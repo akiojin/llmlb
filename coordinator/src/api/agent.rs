@@ -1,17 +1,12 @@
 //! エージェント登録APIハンドラー
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-    response::IntoResponse,
-};
+use crate::AppState;
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use ollama_coordinator_common::{
+    error::CoordinatorError,
     protocol::{RegisterRequest, RegisterResponse},
     types::Agent,
-    error::CoordinatorError,
 };
-use crate::AppState;
 
 /// POST /api/agents - エージェント登録
 pub async fn register_agent(
@@ -23,9 +18,7 @@ pub async fn register_agent(
 }
 
 /// GET /api/agents - エージェント一覧取得
-pub async fn list_agents(
-    State(state): State<AppState>,
-) -> Json<Vec<Agent>> {
+pub async fn list_agents(State(state): State<AppState>) -> Json<Vec<Agent>> {
     let agents = state.registry.list().await;
     Json(agents)
 }
@@ -43,11 +36,17 @@ impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match self.0 {
             CoordinatorError::AgentNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            CoordinatorError::NoAgentsAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
-            CoordinatorError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
+            CoordinatorError::NoAgentsAvailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string())
+            }
+            CoordinatorError::Database(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string())
+            }
             CoordinatorError::Http(_) => (StatusCode::BAD_GATEWAY, self.0.to_string()),
             CoordinatorError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.0.to_string()),
-            CoordinatorError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
+            CoordinatorError::Internal(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string())
+            }
             CoordinatorError::Common(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),
         };
 
@@ -102,7 +101,9 @@ mod tests {
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
         };
-        register_agent(State(state.clone()), Json(req1)).await.unwrap();
+        register_agent(State(state.clone()), Json(req1))
+            .await
+            .unwrap();
 
         let req2 = RegisterRequest {
             machine_name: "machine2".to_string(),
@@ -110,7 +111,9 @@ mod tests {
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
         };
-        register_agent(State(state.clone()), Json(req2)).await.unwrap();
+        register_agent(State(state.clone()), Json(req2))
+            .await
+            .unwrap();
 
         let result = list_agents(State(state)).await;
         assert_eq!(result.0.len(), 2);

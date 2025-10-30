@@ -1,11 +1,8 @@
 //! ヘルスチェックAPIハンドラー
 
-use axum::{
-    extract::State,
-    Json,
-};
+use crate::{api::agent::AppError, AppState};
+use axum::{extract::State, Json};
 use ollama_coordinator_common::protocol::HealthCheckRequest;
-use crate::{AppState, api::agent::AppError};
 
 /// POST /api/health - ヘルスチェック受信
 pub async fn health_check(
@@ -59,8 +56,15 @@ mod tests {
         assert!(result.is_ok());
 
         // エージェントが更新されたことを確認
-        let agent = state.registry.get(register_response.agent_id).await.unwrap();
-        assert_eq!(agent.status, ollama_coordinator_common::types::AgentStatus::Online);
+        let agent = state
+            .registry
+            .get(register_response.agent_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            agent.status,
+            ollama_coordinator_common::types::AgentStatus::Online
+        );
     }
 
     #[tokio::test]

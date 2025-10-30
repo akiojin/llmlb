@@ -52,14 +52,22 @@ async fn test_ollama_start_and_stop() {
 
     // Act: 起動
     let start_result = manager.ensure_running().await;
-    assert!(start_result.is_ok(), "Failed to start Ollama: {:?}", start_result);
+    assert!(
+        start_result.is_ok(),
+        "Failed to start Ollama: {:?}",
+        start_result
+    );
 
     // Assert: 起動確認
     assert!(manager.is_running().await, "Ollama should be running");
 
     // Act: 停止
     let stop_result = manager.stop();
-    assert!(stop_result.is_ok(), "Failed to stop Ollama: {:?}", stop_result);
+    assert!(
+        stop_result.is_ok(),
+        "Failed to stop Ollama: {:?}",
+        stop_result
+    );
 
     // Assert: 停止確認（少し待ってから確認）
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;

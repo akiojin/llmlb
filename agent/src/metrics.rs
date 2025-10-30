@@ -2,8 +2,8 @@
 //!
 //! CPU/メモリ使用率の監視
 
-use sysinfo::{System, SystemExt, CpuExt};
 use ollama_coordinator_common::error::{AgentError, AgentResult};
+use sysinfo::System;
 
 /// システムメトリクスコレクター
 pub struct MetricsCollector {
@@ -28,9 +28,13 @@ impl MetricsCollector {
         self.system.refresh_cpu();
 
         // 全CPUの平均使用率を計算
-        let cpu_usage = self.system.cpus().iter()
+        let cpu_usage = self
+            .system
+            .cpus()
+            .iter()
             .map(|cpu| cpu.cpu_usage())
-            .sum::<f32>() / self.system.cpus().len() as f32;
+            .sum::<f32>()
+            / self.system.cpus().len() as f32;
 
         Ok(cpu_usage)
     }

@@ -3,7 +3,7 @@
 //! エージェントのハートビート送信機能をテスト
 
 use ollama_coordinator_agent::{client::CoordinatorClient, metrics::MetricsCollector};
-use ollama_coordinator_common::protocol::{RegisterRequest, HealthCheckRequest};
+use ollama_coordinator_common::protocol::{HealthCheckRequest, RegisterRequest};
 use std::net::IpAddr;
 
 #[tokio::test]
@@ -66,7 +66,10 @@ async fn test_heartbeat_with_real_metrics() {
     let mut metrics_collector = MetricsCollector::new();
     let (cpu_usage, memory_usage) = metrics_collector.collect_metrics().unwrap();
 
-    println!("Collected metrics - CPU: {}%, Memory: {}%", cpu_usage, memory_usage);
+    println!(
+        "Collected metrics - CPU: {}%, Memory: {}%",
+        cpu_usage, memory_usage
+    );
 
     // Act: ハートビート送信
     let heartbeat_req = HealthCheckRequest {
@@ -79,7 +82,10 @@ async fn test_heartbeat_with_real_metrics() {
     let heartbeat_result = client.send_heartbeat(heartbeat_req).await;
 
     // Assert: ハートビート送信成功
-    assert!(heartbeat_result.is_ok(), "Heartbeat with real metrics should succeed");
+    assert!(
+        heartbeat_result.is_ok(),
+        "Heartbeat with real metrics should succeed"
+    );
 }
 
 #[tokio::test]

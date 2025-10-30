@@ -2,10 +2,10 @@
 //!
 //! Ollamaの自動ダウンロード、起動、停止、状態監視
 
-use std::path::{Path, PathBuf};
+use ollama_coordinator_common::error::{AgentError, AgentResult};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use tokio::time::{sleep, Duration};
-use ollama_coordinator_common::error::{AgentError, AgentResult};
 
 /// Ollamaマネージャー
 pub struct OllamaManager {
@@ -97,8 +97,9 @@ impl OllamaManager {
                 .map_err(|e| AgentError::Internal(format!("Failed to get file metadata: {}", e)))?
                 .permissions();
             perms.set_mode(0o755);
-            std::fs::set_permissions(&self.ollama_path, perms)
-                .map_err(|e| AgentError::Internal(format!("Failed to set execute permission: {}", e)))?;
+            std::fs::set_permissions(&self.ollama_path, perms).map_err(|e| {
+                AgentError::Internal(format!("Failed to set execute permission: {}", e))
+            })?;
         }
 
         println!("Ollama downloaded successfully to {:?}", self.ollama_path);
@@ -148,7 +149,9 @@ impl OllamaManager {
         let output = Command::new(&self.ollama_path)
             .arg("--version")
             .output()
-            .map_err(|e| AgentError::OllamaConnection(format!("Failed to get Ollama version: {}", e)))?;
+            .map_err(|e| {
+                AgentError::OllamaConnection(format!("Failed to get Ollama version: {}", e))
+            })?;
 
         if !output.status.success() {
             return Err(AgentError::OllamaConnection(
@@ -156,9 +159,7 @@ impl OllamaManager {
             ));
         }
 
-        let version = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         Ok(version)
     }
@@ -166,9 +167,9 @@ impl OllamaManager {
     /// Ollamaを停止
     pub fn stop(&mut self) -> AgentResult<()> {
         if let Some(mut process) = self.process.take() {
-            process
-                .kill()
-                .map_err(|e| AgentError::Internal(format!("Failed to kill Ollama process: {}", e)))?;
+            process.kill().map_err(|e| {
+                AgentError::Internal(format!("Failed to kill Ollama process: {}", e))
+            })?;
             println!("Ollama process stopped");
         }
         Ok(())
@@ -187,7 +188,9 @@ fn get_ollama_directory() -> PathBuf {
         // Windows: %LOCALAPPDATA%\OllamaCoordinator\ollama
         let local_app_data = std::env::var("LOCALAPPDATA")
             .unwrap_or_else(|_| String::from("C:\\Users\\Default\\AppData\\Local"));
-        PathBuf::from(local_app_data).join("OllamaCoordinator").join("ollama")
+        PathBuf::from(local_app_data)
+            .join("OllamaCoordinator")
+            .join("ollama")
     } else if cfg!(target_os = "macos") {
         // macOS: ~/Library/Application Support/OllamaCoordinator/ollama
         let home = std::env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
@@ -231,8 +234,10 @@ mod tests {
     #[test]
     fn test_get_ollama_directory() {
         let dir = get_ollama_directory();
-        assert!(dir.to_string_lossy().contains("OllamaCoordinator") ||
-                dir.to_string_lossy().contains("ollama-coordinator"));
+        assert!(
+            dir.to_string_lossy().contains("OllamaCoordinator")
+                || dir.to_string_lossy().contains("ollama-coordinator")
+        );
     }
 
     #[test]

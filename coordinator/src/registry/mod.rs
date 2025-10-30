@@ -2,16 +2,16 @@
 //!
 //! エージェントの状態をメモリ内で管理し、データベースと同期
 
+use chrono::Utc;
+use ollama_coordinator_common::{
+    error::{CoordinatorError, CoordinatorResult},
+    protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
+    types::{Agent, AgentStatus},
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use chrono::Utc;
-use ollama_coordinator_common::{
-    types::{Agent, AgentStatus},
-    protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
-    error::{CoordinatorError, CoordinatorResult},
-};
 
 /// エージェントレジストリ
 #[derive(Clone)]
@@ -70,7 +70,8 @@ impl AgentRegistry {
         let mut agents = self.agents.write().await;
 
         // 同じマシン名のエージェントが既に存在するか確認
-        let existing = agents.values()
+        let existing = agents
+            .values()
             .find(|a| a.machine_name == req.machine_name)
             .map(|a| a.id);
 
@@ -105,16 +106,14 @@ impl AgentRegistry {
         drop(agents);
         self.save_to_db(&agent).await?;
 
-        Ok(RegisterResponse {
-            agent_id,
-            status,
-        })
+        Ok(RegisterResponse { agent_id, status })
     }
 
     /// エージェントを取得
     pub async fn get(&self, agent_id: Uuid) -> CoordinatorResult<Agent> {
         let agents = self.agents.read().await;
-        agents.get(&agent_id)
+        agents
+            .get(&agent_id)
             .cloned()
             .ok_or(CoordinatorError::AgentNotFound(agent_id))
     }
@@ -129,7 +128,8 @@ impl AgentRegistry {
     pub async fn update_last_seen(&self, agent_id: Uuid) -> CoordinatorResult<()> {
         let agent_to_save = {
             let mut agents = self.agents.write().await;
-            let agent = agents.get_mut(&agent_id)
+            let agent = agents
+                .get_mut(&agent_id)
                 .ok_or(CoordinatorError::AgentNotFound(agent_id))?;
             agent.last_seen = Utc::now();
             agent.status = AgentStatus::Online;
@@ -145,7 +145,8 @@ impl AgentRegistry {
     pub async fn mark_offline(&self, agent_id: Uuid) -> CoordinatorResult<()> {
         let agent_to_save = {
             let mut agents = self.agents.write().await;
-            let agent = agents.get_mut(&agent_id)
+            let agent = agents
+                .get_mut(&agent_id)
                 .ok_or(CoordinatorError::AgentNotFound(agent_id))?;
             agent.status = AgentStatus::Offline;
             agent.clone()

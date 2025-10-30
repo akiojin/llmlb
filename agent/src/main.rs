@@ -1,7 +1,9 @@
 //! Ollama Coordinator Agent Entry Point
 
-use ollama_coordinator_agent::{ollama::OllamaManager, client::CoordinatorClient, metrics::MetricsCollector};
-use ollama_coordinator_common::protocol::{RegisterRequest, HealthCheckRequest};
+use ollama_coordinator_agent::{
+    client::CoordinatorClient, metrics::MetricsCollector, ollama::OllamaManager,
+};
+use ollama_coordinator_common::protocol::{HealthCheckRequest, RegisterRequest};
 use tokio::time::{interval, Duration};
 
 #[tokio::main]
@@ -9,9 +11,10 @@ async fn main() {
     println!("Ollama Coordinator Agent v{}", env!("CARGO_PKG_VERSION"));
 
     // 設定（将来的には設定ファイルから読み込む）
-    let coordinator_url = std::env::var("COORDINATOR_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
-    let ollama_port = std::env::var("OLLAMA_PORT")
+    let coordinator_url =
+        std::env::var("COORDINATOR_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let ollama_port: u16 = std::env::var("OLLAMA_PORT")
+        .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(11434);
     let heartbeat_interval_secs = 10;
@@ -28,7 +31,10 @@ async fn main() {
     // マシン情報を取得
     let machine_name = whoami::devicename();
     let ip_address = get_local_ip().unwrap_or_else(|| "127.0.0.1".parse().unwrap());
-    let ollama_version = ollama_manager.get_version().await.unwrap_or_else(|_| "unknown".to_string());
+    let ollama_version = ollama_manager
+        .get_version()
+        .await
+        .unwrap_or_else(|_| "unknown".to_string());
 
     println!("Machine: {}", machine_name);
     println!("IP: {}", ip_address);
@@ -97,7 +103,7 @@ async fn main() {
 
 /// ローカルIPアドレスを取得
 fn get_local_ip() -> Option<std::net::IpAddr> {
-    use std::net::{IpAddr, UdpSocket};
+    use std::net::UdpSocket;
 
     // ダミーのUDP接続を作成してローカルIPを取得
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;

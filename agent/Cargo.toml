@@ -12,10 +12,6 @@ ollama-coordinator-common = { path = "../common" }
 # 非同期ランタイム
 tokio = { workspace = true }
 
-# GUI
-tauri = { workspace = true }
-tray-icon = { workspace = true }
-
 # HTTPクライアント
 reqwest = { workspace = true }
 

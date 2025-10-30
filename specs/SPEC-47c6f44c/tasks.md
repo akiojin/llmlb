@@ -28,13 +28,13 @@
 
 ### Contract Tests (並列実行可能)
 
-- [ ] **T003** [P] `test-quality-checks.yml`を作成（品質チェックワークフローのテスト）
+- [x] **T003** [P] `test-quality-checks.yml`を作成（品質チェックワークフローのテスト）
   - **ファイル**: `/ollama-coordinator/.github/workflows/test-quality-checks.yml`
   - **参照**: `contracts/quality-checks.contract.yml`
   - **目的**: 各ジョブ（tasks-check、rust-test、rust-lint、commitlint、markdownlint）が独立して実行可能かテスト
   - **期待**: 実装前なので失敗する（RED）
 
-- [ ] **T004** [P] `test-auto-merge.yml`を作成（自動マージワークフローのテスト）
+- [x] **T004** [P] `test-auto-merge.yml`を作成（自動マージワークフローのテスト）
   - **ファイル**: `/ollama-coordinator/.github/workflows/test-auto-merge.yml`
   - **参照**: `contracts/auto-merge.contract.yml`
   - **目的**: workflow_runトリガー、条件判定、GraphQL APIマージをテスト

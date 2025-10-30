@@ -1,6 +1,9 @@
 //! エージェント登録APIハンドラー
 
-use crate::{balancer::AgentLoadSnapshot, AppState};
+use crate::{
+    balancer::{AgentLoadSnapshot, SystemSummary},
+    AppState,
+};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use ollama_coordinator_common::{
     error::CoordinatorError,
@@ -27,6 +30,12 @@ pub async fn list_agents(State(state): State<AppState>) -> Json<Vec<Agent>> {
 pub async fn list_agent_metrics(State(state): State<AppState>) -> Json<Vec<AgentLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;
     Json(snapshots)
+}
+
+/// GET /api/metrics/summary - システム統計
+pub async fn metrics_summary(State(state): State<AppState>) -> Json<SystemSummary> {
+    let summary = state.load_manager.summary().await;
+    Json(summary)
 }
 
 /// Axum用のエラーレスポンス型
@@ -64,8 +73,12 @@ impl IntoResponse for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, registry::AgentRegistry};
+    use crate::{
+        balancer::{LoadManager, RequestOutcome},
+        registry::AgentRegistry,
+    };
     use std::net::IpAddr;
+    use std::time::Duration;
 
     fn create_test_state() -> AppState {
         let registry = AgentRegistry::new();
@@ -161,5 +174,79 @@ mod tests {
         assert_eq!(snapshot.cpu_usage.unwrap(), 42.0);
         assert_eq!(snapshot.memory_usage.unwrap(), 33.0);
         assert_eq!(snapshot.active_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_summary_empty() {
+        let state = create_test_state();
+        let summary = metrics_summary(State(state)).await;
+        assert_eq!(summary.total_agents, 0);
+        assert_eq!(summary.online_agents, 0);
+        assert_eq!(summary.total_requests, 0);
+        assert!(summary.average_response_time_ms.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_metrics_summary_counts_requests() {
+        let state = create_test_state();
+
+        // エージェントを登録
+        let register_req = RegisterRequest {
+            machine_name: "stats-machine".to_string(),
+            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
+            ollama_version: "0.1.0".to_string(),
+            ollama_port: 11434,
+        };
+        let response = register_agent(State(state.clone()), Json(register_req))
+            .await
+            .unwrap()
+            .0;
+
+        // ハートビートでメトリクス更新
+        state
+            .load_manager
+            .record_metrics(response.agent_id, 55.0, 44.0, 2)
+            .await
+            .unwrap();
+
+        // リクエストを成功・失敗で記録
+        state
+            .load_manager
+            .begin_request(response.agent_id)
+            .await
+            .unwrap();
+        state
+            .load_manager
+            .finish_request(
+                response.agent_id,
+                RequestOutcome::Success,
+                Duration::from_millis(120),
+            )
+            .await
+            .unwrap();
+
+        state
+            .load_manager
+            .begin_request(response.agent_id)
+            .await
+            .unwrap();
+        state
+            .load_manager
+            .finish_request(
+                response.agent_id,
+                RequestOutcome::Error,
+                Duration::from_millis(200),
+            )
+            .await
+            .unwrap();
+
+        let summary = metrics_summary(State(state)).await;
+        assert_eq!(summary.total_agents, 1);
+        assert_eq!(summary.online_agents, 1);
+        assert_eq!(summary.total_requests, 2);
+        assert_eq!(summary.successful_requests, 1);
+        assert_eq!(summary.failed_requests, 1);
+        let avg = summary.average_response_time_ms.unwrap();
+        assert!((avg - 160.0).abs() < 0.1);
     }
 }

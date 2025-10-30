@@ -20,6 +20,7 @@ pub fn create_router(state: AppState) -> Router {
             post(agent::register_agent).get(agent::list_agents),
         )
         .route("/api/agents/metrics", get(agent::list_agent_metrics))
+        .route("/api/metrics/summary", get(agent::metrics_summary))
         .route("/api/health", post(health::health_check))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))

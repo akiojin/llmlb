@@ -92,6 +92,25 @@ pub struct AgentLoadSnapshot {
     pub last_updated: Option<DateTime<Utc>>,
 }
 
+/// システム全体の統計サマリー
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct SystemSummary {
+    /// 登録エージェント総数
+    pub total_agents: usize,
+    /// オンラインエージェント数
+    pub online_agents: usize,
+    /// オフラインエージェント数
+    pub offline_agents: usize,
+    /// 累積リクエスト数
+    pub total_requests: u64,
+    /// 成功リクエスト数
+    pub successful_requests: u64,
+    /// 失敗リクエスト数
+    pub failed_requests: u64,
+    /// 平均レスポンスタイム (ms)
+    pub average_response_time_ms: Option<f32>,
+}
+
 /// ロードマネージャー
 #[derive(Clone)]
 pub struct LoadManager {
@@ -249,6 +268,55 @@ impl LoadManager {
                 self.build_snapshot(agent, load_state)
             })
             .collect()
+    }
+
+    /// システム全体の統計サマリーを取得
+    pub async fn summary(&self) -> SystemSummary {
+        let agents = self.registry.list().await;
+        let state = self.state.read().await;
+
+        let mut summary = SystemSummary {
+            total_agents: agents.len(),
+            online_agents: agents
+                .iter()
+                .filter(|agent| agent.status == AgentStatus::Online)
+                .count(),
+            offline_agents: agents
+                .iter()
+                .filter(|agent| agent.status == AgentStatus::Offline)
+                .count(),
+            ..Default::default()
+        };
+
+        let mut total_latency_ms = 0u128;
+        let mut latency_samples = 0u64;
+
+        for agent in &agents {
+            if let Some(load_state) = state.get(&agent.id) {
+                summary.total_requests = summary
+                    .total_requests
+                    .saturating_add(load_state.total_assigned);
+                summary.successful_requests = summary
+                    .successful_requests
+                    .saturating_add(load_state.success_count);
+                summary.failed_requests = summary
+                    .failed_requests
+                    .saturating_add(load_state.error_count);
+
+                let completed = load_state.success_count + load_state.error_count;
+                if completed > 0 {
+                    total_latency_ms = total_latency_ms.saturating_add(load_state.total_latency_ms);
+                    latency_samples = latency_samples.saturating_add(completed);
+                }
+            }
+        }
+
+        if latency_samples > 0 {
+            summary.average_response_time_ms =
+                Some((total_latency_ms as f64 / latency_samples as f64) as f32);
+        }
+
+        summary
     }
 
     fn build_snapshot(&self, agent: Agent, load_state: AgentLoadState) -> AgentLoadSnapshot {

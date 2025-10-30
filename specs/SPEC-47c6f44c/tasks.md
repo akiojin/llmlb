@@ -85,7 +85,7 @@
 
 ### 統合テストシナリオ1: 未完了タスク → tasks-check失敗
 
-- [ ] **T009** ダミーfeatureブランチ作成 → 未完了タスク含むPR → tasks-check失敗確認
+- [x] **T009** ダミーfeatureブランチ作成 → 未完了タスク含むPR → tasks-check失敗確認
   - **ブランチ**: `feature/test-tasks-fail`
   - **手順**:
     1. 未完了タスク（`- [ ]`）を含むtasks.mdを作成
@@ -98,7 +98,7 @@
 
 ### 統合テストシナリオ2: 規約違反コミット → commitlint失敗
 
-- [ ] **T010** 規約違反コミット含むPR → commitlint失敗確認
+- [x] **T010** 規約違反コミット含むPR → commitlint失敗確認
   - **ブランチ**: `feature/test-commitlint-fail`
   - **手順**:
     1. 規約違反コミット（例: `新機能追加`、プレフィックスなし）を作成
@@ -124,7 +124,7 @@
 
 ### 統合テストシナリオ4: ドラフトPR → 自動マージスキップ
 
-- [ ] **T012** ドラフトPR → 品質チェック実行 → 自動マージスキップ確認
+- [x] **T012** ドラフトPR → 品質チェック実行 → 自動マージスキップ確認
   - **ブランチ**: `feature/test-draft-pr`
   - **手順**:
     1. `--draft`オプションでPR作成
@@ -156,7 +156,7 @@
     - ドラフトPRの扱いを明記
   - **コミット**: `docs: CLAUDE.mdに自動マージセクション追加`
 
-- [ ] **T015** 既存`ci.yml`の統合または削除
+- [x] **T015** 既存`ci.yml`の統合または削除
   - **ファイル**: `/ollama-coordinator/.github/workflows/ci.yml`
   - **選択肢**:
     - **オプション1**: `quality-checks.yml`に統合（coverageジョブ追加）してから`ci.yml`削除
@@ -171,7 +171,7 @@
   - **修正**: markdownlint警告/エラーを修正
   - **コミット**: `style(docs): markdownlint修正`
 
-- [ ] **T017** [P] 最終動作確認（E2Eテスト）
+- [x] **T017** [P] 最終動作確認（E2Eテスト）
   - **手順**:
     1. 実際のfeatureブランチで`finish-feature.sh`実行
     2. PR作成 → quality-checks実行 → auto-merge実行 → mainマージ確認
@@ -179,7 +179,7 @@
   - **参照**: `quickstart.md` の検証チェックリスト
   - **確認**: 本番環境でのフルフロー動作確認
 
-- [ ] **T018** [P] テスト用ブランチとPRのクリーンアップ
+- [x] **T018** [P] テスト用ブランチとPRのクリーンアップ
   - **対象**:
     - `feature/test-tasks-fail`
     - `feature/test-commitlint-fail`

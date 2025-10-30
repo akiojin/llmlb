@@ -8,6 +8,7 @@ use axum::{
 };
 use ollama_coordinator_common::{
     protocol::{RegisterRequest, RegisterResponse},
+    types::Agent,
     error::CoordinatorError,
 };
 use crate::AppState;
@@ -19,6 +20,14 @@ pub async fn register_agent(
 ) -> Result<Json<RegisterResponse>, AppError> {
     let response = state.registry.register(req).await?;
     Ok(Json(response))
+}
+
+/// GET /api/agents - エージェント一覧取得
+pub async fn list_agents(
+    State(state): State<AppState>,
+) -> Json<Vec<Agent>> {
+    let agents = state.registry.list().await;
+    Json(agents)
 }
 
 /// Axum用のエラーレスポンス型
@@ -73,5 +82,37 @@ mod tests {
 
         let response = result.unwrap().0;
         assert!(!response.agent_id.to_string().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_agents_empty() {
+        let state = create_test_state();
+        let result = list_agents(State(state)).await;
+        assert_eq!(result.0.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_agents_with_agents() {
+        let state = create_test_state();
+
+        // エージェントを2つ登録
+        let req1 = RegisterRequest {
+            machine_name: "machine1".to_string(),
+            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            ollama_version: "0.1.0".to_string(),
+            ollama_port: 11434,
+        };
+        register_agent(State(state.clone()), Json(req1)).await.unwrap();
+
+        let req2 = RegisterRequest {
+            machine_name: "machine2".to_string(),
+            ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
+            ollama_version: "0.1.0".to_string(),
+            ollama_port: 11434,
+        };
+        register_agent(State(state.clone()), Json(req2)).await.unwrap();
+
+        let result = list_agents(State(state)).await;
+        assert_eq!(result.0.len(), 2);
     }
 }

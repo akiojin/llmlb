@@ -125,7 +125,7 @@ mod tests {
         assert_eq!(config.coordinator_url, "http://localhost:8080");
         assert_eq!(config.ollama_url, "http://localhost:11434");
         assert_eq!(config.heartbeat_interval_secs, 10);
-        assert_eq!(config.auto_start, false);
+        assert!(!config.auto_start);
     }
 
     #[test]
@@ -145,7 +145,7 @@ mod tests {
         let config: AgentConfig = serde_json::from_str(json).unwrap();
 
         assert_eq!(config.coordinator_url, "http://192.168.1.10:8080");
-        assert_eq!(config.auto_start, true);
+        assert!(config.auto_start);
         // デフォルト値が適用される
         assert_eq!(config.ollama_url, "http://localhost:11434");
     }

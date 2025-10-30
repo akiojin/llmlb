@@ -146,6 +146,6 @@ mod tests {
         let json = r#"{"model":"llama2","messages":[{"role":"user","content":"Hello"}]}"#;
         let request: ChatRequest = serde_json::from_str(json).unwrap();
 
-        assert_eq!(request.stream, false);
+        assert!(!request.stream);
     }
 }

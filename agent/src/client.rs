@@ -2,11 +2,11 @@
 //!
 //! エージェント登録とハートビート送信
 
-use uuid::Uuid;
 use ollama_coordinator_common::{
-    protocol::{RegisterRequest, RegisterResponse, HealthCheckRequest},
     error::{AgentError, AgentResult},
+    protocol::{HealthCheckRequest, RegisterRequest, RegisterResponse},
 };
+use uuid::Uuid;
 
 /// Coordinatorクライアント
 pub struct CoordinatorClient {
@@ -52,7 +52,10 @@ impl CoordinatorClient {
         // エージェントIDを保存
         self.agent_id = Some(register_response.agent_id);
 
-        println!("Registered with Coordinator: agent_id = {}", register_response.agent_id);
+        println!(
+            "Registered with Coordinator: agent_id = {}",
+            register_response.agent_id
+        );
 
         Ok(register_response)
     }

@@ -1,0 +1,12 @@
+/ollama-coordinator/.git/worktree/feature-coordinator/target/debug/deps/sqlformat-2d037efdfdbd00a9.d: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/formatter.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/indentation.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/inline_block.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/params.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/tokenizer.rs
+
+/ollama-coordinator/.git/worktree/feature-coordinator/target/debug/deps/libsqlformat-2d037efdfdbd00a9.rlib: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/formatter.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/indentation.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/inline_block.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/params.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/tokenizer.rs
+
+/ollama-coordinator/.git/worktree/feature-coordinator/target/debug/deps/libsqlformat-2d037efdfdbd00a9.rmeta: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/formatter.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/indentation.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/inline_block.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/params.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/tokenizer.rs
+
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/lib.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/formatter.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/indentation.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/inline_block.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/params.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlformat-0.2.6/src/tokenizer.rs:

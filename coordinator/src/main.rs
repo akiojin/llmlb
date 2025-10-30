@@ -1,14 +1,14 @@
 //! Ollama Coordinator Server Entry Point
 
-use ollama_coordinator_coordinator::{AppState, api, registry, db, health};
+use ollama_coordinator_coordinator::{api, db, health, registry, AppState};
 
 #[tokio::main]
 async fn main() {
     println!("Ollama Coordinator v{}", env!("CARGO_PKG_VERSION"));
 
     // データベースURL
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite://coordinator.db".to_string());
+    let database_url =
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://coordinator.db".to_string());
 
     println!("Connecting to database: {}", database_url);
 
@@ -25,10 +25,12 @@ async fn main() {
         .expect("Failed to initialize agent registry");
 
     // ヘルスチェック設定
-    let health_check_interval_secs = std::env::var("HEALTH_CHECK_INTERVAL")
+    let health_check_interval_secs: u64 = std::env::var("HEALTH_CHECK_INTERVAL")
+        .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
-    let agent_timeout_secs = std::env::var("AGENT_TIMEOUT")
+    let agent_timeout_secs: u64 = std::env::var("AGENT_TIMEOUT")
+        .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(60);
 
@@ -47,10 +49,8 @@ async fn main() {
     let app = api::create_router(state);
 
     // サーバー起動
-    let host = std::env::var("COORDINATOR_HOST")
-        .unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port = std::env::var("COORDINATOR_PORT")
-        .unwrap_or_else(|_| "8080".to_string());
+    let host = std::env::var("COORDINATOR_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("COORDINATOR_PORT").unwrap_or_else(|_| "8080".to_string());
     let bind_addr = format!("{}:{}", host, port);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -59,7 +59,5 @@ async fn main() {
 
     println!("Coordinator server listening on {}", bind_addr);
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server error");
+    axum::serve(listener, app).await.expect("Server error");
 }

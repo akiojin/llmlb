@@ -34,8 +34,7 @@ async fn test_agent_registration_to_coordinator() {
 
     let response = register_result.unwrap();
     assert!(
-        response.status == RegisterStatus::Registered
-            || response.status == RegisterStatus::Updated,
+        response.status == RegisterStatus::Registered || response.status == RegisterStatus::Updated,
         "Status should be Registered or Updated"
     );
     assert!(

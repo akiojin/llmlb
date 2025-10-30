@@ -2,13 +2,13 @@
 //!
 //! SQLiteデータベースへの接続とクエリ実行
 
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions, Row};
-use ollama_coordinator_common::{
-    types::{Agent, AgentStatus},
-    error::{CoordinatorError, CoordinatorResult},
-};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use ollama_coordinator_common::{
+    error::{CoordinatorError, CoordinatorResult},
+    types::{Agent, AgentStatus},
+};
+use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use uuid::Uuid;
 
 /// データベース接続プールを作成
 pub async fn create_pool(database_url: &str) -> CoordinatorResult<SqlitePool> {
@@ -79,7 +79,8 @@ pub async fn load_agents(pool: &SqlitePool) -> CoordinatorResult<Vec<Agent>> {
         let machine_name: String = row.get("machine_name");
 
         let ip_str: String = row.get("ip_address");
-        let ip_address = ip_str.parse()
+        let ip_address = ip_str
+            .parse()
             .map_err(|e| CoordinatorError::Database(format!("Invalid IP address: {}", e)))?;
 
         let ollama_version: String = row.get("ollama_version");

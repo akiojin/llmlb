@@ -28,9 +28,7 @@ tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "uuid"] }
 
 # Agent専用
-tauri = { version = "1.5", features = ["system-tray", "window-all"] }
 sysinfo = "0.30"
-tray-icon = "0.12"
 
 [profile.release]
 opt-level = 3

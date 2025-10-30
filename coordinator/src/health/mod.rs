@@ -2,10 +2,10 @@
 //!
 //! 定期的にエージェントのタイムアウトを検知し、オフライン判定
 
-use tokio::time::{interval, Duration};
-use chrono::Utc;
 use crate::registry::AgentRegistry;
+use chrono::Utc;
 use ollama_coordinator_common::types::AgentStatus;
+use tokio::time::{interval, Duration};
 
 /// ヘルスモニター
 pub struct HealthMonitor {

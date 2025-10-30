@@ -1,15 +1,12 @@
 //! Ollamaプロキシ APIハンドラー
 
-use axum::{
-    extract::State,
-    Json,
-};
+use crate::{api::agent::AppError, AppState};
+use axum::{extract::State, Json};
 use ollama_coordinator_common::{
+    error::CoordinatorError,
     protocol::{ChatRequest, ChatResponse, GenerateRequest},
     types::AgentStatus,
-    error::CoordinatorError,
 };
-use crate::{AppState, api::agent::AppError};
 
 /// POST /api/chat - Ollama Chat APIプロキシ
 pub async fn proxy_chat(
@@ -55,7 +52,10 @@ pub async fn proxy_generate(
     let agent = select_available_agent(&state).await?;
 
     // OllamaインスタンスにリクエストをProxy
-    let ollama_url = format!("http://{}:{}/api/generate", agent.ip_address, agent.ollama_port);
+    let ollama_url = format!(
+        "http://{}:{}/api/generate",
+        agent.ip_address, agent.ollama_port
+    );
 
     let client = reqwest::Client::new();
     let response = client
@@ -105,9 +105,7 @@ async fn select_available_agent(
 mod tests {
     use super::*;
     use crate::registry::AgentRegistry;
-    use ollama_coordinator_common::{
-        protocol::{ChatMessage, RegisterRequest},
-    };
+    use ollama_coordinator_common::protocol::{ChatMessage, RegisterRequest};
     use std::net::IpAddr;
 
     fn create_test_state() -> AppState {
@@ -161,7 +159,11 @@ mod tests {
         let response1 = state.registry.register(register_req1).await.unwrap();
 
         // エージェント1をオフラインにする
-        state.registry.mark_offline(response1.agent_id).await.unwrap();
+        state
+            .registry
+            .mark_offline(response1.agent_id)
+            .await
+            .unwrap();
 
         // エージェント2を登録
         let register_req2 = RegisterRequest {

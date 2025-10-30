@@ -1,0 +1,110 @@
+# Contract: Quality Checks Workflow
+# 機能ID: SPEC-47c6f44c
+# 目的: PR作成時に品質チェックを並列実行
+# 要件: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007
+
+name: Quality Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/**]
+
+jobs:
+  tasks-check:
+    # 要件: FR-002
+    # 目的: tasks.mdの全タスク完了をチェック
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check tasks.md completion
+        run: |
+          chmod +x .specify/scripts/checks/check-tasks.sh
+          .specify/scripts/checks/check-tasks.sh
+        env:
+          CI: true
+
+  rust-test:
+    # 要件: FR-003
+    # 目的: Rustテストを実行（複数OS）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: [stable]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Run Rust tests
+        run: cargo test --all-features --workspace -- --test-threads=1
+
+  rust-lint:
+    # 要件: FR-004
+    # 目的: Rust lintチェック（fmt, clippy）
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  commitlint:
+    # 要件: FR-005
+    # 目的: コミットメッセージがConventional Commits準拠かチェック
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install commitlint
+        run: |
+          npm install --save-dev @commitlint/cli @commitlint/config-conventional
+
+      - name: Check commit messages
+        run: |
+          chmod +x .specify/scripts/checks/check-commits.sh
+          .specify/scripts/checks/check-commits.sh --from origin/main --to HEAD
+
+  markdownlint:
+    # 要件: FR-006
+    # 目的: マークダウンファイルのスタイル違反を検出
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run markdownlint
+        run: |
+          npx markdownlint-cli '**/*.md' --ignore node_modules --ignore .git

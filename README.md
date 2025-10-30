@@ -264,6 +264,8 @@ COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator
 - `COORDINATOR_HOST`: Bind address (default: `0.0.0.0`)
 - `COORDINATOR_PORT`: Port number (default: `8080`)
 - `DATABASE_URL`: Database URL (default: `sqlite://coordinator.db`)
+- `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
+- `AGENT_TIMEOUT`: Agent timeout in seconds (default: `60`)
 
 #### Agent
 - `COORDINATOR_URL`: Coordinator URL (default: `http://localhost:8080`)

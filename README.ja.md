@@ -264,6 +264,8 @@ COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator
 - `COORDINATOR_HOST`: バインドアドレス（デフォルト: `0.0.0.0`）
 - `COORDINATOR_PORT`: ポート番号（デフォルト: `8080`）
 - `DATABASE_URL`: データベースURL（デフォルト: `sqlite://coordinator.db`）
+- `HEALTH_CHECK_INTERVAL`: ヘルスチェック間隔（秒）（デフォルト: `30`）
+- `AGENT_TIMEOUT`: エージェントタイムアウト（秒）（デフォルト: `60`）
 
 #### Agent
 - `COORDINATOR_URL`: CoordinatorのURL（デフォルト: `http://localhost:8080`）

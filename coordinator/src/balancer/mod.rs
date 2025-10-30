@@ -100,6 +100,8 @@ pub struct AgentLoadSnapshot {
     pub average_response_time_ms: Option<f32>,
     /// メトリクス最終更新時刻
     pub last_updated: Option<DateTime<Utc>>,
+    /// メトリクスが鮮度閾値を超えているか
+    pub is_stale: bool,
 }
 
 /// システム全体の統計サマリー
@@ -268,7 +270,7 @@ impl LoadManager {
         let state = self.state.read().await;
         let load_state = state.get(&agent_id).cloned().unwrap_or_default();
 
-        Ok(self.build_snapshot(agent, load_state))
+        Ok(self.build_snapshot(agent, load_state, Utc::now()))
     }
 
     /// すべてのエージェントのロードスナップショットを取得
@@ -276,11 +278,13 @@ impl LoadManager {
         let agents = self.registry.list().await;
         let state = self.state.read().await;
 
+        let now = Utc::now();
+
         agents
             .into_iter()
             .map(|agent| {
                 let load_state = state.get(&agent.id).cloned().unwrap_or_default();
-                self.build_snapshot(agent, load_state)
+                self.build_snapshot(agent, load_state, now)
             })
             .collect()
     }
@@ -357,7 +361,12 @@ impl LoadManager {
         summary
     }
 
-    fn build_snapshot(&self, agent: Agent, load_state: AgentLoadState) -> AgentLoadSnapshot {
+    fn build_snapshot(
+        &self,
+        agent: Agent,
+        load_state: AgentLoadState,
+        now: DateTime<Utc>,
+    ) -> AgentLoadSnapshot {
         let cpu_usage = load_state
             .last_metrics
             .as_ref()
@@ -380,6 +389,7 @@ impl LoadManager {
             failed_requests: load_state.error_count,
             average_response_time_ms: load_state.average_latency_ms(),
             last_updated: load_state.last_updated(),
+            is_stale: load_state.is_stale(now),
         }
     }
 }

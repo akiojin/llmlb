@@ -174,6 +174,7 @@ mod tests {
         assert_eq!(snapshot.cpu_usage.unwrap(), 42.0);
         assert_eq!(snapshot.memory_usage.unwrap(), 33.0);
         assert_eq!(snapshot.active_requests, 1);
+        assert!(!snapshot.is_stale);
     }
 
     #[tokio::test]

@@ -36,3 +36,4 @@ thiserror = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3.8"
+once_cell = "1.21"

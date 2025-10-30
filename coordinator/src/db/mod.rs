@@ -136,16 +136,17 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use ollama_coordinator_common::types::AgentStatus;
+    use once_cell::sync::Lazy;
     use std::net::IpAddr;
-    use std::sync::Mutex;
     use tempfile::tempdir;
+    use tokio::sync::Mutex as TokioMutex;
 
     // テスト用のグローバルロック（環境変数の競合を防ぐ）
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    static TEST_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
 
     #[tokio::test]
     async fn test_init_storage() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
@@ -163,7 +164,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_and_load_agent() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
@@ -196,7 +197,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_agent() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
@@ -226,7 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_existing_agent() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();

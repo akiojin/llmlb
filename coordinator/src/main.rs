@@ -1,6 +1,6 @@
 //! Ollama Coordinator Server Entry Point
 
-use ollama_coordinator_coordinator::{api, db, health, registry, AppState};
+use ollama_coordinator_coordinator::{api, health, registry, AppState};
 
 #[tokio::main]
 async fn main() {

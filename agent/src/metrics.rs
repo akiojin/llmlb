@@ -77,14 +77,14 @@ mod tests {
     #[test]
     fn test_metrics_collector_creation() {
         let collector = MetricsCollector::new();
-        assert!(collector.system.cpus().len() > 0);
+        assert!(!collector.system.cpus().is_empty());
     }
 
     #[test]
     fn test_get_memory_usage() {
         let mut collector = MetricsCollector::new();
         let memory_usage = collector.get_memory_usage().unwrap();
-        assert!(memory_usage >= 0.0 && memory_usage <= 100.0);
+        assert!((0.0..=100.0).contains(&memory_usage));
     }
 
     #[test]
@@ -92,7 +92,7 @@ mod tests {
         let mut collector = MetricsCollector::new();
         let (cpu_usage, memory_usage) = collector.collect_metrics().unwrap();
 
-        assert!(cpu_usage >= 0.0 && cpu_usage <= 100.0);
-        assert!(memory_usage >= 0.0 && memory_usage <= 100.0);
+        assert!((0.0..=100.0).contains(&cpu_usage));
+        assert!((0.0..=100.0).contains(&memory_usage));
     }
 }

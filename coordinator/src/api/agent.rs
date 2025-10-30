@@ -1,6 +1,6 @@
 //! エージェント登録APIハンドラー
 
-use crate::AppState;
+use crate::{balancer::AgentLoadSnapshot, AppState};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use ollama_coordinator_common::{
     error::CoordinatorError,
@@ -21,6 +21,12 @@ pub async fn register_agent(
 pub async fn list_agents(State(state): State<AppState>) -> Json<Vec<Agent>> {
     let agents = state.registry.list().await;
     Json(agents)
+}
+
+/// GET /api/agents/metrics - エージェントメトリクス取得
+pub async fn list_agent_metrics(State(state): State<AppState>) -> Json<Vec<AgentLoadSnapshot>> {
+    let snapshots = state.load_manager.snapshots().await;
+    Json(snapshots)
 }
 
 /// Axum用のエラーレスポンス型
@@ -58,12 +64,15 @@ impl IntoResponse for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::AgentRegistry;
+    use crate::{balancer::LoadManager, registry::AgentRegistry};
     use std::net::IpAddr;
 
     fn create_test_state() -> AppState {
+        let registry = AgentRegistry::new();
+        let load_manager = LoadManager::new(registry.clone());
         AppState {
-            registry: AgentRegistry::new(),
+            registry,
+            load_manager,
         }
     }
 
@@ -118,5 +127,39 @@ mod tests {
 
         let result = list_agents(State(state)).await;
         assert_eq!(result.0.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_agent_metrics_returns_snapshot() {
+        let state = create_test_state();
+
+        // エージェントを登録
+        let req = RegisterRequest {
+            machine_name: "metrics-machine".to_string(),
+            ip_address: "192.168.1.150".parse::<IpAddr>().unwrap(),
+            ollama_version: "0.1.0".to_string(),
+            ollama_port: 11434,
+        };
+
+        let response = register_agent(State(state.clone()), Json(req))
+            .await
+            .unwrap()
+            .0;
+
+        // メトリクスを記録
+        state
+            .load_manager
+            .record_metrics(response.agent_id, 42.0, 33.0, 1)
+            .await
+            .unwrap();
+
+        let metrics = list_agent_metrics(State(state)).await;
+        assert_eq!(metrics.0.len(), 1);
+
+        let snapshot = &metrics.0[0];
+        assert_eq!(snapshot.agent_id, response.agent_id);
+        assert_eq!(snapshot.cpu_usage.unwrap(), 42.0);
+        assert_eq!(snapshot.memory_usage.unwrap(), 33.0);
+        assert_eq!(snapshot.active_requests, 1);
     }
 }

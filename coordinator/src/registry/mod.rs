@@ -117,7 +117,9 @@ impl AgentRegistry {
     /// 全エージェントを取得
     pub async fn list(&self) -> Vec<Agent> {
         let agents = self.agents.read().await;
-        agents.values().cloned().collect()
+        let mut list: Vec<Agent> = agents.values().cloned().collect();
+        list.sort_by(|a, b| a.registered_at.cmp(&b.registered_at));
+        list
     }
 
     /// エージェントの最終確認時刻を更新

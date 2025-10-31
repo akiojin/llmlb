@@ -63,19 +63,21 @@ mod tests {
 
     #[test]
     fn effective_average_ms_prefers_metrics_value() {
-        let mut state = AgentLoadState::default();
-        state.success_count = 5;
-        state.total_latency_ms = 500;
         let timestamp = Utc::now();
-        state.last_metrics = Some(HealthMetrics {
-            agent_id: Uuid::new_v4(),
-            cpu_usage: 10.0,
-            memory_usage: 20.0,
-            active_requests: 1,
-            total_requests: 5,
-            average_response_time_ms: Some(80.0),
-            timestamp,
-        });
+        let state = AgentLoadState {
+            success_count: 5,
+            total_latency_ms: 500,
+            last_metrics: Some(HealthMetrics {
+                agent_id: Uuid::new_v4(),
+                cpu_usage: 10.0,
+                memory_usage: 20.0,
+                active_requests: 1,
+                total_requests: 5,
+                average_response_time_ms: Some(80.0),
+                timestamp,
+            }),
+            ..Default::default()
+        };
 
         assert_eq!(state.effective_average_ms(), Some(80.0));
     }

@@ -325,4 +325,37 @@ mod tests {
         assert_eq!(agent.tags, vec!["dallas", "gpu"]);
         assert_eq!(agent.notes.as_deref(), Some("Keep online"));
     }
+
+    #[tokio::test]
+    async fn test_delete_agent_endpoint() {
+        let state = create_test_state();
+        let response = register_agent(
+            State(state.clone()),
+            Json(RegisterRequest {
+                machine_name: "delete-agent".into(),
+                ip_address: "10.0.0.7".parse().unwrap(),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        let status = delete_agent(State(state.clone()), axum::extract::Path(response.agent_id))
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let agents = list_agents(State(state)).await.0;
+        assert!(agents.is_empty());
+    }
+}
+/// DELETE /api/agents/:id - エージェントを削除
+pub async fn delete_agent(
+    State(state): State<AppState>,
+    axum::extract::Path(agent_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.registry.delete(agent_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

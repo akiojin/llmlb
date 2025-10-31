@@ -392,6 +392,16 @@ body {
   color: #0b1120;
 }
 
+.btn--danger {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+}
+
+.btn--danger:hover {
+  box-shadow: 0 10px 24px rgba(248, 113, 113, 0.25);
+}
+
 .modal {
   position: fixed;
   inset: 0;

@@ -21,6 +21,7 @@ const modalRefs = {
   close: null,
   ok: null,
   save: null,
+  delete: null,
   machineName: null,
   ipAddress: null,
   ollamaVersion: null,
@@ -44,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalClose = document.getElementById("agent-modal-close");
   const modalOk = document.getElementById("agent-modal-ok");
   const modalSave = document.getElementById("agent-modal-save");
+  const modalDelete = document.getElementById("agent-modal-delete");
   const tbody = document.getElementById("agents-body");
 
   Object.assign(modalRefs, {
@@ -62,6 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tags: document.getElementById("detail-tags"),
     notes: document.getElementById("detail-notes"),
     save: modalSave,
+    delete: modalDelete,
   });
 
   refreshButton.addEventListener("click", () => refreshData({ manual: true }));
@@ -147,6 +150,25 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (error) {
       console.error("Failed to persist agent settings", error);
+    }
+  });
+  modalDelete.addEventListener("click", async () => {
+    if (!state.currentAgentId) return;
+    const agentId = state.currentAgentId;
+    const agent = state.agents.find((item) => item.id === agentId);
+    const name = agent ? getDisplayName(agent) : "対象";
+    if (!window.confirm(`${name} を削除しますか？`)) {
+      return;
+    }
+
+    try {
+      await deleteAgent(agentId);
+      state.agents = state.agents.filter((item) => item.id !== agentId);
+      state.selection.delete(agentId);
+      closeAgentModal();
+      renderAgents();
+    } catch (error) {
+      console.error("Failed to delete agent", error);
     }
   });
   modal.addEventListener("click", (event) => {
@@ -585,6 +607,24 @@ async function saveAgentSettings(agentId) {
   } catch (error) {
     console.error("Failed to save agent settings:", error);
     showError(`設定の保存に失敗しました: ${error.message}`);
+    throw error;
+  }
+}
+
+async function deleteAgent(agentId) {
+  try {
+    const response = await fetch(`/api/agents/${agentId}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    showError(`エージェントの削除に失敗しました: ${error.message}`);
     throw error;
   }
 }

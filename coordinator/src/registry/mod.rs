@@ -229,6 +229,24 @@ impl AgentRegistry {
         self.save_to_storage(&updated_agent).await?;
         Ok(updated_agent)
     }
+
+    /// エージェントを削除
+    pub async fn delete(&self, agent_id: Uuid) -> CoordinatorResult<()> {
+        let existed = {
+            let mut agents = self.agents.write().await;
+            agents.remove(&agent_id)
+        };
+
+        if existed.is_none() {
+            return Err(CoordinatorError::AgentNotFound(agent_id));
+        }
+
+        if self.storage_enabled {
+            crate::db::delete_agent(agent_id).await
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Default for AgentRegistry {
@@ -346,5 +364,23 @@ mod tests {
         assert_eq!(updated.custom_name.as_deref(), Some("Display"));
         assert_eq!(updated.tags, vec!["primary", "gpu"]);
         assert_eq!(updated.notes.as_deref(), Some("Important"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_agent_removes_from_registry() {
+        let registry = AgentRegistry::new();
+        let agent_id = registry
+            .register(RegisterRequest {
+                machine_name: "delete-me".to_string(),
+                ip_address: "127.0.0.1".parse().unwrap(),
+                ollama_version: "0.1.0".to_string(),
+                ollama_port: 11434,
+            })
+            .await
+            .unwrap()
+            .agent_id;
+
+        registry.delete(agent_id).await.unwrap();
+        assert!(registry.list().await.is_empty());
     }
 }

@@ -9,7 +9,7 @@ pub mod proxy;
 
 use crate::AppState;
 use axum::{
-    routing::{get, get_service, post, put},
+    routing::{delete, get, get_service, post, put},
     Router,
 };
 use tower_http::services::ServeDir;
@@ -25,6 +25,7 @@ pub fn create_router(state: AppState) -> Router {
             "/api/agents",
             post(agent::register_agent).get(agent::list_agents),
         )
+        .route("/api/agents/:agent_id", delete(agent::delete_agent))
         .route(
             "/api/agents/:agent_id/settings",
             put(agent::update_agent_settings),

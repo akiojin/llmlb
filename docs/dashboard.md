@@ -97,7 +97,6 @@ To customise:
 1. Modify the HTML and CSS as desired (no bundler required).
 2. Add new endpoints to `coordinator/src/api` and update `app.js` to consume them.
 3. Remember to run `cargo fmt` and `cargo test -p ollama-coordinator-coordinator` before committing.
-
 ---
 
 ## 6. Troubleshooting
@@ -114,4 +113,3 @@ To customise:
 - `SPEC-63acef08`: API proxy & request routing
 - `SPEC-443acc8c`: Health monitoring
 - `SPEC-712c20cf`: Dashboard requirements (current document)
-

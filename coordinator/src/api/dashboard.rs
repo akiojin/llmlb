@@ -3,7 +3,10 @@
 //! `/api/dashboard/*` 系のエンドポイントを提供し、エージェントの状態および
 //! システム統計を返却する。
 
-use crate::{balancer::AgentLoadSnapshot, AppState};
+use crate::{
+    balancer::{AgentLoadSnapshot, RequestHistoryPoint},
+    AppState,
+};
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use ollama_coordinator_common::types::AgentStatus;
@@ -173,6 +176,12 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<DashboardStats> {
     Json(stats)
 }
 
+/// GET /api/dashboard/request-history
+pub async fn get_request_history(State(state): State<AppState>) -> Json<Vec<RequestHistoryPoint>> {
+    let history = state.load_manager.request_history().await;
+    Json(history)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,5 +306,46 @@ mod tests {
         assert_eq!(stats.successful_requests, 0);
         assert!(stats.last_registered_at.is_some());
         assert!(stats.last_seen_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_request_history_returns_series() {
+        let state = create_state();
+
+        let agent_id = state
+            .registry
+            .register(RegisterRequest {
+                machine_name: "agent-history".into(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            })
+            .await
+            .unwrap()
+            .agent_id;
+
+        state.load_manager.begin_request(agent_id).await.unwrap();
+        state
+            .load_manager
+            .finish_request(
+                agent_id,
+                RequestOutcome::Success,
+                Duration::from_millis(150),
+            )
+            .await
+            .unwrap();
+
+        state.load_manager.begin_request(agent_id).await.unwrap();
+        state
+            .load_manager
+            .finish_request(agent_id, RequestOutcome::Error, Duration::from_millis(200))
+            .await
+            .unwrap();
+
+        let history = get_request_history(State(state)).await.0;
+        assert_eq!(history.len() as i64, 60);
+        let latest = history.last().unwrap();
+        assert!(latest.success >= 1);
+        assert!(latest.error >= 1);
     }
 }

@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ollama Coordinator ダッシュボード</title>
     <link rel="stylesheet" href="styles.css" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"
+      integrity="sha384-kdaPQ1PbX0dJZV4x8SyCNFlvEDc+IWd/KFiqsk5dGDg7N4kjr7/1wLe73KUpuC8P"
+      crossorigin="anonymous"
+      defer
+    ></script>
   </head>
   <body>
     <header class="page-header">
@@ -99,10 +105,10 @@
       <section class="charts-section">
         <header class="section-header">
           <h2>リクエスト履歴</h2>
-          <p class="section-caption">次フェーズでのチャート実装予定（placeholder）</p>
+          <p class="section-caption">直近60分の成功・失敗リクエスト件数</p>
         </header>
-        <div class="chart-placeholder">
-          <span class="placeholder-text">可視化準備中…</span>
+        <div class="chart-container">
+          <canvas id="requests-chart" aria-label="Requests per minute" role="img"></canvas>
         </div>
       </section>
     </main>

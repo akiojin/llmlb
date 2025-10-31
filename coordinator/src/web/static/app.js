@@ -3,8 +3,11 @@ const REFRESH_INTERVAL_MS = 5000;
 const state = {
   agents: [],
   stats: null,
+  history: [],
   timerId: null,
 };
+
+let requestsChart = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   const refreshButton = document.getElementById("refresh-button");
@@ -31,16 +34,19 @@ async function refreshData({ manual = false } = {}) {
   setConnectionStatus(manual ? "loading" : "updating");
 
   try {
-    const [agents, stats] = await Promise.all([
+    const [agents, stats, history] = await Promise.all([
       fetchJson("/api/dashboard/agents"),
       fetchJson("/api/dashboard/stats"),
+      fetchJson("/api/dashboard/request-history"),
     ]);
 
     state.agents = agents;
     state.stats = stats;
+    state.history = history;
 
     renderStats();
     renderAgents();
+    renderHistory();
     hideError();
     setConnectionStatus("online");
     updateLastRefreshed(new Date());
@@ -122,6 +128,117 @@ function renderAgents() {
   }
 
   tbody.appendChild(fragment);
+}
+
+function renderHistory() {
+  const canvas = document.getElementById("requests-chart");
+  if (!canvas || typeof Chart === "undefined") {
+    return;
+  }
+
+  if (!Array.isArray(state.history) || !state.history.length) {
+    const labels = buildHistoryLabels([]);
+    const zeroes = new Array(labels.length).fill(0);
+    updateHistoryChart(canvas, labels, zeroes, zeroes);
+    return;
+  }
+
+  const labels = buildHistoryLabels(state.history);
+  const success = state.history.map((point) => point.success ?? 0);
+  const failures = state.history.map((point) => point.error ?? 0);
+  updateHistoryChart(canvas, labels, success, failures);
+}
+
+function updateHistoryChart(canvas, labels, success, failures) {
+  if (!requestsChart) {
+    requestsChart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "成功リクエスト",
+            data: success,
+            tension: 0.3,
+            borderColor: "rgba(59, 130, 246, 0.9)",
+            backgroundColor: "rgba(59, 130, 246, 0.15)",
+            fill: true,
+            pointRadius: 0,
+          },
+          {
+            label: "失敗リクエスト",
+            data: failures,
+            tension: 0.3,
+            borderColor: "rgba(248, 113, 113, 0.9)",
+            backgroundColor: "rgba(248, 113, 113, 0.15)",
+            fill: true,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: "var(--text-subtle)",
+            },
+          },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                const raw = items[0]?.label ?? "";
+                return raw;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "var(--text-subtle)",
+              maxRotation: 0,
+            },
+            grid: {
+              color: "rgba(148, 163, 184, 0.08)",
+            },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              color: "var(--text-subtle)",
+              precision: 0,
+            },
+            grid: {
+              color: "rgba(148, 163, 184, 0.08)",
+            },
+          },
+        },
+      },
+    });
+  } else {
+    requestsChart.data.labels = labels;
+    requestsChart.data.datasets[0].data = success;
+    requestsChart.data.datasets[1].data = failures;
+    requestsChart.update("none");
+  }
+}
+
+function buildHistoryLabels(history) {
+  if (!history.length) {
+    const now = alignDateToMinute(new Date());
+    return Array.from({ length: 60 }, (_, idx) => {
+      const date = new Date(now.getTime() - (59 - idx) * 60 * 1000);
+      return formatHistoryLabel(date);
+    });
+  }
+
+  return history.map((point) => formatHistoryLabel(new Date(point.minute)));
 }
 
 function buildAgentRow(agent) {
@@ -273,6 +390,26 @@ function formatDate(date) {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatHistoryLabel(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function alignDateToMinute(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return new Date();
+  }
+  const copy = new Date(date.getTime());
+  copy.setSeconds(0, 0);
+  return copy;
 }
 
 function escapeHtml(value) {

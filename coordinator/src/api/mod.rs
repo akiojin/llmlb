@@ -29,6 +29,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/metrics/summary", get(agent::metrics_summary))
         .route("/api/dashboard/agents", get(dashboard::get_agents))
         .route("/api/dashboard/stats", get(dashboard::get_stats))
+        .route(
+            "/api/dashboard/request-history",
+            get(dashboard::get_request_history),
+        )
         .route("/api/health", post(health::health_check))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))

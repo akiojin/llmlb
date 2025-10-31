@@ -4,7 +4,7 @@
 //! 高度なロードバランシング戦略を提供する。
 
 use crate::registry::AgentRegistry;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
 use ollama_coordinator_common::{
     error::{CoordinatorError, CoordinatorResult},
     types::{Agent, AgentStatus, HealthMetrics},
@@ -12,18 +12,20 @@ use ollama_coordinator_common::{
 use serde::Serialize;
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicUsize, Ordering as AtomicOrdering},
         Arc,
     },
-    time::Duration,
+    time::Duration as StdDuration,
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// メトリクスを新鮮とみなすための許容秒数
 const METRICS_STALE_THRESHOLD_SECS: i64 = 120;
+/// リクエスト履歴の保持分数
+const REQUEST_HISTORY_WINDOW_MINUTES: i64 = 60;
 
 /// リクエスト結果
 #[derive(Debug, Clone, Copy)]
@@ -230,6 +232,7 @@ pub struct LoadManager {
     registry: AgentRegistry,
     state: Arc<RwLock<HashMap<Uuid, AgentLoadState>>>,
     round_robin: Arc<AtomicUsize>,
+    history: Arc<RwLock<VecDeque<RequestHistoryPoint>>>,
 }
 
 impl LoadManager {
@@ -239,6 +242,7 @@ impl LoadManager {
             registry,
             state: Arc::new(RwLock::new(HashMap::new())),
             round_robin: Arc::new(AtomicUsize::new(0)),
+            history: Arc::new(RwLock::new(VecDeque::new())),
         }
     }
 
@@ -289,7 +293,7 @@ impl LoadManager {
         &self,
         agent_id: Uuid,
         outcome: RequestOutcome,
-        duration: Duration,
+        duration: StdDuration,
     ) -> CoordinatorResult<()> {
         self.registry.get(agent_id).await?;
 
@@ -315,6 +319,9 @@ impl LoadManager {
                 metrics.average_response_time_ms = updated_average;
             }
         }
+
+        drop(state);
+        self.record_request_history(outcome, Utc::now()).await;
 
         Ok(())
     }
@@ -477,6 +484,29 @@ impl LoadManager {
         summary
     }
 
+    /// リクエスト履歴を取得
+    pub async fn request_history(&self) -> Vec<RequestHistoryPoint> {
+        let history = self.history.read().await;
+        build_history_window(&history)
+    }
+
+    async fn record_request_history(&self, outcome: RequestOutcome, timestamp: DateTime<Utc>) {
+        let minute = align_to_minute(timestamp);
+        let mut history = self.history.write().await;
+
+        if let Some(last) = history.back_mut() {
+            if last.minute == minute {
+                increment_history(last, outcome);
+            } else {
+                history.push_back(new_history_point(minute, outcome));
+            }
+        } else {
+            history.push_back(new_history_point(minute, outcome));
+        }
+
+        prune_history(&mut history, minute);
+    }
+
     fn build_snapshot(
         &self,
         agent: Agent,
@@ -508,4 +538,81 @@ impl LoadManager {
             is_stale: load_state.is_stale(now),
         }
     }
+}
+
+fn align_to_minute(ts: DateTime<Utc>) -> DateTime<Utc> {
+    ts.with_second(0).unwrap().with_nanosecond(0).unwrap()
+}
+
+fn prune_history(history: &mut VecDeque<RequestHistoryPoint>, newest: DateTime<Utc>) {
+    let cutoff = newest - ChronoDuration::minutes(REQUEST_HISTORY_WINDOW_MINUTES - 1);
+    while let Some(front) = history.front() {
+        if front.minute < cutoff {
+            history.pop_front();
+        } else {
+            break;
+        }
+    }
+}
+
+fn new_history_point(minute: DateTime<Utc>, outcome: RequestOutcome) -> RequestHistoryPoint {
+    let mut point = RequestHistoryPoint {
+        minute,
+        success: 0,
+        error: 0,
+    };
+    increment_history(&mut point, outcome);
+    point
+}
+
+fn increment_history(point: &mut RequestHistoryPoint, outcome: RequestOutcome) {
+    match outcome {
+        RequestOutcome::Success => point.success = point.success.saturating_add(1),
+        RequestOutcome::Error => point.error = point.error.saturating_add(1),
+    }
+}
+
+fn build_history_window(history: &VecDeque<RequestHistoryPoint>) -> Vec<RequestHistoryPoint> {
+    let now = align_to_minute(Utc::now());
+    let mut map: HashMap<DateTime<Utc>, RequestHistoryPoint> = history
+        .iter()
+        .cloned()
+        .map(|point| (point.minute, point))
+        .collect();
+    fill_history(now, &mut map)
+}
+
+fn fill_history(
+    now: DateTime<Utc>,
+    map: &mut HashMap<DateTime<Utc>, RequestHistoryPoint>,
+) -> Vec<RequestHistoryPoint> {
+    let start = now - ChronoDuration::minutes(REQUEST_HISTORY_WINDOW_MINUTES - 1);
+    let mut cursor = start;
+    let mut result = Vec::with_capacity(REQUEST_HISTORY_WINDOW_MINUTES as usize);
+
+    while cursor <= now {
+        if let Some(point) = map.remove(&cursor) {
+            result.push(point);
+        } else {
+            result.push(RequestHistoryPoint {
+                minute: cursor,
+                success: 0,
+                error: 0,
+            });
+        }
+        cursor += ChronoDuration::minutes(1);
+    }
+
+    result
+}
+
+/// リクエスト履歴ポイント
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
+pub struct RequestHistoryPoint {
+    /// 分単位のタイムスタンプ
+    pub minute: DateTime<Utc>,
+    /// 成功数
+    pub success: u64,
+    /// 失敗数
+    pub error: u64,
 }

@@ -282,15 +282,17 @@ body {
   font-size: 0.95rem;
 }
 
-.chart-placeholder {
-  height: 220px;
+.chart-container {
+  background: var(--bg-card);
   border-radius: 16px;
-  border: 2px dashed rgba(148, 163, 184, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-subtle);
-  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border);
+  padding: 18px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+}
+
+.chart-container canvas {
+  width: 100% !important;
+  max-height: 320px;
 }
 
 .page-footer {

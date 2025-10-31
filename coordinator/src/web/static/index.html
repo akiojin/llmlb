@@ -4,7 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ollama Coordinator ダッシュボード</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="/dashboard/styles.css" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"
+      integrity="sha384-Sse/HDqcypGpyTDpvZOJNnG0TT3feGQUkF9H+mnRvic+LjR+K1NhTt8f51KIQ3v3"
+      crossorigin="anonymous"
+      defer
+    ></script>
   </head>
   <body>
     <header class="page-header">
@@ -17,6 +23,7 @@
           接続状態: 更新中…
         </span>
         <span id="last-refreshed" class="last-refreshed">最終更新: -</span>
+        <span id="refresh-metrics" class="last-refreshed">取得: - / 描画: -</span>
         <button id="refresh-button" class="refresh-button" type="button">
           手動更新
         </button>
@@ -64,9 +71,26 @@
         <header class="section-header">
           <h2>エージェント一覧</h2>
           <div class="section-tools">
+            <div class="export-group">
+              <button type="button" id="export-json" class="btn">JSONエクスポート</button>
+              <button type="button" id="export-csv" class="btn">CSVエクスポート</button>
+            </div>
             <label class="filter-label">
-              <input type="checkbox" id="filter-offline" />
-              オフラインを非表示
+              <span>状態</span>
+              <select id="filter-status">
+                <option value="all">すべて</option>
+                <option value="online">オンライン</option>
+                <option value="offline">オフライン</option>
+              </select>
+            </label>
+            <label class="filter-label">
+              <span>検索</span>
+              <input
+                type="search"
+                id="filter-query"
+                placeholder="マシン名・IPアドレス"
+                autocomplete="off"
+              />
             </label>
           </div>
         </header>
@@ -75,34 +99,58 @@
           <table class="agents-table">
             <thead>
               <tr>
-                <th>名前</th>
-                <th>アドレス</th>
-                <th>状態</th>
-                <th>稼働時間</th>
+                <th>
+                  <input type="checkbox" id="select-all" aria-label="すべて選択" />
+                </th>
+                <th data-sort="machine" class="sortable">
+                  <span>名前</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th data-sort="ip" class="sortable">
+                  <span>アドレス</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th data-sort="status" class="sortable">
+                  <span>状態</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th data-sort="uptime" class="sortable">
+                  <span>稼働時間</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
                 <th>CPU</th>
                 <th>メモリ</th>
                 <th>処理中</th>
-                <th>累積</th>
+                <th data-sort="total" class="sortable">
+                  <span>累積</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
                 <th>平均応答</th>
                 <th>最終確認</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody id="agents-body">
               <tr class="empty-row">
-                <td colspan="10">データ取得中…</td>
+                <td colspan="11">データ取得中…</td>
               </tr>
             </tbody>
           </table>
+        </div>
+        <div class="pagination" aria-label="エージェント一覧ページネーション">
+          <button type="button" id="page-prev" class="btn" aria-label="前のページ">&lt;</button>
+          <span class="pagination__info" id="page-info">- / -</span>
+          <button type="button" id="page-next" class="btn" aria-label="次のページ">&gt;</button>
         </div>
       </section>
 
       <section class="charts-section">
         <header class="section-header">
           <h2>リクエスト履歴</h2>
-          <p class="section-caption">次フェーズでのチャート実装予定（placeholder）</p>
+          <p class="section-caption">直近60分の成功・失敗リクエスト件数</p>
         </header>
-        <div class="chart-placeholder">
-          <span class="placeholder-text">可視化準備中…</span>
+        <div class="chart-container">
+          <canvas id="requests-chart" aria-label="Requests per minute" role="img"></canvas>
         </div>
       </section>
     </main>
@@ -111,6 +159,70 @@
       <small>&copy; 2025 Ollama Coordinator</small>
     </footer>
 
-    <script src="app.js" defer></script>
+    <div id="agent-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="agent-modal-title">
+      <div class="modal__dialog">
+        <header class="modal__header">
+          <h2 id="agent-modal-title">エージェント詳細</h2>
+          <button type="button" id="agent-modal-close" class="modal__close" aria-label="閉じる">×</button>
+        </header>
+        <section class="modal__content">
+          <form id="agent-settings-form" class="detail-list">
+            <div>
+              <dt>表示名</dt>
+              <dd><input id="detail-custom-name" name="custom_name" type="text" placeholder="任意の名前" /></dd>
+            </div>
+            <div>
+              <dt>タグ</dt>
+              <dd><input id="detail-tags" name="tags" type="text" placeholder="カンマ区切りで入力" /></dd>
+            </div>
+            <div>
+              <dt>メモ</dt>
+              <dd><textarea id="detail-notes" name="notes" rows="3" placeholder="任意のメモ"></textarea></dd>
+            </div>
+
+            <div>
+              <dt>マシン名</dt>
+              <dd id="detail-machine-name">-</dd>
+            </div>
+            <div>
+              <dt>IPアドレス</dt>
+              <dd id="detail-ip-address">-</dd>
+            </div>
+            <div>
+              <dt>Ollamaバージョン</dt>
+              <dd id="detail-ollama-version">-</dd>
+            </div>
+            <div>
+              <dt>稼働時間</dt>
+              <dd id="detail-uptime">-</dd>
+            </div>
+            <div>
+              <dt>状態</dt>
+              <dd id="detail-status">-</dd>
+            </div>
+            <div>
+              <dt>最終確認</dt>
+              <dd id="detail-last-seen">-</dd>
+            </div>
+            <div>
+              <dt>累積リクエスト</dt>
+              <dd id="detail-total-requests">-</dd>
+            </div>
+            <div>
+              <dt>直近平均応答</dt>
+              <dd id="detail-average-response">-</dd>
+            </div>
+          </form>
+        </section>
+        <footer class="modal__footer">
+          <button type="button" id="agent-modal-disconnect" class="btn">強制切断</button>
+          <button type="button" id="agent-modal-delete" class="btn btn--danger">削除</button>
+          <button type="button" id="agent-modal-save" class="btn btn--primary">保存</button>
+          <button type="button" id="agent-modal-ok" class="btn">閉じる</button>
+        </footer>
+      </div>
+    </div>
+
+    <script src="/dashboard/app.js" defer></script>
   </body>
 </html>

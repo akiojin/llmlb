@@ -9,29 +9,153 @@ pub mod proxy;
 
 use crate::AppState;
 use axum::{
-    routing::{get, get_service, post},
+    routing::{delete, get, get_service, post, put},
     Router,
 };
 use tower_http::services::ServeDir;
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
-    let static_files = get_service(
-        ServeDir::new("coordinator/src/web/static").append_index_html_on_directories(true),
-    );
+    let static_dir = format!("{}/src/web/static", env!("CARGO_MANIFEST_DIR"));
+    let static_files =
+        get_service(ServeDir::new(static_dir).append_index_html_on_directories(true));
 
     Router::new()
         .route(
             "/api/agents",
             post(agent::register_agent).get(agent::list_agents),
         )
+        .route("/api/agents/:agent_id", delete(agent::delete_agent))
+        .route(
+            "/api/agents/:agent_id/disconnect",
+            post(agent::disconnect_agent),
+        )
+        .route(
+            "/api/agents/:agent_id/settings",
+            put(agent::update_agent_settings),
+        )
         .route("/api/agents/metrics", get(agent::list_agent_metrics))
         .route("/api/metrics/summary", get(agent::metrics_summary))
         .route("/api/dashboard/agents", get(dashboard::get_agents))
         .route("/api/dashboard/stats", get(dashboard::get_stats))
+        .route(
+            "/api/dashboard/request-history",
+            get(dashboard::get_request_history),
+        )
+        .route("/api/dashboard/overview", get(dashboard::get_overview))
         .route("/api/health", post(health::health_check))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))
         .nest_service("/dashboard", static_files)
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{balancer::LoadManager, registry::AgentRegistry};
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Request, StatusCode};
+    use ollama_coordinator_common::protocol::RegisterRequest;
+    use tower::Service;
+
+    fn test_state() -> (AppState, AgentRegistry) {
+        let registry = AgentRegistry::new();
+        let load_manager = LoadManager::new(registry.clone());
+        let state = AppState {
+            registry: registry.clone(),
+            load_manager,
+        };
+        (state, registry)
+    }
+
+    #[tokio::test]
+    async fn test_dashboard_static_served() {
+        let (state, _) = test_state();
+        let mut router = create_router(state);
+        let response = router
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/dashboard/index.html")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let (parts, body) = response.into_parts();
+        let bytes = to_bytes(body, 1024 * 1024).await.unwrap();
+
+        assert_eq!(status, StatusCode::OK);
+        let content_type = parts.headers[axum::http::header::CONTENT_TYPE]
+            .to_str()
+            .unwrap();
+        assert!(content_type.starts_with("text/html"));
+        assert!(bytes.starts_with(b"<!DOCTYPE html"));
+    }
+
+    #[tokio::test]
+    async fn test_dashboard_agents_endpoint_returns_json() {
+        let (state, registry) = test_state();
+        registry
+            .register(RegisterRequest {
+                machine_name: "test-agent".into(),
+                ip_address: "127.0.0.1".parse().unwrap(),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            })
+            .await
+            .unwrap();
+
+        let mut router = create_router(state);
+        let response = router
+            .call(
+                Request::builder()
+                    .uri("/api/dashboard/agents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let agents: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(agents.is_array());
+        assert_eq!(agents.as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_dashboard_overview_endpoint_returns_all_sections() {
+        let (state, registry) = test_state();
+        registry
+            .register(RegisterRequest {
+                machine_name: "overview-agent".into(),
+                ip_address: "127.0.0.1".parse().unwrap(),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            })
+            .await
+            .unwrap();
+
+        let mut router = create_router(state);
+        let response = router
+            .call(
+                Request::builder()
+                    .uri("/api/dashboard/overview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let overview: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(overview["agents"].is_array());
+        assert!(overview["stats"].is_object());
+        assert!(overview["history"].is_array());
+    }
 }

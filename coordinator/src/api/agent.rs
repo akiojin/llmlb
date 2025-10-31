@@ -2,6 +2,7 @@
 
 use crate::{
     balancer::{AgentLoadSnapshot, SystemSummary},
+    registry::AgentSettingsUpdate,
     AppState,
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
@@ -10,6 +11,7 @@ use ollama_coordinator_common::{
     protocol::{RegisterRequest, RegisterResponse},
     types::Agent,
 };
+use serde::Deserialize;
 
 /// POST /api/agents - エージェント登録
 pub async fn register_agent(
@@ -26,6 +28,37 @@ pub async fn list_agents(State(state): State<AppState>) -> Json<Vec<Agent>> {
     Json(agents)
 }
 
+/// PUT /api/agents/:id/settings - エージェント設定更新
+pub async fn update_agent_settings(
+    State(state): State<AppState>,
+    axum::extract::Path(agent_id): axum::extract::Path<uuid::Uuid>,
+    Json(payload): Json<UpdateAgentSettingsPayload>,
+) -> Result<Json<Agent>, AppError> {
+    let update = AgentSettingsUpdate {
+        custom_name: payload.custom_name,
+        tags: payload.tags,
+        notes: payload.notes,
+    };
+
+    let agent = state.registry.update_settings(agent_id, update).await?;
+
+    Ok(Json(agent))
+}
+
+/// エージェント設定更新リクエスト
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentSettingsPayload {
+    /// 表示名（nullでリセット）
+    #[serde(default)]
+    pub custom_name: Option<Option<String>>,
+    /// タグ一覧
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    /// メモ（nullでリセット）
+    #[serde(default)]
+    pub notes: Option<Option<String>>,
+}
+
 /// GET /api/agents/metrics - エージェントメトリクス取得
 pub async fn list_agent_metrics(State(state): State<AppState>) -> Json<Vec<AgentLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;
@@ -36,6 +69,24 @@ pub async fn list_agent_metrics(State(state): State<AppState>) -> Json<Vec<Agent
 pub async fn metrics_summary(State(state): State<AppState>) -> Json<SystemSummary> {
     let summary = state.load_manager.summary().await;
     Json(summary)
+}
+
+/// DELETE /api/agents/:id - エージェントを削除
+pub async fn delete_agent(
+    State(state): State<AppState>,
+    axum::extract::Path(agent_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.registry.delete(agent_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/agents/:id/disconnect - エージェントを強制オフラインにする
+pub async fn disconnect_agent(
+    State(state): State<AppState>,
+    axum::extract::Path(agent_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.registry.mark_offline(agent_id).await?;
+    Ok(StatusCode::ACCEPTED)
 }
 
 /// Axum用のエラーレスポンス型
@@ -77,6 +128,7 @@ mod tests {
         balancer::{LoadManager, RequestOutcome},
         registry::AgentRegistry,
     };
+    use ollama_coordinator_common::types::AgentStatus;
     use std::net::IpAddr;
     use std::time::Duration;
 
@@ -253,5 +305,94 @@ mod tests {
         let avg = summary.average_response_time_ms.unwrap();
         assert!((avg - 160.0).abs() < 0.1);
         assert!(summary.last_metrics_updated_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_update_agent_settings_endpoint() {
+        let state = create_test_state();
+
+        let agent_id = register_agent(
+            State(state.clone()),
+            Json(RegisterRequest {
+                machine_name: "agent-settings".into(),
+                ip_address: "10.0.0.5".parse().unwrap(),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            }),
+        )
+        .await
+        .unwrap()
+        .0
+        .agent_id;
+
+        let payload = UpdateAgentSettingsPayload {
+            custom_name: Some(Some("Primary".into())),
+            tags: Some(vec!["dallas".into(), "gpu".into()]),
+            notes: Some(Some("Keep online".into())),
+        };
+
+        let agent = update_agent_settings(
+            State(state.clone()),
+            axum::extract::Path(agent_id),
+            Json(payload),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        assert_eq!(agent.custom_name.as_deref(), Some("Primary"));
+        assert_eq!(agent.tags, vec!["dallas", "gpu"]);
+        assert_eq!(agent.notes.as_deref(), Some("Keep online"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_agent_endpoint() {
+        let state = create_test_state();
+        let response = register_agent(
+            State(state.clone()),
+            Json(RegisterRequest {
+                machine_name: "delete-agent".into(),
+                ip_address: "10.0.0.7".parse().unwrap(),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+
+        let status = delete_agent(State(state.clone()), axum::extract::Path(response.agent_id))
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let agents = list_agents(State(state)).await.0;
+        assert!(agents.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_agent_endpoint_marks_offline() {
+        let state = create_test_state();
+        let agent_id = register_agent(
+            State(state.clone()),
+            Json(RegisterRequest {
+                machine_name: "disconnect-agent".into(),
+                ip_address: "10.0.0.8".parse().unwrap(),
+                ollama_version: "0.1.0".into(),
+                ollama_port: 11434,
+            }),
+        )
+        .await
+        .unwrap()
+        .0
+        .agent_id;
+
+        let status = disconnect_agent(State(state.clone()), axum::extract::Path(agent_id))
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let agent = state.registry.get(agent_id).await.unwrap();
+        assert_eq!(agent.status, AgentStatus::Offline);
     }
 }

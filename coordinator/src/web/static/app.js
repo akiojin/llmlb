@@ -3,15 +3,251 @@ const REFRESH_INTERVAL_MS = 5000;
 const state = {
   agents: [],
   stats: null,
+  history: [],
+  filterStatus: "all",
+  filterQuery: "",
+  sortKey: "machine",
+  sortOrder: "asc",
+  lastFocused: null,
+  selection: new Set(),
+  selectAll: false,
+  currentAgentId: null,
+  currentPage: 1,
+  pageSize: 50,
   timerId: null,
+  rowCache: new Map(),
+  renderSnapshot: null,
+  statsSignature: "",
+  historySignature: "",
+  selectAllCheckbox: null,
+  performanceIndicator: null,
+  metrics: {
+    fetchMs: null,
+    renderMs: null,
+    usedLegacy: false,
+  },
+  fallbackNotified: false,
 };
+
+let requestsChart = null;
+const modalRefs = {
+  modal: null,
+  close: null,
+  ok: null,
+  save: null,
+  delete: null,
+  machineName: null,
+  ipAddress: null,
+  ollamaVersion: null,
+  uptime: null,
+  status: null,
+  lastSeen: null,
+  totalRequests: null,
+  averageResponse: null,
+  customName: null,
+  tags: null,
+  notes: null,
+};
+const paginationRefs = { prev: null, next: null, info: null };
 
 document.addEventListener("DOMContentLoaded", () => {
   const refreshButton = document.getElementById("refresh-button");
-  const filterCheckbox = document.getElementById("filter-offline");
+  const statusSelect = document.getElementById("filter-status");
+  const queryInput = document.getElementById("filter-query");
+  const sortableHeaders = document.querySelectorAll("th[data-sort]");
+  const selectAllCheckbox = document.getElementById("select-all");
+  const exportJsonButton = document.getElementById("export-json");
+  const exportCsvButton = document.getElementById("export-csv");
+  const modal = document.getElementById("agent-modal");
+  const modalClose = document.getElementById("agent-modal-close");
+  const modalOk = document.getElementById("agent-modal-ok");
+  const modalSave = document.getElementById("agent-modal-save");
+  const modalDelete = document.getElementById("agent-modal-delete");
+  const modalDisconnect = document.getElementById("agent-modal-disconnect");
+  const tbody = document.getElementById("agents-body");
+
+  paginationRefs.prev = document.getElementById("page-prev");
+  paginationRefs.next = document.getElementById("page-next");
+  paginationRefs.info = document.getElementById("page-info");
+  state.selectAllCheckbox = selectAllCheckbox;
+  state.performanceIndicator = document.getElementById("refresh-metrics");
+  updatePerformanceIndicator();
+
+  Object.assign(modalRefs, {
+    modal,
+    close: modalClose,
+    ok: modalOk,
+    machineName: document.getElementById("detail-machine-name"),
+    ipAddress: document.getElementById("detail-ip-address"),
+    ollamaVersion: document.getElementById("detail-ollama-version"),
+    uptime: document.getElementById("detail-uptime"),
+    status: document.getElementById("detail-status"),
+    lastSeen: document.getElementById("detail-last-seen"),
+    totalRequests: document.getElementById("detail-total-requests"),
+    averageResponse: document.getElementById("detail-average-response"),
+    customName: document.getElementById("detail-custom-name"),
+    tags: document.getElementById("detail-tags"),
+    notes: document.getElementById("detail-notes"),
+    save: modalSave,
+    delete: modalDelete,
+    disconnect: modalDisconnect,
+  });
 
   refreshButton.addEventListener("click", () => refreshData({ manual: true }));
-  filterCheckbox.addEventListener("change", () => renderAgents());
+  statusSelect.addEventListener("change", (event) => {
+    state.filterStatus = event.target.value;
+    state.currentPage = 1;
+    renderAgents();
+  });
+  let queryDebounce = null;
+  queryInput.addEventListener("input", (event) => {
+    const value = event.target.value ?? "";
+    window.clearTimeout(queryDebounce);
+    queryDebounce = window.setTimeout(() => {
+      state.filterQuery = value.trim().toLowerCase();
+      state.currentPage = 1;
+      renderAgents();
+    }, 150);
+  });
+  selectAllCheckbox.addEventListener("change", (event) => {
+    state.selectAll = event.target.checked;
+    if (state.selectAll) {
+      const filtered = state.agents.filter((agent) =>
+        filterAgent(agent, state.filterStatus, state.filterQuery),
+      );
+      state.selection = new Set(filtered.map((agent) => agent.id));
+    } else {
+      state.selection.clear();
+    }
+    renderAgents();
+  });
+
+  sortableHeaders.forEach((header) => {
+    header.addEventListener("click", () => {
+      const key = header.dataset.sort;
+      if (!key) return;
+      if (state.sortKey === key) {
+        state.sortOrder = state.sortOrder === "asc" ? "desc" : "asc";
+      } else {
+        state.sortKey = key;
+        state.sortOrder = "asc";
+      }
+      updateSortIndicators();
+      renderAgents();
+    });
+  });
+
+  updateSortIndicators();
+
+  paginationRefs.prev?.addEventListener("click", () => {
+    if (state.currentPage > 1) {
+      state.currentPage -= 1;
+      renderAgents();
+    }
+  });
+
+  paginationRefs.next?.addEventListener("click", () => {
+    const totalPages = calculateTotalPages();
+    if (state.currentPage < totalPages) {
+      state.currentPage += 1;
+      renderAgents();
+    }
+  });
+
+  exportJsonButton.addEventListener("click", () => {
+    const data = getFilteredAgents();
+    downloadJson(data, "agents.json");
+  });
+
+  exportCsvButton.addEventListener("click", () => {
+    const data = getFilteredAgents();
+    downloadCsv(data, "agents.csv");
+  });
+
+  tbody.addEventListener("click", (event) => {
+    const rowCheckbox = event.target.closest("input[data-agent-id]");
+    if (rowCheckbox) {
+      const agentId = rowCheckbox.dataset.agentId;
+      if (rowCheckbox.checked) {
+        state.selection.add(agentId);
+      } else {
+        state.selection.delete(agentId);
+        state.selectAll = false;
+        selectAllCheckbox.checked = false;
+      }
+      return;
+    }
+    const button = event.target.closest("button[data-agent-id]");
+    if (!button) return;
+    const agentId = button.dataset.agentId;
+    const agent = state.agents.find((item) => item.id === agentId);
+    if (agent) {
+      openAgentModal(agent);
+    }
+  });
+
+  const closeModal = () => closeAgentModal();
+  modalClose.addEventListener("click", closeModal);
+  modalOk.addEventListener("click", closeModal);
+  modalSave.addEventListener("click", async () => {
+    if (!state.currentAgentId) return;
+    const agentId = state.currentAgentId;
+    try {
+      const updated = await saveAgentSettings(agentId);
+      if (updated && updated.id) {
+        state.agents = state.agents.map((agent) =>
+          agent.id === updated.id ? { ...agent, ...updated } : agent,
+        );
+        closeAgentModal();
+        renderAgents();
+      }
+    } catch (error) {
+      console.error("Failed to persist agent settings", error);
+    }
+  });
+  modalDelete.addEventListener("click", async () => {
+    if (!state.currentAgentId) return;
+    const agentId = state.currentAgentId;
+    const agent = state.agents.find((item) => item.id === agentId);
+    const name = agent ? getDisplayName(agent) : "対象";
+    if (!window.confirm(`${name} を削除しますか？`)) {
+      return;
+    }
+
+    try {
+      await deleteAgent(agentId);
+      state.agents = state.agents.filter((item) => item.id !== agentId);
+      state.selection.delete(agentId);
+      closeAgentModal();
+      renderAgents();
+    } catch (error) {
+      console.error("Failed to delete agent", error);
+    }
+  });
+  modalDisconnect.addEventListener("click", async () => {
+    if (!state.currentAgentId) return;
+    const agentId = state.currentAgentId;
+    try {
+      await disconnectAgent(agentId);
+      const agent = state.agents.find((item) => item.id === agentId);
+      if (agent) {
+        agent.status = "offline";
+      }
+      renderAgents();
+    } catch (error) {
+      console.error("Failed to disconnect agent", error);
+    }
+  });
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeModal();
+    }
+  });
 
   refreshData({ initial: true });
   state.timerId = window.setInterval(refreshData, REFRESH_INTERVAL_MS);
@@ -30,25 +266,97 @@ document.addEventListener("DOMContentLoaded", () => {
 async function refreshData({ manual = false } = {}) {
   setConnectionStatus(manual ? "loading" : "updating");
 
+  const start = performance.now();
+  let overview;
+  let fetchMs;
+  let usedLegacy = false;
+
   try {
-    const [agents, stats] = await Promise.all([
-      fetchJson("/api/dashboard/agents"),
-      fetchJson("/api/dashboard/stats"),
-    ]);
+    try {
+      overview = await fetchOverview();
+      fetchMs = performance.now() - start;
+      state.fallbackNotified = false;
+    } catch (error) {
+      if (error?.status === 404) {
+        usedLegacy = true;
+        const legacyStart = performance.now();
+        overview = await fetchLegacyOverview();
+        fetchMs = performance.now() - start;
+        if (!state.fallbackNotified) {
+          console.warn(
+            "Dashboard overview endpoint not available; falling back to legacy endpoints.",
+          );
+          state.fallbackNotified = true;
+        }
+      } else {
+        throw error;
+      }
+    }
 
-    state.agents = agents;
-    state.stats = stats;
-
-    renderStats();
-    renderAgents();
-    hideError();
-    setConnectionStatus("online");
-    updateLastRefreshed(new Date());
+    const renderStart = performance.now();
+    applyOverviewData(overview);
+    const renderMs = performance.now() - renderStart;
+    recordPerformanceMetrics(fetchMs, renderMs, { usedLegacy });
   } catch (error) {
-    console.error("Dashboard refresh failed:", error);
-    showError(`ダッシュボードデータの取得に失敗しました: ${error.message}`);
-    setConnectionStatus("offline");
+    handleRefreshFailure(error);
+    recordPerformanceMetrics(null, null, { usedLegacy: false });
   }
+}
+
+function applyOverviewData(overview) {
+  state.agents = Array.isArray(overview.agents) ? overview.agents : [];
+  state.stats = overview.stats ?? null;
+  state.history = Array.isArray(overview.history) ? overview.history : [];
+
+  renderStats();
+  renderAgents();
+  renderHistory();
+  hideError();
+  setConnectionStatus("online");
+  updateLastRefreshed(new Date());
+}
+
+async function fetchLegacyOverview() {
+  const [agents, stats, history] = await Promise.all([
+    fetchJson("/api/dashboard/agents"),
+    fetchJson("/api/dashboard/stats"),
+    fetchJson("/api/dashboard/request-history"),
+  ]);
+
+  return { agents, stats, history };
+}
+
+async function fetchOverview() {
+  return fetchJson("/api/dashboard/overview");
+}
+
+function handleRefreshFailure(error) {
+  console.error("Dashboard refresh failed:", error);
+  showError(`ダッシュボードデータの取得に失敗しました: ${error?.message ?? error}`);
+  setConnectionStatus("offline");
+}
+
+function recordPerformanceMetrics(fetchMs, renderMs, { usedLegacy = false } = {}) {
+  state.metrics.fetchMs = typeof fetchMs === "number" ? Math.round(fetchMs) : null;
+  state.metrics.renderMs = typeof renderMs === "number" ? Math.round(renderMs) : null;
+  state.metrics.usedLegacy = Boolean(usedLegacy);
+  updatePerformanceIndicator();
+}
+
+function updatePerformanceIndicator() {
+  const target = state.performanceIndicator;
+  if (!target) return;
+
+  const { fetchMs, renderMs, usedLegacy } = state.metrics;
+  if (fetchMs == null || renderMs == null) {
+    target.textContent = "取得: - / 描画: -";
+    target.classList.toggle("is-legacy", false);
+    return;
+  }
+
+  const suffix = usedLegacy ? " (legacy)" : "";
+  target.textContent = `取得: ${fetchMs} ms / 描画: ${renderMs} ms${suffix}`;
+  target.classList.toggle("is-legacy", usedLegacy);
 }
 
 async function fetchJson(url) {
@@ -61,7 +369,9 @@ async function fetchJson(url) {
   });
 
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    const error = new Error(`${response.status} ${response.statusText}`);
+    error.status = response.status;
+    throw error;
   }
 
   return response.json();
@@ -86,50 +396,247 @@ function renderStats() {
     "last-seen-at": formatTimestamp(state.stats.last_seen_at),
   };
 
-  Object.entries(statsMap).forEach(([key, value]) => {
+  const entries = Object.entries(statsMap);
+  const nextSignature = entries
+    .map(([key, value]) => `${key}:${String(value ?? "-")}`)
+    .join("|");
+  if (state.statsSignature === nextSignature) {
+    return;
+  }
+  state.statsSignature = nextSignature;
+
+  entries.forEach(([key, value]) => {
     const target = document.querySelector(`[data-stat="${key}"]`);
     if (target) {
-      target.textContent = value ?? "-";
+      const displayValue = value ?? "-";
+      if (target.textContent !== String(displayValue)) {
+        target.textContent = displayValue;
+      }
     }
   });
 }
 
 function renderAgents() {
   const tbody = document.getElementById("agents-body");
-  const hideOffline = document.getElementById("filter-offline").checked;
-
-  tbody.innerHTML = "";
+  if (!tbody) return;
 
   if (!state.agents.length) {
-    const placeholder = document.createElement("tr");
-    placeholder.className = "empty-row";
-    placeholder.innerHTML = `<td colspan="10">エージェントはまだ登録されていません</td>`;
-    tbody.appendChild(placeholder);
+    state.rowCache.clear();
+    state.renderSnapshot = null;
+    state.selectAll = false;
+    if (state.selectAllCheckbox) {
+      state.selectAllCheckbox.checked = false;
+    }
+    tbody.replaceChildren(buildPlaceholderRow("エージェントはまだ登録されていません"));
+    updatePagination(0);
+    return;
+  }
+
+  const filtered = getFilteredAgents();
+
+  if (!filtered.length) {
+    state.renderSnapshot = null;
+    state.selectAll = false;
+    if (state.selectAllCheckbox) {
+      state.selectAllCheckbox.checked = false;
+    }
+    tbody.replaceChildren(buildPlaceholderRow("条件に一致するエージェントはありません"));
+    updatePagination(0);
+    return;
+  }
+
+  state.selectAll = filtered.every((agent) => state.selection.has(agent.id));
+  if (state.selectAllCheckbox) {
+    state.selectAllCheckbox.checked = state.selectAll;
+  }
+
+  const sorted = sortAgents(filtered, state.sortKey, state.sortOrder);
+  const totalPages = calculateTotalPages(sorted.length);
+  state.currentPage = Math.min(Math.max(state.currentPage, 1), totalPages);
+  const pageSlice = paginate(sorted, state.currentPage, state.pageSize);
+
+  const pageHash = buildPageSignature(pageSlice);
+  const selectionHash = buildSelectionSignature();
+  const snapshotKey = [
+    pageHash,
+    selectionHash,
+    state.sortKey,
+    state.sortOrder,
+    state.currentPage,
+    state.pageSize,
+    state.filterStatus,
+    state.filterQuery,
+  ].join("#");
+
+  if (
+    state.renderSnapshot &&
+    state.renderSnapshot.key === snapshotKey &&
+    state.renderSnapshot.totalPages === totalPages
+  ) {
+    updatePagination(totalPages);
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  state.agents
-    .filter((agent) => !(hideOffline && agent.status === "offline"))
-    .forEach((agent) => fragment.appendChild(buildAgentRow(agent)));
 
-  if (!fragment.childNodes.length) {
-    const placeholder = document.createElement("tr");
-    placeholder.className = "empty-row";
-    placeholder.innerHTML = `<td colspan="10">表示対象のエージェントはありません</td>`;
-    tbody.appendChild(placeholder);
+  pageSlice.forEach((agent) => {
+    const signature = getAgentSignature(agent);
+    const cached = state.rowCache.get(agent.id);
+    let row = cached?.node;
+    if (!row) {
+      row = document.createElement("tr");
+    }
+
+    if (!cached || cached.signature !== signature) {
+      buildAgentRow(agent, row);
+      state.rowCache.set(agent.id, { node: row, signature });
+    } else {
+      syncAgentRowSelection(row, agent.id);
+      row.classList.toggle("agent-offline", agent.status === "offline");
+    }
+
+    fragment.appendChild(row);
+  });
+
+  tbody.replaceChildren(fragment);
+
+  if (state.rowCache.size > state.agents.length) {
+    const knownIds = new Set(state.agents.map((agent) => agent.id));
+    for (const id of state.rowCache.keys()) {
+      if (!knownIds.has(id)) {
+        state.rowCache.delete(id);
+      }
+    }
+  }
+  updatePagination(totalPages);
+
+  state.renderSnapshot = { key: snapshotKey, totalPages };
+}
+
+function renderHistory() {
+  const canvas = document.getElementById("requests-chart");
+  if (!canvas || typeof Chart === "undefined") {
     return;
   }
 
-  tbody.appendChild(fragment);
+  const historyArray = Array.isArray(state.history) ? state.history : [];
+  const nextSignature = JSON.stringify(historyArray);
+  if (state.historySignature === nextSignature && requestsChart) {
+    return;
+  }
+  state.historySignature = nextSignature;
+
+  if (!historyArray.length) {
+    const labels = buildHistoryLabels([]);
+    const zeroes = new Array(labels.length).fill(0);
+    updateHistoryChart(canvas, labels, zeroes, zeroes);
+    return;
+  }
+
+  const labels = buildHistoryLabels(historyArray);
+  const success = historyArray.map((point) => point.success ?? 0);
+  const failures = historyArray.map((point) => point.error ?? 0);
+  updateHistoryChart(canvas, labels, success, failures);
 }
 
-function buildAgentRow(agent) {
-  const tr = document.createElement("tr");
-  tr.dataset.agentId = agent.id;
-  if (agent.status === "offline") {
-    tr.classList.add("agent-offline");
+function updateHistoryChart(canvas, labels, success, failures) {
+  if (!requestsChart) {
+    requestsChart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "成功リクエスト",
+            data: success,
+            tension: 0.3,
+            borderColor: "rgba(59, 130, 246, 0.9)",
+            backgroundColor: "rgba(59, 130, 246, 0.15)",
+            fill: true,
+            pointRadius: 0,
+          },
+          {
+            label: "失敗リクエスト",
+            data: failures,
+            tension: 0.3,
+            borderColor: "rgba(248, 113, 113, 0.9)",
+            backgroundColor: "rgba(248, 113, 113, 0.15)",
+            fill: true,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: "var(--text-subtle)",
+            },
+          },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                const raw = items[0]?.label ?? "";
+                return raw;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "var(--text-subtle)",
+              maxRotation: 0,
+            },
+            grid: {
+              color: "rgba(148, 163, 184, 0.08)",
+            },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              color: "var(--text-subtle)",
+              precision: 0,
+            },
+            grid: {
+              color: "rgba(148, 163, 184, 0.08)",
+            },
+          },
+        },
+      },
+    });
+  } else {
+    requestsChart.data.labels = labels;
+    requestsChart.data.datasets[0].data = success;
+    requestsChart.data.datasets[1].data = failures;
+    requestsChart.update("none");
   }
+}
+
+function buildHistoryLabels(history) {
+  if (!history.length) {
+    const now = alignDateToMinute(new Date());
+    return Array.from({ length: 60 }, (_, idx) => {
+      const date = new Date(now.getTime() - (59 - idx) * 60 * 1000);
+      return formatHistoryLabel(date);
+    });
+  }
+
+  return history.map((point) => formatHistoryLabel(new Date(point.minute)));
+}
+
+function buildAgentRow(agent, row = document.createElement("tr")) {
+  row.dataset.agentId = agent.id;
+  row.classList.toggle("agent-offline", agent.status === "offline");
+
+  const displayName = getDisplayName(agent);
+  const secondaryName = agent.custom_name ? agent.machine_name : agent.ollama_version;
 
   const statusLabel =
     agent.status === "online"
@@ -142,10 +649,18 @@ function buildAgentRow(agent) {
   const metricsTimestamp = formatTimestamp(agent.metrics_last_updated_at);
   const metricsDetail = metricsBadge ? `${metricsBadge} ${metricsTimestamp}` : metricsTimestamp;
 
-  tr.innerHTML = `
+  row.innerHTML = `
     <td>
-      <div class="cell-title">${escapeHtml(agent.machine_name)}</div>
-      <div class="cell-sub">${escapeHtml(agent.ollama_version)}</div>
+      <input
+        type="checkbox"
+        data-agent-id="${agent.id}"
+        ${state.selection.has(agent.id) ? "checked" : ""}
+        aria-label="${escapeHtml(agent.machine_name)} を選択"
+      />
+    </td>
+    <td>
+      <div class="cell-title">${escapeHtml(displayName)}</div>
+      <div class="cell-sub">${escapeHtml(secondaryName ?? "-")}</div>
     </td>
     <td>
       <div class="cell-title">${escapeHtml(agent.ip_address)}</div>
@@ -167,9 +682,311 @@ function buildAgentRow(agent) {
       <div class="cell-title">${formatTimestamp(agent.last_seen)}</div>
       <div class="cell-sub">${metricsDetail}</div>
     </td>
+    <td>
+      <button type="button" data-agent-id="${agent.id}">詳細</button>
+    </td>
   `;
+  syncAgentRowSelection(row, agent.id);
 
-  return tr;
+  return row;
+}
+
+function syncAgentRowSelection(row, agentId) {
+  const checkbox = row.querySelector('input[data-agent-id]');
+  if (!checkbox) return;
+  const shouldCheck = state.selection.has(agentId);
+  if (checkbox.checked !== shouldCheck) {
+    checkbox.checked = shouldCheck;
+  }
+}
+
+function buildPlaceholderRow(message) {
+  const row = document.createElement("tr");
+  row.className = "empty-row";
+  row.innerHTML = `<td colspan="11">${escapeHtml(message)}</td>`;
+  return row;
+}
+
+function getAgentSignature(agent) {
+  return [
+    agent.machine_name ?? "",
+    agent.custom_name ?? "",
+    agent.ip_address ?? "",
+    agent.ollama_version ?? "",
+    agent.status ?? "",
+    agent.uptime_seconds ?? 0,
+    agent.cpu_usage ?? 0,
+    agent.memory_usage ?? 0,
+    agent.active_requests ?? 0,
+    agent.total_requests ?? 0,
+    agent.successful_requests ?? 0,
+    agent.failed_requests ?? 0,
+    agent.average_response_time_ms ?? "",
+    agent.last_seen ?? "",
+    agent.metrics_last_updated_at ?? "",
+    agent.metrics_stale ? 1 : 0,
+  ].join("|");
+}
+
+function buildPageSignature(pageSlice) {
+  return pageSlice.map((agent) => `${agent.id}:${getAgentSignature(agent)}`).join("|");
+}
+
+function buildSelectionSignature() {
+  return Array.from(state.selection).sort().join("|");
+}
+
+function getDisplayName(agent) {
+  const custom = typeof agent.custom_name === "string" ? agent.custom_name.trim() : "";
+  if (custom) {
+    return custom;
+  }
+  return agent.machine_name ?? "-";
+}
+
+function filterAgent(agent, statusFilter, query) {
+  if (statusFilter === "online" && agent.status !== "online") {
+    return false;
+  }
+  if (statusFilter === "offline" && agent.status !== "offline") {
+    return false;
+  }
+
+  if (!query) {
+    return true;
+  }
+
+  const machine = (agent.machine_name ?? "").toLowerCase();
+  const ip = (agent.ip_address ?? "").toLowerCase();
+  const custom = (agent.custom_name ?? "").toLowerCase();
+  return machine.includes(query) || ip.includes(query) || custom.includes(query);
+}
+
+function getFilteredAgents() {
+  return state.agents.filter((agent) =>
+    filterAgent(agent, state.filterStatus, state.filterQuery),
+  );
+}
+
+function sortAgents(agents, key, order) {
+  const multiplier = order === "desc" ? -1 : 1;
+  const safe = [...agents];
+  safe.sort((a, b) => multiplier * compareAgents(a, b, key));
+  return safe;
+}
+
+function compareAgents(a, b, key) {
+  switch (key) {
+    case "machine":
+      return localeCompare(getDisplayName(a), getDisplayName(b));
+    case "ip":
+      return localeCompare(a.ip_address, b.ip_address);
+    case "status":
+      return localeCompare(a.status, b.status);
+    case "uptime":
+      return numericCompare(a.uptime_seconds, b.uptime_seconds);
+    case "total":
+      return numericCompare(a.total_requests, b.total_requests);
+    default:
+      return 0;
+  }
+}
+
+function localeCompare(a, b) {
+  return String(a ?? "").localeCompare(String(b ?? ""), "ja");
+}
+
+function numericCompare(a, b) {
+  return Number(a ?? 0) - Number(b ?? 0);
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll("th[data-sort]").forEach((header) => {
+    const indicator = header.querySelector(".sort-indicator");
+    if (!indicator) return;
+
+    if (header.dataset.sort === state.sortKey) {
+      header.classList.add("sortable--active");
+      indicator.textContent = state.sortOrder === "asc" ? "▲" : "▼";
+    } else {
+      header.classList.remove("sortable--active");
+      indicator.textContent = "–";
+    }
+  });
+}
+
+function paginate(list, page, pageSize) {
+  const start = (page - 1) * pageSize;
+  return list.slice(start, start + pageSize);
+}
+
+function calculateTotalPages(length) {
+  const total = length ?? getFilteredAgents().length;
+  if (total === 0) return 1;
+  return Math.ceil(total / state.pageSize);
+}
+
+function updatePagination(totalPages) {
+  if (!paginationRefs.info) return;
+  paginationRefs.info.textContent = `${state.currentPage} / ${totalPages || 1}`;
+  if (paginationRefs.prev) {
+    paginationRefs.prev.disabled = state.currentPage <= 1;
+  }
+  if (paginationRefs.next) {
+    paginationRefs.next.disabled = state.currentPage >= (totalPages || 1);
+  }
+}
+
+function openAgentModal(agent) {
+  if (!modalRefs.modal) return;
+  state.lastFocused = document.activeElement;
+  state.selection = new Set([agent.id]);
+  state.currentAgentId = agent.id;
+
+  modalRefs.machineName.textContent = agent.machine_name ?? "-";
+  modalRefs.ipAddress.textContent = agent.ip_address ?? "-";
+  modalRefs.ollamaVersion.textContent = agent.ollama_version ?? "-";
+  modalRefs.uptime.textContent = formatDuration(agent.uptime_seconds);
+  modalRefs.status.textContent = agent.status === "online" ? "オンライン" : "オフライン";
+  modalRefs.lastSeen.textContent = formatTimestamp(agent.last_seen);
+  modalRefs.totalRequests.textContent = agent.total_requests ?? 0;
+  modalRefs.averageResponse.textContent = formatAverage(agent.average_response_time_ms);
+  modalRefs.customName.value = agent.custom_name ?? "";
+  modalRefs.tags.value = Array.isArray(agent.tags) ? agent.tags.join(", ") : "";
+  modalRefs.notes.value = agent.notes ?? "";
+
+  modalRefs.modal.classList.remove("hidden");
+  modalRefs.modal.setAttribute("tabindex", "-1");
+  window.requestAnimationFrame(() => modalRefs.close.focus());
+}
+
+function closeAgentModal() {
+  if (!modalRefs.modal) return;
+  modalRefs.modal.classList.add("hidden");
+  if (state.lastFocused && typeof state.lastFocused.focus === "function") {
+    state.lastFocused.focus();
+  }
+  state.currentAgentId = null;
+}
+
+async function saveAgentSettings(agentId) {
+  const tags = modalRefs.tags.value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+  const payload = {
+    custom_name: modalRefs.customName.value.trim() || null,
+    tags,
+    notes: modalRefs.notes.value.trim() || null,
+  };
+
+  try {
+    const response = await fetch(`/api/agents/${agentId}/settings`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error("Failed to save agent settings:", error);
+    showError(`設定の保存に失敗しました: ${error.message}`);
+    throw error;
+  }
+}
+
+async function deleteAgent(agentId) {
+  try {
+    const response = await fetch(`/api/agents/${agentId}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    showError(`エージェントの削除に失敗しました: ${error.message}`);
+    throw error;
+  }
+}
+
+async function disconnectAgent(agentId) {
+  try {
+    const response = await fetch(`/api/agents/${agentId}/disconnect`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    showError(`強制切断に失敗しました: ${error.message}`);
+    throw error;
+  }
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  triggerDownload(blob, filename);
+}
+
+function downloadCsv(data, filename) {
+  const headers = [
+    "id",
+    "display_name",
+    "machine_name",
+    "ip_address",
+    "ollama_version",
+    "status",
+    "registered_at",
+    "last_seen",
+    "tags",
+  ];
+
+  const rows = data.map((agent) => {
+    return [
+      agent.id,
+      getDisplayName(agent),
+      agent.machine_name ?? "",
+      agent.ip_address ?? "",
+      agent.ollama_version ?? "",
+      agent.status ?? "",
+      agent.registered_at ?? "",
+      agent.last_seen ?? "",
+      Array.isArray(agent.tags) ? agent.tags.join("|") : "",
+    ]
+      .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+      .join(",");
+  });
+
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  triggerDownload(blob, filename);
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function setConnectionStatus(mode) {
@@ -273,6 +1090,26 @@ function formatDate(date) {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatHistoryLabel(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function alignDateToMinute(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return new Date();
+  }
+  const copy = new Date(date.getTime());
+  copy.setSeconds(0, 0);
+  return copy;
 }
 
 function escapeHtml(value) {

@@ -25,6 +25,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/agents",
             post(agent::register_agent).get(agent::list_agents),
         )
+        .route(
+            "/api/agents/:agent_id/settings",
+            axum::routing::put(agent::update_agent_settings),
+        )
         .route("/api/agents/metrics", get(agent::list_agent_metrics))
         .route("/api/metrics/summary", get(agent::metrics_summary))
         .route("/api/dashboard/agents", get(dashboard::get_agents))

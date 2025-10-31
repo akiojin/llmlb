@@ -26,6 +26,21 @@ pub async fn list_agents(State(state): State<AppState>) -> Json<Vec<Agent>> {
     Json(agents)
 }
 
+/// PUT /api/agents/:id/settings - エージェント設定更新（ダミー）
+pub async fn update_agent_settings(
+    State(state): State<AppState>,
+    axum::extract::Path(agent_id): axum::extract::Path<uuid::Uuid>,
+    Json(_payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // TODO: 実装時にエージェントモデルへフィールド追加＆永続化
+    state.registry.get(agent_id).await?;
+
+    Ok(Json(serde_json::json!({
+        "agent_id": agent_id,
+        "status": "accepted",
+    })))
+}
+
 /// GET /api/agents/metrics - エージェントメトリクス取得
 pub async fn list_agent_metrics(State(state): State<AppState>) -> Json<Vec<AgentLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;

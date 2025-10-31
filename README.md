@@ -171,6 +171,24 @@ ollama-coordinator/
         └── tasks.md     # Task breakdown
 ```
 
+## Dashboard
+
+The dashboard ships with the coordinator process. Once the server is running you can supervise all registered agents, review recent request history, and manage metadata from your browser.
+
+### Quick usage
+
+1. Start the coordinator (inside Docker or on the host):
+   ```bash
+   cargo run -p ollama-coordinator-coordinator
+   ```
+2. Open the dashboard in your browser:
+   ```
+   http://localhost:8080/dashboard
+   ```
+3. Filter, search, sort, and page through the agent list. Click “詳細” to edit display name, tags, or notes, or to force-disconnect / delete an agent. Use the export buttons above the table to download the current view as JSON or CSV.
+
+For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
+
 ## Installation
 
 ### Requirements

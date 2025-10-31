@@ -95,6 +95,11 @@ body {
   color: var(--text-subtle);
 }
 
+.last-refreshed.is-legacy {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .refresh-button {
   appearance: none;
   border: 1px solid rgba(56, 189, 248, 0.4);

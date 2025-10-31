@@ -20,6 +20,13 @@ const state = {
   statsSignature: "",
   historySignature: "",
   selectAllCheckbox: null,
+  performanceIndicator: null,
+  metrics: {
+    fetchMs: null,
+    renderMs: null,
+    usedLegacy: false,
+  },
+  fallbackNotified: false,
 };
 
 let requestsChart = null;
@@ -63,6 +70,8 @@ document.addEventListener("DOMContentLoaded", () => {
   paginationRefs.next = document.getElementById("page-next");
   paginationRefs.info = document.getElementById("page-info");
   state.selectAllCheckbox = selectAllCheckbox;
+  state.performanceIndicator = document.getElementById("refresh-metrics");
+  updatePerformanceIndicator();
 
   Object.assign(modalRefs, {
     modal,
@@ -257,21 +266,40 @@ document.addEventListener("DOMContentLoaded", () => {
 async function refreshData({ manual = false } = {}) {
   setConnectionStatus(manual ? "loading" : "updating");
 
+  const start = performance.now();
+  let overview;
+  let fetchMs;
+  let usedLegacy = false;
+
   try {
-    const overview = await fetchOverview();
-    applyOverviewData(overview);
-  } catch (error) {
-    if (error?.status === 404) {
-      try {
-        const legacy = await fetchLegacyOverview();
-        applyOverviewData(legacy);
-        return;
-      } catch (fallbackError) {
-        handleRefreshFailure(fallbackError);
-        return;
+    try {
+      overview = await fetchOverview();
+      fetchMs = performance.now() - start;
+      state.fallbackNotified = false;
+    } catch (error) {
+      if (error?.status === 404) {
+        usedLegacy = true;
+        const legacyStart = performance.now();
+        overview = await fetchLegacyOverview();
+        fetchMs = performance.now() - start;
+        if (!state.fallbackNotified) {
+          console.warn(
+            "Dashboard overview endpoint not available; falling back to legacy endpoints.",
+          );
+          state.fallbackNotified = true;
+        }
+      } else {
+        throw error;
       }
     }
+
+    const renderStart = performance.now();
+    applyOverviewData(overview);
+    const renderMs = performance.now() - renderStart;
+    recordPerformanceMetrics(fetchMs, renderMs, { usedLegacy });
+  } catch (error) {
     handleRefreshFailure(error);
+    recordPerformanceMetrics(null, null, { usedLegacy: false });
   }
 }
 
@@ -306,6 +334,29 @@ function handleRefreshFailure(error) {
   console.error("Dashboard refresh failed:", error);
   showError(`ダッシュボードデータの取得に失敗しました: ${error?.message ?? error}`);
   setConnectionStatus("offline");
+}
+
+function recordPerformanceMetrics(fetchMs, renderMs, { usedLegacy = false } = {}) {
+  state.metrics.fetchMs = typeof fetchMs === "number" ? Math.round(fetchMs) : null;
+  state.metrics.renderMs = typeof renderMs === "number" ? Math.round(renderMs) : null;
+  state.metrics.usedLegacy = Boolean(usedLegacy);
+  updatePerformanceIndicator();
+}
+
+function updatePerformanceIndicator() {
+  const target = state.performanceIndicator;
+  if (!target) return;
+
+  const { fetchMs, renderMs, usedLegacy } = state.metrics;
+  if (fetchMs == null || renderMs == null) {
+    target.textContent = "取得: - / 描画: -";
+    target.classList.toggle("is-legacy", false);
+    return;
+  }
+
+  const suffix = usedLegacy ? " (legacy)" : "";
+  target.textContent = `取得: ${fetchMs} ms / 描画: ${renderMs} ms${suffix}`;
+  target.classList.toggle("is-legacy", usedLegacy);
 }
 
 async function fetchJson(url) {

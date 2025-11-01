@@ -394,10 +394,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_with_retry_eventual_success() {
-        let lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let _guard_retry_secs = EnvGuard::new("COORDINATOR_REGISTER_RETRY_SECS", Some("0"));
         let _guard_retry_limit = EnvGuard::new("COORDINATOR_REGISTER_MAX_RETRIES", Some("0"));
-        drop(lock);
 
         let server = MockServer::start().await;
 
@@ -428,10 +427,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_with_retry_respects_limit() {
-        let lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let _guard_retry_secs = EnvGuard::new("COORDINATOR_REGISTER_RETRY_SECS", Some("0"));
         let _guard_retry_limit = EnvGuard::new("COORDINATOR_REGISTER_MAX_RETRIES", Some("2"));
-        drop(lock);
 
         let server = MockServer::start().await;
 

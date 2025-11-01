@@ -120,6 +120,21 @@ impl MetricsCollector {
             gpu_temperature,
         })
     }
+
+    /// GPUが利用可能かどうかを確認
+    pub fn has_gpu(&self) -> bool {
+        self.gpu.is_some()
+    }
+
+    /// GPU個数を取得
+    pub fn gpu_count(&self) -> Option<u32> {
+        self.gpu.as_ref().map(|gpu| gpu.device_count())
+    }
+
+    /// GPUモデル名を取得（最初のGPUのモデル名）
+    pub fn gpu_model(&self) -> Option<String> {
+        self.gpu.as_ref().and_then(|gpu| gpu.model_name())
+    }
 }
 
 impl Default for MetricsCollector {
@@ -146,6 +161,21 @@ impl GpuCollector {
             nvml,
             device_indices,
         })
+    }
+
+    fn device_count(&self) -> u32 {
+        self.device_indices.len() as u32
+    }
+
+    fn model_name(&self) -> Option<String> {
+        if let Some(first_index) = self.device_indices.first() {
+            self.nvml
+                .device_by_index(*first_index)
+                .ok()
+                .and_then(|device| device.name().ok())
+        } else {
+            None
+        }
     }
 
     fn collect(&self) -> Result<(f32, f32, u64, u64, f32), NvmlError> {

@@ -49,12 +49,18 @@ async fn main() {
     // Coordinatorクライアントを初期化
     let mut coordinator_client = CoordinatorClient::new(coordinator_url);
 
+    // メトリクスコレクターを初期化（GPU情報取得のため）
+    let mut metrics_collector = MetricsCollector::new();
+
     // エージェント登録
     let register_req = RegisterRequest {
         machine_name: machine_name.clone(),
         ip_address,
         ollama_version,
         ollama_port,
+        gpu_available: metrics_collector.has_gpu(),
+        gpu_count: metrics_collector.gpu_count(),
+        gpu_model: metrics_collector.gpu_model(),
     };
 
     println!("Registering with Coordinator...");
@@ -68,9 +74,6 @@ async fn main() {
 
     let agent_id = register_response.agent_id;
     println!("Registered successfully! Agent ID: {}", agent_id);
-
-    // メトリクスコレクターを初期化
-    let mut metrics_collector = MetricsCollector::new();
 
     // ハートビート送信タスク
     let mut heartbeat_timer = interval(Duration::from_secs(heartbeat_interval_secs));
@@ -386,6 +389,9 @@ mod tests {
             ip_address: "127.0.0.1".parse().unwrap(),
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         };
 
         let response = register_with_retry(&mut client, register_req)
@@ -417,6 +423,9 @@ mod tests {
             ip_address: "127.0.0.1".parse().unwrap(),
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         };
 
         let result = register_with_retry(&mut client, register_req).await;

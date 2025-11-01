@@ -711,7 +711,7 @@ mod tests {
         let score = GpuCapability::calculate_score(16384, 2520, (8, 9));
         // Expected: (16 * 100) + (2.52 * 100) + (8 * 1000) = 1600 + 252 + 8000 = 9852
         assert!(
-            score >= 9800 && score <= 10000,
+            (9800..=10000).contains(&score),
             "Score should be around 9852, got {}",
             score
         );
@@ -720,7 +720,7 @@ mod tests {
         let score = GpuCapability::calculate_score(10240, 1710, (8, 6));
         // Expected: (10 * 100) + (1.71 * 100) + (8 * 1000) = 1000 + 171 + 8000 = 9171
         assert!(
-            score >= 9100 && score <= 9200,
+            (9100..=9200).contains(&score),
             "Score should be around 9171, got {}",
             score
         );
@@ -729,7 +729,7 @@ mod tests {
         let score = GpuCapability::calculate_score(6144, 1785, (7, 5));
         // Expected: (6 * 100) + (1.785 * 100) + (7 * 1000) = 600 + 178 + 7000 = 7778
         assert!(
-            score >= 7700 && score <= 7800,
+            (7700..=7800).contains(&score),
             "Score should be around 7778, got {}",
             score
         );

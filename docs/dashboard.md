@@ -60,6 +60,7 @@ Expose the port as configured (`-p 8080:8080`) and open the dashboard from the h
 | Force disconnect       | In the modal, click “強制切断” to set status offline immediately.                                        |
 | Delete agent           | In the modal, click “削除” and confirm. The agent is removed from memory and storage.                     |
 | Export list            | Use “JSONエクスポート” or “CSVエクスポート” buttons to download the filtered list.                        |
+| View CPU/memory trend  | Open “詳細” and scroll to the “メトリクス” section for CPU/メモリの折れ線グラフ (latest 120 samples).      |
 
 Pagination is shown once the list exceeds 50 entries; use the arrows below the table to move between pages.
 
@@ -71,9 +72,11 @@ The dashboard calls these coordinator endpoints:
 
 | Method | Path                                 | Purpose                                 |
 |--------|--------------------------------------|-----------------------------------------|
+| GET    | `/api/dashboard/overview`            | Combined agents + stats + history + generation metrics |
 | GET    | `/api/dashboard/agents`              | Agent list with current runtime metrics |
 | GET    | `/api/dashboard/stats`               | Global coordinator summary              |
 | GET    | `/api/dashboard/request-history`     | Recent request history (60 points)      |
+| GET    | `/api/dashboard/metrics/:agent_id`   | CPU/memory history for a specific agent |
 | PUT    | `/api/agents/:id/settings`           | Update custom name, tags, notes         |
 | DELETE | `/api/agents/:id`                    | Remove agent registration               |
 | POST   | `/api/agents/:id/disconnect`         | Force the agent offline                 |
@@ -104,6 +107,8 @@ To customise:
 - **Dashboard shows “データ取得中…” indefinitely**: Ensure the coordinator process is running and port 8080 is reachable. Check container port mapping (`docker compose ps`).
 - **JSON exports include stale data**: Filters are applied per page; ensure you’re exporting after applying the desired filter.
 - **High latency or many agents**: Adjust `state.pageSize` in `app.js` or implement lazy loading.
+- **Performance indicator shows warning / legacy**: “legacy” means the combined overview endpoint was unavailable and the client fell back to three legacy requests. Warnings appear when fetch (>2s), render (>100ms), or server aggregation (>100ms) exceed the performance budget; investigate coordinator load or reduce agent volume.
+- **Metrics chart is empty**: The agent has not yet reported heartbeat metrics. Once the agent sends CPU/メモリ情報 (`record_metrics`), up to 360 snapshots are retained server-side and the most recent 120 are graphed in the modal.
 
 ---
 

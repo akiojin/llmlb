@@ -213,6 +213,17 @@
               <dd id="detail-average-response">-</dd>
             </div>
           </form>
+          <section class="modal__metrics" aria-label="エージェントメトリクス">
+            <h3>メトリクス</h3>
+            <p id="agent-metrics-status" class="metrics-status">メトリクスを読み込み中…</p>
+            <div class="metrics-chart">
+              <canvas
+                id="agent-metrics-chart"
+                aria-label="CPUとメモリの推移"
+                role="img"
+              ></canvas>
+            </div>
+          </section>
         </section>
         <footer class="modal__footer">
           <button type="button" id="agent-modal-disconnect" class="btn">強制切断</button>

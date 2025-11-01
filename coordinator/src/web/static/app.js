@@ -1,11 +1,5 @@
 const REFRESH_INTERVAL_MS = 5000;
 
-function getCssVariable(variableName) {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(variableName)
-    .trim();
-}
-
 const state = {
   agents: [],
   stats: null,
@@ -546,8 +540,6 @@ function renderHistory() {
 }
 
 function updateHistoryChart(canvas, labels, success, failures) {
-  const textSubtleColor = getCssVariable("--text-subtle");
-
   if (!requestsChart) {
     requestsChart = new Chart(canvas, {
       type: "line",

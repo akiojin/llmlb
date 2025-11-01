@@ -338,10 +338,10 @@ fn get_ollama_download_url() -> String {
         return url;
     }
 
-    let arch = std::env::consts::ARCH;
+    let arch = detect_arch();
 
     if cfg!(target_os = "windows") {
-        match arch {
+        match arch.as_str() {
             "x86_64" | "amd64" => {
                 "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip"
                     .to_string()
@@ -356,7 +356,7 @@ fn get_ollama_download_url() -> String {
             }
         }
     } else if cfg!(target_os = "macos") {
-        match arch {
+        match arch.as_str() {
             "aarch64" | "arm64" => {
                 "https://github.com/ollama/ollama/releases/latest/download/ollama-darwin.tgz"
                     .to_string()
@@ -369,7 +369,7 @@ fn get_ollama_download_url() -> String {
                 .to_string(),
         }
     } else {
-        match arch {
+        match arch.as_str() {
             "x86_64" | "amd64" => {
                 "https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tgz"
                     .to_string()
@@ -382,6 +382,31 @@ fn get_ollama_download_url() -> String {
                 .to_string(),
         }
     }
+}
+
+fn detect_arch() -> String {
+    if let Ok(platform) = std::env::var("OLLAMA_PLATFORM") {
+        return platform;
+    }
+
+    if let Ok(output) = Command::new("uname").arg("-m").output() {
+        if output.status.success() {
+            if let Ok(text) = String::from_utf8(output.stdout) {
+                let arch = text.trim();
+                if !arch.is_empty() {
+                    return arch.to_string();
+                }
+            }
+        }
+    }
+
+    if let Ok(hosttype) = std::env::var("HOSTTYPE") {
+        if !hosttype.is_empty() {
+            return hosttype;
+        }
+    }
+
+    std::env::consts::ARCH.to_string()
 }
 
 #[cfg(test)]

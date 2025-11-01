@@ -149,12 +149,13 @@ impl Default for MetricsCollector {
 enum GpuCollector {
     Env(EnvGpuCollector),
     Nvidia(Box<NvidiaGpuCollector>),
+    Amd(AmdGpuCollector),
     #[cfg(target_os = "macos")]
     AppleSilicon(AppleSiliconGpuCollector),
 }
 
 impl GpuCollector {
-    /// GPUを検出（優先順位: 環境変数 → NVIDIA → Apple Silicon）
+    /// GPUを検出（優先順位: 環境変数 → NVIDIA → AMD → Apple Silicon）
     fn detect_gpu(_ollama_path: Option<&std::path::Path>) -> Option<Self> {
         // 環境変数で明示的にGPUを無効化しているかチェック
         if let Ok(available_str) = std::env::var("OLLAMA_GPU_AVAILABLE") {
@@ -164,7 +165,7 @@ impl GpuCollector {
             }
         }
 
-        // 環境変数からGPU情報を試行
+        // 環境変数からGPU情報を試行（最優先）
         if let Ok(env) = EnvGpuCollector::new() {
             debug!("Detected GPU from environment variables");
             return Some(GpuCollector::Env(env));
@@ -174,6 +175,12 @@ impl GpuCollector {
         if let Ok(nvidia) = NvidiaGpuCollector::new() {
             debug!("Detected NVIDIA GPU");
             return Some(GpuCollector::Nvidia(Box::new(nvidia)));
+        }
+
+        // AMD GPUを試行
+        if let Ok(amd) = AmdGpuCollector::new() {
+            debug!("Detected AMD GPU");
+            return Some(GpuCollector::Amd(amd));
         }
 
         // macOS: Apple Silicon GPUを試行
@@ -191,6 +198,7 @@ impl GpuCollector {
         match self {
             GpuCollector::Env(gpu) => gpu.device_count(),
             GpuCollector::Nvidia(gpu) => gpu.device_count(),
+            GpuCollector::Amd(gpu) => gpu.device_count(),
             #[cfg(target_os = "macos")]
             GpuCollector::AppleSilicon(gpu) => gpu.device_count(),
         }
@@ -200,6 +208,7 @@ impl GpuCollector {
         match self {
             GpuCollector::Env(gpu) => gpu.model_name(),
             GpuCollector::Nvidia(gpu) => gpu.model_name(),
+            GpuCollector::Amd(gpu) => gpu.model_name(),
             #[cfg(target_os = "macos")]
             GpuCollector::AppleSilicon(gpu) => gpu.model_name(),
         }
@@ -212,6 +221,11 @@ impl GpuCollector {
                 Err(NvmlError::NotSupported)
             }
             GpuCollector::Nvidia(gpu) => gpu.collect(),
+            GpuCollector::Amd(_gpu) => {
+                // AMD GPUs don't provide runtime metrics via sysfs/KFD
+                // ROCm SMI would be needed for detailed metrics
+                Err(NvmlError::NotSupported)
+            }
             #[cfg(target_os = "macos")]
             GpuCollector::AppleSilicon(_gpu) => {
                 // Apple Silicon doesn't provide detailed metrics via Metal API
@@ -229,6 +243,12 @@ struct NvidiaGpuCollector {
 
 impl NvidiaGpuCollector {
     fn new() -> Result<Self, NvmlError> {
+        // 事前チェック: デバイスファイルまたは/proc/driverでNVIDIA GPUの存在を確認
+        if !Self::is_nvidia_gpu_present() {
+            debug!("No NVIDIA GPU detected (device file check)");
+            return Err(NvmlError::NotSupported);
+        }
+
         let nvml = Nvml::init()?;
         let count = nvml.device_count()?;
         if count == 0 {
@@ -239,6 +259,25 @@ impl NvidiaGpuCollector {
             nvml,
             device_indices,
         })
+    }
+
+    /// NVIDIA GPUの存在をデバイスファイルや/proc/driverで確認
+    fn is_nvidia_gpu_present() -> bool {
+        use std::path::Path;
+
+        // Method 1: /dev/nvidia0 デバイスファイル確認
+        if Path::new("/dev/nvidia0").exists() {
+            debug!("Found NVIDIA GPU via /dev/nvidia0");
+            return true;
+        }
+
+        // Method 2: /proc/driver/nvidia/version 確認
+        if Path::new("/proc/driver/nvidia/version").exists() {
+            debug!("Found NVIDIA GPU via /proc/driver/nvidia/version");
+            return true;
+        }
+
+        false
     }
 
     fn device_count(&self) -> u32 {
@@ -308,13 +347,66 @@ struct AppleSiliconGpuCollector {
 #[cfg(target_os = "macos")]
 impl AppleSiliconGpuCollector {
     fn new() -> Result<Self, String> {
-        // Metal APIでデフォルトGPUを取得
+        // Method 1: lscpu コマンドで "Vendor ID: Apple" を確認（Docker環境でも動作）
+        if let Ok(device_name) = Self::detect_via_lscpu() {
+            return Ok(Self { device_name });
+        }
+
+        // Method 2: /proc/cpuinfo で "CPU implementer : 0x61" を確認
+        if let Ok(device_name) = Self::detect_via_cpuinfo() {
+            return Ok(Self { device_name });
+        }
+
+        // Method 3: Metal API（macOSネイティブのみ）
         if let Some(device) = MetalDevice::system_default() {
             let device_name = device.name().to_string();
-            Ok(Self { device_name })
-        } else {
-            Err("No Metal GPU device found".to_string())
+            return Ok(Self { device_name });
         }
+
+        Err("No Apple Silicon GPU detected".to_string())
+    }
+
+    /// lscpuコマンドでApple Siliconを検出
+    fn detect_via_lscpu() -> Result<String, String> {
+        use std::process::Command;
+
+        let output = Command::new("lscpu")
+            .output()
+            .map_err(|e| format!("lscpu command failed: {}", e))?;
+
+        if !output.status.success() {
+            return Err("lscpu command failed".to_string());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // "Vendor ID: Apple" をチェック
+        for line in stdout.lines() {
+            if line.contains("Vendor ID") && line.contains("Apple") {
+                debug!("Detected Apple Silicon via lscpu");
+                return Ok("Apple Silicon".to_string());
+            }
+        }
+
+        Err("Not Apple Silicon (lscpu)".to_string())
+    }
+
+    /// /proc/cpuinfoでApple Siliconを検出
+    fn detect_via_cpuinfo() -> Result<String, String> {
+        use std::fs;
+
+        let content = fs::read_to_string("/proc/cpuinfo")
+            .map_err(|e| format!("Failed to read /proc/cpuinfo: {}", e))?;
+
+        // "CPU implementer : 0x61" (Apple) をチェック
+        for line in content.lines() {
+            if line.contains("CPU implementer") && line.contains("0x61") {
+                debug!("Detected Apple Silicon via /proc/cpuinfo");
+                return Ok("Apple Silicon".to_string());
+            }
+        }
+
+        Err("Not Apple Silicon (cpuinfo)".to_string())
     }
 
     fn device_count(&self) -> u32 {
@@ -324,6 +416,127 @@ impl AppleSiliconGpuCollector {
 
     fn model_name(&self) -> Option<String> {
         Some(self.device_name.clone())
+    }
+}
+
+/// AMD GPUコレクター
+struct AmdGpuCollector {
+    device_name: Option<String>,
+    device_count: u32,
+}
+
+impl AmdGpuCollector {
+    fn new() -> Result<Self, String> {
+        // Method 1: KFD Topology (sysfs) で vendor_id 0x1002 を確認（最も確実）
+        if let Ok((device_name, count)) = Self::detect_via_kfd_topology() {
+            return Ok(Self {
+                device_name: Some(device_name),
+                device_count: count,
+            });
+        }
+
+        // Method 2: /dev/kfd デバイスファイル確認
+        if Self::detect_via_kfd_device() {
+            return Ok(Self {
+                device_name: Some("AMD GPU".to_string()),
+                device_count: 1,
+            });
+        }
+
+        // Method 3: DRM デバイスで vendor 0x1002 確認
+        if Self::detect_via_drm_device() {
+            return Ok(Self {
+                device_name: Some("AMD GPU".to_string()),
+                device_count: 1,
+            });
+        }
+
+        Err("No AMD GPU detected".to_string())
+    }
+
+    /// KFD Topology (sysfs) でAMD GPUを検出
+    fn detect_via_kfd_topology() -> Result<(String, u32), String> {
+        use std::fs;
+        use std::path::Path;
+
+        let kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+        if !Path::new(kfd_path).exists() {
+            return Err("KFD topology not found".to_string());
+        }
+
+        let entries = fs::read_dir(kfd_path)
+            .map_err(|e| format!("Failed to read KFD topology: {}", e))?;
+
+        let mut gpu_count = 0u32;
+
+        for entry in entries.flatten() {
+            let properties_path = entry.path().join("properties");
+            if properties_path.exists() {
+                if let Ok(content) = fs::read_to_string(&properties_path) {
+                    // vendor_id 0x1002 (AMD) をチェック
+                    for line in content.lines() {
+                        if line.contains("vendor_id") && line.contains("0x1002") {
+                            gpu_count += 1;
+                            debug!("Detected AMD GPU via KFD topology");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if gpu_count > 0 {
+            Ok(("AMD GPU".to_string(), gpu_count))
+        } else {
+            Err("No AMD GPU found in KFD topology".to_string())
+        }
+    }
+
+    /// /dev/kfd デバイスファイルでAMD GPUを検出
+    fn detect_via_kfd_device() -> bool {
+        use std::path::Path;
+
+        if Path::new("/dev/kfd").exists() {
+            debug!("Found AMD GPU via /dev/kfd");
+            return true;
+        }
+
+        false
+    }
+
+    /// DRM デバイスでAMD GPUを検出
+    fn detect_via_drm_device() -> bool {
+        use std::fs;
+        use std::path::Path;
+
+        let drm_path = "/sys/class/drm";
+        if !Path::new(drm_path).exists() {
+            return false;
+        }
+
+        if let Ok(entries) = fs::read_dir(drm_path) {
+            for entry in entries.flatten() {
+                let vendor_path = entry.path().join("device/vendor");
+                if vendor_path.exists() {
+                    if let Ok(vendor) = fs::read_to_string(&vendor_path) {
+                        if vendor.trim() == "0x1002" {
+                            debug!("Found AMD GPU via DRM device");
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    fn device_count(&self) -> u32 {
+        self.device_count
+    }
+
+    fn model_name(&self) -> Option<String> {
+        self.device_name.clone()
     }
 }
 

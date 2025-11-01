@@ -320,6 +320,9 @@ mod tests {
                 gpu_memory_total_mb: None,
                 gpu_memory_used_mb: None,
                 gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
                 active_requests: 1,
                 average_response_time_ms: None,
             })
@@ -382,6 +385,9 @@ mod tests {
                 gpu_memory_total_mb: None,
                 gpu_memory_used_mb: None,
                 gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
                 active_requests: 2,
                 average_response_time_ms: Some(150.0),
             })
@@ -527,5 +533,27 @@ mod tests {
 
         let agent = state.registry.get(agent_id).await.unwrap();
         assert_eq!(agent.status, AgentStatus::Offline);
+    }
+
+    #[tokio::test]
+    async fn test_register_agent_without_gpu_rejected() {
+        let state = create_test_state();
+        let req = RegisterRequest {
+            machine_name: "no-gpu-machine".to_string(),
+            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
+            ollama_version: "0.1.0".to_string(),
+            ollama_port: 11434,
+            gpu_available: false,
+            gpu_count: None,
+            gpu_model: None,
+        };
+
+        let result = register_agent(State(state), Json(req)).await;
+        assert!(result.is_err());
+
+        // エラーがValidationエラーであることを確認
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(err_msg.contains("Validation") || err_msg.contains("GPU"));
     }
 }

@@ -105,11 +105,21 @@ impl OllamaManager {
 
     /// Ollamaを起動
     fn start(&mut self) -> AgentResult<()> {
-        let child = Command::new(&self.ollama_path)
+        let mut command = Command::new(&self.ollama_path);
+        command
             .arg("serve")
-            .env("OLLAMA_HOST", format!("0.0.0.0:{}", self.port))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .env("OLLAMA_HOST", format!("0.0.0.0:{}", self.port));
+
+        if std::env::var("OLLAMA_NO_GPU").is_err()
+            && std::env::var("OLLAMA_GPU").is_err()
+            && std::env::var("OLLAMA_USE_GPU").is_err()
+        {
+            command.env("OLLAMA_NO_GPU", "1");
+        }
+
+        let child = command
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| AgentError::OllamaConnection(format!("Failed to start Ollama: {}", e)))?;
 
@@ -125,10 +135,18 @@ impl OllamaManager {
     }
 
     /// Ollama起動を待つ
-    async fn wait_for_startup(&self) -> AgentResult<()> {
+    async fn wait_for_startup(&mut self) -> AgentResult<()> {
         let max_attempts = 30; // 30秒待つ
 
         for _ in 0..max_attempts {
+            if let Some(process) = self.process.as_mut() {
+                if let Ok(Some(status)) = process.try_wait() {
+                    return Err(AgentError::OllamaConnection(format!(
+                        "Ollama exited prematurely with status {}",
+                        status
+                    )));
+                }
+            }
             if self.is_running().await {
                 println!("Ollama is ready");
                 return Ok(());
@@ -328,8 +346,10 @@ fn get_ollama_download_url() -> String {
                 "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-arm64.zip"
                     .to_string()
             }
-            _ => "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip"
-                .to_string(),
+            _ => {
+                "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip"
+                    .to_string()
+            }
         }
     } else if cfg!(target_os = "macos") {
         match arch {

@@ -414,15 +414,21 @@ mod tests {
         // GPU model name should contain "Apple"
         if let Some(model) = collector.gpu_model() {
             assert!(
-                model.contains("Apple") || model.contains("M1") ||
-                model.contains("M2") || model.contains("M3") || model.contains("M4"),
+                model.contains("Apple")
+                    || model.contains("M1")
+                    || model.contains("M2")
+                    || model.contains("M3")
+                    || model.contains("M4"),
                 "GPU model should be Apple Silicon: {}",
                 model
             );
         }
 
         // GPU count should be at least 1
-        assert!(collector.gpu_count().is_some(), "Apple Silicon should report GPU count");
+        assert!(
+            collector.gpu_count().is_some(),
+            "Apple Silicon should report GPU count"
+        );
     }
 
     #[test]
@@ -437,7 +443,10 @@ mod tests {
         // If GPU is detected, gpu_model() should return Some
         if collector.has_gpu() {
             let model = collector.gpu_model();
-            assert!(model.is_some() || true, "GPU model can be None for some platforms");
+            assert!(
+                model.is_some() || true,
+                "GPU model can be None for some platforms"
+            );
         }
     }
 
@@ -471,7 +480,10 @@ mod tests {
 
         let collector = MetricsCollector::new();
 
-        assert!(!collector.has_gpu(), "Should not detect GPU when env var is false");
+        assert!(
+            !collector.has_gpu(),
+            "Should not detect GPU when env var is false"
+        );
 
         // クリーンアップ
         std::env::remove_var("OLLAMA_GPU_AVAILABLE");

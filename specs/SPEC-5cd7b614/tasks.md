@@ -14,7 +14,7 @@
   - `coordinator/tests/support/fixtures/agents/gpu_missing.json` を追加（GPU無しエージェントデータ）
   - `coordinator/tests/support/fixtures/agents/gpu_valid.json` を追加（GPU有エージェントデータ）
 
-- [ ] **T003** [P] 403応答フォーマット確認
+- [x] **T003** [P] 403応答フォーマット確認
   - 既存バリデーションエラー応答のJSON形式を調査
   - 共通エラーレスポンス構造がない場合、`common/src/error.rs` に追加する案をメモ
 

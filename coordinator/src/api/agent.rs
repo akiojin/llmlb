@@ -12,6 +12,7 @@ use ollama_coordinator_common::{
     types::Agent,
 };
 use serde::Deserialize;
+use serde_json::json;
 
 /// POST /api/agents - エージェント登録
 pub async fn register_agent(
@@ -133,7 +134,11 @@ impl IntoResponse for AppError {
             }
         };
 
-        (status, message).into_response()
+        let payload = json!({
+            "error": message
+        });
+
+        (status, Json(payload)).into_response()
     }
 }
 
@@ -144,6 +149,7 @@ mod tests {
         balancer::{LoadManager, MetricsUpdate, RequestOutcome},
         registry::AgentRegistry,
     };
+    use axum::body::to_bytes;
     use ollama_coordinator_common::{protocol::RegisterStatus, types::AgentStatus};
     use std::net::IpAddr;
     use std::time::Duration;
@@ -217,6 +223,31 @@ mod tests {
 
         let result = list_agents(State(state)).await;
         assert_eq!(result.0.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_register_agent_gpu_required_error_is_json() {
+        let state = create_test_state();
+        let req = RegisterRequest {
+            machine_name: "gpu-required-test".to_string(),
+            ip_address: "192.168.1.101".parse().unwrap(),
+            ollama_version: "0.1.0".to_string(),
+            ollama_port: 11434,
+            gpu_available: false,
+            gpu_count: None,
+            gpu_model: None,
+        };
+
+        let response = register_agent(State(state), Json(req))
+            .await
+            .unwrap_err()
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let expected = "検証エラー: GPU is required for agent registration";
+        assert_eq!(body["error"], expected);
     }
 
     #[tokio::test]

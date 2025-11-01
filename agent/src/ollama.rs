@@ -212,18 +212,24 @@ fn get_ollama_directory() -> PathBuf {
 
 /// OllamaダウンロードURLを取得
 fn get_ollama_download_url() -> String {
+    if let Ok(url) = std::env::var("OLLAMA_DOWNLOAD_URL") {
+        return url;
+    }
+
     if cfg!(windows) {
-        "https://ollama.com/download/ollama-windows-amd64.exe".to_string()
+        "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.exe"
+            .to_string()
     } else if cfg!(target_os = "macos") {
-        // macOSの場合、アーキテクチャに応じて分岐
         if cfg!(target_arch = "aarch64") {
-            "https://ollama.com/download/ollama-darwin-arm64".to_string()
+            "https://github.com/ollama/ollama/releases/latest/download/ollama-darwin-arm64"
+                .to_string()
         } else {
-            "https://ollama.com/download/ollama-darwin-amd64".to_string()
+            "https://github.com/ollama/ollama/releases/latest/download/ollama-darwin-amd64"
+                .to_string()
         }
     } else {
-        // Linux
-        "https://ollama.com/download/ollama-linux-amd64".to_string()
+        "https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64"
+            .to_string()
     }
 }
 
@@ -243,7 +249,7 @@ mod tests {
     #[test]
     fn test_get_ollama_download_url() {
         let url = get_ollama_download_url();
-        assert!(url.starts_with("https://ollama.com/download/"));
+        assert!(url.contains("ollama"));
     }
 
     #[tokio::test]

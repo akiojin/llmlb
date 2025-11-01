@@ -147,7 +147,6 @@ impl Default for MetricsCollector {
 
 /// GPUメトリクスコレクター（マルチベンダー対応）
 enum GpuCollector {
-    OllamaPs(OllamaPsGpuCollector),
     Env(EnvGpuCollector),
     Nvidia(Box<NvidiaGpuCollector>),
     #[cfg(target_os = "macos")]
@@ -155,20 +154,14 @@ enum GpuCollector {
 }
 
 impl GpuCollector {
-    /// GPUを検出（優先順位: ollama ps → 環境変数 → NVIDIA → Apple Silicon）
-    fn detect_gpu(ollama_path: Option<&std::path::Path>) -> Option<Self> {
+    /// GPUを検出（優先順位: 環境変数 → NVIDIA → Apple Silicon）
+    fn detect_gpu(_ollama_path: Option<&std::path::Path>) -> Option<Self> {
         // 環境変数で明示的にGPUを無効化しているかチェック
         if let Ok(available_str) = std::env::var("OLLAMA_GPU_AVAILABLE") {
             if let Ok(false) = available_str.parse::<bool>() {
                 debug!("GPU explicitly disabled via environment variable");
                 return None;
             }
-        }
-
-        // ollama psコマンドからGPU情報を試行（最優先）
-        if let Ok(ollama_ps) = OllamaPsGpuCollector::new(ollama_path) {
-            debug!("Detected GPU from ollama ps command");
-            return Some(GpuCollector::OllamaPs(ollama_ps));
         }
 
         // 環境変数からGPU情報を試行
@@ -196,7 +189,6 @@ impl GpuCollector {
 
     fn device_count(&self) -> u32 {
         match self {
-            GpuCollector::OllamaPs(gpu) => gpu.device_count(),
             GpuCollector::Env(gpu) => gpu.device_count(),
             GpuCollector::Nvidia(gpu) => gpu.device_count(),
             #[cfg(target_os = "macos")]
@@ -206,7 +198,6 @@ impl GpuCollector {
 
     fn model_name(&self) -> Option<String> {
         match self {
-            GpuCollector::OllamaPs(gpu) => gpu.model_name(),
             GpuCollector::Env(gpu) => gpu.model_name(),
             GpuCollector::Nvidia(gpu) => gpu.model_name(),
             #[cfg(target_os = "macos")]
@@ -216,10 +207,6 @@ impl GpuCollector {
 
     fn collect(&self) -> Result<(f32, f32, u64, u64, f32), NvmlError> {
         match self {
-            GpuCollector::OllamaPs(_gpu) => {
-                // ollama ps doesn't provide runtime metrics
-                Err(NvmlError::NotSupported)
-            }
             GpuCollector::Env(_gpu) => {
                 // Environment variables don't provide runtime metrics
                 Err(NvmlError::NotSupported)
@@ -338,120 +325,6 @@ impl AppleSiliconGpuCollector {
     fn model_name(&self) -> Option<String> {
         Some(self.device_name.clone())
     }
-}
-
-/// ollama psコマンドからGPU情報を取得するコレクター
-struct OllamaPsGpuCollector {
-    model_name: Option<String>,
-}
-
-impl OllamaPsGpuCollector {
-    fn new(ollama_path: Option<&std::path::Path>) -> Result<Self, String> {
-        use std::process::Command;
-
-        // ollamaコマンドのパスを決定
-        let ollama_cmd = if let Some(path) = ollama_path {
-            path.to_path_buf()
-        } else {
-            // デフォルトはPATHから"ollama"を探す
-            std::path::PathBuf::from("ollama")
-        };
-
-        // ollama psコマンドを実行
-        let output = Command::new(&ollama_cmd)
-            .arg("ps")
-            .output()
-            .map_err(|e| format!("Failed to execute ollama ps: {}", e))?;
-
-        if !output.status.success() {
-            return Err(format!(
-                "ollama ps command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // 出力をパースしてGPUを検出
-        let has_gpu = parse_ollama_ps_for_gpu(&stdout);
-
-        if !has_gpu {
-            return Err("No GPU detected in ollama ps output".to_string());
-        }
-
-        // GPUモデル名は環境変数またはシステムから取得を試みる
-        let model_name = std::env::var("OLLAMA_GPU_MODEL")
-            .ok()
-            .or_else(detect_gpu_model_from_system);
-
-        Ok(Self { model_name })
-    }
-
-    fn device_count(&self) -> u32 {
-        // ollama psからは正確なGPU数を取得できないため、1を返す
-        1
-    }
-
-    fn model_name(&self) -> Option<String> {
-        self.model_name.clone()
-    }
-}
-
-/// ollama psの出力からGPU使用を検出
-fn parse_ollama_ps_for_gpu(output: &str) -> bool {
-    for (i, line) in output.lines().enumerate() {
-        // Skip header line
-        if i == 0 {
-            continue;
-        }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        // Split by whitespace and check PROCESSOR column (4th column, index 3+)
-        let columns: Vec<&str> = trimmed.split_whitespace().collect();
-        if columns.len() >= 4 {
-            // PROCESSOR column can be "100% GPU", "100% CPU", "48%/52% CPU/GPU", etc.
-            // Check if any part contains "GPU"
-            let processor_info = columns[3..].join(" ");
-            if processor_info.contains("GPU") {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-/// システムからGPUモデル名を検出
-fn detect_gpu_model_from_system() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        // macOSではMetal APIでGPU名を取得
-        if let Some(device) = MetalDevice::system_default() {
-            return Some(device.name().to_string());
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        // その他のプラットフォームではNVMLを試行
-        if let Ok(nvml) = Nvml::init() {
-            if let Ok(count) = nvml.device_count() {
-                if count > 0 {
-                    if let Ok(device) = nvml.device_by_index(0) {
-                        if let Ok(name) = device.name() {
-                            return Some(name);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    None
 }
 
 /// 環境変数からGPU情報を取得するコレクター

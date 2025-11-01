@@ -5,7 +5,7 @@
 
 ## Phase 3.1 Setup
 
-- [ ] **T001** [P] 現行GPU情報収集の挙動確認
+- [x] **T001** [P] 現行GPU情報収集の挙動確認
   - `agent/src/metrics.rs` で取得する GPU 情報の構造を調査し、サンプル JSON を記録
   - 参考ログを `/tmp/spec-5cd7b614/gpu-sample.json` に保存
   - コミットしない一時ファイルとする

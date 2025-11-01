@@ -328,8 +328,7 @@ mod tests {
     #[test]
     fn test_resolve_machine_name_override() {
         let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _guard_agent =
-            EnvGuard::new("OLLAMA_AGENT_MACHINE_NAME", Some("override-machine"));
+        let _guard_agent = EnvGuard::new("OLLAMA_AGENT_MACHINE_NAME", Some("override-machine"));
         assert_eq!(resolve_machine_name(), "override-machine");
     }
 

@@ -526,15 +526,15 @@ fn write_binary(bytes: &[u8], destination: &Path) -> AgentResult<()> {
     Ok(())
 }
 
-fn set_unix_executable(path: &Path) -> AgentResult<()> {
+fn set_unix_executable(_path: &Path) -> AgentResult<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let metadata = std::fs::metadata(path)
+        let metadata = std::fs::metadata(_path)
             .map_err(|e| AgentError::Internal(format!("Failed to get file metadata: {}", e)))?;
         let mut perms = metadata.permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(path, perms).map_err(|e| {
+        std::fs::set_permissions(_path, perms).map_err(|e| {
             AgentError::Internal(format!("Failed to set execute permission: {}", e))
         })?;
     }

@@ -38,11 +38,16 @@ pub struct MetricsCollector {
 impl MetricsCollector {
     /// 新しいメトリクスコレクターを作成
     pub fn new() -> Self {
+        Self::with_ollama_path(None)
+    }
+
+    /// ollamaバイナリのパスを指定してメトリクスコレクターを作成
+    pub fn with_ollama_path(ollama_path: Option<std::path::PathBuf>) -> Self {
         let mut system = System::new_all();
         system.refresh_all();
 
         // GPUバックエンドを優先順位で試行
-        let gpu = GpuCollector::detect_gpu();
+        let gpu = GpuCollector::detect_gpu(ollama_path.as_deref());
 
         Self { system, gpu }
     }
@@ -151,7 +156,7 @@ enum GpuCollector {
 
 impl GpuCollector {
     /// GPUを検出（優先順位: ollama ps → 環境変数 → NVIDIA → Apple Silicon）
-    fn detect_gpu() -> Option<Self> {
+    fn detect_gpu(ollama_path: Option<&std::path::Path>) -> Option<Self> {
         // 環境変数で明示的にGPUを無効化しているかチェック
         if let Ok(available_str) = std::env::var("OLLAMA_GPU_AVAILABLE") {
             if let Ok(false) = available_str.parse::<bool>() {
@@ -161,7 +166,7 @@ impl GpuCollector {
         }
 
         // ollama psコマンドからGPU情報を試行（最優先）
-        if let Ok(ollama_ps) = OllamaPsGpuCollector::new() {
+        if let Ok(ollama_ps) = OllamaPsGpuCollector::new(ollama_path) {
             debug!("Detected GPU from ollama ps command");
             return Some(GpuCollector::OllamaPs(ollama_ps));
         }
@@ -341,11 +346,19 @@ struct OllamaPsGpuCollector {
 }
 
 impl OllamaPsGpuCollector {
-    fn new() -> Result<Self, String> {
+    fn new(ollama_path: Option<&std::path::Path>) -> Result<Self, String> {
         use std::process::Command;
 
+        // ollamaコマンドのパスを決定
+        let ollama_cmd = if let Some(path) = ollama_path {
+            path.to_path_buf()
+        } else {
+            // デフォルトはPATHから"ollama"を探す
+            std::path::PathBuf::from("ollama")
+        };
+
         // ollama psコマンドを実行
-        let output = Command::new("ollama")
+        let output = Command::new(&ollama_cmd)
             .arg("ps")
             .output()
             .map_err(|e| format!("Failed to execute ollama ps: {}", e))?;

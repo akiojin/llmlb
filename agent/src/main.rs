@@ -50,7 +50,9 @@ async fn main() {
     let mut coordinator_client = CoordinatorClient::new(coordinator_url);
 
     // メトリクスコレクターを初期化（GPU情報取得のため）
-    let mut metrics_collector = MetricsCollector::new();
+    // ollamaバイナリのパスを渡してollama psコマンドでGPU検出を可能にする
+    let mut metrics_collector =
+        MetricsCollector::with_ollama_path(Some(ollama_manager.ollama_path().to_path_buf()));
 
     // エージェント登録
     let register_req = RegisterRequest {

@@ -136,7 +136,11 @@ impl OllamaManager {
 
     /// Ollama起動を待つ
     async fn wait_for_startup(&mut self) -> AgentResult<()> {
-        let max_attempts = 30; // 30秒待つ
+        let timeout_secs = std::env::var("OLLAMA_STARTUP_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(120);
+        let max_attempts = timeout_secs;
 
         for _ in 0..max_attempts {
             if let Some(process) = self.process.as_mut() {

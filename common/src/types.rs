@@ -163,6 +163,25 @@ pub enum RequestStatus {
     Failed,
 }
 
+/// エージェントメトリクス
+///
+/// エージェントから定期的に送信される負荷情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMetrics {
+    /// エージェントID
+    pub agent_id: Uuid,
+    /// CPU使用率（0.0〜100.0）
+    pub cpu_usage: f64,
+    /// メモリ使用率（0.0〜100.0）
+    pub memory_usage: f64,
+    /// アクティブリクエスト数
+    pub active_requests: u32,
+    /// 平均レスポンス時間（ミリ秒）
+    pub avg_response_time_ms: Option<f64>,
+    /// タイムスタンプ
+    pub timestamp: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

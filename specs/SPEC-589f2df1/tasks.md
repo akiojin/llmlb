@@ -36,11 +36,14 @@
 
 ### Phase 2.1: セットアップ
 
-- [ ] **T004** [P] Cargo.toml依存関係追加: `sysinfo`（CPU/メモリ監視）
-- [ ] **T005** [P] モジュール宣言: `coordinator/src/metrics/mod.rs` 作成
-- [ ] **T006** [P] データモデル定義: `common/src/types.rs` にAgentMetrics構造体追加
+- [x] **T004** [P] Cargo.toml依存関係追加: `sysinfo`（CPU/メモリ監視）
+  - ✅ coordinator/Cargo.tomlにsysinfo 0.32を追加
+- [x] **T005** [P] モジュール宣言: `coordinator/src/metrics/mod.rs` 作成
+  - ✅ metricsモジュールとcoordinator/src/lib.rsに宣言を追加
+- [x] **T006** [P] データモデル定義: `common/src/types.rs` にAgentMetrics構造体追加
+  - ✅ agent_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestampフィールドを定義
 
-**推定時間**: 30分
+**推定時間**: 30分 ✅ 完了
 
 ### Phase 2.2: テストファースト（TDD）
 

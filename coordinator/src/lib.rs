@@ -19,6 +19,9 @@ pub mod registry;
 /// データベースアクセス
 pub mod db;
 
+/// メトリクス収集・管理
+pub mod metrics;
+
 /// 設定管理（設定ファイル読み込み）
 pub mod config {
     // TODO: T055で実装

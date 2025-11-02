@@ -2,13 +2,10 @@
 //!
 //! 複数エージェントへのリクエスト分散と負荷ベース選択の検証
 
+use ollama_coordinator_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use ollama_coordinator_coordinator::{
     balancer::{LoadManager, MetricsUpdate, RequestOutcome},
     registry::AgentRegistry,
-};
-use ollama_coordinator_common::{
-    protocol::RegisterRequest,
-    types::GpuDeviceInfo,
 };
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -49,11 +46,7 @@ async fn test_round_robin_load_balancing() {
 
         load_manager.begin_request(agent.id).await.unwrap();
         load_manager
-            .finish_request(
-                agent.id,
-                RequestOutcome::Success,
-                Duration::from_millis(50),
-            )
+            .finish_request(agent.id, RequestOutcome::Success, Duration::from_millis(50))
             .await
             .unwrap();
     }

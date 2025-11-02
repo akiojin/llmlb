@@ -93,6 +93,55 @@ async fn test_proxy_chat_success() {
 }
 
 #[tokio::test]
+async fn test_proxy_chat_missing_model_returns_openai_error() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/chat"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("model not found"))
+        .mount(&mock_server)
+        .await;
+
+    let state = build_state_with_mock(&mock_server).await;
+    let router = api::create_router(state);
+
+    let payload = ChatRequest {
+        model: "missing".into(),
+        messages: vec![ollama_coordinator_common::protocol::ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }],
+        stream: false,
+    };
+
+    let response = router
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/chat")
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_vec(&payload).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["type"], "ollama_upstream_error");
+    assert_eq!(json["error"]["code"], 404);
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("model not found"));
+}
+
+#[tokio::test]
 async fn test_proxy_chat_no_agents() {
     let registry = AgentRegistry::new();
     let load_manager = LoadManager::new(registry.clone());

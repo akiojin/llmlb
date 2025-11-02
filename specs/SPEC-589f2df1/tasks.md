@@ -1,6 +1,6 @@
 # タスク: ロードバランシングシステム
 
-**ステータス**: 🚧 **部分実装** (Phase 1完了、Phase 2.1完了: 7/24タスク = 29.2%)
+**ステータス**: 🚧 **部分実装** (Phase 1完了、Phase 2.1-2.2完了: 10/24タスク = 41.7%)
 **入力**: `/ollama-coordinator/specs/SPEC-589f2df1/`の設計ドキュメント
 
 ---
@@ -56,22 +56,19 @@
 
 #### Integration Tests
 
-- [ ] **T008** `coordinator/tests/integration/metrics_test.rs` にメトリクス収集テスト
-  - 前提: エージェント登録済み
-  - 実行: POST /api/agents/:id/metrics でメトリクス送信
-  - 検証: メトリクスがメモリに保存される
+- [x] **T008** `coordinator/tests/integration/test_metrics.rs` にメトリクス収集テスト
+  - ✅ 3つのIntegration Test作成（収集と保存、更新、存在しないエージェント）
+  - ✅ RED状態確認完了（TDD準拠）
 
-- [ ] **T009** `coordinator/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
-  - 前提: 3台のエージェント、1台が高負荷（CPU 90%）
-  - 実行: select_agent_by_metrics() 呼び出し
-  - 検証: 低負荷エージェントが選択される
+- [x] **T009** `coordinator/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
+  - ✅ 3台エージェント中1台高負荷時の低負荷優先選択テスト作成
+  - ✅ RED状態確認完了（TDD準拠）
 
-- [ ] **T010** `coordinator/tests/integration/loadbalancer_test.rs` に全エージェント高負荷時のフォールバックテスト
-  - 前提: すべてのエージェントがCPU 95%
-  - 実行: select_agent_by_metrics() 呼び出し
-  - 検証: ラウンドロビンにフォールバック
+- [x] **T010** `coordinator/tests/integration/loadbalancer_test.rs` に全エージェント高負荷時のフォールバックテスト
+  - ✅ 全エージェントCPU 95%時のラウンドロビンフォールバックテスト作成
+  - ✅ RED状態確認完了（TDD準拠）
 
-**推定時間**: 2時間
+**推定時間**: 2時間 ✅ 完了
 
 ### Phase 2.3: コア実装
 
@@ -156,11 +153,11 @@
 |---------|---------|------|--------|----------|
 | Phase 1: Roundrobin | 3 | 3 (100%) | 0 | 1時間（完了） |
 | Phase 2.1: Setup | 3 | 3 (100%) | 0 | 30分（完了） |
-| Phase 2.2: Tests | 4 | 1 (25%) | 3 | 2時間 |
+| Phase 2.2: Tests | 4 | 4 (100%) | 0 | 2時間（完了） |
 | Phase 2.3: Core | 6 | 0 | 6 | 3時間 |
 | Phase 2.4: Integration | 3 | 0 | 3 | 1時間 |
 | Phase 2.5: Polish | 5 | 0 | 5 | 3.5時間 |
-| **合計** | **24** | **7 (29.2%)** | **17 (70.8%)** | **約11時間** |
+| **合計** | **24** | **10 (41.7%)** | **14 (58.3%)** | **約11時間** |
 
 ---
 

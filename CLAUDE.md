@@ -53,9 +53,10 @@ GitHub Actions が実行する検証を**全てローカルで事前に成功さ
   - `cargo fmt --check`
   - `cargo clippy -- -D warnings`
   - `cargo test`
-  - `.specify/scripts/checks/check-tasks.sh`
-  - `npx markdownlint-cli '**/*.md' --ignore node_modules --ignore .git`
-  - コミット対象に応じて `.specify/scripts/checks/check-commits.sh` やその他ワークフロー相当のスクリプト
+- `.specify/scripts/checks/check-tasks.sh`
+- `npx markdownlint-cli '**/*.md' --ignore node_modules --ignore .git`
+- コミット対象に応じて `.specify/scripts/checks/check-commits.sh` やその他ワークフロー相当のスクリプト
+- まとめて実行する場合は `make quality-checks` を推奨（内部で `bash .specify/scripts/...` を呼び出すため、noexec マウント環境でも確実に走ります）。個別に叩く場合も `bash .specify/scripts/checks/<script>.sh ...` と `bash` を明示してください。
 - いずれかが失敗した状態でコミットすることを固く禁止する。失敗原因を解消し、再実行→合格を確認してからコミットせよ。
 - ローカル検証結果を残すため、必要に応じて実行ログをメモし、レビュー時に提示できるようにすること。
 

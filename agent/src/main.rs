@@ -49,12 +49,20 @@ async fn main() {
     // Coordinatorクライアントを初期化
     let mut coordinator_client = CoordinatorClient::new(coordinator_url);
 
+    // メトリクスコレクターを初期化（GPU情報取得のため）
+    // ollamaバイナリのパスを渡してollama psコマンドでGPU検出を可能にする
+    let mut metrics_collector =
+        MetricsCollector::with_ollama_path(Some(ollama_manager.ollama_path().to_path_buf()));
+
     // エージェント登録
     let register_req = RegisterRequest {
         machine_name: machine_name.clone(),
         ip_address,
         ollama_version,
         ollama_port,
+        gpu_available: metrics_collector.has_gpu(),
+        gpu_count: metrics_collector.gpu_count(),
+        gpu_model: metrics_collector.gpu_model(),
     };
 
     println!("Registering with Coordinator...");
@@ -69,8 +77,19 @@ async fn main() {
     let agent_id = register_response.agent_id;
     println!("Registered successfully! Agent ID: {}", agent_id);
 
-    // メトリクスコレクターを初期化
-    let mut metrics_collector = MetricsCollector::new();
+    // GPU能力情報を取得（静的な情報、起動時のみ）
+    let gpu_capability = metrics_collector.get_gpu_capability();
+    if let Some(ref capability) = gpu_capability {
+        println!(
+            "GPU Detected: {} (Compute {}.{}, {}MHz, {}MB, Score: {})",
+            capability.model_name,
+            capability.compute_capability.0,
+            capability.compute_capability.1,
+            capability.max_clock_mhz,
+            capability.memory_total_mb,
+            capability.score()
+        );
+    }
 
     // ハートビート送信タスク
     let mut heartbeat_timer = interval(Duration::from_secs(heartbeat_interval_secs));
@@ -106,6 +125,11 @@ async fn main() {
             gpu_memory_total_mb: metrics.gpu_memory_total_mb,
             gpu_memory_used_mb: metrics.gpu_memory_used_mb,
             gpu_temperature: metrics.gpu_temperature,
+            gpu_model_name: gpu_capability.as_ref().map(|c| c.model_name.clone()),
+            gpu_compute_capability: gpu_capability
+                .as_ref()
+                .map(|c| format!("{}.{}", c.compute_capability.0, c.compute_capability.1)),
+            gpu_capability_score: gpu_capability.as_ref().map(|c| c.score()),
             active_requests: 0, // TODO: 実際のリクエスト数をカウント
             average_response_time_ms: None,
             loaded_models: models,
@@ -235,6 +259,31 @@ async fn register_with_retry(
         match client.register(req.clone()).await {
             Ok(response) => return Ok(response),
             Err(err) => {
+                // Check for 403 Forbidden (GPU not available)
+                let err_msg = err.to_string();
+                if err_msg.contains("403") || err_msg.contains("Forbidden") {
+                    eprintln!("\n========================================");
+                    eprintln!("ERROR: GPU Required");
+                    eprintln!("========================================");
+                    eprintln!("This coordinator requires agents to have GPU available.");
+                    eprintln!("GPU was not detected on this machine.");
+                    eprintln!();
+                    eprintln!("To run in Docker or environments where GPU detection fails,");
+                    eprintln!("set the following environment variables:");
+                    eprintln!();
+                    eprintln!("  OLLAMA_GPU_AVAILABLE=true");
+                    eprintln!("  OLLAMA_GPU_MODEL=\"Your GPU Model Name\"");
+                    eprintln!("  OLLAMA_GPU_COUNT=1");
+                    eprintln!();
+                    eprintln!("Example:");
+                    eprintln!("  docker run -e OLLAMA_GPU_AVAILABLE=true \\");
+                    eprintln!("             -e OLLAMA_GPU_MODEL=\"Apple M4\" \\");
+                    eprintln!("             -e OLLAMA_GPU_COUNT=1 \\");
+                    eprintln!("             your-agent-image");
+                    eprintln!("========================================\n");
+                    return Err(err);
+                }
+
                 let target = max_attempts
                     .map(|limit| limit.to_string())
                     .unwrap_or_else(|| "∞".to_string());
@@ -364,12 +413,12 @@ mod tests {
         assert_eq!(resolve_machine_name(), "pretty-host-display");
     }
 
+    #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn test_register_with_retry_eventual_success() {
-        let lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let _guard_retry_secs = EnvGuard::new("COORDINATOR_REGISTER_RETRY_SECS", Some("0"));
         let _guard_retry_limit = EnvGuard::new("COORDINATOR_REGISTER_MAX_RETRIES", Some("0"));
-        drop(lock);
 
         let server = MockServer::start().await;
 
@@ -386,6 +435,9 @@ mod tests {
             ip_address: "127.0.0.1".parse().unwrap(),
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         };
 
         let response = register_with_retry(&mut client, register_req)
@@ -395,12 +447,12 @@ mod tests {
         assert_eq!(response.status, RegisterStatus::Registered);
     }
 
+    #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn test_register_with_retry_respects_limit() {
-        let lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let _guard_retry_secs = EnvGuard::new("COORDINATOR_REGISTER_RETRY_SECS", Some("0"));
         let _guard_retry_limit = EnvGuard::new("COORDINATOR_REGISTER_MAX_RETRIES", Some("2"));
-        drop(lock);
 
         let server = MockServer::start().await;
 
@@ -417,6 +469,9 @@ mod tests {
             ip_address: "127.0.0.1".parse().unwrap(),
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         };
 
         let result = register_with_retry(&mut client, register_req).await;

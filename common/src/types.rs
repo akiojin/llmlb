@@ -38,6 +38,23 @@ pub struct Agent {
     /// ロード済みモデル一覧
     #[serde(default)]
     pub loaded_models: Vec<String>,
+    /// GPU利用可能フラグ
+    pub gpu_available: bool,
+    /// GPU個数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_count: Option<u32>,
+    /// GPUモデル名
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_model: Option<String>,
+    /// GPUモデル名（詳細）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_model_name: Option<String>,
+    /// GPU計算能力 (例: "8.9")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_compute_capability: Option<String>,
+    /// GPU能力スコア (0-10000)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_capability_score: Option<u32>,
 }
 
 /// エージェント状態
@@ -74,6 +91,15 @@ pub struct HealthMetrics {
     /// GPU温度 (℃)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_temperature: Option<f32>,
+    /// GPUモデル名
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_model_name: Option<String>,
+    /// GPU計算能力
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_compute_capability: Option<String>,
+    /// GPU能力スコア
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_capability_score: Option<u32>,
     /// 処理中リクエスト数
     pub active_requests: u32,
     /// 累積リクエスト数
@@ -137,6 +163,12 @@ mod tests {
             tags: vec!["primary".to_string()],
             notes: Some("memo".to_string()),
             loaded_models: vec!["gpt-oss:20b".to_string()],
+            gpu_available: true,
+            gpu_count: Some(2),
+            gpu_model: Some("NVIDIA RTX 4090".to_string()),
+            gpu_model_name: Some("NVIDIA GeForce RTX 4090".to_string()),
+            gpu_compute_capability: Some("8.9".to_string()),
+            gpu_capability_score: Some(9850),
         };
 
         let json = serde_json::to_string(&agent).unwrap();
@@ -155,7 +187,8 @@ mod tests {
             "ollama_port": 11434,
             "status": "online",
             "registered_at": "2025-10-31T00:00:00Z",
-            "last_seen": "2025-10-31T00:00:00Z"
+            "last_seen": "2025-10-31T00:00:00Z",
+            "gpu_available": false
         }"#;
 
         let agent: Agent = serde_json::from_str(json).unwrap();
@@ -163,6 +196,12 @@ mod tests {
         assert!(agent.tags.is_empty());
         assert!(agent.notes.is_none());
         assert!(agent.loaded_models.is_empty());
+        assert!(!agent.gpu_available);
+        assert!(agent.gpu_count.is_none());
+        assert!(agent.gpu_model.is_none());
+        assert!(agent.gpu_model_name.is_none());
+        assert!(agent.gpu_compute_capability.is_none());
+        assert!(agent.gpu_capability_score.is_none());
     }
 
     #[test]

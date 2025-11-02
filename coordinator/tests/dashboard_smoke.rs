@@ -78,6 +78,9 @@ async fn dashboard_agents_and_stats_reflect_registry() {
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 42)),
             ollama_version: "0.1.0".into(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         })
         .await
         .unwrap()
@@ -93,6 +96,9 @@ async fn dashboard_agents_and_stats_reflect_registry() {
             gpu_memory_total_mb: None,
             gpu_memory_used_mb: None,
             gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
             active_requests: 2,
             average_response_time_ms: Some(110.0),
         })
@@ -166,6 +172,9 @@ async fn dashboard_request_history_tracks_activity() {
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7)),
             ollama_version: "0.1.0".into(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         })
         .await
         .unwrap()
@@ -223,6 +232,9 @@ async fn dashboard_overview_returns_combined_payload() {
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9)),
             ollama_version: "0.1.0".into(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         })
         .await
         .unwrap()
@@ -268,6 +280,9 @@ async fn dashboard_agent_metrics_endpoint_returns_history() {
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
             ollama_version: "0.1.0".into(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         })
         .await
         .unwrap()
@@ -283,6 +298,9 @@ async fn dashboard_agent_metrics_endpoint_returns_history() {
             gpu_memory_total_mb: None,
             gpu_memory_used_mb: None,
             gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
             active_requests: 2,
             average_response_time_ms: Some(105.0),
         })

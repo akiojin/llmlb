@@ -17,7 +17,13 @@ pub async fn health_check(
     };
     state
         .registry
-        .update_last_seen(req.agent_id, models)
+        .update_last_seen(
+            req.agent_id,
+            models,
+            req.gpu_model_name.clone(),
+            req.gpu_compute_capability.clone(),
+            req.gpu_capability_score,
+        )
         .await?;
 
     // 最新メトリクスをロードマネージャーに記録
@@ -32,6 +38,9 @@ pub async fn health_check(
             gpu_memory_total_mb: req.gpu_memory_total_mb,
             gpu_memory_used_mb: req.gpu_memory_used_mb,
             gpu_temperature: req.gpu_temperature,
+            gpu_model_name: req.gpu_model_name,
+            gpu_compute_capability: req.gpu_compute_capability,
+            gpu_capability_score: req.gpu_capability_score,
             active_requests: req.active_requests,
             average_response_time_ms: req.average_response_time_ms,
         })
@@ -67,6 +76,9 @@ mod tests {
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             ollama_version: "0.1.0".to_string(),
             ollama_port: 11434,
+            gpu_available: true,
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
         };
         let register_response = state.registry.register(register_req).await.unwrap();
 
@@ -80,6 +92,9 @@ mod tests {
             gpu_memory_total_mb: None,
             gpu_memory_used_mb: None,
             gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
             active_requests: 3,
             average_response_time_ms: Some(110.0),
             loaded_models: vec!["gpt-oss:20b".into()],
@@ -114,6 +129,9 @@ mod tests {
             gpu_memory_total_mb: None,
             gpu_memory_used_mb: None,
             gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
             active_requests: 3,
             average_response_time_ms: None,
             loaded_models: Vec::new(),

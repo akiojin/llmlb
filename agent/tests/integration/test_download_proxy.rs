@@ -24,7 +24,7 @@ async fn test_download_via_http_proxy() {
         .await;
 
     // Act: HTTP_PROXY環境変数を設定してダウンロード
-    let download_url = format!("{}/ollama-download", target_server.uri());
+    let _download_url = format!("{}/ollama-download", target_server.uri());
 
     // Note: reqwestは環境変数HTTP_PROXYを自動的に読み取る
     // 実際のプロキシテストはモックプロキシサーバーが必要だが、
@@ -56,7 +56,7 @@ async fn test_download_via_https_proxy() {
         .await;
 
     // Act: HTTPS_PROXY環境変数を設定
-    let download_url = format!("{}/ollama-download", target_server.uri());
+    let _download_url = format!("{}/ollama-download", target_server.uri());
     env::set_var("HTTPS_PROXY", "http://proxy.example.com:8443");
 
     // ダウンロード関数を呼び出す
@@ -84,7 +84,7 @@ async fn test_proxy_authentication() {
         .await;
 
     // Act: 認証情報付きHTTP_PROXY環境変数を設定
-    let download_url = format!("{}/ollama-download", target_server.uri());
+    let _download_url = format!("{}/ollama-download", target_server.uri());
     env::set_var("HTTP_PROXY", "http://user:password@proxy.example.com:8080");
 
     // ダウンロード関数を呼び出す
@@ -112,7 +112,7 @@ async fn test_no_proxy_exclusion() {
         .await;
 
     // Act: HTTP_PROXYとNO_PROXYを設定
-    let download_url = format!("{}/ollama-download", target_server.uri());
+    let _download_url = format!("{}/ollama-download", target_server.uri());
     env::set_var("HTTP_PROXY", "http://proxy.example.com:8080");
     env::set_var("NO_PROXY", "localhost,127.0.0.1,.example.com");
 

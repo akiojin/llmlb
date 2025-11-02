@@ -378,9 +378,12 @@ mkdir -p common coordinator agent tests/e2e
 
 ### Unit Tests (並列実行可能)
 
-- [ ] **T121** [P] `agent/tests/unit/test_backoff.rs` に指数バックオフ計算 Unit Test
-- [ ] **T122** [P] `agent/tests/unit/test_checksum.rs` にSHA256ハッシュ計算 Unit Test
-- [ ] **T123** [P] `agent/tests/unit/test_proxy_url.rs` にプロキシURL解析 Unit Test
+- [x] **T121** [P] `agent/tests/unit/test_backoff.rs` に指数バックオフ計算 Unit Test
+  - ✅ 3テストケース実装（計算、最大値、開始値）
+- [x] **T122** [P] `agent/tests/unit/test_checksum.rs` にSHA256ハッシュ計算 Unit Test
+  - ✅ 5テストケース実装（既知ハッシュ、空データ、決定性、異なるデータ、長さ）
+- [x] **T123** [P] `agent/tests/unit/test_proxy_url.rs` にプロキシURL解析 Unit Test
+  - ✅ 5テストケース実装（HTTP、HTTPS、認証、無効URL、ポートなし）
 
 ### E2Eテスト
 

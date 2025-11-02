@@ -363,8 +363,10 @@ mkdir -p common coordinator agent tests/e2e
   - ✅ current/total/percentage()メソッドを実装
 - [x] **T113** `agent/src/ollama.rs:download()` にプログレスバー統合
   - ✅ bytes_stream()でチャンク処理、リアルタイム進捗表示
-- [ ] **T114** `agent/src/ollama.rs:pull_model()` にモデルプル進捗表示統合
-  - ⏳ 未実装（オプション）
+- [x] **T114** `agent/src/ollama.rs:pull_model()` にモデルプル進捗表示統合
+  - ✅ stream: true でストリーミングレスポンス処理
+  - ✅ 進捗情報（total/completed）からプログレスバー表示
+  - ✅ ステータスメッセージをリアルタイム更新
 - [x] **T115** **検証**: Integration Test T099が合格 (GREEN)
   - ✅ テストテンプレート作成（実装後に有効化予定）
 

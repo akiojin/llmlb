@@ -204,8 +204,11 @@ impl OllamaManager {
         Ok(names)
     }
 
-    /// モデルをプル（リトライ付き）
+    /// モデルをプル（リトライ付き・進捗表示）
     async fn pull_model(&self, model: &str) -> AgentResult<()> {
+        use futures::StreamExt;
+        use indicatif::{ProgressBar, ProgressStyle};
+
         let mut client_builder =
             reqwest::Client::builder().user_agent("ollama-coordinator-agent/0.1");
 
@@ -222,7 +225,7 @@ impl OllamaManager {
         // リトライ設定を取得
         let (max_retries, max_backoff_secs) = get_retry_config();
 
-        // リトライ付きでモデルプルを実行
+        // リトライ付きでモデルプルを実行（ストリーミング有効）
         let response = retry_http_request(
             || {
                 let client = client.clone();
@@ -231,7 +234,7 @@ impl OllamaManager {
                 async move {
                     client
                         .post(&url)
-                        .json(&json!({ "name": model, "stream": false }))
+                        .json(&json!({ "name": model, "stream": true }))
                         .send()
                         .await
                 }
@@ -248,37 +251,90 @@ impl OllamaManager {
         })?;
 
         let status = response.status();
-        let body = response.text().await.map_err(|e| {
-            AgentError::Internal(format!("Failed to read pull response for {}: {}", model, e))
-        })?;
-
         if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
             return Err(AgentError::OllamaConnection(format!(
                 "Failed to pull model {}: HTTP {} {}",
                 model, status, body
             )));
         }
 
-        for line in body.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
+        // プログレスバーを作成（サイズ不明の場合は spinner として使用）
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg}")
+                .unwrap(),
+        );
+        pb.set_message(format!("Pulling model {}", model));
 
-            if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
-                if let Some(error) = map
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .filter(|v| !v.is_empty())
-                {
-                    return Err(AgentError::OllamaConnection(format!(
-                        "Failed to pull model {}: {}",
-                        model, error
-                    )));
+        // ストリーミングレスポンスを1行ずつ処理
+        let mut stream = response.bytes_stream();
+        let mut buffer = Vec::new();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| {
+                AgentError::Internal(format!("Failed to read pull stream for {}: {}", model, e))
+            })?;
+
+            buffer.extend_from_slice(&chunk);
+
+            // 改行で区切られたJSONを処理
+            while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                let line_bytes = buffer.drain(..=newline_pos).collect::<Vec<_>>();
+                let line = String::from_utf8_lossy(&line_bytes);
+                let trimmed = line.trim();
+
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
+                    // エラーチェック
+                    if let Some(error) = map
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .filter(|v| !v.is_empty())
+                    {
+                        pb.finish_and_clear();
+                        return Err(AgentError::OllamaConnection(format!(
+                            "Failed to pull model {}: {}",
+                            model, error
+                        )));
+                    }
+
+                    // ステータス表示
+                    if let Some(status_msg) = map.get("status").and_then(|v| v.as_str()) {
+                        // ダウンロード進捗がある場合
+                        if let (Some(total), Some(completed)) = (
+                            map.get("total").and_then(|v| v.as_u64()),
+                            map.get("completed").and_then(|v| v.as_u64()),
+                        ) {
+                            if total > 0 {
+                                // プログレスバーを進捗モードに切り替え
+                                if pb.length().is_none() || pb.length() == Some(0) {
+                                    pb.set_length(total);
+                                    pb.set_style(
+                                        ProgressStyle::default_bar()
+                                            .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({percent}%)")
+                                            .unwrap()
+                                            .progress_chars("#>-"),
+                                    );
+                                }
+                                pb.set_position(completed);
+                                pb.set_message(format!("Pulling model {}: {}", model, status_msg));
+                            } else {
+                                pb.set_message(format!("Pulling model {}: {}", model, status_msg));
+                            }
+                        } else {
+                            pb.set_message(format!("Pulling model {}: {}", model, status_msg));
+                        }
+                    }
                 }
             }
         }
 
+        pb.finish_with_message(format!("Model {} pulled successfully", model));
         Ok(())
     }
 

@@ -9,7 +9,7 @@ use serde_json::json;
 #[ignore = "SPEC-32e2b31a archived - covered by api::health::tests"]
 async fn test_health_check_success() {
     // Arrange: 有効なヘルスチェックリクエスト
-    let request_body = json!({
+    let _request_body = json!({
         "agent_id": "550e8400-e29b-41d4-a716-446655440000",
         "cpu_usage": 45.5,
         "memory_usage": 60.2,
@@ -32,7 +32,7 @@ async fn test_health_check_success() {
 #[ignore = "SPEC-32e2b31a archived - covered by api::health::tests"]
 async fn test_health_check_invalid_agent_id() {
     // Arrange: 不正なagent_id形式
-    let request_body = json!({
+    let _request_body = json!({
         "agent_id": "invalid-uuid",
         "cpu_usage": 45.5,
         "memory_usage": 60.2,

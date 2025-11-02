@@ -9,7 +9,7 @@ use serde_json::json;
 #[ignore = "SPEC-32e2b31a archived - covered by api::proxy::tests"]
 async fn test_proxy_generate_success() {
     // Arrange: 有効なGenerateリクエスト
-    let request_body = json!({
+    let _request_body = json!({
         "model": "llama2",
         "prompt": "Tell me a joke",
         "stream": false
@@ -31,7 +31,7 @@ async fn test_proxy_generate_success() {
 #[ignore = "SPEC-32e2b31a archived - covered by api::proxy::tests"]
 async fn test_proxy_generate_missing_model() {
     // Arrange: modelパラメータが欠けている
-    let request_body = json!({
+    let _request_body = json!({
         "prompt": "Tell me a joke"
     });
 

@@ -9,7 +9,7 @@ use serde_json::json;
 #[ignore = "SPEC-32e2b31a archived - covered by api::proxy::tests"]
 async fn test_proxy_chat_success() {
     // Arrange: 有効なチャットリクエスト
-    let request_body = json!({
+    let _request_body = json!({
         "model": "llama2",
         "messages": [
             {"role": "user", "content": "Hello, world!"}
@@ -38,7 +38,7 @@ async fn test_proxy_chat_success() {
 #[ignore = "SPEC-32e2b31a archived - covered by api::proxy::tests"]
 async fn test_proxy_chat_no_agents_available() {
     // Arrange: エージェントが登録されていない状態
-    let request_body = json!({
+    let _request_body = json!({
         "model": "llama2",
         "messages": [
             {"role": "user", "content": "Hello, world!"}

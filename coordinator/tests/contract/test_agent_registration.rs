@@ -12,7 +12,7 @@ async fn test_agent_registration_success() {
     // let app = coordinator::api::create_app().await;
     // let server = axum_test::TestServer::new(app).unwrap();
 
-    let request_body = json!({
+    let _request_body = json!({
         "machine_name": "test-machine",
         "ip_address": "192.168.1.100",
         "ollama_version": "0.1.0",
@@ -41,7 +41,7 @@ async fn test_agent_registration_success() {
 #[ignore = "SPEC-32e2b31a archived - covered by api::agent::tests"]
 async fn test_agent_registration_invalid_request() {
     // Arrange: 不正なリクエスト
-    let request_body = json!({
+    let _request_body = json!({
         "machine_name": "test-machine"
         // ip_address, ollama_version, ollama_portが欠けている
     });

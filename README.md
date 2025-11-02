@@ -18,6 +18,63 @@ Ollama Coordinator is a system that provides unified management and a single API
 - **WebUI Management**: Manage agent settings, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
 
+## Load Balancing
+
+Ollama Coordinator supports multiple load balancing strategies to optimize request distribution across agents.
+
+### Strategies
+
+#### 1. Metrics-Based Load Balancing (Recommended)
+
+Selects agents based on real-time metrics (CPU usage, memory usage, active requests). This mode provides optimal performance by routing requests to the least loaded agent.
+
+**Configuration:**
+```bash
+# Enable metrics-based load balancing
+LOAD_BALANCER_MODE=metrics cargo run -p ollama-coordinator-coordinator
+```
+
+**Load Score Calculation:**
+```
+score = cpu_usage + memory_usage + (active_requests × 10)
+```
+
+The agent with the **lowest score** is selected. If all agents have CPU usage > 80%, the system automatically falls back to round-robin.
+
+**Example:**
+- Agent A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
+- Agent B: CPU 70%, Memory 50%, Active 5 → Score = 170
+
+#### 2. Advanced Load Balancing (Default)
+
+Combines multiple factors including response time, active requests, and CPU usage for sophisticated agent selection.
+
+**Configuration:**
+```bash
+# Use default advanced load balancing (or omit LOAD_BALANCER_MODE)
+LOAD_BALANCER_MODE=auto cargo run -p ollama-coordinator-coordinator
+```
+
+### Metrics API
+
+Agents can report their metrics to the Coordinator for load balancing decisions.
+
+**Endpoint:** `POST /api/agents/:id/metrics`
+
+**Request:**
+```json
+{
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "cpu_usage": 45.5,
+  "memory_usage": 60.2,
+  "active_requests": 3,
+  "avg_response_time_ms": 250.5,
+  "timestamp": "2025-11-02T10:00:00Z"
+}
+```
+
+**Response:** `204 No Content`
+
 ## Architecture
 
 ### System Overview
@@ -314,6 +371,7 @@ OLLAMA_GPU_COUNT=1 \
 - `DATABASE_URL`: Database URL (default: `sqlite://coordinator.db`)
 - `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
 - `AGENT_TIMEOUT`: Agent timeout in seconds (default: `60`)
+- `LOAD_BALANCER_MODE`: Load balancing strategy - `metrics` for metrics-based or `auto` for advanced (default: `auto`)
 
 #### Agent
 - `COORDINATOR_URL`: Coordinator URL (default: `http://localhost:8080`)
@@ -420,6 +478,23 @@ Receive health check information (Agent→Coordinator).
   "active_requests": 3
 }
 ```
+
+#### POST /api/agents/:id/metrics
+Update agent metrics for load balancing (Agent→Coordinator).
+
+**Request:**
+```json
+{
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "cpu_usage": 45.5,
+  "memory_usage": 60.2,
+  "active_requests": 3,
+  "avg_response_time_ms": 250.5,
+  "timestamp": "2025-11-02T10:00:00Z"
+}
+```
+
+**Response:** `204 No Content`
 
 #### POST /api/chat
 Proxy endpoint for Ollama Chat API.

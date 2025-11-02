@@ -302,6 +302,76 @@ mkdir -p common coordinator agent tests/e2e
 
 ---
 
+## Phase 3.8: Ollama自動ダウンロード機能強化
+
+**依存関係**: Agent基本実装完了（T060-T066）
+
+**背景**: 基本的なOllama自動ダウンロード機能は実装済み。以下の4機能を追加実装する。
+
+### Contract Tests (並列実行可能)
+
+- [ ] **T097** [P] `agent/tests/contract/test_download_progress.rs` にダウンロード進捗
+  コールバックAPI Contract Test
+- [ ] **T098** [P] `agent/tests/contract/test_download_retry.rs` にリトライAPI Contract
+  Test
+
+### Integration Tests (並列実行可能)
+
+- [ ] **T099** [P] `agent/tests/integration/test_download_with_progress.rs` に進捗表示
+  Integration Test (モックHTTPサーバーでチャンク送信)
+- [ ] **T100** [P] `agent/tests/integration/test_download_retry.rs` にリトライ
+  Integration Test (タイムアウト・接続エラーシミュレーション)
+- [ ] **T101** [P] `agent/tests/integration/test_download_checksum.rs` にチェックサム検証
+  Integration Test (正常/不一致/欠損)
+- [ ] **T102** [P] `agent/tests/integration/test_download_proxy.rs` にプロキシ
+  Integration Test (プロキシ経由ダウンロード)
+
+### 実装 (優先順位順)
+
+#### P0: リトライ機能 (FR-016e)
+
+- [ ] **T103** `agent/Cargo.toml` に`backoff`クレート追加（または手動実装用の依存追加）
+- [ ] **T104** `agent/src/ollama.rs` に`retry_with_backoff()`関数実装（指数バックオフ）
+- [ ] **T105** `agent/src/ollama.rs:download()` にリトライロジック統合
+- [ ] **T106** `agent/src/ollama.rs:pull_model()` にリトライロジック統合
+- [ ] **T107** **検証**: Integration Test T100が合格 (GREEN)
+
+#### P1: プロキシ対応 (FR-016g)
+
+- [ ] **T108** `agent/src/ollama.rs` に`build_http_client_with_proxy()`関数実装
+- [ ] **T109** `agent/src/ollama.rs:download()` でHTTPクライアント作成時にプロキシ設定適用
+- [ ] **T110** **検証**: Integration Test T102が合格 (GREEN)
+
+#### P2: ダウンロード進捗表示 (FR-016d)
+
+- [ ] **T111** `agent/Cargo.toml` に`indicatif`クレート追加
+- [ ] **T112** `agent/src/ollama.rs` に`DownloadProgress`構造体定義
+- [ ] **T113** `agent/src/ollama.rs:download()` にプログレスバー統合
+  (`bytes_stream()`でチャンク処理)
+- [ ] **T114** `agent/src/ollama.rs:pull_model()` にモデルプル進捗表示統合
+- [ ] **T115** **検証**: Integration Test T099が合格 (GREEN)
+
+#### P3: チェックサム検証 (FR-016f)
+
+- [ ] **T116** `agent/Cargo.toml` に`sha2`クレート追加
+- [ ] **T117** `agent/src/ollama.rs` に`verify_checksum()`関数実装
+- [ ] **T118** `agent/src/ollama.rs` に`fetch_checksum_from_github()`関数実装
+- [ ] **T119** `agent/src/ollama.rs:download()` にチェックサム検証統合
+- [ ] **T120** **検証**: Integration Test T101が合格 (GREEN)
+
+### Unit Tests (並列実行可能)
+
+- [ ] **T121** [P] `agent/tests/unit/test_backoff.rs` に指数バックオフ計算 Unit Test
+- [ ] **T122** [P] `agent/tests/unit/test_checksum.rs` にSHA256ハッシュ計算 Unit Test
+- [ ] **T123** [P] `agent/tests/unit/test_proxy_url.rs` にプロキシURL解析 Unit Test
+
+### E2Eテスト
+
+- [ ] **T124** `tests/e2e/scenarios/ollama_auto_download.rs` にOllama自動ダウンロード
+  E2Eシナリオ (未インストール環境での起動→ダウンロード→モデルプル→登録)
+
+---
+
 ## 注意事項
 
 - **TDD厳守**: テストコミット → RED確認 → 実装コミット → GREEN確認
@@ -323,9 +393,9 @@ mkdir -p common coordinator agent tests/e2e
 
 ---
 
-**総タスク数**: 96タスク
-**並列実行可能タスク**: 約60タスク（[P]マーク）
-**推定完了時間**: 4-6週間（TDDサイクル遵守、パフォーマンス最適化含む）
+**総タスク数**: 124タスク（基本96 + Ollama自動ダウンロード強化28）
+**並列実行可能タスク**: 約70タスク（[P]マーク）
+**推定完了時間**: 5-7週間（TDDサイクル遵守、Ollama自動ダウンロード機能強化含む）
 
 ---
 

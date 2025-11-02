@@ -4,11 +4,11 @@
 //! 1000エージェントで < 10ms の目標を検証する。
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use ollama_coordinator_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use ollama_coordinator_coordinator::{
     balancer::{LoadManager, MetricsUpdate},
     registry::AgentRegistry,
 };
-use ollama_coordinator_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::runtime::Runtime;
 

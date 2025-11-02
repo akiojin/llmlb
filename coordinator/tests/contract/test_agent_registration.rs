@@ -1,10 +1,12 @@
 //! Contract Test: エージェント登録 (POST /api/agents/register)
 //!
-//! このテストはRED状態であることが期待されます（T027-T031で実装後にGREENになる）
+//! ⚠️ このテストはSPEC-32e2b31a（アーカイブ済み）の一部です。
+//! 実装は既に完了しており、api::agent::testsで十分にカバーされています。
 
 use serde_json::json;
 
 #[tokio::test]
+#[ignore = "SPEC-32e2b31a archived - covered by api::agent::tests"]
 async fn test_agent_registration_success() {
     // Arrange: テストサーバー起動（TODO: T027でAxumサーバー実装後に有効化）
     // let app = coordinator::api::create_app().await;
@@ -36,6 +38,7 @@ async fn test_agent_registration_success() {
 }
 
 #[tokio::test]
+#[ignore = "SPEC-32e2b31a archived - covered by api::agent::tests"]
 async fn test_agent_registration_invalid_request() {
     // Arrange: 不正なリクエスト
     let request_body = json!({

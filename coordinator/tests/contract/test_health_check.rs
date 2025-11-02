@@ -1,10 +1,12 @@
 //! Contract Test: ヘルスチェック (POST /api/health)
 //!
-//! このテストはRED状態であることが期待されます（T032-T035で実装後にGREENになる）
+//! ⚠️ このテストはSPEC-32e2b31a（アーカイブ済み）の一部です。
+//! 実装は既に完了しており、api::health::testsで十分にカバーされています。
 
 use serde_json::json;
 
 #[tokio::test]
+#[ignore = "SPEC-32e2b31a archived - covered by api::health::tests"]
 async fn test_health_check_success() {
     // Arrange: 有効なヘルスチェックリクエスト
     let request_body = json!({
@@ -27,6 +29,7 @@ async fn test_health_check_success() {
 }
 
 #[tokio::test]
+#[ignore = "SPEC-32e2b31a archived - covered by api::health::tests"]
 async fn test_health_check_invalid_agent_id() {
     // Arrange: 不正なagent_id形式
     let request_body = json!({

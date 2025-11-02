@@ -296,6 +296,12 @@ cargo test
 # 統合テスト（ignored含む、Coordinatorサーバーが必要）
 cd agent
 TEST_COORDINATOR_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
+
+# 品質ゲート一式（fmt / clippy / workspaceテスト / specifyチェック / markdownlint）
+make quality-checks
+
+# OpenAI互換APIの回帰テスト
+make openai-tests
 ```
 
 ### Spec-Driven Development

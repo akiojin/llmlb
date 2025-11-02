@@ -423,6 +423,12 @@ cargo test
 # Integration tests (including ignored, requires Coordinator server)
 cd agent
 TEST_COORDINATOR_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
+
+# Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint)
+make quality-checks
+
+# OpenAI-compatible proxy regression suite
+make openai-tests
 ```
 
 ### Spec-Driven Development

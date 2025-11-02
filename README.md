@@ -342,10 +342,10 @@ cargo test
 cd agent
 TEST_COORDINATOR_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
 
-# Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint)
+# Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint, OpenAI proxy)
 make quality-checks
 
-# OpenAI-compatible proxy regression suite
+# (Optional) Run only the OpenAI-compatible proxy regression suite
 make openai-tests
 ```
 

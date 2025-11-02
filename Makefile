@@ -34,7 +34,7 @@ specify-commits:
 
 specify-checks: specify-tasks specify-tests specify-compile specify-commits
 
-quality-checks: fmt clippy test specify-checks markdownlint
+quality-checks: fmt clippy test specify-checks markdownlint openai-tests
 
 openai-tests:
 	cargo test -p ollama-coordinator-coordinator --test openai_proxy

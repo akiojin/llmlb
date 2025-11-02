@@ -297,10 +297,10 @@ cargo test
 cd agent
 TEST_COORDINATOR_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
 
-# 品質ゲート一式（fmt / clippy / workspaceテスト / specifyチェック / markdownlint）
+# 品質ゲート一式（fmt / clippy / workspaceテスト / specifyチェック / markdownlint / OpenAIテスト）
 make quality-checks
 
-# OpenAI互換APIの回帰テスト
+# OpenAI互換APIのみ個別に実行する場合
 make openai-tests
 ```
 

@@ -34,6 +34,7 @@ body {
 .page-footer,
 .agents-section,
 .charts-section,
+.request-history-section,
 .stats-grid {
   padding: 0 3vw;
 }
@@ -182,7 +183,8 @@ body {
 }
 
 .agents-section,
-.charts-section {
+.charts-section,
+.request-history-section {
   margin-top: 32px;
 }
 
@@ -645,11 +647,65 @@ body {
   width: 6%;
 }
 
+/* Request History Table */
+.request-history-section .table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.request-history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.request-history-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-subtle);
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.request-history-table td {
+  padding: 12px 16px;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.request-history-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.request-history-table .empty-message {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
+.request-history-table .status-success {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.request-history-table .status-error {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.request-history-table .view-request-detail {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+}
+
 @media (max-width: 900px) {
   .page-header,
   .stats-grid,
   .agents-section,
   .charts-section,
+  .request-history-section,
   .page-footer,
   .banner {
     padding-left: 20px;
@@ -668,6 +724,26 @@ body {
   .agents-table td {
     padding: 10px 12px;
     font-size: 0.85rem;
+  }
+
+  .request-history-table th,
+  .request-history-table td {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+  }
+
+  .section-tools {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .filter-label {
+    width: 100%;
+  }
+
+  .filter-label input {
+    width: 100%;
   }
 }
 

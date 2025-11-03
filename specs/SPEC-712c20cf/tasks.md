@@ -336,14 +336,24 @@
 - **推定時間**: 1時間
 - **ステータス**: ✅ 完了（`GET /api/dashboard/overview` に集計時間を付加、フロントで取得/描画/サーバー集計の各メトリクスを計測し閾値評価を表示。警告・フォールバック検知を実装して性能予算を監視可能に）
 
-### T003: OpenAI互換APIの自動検証 📋
+### T003: OpenAI互換APIの自動検証 ✅
 - **説明**: `/api/chat` `/api/generate` エンドポイントがOpenAI互換仕様に沿って応答することを確認する
 - **詳細**:
   - エージェント（またはモック）を用意し、API経由でリクエストを送信する統合テストを追加
   - 正常系（レスポンス形式・ステータスコード）／異常系（エージェント未登録時など）の評価を含める
 - **完了条件**: CIで自動実行され、OpenAI互換APIの挙動が回帰しないようになる
 - **推定時間**: 2時間
-- **ステータス**: 📋 未実装
+<<<<<<< HEAD
+- **ステータス**: ✅ 完了
+- **検証ログ (2025-11-02)**:
+  - `make openai-tests`（内部で `cargo test -p ollama-coordinator-coordinator --test openai_proxy` を実行）により、`/api/chat`・`/api/generate` の正常系／未登録エージェント／404エラーがOpenAI互換レスポンスで返ることを確認
+  - `curl http://127.0.0.1:8080/api/chat` でエージェントを経由した疎通を手動確認済み（`gpt-oss:20b` 応答およびメモリ不足エラーの両ケースを取得）
+=======
+- **ステータス**: ✅ 完了
+- **検証ログ (2025-11-02)**:
+  - `make openai-tests`（内部で `cargo test -p ollama-coordinator-coordinator --test openai_proxy` を実行）により、`/api/chat`・`/api/generate` の正常系／未登録エージェント／404エラーがOpenAI互換レスポンスで返ることを確認
+  - `curl http://127.0.0.1:8080/api/chat` でエージェントを経由した疎通を手動確認済み（`gpt-oss:20b` 応答およびメモリ不足エラーの両ケースを取得）
+>>>>>>> c3b625c (docs(spec): clarify openai test command)
 
 ### T004: 同一マシン複数エージェントE2E ✅
 - **説明**: 同一マシン名でもポート差異で複数エージェントを登録できることをTDDで保証

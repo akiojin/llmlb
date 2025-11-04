@@ -236,6 +236,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 4. GitHubリポジトリでリリースを作成し、各プラットフォーム向けアーカイブをアップロードする。リリースノートには対応プラットフォーム・ハッシュ値（任意）・既知の制限事項を記載する。
 5. 必要に応じて自動化（GitHub Actions 等）で上記手順を再現し、リリースタグ作成と同時にアーティファクトをアップロードする。  
    本リポジトリでは `.github/workflows/release-binaries.yml` がリリース公開時に同等の処理を自動実行する。
+6. `main` ブランチにマージされると `.github/workflows/semantic-release.yml` が実行され、Conventional Commits からバージョンを決定して `Cargo.toml` 群と `CHANGELOG.md` を更新し、GitHub Release を自動作成します。公開されたリリースイベントが `release-binaries` をトリガーし、各プラットフォーム向けアーカイブが添付されます。
 
 ## 使い方
 

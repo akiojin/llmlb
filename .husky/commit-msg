@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+
+# validate commit message before completing the commit
+commitlint --edit "$1"

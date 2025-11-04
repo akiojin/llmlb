@@ -1,0 +1,20 @@
+{
+  "name": "ollama-coordinator",
+  "version": "0.0.0",
+  "description": "Centralized management system for coordinating Ollama instances across multiple machines.",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "lint:commits": "commitlint --from origin/main --to HEAD",
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules --ignore .git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.0.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "husky": "^9.1.0",
+    "markdownlint-cli": "^0.45.0"
+  }
+}

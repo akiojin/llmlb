@@ -407,6 +407,18 @@ OLLAMA_GPU_COUNT=1 \
 
 ## Development
 
+### Commit Hooks
+
+Install the JavaScript tooling once per clone to enable Husky-managed commit hooks:
+
+```bash
+npm install
+```
+
+- Runs the `prepare` script and configures Husky's Git hook directory.
+- Adds a `commit-msg` hook that executes `commitlint --edit "$1"` so invalid messages fail locally instead of in CI.
+- Use `npm run lint:commits` to lint a range manually (defaults to `origin/main..HEAD`).
+
 ### Running Tests
 
 ```bash

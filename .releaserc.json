@@ -15,7 +15,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "scripts/semantic-release/prepare.sh ${nextRelease.version}"
+        "prepareCmd": "scripts/semantic-release/prepare.sh ${nextRelease.version}",
+        "successCmd": "scripts/semantic-release/success.sh ${nextRelease.version} ${nextRelease.gitTag}"
       }
     ],
     [
@@ -30,18 +31,6 @@
         ]
       }
     ],
-    [
-      "@semantic-release/github",
-      {
-        "assets": [
-          {
-            "path": "release/*.tar.gz"
-          },
-          {
-            "path": "release/*.zip"
-          }
-        ]
-      }
-    ]
+    "@semantic-release/github"
   ]
 }

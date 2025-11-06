@@ -34,6 +34,23 @@
   - REDフェーズのスキップ
   - テスト後の実装コミット
 
+**インフラストラクチャコードの例外:**
+以下の条件を満たすインフラコードは、厳密なTDDサイクルの代わりに**CI/CD統合テスト**で検証可能:
+- **対象**: GitHub Actionsワークフロー、リリーススクリプト、CI/CDパイプライン
+- **理由**: ローカル環境でのユニットテストが実質不可能（GitHub Actions環境依存）
+- **代替検証**:
+  - 品質チェックワークフロー (cargo test, clippy, fmt, commitlint, markdownlint)
+  - 実際のPR作成→品質チェック→マージの統合テスト
+  - 実リリースフローでの動作確認
+- **必須条件**:
+  - 複雑さトラッキングに例外を文書化
+  - 代替検証方法を明記（plan.md）
+  - CI/CDログで検証結果を記録
+  - 外部依存が解決次第、実環境で統合テスト実施
+- **禁止**:
+  - この例外を通常のアプリケーションコードに適用
+  - 統合テストなしでの本番デプロイ
+
 ### IV. C# LSP統合
 - すべてのC# symbol/search/editはバンドルLSP経由で実行
 - Unity通信は不要 (LSPは自己完結)
@@ -79,13 +96,23 @@
 - コンソール読み取り機能でUnityログ統合
 
 ### VIII. バージョニング
-- MAJOR.MINOR.BUILD形式
-- BUILDは変更ごとにインクリメント
-- `npm version`コマンド必須使用:
-  - `npm version patch`: バグ修正
-  - `npm version minor`: 新機能
-  - `npm version major`: 破壊的変更
-- package.jsonの直接編集禁止
+- MAJOR.MINOR.PATCH形式（Semantic Versioning 2.0.0準拠）
+- **自動バージョニング（semantic-release）**:
+  - Conventional Commitsから自動計算
+  - `fix:` → パッチ (+0.0.1)
+  - `feat:` → マイナー (+0.1.0)
+  - `BREAKING CHANGE:` / `!` → メジャー (+1.0.0)
+- **ブランチ別リリース戦略**:
+  - `main`: 正式版 (例: v1.2.3)
+  - `develop`: プレリリース版 (例: v1.2.3-alpha.1)
+  - `hotfix/**`: パッチ版 (mainへ直接マージ)
+- **GitHub Actions統合**:
+  - semantic-release.ymlが自動実行
+  - CHANGELOG.md、Cargo.toml、package.jsonを自動更新
+  - GitHub Releaseとバイナリを自動公開
+- **手動バージョン指定は禁止**:
+  - 手動編集やnpm versionコマンドは使用不可
+  - すべてのバージョン管理はsemantic-releaseに委譲
 
 ## テスト要件
 

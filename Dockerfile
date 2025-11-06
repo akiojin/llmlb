@@ -42,10 +42,7 @@ RUN npm i -g \
     bun@latest \
     typescript@latest \
     eslint@latest \
-    prettier@latest \
-    @anthropic-ai/claude-code@latest \
-    @openai/codex@latest \
-    @google/gemini-cli@latest
+    prettier@latest
 
 EXPOSE 8080
 

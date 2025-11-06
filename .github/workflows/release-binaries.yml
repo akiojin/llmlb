@@ -4,8 +4,11 @@ on:
   workflow_call:
     inputs:
       target_branch:
-        required: true
         type: string
+        default: main
+      release_tag:
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       target_branch:
@@ -21,7 +24,9 @@ jobs:
     name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
     env:
-      TARGET_BRANCH: ${{ inputs.target_branch || github.event.inputs.target_branch || 'main' }}
+      # workflow_call supplies inputs.target_branch, workflow_dispatch writes to github.event.inputs;
+      # default to main when neither is provided.
+      TARGET_BRANCH: ${{ inputs.target_branch != '' && inputs.target_branch || github.event.inputs.target_branch || 'main' }}
     strategy:
       matrix:
         include:
@@ -42,7 +47,7 @@ jobs:
         shell: bash
         run: |
           if [[ "${TARGET_BRANCH}" != "main" ]]; then
-            echo "::error::Binary packaging is restricted to main branch. Received target '${TARGET_BRANCH}'."
+            echo "::error::Binary packaging is restricted to the protected 'main' branch. Received '${TARGET_BRANCH}'. Merge your changes to main or rerun semantic-release on main to build release assets."
             exit 1
           fi
 
@@ -126,8 +131,15 @@ jobs:
           }
           Expand-Archive -Path $archive -DestinationPath $extractDir -Force
           $files = Get-ChildItem -Path $extractDir -File -Recurse
-          $expected = @("ollama-coordinator-coordinator.exe","ollama-coordinator-agent.exe","README.md","README.ja.md","LICENSE")
-          foreach ($name in $expected) {
+          $binaryPrefixes = @("ollama-coordinator-coordinator","ollama-coordinator-agent")
+          foreach ($prefix in $binaryPrefixes) {
+            if (-not ($files.Name | Where-Object { $_ -like "$prefix*.exe" })) {
+              Write-Error "missing executable matching $prefix*.exe in archive"
+              exit 1
+            }
+          }
+          $staticFiles = @("README.md","README.ja.md","LICENSE")
+          foreach ($name in $staticFiles) {
             if (-not ($files.Name -contains $name)) {
               Write-Error "missing $name in archive"
               exit 1
@@ -149,3 +161,26 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ steps.package_windows.outputs.archive }}
           if-no-files-found: error
+
+  publish:
+    name: Attach binaries to release
+    needs: build
+    if: inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List downloaded assets
+        run: ls -R release
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

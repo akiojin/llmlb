@@ -106,10 +106,15 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Install commitlint
         run: |
           echo "📦 Installing commitlint..."
-          npm install --save-dev @commitlint/cli @commitlint/config-conventional
+          pnpm install --frozen-lockfile
 
       - name: Check commit messages
         run: |
@@ -130,7 +135,12 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Run markdownlint
         run: |
           echo "📄 Checking Markdown files..."
-          npx --yes markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github"
+          pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github"

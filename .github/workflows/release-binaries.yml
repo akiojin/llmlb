@@ -90,7 +90,9 @@ jobs:
           [[ "$archive" == ollama-coordinator-* ]] || { echo "::error::unexpected archive name $archive"; exit 1; }
           [[ "$archive" == *.tar.gz ]] || { echo "::error::expected .tar.gz archive"; exit 1; }
           echo "DEBUG: Extracting root_dir..."
+          set +o pipefail
           root_dir=$(tar -tzf "$archive" 2>&1 | head -1 | cut -d/ -f1)
+          set -o pipefail
           echo "DEBUG: root_dir='$root_dir' (length: ${#root_dir})"
           [[ -n "$root_dir" ]] || { echo "::error::failed to detect root directory"; exit 1; }
           echo "DEBUG: Creating contents.txt..."

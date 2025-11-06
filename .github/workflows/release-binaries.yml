@@ -84,16 +84,27 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           archive="${{ steps.package_unix.outputs.archive }}"
+          echo "DEBUG: archive=$archive"
           [[ "$archive" == ollama-coordinator-* ]] || { echo "::error::unexpected archive name $archive"; exit 1; }
           [[ "$archive" == *.tar.gz ]] || { echo "::error::expected .tar.gz archive"; exit 1; }
-          root_dir=$(tar -tzf "$archive" 2>/dev/null | head -1 | cut -d/ -f1)
+          echo "DEBUG: Extracting root_dir..."
+          root_dir=$(tar -tzf "$archive" 2>&1 | head -1 | cut -d/ -f1)
+          echo "DEBUG: root_dir='$root_dir' (length: ${#root_dir})"
           [[ -n "$root_dir" ]] || { echo "::error::failed to detect root directory"; exit 1; }
-          echo "DEBUG: root_dir=$root_dir"
-          tar -tzf "$archive" > contents.txt
+          echo "DEBUG: Creating contents.txt..."
+          tar -tzf "$archive" > contents.txt 2>&1
+          tar_exit=$?
+          echo "DEBUG: tar exit code: $tar_exit"
+          if [[ $tar_exit -ne 0 ]]; then
+            echo "::error::tar failed with exit code $tar_exit"
+            cat contents.txt
+            exit 1
+          fi
           echo "DEBUG: Archive contents:"
           cat contents.txt
+          echo "DEBUG: Checking files..."
           grep -q "^${root_dir}/ollama-coordinator-coordinator\$" contents.txt || { echo "::error::ollama-coordinator-coordinator not found"; exit 1; }
           grep -q "^${root_dir}/ollama-coordinator-agent\$" contents.txt || { echo "::error::ollama-coordinator-agent not found"; exit 1; }
           grep -q "^${root_dir}/README.md\$" contents.txt || { echo "::error::README.md not found"; exit 1; }

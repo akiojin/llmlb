@@ -28,6 +28,21 @@ if [ -n "$GITHUB_USERNAME" ] && [ -n "$GITHUB_PERSONAL_ACCESS_TOKEN" ]; then
     git config --global credential.helper store
 fi
 
+# .codexディレクトリのセットアップ
+# auth.jsonをホストと同期（クロスプラットフォーム対応）
+if [ -f /root/.codex-host/auth.json ]; then
+    # ホストのauth.jsonが存在しない、または空、またはホスト側が新しい場合はコピー
+    if [ ! -f /root/.codex/auth.json ] || [ ! -s /root/.codex/auth.json ] || [ /root/.codex-host/auth.json -nt /root/.codex/auth.json ]; then
+        cp /root/.codex-host/auth.json /root/.codex/auth.json
+        chmod 600 /root/.codex/auth.json
+        echo "✅ Codex auth.json synced from host"
+    else
+        echo "✅ Codex auth.json is up to date"
+    fi
+else
+    echo "ℹ️  INFO: Codex auth.json not found on host (optional)"
+fi
+
 echo "🚀 Docker environment is ready!"
 echo ""
 

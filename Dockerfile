@@ -48,7 +48,7 @@ RUN mkdir -p "$PNPM_HOME" && \
     echo 'export PNPM_HOME="/root/.local/share/pnpm"' >> /root/.bashrc && \
     echo 'export PATH="$PNPM_HOME:$PATH"' >> /root/.bashrc
 
-RUN pnpm i -g \
+RUN npm i -g \
     npm@latest \
     bun@latest \
     typescript@latest \

@@ -1,59 +1,41 @@
-正式リリースプロセスを開始します。
+---
+description: developからrelease/vX.Y.Zブランチを作成し、リリースフローを開始します。
+tags: [project]
+---
 
-## 概要
+# リリースコマンド
 
-このコマンドは `scripts/release/create-release-branch.sh` を実行し、
-`akiojin/unity-mcp-server` と同じ方式の自動リリース（release/vX.Y.Zブランチ → release.yml → publish.yml）を起動します。
+developブランチから`release/vX.Y.Z`ブランチを自動作成し、正式リリースフローを開始します。
 
 ## 実行内容
 
-1. **GitHub CLIの状態確認**
-   - `gh` コマンドの存在と `gh auth status` を確認
-2. **create-release.yml の実行**
-   - developブランチを元に semantic-release のドライランで次バージョンを決定
-   - `release/vX.Y.Z` ブランチを自動作成＆push
-3. **自動処理**（ブランチ作成後）
-   - releaseブランチのpush → `release.yml`
-     - semantic-release本番実行
-     - バージョンタグ + CHANGELOG + Cargo.toml更新
-     - mainへの自動マージ／developへのバックマージ／releaseブランチ削除
-   - mainへのpush → `publish.yml`
-     - `release-binaries.yml` を呼び出し、全プラットフォームのバイナリをGitHub Releaseへ添付
+1. 現在のブランチがdevelopであることを確認
+2. developブランチを最新に更新（`git pull`）
+3. semantic-releaseのドライランで次バージョンを判定
+4. `release/vX.Y.Z`ブランチをdevelopから作成
+5. リモートにpush
+6. GitHub Actionsが以下を自動実行：
+   - **releaseブランチ**: semantic-releaseによりCHANGELOG/Cargo.toml/タグ/GitHub Releaseを更新し、releaseブランチをmainへ直接取り込み（バックマージでdevelopも同期）
+   - **mainブランチ**: release.ymlの完了後にpublish.ymlが起動し、`release-binaries.yml`を呼び出して各プラットフォーム向けバイナリを添付
 
-## 使用方法
+## 前提条件
 
-以下を実行してください：
+- developブランチにいること
+- GitHub CLIが認証済みであること（`gh auth status`）
+- コミットがConventional Commits準拠で、semantic-releaseがバージョンを判定できること
 
-```bash
-./scripts/release/create-release-branch.sh
-```
+## スクリプト実行
 
-Claude Codeからは：
-
-```
-/release
-```
-
-## 注意事項
-
-- GitHub CLIが認証済みであること (`gh auth status`)
-- releaseブランチは `release/vX.Y.Z` 形式で単一実行（重複作成禁止）
-- developブランチにリリース対象の変更が揃っていること
-
-## トラブルシューティング
-
-### バージョンが検出できない
-- developにConventional Commits準拠の変更があるか確認
-- 直前のリリースからの差分がない場合はreleaseブランチを作成できません
-
-### ワークフローの進捗確認
+以下のスクリプトを実行してリリースブランチを作成します：
 
 ```bash
-gh run watch \$(gh run list --workflow=create-release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+scripts/create-release-branch.sh
 ```
 
-release.yml / publish.yml の進行状況も同様に `gh run watch` で確認できます。
+スクリプトはGitHub Actionsの`create-release.yml`を起動し、リモートで次を実行します：
 
----
+1. developでsemantic-releaseドライラン
+2. 次バージョン番号の決定
+3. `release/vX.Y.Z`ブランチの作成とpush
 
-実行しますか？ (このプロンプトを確認後、スクリプトを実行します)
+その後 release.yml → publish.yml → release-binaries.yml が連鎖的に進み、各プラットフォーム向け成果物を含むリリースが完了します。

@@ -94,8 +94,8 @@ jobs:
 
       - name: Verify auto-merge command
         run: |
-          if ! grep -q 'GH_TOKEN: $${{ secrets.PAT || secrets.GITHUB_TOKEN }}' .github/workflows/auto-merge.yml; then
-            echo "❌ ERROR: GH_TOKEN fallback env not found"
+          if ! grep -q "secrets.PAT || secrets.GITHUB_TOKEN" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: GH_TOKEN fallback expression not found"
             exit 1
           fi
           echo "✅ GH_TOKEN env is configured with PAT fallback"

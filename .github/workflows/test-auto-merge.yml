@@ -94,7 +94,7 @@ jobs:
 
       - name: Verify auto-merge command
         run: |
-          if ! rg -q "GH_TOKEN:.*secrets\.PAT" .github/workflows/auto-merge.yml; then
+          if ! grep -E -q "GH_TOKEN:.*secrets\.PAT" .github/workflows/auto-merge.yml; then
             echo "❌ ERROR: GH_TOKEN assignment is not restricted to secrets.PAT"
             exit 1
           fi

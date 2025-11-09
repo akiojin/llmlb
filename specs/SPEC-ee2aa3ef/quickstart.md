@@ -181,7 +181,7 @@ cat CHANGELOG.md
 **または直接スクリプト実行**:
 
 ```bash
-./scripts/release/create-release-branch.sh
+./scripts/create-release-branch.sh
 
 # 実行内容:
 # ✅ gh / 認証状態を確認
@@ -420,7 +420,7 @@ git push --force-with-lease
 ```bash
 # 正式版のバイナリが必要な場合は release ブランチ経由で実行
 
-./scripts/release/create-release-branch.sh
+./scripts/create-release-branch.sh
 # → create-release.yml → release.yml → publish.yml が自動で動作
 # → publish.yml が GitHub Release にバイナリを添付
 ```
@@ -439,7 +439,7 @@ git branch -r | grep 'origin/release/'
 git push origin --delete release/v1.3.0
 
 # または既存のワークフロー完了を待ってから再実行
-./scripts/release/create-release-branch.sh
+./scripts/create-release-branch.sh
 ```
 
 ### Q5. ホットフィックスブランチ作成失敗

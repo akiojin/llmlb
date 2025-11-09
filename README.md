@@ -18,6 +18,7 @@ Ollama Coordinator is a system that provides unified management and a single API
 - **Self-registering Agents**: Agents automatically register with the Coordinator
 - **WebUI Management**: Manage agent settings, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
+- **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
 
 ## Load Balancing
 

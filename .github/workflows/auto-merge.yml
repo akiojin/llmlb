@@ -6,15 +6,98 @@ on:
     branches:
       - main
       - develop
+  workflow_dispatch:
+  push:
+    branches: [test/**]
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
+  verify-auto-merge-structure:
+    name: Verify Auto Merge Workflow
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check workflow exists
+        run: |
+          if [ ! -f .github/workflows/auto-merge.yml ]; then
+            echo "❌ ERROR: auto-merge.yml does not exist"
+            exit 1
+          fi
+          echo "✅ auto-merge.yml exists"
+
+      - name: Verify workflow name
+        run: |
+          WORKFLOW_NAME=$(grep "^name:" .github/workflows/auto-merge.yml | head -1 | cut -d':' -f2- | xargs)
+          if [ "$WORKFLOW_NAME" != "Auto Merge PR" ]; then
+            echo "❌ ERROR: Workflow name is not 'Auto Merge PR' (actual: $WORKFLOW_NAME)"
+            exit 1
+          fi
+          echo "✅ Workflow name is correct"
+
+      - name: Verify triggers and branches
+        run: |
+          if ! grep -q "^  pull_request:" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: pull_request trigger not found"
+            exit 1
+          fi
+          if ! grep -q "types: \\[opened, synchronize, reopened, ready_for_review\\]" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: pull_request types mismatch"
+            exit 1
+          fi
+          for branch in main develop; do
+            if ! grep -q "      - $branch" .github/workflows/auto-merge.yml; then
+              echo "❌ ERROR: Branch '$branch' missing from trigger"
+              exit 1
+            fi
+          done
+          echo "✅ pull_request trigger and branches verified"
+
+      - name: Verify permissions and draft handling
+        run: |
+          if ! grep -q "contents: write" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: 'contents: write' permission missing"
+            exit 1
+          fi
+          if ! grep -q "pull-requests: write" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: 'pull-requests: write' permission missing"
+            exit 1
+          fi
+          if grep -q "if: github.event.pull_request.draft == false" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: Job-level draft guard should not exist"
+            exit 1
+          fi
+          if ! grep -q "github.event.pull_request.draft" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: Inline draft handling missing"
+            exit 1
+          fi
+          echo "✅ Permissionsとドラフト制御を確認"
+
+      - name: Verify auto-merge command configuration
+        run: |
+          if ! grep -E -q "GH_TOKEN:.*secrets\.PAT" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: GH_TOKEN assignment is not restricted to secrets.PAT"
+            exit 1
+          fi
+          if ! grep -q "Required secret PAT is not configured" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: PAT presence check missing"
+            exit 1
+          fi
+          if ! grep -q "gh pr merge --auto --merge" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: gh pr merge command missing"
+            exit 1
+          fi
+          echo "✅ auto-merge command prerequisites verified"
+
   auto-merge:
     name: Enable Auto Merge
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
     steps:
       - name: Enable auto-merge

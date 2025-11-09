@@ -3,7 +3,6 @@ name: semantic-release
 on:
   push:
     branches:
-      - main
       - develop
 
 permissions:
@@ -12,24 +11,25 @@ permissions:
   pull-requests: write
 
 jobs:
-  build-binaries:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/release-binaries.yml
-    with:
-      target_branch: main
-    secrets: inherit
-
   release:
-    needs: [build-binaries]
-    if: always() && (needs.build-binaries.result == 'success' || needs.build-binaries.result == 'skipped')
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: ubuntu-latest
     concurrency:
-      group: semantic-release-${{ github.ref }}
+      group: semantic-release-develop
       cancel-in-progress: false
+    env:
+      PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
     outputs:
       release_tag: ${{ steps.capture_release.outputs.tag }}
       release_version: ${{ steps.capture_release.outputs.version }}
     steps:
+      - name: Ensure Personal Access Token is configured
+        run: |
+          if [[ -z "${PERSONAL_ACCESS_TOKEN:-}" ]]; then
+            echo "::error::PERSONAL_ACCESS_TOKEN secret is not configured." >&2
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -54,22 +54,10 @@ jobs:
       - name: Install npm dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download packaged binaries
-        if: github.ref == 'refs/heads/main'
-        uses: actions/download-artifact@v4
-        with:
-          path: release
-          merge-multiple: true
-
-      - name: List packaged binaries
-        if: github.ref == 'refs/heads/main'
-        run: ls -R release
-
       - name: Run semantic-release
         env:
-          # Prefer a fine-grained PAT (SEMANTIC_RELEASE_TOKEN) when available so the workflow can push release commits even on protected branches.
-          GITHUB_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN != '' && secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN != '' && secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ env.PERSONAL_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ env.PERSONAL_ACCESS_TOKEN }}
         run: pnpm exec semantic-release
 
       - name: Capture release outputs
@@ -86,12 +74,3 @@ jobs:
           version=$(jq -r '.version' "$info_file")
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-  package:
-    needs: release
-    if: needs.release.outputs.release_tag != ''
-    uses: ./.github/workflows/release-binaries.yml
-    with:
-      target_branch: main # Release artifacts are always produced from the post-release commit on main
-      release_tag: ${{ needs.release.outputs.release_tag }}
-    secrets: inherit

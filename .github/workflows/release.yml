@@ -1,0 +1,144 @@
+name: release
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  semantic-release:
+    name: Semantic release
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    outputs:
+      released: ${{ steps.capture_release.outputs.released }}
+      release_tag: ${{ steps.capture_release.outputs.tag }}
+      release_version: ${{ steps.capture_release.outputs.version }}
+      release_branch: ${{ github.ref_name }}
+    steps:
+      - name: Ensure Personal Access Token is configured
+        run: |
+          if [[ -z "${RELEASE_TOKEN:-}" ]]; then
+            echo "::error::PERSONAL_ACCESS_TOKEN secret is not configured." >&2
+            exit 1
+          fi
+
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ env.RELEASE_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit --locked
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ env.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ env.RELEASE_TOKEN }}
+        run: pnpm exec semantic-release
+
+      - name: Capture release outputs
+        id: capture_release
+        run: |
+          info_file="release/semantic-release.json"
+          if [[ -f "$info_file" ]]; then
+            tag=$(jq -r '.tag' "$info_file")
+            version=$(jq -r '.version' "$info_file")
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "No semantic-release metadata found. Skipping downstream steps."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+  merge-to-main:
+    name: Merge release branch and backmerge
+    needs: semantic-release
+    if: needs.semantic-release.result == 'success' && needs.semantic-release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_BRANCH: ${{ needs.semantic-release.outputs.release_branch }}
+      RELEASE_VERSION: ${{ needs.semantic-release.outputs.release_version }}
+      RELEASE_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+    steps:
+      - name: Ensure Personal Access Token is configured
+        run: |
+          if [[ -z "${RELEASE_TOKEN:-}" ]]; then
+            echo "::error::PERSONAL_ACCESS_TOKEN secret is not configured." >&2
+            exit 1
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ env.RELEASE_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch release and develop branches
+        run: |
+          git fetch origin "$RELEASE_BRANCH:$RELEASE_BRANCH"
+          git fetch origin develop:develop
+
+      - name: Merge release branch into main
+        run: |
+          set -euo pipefail
+          git merge --no-ff "$RELEASE_BRANCH" -m "chore(release): merge $RELEASE_BRANCH into main (v${RELEASE_VERSION})
+
+Automated merge from release workflow."
+          git push origin main
+
+      - name: Backmerge main into develop
+        run: |
+          set -euo pipefail
+          git checkout -B develop origin/develop
+          git merge --no-ff main -m "chore: backmerge main after release (v${RELEASE_VERSION})
+
+Automated backmerge from release workflow."
+          git push origin develop
+
+      - name: Delete release branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; then
+            git push origin --delete "$RELEASE_BRANCH"
+            echo "Deleted remote branch $RELEASE_BRANCH"
+          else
+            echo "Release branch $RELEASE_BRANCH already removed"
+          fi

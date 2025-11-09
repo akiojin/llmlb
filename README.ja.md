@@ -236,7 +236,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 4. GitHubリポジトリでリリースを作成し、各プラットフォーム向けアーカイブをアップロードする。リリースノートには対応プラットフォーム・ハッシュ値（任意）・既知の制限事項を記載する。
 5. 必要に応じて自動化（GitHub Actions 等）で上記手順を再現し、リリースタグ作成と同時にアーティファクトをアップロードする。  
 本リポジトリでは `.github/workflows/semantic-release.yml` が Conventional Commits からバージョンを決定して `Cargo.toml` 群と `CHANGELOG.md` を更新し、その後 `.github/workflows/release-binaries.yml` を呼び出して各プラットフォーム向けアーカイブを生成・検証した上で GitHub Release に添付します。
-   - `main` ブランチが保護されている場合、GitHub Actions の既定トークンではリリースコミットやタグ作成がブロックされます。対象リポジトリに限定した **Fine-grained Personal Access Token** を作成し、リポジトリシークレット `SEMANTIC_RELEASE_TOKEN` に登録してください。最低限必要な権限は次のとおりです: Contents (Read & write)、Metadata (Read)、Actions (Read)、Workflows (Read & write)、Issues (Read & write)、Pull requests (Read & write)、Releases (Read & write)。有効期限を短めに設定し、定期的にローテーションすることを推奨します。詳細手順は `CLAUDE.md` の「semantic-release トークン設定」を参照してください。
+   - `main` ブランチが保護されている場合、GitHub Actions の既定トークンではリリースコミットやタグ作成がブロックされます。対象リポジトリに限定した **Fine-grained Personal Access Token** を作成し、リポジトリシークレット `PERSONAL_ACCESS_TOKEN` に登録してください。最低限必要な権限は次のとおりです: Contents (Read & write)、Metadata (Read)、Actions (Read)、Workflows (Read & write)、Issues (Read & write)、Pull requests (Read & write)、Releases (Read & write)。有効期限を短めに設定し、定期的にローテーションすることを推奨します。詳細手順は `CLAUDE.md` の「semantic-release トークン設定」を参照してください。
 
 自動作成されるアーカイブ形式は以下のとおりです。
 

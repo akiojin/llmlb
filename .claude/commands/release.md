@@ -2,38 +2,33 @@
 
 ## 概要
 
-このコマンドは、developブランチからmainブランチへのプルリクエストを作成し、
-正式版リリースプロセスを開始します。
+このコマンドは `scripts/release/create-release-branch.sh` を実行し、
+`akiojin/unity-mcp-server` と同じ方式の自動リリース（release/vX.Y.Zブランチ → release.yml → publish.yml）を起動します。
 
 ## 実行内容
 
-1. **前提条件チェック**
-   - GitHub CLI (gh)の確認
-   - develop/mainブランチの存在確認
-   - 既存PRの確認
-
-2. **PR作成**
-   - develop → main プルリクエストを自動作成
-   - リリース用テンプレートを適用
-   - `release`, `auto-merge` ラベルを付与
-
-3. **自動処理**（PR作成後）
-   - 品質チェックの自動実行
-   - 品質チェック合格後、mainへ自動マージ
-   - semantic-releaseによるバージョニング
-   - CHANGELOG・Cargo.toml自動更新
-   - GitHubタグ・リリース自動作成
-   - 全プラットフォームのバイナリ自動ビルド
+1. **GitHub CLIの状態確認**
+   - `gh` コマンドの存在と `gh auth status` を確認
+2. **create-release.yml の実行**
+   - developブランチを元に semantic-release のドライランで次バージョンを決定
+   - `release/vX.Y.Z` ブランチを自動作成＆push
+3. **自動処理**（ブランチ作成後）
+   - releaseブランチのpush → `release.yml`
+     - semantic-release本番実行
+     - バージョンタグ + CHANGELOG + Cargo.toml更新
+     - mainへの自動マージ／developへのバックマージ／releaseブランチ削除
+   - mainへのpush → `publish.yml`
+     - `release-binaries.yml` を呼び出し、全プラットフォームのバイナリをGitHub Releaseへ添付
 
 ## 使用方法
 
-単に以下のコマンドを実行してください：
+以下を実行してください：
 
 ```bash
-./scripts/release/create-release-pr.sh
+./scripts/release/create-release-branch.sh
 ```
 
-または、Claude Codeから：
+Claude Codeからは：
 
 ```
 /release
@@ -41,23 +36,23 @@
 
 ## 注意事項
 
-- このコマンドはPR作成のみを行います
-- 実際のマージとリリースは品質チェック合格後に自動実行されます
-- developブランチが事前に作成されている必要があります
+- GitHub CLIが認証済みであること (`gh auth status`)
+- releaseブランチは `release/vX.Y.Z` 形式で単一実行（重複作成禁止）
+- developブランチにリリース対象の変更が揃っていること
 
 ## トラブルシューティング
 
-### developブランチが存在しない
+### バージョンが検出できない
+- developにConventional Commits準拠の変更があるか確認
+- 直前のリリースからの差分がない場合はreleaseブランチを作成できません
+
+### ワークフローの進捗確認
 
 ```bash
-# developブランチを作成（メンテナが実行）
-git checkout -b develop main
-git push -u origin develop
+gh run watch \$(gh run list --workflow=create-release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 ```
 
-### 既存のPRがある場合
-
-スクリプトが既存PRを検出し、更新するか確認します。
+release.yml / publish.yml の進行状況も同様に `gh run watch` で確認できます。
 
 ---
 

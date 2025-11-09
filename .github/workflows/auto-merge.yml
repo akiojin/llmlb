@@ -80,12 +80,12 @@ jobs:
 
       - name: Verify auto-merge command configuration
         run: |
-          if ! grep -E -q "GH_TOKEN:.*secrets\.PAT" .github/workflows/auto-merge.yml; then
-            echo "❌ ERROR: GH_TOKEN assignment is not restricted to secrets.PAT"
+          if ! grep -E -q "GH_TOKEN:.*secrets\.PERSONAL_ACCESS_TOKEN" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: GH_TOKEN assignment is not restricted to secrets.PERSONAL_ACCESS_TOKEN"
             exit 1
           fi
-          if ! grep -q "Required secret PAT is not configured" .github/workflows/auto-merge.yml; then
-            echo "❌ ERROR: PAT presence check missing"
+          if ! grep -q "Required secret PERSONAL_ACCESS_TOKEN is not configured" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: PERSONAL_ACCESS_TOKEN presence check missing"
             exit 1
           fi
           if ! grep -q "gh pr merge --auto --merge" .github/workflows/auto-merge.yml; then
@@ -102,10 +102,10 @@ jobs:
     steps:
       - name: Enable auto-merge
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
-            echo "::error::Required secret PAT is not configured. Set secrets.PAT (Personal Access Token with contents/pull-requests write) to enable auto-merge."
+            echo "::error::Required secret PERSONAL_ACCESS_TOKEN is not configured. Set secrets.PERSONAL_ACCESS_TOKEN (Personal Access Token with contents/pull-requests write) to enable auto-merge."
             exit 1
           fi
 

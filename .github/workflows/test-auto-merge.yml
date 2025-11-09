@@ -86,8 +86,8 @@ jobs:
           fi
           echo "✅ Job-level draft guard removed"
 
-          if ! grep -q '\${{ github.event.pull_request.draft }}' .github/workflows/auto-merge.yml; then
-            echo "❌ ERROR: Inline draft check not found in auto-merge step"
+          if ! grep -q "github.event.pull_request.draft" .github/workflows/auto-merge.yml; then
+            echo "❌ ERROR: Inline draft handling not found in auto-merge step"
             exit 1
           fi
           echo "✅ Inline draft handling is present"

@@ -144,3 +144,35 @@ jobs:
         run: |
           echo "📄 Checking Markdown files..."
           pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github"
+
+  hook-tests:
+    # 要件: SPEC-dc648675 (Worktree環境での作業境界強制システム)
+    # 目的: Claude Code PreToolUse Hookの契約テストを実行
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Bats-core
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Set execute permissions on hook scripts
+        run: |
+          chmod +x .claude/hooks/block-git-branch-ops.sh
+          chmod +x .claude/hooks/block-cd-command.sh
+
+      - name: Run Hook contract tests
+        run: |
+          echo "🪝 Running Claude Code Hook tests..."
+          npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats

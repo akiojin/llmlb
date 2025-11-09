@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - 'release/**'
+  create:
   workflow_dispatch:
 
 permissions:
@@ -20,7 +21,11 @@ jobs:
   semantic-release:
     name: Semantic Release
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    if: >
+      (github.event_name == 'create' && startsWith(github.ref, 'refs/heads/release/')) ||
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name != 'create' && github.event_name != 'workflow_dispatch' &&
+       !startsWith(github.event.head_commit.message, 'chore(release):'))
 
     outputs:
       new_release_published: ${{ steps.semantic.outputs.new_release_published }}

@@ -1,3 +1,11 @@
+## [1.1.1](https://github.com/akiojin/ollama-coordinator/compare/v1.1.0...v1.1.1) (2025-11-11)
+
+
+### Bug Fixes
+
+* **docs:** improve README subtitle clarity ([151672a](https://github.com/akiojin/ollama-coordinator/commit/151672a3b1b89638c1cc82ab6810f2609d88da0b))
+* **lint:** disable MD001, MD012, MD025 for CHANGELOG compatibility ([c709a60](https://github.com/akiojin/ollama-coordinator/commit/c709a60db66a2d0f2f472f9b913bd3f937f19acc))
+
 # [1.1.0](https://github.com/akiojin/ollama-coordinator/compare/v1.0.0...v1.1.0) (2025-11-11)
 
 

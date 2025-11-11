@@ -106,27 +106,15 @@ jobs:
 
           echo "Merging $RELEASE_BRANCH to main (version: $VERSION)..."
           git fetch origin "$RELEASE_BRANCH"
-          git merge "origin/$RELEASE_BRANCH" --no-ff -m "chore(release): merge v${VERSION} to main
-
-Automated merge of release branch for version ${VERSION}
-🤖 Generated with GitHub Actions"
+          git merge "origin/$RELEASE_BRANCH" --no-ff -m "chore(release): merge v${VERSION} to main" \
+            -m "Automated merge of release branch for version ${VERSION}" \
+            -m "🤖 Generated with GitHub Actions"
 
           echo "Pushing to main..."
           git push origin main
 
-      - name: Backmerge main to develop
-        run: |
-          echo "Checking out develop..."
-          git fetch origin develop
-          git checkout develop
-
-          echo "Merging main to develop..."
-          git merge origin/main --no-ff -m "chore: backmerge main to develop after release
-
-🤖 Generated with GitHub Actions"
-
-          echo "Pushing to develop..."
-          git push origin develop
+      # Note: Backmerge to develop is now handled by publish.yml
+      # This ensures binaries are published before backmerging
 
       - name: Delete release branch
         run: |

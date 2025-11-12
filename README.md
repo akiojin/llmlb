@@ -293,10 +293,10 @@ cargo build --release
 cd agent
 cargo build --release
 
-# Start Agent
+# Start Agent (環境変数で上書き)
 COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator-agent
 
-# Or start without environment variable (default: http://localhost:8080)
+# 環境変数を指定しない場合はローカル設定パネルで保存した値、なければ http://localhost:8080
 ./target/release/ollama-coordinator-agent
 ```
 
@@ -314,12 +314,12 @@ COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator
 
 Manual installation is also supported. Download Ollama from [ollama.ai](https://ollama.ai).
 
-#### System tray (Windows / macOS)
+#### System tray & settings panel (Windows / macOS)
 
 - On Windows 10+ and macOS 12+, the agent now resides in the system tray / menu bar as soon as it starts.
-- Double-click the tray icon (or choose **Open Dashboard** in the tray menu) to launch `COORDINATOR_URL/dashboard` in your default browser.
-- Use the **Quit Agent** tray action to stop the background process without going back to the terminal.
-- Linux builds continue to run as a headless CLI daemon with no tray icon.
+- Double-clicking the tray icon (or using **Open Settings**) launches the local settings panel in your browser. There you can edit the coordinator URL, Ollama port, and heartbeat interval; the values are stored in `~/.ollama-coordinator/agent-settings.json` and override defaults unless `COORDINATOR_URL`/`OLLAMA_PORT`/`AGENT_HEARTBEAT_INTERVAL_SECS` environment variables are provided.
+- **Open Dashboard** still jumps to `COORDINATOR_URL/dashboard`, and **Quit Agent** stops the background process.
+- Linux builds continue to run as a headless CLI daemon (the settings panel URL is printed to stdout).
 
 ### Release Automation
 

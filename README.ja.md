@@ -205,21 +205,21 @@ cargo build --release
 cd agent
 cargo build --release
 
-# Agentを起動
+# Agentを起動（環境変数で上書き）
 COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator-agent
 
-# または環境変数なしで起動（デフォルト: http://localhost:8080）
+# 環境変数を指定しない場合は設定パネルで保存した値、なければ http://localhost:8080
 ./target/release/ollama-coordinator-agent
 ```
 
 **注意**: Agentは起動時にOllamaの存在を確認し、未インストールなら自動的にバイナリをダウンロード・検証・展開してから起動します。手動インストールが必要な場合は[ollama.ai](https://ollama.ai)から取得できます。
 
-#### システムトレイ表示（Windows / macOS）
+#### システムトレイ & 設定パネル（Windows / macOS）
 
-- Windows 10 以降および macOS 12 以降では、Agent 起動と同時にシステムトレイ（メニューバー）へ常駐アイコンが表示されます。
-- アイコンをダブルクリック、またはトレイメニューの **Dashboardを開く** を選択すると、既定ブラウザで `COORDINATOR_URL/dashboard` が開きます。
-- トレイメニューの **Agentを終了** から常駐プロセスを安全に停止できます。
-- Linux 版はこれまで通り CLI 常駐プロセスであり、トレイアイコンは表示されません。
+- Windows 10 以降 / macOS 12 以降では、起動と同時にトレイ常駐します。
+- ダブルクリック、もしくはトレイメニューの **設定パネルを開く** からローカル設定画面を表示し、コーディネーターURL / Ollamaポート / ハートビート間隔を編集できます。値は `~/.ollama-coordinator/agent-settings.json` に保存され、環境変数 (`COORDINATOR_URL` など) を指定しない限りこちらが優先されます。
+- **Dashboardを開く** は `COORDINATOR_URL/dashboard` を開き、**Agentを終了** で常駐プロセスを停止します。
+- Linux 版は従来通り CLI 常駐ですが、起動時にブラウザで開ける設定パネルURLを標準出力に表示します。
 
 ### リリースバイナリの作成と公開
 

@@ -1,7 +1,9 @@
 //! Ollama Coordinator Agent Entry Point
-
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use ollama_coordinator_agent::gui::tray::{run_with_system_tray, TrayOptions};
+use ollama_coordinator_agent::settings::{
+    load_settings_from_disk, start_settings_panel, StoredSettings,
+};
 use ollama_coordinator_agent::{
     client::CoordinatorClient, metrics::MetricsCollector, ollama::OllamaManager,
     registration::gpu_devices_valid,
@@ -22,8 +24,13 @@ use std::thread;
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn main() {
-    let config = LaunchConfig::from_env();
-    let tray_options = TrayOptions::from_coordinator_url(&config.coordinator_url);
+    let stored_settings = load_settings_from_disk();
+    let settings_panel =
+        start_settings_panel(stored_settings.clone()).expect("failed to start settings panel");
+    println!("Settings panel URL: {}", settings_panel.url());
+
+    let config = LaunchConfig::from_env_or_settings(&stored_settings);
+    let tray_options = TrayOptions::new(&config.coordinator_url, settings_panel.url());
 
     run_with_system_tray(tray_options, move |proxy| {
         let agent_config = config.clone();
@@ -43,7 +50,12 @@ fn main() {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 #[tokio::main]
 async fn main() {
-    let config = LaunchConfig::from_env();
+    let stored_settings = load_settings_from_disk();
+    let settings_panel =
+        start_settings_panel(stored_settings.clone()).expect("failed to start settings panel");
+    println!("Settings panel URL: {}", settings_panel.url());
+
+    let config = LaunchConfig::from_env_or_settings(&stored_settings);
     if let Err(err) = run_agent(config).await {
         eprintln!("Agent runtime exited: {}", err);
     }
@@ -215,16 +227,18 @@ struct LaunchConfig {
 }
 
 impl LaunchConfig {
-    fn from_env() -> Self {
+    fn from_env_or_settings(stored: &StoredSettings) -> Self {
         let coordinator_url = std::env::var("COORDINATOR_URL")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string());
-        let ollama_port = std::env::var("OLLAMA_PORT")
             .ok()
-            .and_then(|value| value.parse::<u16>().ok())
+            .or_else(|| stored.coordinator_url())
+            .unwrap_or_else(|| "http://localhost:8080".to_string());
+
+        let ollama_port = env_u16("OLLAMA_PORT")
+            .or(stored.ollama_port)
             .unwrap_or(11434);
-        let heartbeat_interval_secs = std::env::var("AGENT_HEARTBEAT_INTERVAL_SECS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
+
+        let heartbeat_interval_secs = env_u64("AGENT_HEARTBEAT_INTERVAL_SECS")
+            .or(stored.heartbeat_interval_secs)
             .unwrap_or(10);
 
         Self {
@@ -233,6 +247,18 @@ impl LaunchConfig {
             heartbeat_interval_secs,
         }
     }
+}
+
+fn env_u16(key: &str) -> Option<u16> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+}
+
+fn env_u64(key: &str) -> Option<u64> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
 }
 
 /// ローカルIPアドレスを取得

@@ -29,20 +29,26 @@ const ICON_SIZE: u32 = 32;
 #[derive(Debug, Clone)]
 pub struct TrayOptions {
     dashboard_url: String,
+    settings_url: String,
     tooltip: String,
 }
 
 impl TrayOptions {
-    /// `COORDINATOR_URL` をもとにトレイ起動オプションを組み立てる。
-    pub fn from_coordinator_url(coordinator_url: &str) -> Self {
+    /// トレイ表示に必要な情報をまとめる。
+    pub fn new(coordinator_url: &str, settings_url: &str) -> Self {
         Self {
             dashboard_url: build_dashboard_url(coordinator_url),
+            settings_url: settings_url.to_string(),
             tooltip: format!("Ollama Coordinator Agent\n{}", coordinator_url),
         }
     }
 
     fn dashboard_url(&self) -> &str {
         &self.dashboard_url
+    }
+
+    fn settings_url(&self) -> &str {
+        &self.settings_url
     }
 
     fn tooltip(&self) -> &str {
@@ -152,7 +158,7 @@ impl TrayController {
             #[cfg(target_os = "windows")]
             TrayIconEvent::DoubleClick { button, .. } => {
                 if matches!(button, MouseButton::Left) {
-                    self.open_dashboard();
+                    self.open_settings();
                 }
             }
             #[cfg(target_os = "macos")]
@@ -175,7 +181,7 @@ impl TrayController {
         if let Some(last) = self.last_click {
             if now.duration_since(last) <= DOUBLE_CLICK_WINDOW {
                 self.last_click = None;
-                self.open_dashboard();
+                self.open_settings();
                 return;
             }
         }
@@ -183,7 +189,9 @@ impl TrayController {
     }
 
     fn handle_menu_event(&mut self, event: MenuEvent) {
-        if event.id == *self.menu.open_dashboard.id() {
+        if event.id == *self.menu.open_settings.id() {
+            self.open_settings();
+        } else if event.id == *self.menu.open_dashboard.id() {
             self.open_dashboard();
         } else if event.id == *self.menu.quit.id() {
             self.teardown();
@@ -192,9 +200,11 @@ impl TrayController {
     }
 
     fn open_dashboard(&self) {
-        if let Err(err) = launch_dashboard(self.options.dashboard_url()) {
-            eprintln!("Failed to open dashboard: {err}");
-        }
+        open_url(self.options.dashboard_url(), "dashboard");
+    }
+
+    fn open_settings(&self) {
+        open_url(self.options.settings_url(), "settings panel");
     }
 
     fn teardown(&mut self) {
@@ -204,6 +214,7 @@ impl TrayController {
 
 struct TrayMenu {
     menu: Menu,
+    open_settings: MenuItem,
     open_dashboard: MenuItem,
     quit: MenuItem,
 }
@@ -211,22 +222,32 @@ struct TrayMenu {
 impl TrayMenu {
     fn new() -> Self {
         let menu = Menu::new();
+        let open_settings = MenuItem::new("設定パネルを開く", true, None);
         let open_dashboard = MenuItem::new("Dashboardを開く", true, None);
         let quit = MenuItem::new("エージェントを終了", true, None);
 
+        menu.append(&open_settings)
+            .expect("failed to append settings menu");
         menu.append(&open_dashboard)
             .expect("failed to append dashboard menu");
         menu.append(&quit).expect("failed to append quit menu");
 
         Self {
             menu,
+            open_settings,
             open_dashboard,
             quit,
         }
     }
 }
 
-fn launch_dashboard(url: &str) -> std::io::Result<()> {
+fn open_url(url: &str, label: &str) {
+    if let Err(err) = launch_url(url) {
+        eprintln!("Failed to open {}: {err}", label);
+    }
+}
+
+fn launch_url(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         Command::new("rundll32")

@@ -2,6 +2,8 @@
 //!
 //! エージェントの状態をメモリ内で管理し、データベースと同期
 
+pub mod models;
+
 use chrono::Utc;
 use ollama_coordinator_common::{
     error::{CoordinatorError, CoordinatorResult},

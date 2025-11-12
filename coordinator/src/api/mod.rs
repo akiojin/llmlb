@@ -6,6 +6,7 @@ pub mod agent;
 pub mod dashboard;
 pub mod health;
 pub mod metrics;
+pub mod models;
 pub mod proxy;
 
 use crate::AppState;
@@ -67,6 +68,18 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/health", post(health::health_check))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))
+        // モデル管理API (SPEC-8ae67d67)
+        .route("/api/models/available", get(models::get_available_models))
+        .route("/api/models/distribute", post(models::distribute_models))
+        .route(
+            "/api/agents/:agent_id/models",
+            get(models::get_agent_models),
+        )
+        .route(
+            "/api/agents/:agent_id/models/pull",
+            post(models::pull_model_to_agent),
+        )
+        .route("/api/tasks/:task_id", get(models::get_task_progress))
         .nest_service("/dashboard", static_files)
         .with_state(state)
 }

@@ -19,8 +19,17 @@ pub mod registry;
 /// データベースアクセス
 pub mod db;
 
+/// Ollama公式ライブラリAPI通信
+pub mod ollama;
+
+/// ダウンロードタスク管理
+pub mod tasks;
+
 /// メトリクス収集・管理
 pub mod metrics;
+
+/// モデル管理（GPU選択ロジック）
+pub mod models;
 
 /// 設定管理（設定ファイル読み込み）
 ///

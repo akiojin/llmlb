@@ -316,7 +316,7 @@ Manual installation is also supported. Download Ollama from [ollama.ai](https://
 
 #### System tray & settings panel (Windows / macOS)
 
-- On Windows 10+ and macOS 12+, the agent now resides in the system tray / menu bar as soon as it starts.
+- On Windows 10+ and macOS 12+, the agent now resides in the system tray / menu bar as soon as it starts (settings panel is accessible directly from the tray).
 - Double-clicking the tray icon (or using **Open Settings**) launches the local settings panel in your browser. There you can edit the coordinator URL, Ollama port, and heartbeat interval; the values are stored in `~/.ollama-coordinator/agent-settings.json` and override defaults unless `COORDINATOR_URL`/`OLLAMA_PORT`/`AGENT_HEARTBEAT_INTERVAL_SECS` environment variables are provided.
 - **Open Dashboard** still jumps to `COORDINATOR_URL/dashboard`, and **Quit Agent** stops the background process.
 - Linux builds continue to run as a headless CLI daemon (the settings panel URL is printed to stdout).

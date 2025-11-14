@@ -117,6 +117,14 @@ jobs:
           echo "CC_aarch64_apple_darwin=clang" >> $GITHUB_ENV
           echo "CXX_aarch64_apple_darwin=clang++" >> $GITHUB_ENV
 
+      - name: Configure macOS toolchain (x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          echo "CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=clang" >> $GITHUB_ENV
+          echo "CC_x86_64_apple_darwin=clang" >> $GITHUB_ENV
+          echo "CXX_x86_64_apple_darwin=clang++" >> $GITHUB_ENV
+
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }} -p ollama-coordinator-coordinator -p ollama-coordinator-agent
 

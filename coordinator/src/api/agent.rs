@@ -20,8 +20,14 @@ pub async fn register_agent(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, AppError> {
+    info!(
+        "Agent registration request: machine={}, ip={}, gpu_available={}",
+        req.machine_name, req.ip_address, req.gpu_available
+    );
+
     // GPU必須要件の検証（詳細なエラーメッセージ）
     if !req.gpu_available {
+        error!("Agent registration rejected: GPU not available (machine={})", req.machine_name);
         return Err(AppError(CoordinatorError::Common(
             ollama_coordinator_common::error::CommonError::Validation(
                 "GPU hardware is required for agent registration. gpu_available must be true."
@@ -31,6 +37,7 @@ pub async fn register_agent(
     }
 
     if req.gpu_devices.is_empty() {
+        error!("Agent registration rejected: No GPU devices (machine={})", req.machine_name);
         return Err(AppError(CoordinatorError::Common(
             ollama_coordinator_common::error::CommonError::Validation(
                 "GPU hardware is required for agent registration. No GPU devices detected in gpu_devices array."
@@ -40,6 +47,7 @@ pub async fn register_agent(
     }
 
     if !req.gpu_devices.iter().all(|device| device.is_valid()) {
+        error!("Agent registration rejected: Invalid GPU device info (machine={})", req.machine_name);
         return Err(AppError(CoordinatorError::Common(
             ollama_coordinator_common::error::CommonError::Validation(
                 "GPU hardware is required for agent registration. Invalid GPU device information (empty model or zero count)."
@@ -69,6 +77,12 @@ pub async fn register_agent(
         .unwrap_or(16_000_000_000); // デフォルトは16GB（gpt-oss:20b）
 
     let model_name = crate::models::gpu_selector::select_model_by_gpu_memory(gpu_memory_bytes);
+
+    info!(
+        "Selected model for auto-distribution: model={}, gpu_memory_gb={:.2}",
+        model_name,
+        gpu_memory_bytes as f64 / 1_000_000_000.0
+    );
 
     let mut response = state.registry.register(req).await?;
 

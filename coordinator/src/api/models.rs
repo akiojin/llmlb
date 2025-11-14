@@ -162,10 +162,14 @@ impl IntoResponse for AppError {
 pub async fn get_available_models(
     State(_state): State<AppState>,
 ) -> Result<Json<AvailableModelsResponse>, AppError> {
+    tracing::debug!("Fetching available models from Ollama library");
+
     let client = OllamaClient::new()?;
 
     // 事前定義モデルを取得（エージェントからの取得は後で実装）
     let models = client.get_predefined_models();
+
+    tracing::info!("Available models retrieved: count={}", models.len());
 
     Ok(Json(AvailableModelsResponse {
         models,
@@ -178,8 +182,21 @@ pub async fn distribute_models(
     State(state): State<AppState>,
     Json(request): Json<DistributeModelsRequest>,
 ) -> Result<(StatusCode, Json<DistributeModelsResponse>), AppError> {
+    tracing::info!(
+        "Model distribution request: model={}, target={}",
+        request.model_name,
+        request.target
+    );
+
     // モデル名のバリデーション
-    validate_model_name(&request.model_name)?;
+    if let Err(e) = validate_model_name(&request.model_name) {
+        tracing::error!(
+            "Model name validation failed: model={}, error={}",
+            request.model_name,
+            e
+        );
+        return Err(e.into());
+    }
 
     // ターゲットエージェントを決定
     let agent_ids = match request.target.as_str() {
@@ -205,6 +222,11 @@ pub async fn distribute_models(
 
         // エージェントがオンラインであることを確認
         if agent.status != ollama_coordinator_common::types::AgentStatus::Online {
+            tracing::error!(
+                "Cannot distribute to offline agent: agent_id={}, status={:?}",
+                agent_id,
+                agent.status
+            );
             return Err(CoordinatorError::AgentOffline(agent_id).into());
         }
 
@@ -254,6 +276,13 @@ pub async fn distribute_models(
         });
     }
 
+    tracing::info!(
+        "Model distribution initiated: model={}, tasks_created={}, task_ids={:?}",
+        request.model_name,
+        task_ids.len(),
+        task_ids
+    );
+
     Ok((
         StatusCode::ACCEPTED,
         Json(DistributeModelsResponse { task_ids }),
@@ -283,14 +312,32 @@ pub async fn pull_model_to_agent(
     Path(agent_id): Path<Uuid>,
     Json(request): Json<PullModelRequest>,
 ) -> Result<(StatusCode, Json<PullModelResponse>), AppError> {
+    tracing::info!(
+        "Model pull request: agent_id={}, model={}",
+        agent_id,
+        request.model_name
+    );
+
     // モデル名のバリデーション
-    validate_model_name(&request.model_name)?;
+    if let Err(e) = validate_model_name(&request.model_name) {
+        tracing::error!(
+            "Model name validation failed: model={}, error={}",
+            request.model_name,
+            e
+        );
+        return Err(e.into());
+    }
 
     // エージェントが存在することを確認
     let agent = state.registry.get(agent_id).await?;
 
     // エージェントがオンラインであることを確認
     if agent.status != ollama_coordinator_common::types::AgentStatus::Online {
+        tracing::error!(
+            "Cannot pull to offline agent: agent_id={}, status={:?}",
+            agent_id,
+            agent.status
+        );
         return Err(CoordinatorError::AgentOffline(agent_id).into());
     }
 
@@ -346,12 +393,17 @@ pub async fn get_task_progress(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
 ) -> Result<Json<DownloadTask>, AppError> {
+    tracing::debug!("Task progress query: task_id={}", task_id);
+
     // タスクマネージャーからタスクを取得
     let task = state
         .task_manager
         .get_task(task_id)
         .await
-        .ok_or_else(|| CoordinatorError::Internal(format!("Task {} not found", task_id)))?;
+        .ok_or_else(|| {
+            tracing::error!("Task not found: task_id={}", task_id);
+            CoordinatorError::Internal(format!("Task {} not found", task_id))
+        })?;
 
     Ok(Json(task))
 }
@@ -374,7 +426,17 @@ pub async fn update_progress(
         .task_manager
         .update_progress(task_id, request.progress, request.speed)
         .await
-        .ok_or_else(|| CoordinatorError::Internal(format!("Task {} not found", task_id)))?;
+        .ok_or_else(|| {
+            tracing::error!("Failed to update progress, task not found: task_id={}", task_id);
+            CoordinatorError::Internal(format!("Task {} not found", task_id))
+        })?;
+
+    // 完了時に特別なログを出力
+    if request.progress >= 1.0 {
+        tracing::info!("Task completed: task_id={}", task_id);
+    } else if request.progress == 0.0 {
+        tracing::info!("Task started: task_id={}", task_id);
+    }
 
     Ok(StatusCode::OK)
 }

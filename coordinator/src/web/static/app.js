@@ -44,6 +44,7 @@ const state = {
 
 let requestsChart = null;
 let agentMetricsChart = null;
+let modelsInitPromise = null;
 const modalRefs = {
   modal: null,
   close: null,
@@ -87,6 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalDelete = document.getElementById("agent-modal-delete");
   const modalDisconnect = document.getElementById("agent-modal-disconnect");
   const tbody = document.getElementById("agents-body");
+
+  initTabs();
 
   paginationRefs.prev = document.getElementById("page-prev");
   paginationRefs.next = document.getElementById("page-next");
@@ -324,7 +327,7 @@ async function refreshData({ manual = false } = {}) {
     }
 
     const renderStart = performance.now();
-    applyOverviewData(overview);
+    await applyOverviewData(overview);
     const renderMs = performance.now() - renderStart;
     const serverMs =
       typeof overview?.generation_time_ms === "number"
@@ -337,7 +340,7 @@ async function refreshData({ manual = false } = {}) {
   }
 }
 
-function applyOverviewData(overview) {
+async function applyOverviewData(overview) {
   state.agents = Array.isArray(overview.agents) ? overview.agents : [];
   state.stats = overview.stats ?? null;
   state.history = Array.isArray(overview.history) ? overview.history : [];
@@ -351,6 +354,8 @@ function applyOverviewData(overview) {
   hideError();
   setConnectionStatus("online");
   updateLastRefreshed(new Date(), generatedAt);
+
+  await ensureModelsUiReady();
 }
 
 async function fetchLegacyOverview() {
@@ -1887,34 +1892,38 @@ function initTabs() {
  * models.jsを動的にインポートしてモデル管理UIを初期化
  */
 async function initModels() {
+  const modelsModule = await import('/dashboard/models.js');
+
+  if (typeof modelsModule.initModelsUI !== 'function') {
+    throw new Error('models.js is missing initModelsUI export');
+  }
+
+  await modelsModule.initModelsUI(state.agents);
+
+  if (typeof modelsModule.updateModelsUI === 'function') {
+    window.updateModelsUI = modelsModule.updateModelsUI;
+  }
+}
+
+async function ensureModelsUiReady() {
+  if (typeof window.updateModelsUI === 'function') {
+    window.updateModelsUI(state.agents);
+    return;
+  }
+
+  if (!modelsInitPromise) {
+    modelsInitPromise = initModels().catch((error) => {
+      modelsInitPromise = null;
+      throw error;
+    });
+  }
+
   try {
-    const modelsModule = await import('/dashboard/models.js');
-
-    if (modelsModule && modelsModule.initModelsUI) {
-      await modelsModule.initModelsUI(state.agents);
-
-      // グローバルにエクスポートして他の場所から呼び出せるようにする
-      window.updateModelsUI = modelsModule.updateModelsUI;
+    await modelsInitPromise;
+    if (typeof window.updateModelsUI === 'function') {
+      window.updateModelsUI(state.agents);
     }
   } catch (error) {
     console.error('Failed to initialize models UI:', error);
   }
 }
-
-// ========== 拡張された初期化 ==========
-
-// タブ機能を初期化
-document.addEventListener('DOMContentLoaded', () => {
-  initTabs();
-
-  // エージェント情報取得後にモデルUIを初期化
-  const originalFetch = fetchAll;
-  window.fetchAll = async function() {
-    await originalFetch();
-
-    // 初回のみモデルUIを初期化
-    if (!window.updateModelsUI) {
-      await initModels();
-    }
-  };
-});

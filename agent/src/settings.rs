@@ -2,6 +2,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::mpsc::{self, Sender},
     thread,
 };
@@ -13,7 +14,10 @@ use axum::{
     routing::get,
     Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, Deserializer},
+    Deserialize, Serialize,
+};
 use tokio::{net::TcpListener, runtime::Builder};
 
 use ollama_coordinator_common::error::AgentError;
@@ -48,7 +52,9 @@ struct AppState {
 #[derive(Deserialize, Debug)]
 struct SettingsFormInput {
     coordinator_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_u16")]
     ollama_port: Option<u16>,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
     heartbeat_interval_secs: Option<u64>,
 }
 
@@ -313,4 +319,41 @@ fn html_escape(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+fn deserialize_opt_u16<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_optional_number(deserializer)
+}
+
+fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_optional_number(deserializer)
+}
+
+fn deserialize_optional_number<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: std::fmt::Display,
+{
+    let raw = Option::<String>::deserialize(deserializer)?;
+    match raw {
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                trimmed
+                    .parse::<T>()
+                    .map(Some)
+                    .map_err(|err| de::Error::custom(err.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
 }

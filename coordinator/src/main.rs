@@ -1,6 +1,7 @@
 //! Ollama Coordinator Server Entry Point
 
 use ollama_coordinator_coordinator::{api, balancer, health, logging, registry, tasks, AppState};
+use std::net::SocketAddr;
 use tracing::info;
 
 #[derive(Clone)]
@@ -120,7 +121,7 @@ async fn run_server(config: ServerConfig) {
         task_manager,
     };
 
-    let app = api::create_router(state);
+    let router = api::create_router(state);
 
     let bind_addr = config.bind_addr();
     let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -129,5 +130,10 @@ async fn run_server(config: ServerConfig) {
 
     info!("Coordinator server listening on {}", bind_addr);
 
-    axum::serve(listener, app).await.expect("Server error");
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .expect("Server error");
 }

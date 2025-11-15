@@ -1690,7 +1690,7 @@ async function fetchRequestHistory() {
     console.error("Failed to fetch request history:", error);
     const tbody = document.getElementById("request-history-tbody");
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-message">履歴の読み込みに失敗しました</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-message">履歴の読み込みに失敗しました</td></tr>`;
     }
   }
 }
@@ -1712,7 +1712,7 @@ function renderRequestHistory() {
   filtered = filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-message">履歴がありません</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-message">履歴がありません</td></tr>`;
     updateHistoryPagination(0, 0);
     return;
   }
@@ -1730,6 +1730,7 @@ function renderRequestHistory() {
     const statusText = record.status.type === "success"
       ? "成功"
       : `エラー: ${escapeHtml(record.status.message || "不明")}`;
+    const clientIp = record.client_ip || "-";
 
     return `
       <tr data-record-id="${escapeHtml(record.id)}">
@@ -1737,6 +1738,7 @@ function renderRequestHistory() {
         <td>${escapeHtml(record.request_type)}</td>
         <td>${escapeHtml(record.model)}</td>
         <td title="${escapeHtml(record.agent_ip)}">${escapeHtml(record.agent_machine_name)}</td>
+        <td>${escapeHtml(clientIp)}</td>
         <td>${escapeHtml(record.duration_ms)}ms</td>
         <td><span class="${statusClass}">${statusText}</span></td>
         <td><button class="btn btn-sm view-request-detail" data-id="${escapeHtml(record.id)}">詳細</button></td>
@@ -1789,6 +1791,7 @@ async function showRequestDetail(id) {
     document.getElementById("request-detail-type").textContent = record.request_type;
     document.getElementById("request-detail-model").textContent = record.model;
     document.getElementById("request-detail-agent").textContent = `${record.agent_machine_name} (${record.agent_ip})`;
+    document.getElementById("request-detail-client-ip").textContent = record.client_ip || "未取得";
     document.getElementById("request-detail-duration").textContent = `${record.duration_ms}ms`;
 
     const statusText = record.status.type === "success"

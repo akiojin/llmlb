@@ -4,7 +4,7 @@
 use crate::{api::agent::AppError, balancer::RequestOutcome, AppState};
 use axum::{
     body::Body,
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -18,17 +18,24 @@ use ollama_coordinator_common::{
         RequestType,
     },
 };
-use std::{io, sync::Arc, time::Instant};
+use std::{
+    io,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Instant,
+};
 use uuid::Uuid;
 
 /// POST /api/chat - Ollama Chat APIプロキシ
 pub async fn proxy_chat(
+    ConnectInfo(client_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Response, AppError> {
     proxy_chat_with_handlers(
         &state,
         req,
+        client_addr.ip(),
         |response, _| forward_streaming_response(response).map_err(AppError::from),
         |payload, _| Ok((StatusCode::OK, Json(payload)).into_response()),
     )
@@ -37,12 +44,14 @@ pub async fn proxy_chat(
 
 /// POST /api/generate - Ollama Generate APIプロキシ
 pub async fn proxy_generate(
+    ConnectInfo(client_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     Json(req): Json<GenerateRequest>,
 ) -> Result<Response, AppError> {
     proxy_generate_with_handlers(
         &state,
         req,
+        client_addr.ip(),
         |response, _| forward_streaming_response(response).map_err(AppError::from),
         |payload, _| Ok((StatusCode::OK, Json(payload)).into_response()),
     )
@@ -53,6 +62,7 @@ pub async fn proxy_generate(
 pub(crate) async fn proxy_chat_with_handlers<S, C>(
     state: &AppState,
     req: ChatRequest,
+    client_ip: IpAddr,
     stream_handler: S,
     completion_handler: C,
 ) -> Result<Response, AppError>
@@ -99,6 +109,7 @@ where
                     agent_id,
                     agent_machine_name: agent_machine_name.clone(),
                     agent_ip,
+                    client_ip: Some(client_ip),
                     request_body: request_body.clone(),
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -142,6 +153,7 @@ where
                 agent_id,
                 agent_machine_name: agent_machine_name.clone(),
                 agent_ip,
+                client_ip: Some(client_ip),
                 request_body: request_body.clone(),
                 response_body: None,
                 duration_ms: duration.as_millis() as u64,
@@ -181,6 +193,7 @@ where
                 agent_id,
                 agent_machine_name,
                 agent_ip,
+                client_ip: Some(client_ip),
                 request_body,
                 response_body: None,
                 duration_ms: duration.as_millis() as u64,
@@ -214,6 +227,7 @@ where
                     agent_id,
                     agent_machine_name,
                     agent_ip,
+                    client_ip: Some(client_ip),
                     request_body,
                     response_body,
                     duration_ms: duration.as_millis() as u64,
@@ -241,6 +255,7 @@ where
                     agent_id,
                     agent_machine_name,
                     agent_ip,
+                    client_ip: Some(client_ip),
                     request_body,
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -260,6 +275,7 @@ where
 pub(crate) async fn proxy_generate_with_handlers<S, C>(
     state: &AppState,
     req: GenerateRequest,
+    client_ip: IpAddr,
     stream_handler: S,
     completion_handler: C,
 ) -> Result<Response, AppError>
@@ -309,6 +325,7 @@ where
                     agent_id,
                     agent_machine_name: agent_machine_name.clone(),
                     agent_ip,
+                    client_ip: Some(client_ip),
                     request_body: request_body.clone(),
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -352,6 +369,7 @@ where
                 agent_id,
                 agent_machine_name: agent_machine_name.clone(),
                 agent_ip,
+                client_ip: Some(client_ip),
                 request_body: request_body.clone(),
                 response_body: None,
                 duration_ms: duration.as_millis() as u64,
@@ -391,6 +409,7 @@ where
                 agent_id,
                 agent_machine_name,
                 agent_ip,
+                client_ip: Some(client_ip),
                 request_body,
                 response_body: None,
                 duration_ms: duration.as_millis() as u64,
@@ -424,6 +443,7 @@ where
                     agent_id,
                     agent_machine_name,
                     agent_ip,
+                    client_ip: Some(client_ip),
                     request_body,
                     response_body,
                     duration_ms: duration.as_millis() as u64,
@@ -451,6 +471,7 @@ where
                     agent_id,
                     agent_machine_name,
                     agent_ip,
+                    client_ip: Some(client_ip),
                     request_body,
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,

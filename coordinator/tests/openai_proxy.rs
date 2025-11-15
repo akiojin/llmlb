@@ -1,4 +1,7 @@
-use axum::http::{header::CONTENT_TYPE, StatusCode};
+use axum::{
+    extract::connect_info::ConnectInfo,
+    http::{header::CONTENT_TYPE, StatusCode},
+};
 use ollama_coordinator_common::{
     protocol::{ChatRequest, ChatResponse, GenerateRequest},
     types::GpuDeviceInfo,
@@ -6,6 +9,7 @@ use ollama_coordinator_common::{
 use ollama_coordinator_coordinator::{
     api, balancer::LoadManager, registry::AgentRegistry, tasks::DownloadTaskManager, AppState,
 };
+use std::net::SocketAddr;
 use tower::ServiceExt;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -47,6 +51,12 @@ async fn build_state_with_mock(mock: &MockServer) -> AppState {
     state
 }
 
+fn attach_test_client_ip<B>(mut request: axum::http::Request<B>) -> axum::http::Request<B> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], 54000));
+    request.extensions_mut().insert(ConnectInfo(addr));
+    request
+}
+
 #[tokio::test]
 async fn test_proxy_chat_success() {
     let mock_server = MockServer::start().await;
@@ -78,7 +88,7 @@ async fn test_proxy_chat_success() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/chat")
@@ -87,7 +97,7 @@ async fn test_proxy_chat_success() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -127,7 +137,7 @@ async fn test_proxy_chat_streaming_passthrough() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/chat")
@@ -136,7 +146,7 @@ async fn test_proxy_chat_streaming_passthrough() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -174,7 +184,7 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/chat")
@@ -183,7 +193,7 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -225,7 +235,7 @@ async fn test_proxy_chat_no_agents() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/chat")
@@ -234,7 +244,7 @@ async fn test_proxy_chat_no_agents() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -263,7 +273,7 @@ async fn test_proxy_generate_success() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/generate")
@@ -272,7 +282,7 @@ async fn test_proxy_generate_success() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -304,7 +314,7 @@ async fn test_proxy_generate_streaming_passthrough() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/generate")
@@ -313,7 +323,7 @@ async fn test_proxy_generate_streaming_passthrough() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -350,7 +360,7 @@ async fn test_proxy_generate_no_agents() {
     };
 
     let response = router
-        .oneshot(
+        .oneshot(attach_test_client_ip(
             axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/generate")
@@ -359,7 +369,7 @@ async fn test_proxy_generate_no_agents() {
                     serde_json::to_vec(&payload).unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 

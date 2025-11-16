@@ -8,6 +8,8 @@ use ollama_coordinator_agent::{
     api, client::CoordinatorClient, logging, metrics::MetricsCollector, ollama::OllamaManager,
     registration::gpu_devices_valid,
 };
+mod model_sync;
+use model_sync::sync_all_models;
 use ollama_coordinator_common::{
     error::{AgentError, AgentResult},
     protocol::{HealthCheckRequest, RegisterRequest, RegisterResponse},
@@ -105,6 +107,34 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
     let mut metrics_collector =
         MetricsCollector::with_ollama_path(Some(ollama_manager.ollama_path().to_path_buf()));
 
+    // 先にエージェントAPIサーバーを起動（コーディネーター登録前のヘルスチェックに応答するため）
+    let agent_api_port: u16 = std::env::var("AGENT_API_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(ollama_port + 1); // デフォルトはOllamaポート+1
+
+    let ollama_manager_for_api = Arc::new(Mutex::new(ollama_manager));
+    let ollama_manager_clone = ollama_manager_for_api.clone();
+
+    let state = api::models::AppState {
+        ollama_manager: ollama_manager_for_api,
+        coordinator_url: coordinator_url.clone(),
+    };
+    let app = api::create_router(state);
+    let bind_addr = format!("0.0.0.0:{}", agent_api_port);
+
+    info!("Starting agent HTTP server on {} (pre-registration)", bind_addr);
+
+    // HTTPサーバーをバックグラウンドで起動
+    tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(&bind_addr)
+            .await
+            .expect("Failed to bind agent HTTP server");
+        axum::serve(listener, app)
+            .await
+            .expect("Agent HTTP server error");
+    });
+
     // エージェント登録
     let gpu_devices = metrics_collector.gpu_devices();
     if !gpu_devices_valid(&gpu_devices) {
@@ -149,6 +179,11 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
     let agent_id = register_response.agent_id;
     info!("Registered successfully! Agent ID: {}", agent_id);
 
+    {
+        let mut guard = ollama_manager_clone.lock().await;
+        sync_all_models(&coordinator_url, &mut *guard).await;
+    }
+
     // GPU能力情報を取得（静的な情報、起動時のみ）
     let gpu_capability = metrics_collector.get_gpu_capability();
     if let Some(ref capability) = gpu_capability {
@@ -162,34 +197,6 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
             capability.score()
         );
     }
-
-    // HTTPサーバーを起動（コーディネーターからのモデルプル要求を受信）
-    let ollama_manager_for_api = Arc::new(Mutex::new(ollama_manager));
-    let ollama_manager_clone = ollama_manager_for_api.clone();
-
-    let agent_api_port: u16 = std::env::var("AGENT_API_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(11435); // デフォルトはOllamaポート+1
-
-    let state = api::models::AppState {
-        ollama_manager: ollama_manager_for_api,
-        coordinator_url: coordinator_url.clone(),
-    };
-    let app = api::create_router(state);
-    let bind_addr = format!("0.0.0.0:{}", agent_api_port);
-
-    info!("Starting agent HTTP server on {}", bind_addr);
-
-    // HTTPサーバーをバックグラウンドで起動
-    tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(&bind_addr)
-            .await
-            .expect("Failed to bind agent HTTP server");
-        axum::serve(listener, app)
-            .await
-            .expect("Agent HTTP server error");
-    });
 
     // ハートビート送信タスク
     let mut heartbeat_timer = interval(Duration::from_secs(heartbeat_interval_secs));
@@ -270,6 +277,61 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
     {
         Ok(())
     }
+}
+
+async fn fetch_coordinator_models(coordinator_url: &str) -> AgentResult<Vec<String>> {
+    let url = format!("{}/v1/models", coordinator_url.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let mut last_err = None;
+    for attempt in 1..=3 {
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    last_err = Some(AgentError::CoordinatorConnection(format!(
+                        "list models returned HTTP {}",
+                        resp.status()
+                    )));
+                } else {
+                    let body: serde_json::Value = resp
+                        .json()
+                        .await
+                        .map_err(|e| AgentError::Internal(format!(
+                            "Failed to parse models response: {}",
+                            e
+                        )))?;
+
+                    let models = body
+                        .get("data")
+                        .and_then(|d| d.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| m.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+
+                    return Ok(models);
+                }
+            }
+            Err(e) => {
+                last_err = Some(AgentError::CoordinatorConnection(format!(
+                    "Failed to list models (attempt {}): {}",
+                    attempt, e
+                )));
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
+    }
+
+    Err(last_err.unwrap_or_else(|| AgentError::CoordinatorConnection(
+        "list models failed without details".to_string(),
+    )))
+}
+
+/// コーディネーターが返すモデルをすべて確保（ベストエフォート）
+async fn ensure_all_coordinator_models(coordinator_url: &str, ollama_manager: &mut OllamaManager) {
+    sync_all_models(coordinator_url, ollama_manager).await;
 }
 
 #[derive(Clone)]

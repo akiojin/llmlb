@@ -97,17 +97,20 @@ pub async fn register_agent(
         gpu_memory_bytes as f64 / 1_000_000_000.0
     );
 
-    // ここでの「req」はまだ所有しているので、この段階でヘルスチェックを行う
-    let ollama_base = format!("http://{}:{}", req.ip_address, req.ollama_port);
-    let client = crate::ollama::OllamaClient::new()?;
-    if let Err(e) = client.check_ollama_health(&ollama_base).await {
+    // ヘルスチェックはエージェントのOpenAI互換API経由で実施
+    let agent_api_port = req.ollama_port + 1;
+    let agent_api_base = format!("http://{}:{}", req.ip_address, agent_api_port);
+    let health_url = format!("{}/v1/models", agent_api_base);
+    let client_http = reqwest::Client::new();
+    let health_res = client_http.get(&health_url).send().await;
+    if let Err(e) = health_res {
         error!(
-            "Agent registration rejected: ollama health check failed at {} ({})",
-            ollama_base, e
+            "Agent registration rejected: agent API health check failed at {} ({})",
+            health_url, e
         );
         return Err(AppError(CoordinatorError::Internal(format!(
-            "Ollama not reachable at {}: {}",
-            ollama_base, e
+            "Agent API not reachable at {}: {}",
+            health_url, e
         ))));
     }
 
@@ -118,6 +121,7 @@ pub async fn register_agent(
     let agent_id = response.agent_id;
     let task_manager = state.task_manager.clone();
     let registry = state.registry.clone();
+    let client = crate::ollama::OllamaClient::new()?;
     let supported_models = client.get_predefined_models();
 
     let mut created_tasks = Vec::new();

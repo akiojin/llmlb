@@ -17,6 +17,7 @@ use ollama_coordinator_common::{
         ChatRequest, ChatResponse, GenerateRequest, RecordStatus, RequestResponseRecord,
         RequestType,
     },
+    types::AgentStatus,
 };
 use std::{
     io,
@@ -74,10 +75,11 @@ where
     let timestamp = Utc::now();
     let request_body = serde_json::to_value(&req).unwrap_or_default();
 
-    let agent = select_available_agent(state).await?;
+    let agent = select_available_agent_for_model(state, &req.model).await?;
     let agent_id = agent.id;
     let agent_machine_name = agent.machine_name.clone();
     let agent_ip = agent.ip_address;
+    let agent_api_port = agent.ollama_port + 1;
 
     state
         .load_manager
@@ -86,7 +88,7 @@ where
         .map_err(AppError::from)?;
 
     let client = reqwest::Client::new();
-    let ollama_url = format!("http://{}:{}/api/chat", agent.ip_address, agent.ollama_port);
+    let ollama_url = format!("http://{}:{}/v1/chat/completions", agent.ip_address, agent_api_port);
     let start = Instant::now();
 
     let response = match client.post(&ollama_url).json(&req).send().await {
@@ -287,7 +289,7 @@ where
     let timestamp = Utc::now();
     let request_body = serde_json::to_value(&req).unwrap_or_default();
 
-    let agent = select_available_agent(state).await?;
+    let agent = select_available_agent_for_model(state, &req.model).await?;
     let agent_id = agent.id;
     let agent_machine_name = agent.machine_name.clone();
     let agent_ip = agent.ip_address;
@@ -299,9 +301,10 @@ where
         .map_err(AppError::from)?;
 
     let client = reqwest::Client::new();
+    let agent_api_port = agent.ollama_port + 1;
     let ollama_url = format!(
-        "http://{}:{}/api/generate",
-        agent.ip_address, agent.ollama_port
+        "http://{}:{}/v1/completions",
+        agent.ip_address, agent_api_port
     );
     let start = Instant::now();
 
@@ -492,6 +495,30 @@ where
 /// 環境変数LOAD_BALANCER_MODEで動作モードを切り替え:
 /// - "metrics": メトリクスベース選択（T014-T015）
 /// - その他（デフォルト）: 既存の高度なロードバランシング
+pub(crate) async fn select_available_agent_for_model(
+    state: &AppState,
+    model: &str,
+) -> Result<ollama_coordinator_common::types::Agent, CoordinatorError> {
+    let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
+
+    // まずモデルを保持しているオンラインエージェントを優先
+    let required = model.trim().to_lowercase();
+    let agents = state.registry.list().await;
+    let mut candidates: Vec<_> = agents
+        .into_iter()
+        .filter(|a| a.status == AgentStatus::Online && a.loaded_models.iter().any(|m| m == &required))
+        .collect();
+
+    if candidates.is_empty() {
+        // 既存の挙動にフォールバック
+        return select_available_agent(state).await;
+    }
+
+    // 簡易: 最終確認が新しい順で選択
+    candidates.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+    return Ok(candidates.remove(0));
+}
+
 pub(crate) async fn select_available_agent(
     state: &AppState,
 ) -> Result<ollama_coordinator_common::types::Agent, CoordinatorError> {

@@ -339,7 +339,7 @@ impl OllamaManager {
         Ok(())
     }
 
-    fn api_base(&self) -> String {
+    pub fn api_base(&self) -> String {
         if let Ok(raw) = std::env::var("OLLAMA_API_BASE") {
             let trimmed = raw.trim().trim_end_matches('/').to_string();
             if trimmed.is_empty() {

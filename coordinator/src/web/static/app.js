@@ -805,7 +805,9 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
 
   const statusLabel =
     agent.status === "online"
-      ? '<span class="badge badge--online">Online</span>'
+      ? agent.initializing
+        ? `<span class="badge badge--warming">Warming up${formatReadyProgress(agent.ready_models)}</span>`
+        : '<span class="badge badge--online">Online</span>'
       : '<span class="badge badge--offline">Offline</span>';
 
   const metricsBadge = agent.metrics_stale
@@ -851,6 +853,11 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
     <td>
       <div class="cell-title">${escapeHtml(agent.ip_address)}</div>
       <div class="cell-sub">Port ${Number.isFinite(agent.ollama_port) ? escapeHtml(agent.ollama_port) : "-"}</div>
+      ${
+        agent.initializing || agent.ready_models
+          ? `<div class="cell-sub ready-progress">${formatReadyProgress(agent.ready_models)}</div>`
+          : ""
+      }
     </td>
     <td>${statusLabel}</td>
     <td>${formatDuration(agent.uptime_seconds)}</td>
@@ -1575,6 +1582,13 @@ function formatAverage(value) {
     return `${(value / 1000).toFixed(2)} s`;
   }
   return `${value.toFixed(0)} ms`;
+}
+
+function formatReadyProgress(ready) {
+  if (!ready || !Array.isArray(ready) || ready.length !== 2) return "";
+  const [done, total] = ready;
+  if (typeof done !== "number" || typeof total !== "number" || total === 0) return "";
+  return `(ready ${done}/${total})`;
 }
 
 function formatTimestamp(isoString) {

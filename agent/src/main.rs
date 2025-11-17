@@ -122,13 +122,18 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
         ready_models: None,
     }));
 
+    // プレースホルダー（実際のリストは登録後に取得し上書き）
+    let supported_models_placeholder = Arc::new(Mutex::new(Vec::<String>::new()));
+
     let state = api::models::AppState {
         ollama_manager: ollama_manager_for_api,
         coordinator_url: coordinator_url.clone(),
         ollama_pool,
         init_state: init_state.clone(),
+        supported_models: supported_models_placeholder.clone(),
     };
-    let app = api::create_router(state);
+    let app_state = state.clone();
+    let app = api::create_router(app_state);
     let bind_addr = format!("0.0.0.0:{}", agent_api_port);
 
     info!(
@@ -190,8 +195,12 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
     let agent_id = register_response.agent_id;
     info!("Registered successfully! Agent ID: {}", agent_id);
 
-    // 対応モデルを取得し、全モデルを先に確保
+    // 対応モデルを取得し、全モデルを先に確保（モデルごとに独立した Ollama インスタンスを起動）
     let model_list = fetch_models(&coordinator_url).await.unwrap_or_default();
+    {
+        let mut list = supported_models_placeholder.lock().await;
+        *list = model_list.clone();
+    }
     let total_models = model_list.len().min(u8::MAX as usize) as u8;
     {
         let mut st = init_state.lock().await;
@@ -199,18 +208,21 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
         st.ready_models = Some((0, total_models));
     }
 
-    {
-        let guard = ollama_manager_clone.lock().await;
-        for m in &model_list {
-            if let Err(e) = guard.ensure_model(m).await {
-                warn!("Failed to ensure model {}: {}", m, e);
+    let mut ready: u8 = 0;
+    for m in &model_list {
+        match state.ollama_pool.ensure(m).await {
+            Ok(_) => {
+                ready = ready.saturating_add(1);
+                let mut st = init_state.lock().await;
+                st.ready_models = Some((ready, total_models));
             }
+            Err(e) => warn!("Failed to ensure model {}: {}", m, e),
         }
     }
     {
         let mut st = init_state.lock().await;
         st.initializing = false;
-        st.ready_models = Some((total_models, total_models));
+        st.ready_models = Some((ready, total_models));
     }
 
     // GPU能力情報を取得（静的な情報、起動時のみ）

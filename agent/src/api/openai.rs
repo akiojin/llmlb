@@ -113,31 +113,16 @@ pub async fn embeddings(
 
 /// GET /v1/models
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, StatusCode> {
-    // Ollamaの /api/tags はオブジェクト形式だが、ここでは OpenAI互換の最小レスポンスに整形する
-    let client = reqwest::Client::new();
-    let ollama_base = {
-        let mgr = state.ollama_manager.lock().await;
-        mgr.api_base()
-    };
-    let url = format!("{}/api/tags", ollama_base.trim_end_matches('/'));
-    let resp = client.get(url).send().await.map_err(proxy_error)?;
-    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let json: serde_json::Value = resp.json().await.map_err(proxy_error)?;
-    // 期待フォーマット: { "models": [ { "name": "..."} ] }
-    let models = json
-        .get("models")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let data: Vec<Value> = models
-        .into_iter()
-        .filter_map(|m| {
-            m.get("name").and_then(|n| n.as_str()).map(|id| {
-                serde_json::json!({
-                    "id": id,
-                    "object": "model",
-                    "owned_by": "agent",
-                })
+    // コーディネーターが要求するモデル一覧をそのまま返す
+    let data: Vec<Value> = state
+        .models()
+        .await
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "object": "model",
+                "owned_by": "agent",
             })
         })
         .collect();
@@ -147,5 +132,5 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, Stat
         "initializing": state.initializing().await,
         "ready_models": state.ready_models().await,
     });
-    Ok((status, Json(body)).into_response())
+    Ok((StatusCode::OK, Json(body)).into_response())
 }

@@ -21,6 +21,8 @@ pub struct AppState {
     pub ollama_pool: crate::ollama_pool::OllamaPool,
     /// 初期化状態
     pub init_state: Arc<Mutex<InitState>>,
+    /// コーディネーターが要求するモデル一覧（キャッシュ）
+    pub supported_models: Arc<Mutex<Vec<String>>>,
 }
 
 impl AppState {
@@ -32,6 +34,11 @@ impl AppState {
     /// 起動済みモデル数/総数を返す
     pub async fn ready_models(&self) -> Option<(u8, u8)> {
         self.init_state.lock().await.ready_models
+    }
+
+    /// 対応モデル一覧を返す
+    pub async fn models(&self) -> Vec<String> {
+        self.supported_models.lock().await.clone()
     }
 }
 

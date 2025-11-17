@@ -79,6 +79,8 @@ pub fn create_router(state: AppState) -> Router {
             "/api/dashboard/logs/agents/:agent_id",
             get(logs::get_agent_logs),
         )
+        // FR-002: agent log proxy (spec path)
+        .route("/api/agents/:agent_id/logs", get(logs::get_agent_logs))
         .route("/api/health", post(health::health_check))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))

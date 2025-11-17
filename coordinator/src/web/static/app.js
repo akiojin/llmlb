@@ -838,6 +838,11 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
     typeof agent.gpu_memory_usage === "number"
       ? `<div class="cell-sub">GPU ${formatPercentage(agent.gpu_memory_usage)} (${gpuModelDisplay})</div>`
       : `<div class="cell-sub">${gpuModelDisplay}</div>`;
+  const readyText =
+    agent.initializing || agent.ready_models
+      ? `<div class="cell-sub ready-progress">${formatReadyProgress(agent.ready_models)}</div>`
+      : "";
+
   row.innerHTML = `
     <td>
       <input
@@ -854,11 +859,7 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
     <td>
       <div class="cell-title">${escapeHtml(agent.ip_address)}</div>
       <div class="cell-sub">Port ${Number.isFinite(agent.ollama_port) ? escapeHtml(agent.ollama_port) : "-"}</div>
-      ${
-        agent.initializing || agent.ready_models
-          ? `<div class="cell-sub ready-progress">${formatReadyProgress(agent.ready_models)}</div>`
-          : ""
-      }
+      ${readyText}
     </td>
     <td>${statusLabel}</td>
     <td>${formatDuration(agent.uptime_seconds)}</td>
@@ -922,6 +923,8 @@ function getAgentSignature(agent) {
     agent.gpu_capability_score ?? "",
     agent.gpu_model_name ?? "",
     agent.gpu_compute_capability ?? "",
+    agent.initializing ? 1 : 0,
+    Array.isArray(agent.ready_models) ? agent.ready_models.join(":") : "",
     agent.active_requests ?? 0,
     agent.total_requests ?? 0,
     agent.successful_requests ?? 0,
@@ -1463,7 +1466,6 @@ function downloadCsv(data, filename) {
   ];
 
   const rows = data.map((agent) => {
-
     return [
       agent.id,
       getDisplayName(agent),
@@ -1477,7 +1479,6 @@ function downloadCsv(data, filename) {
       agent.gpu_memory_usage ?? "",
       agent.registered_at ?? "",
       agent.last_seen ?? "",
-      models,
       Array.isArray(agent.tags) ? agent.tags.join("|") : "",
     ]
       .map((value) => `"${String(value).replace(/"/g, '""')}"`)

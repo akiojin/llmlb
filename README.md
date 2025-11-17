@@ -23,6 +23,8 @@ Ollama Coordinator is a system that provides unified management and a single API
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities
   and availability
+- **Authentication & Authorization**: Secure access with JWT, API keys, and agent
+  tokens; role-based access control (Admin/Viewer); OpenAI-compatible authentication
 
 ## Load Balancing
 

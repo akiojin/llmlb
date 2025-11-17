@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use super::support::{
+use crate::support::{
     coordinator::{register_agent, spawn_coordinator},
     http::{spawn_router, TestServer},
 };

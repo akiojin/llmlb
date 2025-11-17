@@ -252,6 +252,24 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
         warn!("Initial heartbeat failed: {}", e);
     }
 
+    // pull によって ready_models が進んだ後、初期化完了なら即座に同期ハートビートを追加で送る
+    if {
+        let st = init_state.lock().await;
+        matches!(st.ready_models, Some((ready, total)) if total > 0 && ready >= total)
+    } {
+        if let Err(e) = send_heartbeat_once(
+            &mut coordinator_client,
+            agent_id,
+            &mut metrics_collector,
+            &gpu_capability,
+            &init_state,
+        )
+        .await
+        {
+            warn!("Post-init heartbeat failed: {}", e);
+        }
+    }
+
     // ハートビート送信タスク
     let mut heartbeat_timer = interval(Duration::from_secs(heartbeat_interval_secs));
 

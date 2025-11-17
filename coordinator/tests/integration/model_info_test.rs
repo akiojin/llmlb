@@ -275,3 +275,45 @@ async fn test_model_matrix_view_multiple_agents() {
         "Available models must be an array"
     );
 }
+
+/// T021: /v1/models は対応モデル5件のみを返す
+#[tokio::test]
+async fn test_v1_models_returns_fixed_list() {
+    let app = build_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    let data = json["data"]
+        .as_array()
+        .expect("data must be an array of models");
+    let ids: Vec<String> = data
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+
+    let expected = vec![
+        "gpt-oss:20b",
+        "gpt-oss:120b",
+        "gpt-safeguard:20b",
+        "glm4:6b-chat",
+        "qwen3-coder:32b",
+    ];
+
+    assert_eq!(ids.len(), expected.len(), "should return exactly 5 models");
+    for id in expected {
+        assert!(ids.contains(&id.to_string()), "missing {id}");
+    }
+}

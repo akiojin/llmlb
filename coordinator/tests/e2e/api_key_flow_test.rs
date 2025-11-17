@@ -14,8 +14,7 @@ use ollama_coordinator_coordinator::{
 use serde_json::json;
 use tower::ServiceExt;
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 async fn build_app() -> (Router, sqlx::SqlitePool) {
     let registry = AgentRegistry::new();
@@ -190,7 +189,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/api/api-keys/{}", api_key_id))
+                .uri(format!("/api/api-keys/{}", api_key_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),

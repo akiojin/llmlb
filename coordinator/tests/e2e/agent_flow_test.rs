@@ -16,8 +16,7 @@ use std::net::IpAddr;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 async fn build_app() -> (Router, sqlx::SqlitePool) {
     let registry = AgentRegistry::new();

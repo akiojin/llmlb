@@ -14,8 +14,8 @@ use ollama_coordinator_coordinator::{
 use serde_json::json;
 use tower::ServiceExt;
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
+
 
 async fn build_app() -> (Router, sqlx::SqlitePool) {
     let registry = AgentRegistry::new();

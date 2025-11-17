@@ -224,7 +224,7 @@ async fn test_agent_token_persistence() {
         .await
         .unwrap();
 
-    assert_eq!(second_register_response.status(), StatusCode::OK);
+    assert_eq!(second_register_response.status(), StatusCode::CREATED);
 
     let second_body = axum::body::to_bytes(second_register_response.into_body(), usize::MAX)
         .await

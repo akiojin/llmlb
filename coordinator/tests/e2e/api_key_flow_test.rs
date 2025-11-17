@@ -28,10 +28,12 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let jwt_secret = support::coordinator::test_jwt_secret();
 
     // テスト用の管理者ユーザーを作成
+    let password_hash =
+        ollama_coordinator_coordinator::auth::password::hash_password("password123").unwrap();
     ollama_coordinator_coordinator::db::users::create(
         &db_pool,
         "admin",
-        "password123",
+        &password_hash,
         UserRole::Admin,
     )
     .await
@@ -168,9 +170,10 @@ async fn test_complete_api_key_flow() {
         .unwrap();
     let keys_list: serde_json::Value = serde_json::from_slice(&list_keys_body).unwrap();
 
-    assert!(keys_list.is_array());
+    assert!(keys_list.get("api_keys").is_some(), "Response must have 'api_keys' field");
+    assert!(keys_list["api_keys"].is_array(), "'api_keys' must be an array");
     assert_eq!(
-        keys_list.as_array().unwrap().len(),
+        keys_list["api_keys"].as_array().unwrap().len(),
         1,
         "Should have one API key"
     );

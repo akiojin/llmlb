@@ -156,7 +156,10 @@ pub fn create_router(state: AppState) -> Router {
 
     // ルーターを統合（認証無効化フラグに応じてミドルウェアを適用）
     let jwt_routes = if auth_disabled {
-        jwt_protected_routes
+        // AUTH_DISABLED=trueの場合、ダミーのAdmin Claimsを注入
+        jwt_protected_routes.layer(axum_middleware::from_fn(
+            middleware::inject_dummy_admin_claims,
+        ))
     } else {
         jwt_protected_routes.layer(axum_middleware::from_fn_with_state(
             state.jwt_secret.clone(),

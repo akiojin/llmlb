@@ -76,6 +76,13 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
     }
 }
 
+/// APIキー一覧レスポンス
+#[derive(Debug, Serialize)]
+pub struct ListApiKeysResponse {
+    /// APIキー一覧
+    pub api_keys: Vec<ApiKeyResponse>,
+}
+
 /// Admin権限チェックヘルパー
 #[allow(clippy::result_large_err)]
 fn check_admin(claims: &Claims) -> Result<(), Response> {
@@ -100,7 +107,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
 pub async fn list_api_keys(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<ApiKeyResponse>>, Response> {
+) -> Result<Json<ListApiKeysResponse>, Response> {
     check_admin(&claims)?;
 
     let api_keys = crate::db::api_keys::list(&app_state.db_pool)
@@ -110,9 +117,9 @@ pub async fn list_api_keys(
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
         })?;
 
-    Ok(Json(
-        api_keys.into_iter().map(ApiKeyResponse::from).collect(),
-    ))
+    Ok(Json(ListApiKeysResponse {
+        api_keys: api_keys.into_iter().map(ApiKeyResponse::from).collect(),
+    }))
 }
 
 /// POST /api/api-keys - APIキー発行

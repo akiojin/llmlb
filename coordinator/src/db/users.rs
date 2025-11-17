@@ -23,7 +23,28 @@ pub async fn create(
     password_hash: &str,
     role: UserRole,
 ) -> Result<User, CoordinatorError> {
-    let id = Uuid::new_v4();
+    create_with_id(pool, Uuid::new_v4(), username, password_hash, role).await
+}
+
+/// ユーザーを特定のIDで作成（テスト用）
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `id` - ユーザーID
+/// * `username` - ユーザー名
+/// * `password_hash` - bcryptハッシュ化されたパスワード
+/// * `role` - ユーザーロール
+///
+/// # Returns
+/// * `Ok(User)` - 作成されたユーザー
+/// * `Err(CoordinatorError)` - 作成失敗（ユーザー名重複など）
+pub async fn create_with_id(
+    pool: &SqlitePool,
+    id: Uuid,
+    username: &str,
+    password_hash: &str,
+    role: UserRole,
+) -> Result<User, CoordinatorError> {
     let created_at = Utc::now();
 
     let role_str = match role {

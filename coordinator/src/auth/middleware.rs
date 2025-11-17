@@ -6,6 +6,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use ollama_coordinator_common::auth::{Claims, UserRole};
 use sha2::{Digest, Sha256};
 
 /// JWT認証ミドルウェア
@@ -62,7 +63,7 @@ pub async fn jwt_auth_middleware(
 
 /// APIキー認証ミドルウェア
 ///
-/// X-API-Keyヘッダーからキーを抽出してSHA-256で検証を行う
+/// X-API-KeyヘッダーまたはAuthorization: Bearer形式でキーを抽出してSHA-256で検証を行う
 ///
 /// # Arguments
 /// * `State(pool)` - データベース接続プール
@@ -77,21 +78,31 @@ pub async fn api_key_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    // X-API-Keyヘッダーを取得
-    let api_key = request
-        .headers()
-        .get("X-API-Key")
-        .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| {
-            (
+    // X-API-Keyヘッダーまたは Authorization: Bearer トークンを取得
+    let api_key = if let Some(api_key) = request.headers().get("X-API-Key").and_then(|h| h.to_str().ok()) {
+        // X-API-Keyヘッダーから取得
+        api_key.to_string()
+    } else if let Some(auth_header) = request.headers().get(header::AUTHORIZATION).and_then(|h| h.to_str().ok()) {
+        // Authorization: Bearer トークンから取得
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            token.to_string()
+        } else {
+            return Err((
                 StatusCode::UNAUTHORIZED,
-                "Missing X-API-Key header".to_string(),
+                "Invalid Authorization header format. Expected 'Bearer <token>'".to_string(),
             )
-                .into_response()
-        })?;
+                .into_response());
+        }
+    } else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-API-Key header or Authorization header".to_string(),
+        )
+            .into_response());
+    };
 
     // SHA-256ハッシュ化
-    let key_hash = hash_with_sha256(api_key);
+    let key_hash = hash_with_sha256(&api_key);
 
     // データベースでAPIキーを検証
     let api_key_record = crate::db::api_keys::find_by_hash(&pool, &key_hash)
@@ -177,6 +188,31 @@ fn hash_with_sha256(input: &str) -> String {
     hasher.update(input.as_bytes());
     let result = hasher.finalize();
     format!("{:x}", result)
+}
+
+/// AUTH_DISABLED用ダミーClaims注入ミドルウェア
+///
+/// 認証無効化モードの場合、すべてのリクエストにダミーのAdmin Claimsを注入する
+/// これにより、Extension<Claims>を要求するハンドラーが正常に動作する
+///
+/// # Arguments
+/// * `request` - HTTPリクエスト
+/// * `next` - 次のミドルウェア/ハンドラー
+///
+/// # Returns
+/// * `Response` - レスポンス
+pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Response {
+    // ダミーのAdmin Claimsを作成
+    let dummy_claims = Claims {
+        sub: "00000000-0000-0000-0000-000000000000".to_string(), // ダミーUUID
+        role: UserRole::Admin,
+        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
+    };
+
+    // リクエストの拡張データに格納
+    request.extensions_mut().insert(dummy_claims);
+
+    next.run(request).await
 }
 
 #[cfg(test)]

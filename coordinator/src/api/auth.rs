@@ -28,6 +28,19 @@ pub struct LoginResponse {
     pub token: String,
     /// トークン有効期限（秒）
     pub expires_in: usize,
+    /// ユーザー情報
+    pub user: UserInfo,
+}
+
+/// ユーザー情報（ログインレスポンス用）
+#[derive(Debug, Serialize)]
+pub struct UserInfo {
+    /// ユーザーID
+    pub id: String,
+    /// ユーザー名
+    pub username: String,
+    /// ロール
+    pub role: String,
 }
 
 /// 認証情報レスポンス
@@ -97,7 +110,15 @@ pub async fn login(
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
             })?;
 
-    Ok(Json(LoginResponse { token, expires_in }))
+    Ok(Json(LoginResponse {
+        token,
+        expires_in,
+        user: UserInfo {
+            id: user.id.to_string(),
+            username: user.username,
+            role: format!("{:?}", user.role).to_lowercase(),
+        },
+    }))
 }
 
 /// POST /api/auth/logout - ログアウト

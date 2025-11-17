@@ -19,7 +19,7 @@ use tracing::{error, info};
 pub async fn register_agent(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
-) -> Result<Json<RegisterResponse>, AppError> {
+) -> Result<(StatusCode, Json<RegisterResponse>), AppError> {
     info!(
         "Agent registration request: machine={}, ip={}, gpu_available={}",
         req.machine_name, req.ip_address, req.gpu_available
@@ -166,7 +166,7 @@ pub async fn register_agent(
         }
     });
 
-    Ok(Json(response))
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// GET /api/agents - エージェント一覧取得
@@ -359,8 +359,8 @@ mod tests {
         let result = register_agent(State(state), Json(req)).await;
         assert!(result.is_ok());
 
-        let response = result.unwrap().0;
-        assert!(!response.agent_id.to_string().is_empty());
+        let (_status, response) = result.unwrap();
+        assert!(!response.0.agent_id.to_string().is_empty());
     }
 
     #[tokio::test]
@@ -475,11 +475,10 @@ mod tests {
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
         };
-        let res1 = register_agent(State(state.clone()), Json(req1))
+        let (_status1, res1) = register_agent(State(state.clone()), Json(req1))
             .await
-            .unwrap()
-            .0;
-        assert_eq!(res1.status, RegisterStatus::Registered);
+            .unwrap();
+        assert_eq!(res1.0.status, RegisterStatus::Registered);
 
         let req2 = RegisterRequest {
             machine_name: "shared-machine".to_string(),
@@ -491,11 +490,10 @@ mod tests {
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
         };
-        let res2 = register_agent(State(state.clone()), Json(req2))
+        let (_status2, res2) = register_agent(State(state.clone()), Json(req2))
             .await
-            .unwrap()
-            .0;
-        assert_eq!(res2.status, RegisterStatus::Registered);
+            .unwrap();
+        assert_eq!(res2.0.status, RegisterStatus::Registered);
 
         let agents = list_agents(State(state)).await.0;
         assert_eq!(agents.len(), 2);
@@ -517,16 +515,15 @@ mod tests {
             gpu_model: Some("Test GPU".to_string()),
         };
 
-        let response = register_agent(State(state.clone()), Json(req))
+        let (_status, response) = register_agent(State(state.clone()), Json(req))
             .await
-            .unwrap()
-            .0;
+            .unwrap();
 
         // メトリクスを記録
         state
             .load_manager
             .record_metrics(MetricsUpdate {
-                agent_id: response.agent_id,
+                agent_id: response.0.agent_id,
                 cpu_usage: 42.0,
                 memory_usage: 33.0,
                 gpu_usage: Some(55.0),
@@ -547,7 +544,7 @@ mod tests {
         assert_eq!(metrics.0.len(), 1);
 
         let snapshot = &metrics.0[0];
-        assert_eq!(snapshot.agent_id, response.agent_id);
+        assert_eq!(snapshot.agent_id, response.0.agent_id);
         assert_eq!(snapshot.cpu_usage.unwrap(), 42.0);
         assert_eq!(snapshot.memory_usage.unwrap(), 33.0);
         assert_eq!(snapshot.gpu_usage, Some(55.0));
@@ -583,16 +580,15 @@ mod tests {
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
         };
-        let response = register_agent(State(state.clone()), Json(register_req))
+        let (_status, response) = register_agent(State(state.clone()), Json(register_req))
             .await
-            .unwrap()
-            .0;
+            .unwrap();
 
         // ハートビートでメトリクス更新
         state
             .load_manager
             .record_metrics(MetricsUpdate {
-                agent_id: response.agent_id,
+                agent_id: response.0.agent_id,
                 cpu_usage: 55.0,
                 memory_usage: 44.0,
                 gpu_usage: Some(60.0),
@@ -612,13 +608,13 @@ mod tests {
         // リクエストを成功・失敗で記録
         state
             .load_manager
-            .begin_request(response.agent_id)
+            .begin_request(response.0.agent_id)
             .await
             .unwrap();
         state
             .load_manager
             .finish_request(
-                response.agent_id,
+                response.0.agent_id,
                 RequestOutcome::Success,
                 Duration::from_millis(120),
             )
@@ -627,13 +623,13 @@ mod tests {
 
         state
             .load_manager
-            .begin_request(response.agent_id)
+            .begin_request(response.0.agent_id)
             .await
             .unwrap();
         state
             .load_manager
             .finish_request(
-                response.agent_id,
+                response.0.agent_id,
                 RequestOutcome::Error,
                 Duration::from_millis(200),
             )
@@ -671,6 +667,7 @@ mod tests {
         )
         .await
         .unwrap()
+        .1
         .0
         .agent_id;
 
@@ -697,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_agent_endpoint() {
         let state = create_test_state().await;
-        let response = register_agent(
+        let (_status, response) = register_agent(
             State(state.clone()),
             Json(RegisterRequest {
                 machine_name: "delete-agent".into(),
@@ -711,10 +708,9 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
-        .0;
+        .unwrap();
 
-        let status = delete_agent(State(state.clone()), axum::extract::Path(response.agent_id))
+        let status = delete_agent(State(state.clone()), axum::extract::Path(response.0.agent_id))
             .await
             .unwrap();
         assert_eq!(status, StatusCode::NO_CONTENT);
@@ -741,6 +737,7 @@ mod tests {
         )
         .await
         .unwrap()
+        .1
         .0
         .agent_id;
 

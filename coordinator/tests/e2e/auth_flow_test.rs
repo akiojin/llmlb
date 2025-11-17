@@ -28,10 +28,12 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let jwt_secret = support::coordinator::test_jwt_secret();
 
     // テスト用の管理者ユーザーを作成
+    let password_hash =
+        ollama_coordinator_coordinator::auth::password::hash_password("password123").unwrap();
     ollama_coordinator_coordinator::db::users::create(
         &db_pool,
         "admin",
-        "password123",
+        &password_hash,
         UserRole::Admin,
     )
     .await
@@ -108,9 +110,10 @@ async fn test_complete_auth_flow() {
         .unwrap();
     let users: serde_json::Value = serde_json::from_slice(&users_body).unwrap();
 
-    assert!(users.is_array(), "Users response should be an array");
+    assert!(users.get("users").is_some(), "Response must have 'users' field");
+    assert!(users["users"].is_array(), "'users' must be an array");
     assert_eq!(
-        users.as_array().unwrap().len(),
+        users["users"].as_array().unwrap().len(),
         1,
         "Should have one admin user"
     );
@@ -129,7 +132,7 @@ async fn test_complete_auth_flow() {
         .await
         .unwrap();
 
-    assert_eq!(logout_response.status(), StatusCode::OK);
+    assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
 
     // Step 4: ログアウト後は認証が必要なエンドポイントにアクセスできない
     let unauthorized_response = app

@@ -188,7 +188,7 @@ async fn test_get_agent_models_contract() {
         .await
         .unwrap();
 
-    assert_eq!(register_response.status(), StatusCode::OK);
+    assert_eq!(register_response.status(), StatusCode::CREATED);
 
     // エージェントIDを取得
     let body = to_bytes(register_response.into_body(), usize::MAX)
@@ -268,7 +268,7 @@ async fn test_pull_model_contract() {
         .await
         .unwrap();
 
-    assert_eq!(register_response.status(), StatusCode::OK);
+    assert_eq!(register_response.status(), StatusCode::CREATED);
 
     // エージェントIDを取得
     let body = to_bytes(register_response.into_body(), usize::MAX)
@@ -348,7 +348,7 @@ async fn test_get_task_progress_contract() {
         .await
         .unwrap();
 
-    assert_eq!(register_response.status(), StatusCode::OK);
+    assert_eq!(register_response.status(), StatusCode::CREATED);
 
     // エージェントIDを取得
     let body = to_bytes(register_response.into_body(), usize::MAX)

@@ -50,6 +50,13 @@ pub struct UserResponse {
     pub last_login: Option<String>,
 }
 
+/// ユーザー一覧レスポンス
+#[derive(Debug, Serialize)]
+pub struct ListUsersResponse {
+    /// ユーザー一覧
+    pub users: Vec<UserResponse>,
+}
+
 impl From<User> for UserResponse {
     fn from(user: User) -> Self {
         UserResponse {
@@ -86,7 +93,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
 pub async fn list_users(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<UserResponse>>, Response> {
+) -> Result<Json<ListUsersResponse>, Response> {
     check_admin(&claims)?;
 
     let users = crate::db::users::list(&app_state.db_pool)
@@ -96,7 +103,9 @@ pub async fn list_users(
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
         })?;
 
-    Ok(Json(users.into_iter().map(UserResponse::from).collect()))
+    Ok(Json(ListUsersResponse {
+        users: users.into_iter().map(UserResponse::from).collect(),
+    }))
 }
 
 /// POST /api/users - ユーザー作成

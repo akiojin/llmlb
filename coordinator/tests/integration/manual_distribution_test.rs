@@ -72,7 +72,7 @@ async fn test_manual_distribution_to_specific_agent() {
         .await
         .unwrap();
 
-    assert_eq!(register_response.status(), StatusCode::OK);
+    assert_eq!(register_response.status(), StatusCode::CREATED);
 
     let body = to_bytes(register_response.into_body(), usize::MAX)
         .await

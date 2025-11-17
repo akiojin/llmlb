@@ -67,7 +67,7 @@ async fn register_gpu_agent_success() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     let list_response = app
         .oneshot(

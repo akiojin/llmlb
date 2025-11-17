@@ -166,6 +166,7 @@ pub async fn ensure_admin_exists(pool: &sqlx::SqlitePool) -> Result<(), Coordina
 mod tests {
     use super::*;
     use crate::db::migrations;
+    use serial_test::serial;
 
     async fn create_test_pool() -> sqlx::SqlitePool {
         let pool = sqlx::SqlitePool::connect(":memory:")
@@ -178,6 +179,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_create_admin_from_env_with_password() {
         let pool = create_test_pool().await;
 
@@ -202,6 +204,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_create_admin_from_env_without_password() {
         let pool = create_test_pool().await;
 
@@ -214,6 +217,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_create_admin_from_env_with_default_username() {
         let pool = create_test_pool().await;
 
@@ -234,6 +238,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_ensure_admin_exists_first_boot() {
         let pool = create_test_pool().await;
 
@@ -256,6 +261,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_ensure_admin_exists_not_first_boot() {
         let pool = create_test_pool().await;
 

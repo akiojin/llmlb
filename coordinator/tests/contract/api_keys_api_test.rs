@@ -28,11 +28,13 @@ async fn build_app() -> Router {
     let db_pool = support::coordinator::create_test_db_pool().await;
     let jwt_secret = support::coordinator::test_jwt_secret();
 
-    // テスト用の管理者ユーザーを作成
+    // テスト用の管理者ユーザーを作成（ダミーClaims注入ミドルウェアと同じUUID）
     let password_hash =
         ollama_coordinator_coordinator::auth::password::hash_password("password123").unwrap();
-    ollama_coordinator_coordinator::db::users::create(
+    let dummy_uuid = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap();
+    ollama_coordinator_coordinator::db::users::create_with_id(
         &db_pool,
+        dummy_uuid,
         "admin",
         &password_hash,
         ollama_coordinator_common::auth::UserRole::Admin,

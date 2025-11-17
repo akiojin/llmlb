@@ -139,6 +139,9 @@ impl OllamaManager {
             return Ok(());
         }
 
+        // 部分的な残骸があると pull が失敗することがあるため、事前にクリーンアップを試す（ベストエフォート）
+        let _ = self.remove_model(name).await;
+
         info!("Model {} not found. Pulling...", name);
         self.pull_model(name).await?;
 
@@ -162,6 +165,24 @@ impl OllamaManager {
 
         let models = self.fetch_models(false).await?;
         Ok(models.iter().any(|entry| tag_matches_model(entry, name)))
+    }
+
+    /// モデルキャッシュを削除（ベストエフォート）
+    pub async fn remove_model(&self, model: &str) -> AgentResult<()> {
+        let mut command = Command::new(&self.ollama_path);
+        command
+            .arg("rm")
+            .arg(model)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        if let Ok(mut child) = command.spawn() {
+            let _ = tokio::time::timeout(Duration::from_secs(30), async move {
+                let _ = child.wait();
+            })
+            .await;
+        }
+        Ok(())
     }
 
     /// モデル一覧を取得

@@ -11,7 +11,6 @@ use axum::{
     Router,
 };
 use models::AppState;
-use crate::ollama_pool::OllamaPool;
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {

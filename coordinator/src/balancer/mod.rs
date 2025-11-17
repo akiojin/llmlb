@@ -1151,6 +1151,10 @@ pub struct MetricsUpdate {
     pub active_requests: u32,
     /// 平均レスポンスタイム（ミリ秒）
     pub average_response_time_ms: Option<f32>,
+    /// 初期化中フラグ
+    pub initializing: bool,
+    /// 起動済みモデル数/総数
+    pub ready_models: Option<(u8, u8)>,
 }
 
 impl LoadManager {
@@ -1180,6 +1184,8 @@ impl LoadManager {
             gpu_capability_score,
             active_requests,
             average_response_time_ms,
+            initializing,
+            ready_models,
         } = update;
 
         // エージェントが存在することを確認
@@ -1210,8 +1216,16 @@ impl LoadManager {
 
         entry.last_metrics = Some(metrics.clone());
         entry.push_metrics(metrics);
+        entry.initializing = initializing;
+        entry.ready_models = ready_models;
 
         Ok(())
+    }
+
+    /// 初期化完了しているエージェントが存在するか
+    pub async fn has_ready_agents(&self) -> bool {
+        let state = self.state.read().await;
+        state.values().any(|s| !s.initializing)
     }
 
     /// リクエスト開始を記録

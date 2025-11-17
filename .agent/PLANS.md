@@ -32,6 +32,9 @@
 
 ## 進捗 (Progress)
 - [x] 2025-11-17T15:10Z  ready待機キューの挙動テストを追加し、clippy/test/markdownlint/タスクチェックを通過。
+- [ ] specs 未完了タスク (自動継承)
+  - SPEC-ee2aa3ef: **T025 ホットフィックスフロー確認／統合テスト(T023–T025)実行**
+  - SPEC-5cd7b614: **PRマージ後の動作確認（メンテナ作業）**
 - [ ] 4/5 以降: 上記手順に沿って実装・検証を進める。
 
 ## Surprises & Discoveries

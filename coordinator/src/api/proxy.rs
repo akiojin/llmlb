@@ -71,11 +71,23 @@ where
     S: FnOnce(reqwest::Response, &ChatRequest) -> Result<Response, AppError>,
     C: FnOnce(ChatResponse, &ChatRequest) -> Result<Response, AppError>,
 {
+    // 全エージェントが初期化中なら待機キュー/再試行を返す
+    if !state.load_manager.has_ready_agents().await {
+        return Err(
+            CoordinatorError::ServiceUnavailable("All agents are warming up models".into()).into()
+        );
+    }
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = serde_json::to_value(&req).unwrap_or_default();
 
     let agent = select_available_agent_for_model(state, &req.model).await?;
+    if agent.initializing {
+        return Err(CoordinatorError::ServiceUnavailable(
+            "All agents are warming up models".into(),
+        )
+        .into());
+    }
     let agent_id = agent.id;
     let agent_machine_name = agent.machine_name.clone();
     let agent_ip = agent.ip_address;
@@ -531,7 +543,13 @@ pub(crate) async fn select_available_agent(
         }
         _ => {
             // デフォルト: 既存の高度なロードバランシング
-            state.load_manager.select_agent().await
+            let agent = state.load_manager.select_agent().await?;
+            if agent.initializing {
+                return Err(CoordinatorError::ServiceUnavailable(
+                    "All agents are warming up models".into(),
+                ));
+            }
+            Ok(agent)
         }
     }
 }

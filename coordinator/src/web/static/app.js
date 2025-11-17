@@ -835,16 +835,6 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
     typeof agent.gpu_memory_usage === "number"
       ? `<div class="cell-sub">GPU ${formatPercentage(agent.gpu_memory_usage)} (${gpuModelDisplay})</div>`
       : `<div class="cell-sub">${gpuModelDisplay}</div>`;
-  const models = getModelList(agent);
-  const primaryModelDisplay = models.length ? models[0] : "-";
-  const extraModels = models.slice(1, 4).join(", ");
-  const remainderCount = Math.max(0, models.length - 4);
-  const modelSub = extraModels
-    ? `<div class="cell-sub">${escapeHtml(extraModels)}${
-        remainderCount > 0 ? ` 他${remainderCount}件` : ""
-      }</div>`
-    : "";
-
   row.innerHTML = `
     <td>
       <input
@@ -881,10 +871,6 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
     </td>
     <td>${formatAverage(agent.average_response_time_ms)}</td>
     <td>
-      <div class="cell-title">${escapeHtml(primaryModelDisplay)}</div>
-      ${modelSub}
-    </td>
-    <td>
       <div class="cell-title">${formatTimestamp(agent.last_seen)}</div>
       <div class="cell-sub">${metricsDetail}</div>
     </td>
@@ -909,7 +895,7 @@ function syncAgentRowSelection(row, agentId) {
 function buildPlaceholderRow(message) {
   const row = document.createElement("tr");
   row.className = "empty-row";
-  row.innerHTML = `<td colspan="13">${escapeHtml(message)}</td>`;
+  row.innerHTML = `<td colspan="12">${escapeHtml(message)}</td>`;
   return row;
 }
 
@@ -936,7 +922,6 @@ function getAgentSignature(agent) {
     agent.last_seen ?? "",
     agent.metrics_last_updated_at ?? "",
     agent.metrics_stale ? 1 : 0,
-    getModelList(agent).join("|") ?? "",
   ].join("|");
 }
 
@@ -956,13 +941,6 @@ function getDisplayName(agent) {
   return agent.machine_name ?? "-";
 }
 
-function getModelList(agent) {
-  if (!agent) return [];
-  const list = Array.isArray(agent.loaded_models) ? agent.loaded_models : [];
-  return list
-    .map((model) => (typeof model === "string" ? model.trim() : ""))
-    .filter((model) => model.length);
-}
 
 function filterAgent(agent, statusFilter, query) {
   if (statusFilter === "online" && agent.status !== "online") {
@@ -979,10 +957,7 @@ function filterAgent(agent, statusFilter, query) {
   const machine = (agent.machine_name ?? "").toLowerCase();
   const ip = (agent.ip_address ?? "").toLowerCase();
   const custom = (agent.custom_name ?? "").toLowerCase();
-  const models = getModelList(agent).join(" ").toLowerCase();
-  return (
-    machine.includes(query) || ip.includes(query) || custom.includes(query) || models.includes(query)
-  );
+  return (machine.includes(query) || ip.includes(query) || custom.includes(query));
 }
 
 function getFilteredAgents() {
@@ -1072,7 +1047,7 @@ function openAgentModal(agent) {
   modalRefs.ipAddress.textContent = agent.ip_address ?? "-";
   modalRefs.ollamaVersion.textContent = agent.ollama_version ?? "-";
   if (modalRefs.loadedModels) {
-    const models = getModelList(agent);
+
     modalRefs.loadedModels.textContent = models.length ? models.join(", ") : "-";
   }
   modalRefs.uptime.textContent = formatDuration(agent.uptime_seconds);
@@ -1475,12 +1450,11 @@ function downloadCsv(data, filename) {
     "gpu_memory_usage",
     "registered_at",
     "last_seen",
-    "loaded_models",
     "tags",
   ];
 
   const rows = data.map((agent) => {
-    const models = getModelList(agent).join("|");
+
     return [
       agent.id,
       getDisplayName(agent),

@@ -986,6 +986,8 @@ struct AgentLoadState {
     error_count: u64,
     total_latency_ms: u128,
     metrics_history: VecDeque<HealthMetrics>,
+    initializing: bool,
+    ready_models: Option<(u8, u8)>,
 }
 
 impl AgentLoadState {

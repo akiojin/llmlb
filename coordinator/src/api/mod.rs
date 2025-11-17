@@ -89,6 +89,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/models/:model_id", get(openai::get_model))
         // モデル管理API (SPEC-8ae67d67)
         .route("/api/models/available", get(models::get_available_models))
+        .route("/api/models/loaded", get(models::get_loaded_models))
         .route("/api/models/distribute", post(models::distribute_models))
         .route(
             "/api/agents/:agent_id/models",

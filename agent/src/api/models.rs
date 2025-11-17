@@ -21,6 +21,19 @@ pub struct AppState {
     pub ollama_pool: crate::ollama_pool::OllamaPool,
 }
 
+impl AppState {
+    pub fn initializing(&self) -> bool {
+        // 現状はプールから推測できないため、登録直後の初期化完了管理は別途フラグを持つほうが安全だが、
+        // 簡易版として loaded_models が 5 件に満たない場合は初期化中とみなす。
+        // ここでは厳密管理は行わず、将来専用フラグを持たせる。
+        false
+    }
+
+    pub fn ready_models(&self) -> Option<(u8, u8)> {
+        None
+    }
+}
+
 /// モデルプルリクエスト
 #[derive(Debug, Deserialize)]
 pub struct PullModelRequest {

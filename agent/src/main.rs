@@ -473,6 +473,7 @@ fn env_u64(key: &str) -> Option<u64> {
         .and_then(|value| value.parse::<u64>().ok())
 }
 
+#[allow(dead_code)]
 fn unsupported_models(existing: &[String], supported: &[String]) -> Vec<String> {
     use std::collections::HashSet;
 
@@ -486,9 +487,8 @@ fn unsupported_models(existing: &[String], supported: &[String]) -> Vec<String> 
         .iter()
         .filter_map(|e| {
             let trimmed = e.trim();
-            if trimmed.is_empty() {
-                None
-            } else if supported_set.contains(&trimmed.to_lowercase()) {
+            let is_supported = supported_set.contains(&trimmed.to_lowercase());
+            if trimmed.is_empty() || is_supported {
                 None
             } else {
                 Some(trimmed.to_string())

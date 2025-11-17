@@ -1,5 +1,4 @@
-#![cfg(all(test, feature = "gpu_selector_tests"))]
-#![allow(unexpected_cfgs)]
+#![cfg(test)]
 //! GPU能力ベースモデル選択ユニットテスト（GPU自動選択機能は仕様簡略化で無効化）
 
 #[cfg(all(test, feature = "gpu_selector_tests"))]

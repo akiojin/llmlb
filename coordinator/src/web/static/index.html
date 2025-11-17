@@ -27,6 +27,9 @@
         <button id="refresh-button" class="refresh-button" type="button">
           手動更新
         </button>
+        <button id="logout-button" class="refresh-button" type="button">
+          ログアウト
+        </button>
       </div>
     </header>
 
@@ -48,6 +51,12 @@
         </button>
         <button type="button" class="tab-button" data-tab="logs">
           ログ
+        </button>
+        <button type="button" class="tab-button" data-tab="api-keys">
+          APIキー管理
+        </button>
+        <button type="button" class="tab-button" data-tab="users">
+          ユーザー管理
         </button>
       </nav>
 
@@ -351,6 +360,66 @@
           </article>
         </section>
       </div>
+
+      <div class="tab-panel" id="tab-api-keys">
+        <section class="api-keys-section">
+          <header class="section-header">
+            <h2>APIキー管理</h2>
+            <button type="button" id="create-api-key-button" class="btn btn--primary">
+              新しいAPIキーを発行
+            </button>
+          </header>
+
+          <div class="table-wrapper">
+            <table class="api-keys-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>名前</th>
+                  <th>作成日時</th>
+                  <th>有効期限</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="api-keys-tbody">
+                <tr>
+                  <td colspan="5" class="empty-message">APIキーを読み込み中...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="tab-users">
+        <section class="users-section">
+          <header class="section-header">
+            <h2>ユーザー管理</h2>
+            <button type="button" id="create-user-button" class="btn btn--primary">
+              新しいユーザーを作成
+            </button>
+          </header>
+
+          <div class="table-wrapper">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>ユーザー名</th>
+                  <th>ロール</th>
+                  <th>作成日時</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody">
+                <tr>
+                  <td colspan="5" class="empty-message">ユーザーを読み込み中...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </main>
 
     <footer class="page-footer">
@@ -530,6 +599,91 @@
       </div>
     </div>
 
+    <!-- APIキー発行モーダル -->
+    <div id="api-key-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal__dialog">
+        <header class="modal__header">
+          <h2 id="api-key-modal-title">新しいAPIキーを発行</h2>
+          <button type="button" id="api-key-modal-close" class="modal__close" aria-label="閉じる">×</button>
+        </header>
+        <section class="modal__content">
+          <form id="api-key-form">
+            <div class="form-group">
+              <label for="api-key-name">キーの名前</label>
+              <input type="text" id="api-key-name" required />
+            </div>
+            <div class="form-group">
+              <label for="api-key-expires">有効期限（オプション）</label>
+              <input type="datetime-local" id="api-key-expires" />
+            </div>
+          </form>
+        </section>
+        <footer class="modal__footer">
+          <button type="button" id="api-key-modal-cancel" class="btn">キャンセル</button>
+          <button type="button" id="api-key-modal-create" class="btn btn--primary">発行</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- APIキー表示モーダル -->
+    <div id="api-key-display-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal__dialog">
+        <header class="modal__header">
+          <h2>APIキーが発行されました</h2>
+          <button type="button" id="api-key-display-close" class="modal__close" aria-label="閉じる">×</button>
+        </header>
+        <section class="modal__content">
+          <p style="color: #c53030; margin-bottom: 1rem;">
+            このAPIキーは今だけ表示されます。必ず安全な場所にコピーしてください。
+          </p>
+          <div class="form-group">
+            <label>APIキー</label>
+            <input type="text" id="api-key-display-value" readonly style="font-family: monospace;" />
+          </div>
+        </section>
+        <footer class="modal__footer">
+          <button type="button" id="api-key-display-copy" class="btn btn--secondary">コピー</button>
+          <button type="button" id="api-key-display-ok" class="btn btn--primary">閉じる</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ユーザー作成/編集モーダル -->
+    <div id="user-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal__dialog">
+        <header class="modal__header">
+          <h2 id="user-modal-title">ユーザーを作成</h2>
+          <button type="button" id="user-modal-close" class="modal__close" aria-label="閉じる">×</button>
+        </header>
+        <section class="modal__content">
+          <form id="user-form">
+            <div class="form-group">
+              <label for="user-username">ユーザー名</label>
+              <input type="text" id="user-username" required />
+            </div>
+            <div class="form-group">
+              <label for="user-password">パスワード</label>
+              <input type="password" id="user-password" />
+              <small>※編集時は変更する場合のみ入力</small>
+            </div>
+            <div class="form-group">
+              <label for="user-role">ロール</label>
+              <select id="user-role" required>
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+          </form>
+        </section>
+        <footer class="modal__footer">
+          <button type="button" id="user-modal-cancel" class="btn">キャンセル</button>
+          <button type="button" id="user-modal-save" class="btn btn--primary">保存</button>
+        </footer>
+      </div>
+    </div>
+
     <script src="/dashboard/app.js" defer></script>
+    <script src="/dashboard/api-keys.js" defer></script>
+    <script src="/dashboard/users.js" defer></script>
   </body>
 </html>

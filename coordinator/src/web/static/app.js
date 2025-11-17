@@ -1,3 +1,66 @@
+// === 認証機能 (T077-T078) ===
+
+/**
+ * JWTトークンを取得
+ * @returns {string|null} JWTトークン
+ */
+function getAuthToken() {
+  return localStorage.getItem('jwt_token');
+}
+
+/**
+ * 認証済みかチェック
+ * @returns {boolean} 認証済みならtrue
+ */
+function isAuthenticated() {
+  return !!getAuthToken();
+}
+
+/**
+ * ログアウト処理
+ */
+function logout() {
+  localStorage.removeItem('jwt_token');
+  window.location.href = '/dashboard/login.html';
+}
+
+/**
+ * 認証付きfetch（全APIリクエストに使用）
+ * @param {string} url - リクエストURL
+ * @param {RequestInit} options - fetchオプション
+ * @returns {Promise<Response>} fetchレスポンス
+ */
+async function authenticatedFetch(url, options = {}) {
+  // AUTH_DISABLED=true の場合はそのまま実行
+  const token = getAuthToken();
+
+  if (token) {
+    // JWTトークンをAuthorizationヘッダーに追加
+    options.headers = {
+      ...options.headers,
+      Authorization: `Bearer ${token}`,
+    };
+  }
+
+  try {
+    const response = await fetch(url, options);
+
+    // 401 Unauthorized の場合はログイン画面へリダイレクト (T078)
+    if (response.status === 401) {
+      console.warn('Authentication required, redirecting to login');
+      logout();
+      return response; // リダイレクト後だが一応returnする
+    }
+
+    return response;
+  } catch (error) {
+    console.error('Fetch error:', error);
+    throw error;
+  }
+}
+
+// === ダッシュボード機能 ===
+
 const REFRESH_INTERVAL_MS = 5000;
 const PERFORMANCE_THRESHOLDS = Object.freeze({
   fetch: 2000,
@@ -500,7 +563,7 @@ function evaluatePerformanceSeverity() {
 
 async function fetchJson(url, options = {}) {
   const { headers, ...rest } = options;
-  const response = await fetch(url, {
+  const response = await authenticatedFetch(url, {
     method: "GET",
     cache: "no-store",
     headers: {
@@ -1399,7 +1462,7 @@ async function saveAgentSettings(agentId) {
   };
 
   try {
-    const response = await fetch(`/api/agents/${agentId}/settings`, {
+    const response = await authenticatedFetch(`/api/agents/${agentId}/settings`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -1422,7 +1485,7 @@ async function saveAgentSettings(agentId) {
 
 async function deleteAgent(agentId) {
   try {
-    const response = await fetch(`/api/agents/${agentId}`, {
+    const response = await authenticatedFetch(`/api/agents/${agentId}`, {
       method: "DELETE",
       headers: {
         Accept: "application/json",
@@ -1440,7 +1503,7 @@ async function deleteAgent(agentId) {
 
 async function disconnectAgent(agentId) {
   try {
-    const response = await fetch(`/api/agents/${agentId}/disconnect`, {
+    const response = await authenticatedFetch(`/api/agents/${agentId}/disconnect`, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -1679,7 +1742,7 @@ let historyPerPage = 50;
 
 async function fetchRequestHistory() {
   try {
-    const response = await fetch("/api/dashboard/request-responses");
+    const response = await authenticatedFetch("/api/dashboard/request-responses");
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -1780,7 +1843,7 @@ function updateHistoryPagination(currentPage, totalPages) {
 
 async function showRequestDetail(id) {
   try {
-    const response = await fetch(`/api/dashboard/request-responses/${id}`);
+    const response = await authenticatedFetch(`/api/dashboard/request-responses/${id}`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -2379,3 +2442,12 @@ async function ensureModelsUiReady() {
     console.error('Failed to initialize models UI:', error);
   }
 }
+
+// ログアウトボタンのイベントリスナー
+const logoutButton = document.getElementById("logout-button");
+if (logoutButton) {
+  logoutButton.addEventListener("click", function() {
+    logout();
+  });
+}
+

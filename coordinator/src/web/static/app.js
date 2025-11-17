@@ -2289,41 +2289,14 @@ function switchTab(tabName) {
 
   state.currentTab = tabName;
 
-  // モデル管理タブがアクティブになった時の処理
-  if (tabName === 'models' && typeof window.updateModelsUI === 'function') {
-    window.updateModelsUI(state.agents);
-  }
-
-  if (tabName === 'logs') {
-    maybeRefreshLogs();
-  }
+  // タブUI廃止に伴い、タブ固有の初期化は行わない
 }
 
 /**
  * タブ切り替えイベントリスナーを登録
  */
 function initTabs() {
-  document.querySelectorAll('.tab-button').forEach((button) => {
-    button.addEventListener('click', () => {
-      switchTab(button.dataset.tab);
-    });
-
-    // キーボードナビゲーション
-    button.addEventListener('keydown', (e) => {
-      const buttons = Array.from(document.querySelectorAll('.tab-button'));
-      const index = buttons.indexOf(button);
-
-      if (e.key === 'ArrowLeft' && index > 0) {
-        buttons[index - 1].focus();
-      } else if (e.key === 'ArrowRight' && index < buttons.length - 1) {
-        buttons[index + 1].focus();
-      } else if (e.key === 'Home') {
-        buttons[0].focus();
-      } else if (e.key === 'End') {
-        buttons[buttons.length - 1].focus();
-      }
-    });
-  });
+  // no-op (タブUI廃止)
 }
 
 // ========== models.js統合 ==========

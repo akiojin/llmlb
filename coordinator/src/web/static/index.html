@@ -33,23 +33,7 @@
     <main>
       <section class="banner hidden" id="error-banner"></section>
 
-      <nav class="tabs-nav">
-        <button type="button" class="tab-button tab-button--active" data-tab="dashboard">
-          ダッシュボード
-        </button>
-        <button type="button" class="tab-button" data-tab="agents">
-          エージェント一覧
-        </button>
-        <button type="button" class="tab-button" data-tab="models">
-          モデル管理
-        </button>
-        <button type="button" class="tab-button" data-tab="history">
-          リクエスト履歴
-        </button>
-        <button type="button" class="tab-button" data-tab="logs">
-          ログ
-        </button>
-      </nav>
+      <!-- タブナビゲーションは廃止（単一ビュー） -->
 
       <div class="tab-panel tab-panel--active" id="tab-dashboard">
       <section class="stats-grid">
@@ -94,7 +78,7 @@
       </section>
       </div>
 
-      <div class="tab-panel" id="tab-agents">
+      <div class="tab-panel" id="tab-agents" hidden>
       <section class="agents-section">
         <header class="section-header">
           <h2>エージェント一覧</h2>
@@ -197,7 +181,7 @@
       </section>
       </div>
 
-      <div class="tab-panel" id="tab-models">
+      <div class="tab-panel" id="tab-models" hidden>
         <section class="models-section">
           <header class="models-hero">
             <div class="models-hero__copy">
@@ -289,7 +273,7 @@
         </section>
       </div>
 
-      <div class="tab-panel" id="tab-history">
+      <div class="tab-panel" id="tab-history" hidden>
       <section class="request-history-section">
         <header class="section-header">
           <h2>リクエスト履歴一覧</h2>
@@ -345,7 +329,7 @@
       </section>
       </div>
 
-      <div class="tab-panel" id="tab-logs">
+      <div class="tab-panel" id="tab-logs" hidden>
         <section class="logs-grid">
           <article class="log-card" aria-labelledby="logs-coordinator-title">
             <header class="log-card__header">

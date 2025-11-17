@@ -71,9 +71,8 @@ where
     S: FnOnce(reqwest::Response, &ChatRequest) -> Result<Response, AppError>,
     C: FnOnce(ChatResponse, &ChatRequest) -> Result<Response, AppError>,
 {
-    // 全エージェントが初期化中なら待機キュー/再試行を返す
+    // 全エージェントが初期化中なら待機キュー/再試行を返す（暫定：503）
     if state.load_manager.all_initializing().await {
-        // 簡易キュー: すぐに503で返し、リトライを促す
         let _ = state
             .load_manager
             .record_request_history(RequestOutcome::Queued, Utc::now())

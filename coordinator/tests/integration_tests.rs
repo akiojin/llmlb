@@ -4,5 +4,8 @@
 #[path = "integration/model_info_test.rs"]
 mod model_info_test;
 
+#[path = "contract/test_proxy_completions.rs"]
+mod test_proxy_completions;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

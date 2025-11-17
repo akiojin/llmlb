@@ -18,10 +18,10 @@ mod test_agent_register_gpu;
 #[path = "contract/test_proxy_chat.rs"]
 mod test_proxy_chat;
 
-#[path = "contract/test_proxy_generate.rs"]
-mod test_proxy_generate;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
+#[path = "contract/test_proxy_generate.rs"]
+mod test_proxy_generate;
 
 #[path = "contract/test_metrics.rs"]
 mod test_metrics;

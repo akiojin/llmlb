@@ -129,8 +129,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, Stat
     let body = serde_json::json!({
         "object": "list",
         "data": data,
-        "initializing": state.initializing(),
-        "ready_models": state.ready_models(),
+        "initializing": state.initializing().await,
+        "ready_models": state.ready_models().await,
     });
     Ok((status, Json(body)).into_response())
 }

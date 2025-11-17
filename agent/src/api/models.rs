@@ -19,19 +19,25 @@ pub struct AppState {
     pub coordinator_url: String,
     /// モデル→Ollamaのプール
     pub ollama_pool: crate::ollama_pool::OllamaPool,
+    /// 初期化状態
+    pub init_state: Arc<Mutex<InitState>>,
 }
 
 impl AppState {
-    pub fn initializing(&self) -> bool {
-        // 現状はプールから推測できないため、登録直後の初期化完了管理は別途フラグを持つほうが安全だが、
-        // 簡易版として loaded_models が 5 件に満たない場合は初期化中とみなす。
-        // ここでは厳密管理は行わず、将来専用フラグを持たせる。
-        false
+    pub async fn initializing(&self) -> bool {
+        self.init_state.lock().await.initializing
     }
 
-    pub fn ready_models(&self) -> Option<(u8, u8)> {
-        None
+    pub async fn ready_models(&self) -> Option<(u8, u8)> {
+        self.init_state.lock().await.ready_models
     }
+}
+
+/// 初期化進捗を共有するための状態
+#[derive(Debug, Clone, Copy)]
+pub struct InitState {
+    pub initializing: bool,
+    pub ready_models: Option<(u8, u8)>,
 }
 
 /// モデルプルリクエスト

@@ -117,11 +117,16 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
     let ollama_manager_for_api = Arc::new(Mutex::new(ollama_manager));
     let ollama_manager_clone = ollama_manager_for_api.clone();
     let ollama_pool = OllamaPool::new(ollama_port, ollama_port + 200);
+    let init_state = Arc::new(Mutex::new(api::models::InitState {
+        initializing: true,
+        ready_models: None,
+    }));
 
     let state = api::models::AppState {
         ollama_manager: ollama_manager_for_api,
         coordinator_url: coordinator_url.clone(),
         ollama_pool,
+        init_state: init_state.clone(),
     };
     let app = api::create_router(state);
     let bind_addr = format!("0.0.0.0:{}", agent_api_port);
@@ -185,8 +190,11 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
     // 対応モデルを取得し、全モデルを先に確保
     let model_list = fetch_models(&coordinator_url).await.unwrap_or_default();
     let total_models = model_list.len().min(u8::MAX as usize) as u8;
-    let mut initializing = true;
-    let mut ready_models = Some((0u8, total_models));
+    {
+        let mut st = init_state.lock().await;
+        st.initializing = true;
+        st.ready_models = Some((0, total_models));
+    }
 
     {
         let mut guard = ollama_manager_clone.lock().await;
@@ -196,8 +204,11 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
             }
         }
     }
-    initializing = false;
-    ready_models = Some((total_models, total_models));
+    {
+        let mut st = init_state.lock().await;
+        st.initializing = false;
+        st.ready_models = Some((total_models, total_models));
+    }
 
     // GPU能力情報を取得（静的な情報、起動時のみ）
     let gpu_capability = metrics_collector.get_gpu_capability();
@@ -241,12 +252,10 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
             }
         };
 
-        let ready_models = ready_models.clone().or_else(|| {
-            Some((
-                models.len().min(u8::MAX as usize) as u8,
-                total_models,
-            ))
-        });
+        let ready_models = {
+            let st = init_state.lock().await;
+            st.ready_models
+        };
 
         let heartbeat_req = HealthCheckRequest {
             agent_id,
@@ -267,7 +276,10 @@ async fn run_agent(config: LaunchConfig) -> AgentResult<()> {
             active_requests: 0,
             average_response_time_ms: None,
             loaded_models: models,
-            initializing,
+            initializing: {
+                let st = init_state.lock().await;
+                st.initializing
+            },
             ready_models,
         };
 

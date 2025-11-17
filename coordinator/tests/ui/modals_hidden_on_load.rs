@@ -20,21 +20,31 @@ fn build_app() -> Router {
 }
 
 #[tokio::test]
-async fn dashboard_html_has_no_model_panel() {
-    // minimal router serving static files
+async fn modals_are_hidden_on_initial_load() {
+    // スタティックHTMLを直接取得し、初期状態でモーダルが非表示になっていることを確認する
     let app = build_app();
     let body = app
-        .oneshot(axum::http::Request::builder()
-            .uri("/dashboard/")
-            .body(axum::body::Body::empty())
-            .unwrap())
+        .oneshot(
+            axum::http::Request::builder()
+                .uri("/dashboard/")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap()
         .into_body();
+
     let bytes = to_bytes(body, usize::MAX).await.unwrap();
     let html = String::from_utf8_lossy(&bytes);
 
-    assert!(html.contains("Ollama Coordinator"));
-    assert!(!html.contains("available-models-list"), "model panel should be removed");
-    assert!(!html.contains("loaded-models-list"), "model load panel should be removed");
+    assert!(
+        html.contains("id=\"agent-modal\" class=\"modal hidden\"")
+            || html.contains("class=\"modal hidden\" id=\"agent-modal\""),
+        "agent modal should be hidden by default",
+    );
+    assert!(
+        html.contains("id=\"request-modal\" class=\"modal hidden\"")
+            || html.contains("class=\"modal hidden\" id=\"request-modal\""),
+        "request modal should be hidden by default",
+    );
 }

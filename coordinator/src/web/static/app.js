@@ -126,6 +126,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalDisconnect = document.getElementById("agent-modal-disconnect");
   const tbody = document.getElementById("agents-body");
 
+  // リロード直後に詳細モーダルが開いたままにならないよう、確実に非表示へ初期化
+  modal?.classList.add("hidden");
+  document.getElementById("request-modal")?.classList.add("hidden");
+
   initTabs();
 
   paginationRefs.prev = document.getElementById("page-prev");
@@ -2279,4 +2283,3 @@ function initTabs() {
   // 旧タブパネルは全て表示状態にしておく
   switchTab('all');
 }
-

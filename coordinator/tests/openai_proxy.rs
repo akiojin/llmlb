@@ -687,7 +687,7 @@ async fn test_openai_models_list_success() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "object": "list",
             "data": [{
-                "id": "llama3",
+                "id": "gpt-oss:20b",
                 "object": "model",
                 "owned_by": "ollama"
             }]
@@ -716,7 +716,7 @@ async fn test_openai_models_list_success() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(value["data"][0]["id"], "llama3");
+    assert_eq!(value["data"][0]["id"], "gpt-oss:20b");
 }
 
 #[tokio::test]
@@ -724,9 +724,9 @@ async fn test_openai_model_detail_success() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/models/phi3"))
+        .and(path("/v1/models/gpt-oss:20b"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "phi3",
+            "id": "gpt-oss:20b",
             "object": "model",
             "owned_by": "ollama"
         })))
@@ -740,7 +740,7 @@ async fn test_openai_model_detail_success() {
         .oneshot(
             axum::http::Request::builder()
                 .method("GET")
-                .uri("/v1/models/phi3")
+                .uri("/v1/models/gpt-oss:20b")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

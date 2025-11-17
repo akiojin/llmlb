@@ -32,6 +32,13 @@
 5. **ドキュメント/運用** ⏳ 進行中
    - README.ja.md に最新アーキ要点を追記済み。ポート表・起動手順は未更新。
    - SPEC-8ae67d67 はモデル一覧・手動配布廃止を更新済み。
+6. **ログAPIの要件化とTDD** 🆕
+   - 要件: エージェントの最新ログをHTTPで取得でき、コーディネーター経由でも同等に参照できること（tail件数指定可、デフォルト200行、JSONLテキスト返却）。
+   - スコープ: Agent `/api/logs` (tail), Coordinator `/api/agents/:id/logs` プロキシ、DashboardのログパネルをこのAPIに接続。
+   - TDD方針: 
+     1) Agent単体: `/api/logs?tail=5` が末尾5行を返し、存在しないファイルでも空文字+200となることをテスト。
+     2) Coordinator契約: エージェントが200を返すケース・タイムアウト/接続不可で502となるケースをカバー。
+     3) UIはスモーク（fetchが成功し、テキストが表示される）で確認。
 
 ## 進捗 (Progress)
 - [x] 2025-11-17T15:10Z  ready待機キューの挙動テストを追加し、clippy/test/markdownlint/タスクチェックを通過。
@@ -41,6 +48,7 @@
 - [x] 2025-11-18 API統合テスト追加（待機キュー溢れ→HTTP503、env override付き）を完了。UI再チェックとREADME.ja.md ポート表整理は未。
 - [x] 2025-11-18 対応モデルを実在リストに修正（gpt-oss-safeguard:20b / glm4:9b-chat-q4_K_M / qwen3-coder:30b）し、UI・spec・テストを更新。
 - [ ] UI非表示問題の再確認とREADME.ja.md ポート表追記。
+- [ ] ログAPI実装: Agent `/api/logs`, Coordinator `/api/agents/:id/logs`, UI接続、テスト追加（上記TDD方針）。
 - [ ] specs 未完了タスク (自動継承)
   - SPEC-ee2aa3ef: **T025 ホットフィックスフロー確認／統合テスト(T023–T025)実行**
   - SPEC-5cd7b614: **PRマージ後の動作確認（メンテナ作業）**

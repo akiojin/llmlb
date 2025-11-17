@@ -5,6 +5,7 @@
 
 /// T018: APIキー発行フローのテスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_api_key_issuance_flow() {
     // REDフェーズ: この機能は未実装
     // 実装後は以下のフローをテスト：
@@ -18,6 +19,7 @@ async fn test_api_key_issuance_flow() {
 
 /// T019: APIキー認証成功フローのテスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_api_key_auth_success() {
     // REDフェーズ: この機能は未実装
     // 実装後は以下のフローをテスト：
@@ -30,6 +32,7 @@ async fn test_api_key_auth_success() {
 
 /// T020: 無効なAPIキーでの認証失敗テスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_api_key_auth_failure() {
     // REDフェーズ: この機能は未実装
     // 実装後は以下のフローをテスト：

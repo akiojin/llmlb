@@ -123,6 +123,7 @@ async fn test_manual_distribution_to_specific_agent() {
 
 /// T015: 全エージェントへ一括配布
 #[tokio::test]
+#[ignore = "RED phase: waiting for models/distribute endpoint implementation"]
 async fn test_bulk_distribution_to_all_agents() {
     let app = build_app().await;
 

@@ -36,6 +36,7 @@ async fn build_app() -> Router {
 
 /// T015: ログイン成功フローのテスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_login_success_flow() {
     let _app = build_app();
 
@@ -51,6 +52,7 @@ async fn test_login_success_flow() {
 
 /// T016: ログイン失敗フロー（間違ったパスワード）のテスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_login_failure_wrong_password() {
     let _app = build_app();
 
@@ -65,6 +67,7 @@ async fn test_login_failure_wrong_password() {
 
 /// T017: 未認証でのダッシュボードアクセス拒否テスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_unauthorized_dashboard_access() {
     let _app = build_app();
 

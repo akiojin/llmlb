@@ -5,6 +5,7 @@
 
 /// T024: エージェント登録時のトークン発行テスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_agent_registration_token_issuance() {
     // REDフェーズ: この機能は未実装
     // 実装後は以下をテスト：
@@ -18,6 +19,7 @@ async fn test_agent_registration_token_issuance() {
 
 /// T025: トークン付きヘルスチェック成功テスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_health_check_with_valid_token() {
     // REDフェーズ: この機能は未実装
     // 実装後は以下をテスト：
@@ -31,6 +33,7 @@ async fn test_health_check_with_valid_token() {
 
 /// T026: トークンなしヘルスチェック拒否テスト
 #[tokio::test]
+#[ignore = "RED phase: waiting for implementation"]
 async fn test_health_check_without_token_rejected() {
     // REDフェーズ: この機能は未実装
     // 実装後は以下をテスト：

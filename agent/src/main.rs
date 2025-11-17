@@ -469,6 +469,30 @@ fn env_u64(key: &str) -> Option<u64> {
         .and_then(|value| value.parse::<u64>().ok())
 }
 
+fn unsupported_models(existing: &[String], supported: &[String]) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let supported_set: HashSet<String> = supported
+        .iter()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    existing
+        .iter()
+        .filter_map(|e| {
+            let trimmed = e.trim();
+            if trimmed.is_empty() {
+                None
+            } else if supported_set.contains(&trimmed.to_lowercase()) {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .collect()
+}
+
 async fn send_heartbeat_once(
     coordinator_client: &mut CoordinatorClient,
     agent_id: uuid::Uuid,
@@ -863,4 +887,20 @@ mod tests {
         let result = register_with_retry(&mut client, register_req).await;
         assert!(result.is_err());
     }
-}
+}    #[test]
+    fn test_unsupported_models_filters_only_extra_models() {
+        let existing = vec![
+            "gpt-oss:20b".to_string(),
+            "extra-old".to_string(),
+            "gpt-oss:120b".to_string(),
+            "QWEN3-CODER:30B".to_string(),
+        ];
+        let supported = vec![
+            "gpt-oss:20b".to_string(),
+            "gpt-oss:120b".to_string(),
+            "gpt-oss-safeguard:20b".to_string(),
+            "qwen3-coder:30b".to_string(),
+        ];
+        let result = unsupported_models(&existing, &supported);
+        assert_eq!(result, vec!["extra-old"]);
+    }

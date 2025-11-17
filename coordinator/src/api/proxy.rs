@@ -630,9 +630,14 @@ pub(crate) fn save_request_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, registry::AgentRegistry, tasks::DownloadTaskManager};
+    use crate::{
+        balancer::{LoadManager, MetricsUpdate},
+        registry::AgentRegistry,
+        tasks::DownloadTaskManager,
+    };
     use ollama_coordinator_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
+    use std::time::Duration;
 
     fn create_test_state() -> AppState {
         let registry = AgentRegistry::new();
@@ -733,5 +738,148 @@ mod tests {
 
         let agent = result.unwrap();
         assert_eq!(agent.machine_name, "machine2");
+    }
+
+    #[tokio::test]
+    async fn proxy_chat_waits_until_agent_ready_then_succeeds() {
+        use axum::{routing::post, Json, Router};
+        use ollama_coordinator_common::protocol::{ChatMessage, ChatRequest, ChatResponse};
+        use tokio::{net::TcpListener, sync::oneshot, time::timeout};
+
+        // ---- stub agent (OpenAI互換API) ----
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let agent_router = Router::new().route(
+            "/api/chat",
+            post(|Json(_req): Json<ChatRequest>| async {
+                let resp = ChatResponse {
+                    message: ChatMessage {
+                        role: "assistant".into(),
+                        content: "ready".into(),
+                    },
+                    done: true,
+                };
+                (StatusCode::OK, Json(resp))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let agent_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(
+                listener,
+                agent_router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await;
+        });
+
+        // ---- coordinator state ----
+        let registry = AgentRegistry::new();
+        let load_manager = LoadManager::new(registry.clone());
+        let request_history =
+            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
+        let task_manager = crate::tasks::DownloadTaskManager::new();
+        let state = AppState {
+            registry,
+            load_manager,
+            request_history,
+            task_manager,
+        };
+
+        // register agent (ollama_port = APIポート-1と報告)
+        let register_req = RegisterRequest {
+            machine_name: "ready-agent".into(),
+            ip_address: agent_addr.ip(),
+            ollama_version: "0.0.0-test".into(),
+            ollama_port: agent_addr.port().saturating_sub(1),
+            gpu_available: true,
+            gpu_devices: vec![GpuDeviceInfo {
+                model: "Test GPU".to_string(),
+                count: 1,
+                memory: Some(16_000_000_000),
+            }],
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+        };
+        let reg = state.registry.register(register_req).await.unwrap();
+        let agent_id = reg.agent_id;
+
+        // all initializing
+        state
+            .load_manager
+            .record_metrics(MetricsUpdate {
+                agent_id,
+                cpu_usage: 0.0,
+                memory_usage: 0.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                average_response_time_ms: None,
+                initializing: true,
+                ready_models: Some((0, 5)),
+            })
+            .await
+            .unwrap();
+
+        // after a short delay, mark as ready to unblock wait_for_ready
+        let lm = state.load_manager.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            let _ = lm
+                .record_metrics(MetricsUpdate {
+                    agent_id,
+                    cpu_usage: 0.0,
+                    memory_usage: 0.0,
+                    gpu_usage: None,
+                    gpu_memory_usage: None,
+                    gpu_memory_total_mb: None,
+                    gpu_memory_used_mb: None,
+                    gpu_temperature: None,
+                    gpu_model_name: None,
+                    gpu_compute_capability: None,
+                    gpu_capability_score: None,
+                    active_requests: 0,
+                    average_response_time_ms: Some(10.0),
+                    initializing: false,
+                    ready_models: Some((5, 5)),
+                })
+                .await;
+        });
+
+        // exercise proxy (non-streaming)
+        let req = ChatRequest {
+            model: "gpt-oss:20b".into(),
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: "hello".into(),
+            }],
+            stream: false,
+        };
+
+        let response = timeout(
+            Duration::from_secs(2),
+            proxy_chat_with_handlers(
+                &state,
+                req,
+                "127.0.0.1".parse().unwrap(),
+                |resp, _| forward_streaming_response(resp).map_err(AppError::from),
+                |payload, _| Ok((StatusCode::OK, Json(payload)).into_response()),
+            ),
+        )
+        .await
+        .expect("proxy should not time out")
+        .expect("proxy should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // shutdown stub
+        let _ = shutdown_tx.send(());
     }
 }

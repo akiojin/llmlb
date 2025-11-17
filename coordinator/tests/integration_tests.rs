@@ -1,10 +1,5 @@
 //! Integration tests entrypoint for model management
-
-#[path = "integration/auto_download_test.rs"]
-mod auto_download_test;
-
-#[path = "integration/manual_distribution_test.rs"]
-mod manual_distribution_test;
+//! （現行仕様では手動配布/旧自動配布テストを削除済み）
 
 #[path = "integration/model_info_test.rs"]
 mod model_info_test;

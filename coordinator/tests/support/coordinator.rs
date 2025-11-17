@@ -38,7 +38,8 @@ pub async fn register_agent(
             "machine_name": "stub-agent",
             "ip_address": agent_addr.ip().to_string(),
             "ollama_version": "0.0.0-test",
-            "ollama_port": agent_addr.port(),
+            // エージェントAPIポートは ollama_port+1 という前提のため、APIポートから1引いた値を報告する
+            "ollama_port": agent_addr.port().saturating_sub(1),
             "gpu_available": true,
             "gpu_devices": [
                 {"model": "Test GPU", "count": 1}

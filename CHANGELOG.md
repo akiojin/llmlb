@@ -1,3 +1,109 @@
+# [2.0.0](https://github.com/akiojin/ollama-router/compare/v1.5.0...v2.0.0) (2025-11-18)
+
+
+* feat!: プロジェクト名をollama-routerに変更し、用語をrouter/nodeに統一 ([b248415](https://github.com/akiojin/ollama-router/commit/b2484151f18ce6cf78cd3cd1d9e12ce3fbc52f4e)), closes [#96](https://github.com/akiojin/ollama-router/issues/96)
+
+
+### Bug Fixes
+
+* add support module to integration_gpu test harness ([d70a080](https://github.com/akiojin/ollama-router/commit/d70a08014c448a127f0a2f5c6e8b740f2781c81b))
+* **agent:** advance ready_models on pull and resend heartbeat when all ready ([0c5f91b](https://github.com/akiojin/ollama-router/commit/0c5f91bd3e0fd763fba4be64d79664e5883535f1))
+* **agent:** heartbeat uses placeholder metrics when collection fails ([87bf821](https://github.com/akiojin/ollama-router/commit/87bf8210c05481000a8821a706037d5dcc53ce51))
+* **agent:** mark ready when counts reached and push initial heartbeat ([5076c71](https://github.com/akiojin/ollama-router/commit/5076c71a84408c90ab7e27c5c0ac2e033bd93749))
+* **agent:** start api server before registration for health check ([f4e3241](https://github.com/akiojin/ollama-router/commit/f4e3241cb92cc0234f17aa61b77e991769d778a5))
+* **agent:** stop forcing initializing true when some models not ready ([95973d5](https://github.com/akiojin/ollama-router/commit/95973d531eaa7a2b9989a189ba853aec6974163d))
+* **auth:** openAI互換エンドポイントへのAPIキー認証適用とテスト修正 ([d9a09d4](https://github.com/akiojin/ollama-router/commit/d9a09d4d99920ec04cd1918761ead6e8020e25ff))
+* **auth:** 認証機能のテスト修正とレスポンス改善 ([f0305fa](https://github.com/akiojin/ollama-router/commit/f0305fa50f4284c8371878b4a4dec5591b76b9cb))
+* **build:** macOSでホストclang/arを利用 ([c7b2bed](https://github.com/akiojin/ollama-router/commit/c7b2bedbbdf1efa8d60590d064fc957e8b674b9b))
+* **build:** macOSネイティブビルドをサポート ([b3e5f6f](https://github.com/akiojin/ollama-router/commit/b3e5f6f50ee11646670100297ab91907a9edc062))
+* **clippy:** drop redundant AgentError conversion in heartbeat ([68850ce](https://github.com/akiojin/ollama-router/commit/68850cec1bd881e7f3c187f628377440fed529cf))
+* **models:** use existing glm4 9b q4_K_M manifest and align UI/specs ([6932729](https://github.com/akiojin/ollama-router/commit/6932729c8d0dbe89abfed82586e872f45ba57b13))
+* **proxy:** sync registry readiness when recording metrics ([e3fea5c](https://github.com/akiojin/ollama-router/commit/e3fea5ccf1f86a505354ecd954754123a8fb3e87))
+* **proxy:** unify header types and init metrics fields ([c112d97](https://github.com/akiojin/ollama-router/commit/c112d97fc1fd00d1854dfb710ba8407dac38d27b))
+* remove needless borrow in users_api_test ([155747e](https://github.com/akiojin/ollama-router/commit/155747ebecfef228c92fe697478b17543017dd76))
+* **rename:** agent registryをnode registryに修正 ([c304ebc](https://github.com/akiojin/ollama-router/commit/c304ebc363900f5b7b1f6eaa0677f08a5bb8b336))
+* **rename:** guiコードのアイコンファイル参照を修正 ([a64bd2e](https://github.com/akiojin/ollama-router/commit/a64bd2eba638b4e2724bebf39a704dbe751a8261))
+* **rename:** rename作業の残存箇所を修正してテストを全て通過させる ([bcb4cf7](https://github.com/akiojin/ollama-router/commit/bcb4cf72f832674f046039b614049d4f37550f24))
+* **rename:** support::coordinatorをsupport::routerに修正 ([9657d87](https://github.com/akiojin/ollama-router/commit/9657d87b493658194edd64a7dfa2290896b672c6))
+* **rename:** テストコード内の環境変数名を統一 ([704a328](https://github.com/akiojin/ollama-router/commit/704a328bdf8acecf99729632612bb237d8f0f38f))
+* **rename:** テストファイル内のクレート名参照を修正 ([39d9b25](https://github.com/akiojin/ollama-router/commit/39d9b257a983765486fe2efc633ab7166ce5431e))
+* **rename:** リネーム漏れ修正によりCI失敗を解消 ([bd0104b](https://github.com/akiojin/ollama-router/commit/bd0104b30352cfadc8aa220169b9dea96e4a79c3))
+* resolve clippy and dead_code warnings ([ea90f2a](https://github.com/akiojin/ollama-router/commit/ea90f2ab4724a2b8b848ef5a9e54b19e454bcf63))
+* resolve duplicate module and clippy issues ([50286a5](https://github.com/akiojin/ollama-router/commit/50286a5425071e4ee5ed4561dc193326c77b3da4))
+* resolve duplicate module errors in integration tests ([59ce8d6](https://github.com/akiojin/ollama-router/commit/59ce8d69fe44434994723a842906d0570ea58728))
+* **test:** add db_pool and jwt_secret to all AppState initializations ([e1624eb](https://github.com/akiojin/ollama-router/commit/e1624eb914a37408c05caaf041551a9262208a77))
+* **test:** configure tests to run with single thread ([dd8769b](https://github.com/akiojin/ollama-router/commit/dd8769b2defe8f2b0cbb5b053f156181047df426))
+* **test:** contract testsでヘルスチェックをスキップし全テスト成功 ([d161809](https://github.com/akiojin/ollama-router/commit/d161809737126702ce22124a8f30ae259d864720))
+* **test:** dashboard_gpu_displayテストの期待ステータスコードを修正 ([8a0c66a](https://github.com/akiojin/ollama-router/commit/8a0c66a57efdc343585d597d327c9ff492b6fa11))
+* **test:** model_info_testの期待ステータスコードを修正 ([fe131a0](https://github.com/akiojin/ollama-router/commit/fe131a0c4836ba6223726aaf8841dbced363d000))
+* **test:** openai互換APIテストのモックエンドポイントをv1パスに修正 ([4aeaa9b](https://github.com/akiojin/ollama-router/commit/4aeaa9b7f3789ff9a568ce24e1b63415f391499d))
+* **test:** openAI互換エンドポイントのテストにAPIキー認証を追加 ([21df080](https://github.com/akiojin/ollama-router/commit/21df0804c459bff45f74b3afe59630cc279f84c3))
+* **test:** openai互換性テストでtest-modelをロード済みモデルに追加 ([e200313](https://github.com/akiojin/ollama-router/commit/e200313c37bb870eeeb1b9bde817175ea3f74644))
+* **test:** proxy_completions_queue_overflow_returns_503テストを一時的に無効化 ([de4b9d3](https://github.com/akiojin/ollama-router/commit/de4b9d3d7fef24f3c9868783a05b5800d0190b3e))
+* **test:** resolve test isolation issues with AUTH_DISABLED env var ([285748d](https://github.com/akiojin/ollama-router/commit/285748d28fa72414ffd79c6b7b782228055c780b))
+* **tests:** reference support module via crate to avoid duplicate loads ([2b17509](https://github.com/akiojin/ollama-router/commit/2b175098b9e2a806d2a642d2f632efbb6128956d))
+* **tests:** silence missing-docs and unexpected cfg warnings ([bd29a5f](https://github.com/akiojin/ollama-router/commit/bd29a5f0c750e00906a77ba213cf259056813814))
+* **ui,api:** address review feedback (logs route, csv, readiness render, banner/colspan) ([3e8a63c](https://github.com/akiojin/ollama-router/commit/3e8a63cb6ab100b7acd6f8a0985a1a29588e3656))
+* **ui:** keep detail modals hidden until opened ([a6b0029](https://github.com/akiojin/ollama-router/commit/a6b0029c6a6b63f7c30306bc8593c1a52416d1bd))
+* **ui:** keep modals hidden on load and cover with tests ([fec1040](https://github.com/akiojin/ollama-router/commit/fec104032bb111ee652f5be7eaa5a92febe36c0d))
+* **ui:** open agent modal without reference errors ([51fef50](https://github.com/akiojin/ollama-router/commit/51fef50806b3fe2e7430403cff16316f070fa9cc))
+* **ui:** show request timestamps in browser local time with TZ label ([19bc1c5](https://github.com/akiojin/ollama-router/commit/19bc1c518b51dafaf5ce4a303d1d5022f72bd9de))
+* use fully qualified path for DownloadTaskManager ([a7ab672](https://github.com/akiojin/ollama-router/commit/a7ab67211f34b1631ee85d31541396963d831d17))
+
+
+### Features
+
+* **agent-api:** proxy openai traffic via agent endpoint ([fbdc3fa](https://github.com/akiojin/ollama-router/commit/fbdc3fa2cb264bf88e9fd4a5ebab431099d24ce4))
+* **agent-init:** propagate initializing/ready_models in heartbeat ([f0bf8e9](https://github.com/akiojin/ollama-router/commit/f0bf8e9a7802afc430b599e0a431a90b1a080be9))
+* **agent-pool:** add per-model ollama pool and route via agent api ([a453b53](https://github.com/akiojin/ollama-router/commit/a453b53496dfdd9e527035f2bf347b04167d91a0))
+* **agent-reg:** parse agent /v1/models on register and sync readiness ([d6465aa](https://github.com/akiojin/ollama-router/commit/d6465aa4cefa7f69c97c5c69ba9bfc3993afbd11))
+* **agent:** allow skipping models via OLLAMA_SKIP_MODELS ([60aebbc](https://github.com/akiojin/ollama-router/commit/60aebbcd6583d900330ec10733b1181f581e76a8))
+* **agent:** bootstrap all coordinator models via pool ([8c6a239](https://github.com/akiojin/ollama-router/commit/8c6a239cd0c0301d39a1ae4d615e8b0a2cc35ed2))
+* **agent:** t088-t090エージェント認証トークン統合を実装 ([daee161](https://github.com/akiojin/ollama-router/commit/daee161e37edd4b669794638841c754d9dbedf80))
+* **auth:** add authentication endpoints and agent token support ([8fcd37d](https://github.com/akiojin/ollama-router/commit/8fcd37d0816b190ddeb6044c6dd44c8ecbcdd4bd))
+* **auth:** implement password hashing and JWT (T032-T046 GREEN) ([72e9b03](https://github.com/akiojin/ollama-router/commit/72e9b03bd4243c0bbdf876ebbe4e843e706aa3a0))
+* **auth:** t047-t056認証ミドルウェアとdb操作実装 ([5717eb4](https://github.com/akiojin/ollama-router/commit/5717eb4d2fe51af647de3280596caca76bc30958))
+* **auth:** t057-t059認証api実装とappstate拡張 ([a53dd34](https://github.com/akiojin/ollama-router/commit/a53dd34b5a988c1bfbcf52119827f0b0dd3ab9c9))
+* **auth:** t060-t063ユーザー管理api実装 ([6958fe7](https://github.com/akiojin/ollama-router/commit/6958fe7b17716509c61473e76678a0df2cc48789))
+* **auth:** t064-t066 apiキー管理api実装 ([17de595](https://github.com/akiojin/ollama-router/commit/17de5952ed082173a46e7d1ba3dcbc829745dd09))
+* **auth:** t067エージェント登録apiにagent_token追加 ([2a65c97](https://github.com/akiojin/ollama-router/commit/2a65c97496d0822ef230943ba385c0a399976e47))
+* **auth:** t068-t070初回起動時の管理者作成処理を実装 ([60fc0e1](https://github.com/akiojin/ollama-router/commit/60fc0e1a5c910bfddef34ed67044c93906c6b71f))
+* **auth:** t071-t074ルーター統合と認証ミドルウェア適用 ([a360860](https://github.com/akiojin/ollama-router/commit/a360860c9584b9b70444e89a3980381253e0d338))
+* **auth:** マージ feature/authenticate into feature/rename ([7053963](https://github.com/akiojin/ollama-router/commit/705396351f09ba087b049576c1d6977dc41892fb))
+* **auth:** 認証機能のセットアップ ([8b6048f](https://github.com/akiojin/ollama-router/commit/8b6048fbd9ba56299f70d5056fc1430d8e5b3dd0))
+* **coord-error:** add service unavailable handling ([c7ab69d](https://github.com/akiojin/ollama-router/commit/c7ab69ddd604c35ecafbbb8e00cb7dc5f4d15c2e))
+* **dashboard:** track uptime since last online ([3a557fd](https://github.com/akiojin/ollama-router/commit/3a557fde66caa59d65b93224de7541952f530384))
+* **db:** implement SQLite migrations (T039-T041 GREEN) ([0e4ee72](https://github.com/akiojin/ollama-router/commit/0e4ee728a68eb3925986f5d058fb3331a83bd05d))
+* **frontend:** t075-t087フロントエンド実装完了 ([693dba7](https://github.com/akiojin/ollama-router/commit/693dba725eb2dee06559a9ea9a6e5717e4bf150b))
+* **logs:** add agent /api/logs and coordinator proxy integration ([4c93462](https://github.com/akiojin/ollama-router/commit/4c9346221314531d49ceee4bbc80cf5f9a8694de))
+* **models:** align available list to required five models ([9feb85d](https://github.com/akiojin/ollama-router/commit/9feb85d029a7f28c46e2f1afa70c3669cda1c097))
+* **models:** lock supported list to requested models ([c4a847c](https://github.com/akiojin/ollama-router/commit/c4a847c792b47628337188a29d59b2e63a84d941))
+* **proxy:** block until ready agent (queue-like wait, max 1024 waiters) ([eee03dc](https://github.com/akiojin/ollama-router/commit/eee03dc11c8bacabf21b92d774071a77599497d1))
+* **proxy:** route openai traffic via agent api and stream passthrough ([9c333ea](https://github.com/akiojin/ollama-router/commit/9c333eaf1390af0e68e487b3b46936b260265109))
+
+
+### BREAKING CHANGES
+
+* プロジェクト名、実行ファイル名、ストレージパス、環境変数名が変更されました。
+
+既存ユーザーは以下の対応が必要です:
+
+1. データ移行:
+   - 旧: ~/.ollama-coordinator/
+   - 新: ~/.or/
+
+2. 環境変数更新:
+   - COORDINATOR_* → ROUTER_*
+   - AGENT_* → NODE_*
+
+3. 実行ファイル名:
+   - ollama-coordinator-coordinator → or-router
+   - ollama-coordinator-agent → or-node
+
+4. Docker/設定ファイル:
+   - docker-compose.ymlのサービス名変更
+   - 環境変数の更新
+
 # [1.5.0](https://github.com/akiojin/ollama-router/compare/v1.4.1...v1.5.0) (2025-11-15)
 
 

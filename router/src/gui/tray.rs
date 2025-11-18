@@ -253,7 +253,7 @@ fn launch_url(url: &str) -> std::io::Result<()> {
 }
 
 fn create_icon() -> Icon {
-    load_icon_from_png(include_bytes!("../../../assets/icons/coordinator.png"))
+    load_icon_from_png(include_bytes!("../../../assets/icons/router.png"))
 }
 
 fn load_icon_from_png(bytes: &[u8]) -> Icon {

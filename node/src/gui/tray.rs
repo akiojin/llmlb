@@ -278,7 +278,7 @@ fn build_dashboard_url(router_url: &str) -> String {
 }
 
 fn create_icon() -> Icon {
-    load_icon_from_png(include_bytes!("../../../assets/icons/agent.png"))
+    load_icon_from_png(include_bytes!("../../../assets/icons/node.png"))
 }
 
 fn load_icon_from_png(bytes: &[u8]) -> Icon {

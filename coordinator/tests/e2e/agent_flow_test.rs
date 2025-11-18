@@ -42,6 +42,8 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 #[tokio::test]
 async fn test_complete_agent_flow() {
+    // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // Step 1: エージェント登録
@@ -73,11 +75,18 @@ async fn test_complete_agent_flow() {
         .await
         .unwrap();
 
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
+    let status = register_response.status();
     let register_body = axum::body::to_bytes(register_response.into_body(), usize::MAX)
         .await
         .unwrap();
+
+    if status != StatusCode::CREATED {
+        let error_text = String::from_utf8_lossy(&register_body);
+        eprintln!("Registration failed with status: {:?}", status);
+        eprintln!("Error body: {}", error_text);
+    }
+    assert_eq!(status, StatusCode::CREATED);
+
     let register_data: serde_json::Value = serde_json::from_slice(&register_body).unwrap();
 
     let agent_id = Uuid::parse_str(register_data["agent_id"].as_str().unwrap()).unwrap();
@@ -162,6 +171,8 @@ async fn test_complete_agent_flow() {
 
 #[tokio::test]
 async fn test_agent_token_persistence() {
+    // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // エージェント登録
@@ -223,7 +234,11 @@ async fn test_agent_token_persistence() {
         .await
         .unwrap();
 
-    assert_eq!(second_register_response.status(), StatusCode::CREATED);
+    assert_eq!(
+        second_register_response.status(),
+        StatusCode::OK,
+        "Re-registration should return 200 OK (update)"
+    );
 
     let second_body = axum::body::to_bytes(second_register_response.into_body(), usize::MAX)
         .await

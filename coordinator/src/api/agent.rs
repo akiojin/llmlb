@@ -19,7 +19,7 @@ use tracing::{error, info};
 pub async fn register_agent(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
-) -> Result<Json<RegisterResponse>, AppError> {
+) -> Result<(StatusCode, Json<RegisterResponse>), AppError> {
     info!(
         "Agent registration request: machine={}, ip={}, gpu_available={}",
         req.machine_name, req.ip_address, req.gpu_available
@@ -174,17 +174,21 @@ pub async fn register_agent(
     let mut response = state.registry.register(req).await?;
     response.agent_api_port = Some(agent_api_port);
 
-    // エージェントトークンを生成して保存
-    let agent_token_with_plaintext = crate::db::agent_tokens::create(&state.db_pool, response.agent_id)
-        .await
-        .map_err(|e| {
-            error!("Failed to create agent token: {}", e);
-            AppError(CoordinatorError::Internal(format!(
-                "Failed to create agent token: {}",
-                e
-            )))
-        })?;
-    response.agent_token = Some(agent_token_with_plaintext.token);
+    // 新規登録時のみエージェントトークンを生成
+    // 更新時は既存のトークンを保持
+    if response.status == ollama_coordinator_common::protocol::RegisterStatus::Registered {
+        let agent_token_with_plaintext =
+            crate::db::agent_tokens::create(&state.db_pool, response.agent_id)
+                .await
+                .map_err(|e| {
+                    error!("Failed to create agent token: {}", e);
+                    AppError(CoordinatorError::Internal(format!(
+                        "Failed to create agent token: {}",
+                        e
+                    )))
+                })?;
+        response.agent_token = Some(agent_token_with_plaintext.token);
+    }
 
     // 取得した初期状態を反映
     let _ = state
@@ -200,11 +204,17 @@ pub async fn register_agent(
         )
         .await;
 
+    // HTTPステータスコードを決定（新規登録=201, 更新=200）
+    let status_code = match response.status {
+        ollama_coordinator_common::protocol::RegisterStatus::Registered => StatusCode::CREATED,
+        ollama_coordinator_common::protocol::RegisterStatus::Updated => StatusCode::OK,
+    };
+
     // エージェント登録成功後、コーディネーターがサポートする全モデルを自動配布
     // テストモードではスキップ
     if skip_health_check {
         info!("Auto-distribution skipped in test mode");
-        return Ok(Json(response));
+        return Ok((status_code, Json(response)));
     }
 
     let agent_id = response.agent_id;
@@ -272,7 +282,7 @@ pub async fn register_agent(
         response.download_task_id = Some(*first_task);
     }
 
-    Ok(Json(response))
+    Ok((status_code, Json(response)))
 }
 
 /// GET /api/agents - エージェント一覧取得
@@ -469,7 +479,7 @@ mod tests {
         let result = register_agent(State(state), Json(req)).await;
         assert!(result.is_ok());
 
-        let response = result.unwrap().0;
+        let response = result.unwrap().1 .0;
         assert!(!response.agent_id.to_string().is_empty());
     }
 
@@ -588,7 +598,8 @@ mod tests {
         let res1 = register_agent(State(state.clone()), Json(req1))
             .await
             .unwrap()
-            .0;
+            .1
+             .0;
         assert_eq!(res1.status, RegisterStatus::Registered);
 
         let req2 = RegisterRequest {
@@ -604,7 +615,8 @@ mod tests {
         let res2 = register_agent(State(state.clone()), Json(req2))
             .await
             .unwrap()
-            .0;
+            .1
+             .0;
         assert_eq!(res2.status, RegisterStatus::Registered);
 
         let agents = list_agents(State(state)).await.0;
@@ -630,7 +642,8 @@ mod tests {
         let response = register_agent(State(state.clone()), Json(req))
             .await
             .unwrap()
-            .0;
+            .1
+             .0;
 
         // メトリクスを記録
         state
@@ -698,7 +711,8 @@ mod tests {
         let response = register_agent(State(state.clone()), Json(register_req))
             .await
             .unwrap()
-            .0;
+            .1
+             .0;
 
         // ハートビートでメトリクス更新
         state
@@ -785,7 +799,8 @@ mod tests {
         )
         .await
         .unwrap()
-        .0
+        .1
+         .0
         .agent_id;
 
         let payload = UpdateAgentSettingsPayload {
@@ -826,7 +841,8 @@ mod tests {
         )
         .await
         .unwrap()
-        .0;
+        .1
+         .0;
 
         let status = delete_agent(State(state.clone()), axum::extract::Path(response.agent_id))
             .await
@@ -855,7 +871,8 @@ mod tests {
         )
         .await
         .unwrap()
-        .0
+        .1
+         .0
         .agent_id;
 
         let status = disconnect_agent(State(state.clone()), axum::extract::Path(agent_id))

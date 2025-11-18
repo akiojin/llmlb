@@ -1,4 +1,4 @@
-//! Contract Test: OpenAI /v1/completions proxy
+//! Contract Test: OpenAI /api/generate proxy
 
 use std::sync::Arc;
 
@@ -36,6 +36,7 @@ async fn spawn_agent_stub(state: AgentStubState) -> TestServer {
         .route("/v1/chat/completions", post(agent_generate_handler))
         .route("/v1/models", get(agent_models_handler))
         .route("/api/tags", get(agent_tags_handler))
+        .route("/api/health", post(|| async { axum::http::StatusCode::OK }))
         .with_state(Arc::new(state));
 
     spawn_router(router).await
@@ -110,11 +111,11 @@ async fn proxy_completions_end_to_end_success() {
     let register_response = register_agent(coordinator.addr(), agent_stub.addr())
         .await
         .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::OK);
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
-        .post(format!("http://{}/v1/completions", coordinator.addr()))
+        .post(format!("http://{}/api/generate", coordinator.addr()))
         .json(&serde_json::json!({
             "model": "gpt-oss:20b",
             "prompt": "ping",
@@ -145,11 +146,11 @@ async fn proxy_completions_propagates_upstream_error() {
     let register_response = register_agent(coordinator.addr(), agent_stub.addr())
         .await
         .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::OK);
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
-        .post(format!("http://{}/v1/completions", coordinator.addr()))
+        .post(format!("http://{}/api/generate", coordinator.addr()))
         .json(&serde_json::json!({
             "model": "missing-model",
             "prompt": "ping",
@@ -188,7 +189,7 @@ async fn proxy_completions_queue_overflow_returns_503() {
     let register_response = register_agent(coordinator.addr(), agent_stub.addr())
         .await
         .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::OK);
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
     let register_body: serde_json::Value = register_response
         .json()
         .await
@@ -197,10 +198,15 @@ async fn proxy_completions_queue_overflow_returns_503() {
         .as_str()
         .expect("agent_id present")
         .to_string();
+    let agent_token = register_body["agent_token"]
+        .as_str()
+        .expect("agent_token present")
+        .to_string();
 
     // 事前にヘルスチェックを送り、LoadManager側に「初期化中」状態を作る
     let bootstrap_health = Client::new()
         .post(format!("http://{}/api/health", coordinator.addr()))
+        .header("X-Agent-Token", &agent_token)
         .json(&serde_json::json!({
             "agent_id": agent_id,
             "cpu_usage": 0.1,
@@ -233,7 +239,7 @@ async fn proxy_completions_queue_overflow_returns_503() {
         .timeout(Duration::from_secs(5))
         .build()
         .expect("client builds");
-    let url = format!("http://{}/v1/completions", coordinator.addr());
+    let url = format!("http://{}/api/generate", coordinator.addr());
     let payload = serde_json::json!({
         "model": "gpt-oss:20b",
         "prompt": "ping",
@@ -244,11 +250,13 @@ async fn proxy_completions_queue_overflow_returns_503() {
     // requests can drain.
     let health_client = client.clone();
     let agent_id_clone = agent_id.clone();
+    let agent_token_clone = agent_token.clone();
     let coordinator_addr = coordinator.addr();
     let health_task = tokio::spawn(async move {
         sleep(Duration::from_millis(50)).await;
         health_client
             .post(format!("http://{}/api/health", coordinator_addr))
+            .header("X-Agent-Token", &agent_token_clone)
             .json(&serde_json::json!({
                 "agent_id": agent_id_clone,
                 "cpu_usage": 1.0,

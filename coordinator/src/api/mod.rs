@@ -61,6 +61,16 @@ pub fn create_router(state: AppState) -> Router {
             crate::auth::middleware::agent_token_auth_middleware,
         ));
 
+    // APIキー認証が必要なルート（OpenAI互換エンドポイント）
+    let api_key_protected_routes = Router::new()
+        .route("/v1/chat/completions", post(openai::chat_completions))
+        .route("/v1/completions", post(openai::completions))
+        .route("/v1/embeddings", post(openai::embeddings))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
+        ));
+
     Router::new()
         // 認証エンドポイント（認証不要）
         .route("/api/auth/login", post(auth::login))
@@ -68,6 +78,7 @@ pub fn create_router(state: AppState) -> Router {
         // 保護されたルート
         .merge(protected_routes)
         .merge(agent_protected_routes)
+        .merge(api_key_protected_routes)
         // 既存のルート
         .route(
             "/api/agents",
@@ -123,9 +134,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/agents/:agent_id/logs", get(logs::get_agent_logs))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))
-        .route("/v1/chat/completions", post(openai::chat_completions))
-        .route("/v1/completions", post(openai::completions))
-        .route("/v1/embeddings", post(openai::embeddings))
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model))
         // モデル管理API (SPEC-8ae67d67)

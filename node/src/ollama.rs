@@ -190,7 +190,7 @@ impl OllamaManager {
 
     async fn fetch_models(&self, fallback: bool) -> NodeResult<Vec<String>> {
         let client = reqwest::Client::builder()
-            .user_agent("ollama-coordinator-agent/0.1")
+            .user_agent("ollama-router-node/0.1")
             .timeout(StdDuration::from_secs(10))
             .build()
             .map_err(|e| NodeError::Internal(format!("Failed to build HTTP client: {}", e)))?;
@@ -235,8 +235,7 @@ impl OllamaManager {
         use futures::StreamExt;
         use indicatif::{ProgressBar, ProgressStyle};
 
-        let mut client_builder =
-            reqwest::Client::builder().user_agent("ollama-coordinator-agent/0.1");
+        let mut client_builder = reqwest::Client::builder().user_agent("ollama-router-node/0.1");
 
         if let Some(timeout) = pull_timeout() {
             client_builder = client_builder.timeout(timeout);
@@ -765,12 +764,12 @@ fn get_ollama_directory() -> PathBuf {
             .join("Or")
             .join("ollama")
     } else {
-        // Linux: ~/.local/share/ollama-coordinator/ollama
+        // Linux: ~/.local/share/ollama-router/ollama
         let home = std::env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
         PathBuf::from(home)
             .join(".local")
             .join("share")
-            .join("ollama-coordinator")
+            .join("ollama-router")
             .join("ollama")
     }
 }
@@ -925,7 +924,7 @@ fn get_retry_config() -> (u32, u64) {
 /// プロキシ設定付きHTTPクライアントを構築
 fn build_http_client_with_proxy() -> NodeResult<reqwest::Client> {
     let client_builder = reqwest::Client::builder()
-        .user_agent("ollama-coordinator-agent/0.1")
+        .user_agent("ollama-router-node/0.1")
         .timeout(StdDuration::from_secs(300)); // 5分タイムアウト
 
     // 環境変数からプロキシ設定を取得（reqwestは自動的にHTTP_PROXY, HTTPS_PROXYを読み込む）
@@ -1062,8 +1061,7 @@ mod tests {
     fn test_get_ollama_directory() {
         let dir = get_ollama_directory();
         assert!(
-            dir.to_string_lossy().contains("Or")
-                || dir.to_string_lossy().contains("ollama-coordinator")
+            dir.to_string_lossy().contains("Or") || dir.to_string_lossy().contains("ollama-router")
         );
     }
 

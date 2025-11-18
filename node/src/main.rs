@@ -107,7 +107,7 @@ async fn run_agent(config: LaunchConfig) -> NodeResult<()> {
         MetricsCollector::with_ollama_path(Some(ollama_manager.ollama_path().to_path_buf()));
 
     // 先にノードAPIサーバーを起動（ルーター登録前のヘルスチェックに応答するため）
-    let agent_api_port: u16 = std::env::var("AGENT_API_PORT")
+    let agent_api_port: u16 = std::env::var("NODE_API_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(ollama_port + 1); // デフォルトはOllamaポート+1
@@ -447,7 +447,7 @@ impl LaunchConfig {
             .or(stored.ollama_port)
             .unwrap_or(11434);
 
-        let heartbeat_interval_secs = env_u64("AGENT_HEARTBEAT_INTERVAL_SECS")
+        let heartbeat_interval_secs = env_u64("NODE_HEARTBEAT_INTERVAL_SECS")
             .or(stored.heartbeat_interval_secs)
             .unwrap_or(10);
 
@@ -557,7 +557,7 @@ fn get_local_ip() -> Option<std::net::IpAddr> {
 }
 
 fn resolve_machine_name() -> String {
-    const OVERRIDE_KEYS: [&str; 2] = ["OLLAMA_AGENT_MACHINE_NAME", "OLLAMA_MACHINE_NAME"];
+    const OVERRIDE_KEYS: [&str; 2] = ["OLLAMA_NODE_MACHINE_NAME", "OLLAMA_MACHINE_NAME"];
     for key in OVERRIDE_KEYS {
         if let Some(value) = candidate_from_env(key) {
             return value;
@@ -712,7 +712,7 @@ Example:
 }
 
 fn registration_retry_interval() -> Duration {
-    std::env::var("COORDINATOR_REGISTER_RETRY_SECS")
+    std::env::var("ROUTER_REGISTER_RETRY_SECS")
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
         .map(Duration::from_secs)
@@ -720,7 +720,7 @@ fn registration_retry_interval() -> Duration {
 }
 
 fn registration_retry_limit() -> Option<usize> {
-    std::env::var("COORDINATOR_REGISTER_MAX_RETRIES")
+    std::env::var("ROUTER_REGISTER_MAX_RETRIES")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .and_then(|limit| if limit == 0 { None } else { Some(limit) })
@@ -789,14 +789,14 @@ mod tests {
     #[test]
     fn test_resolve_machine_name_override() {
         let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _guard_agent = EnvGuard::new("OLLAMA_AGENT_MACHINE_NAME", Some("override-machine"));
+        let _guard_agent = EnvGuard::new("OLLAMA_NODE_MACHINE_NAME", Some("override-machine"));
         assert_eq!(resolve_machine_name(), "override-machine");
     }
 
     #[test]
     fn test_resolve_machine_name_fallback_hostname_env() {
         let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _guard_override = EnvGuard::new("OLLAMA_AGENT_MACHINE_NAME", None);
+        let _guard_override = EnvGuard::new("OLLAMA_NODE_MACHINE_NAME", None);
         let _guard_machine_name = EnvGuard::new("OLLAMA_MACHINE_NAME", None);
         let _guard_pretty = EnvGuard::new("PRETTY_HOSTNAME", None);
         let _guard_host = EnvGuard::new("HOSTNAME", Some("custom-host-name"));
@@ -809,7 +809,7 @@ mod tests {
     #[test]
     fn test_resolve_machine_name_pretty_hostname() {
         let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _guard_override = EnvGuard::new("OLLAMA_AGENT_MACHINE_NAME", None);
+        let _guard_override = EnvGuard::new("OLLAMA_NODE_MACHINE_NAME", None);
         let _guard_machine_name = EnvGuard::new("OLLAMA_MACHINE_NAME", None);
         let _guard_host = EnvGuard::new("HOSTNAME", Some("container-host"));
         let _guard_pretty = EnvGuard::new("PRETTY_HOSTNAME", Some("pretty-host-display"));
@@ -821,8 +821,8 @@ mod tests {
     #[tokio::test]
     async fn test_register_with_retry_eventual_success() {
         let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _guard_retry_secs = EnvGuard::new("COORDINATOR_REGISTER_RETRY_SECS", Some("0"));
-        let _guard_retry_limit = EnvGuard::new("COORDINATOR_REGISTER_MAX_RETRIES", Some("0"));
+        let _guard_retry_secs = EnvGuard::new("ROUTER_REGISTER_RETRY_SECS", Some("0"));
+        let _guard_retry_limit = EnvGuard::new("ROUTER_REGISTER_MAX_RETRIES", Some("0"));
 
         let server = MockServer::start().await;
 
@@ -860,8 +860,8 @@ mod tests {
     #[tokio::test]
     async fn test_register_with_retry_respects_limit() {
         let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _guard_retry_secs = EnvGuard::new("COORDINATOR_REGISTER_RETRY_SECS", Some("0"));
-        let _guard_retry_limit = EnvGuard::new("COORDINATOR_REGISTER_MAX_RETRIES", Some("2"));
+        let _guard_retry_secs = EnvGuard::new("ROUTER_REGISTER_RETRY_SECS", Some("0"));
+        let _guard_retry_limit = EnvGuard::new("ROUTER_REGISTER_MAX_RETRIES", Some("2"));
 
         let server = MockServer::start().await;
 

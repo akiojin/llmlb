@@ -68,7 +68,7 @@ async fn test_download_retry_on_timeout() {
     env::remove_var("OLLAMA_DOWNLOAD_MAX_BACKOFF_SECS");
 }
 
-// テスト用のリトライ関数（agent/src/ollama.rsのロジックを模倣）
+// テスト用のリトライ関数（node/src/ollama.rsのロジックを模倣）
 async fn retry_download(
     client: &reqwest::Client,
     url: &str,

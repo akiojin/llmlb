@@ -6,10 +6,10 @@ fn main() {
         return;
     }
 
-    println!("cargo:rerun-if-changed=../assets/icons/coordinator.ico");
+    println!("cargo:rerun-if-changed=../assets/icons/router.ico");
 
     let mut res = winresource::WindowsResource::new();
-    res.set_icon("../assets/icons/coordinator.ico");
+    res.set_icon("../assets/icons/router.ico");
     res.compile()
-        .expect("failed to embed coordinator Windows resources");
+        .expect("failed to embed router Windows resources");
 }

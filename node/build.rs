@@ -6,10 +6,10 @@ fn main() {
         return;
     }
 
-    println!("cargo:rerun-if-changed=../assets/icons/agent.ico");
+    println!("cargo:rerun-if-changed=../assets/icons/node.ico");
 
     let mut res = winresource::WindowsResource::new();
-    res.set_icon("../assets/icons/agent.ico");
+    res.set_icon("../assets/icons/node.ico");
     res.compile()
-        .expect("failed to embed agent Windows resources");
+        .expect("failed to embed node Windows resources");
 }

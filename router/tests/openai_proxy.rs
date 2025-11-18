@@ -17,9 +17,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new().unwrap(),
-    );
+    let request_history =
+        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -114,14 +113,9 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     .expect("Failed to create test user");
 
     // テスト用のAPIキーを作成
-    let api_key = or_router::db::api_keys::create(
-        &db_pool,
-        "test-key",
-        test_user.id,
-        None,
-    )
-    .await
-    .expect("Failed to create test API key");
+    let api_key = or_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
+        .await
+        .expect("Failed to create test API key");
 
     (state, api_key.key)
 }
@@ -289,9 +283,8 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
 async fn test_proxy_chat_no_agents() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new().unwrap(),
-    );
+    let request_history =
+        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -427,9 +420,8 @@ async fn test_proxy_generate_streaming_passthrough() {
 async fn test_proxy_generate_no_agents() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new().unwrap(),
-    );
+    let request_history =
+        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await

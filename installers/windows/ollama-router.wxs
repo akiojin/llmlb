@@ -39,8 +39,8 @@
   </Fragment>
 
   <Fragment>
-    <Icon Id="CoordinatorShortcutIcon" SourceFile="..\\..\\assets\\icons\\coordinator.ico" />
-    <Icon Id="AgentShortcutIcon" SourceFile="..\\..\\assets\\icons\\agent.ico" />
+    <Icon Id="CoordinatorShortcutIcon" SourceFile="..\\..\\assets\\icons\\router.ico" />
+    <Icon Id="AgentShortcutIcon" SourceFile="..\\..\\assets\\icons\\node.ico" />
   </Fragment>
 
   <Fragment>
@@ -72,7 +72,7 @@
           IconIndex="0"
         />
         <RemoveFolder Id="RemoveCoordinatorProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
-        <RegistryValue Root="HKLM" Key="Software\\OllamaCoordinator" Name="CoordinatorShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\\OllamaRouter" Name="CoordinatorShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
       <Component Id="AgentStartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="{B32759F0-6604-4281-8211-244CC30417B5}" Win64="yes">
@@ -85,7 +85,7 @@
           Icon="AgentShortcutIcon"
           IconIndex="0"
         />
-        <RegistryValue Root="HKLM" Key="Software\\OllamaCoordinator" Name="AgentShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\\OllamaRouter" Name="AgentShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Fragment>

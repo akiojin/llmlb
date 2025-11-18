@@ -43,7 +43,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 #[tokio::test]
 async fn test_complete_agent_flow() {
     // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // Step 1: エージェント登録
@@ -172,7 +172,7 @@ async fn test_complete_agent_flow() {
 #[tokio::test]
 async fn test_agent_token_persistence() {
     // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // エージェント登録

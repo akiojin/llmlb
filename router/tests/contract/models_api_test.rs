@@ -50,7 +50,7 @@ async fn build_app() -> Router {
 /// T004: GET /api/models/available の契約テスト
 #[tokio::test]
 async fn test_get_available_models_contract() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let response = app
@@ -115,7 +115,7 @@ async fn test_get_available_models_contract() {
 /// T005: POST /api/models/distribute の契約テスト
 #[tokio::test]
 async fn test_distribute_models_contract() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用リクエスト
@@ -170,7 +170,7 @@ async fn test_distribute_models_contract() {
 /// T006: GET /api/nodes/{node_id}/models の契約テスト
 #[tokio::test]
 async fn test_get_agent_models_contract() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用のノードを登録
@@ -251,7 +251,7 @@ async fn test_get_agent_models_contract() {
 /// T007: POST /api/nodes/{node_id}/models/pull の契約テスト
 #[tokio::test]
 async fn test_pull_model_contract() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用のノードを登録
@@ -332,7 +332,7 @@ async fn test_pull_model_contract() {
 /// T008: GET /api/tasks/{task_id} の契約テスト
 #[tokio::test]
 async fn test_get_task_progress_contract() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用のノードを登録

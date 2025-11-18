@@ -8,6 +8,6 @@
 //!
 //! 注意:
 //! - ignored テストはCoordinatorサーバーまたはOllamaインストールが必要
-//! - TEST_ROUTER_URL環境変数でCoordinator URLを指定可能
+//! - TEST_ROUTER_URL環境変数でRouter URLを指定可能
 
 mod integration;

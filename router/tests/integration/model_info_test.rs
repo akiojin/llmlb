@@ -101,7 +101,7 @@ async fn test_list_available_models_from_ollama_library() {
 /// T019: 特定ノードのインストール済みモデル一覧を取得
 #[tokio::test]
 async fn test_list_installed_models_on_agent() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用ノードを登録
@@ -182,7 +182,7 @@ async fn test_list_installed_models_on_agent() {
 /// T020: 全ノードのモデルマトリックス表示
 #[tokio::test]
 async fn test_model_matrix_view_multiple_agents() {
-    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // 複数のノードを登録

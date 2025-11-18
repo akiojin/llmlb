@@ -93,12 +93,12 @@
    * 新: ~/.or/
 
 2. 環境変数更新:
-   * `COORDINATOR_*` → `ROUTER_*`
-   * `AGENT_*` → `NODE_*`
+   * `COORDINATOR_*`→`ROUTER_*`
+   * `AGENT_*`→`NODE_*`
 
 3. 実行ファイル名:
-   * ollama-coordinator-coordinator → or-router
-   * ollama-coordinator-agent → or-node
+   * `ollama-coordinator-coordinator`→`or-router`
+   * `ollama-coordinator-agent`→`or-node`
 
 4. Docker/設定ファイル:
    * docker-compose.ymlのサービス名変更

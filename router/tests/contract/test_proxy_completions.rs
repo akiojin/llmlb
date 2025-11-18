@@ -1,4 +1,4 @@
-//! Contract Test: OpenAI /v1/completions proxy
+//! Contract Test: OpenAI /api/generate proxy
 
 use std::sync::Arc;
 
@@ -36,6 +36,8 @@ async fn spawn_agent_stub(state: AgentStubState) -> TestServer {
         .route("/v1/completions", post(agent_generate_handler))
         .route("/v1/chat/completions", post(agent_generate_handler))
         .route("/v1/models", get(agent_models_handler))
+        .route("/api/tags", get(agent_tags_handler))
+        .route("/api/health", post(|| async { axum::http::StatusCode::OK }))
         .with_state(Arc::new(state));
 
     spawn_router(router).await
@@ -92,8 +94,24 @@ async fn agent_models_handler(State(state): State<Arc<AgentStubState>>) -> impl 
     (StatusCode::OK, Json(serde_json::json!({"data": models}))).into_response()
 }
 
+async fn agent_tags_handler(State(state): State<Arc<AgentStubState>>) -> impl IntoResponse {
+    let models: Vec<_> = if let Some(model) = &state.expected_model {
+        vec![serde_json::json!({"name": model, "size": 10_000_000_000i64})]
+    } else {
+        vec![
+            serde_json::json!({"name": "gpt-oss:20b", "size": 10_000_000_000i64}),
+            serde_json::json!({"name": "gpt-oss:120b", "size": 120_000_000_000i64}),
+            serde_json::json!({"name": "gpt-oss-safeguard:20b", "size": 10_000_000_000i64}),
+            serde_json::json!({"name": "qwen3-coder:30b", "size": 30_000_000_000i64}),
+        ]
+    };
+
+    (StatusCode::OK, Json(serde_json::json!({"models": models}))).into_response()
+}
+
 #[tokio::test]
 async fn proxy_completions_end_to_end_success() {
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
         response: AgentGenerateStubResponse::Success(serde_json::json!({
@@ -110,7 +128,7 @@ async fn proxy_completions_end_to_end_success() {
     let register_response = register_node(router.addr(), node_stub.addr())
         .await
         .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::OK);
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
@@ -131,6 +149,7 @@ async fn proxy_completions_end_to_end_success() {
 
 #[tokio::test]
 async fn proxy_completions_propagates_upstream_error() {
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("missing-model".to_string()),
         response: AgentGenerateStubResponse::Error(
@@ -144,7 +163,7 @@ async fn proxy_completions_propagates_upstream_error() {
     let register_response = register_node(router.addr(), node_stub.addr())
         .await
         .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::OK);
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
@@ -187,7 +206,7 @@ async fn proxy_completions_queue_overflow_returns_503() {
     let register_response = register_node(router.addr(), node_stub.addr())
         .await
         .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::OK);
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
     let register_body: serde_json::Value = register_response
         .json()
         .await
@@ -196,10 +215,15 @@ async fn proxy_completions_queue_overflow_returns_503() {
         .as_str()
         .expect("node_id present")
         .to_string();
+    let agent_token = register_body["agent_token"]
+        .as_str()
+        .expect("agent_token present")
+        .to_string();
 
     // 事前にヘルスチェックを送り、LoadManager側に「初期化中」状態を作る
     let bootstrap_health = Client::new()
         .post(format!("http://{}/api/health", router.addr()))
+        .header("X-Agent-Token", &agent_token)
         .json(&serde_json::json!({
             "node_id": node_id,
             "cpu_usage": 0.1,
@@ -243,11 +267,13 @@ async fn proxy_completions_queue_overflow_returns_503() {
     // requests can drain.
     let health_client = client.clone();
     let node_id_clone = node_id.clone();
+    let agent_token_clone = agent_token.clone();
     let router_addr = router.addr();
     let health_task = tokio::spawn(async move {
         sleep(Duration::from_millis(50)).await;
         health_client
             .post(format!("http://{}/api/health", router_addr))
+            .header("X-Agent-Token", &agent_token_clone)
             .json(&serde_json::json!({
                 "node_id": node_id_clone,
                 "cpu_usage": 1.0,

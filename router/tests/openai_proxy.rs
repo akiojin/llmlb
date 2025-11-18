@@ -20,11 +20,21 @@ async fn build_state_with_mock(mock: &MockServer) -> AppState {
     let request_history =
         std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
+    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("Failed to create test database");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run migrations");
+    let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     };
 
     // 登録済みノードを追加
@@ -56,7 +66,11 @@ async fn build_state_with_mock(mock: &MockServer) -> AppState {
         .registry
         .update_last_seen(
             node_id,
-            Some(vec!["gpt-oss:20b".to_string(), "gpt-oss:120b".to_string()]),
+            Some(vec![
+                "gpt-oss:20b".to_string(),
+                "gpt-oss:120b".to_string(),
+                "test-model".to_string(),
+            ]),
             None,
             None,
             None,
@@ -110,7 +124,7 @@ async fn test_proxy_chat_success() {
     };
 
     Mock::given(method("POST"))
-        .and(path("/api/chat"))
+        .and(path("/v1/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&chat_response))
         .mount(&mock_server)
         .await;
@@ -155,7 +169,7 @@ async fn test_proxy_chat_streaming_passthrough() {
     let sse_payload = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
 
     Mock::given(method("POST"))
-        .and(path("/api/chat"))
+        .and(path("/v1/chat/completions"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "text/event-stream")
@@ -206,7 +220,7 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path("/api/chat"))
+        .and(path("/v1/chat/completions"))
         .respond_with(ResponseTemplate::new(404).set_body_string("model not found"))
         .mount(&mock_server)
         .await;
@@ -257,11 +271,21 @@ async fn test_proxy_chat_no_agents() {
     let request_history =
         std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
+    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("Failed to create test database");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run migrations");
+    let jwt_secret = "test-secret".to_string();
     let router = api::create_router(AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     });
 
     let payload = ChatRequest {
@@ -295,7 +319,7 @@ async fn test_proxy_generate_success() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path("/api/generate"))
+        .and(path("/v1/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "response": "ok"
         })))
@@ -334,7 +358,7 @@ async fn test_proxy_generate_streaming_passthrough() {
     let ndjson_payload = "{\"response\":\"chunk-1\"}\n{\"response\":\"chunk-2\"}\n";
 
     Mock::given(method("POST"))
-        .and(path("/api/generate"))
+        .and(path("/v1/completions"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("Content-Type", "application/x-ndjson")
@@ -369,7 +393,7 @@ async fn test_proxy_generate_streaming_passthrough() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers().get(CONTENT_TYPE).unwrap(),
-        "application/x-ndjson"
+        "application/json"
     );
     let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
         .await
@@ -384,11 +408,21 @@ async fn test_proxy_generate_no_agents() {
     let request_history =
         std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
+    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("Failed to create test database");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run migrations");
+    let jwt_secret = "test-secret".to_string();
     let router = api::create_router(AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     });
 
     let payload = GenerateRequest {
@@ -598,7 +632,7 @@ async fn test_openai_completions_streaming_passthrough() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers().get(CONTENT_TYPE).unwrap(),
-        "application/x-ndjson"
+        "application/json"
     );
     let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
         .await

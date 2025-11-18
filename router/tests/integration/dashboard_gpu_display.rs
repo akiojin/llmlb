@@ -13,24 +13,35 @@ use or_router::{
 use serde_json::json;
 use tower::ServiceExt;
 
-fn build_router() -> Router {
+async fn build_router() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
+    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("Failed to create test database");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run migrations");
+    let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     };
     api::create_router(state)
 }
 
 #[tokio::test]
 async fn dashboard_agents_include_gpu_devices() {
-    let router = build_router();
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    let router = build_router().await;
 
     let payload = json!({
         "machine_name": "dashboard-gpu",

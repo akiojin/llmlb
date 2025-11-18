@@ -11,17 +11,27 @@ use or_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use tower::ServiceExt;
 
-fn build_app() -> Router {
+async fn build_app() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = or_router::tasks::DownloadTaskManager::new();
+    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("Failed to create test database");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run migrations");
+    let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     };
 
     api::create_router(state)
@@ -30,7 +40,7 @@ fn build_app() -> Router {
 /// T018: Ollamaライブラリから利用可能なモデル一覧を取得
 #[tokio::test]
 async fn test_list_available_models_from_ollama_library() {
-    let app = build_app();
+    let app = build_app().await;
 
     let response = app
         .oneshot(
@@ -75,14 +85,14 @@ async fn test_list_available_models_from_ollama_library() {
     // 各モデルに必要な情報が含まれることを検証
     for model in models {
         assert!(model.get("name").is_some(), "Model must have 'name'");
-        assert!(model.get("size").is_some(), "Model must have 'size'");
+        assert!(model.get("size_gb").is_some(), "Model must have 'size_gb'");
         assert!(
             model.get("description").is_some(),
             "Model must have 'description'"
         );
         assert!(
-            model.get("required_memory").is_some(),
-            "Model must have 'required_memory'"
+            model.get("required_memory_gb").is_some(),
+            "Model must have 'required_memory_gb'"
         );
         assert!(model.get("tags").is_some(), "Model must have 'tags'");
     }
@@ -91,7 +101,8 @@ async fn test_list_available_models_from_ollama_library() {
 /// T019: 特定ノードのインストール済みモデル一覧を取得
 #[tokio::test]
 async fn test_list_installed_models_on_agent() {
-    let app = build_app();
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    let app = build_app().await;
 
     // テスト用ノードを登録
     let register_payload = json!({
@@ -171,7 +182,8 @@ async fn test_list_installed_models_on_agent() {
 /// T020: 全ノードのモデルマトリックス表示
 #[tokio::test]
 async fn test_model_matrix_view_multiple_agents() {
-    let app = build_app();
+    std::env::set_var("OLLAMA_COORDINATOR_SKIP_HEALTH_CHECK", "1");
+    let app = build_app().await;
 
     // 複数のノードを登録
     let mut node_ids = Vec::new();
@@ -275,7 +287,7 @@ async fn test_model_matrix_view_multiple_agents() {
 /// T021: /v1/models は対応モデル5件のみを返す
 #[tokio::test]
 async fn test_v1_models_returns_fixed_list() {
-    let app = build_app();
+    let app = build_app().await;
 
     let response = app
         .oneshot(

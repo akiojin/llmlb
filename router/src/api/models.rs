@@ -205,6 +205,10 @@ impl IntoResponse for AppError {
             RouterError::Http(_) => (StatusCode::BAD_GATEWAY, self.0.to_string()),
             RouterError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.0.to_string()),
             RouterError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
+            RouterError::PasswordHash(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
+            RouterError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
+            RouterError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.to_string()),
+            RouterError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.to_string()),
             RouterError::Common(err) => (StatusCode::BAD_REQUEST, err.to_string()),
         };
 

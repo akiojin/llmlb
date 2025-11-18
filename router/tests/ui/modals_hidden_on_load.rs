@@ -2,17 +2,27 @@ use axum::{body::to_bytes, Router};
 use or_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use tower::ServiceExt;
 
-fn build_app() -> Router {
+async fn build_app() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = or_router::tasks::DownloadTaskManager::new();
+    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("Failed to create test database");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run migrations");
+    let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     };
 
     api::create_router(state)
@@ -21,7 +31,7 @@ fn build_app() -> Router {
 #[tokio::test]
 async fn modals_are_hidden_on_initial_load() {
     // スタティックHTMLを直接取得し、初期状態でモーダルが非表示になっていることを確認する
-    let app = build_app();
+    let app = build_app().await;
     let body = app
         .oneshot(
             axum::http::Request::builder()

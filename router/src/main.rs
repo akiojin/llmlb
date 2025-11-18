@@ -1,6 +1,6 @@
 //! Ollama Router Server Entry Point
 
-use or_router::{api, balancer, health, logging, registry, tasks, AppState};
+use or_router::{api, auth, balancer, health, logging, registry, tasks, AppState};
 use std::net::SocketAddr;
 use tracing::info;
 
@@ -79,7 +79,7 @@ async fn run_server(config: ServerConfig) {
     info!("Initializing storage at ~/.or/");
     let registry = registry::NodeRegistry::with_storage()
         .await
-        .expect("Failed to initialize agent registry");
+        .expect("Failed to initialize node registry");
 
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");
@@ -112,11 +112,45 @@ async fn run_server(config: ServerConfig) {
 
     let task_manager = tasks::DownloadTaskManager::new();
 
+    // 認証システムを初期化
+    // データベース接続プールを作成
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .expect("Failed to get home directory");
+        format!("sqlite:{}/.or/router.db", home)
+    });
+
+    let db_pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .expect("Failed to connect to database");
+
+    // マイグレーションを実行
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run database migrations");
+
+    // 管理者が存在しない場合は作成
+    auth::bootstrap::ensure_admin_exists(&db_pool)
+        .await
+        .expect("Failed to ensure admin exists");
+
+    // JWT秘密鍵を取得または生成
+    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
+        tracing::warn!("JWT_SECRET not set, using default (not recommended for production)");
+        "default-jwt-secret-change-in-production".to_string()
+    });
+
+    info!("Authentication system initialized");
+
     let state = AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        db_pool,
+        jwt_secret,
     };
 
     let router = api::create_router(state);
@@ -126,7 +160,7 @@ async fn run_server(config: ServerConfig) {
         .await
         .expect("Failed to bind to address");
 
-    info!("Coordinator server listening on {}", bind_addr);
+    info!("Router server listening on {}", bind_addr);
 
     axum::serve(
         listener,

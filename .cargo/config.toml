@@ -11,7 +11,13 @@ rustflags = ["-C", "target-feature=+crt-static"]
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
-# macOS builds: デフォルトのシステムリンカー（clang）を使用
-# osxcrossを使用したクロスコンパイルの場合は環境変数で明示的に指定:
-#   CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=x86_64-apple-darwin23-clang
-#   CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=aarch64-apple-darwin23-clang
+# macOS x86_64 (Intel) cross-compilation with osxcross
+[target.x86_64-apple-darwin]
+# Prefer native toolchain on macOS hosts; override via CARGO_TARGET_* envs when using osxcross
+linker = "clang"
+ar = "ar"
+
+# macOS aarch64 (Apple Silicon) cross-compilation with osxcross
+[target.aarch64-apple-darwin]
+linker = "clang"
+ar = "ar"

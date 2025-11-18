@@ -13,6 +13,7 @@ use ollama_coordinator_coordinator::{
     api, balancer::LoadManager, registry::AgentRegistry, AppState,
 };
 use serde_json::json;
+use serial_test::serial;
 use tower::ServiceExt;
 
 async fn build_app() -> Router {
@@ -54,8 +55,18 @@ async fn build_app() -> Router {
 
 /// T023: 認証無効化モードでのアクセス許可テスト
 #[tokio::test]
+#[serial]
 async fn test_auth_disabled_mode_allows_access() {
     let app = build_app().await;
+
+    // テスト終了後のクリーンアップ用
+    struct Cleanup;
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::env::remove_var("AUTH_DISABLED");
+        }
+    }
+    let _cleanup = Cleanup;
 
     // Step 1: AUTH_DISABLED=true環境変数を設定（build_appで設定済み）
     // Step 2: サーバーを起動（build_appで起動済み）
@@ -132,8 +143,18 @@ async fn test_auth_disabled_mode_allows_access() {
 
 /// T023: 認証無効化モードでのOpenAI互換APIアクセステスト
 #[tokio::test]
+#[serial]
 async fn test_auth_disabled_mode_openai_api() {
     let app = build_app().await;
+
+    // テスト終了後のクリーンアップ用
+    struct Cleanup;
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::env::remove_var("AUTH_DISABLED");
+        }
+    }
+    let _cleanup = Cleanup;
 
     // Step 1: AUTH_DISABLED=true環境変数を設定（build_appで設定済み）
 

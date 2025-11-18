@@ -11,6 +11,7 @@ use ollama_coordinator_coordinator::{
     api, balancer::LoadManager, registry::AgentRegistry, AppState,
 };
 use serde_json::json;
+use serial_test::serial;
 use tower::ServiceExt;
 
 use crate::support;
@@ -43,6 +44,7 @@ async fn build_app() -> Router {
 /// T009: 16GB GPU搭載エージェント登録時に gpt-oss:20b が自動配布される
 #[tokio::test]
 #[ignore = "RED phase: waiting for auto_distributed_model implementation"]
+#[serial]
 async fn test_auto_download_on_registration_16gb_gpu() {
     let app = build_app().await;
 
@@ -92,6 +94,7 @@ async fn test_auto_download_on_registration_16gb_gpu() {
 /// T010: 8GB GPU搭載エージェント登録時に gpt-oss:7b が自動配布される
 #[tokio::test]
 #[ignore = "RED phase: waiting for auto_distributed_model implementation"]
+#[serial]
 async fn test_auto_download_on_registration_8gb_gpu() {
     let app = build_app().await;
 
@@ -136,6 +139,7 @@ async fn test_auto_download_on_registration_8gb_gpu() {
 /// T011: 4.5GB GPU搭載エージェント登録時に gpt-oss:3b が自動配布される
 #[tokio::test]
 #[ignore = "RED phase: waiting for auto_distributed_model implementation"]
+#[serial]
 async fn test_auto_download_on_registration_4_5gb_gpu() {
     let app = build_app().await;
 
@@ -180,6 +184,7 @@ async fn test_auto_download_on_registration_4_5gb_gpu() {
 /// T012: 小容量GPU搭載エージェント登録時に gpt-oss:1b が自動配布される
 #[tokio::test]
 #[ignore = "RED phase: waiting for auto_distributed_model implementation"]
+#[serial]
 async fn test_auto_download_on_registration_small_gpu() {
     let app = build_app().await;
 
@@ -224,6 +229,7 @@ async fn test_auto_download_on_registration_small_gpu() {
 /// T013: ダウンロード進捗が表示される（タスクIDを返す）
 #[tokio::test]
 #[ignore = "RED phase: waiting for download_task_id implementation"]
+#[serial]
 async fn test_progress_display_during_download() {
     let app = build_app().await;
 

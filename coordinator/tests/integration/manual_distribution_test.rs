@@ -11,6 +11,7 @@ use ollama_coordinator_coordinator::{
     api, balancer::LoadManager, registry::AgentRegistry, AppState,
 };
 use serde_json::json;
+use serial_test::serial;
 use tower::ServiceExt;
 
 use crate::support;
@@ -43,8 +44,16 @@ async fn build_app() -> Router {
 
 /// T014: 特定のエージェントへ手動配布
 #[tokio::test]
+#[serial]
 async fn test_manual_distribution_to_specific_agent() {
     let app = build_app().await;
+    struct Cleanup;
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::env::remove_var("AUTH_DISABLED");
+        }
+    }
+    let _cleanup = Cleanup;
 
     // テスト用エージェントを登録
     let register_payload = json!({
@@ -124,8 +133,16 @@ async fn test_manual_distribution_to_specific_agent() {
 /// T015: 全エージェントへ一括配布
 #[tokio::test]
 #[ignore = "RED phase: waiting for models/distribute endpoint implementation"]
+#[serial]
 async fn test_bulk_distribution_to_all_agents() {
     let app = build_app().await;
+    struct Cleanup;
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::env::remove_var("AUTH_DISABLED");
+        }
+    }
+    let _cleanup = Cleanup;
 
     // 複数のエージェントを登録
     for i in 0..3 {
@@ -195,8 +212,16 @@ async fn test_bulk_distribution_to_all_agents() {
 
 /// T016: 複数エージェントの進捗追跡
 #[tokio::test]
+#[serial]
 async fn test_progress_tracking_multiple_agents() {
     let app = build_app().await;
+    struct Cleanup;
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::env::remove_var("AUTH_DISABLED");
+        }
+    }
+    let _cleanup = Cleanup;
 
     // 2つのエージェントを登録
     let mut agent_ids = Vec::new();
@@ -296,8 +321,16 @@ async fn test_progress_tracking_multiple_agents() {
 
 /// T017: オフラインエージェントへの配布エラーハンドリング
 #[tokio::test]
+#[serial]
 async fn test_offline_agent_error_handling() {
     let app = build_app().await;
+    struct Cleanup;
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::env::remove_var("AUTH_DISABLED");
+        }
+    }
+    let _cleanup = Cleanup;
 
     // 存在しないエージェントIDを使って配布を試みる
     let fake_agent_id = Uuid::new_v4().to_string();

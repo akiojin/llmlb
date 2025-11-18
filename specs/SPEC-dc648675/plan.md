@@ -215,7 +215,7 @@ tests/
    - `cd src` → allow (Worktree内)
    - `cd /` → block
    - `cd ~` → block
-   - `cd /ollama-coordinator` → block (Worktree外)
+   - `cd /ollama-router` → block (Worktree外)
    - `cd ../..` → block (親ディレクトリ)
 
 ### Quickstart
@@ -246,7 +246,7 @@ bats tests/hooks/test-block-git-branch-ops.bats
 bats tests/hooks/test-block-cd-command.bats
 ```
 
-### エージェント固有ファイル更新
+### ノード固有ファイル更新
 
 **該当なし**: このプロジェクトは既にCLAUDE.mdが存在し、hook機能の説明は不要です。
 

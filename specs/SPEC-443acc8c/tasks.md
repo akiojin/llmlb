@@ -1,7 +1,7 @@
 # タスク: ヘルスチェックシステム
 
 **ステータス**: ✅ **実装完了** (PR #1でマージ済み、2025-10-30)
-**入力**: `/ollama-coordinator/specs/SPEC-443acc8c/`の設計ドキュメント
+**入力**: `/ollama-router/specs/SPEC-443acc8c/`の設計ドキュメント
 
 ## 実装済みタスク一覧
 
@@ -23,22 +23,22 @@
 ### Integration Tests
 
 - [x] **T003** `coordinator/tests/integration/health_test.rs` にタイムアウト検出テスト
-  - 前提: エージェント登録済み
+  - 前提: ノード登録済み
   - 実行: 60秒待機（ハートビート送信なし）
-  - 検証: エージェントがOfflineステータスに遷移
+  - 検証: ノードがOfflineステータスに遷移
 
 - [x] **T004** `coordinator/tests/integration/health_test.rs` に自動復旧テスト
-  - 前提: エージェントがOfflineステータス
+  - 前提: ノードがOfflineステータス
   - 実行: ハートビート送信
-  - 検証: エージェントがOnlineステータスに復帰
+  - 検証: ノードがOnlineステータスに復帰
 
-- [x] **T005** `coordinator/tests/integration/health_test.rs` にOfflineエージェント除外テスト
-  - 前提: 3台のエージェント（1台Offline）
+- [x] **T005** `coordinator/tests/integration/health_test.rs` にOfflineノード除外テスト
+  - 前提: 3台のノード（1台Offline）
   - 実行: select_agent()呼び出し
   - 検証: Onlineの2台のみが選択される
 
-- [x] **T006** `coordinator/tests/integration/health_test.rs` に全エージェントOfflineテスト
-  - 前提: すべてのエージェントがOffline
+- [x] **T006** `coordinator/tests/integration/health_test.rs` に全ノードOfflineテスト
+  - 前提: すべてのノードがOffline
   - 実行: プロキシリクエスト送信
   - 検証: "No agents available"エラー返却
 
@@ -52,7 +52,7 @@
 
 - [x] **T007** `coordinator/src/registry/mod.rs` にstart_timeout_monitor()実装
   - 機能: Tokio spawn でバックグラウンドタスク開始
-  - ロジック: 定期的に全エージェントをチェック、タイムアウトしたらOffline化
+  - ロジック: 定期的に全ノードをチェック、タイムアウトしたらOffline化
   - 間隔: 環境変数`HEALTH_CHECK_INTERVAL`（デフォルト30秒）
 
 - [x] **T008** `coordinator/src/registry/mod.rs` にタイムアウト判定ロジック実装
@@ -66,10 +66,10 @@
   - ロジック: ハートビート受信時に `agent.status = AgentStatus::Online`
   - ログ: Online復帰時にinfoログ出力
 
-### エージェント選択からOffline除外
+### ノード選択からOffline除外
 
 - [x] **T010** `coordinator/src/registry/mod.rs` のselect_agent()にOfflineフィルター追加
-  - 変更前: すべてのエージェントから選択
+  - 変更前: すべてのノードから選択
   - 変更後: `filter(|a| a.status == AgentStatus::Online)`
 
 **実装時間**: 約1.5時間
@@ -138,7 +138,7 @@
 **テスト結果**:
 - ✅ タイムアウト検出正常動作
 - ✅ 自動復旧正常動作
-- ✅ Offlineエージェント除外正常動作
+- ✅ Offlineノード除外正常動作
 - ✅ cargo clippy: エラー/警告ゼロ
 - ✅ cargo fmt --check: フォーマット準拠
 

@@ -1,4 +1,4 @@
-# 技術リサーチ: エージェント自己登録システム
+# 技術リサーチ: ノード自己登録システム
 
 **SPEC-ID**: SPEC-94621a1f
 **日付**: 2025-10-30（実装完了日）
@@ -8,11 +8,11 @@
 
 ### 決定1: JSONファイルストレージ
 
-**選択**: `~/.ollama-coordinator/agents.json` にエージェント情報を保存
+**選択**: `~/.ollama-router/agents.json` にノード情報を保存
 
 **理由**:
 - シンプル: データベースサーバー不要
-- 十分な性能: ~100エージェントなら数ms で読み書き
+- 十分な性能: ~100ノードなら数ms で読み書き
 - ポータビリティ: ファイルコピーでバックアップ・移行可能
 - デバッグ容易: テキストエディタで確認可能
 
@@ -23,7 +23,7 @@
 
 **実装詳細**:
 ```rust
-// ~/.ollama-coordinator/agents.json
+// ~/.ollama-router/agents.json
 [
   {
     "id": "uuid",
@@ -40,7 +40,7 @@
 
 ### 決定2: Arc<RwLock<HashMap>> によるメモリ内管理
 
-**選択**: `Arc<RwLock<HashMap<Uuid, Agent>>>` でエージェント情報をメモリ管理
+**選択**: `Arc<RwLock<HashMap<Uuid, Agent>>>` でノード情報をメモリ管理
 
 **理由**:
 - 高速: O(1) アクセス
@@ -68,7 +68,7 @@ agents.insert(id, agent);
 
 ### 決定3: 30秒ハートビート間隔 + 60秒タイムアウト
 
-**選択**: エージェントは30秒ごとにハートビート、60秒タイムアウトでOffline
+**選択**: ノードは30秒ごとにハートビート、60秒タイムアウトでOffline
 
 **理由**:
 - バランス: ネットワーク負荷低、障害検出も適度に早い
@@ -80,16 +80,16 @@ agents.insert(id, agent);
 
 **実装詳細**:
 - 環境変数: `HEARTBEAT_INTERVAL=30`, `AGENT_TIMEOUT=60`
-- エージェント側: `tokio::time::interval(Duration::from_secs(30))`
-- コーディネーター側: `last_heartbeat + 60秒 < now` でOffline判定
+- ノード側: `tokio::time::interval(Duration::from_secs(30))`
+- ルーター側: `last_heartbeat + 60秒 < now` でOffline判定
 
-### 決定4: UUID v4 によるエージェントID生成
+### 決定4: UUID v4 によるノードID生成
 
 **選択**: `uuid::Uuid::new_v4()` でランダムUUID生成
 
 **理由**:
 - 衝突リスク極小: 実質的にユニーク
-- 中央管理不要: 各エージェントが独立生成可能
+- 中央管理不要: 各ノードが独立生成可能
 - 標準的: Rust `uuid` クレート、安定
 
 **代替案検討**:
@@ -107,7 +107,7 @@ agents.insert(id, agent);
 ## 技術負債・将来改善
 
 - [ ] 認証機能なし → APIキーまたはトークンベース認証追加
-- [ ] ストレージが1ファイル → 将来的にSQLite検討（1000+エージェント時）
+- [ ] ストレージが1ファイル → 将来的にSQLite検討（1000+ノード時）
 - [ ] ヘルスチェックが受動的 → 能動的Ping検討
 
 **優先度**: 低（現状で十分機能）

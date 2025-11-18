@@ -5,18 +5,18 @@
 
 ## 概要
 
-この機能は、コーディネーターが受信するリクエストとエージェントから返される
+この機能は、ルーターが受信するリクエストとノードから返される
 レスポンスを自動的に保存し、Webダッシュボードで確認できるようにします。
 
 ## 前提条件
 
 - Rust 1.75+ がインストールされていること
-- Ollama Coordinator が起動していること
-- 1つ以上のエージェントが登録されていること
+- Ollama Router が起動していること
+- 1つ以上のノードが登録されていること
 
 ## 5分で試す
 
-### 1. コーディネーターを起動
+### 1. ルーターを起動
 
 ```bash
 cargo run --bin coordinator
@@ -54,7 +54,7 @@ curl -X POST http://localhost:8080/api/generate \
 
 **確認項目**:
 - リクエストが時系列順に表示されている
-- 各レコードに時刻、モデル名、エージェント名、処理時間、ステータスが表示されている
+- 各レコードに時刻、モデル名、ノード名、処理時間、ステータスが表示されている
 - レコードをクリックすると詳細モーダルが開く
 
 ### 4. APIで履歴を取得
@@ -81,7 +81,7 @@ curl "http://localhost:8080/api/dashboard/request-responses/export?format=csv" \
 ### 5. 保存ファイルを確認
 
 ```bash
-cat ~/.ollama-coordinator/request_history.json | jq
+cat ~/.ollama-router/request_history.json | jq
 ```
 
 レコードがJSON配列形式で保存されていることを確認できます。
@@ -93,14 +93,14 @@ cat ~/.ollama-coordinator/request_history.json | jq
 **目的**: オペレーターがリクエストの処理状況を監視できること
 
 **検証手順**:
-1. コーディネーターを起動
+1. ルーターを起動
 2. 複数のリクエストを送信（成功・失敗を含む）
 3. ダッシュボードの履歴タブを開く
 
 **期待結果**:
 - ✅ 時系列順にリクエスト一覧が表示される
 - ✅ 成功/失敗のステータスが視覚的に区別できる（色分け）
-- ✅ どのエージェントが処理したかが表示される
+- ✅ どのノードが処理したかが表示される
 
 **検証コマンド**:
 ```bash
@@ -109,7 +109,7 @@ curl -X POST http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
   -d '{"model": "llama2", "messages": [{"role": "user", "content": "test"}], "stream": false}'
 
-# 失敗リクエスト（存在しないエージェント）
+# 失敗リクエスト（存在しないノード）
 # → システムで自動的にエラーとなる場合があります
 
 # ダッシュボードで確認
@@ -152,7 +152,7 @@ curl http://localhost:8080/api/dashboard/request-responses/$RECORD_ID | jq
 
 **期待結果**:
 - ✅ モデル名でフィルタできる
-- ✅ エージェントでフィルタできる
+- ✅ ノードでフィルタできる
 - ✅ ステータス（成功/失敗）でフィルタできる
 - ✅ 日時範囲でフィルタできる
 
@@ -208,14 +208,14 @@ head history.csv
 **確認方法**:
 ```bash
 # ファイルの存在確認
-ls -lh ~/.ollama-coordinator/request_history.json
+ls -lh ~/.ollama-router/request_history.json
 
 # ファイルの内容確認
-cat ~/.ollama-coordinator/request_history.json | jq
+cat ~/.ollama-router/request_history.json | jq
 ```
 
 **対処方法**:
-- コーディネーターのログを確認（`tracing` で出力）
+- ルーターのログを確認（`tracing` で出力）
 - ストレージディレクトリの書き込み権限を確認
 
 ---
@@ -243,11 +243,11 @@ curl -v "http://localhost:8080/api/dashboard/request-responses/export?format=inv
 **確認方法**:
 ```bash
 # ファイルサイズ確認
-du -h ~/.ollama-coordinator/request_history.json
+du -h ~/.ollama-router/request_history.json
 ```
 
 **対処方法**:
-- コーディネーターを再起動（起動時にクリーンアップ実行）
+- ルーターを再起動（起動時にクリーンアップ実行）
 - 手動でファイルを編集（古いレコードを削除）
 
 ---

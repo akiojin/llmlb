@@ -1,4 +1,4 @@
-# Ollama Coordinator
+# Ollama Router
 
 A centralized management system for coordinating Ollama instances across multiple machines
 
@@ -6,7 +6,7 @@ English | [日本語](./README.ja.md)
 
 ## Overview
 
-Ollama Coordinator is a system that provides unified management and a single API endpoint for multiple Ollama instances running across different machines. It features intelligent load balancing, automatic failure detection, and real-time monitoring capabilities.
+Ollama Router is a system that provides unified management and a single API endpoint for multiple Ollama instances running across different machines. It features intelligent load balancing, automatic failure detection, and real-time monitoring capabilities.
 
 ## Key Features
 
@@ -26,7 +26,7 @@ Ollama Coordinator is a system that provides unified management and a single API
 
 ## Load Balancing
 
-Ollama Coordinator supports multiple load balancing strategies to optimize request distribution across agents.
+Ollama Router supports multiple load balancing strategies to optimize request distribution across agents.
 
 ### Strategies
 
@@ -37,7 +37,7 @@ Selects agents based on real-time metrics (CPU usage, memory usage, active reque
 **Configuration:**
 ```bash
 # Enable metrics-based load balancing
-LOAD_BALANCER_MODE=metrics cargo run -p ollama-coordinator-coordinator
+LOAD_BALANCER_MODE=metrics cargo run -p ollama-router-coordinator
 ```
 
 **Load Score Calculation:**
@@ -58,7 +58,7 @@ Combines multiple factors including response time, active requests, and CPU usag
 **Configuration:**
 ```bash
 # Use default advanced load balancing (or omit LOAD_BALANCER_MODE)
-LOAD_BALANCER_MODE=auto cargo run -p ollama-coordinator-coordinator
+LOAD_BALANCER_MODE=auto cargo run -p ollama-router-coordinator
 ```
 
 ### Metrics API
@@ -117,7 +117,7 @@ Machine 1          Machine 2          Machine 3
 
 ### Communication Flow (Proxy Pattern)
 
-Ollama Coordinator uses a **Proxy Pattern** - clients only need to know the Coordinator URL.
+Ollama Router uses a **Proxy Pattern** - clients only need to know the Coordinator URL.
 
 #### Traditional Method (Without Coordinator)
 ```bash
@@ -199,7 +199,7 @@ curl http://coordinator:8080/api/chat -d '...'
 ## Project Structure
 
 ```
-ollama-coordinator/
+ollama-router/
 ├── common/              # Common library (types, protocols, errors)
 │   ├── src/
 │   │   ├── types.rs     # Agent, HealthMetrics, Request types
@@ -242,7 +242,7 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 1. Start the coordinator (inside Docker or on the host):
    ```bash
-   cargo run -p ollama-coordinator-coordinator
+   cargo run -p ollama-router-coordinator
    ```
 2. Open the dashboard in your browser:
    ```
@@ -278,15 +278,15 @@ For a deeper walkthrough, including API references and customisation tips, see [
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/ollama-coordinator.git
-cd ollama-coordinator
+git clone https://github.com/your-org/ollama-router.git
+cd ollama-router
 
 # Build Coordinator
 cd coordinator
 cargo build --release
 
 # Start Coordinator
-./target/release/ollama-coordinator-coordinator
+./target/release/ollama-router-coordinator
 # Default: http://0.0.0.0:8080
 ```
 
@@ -298,10 +298,10 @@ cd agent
 cargo build --release
 
 # Start Agent (環境変数で上書き)
-COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator-agent
+ROUTER_URL=http://coordinator-host:8080 ./target/release/ollama-router-agent
 
 # 環境変数を指定しない場合はローカル設定パネルで保存した値、なければ http://localhost:8080
-./target/release/ollama-coordinator-agent
+./target/release/ollama-router-agent
 ```
 
 **Note**: Ollama is automatically downloaded and installed on first startup if not already present. The agent will:
@@ -321,7 +321,7 @@ Manual installation is also supported. Download Ollama from [ollama.ai](https://
 #### System tray (Windows / macOS)
 
 - On Windows 10+ and macOS 12+, both the **agent** *and* the **coordinator** expose tray / menu bar icons when launched as binaries.
-- The agent tray icon behaves as before: double-click or **Open Settings** to launch the local settings panel, edit coordinator URL / Ollama port / heartbeat interval, and jump to `COORDINATOR_URL/dashboard`. **Quit Agent** stops the background process. Linux builds continue to run as a headless CLI daemon (settings URL is printed to stdout).
+- The agent tray icon behaves as before: double-click or **Open Settings** to launch the local settings panel, edit coordinator URL / Ollama port / heartbeat interval, and jump to `ROUTER_URL/dashboard`. **Quit Agent** stops the background process. Linux builds continue to run as a headless CLI daemon (settings URL is printed to stdout).
 - The coordinator tray icon lets you open the local dashboard (`http://127.0.0.1:<port>/dashboard` by default) or exit the server directly from the system tray. Double-clicking the icon also launches the dashboard in your default browser.
 - Tray icons are derived from [Open Iconic](https://github.com/iconic/open-iconic) (MIT License); a copy of the license is included at `assets/icons/ICON-LICENSE.txt`.
 
@@ -365,7 +365,7 @@ If automatic detection fails, set environment variables:
 OLLAMA_GPU_AVAILABLE=true \
 OLLAMA_GPU_MODEL="Your GPU Model" \
 OLLAMA_GPU_COUNT=1 \
-./target/release/ollama-coordinator-agent
+./target/release/ollama-router-agent
 ```
 
 ## Usage
@@ -381,13 +381,13 @@ OLLAMA_GPU_COUNT=1 \
 2. **Start Agents on Multiple Machines**
    ```bash
    # Machine 1
-   COORDINATOR_URL=http://coordinator:8080 cargo run --release --bin ollama-coordinator-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
 
    # Machine 2
-   COORDINATOR_URL=http://coordinator:8080 cargo run --release --bin ollama-coordinator-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
 
    # Machine 3
-   COORDINATOR_URL=http://coordinator:8080 cargo run --release --bin ollama-coordinator-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
    ```
 
 3. **Use Ollama API Through Coordinator**
@@ -419,15 +419,15 @@ OLLAMA_GPU_COUNT=1 \
 ### Environment Variables
 
 #### Coordinator
-- `COORDINATOR_HOST`: Bind address (default: `0.0.0.0`)
-- `COORDINATOR_PORT`: Port number (default: `8080`)
+- `ROUTER_HOST`: Bind address (default: `0.0.0.0`)
+- `ROUTER_PORT`: Port number (default: `8080`)
 - `DATABASE_URL`: Database URL (default: `sqlite://coordinator.db`)
 - `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
 - `AGENT_TIMEOUT`: Agent timeout in seconds (default: `60`)
 - `LOAD_BALANCER_MODE`: Load balancing strategy - `metrics` for metrics-based or `auto` for advanced (default: `auto`)
 
 #### Agent
-- `COORDINATOR_URL`: Coordinator URL (default: `http://localhost:8080`)
+- `ROUTER_URL`: Coordinator URL (default: `http://localhost:8080`)
 - `OLLAMA_PORT`: Ollama port number (default: `11434`)
 - `OLLAMA_GPU_AVAILABLE`: Manual GPU availability flag (optional, auto-detected)
 - `OLLAMA_GPU_MODEL`: Manual GPU model name (optional, auto-detected)
@@ -466,7 +466,7 @@ cargo test
 
 # Integration tests (including ignored, requires Coordinator server)
 cd agent
-TEST_COORDINATOR_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
+TEST_ROUTER_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
 
 # Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint, OpenAI proxy)
 make quality-checks
@@ -535,7 +535,7 @@ Hook tests are automatically executed in CI/CD:
 
 ## Request History
 
-Ollama Coordinator automatically logs all requests and responses for debugging,
+Ollama Router automatically logs all requests and responses for debugging,
 auditing, and analysis purposes.
 
 ### Features
@@ -580,8 +580,8 @@ GET /api/dashboard/request-responses/export
 ### Storage
 
 Request history is stored in JSON format at:
-- Linux/macOS: `~/.ollama-coordinator/request_history.json`
-- Windows: `%USERPROFILE%\.ollama-coordinator\request_history.json`
+- Linux/macOS: `~/.ollama-router/request_history.json`
+- Windows: `%USERPROFILE%\.ollama-router\request_history.json`
 
 The file is automatically managed with:
 - Atomic writes (temp file + rename) to prevent corruption

@@ -1,10 +1,10 @@
-# タスク: Ollama Coordinator System
+# タスク: Ollama Router System
 
 ⚠️ **このSPECはアーカイブ済みです**
 
 本SPECは以下の5つの独立したSPECに分割され、すべて実装完了しています：
 
-1. **[SPEC-94621a1f](../SPEC-94621a1f/)** - エージェント自己登録システム（✅ 実装済み）
+1. **[SPEC-94621a1f](../SPEC-94621a1f/)** - ノード自己登録システム（✅ 実装済み）
 2. **[SPEC-63acef08](../SPEC-63acef08/)** - 統一APIプロキシ（✅ 実装済み）
 3. **[SPEC-443acc8c](../SPEC-443acc8c/)** - ヘルスチェックシステム（✅ 実装済み）
 4. **[SPEC-589f2df1](../SPEC-589f2df1/)** - ロードバランシングシステム（✅ Phase 2完了）
@@ -22,7 +22,7 @@
 ```
 1. plan.mdから技術スタック抽出 → Rust Cargo Workspace (coordinator, agent, common)
 2. データモデル抽出 → Agent, HealthMetrics, Request, Config
-3. API契約抽出 → OpenAPI 3.0 (エージェント登録、ヘルスチェック、プロキシ)
+3. API契約抽出 → OpenAPI 3.0 (ノード登録、ヘルスチェック、プロキシ)
 4. タスク生成 → TDD順序 (Contract→Integration→実装→Unit→E2E)
 5. 並列実行マーク → 異なるファイル/独立タスクに[P]
 6. 依存関係検証 → テストが実装より先
@@ -60,15 +60,15 @@
 
 ### Contract Tests (並列実行可能)
 
-- [x] **T009** [P] `coordinator/tests/contract/test_agent_registration.rs` にエージェント登録 Contract Test (POST /api/agents/register)
+- [x] **T009** [P] `coordinator/tests/contract/test_agent_registration.rs` にノード登録 Contract Test (POST /api/agents/register)
 - [x] **T010** [P] `coordinator/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /api/health)
 - [x] **T011** [P] `coordinator/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /api/chat)
 - [x] **T012** [P] `coordinator/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /api/generate)
-- [x] **T013** [P] `coordinator/tests/contract/test_agents_list.rs` にエージェント一覧 Contract Test (GET /api/agents)
+- [x] **T013** [P] `coordinator/tests/contract/test_agents_list.rs` にノード一覧 Contract Test (GET /api/agents)
 
 ### Integration Tests (並列実行可能)
 
-- [x] **T014** [P] `coordinator/tests/integration/test_agent_lifecycle.rs` にエージェントライフサイクル Integration Test (登録→ヘルスチェック→オフライン検知)
+- [x] **T014** [P] `coordinator/tests/integration/test_agent_lifecycle.rs` にノードライフサイクル Integration Test (登録→ヘルスチェック→オフライン検知)
 - [x] **T015** [P] `coordinator/tests/integration/test_proxy.rs` にプロキシ Integration Test (リクエスト振り分け→Ollama転送)
 - [x] **T016** [P] `coordinator/tests/integration/test_load_balancing.rs` にロードバランシング Integration Test (複数リクエスト分散)
 - [x] **T017** [P] `coordinator/tests/integration/test_health_monitor.rs` にヘルスモニター Integration Test (タイムアウト検知)
@@ -100,11 +100,11 @@
 
 **依存関係**: T019-T026が完了（Common層完成）
 
-### エージェント登録API (Contract Test T009をGREENに)
+### ノード登録API (Contract Test T009をGREENに)
 
 - [x] **T027** `coordinator/src/api/mod.rs` にAPIモジュール構造定義
-- [x] **T028** `coordinator/src/api/agents.rs` にエージェント登録ハンドラー実装 (POST /api/agents/register)
-- [x] **T029** `coordinator/src/registry/mod.rs` にエージェント登録管理モジュール
+- [x] **T028** `coordinator/src/api/agents.rs` にノード登録ハンドラー実装 (POST /api/agents/register)
+- [x] **T029** `coordinator/src/registry/mod.rs` にノード登録管理モジュール
 - [x] **T030** `coordinator/src/registry/manager.rs` にAgentRegistryManager実装 (登録・更新・削除)
 - [x] **T031** **検証**: Contract Test T009が合格 (GREEN)
 
@@ -122,9 +122,9 @@
 - [x] **T038** `coordinator/src/balancer/round_robin.rs` にRoundRobinBalancer実装 (Atomicカウンター使用)
 - [x] **T039** **検証**: Contract Test T011-T012が合格 (GREEN)
 
-### エージェント一覧API (Contract Test T013をGREENに)
+### ノード一覧API (Contract Test T013をGREENに)
 
-- [x] **T040** `coordinator/src/api/agents.rs` にエージェント一覧ハンドラー追加 (GET /api/agents)
+- [x] **T040** `coordinator/src/api/agents.rs` にノード一覧ハンドラー追加 (GET /api/agents)
 - [x] **T041** **検証**: Contract Test T013が合格 (GREEN)
 
 ### DB永続化 (Integration Test T014をGREENに)
@@ -211,9 +211,9 @@
 
 ### ユーザーストーリーE2Eテスト (並列実行可能)
 
-- [x] **T076** [P] `tests/e2e/scenarios/agent_registration.rs` にP1エージェント登録E2Eテスト
+- [x] **T076** [P] `tests/e2e/scenarios/agent_registration.rs` にP1ノード登録E2Eテスト
 - [x] **T077** [P] `tests/e2e/scenarios/proxy_api.rs` にP2統一APIプロキシE2Eテスト  
-  - ✅ `coordinator/tests/e2e_openai_proxy.rs` でコーディネーター＋スタブエージェントを起動し、OpenAI互換APIの成功/ストリーミング/エラーを実リクエストで検証（2025-11-03）
+  - ✅ `coordinator/tests/e2e_openai_proxy.rs` でルーター＋スタブノードを起動し、OpenAI互換APIの成功/ストリーミング/エラーを実リクエストで検証（2025-11-03）
 - [x] **T078** [P] `tests/e2e/scenarios/load_balancing.rs` にP3ロードバランシングE2Eテスト
 - [x] **T079** [P] `tests/e2e/scenarios/health_check.rs` にP4ヘルスチェックE2Eテスト
 - [x] **T080** [P] `tests/e2e/scenarios/dashboard.rs` にP5ダッシュボードE2Eテスト
@@ -235,7 +235,7 @@
 ### パフォーマンステスト
 
 - [x] **T086** [P] `tests/performance/test_request_latency.rs` にリクエスト振り分けレイテンシテスト (<50ms)
-- [x] **T087** [P] `tests/performance/test_agent_registration.rs` にエージェント登録速度テスト (<5秒)
+- [x] **T087** [P] `tests/performance/test_agent_registration.rs` にノード登録速度テスト (<5秒)
 - [x] **T088** [P] `tests/performance/test_health_check_timeout.rs` に障害検知速度テスト (<60秒)
 
 ### ドキュメント
@@ -284,7 +284,7 @@ E2Eテスト (T075-T080)
 
 ```bash
 # すべて並列実行可能
-cargo init --name ollama-coordinator
+cargo init --name ollama-router
 mkdir -p common coordinator agent tests/e2e
 ```
 

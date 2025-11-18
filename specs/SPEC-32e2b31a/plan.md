@@ -1,4 +1,4 @@
-# 実装計画: Ollama Coordinator System
+# 実装計画: Ollama Router System
 
 **機能ID**: `SPEC-32e2b31a` | **日付**: 2025-10-30 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-32e2b31a/spec.md`の機能仕様
@@ -33,13 +33,13 @@
 - **Agent**: `tauri` (GUI)、`tokio` (非同期)、`reqwest` (HTTP)、`sysinfo` (メトリクス)、`tray-icon` (システムトレイ)
 - **Common**: `serde` (JSON)、`thiserror` (エラー)、`config` (設定)
 
-**ストレージ**: SQLite (Coordinator側、エージェント情報・メトリクス履歴)
+**ストレージ**: SQLite (Coordinator側、ノード情報・メトリクス履歴)
 **テスト**: `cargo test` (unit/integration)、`tokio::test` (非同期テスト)
 **対象プラットフォーム**: Windows 10+ (Agent), Linux/Windows (Coordinator)
 **プロジェクトタイプ**: multi (Cargo Workspace: coordinator, agent, common)
-**パフォーマンス目標**: エージェント登録<5秒、リクエスト振り分け<50ms、障害検知<60秒
+**パフォーマンス目標**: ノード登録<5秒、リクエスト振り分け<50ms、障害検知<60秒
 **制約**: Windows GUI必須（Tauri）、非同期I/O優先、メモリ消費<100MB/Agent
-**スケール/スコープ**: 10台のエージェント同時管理、100req/min処理、24時間連続稼働
+**スケール/スコープ**: 10台のノード同時管理、100req/min処理、24時間連続稼働
 
 ## 憲章チェック
 
@@ -65,7 +65,7 @@
 - 順序: Contract→Integration→E2E→Unit を厳密に遵守? ✅
   - Contract tests: API契約テスト（エンドポイント定義）
   - Integration tests: Coordinator↔Agent通信、Coordinator↔Ollama通信、DB永続化
-  - E2E tests: エンドツーエンドシナリオ（エージェント登録→リクエスト振り分け→レスポンス）
+  - E2E tests: エンドツーエンドシナリオ（ノード登録→リクエスト振り分け→レスポンス）
   - Unit tests: 個別関数（ロードバランサーロジック、ヘルスチェックロジック）
 - 実依存関係を使用? ✅ (実SQLite DB、モックではない)
 - Integration testの対象: 新クレート、契約変更、共通スキーマ ✅
@@ -100,7 +100,7 @@ specs/SPEC-32e2b31a/
 ### ソースコード (リポジトリルート)
 
 ```
-ollama-coordinator/
+ollama-router/
 ├── Cargo.toml                    # Workspace定義
 ├── Cargo.lock
 ├── .cargo/
@@ -123,7 +123,7 @@ ollama-coordinator/
 │   │   ├── config.rs           # 設定読み込み
 │   │   ├── api/                # REST APIハンドラー
 │   │   │   ├── mod.rs
-│   │   │   ├── agents.rs       # エージェント登録・一覧
+│   │   │   ├── agents.rs       # ノード登録・一覧
 │   │   │   ├── health.rs       # ヘルスチェック受信
 │   │   │   ├── proxy.rs        # Ollama統一APIプロキシ
 │   │   │   └── dashboard.rs    # ダッシュボードAPI (WebSocket)
@@ -134,9 +134,9 @@ ollama-coordinator/
 │   │   ├── health/             # ヘルスチェック
 │   │   │   ├── mod.rs
 │   │   │   └── monitor.rs      # 定期ヘルスチェック
-│   │   ├── registry/           # エージェント登録管理
+│   │   ├── registry/           # ノード登録管理
 │   │   │   ├── mod.rs
-│   │   │   └── manager.rs      # エージェント状態管理
+│   │   │   └── manager.rs      # ノード状態管理
 │   │   └── db/                 # データベースアクセス
 │   │       ├── mod.rs
 │   │       ├── schema.sql      # SQLiteスキーマ
@@ -263,7 +263,7 @@ pub struct HealthMetrics {
 ```rust
 pub struct Request {
     pub id: Uuid,
-    pub agent_id: Uuid,            // 振り分け先エージェント
+    pub agent_id: Uuid,            // 振り分け先ノード
     pub endpoint: String,          // "/api/chat" など
     pub status: RequestStatus,     // 処理中/完了/エラー
     pub duration_ms: Option<u64>,  // 処理時間
@@ -307,7 +307,7 @@ pub struct AgentConfig {
 ```yaml
 openapi: 3.0.3
 info:
-  title: Ollama Coordinator API
+  title: Ollama Router API
   version: 0.1.0
   description: 複数Ollamaインスタンスを管理する中央集権型システム
 
@@ -318,7 +318,7 @@ servers:
 paths:
   /api/agents/register:
     post:
-      summary: エージェント登録
+      summary: ノード登録
       operationId: registerAgent
       requestBody:
         required: true
@@ -338,7 +338,7 @@ paths:
 
   /api/agents:
     get:
-      summary: エージェント一覧取得
+      summary: ノード一覧取得
       operationId: listAgents
       responses:
         '200':
@@ -382,7 +382,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ChatResponse'
         '503':
-          description: 利用可能なエージェントなし
+          description: 利用可能なノードなし
 
   /api/generate:
     post:
@@ -518,7 +518,7 @@ components:
 
 **プロトコル仕様**:
 
-1. **エージェント登録**:
+1. **ノード登録**:
    - Agent → Coordinator: `POST /api/agents/register` (起動時)
    - Coordinator → Agent: `RegisterResponse` (agent_id返却)
 
@@ -528,12 +528,12 @@ components:
 
 3. **リクエスト振り分け**:
    - Client → Coordinator: `POST /api/chat` or `POST /api/generate`
-   - Coordinator → Agent: HTTP Proxy (選択されたエージェントのOllama URLへ転送)
+   - Coordinator → Agent: HTTP Proxy (選択されたノードのOllama URLへ転送)
    - Agent → Ollama: ローカルOllama APIへ転送
    - Ollama → Agent → Coordinator → Client: レスポンス返却
 
-4. **エージェント切断検知**:
-   - Coordinator: 60秒以上ヘルスチェックがないエージェントを「オフライン」とマーク
+4. **ノード切断検知**:
+   - Coordinator: 60秒以上ヘルスチェックがないノードを「オフライン」とマーク
 
 ### 4. Contract Tests生成
 
@@ -551,24 +551,24 @@ components:
 
 **ユーザーストーリーからのテストシナリオ**:
 
-1. **P1: エージェント登録** (`tests/integration/test_agent_lifecycle.rs`):
-   - エージェント起動 → 登録リクエスト送信 → Coordinator受信 → DB保存 → agent_id返却
-   - エージェント終了 → 60秒後にタイムアウト → オフライン状態に変更
+1. **P1: ノード登録** (`tests/integration/test_agent_lifecycle.rs`):
+   - ノード起動 → 登録リクエスト送信 → Coordinator受信 → DB保存 → agent_id返却
+   - ノード終了 → 60秒後にタイムアウト → オフライン状態に変更
 
 2. **P2: 統一APIプロキシ** (`tests/integration/test_proxy.rs`):
-   - リクエスト送信 → エージェント選択 → Ollamaへ転送 → レスポンス返却
-   - エージェント0台 → 503エラー
+   - リクエスト送信 → ノード選択 → Ollamaへ転送 → レスポンス返却
+   - ノード0台 → 503エラー
 
 3. **P3: ロードバランシング** (`tests/integration/test_load_balancing.rs`):
-   - 複数リクエスト → ラウンドロビン分散 → 各エージェント均等処理
+   - 複数リクエスト → ラウンドロビン分散 → 各ノード均等処理
 
 4. **P4: ヘルスチェック** (`tests/integration/test_health_monitor.rs`):
-   - エージェント強制終了 → 60秒後にオフライン検知 → 振り分け対象から除外
+   - ノード強制終了 → 60秒後にオフライン検知 → 振り分け対象から除外
 
 5. **P5: ダッシュボード** (`tests/integration/test_dashboard.rs`):
-   - WebSocket接続 → エージェント登録イベント → クライアント受信
+   - WebSocket接続 → ノード登録イベント → クライアント受信
 
-### 6. エージェントファイル更新
+### 6. ノードファイル更新
 
 **CLAUDE.md更新** (開発ガイドライン):
 - Rust開発環境セットアップ
@@ -597,12 +597,12 @@ components:
    - 設定管理 (`common/src/config.rs`) → Unit Test
 
 3. **Contract Testsタスク** ([P]):
-   - エージェント登録契約テスト (RED)
+   - ノード登録契約テスト (RED)
    - ヘルスチェック契約テスト (RED)
    - プロキシ契約テスト (RED)
 
 4. **Coordinator実装** (依存関係順):
-   - エージェント登録API実装 → Contract Test GREEN
+   - ノード登録API実装 → Contract Test GREEN
    - ヘルスチェックAPI実装 → Contract Test GREEN
    - プロキシAPI実装 → Contract Test GREEN
    - ロードバランサー実装 → Unit Test
@@ -618,7 +618,7 @@ components:
    - システムトレイ統合 → 手動テスト
 
 6. **E2Eテスト** (ユーザーストーリー順):
-   - P1: エージェント登録シナリオ
+   - P1: ノード登録シナリオ
    - P2: 統一APIプロキシシナリオ
    - P3: ロードバランシングシナリオ
    - P4: ヘルスチェックシナリオ

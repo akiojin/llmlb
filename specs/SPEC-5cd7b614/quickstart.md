@@ -1,4 +1,4 @@
-# Quickstart: GPU必須エージェント登録チェックリスト
+# Quickstart: GPU必須ノード登録チェックリスト
 
 1. **Agentを起動する**
 

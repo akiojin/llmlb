@@ -126,7 +126,7 @@ jobs:
           echo "CXX_x86_64_apple_darwin=clang++" >> $GITHUB_ENV
 
       - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p ollama-coordinator-coordinator -p ollama-coordinator-agent
+        run: cargo build --release --target ${{ matrix.target }} -p or-router -p or-node
 
       - name: Install WiX Toolset
         if: runner.os == 'Windows'
@@ -139,11 +139,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="ollama-coordinator-${{ matrix.artifact }}.tar.gz"
-          staging="dist/ollama-coordinator-${{ matrix.artifact }}"
+          archive="ollama-router-${{ matrix.artifact }}.tar.gz"
+          staging="dist/ollama-router-${{ matrix.artifact }}"
           mkdir -p "$staging"
-          cp "target/${{ matrix.target }}/release/ollama-coordinator-coordinator" "$staging/"
-          cp "target/${{ matrix.target }}/release/ollama-coordinator-agent" "$staging/"
+          cp "target/${{ matrix.target }}/release/or-router" "$staging/"
+          cp "target/${{ matrix.target }}/release/or-node" "$staging/"
           cp README.md README.ja.md LICENSE "$staging/"
           tar czf "$archive" -C dist "$(basename "$staging")"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
@@ -154,15 +154,15 @@ jobs:
         run: |
           set -uo pipefail
           archive="${{ steps.package_unix.outputs.archive }}"
-          [[ "$archive" == ollama-coordinator-* ]] || { echo "::error::unexpected archive name $archive"; exit 1; }
+          [[ "$archive" == ollama-router-* ]] || { echo "::error::unexpected archive name $archive"; exit 1; }
           [[ "$archive" == *.tar.gz ]] || { echo "::error::expected .tar.gz archive"; exit 1; }
           set +o pipefail
           root_dir=$(tar -tzf "$archive" 2>&1 | head -1 | cut -d/ -f1)
           set -o pipefail
           [[ -n "$root_dir" ]] || { echo "::error::failed to detect root directory"; exit 1; }
           tar -tzf "$archive" > contents.txt 2>&1
-          grep -q "^${root_dir}/ollama-coordinator-coordinator\$" contents.txt || { echo "::error::ollama-coordinator-coordinator not found"; exit 1; }
-          grep -q "^${root_dir}/ollama-coordinator-agent\$" contents.txt || { echo "::error::ollama-coordinator-agent not found"; exit 1; }
+          grep -q "^${root_dir}/or-router\$" contents.txt || { echo "::error::or-router not found"; exit 1; }
+          grep -q "^${root_dir}/or-node\$" contents.txt || { echo "::error::or-node not found"; exit 1; }
           grep -q "^${root_dir}/README.md\$" contents.txt || { echo "::error::README.md not found"; exit 1; }
           grep -q "^${root_dir}/README.ja.md\$" contents.txt || { echo "::error::README.ja.md not found"; exit 1; }
           grep -q "^${root_dir}/LICENSE\$" contents.txt || { echo "::error::LICENSE not found"; exit 1; }
@@ -173,11 +173,11 @@ jobs:
         id: package_windows
         shell: pwsh
         run: |
-          $archive = "ollama-coordinator-${{ matrix.artifact }}.zip"
-          $staging = Join-Path "dist" "ollama-coordinator-${{ matrix.artifact }}"
+          $archive = "ollama-router-${{ matrix.artifact }}.zip"
+          $staging = Join-Path "dist" "ollama-router-${{ matrix.artifact }}"
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/ollama-coordinator-coordinator.exe" $staging
-          Copy-Item "target/${{ matrix.target }}/release/ollama-coordinator-agent.exe" $staging
+          Copy-Item "target/${{ matrix.target }}/release/or-router.exe" $staging
+          Copy-Item "target/${{ matrix.target }}/release/or-node.exe" $staging
           Copy-Item README.md,README.ja.md,LICENSE $staging
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archive -Force
           "archive=$archive" >> $env:GITHUB_OUTPUT
@@ -187,7 +187,7 @@ jobs:
         shell: pwsh
         run: |
           $archive = "${{ steps.package_windows.outputs.archive }}"
-          if (-not ($archive -like "ollama-coordinator-*")) {
+          if (-not ($archive -like "ollama-router-*")) {
             Write-Error "unexpected archive name $archive"
             exit 1
           }
@@ -201,7 +201,7 @@ jobs:
           }
           Expand-Archive -Path $archive -DestinationPath $extractDir -Force
           $files = Get-ChildItem -Path $extractDir -File -Recurse
-          $binaryPrefixes = @("ollama-coordinator-coordinator","ollama-coordinator-agent")
+          $binaryPrefixes = @("or-router","or-node")
           foreach ($prefix in $binaryPrefixes) {
             if (-not ($files.Name | Where-Object { $_ -like "$prefix*.exe" })) {
               Write-Error "missing executable matching $prefix*.exe in archive"
@@ -231,12 +231,12 @@ jobs:
           pkg_root="$(pwd)/pkgroot"
           install_dir="$pkg_root/usr/local/bin"
           mkdir -p "$install_dir"
-          install -m 0755 "target/${{ matrix.target }}/release/ollama-coordinator-coordinator" "$install_dir/"
-          install -m 0755 "target/${{ matrix.target }}/release/ollama-coordinator-agent" "$install_dir/"
-          pkg_name="ollama-coordinator-${{ matrix.artifact }}.pkg"
+          install -m 0755 "target/${{ matrix.target }}/release/or-router" "$install_dir/"
+          install -m 0755 "target/${{ matrix.target }}/release/or-node" "$install_dir/"
+          pkg_name="ollama-router-${{ matrix.artifact }}.pkg"
           pkgbuild \
             --root "$pkg_root" \
-            --identifier "io.ollama.coordinator" \
+            --identifier "io.ollama.router" \
             --version "$version" \
             --install-location "/" \
             "$pkg_name"
@@ -254,9 +254,9 @@ jobs:
             exit 1
           }
           $binaryDir = Join-Path $PWD "target/${{ matrix.target }}/release"
-          $wxs = Join-Path $PWD "installers/windows/ollama-coordinator.wxs"
-          $obj = "ollama-coordinator.wixobj"
-          $msi = "ollama-coordinator-${{ matrix.artifact }}.msi"
+          $wxs = Join-Path $PWD "installers/windows/ollama-router.wxs"
+          $obj = "ollama-router.wixobj"
+          $msi = "ollama-router-${{ matrix.artifact }}.msi"
           $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
           $env:PATH = "$wixPath;$env:PATH"
           candle.exe $wxs -out $obj -dBinariesDir="$binaryDir" -dProductVersion="$version"

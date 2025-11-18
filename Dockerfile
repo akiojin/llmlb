@@ -126,7 +126,7 @@ RUN mkdir -p "$PNPM_HOME" && \
 
 EXPOSE 8080
 
-WORKDIR /ollama-coordinator
+WORKDIR /ollama-router
 # Use bash to invoke entrypoint to avoid exec-bit and CRLF issues on Windows mounts
-ENTRYPOINT ["bash", "/ollama-coordinator/scripts/entrypoint.sh"]
+ENTRYPOINT ["bash", "/ollama-router/scripts/entrypoint.sh"]
 CMD ["bash"]

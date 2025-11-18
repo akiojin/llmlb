@@ -1,4 +1,4 @@
-# Ollama Coordinator
+# Ollama Router
 
 複数マシンでOllamaインスタンスを管理する中央集権型システム
 
@@ -6,17 +6,17 @@
 
 ## 概要
 
-Ollama Coordinatorは、複数のマシン上で動作するOllamaインスタンスを一元管理し、統一されたAPIエンドポイントを提供するシステムです。インテリジェントなロードバランシング、自動障害検知、リアルタイム監視機能を備えています。
+Ollama Routerは、複数のマシン上で動作するOllamaインスタンスを一元管理し、統一されたAPIエンドポイントを提供するシステムです。インテリジェントなロードバランシング、自動障害検知、リアルタイム監視機能を備えています。
 
 ## 主な特徴
 
 - **統一APIエンドポイント**: 複数のOllamaインスタンスを単一のURLで利用可能
-- **自動ロードバランシング**: リクエストを利用可能なエージェントに自動分散
-- **自動障害検知**: オフラインエージェントを自動検知して振り分けから除外
-- **リアルタイム監視**: Webダッシュボードで全エージェントの状態を可視化
+- **自動ロードバランシング**: リクエストを利用可能なノードに自動分散
+- **自動障害検知**: オフラインノードを自動検知して振り分けから除外
+- **リアルタイム監視**: Webダッシュボードで全ノードの状態を可視化
 - **リクエスト履歴記録**: 完全なリクエスト/レスポンスログを7日間保持
-- **エージェント自己登録**: エージェントが自動的にCoordinatorに登録
-- **WebUI管理**: ブラウザベースのダッシュボードでエージェント設定、監視、制御が可能
+- **ノード自己登録**: ノードが自動的にCoordinatorに登録
+- **WebUI管理**: ブラウザベースのダッシュボードでノード設定、監視、制御が可能
 - **クロスプラットフォーム対応**: Windows 10+、macOS 12+、Linuxで動作
 - **GPU対応ルーティング**: GPU能力と可用性に基づくインテリジェントなリクエストルーティング
 
@@ -37,8 +37,8 @@ Ollama Coordinatorは、複数のマシン上で動作するOllamaインスタ�
 │                   （中央管理サーバー）                         │
 │                                                               │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ 1. エージェント選択（ロードバランシング）              │   │
-│  │ 2. リクエストを選択されたエージェントへプロキシ転送   │   │
+│  │ 1. ノード選択（ロードバランシング）              │   │
+│  │ 2. リクエストを選択されたノードへプロキシ転送   │   │
 │  │ 3. レスポンスをクライアントへ返却                     │   │
 │  └─────────────────────────────────────────────────────┘   │
 └────┬──────────────────┬──────────────────┬─────────────────┘
@@ -54,15 +54,15 @@ Ollama Coordinatorは、複数のマシン上で動作するOllamaインスタ�
 Machine 1          Machine 2          Machine 3
 ```
 
-### 通信フロー（プロキシパターン・エージェント経由のみ）
+### 通信フロー（プロキシパターン・ノード経由のみ）
 
 **要点（2025-11 更新）**
-- コーディネーターはエージェントの OpenAI互換API（標準 `ollama_port+1`）のみを叩き、エージェント内部の Ollama を直接呼ばない。
-- エージェントは対応モデル4件（gpt-oss:20b/120b、gpt-oss-safeguard:20b、qwen3-coder:30b）を起動し、モデルごとに独立した `ollama serve` をポート割り当てして常駐。
-- 全エージェントが `initializing=true` の間、リクエストは待機キュー（上限1024、超過で503）。`ready_models=(n/5)` が進み、全完了で `initializing=false`。
+- ルーターはノードの OpenAI互換API（標準 `ollama_port+1`）のみを叩き、ノード内部の Ollama を直接呼ばない。
+- ノードは対応モデル4件（gpt-oss:20b/120b、gpt-oss-safeguard:20b、qwen3-coder:30b）を起動し、モデルごとに独立した `ollama serve` をポート割り当てして常駐。
+- 全ノードが `initializing=true` の間、リクエストは待機キュー（上限1024、超過で503）。`ready_models=(n/5)` が進み、全完了で `initializing=false`。
 - 手動配布UI/APIは廃止。 `/v1/models` と UI は常に上記5モデルのみを表示。
 
-Ollama Coordinatorは**プロキシパターン**を採用しており、クライアントはCoordinator URLだけを知っていればOKです。
+Ollama Routerは**プロキシパターン**を採用しており、クライアントはCoordinator URLだけを知っていればOKです。
 
 #### 従来の方法（Coordinator なし）
 ```bash
@@ -126,7 +126,7 @@ curl http://coordinator:8080/api/chat -d '...'
    - 各Agent/Ollamaの場所を知る必要なし
 
 2. **透過的なロードバランシング**
-   - Coordinatorが自動的に最適なエージェントを選択
+   - Coordinatorが自動的に最適なノードを選択
    - クライアントは何も意識せずに負荷分散の恩恵を受ける
 
 3. **障害時の自動リトライ**
@@ -144,7 +144,7 @@ curl http://coordinator:8080/api/chat -d '...'
 ## プロジェクト構成
 
 ```
-ollama-coordinator/
+ollama-router/
 ├── common/              # 共通ライブラリ（型定義、プロトコル、エラー）
 │   ├── src/
 │   │   ├── types.rs     # Agent, HealthMetrics, Request型定義
@@ -155,10 +155,10 @@ ollama-coordinator/
 ├── coordinator/         # Coordinatorサーバー
 │   ├── src/
 │   │   ├── api/         # REST APIハンドラー
-│   │   │   ├── agent.rs    # エージェント登録・一覧
+│   │   │   ├── agent.rs    # ノード登録・一覧
 │   │   │   ├── health.rs   # ヘルスチェック受信
 │   │   │   └── proxy.rs    # Ollamaプロキシ
-│   │   ├── registry/    # エージェント状態管理
+│   │   ├── registry/    # ノード状態管理
 │   │   ├── db/          # データベースアクセス
 │   │   └── main.rs
 │   ├── migrations/      # データベースマイグレーション
@@ -186,21 +186,21 @@ ollama-coordinator/
 - **Coordinator**: Linux / Windows 10以降 / macOS 12以降、Rust 1.70以降
 - **Agent**: Windows 10以降 / macOS 12以降（CLIベースアプリケーション）、Rust 1.70以降
 - **Ollama**: 未インストールの場合は初回起動時に自動ダウンロード・インストール（進捗表示・再試行・SHA256検証付き）
-- **管理**: ブラウザベースのWebUIダッシュボードでエージェント設定と監視
+- **管理**: ブラウザベースのWebUIダッシュボードでノード設定と監視
 
 ### Coordinatorのセットアップ
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/your-org/ollama-coordinator.git
-cd ollama-coordinator
+git clone https://github.com/your-org/ollama-router.git
+cd ollama-router
 
 # Coordinatorをビルド
 cd coordinator
 cargo build --release
 
 # Coordinatorを起動
-./target/release/ollama-coordinator-coordinator
+./target/release/ollama-router-coordinator
 # デフォルト: http://0.0.0.0:8080
 ```
 
@@ -212,19 +212,19 @@ cd agent
 cargo build --release
 
 # Agentを起動（環境変数で上書き）
-COORDINATOR_URL=http://coordinator-host:8080 ./target/release/ollama-coordinator-agent
+ROUTER_URL=http://coordinator-host:8080 ./target/release/ollama-router-agent
 
 # 環境変数を指定しない場合は設定パネルで保存した値、なければ http://localhost:8080
-./target/release/ollama-coordinator-agent
+./target/release/ollama-router-agent
 ```
 
 **注意**: Agentは起動時にOllamaの存在を確認し、未インストールなら自動的にバイナリをダウンロード・検証・展開してから起動します。手動インストールが必要な場合は[ollama.ai](https://ollama.ai)から取得できます。
 
 #### システムトレイ（Windows / macOS）
 
-- Windows 10 以降 / macOS 12 以降では、**エージェント** と **コーディネーター** の両方がトレイ（メニューバー）に常駐します。
-- エージェント側は従来どおり、ダブルクリックまたは **設定パネルを開く** からローカル設定画面を表示し、コーディネーターURL / Ollamaポート / ハートビート間隔を編集可能です。**Dashboardを開く** は `COORDINATOR_URL/dashboard` を開き、**Agentを終了** で常駐プロセスを停止します。Linux 版は CLI 常駐で、設定パネルURLを標準出力に表示します。
-- コーディネーター側はトレイアイコンからローカルダッシュボード（例: `http://127.0.0.1:8080/dashboard`）を開いたり、**Coordinatorを終了** を選んでサーバーを終了できます。ダブルクリックでもブラウザが起動します。
+- Windows 10 以降 / macOS 12 以降では、**ノード** と **ルーター** の両方がトレイ（メニューバー）に常駐します。
+- ノード側は従来どおり、ダブルクリックまたは **設定パネルを開く** からローカル設定画面を表示し、ルーターURL / Ollamaポート / ハートビート間隔を編集可能です。**Dashboardを開く** は `ROUTER_URL/dashboard` を開き、**Agentを終了** で常駐プロセスを停止します。Linux 版は CLI 常駐で、設定パネルURLを標準出力に表示します。
+- ルーター側はトレイアイコンからローカルダッシュボード（例: `http://127.0.0.1:8080/dashboard`）を開いたり、**Coordinatorを終了** を選んでサーバーを終了できます。ダブルクリックでもブラウザが起動します。
 - トレイアイコンは [Open Iconic](https://github.com/iconic/open-iconic)（MIT License）をベースにしており、`assets/icons/ICON-LICENSE.txt` にライセンスを同梱しています。
 
 ### リリースバイナリの作成と公開
@@ -246,7 +246,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
    # macOS (Intel)
    cargo build --release --target x86_64-apple-darwin
    ```
-3. 生成されたバイナリ（`target/<target>/release/` 配下の `ollama-coordinator-coordinator` と `ollama-coordinator-agent`）を `.tar.gz` もしくは `.zip` にまとめ、README・CHANGELOGなど必要ファイルを同梱する。
+3. 生成されたバイナリ（`target/<target>/release/` 配下の `ollama-router-coordinator` と `ollama-router-agent`）を `.tar.gz` もしくは `.zip` にまとめ、README・CHANGELOGなど必要ファイルを同梱する。
 4. GitHubリポジトリでリリースを作成し、各プラットフォーム向けアーカイブをアップロードする。リリースノートには対応プラットフォーム・ハッシュ値（任意）・既知の制限事項を記載する。
 5. 必要に応じて自動化（GitHub Actions 等）で上記手順を再現し、リリースタグ作成と同時にアーティファクトをアップロードする。  
    本リポジトリでは `.github/workflows/semantic-release.yml` が Conventional Commits からバージョンを決定して `Cargo.toml` 群と `CHANGELOG.md` を更新し、その後 `.github/workflows/release-binaries.yml` を呼び出して各プラットフォーム向けアーカイブを生成・検証した上で GitHub Release に添付します。
@@ -282,13 +282,13 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 2. **複数のマシンでAgentを起動**
    ```bash
    # Machine 1
-   COORDINATOR_URL=http://coordinator:8080 cargo run --release --bin ollama-coordinator-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
 
    # Machine 2
-   COORDINATOR_URL=http://coordinator:8080 cargo run --release --bin ollama-coordinator-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
 
    # Machine 3
-   COORDINATOR_URL=http://coordinator:8080 cargo run --release --bin ollama-coordinator-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
    ```
 
 3. **Coordinatorを通じてOllama APIを利用**
@@ -312,7 +312,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
      }'
    ```
 
-4. **エージェント一覧を確認**
+4. **ノード一覧を確認**
    ```bash
    curl http://coordinator:8080/api/agents
    ```
@@ -320,19 +320,19 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 ### 環境変数
 
 #### Coordinator
-- `COORDINATOR_HOST`: バインドアドレス（デフォルト: `0.0.0.0`）
-- `COORDINATOR_PORT`: ポート番号（デフォルト: `8080`）
+- `ROUTER_HOST`: バインドアドレス（デフォルト: `0.0.0.0`）
+- `ROUTER_PORT`: ポート番号（デフォルト: `8080`）
 - `DATABASE_URL`: データベースURL（デフォルト: `sqlite://coordinator.db`）
 - `HEALTH_CHECK_INTERVAL`: ヘルスチェック間隔（秒）（デフォルト: `30`）
-- `AGENT_TIMEOUT`: エージェントタイムアウト（秒）（デフォルト: `60`）
+- `AGENT_TIMEOUT`: ノードタイムアウト（秒）（デフォルト: `60`）
 
 #### Agent
-- `COORDINATOR_URL`: CoordinatorのURL（デフォルト: `http://localhost:8080`）
+- `ROUTER_URL`: CoordinatorのURL（デフォルト: `http://localhost:8080`）
 - `OLLAMA_PORT`: Ollamaポート番号（デフォルト: `11434`）
 - `OLLAMA_AGENT_MACHINE_NAME`: Coordinator登録時に使用するマシン名。未設定時は `OLLAMA_MACHINE_NAME` → `HOSTNAME` → `whoami::hostname()` の順で自動判定されます。
 - `OLLAMA_PULL_TIMEOUT_SECS`: モデル自動ダウンロード時のHTTPタイムアウト秒数。未設定または `0` の場合はタイムアウトなしで待機します。
-- `COORDINATOR_REGISTER_RETRY_SECS`: 登録リトライ間隔（秒）。未設定時は `5` 秒、`0` を指定すると即座に再試行します。
-- `COORDINATOR_REGISTER_MAX_RETRIES`: 登録リトライ上限回数。未設定または `0` の場合は成功するまで無制限に再試行します。
+- `ROUTER_REGISTER_RETRY_SECS`: 登録リトライ間隔（秒）。未設定時は `5` 秒、`0` を指定すると即座に再試行します。
+- `ROUTER_REGISTER_MAX_RETRIES`: 登録リトライ上限回数。未設定または `0` の場合は成功するまで無制限に再試行します。
 
 ## 開発
 
@@ -364,7 +364,7 @@ cargo test
 
 # 統合テスト（ignored含む、Coordinatorサーバーが必要）
 cd agent
-TEST_COORDINATOR_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
+TEST_ROUTER_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
 
 # 品質ゲート一式（fmt / clippy / workspaceテスト / specifyチェック / markdownlint / OpenAIテスト）
 make quality-checks
@@ -389,8 +389,8 @@ Linux環境（Docker）からmacOS向けバイナリをビルドできます。
    tar -cJf ~/MacOSX14.2.sdk.tar.xz MacOSX14.2.sdk
 
    # プロジェクトに配置
-   mkdir -p /path/to/ollama-coordinator/.sdk
-   cp ~/MacOSX14.2.sdk.tar.xz /path/to/ollama-coordinator/.sdk/
+   mkdir -p /path/to/ollama-router/.sdk
+   cp ~/MacOSX14.2.sdk.tar.xz /path/to/ollama-router/.sdk/
    ```
 
 2. Dockerイメージのビルド
@@ -407,7 +407,7 @@ Linux環境（Docker）からmacOS向けバイナリをビルドできます。
 
 ```bash
 # Docker環境に入る
-docker-compose run --rm ollama-coordinator bash
+docker-compose run --rm ollama-router bash
 
 # Intel Mac向けビルド
 make build-macos-x86_64
@@ -421,10 +421,10 @@ make build-macos-all
 
 成果物は以下に出力されます：
 
-- `target/x86_64-apple-darwin/release/ollama-coordinator-coordinator`
-- `target/x86_64-apple-darwin/release/ollama-coordinator-agent`
-- `target/aarch64-apple-darwin/release/ollama-coordinator-coordinator`
-- `target/aarch64-apple-darwin/release/ollama-coordinator-agent`
+- `target/x86_64-apple-darwin/release/ollama-router-coordinator`
+- `target/x86_64-apple-darwin/release/ollama-router-agent`
+- `target/aarch64-apple-darwin/release/ollama-router-coordinator`
+- `target/aarch64-apple-darwin/release/ollama-router-agent`
 
 **注意**: macOSバイナリのコード署名とnotarizationは、macOS環境で実施する必要があります。
 
@@ -441,7 +441,7 @@ make build-macos-all
 
 ## リクエスト履歴
 
-Ollama Coordinatorは、デバッグ、監査、分析のために、すべてのリクエストと
+Ollama Routerは、デバッグ、監査、分析のために、すべてのリクエストと
 レスポンスを自動的にログ記録します。
 
 ### 機能
@@ -452,13 +452,13 @@ Ollama Coordinatorは、デバッグ、監査、分析のために、すべて�
 - **自動保持**: 7日間履歴を保持し、自動的にクリーンアップ
 - **Webダッシュボード**: Web画面でリクエスト履歴の閲覧、フィルタ、検索が可能
 - **エクスポート機能**: JSON形式またはCSV形式で履歴をエクスポート
-- **フィルタオプション**: モデル、エージェント、ステータス、時間範囲でフィルタ
+- **フィルタオプション**: モデル、ノード、ステータス、時間範囲でフィルタ
 
 ### リクエスト履歴へのアクセス
 
 #### Webダッシュボード経由
 
-1. コーディネーターダッシュボードを開く: `http://localhost:8080/dashboard`
+1. ルーターダッシュボードを開く: `http://localhost:8080/dashboard`
 2. 「リクエスト履歴」セクションに移動
 3. フィルタを使用して特定のリクエストを絞り込み
 4. 任意のリクエストをクリックして、リクエスト/レスポンス本文を含む
@@ -487,8 +487,8 @@ GET /api/dashboard/request-responses/export
 ### ストレージ
 
 リクエスト履歴はJSON形式で以下の場所に保存されます：
-- Linux/macOS: `~/.ollama-coordinator/request_history.json`
-- Windows: `%USERPROFILE%\.ollama-coordinator\request_history.json`
+- Linux/macOS: `~/.ollama-router/request_history.json`
+- Windows: `%USERPROFILE%\.ollama-router\request_history.json`
 
 ファイルは以下の機能により自動管理されます：
 - アトミック書き込み（一時ファイル + rename）による破損防止
@@ -500,7 +500,7 @@ GET /api/dashboard/request-responses/export
 ### Coordinator API
 
 #### POST /api/agents
-エージェントを登録します。
+ノードを登録します。
 
 **リクエスト:**
 ```json
@@ -525,7 +525,7 @@ GET /api/dashboard/request-responses/export
 ```
 
 #### GET /api/agents
-登録されているエージェント一覧を取得します。
+登録されているノード一覧を取得します。
 
 **レスポンス:**
 ```json

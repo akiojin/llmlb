@@ -10,7 +10,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Ollama Coordinator Dashboard                         [Refresh] │
+│ Ollama Router Dashboard                         [Refresh] │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌──────────┐ │
@@ -80,8 +80,8 @@
 /**
  * システム統計を更新
  * @param {Object} stats - システム統計オブジェクト
- * @param {number} stats.total_agents - 総エージェント数
- * @param {number} stats.online_agents - オンラインエージェント数
+ * @param {number} stats.total_agents - 総ノード数
+ * @param {number} stats.online_agents - オンラインノード数
  * @param {number} stats.total_requests - 総リクエスト数
  * @param {number} stats.avg_response_time_ms - 平均レスポンスタイム
  */
@@ -97,7 +97,7 @@ function updateStats(stats) {
 
 ### 2. AgentTable
 
-**説明**: エージェント一覧を表示するテーブルコンポーネント
+**説明**: ノード一覧を表示するテーブルコンポーネント
 
 **HTML構造**:
 ```html
@@ -114,7 +114,7 @@ function updateStats(stats) {
       </tr>
     </thead>
     <tbody id="agent-table-body">
-      <!-- エージェント行が動的に追加される -->
+      <!-- ノード行が動的に追加される -->
     </tbody>
   </table>
 </div>
@@ -132,9 +132,9 @@ function updateStats(stats) {
 **JavaScript契約**:
 ```javascript
 /**
- * エージェント一覧を更新
- * @param {Array<Object>} agents - エージェント配列
- * @param {string} agents[].id - エージェントID
+ * ノード一覧を更新
+ * @param {Array<Object>} agents - ノード配列
+ * @param {string} agents[].id - ノードID
  * @param {string} agents[].machine_name - マシン名
  * @param {string} agents[].ip_address - IPアドレス
  * @param {string} agents[].status - ステータス ("Online" | "Offline")
@@ -255,7 +255,7 @@ const POLL_INTERVAL = 5000; // 5秒
  */
 async function refreshDashboard() {
   try {
-    // エージェント一覧を取得
+    // ノード一覧を取得
     const agentsResponse = await fetch('/api/dashboard/agents');
     if (!agentsResponse.ok) {
       throw new Error(`HTTP error! status: ${agentsResponse.status}`);
@@ -394,7 +394,7 @@ function showError(message) {
 
 ### E2Eテスト要件
 1. ダッシュボードページが表示される
-2. エージェント一覧が正しく表示される
+2. ノード一覧が正しく表示される
 3. システム統計が正しく表示される
 4. リフレッシュボタンが動作する
 5. ポーリングが5秒ごとに実行される

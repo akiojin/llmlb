@@ -1,7 +1,7 @@
 {
-  "name": "ollama-coordinator-release",
+  "name": "ollama-router-release",
   "version": "0.0.0",
-  "description": "Centralized management system for coordinating Ollama instances across multiple machines.",
+  "description": "Centralized management system for routing Ollama instances across multiple machines.",
   "private": true,
   "packageManager": "pnpm@10.20.0",
   "scripts": {

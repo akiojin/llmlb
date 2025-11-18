@@ -1,4 +1,4 @@
-# タスク: コーディネーター主導のモデル自動配布機能
+# タスク: ルーター主導のモデル自動配布機能
 
 **機能ID**: `SPEC-8ae67d67`
 **入力**: `/specs/SPEC-8ae67d67/`の設計ドキュメント
@@ -87,7 +87,7 @@
 ### Ollama公式API通信実装
 
 - [x] **T0*25** Ollama通信実装: `coordinator/src/ollama/client.rs` に `OllamaClient` 実装
-  - エージェント経由でモデル一覧取得（`GET /api/tags`）
+  - ノード経由でモデル一覧取得（`GET /api/tags`）
   - 事前定義モデルリスト管理
 
 ### GPU能力ベースモデル選択
@@ -102,23 +102,23 @@
 - [x] **T0*30** API実装: `coordinator/src/api/models.rs` に `pull_model_to_agent` ハンドラーを実装（`POST /api/agents/{agent_id}/models/pull`）
 - [x] **T0*31** API実装: `coordinator/src/api/models.rs` に `get_task_progress` ハンドラーを実装（`GET /api/tasks/{task_id}`）
 
-### エージェント登録時自動配布
+### ノード登録時自動配布
 
 - [x] **T0*32** 自動配布ロジック: `coordinator/src/api/agent.rs` の `register_agent` ハンドラーを拡張
   - 登録完了後に `select_model_by_gpu_memory()` を呼び出し
   - バックグラウンドで `distribute_models` を実行（`tokio::spawn`）
 
-### エージェント側モデルプル拡張
+### ノード側モデルプル拡張
 
-- [x] **T0*33** [P] エージェント側API: `agent/src/api/mod.rs` と `agent/src/api/models.rs` を作成
-  - `POST /pull` エンドポイント（コーディネーターからの指示を受ける）
+- [x] **T0*33** [P] ノード側API: `agent/src/api/mod.rs` と `agent/src/api/models.rs` を作成
+  - `POST /pull` エンドポイント（ルーターからの指示を受ける）
   - 既存の `agent/src/ollama.rs` の `pull_model()` を呼び出し
 
 ### 進捗報告機能
 
-- [x] **T0*34** 進捗報告: `agent/src/api/models.rs` で `pull_model()` の進捗をコーディネーターに送信
+- [x] **T0*34** 進捗報告: `agent/src/api/models.rs` で `pull_model()` の進捗をルーターに送信
   - ストリーミングレスポンスをパースして進捗計算
-  - `POST /api/tasks/{task_id}/progress` でコーディネーターに送信
+  - `POST /api/tasks/{task_id}/progress` でルーターに送信
 
 ---
 
@@ -140,13 +140,13 @@
   - `fetchAgentModels()` 関数
   - `monitorProgress()` 関数（5秒ポーリング）
 - [x] **T038** UI: `coordinator/src/web/static/app.js` を拡張
-  - エージェント詳細モーダルに「インストール済みモデル」セクション追加
+  - ノード詳細モーダルに「インストール済みモデル」セクション追加
   - ダウンロード進捗表示（HTML5 `<progress>` タグ）
 
 ### エラーハンドリング
 
 - [x] **T039** エラーハンドリング: 各APIハンドラーにエラーレスポンス実装
-  - オフラインエージェントへの配布試行: 503 Service Unavailable
+  - オフラインノードへの配布試行: 503 Service Unavailable
   - ディスク容量不足: 507 Insufficient Storage
   - モデル名不正: 400 Bad Request
 
@@ -223,7 +223,7 @@ Task T021, T022 を並列実行
 ```
 # 独立モジュール
 Task T026 (GPU判定) を単独実行
-Task T033 (エージェント側API) を単独実行
+Task T033 (ノード側API) を単独実行
 
 # モデル管理API（T027-T031は順次または慎重に並列化）
 Task T027, T028, T029, T030, T031 を実装

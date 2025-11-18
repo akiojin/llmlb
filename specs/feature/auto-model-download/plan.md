@@ -16,7 +16,7 @@
    → 進捗トラッキングを更新: 初期憲章チェック
 4. Phase 0 を実行 → research.md
    → 要明確化が残っている場合: ERROR "不明点を解決してください"
-5. Phase 1 を実行 → contracts, data-model.md, quickstart.md, エージェント固有ファイル (例: Claude Code用`CLAUDE.md`、GitHub Copilot用`.github/copilot-instructions.md`、Gemini CLI用`GEMINI.md`)
+5. Phase 1 を実行 → contracts, data-model.md, quickstart.md, ノード固有ファイル (例: Claude Code用`CLAUDE.md`、GitHub Copilot用`.github/copilot-instructions.md`、Gemini CLI用`GEMINI.md`)
 6. 憲章チェックセクションを再評価
    → 新しい違反がある場合: 設計をリファクタリング、Phase 1に戻る
    → 進捗トラッキングを更新: 設計後憲章チェック
@@ -133,7 +133,7 @@ ios/ または android/
    - 各依存関係 → ベストプラクティスタスク
    - 各統合 → パターンタスク
 
-2. **リサーチエージェントを生成して派遣**:
+2. **リサーチノードを生成して派遣**:
    ```
    技術コンテキストの各不明点について:
      タスク: "Research {unknown} for {feature context}"
@@ -170,7 +170,7 @@ ios/ または android/
    - 各ストーリー → integrationテストシナリオ
    - クイックスタートテスト = ストーリー検証ステップ
 
-5. **エージェントファイルを漸進的に更新** (O(1)操作):
+5. **ノードファイルを漸進的に更新** (O(1)操作):
    - AIアシスタント用に `/scripts/update-agent-context.sh [claude|gemini|copilot]` を実行
    - 存在する場合: 現在の計画から新しい技術のみ追加
    - マーカー間の手動追加を保持
@@ -178,7 +178,7 @@ ios/ または android/
    - トークン効率のため150行未満に保つ
    - リポジトリルートに出力
 
-**出力**: data-model.md, /contracts/*, 失敗するテスト, quickstart.md, エージェント固有ファイル
+**出力**: data-model.md, /contracts/*, 失敗するテスト, quickstart.md, ノード固有ファイル
 
 ## Phase 2: タスク計画アプローチ
 *このセクションは/speckit.tasksコマンドが実行することを記述 - /speckit.plan中は実行しない*

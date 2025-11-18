@@ -1,5 +1,5 @@
 [package]
-name = "ollama-coordinator-common"
+name = "ollama-router-common"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

@@ -1,4 +1,4 @@
-# Cargo configuration for ollama-coordinator
+# Cargo configuration for ollama-router
 
 [build]
 # SQLx offline mode: コンパイル時にデータベース接続不要

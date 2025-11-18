@@ -1,0 +1,67 @@
+[package]
+name = "or-node"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[dependencies]
+ollama-router-common = { path = "../common" }
+
+# 非同期ランタイム
+tokio = { workspace = true }
+
+# HTTPクライアント
+reqwest = { workspace = true, features = ["stream"] }
+futures = "0.3"
+
+# HTTPサーバー（モデルプル要求受信用）
+axum = { workspace = true }
+tower = { workspace = true }
+
+# システム監視
+sysinfo = { workspace = true }
+flate2 = "1.0"
+tar = "0.4"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+nvml-wrapper = "0.9"
+
+# シリアライゼーション
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# ログ
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+
+# その他
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+whoami = "1.4"
+indicatif = "0.17"
+sha2 = "0.10"
+dirs = "5.0"
+
+[build-dependencies]
+winresource = "0.1.27"
+
+# GPU検出 (プラットフォーム別)
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.29"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+tray-icon = "0.21.2"
+winit = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+wiremock = "0.6.5"
+once_cell = "1.21"
+tempfile = "3"
+futures = "0.3"
+serial_test = "3.2"

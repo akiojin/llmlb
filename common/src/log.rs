@@ -127,7 +127,7 @@ mod tests {
 
         writeln!(
             file,
-            r#"{{"timestamp":"2025-11-14T00:00:00Z","level":"INFO","target":"app","fields":{{"message":"first","agent_id":"a"}}}}"#
+            r#"{{"timestamp":"2025-11-14T00:00:00Z","level":"INFO","target":"app","fields":{{"message":"first","node_id":"a"}}}}"#
         )
         .unwrap();
         writeln!(
@@ -143,7 +143,7 @@ mod tests {
         assert_eq!(entries[1].file.as_deref(), Some("main.rs"));
         assert_eq!(entries[1].line, Some(42));
         assert_eq!(
-            entries[0].fields.get("agent_id").and_then(|v| v.as_str()),
+            entries[0].fields.get("node_id").and_then(|v| v.as_str()),
             Some("a")
         );
     }

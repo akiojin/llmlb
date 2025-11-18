@@ -10,9 +10,9 @@
 
 ### 1. Agent (既存)
 
-**説明**: エージェント情報を表す構造体（既存の`common/src/types.rs`で定義済み）
+**説明**: ノード情報を表す構造体（既存の`common/src/types.rs`で定義済み）
 
-> 2025-11-01 追記: `loaded_models: Vec<String>` を追加し、エージェントがOllamaにロード済みのモデル一覧を保持する。ダッシュボードの「モデル」列および詳細モーダルで参照する。
+> 2025-11-01 追記: `loaded_models: Vec<String>` を追加し、ノードがOllamaにロード済みのモデル一覧を保持する。ダッシュボードの「モデル」列および詳細モーダルで参照する。
 
 **フィールド**:
 ```rust
@@ -47,7 +47,7 @@ pub struct SystemInfo {
 - `ollama_version`: セマンティックバージョニング形式
 
 **ダッシュボードでの使用**:
-- エージェント一覧表示
+- ノード一覧表示
 - オンライン/オフラインステータス表示
 - 稼働時間計算（直近でオンラインになった時刻=`online_since` と現在時刻の差分、未設定時は0秒）
 
@@ -75,14 +75,14 @@ pub struct SystemStats {
 - `avg_response_time_ms >= 0`
 
 **計算方法**:
-- `total_agents`: AgentRegistryの全エージェント数
+- `total_agents`: AgentRegistryの全ノード数
 - `online_agents`: `status == AgentStatus::Online`の数
 - `offline_agents`: `status == AgentStatus::Offline`の数
 - `total_requests`, `avg_response_time_ms`, `errors_count`: 将来拡張（初期実装では0）
 
 ### 3. AgentWithUptime (新規レスポンス型)
 
-**説明**: ダッシュボードAPI用のエージェント情報（稼働時間を含む）
+**説明**: ダッシュボードAPI用のノード情報（稼働時間を含む）
 
 **フィールド**:
 ```rust
@@ -133,7 +133,7 @@ impl From<Agent> for AgentWithUptime {
 
 ### 4. AgentMetrics (将来拡張、SPEC-589f2df1依存)
 
-**説明**: エージェントのパフォーマンスメトリクス（将来拡張用）
+**説明**: ノードのパフォーマンスメトリクス（将来拡張用）
 
 **フィールド**:
 ```rust
@@ -223,7 +223,7 @@ pub struct AgentMetrics {
 
 ## データフロー
 
-### エージェント一覧取得
+### ノード一覧取得
 ```
 Client ─GET /api/dashboard/agents→ Coordinator
                                         │

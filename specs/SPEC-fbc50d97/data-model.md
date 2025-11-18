@@ -32,13 +32,13 @@ pub struct RequestResponseRecord {
     /// 使用されたモデル名（例: "llama2"）
     pub model: String,
 
-    /// 処理したエージェントのID
+    /// 処理したノードのID
     pub agent_id: Uuid,
 
-    /// エージェントのマシン名
+    /// ノードのマシン名
     pub agent_machine_name: String,
 
-    /// エージェントのIPアドレス
+    /// ノードのIPアドレス
     pub agent_ip: IpAddr,
 
     /// リクエスト本文（JSON形式）
@@ -80,9 +80,9 @@ pub enum RecordStatus {
 | `timestamp` | `DateTime<Utc>` | Yes | リクエスト受信時刻（UTCタイムゾーン） |
 | `request_type` | `RequestType` | Yes | "chat" または "generate" |
 | `model` | `String` | Yes | モデル名（例: "llama2", "codellama"） |
-| `agent_id` | `Uuid` | Yes | エージェントID（Agent構造体のidと一致） |
-| `agent_machine_name` | `String` | Yes | エージェントのマシン名（表示用） |
-| `agent_ip` | `IpAddr` | Yes | エージェントのIPアドレス（デバッグ用） |
+| `agent_id` | `Uuid` | Yes | ノードID（Agent構造体のidと一致） |
+| `agent_machine_name` | `String` | Yes | ノードのマシン名（表示用） |
+| `agent_ip` | `IpAddr` | Yes | ノードのIPアドレス（デバッグ用） |
 | `request_body` | `serde_json::Value` | Yes | リクエスト本文全体をJSON Value として保存 |
 | `response_body` | `Option<serde_json::Value>` | No | レスポンス本文、エラー時は None |
 | `duration_ms` | `u64` | Yes | リクエスト開始から完了までの時間（ミリ秒） |
@@ -144,7 +144,7 @@ pub enum RecordStatus {
 - 外部キー制約なし（JSONファイルベースのため）
 
 **参照整合性**:
-- エージェント削除時、既存のレコードは残る（履歴保持のため）
+- ノード削除時、既存のレコードは残る（履歴保持のため）
 - `agent_machine_name` と `agent_ip` を非正規化して保存（表示用）
 
 **図**:
@@ -162,10 +162,10 @@ Agent (1) ----< (N) RequestResponseRecord
 ### ファイルパス
 
 ```
-~/.ollama-coordinator/request_history.json
+~/.ollama-router/request_history.json
 ```
 
-環境変数 `OLLAMA_COORDINATOR_DATA_DIR` で変更可能。
+環境変数 `OLLAMA_ROUTER_DATA_DIR` で変更可能。
 
 ### JSON構造
 
@@ -239,7 +239,7 @@ Agent (1) ----< (N) RequestResponseRecord
    → id 生成（UUID）
    → request_body 保存
 
-2. [処理中] エージェントへ転送
+2. [処理中] ノードへ転送
 
 3. [完了] レスポンス受信
    → response_body 保存
@@ -256,7 +256,7 @@ Agent (1) ----< (N) RequestResponseRecord
 
 **状態図**:
 ```
-[リクエスト受信] → [エージェント処理] → [レスポンス完了] → [保存済み] → [7日後削除]
+[リクエスト受信] → [ノード処理] → [レスポンス完了] → [保存済み] → [7日後削除]
                                             ↓ (エラー時)
                                         [エラー記録] → [保存済み] → [7日後削除]
 ```

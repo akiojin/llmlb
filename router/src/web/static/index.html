@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ollama Router ダッシュボード</title>
+    <link rel="stylesheet" href="/dashboard/styles.css" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"
+      integrity="sha384-Sse/HDqcypGpyTDpvZOJNnG0TT3feGQUkF9H+mnRvic+LjR+K1NhTt8f51KIQ3v3"
+      crossorigin="anonymous"
+      defer
+    ></script>
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="title-group">
+        <h1>Ollama Router ダッシュボード</h1>
+        <p class="subtitle">エージェントの稼働状況とシステム統計をリアルタイム監視</p>
+      </div>
+      <div class="header-controls">
+        <span id="connection-status" class="status-pill status-pill--connecting">
+          接続状態: 更新中…
+        </span>
+        <span id="last-refreshed" class="last-refreshed">最終更新: -</span>
+        <span id="refresh-metrics" class="last-refreshed">取得: - / 描画: -</span>
+        <button id="refresh-button" class="refresh-button" type="button">
+          手動更新
+        </button>
+      </div>
+    </header>
+
+    <main>
+    <section class="banner hidden" id="error-banner"></section>
+
+      <!-- タブナビゲーションは廃止（単一ビュー） -->
+
+      <div class="tab-panel tab-panel--active" id="tab-dashboard">
+      <section class="stats-grid">
+        <article class="stat-card">
+          <h2>登録エージェント</h2>
+          <p class="stat-value" data-stat="total-agents">-</p>
+          <p class="stat-caption">
+            オンライン <span data-stat="online-agents">-</span> / オフライン
+            <span data-stat="offline-agents">-</span>
+          </p>
+        </article>
+        <article class="stat-card">
+          <h2>リクエスト総数</h2>
+          <p class="stat-value" data-stat="total-requests">-</p>
+          <p class="stat-caption">
+            成功 <span data-stat="successful-requests">-</span> / 失敗
+            <span data-stat="failed-requests">-</span>
+          </p>
+        </article>
+        <article class="stat-card">
+          <h2>平均レスポンス</h2>
+          <p class="stat-value" data-stat="average-response-time-ms">-</p>
+          <p class="stat-caption">
+            メトリクス更新: <span data-stat="last-metrics-updated-at">-</span>
+          </p>
+        </article>
+        <article class="stat-card">
+          <h2>平均GPU使用率</h2>
+          <p class="stat-value" data-stat="average-gpu-usage">-</p>
+          <p class="stat-caption">
+            メモリ: <span data-stat="average-gpu-memory-usage">-</span>
+          </p>
+        </article>
+        <article class="stat-card">
+          <h2>アクティブリクエスト</h2>
+          <p class="stat-value" data-stat="total-active-requests">-</p>
+          <p class="stat-caption">
+            最終登録: <span data-stat="last-registered-at">-</span><br />
+            最終確認: <span data-stat="last-seen-at">-</span>
+          </p>
+        </article>
+      </section>
+      </div>
+
+      <div class="tab-panel" id="tab-agents">
+      <section class="agents-section">
+        <header class="section-header">
+          <h2>エージェント一覧</h2>
+          <div class="section-tools">
+            <div class="export-group">
+              <button type="button" id="export-json" class="btn">JSONエクスポート</button>
+              <button type="button" id="export-csv" class="btn">CSVエクスポート</button>
+            </div>
+            <label class="filter-label">
+              <span>状態</span>
+              <select id="filter-status">
+                <option value="all">すべて</option>
+                <option value="online">オンライン</option>
+                <option value="offline">オフライン</option>
+              </select>
+            </label>
+            <label class="filter-label">
+              <span>検索</span>
+              <input
+                type="search"
+                id="filter-query"
+                placeholder="マシン名・IPアドレス"
+                autocomplete="off"
+              />
+            </label>
+          </div>
+        </header>
+
+            <div class="table-wrapper">
+              <table class="agents-table">
+                <colgroup>
+                  <col class="col-select" />
+                  <col class="col-name" />
+              <col class="col-address" />
+              <col class="col-status" />
+              <col class="col-uptime" />
+              <col class="col-cpu" />
+              <col class="col-memory" />
+                  <col class="col-active" />
+                  <col class="col-total" />
+                  <col class="col-average" />
+                  <col class="col-last-seen" />
+                  <col class="col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                <th>
+                  <input type="checkbox" id="select-all" aria-label="すべて選択" />
+                </th>
+                <th data-sort="machine" class="sortable">
+                  <span>名前</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th data-sort="ip" class="sortable">
+                  <span>アドレス</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th data-sort="status" class="sortable">
+                  <span>状態</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th data-sort="uptime" class="sortable">
+                  <span>稼働時間</span>
+                  <span class="sort-indicator" aria-hidden="true">–</span>
+                </th>
+                <th>CPU / GPU</th>
+                  <th>メモリ / GPU</th>
+                  <th>処理中</th>
+                  <th data-sort="total" class="sortable">
+                    <span>累積</span>
+                    <span class="sort-indicator" aria-hidden="true">–</span>
+                  </th>
+                  <th>平均応答</th>
+                  <th>最終確認</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+            <tbody id="agents-body">
+              <tr class="empty-row">
+                <td colspan="12">データ取得中…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" aria-label="エージェント一覧ページネーション">
+          <button type="button" id="page-prev" class="btn" aria-label="前のページ">&lt;</button>
+          <span class="pagination__info" id="page-info">- / -</span>
+          <button type="button" id="page-next" class="btn" aria-label="次のページ">&gt;</button>
+        </div>
+      </section>
+
+      <section class="charts-section">
+        <header class="section-header">
+          <h2>リクエスト推移グラフ</h2>
+          <p class="section-caption">直近60分の成功・失敗リクエスト件数</p>
+        </header>
+        <div class="chart-container">
+          <canvas id="requests-chart" aria-label="Requests per minute" role="img"></canvas>
+        </div>
+      </section>
+      </div>
+
+      <div class="tab-panel" id="tab-history">
+      <section class="request-history-section">
+        <header class="section-header">
+          <h2>リクエスト履歴一覧</h2>
+          <div class="section-tools">
+            <button type="button" id="export-history-csv" class="btn">CSVエクスポート</button>
+            <label class="filter-label">
+              <span>モデル</span>
+              <input
+                type="search"
+                id="filter-history-model"
+                placeholder="モデル名でフィルタ"
+                autocomplete="off"
+              />
+            </label>
+            <label class="filter-label">
+              <span>表示件数</span>
+              <select id="history-per-page" class="per-page-select">
+                <option value="25">25件</option>
+                <option value="50" selected>50件</option>
+                <option value="100">100件</option>
+              </select>
+            </label>
+          </div>
+        </header>
+
+        <div class="table-wrapper">
+          <table class="request-history-table">
+            <thead>
+              <tr>
+                <th>タイムスタンプ</th>
+                <th>種類</th>
+                <th>モデル</th>
+                <th>エージェント</th>
+                <th>リクエスト元IP</th>
+                <th>処理時間</th>
+                <th>ステータス</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="request-history-tbody">
+              <tr>
+                <td colspan="8" class="empty-message">履歴を読み込み中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination" id="history-pagination">
+          <button type="button" id="history-page-prev" class="btn" aria-label="前のページ">&lt;</button>
+          <span class="pagination__info" id="history-page-info">- / -</span>
+          <button type="button" id="history-page-next" class="btn" aria-label="次のページ">&gt;</button>
+        </div>
+      </section>
+      </div>
+
+      <div class="tab-panel" id="tab-logs">
+        <section class="logs-grid">
+          <article class="log-card" aria-labelledby="logs-coordinator-title">
+            <header class="log-card__header">
+              <div>
+                <h2 id="logs-coordinator-title">コーディネーターログ</h2>
+                <p class="log-card__path" id="logs-coordinator-path"></p>
+              </div>
+              <div class="log-card__actions">
+                <button type="button" id="logs-coordinator-refresh" class="btn btn--secondary">
+                  再読み込み
+                </button>
+              </div>
+            </header>
+            <p class="log-card__status" id="logs-coordinator-status">-</p>
+            <div
+              class="log-viewer"
+              id="logs-coordinator-list"
+              role="log"
+              aria-live="polite"
+            ></div>
+          </article>
+
+          <article class="log-card" aria-labelledby="logs-agent-title">
+            <header class="log-card__header">
+              <div>
+                <h2 id="logs-agent-title">エージェントログ</h2>
+                <p class="log-card__path" id="logs-agent-path"></p>
+              </div>
+              <div class="log-card__actions">
+                <label class="log-agent-select">
+                  <span>エージェント</span>
+                  <select id="logs-agent-select">
+                    <option value="">選択してください</option>
+                  </select>
+                </label>
+                <button type="button" id="logs-agent-refresh" class="btn btn--secondary">
+                  再読み込み
+                </button>
+              </div>
+            </header>
+            <p class="log-card__status" id="logs-agent-status">-</p>
+            <div class="log-viewer" id="logs-agent-list" role="log" aria-live="polite"></div>
+          </article>
+        </section>
+      </div>
+    </main>
+
+    <footer class="page-footer">
+      <small>&copy; 2025 Ollama Router</small>
+    </footer>
+
+    <div id="agent-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="agent-modal-title">
+      <div class="modal__dialog">
+        <header class="modal__header">
+          <h2 id="agent-modal-title">エージェント詳細</h2>
+          <button type="button" id="agent-modal-close" class="modal__close" aria-label="閉じる">×</button>
+        </header>
+        <section class="modal__content">
+          <form id="agent-settings-form" class="detail-list">
+            <div>
+              <dt>表示名</dt>
+              <dd><input id="detail-custom-name" name="custom_name" type="text" placeholder="任意の名前" /></dd>
+            </div>
+            <div>
+              <dt>タグ</dt>
+              <dd><input id="detail-tags" name="tags" type="text" placeholder="カンマ区切りで入力" /></dd>
+            </div>
+            <div>
+              <dt>メモ</dt>
+              <dd><textarea id="detail-notes" name="notes" rows="3" placeholder="任意のメモ"></textarea></dd>
+            </div>
+
+            <div>
+              <dt>マシン名</dt>
+              <dd id="detail-machine-name">-</dd>
+            </div>
+            <div>
+              <dt>IPアドレス</dt>
+              <dd id="detail-ip-address">-</dd>
+            </div>
+            <div>
+              <dt>Ollamaバージョン</dt>
+              <dd id="detail-ollama-version">-</dd>
+            </div>
+            <div>
+              <dt>モデル</dt>
+              <dd id="detail-loaded-models">-</dd>
+            </div>
+            <div>
+              <dt>稼働時間</dt>
+              <dd id="detail-uptime">-</dd>
+            </div>
+            <div>
+              <dt>状態</dt>
+              <dd id="detail-status">-</dd>
+            </div>
+            <div>
+              <dt>最終確認</dt>
+              <dd id="detail-last-seen">-</dd>
+            </div>
+            <div>
+              <dt>累積リクエスト</dt>
+              <dd id="detail-total-requests">-</dd>
+            </div>
+            <div>
+              <dt>直近平均応答</dt>
+              <dd id="detail-average-response">-</dd>
+            </div>
+            <div>
+              <dt>GPU使用率</dt>
+              <dd id="detail-gpu-usage">-</dd>
+            </div>
+            <div>
+              <dt>GPUメモリ使用率</dt>
+              <dd id="detail-gpu-memory">-</dd>
+            </div>
+            <div>
+              <dt>GPU能力スコア</dt>
+              <dd id="detail-gpu-capability-score">-</dd>
+            </div>
+            <div>
+              <dt>GPUモデル</dt>
+              <dd id="detail-gpu-model">-</dd>
+            </div>
+            <div>
+              <dt>GPU Compute</dt>
+              <dd id="detail-gpu-compute">-</dd>
+            </div>
+          </form>
+          <section class="modal__metrics" aria-label="エージェントメトリクス">
+            <h3>メトリクス</h3>
+            <p id="agent-metrics-status" class="metrics-status">メトリクスを読み込み中…</p>
+            <div class="metrics-chart">
+              <canvas
+                id="agent-metrics-chart"
+                aria-label="CPUとメモリの推移"
+                role="img"
+              ></canvas>
+            </div>
+          </section>
+          <section class="modal__logs" id="agent-log-section" aria-label="エージェントログ">
+            <div class="modal__logs-header">
+              <h3>最新ログ</h3>
+              <div class="modal__logs-actions">
+                <span id="agent-log-path" class="modal__logs-path"></span>
+                <button type="button" id="agent-log-refresh" class="btn btn--secondary">
+                  再読み込み
+                </button>
+              </div>
+            </div>
+            <p id="agent-log-status" class="modal__logs-status">ログを読み込み中…</p>
+            <div
+              class="log-viewer log-viewer--compact"
+              id="agent-log-viewer"
+              role="log"
+              aria-live="polite"
+            ></div>
+          </section>
+        </section>
+        <footer class="modal__footer">
+          <button type="button" id="agent-modal-disconnect" class="btn">強制切断</button>
+          <button type="button" id="agent-modal-delete" class="btn btn--danger">削除</button>
+          <button type="button" id="agent-modal-save" class="btn btn--primary">保存</button>
+          <button type="button" id="agent-modal-ok" class="btn">閉じる</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="request-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="request-modal-title">
+      <div class="modal__dialog">
+        <header class="modal__header">
+          <h2 id="request-modal-title">リクエスト詳細</h2>
+          <button type="button" id="request-modal-close" class="modal__close" aria-label="閉じる">×</button>
+        </header>
+        <section class="modal__content">
+          <form id="request-detail-form" class="detail-list">
+            <div>
+              <dt>ID</dt>
+              <dd id="request-detail-id">-</dd>
+            </div>
+            <div>
+              <dt>タイムスタンプ</dt>
+              <dd id="request-detail-timestamp">-</dd>
+            </div>
+            <div>
+              <dt>種類</dt>
+              <dd id="request-detail-type">-</dd>
+            </div>
+            <div>
+              <dt>モデル</dt>
+              <dd id="request-detail-model">-</dd>
+            </div>
+            <div>
+              <dt>エージェント</dt>
+              <dd id="request-detail-agent">-</dd>
+            </div>
+            <div>
+              <dt>リクエスト元IP</dt>
+              <dd id="request-detail-client-ip">-</dd>
+            </div>
+            <div>
+              <dt>処理時間</dt>
+              <dd id="request-detail-duration">-</dd>
+            </div>
+            <div>
+              <dt>ステータス</dt>
+              <dd id="request-detail-status">-</dd>
+            </div>
+            <div>
+              <dt>リクエストボディ</dt>
+              <dd><pre id="request-detail-request-body" class="json-body">-</pre></dd>
+            </div>
+            <div>
+              <dt>レスポンスボディ</dt>
+              <dd><pre id="request-detail-response-body" class="json-body">-</pre></dd>
+            </div>
+          </form>
+        </section>
+        <footer class="modal__footer">
+          <button type="button" id="request-modal-ok" class="btn">閉じる</button>
+        </footer>
+      </div>
+    </div>
+
+    <script src="/dashboard/app.js" defer></script>
+  </body>
+</html>

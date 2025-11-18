@@ -1,13 +1,13 @@
 [workspace]
-members = ["common", "coordinator", "agent"]
+members = ["common", "router", "node"]
 resolver = "2"
 
 [workspace.package]
 version = "1.5.0"
 edition = "2021"
-authors = ["Ollama Coordinator Contributors"]
+authors = ["Ollama Router Contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/akiojin/ollama-coordinator"
+repository = "https://github.com/akiojin/ollama-router"
 
 [workspace.dependencies]
 # 共通依存クレート
@@ -22,12 +22,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 reqwest = { version = "0.11", features = ["json", "stream"] }
 
-# Coordinator専用
+# Router専用
 axum = "0.7"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 
-# Agent専用
+# Node専用
 sysinfo = "0.30"
 
 [patch.crates-io]

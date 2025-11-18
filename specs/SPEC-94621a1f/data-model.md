@@ -1,4 +1,4 @@
-# データモデル: エージェント自己登録システム
+# データモデル: ノード自己登録システム
 
 **SPEC-ID**: SPEC-94621a1f
 **日付**: 2025-10-30（実装完了日）
@@ -8,7 +8,7 @@
 
 ### Agent
 
-エージェント情報を表すメインエンティティ
+ノード情報を表すメインエンティティ
 
 **ファイル**: `common/src/types.rs`
 
@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Agent {
-    /// エージェントの一意識別子
+    /// ノードの一意識別子
     pub id: Uuid,
 
     /// ホスト名
@@ -56,7 +56,7 @@ pub struct Agent {
 
 ### AgentStatus
 
-エージェントの稼働状態
+ノードの稼働状態
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,7 +94,7 @@ pub enum AgentStatus {
 
 ### RegisterRequest
 
-エージェント登録リクエスト
+ノード登録リクエスト
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,7 +108,7 @@ pub struct RegisterRequest {
 
 ### RegisterResponse
 
-エージェント登録レスポンス
+ノード登録レスポンス
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,7 +138,7 @@ pub struct HeartbeatRequest {
 
 ## ストレージスキーマ
 
-**ファイル**: `~/.ollama-coordinator/agents.json`
+**ファイル**: `~/.ollama-router/agents.json`
 
 ```json
 [
@@ -186,7 +186,7 @@ pub struct HeartbeatRequest {
 
 ## データフロー
 
-### 1. エージェント登録
+### 1. ノード登録
 ```
 RegisterRequest
     → AgentRegistry::register()

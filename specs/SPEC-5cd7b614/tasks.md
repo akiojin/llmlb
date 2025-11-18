@@ -1,4 +1,4 @@
-# 実装タスク: GPU必須エージェント登録要件
+# 実装タスク: GPU必須ノード登録要件
 
 **SPEC ID**: SPEC-5cd7b614  
 **作成日**: 2025-11-01
@@ -44,7 +44,7 @@
 #### テスト
 
 - [x] Coordinator APIレスポンスのテストを追加
-- [x] GPU情報を含むエージェント登録のテストを確認
+- [x] GPU情報を含むノード登録のテストを確認
 
 ### Phase 3: ドキュメント更新 ⏳
 
@@ -97,7 +97,7 @@
 
 - [x] **T012** Integration Test: 起動時クリーンアップ
   - `coordinator/tests/integration/registry_cleanup.rs` を追加
-  - GPU無しエージェントが起動時に削除されることを検証
+  - GPU無しノードが起動時に削除されることを検証
 
 - [x] **T013** Integration Test: Dashboard API 表示
   - `/api/dashboard/agents` レスポンスで GPU 情報を検証
@@ -133,7 +133,7 @@
   - ✅ テストケースを更新
 
 - [x] **T031** ログ整備
-  - GPU未搭載エージェント拒否時・クリーンアップ時のログを明瞭化
+  - GPU未搭載ノード拒否時・クリーンアップ時のログを明瞭化
   - ✅ println!をtracing::info/warn/errorに置き換え
   - ✅ 構造化ログ（agent_id, machine_name, reason）を追加
 

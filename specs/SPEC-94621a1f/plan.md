@@ -1,4 +1,4 @@
-# 実装計画: エージェント自己登録システム
+# 実装計画: ノード自己登録システム
 
 **機能ID**: `SPEC-94621a1f` | **日付**: 2025-10-31 | **仕様**: [spec.md](./spec.md)
 **ステータス**: ✅ 実装完了 (PR #1)
@@ -6,11 +6,11 @@
 
 ## 概要
 
-各マシンでエージェントアプリケーションを起動し、コーディネーターに自動的に登録される機能。エージェントはコーディネーターとの接続状態を管理し、ハートビートを送信する。
+各マシンでノードアプリケーションを起動し、ルーターに自動的に登録される機能。ノードはルーターとの接続状態を管理し、ハートビートを送信する。
 
 **主要機能**:
-- エージェント登録API (`POST /api/agents/register`)
-- エージェント一覧API (`GET /api/agents`)
+- ノード登録API (`POST /api/agents/register`)
+- ノード一覧API (`GET /api/agents`)
 - ハートビート送信 (`POST /api/agents/:id/heartbeat`)
 - JSONファイルベースの永続化
 
@@ -21,16 +21,16 @@
 - `axum` - Web APIフレームワーク
 - `tokio` - 非同期ランタイム
 - `serde` / `serde_json` - JSONシリアライゼーション
-- `uuid` - エージェントID生成
+- `uuid` - ノードID生成
 - `chrono` - タイムスタンプ管理
 
-**ストレージ**: JSONファイル (`~/.ollama-coordinator/agents.json`)
+**ストレージ**: JSONファイル (`~/.ollama-router/agents.json`)
 **テスト**: `cargo test`（単体・統合テスト）
 **対象プラットフォーム**: Linuxサーバー
 **プロジェクトタイプ**: single（バイナリクレート）
-**パフォーマンス目標**: エージェント登録API < 100ms、最大1000エージェント管理
+**パフォーマンス目標**: ノード登録API < 100ms、最大1000ノード管理
 **制約**: 認証機能なし（将来拡張候補）
-**スケール/スコープ**: 1000エージェント以下
+**スケール/スコープ**: 1000ノード以下
 
 ## 憲章チェック
 *ゲート: Phase 0 research前に合格必須。Phase 1 design後に再チェック。*
@@ -85,18 +85,18 @@ coordinator/
 ├── src/
 │   ├── api/
 │   │   ├── mod.rs
-│   │   └── agent.rs     # エージェント登録・一覧・ハートビートAPI
+│   │   └── agent.rs     # ノード登録・一覧・ハートビートAPI
 │   ├── db/
 │   │   └── mod.rs       # JSONファイルストレージ
 │   ├── registry/
-│   │   └── mod.rs       # AgentRegistry（メモリ上のエージェント管理）
+│   │   └── mod.rs       # AgentRegistry（メモリ上のノード管理）
 │   └── main.rs          # エントリーポイント
 └── tests/
     └── agent_test.rs    # 統合テスト
 
 agent/
 ├── src/
-│   └── main.rs          # エージェントクライアント
+│   └── main.rs          # ノードクライアント
 └── Cargo.toml
 ```
 
@@ -107,7 +107,7 @@ agent/
 ### 技術選択の理由
 
 #### ストレージ: JSONファイル
-**決定**: SQLiteではなくJSONファイル (`~/.ollama-coordinator/agents.json`)
+**決定**: SQLiteではなくJSONファイル (`~/.ollama-router/agents.json`)
 
 **理由**:
 1. **シンプルさの極限を追求**（CLAUDE.md準拠）
@@ -119,7 +119,7 @@ agent/
 **検討した代替案**:
 - **SQLite**: リレーショナルDB、トランザクションサポート、複雑なクエリ可能
 - **PostgreSQL**: 本格的なDB、高機能だが過剰
-- **却下理由**: 1000エージェント以下では、JSONファイルで十分。複雑さを避けるため。
+- **却下理由**: 1000ノード以下では、JSONファイルで十分。複雑さを避けるため。
 
 #### 非同期ランタイム: Tokio
 **決定**: Tokio
@@ -155,7 +155,7 @@ agent/
 
 ### API契約設計
 
-#### 1. エージェント登録API
+#### 1. ノード登録API
 - **エンドポイント**: `POST /api/agents/register`
 - **リクエストボディ**: JSON
 ```json
@@ -179,7 +179,7 @@ agent/
 }
 ```
 
-#### 2. エージェント一覧API
+#### 2. ノード一覧API
 - **エンドポイント**: `GET /api/agents`
 - **レスポンス**: JSON配列
 ```json
@@ -235,11 +235,11 @@ pub struct SystemInfo {
 
 **レイヤー構成**:
 1. **API層** (`coordinator/src/api/agent.rs`): HTTPリクエスト処理
-2. **Registry層** (`coordinator/src/registry/mod.rs`): メモリ上のエージェント管理
+2. **Registry層** (`coordinator/src/registry/mod.rs`): メモリ上のノード管理
 3. **Storage層** (`coordinator/src/db/mod.rs`): ファイルI/O
 
 **状態管理**:
-- `Arc<RwLock<HashMap<Uuid, Agent>>>` でエージェント情報を管理
+- `Arc<RwLock<HashMap<Uuid, Agent>>>` でノード情報を管理
 - 書き込み時: `RwLock::write()` → Registry更新 → ファイル保存
 - 読み込み時: `RwLock::read()` → Registry参照
 
@@ -273,11 +273,11 @@ pub struct SystemInfo {
 
 ### ハートビート自動復旧
 **仕様**: ハートビート受信時、ステータスを自動的に`Online`に更新
-**理由**: エージェント再起動時の手動復旧を不要にするため
+**理由**: ノード再起動時の手動復旧を不要にするため
 **実装**: `POST /api/agents/:id/heartbeat` で`status = AgentStatus::Online`を設定
 
 ### AtomicUsizeによるラウンドロビン
-**仕様**: エージェント選択時、AtomicUsizeでインデックス管理
+**仕様**: ノード選択時、AtomicUsizeでインデックス管理
 **理由**: スレッドセーフで効率的
 **実装**: `AgentRegistry::select_available_agent()`で`fetch_add(1, Ordering::Relaxed)`使用
 
@@ -303,8 +303,8 @@ pub struct SystemInfo {
 
 ## 実装済み機能（PR #1）
 
-✅ エージェント登録API
-✅ エージェント一覧API
+✅ ノード登録API
+✅ ノード一覧API
 ✅ ハートビート機能
 ✅ JSONファイルベースの永続化
 ✅ 統合テスト
@@ -314,8 +314,8 @@ pub struct SystemInfo {
 ## 今後の拡張候補
 
 1. **認証機能**: APIキーまたはトークンベース認証
-2. **エージェント削除API**: `DELETE /api/agents/:id`
-3. **エージェント更新API**: `PUT /api/agents/:id`
+2. **ノード削除API**: `DELETE /api/agents/:id`
+3. **ノード更新API**: `PUT /api/agents/:id`
 4. **バックアップ機能**: JSONファイルの自動バックアップ
 5. **PostgreSQL対応**: 大規模環境向けのDB切り替え
 

@@ -5,7 +5,7 @@
 
 ## 概要
 
-ollama-coordinatorのmacOS向けバイナリをLinux環境（Docker）でビルドするには、
+ollama-routerのmacOS向けバイナリをLinux環境（Docker）でビルドするには、
 macOS SDKが必要です。このSDKはAppleのライセンス規約により、
 各開発者が個別に取得する必要があります。
 
@@ -74,8 +74,8 @@ ls -lh ~/sdk-packages/MacOSX${SDK_VERSION}.sdk.tar.xz
 ### Step 4: SDKファイルをプロジェクトに配置
 
 ```bash
-# ollama-coordinatorプロジェクトのルートディレクトリに移動
-cd /path/to/ollama-coordinator
+# ollama-routerプロジェクトのルートディレクトリに移動
+cd /path/to/ollama-router
 
 # .sdkディレクトリを作成
 mkdir -p .sdk

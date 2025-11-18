@@ -31,17 +31,17 @@ pub enum CommonError {
 
 /// Coordinatorエラー型
 #[derive(Debug, Error)]
-pub enum CoordinatorError {
+pub enum RouterError {
     /// Common層エラー
     #[error(transparent)]
     Common(#[from] CommonError),
 
-    /// エージェント未登録
-    #[error("エージェントが見つかりません: {0}")]
+    /// ノード未登録
+    #[error("ノードが見つかりません: {0}")]
     AgentNotFound(Uuid),
 
-    /// 利用可能なエージェントがない
-    #[error("利用可能なエージェントがありません")]
+    /// 利用可能なノードがない
+    #[error("利用可能なノードがありません")]
     NoAgentsAvailable,
 
     /// データベースエラー
@@ -64,8 +64,8 @@ pub enum CoordinatorError {
     #[error("内部エラー: {0}")]
     Internal(String),
 
-    /// エージェントがオフライン
-    #[error("エージェント {0} はオフラインです")]
+    /// ノードがオフライン
+    #[error("ノード {0} はオフラインです")]
     AgentOffline(Uuid),
 
     /// 無効なモデル名
@@ -93,9 +93,9 @@ pub enum CoordinatorError {
     Authorization(String),
 }
 
-/// Agentエラー型
+/// Nodeエラー型
 #[derive(Debug, Error)]
-pub enum AgentError {
+pub enum NodeError {
     /// Common層エラー
     #[error(transparent)]
     Common(#[from] CommonError),
@@ -109,7 +109,7 @@ pub enum AgentError {
     OllamaConnection(String),
 
     /// 登録エラー
-    #[error("エージェント登録に失敗しました: {0}")]
+    #[error("ノード登録に失敗しました: {0}")]
     Registration(String),
 
     /// ヘルスチェック送信エラー
@@ -133,10 +133,10 @@ pub enum AgentError {
 pub type CommonResult<T> = Result<T, CommonError>;
 
 /// Result型エイリアス（Coordinator）
-pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
+pub type RouterResult<T> = Result<T, RouterError>;
 
-/// Result型エイリアス（Agent）
-pub type AgentResult<T> = Result<T, AgentError>;
+/// Result型エイリアス（Node）
+pub type NodeResult<T> = Result<T, NodeError>;
 
 #[cfg(test)]
 mod tests {
@@ -150,20 +150,20 @@ mod tests {
 
     #[test]
     fn test_coordinator_error_agent_not_found() {
-        let agent_id = Uuid::new_v4();
-        let error = CoordinatorError::AgentNotFound(agent_id);
-        assert!(error.to_string().contains(&agent_id.to_string()));
+        let node_id = Uuid::new_v4();
+        let error = RouterError::AgentNotFound(node_id);
+        assert!(error.to_string().contains(&node_id.to_string()));
     }
 
     #[test]
     fn test_coordinator_error_no_agents() {
-        let error = CoordinatorError::NoAgentsAvailable;
-        assert_eq!(error.to_string(), "利用可能なエージェントがありません");
+        let error = RouterError::NoAgentsAvailable;
+        assert_eq!(error.to_string(), "利用可能なノードがありません");
     }
 
     #[test]
     fn test_agent_error_coordinator_connection() {
-        let error = AgentError::CoordinatorConnection("タイムアウト".to_string());
+        let error = NodeError::CoordinatorConnection("タイムアウト".to_string());
         assert_eq!(
             error.to_string(),
             "Coordinatorへの接続に失敗しました: タイムアウト"

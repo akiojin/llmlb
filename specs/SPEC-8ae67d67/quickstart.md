@@ -3,7 +3,7 @@
 **機能ID**: `SPEC-8ae67d67`
 **最終更新**: 2025-11-14
 
-このガイドでは、コーディネーター主導のモデル自動配布機能の3つの主要シナリオ
+このガイドでは、ルーター主導のモデル自動配布機能の3つの主要シナリオ
 について、実際の操作手順を説明します。
 
 ---
@@ -12,16 +12,16 @@
 
 - Coordinatorが起動していること (`coordinator` バイナリ)
 - 1台以上のAgentが稼働していること (`agent` バイナリ)
-- エージェントがGPUを搭載していること
+- ノードがGPUを搭載していること
 - CoordinatorとAgent間でネットワーク通信が可能であること
 
 ---
 
-## シナリオ1: エージェント登録時の自動モデル配布
+## シナリオ1: ノード登録時の自動モデル配布
 
 ### 概要
 
-新しいエージェントを登録すると、GPUメモリサイズに応じて最適なモデルが
+新しいノードを登録すると、GPUメモリサイズに応じて最適なモデルが
 自動的に選択され、ダウンロードが開始されます。
 
 ### GPU メモリとモデルの対応表
@@ -35,7 +35,7 @@
 
 ### 操作手順
 
-#### 1. エージェントを起動
+#### 1. ノードを起動
 
 ```bash
 # Agent側で実行
@@ -47,7 +47,7 @@
 
 #### 2. 自動登録の確認
 
-エージェント起動時に、以下のログが表示されます：
+ノード起動時に、以下のログが表示されます：
 
 ```
 INFO Agent registration successful: agent_id=...
@@ -94,7 +94,7 @@ INFO Model pull completed: model=gpt-oss:20b, task_id=...
 
 ### 概要
 
-管理者が明示的に特定のモデルを特定のエージェント（または全エージェント）に
+管理者が明示的に特定のモデルを特定のノード（または全ノード）に
 配布します。新しいモデルのテストや、特定タスク向けモデルの配布に使用します。
 
 ### 操作手順
@@ -127,7 +127,7 @@ curl http://localhost:8080/api/models/available
 }
 ```
 
-#### 2. 特定エージェントへのモデル配布
+#### 2. 特定ノードへのモデル配布
 
 ```bash
 curl -X POST http://localhost:8080/api/agents/{agent_id}/models/pull \
@@ -145,7 +145,7 @@ curl -X POST http://localhost:8080/api/agents/{agent_id}/models/pull \
 }
 ```
 
-#### 3. 全エージェントへの一括配布
+#### 3. 全ノードへの一括配布
 
 ```bash
 curl -X POST http://localhost:8080/api/models/distribute \
@@ -168,7 +168,7 @@ curl -X POST http://localhost:8080/api/models/distribute \
 }
 ```
 
-#### 4. 特定エージェント群への配布
+#### 4. 特定ノード群への配布
 
 ```bash
 curl -X POST http://localhost:8080/api/models/distribute \
@@ -189,7 +189,7 @@ curl -X POST http://localhost:8080/api/models/distribute \
 
 ### 概要
 
-システム全体のモデル配布状況を確認し、どのエージェントにどのモデルが
+システム全体のモデル配布状況を確認し、どのノードにどのモデルが
 インストールされているかを把握します。
 
 ### 操作手順
@@ -203,7 +203,7 @@ curl http://localhost:8080/api/models/available
 - Ollama公式ライブラリから取得したモデル一覧が表示されます
 - モデル名、表示名、サイズ、説明が含まれます
 
-#### 2. 特定エージェントのインストール済みモデルを確認
+#### 2. 特定ノードのインストール済みモデルを確認
 
 ```bash
 curl http://localhost:8080/api/agents/{agent_id}/models
@@ -226,13 +226,13 @@ curl http://localhost:8080/api/agents/{agent_id}/models
 ]
 ```
 
-#### 3. 全エージェントの状況をマトリクス形式で確認
+#### 3. 全ノードの状況をマトリクス形式で確認
 
 ```bash
-# エージェント一覧を取得
+# ノード一覧を取得
 curl http://localhost:8080/api/agents
 
-# 各エージェントのモデルを確認
+# 各ノードのモデルを確認
 for agent_id in $(curl -s http://localhost:8080/api/agents | jq -r '.[].id'); do
   echo "Agent: $agent_id"
   curl -s http://localhost:8080/api/agents/$agent_id/models | jq '.[] | .name'
@@ -255,7 +255,7 @@ Agent: 234f5678-f90c-23e4-b567-537725285111
 
 ## エラーハンドリング
 
-### オフラインエージェントへの配布試行
+### オフラインノードへの配布試行
 
 ```bash
 curl -X POST http://localhost:8080/api/agents/{offline_agent_id}/models/pull \
@@ -267,7 +267,7 @@ curl -X POST http://localhost:8080/api/agents/{offline_agent_id}/models/pull \
 
 ```json
 {
-  "error": "エージェント {agent_id} はオフラインです"
+  "error": "ノード {agent_id} はオフラインです"
 }
 ```
 
@@ -308,16 +308,16 @@ curl -X POST http://localhost:8080/api/models/distribute \
 
 ## トラブルシューティング
 
-### 問題: エージェント登録時にモデルダウンロードが開始されない
+### 問題: ノード登録時にモデルダウンロードが開始されない
 
 **原因**:
 
 - GPUメモリ情報が正しく検出されていない
-- エージェント側のAPI通信が失敗している
+- ノード側のAPI通信が失敗している
 
 **解決方法**:
 
-1. エージェントのログで GPU 検出状況を確認:
+1. ノードのログで GPU 検出状況を確認:
 
    ```
    INFO GPU detected: model=NVIDIA GeForce RTX 3090, memory=24GB
@@ -339,7 +339,7 @@ curl -X POST http://localhost:8080/api/models/distribute \
 
 **原因**:
 
-- エージェント側でOllamaサービスが起動していない
+- ノード側でOllamaサービスが起動していない
 - ネットワーク帯域が不足している
 
 **解決方法**:

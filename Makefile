@@ -38,7 +38,7 @@ specify-checks: specify-tasks specify-tests specify-compile specify-commits
 quality-checks: fmt clippy test specify-checks markdownlint openai-tests test-hooks
 
 openai-tests:
-	cargo test -p ollama-coordinator-coordinator --test openai_proxy
+	cargo test -p or-router --test openai_proxy
 
 test-hooks:
 	npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats
@@ -47,14 +47,14 @@ test-hooks:
 build-macos-x86_64:
 	@echo "Building for macOS x86_64 (Intel)..."
 	cargo build --release --target x86_64-apple-darwin \
-		-p ollama-coordinator-coordinator \
-		-p ollama-coordinator-agent
+		-p or-router \
+		-p or-node
 
 build-macos-aarch64:
 	@echo "Building for macOS aarch64 (Apple Silicon)..."
 	cargo build --release --target aarch64-apple-darwin \
-		-p ollama-coordinator-coordinator \
-		-p ollama-coordinator-agent
+		-p or-router \
+		-p or-node
 
 build-macos-all: build-macos-x86_64 build-macos-aarch64
 	@echo "All macOS builds completed successfully!"

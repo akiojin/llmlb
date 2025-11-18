@@ -1,7 +1,7 @@
 # タスク: 統一APIプロキシ
 
 **ステータス**: ✅ **実装完了** (PR #1でマージ済み、2025-10-30)
-**入力**: `/ollama-coordinator/specs/SPEC-63acef08/`の設計ドキュメント
+**入力**: `/ollama-router/specs/SPEC-63acef08/`の設計ドキュメント
 
 ## 実装済みタスク一覧
 
@@ -36,22 +36,22 @@
 ### Integration Tests
 
 - [x] **T006** `coordinator/tests/integration/proxy_test.rs` にプロキシ基本動作テスト
-  - 前提: 1台のエージェント登録済み
+  - 前提: 1台のノード登録済み
   - 実行: POST /api/chat でリクエスト送信
-  - 検証: エージェントにリクエストが転送され、レスポンスが返される
+  - 検証: ノードにリクエストが転送され、レスポンスが返される
 
 - [x] **T007** `coordinator/tests/integration/proxy_test.rs` にラウンドロビンテスト
-  - 前提: 3台のエージェント登録済み
+  - 前提: 3台のノード登録済み
   - 実行: 9回連続でPOST /api/chat リクエスト送信
-  - 検証: 各エージェントが3リクエストずつ処理（均等分散）
+  - 検証: 各ノードが3リクエストずつ処理（均等分散）
 
-- [x] **T008** `coordinator/tests/integration/proxy_test.rs` にエージェント不在エラーテスト
-  - 前提: 登録されたエージェントなし
+- [x] **T008** `coordinator/tests/integration/proxy_test.rs` にノード不在エラーテスト
+  - 前提: 登録されたノードなし
   - 実行: POST /api/chat リクエスト送信
   - 検証: 503 Service Unavailable、"No agents available"エラー
 
 - [x] **T009** `coordinator/tests/integration/proxy_test.rs` にタイムアウトテスト
-  - 前提: 応答しないモックエージェント登録
+  - 前提: 応答しないモックノード登録
   - 実行: POST /api/chat リクエスト送信
   - 検証: 60秒後にタイムアウトエラー
 
@@ -68,9 +68,9 @@
   - 初期化: `AtomicUsize::new(0)`
 
 - [x] **T011** `coordinator/src/registry/mod.rs` にselect_agent()メソッド実装
-  - 機能: オンラインエージェント一覧取得 → ラウンドロビンで選択
+  - 機能: オンラインノード一覧取得 → ラウンドロビンで選択
   - アルゴリズム: `index % online_agents.len()`
-  - エージェント不在時: `None` 返却
+  - ノード不在時: `None` 返却
 
 ### プロキシAPI層
 
@@ -124,8 +124,8 @@
 
 - [x] **T020** [P] `coordinator/src/registry/mod.rs` にselect_agent()のunit test
   - ラウンドロビンインデックス更新テスト
-  - オンラインエージェントのみ選択テスト
-  - エージェント不在時Noneテスト
+  - オンラインノードのみ選択テスト
+  - ノード不在時Noneテスト
 
 - [x] **T021** [P] `common/src/protocol.rs` にプロトコル型のunit test
   - JSONシリアライゼーション/デシリアライゼーションテスト
@@ -169,7 +169,7 @@
 
 **テスト結果**:
 - ✅ すべてのテストが合格
-- ✅ ラウンドロビン動作確認（9リクエスト → 3エージェントに均等分散）
+- ✅ ラウンドロビン動作確認（9リクエスト → 3ノードに均等分散）
 - ✅ エラーハンドリング正常動作
 - ✅ cargo clippy: エラー/警告ゼロ
 - ✅ cargo fmt --check: フォーマット準拠

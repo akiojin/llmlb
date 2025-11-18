@@ -8,7 +8,7 @@ use apple::detect_apple;
 
 fn main() {
     println!("=======================================================");
-    println!("       GPU Detection PoC for Ollama Coordinator");
+    println!("       GPU Detection PoC for Ollama Router");
     println!("=======================================================\n");
 
     // Detect NVIDIA GPUs

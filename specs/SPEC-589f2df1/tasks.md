@@ -1,7 +1,7 @@
 # タスク: ロードバランシングシステム
 
 **ステータス**: ✅ **実装完了** (Phase 1-2完了: 24/24タスク = 100%)
-**入力**: `/ollama-coordinator/specs/SPEC-589f2df1/`の設計ドキュメント
+**入力**: `/ollama-router/specs/SPEC-589f2df1/`の設計ドキュメント
 
 ---
 
@@ -16,15 +16,15 @@
   - 初期化: `AtomicUsize::new(0)`
 
 - [x] **T002** `coordinator/src/registry/mod.rs` にselect_agent()メソッド実装
-  - 機能: オンラインエージェント一覧取得 → ラウンドロビンで選択
+  - 機能: オンラインノード一覧取得 → ラウンドロビンで選択
   - アルゴリズム: `index % online_agents.len()`
 
 ### テスト
 
 - [x] **T003** `coordinator/tests/integration/proxy_test.rs` にラウンドロビン動作テスト
-  - 前提: 3台のエージェント登録済み
+  - 前提: 3台のノード登録済み
   - 実行: 9回連続リクエスト送信
-  - 検証: 各エージェントが3リクエストずつ処理
+  - 検証: 各ノードが3リクエストずつ処理
 
 **Phase 1 実装時間**: 約1時間（SPEC-63acef08に含む）
 
@@ -50,22 +50,22 @@
 #### Contract Tests
 
 - [x] **T007** [P] `coordinator/tests/contract/test_metrics.rs` に POST /api/agents/:id/metrics のcontract test
-  - ✅ 3つのContract Test作成（成功ケース、存在しないエージェント、不正な値）
+  - ✅ 3つのContract Test作成（成功ケース、存在しないノード、不正な値）
   - ✅ coordinator/tests/contract_tests.rs にエントリーポイント作成
   - ✅ RED状態確認完了（TDD準拠）
 
 #### Integration Tests
 
 - [x] **T008** `coordinator/tests/integration/test_metrics.rs` にメトリクス収集テスト
-  - ✅ 3つのIntegration Test作成（収集と保存、更新、存在しないエージェント）
+  - ✅ 3つのIntegration Test作成（収集と保存、更新、存在しないノード）
   - ✅ RED状態確認完了（TDD準拠）
 
 - [x] **T009** `coordinator/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
-  - ✅ 3台エージェント中1台高負荷時の低負荷優先選択テスト作成
+  - ✅ 3台ノード中1台高負荷時の低負荷優先選択テスト作成
   - ✅ RED状態確認完了（TDD準拠）
 
-- [x] **T010** `coordinator/tests/integration/loadbalancer_test.rs` に全エージェント高負荷時のフォールバックテスト
-  - ✅ 全エージェントCPU 95%時のラウンドロビンフォールバックテスト作成
+- [x] **T010** `coordinator/tests/integration/loadbalancer_test.rs` に全ノード高負荷時のフォールバックテスト
+  - ✅ 全ノードCPU 95%時のラウンドロビンフォールバックテスト作成
   - ✅ RED状態確認完了（TDD準拠）
 
 **推定時間**: 2時間 ✅ 完了
@@ -85,16 +85,16 @@
   - ✅ new()とwith_storage()で空のHashMapとして初期化
 
 - [x] **T013** `coordinator/src/registry/mod.rs` にupdate_metrics()メソッド実装
-  - ✅ エージェント存在確認 → メトリクス保存の実装完了
+  - ✅ ノード存在確認 → メトリクス保存の実装完了
 
 #### 負荷ベース選択ロジック
 
 - [x] **T014** `coordinator/src/balancer/mod.rs` にselect_agent_by_metrics()メソッド実装
   - ✅ 負荷スコア計算: cpu_usage + memory_usage + (active_requests * 10)
-  - ✅ 最小スコアエージェント選択ロジック実装
+  - ✅ 最小スコアノード選択ロジック実装
 
 - [x] **T015** `coordinator/src/balancer/mod.rs` にフォールバックロジック実装
-  - ✅ 全エージェントCPU > 80%時のラウンドロビンフォールバック実装
+  - ✅ 全ノードCPU > 80%時のラウンドロビンフォールバック実装
 
 #### メトリクス収集API
 
@@ -125,8 +125,8 @@
 #### Unit Tests
 
 - [x] **T020** [P] `coordinator/src/registry/mod.rs` に負荷スコア計算のunit test
-  - ✅ 正常ケース: 低負荷エージェントが高スコア
-  - ✅ エッジケース: メトリクスなしエージェントは最低優先度
+  - ✅ 正常ケース: 低負荷ノードが高スコア
+  - ✅ エッジケース: メトリクスなしノードは最低優先度
 
 - [x] **T021** [P] `common/src/types.rs` にAgentMetrics型のunit test
   - ✅ JSONシリアライゼーション/デシリアライゼーションテスト
@@ -143,13 +143,13 @@
 
 - [x] **T024** [P] `coordinator/benches/loadbalancer_bench.rs` にベンチマーク追加
   - ✅ 測定: select_agent_by_metrics() の実行時間
-  - ✅ 目標: 1000エージェントで < 10ms
+  - ✅ 目標: 1000ノードで < 10ms
   - ✅ **実測結果**（2025-11-02）:
-    - 10エージェント: 2.8 µs
-    - 50エージェント: 15.5 µs
-    - 100エージェント: 34.4 µs
-    - 500エージェント: 203.0 µs
-    - **1000エージェント: 0.447 ms** ← 目標10msの**22倍高速** ✅
+    - 10ノード: 2.8 µs
+    - 50ノード: 15.5 µs
+    - 100ノード: 34.4 µs
+    - 500ノード: 203.0 µs
+    - **1000ノード: 0.447 ms** ← 目標10msの**22倍高速** ✅
 
 **推定時間**: 3.5時間 ✅ 完了
 

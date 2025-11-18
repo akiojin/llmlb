@@ -1,16 +1,16 @@
 services:
-  ollama-coordinator:
+  ollama-router:
     build:
       context: .
       args:
         SDK_VERSION: ${SDK_VERSION:-14.2}
         OSX_VERSION_MIN: ${OSX_VERSION_MIN:-11.0}
-    container_name: ollama-coordinator
+    container_name: ollama-router
     mem_limit: 16g
     mem_reservation: 13g
     memswap_limit: 18g
     volumes:
-      - .:/ollama-coordinator
+      - .:/ollama-router
       - bash-history:/root/.bash_history_dir
       - ./.docker/bash_history:/root/.bash_history
       - claude-config:/root/.claude
@@ -34,10 +34,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${COORDINATOR_PORT:-8080}:8080"
+      - "${ROUTER_PORT:-8080}:8080"
     stdin_open: true
     tty: true
-    working_dir: /ollama-coordinator
+    working_dir: /ollama-router
 
 volumes:
   bash-history: {}

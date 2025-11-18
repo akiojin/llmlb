@@ -1,4 +1,4 @@
-# 実装計画: コーディネーター主導のモデル自動配布機能
+# 実装計画: ルーター主導のモデル自動配布機能
 
 **機能ID**: `SPEC-8ae67d67` | **日付**: 2025-11-12 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-8ae67d67/spec.md`の機能仕様
@@ -18,14 +18,14 @@
 
 ## 概要
 
-コーディネーターから各エージェントのOllamaモデルダウンロードを一元制御する機能を実装します。エージェント登録時にGPU能力に応じた自動配布、ダッシュボードからの手動配布、モデル情報の可視化を提供し、運用効率を向上させます。
+ルーターから各ノードのOllamaモデルダウンロードを一元制御する機能を実装します。ノード登録時にGPU能力に応じた自動配布、ダッシュボードからの手動配布、モデル情報の可視化を提供し、運用効率を向上させます。
 
 **主要要件**:
-- エージェント登録時のGPU能力ベース自動モデル配布
+- ノード登録時のGPU能力ベース自動モデル配布
 - ダッシュボードからの個別/一括モデル配布
 - Ollama公式ライブラリAPIからのモデル一覧取得
 - リアルタイム進捗表示
-- 既存のエージェント自律ダウンロード機能との独立併存
+- 既存のノード自律ダウンロード機能との独立併存
 
 ## 技術コンテキスト
 
@@ -43,9 +43,9 @@
 - 同時ダウンロードタスク: 10個
 **制約**:
 - Ollama公式ライブラリAPIへのインターネット接続必須
-- エージェント側ディスク容量依存
+- ノード側ディスク容量依存
 - ネットワーク安定性必須（リアルタイム進捗更新）
-**スケール/スコープ**: 10-50エージェント、数十～数百のモデル
+**スケール/スコープ**: 10-50ノード、数十～数百のモデル
 
 ## 憲章チェック
 
@@ -58,11 +58,11 @@
 **アーキテクチャ**:
 - すべての機能をライブラリとして? Partial (coordinator/agentはバイナリだが、共通ロジックはモジュール化)
 - ライブラリリスト:
-  - `coordinator::registry`: エージェント管理
+  - `coordinator::registry`: ノード管理
   - `coordinator::api`: REST APIハンドラー
   - `agent::ollama`: Ollama通信
 - ライブラリごとのCLI:
-  - `ollama-coordinator --help/--version`
+  - `ollama-router --help/--version`
   - `ollama-agent --help/--version`
 - ライブラリドキュメント: 既存のREADME.mdに追記予定
 
@@ -97,7 +97,7 @@ specs/SPEC-8ae67d67/
 ├── quickstart.md        # Phase 1 出力
 ├── contracts/           # Phase 1 出力
 │   ├── models-api.yaml  # モデル関連APIのOpenAPI仕様
-│   └── agent-api.yaml   # エージェント関連APIのOpenAPI仕様拡張
+│   └── agent-api.yaml   # ノード関連APIのOpenAPI仕様拡張
 └── tasks.md             # Phase 2 出力 (/speckit.tasks コマンド)
 ```
 
@@ -107,12 +107,12 @@ specs/SPEC-8ae67d67/
 coordinator/
 ├── src/
 │   ├── api/
-│   │   ├── agent.rs      # 既存: エージェント登録API
+│   │   ├── agent.rs      # 既存: ノード登録API
 │   │   ├── health.rs     # 既存: ヘルスチェックAPI
 │   │   ├── proxy.rs      # 既存: プロキシAPI
 │   │   └── models.rs     # 新規: モデル管理API
 │   ├── registry/
-│   │   ├── mod.rs        # 既存: エージェントレジストリ
+│   │   ├── mod.rs        # 既存: ノードレジストリ
 │   │   └── models.rs     # 新規: モデル状態管理
 │   ├── ollama/
 │   │   ├── mod.rs        # 新規: Ollama公式ライブラリAPI通信
@@ -121,7 +121,7 @@ coordinator/
 ├── tests/
 │   ├── contract/
 │   │   ├── models_api_test.rs   # 新規: モデルAPI契約テスト
-│   │   └── agent_api_test.rs    # 既存拡張: エージェントAPI契約テスト
+│   │   └── agent_api_test.rs    # 既存拡張: ノードAPI契約テスト
 │   ├── integration/
 │   │   ├── auto_download_test.rs        # 新規: 自動配布統合テスト
 │   │   ├── manual_distribution_test.rs  # 新規: 手動配布統合テスト
@@ -213,7 +213,7 @@ agent/
   - `required_memory: u64` (bytes)
   - `tags: Vec<String>`
 
-- `InstalledModel`: エージェントにインストール済みのモデル
+- `InstalledModel`: ノードにインストール済みのモデル
   - `name: String`
   - `size: u64`
   - `installed_at: DateTime<Utc>`
@@ -288,7 +288,7 @@ agent/
 
 /api/agents/{agent_id}/models:
   get:
-    summary: エージェントのインストール済みモデル一覧
+    summary: ノードのインストール済みモデル一覧
     responses:
       200:
         content:
@@ -299,7 +299,7 @@ agent/
 
 /api/agents/{agent_id}/models/pull:
   post:
-    summary: 特定エージェントにモデルダウンロード指示
+    summary: 特定ノードにモデルダウンロード指示
     requestBody:
       content:
         application/json:
@@ -374,17 +374,17 @@ agent/
 # クイックスタート: モデル自動配布機能
 
 ## 前提条件
-- ollama-coordinatorが起動している
-- 少なくとも1つのエージェントが登録されている
+- ollama-routerが起動している
+- 少なくとも1つのノードが登録されている
 
-## シナリオ1: エージェント登録時の自動配布
+## シナリオ1: ノード登録時の自動配布
 
-1. 新しいエージェントを起動:
+1. 新しいノードを起動:
    \`\`\`bash
    ollama-agent --coordinator-url http://localhost:8080
    \`\`\`
 
-2. コーディネーターログで自動配布を確認:
+2. ルーターログで自動配布を確認:
    \`\`\`
    [INFO] Agent registered: <agent_id>
    [INFO] Auto-downloading model: gpt-oss:20b (16GB+ GPU detected)
@@ -393,14 +393,14 @@ agent/
 
 3. ダッシュボードで進捗を確認:
    - http://localhost:8080/dashboard
-   - エージェント詳細 → ダウンロード進捗
+   - ノード詳細 → ダウンロード進捗
 
 ## シナリオ2: ダッシュボードからの手動配布
 
 1. ダッシュボードを開く: http://localhost:8080/dashboard
 2. 「モデル管理」タブをクリック
 3. ダウンロード可能なモデル一覧から選択
-4. 配布先を選択（特定エージェント or 全エージェント）
+4. 配布先を選択（特定ノード or 全ノード）
 5. 「ダウンロード」ボタンをクリック
 6. 進捗をリアルタイムで確認
 
@@ -408,17 +408,17 @@ agent/
 
 1. ダッシュボードを開く
 2. 「モデル管理」タブ → 「ダウンロード可能」サブタブ
-3. 各エージェントの詳細画面 → 「インストール済みモデル」セクション
+3. 各ノードの詳細画面 → 「インストール済みモデル」セクション
 ```
 
-### 6. エージェントファイル更新
+### 6. ノードファイル更新
 
 `CLAUDE.md` に追記:
 ```markdown
 ## モデル自動配布機能 (SPEC-8ae67d67)
 
 ### 概要
-コーディネーターが各エージェントのモデルダウンロードを制御
+ルーターが各ノードのモデルダウンロードを制御
 
 ### 主要コンポーネント
 - coordinator/src/api/models.rs: モデル管理API
@@ -486,7 +486,7 @@ agent/
 
 4. **Integration Phase**:
    - ダッシュボードUI拡張
-   - エージェント側モデルプル機能拡張
+   - ノード側モデルプル機能拡張
    - 進捗更新機能実装
 
 5. **Polish Phase**:

@@ -1,6 +1,6 @@
 //! 通信プロトコル定義
 //!
-//! Agent↔Coordinator間の通信メッセージ
+//! Node↔Coordinator間の通信メッセージ
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::types::GpuDeviceInfo;
 
-/// エージェント登録リクエスト
+/// ノード登録リクエスト
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RegisterRequest {
     /// マシン名
@@ -33,14 +33,14 @@ pub struct RegisterRequest {
     pub gpu_model: Option<String>,
 }
 
-/// エージェント登録レスポンス
+/// ノード登録レスポンス
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RegisterResponse {
-    /// エージェントID
-    pub agent_id: Uuid,
+    /// ノードID
+    pub node_id: Uuid,
     /// ステータス ("registered" または "updated")
     pub status: RegisterStatus,
-    /// エージェントAPIポート（OpenAI互換API）
+    /// ノードAPIポート（OpenAI互換API）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_api_port: Option<u16>,
     /// 自動配布されたモデル名（オプション）
@@ -60,15 +60,15 @@ pub struct RegisterResponse {
 pub enum RegisterStatus {
     /// 新規登録
     Registered,
-    /// 既存エージェント更新
+    /// 既存ノード更新
     Updated,
 }
 
 /// ヘルスチェックリクエスト
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HealthCheckRequest {
-    /// エージェントID
-    pub agent_id: Uuid,
+    /// ノードID
+    pub node_id: Uuid,
     /// CPU使用率 (0.0-100.0)
     pub cpu_usage: f32,
     /// メモリ使用率 (0.0-100.0)
@@ -102,7 +102,7 @@ pub struct HealthCheckRequest {
     /// 過去N件の平均レスポンスタイム (ms)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub average_response_time_ms: Option<f32>,
-    /// エージェントがロード済みのモデル一覧
+    /// ノードがロード済みのモデル一覧
     #[serde(default)]
     pub loaded_models: Vec<String>,
     /// モデル起動中フラグ
@@ -166,11 +166,11 @@ pub struct RequestResponseRecord {
     pub request_type: RequestType,
     /// 使用されたモデル名
     pub model: String,
-    /// 処理したエージェントのID
-    pub agent_id: Uuid,
-    /// エージェントのマシン名
+    /// 処理したノードのID
+    pub node_id: Uuid,
+    /// ノードのマシン名
     pub agent_machine_name: String,
-    /// エージェントのIPアドレス
+    /// ノードのIPアドレス
     pub agent_ip: IpAddr,
     /// リクエスト元クライアントのIPアドレス
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn test_health_check_request_serialization() {
         let request = HealthCheckRequest {
-            agent_id: Uuid::new_v4(),
+            node_id: Uuid::new_v4(),
             cpu_usage: 45.5,
             memory_usage: 60.2,
             gpu_usage: Some(33.0),
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn test_health_check_request_with_gpu_capability() {
         let request = HealthCheckRequest {
-            agent_id: Uuid::new_v4(),
+            node_id: Uuid::new_v4(),
             cpu_usage: 50.0,
             memory_usage: 60.0,
             gpu_usage: Some(40.0),

@@ -171,7 +171,7 @@ tower-http = { version = "0.5", features = ["fs"] }
   gap: 1rem;
 }
 
-/* エージェントテーブル */
+/* ノードテーブル */
 .agent-table {
   width: 100%;
   overflow-x: auto;

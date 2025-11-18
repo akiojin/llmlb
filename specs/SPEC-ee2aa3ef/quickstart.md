@@ -517,7 +517,7 @@ pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.workt
 ✅ **良い例**:
 
 ```
-feat(core): エージェント登録機能を追加
+feat(core): ノード登録機能を追加
 
 - GPU情報検証を強化
 - エラーメッセージを改善
@@ -729,10 +729,10 @@ gh release view --json assets -q '.assets[].name'
 **期待される出力**:
 
 ```
-ollama-coordinator-v1.0.1-x86_64-unknown-linux-gnu.tar.gz
-ollama-coordinator-v1.0.1-x86_64-pc-windows-msvc.zip
-ollama-coordinator-v1.0.1-x86_64-apple-darwin.tar.gz
-ollama-coordinator-v1.0.1-aarch64-apple-darwin.tar.gz
+ollama-router-v1.0.1-x86_64-unknown-linux-gnu.tar.gz
+ollama-router-v1.0.1-x86_64-pc-windows-msvc.zip
+ollama-router-v1.0.1-x86_64-apple-darwin.tar.gz
+ollama-router-v1.0.1-aarch64-apple-darwin.tar.gz
 ```
 
 #### 8. ブランチ削除

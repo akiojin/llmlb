@@ -1,4 +1,4 @@
-# エージェント自己登録システム クイックスタート
+# ノード自己登録システム クイックスタート
 
 **SPEC-ID**: SPEC-94621a1f
 **ステータス**: ✅ 実装済み
@@ -6,11 +6,11 @@
 ## 前提条件
 
 - Rust 1.75+ がインストールされている
-- コーディネーターが起動している（`cargo run --bin coordinator`）
+- ルーターが起動している（`cargo run --bin coordinator`）
 
-## エージェント登録手順
+## ノード登録手順
 
-### 1. コーディネーター起動
+### 1. ルーター起動
 
 ```bash
 cargo run --manifest-path coordinator/Cargo.toml --bin coordinator
@@ -18,11 +18,11 @@ cargo run --manifest-path coordinator/Cargo.toml --bin coordinator
 
 **期待される出力**:
 ```
-INFO coordinator: Starting Ollama Coordinator on 0.0.0.0:8080
+INFO coordinator: Starting Ollama Router on 0.0.0.0:8080
 INFO coordinator: Agent registry initialized
 ```
 
-### 2. エージェント登録（curlで確認）
+### 2. ノード登録（curlで確認）
 
 ```bash
 curl -X POST http://localhost:8080/api/agents \
@@ -44,7 +44,7 @@ curl -X POST http://localhost:8080/api/agents \
 }
 ```
 
-### 3. エージェント一覧確認
+### 3. ノード一覧確認
 
 ```bash
 curl http://localhost:8080/api/agents
@@ -84,51 +84,51 @@ curl -X POST http://localhost:8080/api/agents/${AGENT_ID}/heartbeat \
 
 | ステップ | アクション | 期待される結果 |
 |---------|-----------|--------------|
-| 1 | コーディネーター起動 | ポート8080でリッスン |
-| 2 | POST /api/agents でエージェント登録 | 200 OK, agent_id返却 |
-| 3 | GET /api/agents でエージェント一覧取得 | 登録したエージェントが含まれる |
+| 1 | ルーター起動 | ポート8080でリッスン |
+| 2 | POST /api/agents でノード登録 | 200 OK, agent_id返却 |
+| 3 | GET /api/agents でノード一覧取得 | 登録したノードが含まれる |
 
 ### シナリオ2: 永続化確認
 
 | ステップ | アクション | 期待される結果 |
 |---------|-----------|--------------|
-| 1 | エージェント登録 | 成功 |
-| 2 | `~/.ollama-coordinator/agents.json` を確認 | エージェント情報が保存されている |
-| 3 | コーディネーター再起動 | - |
-| 4 | GET /api/agents | 登録済みエージェント情報が保持されている |
+| 1 | ノード登録 | 成功 |
+| 2 | `~/.ollama-router/agents.json` を確認 | ノード情報が保存されている |
+| 3 | ルーター再起動 | - |
+| 4 | GET /api/agents | 登録済みノード情報が保持されている |
 
 ### シナリオ3: ハートビート＆タイムアウト
 
 | ステップ | アクション | 期待される結果 |
 |---------|-----------|--------------|
-| 1 | エージェント登録 | status = "Online" |
+| 1 | ノード登録 | status = "Online" |
 | 2 | 30秒ごとにハートビート送信 | status = "Online" 維持 |
 | 3 | ハートビート停止 | - |
 | 4 | 60秒待機 | status = "Offline" に変化（SPEC-443acc8c） |
 
 ## トラブルシューティング
 
-### エージェント登録に失敗
+### ノード登録に失敗
 
 **症状**: POST /api/agents が 500 エラー
 
 **原因と対処**:
 1. **ストレージディレクトリが作成できない**
-   - `~/.ollama-coordinator/` の書き込み権限を確認
-   - `mkdir -p ~/.ollama-coordinator` で手動作成
+   - `~/.ollama-router/` の書き込み権限を確認
+   - `mkdir -p ~/.ollama-router` で手動作成
 
 2. **JSONパース失敗**
    - リクエストボディのJSONフォーマットを確認
    - Content-Typeヘッダーが `application/json` であることを確認
 
-### エージェント一覧が空
+### ノード一覧が空
 
 **症状**: GET /api/agents が空配列を返す
 
 **原因と対処**:
-1. **エージェントが登録されていない**
+1. **ノードが登録されていない**
    - POST /api/agents で登録
-   - `~/.ollama-coordinator/agents.json` の内容を確認
+   - `~/.ollama-router/agents.json` の内容を確認
 
 2. **ストレージファイルが読み込めない**
    - ファイル権限を確認
@@ -155,6 +155,6 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 ## 次のステップ
 
-1. **SPEC-63acef08**: 統一APIプロキシ実装（エージェント選択＆ルーティング）
+1. **SPEC-63acef08**: 統一APIプロキシ実装（ノード選択＆ルーティング）
 2. **SPEC-443acc8c**: ヘルスチェックシステム実装（自動Offline検出）
-3. **SPEC-712c20cf**: 管理ダッシュボード実装（エージェント可視化）
+3. **SPEC-712c20cf**: 管理ダッシュボード実装（ノード可視化）

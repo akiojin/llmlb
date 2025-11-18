@@ -1,12 +1,12 @@
 # 実装計画: 統一APIプロキシ
 
 **機能ID**: `SPEC-63acef08` | **日付**: 2025-10-30（実装完了日） | **仕様**: [spec.md](./spec.md)
-**入力**: `/ollama-coordinator/specs/SPEC-63acef08/spec.md`の機能仕様
+**入力**: `/ollama-router/specs/SPEC-63acef08/spec.md`の機能仕様
 **ステータス**: ✅ **実装済み** (PR #1でマージ済み)
 
 ## 概要
 
-複数のOllamaインスタンスを統一して扱うプロキシ機能。ユーザーはコーディネーターの単一エンドポイントを通じてOllama APIにアクセスでき、コーディネーターが自動的に利用可能なエージェントにリクエストを振り分ける。
+複数のOllamaインスタンスを統一して扱うプロキシ機能。ユーザーはルーターの単一エンドポイントを通じてOllama APIにアクセスでき、ルーターが自動的に利用可能なノードにリクエストを振り分ける。
 
 ## 技術コンテキスト
 
@@ -18,7 +18,7 @@
 **プロジェクトタイプ**: single（Rust workspace内のcoordinatorクレート）
 **パフォーマンス目標**: プロキシオーバーヘッド < 50ms、同時100リクエスト処理
 **制約**: Ollama API v0.1.0以降との互換性
-**スケール/スコープ**: 100エージェント対応
+**スケール/スコープ**: 100ノード対応
 
 ## 憲章チェック
 
@@ -54,7 +54,7 @@ coordinator/
 │   ├── api/
 │   │   └── proxy.rs        # プロキシエンドポイント実装
 │   ├── registry/
-│   │   └── mod.rs          # エージェント選択ロジック
+│   │   └── mod.rs          # ノード選択ロジック
 │   └── lib.rs
 └── tests/
     └── integration/
@@ -63,7 +63,7 @@ coordinator/
 
 ## 実装アーキテクチャ
 
-### エージェント選択ロジック（ラウンドロビン）
+### ノード選択ロジック（ラウンドロビン）
 
 ```rust
 pub struct AgentRegistry {
@@ -97,7 +97,7 @@ pub async fn proxy_chat(
     State(state): State<AppState>,
     Json(request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, AppError> {
-    // 1. エージェント選択
+    // 1. ノード選択
     let agent = state.registry.select_agent().await
         .ok_or(AppError::NoAgents)?;
 
@@ -123,7 +123,7 @@ pub async fn proxy_chat(
 
 **理由**:
 - シンプル: 複雑なメトリクス収集不要
-- 公平: すべてのエージェントに均等に負荷分散
+- 公平: すべてのノードに均等に負荷分散
 - パフォーマンス: ロックフリー操作で高速
 - 予測可能: テスト容易
 
@@ -186,7 +186,7 @@ pub async fn proxy_chat(
 
 **検証結果**:
 - ✅ すべてのテストが合格
-- ✅ ラウンドロビン動作確認（9リクエスト → 3エージェントに3ずつ分散）
+- ✅ ラウンドロビン動作確認（9リクエスト → 3ノードに3ずつ分散）
 - ✅ エラーハンドリング正常動作
 - ✅ タイムアウト機能動作確認
 

@@ -53,8 +53,15 @@ jobs:
           if [[ -n "$INPUT_TAG" ]]; then
             tag="$INPUT_TAG"
           else
-            git fetch --tags --force
-            tag=$(git describe --tags --abbrev=0 || true)
+            # Extract version from commit message (e.g., "chore(release): merge v2.0.5 to main")
+            commit_msg=$(git log -1 --pretty=%B)
+            tag=$(echo "$commit_msg" | grep -oP 'v\d+\.\d+\.\d+' | head -1 || true)
+
+            # Fallback to git describe if version not found in commit message
+            if [[ -z "$tag" ]]; then
+              git fetch --tags --force
+              tag=$(git describe --tags --abbrev=0 || true)
+            fi
           fi
 
           if [[ -z "$tag" ]]; then

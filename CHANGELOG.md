@@ -3,6 +3,7 @@
 
 ### Bug Fixes
 
+* **ci:** skip ICE03 validation for Windows MSI build ([3391b7d](https://github.com/akiojin/ollama-router/commit/3391b7d0c120e249837ddd985c1da13d0dba9b15))
 * **deps:** upgrade sqlx to 0.8.6 to address security vulnerability ([cef2542](https://github.com/akiojin/ollama-router/commit/cef2542b08144154a02546f29d763c9ef508c026)), closes [#3](https://github.com/akiojin/ollama-router/issues/3)
 * **installer:** move KeyPath from RemoveFolder to RegistryValue ([d23230e](https://github.com/akiojin/ollama-router/commit/d23230e5c2756be7f4feed3c17d537f57e97f220))
 * **installer:** resolve ICE03 validation errors in WiX ([1303301](https://github.com/akiojin/ollama-router/commit/1303301196269fb3b3375feee443787f4b52e150))

@@ -23,9 +23,9 @@ jobs:
     if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
 
     outputs:
-      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
-      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
-      new_release_git_tag: ${{ steps.semantic.outputs.new_release_git_tag }}
+      new_release_published: ${{ steps.verify.outputs.new_release_published }}
+      new_release_version: ${{ steps.verify.outputs.new_release_version }}
+      new_release_git_tag: ${{ steps.verify.outputs.new_release_git_tag }}
 
     steps:
       - name: Checkout
@@ -53,6 +53,7 @@ jobs:
 
       - name: Run semantic-release
         id: semantic
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -63,20 +64,40 @@ jobs:
           HUSKY: 0
         run: |
           set -o pipefail
-          pnpm exec semantic-release | tee release-output.txt
+          pnpm exec semantic-release 2>&1 | tee release-output.txt
           RELEASE_EXIT_CODE=${PIPESTATUS[0]}
+          echo "semantic_exit_code=$RELEASE_EXIT_CODE" >> $GITHUB_OUTPUT
 
-          if [ $RELEASE_EXIT_CODE -eq 0 ] && grep -q "Published release" release-output.txt; then
-            VERSION=$(grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+' release-output.txt | head -1)
+      - name: Verify release and set outputs
+        id: verify
+        run: |
+          # Gitタグを確認してリリース成功を判定
+          git fetch --tags --force
+
+          # 現在のコミットに対応するタグを取得
+          CURRENT_TAG=$(git describe --exact-match HEAD 2>/dev/null || echo "")
+
+          if [ -n "$CURRENT_TAG" ] && [[ "$CURRENT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            VERSION="${CURRENT_TAG#v}"
+
             echo "new_release_published=true" >> $GITHUB_OUTPUT
             echo "new_release_version=$VERSION" >> $GITHUB_OUTPUT
-            echo "new_release_git_tag=v$VERSION" >> $GITHUB_OUTPUT
-            echo "✓ New release published: v$VERSION"
+            echo "new_release_git_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+            echo "✓ Release verified: $CURRENT_TAG"
+
+            # semantic-releaseの出力をログに記録
+            if [ "${{ steps.semantic.outputs.semantic_exit_code }}" != "0" ]; then
+              echo "⚠️ semantic-release exited with code ${{ steps.semantic.outputs.semantic_exit_code }}, but release was created successfully"
+            fi
           else
             echo "new_release_published=false" >> $GITHUB_OUTPUT
             echo "No new release published"
-            if [ $RELEASE_EXIT_CODE -ne 0 ]; then
-              exit $RELEASE_EXIT_CODE
+
+            # リリースが作成されていない場合のみエラーを引き継ぐ
+            if [ "${{ steps.semantic.outputs.semantic_exit_code }}" != "0" ]; then
+              echo "❌ semantic-release failed with exit code ${{ steps.semantic.outputs.semantic_exit_code }}"
+              cat release-output.txt
+              exit ${{ steps.semantic.outputs.semantic_exit_code }}
             fi
           fi
 

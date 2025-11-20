@@ -1,42 +1,19 @@
 ---
-description: developからrelease/vX.Y.Zブランチを作成し、リリースフローを開始します。
+description: リリースPRを自動生成し、CI成功で自動マージ→タグ/Release→配信まで流すワークフローをトリガーします。
 tags: [project]
 ---
 
 # リリースコマンド
 
-developブランチから`release/vX.Y.Z`ブランチを自動作成し、リリースフローを開始します。
+`create-release.yml` を実行して release-please の **リリースPR（バージョンアップ込み）** を作成します。PR は CI が通ると自動マージされ、main でタグと GitHub Release が作成され、タグ push をトリガーに配信・バックマージが走ります。ローカルでのブランチ操作は不要です。
 
-## 実行内容
-
-1. 現在のブランチがdevelopであることを確認
-2. developブランチを最新に更新（`git pull`）
-3. semantic-releaseのドライランで次バージョンを判定
-4. `release/vX.Y.Z`ブランチをdevelopから作成
-5. リモートにpush
-6. GitHub Actionsが以下を自動実行：
-   - **releaseブランチ**: semantic-releaseでバージョン決定・CHANGELOG更新・タグ作成・GitHub Release作成、完了後に release ブランチを main へ取り込み、develop へバックマージし、ブランチを削除
-   - **mainブランチ**: publish.yml が `release-binaries.yml` を呼び出し、Linux/macOS/Windows 向けのバイナリをビルドして GitHub Release に添付
-
-## 前提条件
-
-- developブランチにいること
-- GitHub CLIが認証済みであること（`gh auth login`）
-- コミットがすべてConventional Commits形式であること
-- semantic-releaseがバージョンアップを判定できるコミットが存在すること
-
-## スクリプト実行
-
-リリースブランチを作成するには、以下を実行します：
+## 使い方
 
 ```bash
 scripts/create-release-branch.sh
 ```
 
-スクリプトはGitHub Actions の `create-release.yml` を起動し、リモートで以下を実行します：
+## 注意
 
-1. developブランチでsemantic-releaseのドライラン
-2. 次バージョン番号の判定
-3. `release/vX.Y.Z`ブランチを作成してpush
-
-これにより release.yml → publish.yml → release-binaries.yml が自動的に進みます。準備ができたら `/release` を実行してください。
+- GitHub CLI で認証済みであること（`gh auth login`）。
+- リリース対象の変更が main に含まれていることを確認してから実行してください（release PR は main ベースで作られます）。

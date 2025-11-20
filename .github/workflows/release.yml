@@ -15,10 +15,12 @@ jobs:
     name: Release Please (tag & GitHub Release)
     runs-on: ubuntu-latest
     steps:
-      - name: Run release-please
-        id: release
-        uses: google-github-actions/release-please-action@v4
+      - name: Run release-please (manifest)
+        uses: googleapis/release-please-action@v4
         with:
-          command: manifest
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
-          default-branch: main
+          release-type: node
+          manifest-file: .release-please-manifest.json
+          config-file: .release-please-config.json
+          target-branch: main
+          skip-github-pull-request: true

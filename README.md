@@ -6,12 +6,12 @@ English | [日本語](./README.ja.md)
 
 ## Overview
 
-Ollama Router is a system that provides unified management and a single API endpoint for multiple Ollama instances running across different machines. It features intelligent load balancing, automatic failure detection, and real-time monitoring capabilities.
+Ollama Router is a system that provides unified management and a single API endpoint for multiple Ollama instances running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration.
 
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple Ollama instances through a single URL
-- **Automatic Load Balancing**: Automatically distribute requests across available agents
+- **Automatic Load Balancing**: Intelligently distribute requests across available agents
 - **Automatic Failure Detection**: Detect offline agents and exclude them from distribution
 - **Real-time Monitoring**: Visualize all agent states via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention

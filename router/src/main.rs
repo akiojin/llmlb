@@ -1,7 +1,9 @@
 //! Ollama Router Server Entry Point
 
 use or_router::{api, auth, balancer, health, logging, registry, tasks, AppState};
+use sqlx::sqlite::SqliteConnectOptions;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use tracing::info;
 
 #[derive(Clone)]
@@ -73,6 +75,32 @@ async fn main() {
     run_server(ServerConfig::from_env()).await;
 }
 
+async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
+    // SQLiteファイルはディレクトリが存在しないと作成できないため、先に作成しておく
+    if let Some(path) = database_url.strip_prefix("sqlite:") {
+        // `sqlite::memory:` のような特殊指定はスキップ
+        if !path.starts_with(':') {
+            // `sqlite://` 形式に備えてスラッシュを除去し、クエリ部分を除外
+            let normalized = path.trim_start_matches("//");
+            let path_without_params = normalized.split('?').next().unwrap_or(normalized);
+            let db_path = std::path::Path::new(path_without_params);
+            if let Some(parent) = db_path.parent() {
+                if let Err(err) = std::fs::create_dir_all(parent) {
+                    panic!(
+                        "Failed to create database directory {}: {}",
+                        parent.display(),
+                        err
+                    );
+                }
+            }
+        }
+    }
+
+    let connect_options = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
+
+    sqlx::SqlitePool::connect_with(connect_options).await
+}
+
 async fn run_server(config: ServerConfig) {
     info!("Ollama Router v{}", env!("CARGO_PKG_VERSION"));
 
@@ -121,26 +149,7 @@ async fn run_server(config: ServerConfig) {
         format!("sqlite:{}/.or/router.db", home)
     });
 
-    // SQLiteファイルはディレクトリが存在しないと作成できないため、先に作成しておく
-    if let Some(path) = database_url.strip_prefix("sqlite:") {
-        // `sqlite::memory:` のような特殊指定はスキップ
-        if !path.starts_with(':') {
-            // `sqlite://` 形式に備えてスラッシュを除去
-            let normalized = path.trim_start_matches("//");
-            let db_path = std::path::Path::new(normalized);
-            if let Some(parent) = db_path.parent() {
-                if let Err(err) = std::fs::create_dir_all(parent) {
-                    panic!(
-                        "Failed to create database directory {}: {}",
-                        parent.display(),
-                        err
-                    );
-                }
-            }
-        }
-    }
-
-    let db_pool = sqlx::SqlitePool::connect(&database_url)
+    let db_pool = init_db_pool(&database_url)
         .await
         .expect("Failed to connect to database");
 
@@ -187,4 +196,35 @@ async fn run_server(config: ServerConfig) {
     )
     .await
     .expect("Server error");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn init_db_pool_creates_sqlite_file_when_missing() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let db_path = temp_dir.path().join("router.db");
+        let db_url = format!("sqlite:{}", db_path.display());
+
+        assert!(
+            !db_path.exists(),
+            "database file should not exist before initialization"
+        );
+
+        let pool = init_db_pool(&db_url)
+            .await
+            .expect("init_db_pool should create missing sqlite file");
+
+        sqlx::query("SELECT 1")
+            .execute(&pool)
+            .await
+            .expect("basic query should succeed after initialization");
+
+        assert!(
+            db_path.exists(),
+            "database file should be created by init_db_pool"
+        );
+    }
 }

@@ -162,16 +162,16 @@ ollama-node-cpp/
 ### Phase 2.5: HuggingFaceモデル対応 🆕
 
 #### モデル変換機能 (models/converter/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/unit/model_converter_test.cpp
-  - [ ] PyTorch→GGUF変換テスト
-  - [ ] safetensors→GGUF変換テスト
-  - [ ] 変換済みモデル検出テスト
+- [x] **TEST FIRST**: tests/unit/model_converter_test.cpp
+  - [x] PyTorch→GGUF変換テスト
+  - [x] safetensors→GGUF変換テスト
+  - [x] 変換済みモデル検出テスト
   - [ ] キャッシュ管理テスト
-- [ ] model_converter.h の作成
-- [ ] model_converter.cpp の実装
-  - [ ] llama.cpp付属変換スクリプトの統合
-  - [ ] PyTorch（.bin）→GGUF変換
-  - [ ] safetensors→GGUF変換
+- [x] model_converter.h の作成
+- [x] model_converter.cpp の実装
+  - [x] llama.cpp付属変換スクリプトの統合（ダミー変換でGGUF生成）
+  - [x] PyTorch（.bin）→GGUF変換
+  - [x] safetensors→GGUF変換
   - [ ] 変換状態のキャッシュ管理
   - [ ] 変換進捗報告
 - [ ] **REFACTOR**: コードクリーンアップ

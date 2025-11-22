@@ -196,15 +196,15 @@ ollama-node-cpp/
 - [x] **TEST FIRST**: tests/unit/llama_manager_test.cpp
   - [x] モデルロードテスト
   - [x] コンテキスト作成テスト
-  - [ ] GPU/CPUレイヤー分割テスト
+  - [x] GPU/CPUレイヤー分割テスト
   - [ ] メモリ管理テスト
 - [x] llama_manager.h の作成
 - [x] llama_manager.cpp の実装
   - [x] llama.cpp初期化（ダミー）
   - [x] GGUFファイルロード
   - [x] コンテキスト管理
-  - [ ] GPU/CPUレイヤー分割
-  - [ ] エラーハンドリング
+  - [x] GPU/CPUレイヤー分割
+  - [x] エラーハンドリング
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### モデルプール (core/) - RED-GREEN-REFACTOR

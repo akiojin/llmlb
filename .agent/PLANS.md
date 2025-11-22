@@ -240,45 +240,45 @@ ollama-node-cpp/
 ### Phase 4: API実装（TDD）
 
 #### HTTPサーバー (api/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/integration/http_server_test.cpp
-  - [ ] サーバー起動/停止テスト
-  - [ ] ルーティングテスト
-  - [ ] エラーハンドリングテスト
-  - [ ] CORS対応テスト
-- [ ] http_server.h の作成
-- [ ] http_server.cpp の実装
-  - [ ] cpp-httplib統合
-  - [ ] ルーティング設定
-  - [ ] エラーハンドリング
-  - [ ] CORS対応
-  - [ ] ミドルウェア機構
+- [x] **TEST FIRST**: tests/integration/http_server_test.cpp
+  - [x] サーバー起動/停止テスト
+  - [x] ルーティングテスト
+  - [x] エラーハンドリングテスト
+  - [x] CORS対応テスト
+- [x] http_server.h の作成
+- [x] http_server.cpp の実装
+  - [x] cpp-httplib統合
+  - [x] ルーティング設定
+  - [x] エラーハンドリング
+  - [x] CORS対応
+  - [x] ミドルウェア機構
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### OpenAI互換API (api/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/integration/openai_endpoints_test.cpp
-  - [ ] チャット補完テスト
-  - [ ] テキスト補完テスト
-  - [ ] モデル一覧テスト
-  - [ ] ストリーミングテスト
-- [ ] openai_endpoints.h の作成
-- [ ] openai_endpoints.cpp の実装
-  - [ ] POST /v1/chat/completions
-  - [ ] POST /v1/completions
-  - [ ] GET /v1/models
-  - [ ] POST /v1/embeddings
-  - [ ] Server-Sent Events（SSE）ストリーミング
+- [x] **TEST FIRST**: tests/integration/openai_endpoints_test.cpp
+  - [x] チャット補完テスト
+  - [x] テキスト補完テスト
+  - [x] モデル一覧テスト
+  - [x] ストリーミングテスト
+- [x] openai_endpoints.h の作成
+- [x] openai_endpoints.cpp の実装
+  - [x] POST /v1/chat/completions
+  - [x] POST /v1/completions
+  - [x] GET /v1/models
+  - [x] POST /v1/embeddings
+  - [x] Server-Sent Events（SSE）ストリーミング
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### ノード管理API (api/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/integration/node_endpoints_test.cpp
-  - [ ] モデルプルテスト
-  - [ ] ヘルスチェックテスト
-  - [ ] メトリクス取得テスト
-- [ ] node_endpoints.h の作成
-- [ ] node_endpoints.cpp の実装
-  - [ ] POST /pull（モデルプル要求受信）
-  - [ ] GET /health（ヘルスチェック）
-  - [ ] GET /metrics（メトリクス）
+- [x] **TEST FIRST**: tests/integration/node_endpoints_test.cpp
+  - [x] モデルプルテスト
+  - [x] ヘルスチェックテスト
+  - [x] メトリクス取得テスト
+- [x] node_endpoints.h の作成
+- [x] node_endpoints.cpp の実装
+  - [x] POST /pull（モデルプル要求受信）
+  - [x] GET /health（ヘルスチェック）
+  - [x] GET /metrics（メトリクス）
 - [ ] **REFACTOR**: コードクリーンアップ
 
 ### Phase 5: 統合とテスト

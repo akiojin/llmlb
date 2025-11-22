@@ -131,15 +131,15 @@ ollama-node-cpp/
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### Ollamaモデル互換 (models/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/unit/ollama_compat_test.cpp
-  - [ ] マニフェスト解析テスト
-  - [ ] GGUFパス解決テスト
-  - [ ] モデル検証テスト
-  - [ ] エラー処理テスト
-- [ ] ollama_compat.h の作成
-- [ ] ollama_compat.cpp の実装
-  - [ ] ~/.ollama/models/ のマニフェスト解析
-  - [ ] GGUFファイルパス解決
+- [x] **TEST FIRST**: tests/unit/ollama_compat_test.cpp
+  - [x] マニフェスト解析テスト
+  - [x] GGUFパス解決テスト
+  - [x] モデル検証テスト
+  - [x] エラー処理テスト
+- [x] ollama_compat.h の作成
+- [x] ollama_compat.cpp の実装
+  - [x] ~/.ollama/models/ のマニフェスト解析
+  - [x] GGUFファイルパス解決
   - [ ] モデルメタデータ読み込み
   - [ ] モデル検証
 - [ ] **REFACTOR**: コードクリーンアップ

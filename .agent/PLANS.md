@@ -59,20 +59,20 @@ ollama-node-cpp/
 ### Phase 0: TDD準備とテスト環境構築 🚨
 
 #### テストフレームワークセットアップ
-- [ ] Google Test/Google Mockの導入
-- [ ] tests/CMakeLists.txt の作成
-- [ ] テストヘルパーの作成
-- [ ] モックオブジェクトの準備
+- [x] Google Test/Google Mockの導入
+- [x] tests/CMakeLists.txt の作成
+- [x] テストヘルパーの作成
+- [x] モックオブジェクトの準備
 
 #### コントラクトテスト（最初に作成）
-- [ ] tests/contract/router_api_test.cpp
-  - [ ] ノード登録APIコントラクト
-  - [ ] ハートビートAPIコントラクト
-  - [ ] モデル一覧取得APIコントラクト
-- [ ] tests/contract/openai_api_test.cpp
-  - [ ] /v1/chat/completions コントラクト
-  - [ ] /v1/models コントラクト
-  - [ ] SSEストリーミングコントラクト
+- [x] tests/contract/router_api_test.cpp
+  - [x] ノード登録APIコントラクト
+  - [x] ハートビートAPIコントラクト
+  - [x] モデル一覧取得APIコントラクト
+- [x] tests/contract/openai_api_test.cpp
+  - [x] /v1/chat/completions コントラクト
+  - [x] /v1/models コントラクト
+  - [x] SSEストリーミングコントラクト
 
 ### Phase 1: 基盤構築 ✅
 
@@ -115,17 +115,17 @@ ollama-node-cpp/
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### モデル同期 (models/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/unit/model_sync_test.cpp
-  - [ ] モデル一覧取得テスト
-  - [ ] 差分検出テスト
-  - [ ] モデル削除テスト
-  - [ ] 同期完了テスト
-- [ ] model_sync.h の作成
-- [ ] model_sync.cpp の実装
-  - [ ] `/v1/models` からモデル一覧取得
-  - [ ] ローカルモデルとの差分チェック
-  - [ ] 不要モデルの削除
-  - [ ] 同期ステータス管理
+- [x] **TEST FIRST**: tests/unit/model_sync_test.cpp
+  - [x] モデル一覧取得テスト
+  - [x] 差分検出テスト
+  - [x] モデル削除テスト
+  - [x] 同期完了テスト
+- [x] model_sync.h の作成
+- [x] model_sync.cpp の実装
+  - [x] `/v1/models` からモデル一覧取得
+  - [x] ローカルモデルとの差分チェック
+  - [x] 不要モデルの削除
+  - [x] 同期ステータス管理
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### Ollamaモデル互換 (models/) - RED-GREEN-REFACTOR
@@ -143,18 +143,18 @@ ollama-node-cpp/
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### モデルダウンロード (models/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/unit/model_downloader_test.cpp
-  - [ ] マニフェスト取得テスト
-  - [ ] Blobダウンロードテスト
-  - [ ] 進捗報告テスト
-  - [ ] 中断・再開テスト
-- [ ] model_downloader.h の作成
-- [ ] model_downloader.cpp の実装
-  - [ ] Ollamaレジストリ（registry.ollama.ai）通信
-  - [ ] Blobダウンロード（チャンク処理）
-  - [ ] 進捗報告機能
-  - [ ] ~/.ollama/models/ への保存
-  - [ ] チェックサムの検証
+- [x] **TEST FIRST**: tests/unit/model_downloader_test.cpp
+  - [x] マニフェスト取得テスト
+  - [x] Blobダウンロードテスト
+  - [x] 進捗報告テスト
+  - [x] 中断・再開テスト
+- [x] model_downloader.h の作成
+- [x] model_downloader.cpp の実装
+  - [x] Ollamaレジストリ（registry.ollama.ai）通信
+  - [x] Blobダウンロード（チャンク処理）
+  - [x] 進捗報告機能
+  - [x] ~/.ollama/models/ への保存
+  - [x] チェックサムの検証
 - [ ] **REFACTOR**: コードクリーンアップ
 
 ### Phase 2.5: HuggingFaceモデル対応 🆕

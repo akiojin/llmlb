@@ -102,18 +102,18 @@ ollama-node-cpp/
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### ルータークライアント (api/) - RED-GREEN-REFACTOR
-- [ ] **TEST FIRST**: tests/unit/router_client_test.cpp
-  - [ ] ノード登録成功テスト
-  - [ ] ノード登録失敗テスト（GPUなし）
-  - [ ] ハートビート送信テスト
+- [x] **TEST FIRST**: tests/unit/router_client_test.cpp
+  - [x] ノード登録成功テスト
+  - [x] ノード登録失敗テスト（GPUなし）
+  - [x] ハートビート送信テスト
   - [ ] 再接続テスト
-- [ ] router_client.h の作成
-- [ ] router_client.cpp の実装
-  - [ ] ノード登録（POST /api/nodes）
-  - [ ] ハートビート（10秒間隔）
+- [x] router_client.h の作成
+- [x] router_client.cpp の実装
+  - [x] ノード登録（POST /api/nodes）
+  - [x] ハートビート（10秒間隔）
   - [ ] 初期化状態報告（initializing, ready_models）
   - [ ] メトリクス送信
-  - [ ] エラーハンドリングとリトライ
+  - [x] エラーハンドリングとリトライ
 - [ ] **REFACTOR**: コードクリーンアップ
 
 #### モデル同期 (models/) - RED-GREEN-REFACTOR

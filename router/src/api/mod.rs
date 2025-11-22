@@ -29,6 +29,7 @@ use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
 const DASHBOARD_INDEX: &str = "index.html";
+const CHAT_INDEX: &str = "openui/index.html";
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
@@ -150,6 +151,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
         .route("/dashboard/*path", get(serve_dashboard_asset))
+        // チャットUI（正式）
+        .route("/chat", get(serve_chat_index))
+        .route("/chat/", get(serve_chat_index))
+        .route("/chat/*path", get(serve_chat_asset))
         .with_state(state)
 }
 
@@ -159,6 +164,18 @@ async fn serve_dashboard_index() -> Response {
 
 async fn serve_dashboard_asset(AxumPath(request_path): AxumPath<String>) -> Response {
     let normalized = normalize_dashboard_path(&request_path);
+    match normalized {
+        Some(path) => embedded_dashboard_response(&path),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn serve_chat_index() -> Response {
+    embedded_dashboard_response(CHAT_INDEX)
+}
+
+async fn serve_chat_asset(AxumPath(request_path): AxumPath<String>) -> Response {
+    let normalized = normalize_chat_path(&request_path);
     match normalized {
         Some(path) => embedded_dashboard_response(&path),
         None => StatusCode::NOT_FOUND.into_response(),
@@ -192,6 +209,17 @@ fn normalize_dashboard_path(request_path: &str) -> Option<String> {
         return None;
     }
     Some(trimmed.to_string())
+}
+
+fn normalize_chat_path(request_path: &str) -> Option<String> {
+    let trimmed = request_path.trim_matches('/');
+    if trimmed.is_empty() {
+        return Some(CHAT_INDEX.to_string());
+    }
+    if trimmed.contains("..") || trimmed.contains('\\') {
+        return None;
+    }
+    Some(format!("openui/{}", trimmed))
 }
 
 #[cfg(test)]
@@ -249,6 +277,33 @@ mod tests {
                 Request::builder()
                     .method(axum::http::Method::GET)
                     .uri("/dashboard/index.html")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let (parts, body) = response.into_parts();
+        let bytes = to_bytes(body, 1024 * 1024).await.unwrap();
+
+        assert_eq!(status, StatusCode::OK);
+        let content_type = parts.headers[axum::http::header::CONTENT_TYPE]
+            .to_str()
+            .unwrap();
+        assert!(content_type.starts_with("text/html"));
+        assert!(bytes.starts_with(b"<!DOCTYPE html"));
+    }
+
+    #[tokio::test]
+    async fn test_chat_static_served() {
+        let (state, _) = test_state().await;
+        let mut router = create_router(state);
+        let response = router
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/chat")
                     .body(Body::empty())
                     .unwrap(),
             )

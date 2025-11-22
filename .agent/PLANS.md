@@ -210,7 +210,7 @@ ollama-node-cpp/
 #### モデルプール (core/) - RED-GREEN-REFACTOR
 - [x] **TEST FIRST**: tests/unit/model_pool_test.cpp
   - [x] 複数モデル管理テスト
-  - [ ] スレッド安全性テスト
+  - [x] スレッド安全性テスト
   - [ ] 動的ロード/アンロードテスト
   - [x] メモリ制限テスト
 - [x] model_pool.h の作成

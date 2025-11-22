@@ -58,6 +58,8 @@ ollama-node-cpp/
 
 ### Phase 0: TDD準備とテスト環境構築 🚨
 
+- [x] Phase 0 完了 (2025-11-22)
+
 #### テストフレームワークセットアップ
 - [x] Google Test/Google Mockの導入
 - [x] tests/CMakeLists.txt の作成

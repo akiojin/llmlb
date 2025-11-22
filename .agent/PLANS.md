@@ -4,6 +4,20 @@
 
 Rustノードをllama.cpp統合のC++ノードに置き換える完全実装計画書。Ollamaプロセス依存を排除し、llama.cppを直接統合して高性能なマルチモデルホスティングを実現する。
 
+## 技術選択の根拠
+
+### なぜC++を選んだか
+- **Rustからollama.cpp使用の課題**: FFI（bindgen/cxx）でC++をラップすることは可能だが、ビルド・ABI・API変更対応などの保守コストが非常に高い
+- **検討した代替案**:
+  - `llama-cpp-rs`: RustからGGUFを直接読むバインディング（ollama.cpp不要）
+  - `ollama-rs`: Ollama HTTPクライアント（Ollamaサーバー依存）
+- **結論**: 「ollama.cppを前提にゴリゴリやるならC++が一番現実的」（GPT-5.1の推奨）
+
+### ollama.cppの制限事項と対策
+- **制限**: 単体ではOllama互換HTTPAPIを持っていない → **対策**: cpp-httplibで自前実装
+- **制限**: Modelfile的なモデル管理機能は限定的 → **対策**: 簡易版を実装、将来的に拡張
+- **制限**: マルチモデル管理や高度なキャッシュ機構なし → **対策**: スレッドプールで独自実装
+
 ## 重要な要件
 
 ### 必須要件
@@ -141,6 +155,37 @@ ollama-node-cpp/
   - [ ] 進捗報告機能
   - [ ] ~/.ollama/models/ への保存
   - [ ] チェックサムの検証
+- [ ] **REFACTOR**: コードクリーンアップ
+
+### Phase 2.5: HuggingFaceモデル対応 🆕
+
+#### モデル変換機能 (models/converter/) - RED-GREEN-REFACTOR
+- [ ] **TEST FIRST**: tests/unit/model_converter_test.cpp
+  - [ ] PyTorch→GGUF変換テスト
+  - [ ] safetensors→GGUF変換テスト
+  - [ ] 変換済みモデル検出テスト
+  - [ ] キャッシュ管理テスト
+- [ ] model_converter.h の作成
+- [ ] model_converter.cpp の実装
+  - [ ] llama.cpp付属変換スクリプトの統合
+  - [ ] PyTorch（.bin）→GGUF変換
+  - [ ] safetensors→GGUF変換
+  - [ ] 変換状態のキャッシュ管理
+  - [ ] 変換進捗報告
+- [ ] **REFACTOR**: コードクリーンアップ
+
+#### HuggingFaceモデル取得 (models/hf_client/)
+- [ ] **TEST FIRST**: tests/unit/hf_client_test.cpp
+  - [ ] モデルダウンロードテスト
+  - [ ] TheBloke等の事前変換モデル検出テスト
+  - [ ] LoRA検出・エラー処理テスト
+- [ ] hf_client.h の作成
+- [ ] hf_client.cpp の実装
+  - [ ] HuggingFace Hub APIクライアント
+  - [ ] モデルファイルダウンロード
+  - [ ] GGUF形式モデルの直接利用（TheBloke等）
+  - [ ] 変換が必要なモデルの検出
+  - [ ] LoRAやDiffusersモデルの除外
 - [ ] **REFACTOR**: コードクリーンアップ
 
 ### Phase 3: llama.cpp統合（TDD）
@@ -376,15 +421,16 @@ ollama-node-cpp/
 
 ### ⚡ 重要機能
 9. モデルダウンロード
-10. マルチモデル管理
-11. ストリーミング応答
-12. 自動リリース設定
+10. HuggingFaceモデル対応（変換・取得）
+11. マルチモデル管理
+12. ストリーミング応答
+13. 自動リリース設定
 
 ### 🔧 追加機能
-13. Docker化
-14. パッケージング
-15. 監視・メトリクス
-16. 最適化
+14. Docker化
+15. パッケージング
+16. 監視・メトリクス
+17. 最適化
 
 ## 技術的決定事項
 

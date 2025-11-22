@@ -5,6 +5,28 @@
 
 * **installer:** ルーターとノードのインストーラーを分離 ([1a29f9f](https://github.com/akiojin/ollama-router/commit/1a29f9fd732a6867931387211760a28c7dd34096))
 
+## [2.2.0](https://github.com/akiojin/ollama-router/compare/v2.1.8...v2.2.0) (2025-11-22)
+
+
+### Features
+
+* **web:** unify chat ui under /chat ([3817a64](https://github.com/akiojin/ollama-router/commit/3817a64c93f8ba679d9e077af925e0d0368801fd))
+
+
+### Bug Fixes
+
+* **readme:** enhance overview description with scalability focus ([3549ec0](https://github.com/akiojin/ollama-router/commit/3549ec08e8c4788d44a2abd3b934995423647920))
+* **readme:** enhance overview description with scalability focus ([34289f7](https://github.com/akiojin/ollama-router/commit/34289f7623e3afbcb5bb525aceabd1e5aa43825a))
+* **readme:** enhance overview description with scalability focus ([14fa626](https://github.com/akiojin/ollama-router/commit/14fa6264028c96f44a88b063fb1389c1b6d68d57))
+
+## [2.1.8](https://github.com/akiojin/ollama-router/compare/v2.1.7...v2.1.8) (2025-11-21)
+
+
+### Bug Fixes
+
+* **readme:** enhance advanced load balancing description ([a45d3bb](https://github.com/akiojin/ollama-router/commit/a45d3bbb816741a3f778c5d65e134129d7f5ec5b))
+* **readme:** enhance advanced load balancing description ([249b2fd](https://github.com/akiojin/ollama-router/commit/249b2fd66d6de9110fd19e779318a277f3961fd2))
+
 ## [2.1.6](https://github.com/akiojin/ollama-router/compare/v2.1.5...v2.1.6) (2025-11-21)
 
 

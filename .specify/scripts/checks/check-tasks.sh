@@ -63,8 +63,8 @@ if [ -n "$UNCOMPLETED" ]; then
     echo ""
 
     # 完了済みと未完了の数をカウント
-    COMPLETED_COUNT=$(grep -cE '^\s*-\s*\[x\]' "$TASKS_FILE" || echo "0")
-    UNCOMPLETED_COUNT=$(grep -cE '^\s*-\s*\[\s*\]' "$TASKS_FILE" || echo "0")
+    COMPLETED_COUNT=$(grep -cE '^\s*-\s*\[x\]' "$TASKS_FILE" || true)
+    UNCOMPLETED_COUNT=$(grep -cE '^\s*-\s*\[\s*\]' "$TASKS_FILE" || true)
     TOTAL=$((COMPLETED_COUNT + UNCOMPLETED_COUNT))
 
     echo "Progress: $COMPLETED_COUNT/$TOTAL tasks completed"
@@ -72,9 +72,11 @@ if [ -n "$UNCOMPLETED" ]; then
 fi
 
 # すべて完了している場合
-COMPLETED_COUNT=$(grep -cE '^\s*-\s*\[x\]' "$TASKS_FILE" || echo "0")
+COMPLETED_COUNT=$(grep -cE '^\s*-\s*\[x\]' "$TASKS_FILE" || true)
+UNCOMPLETED_COUNT=$(grep -cE '^\s*-\s*\[\s*\]' "$TASKS_FILE" || true)
+TOTAL=$((COMPLETED_COUNT + UNCOMPLETED_COUNT))
 
-if [ "$COMPLETED_COUNT" -eq 0 ]; then
+if [ "${TOTAL:-0}" -eq 0 ]; then
     echo "⚠️  Warning: No tasks found in $TASKS_FILE"
     echo "   This might be okay if tasks are not yet defined."
     exit 0

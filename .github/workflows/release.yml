@@ -59,6 +59,22 @@ jobs:
           cmake --build ollama-node-cpp/build-macos --config Release
           tar -czf dist/ollama-node-macos-arm64.tar.gz -C ollama-node-cpp/build-macos ollama-node
 
+      - name: Build C++ binary (Windows x64) [cross]
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 cmake libssl-dev
+          cmake -S ollama-node-cpp -B ollama-node-cpp/build-win \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_SYSTEM_VERSION=10.0 \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DBUILD_TESTS=OFF
+          cmake --build ollama-node-cpp/build-win --config Release
+          mkdir -p dist/win
+          cp ollama-node-cpp/build-win/ollama-node.exe dist/win/
+          (cd dist && zip -r ollama-node-windows-x64.zip win)
+
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

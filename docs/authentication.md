@@ -649,7 +649,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 
    ```bash
    rm ~/.ollama-agent/token
-   ./or-node
+   # Re-run the agent (ollama-node-cpp)
    ```
 
 2. **Verify coordinator URL:**
@@ -761,7 +761,7 @@ curl http://localhost:8080/api/users \
 # WARNING: This requires direct database access and Rust tooling
 
 # 1. Generate new password hash
-echo -n "new-password" | cargo run -p ollama-coordinator-common --bin hash-password
+echo -n "new-password" | cargo run -p ollama-router-common --bin hash-password
 
 # Output: $2b$12$...
 

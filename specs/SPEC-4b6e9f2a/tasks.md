@@ -12,7 +12,7 @@
 
 - [x] Unit: モデル名パーサ（プレフィックス検出、タイポ互換、デフォルトローカル）
 - [x] Unit: 設定バリデーション（キー未設定時のエラー）
-- [ ] Integration: クラウドプレフィックス付きリクエストがローカルノードに到達しないことをモックで検証
+- [x] Integration: クラウドプレフィックス付きリクエストがローカルノードに到達しないことをモックで検証
 - [x] Integration: OpenAI/Google/Anthropic 各モッククライアントの非ストリーミング応答をプロキシできること
 - [x] Integration: `stream: true` を指定した場合にSSEでチャンクが順次届くこと
 - [x] Regression: プレフィックスなしモデルが従来のローカルルートで動作し続けること
@@ -33,4 +33,4 @@
 ## Docs
 
 - [x] README/USAGE/API仕様にプレフィックス利用方法・環境変数・制限事項を追記（README対応、API仕様/CHANGELOG残）
-- [ ] 変更点を CHANGELOG に反映
+- [x] 変更点を CHANGELOG に反映

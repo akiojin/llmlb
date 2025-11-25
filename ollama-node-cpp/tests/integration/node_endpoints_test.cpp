@@ -95,3 +95,46 @@ TEST(NodeEndpointsTest, MetricsReportsUptimeAndCounts) {
 
     server.stop();
 }
+
+TEST(HttpServerTest, RequestIdGeneratedAndEchoed) {
+    ModelRegistry registry;
+    InferenceEngine engine;
+    OpenAIEndpoints openai(registry, engine);
+    NodeEndpoints node;
+    HttpServer server(18092, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18092);
+    auto resp = cli.Get("/health");
+    ASSERT_TRUE(resp);
+    auto id = resp->get_header_value("X-Request-Id");
+    EXPECT_FALSE(id.empty());
+
+    // Custom request id is echoed
+    httplib::Headers h{{"X-Request-Id", "custom-id"}};
+    auto resp2 = cli.Get("/health", h);
+    ASSERT_TRUE(resp2);
+    EXPECT_EQ(resp2->get_header_value("X-Request-Id"), "custom-id");
+
+    server.stop();
+}
+
+TEST(HttpServerTest, TraceparentPropagatesTraceId) {
+    ModelRegistry registry;
+    InferenceEngine engine;
+    OpenAIEndpoints openai(registry, engine);
+    NodeEndpoints node;
+    HttpServer server(18093, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18093);
+    std::string incoming = "00-11111111111111111111111111111111-2222222222222222-01";
+    httplib::Headers h{{"traceparent", incoming}};
+    auto resp = cli.Get("/health", h);
+    ASSERT_TRUE(resp);
+    auto tp = resp->get_header_value("traceparent");
+    EXPECT_FALSE(tp.empty());
+    EXPECT_NE(tp.find("11111111111111111111111111111111"), std::string::npos);
+    EXPECT_EQ(tp.size(), 55);
+    server.stop();
+}

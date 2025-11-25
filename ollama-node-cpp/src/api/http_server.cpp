@@ -3,6 +3,7 @@
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
 #include <nlohmann/json.hpp>
+#include "utils/request_id.h"
 
 namespace ollama_node {
 
@@ -39,6 +40,24 @@ void HttpServer::start() {
                 return httplib::Server::HandlerResponse::Handled;  // short-circuit preflight
             }
         }
+
+        // Request ID
+        std::string req_id = req.get_header_value("X-Request-Id");
+        if (req_id.empty()) req_id = generate_request_id();
+        res.set_header("X-Request-Id", req_id);
+
+        // Traceparent (W3C)
+        std::string traceparent = req.get_header_value("traceparent");
+        std::string trace_id = generate_trace_id();
+        std::string span_id = generate_span_id();
+        if (!traceparent.empty() && traceparent.size() >= 55) {
+            // format: 00-<32 hex trace id>-<16 hex span id>-<flags>
+            // keep incoming trace id, new span id
+            std::string incoming_trace = traceparent.substr(3, 32);
+            trace_id = incoming_trace;
+        }
+        std::string new_traceparent = "00-" + trace_id + "-" + span_id + "-01";
+        res.set_header("traceparent", new_traceparent);
 
         for (auto& mw : middlewares_) {
             if (!mw(req, res)) return httplib::Server::HandlerResponse::Handled;

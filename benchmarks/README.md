@@ -67,6 +67,12 @@ wrk ... --latency | scripts/benchmarks/wrk_parse.py --label local \
 ```
 CSV列: `label,rps,p50_ms,p75_ms,p90_ms,p95_ms,p99_ms,non2xx,socket_errors,requests,duration_s`
 
+### 複数結果のサマリ出力（Markdown）
+```bash
+scripts/benchmarks/summarize_csv.py benchmarks/results/*.csv
+```
+列: label / rps / p95_ms / p99_ms / non2xx / socket_errors / requests / duration_s / source
+
 ## 6. 次ステップ
 - 主要シナリオで baseline を取って results に保存
 - p95/p99 をグラフ化する場合は `benchmarks/results/*.csv` を生成し、

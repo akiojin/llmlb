@@ -48,6 +48,9 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             std::chrono::steady_clock::now() - start_time_).count();
         exporter_.set_gauge("ollama_node_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
         exporter_.set_gauge("ollama_node_pulls_total", static_cast<double>(pull_count_.load()), "Total pull requests served");
+        exporter_.set_gauge("ollama_node_gpu_devices", static_cast<double>(gpu_devices_), "Detected GPU devices");
+        exporter_.set_gauge("ollama_node_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
+        exporter_.set_gauge("ollama_node_gpu_capability", gpu_capability_, "Aggregated GPU capability score");
         res.set_content(exporter_.render(), "text/plain");
     });
 

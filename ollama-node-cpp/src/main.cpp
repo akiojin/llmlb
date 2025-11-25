@@ -86,6 +86,7 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
         // Start HTTP server
         ollama_node::OpenAIEndpoints openai(registry, engine);
         ollama_node::NodeEndpoints node_endpoints;
+        node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
         ollama_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();

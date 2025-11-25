@@ -1,5 +1,6 @@
 //! OpenAI互換APIエンドポイント (/v1/*)
 
+use axum::body::Body;
 use axum::{
     extract::{Path, State},
     http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
@@ -11,11 +12,10 @@ use ollama_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
 };
+use reqwest;
 use serde_json::{json, Value};
 use std::time::Instant;
-use axum::body::Body;
 use uuid::Uuid;
-use reqwest;
 
 use crate::{
     api::{
@@ -577,23 +577,26 @@ mod tests {
         let err = proxy_openai_cloud_post("/v1/chat/completions", "openai:gpt-4o", false, payload)
             .await
             .unwrap_err();
+        let msg = format!("{:?}", err);
         assert!(
-            err.to_string().contains("OPENAI_API_KEY"),
+            msg.contains("OPENAI_API_KEY"),
             "expected error mentioning OPENAI_API_KEY, got {}",
-            err
+            msg
         );
     }
 
     #[tokio::test]
     async fn google_prefix_returns_not_implemented() {
         let payload = json!({"model":"google:gemini-pro","messages":[]});
-        let err = proxy_openai_cloud_post("/v1/chat/completions", "google:gemini-pro", false, payload)
-            .await
-            .unwrap_err();
+        let err =
+            proxy_openai_cloud_post("/v1/chat/completions", "google:gemini-pro", false, payload)
+                .await
+                .unwrap_err();
+        let msg = format!("{:?}", err);
         assert!(
-            err.to_string().contains("not yet implemented") || err.to_string().contains("reserved"),
+            msg.contains("not yet implemented") || msg.contains("reserved"),
             "expected not implemented error, got {}",
-            err
+            msg
         );
     }
 }

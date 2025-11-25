@@ -270,9 +270,10 @@ ollama-node-cpp/
 - [x] **REFACTOR**: コードクリーンアップ（モデル存在検証・共通JSON応答・エラー整備）
 
 #### クラウドモデルルーティング
+- 仕様: `specs/SPEC-4b6e9f2a`（クラウドプレフィックスでリモートAPIへプロキシ）
 - [x] openai: プレフィックスをOpenAI APIへフォワード（OPENAI_API_KEY必須、stream未対応）
 - [ ] google:/anthropic: プレフィックスのリモートAPI対応
-- [ ] stream対応（クラウドプレフィックス）
+- [ ] stream対応（クラウドプレフィックス全ベンダー）
 
 #### ノード管理API (api/) - RED-GREEN-REFACTOR
 - [x] **TEST FIRST**: tests/integration/node_endpoints_test.cpp
@@ -475,11 +476,11 @@ ollama-node-cpp/
 
 ## 次のステップ（即座に実行）
 
-1. ✅ PLANS.md作成（.agent/に配置）
-2. ⬜ テスト環境構築（Google Test導入）
-3. ⬜ コントラクトテスト作成
-4. ⬜ GPU検出のテスト作成
-5. ⬜ GPU検出の実装完了
+1. ✅ SPEC-4b6e9f2a を策定しクラウドプレフィックス要件を明文化
+2. ⬜ クラウドプレフィックス: Google/Anthropic クライアントと非ストリーミングプロキシを実装（モック統合テスト RED→GREEN）
+3. ⬜ クラウドプレフィックス: stream=true のSSE中継を全ベンダーで実装しテスト追加
+4. ⬜ メトリクス/ログ拡張（providerラベル、レイテンシ）とドキュメント更新（README/USAGE/API仕様）
+5. ⬜ 完了後 quality-checks（`make quality-checks`）を通してコミット＆プッシュ
 
 ## リスクと対策
 

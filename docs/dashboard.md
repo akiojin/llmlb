@@ -79,7 +79,7 @@ The dashboard calls these coordinator endpoints:
 |--------|--------------------------------------|-----------------------------------------|
 | GET    | `/api/dashboard/overview`            | Combined agents + stats + history + generation metrics |
 | GET    | `/api/dashboard/agents`              | Agent list with current runtime metrics |
-| GET    | `/api/dashboard/stats`               | Global coordinator summary              |
+| GET    | `/api/dashboard/stats`               | Global coordinator summary (includes cloud API key presence flags) |
 | GET    | `/api/dashboard/request-history`     | Recent request history (60 points)      |
 | GET    | `/api/dashboard/metrics/:agent_id`   | CPU/memory/GPU history for a specific agent |
 | PUT    | `/api/agents/:id/settings`           | Update custom name, tags, notes         |

@@ -339,8 +339,8 @@ ollama-node-cpp/
   - [x] ネットワーク設定
 
 #### パッケージマネージャー
-- [ ] Debian/Ubuntuパッケージ（.deb）
-- [ ] RedHat/CentOSパッケージ（.rpm）
+- [x] Debian/Ubuntuパッケージ（.deb）
+- [x] RedHat/CentOSパッケージ（.rpm）
 - [ ] macOS Homebrew Formula
 - [ ] Windows MSIインストーラー
 

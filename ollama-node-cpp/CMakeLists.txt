@@ -153,6 +153,18 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+# Packaging (DEB/RPM via CPack)
+set(CPACK_PACKAGE_NAME "ollama-node-cpp")
+set(CPACK_PACKAGE_VENDOR "ollama-router")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Ollama-compatible C++ node")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT "oss@ollama-router.local")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE")
+set(CPACK_GENERATOR "DEB;RPM")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libssl3")
+set(CPACK_RPM_PACKAGE_REQUIRES "openssl-libs")
+include(CPack)
+
 # Print configuration summary
 message(STATUS "")
 message(STATUS "ollama-node-cpp configuration summary:")

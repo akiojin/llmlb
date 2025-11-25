@@ -56,9 +56,16 @@ hey -n 200 -c 20 -m POST \
 - 成果物:
   - RPS: xxx
   - p95: xxx ms / p99: xxx ms
-  - 失敗: xxx (内訳 4xx/5xx/timeout)
+- 失敗: xxx (内訳 4xx/5xx/timeout)
 - 備考: 例) GPU使用率70%、クラウド側403なし
 ```
+
+### wrk出力のCSV化
+```bash
+wrk ... --latency | scripts/benchmarks/wrk_parse.py --label local \
+  > benchmarks/results/20251125-local.csv
+```
+CSV列: `label,rps,p50_ms,p75_ms,p90_ms,p95_ms,p99_ms,non2xx,socket_errors,requests,duration_s`
 
 ## 6. 次ステップ
 - 主要シナリオで baseline を取って results に保存

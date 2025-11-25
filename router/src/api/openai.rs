@@ -852,12 +852,42 @@ fn validation_error(message: impl Into<String>) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_cloud_model, proxy_openai_cloud_post};
+    use super::{parse_cloud_model, proxy_openai_cloud_post, proxy_openai_post};
+    use crate::{
+        balancer::LoadManager, db::request_history::RequestHistoryStorage, registry::NodeRegistry,
+        tasks::DownloadTaskManager, AppState,
+    };
     use axum::body::to_bytes;
+    use ollama_router_common::protocol::RequestType;
     use serde_json::json;
     use serial_test::serial;
+    use sqlx::SqlitePool;
+    use std::sync::Arc;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn create_local_state() -> AppState {
+        let registry = NodeRegistry::new();
+        let load_manager = LoadManager::new(registry.clone());
+        let request_history =
+            Arc::new(RequestHistoryStorage::new().expect("request history storage"));
+        let task_manager = DownloadTaskManager::new();
+        let db_pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("sqlite memory connect");
+        sqlx::migrate!("./migrations")
+            .run(&db_pool)
+            .await
+            .expect("migrations");
+        AppState {
+            registry,
+            load_manager,
+            request_history,
+            task_manager,
+            db_pool,
+            jwt_secret: "test-secret".into(),
+        }
+    }
 
     #[test]
     fn parse_cloud_prefixes() {
@@ -1021,6 +1051,31 @@ mod tests {
 
         std::env::remove_var("ANTHROPIC_API_KEY");
         std::env::remove_var("ANTHROPIC_API_BASE_URL");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_prefixed_model_stays_on_local_path() {
+        let state = create_local_state().await;
+        let payload = json!({"model":"gpt-oss:20b","messages":[]});
+        let res = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "gpt-oss:20b".into(),
+            false,
+            RequestType::Chat,
+        )
+        .await;
+        let err = res.unwrap_err();
+        let msg = format!("{:?}", err);
+        assert!(
+            msg.contains("NoAgentsAvailable")
+                || msg.contains("No available agents")
+                || msg.contains("No agents available"),
+            "expected local-path agent error, got {}",
+            msg
+        );
     }
     async fn streaming_allowed_for_cloud_prefix() {
         let payload = json!({"model":"openai:gpt-4o","messages":[],"stream":true});

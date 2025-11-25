@@ -15,7 +15,7 @@
 - [ ] Integration: クラウドプレフィックス付きリクエストがローカルノードに到達しないことをモックで検証
 - [x] Integration: OpenAI/Google/Anthropic 各モッククライアントの非ストリーミング応答をプロキシできること
 - [x] Integration: `stream: true` を指定した場合にSSEでチャンクが順次届くこと
-- [ ] Regression: プレフィックスなしモデルが従来のローカルルートで動作し続けること
+- [x] Regression: プレフィックスなしモデルが従来のローカルルートで動作し続けること
 
 ## Core Implementation
 

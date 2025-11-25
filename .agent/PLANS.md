@@ -345,8 +345,8 @@ ollama-node-cpp/
 - [ ] Windows MSIインストーラー
 
 #### インストールスクリプト
-- [ ] install.sh（Linux/macOS）
-- [ ] install.ps1（Windows）
+- [x] install.sh（Linux/macOS）
+- [x] install.ps1（Windows）
 - [ ] 自動アップデート機構
 
 ### Phase 8: ドキュメント

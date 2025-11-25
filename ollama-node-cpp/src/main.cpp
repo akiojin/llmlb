@@ -78,13 +78,15 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
         // For now, combine remote list; local deletes not performed here
         registry.setModels(model_sync.fetchRemoteModels());
 
+        std::string bind_address = cfg.bind_address.empty() ? std::string("0.0.0.0") : cfg.bind_address;
+
         // Initialize inference engine
         ollama_node::InferenceEngine engine;
 
         // Start HTTP server
         ollama_node::OpenAIEndpoints openai(registry, engine);
         ollama_node::NodeEndpoints node_endpoints;
-        ollama_node::HttpServer server(node_port, openai, node_endpoints);
+        ollama_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();
         server_started = true;

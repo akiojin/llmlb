@@ -25,6 +25,7 @@ struct NodeConfig {
     int node_port{11435};
     int heartbeat_interval_sec{10};
     bool require_gpu{true};
+    std::string bind_address{"0.0.0.0"};
 };
 
 NodeConfig loadNodeConfig();

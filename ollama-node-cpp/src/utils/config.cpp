@@ -146,6 +146,7 @@ bool readJsonWithLock(const std::filesystem::path& path, nlohmann::json& out) {
 
 std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     NodeConfig cfg;
+    cfg.bind_address = "0.0.0.0";
     std::ostringstream log;
     bool used_env = false;
     bool used_file = false;
@@ -161,6 +162,7 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
             cfg.heartbeat_interval_sec = j["heartbeat_interval_sec"].get<int>();
         }
         if (j.contains("require_gpu") && j["require_gpu"].is_boolean()) cfg.require_gpu = j["require_gpu"].get<bool>();
+        if (j.contains("bind_address") && j["bind_address"].is_string()) cfg.bind_address = j["bind_address"].get<std::string>();
     };
 
     // file
@@ -218,6 +220,12 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
             log << "env:ALLOW_NO_GPU=1 ";
             used_env = true;
         }
+    }
+
+    if (auto v = getenv_str("OLLAMA_BIND_ADDRESS")) {
+        cfg.bind_address = *v;
+        log << "env:BIND_ADDRESS=" << *v << " ";
+        used_env = true;
     }
 
     if (log.tellp() > 0) log << "|";

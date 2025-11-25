@@ -16,7 +16,12 @@
     [
       "@semantic-release/github",
       {
-        "assets": []
+        "assets": [
+          {
+            "path": "dist/ollama-node-linux-amd64.tar.gz",
+            "label": "ollama-node-linux-amd64"
+          }
+        ]
       }
     ],
     [

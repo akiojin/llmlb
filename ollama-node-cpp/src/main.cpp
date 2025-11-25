@@ -44,6 +44,7 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
             return 1;
         }
         size_t total_mem = gpu_detector.getTotalMemory();
+        double capability = gpu_detector.getCapabilityScore();
         std::cout << "GPU detected: devices=" << gpus.size() << " total_mem=" << total_mem << " bytes" << std::endl;
 
         // Build GPU device info for router

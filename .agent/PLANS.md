@@ -342,7 +342,7 @@ ollama-node-cpp/
 - [x] Debian/Ubuntuパッケージ（.deb）
 - [x] RedHat/CentOSパッケージ（.rpm）
 - [x] macOS Homebrew Formula
-- [ ] Windows MSIインストーラー
+- [ ] Windows MSIインストーラー（Wix: installers/windows/ollama-router-node.wxs 要ビルド）
 
 #### インストールスクリプト
 - [x] install.sh（Linux/macOS）

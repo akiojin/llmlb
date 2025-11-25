@@ -49,7 +49,7 @@
         <File
           Id="AgentExe"
           KeyPath="yes"
-          Source="$(var.BinariesDir)\or-node.exe"
+          Source="$(var.BinariesDir)\ollama-node.exe"
         />
       </Component>
 
@@ -58,7 +58,7 @@
           Id="AgentShortcut"
           Name="Ollama Router Agent"
           Description="Ollama Router Agent を起動"
-          Target="[INSTALLFOLDER]or-node.exe"
+          Target="[INSTALLFOLDER]ollama-node.exe"
           WorkingDirectory="INSTALLFOLDER"
           Icon="AgentIcon"
           IconIndex="0"

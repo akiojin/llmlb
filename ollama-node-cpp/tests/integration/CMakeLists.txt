@@ -2,6 +2,7 @@ set(INTEGRATION_TEST_SOURCES
     http_server_test.cpp
     openai_endpoints_test.cpp
     node_endpoints_test.cpp
+    node_prometheus_test.cpp
     main_test.cpp
     model_sync_download_test.cpp
     ../../src/main.cpp
@@ -13,6 +14,7 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_registry.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
+    ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
     ../../src/system/gpu_detector.cpp
 )

@@ -12,6 +12,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/pull", [this](const httplib::Request&, httplib::Response& res) {
         pull_count_.fetch_add(1);
+        exporter_.inc_counter("ollama_node_pull_total", 1.0, "Number of pull requests received");
         nlohmann::json body = {{"status", "accepted"}};
         res.set_content(body.dump(), "application/json");
     });
@@ -29,6 +30,14 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             {"pull_count", pull_count_.load()}
         };
         res.set_content(body.dump(), "application/json");
+    });
+
+    server.Get("/metrics/prom", [this](const httplib::Request&, httplib::Response& res) {
+        auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start_time_).count();
+        exporter_.set_gauge("ollama_node_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
+        exporter_.set_gauge("ollama_node_pulls_total", static_cast<double>(pull_count_.load()), "Total pull requests served");
+        res.set_content(exporter_.render(), "text/plain");
     });
 
     server.Get("/internal-error", [](const httplib::Request&, httplib::Response&) {

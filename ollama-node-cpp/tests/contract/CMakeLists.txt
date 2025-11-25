@@ -7,6 +7,7 @@ set(CONTRACT_TEST_SOURCES
     ../../src/models/model_registry.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
+    ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
     ../../src/api/router_client.cpp
 )

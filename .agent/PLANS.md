@@ -308,11 +308,10 @@ ollama-node-cpp/
   - [x] コードカバレッジ測定
   - [x] 静的解析（clang-tidy, cppcheck）
 
-- [ ] .github/workflows/release.yml
-  - [ ] semantic-release統合
-  - [ ] 自動バージョニング（commitlintベース）
+- [x] .github/workflows/release.yml
+  - [x] semantic-release統合
   - [ ] バイナリビルド（各プラットフォーム）
-  - [ ] リリースノート自動生成
+  - [x] リリースノート自動生成
   - [ ] アセット自動アップロード
 
 #### commitlint設定

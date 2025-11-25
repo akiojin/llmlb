@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -13,7 +13,9 @@ use ollama_router_common::{
 };
 use serde_json::{json, Value};
 use std::time::Instant;
+use axum::body::Body;
 use uuid::Uuid;
+use reqwest;
 
 use crate::{
     api::{
@@ -23,6 +25,10 @@ use crate::{
     balancer::RequestOutcome,
     AppState,
 };
+
+fn map_reqwest_error(err: reqwest::Error) -> AppError {
+    AppError::from(RouterError::Http(err.to_string()))
+}
 
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
@@ -154,6 +160,73 @@ fn extract_stream(payload: &Value) -> bool {
         .unwrap_or(false)
 }
 
+fn parse_cloud_model(model: &str) -> Option<(String, String)> {
+    // Accept prefixes like "openai:foo", "google:bar", "anthropic:baz"
+    let prefixes = ["openai:", "google:", "anthropic:", "ahtnorpic:"];
+    for p in prefixes.iter() {
+        if model.starts_with(p) {
+            let rest = model.trim_start_matches(p);
+            if rest.is_empty() {
+                return None;
+            }
+            let provider = if *p == "ahtnorpic:" {
+                "anthropic"
+            } else {
+                p.trim_end_matches(':')
+            };
+            return Some((provider.to_string(), rest.to_string()));
+        }
+    }
+    None
+}
+
+async fn proxy_openrouter_post(
+    target_path: &str,
+    model: &str,
+    stream: bool,
+    mut payload: Value,
+) -> Result<Response, AppError> {
+    if stream {
+        return Err(validation_error(
+            "stream=true is not supported for cloud-prefixed models yet",
+        ));
+    }
+
+    let api_key = std::env::var("OPENROUTER_API_KEY").map_err(|_| {
+        validation_error("OPENROUTER_API_KEY is required for cloud-prefixed models")
+    })?;
+
+    // Map prefix:model -> provider/model for OpenRouter
+    let (provider, rest) = parse_cloud_model(model)
+        .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
+    let or_model = format!("{}/{}", provider, rest);
+    payload["model"] = Value::String(or_model.clone());
+
+    let client = reqwest::Client::new();
+    let url = format!("https://openrouter.ai/api/v1{target_path}");
+    let res = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .header("HTTP-Referer", "https://ollama-router.local")
+        .header("X-Title", "ollama-router")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(map_reqwest_error)?;
+
+    let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let content_type = res.headers().get(reqwest::header::CONTENT_TYPE).cloned();
+    let bytes = res.bytes().await.map_err(map_reqwest_error)?;
+    let mut resp = Response::builder().status(status);
+    // Mirror content-type if present
+    if let Some(ct) = content_type {
+        if let Ok(hv) = HeaderValue::from_str(ct.to_str().unwrap_or("")) {
+            resp = resp.header(CONTENT_TYPE, hv);
+        }
+    }
+    Ok(resp.body(Body::from(bytes)).unwrap())
+}
+
 async fn proxy_openai_post(
     state: &AppState,
     payload: Value,
@@ -162,6 +235,11 @@ async fn proxy_openai_post(
     stream: bool,
     request_type: RequestType,
 ) -> Result<Response, AppError> {
+    // Cloud-prefixed model -> forward to OpenRouter
+    if parse_cloud_model(&model).is_some() {
+        return proxy_openrouter_post(target_path, &model, stream, payload).await;
+    }
+
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = payload.clone();

@@ -1,3 +1,12 @@
+# Unreleased
+
+### Features
+- cloud prefix routing for `openai:/google:/anthropic:` with SSE passthrough
+- cloud Prometheus metrics at `/metrics/cloud` (provider/status counters & latency histogram)
+
+### Tests
+- mock integration tests for cloud prefixes (non/stream) and regression ensuring non-prefixed models stay on local path
+
 # [2.1.0](https://github.com/akiojin/ollama-router/compare/v2.0.5...v2.1.0) (2025-11-19)
 
 

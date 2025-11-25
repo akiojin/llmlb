@@ -20,6 +20,10 @@
           {
             "path": "dist/ollama-node-linux-amd64.tar.gz",
             "label": "ollama-node-linux-amd64"
+          },
+          {
+            "path": "dist/ollama-node-macos-arm64.tar.gz",
+            "label": "ollama-node-macos-arm64"
           }
         ]
       }

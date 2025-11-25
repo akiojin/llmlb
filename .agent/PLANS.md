@@ -482,7 +482,7 @@ ollama-node-cpp/
 4. ✅ メトリクス/ログ拡張（providerラベル、レイテンシ）とドキュメント更新（README反映）
 5. ✅ 完了後 quality-checks（`make quality-checks`）を通してコミット＆プッシュ
 6. ✅ クラウドプレフィックス統合テスト（ローカル経路に流れないこと・非/ストリームのモック応答）を追加
-7. ⬜ CHANGELOG更新とAPI仕様/USAGE細部の追記
+7. ⬜ API仕様/USAGE細部の追記（必要箇所を仕上げる）
 
 ## リスクと対策
 

@@ -15,6 +15,9 @@ services:
       - ${HOME:-~}/.codex:/root/.codex-host:ro
       - ~/.serena:/root/.serena
     environment:
+      - OPENAI_API_KEY
+      - GOOGLE_API_KEY
+      - ANTHROPIC_API_KEY
       - NPM_USER
       - NPM_EMAIL
       - NPM_PASS

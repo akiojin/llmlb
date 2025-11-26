@@ -58,7 +58,7 @@ cargo build --release -p or-router
 On Windows 10+ and macOS 12+, the router displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
-### Node (ollama-node-cpp)
+### Node (C++)
 
 **Prerequisites:**
 
@@ -77,15 +77,14 @@ sudo apt install cmake build-essential
 
 ```bash
 # Build (Metal is enabled by default on macOS)
-cd ollama-node-cpp
-cmake -B build -S .
-cmake --build build --config Release
+npm run build:node
 
 # Run
-OLLAMA_ROUTER_URL=http://localhost:8080 ./build/ollama-node
+npm run start:node
 
-# Disable Metal explicitly (if needed)
-# cmake -B build -S . -DBUILD_WITH_METAL=OFF
+# Or manually:
+# cd node && cmake -B build -S . && cmake --build build --config Release
+# OLLAMA_ROUTER_URL=http://localhost:8080 ./node/build/ollama-node
 ```
 
 **Environment Variables:**
@@ -102,7 +101,7 @@ OLLAMA_ROUTER_URL=http://localhost:8080 ./build/ollama-node
 
 ```bash
 # Build
-docker build --build-arg CUDA=cpu -t ollama-node-cpp:latest ollama-node-cpp/
+docker build --build-arg CUDA=cpu -t ollama-node-cpp:latest node/
 
 # Run
 docker run --rm -p 11435:11435 \
@@ -304,7 +303,7 @@ ollama-router/
 │   │   └── main.rs
 │   ├── migrations/      # Database migrations
 │   └── Cargo.toml
-├── ollama-node-cpp/     # C++ Node (llama.cpp integrated)
+├── node/                # C++ Node (llama.cpp integrated)
 │   ├── src/
 │   │   ├── main.cpp     # Entry point
 │   │   ├── api/         # OpenAI-compatible API

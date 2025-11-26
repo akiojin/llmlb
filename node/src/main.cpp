@@ -12,6 +12,8 @@
 #include "api/router_client.h"
 #include "models/model_sync.h"
 #include "models/model_registry.h"
+#include "models/ollama_compat.h"
+#include "core/llama_manager.h"
 #include "core/inference_engine.h"
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
@@ -24,6 +26,7 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
     ollama_node::g_running_flag.store(true);
 
     bool server_started = false;
+    bool llama_backend_initialized = false;
     std::thread heartbeat_thread;
 
     try {
@@ -31,6 +34,11 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
         ollama_node::set_ready(false);
         std::string router_url = cfg.router_url;
         int node_port = cfg.node_port;
+
+        // Initialize llama.cpp backend
+        spdlog::info("Initializing llama.cpp backend...");
+        ollama_node::LlamaManager::initBackend();
+        llama_backend_initialized = true;
 
         spdlog::info("Router URL: {}", router_url);
         spdlog::info("Node port: {}", node_port);
@@ -68,8 +76,25 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
         // Initialize model registry (empty for now, will sync after registration)
         ollama_node::ModelRegistry registry;
 
-        // Initialize inference engine
-        ollama_node::InferenceEngine engine;
+        // Determine models directory
+        std::string models_dir = cfg.models_dir.empty()
+                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.ollama/models"
+                                     : cfg.models_dir;
+
+        // Initialize LlamaManager and OllamaCompat for inference engine
+        ollama_node::LlamaManager llama_manager(models_dir);
+        ollama_node::OllamaCompat ollama_compat(models_dir);
+
+        // Set GPU layers based on detection (use all layers on GPU if available)
+        if (!gpu_devices.empty()) {
+            // Use 99 layers for GPU offloading (most models have fewer layers)
+            llama_manager.setGpuLayerSplit(99);
+            spdlog::info("GPU offloading enabled with {} layers", 99);
+        }
+
+        // Initialize inference engine with dependencies
+        ollama_node::InferenceEngine engine(llama_manager, ollama_compat);
+        spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
         ollama_node::OpenAIEndpoints openai(registry, engine);
@@ -85,8 +110,33 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
         ollama_node::RouterClient router(router_url);
         ollama_node::NodeInfo info;
         info.machine_name = hostname_buf;
-        info.ip_address = "127.0.0.1";  // TODO: detect actual IP
-        info.ollama_version = "1.0.0";  // ollama-node-cpp version
+        // Use configured IP, or extract host from router URL, or fallback to hostname
+        if (!cfg.ip_address.empty()) {
+            info.ip_address = cfg.ip_address;
+        } else {
+            // Extract host from router_url (e.g., "http://192.168.1.100:8081" -> "192.168.1.100")
+            std::string host = router_url;
+            auto proto_end = host.find("://");
+            if (proto_end != std::string::npos) {
+                host = host.substr(proto_end + 3);
+            }
+            auto port_pos = host.find(':');
+            if (port_pos != std::string::npos) {
+                host = host.substr(0, port_pos);
+            }
+            auto path_pos = host.find('/');
+            if (path_pos != std::string::npos) {
+                host = host.substr(0, path_pos);
+            }
+            // If router is on localhost, use 127.0.0.1; otherwise use router's host
+            if (host == "localhost") {
+                info.ip_address = "127.0.0.1";
+            } else {
+                info.ip_address = host;
+            }
+        }
+        spdlog::info("Node IP address: {}", info.ip_address);
+        info.ollama_version = "1.0.0";  // ollama-node version
         // Router calculates API port as ollama_port + 1, so report node_port - 1
         info.ollama_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 11434);
         info.gpu_available = !gpu_devices.empty();
@@ -110,9 +160,6 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
 
         // Sync models from router
         std::cout << "Syncing models from router..." << std::endl;
-        std::string models_dir = cfg.models_dir.empty()
-                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.ollama/models"
-                                     : cfg.models_dir;
         ollama_node::ModelSync model_sync(router_url, models_dir);
         auto sync_result = model_sync.sync();
         if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync.listLocalModels().empty()) {
@@ -153,11 +200,20 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
             heartbeat_thread.join();
         }
 
+        // Free llama.cpp backend
+        if (llama_backend_initialized) {
+            spdlog::info("Freeing llama.cpp backend...");
+            ollama_node::LlamaManager::freeBackend();
+        }
+
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
         if (heartbeat_thread.joinable()) {
             ollama_node::request_shutdown();
             heartbeat_thread.join();
+        }
+        if (llama_backend_initialized) {
+            ollama_node::LlamaManager::freeBackend();
         }
         if (server_started) {
             // best-effort stop
@@ -180,7 +236,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    std::cout << "ollama-node-cpp v1.0.0 starting..." << std::endl;
+    std::cout << "ollama-node v1.0.0 starting..." << std::endl;
 
     auto cfg = ollama_node::loadNodeConfig();
     return run_node(cfg, /*single_iteration=*/false);

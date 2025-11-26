@@ -37,7 +37,7 @@ TEST(LlamaManagerTest, LoadsExistingModel) {
 
     auto ctx = mgr.createContext("model.gguf");
     ASSERT_NE(ctx, nullptr);
-    EXPECT_EQ(ctx->model, model.string());
+    EXPECT_EQ(ctx->model_path, model.string());
     EXPECT_EQ(ctx->gpu_layers, 5u);
 }
 

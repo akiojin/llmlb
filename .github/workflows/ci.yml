@@ -68,11 +68,11 @@ jobs:
         run: npm run test:node
       - name: clang-tidy (sources only)
         run: |
-          cd ollama-node-cpp
+          cd node
           run-clang-tidy -p build src include -quiet || (cat /tmp/run-clang-tidy.log || true; exit 1)
       - name: cppcheck (warnings)
         run: |
-          cd ollama-node-cpp
+          cd node
           cppcheck --enable=warning --inline-suppr --std=c++20 \
             -I include -I third_party/nlohmann-json/include -I third_party/cpp-httplib \
             --suppress=missingIncludeSystem \
@@ -90,7 +90,7 @@ jobs:
         with:
           version: 10.20.0
       - name: Run markdownlint
-        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!ollama-node-cpp/third_party" "!ollama-node-cpp/build"
+        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!node/third_party" "!node/build"
 
   coverage-rust:
     name: Coverage (Rust)
@@ -134,7 +134,7 @@ jobs:
       - name: gcovr lcov report
         run: |
           mkdir -p coverage-cpp
-          gcovr -r ollama-node-cpp -x coverage-cpp/coverage.xml -s
+          gcovr -r node -x coverage-cpp/coverage.xml -s
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:

@@ -26,6 +26,7 @@ struct NodeConfig {
     int heartbeat_interval_sec{10};
     bool require_gpu{true};
     std::string bind_address{"0.0.0.0"};
+    std::string ip_address;  // Empty means auto-detect
 };
 
 NodeConfig loadNodeConfig();

@@ -7,8 +7,10 @@ set(CONTRACT_TEST_SOURCES
     ../../src/models/model_registry.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
+    ../../src/models/ollama_compat.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/llama_manager.cpp
     ../../src/api/router_client.cpp
     ../../src/runtime/state.cpp
 )
@@ -20,8 +22,11 @@ add_executable(ollama-node-contract-tests
 target_link_libraries(ollama-node-contract-tests
     PRIVATE
         test_common
+        llama
         nlohmann_json::nlohmann_json
         utils_lib
+        OpenSSL::SSL
+        OpenSSL::Crypto
 )
 
 target_include_directories(ollama-node-contract-tests

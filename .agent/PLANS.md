@@ -37,7 +37,7 @@ Rustノードをllama.cpp統合のC++ノードに置き換える完全実装計�
 ## アーキテクチャ
 
 ```
-ollama-node-cpp/
+node/
 ├── src/
 │   ├── core/           # llama.cpp統合、モデル管理
 │   ├── api/            # HTTPサーバー、OpenAI互換API
@@ -190,7 +190,10 @@ ollama-node-cpp/
   - [x] LoRAやDiffusersモデルの除外
 - [x] **REFACTOR**: コードクリーンアップ
 
-### Phase 3: llama.cpp統合（TDD）
+### Phase 3: llama.cpp統合（TDD）✅ **実装完了**
+
+> **✅ 更新 (2025-11-25)**: llama.cpp APIの実際の呼び出しを実装しました。
+> LlamaManager、InferenceEngine共にllama.cppを直接使用する実装に変更済み。
 
 #### モデルマネージャー (core/) - RED-GREEN-REFACTOR
 - [x] **TEST FIRST**: tests/unit/llama_manager_test.cpp
@@ -199,12 +202,13 @@ ollama-node-cpp/
   - [x] GPU/CPUレイヤー分割テスト
   - [x] メモリ管理テスト
 - [x] llama_manager.h の作成
-- [x] llama_manager.cpp の実装
-  - [x] llama.cpp初期化（ダミー）
-  - [x] GGUFファイルロード
-  - [x] コンテキスト管理
-  - [x] GPU/CPUレイヤー分割
+- [x] llama_manager.cpp の実装 ✅ **llama.cpp API使用**
+  - [x] llama.cpp初期化（`llama_backend_init()`）
+  - [x] GGUFファイルロード（`llama_model_load_from_file()`）
+  - [x] コンテキスト管理（`llama_init_from_model()`）
+  - [x] GPU/CPUレイヤー分割（`n_gpu_layers`設定）
   - [x] エラーハンドリング
+  - [x] メモリ使用量追跡（`llama_model_size()`）
 - [x] **REFACTOR**: コードクリーンアップ
 
 #### モデルプール (core/) - RED-GREEN-REFACTOR
@@ -214,28 +218,36 @@ ollama-node-cpp/
   - [x] 動的ロード/アンロードテスト
   - [x] メモリ制限テスト
 - [x] model_pool.h の作成
-- [x] model_pool.cpp の実装
-  - [x] 複数モデルインスタンス管理（最低限）
+- [x] model_pool.cpp の実装 ✅ **LlamaManager統合**
+  - [x] 複数モデルインスタンス管理（llama_model*使用）
   - [x] スレッドごとのモデル割り当て
-  - [x] 動的ロード/アンロード
-  - [x] メモリ管理とGC
+  - [x] 動的ロード/アンロード（`loadModel()`/`unloadModel()`）
+  - [x] メモリ管理とGC（`memoryUsageBytes()`）
   - [x] ロック機構
 - [x] **REFACTOR**: コードクリーンアップ
 
-#### 推論エンジン (core/) - RED-GREEN-REFACTOR
+#### 推論エンジン (core/) - RED-GREEN-REFACTOR ✅
 - [x] **TEST FIRST**: tests/unit/inference_engine_test.cpp
   - [x] プロンプト処理テスト
   - [x] トークン生成テスト
   - [x] ストリーミングテスト
   - [x] バッチ推論テスト
 - [x] inference_engine.h の作成
-- [x] inference_engine.cpp の実装
-  - [x] プロンプト処理
-  - [x] トークン生成
-  - [x] ストリーミング対応
-  - [x] バッチ推論
-  - [x] サンプリング戦略
+- [x] inference_engine.cpp の実装 ✅ **llama.cpp API完全統合**
+  - [x] プロンプト処理（`llama_tokenize()`）
+  - [x] トークン生成（`llama_decode()`, `llama_sampler_sample()`）
+  - [x] ストリーミング対応（トークンごとのコールバック）
+  - [x] バッチ推論（`llama_batch_get_one()`）
+  - [x] サンプリング戦略（`llama_sampler_chain_init()`, top_k, top_p, temp, dist）
+  - [x] EOG（End of Generation）検出（`llama_vocab_is_eog()`）
+  - [x] InferenceParamsによるパラメータ制御（max_tokens, temperature, top_p, top_k, seed）
 - [x] **REFACTOR**: コードクリーンアップ
+
+> **実装詳細 (2025-11-25)**:
+> - `llama_manager.cpp`: `#include "llama.h"`を追加、`llama_backend_init()`/`llama_backend_free()`でバックエンド管理
+> - `inference_engine.cpp`: LlamaManager/OllamaCompatへの依存性注入、実際のトークン化・推論ループ実装
+> - `main.cpp`: バックエンド初期化、LlamaManager/OllamaCompat/InferenceEngineの依存性注入
+> - 後方互換性: デフォルトコンストラクタはスタブモード維持（既存テスト互換）
 
 ### Phase 4: API実装（TDD）
 

@@ -3,8 +3,9 @@
 Steps for working on this repository locally.
 
 ## Prerequisites
+
 - Rust toolchain (stable)
-- CMake + C++20 compiler for `ollama-node-cpp`
+- CMake + C++20 compiler for C++ node
 - Docker (optional)
 - pnpm (for markdownlint)
 
@@ -16,10 +17,12 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 ```
 
 ## Everyday Commands
+
 - Format/lint/test everything: `make quality-checks`
 - OpenAI-only tests: `make openai-tests`
 - Router dev run: `cargo run -p or-router`
-- C++ node build: `cmake -B build -S ollama-node-cpp && cmake --build build`
+- C++ node build: `npm run build:node`
+- C++ node run: `npm run start:node`
 
 ## TDD Expectations
 1. Write a failing test (contract/integration first, then unit).

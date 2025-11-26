@@ -23,7 +23,7 @@ std::shared_ptr<LlamaContext> ModelPool::acquireForThread(const std::string& mod
     {
         std::lock_guard<std::mutex> lock(mu_);
         auto it = thread_cache_.find(tid);
-        if (it != thread_cache_.end() && it->second && it->second->model.find(model) != std::string::npos) {
+        if (it != thread_cache_.end() && it->second && it->second->model_path.find(model) != std::string::npos) {
             return it->second;
         }
     }

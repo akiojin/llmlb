@@ -53,7 +53,7 @@ cargo build --release -p or-router
 Windows 10以降およびmacOS 12以降では、システムトレイにアイコンが表示されます。
 ダブルクリックでダッシュボードを開きます。Docker/LinuxではCLIプロセスとして動作します。
 
-### ノード (ollama-node-cpp)
+### ノード (C++)
 
 **前提条件:**
 
@@ -72,15 +72,14 @@ sudo apt install cmake build-essential
 
 ```bash
 # ビルド（macOSではMetalがデフォルト有効）
-cd ollama-node-cpp
-cmake -B build -S .
-cmake --build build --config Release
+npm run build:node
 
 # 起動
-OLLAMA_ROUTER_URL=http://localhost:8080 ./build/ollama-node
+npm run start:node
 
-# Metalを明示的に無効化する場合
-# cmake -B build -S . -DBUILD_WITH_METAL=OFF
+# 手動でビルドする場合:
+# cd node && cmake -B build -S . && cmake --build build --config Release
+# OLLAMA_ROUTER_URL=http://localhost:8080 ./node/build/ollama-node
 ```
 
 **環境変数:**
@@ -97,7 +96,7 @@ OLLAMA_ROUTER_URL=http://localhost:8080 ./build/ollama-node
 
 ```bash
 # ビルド
-docker build --build-arg CUDA=cpu -t ollama-node-cpp:latest ollama-node-cpp/
+docker build --build-arg CUDA=cpu -t ollama-node-cpp:latest node/
 
 # 起動
 docker run --rm -p 11435:11435 \
@@ -248,7 +247,7 @@ ollama-router/
 │   │   └── main.rs
 │   ├── migrations/      # データベースマイグレーション
 │   └── Cargo.toml
-├── ollama-node-cpp/     # C++ Node (llama.cpp統合)
+├── node/                # C++ Node (llama.cpp統合)
 │   ├── src/
 │   │   ├── main.cpp     # エントリーポイント
 │   │   ├── api/         # OpenAI互換API

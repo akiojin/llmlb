@@ -90,11 +90,11 @@ jobs:
           sudo apt-get install -y build-essential cmake libssl-dev
 
       - name: Configure C++ project
-        run: cmake -S ollama-node-cpp -B ollama-node-cpp/build -DBUILD_TESTS=ON
+        run: cmake -S node -B node/build -DBUILD_TESTS=ON
 
       - name: Build C++ project
-        run: cmake --build ollama-node-cpp/build --config Release
+        run: cmake --build node/build --config Release
 
       - name: Run C++ tests
         run: ctest --output-on-failure
-        working-directory: ollama-node-cpp/build
+        working-directory: node/build

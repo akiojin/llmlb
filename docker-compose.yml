@@ -40,7 +40,7 @@ services:
 
   ollama-node-cpp:
     build:
-      context: ./ollama-node-cpp
+      context: ./node
       dockerfile: Dockerfile
       args:
         CUDA: ${OLLAMA_CPP_CUDA:-cpu} # cpu | cuda
@@ -55,7 +55,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}
     runtime: ${DOCKER_RUNTIME:-runc} # set to nvidia when using GPU
     volumes:
-      - ./ollama-node-cpp/models:/models
+      - ./node/models:/models
     ports:
       - "11435:11435"
     restart: unless-stopped

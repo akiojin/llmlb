@@ -228,6 +228,12 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         used_env = true;
     }
 
+    if (auto v = getenv_str("OLLAMA_NODE_IP")) {
+        cfg.ip_address = *v;
+        log << "env:NODE_IP=" << *v << " ";
+        used_env = true;
+    }
+
     if (log.tellp() > 0) log << "|";
     log << "sources=";
     if (used_env) log << "env";

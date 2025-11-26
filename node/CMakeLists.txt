@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ollama-node-cpp VERSION 1.0.0 LANGUAGES CXX C)
+project(ollama-node VERSION 1.0.0 LANGUAGES CXX C)
 
 # Enable Objective-C/C++ on Apple platforms for Metal support
 if(APPLE)
@@ -70,6 +70,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/ggml/include
 )
 
 # Find required packages
@@ -172,7 +174,7 @@ if(BUILD_TESTS)
 endif()
 
 # Packaging (DEB/RPM via CPack)
-set(CPACK_PACKAGE_NAME "ollama-node-cpp")
+set(CPACK_PACKAGE_NAME "ollama-node")
 set(CPACK_PACKAGE_VENDOR "ollama-router")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Ollama-compatible C++ node")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
@@ -185,7 +187,7 @@ include(CPack)
 
 # Print configuration summary
 message(STATUS "")
-message(STATUS "ollama-node-cpp configuration summary:")
+message(STATUS "ollama-node configuration summary:")
 message(STATUS "  Build type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard:      ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler:          ${CMAKE_CXX_COMPILER_ID}")

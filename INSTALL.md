@@ -24,13 +24,18 @@ docker run --rm -p 8080:8080 --gpus all \
 ```
 GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
 
-## 3) C++ Node (ollama-node-cpp) ビルド
+## 3) C++ Node ビルド
+
 ```bash
-cd ollama-node-cpp
+npm run build:node
+
+# 手動でビルドする場合:
+cd node
 cmake -B build -S .
 cmake --build build --config Release
 ```
-生成物: `build/bin/ollama-node-cpp`
+
+生成物: `node/build/ollama-node`
 
 ## 4) 基本設定
 - ルーター（Rust）
@@ -50,7 +55,7 @@ cmake --build build --config Release
 cargo run -p or-router
 
 # ノード (別シェル)
-./ollama-node-cpp --router http://localhost:8080 --port 11434
+./node/build/ollama-node
 ```
 
 ## 6) 動作確認

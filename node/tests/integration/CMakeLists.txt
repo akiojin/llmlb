@@ -14,8 +14,10 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_registry.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
+    ../../src/models/ollama_compat.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/llama_manager.cpp
 )
 
 # Use platform-specific gpu_detector source
@@ -32,6 +34,7 @@ add_executable(ollama-node-integration-tests
 target_link_libraries(ollama-node-integration-tests
     PRIVATE
         test_common
+        llama
         nlohmann_json::nlohmann_json
         utils_lib
         OpenSSL::SSL

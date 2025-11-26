@@ -62,6 +62,8 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 }})}
             };
             setJson(res, resp);
+        } catch (const std::exception& e) {
+            respondError(res, 400, "bad_request", std::string("error: ") + e.what());
         } catch (...) {
             respondError(res, 400, "bad_request", "invalid JSON body");
         }

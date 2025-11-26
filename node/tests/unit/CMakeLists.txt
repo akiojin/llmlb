@@ -36,6 +36,7 @@ add_executable(ollama-node-unit-tests
 target_link_libraries(ollama-node-unit-tests
     PRIVATE
         test_common
+        llama
         nlohmann_json::nlohmann_json
         utils_lib
         OpenSSL::SSL

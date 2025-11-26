@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 namespace ollama_node {
@@ -34,6 +35,9 @@ public:
 
 private:
     std::string models_dir_;
+
+    // Helper for old manifest format
+    std::string resolveGgufFromManifest(const std::filesystem::path& manifest_path, const std::string& model_name) const;
 };
 
 }  // namespace ollama_node

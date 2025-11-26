@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <array>
 #include "utils/sha256.h"
@@ -14,9 +15,55 @@ namespace ollama_node {
 OllamaCompat::OllamaCompat(std::string models_dir) : models_dir_(std::move(models_dir)) {}
 
 std::string OllamaCompat::resolveGguf(const std::string& model_name) const {
-    const auto manifest_path = fs::path(models_dir_) / model_name / "manifest.json";
-    if (!fs::exists(manifest_path)) return "";
+    // Parse model_name (e.g., "gpt-oss:20b" -> name="gpt-oss", tag="20b")
+    std::string name = model_name;
+    std::string tag = "latest";
+    auto colon_pos = model_name.find(':');
+    if (colon_pos != std::string::npos) {
+        name = model_name.substr(0, colon_pos);
+        tag = model_name.substr(colon_pos + 1);
+    }
 
+    // Ollama manifest path: ~/.ollama/models/manifests/registry.ollama.ai/library/<name>/<tag>
+    const auto manifest_path = fs::path(models_dir_) / "manifests" / "registry.ollama.ai" / "library" / name / tag;
+    if (!fs::exists(manifest_path)) {
+        // Fallback: try old simple format
+        const auto simple_path = fs::path(models_dir_) / model_name / "manifest.json";
+        if (!fs::exists(simple_path)) return "";
+        return resolveGgufFromManifest(simple_path, model_name);
+    }
+
+    try {
+        std::ifstream ifs(manifest_path);
+        json j = json::parse(ifs);
+
+        // Ollama manifest has "layers" array with mediaType and digest
+        if (j.contains("layers") && j["layers"].is_array()) {
+            for (const auto& layer : j["layers"]) {
+                std::string media_type = layer.value("mediaType", "");
+                // GGUF model layer
+                if (media_type == "application/vnd.ollama.image.model") {
+                    std::string digest = layer.value("digest", "");
+                    if (!digest.empty()) {
+                        // Blob path: ~/.ollama/models/blobs/<digest>
+                        // Digest format: "sha256:xxxx" -> "sha256-xxxx"
+                        std::string blob_name = digest;
+                        std::replace(blob_name.begin(), blob_name.end(), ':', '-');
+                        auto blob_path = fs::path(models_dir_) / "blobs" / blob_name;
+                        if (fs::exists(blob_path)) {
+                            return blob_path.string();
+                        }
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        return "";
+    }
+    return "";
+}
+
+std::string OllamaCompat::resolveGgufFromManifest(const fs::path& manifest_path, const std::string& model_name) const {
     try {
         std::ifstream ifs(manifest_path);
         json j = json::parse(ifs);
@@ -24,10 +71,10 @@ std::string OllamaCompat::resolveGguf(const std::string& model_name) const {
             for (const auto& f : j["files"]) {
                 if (f.value("type", "") == "gguf") {
                     auto path = f.value("path", "");
-                    auto name = f.value("name", "");
+                    auto fname = f.value("name", "");
                     std::vector<fs::path> candidates;
                     if (!path.empty()) candidates.push_back(path);
-                    if (!name.empty()) candidates.push_back(name);
+                    if (!fname.empty()) candidates.push_back(fname);
                     if (candidates.empty()) continue;
                     for (const auto& rel : candidates) {
                         auto full = fs::path(models_dir_) / model_name / rel;

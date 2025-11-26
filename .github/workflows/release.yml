@@ -40,63 +40,63 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev
-          cmake -S ollama-node-cpp -B ollama-node-cpp/build -DBUILD_TESTS=OFF
-          cmake --build ollama-node-cpp/build --config Release
+          cmake -S node -B node/build -DBUILD_TESTS=OFF
+          cmake --build node/build --config Release
           mkdir -p dist
-          tar -czf dist/ollama-node-linux-amd64.tar.gz -C ollama-node-cpp/build ollama-node
+          tar -czf dist/ollama-node-linux-amd64.tar.gz -C node/build ollama-node
 
       - name: Build C++ binary (macOS arm64) [cross]
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm lld cmake libssl-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
-          cmake -S ollama-node-cpp -B ollama-node-cpp/build-macos \
+          cmake -S node -B node/build-macos \
             -DCMAKE_SYSTEM_NAME=Darwin \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DBUILD_TESTS=OFF
-          cmake --build ollama-node-cpp/build-macos --config Release
-          tar -czf dist/ollama-node-macos-arm64.tar.gz -C ollama-node-cpp/build-macos ollama-node
+          cmake --build node/build-macos --config Release
+          tar -czf dist/ollama-node-macos-arm64.tar.gz -C node/build-macos ollama-node
 
       - name: Build C++ binary (macOS x64) [cross]
         if: runner.os == 'Linux'
         run: |
-          cmake -S ollama-node-cpp -B ollama-node-cpp/build-macos-x64 \
+          cmake -S node -B node/build-macos-x64 \
             -DCMAKE_SYSTEM_NAME=Darwin \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DBUILD_TESTS=OFF
-          cmake --build ollama-node-cpp/build-macos-x64 --config Release
-          tar -czf dist/ollama-node-macos-x64.tar.gz -C ollama-node-cpp/build-macos-x64 ollama-node
+          cmake --build node/build-macos-x64 --config Release
+          tar -czf dist/ollama-node-macos-x64.tar.gz -C node/build-macos-x64 ollama-node
 
       - name: Build C++ binary (Windows x64) [cross]
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y mingw-w64 cmake libssl-dev
-          cmake -S ollama-node-cpp -B ollama-node-cpp/build-win \
+          cmake -S node -B node/build-win \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_SYSTEM_VERSION=10.0 \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
             -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
             -DBUILD_TESTS=OFF
-          cmake --build ollama-node-cpp/build-win --config Release
+          cmake --build node/build-win --config Release
           mkdir -p dist/win
-          cp ollama-node-cpp/build-win/ollama-node.exe dist/win/
+          cp node/build-win/ollama-node.exe dist/win/
           (cd dist && zip -r ollama-node-windows-x64.zip win)
 
       - name: Build C++ binary (Linux CUDA)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev
-          cmake -S ollama-node-cpp -B ollama-node-cpp/build-cuda \
+          cmake -S node -B node/build-cuda \
             -DBUILD_TESTS=OFF \
             -DBUILD_WITH_CUDA=ON
-          cmake --build ollama-node-cpp/build-cuda --config Release
+          cmake --build node/build-cuda --config Release
           mkdir -p dist
-          tar -czf dist/ollama-node-linux-cuda.tar.gz -C ollama-node-cpp/build-cuda ollama-node
+          tar -czf dist/ollama-node-linux-cuda.tar.gz -C node/build-cuda ollama-node
 
       - name: Semantic Release
         env:

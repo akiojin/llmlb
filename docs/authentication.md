@@ -649,7 +649,8 @@ curl -X POST http://localhost:8080/api/auth/login \
 
    ```bash
    rm ~/.ollama-agent/token
-   # Re-run the agent (ollama-node-cpp)
+   # Re-run the node
+   npm run start:node
    ```
 
 2. **Verify coordinator URL:**

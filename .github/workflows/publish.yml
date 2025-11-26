@@ -84,7 +84,7 @@ jobs:
           echo "CXX_x86_64_apple_darwin=clang++" >> $GITHUB_ENV
 
       - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p or-router
+        run: cargo build --release --target ${{ matrix.target }} -p llm-router
 
       - name: Install WiX Toolset
         if: runner.os == 'Windows'
@@ -97,10 +97,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="ollama-router-${{ matrix.artifact }}.tar.gz"
-          staging="dist/ollama-router-${{ matrix.artifact }}"
+          archive="llm-router-${{ matrix.artifact }}.tar.gz"
+          staging="dist/llm-router-${{ matrix.artifact }}"
           mkdir -p "$staging"
-          cp "target/${{ matrix.target }}/release/or-router" "$staging/"
+          cp "target/${{ matrix.target }}/release/llm-router" "$staging/"
           cp README.md README.ja.md LICENSE "$staging/"
           tar czf "$archive" -C dist "$(basename "$staging")"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
@@ -111,14 +111,14 @@ jobs:
         run: |
           set -uo pipefail
           archive="${{ steps.package_unix.outputs.archive }}"
-          [[ "$archive" == ollama-router-* ]] || { echo "::error::unexpected archive name $archive"; exit 1; }
+          [[ "$archive" == llm-router-* ]] || { echo "::error::unexpected archive name $archive"; exit 1; }
           [[ "$archive" == *.tar.gz ]] || { echo "::error::expected .tar.gz archive"; exit 1; }
           set +o pipefail
           root_dir=$(tar -tzf "$archive" 2>&1 | head -1 | cut -d/ -f1)
           set -o pipefail
           [[ -n "$root_dir" ]] || { echo "::error::failed to detect root directory"; exit 1; }
           tar -tzf "$archive" > contents.txt 2>&1
-          grep -q "^${root_dir}/or-router\$" contents.txt || { echo "::error::or-router not found"; exit 1; }
+          grep -q "^${root_dir}/llm-router\$" contents.txt || { echo "::error::llm-router not found"; exit 1; }
           grep -q "^${root_dir}/README.md\$" contents.txt || { echo "::error::README.md not found"; exit 1; }
           grep -q "^${root_dir}/README.ja.md\$" contents.txt || { echo "::error::README.ja.md not found"; exit 1; }
           grep -q "^${root_dir}/LICENSE\$" contents.txt || { echo "::error::LICENSE not found"; exit 1; }
@@ -129,10 +129,10 @@ jobs:
         id: package_windows
         shell: pwsh
         run: |
-          $archive = "ollama-router-${{ matrix.artifact }}.zip"
-          $staging = Join-Path "dist" "ollama-router-${{ matrix.artifact }}"
+          $archive = "llm-router-${{ matrix.artifact }}.zip"
+          $staging = Join-Path "dist" "llm-router-${{ matrix.artifact }}"
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/or-router.exe" $staging
+          Copy-Item "target/${{ matrix.target }}/release/llm-router.exe" $staging
           Copy-Item README.md,README.ja.md,LICENSE $staging
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archive -Force
           "archive=$archive" >> $env:GITHUB_OUTPUT
@@ -142,7 +142,7 @@ jobs:
         shell: pwsh
         run: |
           $archive = "${{ steps.package_windows.outputs.archive }}"
-          if (-not ($archive -like "ollama-router-*")) {
+          if (-not ($archive -like "llm-router-*")) {
             Write-Error "unexpected archive name $archive"
             exit 1
           }
@@ -156,7 +156,7 @@ jobs:
           }
           Expand-Archive -Path $archive -DestinationPath $extractDir -Force
           $files = Get-ChildItem -Path $extractDir -File -Recurse
-          $binaryPrefixes = @("or-router")
+          $binaryPrefixes = @("llm-router")
           foreach ($prefix in $binaryPrefixes) {
             if (-not ($files.Name | Where-Object { $_ -like "$prefix*.exe" })) {
               Write-Error "missing executable matching $prefix*.exe in archive"
@@ -186,11 +186,11 @@ jobs:
           pkg_root_router="$(pwd)/pkgroot-router"
           install_dir_router="$pkg_root_router/usr/local/bin"
           mkdir -p "$install_dir_router"
-          install -m 0755 "target/${{ matrix.target }}/release/or-router" "$install_dir_router/"
-          pkg_router="or-router-${{ matrix.artifact }}.pkg"
+          install -m 0755 "target/${{ matrix.target }}/release/llm-router" "$install_dir_router/"
+          pkg_router="llm-router-${{ matrix.artifact }}.pkg"
           pkgbuild \
             --root "$pkg_root_router" \
-            --identifier "io.ollama.router" \
+            --identifier "io.llm.router" \
             --version "$version" \
             --install-location "/" \
             "$pkg_router"
@@ -208,9 +208,9 @@ jobs:
             exit 1
           }
           $binaryDir = Join-Path $PWD "target/${{ matrix.target }}/release"
-          $routerWxs = Join-Path $PWD "installers/windows/ollama-router.wxs"
-          $routerObj = "ollama-router.wixobj"
-          $routerMsi = "or-router-${{ matrix.artifact }}.msi"
+          $routerWxs = Join-Path $PWD "installers/windows/llm-router.wxs"
+          $routerObj = "llm-router.wixobj"
+          $routerMsi = "llm-router-${{ matrix.artifact }}.msi"
           $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
           $env:PATH = "$wixPath;$env:PATH"
           candle.exe $routerWxs -out $routerObj -dBinariesDir="$binaryDir" -dProductVersion="$version"

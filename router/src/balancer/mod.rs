@@ -5,7 +5,7 @@
 
 use crate::registry::NodeRegistry;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     types::{HealthMetrics, Node, NodeStatus},
 };
@@ -93,8 +93,8 @@ fn compare_spec_by_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ollama_router_common::protocol::RegisterRequest;
-    use ollama_router_common::types::GpuDeviceInfo;
+    use llm_router_common::protocol::RegisterRequest;
+    use llm_router_common::types::GpuDeviceInfo;
     use std::net::{IpAddr, Ipv4Addr};
     use tokio::time::{sleep, timeout, Duration};
 

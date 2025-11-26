@@ -10,7 +10,7 @@ use crate::support::{
     router::{register_node, spawn_test_router},
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use ollama_router_common::protocol::{ChatRequest, ChatResponse};
+use llm_router_common::protocol::{ChatRequest, ChatResponse};
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serial_test::serial;
 
@@ -91,7 +91,7 @@ async fn proxy_chat_end_to_end_success() {
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
         chat_response: AgentChatStubResponse::Success(ChatResponse {
-            message: ollama_router_common::protocol::ChatMessage {
+            message: llm_router_common::protocol::ChatMessage {
                 role: "assistant".into(),
                 content: "Hello from stub".into(),
             },
@@ -113,7 +113,7 @@ async fn proxy_chat_end_to_end_success() {
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "Hello?".into(),
             }],
@@ -142,7 +142,7 @@ async fn proxy_chat_uses_health_check_without_skip_flag() {
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
         chat_response: AgentChatStubResponse::Success(ChatResponse {
-            message: ollama_router_common::protocol::ChatMessage {
+            message: llm_router_common::protocol::ChatMessage {
                 role: "assistant".into(),
                 content: "Hello via health check".into(),
             },
@@ -162,7 +162,7 @@ async fn proxy_chat_uses_health_check_without_skip_flag() {
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "Hello?".into(),
             }],
@@ -207,7 +207,7 @@ async fn proxy_chat_propagates_upstream_error() {
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "missing-model".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "ping".into(),
             }],

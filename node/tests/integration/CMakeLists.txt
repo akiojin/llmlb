@@ -27,11 +27,11 @@ else()
     list(APPEND INTEGRATION_TEST_SOURCES ../../src/system/gpu_detector.cpp)
 endif()
 
-add_executable(ollama-node-integration-tests
+add_executable(llm-node-integration-tests
     ${INTEGRATION_TEST_SOURCES}
 )
 
-target_link_libraries(ollama-node-integration-tests
+target_link_libraries(llm-node-integration-tests
     PRIVATE
         test_common
         llama
@@ -46,23 +46,23 @@ if(APPLE)
     find_library(METAL_FRAMEWORK Metal)
     find_library(FOUNDATION_FRAMEWORK Foundation)
     if(METAL_FRAMEWORK AND FOUNDATION_FRAMEWORK)
-        target_link_libraries(ollama-node-integration-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
-        target_compile_definitions(ollama-node-integration-tests PRIVATE USE_METAL=1)
+        target_link_libraries(llm-node-integration-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
+        target_compile_definitions(llm-node-integration-tests PRIVATE USE_METAL=1)
     endif()
 endif()
 
-target_include_directories(ollama-node-integration-tests
+target_include_directories(llm-node-integration-tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
-target_compile_definitions(ollama-node-integration-tests
+target_compile_definitions(llm-node-integration-tests
     PRIVATE
         OLLAMA_NODE_TESTING=1
 )
 
 add_test(
-    NAME ollama-node-integration-tests
-    COMMAND ollama-node-integration-tests
+    NAME llm-node-integration-tests
+    COMMAND llm-node-integration-tests
 )

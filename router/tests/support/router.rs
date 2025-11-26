@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
 use reqwest::{Client, Response};
@@ -39,7 +39,7 @@ pub async fn spawn_test_router() -> TestServer {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = create_test_db_pool().await;
     let jwt_secret = test_jwt_secret();

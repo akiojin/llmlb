@@ -11,8 +11,8 @@ Steps for working on this repository locally.
 
 ## Setup
 ```bash
-git clone https://github.com/akiojin/ollama-router.git
-cd ollama-router
+git clone https://github.com/akiojin/llm-router.git
+cd llm-router
 pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendored
 ```
 
@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 
 - Format/lint/test everything: `make quality-checks`
 - OpenAI-only tests: `make openai-tests`
-- Router dev run: `cargo run -p or-router`
+- Router dev run: `cargo run -p llm-router`
 - C++ node build: `npm run build:node`
 - C++ node run: `npm run start:node`
 

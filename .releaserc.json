@@ -1,6 +1,6 @@
 {
   "branches": ["main"],
-  "repositoryUrl": "https://github.com/akiojin/ollama-router",
+  "repositoryUrl": "https://github.com/akiojin/llm-router",
   "tagFormat": "v${version}",
   "npmPublish": false,
   "tarballDir": false,
@@ -18,24 +18,24 @@
       {
         "assets": [
           {
-            "path": "dist/ollama-node-linux-amd64.tar.gz",
-            "label": "ollama-node-linux-amd64"
+            "path": "dist/llm-node-linux-amd64.tar.gz",
+            "label": "llm-node-linux-amd64"
           },
           {
-            "path": "dist/ollama-node-macos-arm64.tar.gz",
-            "label": "ollama-node-macos-arm64"
+            "path": "dist/llm-node-macos-arm64.tar.gz",
+            "label": "llm-node-macos-arm64"
           },
           {
-            "path": "dist/ollama-node-macos-x64.tar.gz",
-            "label": "ollama-node-macos-x64"
+            "path": "dist/llm-node-macos-x64.tar.gz",
+            "label": "llm-node-macos-x64"
           },
           {
-            "path": "dist/ollama-node-windows-x64.zip",
-            "label": "ollama-node-windows-x64"
+            "path": "dist/llm-node-windows-x64.zip",
+            "label": "llm-node-windows-x64"
           },
           {
-            "path": "dist/ollama-node-linux-cuda.tar.gz",
-            "label": "ollama-node-linux-cuda"
+            "path": "dist/llm-node-linux-cuda.tar.gz",
+            "label": "llm-node-linux-cuda"
           }
         ]
       }

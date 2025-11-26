@@ -1,6 +1,6 @@
 //! Ollama Router Server Entry Point
 
-use or_router::{api, auth, balancer, health, logging, registry, tasks, AppState};
+use llm_router::{api, auth, balancer, health, logging, registry, tasks, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -48,7 +48,7 @@ impl ServerConfig {
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn main() {
     logging::init().expect("failed to initialize logging");
-    use or_router::gui::tray::{run_with_system_tray, TrayOptions};
+    use llm_router::gui::tray::{run_with_system_tray, TrayOptions};
     use std::thread;
     use tokio::runtime::Builder;
 
@@ -133,10 +133,10 @@ async fn run_server(config: ServerConfig) {
     info!("Load balancer mode: {}", load_balancer_mode);
 
     let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new()
+        llm_router::db::request_history::RequestHistoryStorage::new()
             .expect("Failed to initialize request history storage"),
     );
-    or_router::db::request_history::start_cleanup_task(request_history.clone());
+    llm_router::db::request_history::start_cleanup_task(request_history.clone());
 
     let task_manager = tasks::DownloadTaskManager::new();
 

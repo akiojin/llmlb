@@ -6,7 +6,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use ollama_router_common::auth::{Claims, UserRole};
+use llm_router_common::auth::{Claims, UserRole};
 use sha2::{Digest, Sha256};
 
 /// JWT認証ミドルウェア

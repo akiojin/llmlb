@@ -50,7 +50,7 @@
         <File
           Id="CoordinatorExe"
           KeyPath="yes"
-          Source="$(var.BinariesDir)\or-router.exe"
+          Source="$(var.BinariesDir)\llm-router.exe"
         />
       </Component>
 
@@ -59,7 +59,7 @@
           Id="CoordinatorShortcut"
           Name="Ollama Router"
           Description="Ollama Router を起動"
-          Target="[INSTALLFOLDER]or-router.exe"
+          Target="[INSTALLFOLDER]llm-router.exe"
           WorkingDirectory="INSTALLFOLDER"
           Icon="CoordIcon"
           IconIndex="0"

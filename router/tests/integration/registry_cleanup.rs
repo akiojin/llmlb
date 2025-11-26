@@ -2,8 +2,8 @@
 //!
 //! ストレージに保存されたGPU無しノードが、Coordinator起動時に自動削除されることを確認する。
 
+use llm_router::registry::NodeRegistry;
 use once_cell::sync::Lazy;
-use or_router::registry::NodeRegistry;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;

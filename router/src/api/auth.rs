@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use ollama_router_common::auth::Claims;
+use llm_router_common::auth::Claims;
 use serde::{Deserialize, Serialize};
 
 /// ログインリクエスト

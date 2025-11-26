@@ -2,7 +2,7 @@
 //!
 //! T014: JSONからSQLiteへのマイグレーション
 
-use or_router::db::migrations::{
+use llm_router::db::migrations::{
     import_agents_from_json, initialize_database,
 };
 

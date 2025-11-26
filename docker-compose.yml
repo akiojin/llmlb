@@ -1,13 +1,13 @@
 services:
-  ollama-router:
+  llm-router:
     build:
       context: .
-    container_name: ollama-router
+    container_name: llm-router
     mem_limit: 16g
     mem_reservation: 13g
     memswap_limit: 18g
     volumes:
-      - .:/ollama-router
+      - .:/llm-router
       - bash-history:/root/.bash_history_dir
       - ./.docker/bash_history:/root/.bash_history
       - claude-config:/root/.claude
@@ -39,19 +39,19 @@ services:
       - "11434-11440:11434-11440"
     stdin_open: true
     tty: true
-    working_dir: /ollama-router
+    working_dir: /llm-router
 
-  ollama-node-cpp:
+  llm-node:
     build:
       context: ./node
       dockerfile: Dockerfile
       args:
         CUDA: ${OLLAMA_CPP_CUDA:-cpu} # cpu | cuda
-    container_name: ollama-node-cpp
+    container_name: llm-node
     depends_on:
-      - ollama-router
+      - llm-router
     environment:
-      - OLLAMA_ROUTER_URL=http://ollama-router:8080
+      - OLLAMA_ROUTER_URL=http://llm-router:8080
       - OLLAMA_MODELS_DIR=/models
       - OLLAMA_NODE_PORT=11435
       - OLLAMA_ALLOW_NO_GPU=1

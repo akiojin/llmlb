@@ -4,7 +4,7 @@
 
 use crate::registry::NodeRegistry;
 use chrono::Utc;
-use ollama_router_common::types::NodeStatus;
+use llm_router_common::types::NodeStatus;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
@@ -84,7 +84,7 @@ impl HealthMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
 
     #[tokio::test]

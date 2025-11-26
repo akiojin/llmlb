@@ -27,7 +27,7 @@ pub(crate) mod test_utils {
 }
 
 use chrono::Utc;
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     types::Node,
 };
@@ -204,7 +204,7 @@ async fn recover_corrupted_nodes_file(data_file: &PathBuf) -> RouterResult<()> {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use ollama_router_common::types::{GpuDeviceInfo, NodeStatus};
+    use llm_router_common::types::{GpuDeviceInfo, NodeStatus};
     use std::net::IpAddr;
     use tempfile::tempdir;
 

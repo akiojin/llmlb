@@ -8,7 +8,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     log::{tail_json_logs, LogEntry},
     types::NodeStatus,
@@ -148,7 +148,7 @@ mod tests {
         tasks::DownloadTaskManager,
     };
     use axum::extract::State as AxumState;
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::{net::IpAddr, sync::Arc};
     use tempfile::tempdir;
     use wiremock::matchers::{method, path};

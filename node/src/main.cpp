@@ -136,7 +136,7 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
         spdlog::info("Node IP address: {}", info.ip_address);
-        info.ollama_version = "1.0.0";  // ollama-node version
+        info.ollama_version = "1.0.0";  // llm-node version
         // Router calculates API port as ollama_port + 1, so report node_port - 1
         info.ollama_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 11434);
         info.gpu_available = !gpu_devices.empty();
@@ -236,7 +236,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    std::cout << "ollama-node v1.0.0 starting..." << std::endl;
+    std::cout << "llm-node v1.0.0 starting..." << std::endl;
 
     auto cfg = ollama_node::loadNodeConfig();
     return run_node(cfg, /*single_iteration=*/false);

@@ -1,12 +1,12 @@
-# Ollama Router
+# LLM Router
 
-A centralized management system for coordinating Ollama instances across multiple machines
+A centralized management system for coordinating LLM inference nodes across multiple machines
 
 English | [日本語](./README.ja.md)
 
 ## Overview
 
-Ollama Router is a powerful centralized system that provides unified management and a single API endpoint for multiple Ollama instances running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
+LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference nodes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
 
 ## Key Features
 
@@ -32,14 +32,14 @@ Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
 
 ## Quick Start
 
-### Router (or-router)
+### Router (llm-router)
 
 ```bash
 # Build
-cargo build --release -p or-router
+cargo build --release -p llm-router
 
 # Run
-./target/release/or-router
+./target/release/llm-router
 # Default: http://0.0.0.0:8080
 
 # Access dashboard
@@ -84,7 +84,7 @@ npm run start:node
 
 # Or manually:
 # cd node && cmake -B build -S . && cmake --build build --config Release
-# OLLAMA_ROUTER_URL=http://localhost:8080 ./node/build/ollama-node
+# OLLAMA_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 ```
 
 **Environment Variables:**
@@ -101,17 +101,17 @@ npm run start:node
 
 ```bash
 # Build
-docker build --build-arg CUDA=cpu -t ollama-node-cpp:latest node/
+docker build --build-arg CUDA=cpu -t llm-node:latest node/
 
 # Run
 docker run --rm -p 11435:11435 \
   -e OLLAMA_ROUTER_URL=http://host.docker.internal:8080 \
-  ollama-node-cpp:latest
+  llm-node:latest
 ```
 
 ## Load Balancing
 
-Ollama Router supports multiple load balancing strategies to optimize request distribution across agents.
+LLM Router supports multiple load balancing strategies to optimize request distribution across agents.
 
 ### Strategies
 
@@ -284,7 +284,7 @@ curl http://coordinator:8080/api/chat -d '...'
 ## Project Structure
 
 ```
-ollama-router/
+llm-router/
 ├── common/              # Common library (types, protocols, errors)
 │   ├── src/
 │   │   ├── types.rs     # Agent, HealthMetrics, Request types
@@ -619,7 +619,7 @@ Hook tests are automatically executed in CI/CD:
 
 ## Request History
 
-Ollama Router automatically logs all requests and responses for debugging,
+LLM Router automatically logs all requests and responses for debugging,
 auditing, and analysis purposes.
 
 ### Features
@@ -664,8 +664,8 @@ GET /api/dashboard/request-responses/export
 ### Storage
 
 Request history is stored in JSON format at:
-- Linux/macOS: `~/.ollama-router/request_history.json`
-- Windows: `%USERPROFILE%\.ollama-router\request_history.json`
+- Linux/macOS: `~/.llm-router/request_history.json`
+- Windows: `%USERPROFILE%\.llm-router\request_history.json`
 
 The file is automatically managed with:
 - Atomic writes (temp file + rename) to prevent corruption

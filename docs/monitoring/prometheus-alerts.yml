@@ -1,8 +1,8 @@
 groups:
-  - name: ollama-node
+  - name: llm-node
     rules:
       - alert: OllamaNodeDown
-        expr: up{job="ollama-node"} == 0
+        expr: up{job="llm-node"} == 0
         for: 1m
         labels:
           severity: critical

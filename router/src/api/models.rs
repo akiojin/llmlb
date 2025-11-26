@@ -16,7 +16,7 @@ use crate::{
     registry::models::{DownloadStatus, DownloadTask, InstalledModel, ModelInfo},
     AppState,
 };
-use ollama_router_common::error::RouterError;
+use llm_router_common::error::RouterError;
 
 /// モデル名の妥当性を検証
 ///
@@ -318,7 +318,7 @@ pub async fn distribute_models(
         let node = state.registry.get(node_id).await?;
 
         // ノードがオンラインであることを確認
-        if node.status != ollama_router_common::types::NodeStatus::Online {
+        if node.status != llm_router_common::types::NodeStatus::Online {
             tracing::error!(
                 "Cannot distribute to offline node: node_id={}, status={:?}",
                 node_id,
@@ -429,7 +429,7 @@ pub async fn pull_model_to_node(
     let node = state.registry.get(node_id).await?;
 
     // ノードがオンラインであることを確認
-    if node.status != ollama_router_common::types::NodeStatus::Online {
+    if node.status != llm_router_common::types::NodeStatus::Online {
         tracing::error!(
             "Cannot pull to offline node: node_id={}, status={:?}",
             node_id,

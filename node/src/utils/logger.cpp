@@ -33,7 +33,7 @@ void init(const std::string& level,
         sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(file_path, true));
     }
 
-    auto logger = std::make_shared<spdlog::logger>("ollama-node", sinks.begin(), sinks.end());
+    auto logger = std::make_shared<spdlog::logger>("llm-node", sinks.begin(), sinks.end());
     spdlog::set_default_logger(logger);
 
     spdlog::set_pattern(pattern);

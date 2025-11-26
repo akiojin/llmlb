@@ -15,11 +15,11 @@ set(CONTRACT_TEST_SOURCES
     ../../src/runtime/state.cpp
 )
 
-add_executable(ollama-node-contract-tests
+add_executable(llm-node-contract-tests
     ${CONTRACT_TEST_SOURCES}
 )
 
-target_link_libraries(ollama-node-contract-tests
+target_link_libraries(llm-node-contract-tests
     PRIVATE
         test_common
         llama
@@ -29,13 +29,13 @@ target_link_libraries(ollama-node-contract-tests
         OpenSSL::Crypto
 )
 
-target_include_directories(ollama-node-contract-tests
+target_include_directories(llm-node-contract-tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
 add_test(
-    NAME ollama-node-contract-tests
-    COMMAND ollama-node-contract-tests
+    NAME llm-node-contract-tests
+    COMMAND llm-node-contract-tests
 )

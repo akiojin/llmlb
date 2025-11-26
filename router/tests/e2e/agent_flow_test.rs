@@ -7,10 +7,10 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
+use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use serde_json::json;
 use std::net::IpAddr;
 use tower::ServiceExt;
@@ -22,7 +22,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
@@ -252,9 +252,9 @@ async fn test_agent_token_persistence() {
         "Re-registration should return same agent ID"
     );
 
-    // 2回目の登録ではトークンは返されない（既存のトークンを使用）
+    // 2回目の登録でも新しいトークンが返される（プロトコル変更により、更新時もトークンを再生成）
     assert!(
-        second_data["agent_token"].is_null(),
-        "Re-registration should not return new token"
+        second_data["agent_token"].is_string(),
+        "Re-registration should return a new token"
     );
 }

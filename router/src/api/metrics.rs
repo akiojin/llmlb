@@ -2,7 +2,7 @@
 
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use ollama_router_common::types::AgentMetrics;
+use llm_router_common::types::AgentMetrics;
 
 use super::nodes::AppError;
 

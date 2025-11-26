@@ -8,8 +8,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use ollama_router_common::auth::UserRole;
-use or_router::{
+use llm_router_common::auth::UserRole;
+use llm_router::{
     api, balancer::LoadManager, registry::AgentRegistry, AppState,
 };
 use serde_json::json;
@@ -22,16 +22,16 @@ async fn build_app() -> Router {
     let registry = AgentRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new().unwrap(),
+        llm_router::db::request_history::RequestHistoryStorage::new().unwrap(),
     );
-    let task_manager = or_router::tasks::DownloadTaskManager::new();
+    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
 
     // テスト用の管理者ユーザーを作成
     let password_hash =
-        or_router::auth::password::hash_password("password123").unwrap();
-    or_router::db::users::create(
+        llm_router::auth::password::hash_password("password123").unwrap();
+    llm_router::db::users::create(
         &db_pool,
         "admin",
         &password_hash,
@@ -42,8 +42,8 @@ async fn build_app() -> Router {
 
     // テスト用のViewerユーザーを作成
     let viewer_password_hash =
-        or_router::auth::password::hash_password("viewer123").unwrap();
-    or_router::db::users::create(
+        llm_router::auth::password::hash_password("viewer123").unwrap();
+    llm_router::db::users::create(
         &db_pool,
         "viewer",
         &viewer_password_hash,

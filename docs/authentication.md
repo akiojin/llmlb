@@ -224,7 +224,7 @@ CREATE TABLE agent_tokens (
 On first startup, the coordinator prompts for admin account creation:
 
 ```bash
-$ ./target/release/or-router
+$ ./target/release/llm-router
 
 No admin users found. Please create the first admin account.
 Username: admin
@@ -709,7 +709,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 Set environment variable:
 
 ```bash
-RUST_LOG=debug ./or-router
+RUST_LOG=debug ./llm-router
 ```
 
 Look for authentication-related logs:
@@ -762,7 +762,7 @@ curl http://localhost:8080/api/users \
 # WARNING: This requires direct database access and Rust tooling
 
 # 1. Generate new password hash
-echo -n "new-password" | cargo run -p ollama-router-common --bin hash-password
+echo -n "new-password" | cargo run -p llm-router-common --bin hash-password
 
 # Output: $2b$12$...
 
@@ -778,7 +778,7 @@ UPDATE users SET password_hash = '$2b$12$...' WHERE username = 'admin';
 rm ~/.or/jwt_secret
 
 # Restart coordinator (generates new secret)
-./or-router
+./llm-router
 
 # All existing JWT tokens are now invalid
 # Users must re-login

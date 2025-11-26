@@ -11,7 +11,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use ollama_router_common::protocol::{ChatRequest, ChatResponse, GenerateRequest};
+use llm_router_common::protocol::{ChatRequest, ChatResponse, GenerateRequest};
 use reqwest::{header, Client};
 use serde_json::{json, Value};
 use tokio::time::sleep;
@@ -97,7 +97,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
         chat_response: ChatResponse {
-            message: ollama_router_common::protocol::ChatMessage {
+            message: llm_router_common::protocol::ChatMessage {
                 role: "assistant".into(),
                 content: "Hello from agent".into(),
             },
@@ -127,7 +127,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "hello?".into(),
             }],
@@ -145,7 +145,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "stream?".into(),
             }],

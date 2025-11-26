@@ -8,19 +8,19 @@
 
 ## 1) Rustソースからビルド（推奨）
 ```bash
-git clone https://github.com/akiojin/ollama-router.git
-cd ollama-router
+git clone https://github.com/akiojin/llm-router.git
+cd llm-router
 make quality-checks   # fmt/clippy/test/markdownlint 一式
-cargo build -p or-router --release
+cargo build -p llm-router --release
 ```
-生成物: `target/release/or-router`
+生成物: `target/release/llm-router`
 
 ## 2) Docker で起動
 ```bash
-docker build -t ollama-router:latest .
+docker build -t llm-router:latest .
 docker run --rm -p 8080:8080 --gpus all \
   -e OPENAI_API_KEY=... \
-  ollama-router:latest
+  llm-router:latest
 ```
 GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
 
@@ -35,7 +35,7 @@ cmake -B build -S .
 cmake --build build --config Release
 ```
 
-生成物: `node/build/ollama-node`
+生成物: `node/build/llm-node`
 
 ## 4) 基本設定
 - ルーター（Rust）
@@ -52,10 +52,10 @@ cmake --build build --config Release
 ## 5) 起動例
 ```bash
 # ルーター
-cargo run -p or-router
+cargo run -p llm-router
 
 # ノード (別シェル)
-./node/build/ollama-node
+./node/build/llm-node
 ```
 
 ## 6) 動作確認

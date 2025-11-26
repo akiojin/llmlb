@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ollama-node VERSION 1.0.0 LANGUAGES CXX C)
+project(llm-node VERSION 1.0.0 LANGUAGES CXX C)
 
 # Enable Objective-C/C++ on Apple platforms for Metal support
 if(APPLE)
@@ -142,10 +142,10 @@ if(APPLE)
 endif()
 
 # Create executable
-add_executable(ollama-node ${SOURCES})
+add_executable(llm-node ${SOURCES})
 
 # Link libraries
-target_link_libraries(ollama-node
+target_link_libraries(llm-node
     llama
     utils_lib
     ${CMAKE_THREAD_LIBS_INIT}
@@ -156,14 +156,14 @@ target_link_libraries(ollama-node
 # Static linking if requested
 if(STATIC_BUILD)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        set_target_properties(ollama-node PROPERTIES
+        set_target_properties(llm-node PROPERTIES
             LINK_FLAGS "-static"
         )
     endif()
 endif()
 
 # Installation
-install(TARGETS ollama-node
+install(TARGETS llm-node
     RUNTIME DESTINATION bin
 )
 
@@ -174,11 +174,11 @@ if(BUILD_TESTS)
 endif()
 
 # Packaging (DEB/RPM via CPack)
-set(CPACK_PACKAGE_NAME "ollama-node")
-set(CPACK_PACKAGE_VENDOR "ollama-router")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Ollama-compatible C++ node")
+set(CPACK_PACKAGE_NAME "llm-node")
+set(CPACK_PACKAGE_VENDOR "llm-router")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "LLM inference node with llama.cpp")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_CONTACT "oss@ollama-router.local")
+set(CPACK_PACKAGE_CONTACT "oss@llm-router.local")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE")
 set(CPACK_GENERATOR "DEB;RPM")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libssl3")
@@ -187,7 +187,7 @@ include(CPack)
 
 # Print configuration summary
 message(STATUS "")
-message(STATUS "ollama-node configuration summary:")
+message(STATUS "llm-node configuration summary:")
 message(STATUS "  Build type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard:      ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler:          ${CMAKE_CXX_COMPILER_ID}")

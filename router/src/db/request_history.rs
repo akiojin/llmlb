@@ -3,7 +3,7 @@
 //! JSONファイルベースでリクエスト履歴を永続化
 
 use chrono::{DateTime, Duration, Utc};
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RecordStatus, RequestResponseRecord},
 };
@@ -263,7 +263,7 @@ pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
-    use ollama_router_common::protocol::RequestType;
+    use llm_router_common::protocol::RequestType;
     use std::net::IpAddr;
     use tempfile::tempdir;
 

@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::AgentRegistry, tasks::DownloadTaskManager, AppState,
 };
 use serde_json::json;
@@ -22,7 +22,7 @@ async fn build_app() -> Router {
     let registry = AgentRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new().unwrap(),
+        llm_router::db::request_history::RequestHistoryStorage::new().unwrap(),
     );
     let task_manager = DownloadTaskManager::new();
     let db_pool = support::router::create_test_db_pool().await;
@@ -30,12 +30,12 @@ async fn build_app() -> Router {
 
     // テスト用の管理者ユーザーを作成
     let password_hash =
-        or_router::auth::password::hash_password("password123").unwrap();
-    or_router::db::users::create(
+        llm_router::auth::password::hash_password("password123").unwrap();
+    llm_router::db::users::create(
         &db_pool,
         "admin",
         &password_hash,
-        ollama_router_common::auth::UserRole::Admin,
+        llm_router_common::auth::UserRole::Admin,
     )
     .await
     .ok();

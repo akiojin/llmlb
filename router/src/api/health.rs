@@ -2,7 +2,7 @@
 
 use crate::{api::nodes::AppError, balancer::MetricsUpdate, AppState};
 use axum::{extract::State, Json};
-use ollama_router_common::protocol::HealthCheckRequest;
+use llm_router_common::protocol::HealthCheckRequest;
 
 /// POST /api/health - ヘルスチェック受信
 pub async fn health_check(
@@ -57,7 +57,7 @@ pub async fn health_check(
 mod tests {
     use super::*;
     use crate::{balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager};
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
     use uuid::Uuid;
 
@@ -131,10 +131,7 @@ mod tests {
 
         // ノードが更新されたことを確認
         let agent = state.registry.get(register_response.node_id).await.unwrap();
-        assert_eq!(
-            agent.status,
-            ollama_router_common::types::NodeStatus::Online
-        );
+        assert_eq!(agent.status, llm_router_common::types::NodeStatus::Online);
         assert_eq!(agent.loaded_models, vec!["gpt-oss:20b"]);
     }
 

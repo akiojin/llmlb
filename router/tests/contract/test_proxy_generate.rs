@@ -10,7 +10,7 @@ use crate::support::{
     router::{register_node, spawn_test_router},
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use ollama_router_common::protocol::GenerateRequest;
+use llm_router_common::protocol::GenerateRequest;
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serde_json::Value;
 use serial_test::serial;

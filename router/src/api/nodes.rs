@@ -6,7 +6,7 @@ use crate::{
     AppState,
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use ollama_router_common::{
+use llm_router_common::{
     error::RouterError,
     protocol::{RegisterRequest, RegisterResponse},
     types::Node,
@@ -32,7 +32,7 @@ pub async fn register_node(
             req.machine_name
         );
         return Err(AppError(RouterError::Common(
-            ollama_router_common::error::CommonError::Validation(
+            llm_router_common::error::CommonError::Validation(
                 "GPU hardware is required for agent registration. gpu_available must be true."
                     .to_string(),
             ),
@@ -45,7 +45,7 @@ pub async fn register_node(
             req.machine_name
         );
         return Err(AppError(RouterError::Common(
-            ollama_router_common::error::CommonError::Validation(
+            llm_router_common::error::CommonError::Validation(
                 "GPU hardware is required for agent registration. No GPU devices detected in gpu_devices array."
                     .to_string(),
             ),
@@ -58,7 +58,7 @@ pub async fn register_node(
             req.machine_name
         );
         return Err(AppError(RouterError::Common(
-            ollama_router_common::error::CommonError::Validation(
+            llm_router_common::error::CommonError::Validation(
                 "GPU hardware is required for agent registration. Invalid GPU device information (empty model or zero count)."
                     .to_string(),
             ),
@@ -187,7 +187,7 @@ pub async fn register_node(
     response.agent_api_port = Some(node_api_port);
 
     // エージェントトークンを生成（更新時は既存トークンを削除して再生成）
-    if response.status == ollama_router_common::protocol::RegisterStatus::Updated {
+    if response.status == llm_router_common::protocol::RegisterStatus::Updated {
         // 既存トークンを削除
         let _ = crate::db::agent_tokens::delete(&state.db_pool, response.node_id).await;
     }
@@ -224,8 +224,8 @@ pub async fn register_node(
 
     // HTTPステータスコードを決定（新規登録=201, 更新=200）
     let status_code = match response.status {
-        ollama_router_common::protocol::RegisterStatus::Registered => StatusCode::CREATED,
-        ollama_router_common::protocol::RegisterStatus::Updated => StatusCode::OK,
+        llm_router_common::protocol::RegisterStatus::Registered => StatusCode::CREATED,
+        llm_router_common::protocol::RegisterStatus::Updated => StatusCode::OK,
     };
 
     // ノード登録成功後、ルーターがサポートする全モデルを自動配布
@@ -429,7 +429,7 @@ mod tests {
         tasks::DownloadTaskManager,
     };
     use axum::body::to_bytes;
-    use ollama_router_common::{
+    use llm_router_common::{
         protocol::RegisterStatus,
         types::{GpuDeviceInfo, NodeStatus},
     };

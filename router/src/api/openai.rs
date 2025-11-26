@@ -8,7 +8,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use ollama_router_common::{
+use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
 };
@@ -884,7 +884,7 @@ mod tests {
         tasks::DownloadTaskManager, AppState,
     };
     use axum::body::to_bytes;
-    use ollama_router_common::protocol::RequestType;
+    use llm_router_common::protocol::RequestType;
     use serde_json::json;
     use serial_test::serial;
     use sqlx::SqlitePool;
@@ -934,7 +934,12 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn openai_prefix_requires_api_key() {
+        // Save and remove any existing API key to test error case
+        let saved = std::env::var("OPENAI_API_KEY").ok();
+        std::env::remove_var("OPENAI_API_KEY");
+
         let payload = json!({"model":"openai:gpt-4o","messages":[]});
         let err = proxy_openai_cloud_post("/v1/chat/completions", "openai:gpt-4o", false, payload)
             .await
@@ -945,10 +950,20 @@ mod tests {
             "expected error mentioning OPENAI_API_KEY, got {}",
             msg
         );
+
+        // Restore API key if it was set
+        if let Some(key) = saved {
+            std::env::set_var("OPENAI_API_KEY", key);
+        }
     }
 
     #[tokio::test]
+    #[serial]
     async fn google_prefix_requires_api_key() {
+        // Save and remove any existing API key to test error case
+        let saved = std::env::var("GOOGLE_API_KEY").ok();
+        std::env::remove_var("GOOGLE_API_KEY");
+
         let payload = json!({"model":"google:gemini-pro","messages":[]});
         let err =
             proxy_openai_cloud_post("/v1/chat/completions", "google:gemini-pro", false, payload)
@@ -960,10 +975,20 @@ mod tests {
             "expected GOOGLE_API_KEY error, got {}",
             msg
         );
+
+        // Restore API key if it was set
+        if let Some(key) = saved {
+            std::env::set_var("GOOGLE_API_KEY", key);
+        }
     }
 
     #[tokio::test]
+    #[serial]
     async fn anthropic_prefix_requires_api_key() {
+        // Save and remove any existing API key to test error case
+        let saved = std::env::var("ANTHROPIC_API_KEY").ok();
+        std::env::remove_var("ANTHROPIC_API_KEY");
+
         let payload = json!({"model":"anthropic:claude-3","messages":[]});
         let err =
             proxy_openai_cloud_post("/v1/chat/completions", "anthropic:claude-3", false, payload)
@@ -975,6 +1000,11 @@ mod tests {
             "expected ANTHROPIC_API_KEY error, got {}",
             msg
         );
+
+        // Restore API key if it was set
+        if let Some(key) = saved {
+            std::env::set_var("ANTHROPIC_API_KEY", key);
+        }
     }
 
     #[tokio::test]
@@ -1104,7 +1134,12 @@ mod tests {
         );
     }
     #[tokio::test]
+    #[serial]
     async fn streaming_allowed_for_cloud_prefix() {
+        // Save and remove any existing API key to test error case
+        let saved = std::env::var("OPENAI_API_KEY").ok();
+        std::env::remove_var("OPENAI_API_KEY");
+
         let payload = json!({"model":"openai:gpt-4o","messages":[],"stream":true});
         let err = proxy_openai_cloud_post("/v1/chat/completions", "openai:gpt-4o", true, payload)
             .await
@@ -1115,5 +1150,10 @@ mod tests {
             "expected API key error (stream path), got {}",
             msg
         );
+
+        // Restore API key if it was set
+        if let Some(key) = saved {
+            std::env::set_var("OPENAI_API_KEY", key);
+        }
     }
 }

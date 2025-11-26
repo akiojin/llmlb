@@ -16,7 +16,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use ollama_router_common::types::{GpuDeviceInfo, HealthMetrics, NodeStatus};
+use llm_router_common::types::{GpuDeviceInfo, HealthMetrics, NodeStatus};
 use serde::Serialize;
 use std::{collections::HashMap, time::Instant};
 use uuid::Uuid;
@@ -356,14 +356,14 @@ pub async fn list_request_responses(
 pub async fn get_request_response_detail(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
-) -> Result<Json<ollama_router_common::protocol::RequestResponseRecord>, AppError> {
+) -> Result<Json<llm_router_common::protocol::RequestResponseRecord>, AppError> {
     let records = state
         .request_history
         .load_records()
         .await
         .map_err(AppError::from)?;
     let record = records.into_iter().find(|r| r.id == id).ok_or_else(|| {
-        ollama_router_common::error::RouterError::Database(format!("Record {} not found", id))
+        llm_router_common::error::RouterError::Database(format!("Record {} not found", id))
     })?;
     Ok(Json(record))
 }
@@ -392,13 +392,13 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
         "completed_at",
     ])
     .map_err(|e| {
-        ollama_router_common::error::RouterError::Internal(format!("CSV header error: {}", e))
+        llm_router_common::error::RouterError::Internal(format!("CSV header error: {}", e))
     })?;
 
     for record in records {
         let status_str = match &record.status {
-            ollama_router_common::protocol::RecordStatus::Success => "success".to_string(),
-            ollama_router_common::protocol::RecordStatus::Error { message } => {
+            llm_router_common::protocol::RecordStatus::Success => "success".to_string(),
+            llm_router_common::protocol::RecordStatus::Error { message } => {
                 format!("error: {}", message)
             }
         };
@@ -420,12 +420,12 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
             record.completed_at.to_rfc3339(),
         ])
         .map_err(|e| {
-            ollama_router_common::error::RouterError::Internal(format!("CSV write error: {}", e))
+            llm_router_common::error::RouterError::Internal(format!("CSV write error: {}", e))
         })?;
     }
 
     let csv_data = wtr.into_inner().map_err(|e| {
-        ollama_router_common::error::RouterError::Internal(format!("CSV finalize error: {}", e))
+        llm_router_common::error::RouterError::Internal(format!("CSV finalize error: {}", e))
     })?;
 
     let response = Response::builder()
@@ -449,7 +449,7 @@ mod tests {
         registry::NodeRegistry,
         tasks::DownloadTaskManager,
     };
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::{IpAddr, Ipv4Addr};
     use tokio::time::Duration;
 

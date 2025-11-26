@@ -3,7 +3,7 @@
 //! ノード経由でモデル情報を取得し、事前定義リストと統合
 
 use crate::registry::models::ModelInfo;
-use ollama_router_common::error::{RouterError, RouterResult};
+use llm_router_common::error::{RouterError, RouterResult};
 use reqwest::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;

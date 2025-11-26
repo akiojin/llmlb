@@ -1,5 +1,5 @@
 [package]
-name = "or-router"
+name = "llm-router"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 build = "build.rs"
 
 [dependencies]
-ollama-router-common = { path = "../common" }
+llm-router-common = { path = "../common" }
 
 # 非同期ランタイム
 tokio = { workspace = true }

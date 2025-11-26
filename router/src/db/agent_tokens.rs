@@ -1,8 +1,8 @@
 // T055-T056: エージェントトークンCRUD操作とトークン生成
 
 use chrono::{DateTime, Utc};
-use ollama_router_common::auth::{AgentToken, AgentTokenWithPlaintext};
-use ollama_router_common::error::RouterError;
+use llm_router_common::auth::{AgentToken, AgentTokenWithPlaintext};
+use llm_router_common::error::RouterError;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use uuid::Uuid;

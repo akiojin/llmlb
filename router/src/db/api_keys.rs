@@ -1,8 +1,8 @@
 // T053-T054: APIキーCRUD操作とキー生成
 
 use chrono::{DateTime, Utc};
-use ollama_router_common::auth::{ApiKey, ApiKeyWithPlaintext};
-use ollama_router_common::error::RouterError;
+use llm_router_common::auth::{ApiKey, ApiKeyWithPlaintext};
+use llm_router_common::error::RouterError;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
@@ -188,7 +188,7 @@ mod tests {
     use super::*;
     use crate::db::migrations::initialize_database;
     use crate::db::users;
-    use ollama_router_common::auth::UserRole;
+    use llm_router_common::auth::UserRole;
 
     async fn setup_test_db() -> SqlitePool {
         initialize_database("sqlite::memory:")

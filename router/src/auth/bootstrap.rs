@@ -4,8 +4,8 @@
 
 use crate::auth::password::hash_password;
 use crate::db;
-use ollama_router_common::auth::UserRole;
-use ollama_router_common::error::RouterError;
+use llm_router_common::auth::UserRole;
+use llm_router_common::error::RouterError;
 use std::io::{self, Write};
 
 /// 環境変数から管理者を作成

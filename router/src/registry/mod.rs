@@ -5,7 +5,7 @@
 pub mod models;
 
 use chrono::Utc;
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
     types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus},
@@ -484,7 +484,7 @@ fn normalize_models(models: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ollama_router_common::types::GpuDeviceInfo;
+    use llm_router_common::types::GpuDeviceInfo;
     use std::net::IpAddr;
 
     fn sample_gpu_devices() -> Vec<GpuDeviceInfo> {

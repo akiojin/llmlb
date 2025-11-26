@@ -11,7 +11,7 @@ use axum::{
 };
 use chrono::Utc;
 use futures::TryStreamExt;
-use ollama_router_common::{
+use llm_router_common::{
     error::RouterError,
     protocol::{
         ChatRequest, ChatResponse, GenerateRequest, RecordStatus, RequestResponseRecord,
@@ -541,7 +541,7 @@ where
 pub(crate) async fn select_available_node_for_model(
     state: &AppState,
     model: &str,
-) -> Result<ollama_router_common::types::Node, RouterError> {
+) -> Result<llm_router_common::types::Node, RouterError> {
     let _mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     // まずモデルを保持しているオンラインノードを優先
@@ -566,7 +566,7 @@ pub(crate) async fn select_available_node_for_model(
 
 pub(crate) async fn select_available_node(
     state: &AppState,
-) -> Result<ollama_router_common::types::Node, RouterError> {
+) -> Result<llm_router_common::types::Node, RouterError> {
     let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     match mode.as_str() {
@@ -642,7 +642,7 @@ mod tests {
         registry::NodeRegistry,
         tasks::DownloadTaskManager,
     };
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
     use std::time::Duration;
 
@@ -798,7 +798,7 @@ mod tests {
     #[tokio::test]
     async fn proxy_chat_waits_until_agent_ready_then_succeeds() {
         use axum::{routing::post, Json, Router};
-        use ollama_router_common::protocol::{ChatMessage, ChatRequest, ChatResponse};
+        use llm_router_common::protocol::{ChatMessage, ChatRequest, ChatResponse};
         use tokio::{net::TcpListener, sync::oneshot, time::timeout};
 
         // ---- stub node (OpenAI互換API) ----

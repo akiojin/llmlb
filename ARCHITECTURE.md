@@ -1,6 +1,6 @@
 # Architecture
 
-Ollama Router coordinates local llama.cpp nodes and optionally proxies to cloud
+LLM Router coordinates local llama.cpp nodes and optionally proxies to cloud
 LLM providers via model prefixes. This document outlines the high-level
 components; no source code is included here.
 
@@ -37,7 +37,7 @@ Router (OpenAI-compatible)
   `OLLAMA_ALLOW_NO_GPU` (opt-out of GPU requirement).
 
 ## Deployment Options
-- Bare metal: build router with `cargo build -p or-router --release`.
-- Docker: `docker build -t ollama-router .` then run with `--gpus all` when
+- Bare metal: build router with `cargo build -p llm-router --release`.
+- Docker: `docker build -t llm-router .` then run with `--gpus all` when
   GPUs are required.
 - Nodes can be packaged as RPM/DEB/Homebrew/MSI; see installers/ for scripts.

@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::AgentRegistry, AppState,
 };
 use serde_json::json;
@@ -24,9 +24,9 @@ async fn build_app() -> Router {
     let registry = AgentRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history = std::sync::Arc::new(
-        or_router::db::request_history::RequestHistoryStorage::new().unwrap(),
+        llm_router::db::request_history::RequestHistoryStorage::new().unwrap(),
     );
-    let task_manager = or_router::tasks::DownloadTaskManager::new();
+    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
 

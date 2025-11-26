@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use ollama_router_common::auth::{ApiKey, ApiKeyWithPlaintext, Claims, UserRole};
+use llm_router_common::auth::{ApiKey, ApiKeyWithPlaintext, Claims, UserRole};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

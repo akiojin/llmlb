@@ -234,7 +234,7 @@ mod tests {
     };
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use tower::Service;
 
     async fn test_state() -> (AppState, NodeRegistry) {

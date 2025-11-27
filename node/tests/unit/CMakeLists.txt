@@ -61,7 +61,7 @@ target_include_directories(llm-node-unit-tests
 
 target_compile_definitions(llm-node-unit-tests
     PRIVATE
-        OLLAMA_NODE_TESTING=1
+        LLM_NODE_TESTING=1
 )
 
 add_test(

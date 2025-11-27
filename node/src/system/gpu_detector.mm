@@ -141,7 +141,7 @@ std::vector<GpuDevice> GpuDetector::detectRocm() {
     return std::vector<GpuDevice>();
 }
 
-#ifdef OLLAMA_NODE_TESTING
+#ifdef LLM_NODE_TESTING
 void GpuDetector::setDetectedDevicesForTest(std::vector<GpuDevice> devices) {
     detected_devices_ = std::move(devices);
 }

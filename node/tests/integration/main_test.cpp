@@ -49,11 +49,11 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
     while (!router.is_running()) std::this_thread::sleep_for(10ms);
 
     TempDir models;
-    setenv("OLLAMA_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
-    setenv("OLLAMA_NODE_PORT", std::to_string(node_port).c_str(), 1);
-    setenv("OLLAMA_MODELS_DIR", models.path.string().c_str(), 1);
-    setenv("OLLAMA_ALLOW_NO_GPU", "true", 1);
-    setenv("OLLAMA_HEARTBEAT_SECS", "1", 1);
+    setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
+    setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
+    setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
+    setenv("LLM_ALLOW_NO_GPU", "true", 1);
+    setenv("LLM_HEARTBEAT_SECS", "1", 1);
 
     std::atomic<int> exit_code{0};
     std::thread node_thread([&]() { exit_code = ollama_node_run_for_test(); });
@@ -91,11 +91,11 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
     while (!router.is_running()) std::this_thread::sleep_for(10ms);
 
     TempDir models;
-    setenv("OLLAMA_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
-    setenv("OLLAMA_NODE_PORT", std::to_string(node_port).c_str(), 1);
-    setenv("OLLAMA_MODELS_DIR", models.path.string().c_str(), 1);
-    setenv("OLLAMA_ALLOW_NO_GPU", "true", 1);
-    setenv("OLLAMA_HEARTBEAT_SECS", "1", 1);
+    setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
+    setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
+    setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
+    setenv("LLM_ALLOW_NO_GPU", "true", 1);
+    setenv("LLM_HEARTBEAT_SECS", "1", 1);
 
     std::atomic<int> exit_code{0};
     std::thread node_thread([&]() { exit_code = ollama_node_run_for_test(); });

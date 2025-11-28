@@ -34,7 +34,7 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
     httplib::Server router;
     router.Post("/api/nodes", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
-        res.set_content(R"({"node_id":"test-node"})", "application/json");
+        res.set_content(R"({"node_id":"test-node","agent_token":"test-token"})", "application/json");
     });
     router.Post("/api/nodes/heartbeat", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;

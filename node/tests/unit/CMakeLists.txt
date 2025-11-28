@@ -9,6 +9,7 @@ set(UNIT_TEST_SOURCES
     hf_client_test.cpp
     llama_manager_test.cpp
     model_pool_test.cpp
+    model_repair_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
     ../../src/api/router_client.cpp
@@ -17,6 +18,7 @@ set(UNIT_TEST_SOURCES
     ../../src/models/ollama_compat.cpp
     ../../src/models/model_converter.cpp
     ../../src/models/hf_client.cpp
+    ../../src/models/model_repair.cpp
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
     ../../src/core/inference_engine.cpp

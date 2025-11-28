@@ -1,7 +1,6 @@
 //! ロギング初期化ユーティリティ
 //!
-//! `tracing` による構造化ロギングをJSONライン形式ファイルへ出力する。
-//! 標準出力には出力せず、ファイルのみに出力する。
+//! `tracing` による構造化ロギングを標準出力とJSONライン形式ファイルへ出力する。
 
 use chrono::Local;
 use std::{
@@ -125,6 +124,7 @@ fn configure_logger() -> io::Result<LoggerGuard> {
         .or_else(|_| EnvFilter::try_from_env(ALT_LEVEL_ENV))
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
+    // ファイル出力レイヤー（JSON形式）
     let file_layer = fmt::layer()
         .json()
         .with_writer(file_writer)
@@ -134,9 +134,16 @@ fn configure_logger() -> io::Result<LoggerGuard> {
         .with_file(false)
         .with_line_number(false);
 
+    // 標準出力レイヤー（人間が読みやすい形式）
+    let stdout_layer = fmt::layer()
+        .with_target(true)
+        .with_file(false)
+        .with_line_number(false);
+
     tracing_subscriber::registry()
         .with(env_filter)
         .with(file_layer)
+        .with(stdout_layer)
         .try_init()
         .map_err(Error::other)?;
 

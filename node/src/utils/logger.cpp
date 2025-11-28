@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <sstream>
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 namespace fs = std::filesystem;
 
@@ -165,13 +166,21 @@ void init_from_env() {
     // Get today's log file path
     std::string log_path = get_log_file_path();
 
-    // JSON pattern (structured logging)
-    std::string pattern = R"({"ts":"%Y-%m-%dT%H:%M:%S.%e","level":"%l","msg":"%v"})";
-
-    // Create file sink only (no stdout)
+    // Create sinks: stdout + file
     std::vector<spdlog::sink_ptr> sinks;
-    sinks.push_back(
-        std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_path, false));
+
+    // Stdout sink (human-readable format)
+    auto stdout_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    stdout_sink->set_pattern("[%Y-%m-%d %T.%e] [%l] %v");
+    sinks.push_back(stdout_sink);
+
+    // File sink (JSON format for structured logging)
+    auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_path, false);
+    file_sink->set_pattern(R"({"ts":"%Y-%m-%dT%H:%M:%S.%e","level":"%l","msg":"%v"})");
+    sinks.push_back(file_sink);
+
+    // Use stdout pattern as default (file sink has its own pattern)
+    std::string pattern = "[%Y-%m-%d %T.%e] [%l] %v";
 
     init(level, pattern, "", sinks);
 

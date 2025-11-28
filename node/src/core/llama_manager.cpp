@@ -79,14 +79,30 @@ std::string LlamaManager::canonicalizePath(const std::string& path) const {
     return fs::weakly_canonical(p).string();
 }
 
+// Ollamaのblobファイル名かどうかを判定
+static bool isOllamaBlobFile(const std::string& filename) {
+    // Ollama blob format: sha256-<64 hex chars>
+    if (filename.length() < 7) return false;
+    if (filename.substr(0, 7) != "sha256-") return false;
+    // 残りが16進数文字のみかチェック
+    for (size_t i = 7; i < filename.length(); ++i) {
+        char c = filename[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // モデルロード（llama.cpp API使用）
 bool LlamaManager::loadModel(const std::string& model_path) {
     std::string canonical = canonicalizePath(model_path);
 
-    // 拡張子チェック
+    // 拡張子チェック（.ggufまたはOllama blobファイル形式を許可）
     fs::path p(canonical);
-    if (p.extension() != ".gguf") {
-        spdlog::error("Invalid model file extension (expected .gguf): {}", canonical);
+    std::string filename = p.filename().string();
+    if (p.extension() != ".gguf" && !isOllamaBlobFile(filename)) {
+        spdlog::error("Invalid model file (expected .gguf or Ollama blob): {}", canonical);
         return false;
     }
 

@@ -66,3 +66,13 @@ Ollamaが生成するGGUFファイルは以下の形式を使用する:
 
 `LLM_ARCH_NAMES`のマッピングを`"gptoss"`に変更し、
 `llm_arch_from_string`で`"gpt-oss"`のエイリアスも認識するようにした。
+
+### llama.cpp本家との同期
+
+テンソル定義やグラフビルダーをllama.cpp本家と同期:
+
+- `LLM_TENSOR_ATTN_POST_NORM` テンソル追加
+- `LLM_TENSOR_ATTN_SINKS` テンソル追加
+- バイアステンソル（bq, bk, bv, bo, ffn_*_b）追加
+- `llm_build_openai_moe_iswa` グラフビルダー使用
+- SWAパターン設定の追加

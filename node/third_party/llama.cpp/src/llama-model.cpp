@@ -7372,7 +7372,11 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
             } break;
         case LLM_ARCH_OPENAI_MOE:
             {
-                llm = std::make_unique<llm_build_openai_moe_iswa>(*this, params);
+                if (hparams.n_swa > 0) {
+                    llm = std::make_unique<llm_build_openai_moe<true>>(*this, params);
+                } else {
+                    llm = std::make_unique<llm_build_openai_moe<false>>(*this, params);
+                }
             } break;
         case LLM_ARCH_FALCON_H1:
             {

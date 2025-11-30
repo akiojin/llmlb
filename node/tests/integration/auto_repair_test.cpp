@@ -9,7 +9,7 @@
 #include "models/model_repair.h"
 #include "models/model_sync.h"
 #include "models/model_downloader.h"
-#include "models/ollama_compat.h"
+#include "models/model_storage.h"
 
 namespace fs = std::filesystem;
 using namespace ollama_node;
@@ -91,9 +91,9 @@ TEST(AutoRepairIntegrationTest, RepairSucceedsWithMockServer) {
 
     ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
     ModelDownloader downloader("http://127.0.0.1:" + std::to_string(port), guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     auto result = repair.repair("test-model", 30s);
 
@@ -116,9 +116,9 @@ TEST(AutoRepairIntegrationTest, RepairFailsWhenServerUnavailable) {
     // 存在しないサーバーを指定
     ModelSync sync("http://127.0.0.1:19999", guard.path.string());
     ModelDownloader downloader("http://127.0.0.1:19999", guard.path.string(), 500ms);
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     auto result = repair.repair("non-existent-model", 2s);
 
@@ -162,9 +162,9 @@ TEST(AutoRepairIntegrationTest, ConcurrentRepairRequestsAreDeduplicated) {
 
     ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
     ModelDownloader downloader("http://127.0.0.1:" + std::to_string(port), guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     // 同時に3つの修復リクエストを開始
     std::vector<std::thread> threads;
@@ -226,9 +226,9 @@ TEST(AutoRepairIntegrationTest, WaitForRepairReturnsAfterCompletion) {
 
     ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
     ModelDownloader downloader("http://127.0.0.1:" + std::to_string(port), guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     // 修復を開始（別スレッドで）
     std::thread repair_thread([&repair]() {
@@ -271,9 +271,9 @@ TEST(AutoRepairIntegrationTest, RepairTimesOutWithSlowServer) {
 
     ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
     ModelDownloader downloader("http://127.0.0.1:" + std::to_string(port), guard.path.string(), 500ms);
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     // 短いタイムアウトでリクエスト
     auto result = repair.repair("timeout-model", 1s);

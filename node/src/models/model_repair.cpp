@@ -6,14 +6,14 @@
 
 #include "models/model_sync.h"
 #include "models/model_downloader.h"
-#include "models/ollama_compat.h"
+#include "models/model_storage.h"
 
 namespace fs = std::filesystem;
 
 namespace ollama_node {
 
-ModelRepair::ModelRepair(ModelSync& sync, ModelDownloader& downloader, OllamaCompat& compat)
-    : sync_(sync), downloader_(downloader), compat_(compat) {}
+ModelRepair::ModelRepair(ModelSync& sync, ModelDownloader& downloader, ModelStorage& storage)
+    : sync_(sync), downloader_(downloader), storage_(storage) {}
 
 bool ModelRepair::needsRepair(const std::string& model_path) const {
     // ファイルが存在しない場合は修復が必要

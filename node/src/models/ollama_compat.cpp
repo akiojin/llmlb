@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <array>
+#include <spdlog/spdlog.h>
 #include "utils/sha256.h"
 
 namespace fs = std::filesystem;
@@ -24,8 +25,11 @@ std::string OllamaCompat::resolveGguf(const std::string& model_name) const {
         tag = model_name.substr(colon_pos + 1);
     }
 
+    spdlog::debug("resolveGguf: model_name={}, name={}, tag={}, models_dir={}", model_name, name, tag, models_dir_);
+
     // Ollama manifest path: ~/.ollama/models/manifests/registry.ollama.ai/library/<name>/<tag>
     const auto manifest_path = fs::path(models_dir_) / "manifests" / "registry.ollama.ai" / "library" / name / tag;
+    spdlog::debug("resolveGguf: manifest_path={}, exists={}", manifest_path.string(), fs::exists(manifest_path));
     if (!fs::exists(manifest_path)) {
         // Fallback: try old simple format
         const auto simple_path = fs::path(models_dir_) / model_name / "manifest.json";

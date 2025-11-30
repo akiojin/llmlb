@@ -5,7 +5,7 @@
 #include "models/model_repair.h"
 #include "models/model_sync.h"
 #include "models/model_downloader.h"
-#include "models/ollama_compat.h"
+#include "models/model_storage.h"
 
 namespace fs = std::filesystem;
 using namespace ollama_node;
@@ -69,9 +69,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsTrueForNonExistentFile) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     fs::path non_existent = guard.path / "non_existent.gguf";
     EXPECT_TRUE(repair.needsRepair(non_existent.string()));
@@ -81,9 +81,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsTrueForEmptyFile) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     fs::path empty_file = guard.path / "empty.gguf";
     createEmptyFile(empty_file);
@@ -95,9 +95,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsTrueForTinyFile) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     fs::path tiny_file = guard.path / "tiny.gguf";
     createTinyFile(tiny_file);
@@ -110,9 +110,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsTrueForInvalidGgufHeader) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     fs::path corrupted = guard.path / "corrupted.gguf";
     createCorruptedFile(corrupted, 2048);  // 1KB以上だがヘッダーが無効
@@ -124,9 +124,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsFalseForValidGgufFile) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     fs::path valid = guard.path / "valid.gguf";
     createValidGgufFile(valid);
@@ -142,9 +142,9 @@ TEST(ModelRepairTest, IsRepairingReturnsFalseInitially) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     EXPECT_FALSE(repair.isRepairing("gpt-oss:7b"));
 }
@@ -153,9 +153,9 @@ TEST(ModelRepairTest, DefaultTimeoutIs300Seconds) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     EXPECT_EQ(repair.getDefaultTimeout(), std::chrono::seconds(300));
 }
@@ -164,9 +164,9 @@ TEST(ModelRepairTest, SetDefaultTimeoutUpdatesValue) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     repair.setDefaultTimeout(std::chrono::seconds(600));
     EXPECT_EQ(repair.getDefaultTimeout(), std::chrono::seconds(600));
@@ -212,9 +212,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsTrueForPartialGgufHeader) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     // GGUFヘッダーの最初の2バイトのみ
     fs::path partial = guard.path / "partial.gguf";
@@ -231,9 +231,9 @@ TEST(ModelRepairTest, NeedsRepairReturnsTrueForWrongMagicNumber) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     // 間違ったマジックナンバー
     fs::path wrong_magic = guard.path / "wrong_magic.gguf";
@@ -252,9 +252,9 @@ TEST(ModelRepairTest, ValidGgufWithDifferentVersions) {
     TempDirGuard guard;
     ModelSync sync("http://localhost:9999", guard.path.string());
     ModelDownloader downloader("http://localhost:9999", guard.path.string());
-    OllamaCompat compat(guard.path.string());
+    ModelStorage storage(guard.path.string());
 
-    ModelRepair repair(sync, downloader, compat);
+    ModelRepair repair(sync, downloader, storage);
 
     // バージョン2のGGUF
     fs::path v2 = guard.path / "v2.gguf";

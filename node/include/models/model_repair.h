@@ -12,7 +12,7 @@ namespace ollama_node {
 
 class ModelSync;
 class ModelDownloader;
-class OllamaCompat;
+class ModelStorage;
 
 /// モデルロード時のエラー種別
 enum class ModelLoadError {
@@ -59,8 +59,8 @@ public:
     /// コンストラクタ
     /// @param sync モデル同期オブジェクト
     /// @param downloader モデルダウンローダー
-    /// @param compat Ollama互換レイヤー
-    ModelRepair(ModelSync& sync, ModelDownloader& downloader, OllamaCompat& compat);
+    /// @param storage モデルストレージ
+    ModelRepair(ModelSync& sync, ModelDownloader& downloader, ModelStorage& storage);
 
     ~ModelRepair() = default;
 
@@ -102,7 +102,7 @@ public:
 private:
     ModelSync& sync_;
     ModelDownloader& downloader_;
-    OllamaCompat& compat_;
+    ModelStorage& storage_;
 
     mutable std::mutex mutex_;
     std::condition_variable cv_;

@@ -42,7 +42,7 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     bool used_file = false;
     bool used_env = false;
 
-    // Optional JSON config file: path from LLM_DL_CONFIG or ~/.ollama/config.json
+    // Optional JSON config file: path from LLM_DL_CONFIG or ~/.llm-router/config.json
     auto load_from_file = [&](const std::filesystem::path& path) {
         if (!std::filesystem::exists(path)) return false;
         try {
@@ -71,7 +71,7 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     } else {
         try {
             std::filesystem::path home = std::getenv("HOME") ? std::getenv("HOME") : "";
-            auto path = home / std::filesystem::path(".ollama/config.json");
+            auto path = home / std::filesystem::path(".llm-router/config.json");
             if (load_from_file(path)) {
                 used_file = true;
             }
@@ -140,7 +140,7 @@ namespace {
 std::filesystem::path defaultConfigPath() {
     try {
         std::filesystem::path home = std::getenv("HOME") ? std::getenv("HOME") : "";
-        if (!home.empty()) return home / ".ollama/config.json";
+        if (!home.empty()) return home / ".llm-router/config.json";
     } catch (...) {
     }
     return std::filesystem::path();
@@ -169,8 +169,8 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     bool used_env = false;
     bool used_file = false;
 
-    // defaults
-    cfg.models_dir = defaultConfigPath().empty() ? ".ollama/models" : (defaultConfigPath().parent_path() / "models").string();
+    // defaults: ~/.llm-router/models/
+    cfg.models_dir = defaultConfigPath().empty() ? ".llm-router/models" : (defaultConfigPath().parent_path() / "models").string();
 
     auto apply_json = [&](const nlohmann::json& j) {
         if (j.contains("router_url") && j["router_url"].is_string()) cfg.router_url = j["router_url"].get<std::string>();

@@ -17,7 +17,7 @@ std::string getHelpMessage() {
     oss << "    -V, --version    Print version information\n";
     oss << "\n";
     oss << "ENVIRONMENT VARIABLES:\n";
-    oss << "    LLM_NODE_MODELS_DIR          Model files directory (default: ~/.ollama/models)\n";
+    oss << "    LLM_NODE_MODELS_DIR          Model files directory (default: ~/.llm-router/models)\n";
     oss << "    LLM_NODE_PORT                HTTP server port (default: 11435)\n";
     oss << "    LLM_NODE_HEARTBEAT_SECS      Heartbeat interval in seconds (default: 10)\n";
     oss << "    LLM_NODE_ALLOW_NO_GPU        Allow running without GPU (default: false)\n";

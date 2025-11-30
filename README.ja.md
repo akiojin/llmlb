@@ -411,20 +411,40 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 
 ### 環境変数
 
-#### Coordinator
-- `ROUTER_HOST`: バインドアドレス（デフォルト: `0.0.0.0`）
-- `ROUTER_PORT`: ポート番号（デフォルト: `8080`）
-- `DATABASE_URL`: データベースURL（デフォルト: `sqlite://coordinator.db`）
-- `HEALTH_CHECK_INTERVAL`: ヘルスチェック間隔（秒）（デフォルト: `30`）
-- `AGENT_TIMEOUT`: ノードタイムアウト（秒）（デフォルト: `60`）
+#### ルーター（Rust）
 
-#### Agent
-- `ROUTER_URL`: CoordinatorのURL（デフォルト: `http://localhost:8080`）
-- `LLM_PORT`: Ollamaポート番号（デフォルト: `11434`）
-- `LLM_AGENT_MACHINE_NAME`: Coordinator登録時に使用するマシン名。未設定時は `LLM_MACHINE_NAME` → `HOSTNAME` → `whoami::hostname()` の順で自動判定されます。
-- `LLM_PULL_TIMEOUT_SECS`: モデル自動ダウンロード時のHTTPタイムアウト秒数。未設定または `0` の場合はタイムアウトなしで待機します。
-- `ROUTER_REGISTER_RETRY_SECS`: 登録リトライ間隔（秒）。未設定時は `5` 秒、`0` を指定すると即座に再試行します。
-- `ROUTER_REGISTER_MAX_RETRIES`: 登録リトライ上限回数。未設定または `0` の場合は成功するまで無制限に再試行します。
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
+| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
+| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
+| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
+| `LLM_ROUTER_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
+| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+
+クラウドAPI:
+
+- `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
+
+#### ノード（C++）
+
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
+| `LLM_NODE_MODELS_DIR` | `~/.ollama/models` | モデルディレクトリ |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU必須を無効化 |
+| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+
+**注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
+新しい環境変数名を使用してください。
 
 ## 開発
 

@@ -50,8 +50,14 @@ cargo build --release -p llm-router
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ROUTER_HOST` | `0.0.0.0` | Bind address |
-| `ROUTER_PORT` | `8080` | Listen port |
+| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
+| `LLM_ROUTER_PORT` | `8080` | Listen port |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
+| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
+| `LLM_ROUTER_ADMIN_PASSWORD` | (required) | Initial admin password |
+
+**Backward compatibility:** Legacy env var names (`ROUTER_PORT` etc.) are supported but deprecated.
 
 **System Tray (Windows/macOS only):**
 
@@ -91,11 +97,15 @@ npm run start:node
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
 | `LLM_NODE_PORT` | `11435` | Node listen port |
-| `LLM_MODELS_DIR` | `~/.ollama/models` | Model storage directory |
-| `LLM_ALLOW_NO_GPU` | `false` | Allow running without GPU |
-| `LLM_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `LLM_NODE_MODELS_DIR` | `~/.ollama/models` | Model storage directory |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU |
+| `LLM_NODE_LOG_LEVEL` | `info` | Log level |
+
+**Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
 
 **Docker:**
 

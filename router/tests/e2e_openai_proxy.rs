@@ -21,7 +21,7 @@ mod support;
 
 use support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{create_test_api_key, register_node, spawn_test_router, spawn_test_router_with_db},
 };
 
 #[derive(Clone)]
@@ -243,6 +243,163 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         error >= 1,
         "expected at least one failed request recorded, got {error}"
     );
+
+    router.stop().await;
+    node_stub.stop().await;
+}
+
+#[tokio::test]
+async fn openai_v1_models_list_with_registered_node() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let node_stub = spawn_agent_stub(AgentStubState {
+        chat_response: ChatResponse {
+            message: llm_router_common::protocol::ChatMessage {
+                role: "assistant".into(),
+                content: "Hello".into(),
+            },
+            done: true,
+        },
+        chat_stream_payload: "".to_string(),
+        generate_response: json!({}),
+        generate_stream_payload: "".to_string(),
+    })
+    .await;
+
+    let (router, db_pool) = spawn_test_router_with_db().await;
+
+    register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("agent registration should succeed");
+
+    // APIキーを取得
+    let api_key = create_test_api_key(router.addr(), &db_pool).await;
+
+    let client = Client::new();
+
+    // GET /v1/models
+    let models_response = client
+        .get(format!("http://{}/v1/models", router.addr()))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("models request should succeed");
+
+    assert_eq!(models_response.status(), reqwest::StatusCode::OK);
+
+    let models_payload: Value = models_response.json().await.expect("models json response");
+
+    assert!(
+        models_payload.get("data").is_some(),
+        "Response must have 'data' field"
+    );
+    assert!(
+        models_payload["data"].is_array(),
+        "'data' field must be an array"
+    );
+    assert_eq!(
+        models_payload["object"].as_str(),
+        Some("list"),
+        "'object' field must be 'list'"
+    );
+
+    router.stop().await;
+    node_stub.stop().await;
+}
+
+#[tokio::test]
+async fn openai_v1_models_get_specific() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let node_stub = spawn_agent_stub(AgentStubState {
+        chat_response: ChatResponse {
+            message: llm_router_common::protocol::ChatMessage {
+                role: "assistant".into(),
+                content: "Hello".into(),
+            },
+            done: true,
+        },
+        chat_stream_payload: "".to_string(),
+        generate_response: json!({}),
+        generate_stream_payload: "".to_string(),
+    })
+    .await;
+
+    let (router, db_pool) = spawn_test_router_with_db().await;
+
+    register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("agent registration should succeed");
+
+    // APIキーを取得
+    let api_key = create_test_api_key(router.addr(), &db_pool).await;
+
+    let client = Client::new();
+
+    // GET /v1/models/gpt-oss:20b
+    let model_response = client
+        .get(format!("http://{}/v1/models/gpt-oss:20b", router.addr()))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("model request should succeed");
+
+    assert_eq!(model_response.status(), reqwest::StatusCode::OK);
+
+    let model_payload: Value = model_response.json().await.expect("model json response");
+
+    assert!(
+        model_payload.get("id").is_some(),
+        "Response must have 'id' field"
+    );
+    assert_eq!(
+        model_payload["object"].as_str(),
+        Some("model"),
+        "'object' field must be 'model'"
+    );
+
+    router.stop().await;
+    node_stub.stop().await;
+}
+
+#[tokio::test]
+async fn openai_v1_models_not_found() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let node_stub = spawn_agent_stub(AgentStubState {
+        chat_response: ChatResponse {
+            message: llm_router_common::protocol::ChatMessage {
+                role: "assistant".into(),
+                content: "Hello".into(),
+            },
+            done: true,
+        },
+        chat_stream_payload: "".to_string(),
+        generate_response: json!({}),
+        generate_stream_payload: "".to_string(),
+    })
+    .await;
+
+    let (router, db_pool) = spawn_test_router_with_db().await;
+
+    register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("agent registration should succeed");
+
+    // APIキーを取得
+    let api_key = create_test_api_key(router.addr(), &db_pool).await;
+
+    let client = Client::new();
+
+    // GET /v1/models/non-existent-model
+    let model_response = client
+        .get(format!(
+            "http://{}/v1/models/non-existent-model",
+            router.addr()
+        ))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("model request should succeed");
+
+    assert_eq!(model_response.status(), reqwest::StatusCode::NOT_FOUND);
 
     router.stop().await;
     node_stub.stop().await;

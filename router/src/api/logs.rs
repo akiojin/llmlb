@@ -196,6 +196,8 @@ mod tests {
         if let Some(parent) = log_path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
+        // 既存のログファイルを削除してクリーンな状態から開始
+        let _ = std::fs::remove_file(&log_path);
         std::fs::write(
             &log_path,
             "{\"timestamp\":\"2025-11-14T00:00:00Z\",\"level\":\"INFO\",\"target\":\"test\",\"fields\":{\"message\":\"hello\"}}\n{\"timestamp\":\"2025-11-14T00:01:00Z\",\"level\":\"ERROR\",\"target\":\"test\",\"fields\":{\"message\":\"world\"}}\n",

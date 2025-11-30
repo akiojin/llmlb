@@ -29,5 +29,11 @@ mod test_metrics;
 #[path = "contract/models_api_test.rs"]
 mod models_api_test;
 
+#[path = "contract/chat_modal_embed.rs"]
+mod chat_modal_embed;
+
+#[path = "contract/chat_page_spec.rs"]
+mod chat_page_spec;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

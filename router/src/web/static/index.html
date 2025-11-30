@@ -19,9 +19,7 @@
         <p class="subtitle">Real-time monitoring of node status and system statistics</p>
       </div>
       <div class="header-controls">
-        <a href="/chat" class="refresh-button" target="_blank" rel="noreferrer">
-          Chat
-        </a>
+        <button id="chat-open" class="refresh-button" type="button">Chat</button>
         <button id="api-keys-button" class="refresh-button" type="button">
           API Keys
         </button>
@@ -514,6 +512,31 @@
         <footer class="modal__footer">
           <button type="button" id="api-keys-modal-ok" class="btn">Close</button>
         </footer>
+      </div>
+    </div>
+
+    <!-- Fullscreen chat console (embedded /chat) -->
+    <div id="chat-modal" class="chat-modal hidden" role="dialog" aria-modal="true" aria-label="Chat console">
+      <div class="chat-modal__backdrop" data-chat-close></div>
+      <div class="chat-modal__content">
+        <header class="chat-modal__header">
+          <div>
+            <p class="eyebrow">Chat Console</p>
+            <p class="chat-modal__title">/api/chat のテスト用コンソール</p>
+          </div>
+          <div class="chat-modal__actions">
+            <button type="button" id="chat-reload" class="ghost">再読み込み</button>
+            <button type="button" id="chat-close" class="modal__close" aria-label="Close">×</button>
+          </div>
+        </header>
+        <iframe
+          id="chat-iframe"
+          src="/chat"
+          title="Chat console"
+          class="chat-modal__iframe"
+          loading="lazy"
+          referrerpolicy="same-origin"
+        ></iframe>
       </div>
     </div>
 

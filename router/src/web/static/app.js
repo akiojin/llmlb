@@ -124,11 +124,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalSave = document.getElementById("node-modal-save");
   const modalDelete = document.getElementById("node-modal-delete");
   const modalDisconnect = document.getElementById("node-modal-disconnect");
+  const chatOpen = document.getElementById("chat-open");
+  const chatModal = document.getElementById("chat-modal");
+  const chatClose = document.getElementById("chat-close");
+  const chatReload = document.getElementById("chat-reload");
+  const chatIframe = document.getElementById("chat-iframe");
   const tbody = document.getElementById("nodes-body");
 
   // リロード直後に詳細モーダルが開いたままにならないよう、確実に非表示へ初期化
   modal?.classList.add("hidden");
   document.getElementById("request-modal")?.classList.add("hidden");
+  chatModal?.classList.add("hidden");
 
   initTabs();
 
@@ -192,6 +198,34 @@ document.addEventListener("DOMContentLoaded", () => {
     state.filterStatus = event.target.value;
     state.currentPage = 1;
     renderAgents();
+  });
+  chatOpen?.addEventListener("click", () => {
+    if (!chatModal) return;
+    chatModal.classList.remove("hidden");
+    document.body.classList.add("body--modal-open");
+    chatIframe?.focus();
+  });
+  const closeChat = () => {
+    chatModal?.classList.add("hidden");
+    document.body.classList.remove("body--modal-open");
+  };
+  chatClose?.addEventListener("click", closeChat);
+  chatModal?.addEventListener("click", (event) => {
+    if (event.target?.dataset?.chatClose !== undefined) {
+      closeChat();
+    }
+  });
+  chatReload?.addEventListener("click", () => {
+    if (chatIframe?.contentWindow) {
+      chatIframe.contentWindow.location.reload();
+    } else if (chatIframe) {
+      chatIframe.setAttribute("src", chatIframe.getAttribute("src"));
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !chatModal?.classList.contains("hidden")) {
+      closeChat();
+    }
   });
   let queryDebounce = null;
   queryInput.addEventListener("input", (event) => {

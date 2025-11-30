@@ -102,9 +102,9 @@ async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
 }
 
 async fn run_server(config: ServerConfig) {
-    info!("Ollama Router v{}", env!("CARGO_PKG_VERSION"));
+    info!("LLM Router v{}", env!("CARGO_PKG_VERSION"));
 
-    info!("Initializing storage at ~/.or/");
+    info!("Initializing storage at ~/.llm-router/");
     let registry = registry::NodeRegistry::with_storage()
         .await
         .expect("Failed to initialize node registry");
@@ -146,7 +146,7 @@ async fn run_server(config: ServerConfig) {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .expect("Failed to get home directory");
-        format!("sqlite:{}/.or/router.db", home)
+        format!("sqlite:{}/.llm-router/router.db", home)
     });
 
     let db_pool = init_db_pool(&database_url)

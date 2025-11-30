@@ -41,7 +41,7 @@ cmake --build build --config Release
 - ルーター（Rust）
   - `ROUTER_HOST` (default `0.0.0.0`)
   - `ROUTER_PORT` (default `8080`)
-  - `DATABASE_URL` (default `sqlite:$HOME/.or/router.db`)
+  - `DATABASE_URL` (default `sqlite:$HOME/.llm-router/router.db`)
   - クラウドキー: `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 - ノード（C++）
   - `LLM_ROUTER_URL` (例: `http://localhost:8080`)

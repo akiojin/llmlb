@@ -724,7 +724,7 @@ Look for authentication-related logs:
 
 ```bash
 # Connect to SQLite database
-sqlite3 ~/.or/router.db
+sqlite3 ~/.llm-router/router.db
 
 -- List users
 SELECT id, username, role, created_at FROM users;
@@ -767,7 +767,7 @@ echo -n "new-password" | cargo run -p llm-router-common --bin hash-password
 # Output: $2b$12$...
 
 # 2. Update database
-sqlite3 ~/.or/router.db
+sqlite3 ~/.llm-router/router.db
 UPDATE users SET password_hash = '$2b$12$...' WHERE username = 'admin';
 ```
 
@@ -775,7 +775,7 @@ UPDATE users SET password_hash = '$2b$12$...' WHERE username = 'admin';
 
 ```bash
 # Delete existing JWT secret
-rm ~/.or/jwt_secret
+rm ~/.llm-router/jwt_secret
 
 # Restart coordinator (generates new secret)
 ./llm-router
@@ -789,7 +789,7 @@ rm ~/.or/jwt_secret
 #### Clear All API Keys
 
 ```bash
-sqlite3 ~/.or/router.db
+sqlite3 ~/.llm-router/router.db
 DELETE FROM api_keys;
 ```
 

@@ -153,7 +153,7 @@ async function fetchTaskProgress(taskId) {
 }
 
 /**
- * GET /api/models/loaded - コーディネーター全体のロード済みモデル集計
+ * GET /api/models/loaded - ルーター全体のロード済みモデル集計
  */
 async function fetchLoadedModels() {
   try {

@@ -108,11 +108,11 @@
 
 ## Phase 3.8: 仕上げ
 
-- [ ] T031 [P] `docs/authentication.md` を更新
-  - 新しい環境変数名を記載
-  - CLIコマンドの使用例を追加
-- [ ] T032 [P] `INSTALL.md` を更新
-  - 新しい環境変数名を記載
+- [x] T031 [P] `docs/authentication.md` を更新
+  - CLI user コマンドの使用例を追加
+  - 環境変数 `LLM_ROUTER_ADMIN_PASSWORD` / `LLM_ROUTER_JWT_SECRET` を記載
+- [x] T032 [P] `INSTALL.md` を更新
+  - 新しい環境変数名を表形式で記載（Router: LLM_ROUTER_*, Node: LLM_NODE_*）
 - [x] T033 [P] `README.md` を更新
   - 環境変数セクションを更新済み
 - [x] T034 すべてのテストを実行して合格を確認

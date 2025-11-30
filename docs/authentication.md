@@ -221,7 +221,35 @@ CREATE TABLE agent_tokens (
 
 ### Initial Setup
 
-On first startup, the coordinator prompts for admin account creation:
+#### Option 1: Environment Variable (Recommended for automation)
+
+Set the admin password via environment variable:
+
+```bash
+export LLM_ROUTER_ADMIN_PASSWORD="your-secure-password"
+export LLM_ROUTER_ADMIN_USERNAME="admin"  # optional, default: admin
+./target/release/llm-router
+```
+
+#### Option 2: CLI User Management
+
+Use the CLI to manage users:
+
+```bash
+# List users
+./target/release/llm-router user list
+
+# Add a user (password must be 8+ characters)
+./target/release/llm-router user add developer --password secure-password
+
+# Delete a user
+./target/release/llm-router user delete developer
+```
+
+#### Option 3: Interactive Prompt (deprecated)
+
+On first startup without environment variables, the coordinator prompts
+for admin account creation:
 
 ```bash
 $ ./target/release/llm-router
@@ -564,7 +592,8 @@ curl -X POST http://localhost:8080/api/agents \
    - Recommended: nginx, Caddy, or Traefik
 
 2. **Set Strong JWT Secret**
-   - Override default with `JWT_SECRET` environment variable
+   - Override default with `LLM_ROUTER_JWT_SECRET` environment variable
+   - Auto-generated and persisted to `~/.llm-router/jwt_secret` if not set
    - Use at least 256 bits of entropy
 
 3. **Enable Rate Limiting**

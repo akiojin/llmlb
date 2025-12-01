@@ -30,7 +30,7 @@ use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
 const DASHBOARD_INDEX: &str = "index.html";
-const CHAT_INDEX: &str = "openui/index.html";
+const CHAT_INDEX: &str = "chat/index.html";
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
@@ -224,7 +224,7 @@ fn normalize_chat_path(request_path: &str) -> Option<String> {
     if trimmed.contains("..") || trimmed.contains('\\') {
         return None;
     }
-    Some(format!("openui/{}", trimmed))
+    Some(format!("chat/{}", trimmed))
 }
 
 #[cfg(test)]

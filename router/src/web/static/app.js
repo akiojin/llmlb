@@ -127,7 +127,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatOpen = document.getElementById("chat-open");
   const chatModal = document.getElementById("chat-modal");
   const chatClose = document.getElementById("chat-close");
-  const chatReload = document.getElementById("chat-reload");
   const chatIframe = document.getElementById("chat-iframe");
   const tbody = document.getElementById("nodes-body");
 
@@ -213,13 +212,6 @@ document.addEventListener("DOMContentLoaded", () => {
   chatModal?.addEventListener("click", (event) => {
     if (event.target?.dataset?.chatClose !== undefined) {
       closeChat();
-    }
-  });
-  chatReload?.addEventListener("click", () => {
-    if (chatIframe?.contentWindow) {
-      chatIframe.contentWindow.location.reload();
-    } else if (chatIframe) {
-      chatIframe.setAttribute("src", chatIframe.getAttribute("src"));
     }
   });
   window.addEventListener("keydown", (event) => {

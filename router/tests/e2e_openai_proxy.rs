@@ -11,7 +11,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use llm_router_common::protocol::{ChatRequest, ChatResponse, GenerateRequest};
+use llm_router_common::protocol::{ChatRequest, GenerateRequest};
 use reqwest::{header, Client};
 use serde_json::{json, Value};
 use tokio::time::sleep;
@@ -26,7 +26,7 @@ use support::{
 
 #[derive(Clone)]
 struct AgentStubState {
-    chat_response: ChatResponse,
+    chat_response: Value,
     chat_stream_payload: String,
     generate_response: Value,
     generate_stream_payload: String,
@@ -67,7 +67,7 @@ async fn agent_chat_handler(
             .unwrap();
     }
 
-    Json(state.chat_response.clone()).into_response()
+    Json(&state.chat_response).into_response()
 }
 
 async fn agent_generate_handler(
@@ -96,13 +96,19 @@ async fn agent_generate_handler(
 async fn openai_proxy_end_to_end_updates_dashboard_history() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
-        chat_response: ChatResponse {
-            message: llm_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello from agent".into(),
-            },
-            done: true,
-        },
+        // OpenAI互換形式のレスポンス
+        chat_response: json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello from agent"
+                },
+                "finish_reason": "stop"
+            }]
+        }),
         chat_stream_payload: "data: {\"choices\":[{\"delta\":{\"content\":\"Hello stream\"}}]}\n\n"
             .to_string(),
         generate_response: json!({
@@ -137,8 +143,11 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .await
         .expect("chat request should succeed");
     assert_eq!(chat_response.status(), reqwest::StatusCode::OK);
-    let chat_payload: ChatResponse = chat_response.json().await.expect("chat json response");
-    assert_eq!(chat_payload.message.content, "Hello from agent");
+    let chat_payload: Value = chat_response.json().await.expect("chat json response");
+    assert_eq!(
+        chat_payload["choices"][0]["message"]["content"],
+        "Hello from agent"
+    );
 
     // ストリーミングチャット
     let streaming_response = client

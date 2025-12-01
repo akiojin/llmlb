@@ -1,4 +1,4 @@
-//! Contract Test: Ollama Chat APIプロキシ (POST /api/chat)
+//! Contract Test: Chat APIプロキシ (POST /api/chat)
 //!
 //! 実際にHTTPで待ち受けるスタブノードとルーターを起動し、
 //! OpenAI互換の正常系/異常系を確認する。
@@ -10,8 +10,9 @@ use crate::support::{
     router::{register_node, spawn_test_router},
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use llm_router_common::protocol::{ChatRequest, ChatResponse};
+use llm_router_common::protocol::ChatRequest;
 use reqwest::{Client, StatusCode as ReqStatusCode};
+use serde_json::{json, Value};
 use serial_test::serial;
 
 #[derive(Clone)]
@@ -22,7 +23,7 @@ struct AgentStubState {
 
 #[derive(Clone)]
 enum AgentChatStubResponse {
-    Success(ChatResponse),
+    Success(Value),
     Error(StatusCode, String),
 }
 
@@ -76,9 +77,7 @@ async fn agent_chat_handler(
     }
 
     match &state.chat_response {
-        AgentChatStubResponse::Success(resp) => {
-            (StatusCode::OK, Json(resp.clone())).into_response()
-        }
+        AgentChatStubResponse::Success(resp) => (StatusCode::OK, Json(resp)).into_response(),
         AgentChatStubResponse::Error(status, body) => (*status, body.clone()).into_response(),
     }
 }
@@ -90,13 +89,19 @@ async fn proxy_chat_end_to_end_success() {
     // Arrange: スタブノードとルーターを実ポートで起動
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
-        chat_response: AgentChatStubResponse::Success(ChatResponse {
-            message: llm_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello from stub".into(),
-            },
-            done: true,
-        }),
+        // OpenAI互換形式のレスポンス
+        chat_response: AgentChatStubResponse::Success(json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello from stub"
+                },
+                "finish_reason": "stop"
+            }]
+        })),
     })
     .await;
     let router = spawn_test_router().await;
@@ -125,9 +130,9 @@ async fn proxy_chat_end_to_end_success() {
 
     // Assert: ルーターがスタブのレスポンスをそのまま返す
     assert_eq!(response.status(), ReqStatusCode::OK);
-    let body: ChatResponse = response.json().await.expect("valid chat response");
-    assert_eq!(body.message.content, "Hello from stub");
-    assert!(body.done);
+    let body: Value = response.json().await.expect("valid chat response");
+    assert_eq!(body["choices"][0]["message"]["content"], "Hello from stub");
+    assert_eq!(body["choices"][0]["finish_reason"], "stop");
 
     // Shutdown
     router.stop().await;
@@ -141,13 +146,19 @@ async fn proxy_chat_uses_health_check_without_skip_flag() {
 
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
-        chat_response: AgentChatStubResponse::Success(ChatResponse {
-            message: llm_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello via health check".into(),
-            },
-            done: true,
-        }),
+        // OpenAI互換形式のレスポンス
+        chat_response: AgentChatStubResponse::Success(json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello via health check"
+                },
+                "finish_reason": "stop"
+            }]
+        })),
     })
     .await;
     let router = spawn_test_router().await;
@@ -173,9 +184,12 @@ async fn proxy_chat_uses_health_check_without_skip_flag() {
         .expect("chat request should succeed");
 
     assert_eq!(response.status(), ReqStatusCode::OK);
-    let body: ChatResponse = response.json().await.expect("valid chat response");
-    assert_eq!(body.message.content, "Hello via health check");
-    assert!(body.done);
+    let body: Value = response.json().await.expect("valid chat response");
+    assert_eq!(
+        body["choices"][0]["message"]["content"],
+        "Hello via health check"
+    );
+    assert_eq!(body["choices"][0]["finish_reason"], "stop");
 
     router.stop().await;
     node_stub.stop().await;

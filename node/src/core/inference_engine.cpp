@@ -23,8 +23,10 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, OllamaCompat& ollama_com
     , ollama_compat_(&ollama_compat)
     , repair_(&repair) {}
 
-// チャットメッセージからプロンプトを構築
+// チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
+    // この関数はモデルなしで呼ばれる互換性維持用のフォールバック
+    // 実際の推論では generateChat/generateChatStream 内で直接テンプレートを適用
     std::ostringstream oss;
 
     for (const auto& msg : messages) {
@@ -40,6 +42,79 @@ std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& mes
     // アシスタント応答の開始を示す
     oss << "Assistant: ";
     return oss.str();
+}
+
+// モデル固有のチャットテンプレートを適用してプロンプトを構築
+static std::string applyModelChatTemplate(
+    llama_model* model,
+    const std::vector<ChatMessage>& messages) {
+
+    // llama_chat_message 配列を構築
+    std::vector<llama_chat_message> llama_messages;
+    llama_messages.reserve(messages.size());
+    for (const auto& msg : messages) {
+        llama_messages.push_back({msg.role.c_str(), msg.content.c_str()});
+    }
+
+    // モデルからチャットテンプレートを取得
+    const char* tmpl = llama_model_chat_template(model, nullptr);
+
+    // 初回呼び出しで必要なバッファサイズを取得
+    int32_t required_size = llama_chat_apply_template(
+        tmpl,
+        llama_messages.data(),
+        llama_messages.size(),
+        true,  // add_ass: アシスタント応答の開始を追加
+        nullptr,
+        0);
+
+    if (required_size < 0) {
+        // テンプレート適用に失敗した場合、フォールバック
+        spdlog::warn("llama_chat_apply_template failed (size={}), using fallback", required_size);
+        std::ostringstream oss;
+        for (const auto& msg : messages) {
+            if (msg.role == "system") {
+                oss << "System: " << msg.content << "\n\n";
+            } else if (msg.role == "user") {
+                oss << "User: " << msg.content << "\n\n";
+            } else if (msg.role == "assistant") {
+                oss << "Assistant: " << msg.content << "\n\n";
+            }
+        }
+        oss << "Assistant: ";
+        return oss.str();
+    }
+
+    // バッファを確保してテンプレートを適用
+    std::vector<char> buf(static_cast<size_t>(required_size) + 1);
+    int32_t actual_size = llama_chat_apply_template(
+        tmpl,
+        llama_messages.data(),
+        llama_messages.size(),
+        true,
+        buf.data(),
+        static_cast<int32_t>(buf.size()));
+
+    if (actual_size < 0 || actual_size > static_cast<int32_t>(buf.size())) {
+        spdlog::error("llama_chat_apply_template failed on second call");
+        // フォールバック
+        std::ostringstream oss;
+        for (const auto& msg : messages) {
+            if (msg.role == "system") {
+                oss << "System: " << msg.content << "\n\n";
+            } else if (msg.role == "user") {
+                oss << "User: " << msg.content << "\n\n";
+            } else if (msg.role == "assistant") {
+                oss << "Assistant: " << msg.content << "\n\n";
+            }
+        }
+        oss << "Assistant: ";
+        return oss.str();
+    }
+
+    std::string prompt(buf.data(), static_cast<size_t>(actual_size));
+    spdlog::debug("Applied chat template: {} chars", prompt.size());
+    return prompt;
 }
 
 // チャット生成（llama.cpp API使用）
@@ -96,8 +171,8 @@ std::string InferenceEngine::generateChat(
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
 
-    // 4. プロンプト構築
-    std::string prompt = buildChatPrompt(messages);
+    // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
+    std::string prompt = applyModelChatTemplate(model, messages);
     spdlog::debug("Prompt: {}", prompt);
 
     // 5. vocab取得
@@ -157,6 +232,14 @@ std::string InferenceEngine::generateChat(
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
 
+    // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
+    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+        64,                      // last_n: 直近64トークンを考慮
+        params.repeat_penalty,   // repeat_penalty: 1.1
+        0.0f,                    // frequency_penalty
+        0.0f                     // presence_penalty
+    ));
+
     // シード設定
     uint32_t seed = params.seed;
     if (seed == 0) {
@@ -210,6 +293,25 @@ std::string InferenceEngine::generateChat(
 
     // 10. クリーンアップ
     llama_sampler_free(sampler);
+
+    // 11. 出力の後処理: chatMLテンプレートのストップトークンで切り詰め
+    // Qwen3などのモデルは<|im_end|>で応答を終了するが、EOGとして認識されない場合がある
+    static const std::vector<std::string> stop_sequences = {
+        "<|im_end|>",       // ChatML (Qwen3, etc.)
+        "<|end|>",          // Some models
+        "<|eot_id|>",       // Llama 3
+        "</s>",             // Llama 2, Mistral
+        "<|endoftext|>",    // GPT-style
+    };
+
+    for (const auto& stop : stop_sequences) {
+        size_t pos = output.find(stop);
+        if (pos != std::string::npos) {
+            spdlog::debug("Truncating output at stop sequence '{}' at position {}", stop, pos);
+            output = output.substr(0, pos);
+            break;
+        }
+    }
 
     // Debug: log final output hex dump (first 100 bytes)
     std::string hex_output;
@@ -292,9 +394,9 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         throw std::runtime_error("Failed to get context/model");
     }
 
-    // 3. vocab取得とプロンプト処理
+    // 3. vocab取得とプロンプト処理（モデル固有のチャットテンプレートを使用）
     const llama_vocab* vocab = llama_model_get_vocab(model);
-    std::string prompt = buildChatPrompt(messages);
+    std::string prompt = applyModelChatTemplate(model, messages);
 
     std::vector<llama_token> tokens(prompt.size() + 128);
     int32_t n_tokens = llama_tokenize(
@@ -324,6 +426,14 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
 
+    // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
+    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+        64,                      // last_n: 直近64トークンを考慮
+        params.repeat_penalty,   // repeat_penalty: 1.1
+        0.0f,                    // frequency_penalty
+        0.0f                     // presence_penalty
+    ));
+
     uint32_t seed = params.seed;
     if (seed == 0) {
         seed = static_cast<uint32_t>(
@@ -332,7 +442,19 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
 
     // 6. ストリーミング生成ループ
-    for (size_t i = 0; i < params.max_tokens; i++) {
+    // ストップシーケンスの定義（chatMLテンプレート用）
+    static const std::vector<std::string> stop_sequences = {
+        "<|im_end|>",       // ChatML (Qwen3, etc.)
+        "<|end|>",          // Some models
+        "<|eot_id|>",       // Llama 3
+        "</s>",             // Llama 2, Mistral
+        "<|endoftext|>",    // GPT-style
+    };
+
+    std::string accumulated_output;  // ストップシーケンス検出用の累積出力
+    bool should_stop = false;
+
+    for (size_t i = 0; i < params.max_tokens && !should_stop; i++) {
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
         if (llama_vocab_is_eog(vocab, new_token)) {
@@ -343,19 +465,50 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
         if (len > 0) {
             std::string piece(buf, static_cast<size_t>(len));
-            all_tokens.push_back(piece);
+            accumulated_output += piece;
 
-            // コールバックで即座に送信
-            if (on_token) {
-                on_token(piece);
+            // ストップシーケンスのチェック
+            for (const auto& stop : stop_sequences) {
+                size_t pos = accumulated_output.find(stop);
+                if (pos != std::string::npos) {
+                    spdlog::debug("Streaming: found stop sequence '{}' at position {}", stop, pos);
+                    // ストップシーケンス前の部分のみを送信
+                    if (pos > 0 && pos > accumulated_output.size() - piece.size()) {
+                        // 現在のピースがストップシーケンスを含む場合、その前の部分のみ送信
+                        std::string partial = piece.substr(0, pos - (accumulated_output.size() - piece.size()));
+                        if (!partial.empty() && on_token) {
+                            on_token(partial);
+                            all_tokens.push_back(partial);
+                        }
+                    } else if (pos == 0 || accumulated_output.find(stop) >= accumulated_output.size() - piece.size()) {
+                        // ストップシーケンスがこのピースで始まる場合、送信しない
+                    } else {
+                        all_tokens.push_back(piece);
+                        if (on_token) {
+                            on_token(piece);
+                        }
+                    }
+                    should_stop = true;
+                    break;
+                }
+            }
+
+            if (!should_stop) {
+                all_tokens.push_back(piece);
+                // コールバックで即座に送信
+                if (on_token) {
+                    on_token(piece);
+                }
             }
         }
 
-        llama_sampler_accept(sampler, new_token);
+        if (!should_stop) {
+            llama_sampler_accept(sampler, new_token);
 
-        llama_batch next_batch = llama_batch_get_one(&new_token, 1);
-        if (llama_decode(ctx, next_batch) != 0) {
-            break;
+            llama_batch next_batch = llama_batch_get_one(&new_token, 1);
+            if (llama_decode(ctx, next_batch) != 0) {
+                break;
+            }
         }
     }
 

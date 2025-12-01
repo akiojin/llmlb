@@ -737,3 +737,96 @@
 .status-pill--connecting { }
 .status-pill--error { }
 .status-pill--offline { }
+
+/* ========================================
+   Typing Indicator
+   ======================================== */
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.typing-indicator .dot {
+  width: 8px;
+  height: 8px;
+  background: #6b7280;
+  border-radius: 50%;
+  animation: typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.typing-indicator .dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+@keyframes typing-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   Reasoning Block (思考過程表示)
+   ======================================== */
+.reasoning-block {
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(113, 113, 122, 0.1);
+}
+
+.reasoning-summary {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #a1a1aa;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reasoning-summary::before {
+  content: "▶";
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.reasoning-block[open] .reasoning-summary::before {
+  transform: rotate(90deg);
+}
+
+.reasoning-summary:hover {
+  color: #e4e4e7;
+}
+
+.reasoning-content {
+  padding: 12px;
+  font-size: 13px;
+  color: #9ca3af;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 0 0 7px 7px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.main-content {
+  white-space: pre-wrap;
+}

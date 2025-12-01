@@ -134,16 +134,7 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-/// Ollamaチャットレスポンス
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatResponse {
-    /// レスポンスメッセージ
-    pub message: ChatMessage,
-    /// 完了フラグ
-    pub done: bool,
-}
-
-/// Ollama Generateリクエスト
+/// Generateリクエスト
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateRequest {
     /// モデル名

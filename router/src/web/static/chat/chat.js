@@ -239,6 +239,7 @@
         history: (session.history || []).map((msg) => ({
           role: msg.role,
           content: msg.content,
+          reasoning: msg.reasoning || null,
           model: msg.model,
           createdAt: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : msg.createdAt,
         })),
@@ -265,6 +266,7 @@
         history: (session.history || []).map((msg) => ({
           role: msg.role,
           content: msg.content,
+          reasoning: msg.reasoning || null,
           model: msg.model,
           createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
           element: null,
@@ -444,11 +446,31 @@
     const textEl = node.querySelector(".message-text");
     const metaEl = node.querySelector(".message-meta");
 
-    if (avatarEl) {
-      avatarEl.textContent = entry.role === "assistant" ? "AI" : "You";
-    }
+    // Avatar text is handled via CSS ::before pseudo-element
     if (roleEl) roleEl.textContent = messageLabel(entry.role);
-    if (textEl) textEl.textContent = entry.content;
+    if (textEl) {
+      // Reasoning content を折りたたみ表示
+      if (entry.reasoning && entry.role === "assistant") {
+        const details = document.createElement("details");
+        details.className = "reasoning-block";
+        const summary = document.createElement("summary");
+        summary.className = "reasoning-summary";
+        summary.textContent = "思考過程を表示";
+        const reasoningContent = document.createElement("div");
+        reasoningContent.className = "reasoning-content";
+        reasoningContent.textContent = entry.reasoning;
+        details.appendChild(summary);
+        details.appendChild(reasoningContent);
+        textEl.appendChild(details);
+
+        const mainContent = document.createElement("div");
+        mainContent.className = "main-content";
+        mainContent.textContent = entry.content;
+        textEl.appendChild(mainContent);
+      } else {
+        textEl.textContent = entry.content;
+      }
+    }
     if (metaEl) metaEl.textContent = messageMeta(entry);
 
     dom.chatLog.querySelector(".chat-welcome")?.remove();
@@ -468,11 +490,12 @@
     persistSessions();
   }
 
-  function addMessage(role, content, { model } = {}) {
+  function addMessage(role, content, { model, reasoning } = {}) {
     const entry = {
       id: crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}-${Math.random()}`,
       role,
       content,
+      reasoning: reasoning || null,
       model: model || null,
       createdAt: new Date(),
       element: null,
@@ -488,6 +511,38 @@
     persistSessions();
     updateSessionHeader(session);
     return entry;
+  }
+
+  function addTypingIndicator(model) {
+    const template = dom.messageTemplate;
+    if (!template || !dom.chatLog) return null;
+
+    const node = template.content.firstElementChild.cloneNode(true);
+    const id = `typing-${Date.now()}`;
+    node.dataset.messageId = id;
+    node.classList.add("message--assistant");
+
+    const roleEl = node.querySelector(".message-role");
+    const textEl = node.querySelector(".message-text");
+    const metaEl = node.querySelector(".message-meta");
+
+    if (roleEl) roleEl.textContent = "Assistant";
+    if (textEl) {
+      textEl.innerHTML = '<span class="typing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+    }
+    if (metaEl) metaEl.textContent = model ? `${model} is typing...` : "Generating...";
+
+    dom.chatLog.querySelector(".chat-welcome")?.remove();
+    dom.chatLog.appendChild(node);
+    dom.chatLog.scrollTop = dom.chatLog.scrollHeight;
+
+    return { id, element: node };
+  }
+
+  function removeTypingIndicator(entry) {
+    if (entry?.element) {
+      entry.element.remove();
+    }
   }
 
   function updateSessionTitleFrom(entry) {
@@ -615,26 +670,40 @@
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        const parsed = safeParse(line);
+        // SSE形式の場合は "data: " プレフィックスを除去
+        const dataLine = line.startsWith("data: ") ? line.slice(6) : line;
+        if (dataLine === "[DONE]") {
+          buffer = "";
+          continue;
+        }
+        const parsed = safeParse(dataLine);
         if (!parsed) continue;
         if (parsed.error) {
           throw new Error(parsed.error.message || String(parsed.error));
         }
-        if (parsed.message?.content) {
-          assembled += parsed.message.content;
+        // OpenAI互換形式: choices[0].delta.content (ストリーミング)
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          assembled += delta;
           updateMessage(assistantEntry, assembled);
         }
-        if (parsed.done) {
+        // 終了判定
+        if (parsed.choices?.[0]?.finish_reason) {
           buffer = "";
         }
       }
     }
 
     if (buffer.trim()) {
-      const parsed = safeParse(buffer.trim());
-      if (parsed?.message?.content) {
-        assembled += parsed.message.content;
-        updateMessage(assistantEntry, assembled);
+      const dataLine = buffer.trim().startsWith("data: ") ? buffer.trim().slice(6) : buffer.trim();
+      if (dataLine !== "[DONE]") {
+        const parsed = safeParse(dataLine);
+        // OpenAI互換形式: choices[0].delta.content
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        if (delta) {
+          assembled += delta;
+          updateMessage(assistantEntry, assembled);
+        }
       }
     }
 
@@ -695,9 +764,21 @@
           updateMessage(assistantEntry, "(Empty response)");
         }
       } else {
-        const body = await postChat(payload);
-        assistantContent = body?.message?.content ?? "(Empty response)";
-        addMessage("assistant", assistantContent, { model: payload.model });
+        // 非ストリーミングモードでもタイピングインジケーターを表示
+        const typingEntry = addTypingIndicator(payload.model);
+        try {
+          const body = await postChat(payload);
+          // OpenAI互換形式: choices[0].message.content
+          const message = body?.choices?.[0]?.message;
+          assistantContent = message?.content ?? "(Empty response)";
+          // reasoning_content をサポート（o1系モデル等）
+          const reasoning = message?.reasoning_content || null;
+          removeTypingIndicator(typingEntry);
+          addMessage("assistant", assistantContent, { model: payload.model, reasoning });
+        } catch (err) {
+          removeTypingIndicator(typingEntry);
+          throw err;
+        }
       }
       setStatus(`Response from model ${payload.model}`, "online");
     } catch (err) {
@@ -759,6 +840,10 @@
   }
 
   function handleKeydown(event) {
+    // IME変換中のEnterは無視する（日本語入力など）
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       dom.chatForm?.requestSubmit();

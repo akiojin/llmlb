@@ -13,10 +13,7 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use llm_router_common::{
     error::RouterError,
-    protocol::{
-        ChatRequest, ChatResponse, GenerateRequest, RecordStatus, RequestResponseRecord,
-        RequestType,
-    },
+    protocol::{ChatRequest, GenerateRequest, RecordStatus, RequestResponseRecord, RequestType},
     types::NodeStatus,
 };
 use std::{
@@ -83,7 +80,7 @@ pub(crate) async fn proxy_chat_with_handlers<S, C>(
 ) -> Result<Response, AppError>
 where
     S: FnOnce(reqwest::Response, &ChatRequest) -> Result<Response, AppError>,
-    C: FnOnce(ChatResponse, &ChatRequest) -> Result<Response, AppError>,
+    C: FnOnce(serde_json::Value, &ChatRequest) -> Result<Response, AppError>,
 {
     // 全ノードが初期化中なら ready 出現を待つ（待機者上限で 503）
     if state.load_manager.all_initializing().await {
@@ -239,7 +236,7 @@ where
         return stream_handler(response, &req);
     }
 
-    let parsed = response.json::<ChatResponse>().await;
+    let parsed = response.json::<serde_json::Value>().await;
     let duration = start.elapsed();
 
     match parsed {
@@ -250,7 +247,7 @@ where
                 .await
                 .map_err(AppError::from)?;
 
-            let response_body = serde_json::to_value(&payload).ok();
+            let response_body = Some(payload.clone());
             save_request_record(
                 state.request_history.clone(),
                 RequestResponseRecord {
@@ -642,7 +639,10 @@ mod tests {
         registry::NodeRegistry,
         tasks::DownloadTaskManager,
     };
-    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{
+        protocol::{ChatMessage, RegisterRequest},
+        types::GpuDeviceInfo,
+    };
     use std::net::IpAddr;
     use std::time::Duration;
 
@@ -798,7 +798,7 @@ mod tests {
     #[tokio::test]
     async fn proxy_chat_waits_until_agent_ready_then_succeeds() {
         use axum::{routing::post, Json, Router};
-        use llm_router_common::protocol::{ChatMessage, ChatRequest, ChatResponse};
+        use llm_router_common::protocol::ChatRequest;
         use tokio::{net::TcpListener, sync::oneshot, time::timeout};
 
         // ---- stub node (OpenAI互換API) ----
@@ -806,13 +806,19 @@ mod tests {
         let agent_router = Router::new().route(
             "/v1/chat/completions",
             post(|Json(_req): Json<ChatRequest>| async {
-                let resp = ChatResponse {
-                    message: ChatMessage {
-                        role: "assistant".into(),
-                        content: "ready".into(),
-                    },
-                    done: true,
-                };
+                // OpenAI形式のレスポンス
+                let resp = serde_json::json!({
+                    "id": "chatcmpl-test",
+                    "object": "chat.completion",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "ready"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                });
                 (StatusCode::OK, Json(resp))
             }),
         );

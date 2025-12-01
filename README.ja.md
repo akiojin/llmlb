@@ -202,10 +202,18 @@ curl http://coordinator:8080/api/chat -d '...'
 5. **Coordinator → クライアント（レスポンス返却）**
    ```json
    {
-     "message": {"role": "assistant", "content": "..."},
-     "done": true
+     "id": "chatcmpl-xxx",
+     "object": "chat.completion",
+     "choices": [{
+       "index": 0,
+       "message": {"role": "assistant", "content": "..."},
+       "finish_reason": "stop"
+     }]
    }
    ```
+
+> **注意**: LLM Routerは**OpenAI互換APIフォーマットのみ**をサポートしています。
+> すべてのレスポンスはOpenAI Chat Completions API仕様に準拠します。
 
 **クライアントから見ると**:
 - Coordinatorが唯一のOllama APIサーバーとして見える
@@ -675,14 +683,63 @@ GET /api/dashboard/request-responses/export
 ```
 
 #### POST /api/chat
-Ollama Chat APIへのプロキシエンドポイント。
 
-**リクエスト/レスポンス:** [Ollama Chat API仕様](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion)に準拠
+Chat APIへのプロキシエンドポイント（OpenAI互換形式）。
+
+**リクエスト:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "stream": false
+}
+```
+
+**レスポンス（OpenAI互換形式）:**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
+    "finish_reason": "stop"
+  }]
+}
+```
+
+> **重要**: LLM RouterはOpenAI互換レスポンス形式のみをサポートしています。
+> Ollamaネイティブ形式（`message`/`done`フィールド）は**サポートされていません**。
 
 #### POST /api/generate
-Ollama Generate APIへのプロキシエンドポイント。
 
-**リクエスト/レスポンス:** [Ollama Generate API仕様](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion)に準拠
+Generate APIへのプロキシエンドポイント（OpenAI互換形式）。
+
+**リクエスト:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "prompt": "Tell me a joke",
+  "stream": false
+}
+```
+
+**レスポンス（OpenAI互換形式）:**
+
+```json
+{
+  "id": "cmpl-xxx",
+  "object": "text_completion",
+  "choices": [{
+    "text": "Why did the programmer quit? Because he didn't get arrays!",
+    "index": 0,
+    "finish_reason": "stop"
+  }]
+}
+```
 
 ## ライセンス
 

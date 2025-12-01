@@ -259,10 +259,18 @@ curl http://coordinator:8080/api/chat -d '...'
 5. **Coordinator → Client (Return Response)**
    ```json
    {
-     "message": {"role": "assistant", "content": "..."},
-     "done": true
+     "id": "chatcmpl-xxx",
+     "object": "chat.completion",
+     "choices": [{
+       "index": 0,
+       "message": {"role": "assistant", "content": "..."},
+       "finish_reason": "stop"
+     }]
    }
    ```
+
+> **Note**: LLM Router exclusively supports **OpenAI-compatible API format**.
+> All responses follow the OpenAI Chat Completions API specification.
 
 **From Client's Perspective**:
 - Coordinator appears as the only Ollama API server
@@ -907,14 +915,62 @@ Get progress of a model download task.
 
 #### POST /api/chat
 
-Proxy endpoint for Ollama Chat API.
+Proxy endpoint for Chat API (OpenAI-compatible format).
 
-**Request/Response:** Conforms to [Ollama Chat API specification](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion)
+**Request:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "stream": false
+}
+```
+
+**Response (OpenAI-compatible):**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
+    "finish_reason": "stop"
+  }]
+}
+```
+
+> **Important**: LLM Router only supports OpenAI-compatible response format.
+> Ollama-native format (`message`/`done` fields) is NOT supported.
 
 #### POST /api/generate
-Proxy endpoint for Ollama Generate API.
 
-**Request/Response:** Conforms to [Ollama Generate API specification](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion)
+Proxy endpoint for Generate API (OpenAI-compatible format).
+
+**Request:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "prompt": "Tell me a joke",
+  "stream": false
+}
+```
+
+**Response (OpenAI-compatible):**
+
+```json
+{
+  "id": "cmpl-xxx",
+  "object": "text_completion",
+  "choices": [{
+    "text": "Why did the programmer quit? Because he didn't get arrays!",
+    "index": 0,
+    "finish_reason": "stop"
+  }]
+}
+```
 
 ## License
 

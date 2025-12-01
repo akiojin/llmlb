@@ -261,13 +261,10 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
 async fn openai_v1_models_list_with_registered_node() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
-        chat_response: ChatResponse {
-            message: llm_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello".into(),
-            },
-            done: true,
-        },
+        chat_response: json!({
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": true
+        }),
         chat_stream_payload: "".to_string(),
         generate_response: json!({}),
         generate_stream_payload: "".to_string(),
@@ -319,13 +316,10 @@ async fn openai_v1_models_list_with_registered_node() {
 async fn openai_v1_models_get_specific() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
-        chat_response: ChatResponse {
-            message: llm_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello".into(),
-            },
-            done: true,
-        },
+        chat_response: json!({
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": true
+        }),
         chat_stream_payload: "".to_string(),
         generate_response: json!({}),
         generate_stream_payload: "".to_string(),
@@ -373,13 +367,10 @@ async fn openai_v1_models_get_specific() {
 async fn openai_v1_models_not_found() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
-        chat_response: ChatResponse {
-            message: llm_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello".into(),
-            },
-            done: true,
-        },
+        chat_response: json!({
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": true
+        }),
         chat_stream_payload: "".to_string(),
         generate_response: json!({}),
         generate_stream_payload: "".to_string(),

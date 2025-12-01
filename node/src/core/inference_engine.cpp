@@ -44,6 +44,17 @@ std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& mes
     return oss.str();
 }
 
+// ChatML形式でプロンプトを構築するフォールバック関数
+static std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
+    std::ostringstream oss;
+    for (const auto& msg : messages) {
+        oss << "<|im_start|>" << msg.role << "\n" << msg.content << "<|im_end|>\n";
+    }
+    // アシスタント応答の開始
+    oss << "<|im_start|>assistant\n";
+    return oss.str();
+}
+
 // モデル固有のチャットテンプレートを適用してプロンプトを構築
 static std::string applyModelChatTemplate(
     llama_model* model,
@@ -59,6 +70,14 @@ static std::string applyModelChatTemplate(
     // モデルからチャットテンプレートを取得
     const char* tmpl = llama_model_chat_template(model, nullptr);
 
+    // テンプレートがない場合はChatML形式を使用
+    if (tmpl == nullptr || tmpl[0] == '\0') {
+        spdlog::info("Model has no chat template, using ChatML format");
+        return buildChatMLPrompt(messages);
+    }
+
+    spdlog::debug("Model chat template found: {}", tmpl);
+
     // 初回呼び出しで必要なバッファサイズを取得
     int32_t required_size = llama_chat_apply_template(
         tmpl,
@@ -69,20 +88,9 @@ static std::string applyModelChatTemplate(
         0);
 
     if (required_size < 0) {
-        // テンプレート適用に失敗した場合、フォールバック
-        spdlog::warn("llama_chat_apply_template failed (size={}), using fallback", required_size);
-        std::ostringstream oss;
-        for (const auto& msg : messages) {
-            if (msg.role == "system") {
-                oss << "System: " << msg.content << "\n\n";
-            } else if (msg.role == "user") {
-                oss << "User: " << msg.content << "\n\n";
-            } else if (msg.role == "assistant") {
-                oss << "Assistant: " << msg.content << "\n\n";
-            }
-        }
-        oss << "Assistant: ";
-        return oss.str();
+        // テンプレート適用に失敗した場合、ChatML形式にフォールバック
+        spdlog::warn("llama_chat_apply_template failed (size={}), using ChatML fallback", required_size);
+        return buildChatMLPrompt(messages);
     }
 
     // バッファを確保してテンプレートを適用
@@ -97,19 +105,8 @@ static std::string applyModelChatTemplate(
 
     if (actual_size < 0 || actual_size > static_cast<int32_t>(buf.size())) {
         spdlog::error("llama_chat_apply_template failed on second call");
-        // フォールバック
-        std::ostringstream oss;
-        for (const auto& msg : messages) {
-            if (msg.role == "system") {
-                oss << "System: " << msg.content << "\n\n";
-            } else if (msg.role == "user") {
-                oss << "User: " << msg.content << "\n\n";
-            } else if (msg.role == "assistant") {
-                oss << "Assistant: " << msg.content << "\n\n";
-            }
-        }
-        oss << "Assistant: ";
-        return oss.str();
+        // ChatML形式にフォールバック
+        return buildChatMLPrompt(messages);
     }
 
     std::string prompt(buf.data(), static_cast<size_t>(actual_size));

@@ -12,6 +12,7 @@ pub mod api_keys;
 
 /// エージェントトークン管理
 pub mod agent_tokens;
+pub mod models;
 
 /// データベースマイグレーション
 pub mod migrations;
@@ -138,7 +139,15 @@ pub async fn load_nodes() -> RouterResult<Vec<Node>> {
                 err
             );
             recover_corrupted_nodes_file(&data_file).await?;
-            Ok(Vec::new())
+            // 再読込して返す (空なら空配列)
+            let reopened = fs::read_to_string(&data_file).await.unwrap_or_default();
+            if reopened.trim().is_empty() {
+                return Ok(Vec::new());
+            }
+            match serde_json::from_str::<Vec<Node>>(&reopened) {
+                Ok(nodes2) => Ok(nodes2),
+                Err(_) => Ok(Vec::new()),
+            }
         }
     }
 }

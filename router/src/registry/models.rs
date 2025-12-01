@@ -6,6 +6,20 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+/// モデルのソース種別
+#[derive(Default)]
+pub enum ModelSource {
+    /// 事前定義モデル
+    #[default]
+    Predefined,
+    /// HFのGGUFモデル
+    HfGguf,
+    /// HF非GGUFで変換待ち
+    HfPendingConversion,
+}
+
 /// Ollamaモデル情報
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelInfo {
@@ -19,6 +33,24 @@ pub struct ModelInfo {
     pub required_memory: u64,
     /// タグ（例: ["vision", "tools", "thinking"]）
     pub tags: Vec<String>,
+    /// ソース種別
+    #[serde(default)]
+    pub source: ModelSource,
+    /// ダウンロードURL（HFなど外部ソース用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
+    /// HFリポジトリ名
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// HFファイル名
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// 最終更新
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_modified: Option<DateTime<Utc>>,
+    /// ステータス（available/registered等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 impl ModelInfo {
@@ -36,6 +68,12 @@ impl ModelInfo {
             description,
             required_memory,
             tags,
+            source: ModelSource::Predefined,
+            download_url: None,
+            repo: None,
+            filename: None,
+            last_modified: None,
+            status: None,
         }
     }
 

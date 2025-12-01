@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        models::list_registered_models,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record, select_available_node},
     },
@@ -105,7 +106,8 @@ pub async fn embeddings(
 pub async fn list_models(State(_state): State<AppState>) -> Result<Response, AppError> {
     // ルーターがサポートするモデルを返す（プロキシせずローカルリストを使用）
     let client = crate::ollama::OllamaClient::new()?;
-    let models = client.get_predefined_models();
+    let mut models = client.get_predefined_models();
+    models.extend(list_registered_models());
 
     // OpenAI互換レスポンス形式に合わせる
     // https://platform.openai.com/docs/api-reference/models/list
@@ -135,10 +137,9 @@ pub async fn get_model(
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
     let client = crate::ollama::OllamaClient::new()?;
-    let exists = client
-        .get_predefined_models()
-        .into_iter()
-        .any(|m| m.name == model_id);
+    let mut all = client.get_predefined_models();
+    all.extend(list_registered_models());
+    let exists = all.into_iter().any(|m| m.name == model_id);
 
     if !exists {
         // 404 を OpenAI 換算で返す

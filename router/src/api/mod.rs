@@ -140,8 +140,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/generate", post(proxy::proxy_generate))
         // モデル管理API (SPEC-8ae67d67)
         .route("/api/models/available", get(models::get_available_models))
+        .route("/api/models/register", post(models::register_model))
         .route("/api/models/loaded", get(models::get_loaded_models))
         .route("/api/models/distribute", post(models::distribute_models))
+        .route("/api/models/download", post(models::distribute_models))
         .route("/api/nodes/:node_id/models", get(models::get_node_models))
         .route(
             "/api/nodes/:node_id/models/pull",

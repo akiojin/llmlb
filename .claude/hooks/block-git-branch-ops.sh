@@ -45,7 +45,13 @@ PY
         if [ -z "$tokens_json" ]; then
             tokens_json='[]'
         fi
-        mapfile -t branch_tokens < <(printf '%s\n' "$tokens_json" | jq -r '.[]')
+        branch_tokens=()
+        while IFS= read -r token; do
+            # Skip empty tokens to avoid introducing blanks from jq output
+            [ -n "$token" ] && branch_tokens+=("$token")
+        done <<EOF
+$(printf '%s\n' "$tokens_json" | jq -r '.[]')
+EOF
     else
         # Pythonが利用できない環境向けフォールバック
         read -r -a branch_tokens <<< "$branch_args"

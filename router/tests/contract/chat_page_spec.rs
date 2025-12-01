@@ -71,3 +71,34 @@ async fn chat_page_contains_sidebar_and_filters() {
     );
     assert!(html.contains("id=\"chat-input\""), "chat input is missing");
 }
+
+#[tokio::test]
+async fn chat_page_contains_settings_toggle() {
+    let router = build_router().await;
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/chat")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
+    let html = String::from_utf8(bytes.to_vec()).expect("chat html should be utf-8");
+
+    // Settings toggle button should exist
+    assert!(
+        html.contains("id=\"settings-toggle\""),
+        "settings toggle button is missing"
+    );
+
+    // Settings panel should be collapsed by default
+    assert!(
+        html.contains("openui-controls--collapsed"),
+        "settings panel should be collapsed by default"
+    );
+}

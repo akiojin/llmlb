@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+set -e
+
+# Try to limit tasks check to the current SPEC branch; otherwise skip tasks to avoid
+# unrelated specs blocking local commits. CI will still run its own gate.
+branch_name=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+case "$branch_name" in
+  feature/SPEC-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9])
+    spec_id=${branch_name#feature/}
+    TASKS="specs/${spec_id}/tasks.md" make quality-checks
+    ;;
+  *)
+    TASKS="" make quality-checks
+    ;;
+esac

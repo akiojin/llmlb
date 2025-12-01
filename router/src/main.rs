@@ -80,6 +80,12 @@ async fn main() {
             // User commands don't need full logging
             handle_user_command(command).await;
         }
+        Some(Commands::Model { command }) => {
+            if let Err(e) = llm_router::cli::model::run(command) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         None => {
             // No command = start server
             logging::init().expect("failed to initialize logging");
@@ -229,6 +235,8 @@ async fn run_server(config: ServerConfig) {
     let registry = registry::NodeRegistry::with_storage()
         .await
         .expect("Failed to initialize node registry");
+    // Load registered models (HF etc.)
+    llm_router::api::models::load_registered_models_from_storage().await;
 
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");

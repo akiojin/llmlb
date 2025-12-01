@@ -1096,6 +1096,10 @@ body {
   gap: 6px;
 }
 
+.tasks-list .task-card {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .task-header {
   display: flex;
   justify-content: space-between;
@@ -1633,6 +1637,32 @@ body {
 
 .unlimited-warning {
   cursor: help;
+}
+
+.success-banner {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.models-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.models-column h3 {
+  margin: 0 0 4px;
+}
+
+.model-cards {
+  display: grid;
+  gap: 8px;
+}
+
+.model-card__actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 @media (prefers-color-scheme: light) {

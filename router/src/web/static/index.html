@@ -82,6 +82,43 @@
       </section>
       </div>
 
+      <!-- Models Management -->
+      <div class="tab-panel tab-panel--active" id="tab-models">
+        <section class="models-section">
+          <header class="section-header">
+            <h2>Models</h2>
+            <div class="section-tools">
+              <button type="button" id="download-tasks-refresh" class="btn">Refresh Tasks</button>
+              <label class="filter-label">
+                <span>Search HF</span>
+                <input type="search" id="hf-search" placeholder="llama" autocomplete="off" />
+              </label>
+              <button type="button" id="hf-refresh" class="btn">Refresh HF</button>
+              <button type="button" id="registered-refresh" class="btn">Refresh Registered</button>
+            </div>
+          </header>
+          <div class="models-grid">
+            <article class="models-column">
+              <h3>対応可能モデル（HF GGUF）</h3>
+              <p class="caption">Register to add into supported list</p>
+              <div id="hf-models-list" class="model-cards"></div>
+              <p id="hf-models-status" class="caption"></p>
+            </article>
+            <article class="models-column">
+              <h3>対応モデル</h3>
+              <p class="caption">Registered models (used by /v1/models)</p>
+              <div id="registered-models-list" class="model-cards"></div>
+              <div class="tasks-panel">
+                <h4>Download Tasks</h4>
+                <div id="download-tasks-list" class="tasks-list"></div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <!-- Legacy manual distribution panel (kept) -->
+
       <div class="tab-panel" id="tab-nodes">
       <section class="nodes-section">
         <header class="section-header">

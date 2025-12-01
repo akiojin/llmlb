@@ -34,6 +34,7 @@ const MODEL_PRESETS = {
 
 // ========== State Management ==========
 let availableModels = [];
+let registeredModels = [];
 let availableModelsMeta = { source: null };
 let selectedModel = null;
 let downloadTasks = new Map(); // task_id -> task info
@@ -46,6 +47,8 @@ let manualPanelOpen = false;
 // ========== DOM Elements ==========
 const elements = {
   availableModelsList: () => document.getElementById('available-models-list'),
+  hfModelsList: () => document.getElementById('hf-models-list'),
+  registeredModelsList: () => document.getElementById('registered-models-list'),
   agentsForDistribution: () => document.getElementById('agents-for-distribution'),
   distributeButton: () => document.getElementById('distribute-model-button'),
   selectAllButton: () => document.getElementById('select-all-agents'),
@@ -66,6 +69,11 @@ const elements = {
   modelSearchInput: () => document.getElementById('model-search-input'),
   modelsSourceLabel: () => document.getElementById('models-source-label'),
   selectedModelCard: () => document.getElementById('selected-model-card'),
+  hfSearchInput: () => document.getElementById('hf-search'),
+  hfRefreshBtn: () => document.getElementById('hf-refresh'),
+  registeredRefreshBtn: () => document.getElementById('registered-refresh'),
+  hfStatus: () => document.getElementById('hf-models-status'),
+  tasksRefreshBtn: () => document.getElementById('download-tasks-refresh'),
 };
 
 // ========== API Functions ==========
@@ -75,7 +83,11 @@ const elements = {
  */
 async function fetchAvailableModels() {
   try {
-    const response = await fetch('/api/models/available');
+    const params = new URLSearchParams();
+    params.set('source', 'hf');
+    const q = elements.hfSearchInput()?.value;
+    if (q) params.set('search', q);
+    const response = await fetch(`/api/models/available?${params.toString()}`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -87,6 +99,40 @@ async function fetchAvailableModels() {
     showError('Failed to fetch available models');
     return [];
   }
+}
+
+async function fetchRegisteredModels() {
+  try {
+    const response = await fetch('/v1/models');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const list = Array.isArray(data.data) ? data.data : [];
+    return list.map((m) => ({
+      name: m.id ?? '',
+      description: m.description ?? '',
+      display_name: m.id ?? '',
+      size_gb: m.size_gb ?? undefined,
+      tags: m.tags ?? [],
+    }));
+  } catch (error) {
+    console.error('Failed to fetch registered models:', error);
+    showError('Failed to fetch registered models');
+    return [];
+  }
+}
+
+async function registerModel(repo, filename, displayName) {
+  const payload = { repo, filename, display_name: displayName };
+  const response = await fetch('/api/models/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || `HTTP ${response.status}`);
+  }
+  return response.json();
 }
 
 /**
@@ -398,6 +444,36 @@ function renderModelCard(model) {
   `;
 }
 
+function renderHfModelCard(model) {
+  const card = renderModelCard(model);
+  const repo = model.repo || (model.name?.split('/').slice(1, -1).join('/') ?? '');
+  const filename = model.filename || model.name?.split('/').pop() || '';
+  return card.replace(
+    '</div>',
+    `
+      <div class="model-card__actions">
+        <button class="btn btn-small" data-action="register" data-repo="${escapeHtml(
+          repo
+        )}" data-file="${escapeHtml(filename)}">Register</button>
+      </div>
+    </div>`
+  );
+}
+
+function renderRegisteredModelCard(model) {
+  const card = renderModelCard(model);
+  return card.replace(
+    '</div>',
+    `
+      <div class="model-card__actions">
+        <button class="btn btn-small" data-action="download" data-model="${escapeHtml(
+          model.name
+        )}">Download (all)</button>
+      </div>
+    </div>`
+  );
+}
+
 function resolveGpuModel(agent) {
   if (!agent) return '';
   if (agent.gpu_model_name) return agent.gpu_model_name;
@@ -419,12 +495,6 @@ function renderAvailableModels(models) {
 
   updateModelsCount(models.length);
   updateModelsSourceLabel();
-
-  if (models.length === 0) {
-    container.innerHTML = '<p class="empty-message">No models found</p>';
-    updateSelectedModelSummary();
-    return;
-  }
 
   const filtered = applyModelFilter(models, modelFilterQuery);
 
@@ -449,6 +519,53 @@ function renderAvailableModels(models) {
   });
 
   updateSelectedModelSummary();
+}
+
+function renderHfModels(models) {
+  const container = elements.hfModelsList();
+  const status = elements.hfStatus();
+  if (!container) return;
+  if (status) status.textContent = availableModelsMeta.cached ? 'Cached' : '';
+  if (models.length === 0) {
+    container.innerHTML = '<p class="empty-message">No HF models</p>';
+    return;
+  }
+  const filtered = applyModelFilter(models, modelFilterQuery);
+  if (filtered.length === 0) {
+    container.innerHTML = '<p class="empty-message">No HF models match filter</p>';
+    return;
+  }
+  container.innerHTML = filtered.map((m) => renderHfModelCard(m)).join('');
+  container.querySelectorAll('button[data-action="register"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const repo = btn.dataset.repo;
+      const file = btn.dataset.file;
+      try {
+        await registerModel(repo, file, `${repo}/${file}`);
+        await refreshRegisteredModels();
+        showSuccess('Registered model');
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  });
+}
+
+function renderRegisteredModels(models) {
+  const container = elements.registeredModelsList();
+  if (!container) return;
+  if (models.length === 0) {
+    container.innerHTML = '<p class="empty-message">No registered models</p>';
+    return;
+  }
+  container.innerHTML = models.map((m) => renderRegisteredModelCard(m)).join('');
+  container.querySelectorAll('button[data-action="download"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const modelName = btn.dataset.model;
+      await distributeModel(modelName, 'all');
+      showSuccess('Download started for all nodes');
+    });
+  });
 }
 
 /**
@@ -672,6 +789,21 @@ function showError(message) {
   }
 }
 
+function showSuccess(message) {
+  const banner = document.getElementById('error-banner');
+  if (banner) {
+    banner.textContent = message;
+    banner.classList.remove('hidden');
+    banner.classList.add('success-banner');
+    setTimeout(() => {
+      banner.classList.add('hidden');
+      banner.classList.remove('success-banner');
+    }, 3000);
+  } else {
+    console.info(message);
+  }
+}
+
 // ========== Progress Monitoring ==========
 
 /**
@@ -809,6 +941,10 @@ export async function initModelsUI(agents) {
   availableModels = await fetchAvailableModels();
   modelFilterQuery = '';
   renderAvailableModels(availableModels);
+  renderHfModels(availableModels);
+
+  registeredModels = await fetchRegisteredModels();
+  renderRegisteredModels(registeredModels);
 
   // エージェント一覧を描画
   renderAgentsForDistribution(agents);
@@ -819,6 +955,9 @@ export async function initModelsUI(agents) {
   const deselectAllButton = elements.deselectAllButton();
   const searchInput = elements.modelSearchInput();
   const toggleManualBtn = elements.toggleManualBtn();
+  const hfSearch = elements.hfSearchInput();
+  const hfRefresh = elements.hfRefreshBtn();
+  const regRefresh = elements.registeredRefreshBtn();
 
   if (distributeButton) {
     distributeButton.addEventListener('click', handleDistribute);
@@ -837,6 +976,24 @@ export async function initModelsUI(agents) {
     searchInput.addEventListener('input', handleModelSearch);
   }
 
+  if (hfSearch) {
+    hfSearch.addEventListener('input', async () => {
+      availableModels = await fetchAvailableModels();
+      renderHfModels(availableModels);
+    });
+  }
+
+  if (hfRefresh) {
+    hfRefresh.addEventListener('click', async () => {
+      availableModels = await fetchAvailableModels();
+      renderHfModels(availableModels);
+    });
+  }
+
+  if (regRefresh) {
+    regRefresh.addEventListener('click', refreshRegisteredModels);
+  }
+
   if (toggleManualBtn) {
     toggleManualBtn.addEventListener('click', toggleManualPanel);
   }
@@ -848,6 +1005,21 @@ export async function initModelsUI(agents) {
   // ロード済みモデルを初期取得
   loadedModels = await fetchLoadedModels();
   renderLoadedModels();
+
+  // 進捗監視開始
+  monitorProgress();
+
+  const tasksRefresh = elements.tasksRefreshBtn();
+  if (tasksRefresh) {
+    tasksRefresh.addEventListener('click', async () => {
+      const ids = Array.from(downloadTasks.keys());
+      for (const id of ids) {
+        const t = await fetchTaskProgress(id);
+        if (t) downloadTasks.set(id, t);
+      }
+      renderDownloadTasks();
+    });
+  }
 }
 
 /**
@@ -855,4 +1027,9 @@ export async function initModelsUI(agents) {
  */
 export function updateModelsUI(agents) {
   renderAgentsForDistribution(agents);
+}
+
+async function refreshRegisteredModels() {
+  registeredModels = await fetchRegisteredModels();
+  renderRegisteredModels(registeredModels);
 }

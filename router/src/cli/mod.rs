@@ -2,6 +2,7 @@
 //!
 //! Provides command-line interface for router management.
 
+pub mod model;
 pub mod user;
 
 use clap::{Parser, Subcommand};
@@ -33,5 +34,12 @@ pub enum Commands {
         /// User management subcommand
         #[command(subcommand)]
         command: user::UserCommand,
+    },
+    /// Manage models (HF GGUF)
+    /// Manage models (HF GGUF)
+    Model {
+        /// Model management subcommand
+        #[command(subcommand)]
+        command: model::ModelCommand,
     },
 }

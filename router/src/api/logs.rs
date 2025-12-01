@@ -204,7 +204,7 @@ mod tests {
         )
         .unwrap();
 
-        let response = get_coordinator_logs(Query(LogQuery { limit: 10 }))
+        let response = get_coordinator_logs(Query(LogQuery { limit: 2 }))
             .await
             .unwrap()
             .0;

@@ -193,12 +193,12 @@
   async function loadModels() {
     setStatus("Fetching models...", "connecting");
     try {
-      const res = await fetch("/v1/models");
+      const res = await fetch("/api/models/available");
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const body = await res.json();
-      const models = (body?.data || []).map((item) => item.id).filter(Boolean);
+      const models = (body?.models || []).map((item) => item.name).filter(Boolean);
       if (!models.length) {
         throw new Error("Model list is empty");
       }

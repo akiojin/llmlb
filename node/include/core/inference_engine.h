@@ -10,7 +10,7 @@ namespace ollama_node {
 
 // 前方宣言
 class LlamaManager;
-class OllamaCompat;
+class ModelStorage;
 class ModelRepair;
 
 struct ChatMessage {
@@ -50,11 +50,11 @@ private:
 
 class InferenceEngine {
 public:
-    /// コンストラクタ: LlamaManager と OllamaCompat への参照を注入
-    InferenceEngine(LlamaManager& manager, OllamaCompat& ollama_compat);
+    /// コンストラクタ: LlamaManager と ModelStorage への参照を注入
+    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage);
 
     /// コンストラクタ: ModelRepair を含む完全な依存関係注入
-    InferenceEngine(LlamaManager& manager, OllamaCompat& ollama_compat, ModelRepair& repair);
+    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelRepair& repair);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
@@ -97,7 +97,7 @@ public:
     std::string sampleNextToken(const std::vector<std::string>& tokens) const;
 
     /// 依存関係が注入されているか確認
-    bool isInitialized() const { return manager_ != nullptr && ollama_compat_ != nullptr; }
+    bool isInitialized() const { return manager_ != nullptr && model_storage_ != nullptr; }
 
     /// モデルをロードし、必要に応じて自動修復を試行
     /// @return ロード結果（成功/失敗、修復トリガー有無）
@@ -108,7 +108,7 @@ public:
 
 private:
     LlamaManager* manager_{nullptr};
-    OllamaCompat* ollama_compat_{nullptr};
+    ModelStorage* model_storage_{nullptr};
     ModelRepair* repair_{nullptr};
 
     /// チャットメッセージからプロンプト文字列を構築

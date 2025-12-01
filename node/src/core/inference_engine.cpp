@@ -1,6 +1,6 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
-#include "models/ollama_compat.h"
+#include "models/model_storage.h"
 #include "models/model_repair.h"
 #include "include/llama.h"
 
@@ -12,15 +12,15 @@
 namespace ollama_node {
 
 // コンストラクタ
-InferenceEngine::InferenceEngine(LlamaManager& manager, OllamaCompat& ollama_compat)
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage)
     : manager_(&manager)
-    , ollama_compat_(&ollama_compat)
+    , model_storage_(&model_storage)
     , repair_(nullptr) {}
 
 // コンストラクタ: ModelRepair を含む完全な依存関係注入
-InferenceEngine::InferenceEngine(LlamaManager& manager, OllamaCompat& ollama_compat, ModelRepair& repair)
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelRepair& repair)
     : manager_(&manager)
-    , ollama_compat_(&ollama_compat)
+    , model_storage_(&model_storage)
     , repair_(&repair) {}
 
 // チャットメッセージからプロンプトを構築
@@ -56,7 +56,7 @@ std::string InferenceEngine::generateChat(
     }
 
     // 1. モデルパス解決
-    std::string gguf_path = ollama_compat_->resolveGguf(model_name);
+    std::string gguf_path = model_storage_->resolveGguf(model_name);
     if (gguf_path.empty()) {
         spdlog::error("Model not found: {}", model_name);
         throw std::runtime_error("Model not found: " + model_name);
@@ -139,13 +139,21 @@ std::string InferenceEngine::generateChat(
     tokens.resize(static_cast<size_t>(n_tokens));
     spdlog::debug("Tokenized prompt: {} tokens", n_tokens);
 
-    // 7. バッチ作成とプロンプト処理
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
+    // 7. バッチ分割処理でプロンプトをデコード
+    const int32_t batch_size = llama_n_batch(ctx);
+    spdlog::debug("Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
 
-    int32_t decode_result = llama_decode(ctx, batch);
-    if (decode_result != 0) {
-        spdlog::error("llama_decode failed for prompt: {}", decode_result);
-        throw std::runtime_error("llama_decode failed");
+    for (int32_t i = 0; i < n_tokens; i += batch_size) {
+        int32_t current_batch_size = std::min(batch_size, n_tokens - i);
+        llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
+
+        int32_t decode_result = llama_decode(ctx, batch);
+        if (decode_result != 0) {
+            spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}, error={}",
+                i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
+                n_tokens, batch_size, decode_result);
+            throw std::runtime_error("llama_decode failed");
+        }
     }
 
     // 8. サンプラーチェーン初期化
@@ -199,9 +207,9 @@ std::string InferenceEngine::generateChat(
 
         // 次のトークン用にバッチを準備
         llama_batch next_batch = llama_batch_get_one(&new_token, 1);
-        decode_result = llama_decode(ctx, next_batch);
-        if (decode_result != 0) {
-            spdlog::warn("llama_decode failed during generation: {}", decode_result);
+        int32_t gen_decode_result = llama_decode(ctx, next_batch);
+        if (gen_decode_result != 0) {
+            spdlog::warn("llama_decode failed during generation: {}", gen_decode_result);
             break;
         }
 
@@ -255,7 +263,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     }
 
     // 1. モデルパス解決
-    std::string gguf_path = ollama_compat_->resolveGguf(model_name);
+    std::string gguf_path = model_storage_->resolveGguf(model_name);
     if (gguf_path.empty()) {
         throw std::runtime_error("Model not found: " + model_name);
     }
@@ -310,10 +318,20 @@ std::vector<std::string> InferenceEngine::generateChatStream(
 
     tokens.resize(static_cast<size_t>(n_tokens));
 
-    // 4. プロンプトをデコード
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
-    if (llama_decode(ctx, batch) != 0) {
-        throw std::runtime_error("llama_decode failed for prompt");
+    // 4. バッチ分割処理でプロンプトをデコード
+    const int32_t batch_size = llama_n_batch(ctx);
+    spdlog::debug("Streaming: Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
+
+    for (int32_t i = 0; i < n_tokens; i += batch_size) {
+        int32_t current_batch_size = std::min(batch_size, n_tokens - i);
+        llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
+
+        if (llama_decode(ctx, batch) != 0) {
+            spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}",
+                i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
+                n_tokens, batch_size);
+            throw std::runtime_error("llama_decode failed for prompt");
+        }
     }
 
     // 5. サンプラー初期化
@@ -441,7 +459,7 @@ ModelLoadResult InferenceEngine::loadModelWithRepair(const std::string& model_na
     }
 
     // 1. モデルパス解決
-    std::string gguf_path = ollama_compat_->resolveGguf(model_name);
+    std::string gguf_path = model_storage_->resolveGguf(model_name);
     if (gguf_path.empty()) {
         result.error_message = "Model not found: " + model_name;
         return result;
@@ -477,7 +495,7 @@ ModelLoadResult InferenceEngine::loadModelWithRepair(const std::string& model_na
         }
 
         // 修復後にパスを再解決
-        gguf_path = ollama_compat_->resolveGguf(model_name);
+        gguf_path = model_storage_->resolveGguf(model_name);
     }
 
     // 4. モデルをロード（オンデマンドロード使用）
@@ -489,7 +507,7 @@ ModelLoadResult InferenceEngine::loadModelWithRepair(const std::string& model_na
             auto repair_result = repair_->repair(model_name, repair_->getDefaultTimeout());
             if (repair_result.status == RepairStatus::Success) {
                 // 修復成功後に再ロード
-                gguf_path = ollama_compat_->resolveGguf(model_name);
+                gguf_path = model_storage_->resolveGguf(model_name);
                 if (manager_->loadModelIfNeeded(gguf_path)) {
                     result.success = true;
                     return result;

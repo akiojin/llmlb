@@ -73,4 +73,68 @@ mod tests {
         assert!(out.contains("cloud_requests_total"));
         assert!(out.contains("cloud_request_latency_seconds"));
     }
+
+    #[test]
+    fn record_multiple_providers() {
+        record("openai", 200, 100);
+        record("google", 200, 150);
+        record("anthropic", 200, 200);
+        let encoder = TextEncoder::new();
+        let metric_families = REGISTRY.gather();
+        let mut buf = Vec::new();
+        encoder.encode(&metric_families, &mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("openai"));
+        assert!(out.contains("google"));
+        assert!(out.contains("anthropic"));
+    }
+
+    #[test]
+    fn record_various_status_codes() {
+        record("openai", 200, 50);
+        record("openai", 400, 25);
+        record("openai", 500, 30);
+        let encoder = TextEncoder::new();
+        let metric_families = REGISTRY.gather();
+        let mut buf = Vec::new();
+        encoder.encode(&metric_families, &mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("200"));
+        assert!(out.contains("400"));
+        assert!(out.contains("500"));
+    }
+
+    #[test]
+    fn init_metrics_is_idempotent() {
+        init_metrics();
+        init_metrics();
+        init_metrics();
+        // No panic means success
+    }
+
+    #[tokio::test]
+    async fn export_metrics_returns_text_plain() {
+        record("test", 200, 10);
+        let response = export_metrics().await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get(header::CONTENT_TYPE);
+        assert!(content_type.is_some());
+        assert!(content_type
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("text/plain"));
+    }
+
+    #[test]
+    fn latency_conversion_ms_to_seconds() {
+        record("latency_test", 200, 1500);
+        let encoder = TextEncoder::new();
+        let metric_families = REGISTRY.gather();
+        let mut buf = Vec::new();
+        encoder.encode(&metric_families, &mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        // 1500ms = 1.5s, bucket should contain this value
+        assert!(out.contains("cloud_request_latency_seconds"));
+    }
 }

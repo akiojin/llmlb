@@ -13,7 +13,7 @@
 #include "models/model_sync.h"
 #include "models/model_downloader.h"
 #include "models/model_registry.h"
-#include "models/ollama_compat.h"
+#include "models/model_storage.h"
 #include "models/model_repair.h"
 #include "core/llama_manager.h"
 #include "core/inference_engine.h"
@@ -82,12 +82,12 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
 
         // Determine models directory
         std::string models_dir = cfg.models_dir.empty()
-                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.ollama/models"
+                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.llm-router/models"
                                      : cfg.models_dir;
 
-        // Initialize LlamaManager and OllamaCompat for inference engine
+        // Initialize LlamaManager and ModelStorage for inference engine
         ollama_node::LlamaManager llama_manager(models_dir);
-        ollama_node::OllamaCompat ollama_compat(models_dir);
+        ollama_node::ModelStorage model_storage(models_dir);
 
         // Set GPU layers based on detection (use all layers on GPU if available)
         if (!gpu_devices.empty()) {
@@ -129,15 +129,15 @@ int run_node(const ollama_node::NodeConfig& cfg, bool single_iteration) {
             model_sync_ptr = std::make_unique<ollama_node::ModelSync>(router_url, models_dir);
             model_downloader_ptr = std::make_unique<ollama_node::ModelDownloader>(router_url, models_dir);
             model_repair_ptr = std::make_unique<ollama_node::ModelRepair>(
-                *model_sync_ptr, *model_downloader_ptr, ollama_compat);
+                *model_sync_ptr, *model_downloader_ptr, model_storage);
             model_repair_ptr->setDefaultTimeout(std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::seconds(cfg.repair_timeout_secs)));
         }
 
         // Initialize inference engine with dependencies
         ollama_node::InferenceEngine engine = cfg.auto_repair && model_repair_ptr
-            ? ollama_node::InferenceEngine(llama_manager, ollama_compat, *model_repair_ptr)
-            : ollama_node::InferenceEngine(llama_manager, ollama_compat);
+            ? ollama_node::InferenceEngine(llama_manager, model_storage, *model_repair_ptr)
+            : ollama_node::InferenceEngine(llama_manager, model_storage);
         spdlog::info("InferenceEngine initialized with llama.cpp support{}", cfg.auto_repair ? " (auto-repair enabled)" : "");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)

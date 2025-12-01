@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 .PHONY: quality-checks fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
-.PHONY: openai-tests test-hooks
+.PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 
@@ -43,6 +43,11 @@ openai-tests:
 
 test-hooks:
 	npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats
+
+# E2E tests for OpenAI-compatible API (requires running router/node)
+# Usage: LLM_ROUTER_URL=http://localhost:8081 LLM_ROUTER_API_KEY=sk_xxx make e2e-tests
+e2e-tests:
+	npx bats tests/e2e/test-openai-api.bats
 
 # Benchmarks (wrk required)
 bench-local:

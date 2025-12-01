@@ -549,3 +549,161 @@ pub async fn update_progress(
 
     Ok(StatusCode::OK)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_model_name_valid() {
+        assert!(validate_model_name("gpt-oss").is_ok());
+        assert!(validate_model_name("gpt-oss:7b").is_ok());
+        assert!(validate_model_name("llama3.2:latest").is_ok());
+        assert!(validate_model_name("model_name:v1.0").is_ok());
+    }
+
+    #[test]
+    fn test_validate_model_name_empty() {
+        assert!(validate_model_name("").is_err());
+    }
+
+    #[test]
+    fn test_validate_model_name_too_many_colons() {
+        assert!(validate_model_name("a:b:c").is_err());
+    }
+
+    #[test]
+    fn test_validate_model_name_invalid_characters() {
+        assert!(validate_model_name("Model Name").is_err());
+        assert!(validate_model_name("model@name").is_err());
+    }
+
+    #[test]
+    fn test_available_model_view_serialize() {
+        let view = AvailableModelView {
+            name: "gpt-oss:7b".to_string(),
+            display_name: Some("GPT-OSS 7B".to_string()),
+            description: Some("Test model".to_string()),
+            tags: Some(vec!["7b".to_string()]),
+            size_gb: Some(4.0),
+            required_memory_gb: Some(6.0),
+        };
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("gpt-oss:7b"));
+        assert!(json.contains("GPT-OSS 7B"));
+    }
+
+    #[test]
+    fn test_available_model_view_optional_fields_skipped() {
+        let view = AvailableModelView {
+            name: "test".to_string(),
+            display_name: None,
+            description: None,
+            tags: None,
+            size_gb: None,
+            required_memory_gb: None,
+        };
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("display_name"));
+        assert!(!json.contains("description"));
+    }
+
+    #[test]
+    fn test_available_models_response_serialize() {
+        let response = AvailableModelsResponse {
+            models: vec![],
+            source: "ollama_library".to_string(),
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("ollama_library"));
+    }
+
+    #[test]
+    fn test_loaded_model_summary_serialize() {
+        let summary = LoadedModelSummary {
+            model_name: "test:7b".to_string(),
+            total_nodes: 3,
+            pending: 1,
+            downloading: 1,
+            completed: 1,
+            failed: 0,
+        };
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("test:7b"));
+        assert!(json.contains("\"total_nodes\":3"));
+    }
+
+    #[test]
+    fn test_distribute_models_request_deserialize() {
+        let json = r#"{"model_name": "test:7b", "target": "all"}"#;
+        let request: DistributeModelsRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.model_name, "test:7b");
+        assert_eq!(request.target, "all");
+        assert!(request.node_ids.is_empty());
+    }
+
+    #[test]
+    fn test_distribute_models_request_with_node_ids() {
+        let json = r#"{"model_name": "test:7b", "target": "specific", "node_ids": ["550e8400-e29b-41d4-a716-446655440000"]}"#;
+        let request: DistributeModelsRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.target, "specific");
+        assert_eq!(request.node_ids.len(), 1);
+    }
+
+    #[test]
+    fn test_distribute_models_response_serialize() {
+        let task_id = Uuid::new_v4();
+        let response = DistributeModelsResponse {
+            task_ids: vec![task_id],
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains(&task_id.to_string()));
+    }
+
+    #[test]
+    fn test_pull_model_request_deserialize() {
+        let json = r#"{"model_name": "gpt-oss:20b"}"#;
+        let request: PullModelRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.model_name, "gpt-oss:20b");
+    }
+
+    #[test]
+    fn test_pull_model_response_serialize() {
+        let task_id = Uuid::new_v4();
+        let response = PullModelResponse { task_id };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains(&task_id.to_string()));
+    }
+
+    #[test]
+    fn test_update_progress_request_deserialize() {
+        let json = r#"{"progress": 0.5, "speed": 1024}"#;
+        let request: UpdateProgressRequest = serde_json::from_str(json).unwrap();
+        assert!((request.progress - 0.5).abs() < f32::EPSILON);
+        assert_eq!(request.speed, Some(1024));
+    }
+
+    #[test]
+    fn test_update_progress_request_without_speed() {
+        let json = r#"{"progress": 0.75}"#;
+        let request: UpdateProgressRequest = serde_json::from_str(json).unwrap();
+        assert!((request.progress - 0.75).abs() < f32::EPSILON);
+        assert!(request.speed.is_none());
+    }
+
+    #[test]
+    fn test_model_info_to_view_conversion() {
+        let model = crate::registry::models::ModelInfo {
+            name: "gpt-oss:7b".to_string(),
+            description: "Test model".to_string(),
+            tags: vec!["7b".to_string()],
+            size: 4 * 1024 * 1024 * 1024,            // 4 GB
+            required_memory: 6 * 1024 * 1024 * 1024, // 6 GB
+        };
+        let view = model_info_to_view(model);
+        assert_eq!(view.name, "gpt-oss:7b");
+        assert_eq!(view.display_name, Some("GPT-OSS 7B".to_string()));
+        assert!((view.size_gb.unwrap() - 4.0).abs() < 0.001);
+        assert!((view.required_memory_gb.unwrap() - 6.0).abs() < 0.001);
+    }
+}

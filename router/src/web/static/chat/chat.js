@@ -34,6 +34,8 @@
     stopButton: document.getElementById("stop-button"),
     resetButton: document.getElementById("reset-chat"),
     errorBanner: document.getElementById("error-banner"),
+    errorMessage: document.getElementById("error-message"),
+    errorClose: document.getElementById("error-close"),
     routerStatus: document.getElementById("router-status"),
     modelCount: document.getElementById("model-count"),
     modelHint: document.getElementById("model-hint"),
@@ -107,13 +109,17 @@
 
   function showError(message) {
     if (!dom.errorBanner) return;
-    dom.errorBanner.textContent = message;
+    if (dom.errorMessage) {
+      dom.errorMessage.textContent = message;
+    } else {
+      dom.errorBanner.textContent = message;
+    }
     dom.errorBanner.classList.remove("hidden");
   }
 
   function clearError() {
     dom.errorBanner?.classList.add("hidden");
-    if (dom.errorBanner) dom.errorBanner.textContent = "";
+    if (dom.errorMessage) dom.errorMessage.textContent = "";
   }
 
   function modelKind(id) {
@@ -479,18 +485,28 @@
     entry.element = node;
   }
 
+  function getScrollContainer() {
+    // chat-messagesの親要素(.chat-container)がスクロール可能
+    return dom.chatLog?.parentElement;
+  }
+
   function isNearBottom() {
-    if (!dom.chatLog) return true;
+    const container = getScrollContainer();
+    if (!container) return true;
     const threshold = 100; // ピクセル単位のしきい値
-    const { scrollTop, scrollHeight, clientHeight } = dom.chatLog;
+    const { scrollTop, scrollHeight, clientHeight } = container;
     return scrollHeight - scrollTop - clientHeight < threshold;
   }
 
   function scrollToBottom(smooth = false) {
-    if (!dom.chatLog) return;
-    dom.chatLog.scrollTo({
-      top: dom.chatLog.scrollHeight,
-      behavior: smooth ? "smooth" : "instant",
+    const container = getScrollContainer();
+    if (!container) return;
+    // requestAnimationFrameでDOM更新後にスクロール
+    requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: smooth ? "smooth" : "instant",
+      });
     });
   }
 
@@ -926,6 +942,9 @@
     // Sidebar toggle
     dom.sidebarToggle?.addEventListener("click", toggleSidebar);
     dom.sidebarToggleMobile?.addEventListener("click", toggleSidebar);
+
+    // Error close button
+    dom.errorClose?.addEventListener("click", clearError);
   }
 
   document.addEventListener("DOMContentLoaded", () => {

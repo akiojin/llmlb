@@ -18,7 +18,8 @@ use uuid::Uuid;
 use crate::{
     ollama::OllamaClient,
     registry::models::{
-        router_model_path, DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
+        ensure_router_model_cached, router_model_path, DownloadStatus, DownloadTask,
+        InstalledModel, ModelInfo, ModelSource,
     },
     AppState,
 };
@@ -621,9 +622,13 @@ pub async fn distribute_models(
         let model_name = request.model_name.clone();
 
         let model_info = find_model_by_name(&model_name);
-        let shared_path = model_info
-            .as_ref()
-            .and_then(|m| router_model_path(&m.name))
+        let cached = if let Some(mi) = &model_info {
+            ensure_router_model_cached(mi).await
+        } else {
+            None
+        };
+        let shared_path = cached
+            .or_else(|| model_info.as_ref().and_then(|m| router_model_path(&m.name)))
             .map(|p| p.to_string_lossy().to_string());
         let download_url = model_info.and_then(|m| m.download_url.clone());
 

@@ -18,7 +18,7 @@ use std::{net::IpAddr, time::Instant};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::registry::models::router_model_path;
+use crate::registry::models::{ensure_router_model_cached, router_model_path};
 use crate::{
     api::{
         models::list_registered_models,
@@ -112,27 +112,29 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
 
     // OpenAI互換レスポンス形式に合わせる
     // https://platform.openai.com/docs/api-reference/models/list
-    let data: Vec<Value> = models
-        .into_iter()
-        .map(|m| {
-            let path = router_model_path(&m.name).map(|p| p.to_string_lossy().to_string());
+    let mut data: Vec<Value> = Vec::new();
+    for m in models {
+        // ルーター側でキャッシュを試行
+        let cached = ensure_router_model_cached(&m).await;
+        let path = cached
+            .or_else(|| router_model_path(&m.name))
+            .map(|p| p.to_string_lossy().to_string());
 
-            let mut obj = json!({
-                "id": m.name,
-                "object": "model",
-                "created": 0,
-                "owned_by": "coordinator",
-            });
+        let mut obj = json!({
+            "id": m.name,
+            "object": "model",
+            "created": 0,
+            "owned_by": "coordinator",
+        });
 
-            if let Some(p) = path {
-                obj["path"] = json!(p);
-            }
-            if let Some(url) = m.download_url {
-                obj["download_url"] = json!(url);
-            }
-            obj
-        })
-        .collect();
+        if let Some(p) = path {
+            obj["path"] = json!(p);
+        }
+        if let Some(url) = m.download_url.clone() {
+            obj["download_url"] = json!(url);
+        }
+        data.push(obj);
+    }
 
     let body = json!({
         "object": "list",
@@ -165,7 +167,14 @@ pub async fn get_model(
         return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
     }
 
-    let path = router_model_path(&model_id).map(|p| p.to_string_lossy().to_string());
+    // ルーター側キャッシュを試行
+    let cached =
+        ensure_router_model_cached(all.iter().find(|m| m.name == model_id).unwrap_or(&all[0]))
+            .await;
+
+    let path = cached
+        .or_else(|| router_model_path(&model_id))
+        .map(|p| p.to_string_lossy().to_string());
 
     let mut body = json!({
         "id": model_id,

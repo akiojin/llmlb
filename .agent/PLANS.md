@@ -715,11 +715,12 @@ bool parse_special = is_gptoss; // gpt-oss は特殊トークンをパース
 - ノードはまずローカル `~/.llm-router/models` を確認し、なければ `path` が読めるかチェック、不可なら `download_url` をダウンロード。Ollama blob など外部フォールバックは廃止。
 
 ### 実装タスク
-1. Router `/v1/models` スキーマ拡張: `path`, `download_url` をオプションで返す（spec反映済み） **実装完了**。
+1. Router `/v1/models` スキーマ拡張: `path`, `download_url` をオプションで返す（spec反映済み） **実装完了**。`path` はルーター側キャッシュ成功時にセット。
 2. Node model resolver 改修:
    - ローカル固定パスのみを見るようにする（フォールバック削除済み）。
-   - `/v1/models` / `/pull` から受け取った `path` が読めればコピー、不可なら `download_url` or manifest でダウンロードして `~/.llm-router/models` に保存（実装済み、manifestはフォールバックで維持）。
-3. テスト:
+   - `/v1/models` / `/pull` から受け取った `path` が読めればコピー、不可なら `download_url` でダウンロードして `~/.llm-router/models` に保存。
+3. テスト (TDD):
+   - ルーターキャッシュ有りで `path` が返るユニットテスト。
    - pathのみ有効 / downloadのみ有効 / 両方無効（エラー）のユニットテスト。
    - E2Eで共有パス経由でロードできるケースを追加。
 

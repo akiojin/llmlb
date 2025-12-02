@@ -94,7 +94,7 @@ TEST(LlamaManagerTest, UnloadReducesMemory) {
 // LLM runtime blob file format tests (SPEC-0c4f3e5c)
 // =============================================================================
 
-TEST(LlamaManagerTest, AcceptsLLM runtimeBlobFormat) {
+TEST(LlamaManagerTest, AcceptsRuntimeBlobFormat) {
     TempModelFile tmp;
     // Create a valid LLM runtime blob filename (sha256-<64 hex chars>)
     std::string blob_name = "sha256-e7b273f9636059a689e3ddcab3716e4f65abe0143ac978e46673ad0e52d09efb";

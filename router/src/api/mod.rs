@@ -336,8 +336,8 @@ mod tests {
             .register(RegisterRequest {
                 machine_name: "test-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
-                ollama_version: "0.1.0".into(),
-                ollama_port: 11434,
+                runtime_version: "0.1.0".into(),
+                runtime_port: 11434,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -371,8 +371,8 @@ mod tests {
             .register(RegisterRequest {
                 machine_name: "overview-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
-                ollama_version: "0.1.0".into(),
-                ollama_port: 11434,
+                runtime_version: "0.1.0".into(),
+                runtime_port: 11434,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -409,8 +409,8 @@ mod tests {
             .register(RegisterRequest {
                 machine_name: "metrics-route".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
-                ollama_version: "0.1.0".into(),
-                ollama_port: 11434,
+                runtime_version: "0.1.0".into(),
+                runtime_port: 11434,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),

@@ -2,7 +2,7 @@
 
 #include "core/inference_engine.h"
 
-using namespace ollama_node;
+using namespace llm_node;
 
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
     InferenceEngine engine;

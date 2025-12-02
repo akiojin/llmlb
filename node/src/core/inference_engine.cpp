@@ -9,7 +9,7 @@
 #include <sstream>
 #include <chrono>
 
-namespace ollama_node {
+namespace llm_node {
 
 // コンストラクタ
 InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage)
@@ -522,4 +522,4 @@ ModelLoadResult InferenceEngine::loadModelWithRepair(const std::string& model_na
     return result;
 }
 
-}  // namespace ollama_node
+}  // namespace llm_node

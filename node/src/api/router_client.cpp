@@ -4,7 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <thread>
 
-namespace ollama_node {
+namespace llm_node {
 
 using json = nlohmann::json;
 
@@ -42,8 +42,8 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     json payload = {
         {"machine_name", info.machine_name},
         {"ip_address", info.ip_address},
-        {"ollama_version", info.ollama_version},
-        {"ollama_port", info.ollama_port},
+        {"runtime_version", info.runtime_version},
+        {"runtime_port", info.runtime_port},
         {"gpu_available", info.gpu_available},
         {"gpu_devices", gpu_devices_json}
     };
@@ -132,4 +132,4 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
     return false;
 }
 
-}  // namespace ollama_node
+}  // namespace llm_node

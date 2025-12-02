@@ -1,6 +1,6 @@
 //! モデル情報管理
 //!
-//! Ollamaモデルのメタデータとダウンロードタスク管理
+//! LLM runtimeモデルのメタデータとダウンロードタスク管理
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ pub enum ModelSource {
     HfPendingConversion,
 }
 
-/// Ollamaモデル情報
+/// LLM runtimeモデル情報
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelInfo {
     /// モデル名（例: "gpt-oss:20b", "llama3.2"）
@@ -97,7 +97,7 @@ pub struct InstalledModel {
     pub size: u64,
     /// インストール日時
     pub installed_at: DateTime<Utc>,
-    /// digest（Ollamaのモデル識別子）
+    /// digest（LLM runtimeのモデル識別子）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digest: Option<String>,
 }

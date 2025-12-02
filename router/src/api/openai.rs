@@ -105,7 +105,7 @@ pub async fn embeddings(
 /// GET /v1/models - モデル一覧取得
 pub async fn list_models(State(_state): State<AppState>) -> Result<Response, AppError> {
     // ルーターがサポートするモデルを返す（プロキシせずローカルリストを使用）
-    let client = crate::ollama::OllamaClient::new()?;
+    let client = crate::runtime::RuntimeClient::new()?;
     let mut models = client.get_predefined_models();
     models.extend(list_registered_models());
 
@@ -136,7 +136,7 @@ pub async fn get_model(
     State(_state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
-    let client = crate::ollama::OllamaClient::new()?;
+    let client = crate::runtime::RuntimeClient::new()?;
     let mut all = client.get_predefined_models();
     all.extend(list_registered_models());
     let exists = all.into_iter().any(|m| m.name == model_id);
@@ -746,14 +746,14 @@ async fn proxy_openai_post(
         .map_err(AppError::from)?;
 
     let client = reqwest::Client::new();
-    let agent_api_port = agent.ollama_port + 1;
-    let ollama_url = format!(
+    let agent_api_port = agent.runtime_port + 1;
+    let runtime_url = format!(
         "http://{}:{}{}",
         agent.ip_address, agent_api_port, target_path
     );
     let start = Instant::now();
 
-    let response = match client.post(&ollama_url).json(&payload).send().await {
+    let response = match client.post(&runtime_url).json(&payload).send().await {
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();
@@ -860,7 +860,7 @@ async fn proxy_openai_post(
         let payload = json!({
             "error": {
                 "message": message,
-                "type": "ollama_upstream_error",
+                "type": "runtime_upstream_error",
                 "code": status_code.as_u16(),
             }
         });
@@ -975,13 +975,13 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
         .map_err(AppError::from)?;
 
     let client = reqwest::Client::new();
-    let ollama_url = format!(
+    let runtime_url = format!(
         "http://{}:{}{}",
-        agent.ip_address, agent.ollama_port, target_path
+        agent.ip_address, agent.runtime_port, target_path
     );
     let start = Instant::now();
 
-    let response = client.get(&ollama_url).send().await.map_err(|e| {
+    let response = client.get(&runtime_url).send().await.map_err(|e| {
         AppError::from(RouterError::Http(format!(
             "Failed to proxy OpenAI models request: {}",
             e
@@ -1013,7 +1013,7 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
         let payload = json!({
             "error": {
                 "message": message,
-                "type": "ollama_upstream_error",
+                "type": "runtime_upstream_error",
                 "code": status_code.as_u16(),
             }
         });

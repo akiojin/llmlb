@@ -1,4 +1,4 @@
-//! Contract Test: Ollama Generate APIプロキシ (POST /api/generate)
+//! Contract Test: LLM runtime Generate APIプロキシ (POST /api/generate)
 //!
 //! `/api/generate` を実ポートで起動したスタブノードに中継し、
 //! OpenAI互換のレスポンス/エラーハンドリングを検証する。
@@ -134,7 +134,7 @@ async fn proxy_generate_propagates_upstream_error() {
 
     assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
     let body: Value = response.json().await.expect("error payload");
-    assert_eq!(body["error"]["type"], "ollama_upstream_error");
+    assert_eq!(body["error"]["type"], "runtime_upstream_error");
     assert_eq!(body["error"]["code"], 400);
     assert!(body["error"]["message"]
         .as_str()

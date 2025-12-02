@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::{
-    ollama::OllamaClient,
     registry::models::{DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource},
+    runtime::RuntimeClient,
     AppState,
 };
 use llm_router_common::error::RouterError;
@@ -110,7 +110,7 @@ pub struct AvailableModelView {
 pub struct AvailableModelsResponse {
     /// モデル一覧（UI表示用に整形済み）
     pub models: Vec<AvailableModelView>,
-    /// ソース（"ollama_library" / "hf" など）
+    /// ソース（"builtin" / "hf" など）
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     /// キャッシュヒットかどうか
@@ -228,7 +228,7 @@ pub struct AvailableQuery {
     pub limit: Option<u32>,
     /// オフセット
     pub offset: Option<u32>,
-    /// ソース指定（hf/ollama_library）
+    /// ソース指定（hf/builtin）
     pub source: Option<String>,
 }
 
@@ -416,12 +416,9 @@ pub async fn get_available_models(
     State(_state): State<AppState>,
     Query(query): Query<AvailableQuery>,
 ) -> Result<Json<AvailableModelsResponse>, AppError> {
-    // Default to built-in Ollama library for backward compatibility.
+    // Default to built-in model list for backward compatibility.
     // Hugging Face catalog is available via `source=hf` query parameter.
-    let source = query
-        .source
-        .clone()
-        .unwrap_or_else(|| "ollama_library".into());
+    let source = query.source.clone().unwrap_or_else(|| "builtin".into());
 
     if source == "hf" {
         tracing::debug!("Fetching available models from Hugging Face");
@@ -439,13 +436,13 @@ pub async fn get_available_models(
         }));
     }
 
-    tracing::debug!("Fetching available models from Ollama library");
-    let client = OllamaClient::new()?;
+    tracing::debug!("Fetching available models from builtin list");
+    let client = RuntimeClient::new()?;
     let models = client.get_predefined_models();
     let models_view = models.into_iter().map(model_info_to_view).collect();
     Ok(Json(AvailableModelsResponse {
         models: models_view,
-        source: "ollama_library".to_string(),
+        source: "builtin".to_string(),
         cached: None,
         pagination: None,
     }))
@@ -605,7 +602,7 @@ pub async fn distribute_models(
         );
 
         // ノードにモデルプル要求を送信（バックグラウンド）
-        let node_api_port = node.ollama_port + 1;
+        let node_api_port = node.runtime_port + 1;
         let node_url = format!("http://{}:{}/pull", node.ip_address, node_api_port);
         let model_name = request.model_name.clone();
 
@@ -657,10 +654,10 @@ pub async fn get_node_models(
     let node = state.registry.get(node_id).await?;
 
     // ノードからモデル一覧を取得（実装は後で）
-    let node_url = format!("http://{}:{}", node.ip_address, node.ollama_port);
+    let node_url = format!("http://{}:{}", node.ip_address, node.runtime_port);
     tracing::info!("Fetching models from node at {}", node_url);
 
-    // TODO: ノードのOllama APIからモデル一覧を取得
+    // TODO: ノードのLLM runtime APIからモデル一覧を取得
     // 現在は空の配列を返す
     Ok(Json(Vec::new()))
 }
@@ -715,7 +712,7 @@ pub async fn pull_model_to_node(
     );
 
     // ノードにモデルプル要求を送信（バックグラウンド）
-    let node_api_port = node.ollama_port + 1;
+    let node_api_port = node.runtime_port + 1;
     let node_url = format!("http://{}:{}/pull", node.ip_address, node_api_port);
     let model_name = request.model_name.clone();
 
@@ -874,12 +871,12 @@ mod tests {
     fn test_available_models_response_serialize() {
         let response = AvailableModelsResponse {
             models: vec![],
-            source: "ollama_library".to_string(),
+            source: "builtin".to_string(),
             cached: None,
             pagination: None,
         };
         let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("ollama_library"));
+        assert!(json.contains("builtin"));
     }
 
     #[test]

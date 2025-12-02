@@ -6,7 +6,7 @@
 #include <chrono>
 #include "metrics/prometheus_exporter.h"
 
-namespace ollama_node {
+namespace llm_node {
 
 class NodeEndpoints {
 public:
@@ -24,4 +24,4 @@ private:
     double gpu_capability_{0.0};
 };
 
-}  // namespace ollama_node
+}  // namespace llm_node

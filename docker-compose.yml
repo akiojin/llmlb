@@ -1,13 +1,13 @@
 services:
-  ollama-router:
+  llm-router:
     build:
       context: .
-    container_name: ollama-router
+    container_name: llm-router
     mem_limit: 16g
     mem_reservation: 13g
     memswap_limit: 18g
     volumes:
-      - .:/ollama-router
+      - .:/llm-router
       - bash-history:/root/.bash_history_dir
       - ./.docker/bash_history:/root/.bash_history
       - claude-config:/root/.claude
@@ -35,9 +35,33 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${ROUTER_PORT:-8080}:8080"
+      - "8081:8081"
+      - "11434-11440:11434-11440"
     stdin_open: true
     tty: true
-    working_dir: /ollama-router
+    working_dir: /llm-router
+
+  llm-node:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+      args:
+        CUDA: ${LLM_CPP_CUDA:-cpu} # cpu | cuda
+    container_name: llm-node
+    depends_on:
+      - llm-router
+    environment:
+      - LLM_ROUTER_URL=http://llm-router:8080
+      - LLM_MODELS_DIR=/models
+      - LLM_NODE_PORT=11435
+      - LLM_ALLOW_NO_GPU=1
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}
+    runtime: ${DOCKER_RUNTIME:-runc} # set to nvidia when using GPU
+    volumes:
+      - ./node/models:/models
+    ports:
+      - "11435:11435"
+    restart: unless-stopped
 
 volumes:
   bash-history: {}

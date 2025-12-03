@@ -1,0 +1,2 @@
+label,rps,p50_ms,p75_ms,p90_ms,p95_ms,p99_ms,non2xx,socket_errors,requests,duration_s
+local,170600.51,0.249,0.386,0.6,,1.92,5122540,0,5122540,30.03

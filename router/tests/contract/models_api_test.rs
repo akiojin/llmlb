@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use or_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
 use tower::ServiceExt;
@@ -21,13 +21,13 @@ async fn build_app() -> Router {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("OLLAMA_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = or_router::tasks::DownloadTaskManager::new();
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
+    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -52,7 +52,7 @@ async fn build_app() -> Router {
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_contract() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let response = app
@@ -118,7 +118,7 @@ async fn test_get_available_models_contract() {
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_contract() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用リクエスト
@@ -174,7 +174,7 @@ async fn test_distribute_models_contract() {
 #[tokio::test]
 #[serial]
 async fn test_get_agent_models_contract() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用のノードを登録
@@ -256,7 +256,7 @@ async fn test_get_agent_models_contract() {
 #[tokio::test]
 #[serial]
 async fn test_pull_model_contract() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用のノードを登録
@@ -338,7 +338,7 @@ async fn test_pull_model_contract() {
 #[tokio::test]
 #[serial]
 async fn test_get_task_progress_contract() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用のノードを登録

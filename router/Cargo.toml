@@ -1,5 +1,5 @@
 [package]
-name = "or-router"
+name = "llm-router"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 build = "build.rs"
 
 [dependencies]
-ollama-router-common = { path = "../common" }
+llm-router-common = { path = "../common" }
 
 # 非同期ランタイム
 tokio = { workspace = true }
@@ -27,6 +27,9 @@ serde_json = { workspace = true }
 # HTTPクライアント
 reqwest = { workspace = true }
 futures = "0.3"
+prometheus = "0.13"
+once_cell = "1.19"
+anyhow = "1.0"
 
 # ログ
 tracing = { workspace = true }
@@ -46,6 +49,10 @@ bcrypt = "0.15"
 jsonwebtoken = "9.2"
 sha2 = "0.10"
 rand = "0.8"
+rpassword = "7.3"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
 
 [build-dependencies]
 winresource = "0.1.27"

@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: LLM Router API
+  version: "0.1.0"
+  description: >
+    OpenAI-compatible endpoints with optional cloud routing by model prefix
+    (openai:/google:/anthropic:).
+servers:
+  - url: http://localhost:8080
+paths:
+  /v1/chat/completions:
+    post:
+      summary: Chat completion (local or cloud depending on model prefix)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Chat completion response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "400":
+          description: Invalid request or unsupported prefix
+        "401":
+          description: Missing or invalid cloud API key
+  /v1/completions:
+    post:
+      summary: Text completion (legacy)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompletionRequest"
+      responses:
+        "200":
+          description: Completion response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionResponse"
+  /v1/embeddings:
+    post:
+      summary: Embeddings generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbeddingRequest"
+      responses:
+        "200":
+          description: Embedding vectors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingResponse"
+  /api/dashboard/stats:
+    get:
+      summary: Router stats including cloud key presence flags
+      responses:
+        "200":
+          description: Current stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          example: openai:gpt-4o
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        stream:
+          type: boolean
+      required: [model, messages]
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+      required: [role, content]
+    ChatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatChoice"
+    ChatChoice:
+      type: object
+      properties:
+        index:
+          type: integer
+        message:
+          $ref: "#/components/schemas/ChatMessage"
+        finish_reason:
+          type: string
+    CompletionRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        stream:
+          type: boolean
+      required: [model, prompt]
+    CompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              index:
+                type: integer
+    EmbeddingRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        input:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+      required: [model, input]
+    EmbeddingResponse:
+      type: object
+      properties:
+        model:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              embedding:
+                type: array
+                items:
+                  type: number
+              index:
+                type: integer
+    DashboardStats:
+      type: object
+      properties:
+        total_agents:
+          type: integer
+        online_agents:
+          type: integer
+        openai_key_present:
+          type: boolean
+        google_key_present:
+          type: boolean
+        anthropic_key_present:
+          type: boolean

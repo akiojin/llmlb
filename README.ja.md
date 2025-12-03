@@ -1,4 +1,4 @@
-# Ollama Router
+# LLM Router
 
 複数マシンでOllamaインスタンスを管理する中央集権型システム
 
@@ -6,7 +6,7 @@
 
 ## 概要
 
-Ollama Routerは、複数のマシン上で動作するOllamaインスタンスを一元管理し、統一されたAPIエンドポイントを提供するシステムです。インテリジェントなロードバランシング、自動障害検知、リアルタイム監視機能を備えています。
+LLM Routerは、複数のマシン上で動作するOllamaインスタンスを一元管理し、統一されたAPIエンドポイントを提供するシステムです。インテリジェントなロードバランシング、自動障害検知、リアルタイム監視機能を備えています。
 
 ## 主な特徴
 
@@ -19,6 +19,99 @@ Ollama Routerは、複数のマシン上で動作するOllamaインスタンス�
 - **WebUI管理**: ブラウザベースのダッシュボードでノード設定、監視、制御が可能
 - **クロスプラットフォーム対応**: Windows 10+、macOS 12+、Linuxで動作
 - **GPU対応ルーティング**: GPU能力と可用性に基づくインテリジェントなリクエストルーティング
+- **クラウドプレフィックス**: `openai:` `google:` `anthropic:` をモデル名に付けるだけで
+  同一エンドポイントから各クラウドAPIへプロキシ可能
+
+クイックリファレンス: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
+[TROUBLESHOOTING](./TROUBLESHOOTING.md)
+
+## クイックスタート
+
+### ルーター (llm-router)
+
+```bash
+# ビルド
+cargo build --release -p llm-router
+
+# 起動
+./target/release/llm-router
+# デフォルト: http://0.0.0.0:8080
+
+# ダッシュボードにアクセス
+# ブラウザで http://localhost:8080/dashboard を開く
+```
+
+**環境変数:**
+
+| 変数 | デフォルト | 説明 |
+|-----|-----------|------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
+| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_ROUTER_JWT_SECRET` | (自動生成) | JWT署名キー |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
+| `LLM_ROUTER_ADMIN_PASSWORD` | (必須) | 初期管理者パスワード |
+
+**後方互換性:** 旧環境変数名（`ROUTER_PORT`等）も使用可能ですが非推奨です。
+
+**システムトレイ（Windows/macOSのみ）:**
+
+Windows 10以降およびmacOS 12以降では、システムトレイにアイコンが表示されます。
+ダブルクリックでダッシュボードを開きます。Docker/LinuxではCLIプロセスとして動作します。
+
+### ノード (C++)
+
+**前提条件:**
+
+```bash
+# macOS
+brew install cmake
+
+# Ubuntu/Debian
+sudo apt install cmake build-essential
+
+# Windows
+# https://cmake.org/download/ からダウンロード
+```
+
+**ビルドと起動:**
+
+```bash
+# ビルド（macOSではMetalがデフォルト有効）
+npm run build:node
+
+# 起動
+npm run start:node
+
+# 手動でビルドする場合:
+# cd node && cmake -B build -S . && cmake --build build --config Release
+# LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
+```
+
+**環境変数:**
+
+| 変数 | デフォルト | 説明 |
+|-----|-----------|------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | 登録先ルーターのURL |
+| `LLM_NODE_PORT` | `11435` | ノードのリッスンポート |
+| `LLM_NODE_MODELS_DIR` | `~/.ollama/models` | モデル保存ディレクトリ |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU無しでの起動を許可 |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
+| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
+
+**後方互換性:** 旧環境変数名（`LLM_MODELS_DIR`等）も使用可能ですが非推奨です。
+
+**Docker:**
+
+```bash
+# ビルド
+docker build --build-arg CUDA=cpu -t llm-node-cpp:latest node/
+
+# 起動
+docker run --rm -p 11435:11435 \
+  -e LLM_ROUTER_URL=http://host.docker.internal:8080 \
+  llm-node-cpp:latest
+```
 
 ## アーキテクチャ（最新仕様）
 
@@ -62,7 +155,7 @@ Machine 1          Machine 2          Machine 3
 - 全ノードが `initializing=true` の間、リクエストは待機キュー（上限1024、超過で503）。`ready_models=(n/5)` が進み、全完了で `initializing=false`。
 - 手動配布UI/APIは廃止。 `/v1/models` と UI は常に上記5モデルのみを表示。
 
-Ollama Routerは**プロキシパターン**を採用しており、クライアントはCoordinator URLだけを知っていればOKです。
+LLM Routerは**プロキシパターン**を採用しており、クライアントはCoordinator URLだけを知っていればOKです。
 
 #### 従来の方法（Coordinator なし）
 ```bash
@@ -109,10 +202,18 @@ curl http://coordinator:8080/api/chat -d '...'
 5. **Coordinator → クライアント（レスポンス返却）**
    ```json
    {
-     "message": {"role": "assistant", "content": "..."},
-     "done": true
+     "id": "chatcmpl-xxx",
+     "object": "chat.completion",
+     "choices": [{
+       "index": 0,
+       "message": {"role": "assistant", "content": "..."},
+       "finish_reason": "stop"
+     }]
    }
    ```
+
+> **注意**: LLM Routerは**OpenAI互換APIフォーマットのみ**をサポートしています。
+> すべてのレスポンスはOpenAI Chat Completions API仕様に準拠します。
 
 **クライアントから見ると**:
 - Coordinatorが唯一のOllama APIサーバーとして見える
@@ -144,7 +245,7 @@ curl http://coordinator:8080/api/chat -d '...'
 ## プロジェクト構成
 
 ```
-ollama-router/
+llm-router/
 ├── common/              # 共通ライブラリ（型定義、プロトコル、エラー）
 │   ├── src/
 │   │   ├── types.rs     # Agent, HealthMetrics, Request型定義
@@ -163,15 +264,14 @@ ollama-router/
 │   │   └── main.rs
 │   ├── migrations/      # データベースマイグレーション
 │   └── Cargo.toml
-├── agent/               # Agentアプリケーション
+├── node/                # C++ Node (llama.cpp統合)
 │   ├── src/
-│   │   ├── ollama.rs    # Ollama自動管理
-│   │   ├── client.rs    # Coordinator通信
-│   │   ├── metrics.rs   # メトリクス収集
-│   │   └── main.rs
-│   ├── tests/
-│   │   └── integration/ # 統合テスト
-│   └── Cargo.toml
+│   │   ├── main.cpp     # エントリーポイント
+│   │   ├── api/         # OpenAI互換API
+│   │   ├── core/        # llama.cpp推論エンジン
+│   │   └── models/      # モデル管理
+│   ├── tests/           # TDDテスト
+│   └── CMakeLists.txt
 └── specs/               # 仕様書（Spec-Driven Development）
     └── SPEC-32e2b31a/
         ├── spec.md      # 機能仕様書
@@ -192,15 +292,15 @@ ollama-router/
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/your-org/ollama-router.git
-cd ollama-router
+git clone https://github.com/your-org/llm-router.git
+cd llm-router
 
 # Coordinatorをビルド
 cd coordinator
 cargo build --release
 
 # Coordinatorを起動
-./target/release/ollama-router-coordinator
+./target/release/llm-router-coordinator
 # デフォルト: http://0.0.0.0:8080
 ```
 
@@ -212,10 +312,10 @@ cd agent
 cargo build --release
 
 # Agentを起動（環境変数で上書き）
-ROUTER_URL=http://coordinator-host:8080 ./target/release/ollama-router-agent
+ROUTER_URL=http://coordinator-host:8080 ./target/release/llm-router-agent
 
 # 環境変数を指定しない場合は設定パネルで保存した値、なければ http://localhost:8080
-./target/release/ollama-router-agent
+./target/release/llm-router-agent
 ```
 
 **注意**: Agentは起動時にOllamaの存在を確認し、未インストールなら自動的にバイナリをダウンロード・検証・展開してから起動します。手動インストールが必要な場合は[ollama.ai](https://ollama.ai)から取得できます。
@@ -246,7 +346,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
    # macOS (Intel)
    cargo build --release --target x86_64-apple-darwin
    ```
-3. 生成されたバイナリ（`target/<target>/release/` 配下の `ollama-router-coordinator` と `ollama-router-agent`）を `.tar.gz` もしくは `.zip` にまとめ、README・CHANGELOGなど必要ファイルを同梱する。
+3. 生成されたバイナリ（`target/<target>/release/` 配下の `llm-router-coordinator` と `llm-router-agent`）を `.tar.gz` もしくは `.zip` にまとめ、README・CHANGELOGなど必要ファイルを同梱する。
 4. GitHubリポジトリでリリースを作成し、各プラットフォーム向けアーカイブをアップロードする。リリースノートには対応プラットフォーム・ハッシュ値（任意）・既知の制限事項を記載する。
 5. 必要に応じて自動化（GitHub Actions 等）で上記手順を再現し、リリースタグ作成と同時にアーティファクトをアップロードする。
    本リポジトリでは `.github/workflows/release.yml` が Conventional Commits からバージョンを決定して `Cargo.toml` 群と `CHANGELOG.md` を更新し、その後 `.github/workflows/publish.yml` を呼び出して各プラットフォーム向けアーカイブを生成・検証した上で GitHub Release に添付します。
@@ -265,7 +365,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 1. 開発者は `develop` ブランチ上で `/release` コマンド、もしくは `./scripts/create-release-branch.sh` を実行します。内部では `scripts/create-release-branch.sh` が `gh workflow run create-release.yml --ref develop` を呼び出し、semantic-release のドライランで次バージョンを計算しつつ `release/vX.Y.Z` ブランチを作成・push します。
 2. release ブランチの push を契機に `.github/workflows/release.yml` が起動し、semantic-release 本番実行 → CHANGELOG / Cargo.toml / バージョンタグ更新 → main への自動マージ → develop へのバックマージ → release ブランチ削除までを一括で行います。
 3. main へのマージにより `.github/workflows/publish.yml` が動作し、Linux / macOS (x86_64, ARM64) / Windows 向けバイナリをビルド・検証し、GitHub Release に添付します。
-   - この publish フェーズでは従来の `.tar.gz` / `.zip` アーカイブに加えて、`pkgbuild` で作成した macOS 向け `or-router-<platform>.pkg` / `or-node-<platform>.pkg` と、WiX Toolset で作成した Windows 向け `or-router-<platform>.msi` / `or-node-<platform>.msi` を個別に生成・添付します。既存のリリース資産は削除せず、そのまま維持します。
+   - この publish フェーズでは従来の `.tar.gz` / `.zip` アーカイブに加えて、`pkgbuild` で作成した macOS 向け `llm-router-<platform>.pkg` と、WiX Toolset で作成した Windows 向け `llm-router-<platform>.msi` を個別に生成・添付します。既存のリリース資産は削除せず、そのまま維持します。
 
 人手が必要なのは `/release` の実行と、必要に応じた進捗モニタリング（`gh run watch …`）だけです。バージョン決定からリリースノート生成、develop への同期まで CI が自動で完了させます。
 
@@ -282,13 +382,13 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 2. **複数のマシンでAgentを起動**
    ```bash
    # Machine 1
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-router-agent
 
    # Machine 2
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-router-agent
 
    # Machine 3
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-router-agent
    ```
 
 3. **Coordinatorを通じてOllama APIを利用**
@@ -319,20 +419,40 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 
 ### 環境変数
 
-#### Coordinator
-- `ROUTER_HOST`: バインドアドレス（デフォルト: `0.0.0.0`）
-- `ROUTER_PORT`: ポート番号（デフォルト: `8080`）
-- `DATABASE_URL`: データベースURL（デフォルト: `sqlite://coordinator.db`）
-- `HEALTH_CHECK_INTERVAL`: ヘルスチェック間隔（秒）（デフォルト: `30`）
-- `AGENT_TIMEOUT`: ノードタイムアウト（秒）（デフォルト: `60`）
+#### ルーター（Rust）
 
-#### Agent
-- `ROUTER_URL`: CoordinatorのURL（デフォルト: `http://localhost:8080`）
-- `OLLAMA_PORT`: Ollamaポート番号（デフォルト: `11434`）
-- `OLLAMA_AGENT_MACHINE_NAME`: Coordinator登録時に使用するマシン名。未設定時は `OLLAMA_MACHINE_NAME` → `HOSTNAME` → `whoami::hostname()` の順で自動判定されます。
-- `OLLAMA_PULL_TIMEOUT_SECS`: モデル自動ダウンロード時のHTTPタイムアウト秒数。未設定または `0` の場合はタイムアウトなしで待機します。
-- `ROUTER_REGISTER_RETRY_SECS`: 登録リトライ間隔（秒）。未設定時は `5` 秒、`0` を指定すると即座に再試行します。
-- `ROUTER_REGISTER_MAX_RETRIES`: 登録リトライ上限回数。未設定または `0` の場合は成功するまで無制限に再試行します。
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
+| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
+| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
+| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
+| `LLM_ROUTER_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
+| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+
+クラウドAPI:
+
+- `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
+
+#### ノード（C++）
+
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
+| `LLM_NODE_MODELS_DIR` | `~/.ollama/models` | モデルディレクトリ |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU必須を無効化 |
+| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+
+**注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
+新しい環境変数名を使用してください。
 
 ## 開発
 
@@ -389,8 +509,8 @@ Linux環境（Docker）からmacOS向けバイナリをビルドできます。
    tar -cJf ~/MacOSX14.2.sdk.tar.xz MacOSX14.2.sdk
 
    # プロジェクトに配置
-   mkdir -p /path/to/ollama-router/.sdk
-   cp ~/MacOSX14.2.sdk.tar.xz /path/to/ollama-router/.sdk/
+   mkdir -p /path/to/llm-router/.sdk
+   cp ~/MacOSX14.2.sdk.tar.xz /path/to/llm-router/.sdk/
    ```
 
 2. Dockerイメージのビルド
@@ -407,7 +527,7 @@ Linux環境（Docker）からmacOS向けバイナリをビルドできます。
 
 ```bash
 # Docker環境に入る
-docker-compose run --rm ollama-router bash
+docker-compose run --rm llm-router bash
 
 # Intel Mac向けビルド
 make build-macos-x86_64
@@ -421,10 +541,10 @@ make build-macos-all
 
 成果物は以下に出力されます：
 
-- `target/x86_64-apple-darwin/release/ollama-router-coordinator`
-- `target/x86_64-apple-darwin/release/ollama-router-agent`
-- `target/aarch64-apple-darwin/release/ollama-router-coordinator`
-- `target/aarch64-apple-darwin/release/ollama-router-agent`
+- `target/x86_64-apple-darwin/release/llm-router-coordinator`
+- `target/x86_64-apple-darwin/release/llm-router-agent`
+- `target/aarch64-apple-darwin/release/llm-router-coordinator`
+- `target/aarch64-apple-darwin/release/llm-router-agent`
 
 **注意**: macOSバイナリのコード署名とnotarizationは、macOS環境で実施する必要があります。
 
@@ -441,7 +561,7 @@ make build-macos-all
 
 ## リクエスト履歴
 
-Ollama Routerは、デバッグ、監査、分析のために、すべてのリクエストと
+LLM Routerは、デバッグ、監査、分析のために、すべてのリクエストと
 レスポンスを自動的にログ記録します。
 
 ### 機能
@@ -487,8 +607,8 @@ GET /api/dashboard/request-responses/export
 ### ストレージ
 
 リクエスト履歴はJSON形式で以下の場所に保存されます：
-- Linux/macOS: `~/.ollama-router/request_history.json`
-- Windows: `%USERPROFILE%\.ollama-router\request_history.json`
+- Linux/macOS: `~/.llm-router/request_history.json`
+- Windows: `%USERPROFILE%\.llm-router\request_history.json`
 
 ファイルは以下の機能により自動管理されます：
 - アトミック書き込み（一時ファイル + rename）による破損防止
@@ -563,14 +683,63 @@ GET /api/dashboard/request-responses/export
 ```
 
 #### POST /api/chat
-Ollama Chat APIへのプロキシエンドポイント。
 
-**リクエスト/レスポンス:** [Ollama Chat API仕様](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion)に準拠
+Chat APIへのプロキシエンドポイント（OpenAI互換形式）。
+
+**リクエスト:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "stream": false
+}
+```
+
+**レスポンス（OpenAI互換形式）:**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
+    "finish_reason": "stop"
+  }]
+}
+```
+
+> **重要**: LLM RouterはOpenAI互換レスポンス形式のみをサポートしています。
+> Ollamaネイティブ形式（`message`/`done`フィールド）は**サポートされていません**。
 
 #### POST /api/generate
-Ollama Generate APIへのプロキシエンドポイント。
 
-**リクエスト/レスポンス:** [Ollama Generate API仕様](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion)に準拠
+Generate APIへのプロキシエンドポイント（OpenAI互換形式）。
+
+**リクエスト:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "prompt": "Tell me a joke",
+  "stream": false
+}
+```
+
+**レスポンス（OpenAI互換形式）:**
+
+```json
+{
+  "id": "cmpl-xxx",
+  "object": "text_completion",
+  "choices": [{
+    "text": "Why did the programmer quit? Because he didn't get arrays!",
+    "index": 0,
+    "finish_reason": "stop"
+  }]
+}
+```
 
 ## ライセンス
 
@@ -581,3 +750,13 @@ MIT License
 Issue、Pull Requestをお待ちしています。
 
 詳細な開発ガイドラインは[CLAUDE.md](./CLAUDE.md)を参照してください。
+### クラウドモデルプレフィックス（OpenAI互換API）
+
+- 対応プレフィックス: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` タイポ互換）
+- 使い方: `model` を `openai:gpt-4o` / `google:gemini-1.5-pro` / `anthropic:claude-3-opus` のように指定
+- 環境変数:
+  - `OPENAI_API_KEY`（必須）、`OPENAI_BASE_URL`（任意、既定 `https://api.openai.com`）
+  - `GOOGLE_API_KEY`（必須）、`GOOGLE_API_BASE_URL`（任意、既定 `https://generativelanguage.googleapis.com/v1beta`）
+  - `ANTHROPIC_API_KEY`（必須）、`ANTHROPIC_API_BASE_URL`（任意、既定 `https://api.anthropic.com`）
+- 動作: プレフィックスは転送前に除去し、レスポンスはOpenAI互換のまま返却。`stream: true` はクラウド側のSSEをそのままパススルー。
+- メトリクス: `/metrics/cloud` で Prometheus 形式のメトリクスを公開（`cloud_requests_total{provider,status}` / `cloud_request_latency_seconds{provider}`）。

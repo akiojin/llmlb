@@ -11,7 +11,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use ollama_router_common::protocol::{ChatRequest, ChatResponse, GenerateRequest};
+use llm_router_common::protocol::{ChatRequest, GenerateRequest};
 use reqwest::{header, Client};
 use serde_json::{json, Value};
 use tokio::time::sleep;
@@ -21,12 +21,12 @@ mod support;
 
 use support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{create_test_api_key, register_node, spawn_test_router, spawn_test_router_with_db},
 };
 
 #[derive(Clone)]
 struct AgentStubState {
-    chat_response: ChatResponse,
+    chat_response: Value,
     chat_stream_payload: String,
     generate_response: Value,
     generate_stream_payload: String,
@@ -67,7 +67,7 @@ async fn agent_chat_handler(
             .unwrap();
     }
 
-    Json(state.chat_response.clone()).into_response()
+    Json(&state.chat_response).into_response()
 }
 
 async fn agent_generate_handler(
@@ -94,15 +94,21 @@ async fn agent_generate_handler(
 
 #[tokio::test]
 async fn openai_proxy_end_to_end_updates_dashboard_history() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
-        chat_response: ChatResponse {
-            message: ollama_router_common::protocol::ChatMessage {
-                role: "assistant".into(),
-                content: "Hello from agent".into(),
-            },
-            done: true,
-        },
+        // OpenAI互換形式のレスポンス
+        chat_response: json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello from agent"
+                },
+                "finish_reason": "stop"
+            }]
+        }),
         chat_stream_payload: "data: {\"choices\":[{\"delta\":{\"content\":\"Hello stream\"}}]}\n\n"
             .to_string(),
         generate_response: json!({
@@ -127,7 +133,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "hello?".into(),
             }],
@@ -137,15 +143,18 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .await
         .expect("chat request should succeed");
     assert_eq!(chat_response.status(), reqwest::StatusCode::OK);
-    let chat_payload: ChatResponse = chat_response.json().await.expect("chat json response");
-    assert_eq!(chat_payload.message.content, "Hello from agent");
+    let chat_payload: Value = chat_response.json().await.expect("chat json response");
+    assert_eq!(
+        chat_payload["choices"][0]["message"]["content"],
+        "Hello from agent"
+    );
 
     // ストリーミングチャット
     let streaming_response = client
         .post(format!("http://{}/api/chat", router.addr()))
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
-            messages: vec![ollama_router_common::protocol::ChatMessage {
+            messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "stream?".into(),
             }],
@@ -243,6 +252,154 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         error >= 1,
         "expected at least one failed request recorded, got {error}"
     );
+
+    router.stop().await;
+    node_stub.stop().await;
+}
+
+#[tokio::test]
+async fn openai_v1_models_list_with_registered_node() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let node_stub = spawn_agent_stub(AgentStubState {
+        chat_response: json!({
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": true
+        }),
+        chat_stream_payload: "".to_string(),
+        generate_response: json!({}),
+        generate_stream_payload: "".to_string(),
+    })
+    .await;
+
+    let (router, db_pool) = spawn_test_router_with_db().await;
+
+    register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("agent registration should succeed");
+
+    // APIキーを取得
+    let api_key = create_test_api_key(router.addr(), &db_pool).await;
+
+    let client = Client::new();
+
+    // GET /v1/models
+    let models_response = client
+        .get(format!("http://{}/v1/models", router.addr()))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("models request should succeed");
+
+    assert_eq!(models_response.status(), reqwest::StatusCode::OK);
+
+    let models_payload: Value = models_response.json().await.expect("models json response");
+
+    assert!(
+        models_payload.get("data").is_some(),
+        "Response must have 'data' field"
+    );
+    assert!(
+        models_payload["data"].is_array(),
+        "'data' field must be an array"
+    );
+    assert_eq!(
+        models_payload["object"].as_str(),
+        Some("list"),
+        "'object' field must be 'list'"
+    );
+
+    router.stop().await;
+    node_stub.stop().await;
+}
+
+#[tokio::test]
+async fn openai_v1_models_get_specific() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let node_stub = spawn_agent_stub(AgentStubState {
+        chat_response: json!({
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": true
+        }),
+        chat_stream_payload: "".to_string(),
+        generate_response: json!({}),
+        generate_stream_payload: "".to_string(),
+    })
+    .await;
+
+    let (router, db_pool) = spawn_test_router_with_db().await;
+
+    register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("agent registration should succeed");
+
+    // APIキーを取得
+    let api_key = create_test_api_key(router.addr(), &db_pool).await;
+
+    let client = Client::new();
+
+    // GET /v1/models/gpt-oss:20b
+    let model_response = client
+        .get(format!("http://{}/v1/models/gpt-oss:20b", router.addr()))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("model request should succeed");
+
+    assert_eq!(model_response.status(), reqwest::StatusCode::OK);
+
+    let model_payload: Value = model_response.json().await.expect("model json response");
+
+    assert!(
+        model_payload.get("id").is_some(),
+        "Response must have 'id' field"
+    );
+    assert_eq!(
+        model_payload["object"].as_str(),
+        Some("model"),
+        "'object' field must be 'model'"
+    );
+
+    router.stop().await;
+    node_stub.stop().await;
+}
+
+#[tokio::test]
+async fn openai_v1_models_not_found() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let node_stub = spawn_agent_stub(AgentStubState {
+        chat_response: json!({
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": true
+        }),
+        chat_stream_payload: "".to_string(),
+        generate_response: json!({}),
+        generate_stream_payload: "".to_string(),
+    })
+    .await;
+
+    let (router, db_pool) = spawn_test_router_with_db().await;
+
+    register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("agent registration should succeed");
+
+    // APIキーを取得
+    let api_key = create_test_api_key(router.addr(), &db_pool).await;
+
+    let client = Client::new();
+
+    // GET /v1/models/non-existent-model
+    let model_response = client
+        .get(format!(
+            "http://{}/v1/models/non-existent-model",
+            router.addr()
+        ))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("model request should succeed");
+
+    assert_eq!(model_response.status(), reqwest::StatusCode::NOT_FOUND);
 
     router.stop().await;
     node_stub.stop().await;

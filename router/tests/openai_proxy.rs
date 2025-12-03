@@ -2,12 +2,12 @@ use axum::{
     extract::connect_info::ConnectInfo,
     http::{header::CONTENT_TYPE, StatusCode},
 };
-use ollama_router_common::{
-    protocol::{ChatRequest, ChatResponse, GenerateRequest},
-    types::GpuDeviceInfo,
-};
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
+};
+use llm_router_common::{
+    protocol::{ChatRequest, GenerateRequest},
+    types::GpuDeviceInfo,
 };
 use std::net::SocketAddr;
 use tower::ServiceExt;
@@ -18,7 +18,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -40,7 +40,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     // 登録済みエージェントを追加
     state
         .registry
-        .register(ollama_router_common::protocol::RegisterRequest {
+        .register(llm_router_common::protocol::RegisterRequest {
             machine_name: "mock-agent".into(),
             ip_address: mock.address().ip(),
             ollama_version: "0.0.0".into(),
@@ -82,7 +82,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
 
     state
         .load_manager
-        .record_metrics(or_router::balancer::MetricsUpdate {
+        .record_metrics(llm_router::balancer::MetricsUpdate {
             node_id,
             cpu_usage: 0.0,
             memory_usage: 0.0,
@@ -103,17 +103,17 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .unwrap();
 
     // テスト用のユーザーを作成
-    let test_user = or_router::db::users::create(
+    let test_user = llm_router::db::users::create(
         &db_pool,
         "test-user",
         "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyWpLF5JRSia", // bcrypt hash of "password"
-        ollama_router_common::auth::UserRole::Admin,
+        llm_router_common::auth::UserRole::Admin,
     )
     .await
     .expect("Failed to create test user");
 
     // テスト用のAPIキーを作成
-    let api_key = or_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
+    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
         .await
         .expect("Failed to create test API key");
 
@@ -130,13 +130,19 @@ fn attach_test_client_ip<B>(mut request: axum::http::Request<B>) -> axum::http::
 async fn test_proxy_chat_success() {
     let mock_server = MockServer::start().await;
 
-    let chat_response = ChatResponse {
-        message: ollama_router_common::protocol::ChatMessage {
-            role: "assistant".into(),
-            content: "hello".into(),
-        },
-        done: true,
-    };
+    // OpenAI互換形式のレスポンス
+    let chat_response = serde_json::json!({
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "hello"
+            },
+            "finish_reason": "stop"
+        }]
+    });
 
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
@@ -149,7 +155,7 @@ async fn test_proxy_chat_success() {
 
     let payload = ChatRequest {
         model: "test-model".into(),
-        messages: vec![ollama_router_common::protocol::ChatMessage {
+        messages: vec![llm_router_common::protocol::ChatMessage {
             role: "user".into(),
             content: "hi".into(),
         }],
@@ -174,8 +180,8 @@ async fn test_proxy_chat_success() {
     let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
         .await
         .unwrap();
-    let parsed: ChatResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.message.content, "hello");
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(parsed["choices"][0]["message"]["content"], "hello");
 }
 
 #[tokio::test]
@@ -198,7 +204,7 @@ async fn test_proxy_chat_streaming_passthrough() {
 
     let payload = ChatRequest {
         model: "test-model".into(),
-        messages: vec![ollama_router_common::protocol::ChatMessage {
+        messages: vec![llm_router_common::protocol::ChatMessage {
             role: "user".into(),
             content: "stream?".into(),
         }],
@@ -245,7 +251,7 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
 
     let payload = ChatRequest {
         model: "missing".into(),
-        messages: vec![ollama_router_common::protocol::ChatMessage {
+        messages: vec![llm_router_common::protocol::ChatMessage {
             role: "user".into(),
             content: "hi".into(),
         }],
@@ -271,7 +277,7 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["error"]["type"], "ollama_upstream_error");
+    assert_eq!(json["error"]["type"], "node_upstream_error");
     assert_eq!(json["error"]["code"], 404);
     assert!(json["error"]["message"]
         .as_str()
@@ -284,7 +290,7 @@ async fn test_proxy_chat_no_agents() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -305,7 +311,7 @@ async fn test_proxy_chat_no_agents() {
 
     let payload = ChatRequest {
         model: "test-model".into(),
-        messages: vec![ollama_router_common::protocol::ChatMessage {
+        messages: vec![llm_router_common::protocol::ChatMessage {
             role: "user".into(),
             content: "hi".into(),
         }],
@@ -421,7 +427,7 @@ async fn test_proxy_generate_no_agents() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -788,7 +794,7 @@ async fn test_openai_models_list_success() {
         .mount(&mock_server)
         .await;
 
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
+    let (state, api_key) = build_state_with_mock(&mock_server).await;
     let router = api::create_router(state);
 
     let response = router
@@ -796,6 +802,7 @@ async fn test_openai_models_list_success() {
             axum::http::Request::builder()
                 .method("GET")
                 .uri("/v1/models")
+                .header("Authorization", format!("Bearer {}", api_key))
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
@@ -826,7 +833,7 @@ async fn test_openai_model_detail_success() {
         .mount(&mock_server)
         .await;
 
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
+    let (state, api_key) = build_state_with_mock(&mock_server).await;
     let router = api::create_router(state);
 
     let response = router
@@ -834,6 +841,7 @@ async fn test_openai_model_detail_success() {
             axum::http::Request::builder()
                 .method("GET")
                 .uri("/v1/models/gpt-oss:20b")
+                .header("Authorization", format!("Bearer {}", api_key))
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

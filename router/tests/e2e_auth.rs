@@ -14,5 +14,8 @@ mod api_key_flow_test;
 #[path = "e2e/agent_flow_test.rs"]
 mod agent_flow_test;
 
+#[path = "e2e/dashboard_flow_test.rs"]
+mod dashboard_flow_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

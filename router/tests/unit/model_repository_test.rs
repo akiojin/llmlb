@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use or_router::{registry::models::DownloadStatus, tasks::DownloadTaskManager};
+    use llm_router::{registry::models::DownloadStatus, tasks::DownloadTaskManager};
     use uuid::Uuid;
 
     /// T022: タスクライフサイクル全体のテスト

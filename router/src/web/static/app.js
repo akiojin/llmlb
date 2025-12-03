@@ -4,12 +4,12 @@ const PERFORMANCE_THRESHOLDS = Object.freeze({
   render: 100,
   backend: 100,
 });
-const AGENT_METRICS_LIMIT = 120;
+const NODE_METRICS_LIMIT = 120;
 const LOG_ENTRY_LIMIT = 200;
 const MODAL_LOG_ENTRY_LIMIT = 100;
 
 const state = {
-  agents: [],
+  nodes: [],
   stats: null,
   history: [],
   filterStatus: "all",
@@ -19,7 +19,7 @@ const state = {
   lastFocused: null,
   selection: new Set(),
   selectAll: false,
-  currentAgentId: null,
+  currentNodeId: null,
   currentPage: 1,
   pageSize: 50,
   timerId: null,
@@ -37,35 +37,35 @@ const state = {
     generatedAt: null,
     severity: "idle",
   },
-  agentMetricsSignature: "",
-  agentMetricsCache: new Map(),
-  agentMetricsAbortController: null,
+  nodeMetricsSignature: "",
+  nodeMetricsCache: new Map(),
+  nodeMetricsAbortController: null,
   fallbackNotified: false,
   currentTab: "dashboard",
   logs: {
     coordinator: [],
     coordinatorPath: null,
-    agent: [],
-    agentPath: null,
-    selectedAgentId: null,
+    node: [],
+    nodePath: null,
+    selectedNodeId: null,
     coordinatorFetched: false,
-    agentFetched: false,
+    nodeFetched: false,
     loadingCoordinator: false,
-    loadingAgent: false,
+    loadingNode: false,
     coordinatorError: null,
-    agentError: null,
+    nodeError: null,
   },
   modalLog: {
     entries: [],
     path: null,
     loading: false,
     error: null,
-    fetchedAgentId: null,
+    fetchedNodeId: null,
   },
 };
 
 let requestsChart = null;
-let agentMetricsChart = null;
+let nodeMetricsChart = null;
 const modalRefs = {
   modal: null,
   close: null,
@@ -103,11 +103,11 @@ const logRefs = {
   coordinatorPath: null,
   coordinatorStatus: null,
   coordinatorRefresh: null,
-  agentList: null,
-  agentPath: null,
-  agentStatus: null,
-  agentSelect: null,
-  agentRefresh: null,
+  nodeList: null,
+  nodePath: null,
+  nodeStatus: null,
+  nodeSelect: null,
+  nodeRefresh: null,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -118,17 +118,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const selectAllCheckbox = document.getElementById("select-all");
   const exportJsonButton = document.getElementById("export-json");
   const exportCsvButton = document.getElementById("export-csv");
-  const modal = document.getElementById("agent-modal");
-  const modalClose = document.getElementById("agent-modal-close");
-  const modalOk = document.getElementById("agent-modal-ok");
-  const modalSave = document.getElementById("agent-modal-save");
-  const modalDelete = document.getElementById("agent-modal-delete");
-  const modalDisconnect = document.getElementById("agent-modal-disconnect");
-  const tbody = document.getElementById("agents-body");
+  const modal = document.getElementById("node-modal");
+  const modalClose = document.getElementById("node-modal-close");
+  const modalOk = document.getElementById("node-modal-ok");
+  const modalSave = document.getElementById("node-modal-save");
+  const modalDelete = document.getElementById("node-modal-delete");
+  const modalDisconnect = document.getElementById("node-modal-disconnect");
+  const chatOpen = document.getElementById("chat-open");
+  const chatModal = document.getElementById("chat-modal");
+  const chatClose = document.getElementById("chat-close");
+  const chatIframe = document.getElementById("chat-iframe");
+  const tbody = document.getElementById("nodes-body");
 
   // リロード直後に詳細モーダルが開いたままにならないよう、確実に非表示へ初期化
   modal?.classList.add("hidden");
   document.getElementById("request-modal")?.classList.add("hidden");
+  chatModal?.classList.add("hidden");
 
   initTabs();
 
@@ -143,15 +148,15 @@ document.addEventListener("DOMContentLoaded", () => {
   logRefs.coordinatorPath = document.getElementById("logs-coordinator-path");
   logRefs.coordinatorStatus = document.getElementById("logs-coordinator-status");
   logRefs.coordinatorRefresh = document.getElementById("logs-coordinator-refresh");
-  logRefs.agentList = document.getElementById("logs-agent-list");
-  logRefs.agentPath = document.getElementById("logs-agent-path");
-  logRefs.agentStatus = document.getElementById("logs-agent-status");
-  logRefs.agentSelect = document.getElementById("logs-agent-select");
-  logRefs.agentRefresh = document.getElementById("logs-agent-refresh");
+  logRefs.nodeList = document.getElementById("logs-node-list");
+  logRefs.nodePath = document.getElementById("logs-node-path");
+  logRefs.nodeStatus = document.getElementById("logs-node-status");
+  logRefs.nodeSelect = document.getElementById("logs-node-select");
+  logRefs.nodeRefresh = document.getElementById("logs-node-refresh");
   initLogControls();
   renderCoordinatorLogs();
-  renderAgentLogs();
-  renderLogsAgentOptions();
+  renderNodeLogs();
+  renderLogsNodeOptions();
   initModalLogControls();
 
   Object.assign(modalRefs, {
@@ -178,13 +183,13 @@ document.addEventListener("DOMContentLoaded", () => {
     save: modalSave,
     delete: modalDelete,
     disconnect: modalDisconnect,
-    metricsStatus: document.getElementById("agent-metrics-status"),
-    metricsCanvas: document.getElementById("agent-metrics-chart"),
-    logSection: document.getElementById("agent-log-section"),
-    logViewer: document.getElementById("agent-log-viewer"),
-    logStatus: document.getElementById("agent-log-status"),
-    logPath: document.getElementById("agent-log-path"),
-    logRefresh: document.getElementById("agent-log-refresh"),
+    metricsStatus: document.getElementById("node-metrics-status"),
+    metricsCanvas: document.getElementById("node-metrics-chart"),
+    logSection: document.getElementById("node-log-section"),
+    logViewer: document.getElementById("node-log-viewer"),
+    logStatus: document.getElementById("node-log-status"),
+    logPath: document.getElementById("node-log-path"),
+    logRefresh: document.getElementById("node-log-refresh"),
   });
 
   refreshButton.addEventListener("click", () => refreshData({ manual: true }));
@@ -192,6 +197,27 @@ document.addEventListener("DOMContentLoaded", () => {
     state.filterStatus = event.target.value;
     state.currentPage = 1;
     renderAgents();
+  });
+  chatOpen?.addEventListener("click", () => {
+    if (!chatModal) return;
+    chatModal.classList.remove("hidden");
+    document.body.classList.add("body--modal-open");
+    chatIframe?.focus();
+  });
+  const closeChat = () => {
+    chatModal?.classList.add("hidden");
+    document.body.classList.remove("body--modal-open");
+  };
+  chatClose?.addEventListener("click", closeChat);
+  chatModal?.addEventListener("click", (event) => {
+    if (event.target?.dataset?.chatClose !== undefined) {
+      closeChat();
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !chatModal?.classList.contains("hidden")) {
+      closeChat();
+    }
   });
   let queryDebounce = null;
   queryInput.addEventListener("input", (event) => {
@@ -206,14 +232,14 @@ document.addEventListener("DOMContentLoaded", () => {
   selectAllCheckbox.addEventListener("change", (event) => {
     state.selectAll = event.target.checked;
     if (state.selectAll) {
-      const filtered = state.agents.filter((agent) =>
-        filterAgent(agent, state.filterStatus, state.filterQuery),
+      const filtered = state.nodes.filter((node) =>
+        filterNode(node, state.filterStatus, state.filterQuery),
       );
-      state.selection = new Set(filtered.map((agent) => agent.id));
+      state.selection = new Set(filtered.map((node) => node.id));
     } else {
       state.selection.clear();
     }
-    renderAgents();
+    renderNodes();
   });
 
   sortableHeaders.forEach((header) => {
@@ -227,7 +253,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.sortOrder = "asc";
       }
       updateSortIndicators();
-      renderAgents();
+      renderNodes();
     });
   });
 
@@ -236,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
   paginationRefs.prev?.addEventListener("click", () => {
     if (state.currentPage > 1) {
       state.currentPage -= 1;
-      renderAgents();
+      renderNodes();
     }
   });
 
@@ -244,92 +270,92 @@ document.addEventListener("DOMContentLoaded", () => {
     const totalPages = calculateTotalPages();
     if (state.currentPage < totalPages) {
       state.currentPage += 1;
-      renderAgents();
+      renderNodes();
     }
   });
 
   exportJsonButton.addEventListener("click", () => {
-    const data = getFilteredAgents();
-    downloadJson(data, "agents.json");
+    const data = getFilteredNodes();
+    downloadJson(data, "nodes.json");
   });
 
   exportCsvButton.addEventListener("click", () => {
-    const data = getFilteredAgents();
-    downloadCsv(data, "agents.csv");
+    const data = getFilteredNodes();
+    downloadCsv(data, "nodes.csv");
   });
 
   tbody.addEventListener("click", (event) => {
-    const rowCheckbox = event.target.closest("input[data-agent-id]");
+    const rowCheckbox = event.target.closest("input[data-node-id]");
     if (rowCheckbox) {
-      const agentId = rowCheckbox.dataset.agentId;
+      const nodeId = rowCheckbox.dataset.nodeId;
       if (rowCheckbox.checked) {
-        state.selection.add(agentId);
+        state.selection.add(nodeId);
       } else {
-        state.selection.delete(agentId);
+        state.selection.delete(nodeId);
         state.selectAll = false;
         selectAllCheckbox.checked = false;
       }
       return;
     }
-    const button = event.target.closest("button[data-agent-id]");
+    const button = event.target.closest("button[data-node-id]");
     if (!button) return;
-    const agentId = button.dataset.agentId;
-    const agent = state.agents.find((item) => item.id === agentId);
-    if (agent) {
-      openAgentModal(agent);
+    const nodeId = button.dataset.nodeId;
+    const node = state.nodes.find((item) => item.id === nodeId);
+    if (node) {
+      openNodeModal(node);
     }
   });
 
-  const closeModal = () => closeAgentModal();
+  const closeModal = () => closeNodeModal();
   modalClose.addEventListener("click", closeModal);
   modalOk.addEventListener("click", closeModal);
   modalSave.addEventListener("click", async () => {
-    if (!state.currentAgentId) return;
-    const agentId = state.currentAgentId;
+    if (!state.currentNodeId) return;
+    const nodeId = state.currentNodeId;
     try {
-      const updated = await saveAgentSettings(agentId);
+      const updated = await saveNodeSettings(nodeId);
       if (updated && updated.id) {
-        state.agents = state.agents.map((agent) =>
-          agent.id === updated.id ? { ...agent, ...updated } : agent,
+        state.nodes = state.nodes.map((node) =>
+          node.id === updated.id ? { ...node, ...updated } : node,
         );
-        closeAgentModal();
-        renderAgents();
+        closeNodeModal();
+        renderNodes();
       }
     } catch (error) {
-      console.error("Failed to persist agent settings", error);
+      console.error("Failed to persist node settings", error);
     }
   });
   modalDelete.addEventListener("click", async () => {
-    if (!state.currentAgentId) return;
-    const agentId = state.currentAgentId;
-    const agent = state.agents.find((item) => item.id === agentId);
-    const name = agent ? getDisplayName(agent) : "対象";
-    if (!window.confirm(`${name} を削除しますか？`)) {
+    if (!state.currentNodeId) return;
+    const nodeId = state.currentNodeId;
+    const node = state.nodes.find((item) => item.id === nodeId);
+    const name = node ? getDisplayName(node) : "target";
+    if (!window.confirm(`Delete ${name}?`)) {
       return;
     }
 
     try {
-      await deleteAgent(agentId);
-      state.agents = state.agents.filter((item) => item.id !== agentId);
-      state.selection.delete(agentId);
-      closeAgentModal();
-      renderAgents();
+      await deleteNode(nodeId);
+      state.nodes = state.nodes.filter((item) => item.id !== nodeId);
+      state.selection.delete(nodeId);
+      closeNodeModal();
+      renderNodes();
     } catch (error) {
-      console.error("Failed to delete agent", error);
+      console.error("Failed to delete node", error);
     }
   });
   modalDisconnect.addEventListener("click", async () => {
-    if (!state.currentAgentId) return;
-    const agentId = state.currentAgentId;
+    if (!state.currentNodeId) return;
+    const nodeId = state.currentNodeId;
     try {
-      await disconnectAgent(agentId);
-      const agent = state.agents.find((item) => item.id === agentId);
-      if (agent) {
-        agent.status = "offline";
+      await disconnectNode(nodeId);
+      const node = state.nodes.find((item) => item.id === nodeId);
+      if (node) {
+        node.status = "offline";
       }
-      renderAgents();
+      renderNodes();
     } catch (error) {
-      console.error("Failed to disconnect agent", error);
+      console.error("Failed to disconnect node", error);
     }
   });
   modal.addEventListener("click", (event) => {
@@ -402,7 +428,7 @@ async function refreshData({ manual = false } = {}) {
 }
 
 async function applyOverviewData(overview) {
-  state.agents = Array.isArray(overview.agents) ? overview.agents : [];
+  state.nodes = Array.isArray(overview.nodes) ? overview.nodes : [];
   state.stats = overview.stats ?? null;
   state.history = Array.isArray(overview.history) ? overview.history : [];
   const generatedAt =
@@ -410,9 +436,9 @@ async function applyOverviewData(overview) {
   state.metrics.generatedAt = generatedAt;
 
   renderStats();
-  renderAgents();
+  renderNodes();
   renderHistory();
-  renderLogsAgentOptions();
+  renderLogsNodeOptions();
   // タブレス表示のため常にログ更新を試みる
   maybeRefreshLogs();
   hideError();
@@ -422,13 +448,13 @@ async function applyOverviewData(overview) {
 }
 
 async function fetchLegacyOverview() {
-  const [agents, stats, history] = await Promise.all([
-    fetchJson("/api/dashboard/agents"),
+  const [nodes, stats, history] = await Promise.all([
+    fetchJson("/api/dashboard/nodes"),
     fetchJson("/api/dashboard/stats"),
     fetchJson("/api/dashboard/request-history"),
   ]);
 
-  return { agents, stats, history };
+  return { nodes, stats, history };
 }
 
 async function fetchOverview() {
@@ -437,7 +463,7 @@ async function fetchOverview() {
 
 function handleRefreshFailure(error) {
   console.error("Dashboard refresh failed:", error);
-  showError(`ダッシュボードデータの取得に失敗しました: ${error?.message ?? error}`);
+  showError(`Failed to fetch dashboard data: ${error?.message ?? error}`);
   setConnectionStatus("offline");
 }
 
@@ -456,9 +482,9 @@ function updatePerformanceIndicator() {
 
   const { fetchMs, renderMs, backendMs, usedLegacy, severity } = state.metrics;
   const segments = [
-    `取得: ${fetchMs == null ? "-" : `${fetchMs} ms`}`,
-    `描画: ${renderMs == null ? "-" : `${renderMs} ms`}`,
-    `サーバー集計: ${backendMs == null ? "-" : `${backendMs} ms`}`,
+    `Fetch: ${fetchMs == null ? "-" : `${fetchMs} ms`}`,
+    `Render: ${renderMs == null ? "-" : `${renderMs} ms`}`,
+    `Server: ${backendMs == null ? "-" : `${backendMs} ms`}`,
   ];
   const suffix = usedLegacy ? " (legacy)" : "";
 
@@ -526,9 +552,9 @@ function renderStats() {
   }
 
   const statsMap = {
-    "total-agents": state.stats.total_agents,
-    "online-agents": state.stats.online_agents,
-    "offline-agents": state.stats.offline_agents,
+    "total-agents": state.stats.total_nodes,
+    "online-agents": state.stats.online_nodes,
+    "offline-agents": state.stats.offline_nodes,
     "total-requests": state.stats.total_requests,
     "successful-requests": state.stats.successful_requests,
     "failed-requests": state.stats.failed_requests,
@@ -561,23 +587,23 @@ function renderStats() {
   });
 }
 
-function renderAgents() {
-  const tbody = document.getElementById("agents-body");
+function renderNodes() {
+  const tbody = document.getElementById("nodes-body");
   if (!tbody) return;
 
-  if (!state.agents.length) {
+  if (!state.nodes.length) {
     state.rowCache.clear();
     state.renderSnapshot = null;
     state.selectAll = false;
     if (state.selectAllCheckbox) {
       state.selectAllCheckbox.checked = false;
     }
-    tbody.replaceChildren(buildPlaceholderRow("エージェントはまだ登録されていません"));
+    tbody.replaceChildren(buildPlaceholderRow("No nodes registered yet"));
     updatePagination(0);
     return;
   }
 
-  const filtered = getFilteredAgents();
+  const filtered = getFilteredNodes();
 
   if (!filtered.length) {
     state.renderSnapshot = null;
@@ -585,17 +611,17 @@ function renderAgents() {
     if (state.selectAllCheckbox) {
       state.selectAllCheckbox.checked = false;
     }
-    tbody.replaceChildren(buildPlaceholderRow("条件に一致するエージェントはありません"));
+    tbody.replaceChildren(buildPlaceholderRow("No nodes match the filter criteria"));
     updatePagination(0);
     return;
   }
 
-  state.selectAll = filtered.every((agent) => state.selection.has(agent.id));
+  state.selectAll = filtered.every((node) => state.selection.has(node.id));
   if (state.selectAllCheckbox) {
     state.selectAllCheckbox.checked = state.selectAll;
   }
 
-  const sorted = sortAgents(filtered, state.sortKey, state.sortOrder);
+  const sorted = sortNodes(filtered, state.sortKey, state.sortOrder);
   const totalPages = calculateTotalPages(sorted.length);
   state.currentPage = Math.min(Math.max(state.currentPage, 1), totalPages);
   const pageSlice = paginate(sorted, state.currentPage, state.pageSize);
@@ -624,20 +650,20 @@ function renderAgents() {
 
   const fragment = document.createDocumentFragment();
 
-  pageSlice.forEach((agent) => {
-    const signature = getAgentSignature(agent);
-    const cached = state.rowCache.get(agent.id);
-    let row = cached?.node;
+  pageSlice.forEach((node) => {
+    const signature = getNodeSignature(node);
+    const cached = state.rowCache.get(node.id);
+    let row = cached?.row;
     if (!row) {
       row = document.createElement("tr");
     }
 
     if (!cached || cached.signature !== signature) {
-      buildAgentRow(agent, row);
-      state.rowCache.set(agent.id, { node: row, signature });
+      buildNodeRow(node, row);
+      state.rowCache.set(node.id, { row: row, signature });
     } else {
-      syncAgentRowSelection(row, agent.id);
-      row.classList.toggle("agent-offline", agent.status === "offline");
+      syncNodeRowSelection(row, node.id);
+      row.classList.toggle("node-offline", node.status === "offline");
     }
 
     fragment.appendChild(row);
@@ -645,8 +671,8 @@ function renderAgents() {
 
   tbody.replaceChildren(fragment);
 
-  if (state.rowCache.size > state.agents.length) {
-    const knownIds = new Set(state.agents.map((agent) => agent.id));
+  if (state.rowCache.size > state.nodes.length) {
+    const knownIds = new Set(state.nodes.map((node) => node.id));
     for (const id of state.rowCache.keys()) {
       if (!knownIds.has(id)) {
         state.rowCache.delete(id);
@@ -692,7 +718,7 @@ function updateHistoryChart(canvas, labels, success, failures) {
         labels,
         datasets: [
           {
-            label: "成功リクエスト",
+            label: "Success Requests",
             data: success,
             tension: 0.3,
             borderColor: "rgba(59, 130, 246, 0.9)",
@@ -701,7 +727,7 @@ function updateHistoryChart(canvas, labels, success, failures) {
             pointRadius: 0,
           },
           {
-            label: "失敗リクエスト",
+            label: "Failed Requests",
             data: failures,
             tension: 0.3,
             borderColor: "rgba(248, 113, 113, 0.9)",
@@ -776,17 +802,17 @@ function buildHistoryLabels(history) {
   return history.map((point) => formatHistoryLabel(new Date(point.minute)));
 }
 
-function summarizeGpu(agent) {
-  const devices = Array.isArray(agent.gpu_devices) ? agent.gpu_devices : [];
+function summarizeGpu(node) {
+  const devices = Array.isArray(node.gpu_devices) ? node.gpu_devices : [];
   const totalFromDevices = devices.reduce(
     (sum, device) => sum + (Number(device?.count) || 0),
     0
   );
-  const fallbackCount = typeof agent.gpu_count === "number" ? agent.gpu_count : 0;
+  const fallbackCount = typeof node.gpu_count === "number" ? node.gpu_count : 0;
   const totalCount = totalFromDevices || fallbackCount;
   const primaryModel = devices.length > 0 && devices[0]?.model
     ? devices[0].model
-    : agent.gpu_model;
+    : node.gpu_model;
 
   return {
     devices,
@@ -795,61 +821,61 @@ function summarizeGpu(agent) {
   };
 }
 
-function buildAgentRow(agent, row = document.createElement("tr")) {
-  row.dataset.agentId = agent.id;
-  row.classList.toggle("agent-offline", agent.status === "offline");
+function buildNodeRow(node, row = document.createElement("tr")) {
+  row.dataset.nodeId = node.id;
+  row.classList.toggle("node-offline", node.status === "offline");
 
-  const displayName = getDisplayName(agent);
-  const secondaryName = agent.custom_name
-    ? agent.machine_name
-    : agent.ollama_version || agent.machine_name;
+  const displayName = getDisplayName(node);
+  const secondaryName = node.custom_name
+    ? node.machine_name
+    : node.ollama_version || node.machine_name;
 
   const statusLabel =
-    agent.status === "online"
-      ? agent.initializing
-        ? `<span class="badge badge--warming">Warming up${formatReadyProgress(agent.ready_models)}</span>`
+    node.status === "online"
+      ? node.initializing
+        ? `<span class="badge badge--warming">Warming up${formatReadyProgress(node.ready_models)}</span>`
         : '<span class="badge badge--online">Online</span>'
       : '<span class="badge badge--offline">Offline</span>';
 
-  const metricsBadge = agent.metrics_stale
+  const metricsBadge = node.metrics_stale
     ? '<span class="badge badge--stale">STALE</span>'
     : "";
-  const metricsTimestamp = formatTimestamp(agent.metrics_last_updated_at);
+  const metricsTimestamp = formatTimestamp(node.metrics_last_updated_at);
   const metricsDetail = metricsBadge ? `${metricsBadge} ${metricsTimestamp}` : metricsTimestamp;
 
-  const cpuDisplay = formatPercentage(agent.cpu_usage);
-  const gpuSummary = summarizeGpu(agent);
+  const cpuDisplay = formatPercentage(node.cpu_usage);
+  const gpuSummary = summarizeGpu(node);
   const gpuModelDisplay = gpuSummary.primaryModel
     ? `${escapeHtml(gpuSummary.primaryModel)}${
-        gpuSummary.totalCount > 1 ? ` (${gpuSummary.totalCount}枚)` : ''
+        gpuSummary.totalCount > 1 ? ` (${gpuSummary.totalCount} GPUs)` : ''
       }`
-    : 'GPU情報取得中';
-  // GPU性能スコア表示
+    : 'Fetching GPU info';
+  // GPU capability score display
   const gpuScoreText =
-    typeof agent.gpu_capability_score === "number"
-      ? ` / スコア ${agent.gpu_capability_score}`
+    typeof node.gpu_capability_score === "number"
+      ? ` / Score ${node.gpu_capability_score}`
       : "";
   const cpuGpuSub =
-    typeof agent.gpu_usage === "number"
-      ? `<div class="cell-sub">GPU ${formatPercentage(agent.gpu_usage)} (${gpuModelDisplay})${gpuScoreText}</div>`
+    typeof node.gpu_usage === "number"
+      ? `<div class="cell-sub">GPU ${formatPercentage(node.gpu_usage)} (${gpuModelDisplay})${gpuScoreText}</div>`
       : `<div class="cell-sub">${gpuModelDisplay}${gpuScoreText}</div>`;
-  const memoryDisplay = formatPercentage(agent.memory_usage);
+  const memoryDisplay = formatPercentage(node.memory_usage);
   const memoryGpuSub =
-    typeof agent.gpu_memory_usage === "number"
-      ? `<div class="cell-sub">GPU ${formatPercentage(agent.gpu_memory_usage)} (${gpuModelDisplay})</div>`
+    typeof node.gpu_memory_usage === "number"
+      ? `<div class="cell-sub">GPU ${formatPercentage(node.gpu_memory_usage)} (${gpuModelDisplay})</div>`
       : `<div class="cell-sub">${gpuModelDisplay}</div>`;
   const readyText =
-    agent.initializing || agent.ready_models
-      ? `<div class="cell-sub ready-progress">${formatReadyProgress(agent.ready_models)}</div>`
+    node.initializing || node.ready_models
+      ? `<div class="cell-sub ready-progress">${formatReadyProgress(node.ready_models)}</div>`
       : "";
 
   row.innerHTML = `
     <td>
       <input
         type="checkbox"
-        data-agent-id="${agent.id}"
-        ${state.selection.has(agent.id) ? "checked" : ""}
-        aria-label="${escapeHtml(agent.machine_name)} を選択"
+        data-node-id="${node.id}"
+        ${state.selection.has(node.id) ? "checked" : ""}
+        aria-label="Select ${escapeHtml(node.machine_name)}"
       />
     </td>
     <td>
@@ -857,12 +883,12 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
       <div class="cell-sub">${escapeHtml(secondaryName ?? "-")}</div>
     </td>
     <td>
-      <div class="cell-title">${escapeHtml(agent.ip_address)}</div>
-      <div class="cell-sub">Port ${Number.isFinite(agent.ollama_port) ? escapeHtml(agent.ollama_port) : "-"}</div>
+      <div class="cell-title">${escapeHtml(node.ip_address)}</div>
+      <div class="cell-sub">Port ${Number.isFinite(node.ollama_port) ? escapeHtml(node.ollama_port) : "-"}</div>
       ${readyText}
     </td>
     <td>${statusLabel}</td>
-    <td>${formatDuration(agent.uptime_seconds)}</td>
+    <td>${formatDuration(node.uptime_seconds)}</td>
     <td>
       <div class="cell-title">${cpuDisplay}</div>
       ${cpuGpuSub}
@@ -871,31 +897,31 @@ function buildAgentRow(agent, row = document.createElement("tr")) {
       <div class="cell-title">${memoryDisplay}</div>
       ${memoryGpuSub}
     </td>
-    <td>${agent.active_requests}</td>
+    <td>${node.active_requests}</td>
     <td>
-      <div class="cell-title">${agent.total_requests}</div>
+      <div class="cell-title">${node.total_requests}</div>
       <div class="cell-sub">
-        成功 ${agent.successful_requests} / 失敗 ${agent.failed_requests}
+        Success ${node.successful_requests} / Failed ${node.failed_requests}
       </div>
     </td>
-    <td>${formatAverage(agent.average_response_time_ms)}</td>
+    <td>${formatAverage(node.average_response_time_ms)}</td>
     <td>
-      <div class="cell-title">${formatTimestamp(agent.last_seen)}</div>
+      <div class="cell-title">${formatTimestamp(node.last_seen)}</div>
       <div class="cell-sub">${metricsDetail}</div>
     </td>
     <td>
-      <button type="button" data-agent-id="${agent.id}">詳細</button>
+      <button type="button" data-node-id="${node.id}">Details</button>
     </td>
   `;
-  syncAgentRowSelection(row, agent.id);
+  syncNodeRowSelection(row, node.id);
 
   return row;
 }
 
-function syncAgentRowSelection(row, agentId) {
-  const checkbox = row.querySelector('input[data-agent-id]');
+function syncNodeRowSelection(row, nodeId) {
+  const checkbox = row.querySelector('input[data-node-id]');
   if (!checkbox) return;
-  const shouldCheck = state.selection.has(agentId);
+  const shouldCheck = state.selection.has(nodeId);
   if (checkbox.checked !== shouldCheck) {
     checkbox.checked = shouldCheck;
   }
@@ -908,56 +934,56 @@ function buildPlaceholderRow(message) {
   return row;
 }
 
-function getAgentSignature(agent) {
+function getNodeSignature(node) {
   return [
-    agent.machine_name ?? "",
-    agent.custom_name ?? "",
-    agent.ip_address ?? "",
-    agent.ollama_version ?? "",
-    agent.status ?? "",
-    agent.uptime_seconds ?? 0,
-    agent.cpu_usage ?? 0,
-    agent.memory_usage ?? 0,
-    agent.gpu_usage ?? 0,
-    agent.gpu_memory_usage ?? 0,
-    agent.gpu_capability_score ?? "",
-    agent.gpu_model_name ?? "",
-    agent.gpu_compute_capability ?? "",
-    agent.initializing ? 1 : 0,
-    Array.isArray(agent.ready_models) ? agent.ready_models.join(":") : "",
-    agent.active_requests ?? 0,
-    agent.total_requests ?? 0,
-    agent.successful_requests ?? 0,
-    agent.failed_requests ?? 0,
-    agent.average_response_time_ms ?? "",
-    agent.last_seen ?? "",
-    agent.metrics_last_updated_at ?? "",
-    agent.metrics_stale ? 1 : 0,
+    node.machine_name ?? "",
+    node.custom_name ?? "",
+    node.ip_address ?? "",
+    node.ollama_version ?? "",
+    node.status ?? "",
+    node.uptime_seconds ?? 0,
+    node.cpu_usage ?? 0,
+    node.memory_usage ?? 0,
+    node.gpu_usage ?? 0,
+    node.gpu_memory_usage ?? 0,
+    node.gpu_capability_score ?? "",
+    node.gpu_model_name ?? "",
+    node.gpu_compute_capability ?? "",
+    node.initializing ? 1 : 0,
+    Array.isArray(node.ready_models) ? node.ready_models.join(":") : "",
+    node.active_requests ?? 0,
+    node.total_requests ?? 0,
+    node.successful_requests ?? 0,
+    node.failed_requests ?? 0,
+    node.average_response_time_ms ?? "",
+    node.last_seen ?? "",
+    node.metrics_last_updated_at ?? "",
+    node.metrics_stale ? 1 : 0,
   ].join("|");
 }
 
 function buildPageSignature(pageSlice) {
-  return pageSlice.map((agent) => `${agent.id}:${getAgentSignature(agent)}`).join("|");
+  return pageSlice.map((node) => `${node.id}:${getNodeSignature(node)}`).join("|");
 }
 
 function buildSelectionSignature() {
   return Array.from(state.selection).sort().join("|");
 }
 
-function getDisplayName(agent) {
-  const custom = typeof agent.custom_name === "string" ? agent.custom_name.trim() : "";
+function getDisplayName(node) {
+  const custom = typeof node.custom_name === "string" ? node.custom_name.trim() : "";
   if (custom) {
     return custom;
   }
-  return agent.machine_name ?? "-";
+  return node.machine_name ?? "-";
 }
 
 
-function filterAgent(agent, statusFilter, query) {
-  if (statusFilter === "online" && agent.status !== "online") {
+function filterNode(node, statusFilter, query) {
+  if (statusFilter === "online" && node.status !== "online") {
     return false;
   }
-  if (statusFilter === "offline" && agent.status !== "offline") {
+  if (statusFilter === "offline" && node.status !== "offline") {
     return false;
   }
 
@@ -965,26 +991,26 @@ function filterAgent(agent, statusFilter, query) {
     return true;
   }
 
-  const machine = (agent.machine_name ?? "").toLowerCase();
-  const ip = (agent.ip_address ?? "").toLowerCase();
-  const custom = (agent.custom_name ?? "").toLowerCase();
+  const machine = (node.machine_name ?? "").toLowerCase();
+  const ip = (node.ip_address ?? "").toLowerCase();
+  const custom = (node.custom_name ?? "").toLowerCase();
   return (machine.includes(query) || ip.includes(query) || custom.includes(query));
 }
 
-function getFilteredAgents() {
-  return state.agents.filter((agent) =>
-    filterAgent(agent, state.filterStatus, state.filterQuery),
+function getFilteredNodes() {
+  return state.nodes.filter((node) =>
+    filterNode(node, state.filterStatus, state.filterQuery),
   );
 }
 
-function sortAgents(agents, key, order) {
+function sortNodes(nodes, key, order) {
   const multiplier = order === "desc" ? -1 : 1;
-  const safe = [...agents];
-  safe.sort((a, b) => multiplier * compareAgents(a, b, key));
+  const safe = [...nodes];
+  safe.sort((a, b) => multiplier * compareNodes(a, b, key));
   return safe;
 }
 
-function compareAgents(a, b, key) {
+function compareNodes(a, b, key) {
   switch (key) {
     case "machine":
       return localeCompare(getDisplayName(a), getDisplayName(b));
@@ -1030,7 +1056,7 @@ function paginate(list, page, pageSize) {
 }
 
 function calculateTotalPages(length) {
-  const total = length ?? getFilteredAgents().length;
+  const total = length ?? getFilteredNodes().length;
   if (total === 0) return 1;
   return Math.ceil(total / state.pageSize);
 }
@@ -1046,147 +1072,147 @@ function updatePagination(totalPages) {
   }
 }
 
-function openAgentModal(agent) {
+function openNodeModal(node) {
   if (!modalRefs.modal) return;
   state.lastFocused = document.activeElement;
-  state.selection = new Set([agent.id]);
-  state.currentAgentId = agent.id;
-  prepareAgentMetrics(agent.id);
-  resetModalAgentLogs();
+  state.selection = new Set([node.id]);
+  state.currentNodeId = node.id;
+  prepareNodeMetrics(node.id);
+  resetModalNodeLogs();
 
-  modalRefs.machineName.textContent = agent.machine_name ?? "-";
-  modalRefs.ipAddress.textContent = agent.ip_address ?? "-";
-  modalRefs.ollamaVersion.textContent = agent.ollama_version ?? "-";
+  modalRefs.machineName.textContent = node.machine_name ?? "-";
+  modalRefs.ipAddress.textContent = node.ip_address ?? "-";
+  modalRefs.ollamaVersion.textContent = node.ollama_version ?? "-";
   if (modalRefs.loadedModels) {
-    const models = Array.isArray(agent.loaded_models) ? agent.loaded_models : [];
+    const models = Array.isArray(node.loaded_models) ? node.loaded_models : [];
 
     modalRefs.loadedModels.textContent = models.length ? models.join(", ") : "-";
   }
-  modalRefs.uptime.textContent = formatDuration(agent.uptime_seconds);
-  modalRefs.status.textContent = agent.status === "online" ? "オンライン" : "オフライン";
-  modalRefs.lastSeen.textContent = formatTimestamp(agent.last_seen);
-  modalRefs.totalRequests.textContent = agent.total_requests ?? 0;
-  modalRefs.averageResponse.textContent = formatAverage(agent.average_response_time_ms);
-  modalRefs.customName.value = agent.custom_name ?? "";
-  modalRefs.tags.value = Array.isArray(agent.tags) ? agent.tags.join(", ") : "";
-  modalRefs.notes.value = agent.notes ?? "";
+  modalRefs.uptime.textContent = formatDuration(node.uptime_seconds);
+  modalRefs.status.textContent = node.status === "online" ? "Online" : "Offline";
+  modalRefs.lastSeen.textContent = formatTimestamp(node.last_seen);
+  modalRefs.totalRequests.textContent = node.total_requests ?? 0;
+  modalRefs.averageResponse.textContent = formatAverage(node.average_response_time_ms);
+  modalRefs.customName.value = node.custom_name ?? "";
+  modalRefs.tags.value = Array.isArray(node.tags) ? node.tags.join(", ") : "";
+  modalRefs.notes.value = node.notes ?? "";
   if (modalRefs.gpuUsage) {
-    const gpuSummary = summarizeGpu(agent);
-    const gpuModel = gpuSummary.primaryModel || 'GPU情報なし';
-    const gpuCount = gpuSummary.totalCount > 1 ? ` (${gpuSummary.totalCount}枚)` : '';
+    const gpuSummary = summarizeGpu(node);
+    const gpuModel = gpuSummary.primaryModel || 'No GPU info';
+    const gpuCount = gpuSummary.totalCount > 1 ? ` (${gpuSummary.totalCount} GPUs)` : '';
     modalRefs.gpuUsage.textContent =
-      typeof agent.gpu_usage === "number"
-        ? formatPercentage(agent.gpu_usage)
-        : `${gpuModel}${gpuCount} (メトリクス非対応)`;
+      typeof node.gpu_usage === "number"
+        ? formatPercentage(node.gpu_usage)
+        : `${gpuModel}${gpuCount} (Metrics not supported)`;
   }
   if (modalRefs.gpuMemory) {
-    const gpuSummary = summarizeGpu(agent);
-    const gpuModel = gpuSummary.primaryModel || 'GPU情報なし';
-    const gpuCount = gpuSummary.totalCount > 1 ? ` (${gpuSummary.totalCount}枚)` : '';
+    const gpuSummary = summarizeGpu(node);
+    const gpuModel = gpuSummary.primaryModel || 'No GPU info';
+    const gpuCount = gpuSummary.totalCount > 1 ? ` (${gpuSummary.totalCount} GPUs)` : '';
     modalRefs.gpuMemory.textContent =
-      typeof agent.gpu_memory_usage === "number"
-        ? formatPercentage(agent.gpu_memory_usage)
-        : `${gpuModel}${gpuCount} (メトリクス非対応)`;
+      typeof node.gpu_memory_usage === "number"
+        ? formatPercentage(node.gpu_memory_usage)
+        : `${gpuModel}${gpuCount} (Metrics not supported)`;
   }
   if (modalRefs.gpuCapabilityScore) {
     modalRefs.gpuCapabilityScore.textContent =
-      typeof agent.gpu_capability_score === "number"
-        ? agent.gpu_capability_score.toString()
+      typeof node.gpu_capability_score === "number"
+        ? node.gpu_capability_score.toString()
         : "-";
   }
   if (modalRefs.gpuModel) {
-    modalRefs.gpuModel.textContent = agent.gpu_model_name ?? "-";
+    modalRefs.gpuModel.textContent = node.gpu_model_name ?? "-";
   }
   if (modalRefs.gpuCompute) {
-    modalRefs.gpuCompute.textContent = agent.gpu_compute_capability ?? "-";
+    modalRefs.gpuCompute.textContent = node.gpu_compute_capability ?? "-";
   }
 
-  const cached = state.agentMetricsCache.get(agent.id);
+  const cached = state.nodeMetricsCache.get(node.id);
   if (cached && Date.now() - cached.fetchedAt.getTime() < 10_000) {
-    updateAgentMetrics(cached.data);
+    updateNodeMetrics(cached.data);
   } else {
-    loadAgentMetrics(agent.id);
+    loadNodeMetrics(node.id);
   }
 
   modalRefs.modal.classList.remove("hidden");
   modalRefs.modal.setAttribute("tabindex", "-1");
-  loadModalAgentLogs(agent.id, { force: true });
+  loadModalNodeLogs(node.id, { force: true });
   window.requestAnimationFrame(() => modalRefs.close.focus());
 }
 
-function closeAgentModal() {
+function closeNodeModal() {
   if (!modalRefs.modal) return;
   modalRefs.modal.classList.add("hidden");
-  if (state.agentMetricsAbortController) {
-    state.agentMetricsAbortController.abort();
-    state.agentMetricsAbortController = null;
+  if (state.nodeMetricsAbortController) {
+    state.nodeMetricsAbortController.abort();
+    state.nodeMetricsAbortController = null;
   }
   if (state.lastFocused && typeof state.lastFocused.focus === "function") {
     state.lastFocused.focus();
   }
-  state.currentAgentId = null;
-  destroyAgentMetricsChart();
-  resetModalAgentLogs();
+  state.currentNodeId = null;
+  destroyNodeMetricsChart();
+  resetModalNodeLogs();
 }
 
-function prepareAgentMetrics(agentId) {
-  if (state.agentMetricsAbortController) {
-    state.agentMetricsAbortController.abort();
+function prepareNodeMetrics(nodeId) {
+  if (state.nodeMetricsAbortController) {
+    state.nodeMetricsAbortController.abort();
   }
-  state.agentMetricsAbortController = null;
-  state.agentMetricsSignature = "";
-  destroyAgentMetricsChart();
-  setAgentMetricsStatus("メトリクスを読み込み中…");
+  state.nodeMetricsAbortController = null;
+  state.nodeMetricsSignature = "";
+  destroyNodeMetricsChart();
+  setNodeMetricsStatus("Loading metrics...");
   if (modalRefs.metricsCanvas) {
-    modalRefs.metricsCanvas.dataset.agentId = agentId;
+    modalRefs.metricsCanvas.dataset.nodeId = nodeId;
   }
 }
 
-async function loadAgentMetrics(agentId) {
+async function loadNodeMetrics(nodeId) {
   const controller = new AbortController();
-  state.agentMetricsAbortController = controller;
+  state.nodeMetricsAbortController = controller;
   try {
-    const metrics = await fetchJson(`/api/dashboard/metrics/${agentId}`, {
+    const metrics = await fetchJson(`/api/dashboard/metrics/${nodeId}`, {
       signal: controller.signal,
     });
     if (controller.signal.aborted) {
       return;
     }
-    state.agentMetricsAbortController = null;
-    state.agentMetricsCache.set(agentId, { data: metrics, fetchedAt: new Date() });
-    updateAgentMetrics(metrics);
+    state.nodeMetricsAbortController = null;
+    state.nodeMetricsCache.set(nodeId, { data: metrics, fetchedAt: new Date() });
+    updateNodeMetrics(metrics);
   } catch (error) {
     if (controller.signal?.aborted) {
       return;
     }
-    state.agentMetricsAbortController = null;
-    destroyAgentMetricsChart();
-    setAgentMetricsStatus(
-      `メトリクスの取得に失敗しました: ${error?.message ?? error}`,
+    state.nodeMetricsAbortController = null;
+    destroyNodeMetricsChart();
+    setNodeMetricsStatus(
+      `Failed to fetch metrics: ${error?.message ?? error}`,
       { isError: true },
     );
   }
 }
 
-function updateAgentMetrics(metrics) {
+function updateNodeMetrics(metrics) {
   const array = Array.isArray(metrics)
-    ? metrics.slice(Math.max(metrics.length - AGENT_METRICS_LIMIT, 0))
+    ? metrics.slice(Math.max(metrics.length - NODE_METRICS_LIMIT, 0))
     : [];
 
   if (!array.length) {
-    state.agentMetricsSignature = "";
-    destroyAgentMetricsChart();
-    setAgentMetricsStatus("メトリクスはまだありません");
+    state.nodeMetricsSignature = "";
+    destroyNodeMetricsChart();
+    setNodeMetricsStatus("No metrics yet");
     return;
   }
 
-  const signature = buildAgentMetricsSignature(array);
-  if (signature === state.agentMetricsSignature && agentMetricsChart) {
-    setAgentMetricsStatus(buildAgentMetricsSummary(array));
+  const signature = buildNodeMetricsSignature(array);
+  if (signature === state.nodeMetricsSignature && nodeMetricsChart) {
+    setNodeMetricsStatus(buildNodeMetricsSummary(array));
     return;
   }
 
-  state.agentMetricsSignature = signature;
+  state.nodeMetricsSignature = signature;
 
   const canvas = modalRefs.metricsCanvas;
   if (!canvas) return;
@@ -1201,7 +1227,7 @@ function updateAgentMetrics(metrics) {
   if (datasetHasValues(cpu)) {
     datasets.push({
       key: "cpu",
-      label: "CPU使用率",
+      label: "CPU Usage",
       data: cpu,
       borderColor: "rgba(59, 130, 246, 0.85)",
       backgroundColor: "rgba(59, 130, 246, 0.12)",
@@ -1210,7 +1236,7 @@ function updateAgentMetrics(metrics) {
   if (datasetHasValues(memory)) {
     datasets.push({
       key: "memory",
-      label: "メモリ使用率",
+      label: "Memory Usage",
       data: memory,
       borderColor: "rgba(168, 85, 247, 0.85)",
       backgroundColor: "rgba(168, 85, 247, 0.12)",
@@ -1219,7 +1245,7 @@ function updateAgentMetrics(metrics) {
   if (datasetHasValues(gpu)) {
     datasets.push({
       key: "gpu",
-      label: "GPU使用率",
+      label: "GPU Usage",
       data: gpu,
       borderColor: "rgba(34, 197, 94, 0.85)",
       backgroundColor: "rgba(34, 197, 94, 0.12)",
@@ -1228,7 +1254,7 @@ function updateAgentMetrics(metrics) {
   if (datasetHasValues(gpuMemory)) {
     datasets.push({
       key: "gpu-memory",
-      label: "GPUメモリ使用率",
+      label: "GPU Memory Usage",
       data: gpuMemory,
       borderColor: "rgba(248, 113, 113, 0.85)",
       backgroundColor: "rgba(248, 113, 113, 0.12)",
@@ -1236,19 +1262,19 @@ function updateAgentMetrics(metrics) {
   }
 
   if (!datasets.length) {
-    destroyAgentMetricsChart();
-    setAgentMetricsStatus("メトリクスは記録されていますが数値を取得できませんでした");
+    destroyNodeMetricsChart();
+    setNodeMetricsStatus("Metrics recorded but values unavailable");
     return;
   }
 
   const shouldRecreate =
-    !agentMetricsChart ||
-    agentMetricsChart.data.datasets.length !== datasets.length ||
-    datasets.some((dataset, index) => agentMetricsChart.data.datasets[index]?.label !== dataset.label);
+    !nodeMetricsChart ||
+    nodeMetricsChart.data.datasets.length !== datasets.length ||
+    datasets.some((dataset, index) => nodeMetricsChart.data.datasets[index]?.label !== dataset.label);
 
   if (shouldRecreate) {
-    destroyAgentMetricsChart();
-    agentMetricsChart = new Chart(canvas, {
+    destroyNodeMetricsChart();
+    nodeMetricsChart = new Chart(canvas, {
       type: "line",
       data: {
         labels,
@@ -1312,25 +1338,25 @@ function updateAgentMetrics(metrics) {
       },
     });
   } else {
-    agentMetricsChart.data.labels = labels;
+    nodeMetricsChart.data.labels = labels;
     datasets.forEach((dataset, index) => {
-      agentMetricsChart.data.datasets[index].data = dataset.data;
-      agentMetricsChart.data.datasets[index].label = dataset.label;
+      nodeMetricsChart.data.datasets[index].data = dataset.data;
+      nodeMetricsChart.data.datasets[index].label = dataset.label;
     });
-    agentMetricsChart.update("none");
+    nodeMetricsChart.update("none");
   }
 
-  setAgentMetricsStatus(buildAgentMetricsSummary(array));
+  setNodeMetricsStatus(buildNodeMetricsSummary(array));
 }
 
-function destroyAgentMetricsChart() {
-  if (agentMetricsChart) {
-    agentMetricsChart.destroy();
-    agentMetricsChart = null;
+function destroyNodeMetricsChart() {
+  if (nodeMetricsChart) {
+    nodeMetricsChart.destroy();
+    nodeMetricsChart = null;
   }
 }
 
-function setAgentMetricsStatus(message, { isError = false } = {}) {
+function setNodeMetricsStatus(message, { isError = false } = {}) {
   if (!modalRefs.metricsStatus) return;
   modalRefs.metricsStatus.textContent = message;
   modalRefs.metricsStatus.classList.toggle("is-error", isError);
@@ -1340,19 +1366,19 @@ function datasetHasValues(values) {
   return values.some((value) => typeof value === "number" && !Number.isNaN(value));
 }
 
-function buildAgentMetricsSummary(metrics) {
+function buildNodeMetricsSummary(metrics) {
   const latest = metrics[metrics.length - 1];
   const latestTime = formatMetricLabel(new Date(latest.timestamp));
   const parts = [
     `CPU ${formatPercentage(latest.cpu_usage)}`,
-    `メモリ ${formatPercentage(latest.memory_usage)}`,
+    `Memory ${formatPercentage(latest.memory_usage)}`,
     `GPU ${formatPercentage(latest.gpu_usage)}`,
-    `GPUメモリ ${formatPercentage(latest.gpu_memory_usage)}`,
+    `GPU Mem ${formatPercentage(latest.gpu_memory_usage)}`,
   ];
-  return `データ点: ${metrics.length} / 最新 ${latestTime} | ${parts.join(" / ")}`;
+  return `Points: ${metrics.length} / Latest ${latestTime} | ${parts.join(" / ")}`;
 }
 
-function buildAgentMetricsSignature(metrics) {
+function buildNodeMetricsSignature(metrics) {
   return metrics
     .map((point) => {
       const cpu = typeof point.cpu_usage === "number" ? point.cpu_usage.toFixed(2) : "-";
@@ -1373,7 +1399,7 @@ function toNullableNumber(value) {
   return typeof value === "number" && Number.isFinite(value) ? Number(value.toFixed(2)) : null;
 }
 
-async function saveAgentSettings(agentId) {
+async function saveNodeSettings(nodeId) {
   const tags = modalRefs.tags.value
     .split(",")
     .map((tag) => tag.trim())
@@ -1386,7 +1412,7 @@ async function saveAgentSettings(agentId) {
   };
 
   try {
-    const response = await fetch(`/api/agents/${agentId}/settings`, {
+    const response = await fetch(`/api/nodes/${nodeId}/settings`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -1401,15 +1427,15 @@ async function saveAgentSettings(agentId) {
 
     return response.json();
   } catch (error) {
-    console.error("Failed to save agent settings:", error);
-    showError(`設定の保存に失敗しました: ${error.message}`);
+    console.error("Failed to save node settings:", error);
+    showError(`Failed to save settings: ${error.message}`);
     throw error;
   }
 }
 
-async function deleteAgent(agentId) {
+async function deleteNode(nodeId) {
   try {
-    const response = await fetch(`/api/agents/${agentId}`, {
+    const response = await fetch(`/api/nodes/${nodeId}`, {
       method: "DELETE",
       headers: {
         Accept: "application/json",
@@ -1420,14 +1446,14 @@ async function deleteAgent(agentId) {
       throw new Error(`${response.status} ${response.statusText}`);
     }
   } catch (error) {
-    showError(`エージェントの削除に失敗しました: ${error.message}`);
+    showError(`Failed to delete node: ${error.message}`);
     throw error;
   }
 }
 
-async function disconnectAgent(agentId) {
+async function disconnectNode(nodeId) {
   try {
-    const response = await fetch(`/api/agents/${agentId}/disconnect`, {
+    const response = await fetch(`/api/nodes/${nodeId}/disconnect`, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -1438,7 +1464,7 @@ async function disconnectAgent(agentId) {
       throw new Error(`${response.status} ${response.statusText}`);
     }
   } catch (error) {
-    showError(`強制切断に失敗しました: ${error.message}`);
+    showError(`Failed to force disconnect: ${error.message}`);
     throw error;
   }
 }
@@ -1465,21 +1491,21 @@ function downloadCsv(data, filename) {
     "tags",
   ];
 
-  const rows = data.map((agent) => {
+  const rows = data.map((node) => {
     return [
-      agent.id,
-      getDisplayName(agent),
-      agent.machine_name ?? "",
-      agent.ip_address ?? "",
-      agent.ollama_version ?? "",
-      agent.status ?? "",
-      agent.cpu_usage ?? "",
-      agent.memory_usage ?? "",
-      agent.gpu_usage ?? "",
-      agent.gpu_memory_usage ?? "",
-      agent.registered_at ?? "",
-      agent.last_seen ?? "",
-      Array.isArray(agent.tags) ? agent.tags.join("|") : "",
+      node.id,
+      getDisplayName(node),
+      node.machine_name ?? "",
+      node.ip_address ?? "",
+      node.ollama_version ?? "",
+      node.status ?? "",
+      node.cpu_usage ?? "",
+      node.memory_usage ?? "",
+      node.gpu_usage ?? "",
+      node.gpu_memory_usage ?? "",
+      node.registered_at ?? "",
+      node.last_seen ?? "",
+      Array.isArray(node.tags) ? node.tags.join("|") : "",
     ]
       .map((value) => `"${String(value).replace(/"/g, '""')}"`)
       .join(",");
@@ -1508,13 +1534,13 @@ function setConnectionStatus(mode) {
   pill.classList.remove("status-pill--online", "status-pill--offline");
 
   const labelMap = {
-    loading: "接続状態: 更新中…",
-    updating: "接続状態: 更新中…",
-    online: "接続状態: 正常",
-    offline: "接続状態: 切断",
+    loading: "Connection: Updating...",
+    updating: "Connection: Updating...",
+    online: "Connection: OK",
+    offline: "Connection: Disconnected",
   };
 
-  pill.textContent = labelMap[mode] ?? "接続状態: -";
+  pill.textContent = labelMap[mode] ?? "Connection: -";
 
   if (mode === "online") {
     pill.classList.add("status-pill--online");
@@ -1529,9 +1555,9 @@ function updateLastRefreshed(date, serverDate = null) {
   const clientText = formatDate(date);
   const serverText =
     serverDate instanceof Date && !Number.isNaN(serverDate.getTime())
-      ? ` / サーバー: ${formatDate(serverDate)}`
+      ? ` / Server: ${formatDate(serverDate)}`
       : "";
-  label.textContent = `最終更新: ${clientText}${serverText}`;
+  label.textContent = `Last updated: ${clientText}${serverText}`;
 }
 
 function showError(message) {
@@ -1559,15 +1585,15 @@ function formatDuration(seconds) {
   const minutes = Math.floor((abs % 3600) / 60);
 
   if (days > 0) {
-    return `${days}日${hours}時間`;
+    return `${days}d ${hours}h`;
   }
   if (hours > 0) {
-    return `${hours}時間${minutes}分`;
+    return `${hours}h ${minutes}m`;
   }
   if (minutes > 0) {
-    return `${minutes}分`;
+    return `${minutes}m`;
   }
-  return `${abs}秒`;
+  return `${abs}s`;
 }
 
 function formatPercentage(value) {
@@ -1686,7 +1712,7 @@ async function fetchRequestHistory() {
     console.error("Failed to fetch request history:", error);
     const tbody = document.getElementById("request-history-tbody");
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="8" class="empty-message">履歴の読み込みに失敗しました</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-message">Failed to load history</td></tr>`;
     }
   }
 }
@@ -1708,7 +1734,7 @@ function renderRequestHistory() {
   filtered = filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-message">履歴がありません</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-message">No history</td></tr>`;
     updateHistoryPagination(0, 0);
     return;
   }
@@ -1724,8 +1750,8 @@ function renderRequestHistory() {
     const timestamp = new Date(record.timestamp);
     const statusClass = record.status.type === "success" ? "status-success" : "status-error";
     const statusText = record.status.type === "success"
-      ? "成功"
-      : `エラー: ${escapeHtml(record.status.message || "不明")}`;
+      ? "Success"
+      : `Error: ${escapeHtml(record.status.message || "Unknown")}`;
     const clientIp = record.client_ip || "-";
 
     return `
@@ -1737,7 +1763,7 @@ function renderRequestHistory() {
         <td>${escapeHtml(clientIp)}</td>
         <td>${escapeHtml(record.duration_ms)}ms</td>
         <td><span class="${statusClass}">${statusText}</span></td>
-        <td><button class="btn btn-sm view-request-detail" data-id="${escapeHtml(record.id)}">詳細</button></td>
+        <td><button class="btn btn-sm view-request-detail" data-id="${escapeHtml(record.id)}">Details</button></td>
       </tr>
     `;
   }).join("");
@@ -1786,20 +1812,20 @@ async function showRequestDetail(id) {
     document.getElementById("request-detail-timestamp").textContent = formatTimestamp(new Date(record.timestamp));
     document.getElementById("request-detail-type").textContent = record.request_type;
     document.getElementById("request-detail-model").textContent = record.model;
-    document.getElementById("request-detail-agent").textContent = `${record.agent_machine_name} (${record.agent_ip})`;
-    document.getElementById("request-detail-client-ip").textContent = record.client_ip || "未取得";
+    document.getElementById("request-detail-node").textContent = `${record.node_machine_name} (${record.node_ip})`;
+    document.getElementById("request-detail-client-ip").textContent = record.client_ip || "Not available";
     document.getElementById("request-detail-duration").textContent = `${record.duration_ms}ms`;
 
     const statusText = record.status.type === "success"
-      ? "成功"
-      : `エラー: ${record.status.message || "不明"}`;
+      ? "Success"
+      : `Error: ${record.status.message || "Unknown"}`;
     document.getElementById("request-detail-status").textContent = statusText;
 
     document.getElementById("request-detail-request-body").textContent =
       JSON.stringify(record.request_body, null, 2);
 
     document.getElementById("request-detail-response-body").textContent =
-      record.response_body ? JSON.stringify(record.response_body, null, 2) : "（レスポンスなし）";
+      record.response_body ? JSON.stringify(record.response_body, null, 2) : "(No response)";
 
     // モーダル表示
     const modal = document.getElementById("request-modal");
@@ -1808,7 +1834,7 @@ async function showRequestDetail(id) {
     }
   } catch (error) {
     console.error("Failed to fetch request detail:", error);
-    alert("リクエスト詳細の読み込みに失敗しました");
+    alert("Failed to load request details");
   }
 }
 
@@ -1896,25 +1922,25 @@ function initLogControls() {
     });
   }
 
-  if (logRefs.agentRefresh) {
-    logRefs.agentRefresh.addEventListener("click", () => {
-      state.logs.agentFetched = false;
-      fetchAgentLogs({ skipIfFetched: false });
+  if (logRefs.nodeRefresh) {
+    logRefs.nodeRefresh.addEventListener("click", () => {
+      state.logs.nodeFetched = false;
+      fetchNodeLogs({ skipIfFetched: false });
     });
   }
 
-  if (logRefs.agentSelect) {
-    logRefs.agentSelect.addEventListener("change", (event) => {
+  if (logRefs.nodeSelect) {
+    logRefs.nodeSelect.addEventListener("change", (event) => {
       const nextId = event.target.value || null;
-      state.logs.selectedAgentId = nextId;
-      state.logs.agentFetched = false;
+      state.logs.selectedNodeId = nextId;
+      state.logs.nodeFetched = false;
       if (nextId) {
-        fetchAgentLogs({ skipIfFetched: false });
+        fetchNodeLogs({ skipIfFetched: false });
       } else {
-        state.logs.agent = [];
-        state.logs.agentPath = null;
-        state.logs.agentError = null;
-        renderAgentLogs();
+        state.logs.node = [];
+        state.logs.nodePath = null;
+        state.logs.nodeError = null;
+        renderNodeLogs();
       }
     });
   }
@@ -1923,8 +1949,8 @@ function initLogControls() {
 function initModalLogControls() {
   if (modalRefs.logRefresh) {
     modalRefs.logRefresh.addEventListener("click", () => {
-      if (state.currentAgentId) {
-        loadModalAgentLogs(state.currentAgentId, { force: true });
+      if (state.currentNodeId) {
+        loadModalNodeLogs(state.currentNodeId, { force: true });
       }
     });
   }
@@ -1932,10 +1958,10 @@ function initModalLogControls() {
 
 function maybeRefreshLogs(force = false) {
   fetchCoordinatorLogs({ skipIfFetched: !force });
-  if (state.logs.selectedAgentId) {
-    fetchAgentLogs({ skipIfFetched: !force });
+  if (state.logs.selectedNodeId) {
+    fetchNodeLogs({ skipIfFetched: !force });
   } else {
-    renderAgentLogs();
+    renderNodeLogs();
   }
 }
 
@@ -1954,43 +1980,43 @@ async function fetchCoordinatorLogs({ skipIfFetched = false } = {}) {
     state.logs.coordinatorPath = typeof data.path === "string" ? data.path : null;
     state.logs.coordinatorFetched = true;
   } catch (error) {
-    state.logs.coordinatorError = `ログを取得できませんでした: ${error?.message ?? error}`;
+    state.logs.coordinatorError = `Failed to fetch logs: ${error?.message ?? error}`;
   } finally {
     state.logs.loadingCoordinator = false;
     renderCoordinatorLogs();
   }
 }
 
-async function fetchAgentLogs({ skipIfFetched = false } = {}) {
-  if (!state.logs.selectedAgentId) {
-    state.logs.agent = [];
-    state.logs.agentFetched = false;
-    state.logs.agentError = null;
-    state.logs.agentPath = null;
-    renderAgentLogs();
+async function fetchNodeLogs({ skipIfFetched = false } = {}) {
+  if (!state.logs.selectedNodeId) {
+    state.logs.node = [];
+    state.logs.nodeFetched = false;
+    state.logs.nodeError = null;
+    state.logs.nodePath = null;
+    renderNodeLogs();
     return;
   }
 
-  if (skipIfFetched && state.logs.agentFetched) {
+  if (skipIfFetched && state.logs.nodeFetched) {
     return;
   }
 
-  state.logs.loadingAgent = true;
-  state.logs.agentError = null;
-  renderAgentLogs();
+  state.logs.loadingNode = true;
+  state.logs.nodeError = null;
+  renderNodeLogs();
 
   try {
-    const agentId = encodeURIComponent(state.logs.selectedAgentId);
-    const data = await fetchJson(`/api/dashboard/logs/agents/${agentId}?limit=${LOG_ENTRY_LIMIT}`);
-    state.logs.agent = Array.isArray(data.entries) ? data.entries : [];
-    state.logs.agentPath = typeof data.path === "string" ? data.path : null;
-    state.logs.agentFetched = true;
+    const nodeId = encodeURIComponent(state.logs.selectedNodeId);
+    const data = await fetchJson(`/api/dashboard/logs/nodes/${nodeId}?limit=${LOG_ENTRY_LIMIT}`);
+    state.logs.node = Array.isArray(data.entries) ? data.entries : [];
+    state.logs.nodePath = typeof data.path === "string" ? data.path : null;
+    state.logs.nodeFetched = true;
   } catch (error) {
-    state.logs.agentError = `ログを取得できませんでした: ${error?.message ?? error}`;
-    state.logs.agentFetched = false;
+    state.logs.nodeError = `Failed to fetch logs: ${error?.message ?? error}`;
+    state.logs.nodeFetched = false;
   } finally {
-    state.logs.loadingAgent = false;
-    renderAgentLogs();
+    state.logs.loadingNode = false;
+    renderNodeLogs();
   }
 }
 
@@ -1999,57 +2025,57 @@ function renderCoordinatorLogs() {
     entries: state.logs.coordinator,
     loading: state.logs.loadingCoordinator,
     error: state.logs.coordinatorError,
-    emptyMessage: "まだログがありません",
+    emptyMessage: "No logs yet",
   });
 
   if (logRefs.coordinatorPath) {
     logRefs.coordinatorPath.textContent = state.logs.coordinatorPath
-      ? `保存先: ${state.logs.coordinatorPath}`
+      ? `Path: ${state.logs.coordinatorPath}`
       : "";
   }
 
   if (logRefs.coordinatorStatus) {
     if (state.logs.loadingCoordinator) {
-      logRefs.coordinatorStatus.textContent = "読み込み中…";
+      logRefs.coordinatorStatus.textContent = "Loading...";
     } else if (state.logs.coordinatorError) {
-      logRefs.coordinatorStatus.textContent = "エラーが発生しました";
+      logRefs.coordinatorStatus.textContent = "An error occurred";
     } else {
-      logRefs.coordinatorStatus.textContent = `最新 ${state.logs.coordinator.length} 件を表示`;
+      logRefs.coordinatorStatus.textContent = `Showing latest ${state.logs.coordinator.length} entries`;
     }
   }
 }
 
-function renderAgentLogs() {
-  const hasAgents = state.agents.length > 0;
-  const emptyMessage = state.logs.selectedAgentId
-    ? "まだログがありません"
-    : hasAgents
-      ? "エージェントを選択してください"
-      : "エージェントが登録されていません";
-  const errorMessage = state.logs.selectedAgentId ? state.logs.agentError : null;
+function renderNodeLogs() {
+  const hasNodes = state.nodes.length > 0;
+  const emptyMessage = state.logs.selectedNodeId
+    ? "No logs yet"
+    : hasNodes
+      ? "Please select a node"
+      : "No nodes registered";
+  const errorMessage = state.logs.selectedNodeId ? state.logs.nodeError : null;
 
-  renderLogViewer(logRefs.agentList, {
-    entries: state.logs.agent,
-    loading: state.logs.loadingAgent,
+  renderLogViewer(logRefs.nodeList, {
+    entries: state.logs.node,
+    loading: state.logs.loadingNode,
     error: errorMessage,
     emptyMessage,
   });
 
-  if (logRefs.agentPath) {
-    logRefs.agentPath.textContent = state.logs.agentPath
-      ? `保存先: ${state.logs.agentPath}`
+  if (logRefs.nodePath) {
+    logRefs.nodePath.textContent = state.logs.nodePath
+      ? `Path: ${state.logs.nodePath}`
       : "";
   }
 
-  if (logRefs.agentStatus) {
-    if (state.logs.loadingAgent) {
-      logRefs.agentStatus.textContent = "読み込み中…";
+  if (logRefs.nodeStatus) {
+    if (state.logs.loadingNode) {
+      logRefs.nodeStatus.textContent = "Loading...";
     } else if (errorMessage) {
-      logRefs.agentStatus.textContent = errorMessage;
-    } else if (state.logs.selectedAgentId) {
-      logRefs.agentStatus.textContent = `最新 ${state.logs.agent.length} 件を表示`;
+      logRefs.nodeStatus.textContent = errorMessage;
+    } else if (state.logs.selectedNodeId) {
+      logRefs.nodeStatus.textContent = `Showing latest ${state.logs.node.length} entries`;
     } else {
-      logRefs.agentStatus.textContent = emptyMessage;
+      logRefs.nodeStatus.textContent = emptyMessage;
     }
   }
 }
@@ -2058,7 +2084,7 @@ function renderLogViewer(target, { entries, loading, error, emptyMessage }) {
   if (!target) return;
 
   if (loading) {
-    target.innerHTML = '<div class="log-placeholder">読み込み中…</div>';
+    target.innerHTML = '<div class="log-placeholder">Loading...</div>';
     return;
   }
 
@@ -2148,96 +2174,96 @@ function summarizeFieldValue(value) {
   }
 }
 
-function renderLogsAgentOptions() {
-  if (!logRefs.agentSelect) return;
+function renderLogsNodeOptions() {
+  if (!logRefs.nodeSelect) return;
 
-  const select = logRefs.agentSelect;
-  const agents = Array.isArray(state.agents) ? state.agents : [];
-  const previousSelection = state.logs.selectedAgentId;
-  const hasAgents = agents.length > 0;
+  const select = logRefs.nodeSelect;
+  const nodes = Array.isArray(state.nodes) ? state.nodes : [];
+  const previousSelection = state.logs.selectedNodeId;
+  const hasNodes = nodes.length > 0;
 
-  const options = agents
-    .map((agent) => {
+  const options = nodes
+    .map((node) => {
       const label =
-        agent.machine_name && agent.machine_name.trim().length
-          ? agent.machine_name
-          : agent.id.slice(0, 8);
-      const statusLabel = agent.status === "online" ? "オンライン" : "オフライン";
-      return `<option value="${escapeHtml(agent.id)}">${escapeHtml(label)} (${statusLabel})</option>`;
+        node.machine_name && node.machine_name.trim().length
+          ? node.machine_name
+          : node.id.slice(0, 8);
+      const statusLabel = node.status === "online" ? "Online" : "Offline";
+      return `<option value="${escapeHtml(node.id)}">${escapeHtml(label)} (${statusLabel})</option>`;
     })
     .join("");
 
-  select.innerHTML = `<option value="">エージェントを選択</option>${options}`;
+  select.innerHTML = `<option value="">Select a node</option>${options}`;
 
-  if (previousSelection && agents.some((agent) => agent.id === previousSelection)) {
+  if (previousSelection && nodes.some((node) => node.id === previousSelection)) {
     select.value = previousSelection;
-  } else if (hasAgents) {
+  } else if (hasNodes) {
     const fallback =
-      agents.find((agent) => agent.status === "online") ?? agents[0];
-    state.logs.selectedAgentId = fallback.id;
-    state.logs.agentFetched = false;
+      nodes.find((node) => node.status === "online") ?? nodes[0];
+    state.logs.selectedNodeId = fallback.id;
+    state.logs.nodeFetched = false;
     select.value = fallback.id;
   } else {
-    state.logs.selectedAgentId = null;
-    state.logs.agentFetched = false;
+    state.logs.selectedNodeId = null;
+    state.logs.nodeFetched = false;
     select.value = "";
   }
 
-  const disabled = !hasAgents;
+  const disabled = !hasNodes;
   select.disabled = disabled;
-  if (logRefs.agentRefresh) {
-    logRefs.agentRefresh.disabled = disabled;
+  if (logRefs.nodeRefresh) {
+    logRefs.nodeRefresh.disabled = disabled;
   }
 
-  if (!state.logs.selectedAgentId) {
-    state.logs.agent = [];
-    state.logs.agentPath = null;
-    state.logs.agentError = null;
-    renderAgentLogs();
+  if (!state.logs.selectedNodeId) {
+    state.logs.node = [];
+    state.logs.nodePath = null;
+    state.logs.nodeError = null;
+    renderNodeLogs();
   }
 }
 
-function resetModalAgentLogs() {
+function resetModalNodeLogs() {
   state.modalLog.entries = [];
   state.modalLog.path = null;
   state.modalLog.error = null;
   state.modalLog.loading = false;
-  state.modalLog.fetchedAgentId = null;
-  renderModalAgentLogs();
+  state.modalLog.fetchedNodeId = null;
+  renderModalNodeLogs();
 }
 
-async function loadModalAgentLogs(agentId, { force = false } = {}) {
-  if (!agentId || !modalRefs.logViewer) return;
-  if (!force && state.modalLog.fetchedAgentId === agentId && !state.modalLog.error) {
+async function loadModalNodeLogs(nodeId, { force = false } = {}) {
+  if (!nodeId || !modalRefs.logViewer) return;
+  if (!force && state.modalLog.fetchedNodeId === nodeId && !state.modalLog.error) {
     return;
   }
 
   state.modalLog.loading = true;
   state.modalLog.error = null;
-  state.modalLog.fetchedAgentId = agentId;
-  renderModalAgentLogs();
+  state.modalLog.fetchedNodeId = nodeId;
+  renderModalNodeLogs();
 
   try {
     const payload = await fetchJson(
-      `/api/dashboard/logs/agents/${agentId}?limit=${MODAL_LOG_ENTRY_LIMIT}`,
+      `/api/dashboard/logs/nodes/${nodeId}?limit=${MODAL_LOG_ENTRY_LIMIT}`,
     );
     state.modalLog.entries = Array.isArray(payload.entries) ? payload.entries : [];
     state.modalLog.path = typeof payload.path === "string" ? payload.path : null;
     state.modalLog.error = null;
   } catch (error) {
     state.modalLog.entries = [];
-    state.modalLog.error = `ログを取得できませんでした: ${error?.message ?? error}`;
+    state.modalLog.error = `Failed to fetch logs: ${error?.message ?? error}`;
   } finally {
     state.modalLog.loading = false;
-    renderModalAgentLogs();
+    renderModalNodeLogs();
   }
 }
 
-function renderModalAgentLogs() {
+function renderModalNodeLogs() {
   if (!modalRefs.logViewer) return;
-  const emptyMessage = state.currentAgentId
-    ? "まだログがありません"
-    : "エージェントが選択されていません";
+  const emptyMessage = state.currentNodeId
+    ? "No logs yet"
+    : "No node selected";
 
   renderLogViewer(modalRefs.logViewer, {
     entries: state.modalLog.entries,
@@ -2248,22 +2274,22 @@ function renderModalAgentLogs() {
 
   if (modalRefs.logStatus) {
     if (state.modalLog.loading) {
-      modalRefs.logStatus.textContent = "ログを読み込み中…";
+      modalRefs.logStatus.textContent = "Loading logs...";
     } else if (state.modalLog.error) {
       modalRefs.logStatus.textContent = state.modalLog.error;
     } else if (state.modalLog.entries.length) {
-      modalRefs.logStatus.textContent = `最新 ${state.modalLog.entries.length} 件を表示`;
+      modalRefs.logStatus.textContent = `Showing latest ${state.modalLog.entries.length} entries`;
     } else {
       modalRefs.logStatus.textContent = emptyMessage;
     }
   }
 
   if (modalRefs.logPath) {
-    modalRefs.logPath.textContent = state.modalLog.path ? `保存先: ${state.modalLog.path}` : "";
+    modalRefs.logPath.textContent = state.modalLog.path ? `Path: ${state.modalLog.path}` : "";
   }
 
   if (modalRefs.logRefresh) {
-    modalRefs.logRefresh.disabled = !state.currentAgentId || state.modalLog.loading;
+    modalRefs.logRefresh.disabled = !state.currentNodeId || state.modalLog.loading;
   }
 }
 

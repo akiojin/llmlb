@@ -69,7 +69,7 @@ RUN npm i -g \
 
 EXPOSE 8080
 
-WORKDIR /ollama-router
+WORKDIR /llm-router
 # Use bash to invoke entrypoint to avoid exec-bit and CRLF issues on Windows mounts
-ENTRYPOINT ["bash", "/ollama-router/scripts/entrypoint.sh"]
+ENTRYPOINT ["bash", "/llm-router/scripts/entrypoint.sh"]
 CMD ["bash"]

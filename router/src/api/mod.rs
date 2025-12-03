@@ -2,7 +2,6 @@
 //!
 //! ノード登録、ヘルスチェック、プロキシAPI
 
-pub mod agent;
 pub mod api_keys;
 pub mod auth;
 pub mod dashboard;
@@ -10,10 +9,12 @@ pub mod health;
 pub mod logs;
 pub mod metrics;
 pub mod models;
+pub mod nodes;
 pub mod openai;
 pub mod proxy;
 pub mod users;
 
+use crate::cloud_metrics;
 use crate::AppState;
 use axum::{
     body::Body,
@@ -29,7 +30,7 @@ use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
 const DASHBOARD_INDEX: &str = "index.html";
-const CHAT_INDEX: &str = "openui/index.html";
+const CHAT_INDEX: &str = "chat/index.html";
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
@@ -48,7 +49,10 @@ pub fn create_router(state: AppState) -> Router {
             "/api/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
         )
-        .route("/api/api-keys/:id", delete(api_keys::delete_api_key))
+        .route(
+            "/api/api-keys/:id",
+            put(api_keys::update_api_key).delete(api_keys::delete_api_key),
+        )
         .layer(middleware::from_fn_with_state(
             state.jwt_secret.clone(),
             crate::auth::middleware::jwt_auth_middleware,
@@ -67,6 +71,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
+        .route("/v1/models", get(openai::list_models))
+        .route("/v1/models/:model_id", get(openai::get_model))
         .layer(middleware::from_fn_with_state(
             state.db_pool.clone(),
             crate::auth::middleware::api_key_auth_middleware,
@@ -83,21 +89,21 @@ pub fn create_router(state: AppState) -> Router {
         // 既存のルート
         .route(
             "/api/nodes",
-            post(agent::register_agent).get(agent::list_agents),
+            post(nodes::register_node).get(nodes::list_nodes),
         )
-        .route("/api/nodes/:node_id", delete(agent::delete_agent))
+        .route("/api/nodes/:node_id", delete(nodes::delete_node))
         .route(
             "/api/nodes/:node_id/disconnect",
-            post(agent::disconnect_agent),
+            post(nodes::disconnect_node),
         )
         .route(
             "/api/nodes/:node_id/settings",
-            put(agent::update_agent_settings),
+            put(nodes::update_node_settings),
         )
         .route("/api/nodes/:node_id/metrics", post(metrics::update_metrics))
-        .route("/api/nodes/metrics", get(agent::list_agent_metrics))
-        .route("/api/metrics/summary", get(agent::metrics_summary))
-        .route("/api/dashboard/nodes", get(dashboard::get_agents))
+        .route("/api/nodes/metrics", get(nodes::list_node_metrics))
+        .route("/api/metrics/summary", get(nodes::metrics_summary))
+        .route("/api/dashboard/nodes", get(dashboard::get_nodes))
         .route("/api/dashboard/stats", get(dashboard::get_stats))
         .route(
             "/api/dashboard/request-history",
@@ -106,7 +112,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/dashboard/overview", get(dashboard::get_overview))
         .route(
             "/api/dashboard/metrics/:node_id",
-            get(dashboard::get_agent_metrics),
+            get(dashboard::get_node_metrics),
         )
         .route(
             "/api/dashboard/request-responses",
@@ -126,28 +132,31 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route(
             "/api/dashboard/logs/nodes/:node_id",
-            get(logs::get_agent_logs),
+            get(logs::get_node_logs),
         )
-        // FR-002: agent log proxy (spec path)
-        .route("/api/nodes/:node_id/logs", get(logs::get_agent_logs))
+        // FR-002: node log proxy (spec path)
+        .route("/api/nodes/:node_id/logs", get(logs::get_node_logs))
         .route("/api/chat", post(proxy::proxy_chat))
         .route("/api/generate", post(proxy::proxy_generate))
-        .route("/v1/models", get(openai::list_models))
-        .route("/v1/models/:model_id", get(openai::get_model))
         // モデル管理API (SPEC-8ae67d67)
         .route("/api/models/available", get(models::get_available_models))
+        .route("/api/models/register", post(models::register_model))
+        .route("/api/models/pull", post(models::pull_model_from_hf))
         .route("/api/models/loaded", get(models::get_loaded_models))
         .route("/api/models/distribute", post(models::distribute_models))
-        .route("/api/nodes/:node_id/models", get(models::get_agent_models))
+        .route("/api/models/download", post(models::distribute_models))
+        .route("/api/nodes/:node_id/models", get(models::get_node_models))
         .route(
             "/api/nodes/:node_id/models/pull",
-            post(models::pull_model_to_agent),
+            post(models::pull_model_to_node),
         )
+        .route("/api/tasks", get(models::list_tasks))
         .route("/api/tasks/:task_id", get(models::get_task_progress))
         .route(
             "/api/tasks/:task_id/progress",
             post(models::update_progress),
         )
+        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
         .route("/dashboard/*path", get(serve_dashboard_asset))
@@ -219,7 +228,7 @@ fn normalize_chat_path(request_path: &str) -> Option<String> {
     if trimmed.contains("..") || trimmed.contains('\\') {
         return None;
     }
-    Some(format!("openui/{}", trimmed))
+    Some(format!("chat/{}", trimmed))
 }
 
 #[cfg(test)]
@@ -232,7 +241,7 @@ mod tests {
     };
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use tower::Service;
 
     async fn test_state() -> (AppState, NodeRegistry) {
@@ -323,11 +332,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dashboard_agents_endpoint_returns_json() {
+    async fn test_dashboard_nodes_endpoint_returns_json() {
         let (state, registry) = test_state().await;
         registry
             .register(RegisterRequest {
-                machine_name: "test-agent".into(),
+                machine_name: "test-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 ollama_version: "0.1.0".into(),
                 ollama_port: 11434,
@@ -362,7 +371,7 @@ mod tests {
         let (state, registry) = test_state().await;
         registry
             .register(RegisterRequest {
-                machine_name: "overview-agent".into(),
+                machine_name: "overview-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 ollama_version: "0.1.0".into(),
                 ollama_port: 11434,

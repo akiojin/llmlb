@@ -1,0 +1,148 @@
+# Comprehensive CI for Rust & C++ nodes
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  tasks:
+    name: Tasks Completion Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tasks.md completion
+        run: |
+          chmod +x .specify/scripts/checks/check-tasks.sh
+          .specify/scripts/checks/check-tasks.sh
+        env:
+          CI: true
+
+  rust:
+    name: Rust (fmt/clippy/test) ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+        shell: bash
+      - name: Cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        shell: bash
+      - name: Cargo test
+        run: cargo test --workspace --all-features -- --test-threads=1
+        shell: bash
+
+  cpp:
+    name: C++ Node (build & test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev clang-tidy cppcheck
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build
+        run: npm run build:node
+      - name: Test
+        run: npm run test:node
+      - name: clang-tidy (sources only)
+        run: |
+          cd node
+          FILES=$(find src include -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' \))
+          run-clang-tidy -p build $FILES -quiet || (cat /tmp/run-clang-tidy.log || true; exit 1)
+      - name: cppcheck (warnings)
+        run: |
+          cd node
+          cppcheck --enable=warning --inline-suppr --std=c++20 \
+            -I include -I third_party/nlohmann-json/include -I third_party/cpp-httplib \
+            --suppress=missingIncludeSystem \
+            src include
+
+  markdownlint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - name: Run markdownlint
+        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!node/third_party" "!node/build"
+
+  coverage-rust:
+    name: Coverage (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Install cargo-llvm-cov
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --locked
+      - name: Run coverage
+        run: |
+          mkdir -p coverage-rust
+          cargo llvm-cov --all-features --workspace --lcov --output-path coverage-rust/lcov.info
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-lcov
+          path: coverage-rust/lcov.info
+
+  coverage-cpp:
+    name: Coverage (C++)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev gcovr
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build with coverage
+        run: npm run build:node:coverage
+      - name: Test
+        run: npm run test:node
+      - name: gcovr lcov report
+        run: |
+          mkdir -p coverage-cpp
+          gcovr -r node \
+            --exclude 'node/third_party' \
+            --exclude 'node/build/third_party' \
+            --gcov-ignore-parse-errors \
+            -x coverage-cpp/coverage.xml -s
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-coverage-xml
+          path: coverage-cpp/coverage.xml

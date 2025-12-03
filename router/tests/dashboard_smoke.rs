@@ -8,14 +8,14 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-use or_router::{
+use llm_router::{
     api,
     balancer::{LoadManager, MetricsUpdate, RequestOutcome},
     registry::NodeRegistry,
     tasks::DownloadTaskManager,
     AppState,
 };
+use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use serde_json::Value;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -27,7 +27,7 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -116,7 +116,7 @@ async fn dashboard_static_index_contains_gpu_labels() {
         "dashboard table should include GPU column: {html}"
     );
     assert!(
-        html.contains("GPUモデル"),
+        html.contains("GPU Model"),
         "dashboard modal should mention GPU model: {html}"
     );
 }
@@ -208,8 +208,8 @@ async fn dashboard_agents_and_stats_reflect_registry() {
         .unwrap();
     let stats: Value = serde_json::from_slice(&stats_body).unwrap();
 
-    assert_eq!(stats["total_agents"], 1);
-    assert_eq!(stats["online_agents"], 1);
+    assert_eq!(stats["total_nodes"], 1);
+    assert_eq!(stats["online_nodes"], 1);
     assert_eq!(stats["total_requests"], 1);
     assert_eq!(stats["successful_requests"], 1);
 }
@@ -314,7 +314,7 @@ async fn dashboard_overview_returns_combined_payload() {
     assert_eq!(overview["nodes"].as_array().unwrap().len(), 1);
     let agent = overview["nodes"].as_array().unwrap().first().unwrap();
     assert!(agent["loaded_models"].is_array());
-    assert_eq!(overview["stats"]["total_agents"], 1);
+    assert_eq!(overview["stats"]["total_nodes"], 1);
     assert_eq!(overview["history"].as_array().unwrap().len(), 60);
     assert!(overview["generated_at"].is_string());
     assert!(overview["generation_time_ms"].as_u64().is_some());

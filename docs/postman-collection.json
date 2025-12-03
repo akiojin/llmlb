@@ -1,0 +1,49 @@
+{
+  "info": {
+    "name": "LLM Router",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "OpenAI-compatible endpoints with cloud prefixes"
+  },
+  "item": [
+    {
+      "name": "Chat Completions (cloud prefix)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{OPENAI_API_KEY}}", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"openai:gpt-4o\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}],\n  \"stream\": false\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/v1/chat/completions", "host": ["{{baseUrl}}"], "path": ["v1", "chat", "completions"] }
+      }
+    },
+    {
+      "name": "Completions (local)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"gpt-oss:20b\",\n  \"prompt\": \"Write a haiku\",\n  \"stream\": true\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/v1/completions", "host": ["{{baseUrl}}"], "path": ["v1", "completions"] }
+      }
+    },
+    {
+      "name": "Dashboard Stats",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/dashboard/stats", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "stats"] }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "OPENAI_API_KEY", "value": "set-me" }
+  ]
+}

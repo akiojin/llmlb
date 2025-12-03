@@ -1,0 +1,20 @@
+groups:
+  - name: llm-node
+    rules:
+      - alert: OllamaNodeDown
+        expr: up{job="llm-node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ollama node is down"
+          description: "Ollama node exporter is not responding for more than 1 minute."
+
+      - alert: OllamaNodeNoPulls
+        expr: rate(ollama_node_pulls_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No pull activity"
+          description: "No pull requests served in the last 10 minutes."

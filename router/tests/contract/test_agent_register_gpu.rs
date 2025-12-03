@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
 use serde_json::json;
@@ -22,12 +22,12 @@ async fn build_app() -> Router {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("OLLAMA_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -52,7 +52,7 @@ async fn build_app() -> Router {
 #[tokio::test]
 #[serial]
 async fn register_gpu_agent_success() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let payload = json!({
@@ -117,7 +117,7 @@ async fn register_gpu_agent_success() {
 #[tokio::test]
 #[serial]
 async fn register_gpu_agent_missing_devices_is_rejected() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let payload = json!({

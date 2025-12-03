@@ -10,7 +10,7 @@ use crate::support::{
     router::{register_node, spawn_test_router},
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use ollama_router_common::protocol::GenerateRequest;
+use llm_router_common::protocol::GenerateRequest;
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serde_json::Value;
 use serial_test::serial;
@@ -64,7 +64,7 @@ async fn agent_generate_handler(
 #[tokio::test]
 #[serial]
 async fn proxy_generate_end_to_end_success() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
         response: AgentGenerateStubResponse::Success(serde_json::json!({
@@ -104,7 +104,7 @@ async fn proxy_generate_end_to_end_success() {
 #[tokio::test]
 #[serial]
 async fn proxy_generate_propagates_upstream_error() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("missing-model".to_string()),
         response: AgentGenerateStubResponse::Error(
@@ -134,7 +134,7 @@ async fn proxy_generate_propagates_upstream_error() {
 
     assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
     let body: Value = response.json().await.expect("error payload");
-    assert_eq!(body["error"]["type"], "ollama_upstream_error");
+    assert_eq!(body["error"]["type"], "node_upstream_error");
     assert_eq!(body["error"]["code"], 400);
     assert!(body["error"]["message"]
         .as_str()

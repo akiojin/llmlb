@@ -12,6 +12,12 @@
 - ダッシュボードのノード一覧でロード済みモデル列を表示し、詳細モーダルでも全モデルを確認できること。
 - ダッシュボードのノード一覧テーブルはヘッダーと行の列幅が一致し、視覚的なずれが発生しないこと。
 
+## 追加要件（2025-11-30更新）
+- ダッシュボード内でチャットコンソールを新規タブではなく全画面モーダルとしてオーバーレイ表示すること。
+- モーダルはESC/背景クリックで閉じ、再読み込みボタンでiframe内のみをリロードできること。
+- ローカル/クラウド/すべてのモデルフィルタとセッション復元は埋め込み表示でも利用できること。
+- TDD遵守: UIの静的配信・埋め込み有無・アクセシビリティ属性をE2E/スモークテストでRED→GREENの順に追加すること。
+
 ---
 
 ## 本日のToDo (2025-11-01)
@@ -24,12 +30,20 @@
 ## 本日のToDo (2025-10-31)
 
 - [x] **T601** `coordinator/src/api/mod.rs` のルーター結線スモークテストを修正し、静的配信・API経路の確認を通す
-- [x] **T602** `cargo test -p ollama-router-coordinator` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
+- [x] **T602** `cargo test -p llm-router-coordinator` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
 - [x] **T603** 本ファイルを含む関連Specドキュメントのステータス更新と変更点のコミット準備
 - [x] **T604** `coordinator/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
 - [x] **T605** ダッシュボードSpecのタスク進捗（ページネーション等）を現状に合わせて更新
 - [x] **T606** ダッシュボードのDOM差分更新とポーリング処理の最適化（Phase 6 T002 着手）
 - [x] **T607** `GET /api/dashboard/overview` を追加し、ダッシュボードの3リクエストを集約する
+
+## 本日のToDo (2025-11-30)
+
+- [x] **T710 (RED)** `router/tests/contract/chat_modal_embed.rs` を作成し、`GET /dashboard` のHTMLに `id="chat-open"` ボタンと `id="chat-modal"` iframe（src=/chat）が存在することをスナップショットで検証
+- [x] **T711 (GREEN)** 上記テストをパスするようダッシュボードHTML/JS/スタイルを整備（モーダル表示/ESC・背景クリック閉鎖/iframe再読み込み）
+- [x] **T712 (RED)** `router/tests/contract/chat_page_spec.rs` を追加し、`GET /chat` でサイドバーセッションリスト、プロバイダー切替(ローカル/クラウド/すべて)が含まれることを検証
+- [x] **T713 (GREEN)** `/chat` の静的アセットをビルドに含め、モデルフィルタ・セッション永続化が壊れていないことを手動確認＆必要なら追加単体テスト
+- [x] **T714 (DOCS)** `specs/SPEC-712c20cf/spec.md` にチャットモーダル要件と受け入れシナリオを追記
 
 ## Phase 1: 基本UI実装 📋 (推定3時間)
 
@@ -345,7 +359,7 @@
 - **推定時間**: 2時間
 - **ステータス**: ✅ 完了
 - **検証ログ (2025-11-02)**:
-  - `make openai-tests`（内部で `cargo test -p ollama-router-coordinator --test openai_proxy` を実行）により、`/api/chat`・`/api/generate` の正常系／未登録ノード／404エラーがOpenAI互換レスポンスで返ることを確認
+  - `make openai-tests`（内部で `cargo test -p llm-router-coordinator --test openai_proxy` を実行）により、`/api/chat`・`/api/generate` の正常系／未登録ノード／404エラーがOpenAI互換レスポンスで返ることを確認
   - `curl http://127.0.0.1:8080/api/chat` でノードを経由した疎通を手動確認済み（`gpt-oss:20b` 応答およびメモリ不足エラーの両ケースを取得）
   - `make openai-tests` のストリーミングケースを追加し、`stream: true` 指定時にSSEレスポンスがそのまま転送されることを確認（2025-11-03）
 

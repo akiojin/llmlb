@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use ollama_router_common::auth::Claims;
+use llm_router_common::auth::Claims;
 use serde::{Deserialize, Serialize};
 
 /// ログインリクエスト
@@ -171,4 +171,67 @@ pub async fn me(
         username: user.username,
         role: format!("{:?}", user.role).to_lowercase(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[tokio::test]
+    async fn test_logout_returns_no_content() {
+        let response = logout().await.into_response();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[test]
+    fn test_login_request_deserialize() {
+        let json = r#"{"username": "admin", "password": "secret"}"#;
+        let request: LoginRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.username, "admin");
+        assert_eq!(request.password, "secret");
+    }
+
+    #[test]
+    fn test_login_response_serialize() {
+        let response = LoginResponse {
+            token: "jwt_token".to_string(),
+            expires_in: 86400,
+            user: UserInfo {
+                id: "user-id".to_string(),
+                username: "admin".to_string(),
+                role: "admin".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("jwt_token"));
+        assert!(json.contains("86400"));
+        assert!(json.contains("admin"));
+    }
+
+    #[test]
+    fn test_me_response_serialize() {
+        let response = MeResponse {
+            user_id: "user-123".to_string(),
+            username: "testuser".to_string(),
+            role: "user".to_string(),
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("user-123"));
+        assert!(json.contains("testuser"));
+        assert!(json.contains("user"));
+    }
+
+    #[test]
+    fn test_user_info_serialize() {
+        let info = UserInfo {
+            id: "id-456".to_string(),
+            username: "bob".to_string(),
+            role: "admin".to_string(),
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("id-456"));
+        assert!(json.contains("bob"));
+        assert!(json.contains("admin"));
+    }
 }

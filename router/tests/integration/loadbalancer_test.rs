@@ -72,7 +72,7 @@ async fn test_fallback_to_round_robin_when_all_agents_high_load() {
 
 // ヘルパー関数（実装時に使用）
 // fn create_test_agent_request(name: &str, ip: &str) -> RegisterRequest {
-//     use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+//     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 //     RegisterRequest {
 //         machine_name: name.to_string(),
 //         ip_address: ip.parse().unwrap(),
@@ -90,7 +90,7 @@ async fn test_fallback_to_round_robin_when_all_agents_high_load() {
 // }
 
 // fn create_metrics(node_id: Uuid, cpu: f64, memory: f64, active_reqs: u32) -> MetricsUpdate {
-//     use or_router::balancer::MetricsUpdate;
+//     use llm_router::balancer::MetricsUpdate;
 //     MetricsUpdate {
 //         node_id,
 //         cpu_usage: cpu,

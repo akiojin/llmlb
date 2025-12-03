@@ -7,10 +7,11 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-use or_router::{
+use chrono::Utc;
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
+use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use serde_json::json;
 use std::net::IpAddr;
 use tower::ServiceExt;
@@ -22,7 +23,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
@@ -42,7 +43,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 #[tokio::test]
 async fn test_complete_agent_flow() {
     // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // Step 1: エージェント登録
@@ -171,7 +172,7 @@ async fn test_complete_agent_flow() {
 #[tokio::test]
 async fn test_agent_token_persistence() {
     // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // エージェント登録
@@ -252,9 +253,220 @@ async fn test_agent_token_persistence() {
         "Re-registration should return same agent ID"
     );
 
-    // 2回目の登録ではトークンは返されない（既存のトークンを使用）
+    // 2回目の登録でも新しいトークンが返される（プロトコル変更により、更新時もトークンを再生成）
     assert!(
-        second_data["agent_token"].is_null(),
-        "Re-registration should not return new token"
+        second_data["agent_token"].is_string(),
+        "Re-registration should return a new token"
     );
+}
+
+#[tokio::test]
+async fn test_list_nodes() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let (app, _db_pool) = build_app().await;
+
+    // ノードを登録
+    let register_request = RegisterRequest {
+        machine_name: "list-test-node".to_string(),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 200)),
+        ollama_version: "0.1.0".to_string(),
+        ollama_port: 11434,
+        gpu_available: true,
+        gpu_devices: vec![GpuDeviceInfo {
+            model: "Test GPU".to_string(),
+            count: 1,
+            memory: Some(8192),
+        }],
+        gpu_count: Some(1),
+        gpu_model: Some("Test GPU".to_string()),
+    };
+
+    let _register_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/nodes")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // GET /api/nodes でノード一覧を取得
+    let list_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/nodes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        list_response.status(),
+        StatusCode::OK,
+        "GET /api/nodes should return OK"
+    );
+
+    let body = axum::body::to_bytes(list_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let nodes: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert!(nodes.is_array(), "Response should be an array");
+    let nodes_array = nodes.as_array().unwrap();
+    assert!(
+        !nodes_array.is_empty(),
+        "Should have at least one registered node"
+    );
+
+    // ノードの構造を検証
+    let node = &nodes_array[0];
+    assert!(node.get("id").is_some(), "Node must have 'id' field");
+    assert!(
+        node.get("machine_name").is_some(),
+        "Node must have 'machine_name' field"
+    );
+}
+
+#[tokio::test]
+async fn test_node_metrics_update() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let (app, _db_pool) = build_app().await;
+
+    // ノードを登録
+    let register_request = RegisterRequest {
+        machine_name: "metrics-test-node".to_string(),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 201)),
+        ollama_version: "0.1.0".to_string(),
+        ollama_port: 11434,
+        gpu_available: true,
+        gpu_devices: vec![GpuDeviceInfo {
+            model: "Test GPU".to_string(),
+            count: 1,
+            memory: Some(8192),
+        }],
+        gpu_count: Some(1),
+        gpu_model: Some("Test GPU".to_string()),
+    };
+
+    let register_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/nodes")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(register_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let register_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let node_id = register_data["node_id"].as_str().unwrap();
+    let agent_token = register_data["agent_token"].as_str().unwrap();
+
+    // POST /api/nodes/:node_id/metrics でメトリクスを更新
+    let metrics_request = json!({
+        "node_id": node_id,
+        "cpu_usage": 45.5,
+        "memory_usage": 60.2,
+        "active_requests": 3,
+        "avg_response_time_ms": 250.5,
+        "timestamp": Utc::now().to_rfc3339()
+    });
+
+    let metrics_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/nodes/{}/metrics", node_id))
+                .header("content-type", "application/json")
+                .header("x-agent-token", agent_token)
+                .body(Body::from(serde_json::to_vec(&metrics_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        metrics_response.status() == StatusCode::OK
+            || metrics_response.status() == StatusCode::NO_CONTENT,
+        "POST /api/nodes/:id/metrics should return OK or NO_CONTENT"
+    );
+}
+
+#[tokio::test]
+async fn test_list_node_metrics() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let (app, _db_pool) = build_app().await;
+
+    // GET /api/nodes/metrics でメトリクス一覧を取得
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/nodes/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/nodes/metrics should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let metrics: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // メトリクスはオブジェクトまたは配列
+    assert!(
+        metrics.is_object() || metrics.is_array(),
+        "Response should be an object or array"
+    );
+}
+
+#[tokio::test]
+async fn test_metrics_summary() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let (app, _db_pool) = build_app().await;
+
+    // GET /api/metrics/summary
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/metrics/summary")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/metrics/summary should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let summary: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert!(summary.is_object(), "Response should be an object");
 }

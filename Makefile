@@ -1,7 +1,8 @@
 SHELL := /bin/sh
 
 .PHONY: quality-checks fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
-.PHONY: openai-tests test-hooks
+.PHONY: openai-tests test-hooks e2e-tests
+.PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 
 TASKS ?= $(shell find specs -name tasks.md)
@@ -38,23 +39,55 @@ specify-checks: specify-tasks specify-tests specify-compile specify-commits
 quality-checks: fmt clippy test specify-checks markdownlint openai-tests test-hooks
 
 openai-tests:
-	cargo test -p or-router --test openai_proxy
+	cargo test -p llm-router --test openai_proxy
 
 test-hooks:
 	npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats
+
+# E2E tests for OpenAI-compatible API (requires running router/node)
+# Usage: LLM_ROUTER_URL=http://localhost:8081 LLM_ROUTER_API_KEY=sk_xxx make e2e-tests
+e2e-tests:
+	npx bats tests/e2e/test-openai-api.bats
+
+# Benchmarks (wrk required)
+bench-local:
+	WRK_TARGET=http://localhost:8080 \
+	WRK_ENDPOINT=/v1/chat/completions \
+	WRK_MODEL=gpt-oss:20b \
+	scripts/benchmarks/run_wrk.sh -t10 -c50 -d30s --latency | \
+	scripts/benchmarks/wrk_parse.py --label local > benchmarks/results/$$(date +%Y%m%d)-local.csv
+
+bench-openai:
+	WRK_TARGET=http://localhost:8080 \
+	WRK_ENDPOINT=/v1/chat/completions \
+	WRK_MODEL=openai:gpt-4o \
+	scripts/benchmarks/run_wrk.sh -t10 -c50 -d30s --latency | \
+	scripts/benchmarks/wrk_parse.py --label openai > benchmarks/results/$$(date +%Y%m%d)-openai.csv
+
+bench-google:
+	WRK_TARGET=http://localhost:8080 \
+	WRK_ENDPOINT=/v1/chat/completions \
+	WRK_MODEL=google:gemini-1.5-pro \
+	scripts/benchmarks/run_wrk.sh -t10 -c50 -d30s --latency | \
+	scripts/benchmarks/wrk_parse.py --label google > benchmarks/results/$$(date +%Y%m%d)-google.csv
+
+bench-anthropic:
+	WRK_TARGET=http://localhost:8080 \
+	WRK_ENDPOINT=/v1/chat/completions \
+	WRK_MODEL=anthropic:claude-3-opus \
+	scripts/benchmarks/run_wrk.sh -t10 -c50 -d30s --latency | \
+	scripts/benchmarks/wrk_parse.py --label anthropic > benchmarks/results/$$(date +%Y%m%d)-anthropic.csv
 
 # macOS cross-compilation targets
 build-macos-x86_64:
 	@echo "Building for macOS x86_64 (Intel)..."
 	cargo build --release --target x86_64-apple-darwin \
-		-p or-router \
-		-p or-node
+		-p llm-router
 
 build-macos-aarch64:
 	@echo "Building for macOS aarch64 (Apple Silicon)..."
 	cargo build --release --target aarch64-apple-darwin \
-		-p or-router \
-		-p or-node
+		-p llm-router
 
 build-macos-all: build-macos-x86_64 build-macos-aarch64
 	@echo "All macOS builds completed successfully!"

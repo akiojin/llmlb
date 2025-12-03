@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
 use serde_json::json;
@@ -17,7 +17,7 @@ async fn build_router() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -40,7 +40,7 @@ async fn build_router() -> Router {
 
 #[tokio::test]
 async fn dashboard_agents_include_gpu_devices() {
-    std::env::set_var("OLLAMA_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let router = build_router().await;
 
     let payload = json!({

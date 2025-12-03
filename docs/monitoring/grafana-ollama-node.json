@@ -1,0 +1,45 @@
+{
+  "title": "Ollama Node CPP",
+  "editable": true,
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Uptime (s)",
+      "targets": [
+        {
+          "expr": "ollama_node_uptime_seconds",
+          "legendFormat": "uptime",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 }
+    },
+    {
+      "type": "stat",
+      "title": "Pulls Total",
+      "targets": [
+        {
+          "expr": "ollama_node_pulls_total",
+          "legendFormat": "pulls",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 }
+    },
+    {
+      "type": "graph",
+      "title": "Pulls per minute",
+      "targets": [
+        {
+          "expr": "rate(ollama_node_pulls_total[5m])",
+          "legendFormat": "pulls/min",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 6 }
+    }
+  ],
+  "timezone": "browser",
+  "version": 1
+}

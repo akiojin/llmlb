@@ -1,12 +1,12 @@
-# Ollama Router
+# LLM Router
 
-A centralized management system for coordinating Ollama instances across multiple machines
+A centralized management system for coordinating LLM inference nodes across multiple machines
 
 English | [日本語](./README.ja.md)
 
 ## Overview
 
-Ollama Router is a powerful centralized system that provides unified management and a single API endpoint for multiple Ollama instances running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
+LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference nodes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
 
 ## Key Features
 
@@ -23,10 +23,105 @@ Ollama Router is a powerful centralized system that provides unified management 
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities
   and availability
+- **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the
+  model name to proxy to the corresponding cloud provider while keeping the
+  same OpenAI-compatible endpoint.
+
+Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
+[TROUBLESHOOTING](./TROUBLESHOOTING.md)
+
+## Quick Start
+
+### Router (llm-router)
+
+```bash
+# Build
+cargo build --release -p llm-router
+
+# Run
+./target/release/llm-router
+# Default: http://0.0.0.0:8080
+
+# Access dashboard
+# Open http://localhost:8080/dashboard in browser
+```
+
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
+| `LLM_ROUTER_PORT` | `8080` | Listen port |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
+| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
+| `LLM_ROUTER_ADMIN_PASSWORD` | (required) | Initial admin password |
+
+**Backward compatibility:** Legacy env var names (`ROUTER_PORT` etc.) are supported but deprecated.
+
+**System Tray (Windows/macOS only):**
+
+On Windows 10+ and macOS 12+, the router displays a system tray icon.
+Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
+
+### Node (C++)
+
+**Prerequisites:**
+
+```bash
+# macOS
+brew install cmake
+
+# Ubuntu/Debian
+sudo apt install cmake build-essential
+
+# Windows
+# Download from https://cmake.org/download/
+```
+
+**Build & Run:**
+
+```bash
+# Build (Metal is enabled by default on macOS)
+npm run build:node
+
+# Run
+npm run start:node
+
+# Or manually:
+# cd node && cmake -B build -S . && cmake --build build --config Release
+# LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
+```
+
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
+| `LLM_NODE_PORT` | `11435` | Node listen port |
+| `LLM_NODE_MODELS_DIR` | `~/.ollama/models` | Model storage directory |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU |
+| `LLM_NODE_LOG_LEVEL` | `info` | Log level |
+
+**Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
+
+**Docker:**
+
+```bash
+# Build
+docker build --build-arg CUDA=cpu -t llm-node:latest node/
+
+# Run
+docker run --rm -p 11435:11435 \
+  -e LLM_ROUTER_URL=http://host.docker.internal:8080 \
+  llm-node:latest
+```
 
 ## Load Balancing
 
-Ollama Router supports multiple load balancing strategies to optimize request distribution across agents.
+LLM Router supports multiple load balancing strategies to optimize request distribution across agents.
 
 ### Strategies
 
@@ -37,7 +132,7 @@ Selects agents based on real-time metrics (CPU usage, memory usage, active reque
 **Configuration:**
 ```bash
 # Enable metrics-based load balancing
-LOAD_BALANCER_MODE=metrics cargo run -p ollama-router-coordinator
+LOAD_BALANCER_MODE=metrics cargo run -p llm-router
 ```
 
 **Load Score Calculation:**
@@ -58,7 +153,7 @@ Combines multiple factors including response time, active requests, and CPU usag
 **Configuration:**
 ```bash
 # Use default advanced load balancing (or omit LOAD_BALANCER_MODE)
-LOAD_BALANCER_MODE=auto cargo run -p ollama-router-coordinator
+LOAD_BALANCER_MODE=auto cargo run -p llm-router
 ```
 
 ### Metrics API
@@ -117,7 +212,7 @@ Machine 1          Machine 2          Machine 3
 
 ### Communication Flow (Proxy Pattern)
 
-Ollama Router uses a **Proxy Pattern** - clients only need to know the Coordinator URL.
+LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
 
 #### Traditional Method (Without Coordinator)
 ```bash
@@ -164,10 +259,18 @@ curl http://coordinator:8080/api/chat -d '...'
 5. **Coordinator → Client (Return Response)**
    ```json
    {
-     "message": {"role": "assistant", "content": "..."},
-     "done": true
+     "id": "chatcmpl-xxx",
+     "object": "chat.completion",
+     "choices": [{
+       "index": 0,
+       "message": {"role": "assistant", "content": "..."},
+       "finish_reason": "stop"
+     }]
    }
    ```
+
+> **Note**: LLM Router exclusively supports **OpenAI-compatible API format**.
+> All responses follow the OpenAI Chat Completions API specification.
 
 **From Client's Perspective**:
 - Coordinator appears as the only Ollama API server
@@ -199,7 +302,7 @@ curl http://coordinator:8080/api/chat -d '...'
 ## Project Structure
 
 ```
-ollama-router/
+llm-router/
 ├── common/              # Common library (types, protocols, errors)
 │   ├── src/
 │   │   ├── types.rs     # Agent, HealthMetrics, Request types
@@ -218,15 +321,14 @@ ollama-router/
 │   │   └── main.rs
 │   ├── migrations/      # Database migrations
 │   └── Cargo.toml
-├── agent/               # Agent application
+├── node/                # C++ Node (llama.cpp integrated)
 │   ├── src/
-│   │   ├── ollama.rs    # Automatic Ollama management
-│   │   ├── client.rs    # Coordinator communication
-│   │   ├── metrics.rs   # Metrics collection
-│   │   └── main.rs
-│   ├── tests/
-│   │   └── integration/ # Integration tests
-│   └── Cargo.toml
+│   │   ├── main.cpp     # Entry point
+│   │   ├── api/         # OpenAI-compatible API
+│   │   ├── core/        # llama.cpp inference engine
+│   │   └── models/      # Model management
+│   ├── tests/           # TDD tests
+│   └── CMakeLists.txt
 └── specs/               # Specifications (Spec-Driven Development)
     └── SPEC-32e2b31a/
         ├── spec.md      # Feature specification
@@ -242,7 +344,7 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 1. Start the coordinator (inside Docker or on the host):
    ```bash
-   cargo run -p ollama-router-coordinator
+   cargo run -p llm-router
    ```
 2. Open the dashboard in your browser:
    ```
@@ -278,15 +380,15 @@ For a deeper walkthrough, including API references and customisation tips, see [
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/ollama-router.git
-cd ollama-router
+git clone https://github.com/your-org/llm-router.git
+cd llm-router
 
 # Build Coordinator
 cd coordinator
 cargo build --release
 
 # Start Coordinator
-./target/release/ollama-router-coordinator
+./target/release/llm-router
 # Default: http://0.0.0.0:8080
 ```
 
@@ -298,10 +400,10 @@ cd agent
 cargo build --release
 
 # Start Agent (環境変数で上書き)
-ROUTER_URL=http://coordinator-host:8080 ./target/release/ollama-router-agent
+ROUTER_URL=http://coordinator-host:8080 ./target/release/llm-node
 
 # 環境変数を指定しない場合はローカル設定パネルで保存した値、なければ http://localhost:8080
-./target/release/ollama-router-agent
+./target/release/llm-node
 ```
 
 **Note**: Ollama is automatically downloaded and installed on first startup if not already present. The agent will:
@@ -332,7 +434,7 @@ We follow the same release-branch workflow as `akiojin/unity-mcp-server`, with i
 1. While on `develop`, run the `/release` slash command or execute `./scripts/create-release-branch.sh`. The helper script calls `gh workflow run create-release.yml --ref develop`, which performs a semantic-release dry-run and creates `release/vX.Y.Z`.
 2. Pushing `release/vX.Y.Z` triggers `.github/workflows/release.yml`. That workflow runs semantic-release for real, updates CHANGELOG/Cargo manifests, creates the Git tag and GitHub Release, merges the release branch into `main`, backmerges `main` into `develop`, and deletes the release branch.
 3. The `main` push kicks off `.github/workflows/publish.yml`, which builds and attaches Linux/macOS/Windows archives to the GitHub Release.
-   - During this phase the workflow now also builds platform installers **per binary**: macOS gets `or-router-<platform>.pkg` and `or-node-<platform>.pkg` via `pkgbuild`, while Windows receives `or-router-<platform>.msi` and `or-node-<platform>.msi` via WiX. These ship alongside the existing `.tar.gz` / `.zip` archives so current release consumers stay unaffected.
+   - During this phase the workflow also builds platform installers: macOS gets `or-router-<platform>.pkg` via `pkgbuild`, while Windows receives `or-router-<platform>.msi` via WiX. These ship alongside the existing `.tar.gz` / `.zip` archives so current release consumers stay unaffected.
 
 Monitor the pipeline with:
 
@@ -362,10 +464,10 @@ Agents automatically detect GPU on startup. **GPU is required** for agent regist
 If automatic detection fails, set environment variables:
 
 ```bash
-OLLAMA_GPU_AVAILABLE=true \
-OLLAMA_GPU_MODEL="Your GPU Model" \
-OLLAMA_GPU_COUNT=1 \
-./target/release/ollama-router-agent
+LLM_GPU_AVAILABLE=true \
+LLM_GPU_MODEL="Your GPU Model" \
+LLM_GPU_COUNT=1 \
+./target/release/llm-node
 ```
 
 ## Usage
@@ -381,13 +483,13 @@ OLLAMA_GPU_COUNT=1 \
 2. **Start Agents on Multiple Machines**
    ```bash
    # Machine 1
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-node
 
    # Machine 2
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-node
 
    # Machine 3
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin ollama-router-agent
+   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-node
    ```
 
 3. **Use Ollama API Through Coordinator**
@@ -418,23 +520,50 @@ OLLAMA_GPU_COUNT=1 \
 
 ### Environment Variables
 
-#### Coordinator
-- `ROUTER_HOST`: Bind address (default: `0.0.0.0`)
-- `ROUTER_PORT`: Port number (default: `8080`)
-- `DATABASE_URL`: Database URL (default: `sqlite://coordinator.db`)
-- `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
-- `AGENT_TIMEOUT`: Agent timeout in seconds (default: `60`)
-- `LOAD_BALANCER_MODE`: Load balancing strategy - `metrics` for metrics-based or `auto` for advanced (default: `auto`)
+#### Router (llm-router)
 
-#### Agent
-- `ROUTER_URL`: Coordinator URL (default: `http://localhost:8080`)
-- `OLLAMA_PORT`: Ollama port number (default: `11434`)
-- `OLLAMA_GPU_AVAILABLE`: Manual GPU availability flag (optional, auto-detected)
-- `OLLAMA_GPU_MODEL`: Manual GPU model name (optional, auto-detected)
-- `OLLAMA_GPU_COUNT`: Manual GPU count (optional, auto-detected)
-- `OLLAMA_DEFAULT_MODEL`: Default LLM model to download (optional, auto-selected based on memory)
-- `OLLAMA_PULL_TIMEOUT_SECS`: Timeout for model download in seconds (optional)
-- `OLLAMA_API_BASE`: Custom Ollama API base URL (optional, default: `http://127.0.0.1:11434`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
+| `LLM_ROUTER_PORT` | `8080` | Listen port |
+| `LLM_ROUTER_DATABASE_URL` | `sqlite://~/.llm-router/router.db` | Database URL |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Health check interval (seconds) |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node timeout (seconds) |
+| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`metrics` or `auto`) |
+| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing key (overridable via env var) |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
+| `LLM_ROUTER_ADMIN_PASSWORD` | (required) | Initial admin password (first run only) |
+| `LLM_ROUTER_OPENAI_API_KEY` | - | OpenAI API key |
+| `LLM_ROUTER_ANTHROPIC_API_KEY` | - | Anthropic API key |
+| `LLM_ROUTER_GOOGLE_API_KEY` | - | Google API key |
+
+**Backward Compatibility**: Legacy variable names (`ROUTER_PORT`, etc.) are still
+supported but deprecated. A warning is logged when used.
+
+#### Node (llm-node)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
+| `LLM_NODE_PORT` | `11435` | Node listen port |
+| `LLM_NODE_IP` | (auto-detected) | Node IP address |
+| `LLM_NODE_MODELS_DIR` | `~/.ollama/models` | Model storage directory |
+| `LLM_NODE_LOG_LEVEL` | `info` | Log level |
+| `LLM_NODE_LOG_DIR` | `~/.llm-node/logs` | Log directory |
+| `LLM_NODE_LOG_RETENTION_DAYS` | `7` | Log retention days |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `LLM_NODE_MODEL_IDLE_TIMEOUT` | `300` | Model idle timeout (seconds) |
+| `LLM_NODE_MAX_LOADED_MODELS` | `1` | Max loaded models |
+| `LLM_NODE_MAX_MEMORY_BYTES` | (auto) | Max memory usage |
+| `LLM_NODE_AUTO_REPAIR` | `true` | Auto repair |
+| `LLM_NODE_REPAIR_TIMEOUT_SECS` | `60` | Repair timeout (seconds) |
+| `LLM_NODE_CONFIG` | - | Config file path |
+
+**Backward Compatibility**: Legacy variable names (`LLM_MODELS_DIR`, etc.) are
+still supported but deprecated. A warning is logged when used.
 
 ## Development
 
@@ -535,7 +664,7 @@ Hook tests are automatically executed in CI/CD:
 
 ## Request History
 
-Ollama Router automatically logs all requests and responses for debugging,
+LLM Router automatically logs all requests and responses for debugging,
 auditing, and analysis purposes.
 
 ### Features
@@ -580,8 +709,8 @@ GET /api/dashboard/request-responses/export
 ### Storage
 
 Request history is stored in JSON format at:
-- Linux/macOS: `~/.ollama-router/request_history.json`
-- Windows: `%USERPROFILE%\.ollama-router\request_history.json`
+- Linux/macOS: `~/.llm-router/request_history.json`
+- Windows: `%USERPROFILE%\.llm-router\request_history.json`
 
 The file is automatically managed with:
 - Atomic writes (temp file + rename) to prevent corruption
@@ -786,14 +915,62 @@ Get progress of a model download task.
 
 #### POST /api/chat
 
-Proxy endpoint for Ollama Chat API.
+Proxy endpoint for Chat API (OpenAI-compatible format).
 
-**Request/Response:** Conforms to [Ollama Chat API specification](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion)
+**Request:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "stream": false
+}
+```
+
+**Response (OpenAI-compatible):**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
+    "finish_reason": "stop"
+  }]
+}
+```
+
+> **Important**: LLM Router only supports OpenAI-compatible response format.
+> Ollama-native format (`message`/`done` fields) is NOT supported.
 
 #### POST /api/generate
-Proxy endpoint for Ollama Generate API.
 
-**Request/Response:** Conforms to [Ollama Generate API specification](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion)
+Proxy endpoint for Generate API (OpenAI-compatible format).
+
+**Request:**
+
+```json
+{
+  "model": "gpt-oss:20b",
+  "prompt": "Tell me a joke",
+  "stream": false
+}
+```
+
+**Response (OpenAI-compatible):**
+
+```json
+{
+  "id": "cmpl-xxx",
+  "object": "text_completion",
+  "choices": [{
+    "text": "Why did the programmer quit? Because he didn't get arrays!",
+    "index": 0,
+    "finish_reason": "stop"
+  }]
+}
+```
 
 ## License
 
@@ -804,3 +981,13 @@ MIT License
 Issues and Pull Requests are welcome.
 
 For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
+### Cloud model prefixes (OpenAI-compatible API)
+
+- Supported prefixes: `openai:`, `google:`, `anthropic:` (alias `ahtnorpic:`)
+- Usage: set `model` to e.g. `openai:gpt-4o`, `google:gemini-1.5-pro`, `anthropic:claude-3-opus`
+- Environment variables:
+  - `OPENAI_API_KEY` (required), `OPENAI_BASE_URL` (optional, default `https://api.openai.com`)
+  - `GOOGLE_API_KEY` (required), `GOOGLE_API_BASE_URL` (optional, default `https://generativelanguage.googleapis.com/v1beta`)
+  - `ANTHROPIC_API_KEY` (required), `ANTHROPIC_API_BASE_URL` (optional, default `https://api.anthropic.com`)
+- Behavior: prefix is stripped before forwarding; responses remain OpenAI-compatible. Streaming is passthrough as SSE.
+- Metrics: `/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).

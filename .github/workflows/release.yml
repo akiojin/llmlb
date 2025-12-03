@@ -6,20 +6,100 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  release-please:
-    name: Release Please (tag & GitHub Release)
+  semantic-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Run release-please (manifest)
-        uses: googleapis/release-please-action@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
-          release-type: node
-          manifest-file: .release-please-manifest.json
-          config-file: .release-please-config.json
-          target-branch: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build C++ binary (Linux amd64)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+          cmake -S node -B node/build -DBUILD_TESTS=OFF
+          cmake --build node/build --config Release
+          mkdir -p dist
+          tar -czf dist/llm-node-linux-amd64.tar.gz -C node/build llm-node
+
+      - name: Build C++ binary (macOS arm64) [cross]
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm lld cmake libssl-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+          cmake -S node -B node/build-macos \
+            -DCMAKE_SYSTEM_NAME=Darwin \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DBUILD_TESTS=OFF
+          cmake --build node/build-macos --config Release
+          tar -czf dist/llm-node-macos-arm64.tar.gz -C node/build-macos llm-node
+
+      - name: Build C++ binary (macOS x64) [cross]
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S node -B node/build-macos-x64 \
+            -DCMAKE_SYSTEM_NAME=Darwin \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DBUILD_TESTS=OFF
+          cmake --build node/build-macos-x64 --config Release
+          tar -czf dist/llm-node-macos-x64.tar.gz -C node/build-macos-x64 llm-node
+
+      - name: Build C++ binary (Windows x64) [cross]
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 cmake libssl-dev
+          cmake -S node -B node/build-win \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_SYSTEM_VERSION=10.0 \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DBUILD_TESTS=OFF
+          cmake --build node/build-win --config Release
+          mkdir -p dist/win
+          cp node/build-win/llm-node.exe dist/win/
+          (cd dist && zip -r llm-node-windows-x64.zip win)
+
+      - name: Build C++ binary (Linux CUDA)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+          cmake -S node -B node/build-cuda \
+            -DBUILD_TESTS=OFF \
+            -DBUILD_WITH_CUDA=ON
+          cmake --build node/build-cuda --config Release
+          mkdir -p dist
+          tar -czf dist/llm-node-linux-cuda.tar.gz -C node/build-cuda llm-node
+
+      - name: Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm dlx semantic-release

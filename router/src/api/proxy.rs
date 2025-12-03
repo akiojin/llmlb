@@ -1,7 +1,7 @@
 //! Ollamaプロキシ APIハンドラー
 //! Ollamaプロキシ APIハンドラー
 
-use crate::{api::agent::AppError, balancer::RequestOutcome, AppState};
+use crate::{api::nodes::AppError, balancer::RequestOutcome, AppState};
 use axum::{
     body::Body,
     extract::{ConnectInfo, State},
@@ -11,12 +11,9 @@ use axum::{
 };
 use chrono::Utc;
 use futures::TryStreamExt;
-use ollama_router_common::{
+use llm_router_common::{
     error::RouterError,
-    protocol::{
-        ChatRequest, ChatResponse, GenerateRequest, RecordStatus, RequestResponseRecord,
-        RequestType,
-    },
+    protocol::{ChatRequest, GenerateRequest, RecordStatus, RequestResponseRecord, RequestType},
     types::NodeStatus,
 };
 use std::{
@@ -83,7 +80,7 @@ pub(crate) async fn proxy_chat_with_handlers<S, C>(
 ) -> Result<Response, AppError>
 where
     S: FnOnce(reqwest::Response, &ChatRequest) -> Result<Response, AppError>,
-    C: FnOnce(ChatResponse, &ChatRequest) -> Result<Response, AppError>,
+    C: FnOnce(serde_json::Value, &ChatRequest) -> Result<Response, AppError>,
 {
     // 全ノードが初期化中なら ready 出現を待つ（待機者上限で 503）
     if state.load_manager.all_initializing().await {
@@ -101,7 +98,7 @@ where
     let timestamp = Utc::now();
     let request_body = serde_json::to_value(&req).unwrap_or_default();
 
-    let agent = select_available_agent_for_model(state, &req.model).await?;
+    let agent = select_available_node_for_model(state, &req.model).await?;
     if agent.initializing {
         return Err(
             RouterError::ServiceUnavailable("All nodes are warming up models".into()).into(),
@@ -201,7 +198,7 @@ where
         let payload = serde_json::json!({
             "error": {
                 "message": message,
-                "type": "ollama_upstream_error",
+                "type": "node_upstream_error",
                 "code": status_code.as_u16(),
             }
         });
@@ -239,7 +236,7 @@ where
         return stream_handler(response, &req);
     }
 
-    let parsed = response.json::<ChatResponse>().await;
+    let parsed = response.json::<serde_json::Value>().await;
     let duration = start.elapsed();
 
     match parsed {
@@ -250,7 +247,7 @@ where
                 .await
                 .map_err(AppError::from)?;
 
-            let response_body = serde_json::to_value(&payload).ok();
+            let response_body = Some(payload.clone());
             save_request_record(
                 state.request_history.clone(),
                 RequestResponseRecord {
@@ -332,7 +329,7 @@ where
     let timestamp = Utc::now();
     let request_body = serde_json::to_value(&req).unwrap_or_default();
 
-    let agent = select_available_agent_for_model(state, &req.model).await?;
+    let agent = select_available_node_for_model(state, &req.model).await?;
     let node_id = agent.id;
     let agent_machine_name = agent.machine_name.clone();
     let agent_ip = agent.ip_address;
@@ -429,7 +426,7 @@ where
         let payload = serde_json::json!({
             "error": {
                 "message": message,
-                "type": "ollama_upstream_error",
+                "type": "node_upstream_error",
                 "code": status_code.as_u16(),
             }
         });
@@ -538,10 +535,10 @@ where
 /// 環境変数LOAD_BALANCER_MODEで動作モードを切り替え:
 /// - "metrics": メトリクスベース選択（T014-T015）
 /// - その他（デフォルト）: 既存の高度なロードバランシング
-pub(crate) async fn select_available_agent_for_model(
+pub(crate) async fn select_available_node_for_model(
     state: &AppState,
     model: &str,
-) -> Result<ollama_router_common::types::Node, RouterError> {
+) -> Result<llm_router_common::types::Node, RouterError> {
     let _mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     // まずモデルを保持しているオンラインノードを優先
@@ -556,7 +553,7 @@ pub(crate) async fn select_available_agent_for_model(
 
     if candidates.is_empty() {
         // 既存の挙動にフォールバック
-        return select_available_agent(state).await;
+        return select_available_node(state).await;
     }
 
     // 簡易: 最終確認が新しい順で選択
@@ -564,9 +561,9 @@ pub(crate) async fn select_available_agent_for_model(
     Ok(candidates.remove(0))
 }
 
-pub(crate) async fn select_available_agent(
+pub(crate) async fn select_available_node(
     state: &AppState,
-) -> Result<ollama_router_common::types::Node, RouterError> {
+) -> Result<llm_router_common::types::Node, RouterError> {
     let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     match mode.as_str() {
@@ -642,7 +639,10 @@ mod tests {
         registry::NodeRegistry,
         tasks::DownloadTaskManager,
     };
-    use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{
+        protocol::{ChatMessage, RegisterRequest},
+        types::GpuDeviceInfo,
+    };
     use std::net::IpAddr;
     use std::time::Duration;
 
@@ -702,14 +702,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_select_available_agent_no_agents() {
+    async fn test_select_available_node_no_agents() {
         let state = create_test_state().await;
-        let result = select_available_agent(&state).await;
+        let result = select_available_node(&state).await;
         assert!(matches!(result, Err(RouterError::NoAgentsAvailable)));
     }
 
     #[tokio::test]
-    async fn test_select_available_agent_success() {
+    async fn test_select_available_node_success() {
         let state = create_test_state().await;
 
         // ノードを登録
@@ -733,7 +733,7 @@ mod tests {
         let nodes = state.registry.list().await;
         mark_ready(&state, nodes[0].id).await;
 
-        let result = select_available_agent(&state).await;
+        let result = select_available_node(&state).await;
         assert!(result.is_ok());
 
         let agent = result.unwrap();
@@ -741,7 +741,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_select_available_agent_skips_offline() {
+    async fn test_select_available_node_skips_offline() {
         let state = create_test_state().await;
 
         // ノード1を登録
@@ -788,7 +788,7 @@ mod tests {
         // mark second agent ready
         mark_ready(&state, response2.node_id).await;
 
-        let result = select_available_agent(&state).await;
+        let result = select_available_node(&state).await;
         assert!(result.is_ok());
 
         let agent = result.unwrap();
@@ -798,7 +798,7 @@ mod tests {
     #[tokio::test]
     async fn proxy_chat_waits_until_agent_ready_then_succeeds() {
         use axum::{routing::post, Json, Router};
-        use ollama_router_common::protocol::{ChatMessage, ChatRequest, ChatResponse};
+        use llm_router_common::protocol::ChatRequest;
         use tokio::{net::TcpListener, sync::oneshot, time::timeout};
 
         // ---- stub node (OpenAI互換API) ----
@@ -806,13 +806,19 @@ mod tests {
         let agent_router = Router::new().route(
             "/v1/chat/completions",
             post(|Json(_req): Json<ChatRequest>| async {
-                let resp = ChatResponse {
-                    message: ChatMessage {
-                        role: "assistant".into(),
-                        content: "ready".into(),
-                    },
-                    done: true,
-                };
+                // OpenAI形式のレスポンス
+                let resp = serde_json::json!({
+                    "id": "chatcmpl-test",
+                    "object": "chat.completion",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "ready"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                });
                 (StatusCode::OK, Json(resp))
             }),
         );

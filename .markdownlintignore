@@ -4,3 +4,5 @@ dist/
 .git/
 bun.lock
 vendor/
+node/third_party/
+node/build/

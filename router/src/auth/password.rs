@@ -1,7 +1,7 @@
 // T042-T043: パスワードハッシュ化と検証（bcrypt実装）
 
 use bcrypt::{hash, verify};
-use ollama_router_common::error::RouterError;
+use llm_router_common::error::RouterError;
 
 /// パスワードハッシュ化のコスト（12推奨、200-300ms）
 const HASH_COST: u32 = 12;

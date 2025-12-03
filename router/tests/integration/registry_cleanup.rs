@@ -2,8 +2,8 @@
 //!
 //! ストレージに保存されたGPU無しノードが、Coordinator起動時に自動削除されることを確認する。
 
+use llm_router::registry::NodeRegistry;
 use once_cell::sync::Lazy;
-use or_router::registry::NodeRegistry;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
@@ -37,7 +37,7 @@ async fn gpu_less_agents_are_removed_on_startup() {
     fs::create_dir_all(data_dir).unwrap();
     fs::write(&data_file, serde_json::to_string_pretty(&nodes).unwrap()).unwrap();
 
-    std::env::set_var("OLLAMA_ROUTER_DATA_DIR", data_dir);
+    std::env::set_var("LLM_ROUTER_DATA_DIR", data_dir);
 
     // Act: ストレージ付きレジストリを初期化
     let registry = NodeRegistry::with_storage()
@@ -65,5 +65,5 @@ async fn gpu_less_agents_are_removed_on_startup() {
         .map(|list| !list.is_empty())
         .unwrap_or(false)));
 
-    std::env::remove_var("OLLAMA_ROUTER_DATA_DIR");
+    std::env::remove_var("LLM_ROUTER_DATA_DIR");
 }

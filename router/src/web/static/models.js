@@ -1,39 +1,40 @@
 /**
- * モデル管理UI
+ * Model Management UI
  *
- * モデル配布、進捗追跡、モデル情報表示を管理
+ * Manages model distribution, progress tracking, and model info display
  */
 
-// ========== 定数 ==========
+// ========== Constants ==========
 const MODEL_PRESETS = {
   'gpt-oss:20b': {
-    gpuHint: '推奨GPU: 16GB以上',
+    gpuHint: 'Recommended GPU: 16GB+',
     badge: 'GPT-OSS 20B',
-    usage: '高精度・長文向けの汎用/コード両対応',
+    usage: 'High precision, long context, general/code',
     sizeGb: 14.5,
   },
   'gpt-oss-safeguard:20b': {
-    gpuHint: '推奨GPU: 16GB以上',
+    gpuHint: 'Recommended GPU: 16GB+',
     badge: 'Safety 20B',
-    usage: 'モデレーション・セーフティ判定用',
+    usage: 'Moderation and safety evaluation',
     sizeGb: 14,
   },
   'gpt-oss:120b': {
-    gpuHint: '推奨GPU: 80GB以上',
+    gpuHint: 'Recommended GPU: 80GB+',
     badge: 'GPT-OSS 120B',
-    usage: '最高精度だが超大規模GPU向け',
+    usage: 'Highest precision, requires large GPU',
     sizeGb: 65,
   },
   'qwen3-coder:30b': {
-    gpuHint: '推奨GPU: 24GB以上',
+    gpuHint: 'Recommended GPU: 24GB+',
     badge: 'Qwen3 Coder 30B',
-    usage: '最新世代のコード生成',
+    usage: 'Latest generation code generation',
     sizeGb: 17,
   },
 };
 
-// ========== 状態管理 ==========
+// ========== State Management ==========
 let availableModels = [];
+let registeredModels = [];
 let availableModelsMeta = { source: null };
 let selectedModel = null;
 let downloadTasks = new Map(); // task_id -> task info
@@ -43,9 +44,11 @@ let cachedAgents = [];
 let loadedModels = [];
 let manualPanelOpen = false;
 
-// ========== DOM要素取得 ==========
+// ========== DOM Elements ==========
 const elements = {
   availableModelsList: () => document.getElementById('available-models-list'),
+  hfModelsList: () => document.getElementById('hf-models-list'),
+  registeredModelsList: () => document.getElementById('registered-models-list'),
   agentsForDistribution: () => document.getElementById('agents-for-distribution'),
   distributeButton: () => document.getElementById('distribute-model-button'),
   selectAllButton: () => document.getElementById('select-all-agents'),
@@ -66,16 +69,25 @@ const elements = {
   modelSearchInput: () => document.getElementById('model-search-input'),
   modelsSourceLabel: () => document.getElementById('models-source-label'),
   selectedModelCard: () => document.getElementById('selected-model-card'),
+  hfSearchInput: () => document.getElementById('hf-search'),
+  hfRefreshBtn: () => document.getElementById('hf-refresh'),
+  registeredRefreshBtn: () => document.getElementById('registered-refresh'),
+  hfStatus: () => document.getElementById('hf-models-status'),
+  tasksRefreshBtn: () => document.getElementById('download-tasks-refresh'),
 };
 
-// ========== API関数 ==========
+// ========== API Functions ==========
 
 /**
- * GET /api/models/available - 利用可能なモデル一覧を取得
+ * GET /api/models/available - Fetch available models list
  */
 async function fetchAvailableModels() {
   try {
-    const response = await fetch('/api/models/available');
+    const params = new URLSearchParams();
+    params.set('source', 'hf');
+    const q = elements.hfSearchInput()?.value;
+    if (q) params.set('search', q);
+    const response = await fetch(`/api/models/available?${params.toString()}`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -84,13 +96,61 @@ async function fetchAvailableModels() {
     return data.models || [];
   } catch (error) {
     console.error('Failed to fetch available models:', error);
-    showError('利用可能なモデルの取得に失敗しました');
+    showError('Failed to fetch available models');
     return [];
   }
 }
 
+async function fetchRegisteredModels() {
+  try {
+    const response = await fetch('/v1/models');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const list = Array.isArray(data.data) ? data.data : [];
+    return list.map((m) => ({
+      name: m.id ?? '',
+      description: m.description ?? '',
+      display_name: m.id ?? '',
+      size_gb: m.size_gb ?? undefined,
+      tags: m.tags ?? [],
+    }));
+  } catch (error) {
+    console.error('Failed to fetch registered models:', error);
+    showError('Failed to fetch registered models');
+    return [];
+  }
+}
+
+async function registerModel(repo, filename, displayName) {
+  const payload = { repo, filename, display_name: displayName };
+  const response = await fetch('/api/models/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+async function pullModelFromHf(repo, filename, chatTemplate) {
+  const payload = { repo, filename, chat_template: chatTemplate };
+  const response = await fetch('/api/models/pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /**
- * POST /api/models/distribute - モデルを配布
+ * POST /api/models/distribute - Distribute model
  */
 async function distributeModel(modelName, target, agentIds = []) {
   try {
@@ -115,13 +175,13 @@ async function distributeModel(modelName, target, agentIds = []) {
     return data.task_ids || [];
   } catch (error) {
     console.error('Failed to distribute model:', error);
-    showError(`モデル配布に失敗しました: ${error.message}`);
+    showError(`Failed to distribute model: ${error.message}`);
     return [];
   }
 }
 
 /**
- * GET /api/agents/{agent_id}/models - エージェントのインストール済みモデル取得
+ * GET /api/agents/{agent_id}/models - Fetch installed models for agent
  */
 async function fetchAgentModels(agentId) {
   try {
@@ -137,7 +197,23 @@ async function fetchAgentModels(agentId) {
 }
 
 /**
- * GET /api/tasks/{task_id} - タスク進捗を取得
+ * GET /api/tasks - Fetch all active tasks
+ */
+async function fetchActiveTasks() {
+  try {
+    const response = await fetch('/api/tasks');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch active tasks:', error);
+    return [];
+  }
+}
+
+/**
+ * GET /api/tasks/{task_id} - Fetch task progress
  */
 async function fetchTaskProgress(taskId) {
   try {
@@ -153,7 +229,7 @@ async function fetchTaskProgress(taskId) {
 }
 
 /**
- * GET /api/models/loaded - コーディネーター全体のロード済みモデル集計
+ * GET /api/models/loaded - Fetch loaded models summary across all agents
  */
 async function fetchLoadedModels() {
   try {
@@ -168,7 +244,7 @@ async function fetchLoadedModels() {
   }
 }
 
-// ========== ヘルパー ==========
+// ========== Helpers ==========
 
 function escapeHtml(value) {
   if (value == null) return '';
@@ -182,7 +258,7 @@ function escapeHtml(value) {
 
 function formatModelSize(sizeGb) {
   if (typeof sizeGb !== 'number' || Number.isNaN(sizeGb)) {
-    return 'サイズ不明';
+    return 'Size unknown';
   }
   return `${sizeGb.toFixed(1)} GB`;
 }
@@ -194,7 +270,7 @@ function computeSizeGbFromModel(model) {
   if (typeof model?.size === 'number') {
     return model.size / (1024 ** 3);
   }
-  // フォールバック: 必要メモリから概算
+  // Fallback: estimate from required memory
   const reqGb = computeRequiredMemoryGb(model);
   if (typeof reqGb === 'number') {
     return reqGb;
@@ -215,7 +291,7 @@ function computeRequiredMemoryGb(model) {
   }
   const preset = getModelPreset(model?.name);
   if (preset?.sizeGb) {
-    // 推奨メモリ情報がない場合はサイズ相当で代替
+    // If no required memory info, use size as fallback
     return preset.sizeGb;
   }
   return null;
@@ -234,12 +310,12 @@ function getGpuHint(model) {
   const sizeGb = computeSizeGbFromModel(model);
   const basis = typeof requiredGb === 'number' ? requiredGb : sizeGb;
   if (typeof basis === 'number') {
-    if (basis >= 12) return '推奨GPU: 16GB以上';
-    if (basis >= 8) return '推奨GPU: 8〜16GB';
-    if (basis >= 4.5) return '推奨GPU: 4.5〜8GB';
-    return '推奨GPU: 4.5GB未満';
+    if (basis >= 12) return 'Recommended GPU: 16GB+';
+    if (basis >= 8) return 'Recommended GPU: 8-16GB';
+    if (basis >= 4.5) return 'Recommended GPU: 4.5-8GB';
+    return 'Recommended GPU: <4.5GB';
   }
-  return '推奨GPU: 情報未提供';
+  return 'Recommended GPU: Info not available';
 }
 
 function getPresetUsage(model) {
@@ -247,7 +323,7 @@ function getPresetUsage(model) {
   if (preset?.usage) {
     return preset.usage;
   }
-  return '用途の説明が登録されていません';
+  return 'Usage description not registered';
 }
 
 function applyModelFilter(models, query) {
@@ -273,18 +349,18 @@ function applyModelFilter(models, query) {
 function updateModelsCount(count) {
   const target = elements.modelsCount();
   if (target) {
-    target.textContent = `${count}件`;
+    target.textContent = `${count} models`;
   }
 }
 
 function translateSourceLabel(source) {
-  if (!source) return 'ソース: -';
+  if (!source) return 'Source: -';
   const map = {
-    ollama_library: 'ソース: Ollama公式ライブラリ',
-    registry: 'ソース: レジストリ',
-    cache: 'ソース: キャッシュ',
+    ollama_library: 'Source: Ollama Official Library',
+    registry: 'Source: Registry',
+    cache: 'Source: Cache',
   };
-  return map[source] ?? `ソース: ${source}`;
+  return map[source] ?? `Source: ${source}`;
 }
 
 function updateModelsSourceLabel() {
@@ -305,10 +381,10 @@ function updateSelectedModelSummary() {
 
   if (!current) {
     selectedModel = null;
-    if (heroDisplay) heroDisplay.textContent = '未選択';
-    if (title) title.textContent = 'モデルを選択してください';
+    if (heroDisplay) heroDisplay.textContent = 'Not selected';
+    if (title) title.textContent = 'Please select a model';
     if (desc)
-      desc.textContent = '配布対象を選ぶ前に、左のリストからモデルを選択してください。';
+      desc.textContent = 'Select a model from the list on the left before choosing distribution targets.';
     if (size) size.textContent = '-';
     if (gpu) gpu.textContent = '-';
     if (card) card.classList.add('selected-model-banner--empty');
@@ -330,7 +406,7 @@ function updateHeroOnlineCount(agents) {
   if (!target) return;
   const list = Array.isArray(agents) ? agents : [];
   const online = list.filter((agent) => agent.status === 'online').length;
-  target.textContent = `${online}台`;
+  target.textContent = `${online} nodes`;
 }
 
 function updateAgentSelectionSummary() {
@@ -342,13 +418,13 @@ function updateAgentSelectionSummary() {
   ).length;
 
   if (summary) {
-    summary.textContent = `オンライン ${onlineCount}台 / 選択中 ${selectedCount}台`;
+    summary.textContent = `Online ${onlineCount} nodes / Selected ${selectedCount} nodes`;
   }
   if (hint) {
     hint.textContent =
       selectedCount === 0
-        ? '配布対象: 選択したエージェントのみ'
-        : `配布対象: ${selectedCount}台のエージェント`;
+        ? 'Target: Selected agents only'
+        : `Target: ${selectedCount} agents`;
   }
 
   updateHeroOnlineCount(cachedAgents);
@@ -398,6 +474,36 @@ function renderModelCard(model) {
   `;
 }
 
+function renderHfModelCard(model) {
+  const card = renderModelCard(model);
+  const repo = model.repo || (model.name?.split('/').slice(1, -1).join('/') ?? '');
+  const filename = model.filename || model.name?.split('/').pop() || '';
+  return card.replace(
+    '</div>',
+    `
+      <div class="model-card__actions">
+        <button class="btn btn-small" data-action="pull" data-repo="${escapeHtml(
+          repo
+        )}" data-file="${escapeHtml(filename)}">Pull</button>
+      </div>
+    </div>`
+  );
+}
+
+function renderRegisteredModelCard(model) {
+  const card = renderModelCard(model);
+  return card.replace(
+    '</div>',
+    `
+      <div class="model-card__actions">
+        <button class="btn btn-small" data-action="download" data-model="${escapeHtml(
+          model.name
+        )}">Download (all)</button>
+      </div>
+    </div>`
+  );
+}
+
 function resolveGpuModel(agent) {
   if (!agent) return '';
   if (agent.gpu_model_name) return agent.gpu_model_name;
@@ -408,10 +514,10 @@ function resolveGpuModel(agent) {
   return '';
 }
 
-// ========== UI更新関数 ==========
+// ========== UI Update Functions ==========
 
 /**
- * 利用可能なモデル一覧を描画
+ * Render available models list
  */
 function renderAvailableModels(models) {
   const container = elements.availableModelsList();
@@ -420,24 +526,18 @@ function renderAvailableModels(models) {
   updateModelsCount(models.length);
   updateModelsSourceLabel();
 
-  if (models.length === 0) {
-    container.innerHTML = '<p class="empty-message">モデルが見つかりません</p>';
-    updateSelectedModelSummary();
-    return;
-  }
-
   const filtered = applyModelFilter(models, modelFilterQuery);
 
   if (filtered.length === 0) {
     const queryText = escapeHtml(modelFilterQuery);
-    container.innerHTML = `<p class="empty-message">「${queryText}」に一致するモデルはありません</p>`;
+    container.innerHTML = `<p class="empty-message">No models matching "${queryText}"</p>`;
     updateSelectedModelSummary();
     return;
   }
 
   container.innerHTML = filtered.map((model) => renderModelCard(model)).join('');
 
-  // モデル選択イベント
+  // Model selection event
   container.querySelectorAll('.model-card').forEach((card) => {
     card.addEventListener('click', () => selectModel(card.dataset.modelName));
     card.addEventListener('keypress', (e) => {
@@ -451,8 +551,56 @@ function renderAvailableModels(models) {
   updateSelectedModelSummary();
 }
 
+function renderHfModels(models) {
+  const container = elements.hfModelsList();
+  const status = elements.hfStatus();
+  if (!container) return;
+  if (status) status.textContent = availableModelsMeta.cached ? 'Cached' : '';
+  if (models.length === 0) {
+    container.innerHTML = '<p class="empty-message">No HF models</p>';
+    return;
+  }
+  const filtered = applyModelFilter(models, modelFilterQuery);
+  if (filtered.length === 0) {
+    container.innerHTML = '<p class="empty-message">No HF models match filter</p>';
+    return;
+  }
+  container.innerHTML = filtered.map((m) => renderHfModelCard(m)).join('');
+  container.querySelectorAll('button[data-action="pull"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const repo = btn.dataset.repo;
+      const file = btn.dataset.file;
+      try {
+        await pullModelFromHf(repo, file, null);
+        await refreshRegisteredModels();
+        showSuccess('Pulled model to router');
+      } catch (e) {
+        console.error(e);
+        showError(e.message || 'Failed to pull model');
+      }
+    });
+  });
+}
+
+function renderRegisteredModels(models) {
+  const container = elements.registeredModelsList();
+  if (!container) return;
+  if (models.length === 0) {
+    container.innerHTML = '<p class="empty-message">No registered models</p>';
+    return;
+  }
+  container.innerHTML = models.map((m) => renderRegisteredModelCard(m)).join('');
+  container.querySelectorAll('button[data-action="download"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const modelName = btn.dataset.model;
+      await distributeModel(modelName, 'all');
+      showSuccess('Download started for all nodes');
+    });
+  });
+}
+
 /**
- * モデルを選択
+ * Select a model
  */
 function selectModel(modelName) {
   selectedModel = modelName;
@@ -461,7 +609,7 @@ function selectModel(modelName) {
 }
 
 /**
- * エージェント一覧（配布先選択）を描画
+ * Render agents list (distribution targets)
  */
 function renderAgentsForDistribution(agents) {
   const container = elements.agentsForDistribution();
@@ -471,7 +619,7 @@ function renderAgentsForDistribution(agents) {
   updateHeroOnlineCount(cachedAgents);
 
   if (cachedAgents.length === 0) {
-    container.innerHTML = '<p class="empty-message">登録済みのエージェントがありません</p>';
+    container.innerHTML = '<p class="empty-message">No registered agents</p>';
     updateDistributeButtonState();
     return;
   }
@@ -486,7 +634,7 @@ function renderAgentsForDistribution(agents) {
       const name = escapeHtml(agent.machine_name || agent.id?.substring(0, 8) || '-');
       const gpuModel = resolveGpuModel(agent);
       const gpuLine = gpuModel ? `<span class="agent-checkbox__gpu">${escapeHtml(gpuModel)}</span>` : '';
-      const statusLabel = agent.status === 'online' ? 'オンライン' : 'オフライン';
+      const statusLabel = agent.status === 'online' ? 'Online' : 'Offline';
       const statusClass = agent.status === 'online' ? 'status--online' : 'status--offline';
 
       return `
@@ -509,7 +657,7 @@ function renderAgentsForDistribution(agents) {
     })
     .join('');
 
-  // チェックボックス変更時
+  // On checkbox change
   container.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.addEventListener('change', updateDistributeButtonState);
   });
@@ -518,7 +666,7 @@ function renderAgentsForDistribution(agents) {
 }
 
 /**
- * 配布ボタンの有効/無効を更新
+ * Update distribute button enabled/disabled state
  */
 function updateDistributeButtonState() {
   const selectedCount = updateAgentSelectionSummary();
@@ -527,14 +675,14 @@ function updateDistributeButtonState() {
 
   const hasSelectedModel = !!selectedModel;
 
-  // 手動パネルが閉じているときは常に無効
+  // Always disabled when manual panel is closed
   const manualPanel = elements.manualPanel();
   const panelOpen = manualPanel && manualPanel.classList.contains('manual-panel--expanded');
   button.disabled = !(panelOpen && hasSelectedModel && selectedCount > 0);
 }
 
 /**
- * ダウンロードタスク一覧を描画
+ * Render download tasks list
  */
 function renderDownloadTasks() {
   const container = elements.downloadTasksList();
@@ -543,7 +691,7 @@ function renderDownloadTasks() {
   const tasks = Array.from(downloadTasks.values());
 
   if (tasks.length === 0) {
-    container.innerHTML = '<p class="empty-message">実行中のタスクはありません</p>';
+    container.innerHTML = '<p class="empty-message">No running tasks</p>';
     return;
   }
 
@@ -577,9 +725,9 @@ function renderDownloadTasks() {
             <strong>${modelLabel}</strong>
             <span class="task-status task-status--${statusClass}">${statusLabel}</span>
           </div>
-          <div class="task-agent">エージェント: ${agentLabel}${task.agent_id ? '…' : ''}</div>
+          <div class="task-agent">Agent: ${agentLabel}${task.agent_id ? '...' : ''}</div>
           ${progressBlock}
-          <div class="task-time">開始: ${formatTimestamp(task.created_at)}</div>
+          <div class="task-time">Started: ${formatTimestamp(task.created_at)}</div>
         </div>
       `;
     })
@@ -587,14 +735,14 @@ function renderDownloadTasks() {
 }
 
 /**
- * ロード済みモデル（全エージェント合算）を描画
+ * Render loaded models (aggregated across all agents)
  */
 function renderLoadedModels() {
   const container = elements.loadedModelsList();
   if (!container) return;
 
   if (!Array.isArray(loadedModels) || loadedModels.length === 0) {
-    container.innerHTML = '<p class="empty-message">ロード済みモデルはありません</p>';
+    container.innerHTML = '<p class="empty-message">No loaded models</p>';
     return;
   }
 
@@ -610,11 +758,11 @@ function renderLoadedModels() {
         <div class="task-card">
           <div class="task-header">
             <strong>${escapeHtml(item.model_name)}</strong>
-            <span class="task-status task-status--completed">完了 ${completed}</span>
+            <span class="task-status task-status--completed">Completed ${completed}</span>
           </div>
-          <div class="task-agent">合計エージェント: ${total}</div>
+          <div class="task-agent">Total agents: ${total}</div>
           <div class="task-progress">
-            <span class="task-progress-text">進行中 ${downloading} / 待機 ${pending} / 失敗 ${failed}</span>
+            <span class="task-progress-text">In progress ${downloading} / Pending ${pending} / Failed ${failed}</span>
           </div>
         </div>
       `;
@@ -623,20 +771,20 @@ function renderLoadedModels() {
 }
 
 /**
- * タスクステータスを日本語に変換
+ * Translate task status to display text
  */
 function translateStatus(status) {
   const statusMap = {
-    pending: '待機中',
-    downloading: 'ダウンロード中',
-    completed: '完了',
-    failed: '失敗',
+    pending: 'Pending',
+    downloading: 'Downloading',
+    completed: 'Completed',
+    failed: 'Failed',
   };
   return statusMap[status] || status;
 }
 
 /**
- * ダウンロード速度をフォーマット
+ * Format download speed
  */
 function formatSpeed(bytesPerSec) {
   if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
@@ -646,12 +794,12 @@ function formatSpeed(bytesPerSec) {
 }
 
 /**
- * タイムスタンプをフォーマット
+ * Format timestamp
  */
 function formatTimestamp(isoString) {
   if (!isoString) return '-';
   const date = new Date(isoString);
-  return date.toLocaleString('ja-JP', {
+  return date.toLocaleString('en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -661,7 +809,7 @@ function formatTimestamp(isoString) {
 }
 
 /**
- * エラーメッセージを表示
+ * Show error message
  */
 function showError(message) {
   const banner = document.getElementById('error-banner');
@@ -672,10 +820,25 @@ function showError(message) {
   }
 }
 
-// ========== 進捗監視 ==========
+function showSuccess(message) {
+  const banner = document.getElementById('error-banner');
+  if (banner) {
+    banner.textContent = message;
+    banner.classList.remove('hidden');
+    banner.classList.add('success-banner');
+    setTimeout(() => {
+      banner.classList.add('hidden');
+      banner.classList.remove('success-banner');
+    }, 3000);
+  } else {
+    console.info(message);
+  }
+}
+
+// ========== Progress Monitoring ==========
 
 /**
- * ダウンロード進捗を5秒ごとに監視
+ * Monitor download progress every 5 seconds
  */
 function monitorProgress() {
   if (progressPollingInterval) {
@@ -690,7 +853,7 @@ function monitorProgress() {
       if (task) {
         downloadTasks.set(taskId, task);
 
-        // 完了または失敗したタスクは10秒後に削除
+        // Remove completed or failed tasks after 10 seconds
         if (task.status === 'completed' || task.status === 'failed') {
           setTimeout(() => {
             downloadTasks.delete(taskId);
@@ -701,11 +864,11 @@ function monitorProgress() {
     }
 
     renderDownloadTasks();
-    // ロード済みモデル集計を更新
+    // Update loaded models summary
     loadedModels = await fetchLoadedModels();
     renderLoadedModels();
 
-    // タスクがなくなったらポーリング停止
+    // Stop polling when no tasks remain
     if (downloadTasks.size === 0) {
       clearInterval(progressPollingInterval);
       progressPollingInterval = null;
@@ -713,7 +876,7 @@ function monitorProgress() {
   }, 5000);
 }
 
-// ========== イベントハンドラ ==========
+// ========== Event Handlers ==========
 
 function toggleManualPanel() {
   const panel = elements.manualPanel();
@@ -723,17 +886,17 @@ function toggleManualPanel() {
   manualPanelOpen = !panel.classList.contains('manual-panel--expanded');
   panel.classList.toggle('manual-panel--expanded', manualPanelOpen);
   panel.classList.toggle('manual-panel--collapsed', !manualPanelOpen);
-  btn.textContent = manualPanelOpen ? '手動配布パネルを閉じる' : '手動配布パネルを開く';
+  btn.textContent = manualPanelOpen ? 'Close manual distribution panel' : 'Open manual distribution panel';
 
   updateDistributeButtonState();
 }
 
 /**
- * モデル配布ボタンクリック
+ * Model distribution button click
  */
 async function handleDistribute() {
   if (!selectedModel) {
-    showError('モデルを選択してください');
+    showError('Please select a model');
     return;
   }
 
@@ -743,7 +906,7 @@ async function handleDistribute() {
   const agentIds = Array.from(checkboxes).map((cb) => cb.dataset.agentId);
 
   if (agentIds.length === 0) {
-    showError('エージェントを選択してください');
+    showError('Please select agents');
     return;
   }
 
@@ -769,7 +932,7 @@ async function handleDistribute() {
     checkboxes.forEach((cb) => (cb.checked = false));
     updateDistributeButtonState();
 
-    showError(`${taskIds.length}件のダウンロードタスクを開始しました`);
+    showError(`Started ${taskIds.length} download task(s)`);
   }
 }
 
@@ -809,6 +972,10 @@ export async function initModelsUI(agents) {
   availableModels = await fetchAvailableModels();
   modelFilterQuery = '';
   renderAvailableModels(availableModels);
+  renderHfModels(availableModels);
+
+  registeredModels = await fetchRegisteredModels();
+  renderRegisteredModels(registeredModels);
 
   // エージェント一覧を描画
   renderAgentsForDistribution(agents);
@@ -819,6 +986,9 @@ export async function initModelsUI(agents) {
   const deselectAllButton = elements.deselectAllButton();
   const searchInput = elements.modelSearchInput();
   const toggleManualBtn = elements.toggleManualBtn();
+  const hfSearch = elements.hfSearchInput();
+  const hfRefresh = elements.hfRefreshBtn();
+  const regRefresh = elements.registeredRefreshBtn();
 
   if (distributeButton) {
     distributeButton.addEventListener('click', handleDistribute);
@@ -837,6 +1007,24 @@ export async function initModelsUI(agents) {
     searchInput.addEventListener('input', handleModelSearch);
   }
 
+  if (hfSearch) {
+    hfSearch.addEventListener('input', async () => {
+      availableModels = await fetchAvailableModels();
+      renderHfModels(availableModels);
+    });
+  }
+
+  if (hfRefresh) {
+    hfRefresh.addEventListener('click', async () => {
+      availableModels = await fetchAvailableModels();
+      renderHfModels(availableModels);
+    });
+  }
+
+  if (regRefresh) {
+    regRefresh.addEventListener('click', refreshRegisteredModels);
+  }
+
   if (toggleManualBtn) {
     toggleManualBtn.addEventListener('click', toggleManualPanel);
   }
@@ -848,6 +1036,29 @@ export async function initModelsUI(agents) {
   // ロード済みモデルを初期取得
   loadedModels = await fetchLoadedModels();
   renderLoadedModels();
+
+  // アクティブなタスクを初期取得
+  const activeTasks = await fetchActiveTasks();
+  for (const task of activeTasks) {
+    downloadTasks.set(task.id, task);
+  }
+  renderDownloadTasks();
+
+  // 進捗監視開始
+  monitorProgress();
+
+  const tasksRefresh = elements.tasksRefreshBtn();
+  if (tasksRefresh) {
+    tasksRefresh.addEventListener('click', async () => {
+      // サーバーからアクティブなタスク一覧を再取得
+      const tasks = await fetchActiveTasks();
+      downloadTasks.clear();
+      for (const task of tasks) {
+        downloadTasks.set(task.id, task);
+      }
+      renderDownloadTasks();
+    });
+  }
 }
 
 /**
@@ -855,4 +1066,9 @@ export async function initModelsUI(agents) {
  */
 export function updateModelsUI(agents) {
   renderAgentsForDistribution(agents);
+}
+
+async function refreshRegisteredModels() {
+  registeredModels = await fetchRegisteredModels();
+  renderRegisteredModels(registeredModels);
 }

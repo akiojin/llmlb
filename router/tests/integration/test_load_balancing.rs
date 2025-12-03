@@ -2,11 +2,11 @@
 //!
 //! 複数ノードへのリクエスト分散と負荷ベース選択の検証
 
-use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-use or_router::{
+use llm_router::{
     balancer::{LoadManager, MetricsUpdate, RequestOutcome},
     registry::NodeRegistry,
 };
+use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Duration;

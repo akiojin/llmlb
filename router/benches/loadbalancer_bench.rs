@@ -4,11 +4,11 @@
 //! 1000ノードで < 10ms の目標を検証する。
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use ollama_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-use or_router::{
+use llm_router::{
     balancer::{LoadManager, MetricsUpdate},
     registry::NodeRegistry,
 };
+use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::runtime::Runtime;
 

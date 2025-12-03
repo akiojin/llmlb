@@ -5,7 +5,7 @@
 pub mod models;
 
 use chrono::Utc;
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
     types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus},
@@ -57,33 +57,33 @@ impl NodeRegistry {
             return Ok(());
         }
 
-        let loaded_agents = crate::db::load_agents().await?;
+        let loaded_nodes = crate::db::load_nodes().await?;
         let mut nodes = self.nodes.write().await;
 
         let mut removed_count = 0;
         let mut removed_ids = Vec::new();
-        let mut sanitized_agents = Vec::new();
+        let mut sanitized_nodes = Vec::new();
 
-        for mut agent in loaded_agents {
+        for mut node in loaded_nodes {
             // GPU非搭載 or 情報欠落ノードは削除対象
-            if !agent.gpu_available {
+            if !node.gpu_available {
                 info!(
-                    node_id = %agent.id,
-                    machine_name = %agent.machine_name,
+                    node_id = %node.id,
+                    machine_name = %node.machine_name,
                     reason = "gpu_available is false",
-                    "Removing GPU-less agent from database during startup cleanup"
+                    "Removing GPU-less node from database during startup cleanup"
                 );
                 removed_count += 1;
-                removed_ids.push(agent.id);
+                removed_ids.push(node.id);
                 continue;
             }
 
             let mut sanitized = false;
 
-            if agent.gpu_devices.is_empty() {
-                if let Some(model) = agent.gpu_model.clone() {
-                    let count = agent.gpu_count.unwrap_or(1).max(1);
-                    agent.gpu_devices = vec![GpuDeviceInfo {
+            if node.gpu_devices.is_empty() {
+                if let Some(model) = node.gpu_model.clone() {
+                    let count = node.gpu_count.unwrap_or(1).max(1);
+                    node.gpu_devices = vec![GpuDeviceInfo {
                         model,
                         count,
                         memory: None,
@@ -91,63 +91,63 @@ impl NodeRegistry {
                     sanitized = true;
                 } else {
                     info!(
-                        node_id = %agent.id,
-                        machine_name = %agent.machine_name,
+                        node_id = %node.id,
+                        machine_name = %node.machine_name,
                         reason = "gpu_devices array is empty and gpu_model is None",
-                        "Removing agent with missing GPU device information from database"
+                        "Removing node with missing GPU device information from database"
                     );
                     removed_count += 1;
-                    removed_ids.push(agent.id);
+                    removed_ids.push(node.id);
                     continue;
                 }
             }
 
-            if !agent.gpu_devices.iter().all(|device| device.is_valid()) {
+            if !node.gpu_devices.iter().all(|device| device.is_valid()) {
                 info!(
-                    node_id = %agent.id,
-                    machine_name = %agent.machine_name,
+                    node_id = %node.id,
+                    machine_name = %node.machine_name,
                     reason = "gpu_devices contains invalid device (empty model or zero count)",
-                    "Removing agent with invalid GPU device information from database"
+                    "Removing node with invalid GPU device information from database"
                 );
                 removed_count += 1;
-                removed_ids.push(agent.id);
+                removed_ids.push(node.id);
                 continue;
             }
 
             if sanitized {
-                sanitized_agents.push(agent.clone());
+                sanitized_nodes.push(node.clone());
             }
 
-            nodes.insert(agent.id, agent);
+            nodes.insert(node.id, node);
         }
 
         info!(
-            agents_loaded = nodes.len(),
-            agents_removed = removed_count,
-            "Completed agent registry initialization from storage"
+            nodes_loaded = nodes.len(),
+            nodes_removed = removed_count,
+            "Completed node registry initialization from storage"
         );
 
         drop(nodes);
 
         // 削除対象ノードをデータベースから削除
         for id in removed_ids {
-            if let Err(err) = crate::db::delete_agent(id).await {
+            if let Err(err) = crate::db::delete_node(id).await {
                 error!(
                     node_id = %id,
                     error = %err,
-                    "Failed to delete GPU-less agent from database during cleanup"
+                    "Failed to delete GPU-less node from database during cleanup"
                 );
             }
         }
 
         // サニタイズされたノード情報をストレージに保存
-        for agent in sanitized_agents {
-            if let Err(err) = self.save_to_storage(&agent).await {
+        for node in sanitized_nodes {
+            if let Err(err) = self.save_to_storage(&node).await {
                 warn!(
-                    node_id = %agent.id,
-                    machine_name = %agent.machine_name,
+                    node_id = %node.id,
+                    machine_name = %node.machine_name,
                     error = %err,
-                    "Failed to persist sanitized agent data to storage"
+                    "Failed to persist sanitized node data to storage"
                 );
             }
         }
@@ -156,12 +156,12 @@ impl NodeRegistry {
     }
 
     /// ノードをストレージに保存
-    async fn save_to_storage(&self, agent: &Node) -> RouterResult<()> {
+    async fn save_to_storage(&self, node: &Node) -> RouterResult<()> {
         if !self.storage_enabled {
             return Ok(());
         }
 
-        crate::db::save_agent(agent).await
+        crate::db::save_node(node).await
     }
 
     /// ノードを登録
@@ -171,35 +171,35 @@ impl NodeRegistry {
         // 同じマシン名のノードが既に存在するか確認
         let existing = nodes
             .values()
-            .find(|a| a.machine_name == req.machine_name && a.ollama_port == req.ollama_port)
-            .map(|a| a.id);
+            .find(|n| n.machine_name == req.machine_name && n.ollama_port == req.ollama_port)
+            .map(|n| n.id);
 
-        let (node_id, status, agent) = if let Some(id) = existing {
+        let (node_id, status, node) = if let Some(id) = existing {
             // 既存ノードを更新
-            let agent = nodes.get_mut(&id).unwrap();
+            let node = nodes.get_mut(&id).unwrap();
             let now = Utc::now();
-            let was_online = agent.status == NodeStatus::Online;
-            agent.ip_address = req.ip_address;
-            agent.ollama_version = req.ollama_version.clone();
-            agent.ollama_port = req.ollama_port;
-            agent.gpu_available = req.gpu_available;
-            agent.gpu_devices = req.gpu_devices.clone();
-            agent.gpu_count = req.gpu_count;
-            agent.gpu_model = req.gpu_model.clone();
-            agent.status = NodeStatus::Online;
-            agent.last_seen = now;
-            if !was_online || agent.online_since.is_none() {
-                agent.online_since = Some(now);
+            let was_online = node.status == NodeStatus::Online;
+            node.ip_address = req.ip_address;
+            node.ollama_version = req.ollama_version.clone();
+            node.ollama_port = req.ollama_port;
+            node.gpu_available = req.gpu_available;
+            node.gpu_devices = req.gpu_devices.clone();
+            node.gpu_count = req.gpu_count;
+            node.gpu_model = req.gpu_model.clone();
+            node.status = NodeStatus::Online;
+            node.last_seen = now;
+            if !was_online || node.online_since.is_none() {
+                node.online_since = Some(now);
             }
-            agent.agent_api_port = Some(req.ollama_port + 1);
-            agent.initializing = true;
-            agent.ready_models = Some((0, 0));
-            (id, RegisterStatus::Updated, agent.clone())
+            node.agent_api_port = Some(req.ollama_port + 1);
+            node.initializing = true;
+            node.ready_models = Some((0, 0));
+            (id, RegisterStatus::Updated, node.clone())
         } else {
             // 新規ノードを登録
             let node_id = Uuid::new_v4();
             let now = Utc::now();
-            let agent = Node {
+            let node = Node {
                 id: node_id,
                 machine_name: req.machine_name,
                 ip_address: req.ip_address,
@@ -224,18 +224,18 @@ impl NodeRegistry {
                 initializing: true,
                 ready_models: Some((0, 0)),
             };
-            nodes.insert(node_id, agent.clone());
-            (node_id, RegisterStatus::Registered, agent)
+            nodes.insert(node_id, node.clone());
+            (node_id, RegisterStatus::Registered, node)
         };
 
         // ロックを解放してからストレージ保存
         drop(nodes);
-        self.save_to_storage(&agent).await?;
+        self.save_to_storage(&node).await?;
 
         Ok(RegisterResponse {
             node_id,
             status,
-            agent_api_port: Some(agent.ollama_port + 1),
+            agent_api_port: Some(node.ollama_port + 1),
             auto_distributed_model: None,
             download_task_id: None,
             agent_token: None,
@@ -271,42 +271,42 @@ impl NodeRegistry {
         initializing: Option<bool>,
         ready_models: Option<(u8, u8)>,
     ) -> RouterResult<()> {
-        let agent_to_save = {
+        let node_to_save = {
             let mut nodes = self.nodes.write().await;
-            let agent = nodes
+            let node = nodes
                 .get_mut(&node_id)
                 .ok_or(RouterError::AgentNotFound(node_id))?;
             let now = Utc::now();
-            let was_online = agent.status == NodeStatus::Online;
-            agent.last_seen = now;
-            agent.status = NodeStatus::Online;
+            let was_online = node.status == NodeStatus::Online;
+            node.last_seen = now;
+            node.status = NodeStatus::Online;
             if let Some(models) = loaded_models {
-                agent.loaded_models = normalize_models(models);
+                node.loaded_models = normalize_models(models);
             }
             // GPU能力情報を更新
             if gpu_model_name.is_some() {
-                agent.gpu_model_name = gpu_model_name;
+                node.gpu_model_name = gpu_model_name;
             }
             if gpu_compute_capability.is_some() {
-                agent.gpu_compute_capability = gpu_compute_capability;
+                node.gpu_compute_capability = gpu_compute_capability;
             }
             if gpu_capability_score.is_some() {
-                agent.gpu_capability_score = gpu_capability_score;
+                node.gpu_capability_score = gpu_capability_score;
             }
-            if !was_online || agent.online_since.is_none() {
-                agent.online_since = Some(now);
+            if !was_online || node.online_since.is_none() {
+                node.online_since = Some(now);
             }
             if let Some(init) = initializing {
-                agent.initializing = init;
+                node.initializing = init;
             }
             if ready_models.is_some() {
-                agent.ready_models = ready_models;
+                node.ready_models = ready_models;
             }
-            agent.clone()
+            node.clone()
         };
 
         // ロック解放後にストレージ保存
-        self.save_to_storage(&agent_to_save).await?;
+        self.save_to_storage(&node_to_save).await?;
         Ok(())
     }
 
@@ -315,20 +315,20 @@ impl NodeRegistry {
         let normalized = normalize_models(vec![model_name.to_string()]);
         let model = normalized.first().cloned().unwrap_or_default();
 
-        let agent_to_save = {
+        let node_to_save = {
             let mut nodes = self.nodes.write().await;
-            let agent = nodes
+            let node = nodes
                 .get_mut(&node_id)
                 .ok_or(RouterError::AgentNotFound(node_id))?;
-            if !agent.loaded_models.contains(&model) {
-                agent.loaded_models.push(model);
-                agent.loaded_models.sort();
+            if !node.loaded_models.contains(&model) {
+                node.loaded_models.push(model);
+                node.loaded_models.sort();
             }
-            agent.clone()
+            node.clone()
         };
 
         // 永続化（失敗しても致命ではないがログとして残す）
-        if let Err(e) = self.save_to_storage(&agent_to_save).await {
+        if let Err(e) = self.save_to_storage(&node_to_save).await {
             warn!(
                 node_id = %node_id,
                 error = %e,
@@ -341,24 +341,24 @@ impl NodeRegistry {
 
     /// ノードをオフラインにする
     pub async fn mark_offline(&self, node_id: Uuid) -> RouterResult<()> {
-        let agent_to_save = {
+        let node_to_save = {
             let mut nodes = self.nodes.write().await;
-            let agent = nodes
+            let node = nodes
                 .get_mut(&node_id)
                 .ok_or(RouterError::AgentNotFound(node_id))?;
-            agent.status = NodeStatus::Offline;
-            agent.online_since = None;
-            agent.clone()
+            node.status = NodeStatus::Offline;
+            node.online_since = None;
+            node.clone()
         };
 
         // ロック解放後にストレージ保存
-        self.save_to_storage(&agent_to_save).await?;
+        self.save_to_storage(&node_to_save).await?;
         Ok(())
     }
 }
 
 /// ノード設定更新用ペイロード
-pub struct AgentSettingsUpdate {
+pub struct NodeSettingsUpdate {
     /// カスタム表示名（Noneで未指定, Some(None)でリセット）
     pub custom_name: Option<Option<String>>,
     /// タグ配列
@@ -372,16 +372,16 @@ impl NodeRegistry {
     pub async fn update_settings(
         &self,
         node_id: Uuid,
-        settings: AgentSettingsUpdate,
+        settings: NodeSettingsUpdate,
     ) -> RouterResult<Node> {
-        let updated_agent = {
+        let updated_node = {
             let mut nodes = self.nodes.write().await;
-            let agent = nodes
+            let node = nodes
                 .get_mut(&node_id)
                 .ok_or(RouterError::AgentNotFound(node_id))?;
 
             if let Some(custom_name) = settings.custom_name {
-                agent.custom_name = custom_name.and_then(|name| {
+                node.custom_name = custom_name.and_then(|name| {
                     let trimmed = name.trim();
                     if trimmed.is_empty() {
                         None
@@ -392,7 +392,7 @@ impl NodeRegistry {
             }
 
             if let Some(tags) = settings.tags {
-                agent.tags = tags
+                node.tags = tags
                     .into_iter()
                     .map(|tag| tag.trim().to_string())
                     .filter(|tag| !tag.is_empty())
@@ -400,7 +400,7 @@ impl NodeRegistry {
             }
 
             if let Some(notes) = settings.notes {
-                agent.notes = notes.and_then(|note| {
+                node.notes = notes.and_then(|note| {
                     let trimmed = note.trim();
                     if trimmed.is_empty() {
                         None
@@ -410,11 +410,11 @@ impl NodeRegistry {
                 });
             }
 
-            agent.clone()
+            node.clone()
         };
 
-        self.save_to_storage(&updated_agent).await?;
-        Ok(updated_agent)
+        self.save_to_storage(&updated_node).await?;
+        Ok(updated_node)
     }
 
     /// ノードを削除
@@ -429,7 +429,7 @@ impl NodeRegistry {
         }
 
         if self.storage_enabled {
-            crate::db::delete_agent(node_id).await
+            crate::db::delete_node(node_id).await
         } else {
             Ok(())
         }
@@ -484,7 +484,7 @@ fn normalize_models(models: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ollama_router_common::types::GpuDeviceInfo;
+    use llm_router_common::types::GpuDeviceInfo;
     use std::net::IpAddr;
 
     fn sample_gpu_devices() -> Vec<GpuDeviceInfo> {
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_register_new_agent() {
+    async fn test_register_new_node() {
         let registry = NodeRegistry::new();
         let req = RegisterRequest {
             machine_name: "test-machine".to_string(),
@@ -512,14 +512,14 @@ mod tests {
         let response = registry.register(req).await.unwrap();
         assert_eq!(response.status, RegisterStatus::Registered);
 
-        let agent = registry.get(response.node_id).await.unwrap();
-        assert_eq!(agent.machine_name, "test-machine");
-        assert_eq!(agent.status, NodeStatus::Online);
-        assert!(agent.loaded_models.is_empty());
+        let node = registry.get(response.node_id).await.unwrap();
+        assert_eq!(node.machine_name, "test-machine");
+        assert_eq!(node.status, NodeStatus::Online);
+        assert!(node.loaded_models.is_empty());
     }
 
     #[tokio::test]
-    async fn test_register_existing_agent() {
+    async fn test_register_existing_node() {
         let registry = NodeRegistry::new();
         let req = RegisterRequest {
             machine_name: "test-machine".to_string(),
@@ -539,12 +539,12 @@ mod tests {
         assert_eq!(second_response.status, RegisterStatus::Updated);
         assert_eq!(first_response.node_id, second_response.node_id);
 
-        let agent = registry.get(first_response.node_id).await.unwrap();
-        assert!(agent.loaded_models.is_empty());
+        let node = registry.get(first_response.node_id).await.unwrap();
+        assert!(node.loaded_models.is_empty());
     }
 
     #[tokio::test]
-    async fn test_list_agents() {
+    async fn test_list_nodes() {
         let registry = NodeRegistry::new();
 
         let req1 = RegisterRequest {
@@ -592,9 +592,9 @@ mod tests {
         let response = registry.register(req).await.unwrap();
         registry.mark_offline(response.node_id).await.unwrap();
 
-        let agent = registry.get(response.node_id).await.unwrap();
-        assert_eq!(agent.status, NodeStatus::Offline);
-        assert!(agent.loaded_models.is_empty());
+        let node = registry.get(response.node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Offline);
+        assert!(node.loaded_models.is_empty());
     }
 
     #[tokio::test]
@@ -616,7 +616,7 @@ mod tests {
         let updated = registry
             .update_settings(
                 node_id,
-                AgentSettingsUpdate {
+                NodeSettingsUpdate {
                     custom_name: Some(Some("Display".into())),
                     tags: Some(vec!["primary".into(), "gpu".into()]),
                     notes: Some(Some("Important".into())),
@@ -632,7 +632,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_agent_removes_from_registry() {
+    async fn test_delete_node_removes_from_registry() {
         let registry = NodeRegistry::new();
         let node_id = registry
             .register(RegisterRequest {
@@ -689,8 +689,8 @@ mod tests {
             .await
             .unwrap();
 
-        let agent = registry.get(node_id).await.unwrap();
-        assert_eq!(agent.loaded_models, vec!["gpt-oss:20b", "phi-3"]);
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.loaded_models, vec!["gpt-oss:20b", "phi-3"]);
     }
 
     #[test]

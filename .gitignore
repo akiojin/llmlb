@@ -93,3 +93,4 @@ Cargo.lock
 *.sdk/
 *.sdk.tar.xz
 *.sdk.tar.gz
+cookies.txt

@@ -1,3 +1,18 @@
 {
-  "MD013": {"line_length": 120, "heading_line_length": 120, "code_block_line_length": 120}
+  "config": {
+    "MD013": {
+      "line_length": 120,
+      "heading_line_length": 120,
+      "code_block_line_length": 120
+    }
+  },
+  "ignores": [
+    "node_modules",
+    ".git",
+    ".github",
+    ".worktrees",
+    "vendor",
+    "node/third_party",
+    "node/build"
+  ]
 }

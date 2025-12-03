@@ -110,15 +110,17 @@
 
 ### ノード側モデルプル拡張
 
-- [x] **T0*33** [P] ノード側API: `agent/src/api/mod.rs` と `agent/src/api/models.rs` を作成
+- [x] **T0*33** [P] ノード側API: `node/src/api/node_endpoints.cpp` を拡張
   - `POST /pull` エンドポイント（ルーターからの指示を受ける）
-  - 既存の `agent/src/ollama.rs` の `pull_model()` を呼び出し
+  - モデルダウンロード処理を`ModelSync::downloadModel()`で実装
+  - バックグラウンドスレッドで非同期ダウンロード
 
 ### 進捗報告機能
 
-- [x] **T0*34** 進捗報告: `agent/src/api/models.rs` で `pull_model()` の進捗をルーターに送信
-  - ストリーミングレスポンスをパースして進捗計算
+- [x] **T0*34** 進捗報告: `node/src/api/node_endpoints.cpp` で進捗をルーターに送信
+  - `RouterClient::reportProgress()` メソッド追加
   - `POST /api/tasks/{task_id}/progress` でルーターに送信
+  - ダウンロードコールバックから進捗を報告
 
 ---
 
@@ -257,9 +259,58 @@ Task T040, T041, T042, T043 を並列実行
 
 ---
 
-**総タスク数**: 48タスク
+**総タスク数**: 48タスク + 12タスク（オンデマンドロード）= 60タスク
+**完了タスク数**: 66/66
 **推定並列実行**: Setup 3並列, Tests 20並列, Core 一部並列, Polish 4並列
 **TDD遵守**: Phase 3.2（テスト）→ Phase 3.3（実装）の順序厳守
+
+---
+
+## Phase 4: オンデマンドモデルロード
+
+### Phase 4.1: テストファースト (TDD)
+
+- [x] **T049** [P] Unit test: `node/tests/unit/model_loader_test.cpp` にテスト作成
+  - `OnDemandLoadTriggersWhenModelNotLoaded` テスト実装
+  - LlamaManagerの`loadModelIfNeeded()`をテスト
+- [x] **T050** [P] Unit test: `node/tests/unit/model_loader_test.cpp` にアイドルアンロードテスト作成
+  - `IdleModelsAreUnloadedAfterTimeout` テスト実装
+  - `setIdleTimeout()` / `unloadIdleModels()` をテスト
+- [x] **T051** [P] Unit test: `node/tests/unit/model_loader_test.cpp` にメモリ制限テスト作成
+  - `MemoryLimitRestrictsLoadedModels` テスト実装
+  - `TracksLastAccessTime` / `LRUUnloadSelectsOldestAccessedModel` テスト実装
+- [x] **T052** [P] Integration test: `node/tests/integration/model_lifecycle_test.cpp` に `test_load_unload_cycle()` を作成
+  - LoadUnloadCycle / LRUEvictionPolicy / IdleTimeoutConfiguration など5テスト実装
+
+### Phase 4.2: コア実装
+
+- [x] **T053** モデルローダー: `node/src/core/llama_manager.cpp` にオンデマンドロード機能を実装
+  - `loadModelIfNeeded()` メソッド追加
+  - `unloadIdleModels()` メソッド追加
+  - `getLeastRecentlyUsedModel()` によるLRU管理
+- [x] **T054** アイドル監視: `node/src/core/llama_manager.cpp` にアイドルタイムアウト監視を実装
+  - `setIdleTimeout()` / `getIdleTimeout()` メソッド追加
+  - デフォルト5分のアイドルタイムアウト
+- [x] **T055** メモリ管理: `node/src/core/llama_manager.cpp` にメモリ管理を実装
+  - `setMaxLoadedModels()` / `canLoadMore()` メソッド追加
+  - `setMaxMemoryBytes()` / `getMaxMemoryBytes()` メソッド追加
+
+### Phase 4.3: 統合
+
+- [x] **T056** API統合: `node/src/core/inference_engine.cpp` で `loadModelIfNeeded()` を呼び出し
+  - `generateChat()` / `generateChatStream()` でオンデマンドロードを使用
+  - アクセス時刻追跡とLRU管理が有効に
+- [x] **T057** API統合: `node/src/core/inference_engine.cpp` で `loadModelIfNeeded()` を呼び出し
+  - `loadModelWithRepair()` でもオンデマンドロードを使用
+- [x] **T058** 設定: `node/src/main.cpp` に新しい環境変数を追加
+  - `LLM_MODEL_IDLE_TIMEOUT`: アイドルタイムアウト（秒）
+  - `LLM_MAX_LOADED_MODELS`: 最大ロードモデル数
+  - `LLM_MAX_MEMORY_BYTES`: メモリ制限（バイト）
+
+### Phase 4.4: 仕上げ
+
+- [x] **T059** [P] ドキュメント: `specs/SPEC-8ae67d67/spec.md` の更新確認
+- [x] **T060** [P] 品質チェック: C++コードのビルド・テスト実行（83テスト合格）
 
 ---
 

@@ -12,6 +12,7 @@ pub mod api_keys;
 
 /// エージェントトークン管理
 pub mod agent_tokens;
+pub mod models;
 
 /// データベースマイグレーション
 pub mod migrations;
@@ -27,7 +28,7 @@ pub(crate) mod test_utils {
 }
 
 use chrono::Utc;
-use ollama_router_common::{
+use llm_router_common::{
     error::{RouterError, RouterResult},
     types::Node,
 };
@@ -39,14 +40,14 @@ use uuid::Uuid;
 /// データファイルのパスを取得
 fn get_data_file_path() -> RouterResult<PathBuf> {
     // テスト用に環境変数でデータディレクトリを指定可能にする
-    let data_dir = if let Ok(test_dir) = std::env::var("OLLAMA_ROUTER_DATA_DIR") {
+    let data_dir = if let Ok(test_dir) = std::env::var("LLM_ROUTER_DATA_DIR") {
         PathBuf::from(test_dir)
     } else {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .map_err(|_| RouterError::Database("Failed to get home directory".to_string()))?;
 
-        PathBuf::from(home).join(".or")
+        PathBuf::from(home).join(".llm-router")
     };
 
     Ok(data_dir.join("nodes.json"))
@@ -77,7 +78,7 @@ pub async fn init_storage() -> RouterResult<()> {
 }
 
 /// ノードを保存
-pub async fn save_agent(agent: &Node) -> RouterResult<()> {
+pub async fn save_node(node: &Node) -> RouterResult<()> {
     let data_file = get_data_file_path()?;
 
     // ディレクトリが存在しない場合は作成
@@ -92,13 +93,13 @@ pub async fn save_agent(agent: &Node) -> RouterResult<()> {
     }
 
     // 既存のノードを読み込み
-    let mut nodes = load_agents().await?;
+    let mut nodes = load_nodes().await?;
 
     // 同じIDのノードがあれば更新、なければ追加
-    if let Some(existing) = nodes.iter_mut().find(|a| a.id == agent.id) {
-        *existing = agent.clone();
+    if let Some(existing) = nodes.iter_mut().find(|n| n.id == node.id) {
+        *existing = node.clone();
     } else {
-        nodes.push(agent.clone());
+        nodes.push(node.clone());
     }
 
     // JSONに変換して保存
@@ -113,7 +114,7 @@ pub async fn save_agent(agent: &Node) -> RouterResult<()> {
 }
 
 /// 全ノードを読み込み
-pub async fn load_agents() -> RouterResult<Vec<Node>> {
+pub async fn load_nodes() -> RouterResult<Vec<Node>> {
     let data_file = get_data_file_path()?;
 
     // ファイルが存在しない場合は空の配列を返す
@@ -137,21 +138,29 @@ pub async fn load_agents() -> RouterResult<Vec<Node>> {
                 "Detected corrupted nodes.json, attempting recovery: {}",
                 err
             );
-            recover_corrupted_agents_file(&data_file).await?;
-            Ok(Vec::new())
+            recover_corrupted_nodes_file(&data_file).await?;
+            // 再読込して返す (空なら空配列)
+            let reopened = fs::read_to_string(&data_file).await.unwrap_or_default();
+            if reopened.trim().is_empty() {
+                return Ok(Vec::new());
+            }
+            match serde_json::from_str::<Vec<Node>>(&reopened) {
+                Ok(nodes2) => Ok(nodes2),
+                Err(_) => Ok(Vec::new()),
+            }
         }
     }
 }
 
 /// ノードを削除
-pub async fn delete_agent(node_id: Uuid) -> RouterResult<()> {
+pub async fn delete_node(node_id: Uuid) -> RouterResult<()> {
     let data_file = get_data_file_path()?;
 
     // 既存のノードを読み込み
-    let mut nodes = load_agents().await?;
+    let mut nodes = load_nodes().await?;
 
     // 指定されたIDのノードを削除
-    nodes.retain(|a| a.id != node_id);
+    nodes.retain(|n| n.id != node_id);
 
     // JSONに変換して保存
     let json = serde_json::to_string_pretty(&nodes)
@@ -165,7 +174,7 @@ pub async fn delete_agent(node_id: Uuid) -> RouterResult<()> {
 }
 
 /// 破損した nodes.json をバックアップして空のファイルに復旧
-async fn recover_corrupted_agents_file(data_file: &PathBuf) -> RouterResult<()> {
+async fn recover_corrupted_nodes_file(data_file: &PathBuf) -> RouterResult<()> {
     if !data_file.exists() {
         // ファイルが存在しない場合は新規作成のみ行う
         fs::write(data_file, "[]")
@@ -204,7 +213,7 @@ async fn recover_corrupted_agents_file(data_file: &PathBuf) -> RouterResult<()> 
 mod tests {
     use super::*;
     use chrono::Utc;
-    use ollama_router_common::types::{GpuDeviceInfo, NodeStatus};
+    use llm_router_common::types::{GpuDeviceInfo, NodeStatus};
     use std::net::IpAddr;
     use tempfile::tempdir;
 
@@ -214,7 +223,7 @@ mod tests {
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
-        std::env::set_var("OLLAMA_ROUTER_DATA_DIR", _guard.path());
+        std::env::set_var("LLM_ROUTER_DATA_DIR", _guard.path());
 
         let result = init_storage().await;
         assert!(result.is_ok());
@@ -223,21 +232,21 @@ mod tests {
         let data_file = get_data_file_path().unwrap();
         assert!(data_file.exists());
 
-        std::env::remove_var("OLLAMA_ROUTER_DATA_DIR");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
     }
 
     #[tokio::test]
-    async fn test_save_and_load_agent() {
+    async fn test_save_and_load_node() {
         let _lock = test_utils::TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
-        std::env::set_var("OLLAMA_ROUTER_DATA_DIR", _guard.path());
+        std::env::set_var("LLM_ROUTER_DATA_DIR", _guard.path());
 
         init_storage().await.unwrap();
 
         let now = Utc::now();
-        let agent = Node {
+        let node = Node {
             id: Uuid::new_v4(),
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
@@ -268,29 +277,29 @@ mod tests {
         };
 
         // 保存
-        save_agent(&agent).await.unwrap();
+        save_node(&node).await.unwrap();
 
         // 読み込み
-        let loaded_agents = load_agents().await.unwrap();
-        assert_eq!(loaded_agents.len(), 1);
-        assert_eq!(loaded_agents[0].id, agent.id);
-        assert_eq!(loaded_agents[0].machine_name, agent.machine_name);
+        let loaded_nodes = load_nodes().await.unwrap();
+        assert_eq!(loaded_nodes.len(), 1);
+        assert_eq!(loaded_nodes[0].id, node.id);
+        assert_eq!(loaded_nodes[0].machine_name, node.machine_name);
 
-        std::env::remove_var("OLLAMA_ROUTER_DATA_DIR");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
     }
 
     #[tokio::test]
-    async fn test_delete_agent() {
+    async fn test_delete_node() {
         let _lock = test_utils::TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
-        std::env::set_var("OLLAMA_ROUTER_DATA_DIR", _guard.path());
+        std::env::set_var("LLM_ROUTER_DATA_DIR", _guard.path());
 
         init_storage().await.unwrap();
 
         let now = Utc::now();
-        let agent = Node {
+        let node = Node {
             id: Uuid::new_v4(),
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
@@ -320,28 +329,28 @@ mod tests {
             ready_models: None,
         };
 
-        save_agent(&agent).await.unwrap();
-        delete_agent(agent.id).await.unwrap();
+        save_node(&node).await.unwrap();
+        delete_node(node.id).await.unwrap();
 
-        let loaded_agents = load_agents().await.unwrap();
-        assert_eq!(loaded_agents.len(), 0);
+        let loaded_nodes = load_nodes().await.unwrap();
+        assert_eq!(loaded_nodes.len(), 0);
 
-        std::env::remove_var("OLLAMA_ROUTER_DATA_DIR");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
     }
 
     #[tokio::test]
-    async fn test_update_existing_agent() {
+    async fn test_update_existing_node() {
         let _lock = test_utils::TEST_LOCK.lock().await;
 
         // 一時ディレクトリを使用（_guardでスコープ内保持）
         let _guard = tempdir().unwrap();
-        std::env::set_var("OLLAMA_ROUTER_DATA_DIR", _guard.path());
+        std::env::set_var("LLM_ROUTER_DATA_DIR", _guard.path());
 
         init_storage().await.unwrap();
 
         let node_id = Uuid::new_v4();
         let now = Utc::now();
-        let agent1 = Node {
+        let node1 = Node {
             id: node_id,
             machine_name: "test-machine-1".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
@@ -371,11 +380,11 @@ mod tests {
             ready_models: None,
         };
 
-        save_agent(&agent1).await.unwrap();
+        save_node(&node1).await.unwrap();
 
         // 同じIDで異なる内容のノードを保存
         let updated = Utc::now();
-        let agent2 = Node {
+        let node2 = Node {
             id: node_id,
             machine_name: "test-machine-2".to_string(),
             ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
@@ -405,30 +414,30 @@ mod tests {
             ready_models: None,
         };
 
-        save_agent(&agent2).await.unwrap();
+        save_node(&node2).await.unwrap();
 
         // 読み込んで更新されていることを確認
-        let loaded_agents = load_agents().await.unwrap();
-        assert_eq!(loaded_agents.len(), 1);
-        assert_eq!(loaded_agents[0].machine_name, "test-machine-2");
-        assert_eq!(loaded_agents[0].ollama_port, 11435);
+        let loaded_nodes = load_nodes().await.unwrap();
+        assert_eq!(loaded_nodes.len(), 1);
+        assert_eq!(loaded_nodes[0].machine_name, "test-machine-2");
+        assert_eq!(loaded_nodes[0].ollama_port, 11435);
 
-        std::env::remove_var("OLLAMA_ROUTER_DATA_DIR");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
     }
 
     #[tokio::test]
-    async fn test_load_agents_recovers_from_corrupted_file() {
+    async fn test_load_nodes_recovers_from_corrupted_file() {
         let _lock = test_utils::TEST_LOCK.lock().await;
 
         let _guard = tempdir().unwrap();
-        std::env::set_var("OLLAMA_ROUTER_DATA_DIR", _guard.path());
+        std::env::set_var("LLM_ROUTER_DATA_DIR", _guard.path());
 
         init_storage().await.unwrap();
 
         let data_path = get_data_file_path().unwrap();
         fs::write(&data_path, b"{invalid json").await.unwrap();
 
-        let nodes = load_agents().await.unwrap();
+        let nodes = load_nodes().await.unwrap();
         assert!(nodes.is_empty());
 
         let entries = std::fs::read_dir(_guard.path())
@@ -445,6 +454,6 @@ mod tests {
             entries
         );
 
-        std::env::remove_var("OLLAMA_ROUTER_DATA_DIR");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
     }
 }

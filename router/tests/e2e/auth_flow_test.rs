@@ -7,10 +7,10 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use ollama_router_common::auth::UserRole;
-use or_router::{
+use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
+use llm_router_common::auth::UserRole;
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -20,14 +20,14 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
-        std::sync::Arc::new(or_router::db::request_history::RequestHistoryStorage::new().unwrap());
+        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
 
     // テスト用の管理者ユーザーを作成
-    let password_hash = or_router::auth::password::hash_password("password123").unwrap();
-    or_router::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    llm_router::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
         .await
         .ok();
 
@@ -195,5 +195,104 @@ async fn test_invalid_token() {
         response.status(),
         StatusCode::UNAUTHORIZED,
         "Request with invalid token should be unauthorized"
+    );
+}
+
+#[tokio::test]
+async fn test_auth_me_endpoint() {
+    let (app, _db_pool) = build_app().await;
+
+    // Step 1: ログイン
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+
+    let login_body = axum::body::to_bytes(login_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let login_data: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
+    let token = login_data["token"].as_str().unwrap();
+
+    // Step 2: /api/auth/me でユーザー情報を取得
+    let me_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/auth/me")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        me_response.status(),
+        StatusCode::OK,
+        "/api/auth/me should return OK with valid token"
+    );
+
+    let me_body = axum::body::to_bytes(me_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let me_data: serde_json::Value = serde_json::from_slice(&me_body).unwrap();
+
+    assert!(
+        me_data.get("user_id").is_some(),
+        "Response must have 'user_id' field"
+    );
+    assert!(
+        me_data.get("username").is_some(),
+        "Response must have 'username' field"
+    );
+    assert_eq!(
+        me_data["username"].as_str().unwrap(),
+        "admin",
+        "Username should match logged in user"
+    );
+    assert!(
+        me_data.get("role").is_some(),
+        "Response must have 'role' field"
+    );
+}
+
+#[tokio::test]
+async fn test_auth_me_without_token() {
+    let (app, _db_pool) = build_app().await;
+
+    // トークンなしで/api/auth/meにアクセス
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/auth/me")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "/api/auth/me without token should return UNAUTHORIZED"
     );
 }

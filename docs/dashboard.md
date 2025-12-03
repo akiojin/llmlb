@@ -1,6 +1,6 @@
 # Dashboard Guide
 
-This document describes the Ollama Router dashboard, included in the `feature/new-feature` branch. It explains how to run the dashboard, what data is displayed, and how to customize the behaviour for integrators.
+This document describes the LLM Router dashboard, included in the `feature/new-feature` branch. It explains how to run the dashboard, what data is displayed, and how to customize the behaviour for integrators.
 
 ---
 
@@ -24,7 +24,7 @@ The dashboard is implemented with vanilla JavaScript and Chart.js to keep depend
 1. Build and start the coordinator (inside the Docker container or on the host):
 
    ```bash
-   cargo run -p ollama-router-coordinator
+   cargo run -p llm-router
    ```
 
 2. The coordinator listens on `0.0.0.0:8080` by default. Visit the dashboard in a browser:
@@ -41,7 +41,7 @@ If you use the provided compose file:
 
 ```bash
 docker compose up --build -d
-docker compose exec ollama-router cargo run -p ollama-router-coordinator
+docker compose exec llm-router cargo run -p llm-router
 ```
 
 Expose the port as configured (`-p 8080:8080`) and open the dashboard from the host browser.
@@ -62,10 +62,10 @@ Expose the port as configured (`-p 8080:8080`) and open the dashboard from the h
 | Export list            | Use “JSONエクスポート” or “CSVエクスポート” buttons to download the filtered list.                        |
 | View CPU/memory/GPU trend | Open “詳細” and scroll to the “メトリクス” section for CPU/メモリ/GPUの折れ線グラフ (latest 120 samples). |
 | Monitor GPU utilisation | The stats card “平均GPU使用率” displays the current average GPU utilisation and memory usage across all fresh agents. |
-| Override Ollama download | Set `OLLAMA_DOWNLOAD_URL` (and optionally `OLLAMA_PLATFORM` such as `linux-arm64`) when running the agent to force a specific binary. |
-| Auto model preload   | Agents now pull `gpt-oss:20b` automatically once Ollama is up. Override with `OLLAMA_DEFAULT_MODEL`; adjust the pull timeout with `OLLAMA_PULL_TIMEOUT_SECS`. |
+| Override Ollama download | Set `LLM_DOWNLOAD_URL` (and optionally `LLM_PLATFORM` such as `linux-arm64`) when running the agent to force a specific binary. |
+| Auto model preload   | Agents now pull `gpt-oss:20b` automatically once Ollama is up. Override with `LLM_DEFAULT_MODEL`; adjust the pull timeout with `LLM_PULL_TIMEOUT_SECS`. |
 | View loaded models    | The “モデル” column shows each agent’s reported models (top entry + preview). Open “詳細” to see the full, deduplicated list. |
-| Run multiple agents on one host | Launch each agent with a unique `OLLAMA_PORT` (e.g. 11434, 12434…). The coordinator now treats ports on the same machine as distinct agents. |
+| Run multiple agents on one host | Launch each agent with a unique `LLM_PORT` (e.g. 11434, 12434…). The coordinator now treats ports on the same machine as distinct agents. |
 
 Pagination is shown once the list exceeds 50 entries; use the arrows below the table to move between pages.
 
@@ -79,7 +79,7 @@ The dashboard calls these coordinator endpoints:
 |--------|--------------------------------------|-----------------------------------------|
 | GET    | `/api/dashboard/overview`            | Combined agents + stats + history + generation metrics |
 | GET    | `/api/dashboard/agents`              | Agent list with current runtime metrics |
-| GET    | `/api/dashboard/stats`               | Global coordinator summary              |
+| GET    | `/api/dashboard/stats`               | Global coordinator summary (includes cloud API key presence flags) |
 | GET    | `/api/dashboard/request-history`     | Recent request history (60 points)      |
 | GET    | `/api/dashboard/metrics/:agent_id`   | CPU/memory/GPU history for a specific agent |
 | PUT    | `/api/agents/:id/settings`           | Update custom name, tags, notes         |
@@ -104,7 +104,7 @@ To customise:
 
 1. Modify the HTML and CSS as desired (no bundler required).
 2. Add new endpoints to `coordinator/src/api` and update `app.js` to consume them.
-3. Remember to run `cargo fmt` and `cargo test -p ollama-router-coordinator` before committing.
+3. Remember to run `cargo fmt` and `cargo test -p llm-router` before committing.
 ---
 
 ## 6. Troubleshooting

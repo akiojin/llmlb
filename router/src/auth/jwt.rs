@@ -2,8 +2,8 @@
 
 use chrono::Utc;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use ollama_router_common::auth::{Claims, UserRole};
-use ollama_router_common::error::RouterError;
+use llm_router_common::auth::{Claims, UserRole};
+use llm_router_common::error::RouterError;
 
 /// JWT有効期限（24時間）
 const JWT_EXPIRATION_HOURS: i64 = 24;

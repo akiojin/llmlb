@@ -18,6 +18,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use crate::{
+    convert::ConvertTask,
     registry::models::{
         ensure_router_model_cached, model_name_to_dir, router_model_path, router_models_dir,
         DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
@@ -204,7 +205,7 @@ fn find_model_by_name(name: &str) -> Option<ModelInfo> {
 }
 
 /// 登録モデルを追加（重複チェックあり）
-fn add_registered_model(model: ModelInfo) -> Result<(), RouterError> {
+pub(crate) fn add_registered_model(model: ModelInfo) -> Result<(), RouterError> {
     let mut store = REGISTERED_MODELS.write().unwrap();
     if store.iter().any(|m| m.name == model.name) {
         return Err(RouterError::InvalidModelName("重複登録されています".into()));
@@ -400,6 +401,33 @@ pub struct PullModelRequest {
 pub struct PullModelResponse {
     /// タスクID
     pub task_id: Uuid,
+}
+
+/// モデル変換リクエスト
+#[derive(Debug, Deserialize)]
+pub struct ConvertModelRequest {
+    /// HFリポジトリ (e.g., TheBloke/Llama-2-7B-GGUF)
+    pub repo: String,
+    /// ファイル名 (e.g., llama-2-7b.Q4_K_M.gguf)
+    pub filename: String,
+    /// リビジョン（任意, default main）
+    #[serde(default)]
+    pub revision: Option<String>,
+    /// 量子化指定（現状未使用。将来拡張用）
+    #[serde(default)]
+    pub quantization: Option<String>,
+    /// オプションのchat_template
+    #[serde(default)]
+    pub chat_template: Option<String>,
+}
+
+/// モデル変換レスポンス
+#[derive(Debug, Serialize)]
+pub struct ConvertModelResponse {
+    /// ジョブID
+    pub task_id: Uuid,
+    /// ステータス文字列
+    pub status: String,
 }
 
 /// タスク進捗更新リクエスト
@@ -781,7 +809,7 @@ pub async fn get_node_models(
     let node_url = format!("http://{}:{}", node.ip_address, node.runtime_port);
     tracing::info!("Fetching models from node at {}", node_url);
 
-    // TODO: ノードのLLM runtime APIからモデル一覧を取得
+    // TODO: ノードのOllama APIからモデル一覧を取得
     // 現在は空の配列を返す
     Ok(Json(Vec::new()))
 }
@@ -866,6 +894,56 @@ pub async fn pull_model_to_node(
     });
 
     Ok((StatusCode::ACCEPTED, Json(PullModelResponse { task_id })))
+}
+
+/// POST /api/models/convert - HFモデルをダウンロード＆（必要なら）変換するジョブを作成
+pub async fn convert_model(
+    State(state): State<AppState>,
+    Json(req): Json<ConvertModelRequest>,
+) -> Result<(StatusCode, Json<ConvertModelResponse>), AppError> {
+    // 名前のバリデーション（hf/ を付与して再利用）
+    let name = format!("hf/{}/{}", req.repo, req.filename);
+    validate_model_name(&name)?;
+
+    let task = state
+        .convert_manager
+        .enqueue(
+            req.repo.clone(),
+            req.filename.clone(),
+            req.revision.clone(),
+            req.quantization.clone(),
+            req.chat_template.clone(),
+        )
+        .await;
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(ConvertModelResponse {
+            task_id: task.id,
+            status: format!("{:?}", task.status).to_lowercase(),
+        }),
+    ))
+}
+
+/// GET /api/models/convert - 変換ジョブ一覧
+pub async fn list_convert_tasks(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ConvertTask>>, AppError> {
+    let tasks = state.convert_manager.list().await;
+    Ok(Json(tasks))
+}
+
+/// GET /api/models/convert/{task_id} - 単一ジョブ取得
+pub async fn get_convert_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<ConvertTask>, AppError> {
+    let task = state
+        .convert_manager
+        .get(task_id)
+        .await
+        .ok_or_else(|| RouterError::Internal("Task not found".into()))?;
+    Ok(Json(task))
 }
 
 /// T031: GET /api/tasks/{task_id} - タスク進捗を取得

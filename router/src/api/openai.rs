@@ -1107,6 +1107,7 @@ mod tests {
         let request_history =
             Arc::new(RequestHistoryStorage::new().expect("request history storage"));
         let task_manager = DownloadTaskManager::new();
+        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("sqlite memory connect");
@@ -1119,6 +1120,7 @@ mod tests {
             load_manager,
             request_history,
             task_manager,
+            convert_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
             http_client: reqwest::Client::new(),

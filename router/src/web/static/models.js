@@ -38,6 +38,7 @@ let registeredModels = [];
 let availableModelsMeta = { source: null };
 let selectedModel = null;
 let downloadTasks = new Map(); // task_id -> task info
+let convertTasks = new Map(); // task_id -> task info
 let progressPollingInterval = null;
 let modelFilterQuery = '';
 let cachedAgents = [];
@@ -54,6 +55,7 @@ const elements = {
   selectAllButton: () => document.getElementById('select-all-agents'),
   deselectAllButton: () => document.getElementById('deselect-all-agents'),
   downloadTasksList: () => document.getElementById('download-tasks-list'),
+  convertTasksList: () => document.getElementById('convert-tasks-list'),
   loadedModelsList: () => document.getElementById('loaded-models-list'),
   manualPanel: () => document.getElementById('manual-distribution-panel'),
   toggleManualBtn: () => document.getElementById('toggle-manual-distribution'),
@@ -74,6 +76,15 @@ const elements = {
   registeredRefreshBtn: () => document.getElementById('registered-refresh'),
   hfStatus: () => document.getElementById('hf-models-status'),
   tasksRefreshBtn: () => document.getElementById('download-tasks-refresh'),
+  convertModal: () => document.getElementById('convert-modal'),
+  convertModalOpen: () => document.getElementById('convert-modal-open'),
+  convertModalClose: () => document.getElementById('convert-modal-close'),
+  convertRepoInput: () => document.getElementById('convert-repo'),
+  convertFilenameInput: () => document.getElementById('convert-filename'),
+  convertRevisionInput: () => document.getElementById('convert-revision'),
+  convertChatTemplateInput: () => document.getElementById('convert-chat-template'),
+  convertSubmitBtn: () => document.getElementById('convert-submit'),
+  convertTasksRefreshBtn: () => document.getElementById('convert-tasks-refresh'),
 };
 
 // ========== API Functions ==========
@@ -138,6 +149,26 @@ async function registerModel(repo, filename, displayName) {
 async function pullModelFromHf(repo, filename, chatTemplate) {
   const payload = { repo, filename, chat_template: chatTemplate };
   const response = await fetch('/api/models/pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+async function convertModel(repo, filename, revision, quantization, chatTemplate) {
+  const payload = {
+    repo,
+    filename,
+    revision: revision || undefined,
+    quantization: quantization || undefined,
+    chat_template: chatTemplate || undefined,
+  };
+  const response = await fetch('/api/models/convert', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -240,6 +271,23 @@ async function fetchLoadedModels() {
     return await response.json();
   } catch (error) {
     console.error('Failed to fetch loaded models:', error);
+    return [];
+  }
+}
+
+/**
+ * GET /api/models/convert - Fetch convert tasks
+ */
+async function fetchConvertTasks() {
+  try {
+    const response = await fetch('/api/models/convert');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch convert tasks:', error);
+    showError('Failed to fetch convert tasks');
     return [];
   }
 }
@@ -485,6 +533,9 @@ function renderHfModelCard(model) {
         <button class="btn btn-small" data-action="pull" data-repo="${escapeHtml(
           repo
         )}" data-file="${escapeHtml(filename)}">Pull</button>
+        <button class="btn btn-small" data-action="convert" data-repo="${escapeHtml(
+          repo
+        )}" data-file="${escapeHtml(filename)}">Convert</button>
       </div>
     </div>`
   );
@@ -577,6 +628,20 @@ function renderHfModels(models) {
       } catch (e) {
         console.error(e);
         showError(e.message || 'Failed to pull model');
+      }
+    });
+  });
+  container.querySelectorAll('button[data-action="convert"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const repo = btn.dataset.repo;
+      const file = btn.dataset.file;
+      try {
+        await convertModel(repo, file, null, null, null);
+        await refreshConvertTasks();
+        showSuccess('Queued convert job');
+      } catch (e) {
+        console.error(e);
+        showError(e.message || 'Failed to queue convert job');
       }
     });
   });
@@ -728,6 +793,47 @@ function renderDownloadTasks() {
           <div class="task-agent">Agent: ${agentLabel}${task.agent_id ? '...' : ''}</div>
           ${progressBlock}
           <div class="task-time">Started: ${formatTimestamp(task.created_at)}</div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function renderConvertTasks() {
+  const container = elements.convertTasksList();
+  if (!container) return;
+
+  const tasks = Array.from(convertTasks.values());
+  if (tasks.length === 0) {
+    container.innerHTML = '<p class="empty-message">No convert tasks</p>';
+    return;
+  }
+
+  container.innerHTML = tasks
+    .map((task) => {
+      const statusLabel = escapeHtml(task.status ?? '-');
+      const progress =
+        typeof task.progress === 'number' && !Number.isNaN(task.progress)
+          ? Math.min(1, Math.max(0, task.progress))
+          : 0;
+      const path = task.path ? escapeHtml(task.path) : '—';
+      const error = task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : '';
+      const progressBlock =
+        task.status === 'in_progress'
+          ? `<div class="task-progress"><progress value="${progress}" max="1"></progress><span class="task-progress-text">${(
+              progress * 100
+            ).toFixed(1)}%</span></div>`
+          : '';
+      return `
+        <div class="task-card" data-convert-task-id="${escapeHtml(task.id)}">
+          <div class="task-header">
+            <strong>${escapeHtml(task.repo)}/${escapeHtml(task.filename)}</strong>
+            <span class="task-status task-status--${statusLabel}">${statusLabel}</span>
+          </div>
+          ${progressBlock}
+          <div class="task-path">Path: ${path}</div>
+          ${error}
+          <div class="task-time">Updated: ${formatTimestamp(task.updated_at || task.created_at)}</div>
         </div>
       `;
     })
@@ -989,6 +1095,10 @@ export async function initModelsUI(agents) {
   const hfSearch = elements.hfSearchInput();
   const hfRefresh = elements.hfRefreshBtn();
   const regRefresh = elements.registeredRefreshBtn();
+  const convertOpen = elements.convertModalOpen();
+  const convertClose = elements.convertModalClose();
+  const convertSubmit = elements.convertSubmitBtn();
+  const convertTasksRefresh = elements.convertTasksRefreshBtn();
 
   if (distributeButton) {
     distributeButton.addEventListener('click', handleDistribute);
@@ -1025,6 +1135,42 @@ export async function initModelsUI(agents) {
     regRefresh.addEventListener('click', refreshRegisteredModels);
   }
 
+  if (convertOpen) {
+    convertOpen.addEventListener('click', () => {
+      const modal = elements.convertModal();
+      if (modal) modal.classList.remove('hidden');
+    });
+  }
+  if (convertClose) {
+    convertClose.addEventListener('click', () => {
+      const modal = elements.convertModal();
+      if (modal) modal.classList.add('hidden');
+    });
+  }
+  if (convertSubmit) {
+    convertSubmit.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const repo = elements.convertRepoInput()?.value?.trim();
+      const file = elements.convertFilenameInput()?.value?.trim();
+      const rev = elements.convertRevisionInput()?.value?.trim() || null;
+      const chatTpl = elements.convertChatTemplateInput()?.value?.trim() || null;
+      if (!repo || !file) {
+        showError('repo と filename を入力してください');
+        return;
+      }
+      try {
+        await convertModel(repo, file, rev, null, chatTpl);
+        showSuccess('変換ジョブをキューに投入しました');
+        await refreshConvertTasks();
+      } catch (err) {
+        showError(err.message || 'Failed to queue convert');
+      }
+    });
+  }
+  if (convertTasksRefresh) {
+    convertTasksRefresh.addEventListener('click', refreshConvertTasks);
+  }
+
   if (toggleManualBtn) {
     toggleManualBtn.addEventListener('click', toggleManualPanel);
   }
@@ -1036,6 +1182,9 @@ export async function initModelsUI(agents) {
   // ロード済みモデルを初期取得
   loadedModels = await fetchLoadedModels();
   renderLoadedModels();
+
+  // 変換タスク初期取得
+  await refreshConvertTasks();
 
   // アクティブなタスクを初期取得
   const activeTasks = await fetchActiveTasks();
@@ -1071,4 +1220,13 @@ export function updateModelsUI(agents) {
 async function refreshRegisteredModels() {
   registeredModels = await fetchRegisteredModels();
   renderRegisteredModels(registeredModels);
+}
+
+async function refreshConvertTasks() {
+  const tasks = await fetchConvertTasks();
+  convertTasks.clear();
+  for (const task of tasks) {
+    convertTasks.set(task.id, task);
+  }
+  renderConvertTasks();
 }

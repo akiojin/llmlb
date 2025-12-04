@@ -89,6 +89,7 @@
             <h2>Models</h2>
             <div class="section-tools">
               <button type="button" id="download-tasks-refresh" class="btn">Refresh Tasks</button>
+              <button type="button" id="convert-modal-open" class="btn btn-primary">Download &amp; Convert</button>
               <label class="filter-label">
                 <span>Search HF</span>
                 <input type="search" id="hf-search" placeholder="llama" autocomplete="off" />
@@ -111,6 +112,13 @@
               <div class="tasks-panel">
                 <h4>Download Tasks</h4>
                 <div id="download-tasks-list" class="tasks-list"></div>
+              </div>
+              <div class="tasks-panel">
+                <div class="tasks-panel__header">
+                  <h4>Convert Tasks</h4>
+                  <button type="button" id="convert-tasks-refresh" class="btn btn-small">Refresh</button>
+                </div>
+                <div id="convert-tasks-list" class="tasks-list"></div>
               </div>
             </article>
           </div>
@@ -580,5 +588,79 @@
     <script src="/dashboard/api-keys.js" defer></script>
     <script src="/dashboard/users.js" defer></script>
     <script src="/dashboard/app.js" defer></script>
+
+    <!-- Convert Modal -->
+    <div id="convert-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal__dialog">
+        <div class="modal__header">
+          <h3>Download &amp; Convert (HF)</h3>
+          <button type="button" id="convert-modal-close" class="btn btn-small">Close</button>
+        </div>
+        <div class="modal__body">
+          <label class="filter-label">
+            <span>Repo (例: TheBloke/Llama-2-7B-GGUF)</span>
+            <input type="text" id="convert-repo" placeholder="org/repo" />
+          </label>
+          <label class="filter-label">
+            <span>Filename (例: llama-2-7b.Q4_K_M.gguf)</span>
+            <input type="text" id="convert-filename" placeholder="model.gguf" />
+          </label>
+          <label class="filter-label">
+            <span>Revision (省略可: main)</span>
+            <input type="text" id="convert-revision" placeholder="main" />
+          </label>
+          <label class="filter-label">
+            <span>chat_template (省略可)</span>
+            <textarea id="convert-chat-template" rows="3" placeholder="paste template JSON or text"></textarea>
+          </label>
+        </div>
+        <div class="modal__footer">
+          <button type="button" id="convert-submit" class="btn btn-primary">Queue Convert</button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1100;
+      }
+      .modal.hidden { display: none; }
+      .modal__dialog {
+        background: #0b1220;
+        color: #e5e7eb;
+        padding: 1.5rem;
+        border-radius: 12px;
+        width: min(640px, 95vw);
+        box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+      }
+      .modal__header, .modal__footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .modal__body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin: 1rem 0;
+      }
+      .modal__body input,
+      .modal__body textarea {
+        width: 100%;
+      }
+      .tasks-panel__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+    </style>
   </body>
 </html>

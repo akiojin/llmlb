@@ -14,6 +14,7 @@
 #include "models/model_downloader.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
+#include "models/model_repair.h"
 #include "core/llama_manager.h"
 #include "core/inference_engine.h"
 #include "api/openai_endpoints.h"
@@ -118,9 +119,26 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
+        // Initialize auto-repair (if enabled)
+        std::unique_ptr<llm_node::ModelSync> model_sync_ptr;
+        std::unique_ptr<llm_node::ModelDownloader> model_downloader_ptr;
+        std::unique_ptr<llm_node::ModelRepair> model_repair_ptr;
+
+        if (cfg.auto_repair) {
+            spdlog::info("Auto-repair enabled, initializing ModelRepair...");
+            model_sync_ptr = std::make_unique<llm_node::ModelSync>(router_url, models_dir);
+            model_downloader_ptr = std::make_unique<llm_node::ModelDownloader>(router_url, models_dir);
+            model_repair_ptr = std::make_unique<llm_node::ModelRepair>(
+                *model_sync_ptr, *model_downloader_ptr, model_storage);
+            model_repair_ptr->setDefaultTimeout(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::seconds(cfg.repair_timeout_secs)));
+        }
+
         // Initialize inference engine with dependencies
-        llm_node::InferenceEngine engine(llama_manager, model_storage);
-        spdlog::info("InferenceEngine initialized with llama.cpp support");
+        llm_node::InferenceEngine engine = cfg.auto_repair && model_repair_ptr
+            ? llm_node::InferenceEngine(llama_manager, model_storage, *model_repair_ptr)
+            : llm_node::InferenceEngine(llama_manager, model_storage);
+        spdlog::info("InferenceEngine initialized with llama.cpp support{}", cfg.auto_repair ? " (auto-repair enabled)" : "");
 
         // Create shared router client for both registration and progress reporting
         auto router_client = std::make_shared<llm_node::RouterClient>(router_url);
@@ -170,7 +188,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
         spdlog::info("Node IP address: {}", info.ip_address);
-        info.runtime_version = "1.0.0";  // llm-node version
+        info.runtime_version = "1.0.0";  // llm-node runtime version
         // Router calculates API port as runtime_port + 1, so report node_port - 1
         info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 11434);
         info.gpu_available = !gpu_devices.empty();
@@ -297,5 +315,11 @@ extern "C" int llm_node_run_for_test() {
     cfg.heartbeat_interval_sec = 1;
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);
+}
+
+// Backward compatibility for older test binaries that still reference the
+// previous symbol name.
+extern "C" int ollama_node_run_for_test() {
+    return llm_node_run_for_test();
 }
 #endif

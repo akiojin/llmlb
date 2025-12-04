@@ -450,6 +450,7 @@ mod tests {
         let request_history =
             std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
         let task_manager = DownloadTaskManager::new();
+        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -463,6 +464,7 @@ mod tests {
             load_manager,
             request_history,
             task_manager,
+            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),

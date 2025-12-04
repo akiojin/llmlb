@@ -52,6 +52,7 @@ pub async fn spawn_test_router() -> TestServer {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
 
     let router = api::create_router(state);
@@ -148,6 +149,7 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         task_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
 
     let router = api::create_router(state);

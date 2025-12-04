@@ -303,6 +303,14 @@ async fn run_server(config: ServerConfig) {
 
     info!("Authentication system initialized");
 
+    // HTTPクライアント（接続プーリング有効）を作成
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(32)
+        .pool_idle_timeout(std::time::Duration::from_secs(60))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .build()
+        .expect("Failed to create HTTP client");
+
     let state = AppState {
         registry,
         load_manager,
@@ -310,6 +318,7 @@ async fn run_server(config: ServerConfig) {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client,
     };
 
     let router = api::create_router(state);

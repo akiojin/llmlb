@@ -68,4 +68,18 @@ pub struct AppState {
     pub db_pool: sqlx::SqlitePool,
     /// JWT秘密鍵
     pub jwt_secret: String,
+    /// 共有HTTPクライアント（接続プーリング有効）
+    pub http_client: reqwest::Client,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_has_shared_http_client() {
+        // AppStateにhttp_clientフィールドが存在することを確認
+        // この時点ではコンパイルエラーになるはず（http_clientフィールドがまだない場合）
+        let _client_type: fn(&AppState) -> &reqwest::Client = |state| &state.http_client;
+    }
 }

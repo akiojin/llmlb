@@ -1113,6 +1113,7 @@ mod tests {
             task_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
+            http_client: reqwest::Client::new(),
         }
     }
 

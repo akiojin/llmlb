@@ -35,6 +35,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         task_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
 
     // 登録済みエージェントを追加
@@ -307,6 +308,7 @@ async fn test_proxy_chat_no_agents() {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client: reqwest::Client::new(),
     });
 
     let payload = ChatRequest {
@@ -444,6 +446,7 @@ async fn test_proxy_generate_no_agents() {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client: reqwest::Client::new(),
     });
 
     let payload = GenerateRequest {

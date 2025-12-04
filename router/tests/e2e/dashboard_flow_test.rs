@@ -41,6 +41,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         task_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
 
     (api::create_router(state), db_pool)

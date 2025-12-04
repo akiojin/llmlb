@@ -667,6 +667,7 @@ mod tests {
             task_manager,
             db_pool,
             jwt_secret,
+            http_client: reqwest::Client::new(),
         }
     }
 
@@ -856,6 +857,7 @@ mod tests {
             task_manager,
             db_pool,
             jwt_secret,
+            http_client: reqwest::Client::new(),
         };
 
         // register node (runtime_port = APIポート-1として報告)

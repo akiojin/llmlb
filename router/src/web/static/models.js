@@ -1019,7 +1019,7 @@ async function handleDistribute() {
   const taskIds = await distributeModel(selectedModel, 'specific', agentIds);
 
   if (taskIds.length > 0) {
-    // タスクを追加
+    // Add tasks
     for (const taskId of taskIds) {
       downloadTasks.set(taskId, {
         id: taskId,
@@ -1034,7 +1034,7 @@ async function handleDistribute() {
     renderDownloadTasks();
     monitorProgress();
 
-    // チェックボックスをクリア
+    // Clear checkboxes
     checkboxes.forEach((cb) => (cb.checked = false));
     updateDistributeButtonState();
 
@@ -1043,7 +1043,7 @@ async function handleDistribute() {
 }
 
 /**
- * すべて選択ボタンクリック
+ * Select-all button click
  */
 function handleSelectAll() {
   const manualPanel = elements.manualPanel();
@@ -1056,7 +1056,7 @@ function handleSelectAll() {
 }
 
 /**
- * 選択解除ボタンクリック
+ * Deselect-all button click
  */
 function handleDeselectAll() {
   const manualPanel = elements.manualPanel();
@@ -1068,13 +1068,13 @@ function handleDeselectAll() {
   updateDistributeButtonState();
 }
 
-// ========== 初期化 ==========
+// ========== Initialization ==========
 
 /**
- * モデル管理UIの初期化
+ * Initialize model management UI
  */
 export async function initModelsUI(agents) {
-  // 利用可能なモデルを取得
+  // Fetch available models
   availableModels = await fetchAvailableModels();
   modelFilterQuery = '';
   renderAvailableModels(availableModels);
@@ -1083,10 +1083,10 @@ export async function initModelsUI(agents) {
   registeredModels = await fetchRegisteredModels();
   renderRegisteredModels(registeredModels);
 
-  // エージェント一覧を描画
+  // Render agent list
   renderAgentsForDistribution(agents);
 
-  // イベントリスナー登録
+  // Register event listeners
   const distributeButton = elements.distributeButton();
   const selectAllButton = elements.selectAllButton();
   const deselectAllButton = elements.deselectAllButton();
@@ -1155,12 +1155,12 @@ export async function initModelsUI(agents) {
       const rev = elements.convertRevisionInput()?.value?.trim() || null;
       const chatTpl = elements.convertChatTemplateInput()?.value?.trim() || null;
       if (!repo || !file) {
-        showError('repo と filename を入力してください');
+        showError('Enter both repo and filename');
         return;
       }
       try {
         await convertModel(repo, file, rev, null, chatTpl);
-        showSuccess('変換ジョブをキューに投入しました');
+        showSuccess('Queued convert job');
         await refreshConvertTasks();
       } catch (err) {
         showError(err.message || 'Failed to queue convert');
@@ -1175,31 +1175,31 @@ export async function initModelsUI(agents) {
     toggleManualBtn.addEventListener('click', toggleManualPanel);
   }
 
-  // 初期状態を設定
+  // Set initial state
   updateDistributeButtonState();
   renderDownloadTasks();
 
-  // ロード済みモデルを初期取得
+  // Fetch loaded models initially
   loadedModels = await fetchLoadedModels();
   renderLoadedModels();
 
-  // 変換タスク初期取得
+  // Fetch convert tasks initially
   await refreshConvertTasks();
 
-  // アクティブなタスクを初期取得
+  // Fetch active tasks initially
   const activeTasks = await fetchActiveTasks();
   for (const task of activeTasks) {
     downloadTasks.set(task.id, task);
   }
   renderDownloadTasks();
 
-  // 進捗監視開始
+  // Start monitoring progress
   monitorProgress();
 
   const tasksRefresh = elements.tasksRefreshBtn();
   if (tasksRefresh) {
     tasksRefresh.addEventListener('click', async () => {
-      // サーバーからアクティブなタスク一覧を再取得
+      // Re-fetch active tasks from server
       const tasks = await fetchActiveTasks();
       downloadTasks.clear();
       for (const task of tasks) {
@@ -1211,7 +1211,7 @@ export async function initModelsUI(agents) {
 }
 
 /**
- * モデル管理UIの更新（エージェント一覧変更時）
+ * Update model management UI when agent list changes
  */
 export function updateModelsUI(agents) {
   renderAgentsForDistribution(agents);

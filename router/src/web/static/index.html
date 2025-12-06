@@ -19,7 +19,7 @@
         <p class="subtitle">Real-time monitoring of node status and system statistics</p>
       </div>
       <div class="header-controls">
-        <button id="chat-open" class="refresh-button" type="button">Chat</button>
+        <button id="chat-open" class="refresh-button" type="button">Playground</button>
         <button id="api-keys-button" class="refresh-button" type="button">
           API Keys
         </button>
@@ -100,13 +100,13 @@
           </header>
           <div class="models-grid">
             <article class="models-column">
-              <h3>対応可能モデル（HF GGUF）</h3>
+              <h3>Supported Models (HF GGUF)</h3>
               <p class="caption">Register to add into supported list</p>
               <div id="hf-models-list" class="model-cards"></div>
               <p id="hf-models-status" class="caption"></p>
             </article>
             <article class="models-column">
-              <h3>対応モデル</h3>
+              <h3>Registered Models</h3>
               <p class="caption">Registered models (used by /v1/models)</p>
               <div id="registered-models-list" class="model-cards"></div>
               <div class="tasks-panel">
@@ -561,13 +561,13 @@
     </div>
 
     <!-- Fullscreen chat console (embedded /chat) -->
-    <div id="chat-modal" class="chat-modal hidden" role="dialog" aria-modal="true" aria-label="Chat console">
+    <div id="chat-modal" class="chat-modal hidden" role="dialog" aria-modal="true" aria-label="Playground console">
       <div class="chat-modal__backdrop" data-chat-close></div>
       <div class="chat-modal__content">
         <header class="chat-modal__header">
           <div>
-            <p class="eyebrow">Chat Console</p>
-            <p class="chat-modal__title">/api/chat のテスト用コンソール</p>
+            <p class="eyebrow">Playground Console</p>
+            <p class="chat-modal__title">Playground console for /api/chat</p>
           </div>
           <div class="chat-modal__actions">
             <button type="button" id="chat-close" class="modal__close" aria-label="Close">×</button>
@@ -576,7 +576,7 @@
         <iframe
           id="chat-iframe"
           src="/chat"
-          title="Chat console"
+          title="Playground console"
           class="chat-modal__iframe"
           loading="lazy"
           referrerpolicy="same-origin"
@@ -598,19 +598,19 @@
         </div>
         <div class="modal__body">
           <label class="filter-label">
-            <span>Repo (例: TheBloke/Llama-2-7B-GGUF)</span>
+            <span>Repo (e.g. TheBloke/Llama-2-7B-GGUF)</span>
             <input type="text" id="convert-repo" placeholder="org/repo" />
           </label>
           <label class="filter-label">
-            <span>Filename (例: llama-2-7b.Q4_K_M.gguf)</span>
+            <span>Filename (e.g. llama-2-7b.Q4_K_M.gguf)</span>
             <input type="text" id="convert-filename" placeholder="model.gguf" />
           </label>
           <label class="filter-label">
-            <span>Revision (省略可: main)</span>
+            <span>Revision (optional: main)</span>
             <input type="text" id="convert-revision" placeholder="main" />
           </label>
           <label class="filter-label">
-            <span>chat_template (省略可)</span>
+            <span>chat_template (optional)</span>
             <textarea id="convert-chat-template" rows="3" placeholder="paste template JSON or text"></textarea>
           </label>
         </div>

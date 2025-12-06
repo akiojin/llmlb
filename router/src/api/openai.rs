@@ -302,6 +302,7 @@ fn map_openai_messages_to_anthropic(messages: &[Value]) -> (Option<String>, Vec<
 }
 
 async fn proxy_openai_provider(
+    http_client: &reqwest::Client,
     target_path: &str,
     mut payload: Value,
     stream: bool,
@@ -319,9 +320,8 @@ async fn proxy_openai_provider(
     // strip provider prefix before forwarding
     payload["model"] = Value::String(model);
 
-    let client = reqwest::Client::new();
     let url = format!("{base}{target_path}");
-    let res = client
+    let res = http_client
         .post(&url)
         .bearer_auth(api_key)
         .json(&payload)
@@ -401,6 +401,7 @@ fn map_generation_config(payload: &Value) -> Value {
 }
 
 async fn proxy_google_provider(
+    http_client: &reqwest::Client,
     model: String,
     payload: Value,
     stream: bool,
@@ -436,8 +437,10 @@ async fn proxy_google_provider(
     };
     let url = format!("{base}/{endpoint_suffix}");
 
-    let client = reqwest::Client::new();
-    let req = client.post(&url).query(&[("key", api_key)]).json(&body);
+    let req = http_client
+        .post(&url)
+        .query(&[("key", api_key)])
+        .json(&body);
     let res = req.send().await.map_err(map_reqwest_error)?;
 
     if stream {
@@ -525,6 +528,7 @@ async fn proxy_google_provider(
 }
 
 async fn proxy_anthropic_provider(
+    http_client: &reqwest::Client,
     model: String,
     payload: Value,
     stream: bool,
@@ -565,8 +569,7 @@ async fn proxy_anthropic_provider(
     }
 
     let url = format!("{base}/v1/messages");
-    let client = reqwest::Client::new();
-    let req = client
+    let req = http_client
         .post(&url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
@@ -682,9 +685,14 @@ async fn proxy_openai_cloud_post(
     let started = Instant::now();
 
     let outcome = match match provider.as_str() {
-        "openai" => proxy_openai_provider(target_path, payload, stream, model_name).await,
-        "google" => proxy_google_provider(model_name, payload, stream).await,
-        "anthropic" => proxy_anthropic_provider(model_name, payload, stream).await,
+        "openai" => {
+            proxy_openai_provider(&state.http_client, target_path, payload, stream, model_name)
+                .await
+        }
+        "google" => proxy_google_provider(&state.http_client, model_name, payload, stream).await,
+        "anthropic" => {
+            proxy_anthropic_provider(&state.http_client, model_name, payload, stream).await
+        }
         _ => Err(validation_error("unsupported cloud provider prefix")),
     } {
         Ok(res) => res,
@@ -783,7 +791,7 @@ async fn proxy_openai_post(
         .await
         .map_err(AppError::from)?;
 
-    let client = reqwest::Client::new();
+    let client = state.http_client.clone();
     let agent_api_port = agent.runtime_port + 1;
     let runtime_url = format!(
         "http://{}:{}{}",
@@ -1012,7 +1020,7 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
         .await
         .map_err(AppError::from)?;
 
-    let client = reqwest::Client::new();
+    let client = state.http_client.clone();
     let runtime_url = format!(
         "http://{}:{}{}",
         agent.ip_address, agent.runtime_port, target_path
@@ -1113,6 +1121,7 @@ mod tests {
             task_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
+            http_client: reqwest::Client::new(),
         }
     }
 

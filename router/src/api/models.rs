@@ -262,7 +262,10 @@ struct HfSibling {
     size: Option<u64>,
 }
 
-async fn fetch_hf_models(query: &AvailableQuery) -> Result<(Vec<ModelInfo>, bool), RouterError> {
+async fn fetch_hf_models(
+    http_client: &reqwest::Client,
+    query: &AvailableQuery,
+) -> Result<(Vec<ModelInfo>, bool), RouterError> {
     // cache hit
     if query.search.is_none() {
         if let Some(cache) = HF_CACHE.read().unwrap().as_ref() {
@@ -281,8 +284,7 @@ async fn fetch_hf_models(query: &AvailableQuery) -> Result<(Vec<ModelInfo>, bool
         "https://huggingface.co/api/models?library=gguf&limit={limit}&offset={offset}&search={search}&fields=modelId,tags,lastModified,siblings"
     );
 
-    let client = reqwest::Client::new();
-    let mut req = client.get(url);
+    let mut req = http_client.get(url);
     if let Some(t) = token {
         req = req.bearer_auth(t);
     }
@@ -448,7 +450,7 @@ impl IntoResponse for AppError {
 
 /// T027: GET /api/models/available - 利用可能なモデル一覧を取得
 pub async fn get_available_models(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(query): Query<AvailableQuery>,
 ) -> Result<Json<AvailableModelsResponse>, AppError> {
     // Default to built-in model list for backward compatibility.
@@ -457,7 +459,7 @@ pub async fn get_available_models(
 
     if source == "hf" {
         tracing::debug!("Fetching available models from Hugging Face");
-        let (models, cached) = fetch_hf_models(&query).await?;
+        let (models, cached) = fetch_hf_models(&state.http_client, &query).await?;
         let models_view = models.into_iter().map(model_info_to_view).collect();
         return Ok(Json(AvailableModelsResponse {
             models: models_view,
@@ -538,6 +540,7 @@ pub async fn register_model(
 
 /// POST /api/models/pull - HFからダウンロードしローカルキャッシュに保存して登録
 pub async fn pull_model_from_hf(
+    State(state): State<AppState>,
     Json(req): Json<PullFromHfRequest>,
 ) -> Result<(StatusCode, Json<PullFromHfResponse>), AppError> {
     let name = format!("hf/{}/{}", req.repo, req.filename);
@@ -557,8 +560,8 @@ pub async fn pull_model_from_hf(
         .map_err(|e| RouterError::Internal(e.to_string()))?;
 
     // ダウンロード
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = state
+        .http_client
         .get(&download_url)
         .send()
         .await
@@ -723,9 +726,9 @@ pub async fn distribute_models(
             .map(|p| p.to_string_lossy().to_string());
         let download_url = model_info.as_ref().and_then(|m| m.download_url.clone());
         let chat_template = model_info.as_ref().and_then(|m| m.chat_template.clone());
+        let http_client = state.http_client.clone();
 
         tokio::spawn(async move {
-            let client = reqwest::Client::new();
             let pull_request = serde_json::json!({
                 "model": model_name,
                 "task_id": task_id,
@@ -734,7 +737,7 @@ pub async fn distribute_models(
                 "chat_template": chat_template,
             });
 
-            match client.post(&node_url).json(&pull_request).send().await {
+            match http_client.post(&node_url).json(&pull_request).send().await {
                 Ok(response) => {
                     if response.status().is_success() {
                         tracing::info!("Successfully sent pull request to node {}", node_id);
@@ -836,15 +839,15 @@ pub async fn pull_model_to_node(
     let node_api_port = node.runtime_port + 1;
     let node_url = format!("http://{}:{}/pull", node.ip_address, node_api_port);
     let model_name = request.model_name.clone();
+    let http_client = state.http_client.clone();
 
     tokio::spawn(async move {
-        let client = reqwest::Client::new();
         let pull_request = serde_json::json!({
             "model": model_name,
             "task_id": task_id,
         });
 
-        match client.post(&node_url).json(&pull_request).send().await {
+        match http_client.post(&node_url).json(&pull_request).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     tracing::info!("Successfully sent pull request to node {}", node_id);

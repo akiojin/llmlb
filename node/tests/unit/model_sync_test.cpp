@@ -118,25 +118,33 @@ TEST(ModelSyncTest, CopiesSharedPathWhenAvailable) {
     {
         std::ofstream ofs(shared_file);
         ofs << "abc";
+        ofs.flush();
     }
 
+    // Verify source file exists
+    ASSERT_TRUE(fs::exists(shared_file)) << "Source file not created: " << shared_file;
+
     // HTTP server returning /v1/models with path pointing to shared_file
+    const int port = 18097; // Unique port to avoid conflicts
     ModelServer server;
-    server.response_body = std::string(R"({"data":[{"id":"gpt-oss:7b","path":"")") + shared_file.string() + R"("}]})";
-    server.start(18087);
+    server.response_body = std::string(R"({"data":[{"id":"gpt-oss:7b","path":")") + shared_file.string() + R"("}]})";
+    server.start(port);
+
+    // Give server time to fully initialize
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     TempDirGuard local_guard;
-    ModelSync sync("http://127.0.0.1:18087", local_guard.path.string());
+    ModelSync sync("http://127.0.0.1:" + std::to_string(port), local_guard.path.string());
 
     auto result = sync.sync();
 
     server.stop();
 
     // Should not queue download because shared path was copied
-    EXPECT_TRUE(result.to_download.empty());
+    EXPECT_TRUE(result.to_download.empty()) << "to_download should be empty but has " << result.to_download.size() << " items";
 
     auto target = local_guard.path / "gpt-oss_7b" / "model.gguf";
-    EXPECT_TRUE(fs::exists(target));
+    EXPECT_TRUE(fs::exists(target)) << "Target file not found: " << target;
     std::ifstream ifs(target);
     std::string content;
     ifs >> content;

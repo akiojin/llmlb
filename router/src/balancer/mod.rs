@@ -42,6 +42,28 @@ pub enum RequestOutcome {
     Queued,
 }
 
+/// 待機結果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitResult {
+    /// ノードが利用可能になった
+    Ready,
+    /// タイムアウト
+    Timeout,
+    /// 待機キュー容量超過
+    CapacityExceeded,
+}
+
+/// アドミッション制御の判断結果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdmissionDecision {
+    /// 即座に受け入れ
+    Accept,
+    /// 遅延付きで受け入れ
+    AcceptWithDelay(StdDuration),
+    /// リジェクト
+    Reject,
+}
+
 fn compare_option_f32(a: Option<f32>, b: Option<f32>) -> Ordering {
     match (a, b) {
         (Some(ax), Some(bx)) => ax.partial_cmp(&bx).unwrap_or(Ordering::Equal),
@@ -1178,6 +1200,282 @@ mod tests {
             .expect("wait_for_ready should not time out");
         assert!(first_allowed);
     }
+
+    // T004: WaitResult enum テスト
+    #[test]
+    fn wait_result_enum_variants_exist() {
+        // WaitResultの3つのバリアントが存在することを確認
+        let ready = WaitResult::Ready;
+        let timeout = WaitResult::Timeout;
+        let capacity_exceeded = WaitResult::CapacityExceeded;
+
+        // PartialEq実装の確認
+        assert_eq!(ready, WaitResult::Ready);
+        assert_eq!(timeout, WaitResult::Timeout);
+        assert_eq!(capacity_exceeded, WaitResult::CapacityExceeded);
+        assert_ne!(ready, timeout);
+
+        // Debug実装の確認
+        assert!(!format!("{:?}", ready).is_empty());
+    }
+
+    // T004: AdmissionDecision enum テスト
+    #[test]
+    fn admission_decision_enum_variants_exist() {
+        // AdmissionDecisionの3つのバリアントが存在することを確認
+        let accept = AdmissionDecision::Accept;
+        let accept_with_delay = AdmissionDecision::AcceptWithDelay(StdDuration::from_millis(100));
+        let reject = AdmissionDecision::Reject;
+
+        // PartialEq実装の確認
+        assert_eq!(accept, AdmissionDecision::Accept);
+        assert_eq!(reject, AdmissionDecision::Reject);
+        assert_ne!(accept, reject);
+
+        // AcceptWithDelayのDuration値を確認
+        if let AdmissionDecision::AcceptWithDelay(duration) = accept_with_delay {
+            assert_eq!(duration, StdDuration::from_millis(100));
+        } else {
+            panic!("Expected AcceptWithDelay variant");
+        }
+
+        // Debug実装の確認
+        assert!(!format!("{:?}", accept).is_empty());
+    }
+
+    // T005: wait_for_ready_with_timeout - タイムアウトテスト
+    #[tokio::test]
+    async fn wait_for_ready_with_timeout_returns_timeout_when_no_ready_agents() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // ノードを登録（初期化中）
+        let _node_id = registry
+            .register(RegisterRequest {
+                machine_name: "timeout-test".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 11434,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // 短いタイムアウトで待機（ノードがreadyにならないのでタイムアウト）
+        let result = manager
+            .wait_for_ready_with_timeout(1024, Duration::from_millis(10))
+            .await;
+        assert_eq!(result, WaitResult::Timeout);
+    }
+
+    // T006: wait_for_ready_with_timeout - 容量超過テスト
+    #[tokio::test]
+    async fn wait_for_ready_with_timeout_returns_capacity_exceeded() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // ノードを登録（初期化中）
+        let _node_id = registry
+            .register(RegisterRequest {
+                machine_name: "capacity-test".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 11434,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // 1つ目のウェイターをブロック中にする
+        let manager_clone = manager.clone();
+        let first_waiter = tokio::spawn(async move {
+            manager_clone
+                .wait_for_ready_with_timeout(1, Duration::from_millis(100))
+                .await
+        });
+
+        // 少し待ってから2つ目のウェイターを試行
+        sleep(Duration::from_millis(10)).await;
+
+        // max_waiters=1 なので2つ目は即座にCapacityExceededを返す
+        let result = manager
+            .wait_for_ready_with_timeout(1, Duration::from_millis(100))
+            .await;
+        assert_eq!(result, WaitResult::CapacityExceeded);
+
+        // 最初のウェイターはタイムアウト
+        let first_result = first_waiter.await.expect("join should succeed");
+        assert_eq!(first_result, WaitResult::Timeout);
+    }
+
+    // T007: wait_for_ready_with_timeout - Ready成功テスト
+    #[tokio::test]
+    async fn wait_for_ready_with_timeout_returns_ready_when_agent_becomes_available() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "ready-test".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 3)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 11434,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // 初期化中としてマーク
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id,
+                cpu_usage: 10.0,
+                memory_usage: 20.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                average_response_time_ms: Some(50.0),
+                initializing: true,
+                ready_models: Some((0, 1)),
+            })
+            .await
+            .unwrap();
+
+        // ウェイターを開始
+        let manager_clone = manager.clone();
+        let waiter = tokio::spawn(async move {
+            manager_clone
+                .wait_for_ready_with_timeout(1024, Duration::from_millis(200))
+                .await
+        });
+
+        // 少し待ってからノードをreadyにする
+        sleep(Duration::from_millis(20)).await;
+
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id,
+                cpu_usage: 10.0,
+                memory_usage: 20.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                average_response_time_ms: Some(50.0),
+                initializing: false,
+                ready_models: Some((1, 1)),
+            })
+            .await
+            .unwrap();
+
+        let result = waiter.await.expect("join should succeed");
+        assert_eq!(result, WaitResult::Ready);
+    }
+
+    // T009: admission_control - 負荷50%未満ならAccept
+    #[tokio::test]
+    async fn admission_control_returns_accept_when_below_50_percent() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // max_waiters=100 として、waitersが49以下ならAccept
+        // 現在waiters=0なので、Accept
+        let result = manager.admission_control(100);
+        assert_eq!(result, AdmissionDecision::Accept);
+    }
+
+    // T010: admission_control - 負荷50-80%ならAcceptWithDelay
+    #[tokio::test]
+    async fn admission_control_returns_accept_with_delay_when_between_50_and_80_percent() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // max_waiters=100 として、waitersを55に設定（50%超過）
+        for _ in 0..55 {
+            manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+
+        let result = manager.admission_control(100);
+        if let AdmissionDecision::AcceptWithDelay(duration) = result {
+            assert!(duration.as_millis() > 0);
+        } else {
+            panic!("Expected AcceptWithDelay, got {:?}", result);
+        }
+    }
+
+    // T011: admission_control - 負荷80%以上ならReject
+    #[tokio::test]
+    async fn admission_control_returns_reject_when_above_80_percent() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // max_waiters=100 として、waitersを85に設定（80%超過）
+        for _ in 0..85 {
+            manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+
+        let result = manager.admission_control(100);
+        assert_eq!(result, AdmissionDecision::Reject);
+    }
+
+    // T012: admission_control - 境界値テスト
+    #[tokio::test]
+    async fn admission_control_boundary_values() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // max_waiters=100
+        // 境界: 50未満=Accept, 50-79=AcceptWithDelay, 80以上=Reject
+
+        // waiters=49: Accept
+        for _ in 0..49 {
+            manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+        assert_eq!(manager.admission_control(100), AdmissionDecision::Accept);
+
+        // waiters=50: AcceptWithDelay
+        manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
+        assert!(matches!(
+            manager.admission_control(100),
+            AdmissionDecision::AcceptWithDelay(_)
+        ));
+
+        // waiters=79: AcceptWithDelay
+        for _ in 0..29 {
+            manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+        assert!(matches!(
+            manager.admission_control(100),
+            AdmissionDecision::AcceptWithDelay(_)
+        ));
+
+        // waiters=80: Reject
+        manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
+        assert_eq!(manager.admission_control(100), AdmissionDecision::Reject);
+    }
 }
 
 /// ノードの最新ロード状態
@@ -1497,6 +1795,65 @@ impl LoadManager {
         self.ready_notify.notified().await;
         self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
         true
+    }
+
+    /// タイムアウト付きでreadyなノードが出るまで待機
+    ///
+    /// # 戻り値
+    /// - `WaitResult::Ready`: ノードが利用可能になった
+    /// - `WaitResult::Timeout`: タイムアウト
+    /// - `WaitResult::CapacityExceeded`: 待機キュー容量超過
+    pub async fn wait_for_ready_with_timeout(
+        &self,
+        max_waiters: usize,
+        timeout_duration: StdDuration,
+    ) -> WaitResult {
+        // 待ち人数チェック
+        let current = self.waiters.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+        if current > max_waiters {
+            self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+            return WaitResult::CapacityExceeded;
+        }
+
+        // 既にreadyなノードがあれば即座に返す
+        if self.has_ready_agents().await {
+            self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+            return WaitResult::Ready;
+        }
+
+        // タイムアウト付きで待機
+        let result = tokio::time::timeout(timeout_duration, self.ready_notify.notified()).await;
+
+        self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+
+        match result {
+            Ok(_) => WaitResult::Ready,
+            Err(_) => WaitResult::Timeout,
+        }
+    }
+
+    /// アドミッション制御（段階的バックプレッシャー）
+    ///
+    /// 待機キューの使用率に応じて、リクエストの受け入れ判断を行う。
+    /// - 50%未満: 即座に受け入れ
+    /// - 50-80%: 遅延付きで受け入れ（負荷に比例した遅延）
+    /// - 80%以上: リジェクト
+    pub fn admission_control(&self, max_waiters: usize) -> AdmissionDecision {
+        let waiters = self.waiters.load(AtomicOrdering::Relaxed);
+        let threshold_accept = max_waiters / 2; // 50%
+        let threshold_reject = max_waiters * 4 / 5; // 80%
+
+        if waiters < threshold_accept {
+            AdmissionDecision::Accept
+        } else if waiters < threshold_reject {
+            // 50-80%: 負荷に比例した遅延（10ms〜100ms）
+            let load_ratio =
+                (waiters - threshold_accept) as f64 / (threshold_reject - threshold_accept) as f64;
+            let delay_ms = 10 + (load_ratio * 90.0) as u64;
+            AdmissionDecision::AcceptWithDelay(StdDuration::from_millis(delay_ms))
+        } else {
+            AdmissionDecision::Reject
+        }
     }
 
     /// リクエスト開始を記録

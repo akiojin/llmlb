@@ -44,6 +44,7 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager) {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
     let router = api::create_router(state);
     (router, registry, load_manager)

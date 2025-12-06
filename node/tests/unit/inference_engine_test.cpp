@@ -5,10 +5,10 @@
 using namespace llm_node;
 
 // テスト専用ヘルパー（inference_engine.cppで定義）
-namespace ollama_node {
+namespace llm_node {
 std::string extractGptOssFinalMessageForTest(const std::string& output);
 }
-using ollama_node::extractGptOssFinalMessageForTest;
+using llm_node::extractGptOssFinalMessageForTest;
 
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
     InferenceEngine engine;

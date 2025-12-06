@@ -265,6 +265,7 @@ mod tests {
             task_manager,
             db_pool,
             jwt_secret,
+            http_client: reqwest::Client::new(),
         };
         (state, registry)
     }

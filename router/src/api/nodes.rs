@@ -107,8 +107,7 @@ pub async fn register_node(
     let (loaded_models, initializing, ready_models) = if skip_health_check {
         (vec!["gpt-oss:20b".to_string()], false, Some((1, 1)))
     } else {
-        let client_http = reqwest::Client::new();
-        let health_res = client_http.get(&health_url).send().await;
+        let health_res = state.http_client.get(&health_url).send().await;
         if let Err(e) = health_res {
             error!(
                 "Node registration rejected: node API health check failed at {} ({})",
@@ -262,6 +261,7 @@ pub async fn register_node(
 
         // ノードにモデルプル要求を送信（バックグラウンド）
         let registry = registry.clone();
+        let http_client = state.http_client.clone();
         tokio::spawn(async move {
             match registry.get(node_id).await {
                 Ok(node) => {
@@ -271,7 +271,6 @@ pub async fn register_node(
 
                     info!("Sending pull request to node: {}", node_url);
 
-                    let client = reqwest::Client::new();
                     let pull_request = serde_json::json!({
                         "model": model.name,
                         "task_id": task_id,
@@ -279,7 +278,7 @@ pub async fn register_node(
                         "download_url": download_url,
                     });
 
-                    match client.post(&node_url).json(&pull_request).send().await {
+                    match http_client.post(&node_url).json(&pull_request).send().await {
                         Ok(response) => {
                             if response.status().is_success() {
                                 info!("Successfully sent pull request to node {}", node_id);
@@ -466,6 +465,7 @@ mod tests {
             task_manager,
             db_pool,
             jwt_secret,
+            http_client: reqwest::Client::new(),
         }
     }
 

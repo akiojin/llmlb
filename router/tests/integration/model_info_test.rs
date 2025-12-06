@@ -32,6 +32,7 @@ async fn build_app() -> Router {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
 
     api::create_router(state)
@@ -322,6 +323,7 @@ async fn test_v1_models_returns_fixed_list() {
         task_manager,
         db_pool,
         jwt_secret,
+        http_client: reqwest::Client::new(),
     };
 
     let app = api::create_router(state);

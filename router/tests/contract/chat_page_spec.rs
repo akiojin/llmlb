@@ -41,7 +41,7 @@ async fn chat_page_contains_sidebar_and_filters() {
     let response = router
         .oneshot(
             Request::builder()
-                .uri("/chat")
+                .uri("/playground")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
@@ -82,7 +82,7 @@ async fn chat_page_contains_settings_toggle() {
     let response = router
         .oneshot(
             Request::builder()
-                .uri("/chat")
+                .uri("/playground")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

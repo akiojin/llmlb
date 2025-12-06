@@ -168,10 +168,13 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
         .route("/dashboard/*path", get(serve_dashboard_asset))
-        // チャットUI（正式）
-        .route("/chat", get(serve_chat_index))
-        .route("/chat/", get(serve_chat_index))
-        .route("/chat/*path", get(serve_chat_asset))
+        // Playground UI (primary) + legacy /chat alias
+        .route("/playground", get(serve_playground_index))
+        .route("/playground/", get(serve_playground_index))
+        .route("/playground/*path", get(serve_playground_asset))
+        .route("/chat", get(serve_playground_index))
+        .route("/chat/", get(serve_playground_index))
+        .route("/chat/*path", get(serve_playground_asset))
         .with_state(state)
 }
 
@@ -187,11 +190,11 @@ async fn serve_dashboard_asset(AxumPath(request_path): AxumPath<String>) -> Resp
     }
 }
 
-async fn serve_chat_index() -> Response {
+async fn serve_playground_index() -> Response {
     embedded_dashboard_response(CHAT_INDEX)
 }
 
-async fn serve_chat_asset(AxumPath(request_path): AxumPath<String>) -> Response {
+async fn serve_playground_asset(AxumPath(request_path): AxumPath<String>) -> Response {
     let normalized = normalize_chat_path(&request_path);
     match normalized {
         Some(path) => embedded_dashboard_response(&path),
@@ -316,14 +319,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_chat_static_served() {
+    async fn test_playground_static_served() {
         let (state, _) = test_state().await;
         let mut router = create_router(state);
         let response = router
             .call(
                 Request::builder()
                     .method(axum::http::Method::GET)
-                    .uri("/chat")
+                    .uri("/playground")
                     .body(Body::empty())
                     .unwrap(),
             )

@@ -1,7 +1,11 @@
 //! LLM runtimeプロキシ APIハンドラー
 //! LLM runtimeプロキシ APIハンドラー
 
-use crate::{api::nodes::AppError, balancer::RequestOutcome, AppState};
+use crate::{
+    api::nodes::AppError,
+    balancer::{AdmissionDecision, RequestOutcome, WaitResult},
+    AppState,
+};
 use axum::{
     body::Body,
     extract::{ConnectInfo, State},
@@ -20,7 +24,7 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -82,16 +86,41 @@ where
     S: FnOnce(reqwest::Response, &ChatRequest) -> Result<Response, AppError>,
     C: FnOnce(serde_json::Value, &ChatRequest) -> Result<Response, AppError>,
 {
-    // 全ノードが初期化中なら ready 出現を待つ（待機者上限で 503）
+    // バックプレッシャー制御: 待機者数に応じて段階的に制御
+    match state.load_manager.admission_control(max_waiters()) {
+        AdmissionDecision::Reject => {
+            return Err(RouterError::ServiceUnavailable("Server overloaded".into()).into());
+        }
+        AdmissionDecision::AcceptWithDelay(delay) => {
+            tokio::time::sleep(delay).await;
+        }
+        AdmissionDecision::Accept => {}
+    }
+
+    // 全ノードが初期化中なら ready 出現を待つ（タイムアウト付き）
     if state.load_manager.all_initializing().await {
         let _ = state
             .load_manager
             .record_request_history(RequestOutcome::Queued, Utc::now())
             .await;
-        if !state.load_manager.wait_for_ready(max_waiters()).await {
-            return Err(
-                RouterError::ServiceUnavailable("All nodes are warming up models".into()).into(),
-            );
+        match state
+            .load_manager
+            .wait_for_ready_with_timeout(max_waiters(), Duration::from_secs(30))
+            .await
+        {
+            WaitResult::Ready => {}
+            WaitResult::Timeout => {
+                return Err(RouterError::ServiceUnavailable(
+                    "Request timeout while waiting for ready node".into(),
+                )
+                .into());
+            }
+            WaitResult::CapacityExceeded => {
+                return Err(RouterError::ServiceUnavailable(
+                    "All nodes are warming up models".into(),
+                )
+                .into());
+            }
         }
     }
     let record_id = Uuid::new_v4();
@@ -314,15 +343,41 @@ where
     S: FnOnce(reqwest::Response, &GenerateRequest) -> Result<Response, AppError>,
     C: FnOnce(serde_json::Value, &GenerateRequest) -> Result<Response, AppError>,
 {
+    // バックプレッシャー制御: 待機者数に応じて段階的に制御
+    match state.load_manager.admission_control(max_waiters()) {
+        AdmissionDecision::Reject => {
+            return Err(RouterError::ServiceUnavailable("Server overloaded".into()).into());
+        }
+        AdmissionDecision::AcceptWithDelay(delay) => {
+            tokio::time::sleep(delay).await;
+        }
+        AdmissionDecision::Accept => {}
+    }
+
+    // 全ノードが初期化中なら ready 出現を待つ（タイムアウト付き）
     if state.load_manager.all_initializing().await {
         let _ = state
             .load_manager
             .record_request_history(RequestOutcome::Queued, Utc::now())
             .await;
-        if !state.load_manager.wait_for_ready(max_waiters()).await {
-            return Err(
-                RouterError::ServiceUnavailable("All nodes are warming up models".into()).into(),
-            );
+        match state
+            .load_manager
+            .wait_for_ready_with_timeout(max_waiters(), Duration::from_secs(30))
+            .await
+        {
+            WaitResult::Ready => {}
+            WaitResult::Timeout => {
+                return Err(RouterError::ServiceUnavailable(
+                    "Request timeout while waiting for ready node".into(),
+                )
+                .into());
+            }
+            WaitResult::CapacityExceeded => {
+                return Err(RouterError::ServiceUnavailable(
+                    "All nodes are warming up models".into(),
+                )
+                .into());
+            }
         }
     }
     let record_id = Uuid::new_v4();

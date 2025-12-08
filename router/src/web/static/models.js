@@ -1187,11 +1187,7 @@ export async function initModelsUI(agents) {
   await refreshConvertTasks();
 
   // Fetch active tasks initially
-  const activeTasks = await fetchActiveTasks();
-  for (const task of activeTasks) {
-    downloadTasks.set(task.id, task);
-  }
-  renderDownloadTasks();
+  await refreshDownloadTasks();
 
   // Start monitoring progress
   monitorProgress();
@@ -1199,13 +1195,7 @@ export async function initModelsUI(agents) {
   const tasksRefresh = elements.tasksRefreshBtn();
   if (tasksRefresh) {
     tasksRefresh.addEventListener('click', async () => {
-      // Re-fetch active tasks from server
-      const tasks = await fetchActiveTasks();
-      downloadTasks.clear();
-      for (const task of tasks) {
-        downloadTasks.set(task.id, task);
-      }
-      renderDownloadTasks();
+      await refreshDownloadTasks();
     });
   }
 }
@@ -1229,4 +1219,13 @@ async function refreshConvertTasks() {
     convertTasks.set(task.id, task);
   }
   renderConvertTasks();
+}
+
+async function refreshDownloadTasks() {
+  const tasks = await fetchActiveTasks();
+  downloadTasks.clear();
+  for (const task of tasks) {
+    downloadTasks.set(task.id, task);
+  }
+  renderDownloadTasks();
 }

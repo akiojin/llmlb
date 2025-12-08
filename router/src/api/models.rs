@@ -26,7 +26,7 @@ use crate::{
     runtime::RuntimeClient,
     AppState,
 };
-use llm_router_common::error::RouterError;
+use llm_router_common::error::{CommonError, RouterError};
 
 /// モデル名の妥当性を検証
 ///
@@ -235,6 +235,11 @@ const HF_CACHE_TTL: Duration = Duration::from_secs(300);
 /// テストやリカバリ用途でHFカタログキャッシュを強制クリアするユーティリティ。
 pub fn clear_hf_cache() {
     *HF_CACHE.write().unwrap() = None;
+}
+
+/// 登録モデルのインメモリキャッシュをクリア（テスト用）
+pub fn clear_registered_models() {
+    *REGISTERED_MODELS.write().unwrap() = Vec::new();
 }
 
 #[derive(Deserialize)]
@@ -549,13 +554,34 @@ pub struct RegisterModelRequest {
 
 /// POST /api/models/register - HF GGUFを対応モデルに登録
 pub async fn register_model(
+    State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let name = format!("hf/{}/{}", req.repo, req.filename);
-    let download_url = format!(
-        "https://huggingface.co/{}/resolve/main/{}",
-        req.repo, req.filename
-    );
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let download_url = format!("{}/{}/resolve/main/{}", base_url, req.repo, req.filename);
+
+    // HEADで存在確認（404時は明示的に返す）
+    let mut head = state.http_client.head(&download_url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        head = head.bearer_auth(token);
+    }
+    let head_res = head
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    if head_res.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(RouterError::Common(CommonError::Validation(
+            "指定されたGGUFが見つかりません".into(),
+        ))
+        .into());
+    }
+    if !head_res.status().is_success() {
+        return Err(RouterError::Http(head_res.status().to_string()).into());
+    }
 
     let model = ModelInfo {
         name: name.clone(),
@@ -593,10 +619,11 @@ pub async fn pull_model_from_hf(
     let name = format!("hf/{}/{}", req.repo, req.filename);
     validate_model_name(&name)?;
 
-    let download_url = format!(
-        "https://huggingface.co/{}/resolve/main/{}",
-        req.repo, req.filename
-    );
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let download_url = format!("{}/{}/resolve/main/{}", base_url, req.repo, req.filename);
 
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
     let dir = base.join(model_name_to_dir(&name));
@@ -717,7 +744,15 @@ pub async fn distribute_models(
             let nodes = state.registry.list().await;
             nodes.into_iter().map(|a| a.id).collect()
         }
-        "specific" => request.node_ids.clone(),
+        "specific" => {
+            if request.node_ids.is_empty() {
+                return Err(RouterError::Common(CommonError::Validation(
+                    "node_ids is required when target is 'specific'".into(),
+                ))
+                .into());
+            }
+            request.node_ids.clone()
+        }
         _ => {
             return Err(RouterError::Internal(
                 "Invalid target. Must be 'all' or 'specific'".to_string(),

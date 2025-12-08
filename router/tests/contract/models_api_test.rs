@@ -12,6 +12,8 @@ use serde_json::json;
 use serial_test::serial;
 use tower::ServiceExt;
 use uuid::Uuid;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn build_app() -> Router {
     // テスト用に一時ディレクトリを設定
@@ -22,6 +24,8 @@ async fn build_app() -> Router {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    llm_router::api::models::clear_registered_models();
+    llm_router::api::models::clear_hf_cache();
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
@@ -51,18 +55,64 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
+/// T005b: POST /api/models/distribute のバリデーション（specificでnode_ids空）
+#[tokio::test]
+#[serial]
+async fn test_distribute_models_requires_node_ids_for_specific() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let app = build_app().await;
+
+    let request_body = json!({
+        "model_name": "gpt-oss:20b",
+        "target": "specific",
+        "node_ids": []
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/distribute")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "specific target requires node_ids"
+    );
+}
+
 /// T004: GET /api/models/available の契約テスト
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_contract() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let mock = MockServer::start().await;
+    // HF mock responds once with gguf list
+    Mock::given(method("GET"))
+        .and(path("/api/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(vec![json!({
+            "modelId": "test/repo",
+            "tags": ["gguf"],
+            "siblings": [{"rfilename": "model.gguf", "size": 1234}],
+            "lastModified": "2024-01-01T00:00:00Z"
+        })]))
+        .mount(&mock)
+        .await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
     let app = build_app().await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available")
+                .uri("/api/models/available?source=hf")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -96,6 +146,17 @@ async fn test_get_available_models_contract() {
     assert!(
         ["builtin", "nodes", "hf"].contains(&source),
         "'source' must be 'builtin', 'nodes', or 'hf'"
+    );
+
+    // HFモックが返した1件が含まれること
+    let models = body["models"]
+        .as_array()
+        .expect("'models' must be an array");
+    assert!(
+        models
+            .iter()
+            .any(|m| m["name"] == "hf/test/repo/model.gguf"),
+        "hf catalog item should appear"
     );
 
     // models配列の各要素の検証
@@ -467,4 +528,111 @@ async fn test_get_task_progress_contract() {
         .as_str()
         .expect("'node_id' must be a string");
     Uuid::parse_str(node_id_str).expect("'node_id' must be a valid UUID");
+}
+
+/// T009: POST /api/models/register - 正常系と重複/404異常系
+#[tokio::test]
+#[serial]
+async fn test_register_model_contract() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
+    let mock = MockServer::start().await;
+
+    // HEAD 200 for existence
+    Mock::given(method("HEAD"))
+        .and(path("/test/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock)
+        .await;
+
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    let app = build_app().await;
+
+    // 正常登録
+    let payload = json!({
+        "repo": "test/repo",
+        "filename": "model.gguf",
+        "display_name": "Test Model"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // /v1/models に含まれること
+    let models_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let data = body["data"]
+        .as_array()
+        .expect("'data' must be an array on /v1/models");
+    assert!(
+        data.iter()
+            .any(|m| m["id"] == "hf/test/repo/model.gguf" && m["download_url"].as_str().is_some()),
+        "/v1/models must include registered HF model with download_url"
+    );
+
+    // 重複登録は400
+    let dup = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(dup.status(), StatusCode::BAD_REQUEST);
+
+    // 404ケース: HEADが404を返す
+    Mock::given(method("HEAD"))
+        .and(path("/missing/repo/resolve/main/absent.gguf"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+
+    let missing_payload = json!({
+        "repo": "missing/repo",
+        "filename": "absent.gguf"
+    });
+
+    let missing = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&missing_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 }

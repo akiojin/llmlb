@@ -232,6 +232,11 @@ static HF_CACHE: Lazy<RwLock<Option<HfCache>>> = Lazy::new(|| RwLock::new(None))
 
 const HF_CACHE_TTL: Duration = Duration::from_secs(300);
 
+/// テストやリカバリ用途でHFカタログキャッシュを強制クリアするユーティリティ。
+pub fn clear_hf_cache() {
+    *HF_CACHE.write().unwrap() = None;
+}
+
 #[derive(Deserialize)]
 /// HFカタログクエリ
 pub struct AvailableQuery {
@@ -281,8 +286,13 @@ async fn fetch_hf_models(
     let search = query.search.clone().unwrap_or_default();
 
     let token = std::env::var("HF_TOKEN").ok();
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
     let url = format!(
-        "https://huggingface.co/api/models?library=gguf&limit={limit}&offset={offset}&search={search}&fields=modelId,tags,lastModified,siblings"
+        "{}/api/models?library=gguf&limit={limit}&offset={offset}&search={search}&fields=modelId,tags,lastModified,siblings",
+        base_url
     );
 
     let mut req = http_client.get(url);
@@ -293,7 +303,16 @@ async fn fetch_hf_models(
         .send()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    // HF API がレートリミット/障害を返した場合はキャッシュをフォールバックとして返す
     if !resp.status().is_success() {
+        if let Some(cache) = HF_CACHE.read().unwrap().as_ref() {
+            tracing::warn!(
+                "HF API returned {}, serving cached available models",
+                resp.status()
+            );
+            return Ok((cache.models.clone(), true));
+        }
         return Err(RouterError::Http(resp.status().to_string()));
     }
     let models_raw: Vec<HfModel> = resp

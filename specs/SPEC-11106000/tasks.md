@@ -33,7 +33,7 @@
 - [x] `llm-router model list` 実装（search/limit/offset/format）。
 - [x] `llm-router model add <repo> --file <gguf>` 実装。
 - [x] `llm-router model download <name> (--all | --node <uuid>)` 実装。
-- [ ] CLIエラー/重複/進捗表示のテスト。
+- [x] CLIエラー/重複/進捗表示のテスト。
 
 ## Frontend (web/static)
 - [x] 「対応可能モデル」「対応モデル」タブを分離表示。

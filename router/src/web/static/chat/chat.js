@@ -266,7 +266,7 @@
       const parsed = JSON.parse(raw);
       state.sessions = (parsed || []).map((session) => ({
         id: session.id,
-        title: session.title || "New Playground",
+        title: session.title || "新規Playground",
         modelId: session.modelId,
         modelScope: session.modelScope || "local",
         createdAt: session.createdAt || new Date().toISOString(),
@@ -340,7 +340,7 @@
 
   function updateSessionHeader(session) {
     if (!session) return;
-    if (dom.activeSessionTitle) dom.activeSessionTitle.textContent = session.title || "New Playground";
+    if (dom.activeSessionTitle) dom.activeSessionTitle.textContent = session.title || "新規Playground";
     if (dom.activeSessionMeta) {
       const messageCount = session.history?.length ?? 0;
       const updated = formatTime(session.updatedAt);
@@ -357,7 +357,7 @@
     if (!state.sessions.length) {
       const empty = document.createElement("li");
       empty.className = "session-empty";
-      empty.textContent = "No sessions yet. Create a new Playground.";
+      empty.textContent = "まだセッションがありません。新規Playgroundを作成してください。";
       dom.sessionList.appendChild(empty);
       return;
     }
@@ -370,7 +370,7 @@
 
       const title = document.createElement("p");
       title.className = "session-title";
-      title.textContent = session.title || "New Playground";
+      title.textContent = session.title || "新規Playground";
 
       const meta = document.createElement("p");
       meta.className = "session-meta";
@@ -429,7 +429,7 @@
     persistSessions();
   }
 
-  function createSession({ title = "New Playground", persist = true } = {}) {
+  function createSession({ title = "新規Playground", persist = true } = {}) {
     const id =
       crypto.randomUUID?.() || `session-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const now = new Date().toISOString();
@@ -620,7 +620,7 @@
   function updateSessionTitleFrom(entry) {
     const session = currentSession();
     if (!session || entry.role !== "user") return;
-    const defaultTitle = "New Playground";
+    const defaultTitle = "新規Playground";
     const shouldUpdate = session.title === defaultTitle || session.history.length === 1;
     if (!shouldUpdate) return;
     const preview = entry.content.slice(0, 32).replace(/\s+/g, " ");

@@ -156,6 +156,240 @@
   animation: crt-flicker 4s infinite;
 }
 
+/* === Synthwaveテーマ === */
+[data-theme="synthwave"] {
+  --bg: #1a0a2e;
+  --bg-card: rgba(45, 27, 78, 0.9);
+  --bg-card-alt: rgba(60, 35, 100, 0.85);
+  --bg-gradient: radial-gradient(ellipse at top, rgba(255, 113, 206, 0.1), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(1, 205, 254, 0.08), transparent 50%),
+    var(--bg);
+
+  --neon-cyan: #01cdfe;
+  --neon-cyan-glow: rgba(1, 205, 254, 0.5);
+  --neon-magenta: #ff71ce;
+  --neon-magenta-glow: rgba(255, 113, 206, 0.5);
+  --neon-green: #05ffa1;
+  --neon-green-glow: rgba(5, 255, 161, 0.4);
+  --neon-orange: #fffb96;
+  --neon-orange-glow: rgba(255, 251, 150, 0.4);
+  --neon-red: #ff6b6b;
+  --neon-red-glow: rgba(255, 107, 107, 0.4);
+
+  --accent: #ff71ce;
+  --accent-weak: rgba(255, 113, 206, 0.12);
+  --accent-glow: rgba(255, 113, 206, 0.5);
+  --success: #05ffa1;
+  --success-glow: rgba(5, 255, 161, 0.4);
+  --warning: #fffb96;
+  --warning-glow: rgba(255, 251, 150, 0.4);
+  --danger: #ff6b6b;
+  --danger-glow: rgba(255, 107, 107, 0.4);
+
+  --border: rgba(255, 113, 206, 0.2);
+  --border-glow: rgba(255, 113, 206, 0.5);
+  --text: #fff1f9;
+  --text-subtle: #c9a0dc;
+  --text-dim: #8a6a9e;
+  --btn-text-on-accent: #000;
+
+  --scanline-opacity: 0.02;
+  --grid-color: rgba(255, 113, 206, 0.03);
+  --hologram-gradient: linear-gradient(
+    135deg,
+    rgba(255, 113, 206, 0.08) 0%,
+    rgba(1, 205, 254, 0.04) 100%
+  );
+  --crt-curvature: none;
+  --theme-font: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
+
+/* === Ocean Deepテーマ === */
+[data-theme="ocean"] {
+  --bg: #0a1628;
+  --bg-card: rgba(10, 40, 70, 0.9);
+  --bg-card-alt: rgba(15, 50, 85, 0.85);
+  --bg-gradient: radial-gradient(ellipse at top, rgba(0, 212, 255, 0.08), transparent 50%),
+    radial-gradient(ellipse at bottom, rgba(32, 227, 178, 0.05), transparent 50%),
+    var(--bg);
+
+  --neon-cyan: #00d4ff;
+  --neon-cyan-glow: rgba(0, 212, 255, 0.5);
+  --neon-magenta: #00b4d8;
+  --neon-magenta-glow: rgba(0, 180, 216, 0.4);
+  --neon-green: #20e3b2;
+  --neon-green-glow: rgba(32, 227, 178, 0.4);
+  --neon-orange: #ff9f43;
+  --neon-orange-glow: rgba(255, 159, 67, 0.4);
+  --neon-red: #ee5a5a;
+  --neon-red-glow: rgba(238, 90, 90, 0.4);
+
+  --accent: #00d4ff;
+  --accent-weak: rgba(0, 212, 255, 0.12);
+  --accent-glow: rgba(0, 212, 255, 0.4);
+  --success: #20e3b2;
+  --success-glow: rgba(32, 227, 178, 0.4);
+  --warning: #ff9f43;
+  --warning-glow: rgba(255, 159, 67, 0.4);
+  --danger: #ee5a5a;
+  --danger-glow: rgba(238, 90, 90, 0.4);
+
+  --border: rgba(0, 212, 255, 0.15);
+  --border-glow: rgba(0, 212, 255, 0.4);
+  --text: #e0f4ff;
+  --text-subtle: #7eb8d8;
+  --text-dim: #4a8aaa;
+  --btn-text-on-accent: #000;
+
+  --scanline-opacity: 0;
+  --grid-color: rgba(0, 180, 216, 0.03);
+  --hologram-gradient: linear-gradient(
+    135deg,
+    rgba(0, 212, 255, 0.08) 0%,
+    rgba(32, 227, 178, 0.04) 100%
+  );
+  --crt-curvature: none;
+  --theme-font: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
+
+/* === Emberテーマ === */
+[data-theme="ember"] {
+  --bg: #1a0f0f;
+  --bg-card: rgba(50, 20, 20, 0.9);
+  --bg-card-alt: rgba(60, 25, 25, 0.85);
+  --bg-gradient: radial-gradient(ellipse at top, rgba(255, 107, 53, 0.1), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(247, 47, 47, 0.05), transparent 50%),
+    var(--bg);
+
+  --neon-cyan: #ff6b35;
+  --neon-cyan-glow: rgba(255, 107, 53, 0.5);
+  --neon-magenta: #f72f2f;
+  --neon-magenta-glow: rgba(247, 47, 47, 0.4);
+  --neon-green: #ffc93c;
+  --neon-green-glow: rgba(255, 201, 60, 0.4);
+  --neon-orange: #ffaa00;
+  --neon-orange-glow: rgba(255, 170, 0, 0.4);
+  --neon-red: #d63031;
+  --neon-red-glow: rgba(214, 48, 49, 0.4);
+
+  --accent: #ff6b35;
+  --accent-weak: rgba(255, 107, 53, 0.12);
+  --accent-glow: rgba(255, 107, 53, 0.5);
+  --success: #ffc93c;
+  --success-glow: rgba(255, 201, 60, 0.4);
+  --warning: #ffaa00;
+  --warning-glow: rgba(255, 170, 0, 0.4);
+  --danger: #d63031;
+  --danger-glow: rgba(214, 48, 49, 0.4);
+
+  --border: rgba(255, 107, 53, 0.2);
+  --border-glow: rgba(255, 107, 53, 0.5);
+  --text: #fff0e6;
+  --text-subtle: #d4a088;
+  --text-dim: #9a6a55;
+  --btn-text-on-accent: #000;
+
+  --scanline-opacity: 0;
+  --grid-color: rgba(247, 47, 47, 0.03);
+  --hologram-gradient: linear-gradient(
+    135deg,
+    rgba(255, 107, 53, 0.08) 0%,
+    rgba(255, 201, 60, 0.04) 100%
+  );
+  --crt-curvature: none;
+  --theme-font: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
+
+/* === Forestテーマ === */
+[data-theme="forest"] {
+  --bg: #0d1f0d;
+  --bg-card: rgba(20, 50, 20, 0.9);
+  --bg-card-alt: rgba(25, 60, 25, 0.85);
+  --bg-gradient: radial-gradient(ellipse at top, rgba(46, 204, 113, 0.08), transparent 50%),
+    radial-gradient(ellipse at bottom, rgba(39, 174, 96, 0.05), transparent 50%),
+    var(--bg);
+
+  --neon-cyan: #2ecc71;
+  --neon-cyan-glow: rgba(46, 204, 113, 0.5);
+  --neon-magenta: #27ae60;
+  --neon-magenta-glow: rgba(39, 174, 96, 0.4);
+  --neon-green: #00ff7f;
+  --neon-green-glow: rgba(0, 255, 127, 0.4);
+  --neon-orange: #e67e22;
+  --neon-orange-glow: rgba(230, 126, 34, 0.4);
+  --neon-red: #c0392b;
+  --neon-red-glow: rgba(192, 57, 43, 0.4);
+
+  --accent: #2ecc71;
+  --accent-weak: rgba(46, 204, 113, 0.12);
+  --accent-glow: rgba(46, 204, 113, 0.4);
+  --success: #00ff7f;
+  --success-glow: rgba(0, 255, 127, 0.4);
+  --warning: #e67e22;
+  --warning-glow: rgba(230, 126, 34, 0.4);
+  --danger: #c0392b;
+  --danger-glow: rgba(192, 57, 43, 0.4);
+
+  --border: rgba(46, 204, 113, 0.15);
+  --border-glow: rgba(46, 204, 113, 0.4);
+  --text: #e8f5e9;
+  --text-subtle: #81c784;
+  --text-dim: #4caf50;
+  --btn-text-on-accent: #000;
+
+  --scanline-opacity: 0;
+  --grid-color: rgba(39, 174, 96, 0.03);
+  --hologram-gradient: linear-gradient(
+    135deg,
+    rgba(46, 204, 113, 0.08) 0%,
+    rgba(0, 255, 127, 0.04) 100%
+  );
+  --crt-curvature: none;
+  --theme-font: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
+
+/* === Monochromeテーマ === */
+[data-theme="mono"] {
+  --bg: #000000;
+  --bg-card: rgba(30, 30, 30, 0.95);
+  --bg-card-alt: rgba(40, 40, 40, 0.9);
+  --bg-gradient: var(--bg);
+
+  --neon-cyan: #ffffff;
+  --neon-cyan-glow: rgba(255, 255, 255, 0.3);
+  --neon-magenta: #cccccc;
+  --neon-magenta-glow: rgba(204, 204, 204, 0.3);
+  --neon-green: #cccccc;
+  --neon-green-glow: rgba(204, 204, 204, 0.3);
+  --neon-orange: #999999;
+  --neon-orange-glow: rgba(153, 153, 153, 0.3);
+  --neon-red: #666666;
+  --neon-red-glow: rgba(102, 102, 102, 0.3);
+
+  --accent: #ffffff;
+  --accent-weak: rgba(255, 255, 255, 0.1);
+  --accent-glow: rgba(255, 255, 255, 0.3);
+  --success: #cccccc;
+  --success-glow: rgba(204, 204, 204, 0.3);
+  --warning: #999999;
+  --warning-glow: rgba(153, 153, 153, 0.3);
+  --danger: #666666;
+  --danger-glow: rgba(102, 102, 102, 0.3);
+
+  --border: rgba(255, 255, 255, 0.2);
+  --border-glow: rgba(255, 255, 255, 0.3);
+  --text: #ffffff;
+  --text-subtle: #aaaaaa;
+  --text-dim: #666666;
+  --btn-text-on-accent: #000;
+
+  --scanline-opacity: 0;
+  --grid-color: rgba(255, 255, 255, 0.02);
+  --hologram-gradient: none;
+  --crt-curvature: none;
+  --theme-font: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
+
 *,
 *::before,
 *::after {

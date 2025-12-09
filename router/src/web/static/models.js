@@ -75,6 +75,8 @@ const elements = {
   hfRefreshBtn: () => document.getElementById('hf-refresh'),
   registeredRefreshBtn: () => document.getElementById('registered-refresh'),
   hfStatus: () => document.getElementById('hf-models-status'),
+  hfRegisterUrlInput: () => document.getElementById('hf-register-url'),
+  hfRegisterUrlSubmit: () => document.getElementById('hf-register-url-submit'),
   tasksRefreshBtn: () => document.getElementById('download-tasks-refresh'),
   convertModal: () => document.getElementById('convert-modal'),
   convertModalOpen: () => document.getElementById('convert-modal-open'),
@@ -144,6 +146,35 @@ async function registerModel(repo, filename, displayName) {
     throw new Error(txt || `HTTP ${response.status}`);
   }
   return response.json();
+}
+
+function parseHfUrl(rawUrl) {
+  if (!rawUrl) return null;
+  try {
+    const url = new URL(rawUrl);
+    if (!url.hostname.endsWith('huggingface.co')) return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    const repo = `${parts[0]}/${parts[1]}`;
+
+    const pickTail = (marker) => {
+      const idx = parts.indexOf(marker);
+      if (idx >= 0 && idx + 2 <= parts.length) {
+        return parts.slice(idx + 2).join('/');
+      }
+      return null;
+    };
+
+    let filename =
+      pickTail('resolve') ||
+      pickTail('blob') ||
+      (parts.length >= 3 ? parts.slice(2).join('/') : null);
+
+    if (!filename || !filename.endsWith('.gguf')) return null;
+    return { repo, filename };
+  } catch (_) {
+    return null;
+  }
 }
 
 async function pullModelFromHf(repo, filename, chatTemplate) {
@@ -1106,6 +1137,7 @@ export async function initModelsUI(agents) {
   const convertClose = elements.convertModalClose();
   const convertSubmit = elements.convertSubmitBtn();
   const convertTasksRefresh = elements.convertTasksRefreshBtn();
+  const registerUrlBtn = elements.hfRegisterUrlSubmit();
 
   if (distributeButton) {
     distributeButton.addEventListener('click', handleDistribute);
@@ -1176,6 +1208,26 @@ export async function initModelsUI(agents) {
   }
   if (convertTasksRefresh) {
     convertTasksRefresh.addEventListener('click', refreshConvertTasks);
+  }
+
+  if (registerUrlBtn) {
+    registerUrlBtn.addEventListener('click', async () => {
+      const input = elements.hfRegisterUrlInput();
+      const parsed = parseHfUrl(input?.value?.trim() || '');
+      if (!parsed) {
+        showError(
+          'GGUFファイルのURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)'
+        );
+        return;
+      }
+      try {
+        const res = await registerModel(parsed.repo, parsed.filename, parsed.filename);
+        showSuccess(`Registered ${res.name}`);
+        await refreshRegisteredModels();
+      } catch (err) {
+        showError(err.message || 'Failed to register model from URL');
+      }
+    });
   }
 
   if (toggleManualBtn) {

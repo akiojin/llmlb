@@ -12,17 +12,72 @@ const MODAL_LOG_ENTRY_LIMIT = 100;
 // Theme Manager (FR-027)
 // ========================================
 const ThemeManager = {
-  themes: ["cyberpunk", "retro"],
+  themes: ["mono", "cyberpunk", "retro", "synthwave", "ocean", "ember", "forest"],
+  themeLabels: {
+    mono: "Mono",
+    cyberpunk: "Cyber",
+    retro: "Terminal",
+    synthwave: "Synth",
+    ocean: "Ocean",
+    ember: "Ember",
+    forest: "Forest",
+  },
   storageKey: "dashboard-theme",
 
+  // テーマごとのChart.jsカラーパレット
+  chartColors: {
+    cyberpunk: [
+      { border: "rgba(0, 255, 255, 0.85)", bg: "rgba(0, 255, 255, 0.12)" },
+      { border: "rgba(255, 0, 255, 0.85)", bg: "rgba(255, 0, 255, 0.12)" },
+      { border: "rgba(0, 255, 136, 0.85)", bg: "rgba(0, 255, 136, 0.12)" },
+      { border: "rgba(255, 107, 0, 0.85)", bg: "rgba(255, 107, 0, 0.12)" },
+    ],
+    retro: [
+      { border: "rgba(51, 255, 51, 0.85)", bg: "rgba(51, 255, 51, 0.12)" },
+      { border: "rgba(170, 255, 0, 0.85)", bg: "rgba(170, 255, 0, 0.12)" },
+      { border: "rgba(0, 255, 170, 0.85)", bg: "rgba(0, 255, 170, 0.12)" },
+      { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
+    ],
+    synthwave: [
+      { border: "rgba(255, 113, 206, 0.85)", bg: "rgba(255, 113, 206, 0.12)" },
+      { border: "rgba(1, 205, 254, 0.85)", bg: "rgba(1, 205, 254, 0.12)" },
+      { border: "rgba(5, 255, 161, 0.85)", bg: "rgba(5, 255, 161, 0.12)" },
+      { border: "rgba(255, 251, 150, 0.85)", bg: "rgba(255, 251, 150, 0.12)" },
+    ],
+    ocean: [
+      { border: "rgba(0, 212, 255, 0.85)", bg: "rgba(0, 212, 255, 0.12)" },
+      { border: "rgba(32, 227, 178, 0.85)", bg: "rgba(32, 227, 178, 0.12)" },
+      { border: "rgba(0, 180, 216, 0.85)", bg: "rgba(0, 180, 216, 0.12)" },
+      { border: "rgba(255, 159, 67, 0.85)", bg: "rgba(255, 159, 67, 0.12)" },
+    ],
+    ember: [
+      { border: "rgba(255, 107, 53, 0.85)", bg: "rgba(255, 107, 53, 0.12)" },
+      { border: "rgba(255, 201, 60, 0.85)", bg: "rgba(255, 201, 60, 0.12)" },
+      { border: "rgba(247, 47, 47, 0.85)", bg: "rgba(247, 47, 47, 0.12)" },
+      { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
+    ],
+    forest: [
+      { border: "rgba(46, 204, 113, 0.85)", bg: "rgba(46, 204, 113, 0.12)" },
+      { border: "rgba(0, 255, 127, 0.85)", bg: "rgba(0, 255, 127, 0.12)" },
+      { border: "rgba(39, 174, 96, 0.85)", bg: "rgba(39, 174, 96, 0.12)" },
+      { border: "rgba(230, 126, 34, 0.85)", bg: "rgba(230, 126, 34, 0.12)" },
+    ],
+    mono: [
+      { border: "rgba(255, 255, 255, 0.85)", bg: "rgba(255, 255, 255, 0.08)" },
+      { border: "rgba(204, 204, 204, 0.85)", bg: "rgba(204, 204, 204, 0.08)" },
+      { border: "rgba(170, 170, 170, 0.85)", bg: "rgba(170, 170, 170, 0.08)" },
+      { border: "rgba(136, 136, 136, 0.85)", bg: "rgba(136, 136, 136, 0.08)" },
+    ],
+  },
+
   init() {
-    const saved = localStorage.getItem(this.storageKey) || "cyberpunk";
+    const saved = localStorage.getItem(this.storageKey) || "mono";
     this.apply(saved);
   },
 
   apply(theme) {
     if (!this.themes.includes(theme)) {
-      theme = "cyberpunk";
+      theme = "mono";
     }
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(this.storageKey, theme);
@@ -31,7 +86,7 @@ const ThemeManager = {
   },
 
   toggle() {
-    const current = document.documentElement.getAttribute("data-theme") || "cyberpunk";
+    const current = document.documentElement.getAttribute("data-theme") || "mono";
     const nextIndex = (this.themes.indexOf(current) + 1) % this.themes.length;
     this.apply(this.themes[nextIndex]);
   },
@@ -41,55 +96,25 @@ const ThemeManager = {
   },
 
   updateCharts() {
-    // Chart.jsの色をテーマに合わせて更新
-    const accent = this.getColor("--accent") || "#00ffff";
-    const danger = this.getColor("--status-danger") || "#ff0055";
-    const success = this.getColor("--status-success") || "#00ff88";
-    const warning = this.getColor("--status-warning") || "#ff6b00";
+    const theme = document.documentElement.getAttribute("data-theme") || "mono";
+    const colors = this.chartColors[theme] || this.chartColors.mono;
 
     // 既存のrequestsChartを更新
     if (typeof requestsChart !== "undefined" && requestsChart) {
-      requestsChart.data.datasets[0].borderColor = accent.includes("#33ff33")
-        ? "rgba(51, 255, 51, 0.9)"
-        : "rgba(0, 255, 255, 0.9)";
-      requestsChart.data.datasets[0].backgroundColor = accent.includes("#33ff33")
-        ? "rgba(51, 255, 51, 0.15)"
-        : "rgba(0, 255, 255, 0.15)";
-      requestsChart.data.datasets[1].borderColor = "rgba(255, 0, 85, 0.9)";
-      requestsChart.data.datasets[1].backgroundColor = "rgba(255, 0, 85, 0.15)";
+      requestsChart.data.datasets[0].borderColor = colors[0].border;
+      requestsChart.data.datasets[0].backgroundColor = colors[0].bg;
+      requestsChart.data.datasets[1].borderColor = colors[2].border;
+      requestsChart.data.datasets[1].backgroundColor = colors[2].bg;
       requestsChart.update("none");
     }
 
     // nodeMetricsChartを更新
     if (typeof nodeMetricsChart !== "undefined" && nodeMetricsChart) {
-      const isRetro = document.documentElement.getAttribute("data-theme") === "retro";
-      if (isRetro) {
-        // Retro: 緑系のカラーパレット
-        const colors = [
-          { border: "rgba(51, 255, 51, 0.85)", bg: "rgba(51, 255, 51, 0.12)" },
-          { border: "rgba(170, 255, 0, 0.85)", bg: "rgba(170, 255, 0, 0.12)" },
-          { border: "rgba(0, 255, 170, 0.85)", bg: "rgba(0, 255, 170, 0.12)" },
-          { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
-        ];
-        nodeMetricsChart.data.datasets.forEach((ds, i) => {
-          const color = colors[i % colors.length];
-          ds.borderColor = color.border;
-          ds.backgroundColor = color.bg;
-        });
-      } else {
-        // Cyberpunk: シアン/マゼンタ系
-        const colors = [
-          { border: "rgba(0, 255, 255, 0.85)", bg: "rgba(0, 255, 255, 0.12)" },
-          { border: "rgba(255, 0, 255, 0.85)", bg: "rgba(255, 0, 255, 0.12)" },
-          { border: "rgba(0, 255, 136, 0.85)", bg: "rgba(0, 255, 136, 0.12)" },
-          { border: "rgba(255, 107, 0, 0.85)", bg: "rgba(255, 107, 0, 0.12)" },
-        ];
-        nodeMetricsChart.data.datasets.forEach((ds, i) => {
-          const color = colors[i % colors.length];
-          ds.borderColor = color.border;
-          ds.backgroundColor = color.bg;
-        });
-      }
+      nodeMetricsChart.data.datasets.forEach((ds, i) => {
+        const color = colors[i % colors.length];
+        ds.borderColor = color.border;
+        ds.backgroundColor = color.bg;
+      });
       nodeMetricsChart.update("none");
     }
   },
@@ -97,8 +122,8 @@ const ThemeManager = {
   updateToggleButton() {
     const btn = document.getElementById("theme-toggle");
     if (!btn) return;
-    const current = document.documentElement.getAttribute("data-theme") || "cyberpunk";
-    const label = current === "retro" ? "Terminal" : "Cyber";
+    const current = document.documentElement.getAttribute("data-theme") || "mono";
+    const label = this.themeLabels[current] || "Mono";
     btn.setAttribute("title", `Theme: ${label} (Click to switch)`);
     btn.setAttribute("aria-label", `Current theme: ${label}. Click to switch theme.`);
   },

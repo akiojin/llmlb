@@ -1,6 +1,23 @@
 /* ========================================
-   LLM Router Chat - ChatGPT-style UI
+   LLM Router Chat - Cyberpunk UI
    ======================================== */
+
+/* === サイバーパンクカラー変数 === */
+:root {
+  --cyber-bg: #030712;
+  --cyber-card: rgba(10, 15, 30, 0.9);
+  --cyber-cyan: #00ffff;
+  --cyber-cyan-glow: rgba(0, 255, 255, 0.5);
+  --cyber-magenta: #ff00ff;
+  --cyber-magenta-glow: rgba(255, 0, 255, 0.4);
+  --cyber-green: #00ff88;
+  --cyber-green-glow: rgba(0, 255, 136, 0.4);
+  --cyber-red: #ff0055;
+  --cyber-red-glow: rgba(255, 0, 85, 0.4);
+  --cyber-border: rgba(0, 255, 255, 0.15);
+  --cyber-text: #e0f7fa;
+  --cyber-text-subtle: #64b5c6;
+}
 
 /* Reset & Base */
 * {
@@ -11,10 +28,27 @@
 .chat-app {
   display: flex;
   height: 100vh;
-  background: #0f0f1a;
-  color: #e4e4e7;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background:
+    radial-gradient(ellipse at top, rgba(0, 255, 255, 0.05), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(255, 0, 255, 0.03), transparent 50%),
+    var(--cyber-bg);
+  color: var(--cyber-text);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
+  position: relative;
+}
+
+/* グリッドオーバーレイ */
+.chat-app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  z-index: 0;
 }
 
 /* ========================================
@@ -22,11 +56,13 @@
    ======================================== */
 .sidebar {
   width: 260px;
-  background: #171723;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--cyber-card);
+  border-right: 1px solid var(--cyber-border);
   display: flex;
   flex-direction: column;
   transition: transform 0.2s ease, width 0.2s ease;
+  position: relative;
+  z-index: 10;
 }
 
 .sidebar.collapsed {
@@ -67,19 +103,22 @@
   justify-content: center;
   gap: 8px;
   background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  color: #e4e4e7;
+  border: 1px dashed var(--cyber-cyan);
+  color: var(--cyber-cyan);
   padding: 10px 16px;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .new-chat-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 255, 255, 0.1);
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 15px var(--cyber-cyan-glow);
 }
 
 .session-nav {
@@ -151,8 +190,10 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #0f0f1a;
+  border-bottom: 1px solid var(--cyber-cyan);
+  background: linear-gradient(90deg, rgba(0, 255, 255, 0.08), transparent);
+  position: relative;
+  z-index: 10;
 }
 
 .header-left {
@@ -214,8 +255,14 @@
 }
 
 .status-indicator--online {
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+  background: var(--cyber-green);
+  box-shadow: 0 0 8px var(--cyber-green-glow);
+  animation: cyber-pulse 2s ease-in-out infinite;
+}
+
+@keyframes cyber-pulse {
+  0%, 100% { box-shadow: 0 0 5px var(--cyber-green-glow); }
+  50% { box-shadow: 0 0 15px var(--cyber-green-glow); }
 }
 
 .status-indicator--connecting {
@@ -349,7 +396,8 @@
 }
 
 .message-text {
-  background: #1e1e2e;
+  background: var(--cyber-card);
+  border: 1px solid var(--cyber-border);
   border-radius: 12px;
   padding: 12px 16px;
   line-height: 1.6;
@@ -359,13 +407,15 @@
 }
 
 .message--user .message-text {
-  background: #3b82f6;
-  color: white;
+  background: linear-gradient(135deg, rgba(255, 0, 255, 0.2), rgba(0, 255, 255, 0.1));
+  border-color: var(--cyber-magenta);
+  color: var(--cyber-text);
   border-radius: 12px 12px 4px 12px;
 }
 
 .message--assistant .message-text {
-  background: #1e1e2e;
+  background: var(--cyber-card);
+  border-color: var(--cyber-cyan);
   border-radius: 12px 12px 12px 4px;
 }
 
@@ -432,16 +482,16 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: #1e1e2e;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--cyber-card);
+  border: 1px solid var(--cyber-border);
   border-radius: 16px;
   padding: 8px 12px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .chat-input-form:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 20px var(--cyber-cyan-glow);
 }
 
 .chat-input {
@@ -464,9 +514,9 @@
 
 .send-btn,
 .stop-btn {
-  background: #3b82f6;
+  background: var(--cyber-cyan);
   border: none;
-  color: white;
+  color: #000;
   width: 36px;
   height: 36px;
   border-radius: 8px;
@@ -474,12 +524,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .send-btn:hover {
-  background: #2563eb;
+  box-shadow: 0 0 20px var(--cyber-cyan-glow);
+  transform: translateY(-1px);
 }
 
 .send-btn:active {
@@ -489,14 +540,15 @@
 .send-btn:disabled {
   background: #374151;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .stop-btn {
-  background: #ef4444;
+  background: var(--cyber-red);
 }
 
 .stop-btn:hover {
-  background: #dc2626;
+  box-shadow: 0 0 20px var(--cyber-red-glow);
 }
 
 .stop-btn.hidden {

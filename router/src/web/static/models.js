@@ -764,8 +764,9 @@ function renderDownloadTasks() {
     .map((task) => {
       const modelLabel = escapeHtml(task.model_name ?? '-');
       const agentLabel = task.agent_id ? escapeHtml(task.agent_id.substring(0, 8)) : '-';
-      const statusClass = escapeHtml(task.status);
-      const statusLabel = escapeHtml(translateStatus(task.status));
+      const normalizedStatus = normalizeDownloadStatus(task.status);
+      const statusClass = escapeHtml(normalizedStatus);
+      const statusLabel = escapeHtml(translateStatus(normalizedStatus));
       const progressValue =
         typeof task.progress === 'number' && !Number.isNaN(task.progress) ? task.progress : 0;
       const normalizedProgress = Math.min(1, Math.max(0, progressValue));
@@ -774,7 +775,7 @@ function renderDownloadTasks() {
           ? `<div class="task-speed">${formatSpeed(task.download_speed_bps)}</div>`
           : '';
       const progressBlock =
-        task.status === 'downloading'
+        normalizedStatus === 'downloading'
           ? `
         <div class="task-progress">
           <progress value="${normalizedProgress}" max="1"></progress>
@@ -883,10 +884,16 @@ function translateStatus(status) {
   const statusMap = {
     pending: 'Pending',
     downloading: 'Downloading',
+    in_progress: 'Downloading',
     completed: 'Completed',
     failed: 'Failed',
   };
   return statusMap[status] || status;
+}
+
+function normalizeDownloadStatus(status) {
+  if (status === 'in_progress') return 'downloading';
+  return status || 'pending';
 }
 
 /**

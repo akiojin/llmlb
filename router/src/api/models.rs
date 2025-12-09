@@ -23,6 +23,7 @@ use crate::{
         ensure_router_model_cached, model_name_to_dir, router_model_path, router_models_dir,
         DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
     },
+    registry::NodeRegistry,
     runtime::RuntimeClient,
     AppState,
 };
@@ -552,12 +553,47 @@ pub struct RegisterModelRequest {
     pub chat_template: Option<String>,
 }
 
+async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if required_memory == 0 {
+        return warnings;
+    }
+
+    let nodes = registry.list().await;
+    let mut memories: Vec<u64> = Vec::new();
+    for node in nodes {
+        for device in node.gpu_devices {
+            if let Some(mem) = device.memory {
+                memories.push(mem);
+            }
+        }
+    }
+
+    if memories.is_empty() {
+        warnings.push("GPUメモリ情報が登録ノードにないため容量チェックできません".into());
+        return warnings;
+    }
+
+    let max_mem = *memories.iter().max().unwrap();
+    if required_memory > max_mem {
+        warnings.push(format!(
+            "モデルの推奨メモリ{:.1}GBがノードの最大GPUメモリ{:.1}GBを超えています",
+            required_memory as f64 / (1024.0 * 1024.0 * 1024.0),
+            max_mem as f64 / (1024.0 * 1024.0 * 1024.0),
+        ));
+    }
+
+    warnings
+}
+
 /// POST /api/models/register - HF GGUFを対応モデルに登録
 pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let name = format!("hf/{}/{}", req.repo, req.filename);
+    let repo = req.repo.clone();
+    let filename = req.filename.clone();
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -574,20 +610,48 @@ pub async fn register_model(
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
     if head_res.status() == reqwest::StatusCode::NOT_FOUND {
+        tracing::warn!(
+            repo = %req.repo,
+            filename = %req.filename,
+            status = ?head_res.status(),
+            "hf_model_register_not_found"
+        );
         return Err(RouterError::Common(CommonError::Validation(
             "指定されたGGUFが見つかりません".into(),
         ))
         .into());
     }
     if !head_res.status().is_success() {
+        tracing::error!(
+            repo = %req.repo,
+            filename = %req.filename,
+            status = ?head_res.status(),
+            "hf_model_register_head_failed"
+        );
         return Err(RouterError::Http(head_res.status().to_string()).into());
     }
 
+    let content_length = head_res
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    // llama.cpp runtimeは概ねサイズの1.5倍のメモリを使用するため同倍率で推定
+    const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+    let required_memory = if content_length > 0 {
+        ((content_length as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64
+    } else {
+        0
+    };
+
+    let warnings = compute_gpu_warnings(&state.registry, required_memory).await;
+
     let model = ModelInfo {
         name: name.clone(),
-        size: 0,
+        size: content_length,
         description: req.display_name.unwrap_or_else(|| req.repo.clone()),
-        required_memory: 0,
+        required_memory,
         tags: vec!["gguf".into()],
         source: ModelSource::HfGguf,
         download_url: Some(download_url),
@@ -602,11 +666,23 @@ pub async fn register_model(
     add_registered_model(model)?;
     persist_registered_models().await;
 
+    tracing::info!(
+        repo = %repo,
+        filename = %filename,
+        size_bytes = content_length,
+        required_memory_bytes = required_memory,
+        warnings = warnings.len(),
+        "hf_model_registered"
+    );
+
     Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
             "name": name,
-            "status": "registered"
+            "status": "registered",
+            "size_bytes": content_length,
+            "required_memory_bytes": required_memory,
+            "warnings": warnings,
         })),
     ))
 }
@@ -1155,6 +1231,7 @@ pub async fn get_model_blob(Path(model_name): Path<String>) -> axum::response::R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 
     #[test]
     fn test_validate_model_name_valid() {
@@ -1314,6 +1391,30 @@ mod tests {
         assert_eq!(view.display_name, Some("GPT-OSS 7B".to_string()));
         assert!((view.size_gb.unwrap() - 4.0).abs() < 0.001);
         assert!((view.required_memory_gb.unwrap() - 6.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_compute_gpu_warnings_detects_insufficient_memory() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "node-1".into(),
+            ip_address: "127.0.0.1".parse().unwrap(),
+            runtime_version: "0.1.0".into(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: vec![GpuDeviceInfo {
+                model: "Test GPU".into(),
+                count: 1,
+                memory: Some(4 * 1024 * 1024 * 1024),
+            }],
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".into()),
+        };
+        registry.register(req).await.unwrap();
+
+        let warnings = compute_gpu_warnings(&registry, 6 * 1024 * 1024 * 1024).await;
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("最大GPUメモリ"));
     }
 
     #[tokio::test]

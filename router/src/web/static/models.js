@@ -148,6 +148,29 @@ async function registerModel(repo, filename, displayName) {
   return response.json();
 }
 
+function findDownloadTask(modelName) {
+  return Array.from(downloadTasks.values()).find((t) => t.model_name === modelName) || null;
+}
+
+function renderStatusBadge(status) {
+  if (!status) return '';
+  const normalized = normalizeDownloadStatus(status);
+  const label = translateStatus(normalized);
+  return `<span class="task-status task-status--${escapeHtml(normalized)}">${escapeHtml(label)}</span>`;
+}
+
+function renderProgressBar(progress, speedText = '') {
+  const p = Math.min(1, Math.max(0, progress ?? 0));
+  const pct = (p * 100).toFixed(1);
+  return `
+    <div class="task-progress">
+      <progress value="${p}" max="1"></progress>
+      <span class="task-progress-text">${pct}%</span>
+    </div>
+    ${speedText}
+  `;
+}
+
 function parseHfUrl(rawUrl) {
   if (!rawUrl) return null;
   try {
@@ -574,13 +597,28 @@ function renderHfModelCard(model) {
 
 function renderRegisteredModelCard(model) {
   const card = renderModelCard(model);
+  const task = findDownloadTask(model.name);
+  const statusBadge = task ? renderStatusBadge(task.status) : '';
+  const progressBlock =
+    task && (normalizeDownloadStatus(task.status) === 'downloading')
+      ? renderProgressBar(
+          task.progress || 0,
+          task.download_speed_bps ? `<div class="task-speed">${formatSpeed(task.download_speed_bps)}</div>` : ''
+        )
+      : '';
+  const disabled =
+    task && ['pending', 'downloading', 'in_progress'].includes(normalizeDownloadStatus(task.status));
   return card.replace(
     '</div>',
     `
+      <div class="model-card__meta">
+        ${statusBadge}
+        ${progressBlock}
+      </div>
       <div class="model-card__actions">
         <button class="btn btn-small" data-action="download" data-model="${escapeHtml(
           model.name
-        )}">Download (all)</button>
+        )}" ${disabled ? 'disabled' : ''}>Download (all)</button>
       </div>
     </div>`
   );
@@ -637,7 +675,11 @@ function renderHfModels(models) {
   const container = elements.hfModelsList();
   const status = elements.hfStatus();
   if (!container) return;
-  if (status) status.textContent = availableModelsMeta.cached ? 'Cached' : '';
+  if (status) {
+    status.textContent = models.length
+      ? `HF models: ${models.length}${availableModelsMeta.cached ? ' (cached)' : ''}`
+      : '';
+  }
   if (models.length === 0) {
     container.innerHTML = '<p class="empty-message">No HF models</p>';
     return;
@@ -916,6 +958,7 @@ function translateStatus(status) {
     pending: 'Pending',
     downloading: 'Downloading',
     in_progress: 'Downloading',
+    queued: 'Queued',
     completed: 'Completed',
     failed: 'Failed',
   };
@@ -924,6 +967,7 @@ function translateStatus(status) {
 
 function normalizeDownloadStatus(status) {
   if (status === 'in_progress') return 'downloading';
+  if (status === 'queued') return 'pending';
   return status || 'pending';
 }
 

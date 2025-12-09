@@ -53,6 +53,9 @@ pub mod auth;
 /// CLIインターフェース
 pub mod cli;
 
+/// モデル変換タスク
+pub mod convert;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {
@@ -64,6 +67,8 @@ pub struct AppState {
     pub request_history: std::sync::Arc<db::request_history::RequestHistoryStorage>,
     /// ダウンロードタスクマネージャー
     pub task_manager: tasks::DownloadTaskManager,
+    /// 変換タスクマネージャー
+    pub convert_manager: convert::ConvertTaskManager,
     /// データベース接続プール
     pub db_pool: sqlx::SqlitePool,
     /// JWT秘密鍵

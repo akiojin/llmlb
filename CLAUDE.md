@@ -9,6 +9,7 @@
 - 何を作る: Rust 製ルーター（`router/`）＋ llama.cpp ベースの C++ ノード（`node/`）。Ollama は一切使わない／復活させない。
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
 - 守る: ブランチ／worktree 作成・切替禁止、作業ディレクトリ移動禁止、GPU 非搭載ノード登録禁止、必ずローカルで全テスト実行。
+- HFカタログ利用時は `HF_TOKEN`（任意）と必要に応じ `HF_BASE_URL` を環境にセットしておく。
 - まず実行: `make quality-checks`（時間がない場合でも個別コマンドを全て回すこと）。
 - 迷ったら: `memory/constitution.md` とこのファイル後半の詳細ルールを再確認。
 

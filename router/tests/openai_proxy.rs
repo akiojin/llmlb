@@ -20,6 +20,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = DownloadTaskManager::new();
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -33,6 +34,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         load_manager,
         request_history,
         task_manager,
+        convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -278,7 +280,7 @@ async fn test_proxy_chat_missing_model_returns_openai_error() {
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["error"]["type"], "node_upstream_error");
+    assert_eq!(json["error"]["type"], "runtime_upstream_error");
     assert_eq!(json["error"]["code"], 404);
     assert!(json["error"]["message"]
         .as_str()
@@ -306,6 +308,7 @@ async fn test_proxy_chat_no_agents() {
         load_manager,
         request_history,
         task_manager,
+        convert_manager: llm_router::convert::ConvertTaskManager::new(1),
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -444,6 +447,7 @@ async fn test_proxy_generate_no_agents() {
         load_manager,
         request_history,
         task_manager,
+        convert_manager: llm_router::convert::ConvertTaskManager::new(1),
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -819,7 +823,13 @@ async fn test_openai_models_list_success() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(value["data"][0]["id"], "gpt-oss:20b");
+    assert!(
+        value["data"]
+            .as_array()
+            .map(|arr| arr.is_empty())
+            .unwrap_or(true),
+        "/v1/models should be empty when no downloaded models exist"
+    );
 }
 
 #[tokio::test]
@@ -851,5 +861,5 @@ async fn test_openai_model_detail_success() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

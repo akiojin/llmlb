@@ -711,6 +711,10 @@ body::after {
   border: 1px solid rgba(248, 113, 113, 0.5);
   background: rgba(248, 113, 113, 0.18);
   color: #fee2e2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .hidden {
@@ -2087,8 +2091,8 @@ body::after {
   color: var(--text-subtle);
 }
 
-/* Chat modal */
-.chat-modal {
+/* Playground modal */
+.playground-modal {
   position: fixed;
   inset: 0;
   z-index: 999;
@@ -2097,18 +2101,18 @@ body::after {
   align-items: stretch;
 }
 
-.chat-modal.hidden {
+.playground-modal.hidden {
   display: none;
 }
 
-.chat-modal__backdrop {
+.playground-modal__backdrop {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(6px);
 }
 
-.chat-modal__content {
+.playground-modal__content {
   position: relative;
   margin: 24px;
   border-radius: 18px;
@@ -2121,7 +2125,7 @@ body::after {
   min-height: calc(100vh - 48px);
 }
 
-.chat-modal__header {
+.playground-modal__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2131,19 +2135,19 @@ body::after {
   background: linear-gradient(90deg, rgba(0, 255, 255, 0.15), rgba(255, 0, 255, 0.08));
 }
 
-.chat-modal__title {
+.playground-modal__title {
   margin: 4px 0 0;
   color: var(--text);
   font-weight: 700;
 }
 
-.chat-modal__actions {
+.playground-modal__actions {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-.chat-modal__iframe {
+.playground-modal__iframe {
   flex: 1;
   border: none;
   width: 100%;
@@ -2188,7 +2192,7 @@ body::after {
     width: 100%;
   }
 
-  .chat-modal__content {
+  .playground-modal__content {
     margin: 8px;
     min-height: calc(100vh - 16px);
   }
@@ -2361,6 +2365,20 @@ body::after {
 .success-banner {
   background: #d1fae5;
   color: #065f46;
+}
+
+.banner__close {
+  background: transparent;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.banner__close:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .models-grid {

@@ -1682,17 +1682,35 @@ function updateLastRefreshed(date, serverDate = null) {
 
 function showError(message) {
   const banner = document.getElementById("error-banner");
-  if (!banner) return;
-  banner.textContent = message;
+  const text = document.getElementById("error-banner-text");
+  if (!banner || !text) return;
+  banner.classList.remove("success-banner");
+  text.textContent = message;
   banner.classList.remove("hidden");
 }
 
 function hideError() {
   const banner = document.getElementById("error-banner");
-  if (!banner) return;
+  const text = document.getElementById("error-banner-text");
+  if (!banner || !text) return;
   banner.classList.add("hidden");
-  banner.textContent = "";
+  banner.classList.remove("success-banner");
+  text.textContent = "";
 }
+
+// Setup global banner close button once DOM is ready
+document.addEventListener("DOMContentLoaded", () => {
+  const banner = document.getElementById("error-banner");
+  const close = document.getElementById("error-banner-close");
+  const text = document.getElementById("error-banner-text");
+  if (banner && close) {
+    close.addEventListener("click", () => {
+      banner.classList.add("hidden");
+      banner.classList.remove("success-banner");
+      if (text) text.textContent = "";
+    });
+  }
+});
 
 function formatDuration(seconds) {
   if (typeof seconds !== "number" || Number.isNaN(seconds)) {

@@ -9,75 +9,67 @@ const LOG_ENTRY_LIMIT = 200;
 const MODAL_LOG_ENTRY_LIMIT = 100;
 
 // ========================================
-// Theme Manager (FR-027)
+// Theme Manager (FR-027) - 3-Skin System
 // ========================================
 const ThemeManager = {
-  themes: ["mono", "cyberpunk", "retro", "synthwave", "ocean", "ember", "forest"],
+  // NEW: 3 distinct layout-based themes
+  themes: ["minimal", "tech", "creative"],
   themeLabels: {
-    mono: "Mono",
-    cyberpunk: "Cyber",
-    retro: "Terminal",
-    synthwave: "Synth",
-    ocean: "Ocean",
-    ember: "Ember",
-    forest: "Forest",
+    minimal: "Minimal",
+    tech: "Tech",
+    creative: "Creative",
+  },
+  // Migration map from old themes to new themes
+  legacyThemeMap: {
+    mono: "minimal",
+    cyberpunk: "tech",
+    retro: "tech",
+    synthwave: "creative",
+    ocean: "creative",
+    ember: "creative",
+    forest: "creative",
   },
   storageKey: "dashboard-theme",
 
-  // テーマごとのChart.jsカラーパレット
+  // Chart.js color palettes for each theme
   chartColors: {
-    cyberpunk: [
-      { border: "rgba(0, 255, 255, 0.85)", bg: "rgba(0, 255, 255, 0.12)" },
-      { border: "rgba(255, 0, 255, 0.85)", bg: "rgba(255, 0, 255, 0.12)" },
-      { border: "rgba(0, 255, 136, 0.85)", bg: "rgba(0, 255, 136, 0.12)" },
-      { border: "rgba(255, 107, 0, 0.85)", bg: "rgba(255, 107, 0, 0.12)" },
+    minimal: [
+      { border: "rgba(17, 24, 39, 0.85)", bg: "rgba(17, 24, 39, 0.08)" },
+      { border: "rgba(107, 114, 128, 0.85)", bg: "rgba(107, 114, 128, 0.08)" },
+      { border: "rgba(5, 150, 105, 0.85)", bg: "rgba(5, 150, 105, 0.08)" },
+      { border: "rgba(220, 38, 38, 0.85)", bg: "rgba(220, 38, 38, 0.08)" },
     ],
-    retro: [
+    tech: [
       { border: "rgba(51, 255, 51, 0.85)", bg: "rgba(51, 255, 51, 0.12)" },
       { border: "rgba(170, 255, 0, 0.85)", bg: "rgba(170, 255, 0, 0.12)" },
       { border: "rgba(0, 255, 170, 0.85)", bg: "rgba(0, 255, 170, 0.12)" },
       { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
     ],
-    synthwave: [
+    creative: [
       { border: "rgba(255, 113, 206, 0.85)", bg: "rgba(255, 113, 206, 0.12)" },
       { border: "rgba(1, 205, 254, 0.85)", bg: "rgba(1, 205, 254, 0.12)" },
       { border: "rgba(5, 255, 161, 0.85)", bg: "rgba(5, 255, 161, 0.12)" },
       { border: "rgba(255, 251, 150, 0.85)", bg: "rgba(255, 251, 150, 0.12)" },
     ],
-    ocean: [
-      { border: "rgba(0, 212, 255, 0.85)", bg: "rgba(0, 212, 255, 0.12)" },
-      { border: "rgba(32, 227, 178, 0.85)", bg: "rgba(32, 227, 178, 0.12)" },
-      { border: "rgba(0, 180, 216, 0.85)", bg: "rgba(0, 180, 216, 0.12)" },
-      { border: "rgba(255, 159, 67, 0.85)", bg: "rgba(255, 159, 67, 0.12)" },
-    ],
-    ember: [
-      { border: "rgba(255, 107, 53, 0.85)", bg: "rgba(255, 107, 53, 0.12)" },
-      { border: "rgba(255, 201, 60, 0.85)", bg: "rgba(255, 201, 60, 0.12)" },
-      { border: "rgba(247, 47, 47, 0.85)", bg: "rgba(247, 47, 47, 0.12)" },
-      { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
-    ],
-    forest: [
-      { border: "rgba(46, 204, 113, 0.85)", bg: "rgba(46, 204, 113, 0.12)" },
-      { border: "rgba(0, 255, 127, 0.85)", bg: "rgba(0, 255, 127, 0.12)" },
-      { border: "rgba(39, 174, 96, 0.85)", bg: "rgba(39, 174, 96, 0.12)" },
-      { border: "rgba(230, 126, 34, 0.85)", bg: "rgba(230, 126, 34, 0.12)" },
-    ],
-    mono: [
-      { border: "rgba(255, 255, 255, 0.85)", bg: "rgba(255, 255, 255, 0.08)" },
-      { border: "rgba(204, 204, 204, 0.85)", bg: "rgba(204, 204, 204, 0.08)" },
-      { border: "rgba(170, 170, 170, 0.85)", bg: "rgba(170, 170, 170, 0.08)" },
-      { border: "rgba(136, 136, 136, 0.85)", bg: "rgba(136, 136, 136, 0.08)" },
-    ],
   },
 
   init() {
-    const saved = localStorage.getItem(this.storageKey) || "mono";
+    let saved = localStorage.getItem(this.storageKey) || "minimal";
+    // Migrate from legacy themes if needed
+    if (this.legacyThemeMap[saved]) {
+      saved = this.legacyThemeMap[saved];
+      localStorage.setItem(this.storageKey, saved);
+    }
     this.apply(saved);
   },
 
   apply(theme) {
+    // Migrate legacy theme names
+    if (this.legacyThemeMap[theme]) {
+      theme = this.legacyThemeMap[theme];
+    }
     if (!this.themes.includes(theme)) {
-      theme = "mono";
+      theme = "minimal";
     }
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(this.storageKey, theme);
@@ -86,7 +78,7 @@ const ThemeManager = {
   },
 
   toggle() {
-    const current = document.documentElement.getAttribute("data-theme") || "mono";
+    const current = document.documentElement.getAttribute("data-theme") || "minimal";
     const nextIndex = (this.themes.indexOf(current) + 1) % this.themes.length;
     this.apply(this.themes[nextIndex]);
   },
@@ -96,10 +88,10 @@ const ThemeManager = {
   },
 
   updateCharts() {
-    const theme = document.documentElement.getAttribute("data-theme") || "mono";
-    const colors = this.chartColors[theme] || this.chartColors.mono;
+    const theme = document.documentElement.getAttribute("data-theme") || "minimal";
+    const colors = this.chartColors[theme] || this.chartColors.minimal;
 
-    // 既存のrequestsChartを更新
+    // Update requestsChart
     if (typeof requestsChart !== "undefined" && requestsChart) {
       requestsChart.data.datasets[0].borderColor = colors[0].border;
       requestsChart.data.datasets[0].backgroundColor = colors[0].bg;
@@ -108,7 +100,7 @@ const ThemeManager = {
       requestsChart.update("none");
     }
 
-    // nodeMetricsChartを更新
+    // Update nodeMetricsChart
     if (typeof nodeMetricsChart !== "undefined" && nodeMetricsChart) {
       nodeMetricsChart.data.datasets.forEach((ds, i) => {
         const color = colors[i % colors.length];
@@ -122,8 +114,8 @@ const ThemeManager = {
   updateToggleButton() {
     const btn = document.getElementById("theme-toggle");
     if (!btn) return;
-    const current = document.documentElement.getAttribute("data-theme") || "mono";
-    const label = this.themeLabels[current] || "Mono";
+    const current = document.documentElement.getAttribute("data-theme") || "minimal";
+    const label = this.themeLabels[current] || "Minimal";
     btn.setAttribute("title", `Theme: ${label} (Click to switch)`);
     btn.setAttribute("aria-label", `Current theme: ${label}. Click to switch theme.`);
   },

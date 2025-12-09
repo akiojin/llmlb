@@ -92,9 +92,9 @@ npm run start:node
 
 | 変数 | デフォルト | 説明 |
 |-----|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | 登録先ルーターのURL |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | 登録先ルーターのURL（Routerを8080で動かす場合は上書き推奨） |
 | `LLM_NODE_PORT` | `11435` | ノードのリッスンポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデル保存ディレクトリ |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデル保存ディレクトリ |
 | `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU無しでの起動を許可 |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
@@ -417,42 +417,61 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
    curl http://coordinator:8080/api/agents
    ```
 
-### 環境変数
+### 環境変数（プロジェクト全体）
 
 #### ルーター（Rust）
 
-| 環境変数 | デフォルト | 説明 |
-|---------|-----------|------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
-| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
-| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
-| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
-| `LLM_ROUTER_ADMIN_PASSWORD` | - | 初期管理者パスワード |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
-| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+| 環境変数 | デフォルト | 説明 | 旧名 / 備考 |
+|---------|-----------|------|-------------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス | `ROUTER_HOST` |
+| `LLM_ROUTER_PORT` | `8080` | リッスンポート | `ROUTER_PORT` |
+| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL | `DATABASE_URL` |
+| `LLM_ROUTER_DATA_DIR` | `~/.llm-router` | データディレクトリ基点（DB・ログのデフォルトに使用） | - |
+| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット | `JWT_SECRET` |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 | `ADMIN_USERNAME` |
+| `LLM_ROUTER_ADMIN_PASSWORD` | （必須/初回のみ） | 初期管理者パスワード | `ADMIN_PASSWORD` |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル (`EnvFilter` で使用) | `LLM_LOG_LEVEL`, `RUST_LOG` |
+| `LLM_ROUTER_LOG_DIR` | `~/.llm-router/logs` | ログ出力ディレクトリ | `LLM_LOG_DIR`（非推奨） |
+| `LLM_ROUTER_LOG_RETENTION_DAYS` | `7` | ログ保持日数 | `LLM_LOG_RETENTION_DAYS` |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ノードヘルスチェック間隔（秒） | `HEALTH_CHECK_INTERVAL` |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードへのリクエストタイムアウト（秒） | `NODE_TIMEOUT` |
+| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード（`auto` / `metrics`） | `LOAD_BALANCER_MODE` |
+| `LLM_ROUTER_SKIP_HEALTH_CHECK` | 未設定 | テスト用: ヘルスチェックをスキップ | テスト専用 |
+| `ROUTER_MAX_WAITERS` | `1024` | 同時待機リクエスト上限（混雑制御） | 主にテスト用 |
 
-クラウドAPI:
+クラウド/外部サービス:
 
-- `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
+| 環境変数 | デフォルト | 説明 | 備考 |
+|---------|-----------|------|------|
+| `OPENAI_API_KEY` | - | `openai:` プレフィックス利用時のAPIキー | 必須 |
+| `OPENAI_BASE_URL` | `https://api.openai.com` | OpenAIエンドポイント上書き | 任意 |
+| `GOOGLE_API_KEY` | - | `google:` プレフィックス利用時のAPIキー | 必須 |
+| `GOOGLE_API_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Google APIベースURL | 任意 |
+| `ANTHROPIC_API_KEY` | - | `anthropic:` プレフィックス利用時のAPIキー | 必須 |
+| `ANTHROPIC_API_BASE_URL` | `https://api.anthropic.com` | AnthropicベースURL | 任意 |
+| `HF_TOKEN` | - | モデル取得に使うHugging Faceトークン | 任意 |
+| `LLM_ROUTER_API_KEY` | - | e2eテスト/クライアント用APIキー | テスト/クライアント |
 
 #### ノード（C++）
 
-| 環境変数 | デフォルト | 説明 |
-|---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
-| `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU必須を無効化 |
-| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+| 環境変数 | デフォルト | 説明 | 旧名 / 備考 |
+|---------|-----------|------|-------------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | 登録先ルーターURL（Routerを8080で動かす場合は上書き） | - |
+| `LLM_NODE_PORT` | `11435` | ノードHTTPポート | - |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデル保存ディレクトリ | `LLM_MODELS_DIR` |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス | `LLM_BIND_ADDRESS` |
+| `LLM_NODE_IP` | 自動検出 | ルーター登録に使うノードIP | - |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート送信間隔（秒） | `LLM_HEARTBEAT_SECS` |
+| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU無し起動を許可 | `LLM_ALLOW_NO_GPU` |
+| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
+| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログ出力ディレクトリ | `LLM_LOG_DIR` |
+| `LLM_NODE_LOG_RETENTION_DAYS` | `7` | ログ保持日数 | `LLM_LOG_RETENTION_DAYS` |
+| `LLM_NODE_CONFIG` | `~/.llm-router/config.json` | ノード設定ファイルパス | - |
+| `LLM_MODEL_IDLE_TIMEOUT` | 未設定 | モデル未使用時のアンロードまでの秒数 | 設定時のみ有効 |
+| `LLM_MAX_LOADED_MODELS` | 未設定 | 同時ロードモデル数の上限 | 設定時のみ有効 |
+| `LLM_MAX_MEMORY_BYTES` | 未設定 | モデルロードに許可する最大メモリ | 設定時のみ有効 |
 
-**注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
-新しい環境変数名を使用してください。
+**注意**: 旧環境変数は後方互換のために読み込みますが非推奨です。新しい名前を使用してください。
 
 ## 開発
 

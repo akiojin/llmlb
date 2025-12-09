@@ -99,8 +99,8 @@
           </header>
           <div class="models-grid">
             <article class="models-column">
-              <h3>Supported Models (HF GGUF)</h3>
-              <p class="caption">Register to add into supported list</p>
+              <h3>Register Model (HF URL)</h3>
+              <p class="caption">Paste a Hugging Face URL to register or convert</p>
               <div class="card register-url-card">
                 <label class="filter-label" for="hf-register-url">
                   <span>Register via URL</span>
@@ -113,8 +113,6 @@
                 <button type="button" id="hf-register-url-submit" class="btn btn-small">Register</button>
                 <p class="caption">Paste a Hugging Face file URL (GGUF preferred; non-GGUF will be converted).</p>
               </div>
-              <div id="hf-models-list" class="model-cards"></div>
-              <p id="hf-models-status" class="caption"></p>
             </article>
             <article class="models-column">
               <h3>Registered Models</h3>
@@ -598,6 +596,7 @@
     <script src="/dashboard/api-keys.js" defer></script>
     <script src="/dashboard/users.js" defer></script>
     <script src="/dashboard/app.js" defer></script>
+    <script src="/dashboard/models.js" defer></script>
 
     <!-- Convert Modal -->
     <div id="convert-modal" class="modal hidden" role="dialog" aria-modal="true">

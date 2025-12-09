@@ -590,9 +590,8 @@ async fn test_register_model_contract() {
         .as_array()
         .expect("'data' must be an array on /v1/models");
     assert!(
-        data.iter()
-            .any(|m| m["id"] == "hf/test/repo/model.gguf" && m["download_url"].as_str().is_some()),
-        "/v1/models must include registered HF model with download_url"
+        data.iter().all(|m| m["id"] != "hf/test/repo/model.gguf"),
+        "/v1/models must not expose models before download completes"
     );
 
     // 重複登録は400

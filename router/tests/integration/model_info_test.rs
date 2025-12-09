@@ -332,15 +332,11 @@ async fn test_v1_models_returns_fixed_list() {
         .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
         .collect();
 
-    let expected = vec![
-        "gpt-oss:20b",
-        "gpt-oss:120b",
-        "gpt-oss-safeguard:20b",
-        "qwen3-coder:30b",
-    ];
+    let expected: Vec<String> = vec![];
 
-    assert_eq!(ids.len(), expected.len(), "should return exactly 4 models");
-    for id in expected {
-        assert!(ids.contains(&id.to_string()), "missing {id}");
-    }
+    assert_eq!(
+        ids.len(),
+        expected.len(),
+        "should return only downloaded models"
+    );
 }

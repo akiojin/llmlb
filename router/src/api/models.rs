@@ -24,7 +24,6 @@ use crate::{
         DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
     },
     registry::NodeRegistry,
-    runtime::RuntimeClient,
     AppState,
 };
 use llm_router_common::error::{CommonError, RouterError};
@@ -259,23 +258,10 @@ pub async fn load_registered_models_from_storage() {
 
 /// 登録モデルの状態を返す（ダウンロード完了判定含む）
 pub async fn get_registered_models() -> Result<Json<Vec<RegisteredModelView>>, AppError> {
-    let mut list: Vec<RegisteredModelView> = Vec::new();
-
-    // 事前定義モデルのうちダウンロード済みのものを載せる
-    if let Ok(client) = RuntimeClient::new() {
-        for m in client.get_predefined_models() {
-            let view = model_info_to_registered_view(m);
-            if view.ready {
-                list.push(view);
-            }
-        }
-    }
-
-    list.extend(
-        list_registered_models()
-            .into_iter()
-            .map(model_info_to_registered_view),
-    );
+    let list: Vec<RegisteredModelView> = list_registered_models()
+        .into_iter()
+        .map(model_info_to_registered_view)
+        .collect();
     Ok(Json(list))
 }
 
@@ -285,10 +271,9 @@ pub fn list_registered_models() -> Vec<ModelInfo> {
 }
 
 fn find_model_by_name(name: &str) -> Option<ModelInfo> {
-    let client = RuntimeClient::new().ok()?;
-    let mut all = client.get_predefined_models();
-    all.extend(list_registered_models());
-    all.into_iter().find(|m| m.name == name)
+    list_registered_models()
+        .into_iter()
+        .find(|m| m.name == name)
 }
 
 /// 登録モデルを追加（重複チェックあり）
@@ -686,12 +671,9 @@ pub async fn get_available_models(
         }));
     }
 
-    tracing::debug!("Fetching available models from builtin list");
-    let client = RuntimeClient::new()?;
-    let models = client.get_predefined_models();
-    let models_view = models.into_iter().map(model_info_to_view).collect();
+    tracing::debug!("Builtin models are disabled; returning empty list");
     Ok(Json(AvailableModelsResponse {
-        models: models_view,
+        models: Vec::new(),
         source: "builtin".to_string(),
         cached: None,
         pagination: None,

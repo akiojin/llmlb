@@ -142,8 +142,14 @@ async function registerModel(repo, filename, displayName) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    const txt = await response.text();
-    throw new Error(txt || `HTTP ${response.status}`);
+    let msg = await response.text();
+    try {
+      const parsed = JSON.parse(msg);
+      msg = parsed.error || parsed.message || msg;
+    } catch (_) {
+      // keep raw text
+    }
+    throw new Error(msg || `HTTP ${response.status}`);
   }
   return response.json();
 }
@@ -194,9 +200,9 @@ function parseHfUrl(rawUrl) {
       (parts.length >= 3 ? parts.slice(2).join('/') : null);
 
     // repo 直指定の場合は filename なしで返す（後段で解決）
-    if (!filename) return { repo, filename: null };
-    if (!filename.endsWith('.gguf')) return null;
-    return { repo, filename };
+    if (!filename) return { repo, filename: null, isGguf: false };
+    const isGguf = filename.toLowerCase().endsWith('.gguf');
+    return { repo, filename, isGguf };
   } catch (_) {
     return null;
   }
@@ -1155,12 +1161,12 @@ function handleDeselectAll() {
 /**
  * Initialize model management UI
  */
-export async function initModelsUI(agents) {
-  // Fetch available models
-  availableModels = await fetchAvailableModels();
+async function initModelsUI(agents) {
+  // HFカタログは表示しないため空で初期化
+  availableModels = [];
   modelFilterQuery = '';
-  renderAvailableModels(availableModels);
-  renderHfModels(availableModels);
+  renderAvailableModels([]);
+  renderHfModels([]);
 
   registeredModels = await fetchRegisteredModels();
   renderRegisteredModels(registeredModels);
@@ -1174,8 +1180,6 @@ export async function initModelsUI(agents) {
   const deselectAllButton = elements.deselectAllButton();
   const searchInput = elements.modelSearchInput();
   const toggleManualBtn = elements.toggleManualBtn();
-  const hfSearch = elements.hfSearchInput();
-  const hfRefresh = elements.hfRefreshBtn();
   const regRefresh = elements.registeredRefreshBtn();
   const convertOpen = elements.convertModalOpen();
   const convertClose = elements.convertModalClose();
@@ -1198,20 +1202,6 @@ export async function initModelsUI(agents) {
   if (searchInput) {
     searchInput.value = '';
     searchInput.addEventListener('input', handleModelSearch);
-  }
-
-  if (hfSearch) {
-    hfSearch.addEventListener('input', async () => {
-      availableModels = await fetchAvailableModels();
-      renderHfModels(availableModels);
-    });
-  }
-
-  if (hfRefresh) {
-    hfRefresh.addEventListener('click', async () => {
-      availableModels = await fetchAvailableModels();
-      renderHfModels(availableModels);
-    });
   }
 
   if (regRefresh) {
@@ -1259,13 +1249,13 @@ export async function initModelsUI(agents) {
       const input = elements.hfRegisterUrlInput();
       const parsed = parseHfUrl(input?.value?.trim() || '');
       if (!parsed) {
-        showError('GGUFのURLまたはリポジトリURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)');
+        showError('HFのURLまたはリポジトリURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)');
         return;
       }
-      let repo = parsed.repo;
-      let filename = parsed.filename; // may be null -> backend resolves
+      const repo = parsed.repo;
+      const filename = parsed.filename; // may be null -> backend resolves
       const isRepoOnly = !filename;
-      const isGguf = filename ? filename.toLowerCase().endsWith('.gguf') : false;
+      const isGguf = parsed.isGguf;
       try {
         if (isRepoOnly || isGguf) {
           const res = await registerModel(repo, filename, filename || repo);
@@ -1325,7 +1315,8 @@ export async function initModelsUI(agents) {
 /**
  * Update model management UI when agent list changes
  */
-export function updateModelsUI(agents) {
+function updateModelsUI(agents) {
+  cachedAgents = agents;
   renderAgentsForDistribution(agents);
 }
 
@@ -1351,3 +1342,11 @@ async function refreshDownloadTasks() {
   }
   renderDownloadTasks();
 }
+
+// Expose to other scripts if needed
+window.updateModelsUI = updateModelsUI;
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initModelsUI(cachedAgents);
+});

@@ -823,7 +823,13 @@ async fn test_openai_models_list_success() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(value["data"][0]["id"], "gpt-oss:20b");
+    assert!(
+        value["data"]
+            .as_array()
+            .map(|arr| arr.is_empty())
+            .unwrap_or(true),
+        "/v1/models should be empty when no downloaded models exist"
+    );
 }
 
 #[tokio::test]
@@ -855,5 +861,5 @@ async fn test_openai_model_detail_success() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

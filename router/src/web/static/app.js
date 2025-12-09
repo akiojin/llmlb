@@ -721,8 +721,8 @@ function updateHistoryChart(canvas, labels, success, failures) {
             label: "Success Requests",
             data: success,
             tension: 0.3,
-            borderColor: "rgba(59, 130, 246, 0.9)",
-            backgroundColor: "rgba(59, 130, 246, 0.15)",
+            borderColor: "rgba(0, 255, 255, 0.9)",
+            backgroundColor: "rgba(0, 255, 255, 0.15)",
             fill: true,
             pointRadius: 0,
           },
@@ -730,8 +730,8 @@ function updateHistoryChart(canvas, labels, success, failures) {
             label: "Failed Requests",
             data: failures,
             tension: 0.3,
-            borderColor: "rgba(248, 113, 113, 0.9)",
-            backgroundColor: "rgba(248, 113, 113, 0.15)",
+            borderColor: "rgba(255, 0, 85, 0.9)",
+            backgroundColor: "rgba(255, 0, 85, 0.15)",
             fill: true,
             pointRadius: 0,
           },
@@ -1229,8 +1229,8 @@ function updateNodeMetrics(metrics) {
       key: "cpu",
       label: "CPU Usage",
       data: cpu,
-      borderColor: "rgba(59, 130, 246, 0.85)",
-      backgroundColor: "rgba(59, 130, 246, 0.12)",
+      borderColor: "rgba(0, 255, 255, 0.85)",
+      backgroundColor: "rgba(0, 255, 255, 0.12)",
     });
   }
   if (datasetHasValues(memory)) {
@@ -1238,8 +1238,8 @@ function updateNodeMetrics(metrics) {
       key: "memory",
       label: "Memory Usage",
       data: memory,
-      borderColor: "rgba(168, 85, 247, 0.85)",
-      backgroundColor: "rgba(168, 85, 247, 0.12)",
+      borderColor: "rgba(255, 0, 255, 0.85)",
+      backgroundColor: "rgba(255, 0, 255, 0.12)",
     });
   }
   if (datasetHasValues(gpu)) {
@@ -1247,8 +1247,8 @@ function updateNodeMetrics(metrics) {
       key: "gpu",
       label: "GPU Usage",
       data: gpu,
-      borderColor: "rgba(34, 197, 94, 0.85)",
-      backgroundColor: "rgba(34, 197, 94, 0.12)",
+      borderColor: "rgba(0, 255, 136, 0.85)",
+      backgroundColor: "rgba(0, 255, 136, 0.12)",
     });
   }
   if (datasetHasValues(gpuMemory)) {
@@ -1256,8 +1256,8 @@ function updateNodeMetrics(metrics) {
       key: "gpu-memory",
       label: "GPU Memory Usage",
       data: gpuMemory,
-      borderColor: "rgba(248, 113, 113, 0.85)",
-      backgroundColor: "rgba(248, 113, 113, 0.12)",
+      borderColor: "rgba(255, 107, 0, 0.85)",
+      backgroundColor: "rgba(255, 107, 0, 0.12)",
     });
   }
 

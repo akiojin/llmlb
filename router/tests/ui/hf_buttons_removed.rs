@@ -1,7 +1,7 @@
-/// Contract tests for HF button removal (FR-028)
-/// Models section should not have Hugging Face related buttons
+// Contract tests for HF button removal (FR-028)
+// Models section should not have Hugging Face related buttons
 
-/// Read the index.html file content for testing
+// Read the index.html file content for testing
 fn get_index_html() -> String {
     include_str!("../../src/web/static/index.html").to_string()
 }

@@ -9,52 +9,57 @@ const LOG_ENTRY_LIMIT = 200;
 const MODAL_LOG_ENTRY_LIMIT = 100;
 
 // ========================================
-// Theme Manager (FR-027) - 3-Skin System
+// Theme Manager (FR-027) - 3 Color Themes
 // ========================================
 const ThemeManager = {
-  // NEW: 3 distinct layout-based themes
-  themes: ["minimal", "tech", "creative"],
+  // 3 color themes (layout is fixed for all)
+  themes: ["dark", "light", "high-contrast"],
   themeLabels: {
-    minimal: "Minimal",
-    tech: "Tech",
-    creative: "Creative",
+    dark: "Dark",
+    light: "Light",
+    "high-contrast": "High Contrast",
   },
   // Migration map from old themes to new themes
   legacyThemeMap: {
-    mono: "minimal",
-    cyberpunk: "tech",
-    retro: "tech",
-    synthwave: "creative",
-    ocean: "creative",
-    ember: "creative",
-    forest: "creative",
+    // Old 7-color themes
+    mono: "dark",
+    cyberpunk: "dark",
+    retro: "high-contrast",
+    synthwave: "dark",
+    ocean: "dark",
+    ember: "dark",
+    forest: "dark",
+    // Old 3-skin themes
+    minimal: "light",
+    tech: "high-contrast",
+    creative: "dark",
   },
   storageKey: "dashboard-theme",
 
   // Chart.js color palettes for each theme
   chartColors: {
-    minimal: [
-      { border: "rgba(17, 24, 39, 0.85)", bg: "rgba(17, 24, 39, 0.08)" },
-      { border: "rgba(107, 114, 128, 0.85)", bg: "rgba(107, 114, 128, 0.08)" },
-      { border: "rgba(5, 150, 105, 0.85)", bg: "rgba(5, 150, 105, 0.08)" },
+    dark: [
+      { border: "rgba(6, 182, 212, 0.85)", bg: "rgba(6, 182, 212, 0.12)" },
+      { border: "rgba(34, 197, 94, 0.85)", bg: "rgba(34, 197, 94, 0.12)" },
+      { border: "rgba(245, 158, 11, 0.85)", bg: "rgba(245, 158, 11, 0.12)" },
+      { border: "rgba(239, 68, 68, 0.85)", bg: "rgba(239, 68, 68, 0.12)" },
+    ],
+    light: [
+      { border: "rgba(2, 132, 199, 0.85)", bg: "rgba(2, 132, 199, 0.08)" },
+      { border: "rgba(22, 163, 74, 0.85)", bg: "rgba(22, 163, 74, 0.08)" },
+      { border: "rgba(217, 119, 6, 0.85)", bg: "rgba(217, 119, 6, 0.08)" },
       { border: "rgba(220, 38, 38, 0.85)", bg: "rgba(220, 38, 38, 0.08)" },
     ],
-    tech: [
-      { border: "rgba(51, 255, 51, 0.85)", bg: "rgba(51, 255, 51, 0.12)" },
-      { border: "rgba(170, 255, 0, 0.85)", bg: "rgba(170, 255, 0, 0.12)" },
-      { border: "rgba(0, 255, 170, 0.85)", bg: "rgba(0, 255, 170, 0.12)" },
-      { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
-    ],
-    creative: [
-      { border: "rgba(255, 113, 206, 0.85)", bg: "rgba(255, 113, 206, 0.12)" },
-      { border: "rgba(1, 205, 254, 0.85)", bg: "rgba(1, 205, 254, 0.12)" },
-      { border: "rgba(5, 255, 161, 0.85)", bg: "rgba(5, 255, 161, 0.12)" },
-      { border: "rgba(255, 251, 150, 0.85)", bg: "rgba(255, 251, 150, 0.12)" },
+    "high-contrast": [
+      { border: "rgba(0, 255, 255, 0.85)", bg: "rgba(0, 255, 255, 0.15)" },
+      { border: "rgba(0, 255, 0, 0.85)", bg: "rgba(0, 255, 0, 0.15)" },
+      { border: "rgba(255, 255, 0, 0.85)", bg: "rgba(255, 255, 0, 0.15)" },
+      { border: "rgba(255, 0, 0, 0.85)", bg: "rgba(255, 0, 0, 0.15)" },
     ],
   },
 
   init() {
-    let saved = localStorage.getItem(this.storageKey) || "minimal";
+    let saved = localStorage.getItem(this.storageKey) || "dark";
     // Migrate from legacy themes if needed
     if (this.legacyThemeMap[saved]) {
       saved = this.legacyThemeMap[saved];
@@ -69,7 +74,7 @@ const ThemeManager = {
       theme = this.legacyThemeMap[theme];
     }
     if (!this.themes.includes(theme)) {
-      theme = "minimal";
+      theme = "dark";
     }
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(this.storageKey, theme);
@@ -78,7 +83,7 @@ const ThemeManager = {
   },
 
   toggle() {
-    const current = document.documentElement.getAttribute("data-theme") || "minimal";
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
     const nextIndex = (this.themes.indexOf(current) + 1) % this.themes.length;
     this.apply(this.themes[nextIndex]);
   },
@@ -88,8 +93,8 @@ const ThemeManager = {
   },
 
   updateCharts() {
-    const theme = document.documentElement.getAttribute("data-theme") || "minimal";
-    const colors = this.chartColors[theme] || this.chartColors.minimal;
+    const theme = document.documentElement.getAttribute("data-theme") || "dark";
+    const colors = this.chartColors[theme] || this.chartColors.dark;
 
     // Update requestsChart
     if (typeof requestsChart !== "undefined" && requestsChart) {
@@ -114,8 +119,8 @@ const ThemeManager = {
   updateToggleButton() {
     const btn = document.getElementById("theme-toggle");
     if (!btn) return;
-    const current = document.documentElement.getAttribute("data-theme") || "minimal";
-    const label = this.themeLabels[current] || "Minimal";
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const label = this.themeLabels[current] || "Dark";
     btn.setAttribute("title", `Theme: ${label} (Click to switch)`);
     btn.setAttribute("aria-label", `Current theme: ${label}. Click to switch theme.`);
   },

@@ -105,10 +105,10 @@
                 <textarea
                   id="hf-register-url"
                   rows="2"
-                  placeholder="https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf (GGUF推奨。非GGUFは自動でConvert)"
+                  placeholder="https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf (GGUF preferred; non-GGUF will auto-convert)"
                 ></textarea>
                 <button type="button" id="hf-register-url-submit" class="btn btn-small">Register</button>
-                <p class="caption">Hugging FaceのファイルURL（GGUF推奨、非GGUFはConvert）を貼り付けて登録。</p>
+                <p class="caption">Paste a Hugging Face file URL (GGUF preferred; non-GGUF will be converted).</p>
               </div>
               <div id="hf-models-list" class="model-cards"></div>
               <p id="hf-models-status" class="caption"></p>
@@ -574,7 +574,7 @@
         <header class="chat-modal__header">
           <div>
             <p class="eyebrow">Chat Console</p>
-            <p class="chat-modal__title">/api/chat のテスト用コンソール</p>
+            <p class="chat-modal__title">/api/chat Test Console</p>
           </div>
           <div class="chat-modal__actions">
             <button type="button" id="chat-close" class="modal__close" aria-label="Close">×</button>

@@ -182,6 +182,70 @@ fn model_info_to_view(model: ModelInfo) -> AvailableModelView {
     }
 }
 
+#[derive(Debug, Serialize)]
+/// 登録モデル一覧をUIに返すビュー
+pub struct RegisteredModelView {
+    /// モデル名（hf/{repo}/{file}形式）
+    pub name: String,
+    /// 表示用説明
+    pub description: Option<String>,
+    /// 登録ステータス（registered/cached/failedなど）
+    pub status: Option<String>,
+    /// ルーターにモデルファイルが存在するか
+    pub ready: bool,
+    /// ルーター上のパス
+    pub path: Option<String>,
+    /// 元のダウンロードURL（存在する場合）
+    pub download_url: Option<String>,
+    /// ソース（hf/predefinedなど）
+    pub source: Option<String>,
+    /// HFリポジトリ
+    pub repo: Option<String>,
+    /// HFファイル名
+    pub filename: Option<String>,
+    /// サイズ(GB)
+    pub size_gb: Option<f64>,
+    /// 必要メモリ(GB)
+    pub required_memory_gb: Option<f64>,
+    /// タグ
+    pub tags: Vec<String>,
+}
+
+fn model_info_to_registered_view(model: ModelInfo) -> RegisteredModelView {
+    let path = model
+        .path
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+        .or_else(|| router_model_path(&model.name));
+    let ready = path.is_some();
+    let size_gb = if model.size > 0 {
+        Some((model.size as f64) / (1024.0 * 1024.0 * 1024.0))
+    } else {
+        None
+    };
+    let required_memory_gb = if model.required_memory > 0 {
+        Some((model.required_memory as f64) / (1024.0 * 1024.0 * 1024.0))
+    } else {
+        None
+    };
+
+    RegisteredModelView {
+        name: model.name,
+        description: Some(model.description),
+        status: model.status,
+        ready,
+        path: path.map(|p| p.to_string_lossy().to_string()),
+        download_url: model.download_url,
+        source: Some(format!("{:?}", model.source)).map(|s| s.to_lowercase()),
+        repo: model.repo,
+        filename: model.filename,
+        size_gb,
+        required_memory_gb,
+        tags: model.tags,
+    }
+}
+
 // ===== Registered model store (in-memory) =====
 static REGISTERED_MODELS: Lazy<RwLock<Vec<ModelInfo>>> = Lazy::new(|| RwLock::new(Vec::new()));
 
@@ -191,6 +255,28 @@ pub async fn load_registered_models_from_storage() {
         let mut store = REGISTERED_MODELS.write().unwrap();
         *store = models;
     }
+}
+
+/// 登録モデルの状態を返す（ダウンロード完了判定含む）
+pub async fn get_registered_models() -> Result<Json<Vec<RegisteredModelView>>, AppError> {
+    let mut list: Vec<RegisteredModelView> = Vec::new();
+
+    // 事前定義モデルのうちダウンロード済みのものを載せる
+    if let Ok(client) = RuntimeClient::new() {
+        for m in client.get_predefined_models() {
+            let view = model_info_to_registered_view(m);
+            if view.ready {
+                list.push(view);
+            }
+        }
+    }
+
+    list.extend(
+        list_registered_models()
+            .into_iter()
+            .map(model_info_to_registered_view),
+    );
+    Ok(Json(list))
 }
 
 /// 登録済みモデル一覧を取得
@@ -213,6 +299,24 @@ pub(crate) fn add_registered_model(model: ModelInfo) -> Result<(), RouterError> 
     }
     store.push(model);
     Ok(())
+}
+
+/// 既存登録モデルを更新または追加（重複エラーにせず上書き）
+pub fn upsert_registered_model(model: ModelInfo) {
+    let mut store = REGISTERED_MODELS.write().unwrap();
+    if let Some(existing) = store.iter_mut().find(|m| m.name == model.name) {
+        *existing = model;
+    } else {
+        store.push(model);
+    }
+}
+
+/// 登録モデルを名前で削除し、削除が行われたかを返す
+pub fn remove_registered_model(name: &str) -> bool {
+    let mut store = REGISTERED_MODELS.write().unwrap();
+    let initial_len = store.len();
+    store.retain(|m| m.name != name);
+    initial_len != store.len()
 }
 
 /// 登録モデルを永続化（失敗はログのみ）
@@ -386,6 +490,50 @@ async fn fetch_hf_models(
     Ok((out, false))
 }
 
+async fn resolve_first_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+) -> Result<String, RouterError> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/api/models/{}?expand=siblings", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "指定されたリポジトリを取得できませんでした".into(),
+        )));
+    }
+    #[derive(Deserialize)]
+    struct RepoDetail {
+        siblings: Vec<HfSibling>,
+    }
+    let detail: RepoDetail = resp
+        .json()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    let filename = detail
+        .siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
+        .ok_or_else(|| {
+            RouterError::Common(CommonError::Validation(
+                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
+            ))
+        })?;
+    Ok(filename)
+}
+
 /// モデル配布リクエスト
 #[derive(Debug, Deserialize)]
 pub struct DistributeModelsRequest {
@@ -556,7 +704,7 @@ pub struct RegisterModelRequest {
     /// HFリポジトリ名 (e.g., TheBloke/Llama-2-7B-GGUF)
     pub repo: String,
     /// ファイル名 (e.g., llama-2-7b.Q4_K_M.gguf)
-    pub filename: String,
+    pub filename: Option<String>,
     /// 表示名（任意）
     #[serde(default)]
     pub display_name: Option<String>,
@@ -603,11 +751,7 @@ pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let name = format!("hf/{}/{}", req.repo, req.filename);
     let repo = req.repo.clone();
-<<<<<<< HEAD
-    let filename = req.filename.clone();
-=======
     let filename = match req.filename.clone() {
         Some(f) => f,
         None => resolve_first_gguf_in_repo(&state.http_client, &repo).await?,
@@ -619,12 +763,11 @@ pub async fn register_model(
             RouterError::Common(CommonError::Validation("重複登録されています".into())).into(),
         );
     }
->>>>>>> 2512e81 (fix(models): allow slash names and drop embedded defaults)
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
         .to_string();
-    let download_url = format!("{}/{}/resolve/main/{}", base_url, req.repo, req.filename);
+    let download_url = format!("{}/{}/resolve/main/{}", base_url, repo, filename);
 
     // HEADで存在確認（404時は明示的に返す）
     let mut head = state.http_client.head(&download_url);
@@ -638,7 +781,7 @@ pub async fn register_model(
     if head_res.status() == reqwest::StatusCode::NOT_FOUND {
         tracing::warn!(
             repo = %req.repo,
-            filename = %req.filename,
+            filename = %req.filename.as_deref().unwrap_or("<auto>"),
             status = ?head_res.status(),
             "hf_model_register_not_found"
         );
@@ -650,7 +793,7 @@ pub async fn register_model(
     if !head_res.status().is_success() {
         tracing::error!(
             repo = %req.repo,
-            filename = %req.filename,
+            filename = %req.filename.as_deref().unwrap_or("<auto>"),
             status = ?head_res.status(),
             "hf_model_register_head_failed"
         );
@@ -676,21 +819,32 @@ pub async fn register_model(
     let model = ModelInfo {
         name: name.clone(),
         size: content_length,
-        description: req.display_name.unwrap_or_else(|| req.repo.clone()),
+        description: req.display_name.unwrap_or_else(|| repo.clone()),
         required_memory,
         tags: vec!["gguf".into()],
         source: ModelSource::HfGguf,
         download_url: Some(download_url),
         path: None,
         chat_template: req.chat_template.clone(),
-        repo: Some(req.repo.clone()),
-        filename: Some(req.filename.clone()),
+        repo: Some(repo.clone()),
+        filename: Some(filename.clone()),
         last_modified: None,
         status: Some("registered".into()),
     };
 
-    add_registered_model(model)?;
+    upsert_registered_model(model);
     persist_registered_models().await;
+
+    // 登録直後にコンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
+    let convert_manager = state.convert_manager.clone();
+    let repo_for_job = repo.clone();
+    let filename_for_job = filename.clone();
+    let chat_tpl_for_job = req.chat_template.clone();
+    tokio::spawn(async move {
+        convert_manager
+            .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
+            .await;
+    });
 
     tracing::info!(
         repo = %repo,

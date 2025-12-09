@@ -152,7 +152,7 @@
   94% { opacity: 1; }
 }
 
-[data-theme="retro"] .dashboard-container {
+[data-theme="retro"] main {
   animation: crt-flicker 4s infinite;
 }
 
@@ -404,6 +404,10 @@ body {
     var(--bg);
   color: var(--text);
   line-height: 1.5;
+  position: relative;
+}
+
+main {
   position: relative;
 }
 
@@ -2399,7 +2403,7 @@ body::after {
   animation: synthwave-pulse 3s ease-in-out infinite;
 }
 
-[data-theme="synthwave"] .dashboard-container::after {
+[data-theme="synthwave"] main::after {
   content: "";
   position: fixed;
   bottom: 0;
@@ -2456,7 +2460,7 @@ body::after {
   }
 }
 
-[data-theme="ember"] .dashboard-container {
+[data-theme="ember"] main {
   animation: ember-flicker 2s ease-in-out infinite;
 }
 

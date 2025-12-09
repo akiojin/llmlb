@@ -75,3 +75,20 @@ fn models_section_has_no_section_tools() {
         );
     }
 }
+
+#[test]
+fn dashboard_has_no_japanese_text() {
+    let html = get_index_html();
+    assert!(
+        !html.contains("対応可能モデル"),
+        "Japanese text should be removed from models section"
+    );
+    assert!(
+        !html.contains("対応モデル"),
+        "Japanese text should be removed from models section"
+    );
+    assert!(
+        !html.contains("テスト用コンソール"),
+        "Japanese text should be removed from chat modal"
+    );
+}

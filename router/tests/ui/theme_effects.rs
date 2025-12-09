@@ -1,12 +1,12 @@
-/// Contract tests for theme visual effects (FR-027)
-/// Each theme should have unique visual effects beyond just color changes
-///
-/// NEW SKIN SYSTEM: 3 distinct layout-based themes
-/// - Minimal: Single-column centered layout, flat design
-/// - Tech: Sidebar layout with terminal aesthetic
-/// - Creative: Asymmetric magazine-style layout
+// Contract tests for theme visual effects (FR-027)
+// Each theme should have unique visual effects beyond just color changes
+//
+// NEW SKIN SYSTEM: 3 distinct layout-based themes
+// - Minimal: Single-column centered layout, flat design
+// - Tech: Sidebar layout with terminal aesthetic
+// - Creative: Asymmetric magazine-style layout
 
-/// Read the styles.css file content for testing
+// Read the styles.css file content for testing
 fn get_styles_css() -> String {
     include_str!("../../src/web/static/styles.css").to_string()
 }

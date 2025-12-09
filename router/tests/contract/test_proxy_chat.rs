@@ -1,4 +1,4 @@
-//! Contract Test: LLM runtime Chat APIプロキシ (POST /api/chat)
+//! Contract Test: Chat APIプロキシ (POST /api/chat)
 //!
 //! 実際にHTTPで待ち受けるスタブノードとルーターを起動し、
 //! OpenAI互換の正常系/異常系を確認する。
@@ -234,7 +234,7 @@ async fn proxy_chat_propagates_upstream_error() {
     // Assert: ルーターが404とOpenAI互換のエラー形式を返す
     assert_eq!(response.status(), ReqStatusCode::NOT_FOUND);
     let body: serde_json::Value = response.json().await.expect("error payload");
-    assert_eq!(body["error"]["type"], "node_upstream_error");
+    assert_eq!(body["error"]["type"], "runtime_upstream_error");
     assert_eq!(body["error"]["code"], 404);
     assert!(
         body["error"]["message"]

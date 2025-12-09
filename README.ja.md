@@ -417,6 +417,16 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
    curl http://coordinator:8080/api/agents
    ```
 
+### Hugging Faceカタログ (GGUF)
+
+- オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定。
+- CLI
+  - `llm-router model list --search llama --limit 10` でHF GGUFカタログを取得
+  - `llm-router model add <repo> --file <gguf>` で対応モデル登録（IDは `hf/<repo>/<file>`）
+  - `llm-router model download <id> --all|--node <uuid>` で全ノード/指定ノードへダウンロード開始
+- Web: ダッシュボード → モデル管理 → 「対応可能モデル（HF）」から登録し、「今すぐダウンロード」で配布
+- 登録したモデルは `/v1/models` に `download_url` 付きで反映され、ノードが直接取得可能
+
 ### 環境変数
 
 #### ルーター（Rust）

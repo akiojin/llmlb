@@ -354,6 +354,16 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
 
+## Hugging Face catalog (GGUF)
+
+- Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
+- CLI:
+  - `llm-router model list --search llama --limit 10` to browse the HF GGUF catalog
+  - `llm-router model add <repo> --file <gguf>` to register (ID becomes `hf/<repo>/<file>`)
+  - `llm-router model download <id> --all|--node <uuid>` to start downloads
+- Web: Dashboard → モデル管理 → 「対応可能モデル（HF）」で登録し、「今すぐダウンロード」で配布
+- Registered HF entries appear in `/v1/models` with `download_url` for nodes to fetch
+
 ## Installation
 
 ### Requirements

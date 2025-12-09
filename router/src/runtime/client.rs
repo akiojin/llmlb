@@ -116,45 +116,8 @@ impl RuntimeClient {
 
     /// 事前定義モデルリストを取得
     pub fn get_predefined_models(&self) -> Vec<ModelInfo> {
-        vec![
-            ModelInfo::new(
-                "gpt-oss:20b".to_string(),
-                14_500_000_000, // ≈14.5GB (Q4_K_M)
-                "GPT-OSS 20B parameter model".to_string(),
-                16_000_000_000, // 推奨16GB VRAMクラス
-                vec![
-                    "llm".to_string(),
-                    "text".to_string(),
-                    "code".to_string(),
-                    "cot".to_string(),
-                ],
-            ),
-            ModelInfo::new(
-                "gpt-oss-safeguard:20b".to_string(),
-                14_000_000_000,
-                "GPT-OSS Safeguard 20B safety classifier".to_string(),
-                16_000_000_000,
-                vec!["safety".to_string(), "moderation".to_string()],
-            ),
-            ModelInfo::new(
-                "gpt-oss:120b".to_string(),
-                65_000_000_000, // ≈65GB Q4_K_M
-                "GPT-OSS 120B flagship model (high accuracy)".to_string(),
-                80_000_000_000, // 推奨80GB級
-                vec![
-                    "llm".to_string(),
-                    "text".to_string(),
-                    "analysis".to_string(),
-                ],
-            ),
-            ModelInfo::new(
-                "qwen3-coder:30b".to_string(),
-                17_000_000_000, // ≈17GB (Q4_K_M)
-                "Qwen3-Coder 30B Instruct".to_string(),
-                22_000_000_000,
-                vec!["code".to_string(), "llm".to_string(), "text".to_string()],
-            ),
-        ]
+        // プリセットモデルをソースコードに埋め込まない運用に変更
+        Vec::new()
     }
 
     /// ノードから取得したモデルと事前定義リストをマージ
@@ -234,12 +197,7 @@ mod tests {
         let client = RuntimeClient::new().unwrap();
         let models = client.get_predefined_models();
 
-        assert!(!models.is_empty());
-        assert!(models.iter().any(|m| m.name == "gpt-oss:20b"));
-        assert!(models.iter().any(|m| m.name == "gpt-oss:120b"));
-        assert!(models.iter().any(|m| m.name == "gpt-oss-safeguard:20b"));
-        assert!(models.iter().any(|m| m.name == "qwen3-coder:30b"));
-        assert_eq!(models.len(), 4);
+        assert!(models.is_empty());
     }
 
     #[test]

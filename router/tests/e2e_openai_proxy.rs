@@ -337,7 +337,7 @@ async fn openai_v1_models_get_specific() {
 
     let client = Client::new();
 
-    // GET /v1/models/gpt-oss:20b
+    // GET /v1/models/gpt-oss:20b （プリセット廃止のため未登録扱い）
     let model_response = client
         .get(format!("http://{}/v1/models/gpt-oss:20b", router.addr()))
         .header("authorization", format!("Bearer {}", api_key))
@@ -345,19 +345,7 @@ async fn openai_v1_models_get_specific() {
         .await
         .expect("model request should succeed");
 
-    assert_eq!(model_response.status(), reqwest::StatusCode::OK);
-
-    let model_payload: Value = model_response.json().await.expect("model json response");
-
-    assert!(
-        model_payload.get("id").is_some(),
-        "Response must have 'id' field"
-    );
-    assert_eq!(
-        model_payload["object"].as_str(),
-        Some("model"),
-        "'object' field must be 'model'"
-    );
+    assert_eq!(model_response.status(), reqwest::StatusCode::NOT_FOUND);
 
     router.stop().await;
     node_stub.stop().await;

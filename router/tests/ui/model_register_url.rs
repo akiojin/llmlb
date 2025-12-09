@@ -32,8 +32,7 @@ async fn build_app() -> Router {
 }
 
 #[tokio::test]
-async fn modals_are_hidden_on_initial_load() {
-    // スタティックHTMLを直接取得し、初期状態でモーダルが非表示になっていることを確認する
+async fn dashboard_has_hf_url_registration_controls() {
     let app = build_app().await;
     let body = app
         .oneshot(
@@ -45,18 +44,23 @@ async fn modals_are_hidden_on_initial_load() {
         .await
         .unwrap()
         .into_body();
-
     let bytes = to_bytes(body, usize::MAX).await.unwrap();
     let html = String::from_utf8_lossy(&bytes);
 
     assert!(
-        html.contains("id=\"node-modal\" class=\"modal hidden\"")
-            || html.contains("class=\"modal hidden\" id=\"node-modal\""),
-        "node modal should be hidden by default",
+        html.contains("hf-register-url"),
+        "HF URL textarea should be present for direct registration"
     );
     assert!(
-        html.contains("id=\"request-modal\" class=\"modal hidden\"")
-            || html.contains("class=\"modal hidden\" id=\"request-modal\""),
-        "request modal should be hidden by default",
+        html.contains("hf-register-url-submit"),
+        "HF URL submit button should be present"
+    );
+    assert!(
+        html.contains("Download Tasks"),
+        "download tasks panel should still be rendered"
+    );
+    assert!(
+        html.contains("Convert Tasks"),
+        "convert tasks panel should still be rendered"
     );
 }

@@ -116,16 +116,18 @@ async function fetchAvailableModels() {
 
 async function fetchRegisteredModels() {
   try {
-    const response = await fetch('/v1/models');
+    const response = await fetch('/api/models/registered');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const list = Array.isArray(data.data) ? data.data : [];
+    const list = await response.json();
     return list.map((m) => ({
-      name: m.id ?? '',
+      name: m.name ?? '',
       description: m.description ?? '',
-      display_name: m.id ?? '',
+      display_name: m.name ?? '',
       size_gb: m.size_gb ?? undefined,
       tags: m.tags ?? [],
+      status: m.status ?? '',
+      ready: !!m.ready,
+      path: m.path ?? null,
     }));
   } catch (error) {
     console.error('Failed to fetch registered models:', error);
@@ -617,6 +619,9 @@ function renderRegisteredModelCard(model) {
   const card = renderModelCard(model);
   const task = findDownloadTask(model.name);
   const statusBadge = task ? renderStatusBadge(task.status) : '';
+  const readyBadge = !task && model.status
+    ? `<span class="task-status task-status--${escapeHtml(model.status)}">${escapeHtml(model.status)}</span>`
+    : '';
   const progressBlock =
     task && (normalizeDownloadStatus(task.status) === 'downloading')
       ? renderProgressBar(
@@ -630,7 +635,7 @@ function renderRegisteredModelCard(model) {
     '</div>',
     `
       <div class="model-card__meta">
-        ${statusBadge}
+        ${statusBadge || readyBadge}
         ${progressBlock}
       </div>
       <div class="model-card__actions">

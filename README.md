@@ -102,7 +102,6 @@ npm run start:node
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU |
 | `LLM_NODE_LOG_LEVEL` | `info` | Log level |
 
 **Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
@@ -563,7 +562,6 @@ Cloud / external services:
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU | `LLM_ALLOW_NO_GPU` |
 | `LLM_NODE_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
 | `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
 | `LLM_NODE_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |

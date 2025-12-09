@@ -95,7 +95,6 @@ npm run start:node
 | `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | 登録先ルーターのURL（Routerを8080で動かす場合は上書き推奨） |
 | `LLM_NODE_PORT` | `11435` | ノードのリッスンポート |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデル保存ディレクトリ |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU無しでの起動を許可 |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
 
@@ -462,7 +461,6 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス | `LLM_BIND_ADDRESS` |
 | `LLM_NODE_IP` | 自動検出 | ルーター登録に使うノードIP | - |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート送信間隔（秒） | `LLM_HEARTBEAT_SECS` |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU無し起動を許可 | `LLM_ALLOW_NO_GPU` |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
 | `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログ出力ディレクトリ | `LLM_LOG_DIR` |
 | `LLM_NODE_LOG_RETENTION_DAYS` | `7` | ログ保持日数 | `LLM_LOG_RETENTION_DAYS` |

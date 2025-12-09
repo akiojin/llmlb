@@ -20,7 +20,7 @@ std::string getHelpMessage() {
     oss << "    LLM_NODE_MODELS_DIR          Model files directory (default: ~/.llm-router/models)\n";
     oss << "    LLM_NODE_PORT                HTTP server port (default: 11435)\n";
     oss << "    LLM_NODE_HEARTBEAT_SECS      Heartbeat interval in seconds (default: 10)\n";
-    oss << "    LLM_NODE_ALLOW_NO_GPU        Allow running without GPU (default: false)\n";
+    // GPU必須。許可フラグは廃止。
     oss << "    LLM_NODE_BIND_ADDRESS        Bind address (default: 0.0.0.0)\n";
     oss << "    LLM_NODE_LOG_DIR             Log files directory\n";
     oss << "    LLM_NODE_LOG_LEVEL           Log level: trace, debug, info, warn, error (default: info)\n";
@@ -33,7 +33,6 @@ std::string getHelpMessage() {
     oss << "DEPRECATED ENVIRONMENT VARIABLES (use LLM_NODE_* instead):\n";
     oss << "    LLM_MODELS_DIR               -> LLM_NODE_MODELS_DIR\n";
     oss << "    LLM_HEARTBEAT_SECS           -> LLM_NODE_HEARTBEAT_SECS\n";
-    oss << "    LLM_ALLOW_NO_GPU             -> LLM_NODE_ALLOW_NO_GPU\n";
     oss << "    LLM_BIND_ADDRESS             -> LLM_NODE_BIND_ADDRESS\n";
     oss << "    LLM_LOG_DIR                  -> LLM_NODE_LOG_DIR\n";
     oss << "    LLM_LOG_LEVEL                -> LLM_NODE_LOG_LEVEL\n";

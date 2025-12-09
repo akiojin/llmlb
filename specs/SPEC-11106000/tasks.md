@@ -42,6 +42,7 @@
 - [x] 「今すぐダウンロード」（全ノード/指定ノード選択）UI。
 - [x] ダウンロード進捗リスト（5秒ポーリング）。
 - [x] Download Tasks パネルの実データ反映確認と必要ならUI調整。
+- [x] HFモデルURL直貼り登録フォーム（textarea+button）を追加し、登録済み・進捗のカード表示を改善。
 
 ## Node (最小)
 - [x] manifest に HF 直URLが来ても downloadModel が扱えることを確認（必要ならURL判定を緩和）。

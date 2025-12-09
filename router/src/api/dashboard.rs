@@ -10,14 +10,14 @@ use crate::{
 };
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::Response,
     Json,
 };
 use chrono::{DateTime, Utc};
 use llm_router_common::types::{GpuDeviceInfo, HealthMetrics, NodeStatus};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Instant};
 use uuid::Uuid;
 
@@ -339,14 +339,53 @@ async fn collect_history(state: &AppState) -> Vec<RequestHistoryPoint> {
     state.load_manager.request_history().await
 }
 
+/// 許可されたページサイズ
+pub const ALLOWED_PAGE_SIZES: &[usize] = &[10, 25, 50, 100];
+
+/// デフォルトのページサイズ
+pub const DEFAULT_PAGE_SIZE: usize = 10;
+
+/// リクエスト履歴一覧のクエリパラメータ
+#[derive(Debug, Clone, Deserialize)]
+pub struct RequestHistoryQuery {
+    /// ページ番号（1始まり）
+    #[serde(default = "default_page")]
+    pub page: usize,
+    /// 1ページあたりの件数（10, 25, 50, 100のいずれか）
+    #[serde(default = "default_per_page")]
+    pub per_page: usize,
+}
+
+fn default_page() -> usize {
+    1
+}
+
+fn default_per_page() -> usize {
+    DEFAULT_PAGE_SIZE
+}
+
+impl RequestHistoryQuery {
+    /// ページサイズを正規化（許可された値のいずれかに制限）
+    pub fn normalized_per_page(&self) -> usize {
+        if ALLOWED_PAGE_SIZES.contains(&self.per_page) {
+            self.per_page
+        } else {
+            DEFAULT_PAGE_SIZE
+        }
+    }
+}
+
 /// T023: リクエスト履歴一覧API
 pub async fn list_request_responses(
     State(state): State<AppState>,
+    Query(query): Query<RequestHistoryQuery>,
 ) -> Result<Json<crate::db::request_history::FilteredRecords>, AppError> {
     let filter = crate::db::request_history::RecordFilter::default();
+    let page = if query.page == 0 { 1 } else { query.page };
+    let per_page = query.normalized_per_page();
     let result = state
         .request_history
-        .filter_and_paginate(&filter, 1, 100)
+        .filter_and_paginate(&filter, page, per_page)
         .await
         .map_err(AppError::from)?;
     Ok(Json(result))
@@ -780,5 +819,61 @@ mod tests {
         assert!(metrics[1].timestamp >= metrics[0].timestamp);
         assert_eq!(metrics[0].gpu_usage, Some(35.0));
         assert_eq!(metrics[1].gpu_memory_usage, Some(30.0));
+    }
+
+    #[test]
+    fn test_request_history_query_default_values() {
+        let query: RequestHistoryQuery = serde_urlencoded::from_str("").unwrap();
+        assert_eq!(query.page, 1);
+        assert_eq!(query.per_page, DEFAULT_PAGE_SIZE);
+        assert_eq!(query.per_page, 10);
+    }
+
+    #[test]
+    fn test_request_history_query_allowed_page_sizes() {
+        // 許可されたページサイズ: 10, 25, 50, 100
+        assert_eq!(ALLOWED_PAGE_SIZES, &[10, 25, 50, 100]);
+    }
+
+    #[test]
+    fn test_request_history_query_normalized_per_page_valid() {
+        for &size in ALLOWED_PAGE_SIZES {
+            let query = RequestHistoryQuery {
+                page: 1,
+                per_page: size,
+            };
+            assert_eq!(query.normalized_per_page(), size);
+        }
+    }
+
+    #[test]
+    fn test_request_history_query_normalized_per_page_invalid() {
+        // 無効な値はデフォルト(10)に正規化される
+        let invalid_sizes = [0, 5, 15, 30, 99, 101, 200];
+        for size in invalid_sizes {
+            let query = RequestHistoryQuery {
+                page: 1,
+                per_page: size,
+            };
+            assert_eq!(query.normalized_per_page(), DEFAULT_PAGE_SIZE);
+        }
+    }
+
+    #[test]
+    fn test_request_history_query_parse_from_url() {
+        // ページサイズ25を指定
+        let query: RequestHistoryQuery = serde_urlencoded::from_str("page=2&per_page=25").unwrap();
+        assert_eq!(query.page, 2);
+        assert_eq!(query.per_page, 25);
+        assert_eq!(query.normalized_per_page(), 25);
+
+        // ページサイズ50を指定
+        let query: RequestHistoryQuery = serde_urlencoded::from_str("per_page=50").unwrap();
+        assert_eq!(query.page, 1);
+        assert_eq!(query.per_page, 50);
+
+        // ページサイズ100を指定
+        let query: RequestHistoryQuery = serde_urlencoded::from_str("per_page=100").unwrap();
+        assert_eq!(query.per_page, 100);
     }
 }

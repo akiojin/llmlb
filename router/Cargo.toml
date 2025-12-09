@@ -71,6 +71,7 @@ wiremock = "0.6.5"
 criterion = { version = "0.5", features = ["async_tokio"] }
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
 serial_test = "3.0"
+serde_urlencoded = "0.7"
 
 [[bench]]
 name = "loadbalancer_bench"

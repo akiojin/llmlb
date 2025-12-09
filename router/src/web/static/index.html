@@ -19,6 +19,12 @@
         <p class="subtitle">Real-time monitoring of node status and system statistics</p>
       </div>
       <div class="header-controls">
+        <button id="theme-toggle" class="theme-toggle-btn" type="button" title="Switch Theme" aria-label="Switch theme">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+          </svg>
+        </button>
         <button id="chat-open" class="refresh-button" type="button">Playground</button>
         <button id="api-keys-button" class="refresh-button" type="button">
           API Keys
@@ -87,25 +93,16 @@
         <section class="models-section">
           <header class="section-header">
             <h2>Models</h2>
-            <div class="section-tools">
-              <button type="button" id="download-tasks-refresh" class="btn">Refresh Tasks</button>
-              <label class="filter-label">
-                <span>Search HF</span>
-                <input type="search" id="hf-search" placeholder="llama" autocomplete="off" />
-              </label>
-              <button type="button" id="hf-refresh" class="btn">Refresh HF</button>
-              <button type="button" id="registered-refresh" class="btn">Refresh Registered</button>
-            </div>
           </header>
           <div class="models-grid">
             <article class="models-column">
-              <h3>対応可能モデル（HF GGUF）</h3>
+              <h3>Compatible Models (HF GGUF)</h3>
               <p class="caption">Register to add into supported list</p>
               <div id="hf-models-list" class="model-cards"></div>
               <p id="hf-models-status" class="caption"></p>
             </article>
             <article class="models-column">
-              <h3>対応モデル</h3>
+              <h3>Supported Models</h3>
               <p class="caption">Registered models (used by /v1/models)</p>
               <div id="registered-models-list" class="model-cards"></div>
               <div class="tasks-panel">
@@ -559,7 +556,7 @@
         <header class="chat-modal__header">
           <div>
             <p class="eyebrow">Chat Console</p>
-            <p class="chat-modal__title">/api/chat のテスト用コンソール</p>
+            <p class="chat-modal__title">/api/chat Test Console</p>
           </div>
           <div class="chat-modal__actions">
             <button type="button" id="chat-close" class="modal__close" aria-label="Close">×</button>

@@ -8,6 +8,119 @@ const NODE_METRICS_LIMIT = 120;
 const LOG_ENTRY_LIMIT = 200;
 const MODAL_LOG_ENTRY_LIMIT = 100;
 
+// ========================================
+// Theme Manager (FR-027) - 3-Skin System
+// ========================================
+const ThemeManager = {
+  // NEW: 3 distinct layout-based themes
+  themes: ["minimal", "tech", "creative"],
+  themeLabels: {
+    minimal: "Minimal",
+    tech: "Tech",
+    creative: "Creative",
+  },
+  // Migration map from old themes to new themes
+  legacyThemeMap: {
+    mono: "minimal",
+    cyberpunk: "tech",
+    retro: "tech",
+    synthwave: "creative",
+    ocean: "creative",
+    ember: "creative",
+    forest: "creative",
+  },
+  storageKey: "dashboard-theme",
+
+  // Chart.js color palettes for each theme
+  chartColors: {
+    minimal: [
+      { border: "rgba(17, 24, 39, 0.85)", bg: "rgba(17, 24, 39, 0.08)" },
+      { border: "rgba(107, 114, 128, 0.85)", bg: "rgba(107, 114, 128, 0.08)" },
+      { border: "rgba(5, 150, 105, 0.85)", bg: "rgba(5, 150, 105, 0.08)" },
+      { border: "rgba(220, 38, 38, 0.85)", bg: "rgba(220, 38, 38, 0.08)" },
+    ],
+    tech: [
+      { border: "rgba(51, 255, 51, 0.85)", bg: "rgba(51, 255, 51, 0.12)" },
+      { border: "rgba(170, 255, 0, 0.85)", bg: "rgba(170, 255, 0, 0.12)" },
+      { border: "rgba(0, 255, 170, 0.85)", bg: "rgba(0, 255, 170, 0.12)" },
+      { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
+    ],
+    creative: [
+      { border: "rgba(255, 113, 206, 0.85)", bg: "rgba(255, 113, 206, 0.12)" },
+      { border: "rgba(1, 205, 254, 0.85)", bg: "rgba(1, 205, 254, 0.12)" },
+      { border: "rgba(5, 255, 161, 0.85)", bg: "rgba(5, 255, 161, 0.12)" },
+      { border: "rgba(255, 251, 150, 0.85)", bg: "rgba(255, 251, 150, 0.12)" },
+    ],
+  },
+
+  init() {
+    let saved = localStorage.getItem(this.storageKey) || "minimal";
+    // Migrate from legacy themes if needed
+    if (this.legacyThemeMap[saved]) {
+      saved = this.legacyThemeMap[saved];
+      localStorage.setItem(this.storageKey, saved);
+    }
+    this.apply(saved);
+  },
+
+  apply(theme) {
+    // Migrate legacy theme names
+    if (this.legacyThemeMap[theme]) {
+      theme = this.legacyThemeMap[theme];
+    }
+    if (!this.themes.includes(theme)) {
+      theme = "minimal";
+    }
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(this.storageKey, theme);
+    this.updateCharts();
+    this.updateToggleButton();
+  },
+
+  toggle() {
+    const current = document.documentElement.getAttribute("data-theme") || "minimal";
+    const nextIndex = (this.themes.indexOf(current) + 1) % this.themes.length;
+    this.apply(this.themes[nextIndex]);
+  },
+
+  getColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  },
+
+  updateCharts() {
+    const theme = document.documentElement.getAttribute("data-theme") || "minimal";
+    const colors = this.chartColors[theme] || this.chartColors.minimal;
+
+    // Update requestsChart
+    if (typeof requestsChart !== "undefined" && requestsChart) {
+      requestsChart.data.datasets[0].borderColor = colors[0].border;
+      requestsChart.data.datasets[0].backgroundColor = colors[0].bg;
+      requestsChart.data.datasets[1].borderColor = colors[2].border;
+      requestsChart.data.datasets[1].backgroundColor = colors[2].bg;
+      requestsChart.update("none");
+    }
+
+    // Update nodeMetricsChart
+    if (typeof nodeMetricsChart !== "undefined" && nodeMetricsChart) {
+      nodeMetricsChart.data.datasets.forEach((ds, i) => {
+        const color = colors[i % colors.length];
+        ds.borderColor = color.border;
+        ds.backgroundColor = color.bg;
+      });
+      nodeMetricsChart.update("none");
+    }
+  },
+
+  updateToggleButton() {
+    const btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    const current = document.documentElement.getAttribute("data-theme") || "minimal";
+    const label = this.themeLabels[current] || "Minimal";
+    btn.setAttribute("title", `Theme: ${label} (Click to switch)`);
+    btn.setAttribute("aria-label", `Current theme: ${label}. Click to switch theme.`);
+  },
+};
+
 const state = {
   nodes: [],
   stats: null,
@@ -111,6 +224,9 @@ const logRefs = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  // テーマ初期化（最初に実行）
+  ThemeManager.init();
+
   const refreshButton = document.getElementById("refresh-button");
   const statusSelect = document.getElementById("filter-status");
   const queryInput = document.getElementById("filter-query");
@@ -129,11 +245,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatClose = document.getElementById("chat-close");
   const chatIframe = document.getElementById("chat-iframe");
   const tbody = document.getElementById("nodes-body");
+  const themeToggle = document.getElementById("theme-toggle");
 
   // リロード直後に詳細モーダルが開いたままにならないよう、確実に非表示へ初期化
   modal?.classList.add("hidden");
   document.getElementById("request-modal")?.classList.add("hidden");
   chatModal?.classList.add("hidden");
+
+  // テーマ切り替えボタン
+  themeToggle?.addEventListener("click", () => ThemeManager.toggle());
 
   initTabs();
 

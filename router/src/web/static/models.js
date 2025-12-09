@@ -1022,26 +1022,24 @@ function formatTimestamp(isoString) {
  */
 function showError(message) {
   const banner = document.getElementById('error-banner');
-  if (banner) {
-    banner.textContent = message;
-    banner.classList.remove('hidden');
-    setTimeout(() => banner.classList.add('hidden'), 5000);
-  }
+  const text = document.getElementById('error-banner-text');
+  if (!banner || !text) return;
+  banner.classList.remove('success-banner');
+  text.textContent = message;
+  banner.classList.remove('hidden');
 }
 
 function showSuccess(message) {
   const banner = document.getElementById('error-banner');
-  if (banner) {
-    banner.textContent = message;
-    banner.classList.remove('hidden');
-    banner.classList.add('success-banner');
-    setTimeout(() => {
-      banner.classList.add('hidden');
-      banner.classList.remove('success-banner');
-    }, 3000);
-  } else {
-    console.info(message);
-  }
+  const text = document.getElementById('error-banner-text');
+  if (!banner || !text) return console.info(message);
+  text.textContent = message;
+  banner.classList.remove('hidden');
+  banner.classList.add('success-banner');
+  setTimeout(() => {
+    banner.classList.add('hidden');
+    banner.classList.remove('success-banner');
+  }, 4000);
 }
 
 // ========== Progress Monitoring ==========
@@ -1335,6 +1333,16 @@ export async function initModelsUI(agents) {
   if (tasksRefresh) {
     tasksRefresh.addEventListener('click', async () => {
       await refreshDownloadTasks();
+    });
+  }
+
+  // Banner dismiss button
+  const bannerClose = document.getElementById('error-banner-close');
+  const banner = document.getElementById('error-banner');
+  if (banner && bannerClose) {
+    bannerClose.addEventListener('click', () => {
+      banner.classList.add('hidden');
+      banner.classList.remove('success-banner');
     });
   }
 }

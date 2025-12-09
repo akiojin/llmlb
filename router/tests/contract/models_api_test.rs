@@ -10,6 +10,9 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
+use std::io::Write;
+use tempfile::NamedTempFile;
+use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
 use wiremock::matchers::{method, path, query_param};
@@ -24,6 +27,12 @@ async fn build_app() -> Router {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    // router_models_dir は HOME/USERPROFILE を見るためテスト用に上書き
+    std::env::set_var("HOME", &temp_dir);
+    std::env::set_var("USERPROFILE", &temp_dir);
+    if std::env::var("LLM_CONVERT_FAKE").is_err() {
+        std::env::set_var("LLM_CONVERT_FAKE", "1");
+    }
     llm_router::api::models::clear_registered_models();
     llm_router::api::models::clear_hf_cache();
 
@@ -748,4 +757,245 @@ async fn test_register_model_contract() {
             .any(|m| m["id"] == "hf/test/repo/model.gguf"),
         "deleted model must disappear from /v1/models"
     );
+
+    // 非GGUFでも変換完了後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
+    let app_for_convert = build_app().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/models/convertible-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.bin"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/convertible-repo/resolve/main/model.bin"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+        .mount(&mock)
+        .await;
+
+    let reg_convert = app_for_convert
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "convertible-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg_convert.status(), StatusCode::CREATED);
+
+    let mut converted = false;
+    for _ in 0..25 {
+        let resp = app_for_convert
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        if val["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "hf/convertible-repo/model.bin")
+            })
+            .unwrap_or(false)
+        {
+            converted = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(converted, "converted model should appear in /v1/models");
+}
+
+/// T010: convert 失敗タスクを Restore で再キューできること
+#[tokio::test]
+#[serial]
+async fn test_convert_restore_requeues() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
+    // 1回目は意図的に失敗させる（exit 1 の簡易スクリプト）
+    let mut fail_script = NamedTempFile::new().unwrap();
+    writeln!(fail_script, "import sys; sys.exit(1)").unwrap();
+    std::env::set_var("LLM_CONVERT_FAKE", "0");
+    std::env::set_var("LLM_CONVERT_SCRIPT", fail_script.path());
+
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    // siblings returns non-gguf file
+    Mock::given(method("GET"))
+        .and(path("/api/models/restore-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.bin"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/restore-repo/resolve/main/model.bin"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
+        .mount(&mock)
+        .await;
+
+    let app = build_app().await;
+
+    // register -> convert fails
+    let reg = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "restore-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg.status(), StatusCode::CREATED);
+
+    // wait for failed task
+    let mut failed_seen = false;
+    let mut last_tasks = serde_json::Value::Null;
+    for _ in 0..60 {
+        let tasks_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/models/convert")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(tasks_resp.status(), StatusCode::OK);
+        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
+        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_tasks = tasks.clone();
+        if tasks
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|t| t["repo"] == "restore-repo" && t["status"] == "failed")
+            })
+            .unwrap_or(false)
+        {
+            failed_seen = true;
+            break;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        failed_seen,
+        "failed convert task should appear, tasks={:?}",
+        last_tasks
+    );
+
+    // 2回目はFAKEで成功させる
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
+    std::env::remove_var("LLM_CONVERT_SCRIPT");
+
+    let retry = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/convert")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "repo": "restore-repo",
+                        "filename": "model.bin"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(retry.status(), StatusCode::ACCEPTED);
+
+    // wait for success
+    let mut succeeded = false;
+    let mut last_tasks_after_retry = serde_json::Value::Null;
+    for _ in 0..60 {
+        let tasks_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/models/convert")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
+        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_tasks_after_retry = tasks.clone();
+        if tasks
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|t| {
+                    t["repo"] == "restore-repo"
+                        && t["status"] == "completed"
+                        && t["path"].is_string()
+                })
+            })
+            .unwrap_or(false)
+        {
+            succeeded = true;
+            break;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        succeeded,
+        "restore must requeue and complete, tasks={:?}",
+        last_tasks_after_retry
+    );
+
+    // /v1/models should now include the converted model
+    let models_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let present = val["data"]
+        .as_array()
+        .map(|arr| arr.iter().any(|m| m["id"] == "hf/restore-repo/model.bin"))
+        .unwrap_or(false);
+    assert!(present, "/v1/models must include restored model");
 }

@@ -6,9 +6,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
+use tokio::task;
 use uuid::Uuid;
 
 use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
@@ -195,7 +197,6 @@ impl ConvertTaskManager {
 }
 
 /// ダウンロードして必要なら変換する。
-/// いまのところ非GGUFは未対応でエラーにする（将来 convert_hf_to_gguf.py を呼び出す）。
 async fn download_and_maybe_convert(
     repo: &str,
     filename: &str,
@@ -204,12 +205,7 @@ async fn download_and_maybe_convert(
     chat_template: Option<String>,
 ) -> Result<String, RouterError> {
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
-    if !is_gguf {
-        return Err(RouterError::Internal(
-            "Non-GGUF conversion is not yet supported".into(),
-        ));
-    }
-
+    let model_name = format!("hf/{}/{}", repo, filename);
     let url = format!(
         "https://huggingface.co/{}/resolve/{}/{}",
         repo,
@@ -218,27 +214,49 @@ async fn download_and_maybe_convert(
     );
 
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
-    let dir = base.join(model_name_to_dir(&format!("hf/{}/{}", repo, filename)));
+    let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
     let target = dir.join("model.gguf");
 
-    // skip if already present
+    // skip if already present but make sure metadata is up-to-date
     if target.exists() {
+        finalize_model_registration(
+            &model_name,
+            repo,
+            filename,
+            &url,
+            &target,
+            chat_template.clone(),
+        )
+        .await;
         return Ok(target.to_string_lossy().to_string());
     }
 
+    if is_gguf {
+        download_file(&url, &target).await?;
+    } else {
+        convert_non_gguf(repo, revision, &target).await?;
+    }
+
+    finalize_model_registration(&model_name, repo, filename, &url, &target, chat_template).await;
+
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// HTTP GET to file and stream to path
+async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
     let client = reqwest::Client::new();
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(RouterError::Http(resp.status().to_string()));
     }
-    let mut file = tokio::fs::File::create(&target)
+    let mut file = tokio::fs::File::create(target)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
     let mut stream = resp.bytes_stream();
@@ -249,24 +267,176 @@ async fn download_and_maybe_convert(
             .await
             .map_err(|e| RouterError::Internal(e.to_string()))?;
     }
+    Ok(())
+}
 
-    // register model info
-    let mut model = ModelInfo::new(
-        format!("hf/{}/{}", repo, filename),
-        0,
-        repo.to_string(),
-        0,
-        vec!["gguf".into()],
-    );
-    model.download_url = Some(url);
-    model.path = Some(target.to_string_lossy().to_string());
-    model.chat_template = chat_template;
-    model.source = ModelSource::HfGguf;
-    if let Ok(meta) = tokio::fs::metadata(&target).await {
-        model.size = meta.len();
+/// 非GGUFをGGUFへコンバート（sync heavy → blocking thread）
+async fn convert_non_gguf(
+    repo: &str,
+    revision: Option<&str>,
+    target: &Path,
+) -> Result<(), RouterError> {
+    if should_use_fake_convert() {
+        write_dummy_gguf(target).await?;
+        return Ok(());
     }
-    let _ = crate::api::models::add_registered_model(model.clone());
-    crate::api::models::persist_registered_models().await;
 
-    Ok(target.to_string_lossy().to_string())
+    let script = locate_convert_script()
+        .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+    if target.exists() {
+        let _ = tokio::fs::remove_file(target).await;
+    }
+
+    let repo_with_rev = if let Some(rev) = revision {
+        format!("{}@{}", repo, rev)
+    } else {
+        repo.to_string()
+    };
+
+    let script_clone = script.clone();
+    let target_path = target.to_path_buf();
+    let cmd_repo = repo_with_rev.clone();
+    let output = task::spawn_blocking(move || {
+        std::process::Command::new("python3")
+            .arg(script_clone)
+            .arg("--remote")
+            .arg("--outfile")
+            .arg(&target_path)
+            .arg(&cmd_repo)
+            .output()
+    })
+    .await
+    .map_err(|e| RouterError::Internal(e.to_string()))?
+    .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(RouterError::Internal(format!(
+            "convert failed: {}{}{}",
+            output
+                .status
+                .code()
+                .map(|c| format!("exit code {}", c))
+                .unwrap_or_else(|| "terminated".into()),
+            if !stderr.trim().is_empty() {
+                format!(" stderr: {}", stderr.trim())
+            } else {
+                "".into()
+            },
+            if !stdout.trim().is_empty() {
+                format!(" stdout: {}", stdout.trim())
+            } else {
+                "".into()
+            },
+        )));
+    }
+
+    Ok(())
+}
+
+fn should_use_fake_convert() -> bool {
+    std::env::var("LLM_CONVERT_FAKE")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+        .unwrap_or(false)
+}
+
+async fn write_dummy_gguf(target: &Path) -> Result<(), RouterError> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+    let mut file = tokio::fs::File::create(target)
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    file.write_all(b"gguf dummy")
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    Ok(())
+}
+
+fn locate_convert_script() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("LLM_CONVERT_SCRIPT") {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    let candidates = vec![
+        PathBuf::from("node/third_party/llama.cpp/convert_hf_to_gguf.py"),
+        PathBuf::from("third_party/llama.cpp/convert_hf_to_gguf.py"),
+    ];
+
+    for cand in candidates {
+        if cand.exists() {
+            return Some(cand);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let cand = dir
+                .join("..")
+                .join("third_party")
+                .join("llama.cpp")
+                .join("convert_hf_to_gguf.py");
+            if cand.exists() {
+                return Some(cand);
+            }
+        }
+    }
+
+    None
+}
+
+async fn finalize_model_registration(
+    model_name: &str,
+    repo: &str,
+    filename: &str,
+    download_url: &str,
+    target: &Path,
+    chat_template: Option<String>,
+) {
+    use crate::api::models::{
+        list_registered_models, persist_registered_models, upsert_registered_model,
+    };
+
+    let size = tokio::fs::metadata(target)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+    const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+    let required_memory = ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+
+    let mut model = list_registered_models()
+        .into_iter()
+        .find(|m| m.name == model_name)
+        .unwrap_or_else(|| ModelInfo::new(model_name.to_string(), 0, repo.to_string(), 0, vec![]));
+
+    model.size = size;
+    model.required_memory = required_memory;
+    model.tags = vec!["gguf".into()];
+    model.source = ModelSource::HfGguf;
+    model.path = Some(target.to_string_lossy().to_string());
+    model.download_url = Some(download_url.to_string());
+    model.repo = Some(repo.to_string());
+    model.filename = Some(filename.to_string());
+    model.status = Some("cached".into());
+    if model.description.is_empty() {
+        model.description = repo.to_string();
+    }
+    if chat_template.is_some() || model.chat_template.is_none() {
+        model.chat_template = chat_template;
+    }
+
+    upsert_registered_model(model);
+    persist_registered_models().await;
 }

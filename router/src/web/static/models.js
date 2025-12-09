@@ -931,6 +931,16 @@ function renderConvertTasks() {
               progress * 100
             ).toFixed(1)}%</span></div>`
           : '';
+      const restoreBtn =
+        task.status === 'failed'
+          ? `<button class="btn btn-small" data-action="restore-convert" data-repo="${escapeHtml(
+              task.repo
+            )}" data-file="${escapeHtml(task.filename)}" data-rev="${escapeHtml(
+              task.revision || ''
+            )}" data-quant="${escapeHtml(task.quantization || '')}" data-chat="${escapeHtml(
+              task.chat_template || ''
+            )}">Restore</button>`
+          : '';
       return `
         <div class="task-card" data-convert-task-id="${escapeHtml(task.id)}">
           <div class="task-header">
@@ -940,11 +950,30 @@ function renderConvertTasks() {
           ${progressBlock}
           <div class="task-path">Path: ${path}</div>
           ${error}
+          ${restoreBtn ? `<div class="task-actions">${restoreBtn}</div>` : ''}
           <div class="task-time">Updated: ${formatTimestamp(task.updated_at || task.created_at)}</div>
         </div>
       `;
     })
     .join('');
+
+  container.querySelectorAll('button[data-action="restore-convert"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const repo = btn.dataset.repo;
+      const filename = btn.dataset.file;
+      const revision = btn.dataset.rev || null;
+      const quantization = btn.dataset.quant || null;
+      const chatTemplate = btn.dataset.chat || null;
+      try {
+        await convertModel(repo, filename, revision, quantization, chatTemplate);
+        showSuccess('再キューしました');
+        await refreshConvertTasks();
+      } catch (e) {
+        console.error(e);
+        showError(e.message || 'Restoreに失敗しました');
+      }
+    });
+  });
 }
 
 /**

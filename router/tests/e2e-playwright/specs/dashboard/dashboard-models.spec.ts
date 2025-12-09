@@ -38,6 +38,63 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     await expect(convertTasks).toBeVisible();
   });
 
+  test('M-07: Restore failed convert task re-queues', async ({ page }) => {
+    const mockTasks = [
+      {
+        id: '11111111-1111-1111-1111-111111111111',
+        repo: 'restore-repo',
+        filename: 'model.bin',
+        status: 'failed',
+        progress: 0,
+        error: 'convert failed',
+        revision: null,
+        quantization: null,
+        chat_template: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        path: null,
+      },
+    ];
+
+    await page.route('**/api/models/convert', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(mockTasks),
+        });
+        return;
+      }
+      if (request.method() === 'POST') {
+        await route.fulfill({
+          status: 202,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            task_id: '22222222-2222-2222-2222-222222222222',
+            status: 'queued',
+          }),
+        });
+        await page.evaluate(() => {
+          (window as any).__restorePosted = true;
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    // open models tab (default)
+    const convertTasks = page.locator(DashboardSelectors.models.convertTasksList);
+    await expect(convertTasks).toBeVisible();
+    await page.waitForTimeout(200); // allow render
+
+    const restoreBtn = convertTasks.getByRole('button', { name: /restore/i }).first();
+    await expect(restoreBtn).toBeVisible();
+    await restoreBtn.click();
+
+    await page.waitForFunction(() => (window as any).__restorePosted === true);
+  });
+
   test('M-07: Register button triggers API call', async ({ page }) => {
     // Setup request listener
     const requestPromise = page.waitForRequest(

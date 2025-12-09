@@ -11,6 +11,10 @@
         "markitdown-mcp"
       ]
     },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    },
     "serena": {
       "type": "stdio",
       "command": "uvx",

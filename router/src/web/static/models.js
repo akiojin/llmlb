@@ -1293,10 +1293,17 @@ export async function initModelsUI(agents) {
           return;
         }
       }
+      const isGguf = filename.endsWith('.gguf');
       try {
-        const res = await registerModel(repo, filename, filename);
-        showSuccess(`Registered ${res.name}`);
-        await refreshRegisteredModels();
+        if (isGguf) {
+          const res = await registerModel(repo, filename, filename);
+          showSuccess(`Registered ${res.name}`);
+          await refreshRegisteredModels();
+        } else {
+          await convertModel(repo, filename, null, null, null);
+          showSuccess('Non-GGUFファイルをConvertキューに追加しました');
+          await refreshConvertTasks();
+        }
       } catch (err) {
         showError(err.message || 'Failed to register model from URL');
       }

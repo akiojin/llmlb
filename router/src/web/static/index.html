@@ -96,9 +96,13 @@
                 <label class="filter-label" for="hf-register-url">
                   <span>Register via URL</span>
                 </label>
-                <textarea id="hf-register-url" rows="2" placeholder="https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf"></textarea>
+                <textarea
+                  id="hf-register-url"
+                  rows="2"
+                  placeholder="https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf (GGUF推奨。非GGUFは自動でConvert)"
+                ></textarea>
                 <button type="button" id="hf-register-url-submit" class="btn btn-small">Register</button>
-                <p class="caption">Paste GGUF file URL from Hugging Face and register directly.</p>
+                <p class="caption">Hugging FaceのファイルURL（GGUF推奨、非GGUFはConvert）を貼り付けて登録。</p>
               </div>
               <div id="hf-models-list" class="model-cards"></div>
               <p id="hf-models-status" class="caption"></p>

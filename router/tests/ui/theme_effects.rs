@@ -80,3 +80,26 @@ fn prefers_reduced_motion_disables_animations() {
         "CSS should respect prefers-reduced-motion for accessibility"
     );
 }
+
+#[test]
+fn theme_animations_target_main_not_dashboard_container() {
+    let css = get_styles_css();
+    // .dashboard-container should not exist - animations should target main element
+    assert!(
+        !css.contains(".dashboard-container"),
+        "CSS should use main element instead of .dashboard-container"
+    );
+    // Verify main element has animations applied
+    assert!(
+        css.contains("[data-theme=\"retro\"] main"),
+        "Retro theme should animate main element"
+    );
+    assert!(
+        css.contains("[data-theme=\"synthwave\"] main::after"),
+        "Synthwave theme should use main::after for horizon glow"
+    );
+    assert!(
+        css.contains("[data-theme=\"ember\"] main"),
+        "Ember theme should animate main element"
+    );
+}

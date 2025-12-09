@@ -258,7 +258,7 @@ pub struct AvailableQuery {
 
 #[derive(Deserialize)]
 struct HfModel {
-    #[serde(rename = "modelId")]
+    #[serde(rename = "modelId", alias = "id")]
     model_id: String,
     tags: Option<Vec<String>>,
     #[serde(default)]
@@ -271,6 +271,13 @@ struct HfModel {
 struct HfSibling {
     #[serde(rename = "rfilename")]
     rfilename: String,
+    size: Option<u64>,
+    #[serde(default)]
+    lfs: Option<HfLfs>,
+}
+
+#[derive(Deserialize)]
+struct HfLfs {
     size: Option<u64>,
 }
 
@@ -289,7 +296,9 @@ async fn fetch_hf_models(
 
     let limit = query.limit.unwrap_or(20).min(100);
     let offset = query.offset.unwrap_or(0);
-    let search = query.search.clone().unwrap_or_default();
+    // HFの一覧APIはlibraryフィルタではGGUFを返さない場合があるため、
+    // デフォルト検索語に"gguf"を入れてGGUFリポジトリを優先的に取得する
+    let search = query.search.clone().unwrap_or_else(|| "gguf".to_string());
 
     let token = std::env::var("HF_TOKEN").ok();
     let base_url = std::env::var("HF_BASE_URL")
@@ -297,7 +306,7 @@ async fn fetch_hf_models(
         .trim_end_matches('/')
         .to_string();
     let url = format!(
-        "{}/api/models?library=gguf&limit={limit}&offset={offset}&search={search}&fields=modelId,tags,lastModified,siblings",
+        "{}/api/models?limit={limit}&offset={offset}&search={search}&fields=id,modelId,tags,lastModified,siblings&expand=siblings",
         base_url
     );
 
@@ -334,7 +343,10 @@ async fn fetch_hf_models(
                 continue;
             }
             let name = format!("hf/{}/{}", m.model_id, sib.rfilename);
-            let size = sib.size.unwrap_or(0);
+            let size = sib
+                .size
+                .or_else(|| sib.lfs.as_ref().and_then(|l| l.size))
+                .unwrap_or(0);
             let download_url = format!(
                 "https://huggingface.co/{}/resolve/main/{}",
                 m.model_id, sib.rfilename

@@ -58,7 +58,9 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
                 return dir;
             };
 
-            std::thread([sync, client, model_name, task_id, path, chat_template, modelNameToDir]() {
+            std::string download_url = j.value("download_url", "");
+
+            std::thread([sync, client, model_name, task_id, path, download_url, chat_template, modelNameToDir]() {
                 spdlog::info("Starting model pull: model={}, task_id={}, path='{}'",
                               model_name, task_id, path);
 
@@ -94,13 +96,15 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
                     }
                 }
 
-                // 2) 共有パスが利用不可ならルーターHTTP API経由でダウンロード
+                // 2) 共有パスが利用不可なら download_url or Router API 経由でダウンロード
                 if (!success) {
-                    std::string router_blob_url = sync->getBaseUrl() + "/api/models/blob/" + model_name;
-                    spdlog::info("Shared path unavailable, downloading from Router API: {}", router_blob_url);
+                    std::string blob = !download_url.empty()
+                        ? download_url
+                        : sync->getBaseUrl() + "/api/models/blob/" + model_name;
+                    spdlog::info("Shared path unavailable, downloading: {}", blob);
                     ModelDownloader downloader(sync->getBaseUrl(), models_dir, std::chrono::milliseconds(30000));
                     std::string filename = dir_name + "/model.gguf";
-                    auto out = downloader.downloadBlob(router_blob_url, filename, progress_cb);
+                    auto out = downloader.downloadBlob(blob, filename, progress_cb);
                     success = !out.empty();
                 }
 

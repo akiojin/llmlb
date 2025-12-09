@@ -48,12 +48,13 @@ std::string ModelStorage::resolveGguf(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
     const auto gguf_path = fs::path(models_dir_) / dir_name / "model.gguf";
 
+    std::error_code ec;
+    auto st = fs::symlink_status(gguf_path, ec);
+    const bool ok = st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
     spdlog::debug("ModelStorage::resolveGguf: model={}, dir={}, path={}, exists={}",
-        model_name, dir_name, gguf_path.string(), fs::exists(gguf_path));
+        model_name, dir_name, gguf_path.string(), ok);
 
-    if (fs::exists(gguf_path)) {
-        return gguf_path.string();
-    }
+    if (ok) return gguf_path.string();
 
     return "";
 }
@@ -72,7 +73,9 @@ std::vector<ModelInfo> ModelStorage::listAvailable() const {
         const auto dir_name = entry.path().filename().string();
         const auto gguf_path = entry.path() / "model.gguf";
 
-        if (!fs::exists(gguf_path)) {
+        std::error_code ec;
+        auto st = fs::symlink_status(gguf_path, ec);
+        if (st.type() != fs::file_type::regular && st.type() != fs::file_type::symlink) {
             spdlog::debug("ModelStorage::listAvailable: skipping {} (no model.gguf)", dir_name);
             continue;
         }
@@ -111,7 +114,9 @@ bool ModelStorage::validateModel(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
     const auto gguf_path = fs::path(models_dir_) / dir_name / "model.gguf";
 
-    return fs::exists(gguf_path) && fs::is_regular_file(gguf_path);
+    std::error_code ec;
+    auto st = fs::symlink_status(gguf_path, ec);
+    return st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
 }
 
 }  // namespace llm_node

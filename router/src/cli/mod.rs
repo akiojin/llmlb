@@ -21,6 +21,9 @@ use clap::{Parser, Subcommand};
     LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
 "#)]
 pub struct Cli {
+    /// Preload HF models at startup (format: repo:filename or repo/filename)
+    #[arg(long = "preload-model", value_parser, action = clap::ArgAction::Append)]
+    pub preload_models: Vec<String>,
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Option<Commands>,

@@ -77,27 +77,6 @@ pub async fn register_node(
         req.gpu_model = req.gpu_devices.first().map(|device| device.model.clone());
     }
 
-    // GPUメモリ情報からモデルを選択（reqを移動する前に取得）
-    // GPUメモリに応じた簡易選択（仕様上は gpt-oss:20b をデフォルト、超大容量のみ120b）
-    let gpu_memory_bytes = req
-        .gpu_devices
-        .iter()
-        .filter_map(|d| d.memory)
-        .max()
-        .unwrap_or(16_000_000_000); // デフォルトは16GB想定
-
-    let model_name = if gpu_memory_bytes >= 80_000_000_000 {
-        "gpt-oss:120b".to_string()
-    } else {
-        "gpt-oss:20b".to_string()
-    };
-
-    info!(
-        "Selected model for auto-distribution: model={}, gpu_memory_gb={:.2}",
-        model_name,
-        gpu_memory_bytes as f64 / 1_000_000_000.0
-    );
-
     // ヘルスチェックはノードのOpenAI互換API経由で実施
     let node_api_port = req.runtime_port + 1;
     let node_api_base = format!("http://{}:{}", req.ip_address, node_api_port);
@@ -105,7 +84,7 @@ pub async fn register_node(
 
     let skip_health_check = cfg!(test) || std::env::var("LLM_ROUTER_SKIP_HEALTH_CHECK").is_ok();
     let (loaded_models, initializing, ready_models) = if skip_health_check {
-        (vec!["gpt-oss:20b".to_string()], false, Some((1, 1)))
+        (Vec::new(), false, None)
     } else {
         let health_res = state.http_client.get(&health_url).send().await;
         if let Err(e) = health_res {
@@ -450,6 +429,7 @@ mod tests {
         let request_history =
             std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
         let task_manager = DownloadTaskManager::new();
+        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -463,6 +443,7 @@ mod tests {
             load_manager,
             request_history,
             task_manager,
+            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),

@@ -97,12 +97,11 @@ npm run start:node
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router listens on 8080) |
 | `LLM_NODE_PORT` | `11435` | Node listen port |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | Model storage directory |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU |
 | `LLM_NODE_LOG_LEVEL` | `info` | Log level |
 
 **Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
@@ -354,6 +353,16 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
 
+## Hugging Face catalog (GGUF)
+
+- Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
+- CLI:
+  - `llm-router model list --search llama --limit 10` to browse the HF GGUF catalog
+  - `llm-router model add <repo> --file <gguf>` to register (ID becomes `hf/<repo>/<file>`)
+  - `llm-router model download <id> --all|--node <uuid>` to start downloads
+- Web: Dashboard → モデル管理 → 「対応可能モデル（HF）」で登録し、「今すぐダウンロード」で配布
+- Registered HF entries appear in `/v1/models` with `download_url` for nodes to fetch
+
 ## Installation
 
 ### Requirements
@@ -522,48 +531,56 @@ LLM_GPU_COUNT=1 \
 
 #### Router (llm-router)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
-| `LLM_ROUTER_PORT` | `8080` | Listen port |
-| `LLM_ROUTER_DATABASE_URL` | `sqlite://~/.llm-router/router.db` | Database URL |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Health check interval (seconds) |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node timeout (seconds) |
-| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`metrics` or `auto`) |
-| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing key (overridable via env var) |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (required) | Initial admin password (first run only) |
-| `LLM_ROUTER_OPENAI_API_KEY` | - | OpenAI API key |
-| `LLM_ROUTER_ANTHROPIC_API_KEY` | - | Anthropic API key |
-| `LLM_ROUTER_GOOGLE_API_KEY` | - | Google API key |
+| Variable | Default | Description | Legacy / Notes |
+|----------|---------|-------------|----------------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
+| `LLM_ROUTER_PORT` | `8080` | Listen port | `ROUTER_PORT` |
+| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | Database URL | `DATABASE_URL` |
+| `LLM_ROUTER_DATA_DIR` | `~/.llm-router` | Base directory for DB/log defaults | - |
+| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
+| `LLM_ROUTER_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
+| `LLM_ROUTER_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
+| `LLM_ROUTER_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Node health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
+| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
+| `LLM_ROUTER_SKIP_HEALTH_CHECK` | unset | Skip health checks (tests) | test-only |
+| `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 
-**Backward Compatibility**: Legacy variable names (`ROUTER_PORT`, etc.) are still
-supported but deprecated. A warning is logged when used.
+Cloud / external services:
+
+| Variable | Default | Description | Notes |
+|----------|---------|-------------|-------|
+| `OPENAI_API_KEY` | - | API key for `openai:` models | required |
+| `OPENAI_BASE_URL` | `https://api.openai.com` | Override OpenAI base URL | optional |
+| `GOOGLE_API_KEY` | - | API key for `google:` models | required |
+| `GOOGLE_API_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Override Google base URL | optional |
+| `ANTHROPIC_API_KEY` | - | API key for `anthropic:` models | required |
+| `ANTHROPIC_API_BASE_URL` | `https://api.anthropic.com` | Override Anthropic base URL | optional |
+| `HF_TOKEN` | - | Hugging Face token for model pulls | optional |
+| `LLM_ROUTER_API_KEY` | - | API key used by e2e tests/clients | client/test use |
 
 #### Node (llm-node)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
-| `LLM_NODE_PORT` | `11435` | Node listen port |
-| `LLM_NODE_IP` | (auto-detected) | Node IP address |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | Model storage directory |
-| `LLM_NODE_LOG_LEVEL` | `info` | Log level |
-| `LLM_NODE_LOG_DIR` | `~/.llm-node/logs` | Log directory |
-| `LLM_NODE_LOG_RETENTION_DAYS` | `7` | Log retention days |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | Allow running without GPU |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `LLM_NODE_MODEL_IDLE_TIMEOUT` | `300` | Model idle timeout (seconds) |
-| `LLM_NODE_MAX_LOADED_MODELS` | `1` | Max loaded models |
-| `LLM_NODE_MAX_MEMORY_BYTES` | (auto) | Max memory usage |
-| `LLM_NODE_AUTO_REPAIR` | `true` | Auto repair |
-| `LLM_NODE_REPAIR_TIMEOUT_SECS` | `60` | Repair timeout (seconds) |
-| `LLM_NODE_CONFIG` | - | Config file path |
+| Variable | Default | Description | Legacy / Notes |
+|----------|---------|-------------|----------------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router runs on 8080) | - |
+| `LLM_NODE_PORT` | `11435` | Node listen port | - |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
+| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
+| `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
+| `LLM_NODE_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
+| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
+| `LLM_NODE_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `LLM_NODE_CONFIG` | `~/.llm-router/config.json` | Path to node config file | - |
+| `LLM_MODEL_IDLE_TIMEOUT` | unset | Seconds before unloading idle models | enabled when set |
+| `LLM_MAX_LOADED_MODELS` | unset | Cap on simultaneously loaded models | enabled when set |
+| `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
 
-**Backward Compatibility**: Legacy variable names (`LLM_MODELS_DIR`, etc.) are
-still supported but deprecated. A warning is logged when used.
+**Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
 
 ## Development
 

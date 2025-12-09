@@ -11,7 +11,6 @@
 #include "system/gpu_detector.h"
 #include "api/router_client.h"
 #include "models/model_sync.h"
-#include "models/model_downloader.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
 #include "core/llama_manager.h"
@@ -170,7 +169,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
         spdlog::info("Node IP address: {}", info.ip_address);
-        info.runtime_version = "1.0.0";  // llm-node version
+        info.runtime_version = "1.0.0";  // llm-node runtime version
         // Router calculates API port as runtime_port + 1, so report node_port - 1
         info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 11434);
         info.gpu_available = !gpu_devices.empty();
@@ -297,5 +296,11 @@ extern "C" int llm_node_run_for_test() {
     cfg.heartbeat_interval_sec = 1;
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);
+}
+
+// Backward compatibility for older test binaries that still reference the
+// previous symbol name.
+extern "C" int ollama_node_run_for_test() {
+    return llm_node_run_for_test();
 }
 #endif

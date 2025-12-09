@@ -217,8 +217,8 @@ struct TrayMenu {
 impl TrayMenu {
     fn new() -> Self {
         let menu = Menu::new();
-        let open_dashboard = MenuItem::new("Dashboardを開く", true, None);
-        let quit = MenuItem::new("Coordinatorを終了", true, None);
+        let open_dashboard = MenuItem::new("Open Dashboard", true, None);
+        let quit = MenuItem::new("Quit LLM Router", true, None);
 
         menu.append(&open_dashboard)
             .expect("failed to append dashboard menu");

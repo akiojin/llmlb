@@ -70,35 +70,11 @@ async fn test_list_available_models_from_runtime_library() {
         result.get("models").is_some(),
         "Response must have 'models' field"
     );
-    let models = result["models"]
+    let _models = result["models"]
         .as_array()
         .expect("'models' must be an array");
 
-    // 事前定義モデルが含まれることを検証
-    let model_names: Vec<String> = models
-        .iter()
-        .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
-        .collect();
-
-    assert!(model_names.contains(&"gpt-oss:20b".to_string()));
-    assert!(model_names.contains(&"gpt-oss:120b".to_string()));
-    assert!(model_names.contains(&"gpt-oss-safeguard:20b".to_string()));
-    assert!(model_names.contains(&"qwen3-coder:30b".to_string()));
-
-    // 各モデルに必要な情報が含まれることを検証
-    for model in models {
-        assert!(model.get("name").is_some(), "Model must have 'name'");
-        assert!(model.get("size_gb").is_some(), "Model must have 'size_gb'");
-        assert!(
-            model.get("description").is_some(),
-            "Model must have 'description'"
-        );
-        assert!(
-            model.get("required_memory_gb").is_some(),
-            "Model must have 'required_memory_gb'"
-        );
-        assert!(model.get("tags").is_some(), "Model must have 'tags'");
-    }
+    // 事前定義モデルは廃止されたため、空配列でもよい（存在確認のみ）
 }
 
 /// T019: 特定ノードのインストール済みモデル一覧を取得

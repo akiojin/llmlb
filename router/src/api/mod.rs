@@ -152,6 +152,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/models/available", get(models::get_available_models))
         .route("/api/models/register", post(models::register_model))
         .route("/api/models/pull", post(models::pull_model_from_hf))
+        .route("/api/models/registered", get(models::get_registered_models))
+        .route("/api/models/*model_name", delete(models::delete_model))
         .route("/api/models/convert", post(models::convert_model))
         .route("/api/models/convert", get(models::list_convert_tasks))
         .route(

@@ -605,7 +605,21 @@ pub async fn register_model(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let name = format!("hf/{}/{}", req.repo, req.filename);
     let repo = req.repo.clone();
+<<<<<<< HEAD
     let filename = req.filename.clone();
+=======
+    let filename = match req.filename.clone() {
+        Some(f) => f,
+        None => resolve_first_gguf_in_repo(&state.http_client, &repo).await?,
+    };
+    let name = format!("hf/{}/{}", repo, filename);
+
+    if find_model_by_name(&name).is_some() {
+        return Err(
+            RouterError::Common(CommonError::Validation("重複登録されています".into())).into(),
+        );
+    }
+>>>>>>> 2512e81 (fix(models): allow slash names and drop embedded defaults)
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -802,6 +816,27 @@ pub async fn get_loaded_models(
     list.sort_by(|a, b| a.model_name.cmp(&b.model_name));
 
     Ok(Json(list))
+}
+
+/// DELETE /api/models/:model_name - 登録モデル削除
+pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, AppError> {
+    let removed = remove_registered_model(&model_name);
+
+    if let Some(path) = router_model_path(&model_name) {
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::remove_dir_all(parent);
+            }
+        }
+    }
+
+    if removed {
+        persist_registered_models().await;
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(RouterError::Common(CommonError::Validation("model not found".into())).into())
+    }
 }
 
 /// T028: POST /api/models/distribute - モデルを配布

@@ -475,10 +475,10 @@ async fn fetch_hf_models(
     Ok((out, false))
 }
 
-async fn resolve_first_gguf_in_repo(
+async fn select_file_in_repo(
     http_client: &reqwest::Client,
     repo: &str,
-) -> Result<String, RouterError> {
+) -> Result<(String, bool), RouterError> {
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -506,17 +506,38 @@ async fn resolve_first_gguf_in_repo(
         .json()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
-    let filename = detail
+    // GGUF優先
+    if let Some(fname) = detail
         .siblings
         .iter()
         .map(|s| s.rfilename.clone())
         .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
-        .ok_or_else(|| {
-            RouterError::Common(CommonError::Validation(
-                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
-            ))
-        })?;
-    Ok(filename)
+    {
+        return Ok((fname, true));
+    }
+
+    // それ以外で変換可能な拡張子を1つ選ぶ
+    const CONVERTIBLE_EXTS: &[&str] = &[".safetensors", ".bin", ".pth", ".pt"];
+    if let Some(fname) = detail
+        .siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| {
+            let lower = f.to_ascii_lowercase();
+            CONVERTIBLE_EXTS.iter().any(|ext| lower.ends_with(ext))
+        })
+    {
+        return Ok((fname, false));
+    }
+
+    // 何でも良い: 最初のファイルを選択し、後段で変換を試みる
+    if let Some(fname) = detail.siblings.first().map(|s| s.rfilename.clone()) {
+        return Ok((fname, false));
+    }
+
+    Err(RouterError::Common(CommonError::Validation(
+        "リポジトリ内にファイルが見つかりませんでした".into(),
+    )))
 }
 
 /// モデル配布リクエスト
@@ -734,9 +755,12 @@ pub async fn register_model(
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let repo = req.repo.clone();
-    let filename = match req.filename.clone() {
-        Some(f) => f,
-        None => resolve_first_gguf_in_repo(&state.http_client, &repo).await?,
+    let (filename, is_gguf) = match req.filename.clone() {
+        Some(f) => {
+            let is = f.to_ascii_lowercase().ends_with(".gguf");
+            (f, is)
+        }
+        None => select_file_in_repo(&state.http_client, &repo).await?,
     };
     let name = format!("hf/{}/{}", repo, filename);
 
@@ -798,55 +822,103 @@ pub async fn register_model(
 
     let warnings = compute_gpu_warnings(&state.registry, required_memory).await;
 
-    let model = ModelInfo {
-        name: name.clone(),
-        size: content_length,
-        description: req.display_name.unwrap_or_else(|| repo.clone()),
-        required_memory,
-        tags: vec!["gguf".into()],
-        source: ModelSource::HfGguf,
-        download_url: Some(download_url),
-        path: None,
-        chat_template: req.chat_template.clone(),
-        repo: Some(repo.clone()),
-        filename: Some(filename.clone()),
-        last_modified: None,
-        status: Some("registered".into()),
-    };
+    if is_gguf {
+        let model = ModelInfo {
+            name: name.clone(),
+            size: content_length,
+            description: req.display_name.unwrap_or_else(|| repo.clone()),
+            required_memory,
+            tags: vec!["gguf".into()],
+            source: ModelSource::HfGguf,
+            download_url: Some(download_url),
+            path: None,
+            chat_template: req.chat_template.clone(),
+            repo: Some(repo.clone()),
+            filename: Some(filename.clone()),
+            last_modified: None,
+            status: Some("registered".into()),
+        };
 
-    upsert_registered_model(model);
-    persist_registered_models().await;
+        upsert_registered_model(model);
+        persist_registered_models().await;
 
-    // 登録直後にコンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
-    let convert_manager = state.convert_manager.clone();
-    let repo_for_job = repo.clone();
-    let filename_for_job = filename.clone();
-    let chat_tpl_for_job = req.chat_template.clone();
-    tokio::spawn(async move {
-        convert_manager
-            .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
-            .await;
-    });
+        // 登録直後にコンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
+        let convert_manager = state.convert_manager.clone();
+        let repo_for_job = repo.clone();
+        let filename_for_job = filename.clone();
+        let chat_tpl_for_job = req.chat_template.clone();
+        tokio::spawn(async move {
+            convert_manager
+                .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
+                .await;
+        });
 
-    tracing::info!(
-        repo = %repo,
-        filename = %filename,
-        size_bytes = content_length,
-        required_memory_bytes = required_memory,
-        warnings = warnings.len(),
-        "hf_model_registered"
-    );
+        tracing::info!(
+            repo = %repo,
+            filename = %filename,
+            size_bytes = content_length,
+            required_memory_bytes = required_memory,
+            warnings = warnings.len(),
+            "hf_model_registered"
+        );
 
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "name": name,
-            "status": "registered",
-            "size_bytes": content_length,
-            "required_memory_bytes": required_memory,
-            "warnings": warnings,
-        })),
-    ))
+        Ok((
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "name": name,
+                "status": "registered",
+                "size_bytes": content_length,
+                "required_memory_bytes": required_memory,
+                "warnings": warnings,
+            })),
+        ))
+    } else {
+        // 非GGUFはコンバートに投入し、登録情報はpendingとして保持
+        let model = ModelInfo {
+            name: name.clone(),
+            size: content_length,
+            description: req.display_name.unwrap_or_else(|| repo.clone()),
+            required_memory,
+            tags: vec!["pending_convert".into()],
+            source: ModelSource::HfPendingConversion,
+            download_url: Some(download_url.clone()),
+            path: None,
+            chat_template: req.chat_template.clone(),
+            repo: Some(repo.clone()),
+            filename: Some(filename.clone()),
+            last_modified: None,
+            status: Some("pending_conversion".into()),
+        };
+
+        upsert_registered_model(model);
+        persist_registered_models().await;
+
+        let convert_manager = state.convert_manager.clone();
+        let repo_for_job = repo.clone();
+        let filename_for_job = filename.clone();
+        let chat_tpl_for_job = req.chat_template.clone();
+        tokio::spawn(async move {
+            convert_manager
+                .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
+                .await;
+        });
+
+        tracing::info!(
+            repo = %repo,
+            filename = %filename,
+            status = "pending_conversion",
+            "hf_model_registered_pending_convert"
+        );
+
+        Ok((
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "name": name,
+                "status": "pending_conversion",
+                "selected_filename": filename,
+            })),
+        ))
+    }
 }
 
 /// POST /api/models/pull - HFからダウンロードしローカルキャッシュに保存して登録

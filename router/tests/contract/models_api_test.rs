@@ -12,7 +12,7 @@ use serde_json::json;
 use serial_test::serial;
 use tower::ServiceExt;
 use uuid::Uuid;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn build_app() -> Router {
@@ -634,4 +634,118 @@ async fn test_register_model_contract() {
         .await
         .unwrap();
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+
+    // repoのみ指定でGGUFなし→最初の変換可能ファイルを選んでpending_conversionになる
+    Mock::given(method("GET"))
+        .and(path("/api/models/non-gguf-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    Mock::given(method("HEAD"))
+        .and(path("/non-gguf-repo/resolve/main/model.safetensors"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "100"))
+        .mount(&mock)
+        .await;
+
+    let repo_only = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "non-gguf-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(repo_only.status(), StatusCode::CREATED);
+    let repo_body = to_bytes(repo_only.into_body(), usize::MAX).await.unwrap();
+    let repo_json: serde_json::Value = serde_json::from_slice(&repo_body).unwrap();
+    assert_eq!(repo_json["status"], "pending_conversion");
+
+    // repoのみ、変換可能拡張子もない → 最初のファイルを拾ってpending_conversion
+    Mock::given(method("GET"))
+        .and(path("/api/models/unknown-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "other.txt"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    Mock::given(method("HEAD"))
+        .and(path("/unknown-repo/resolve/main/config.json"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "50"))
+        .mount(&mock)
+        .await;
+
+    let repo_only_fallback = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "unknown-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(repo_only_fallback.status(), StatusCode::CREATED);
+    let repo_body_fb = to_bytes(repo_only_fallback.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let repo_json_fb: serde_json::Value = serde_json::from_slice(&repo_body_fb).unwrap();
+    assert_eq!(repo_json_fb["status"], "pending_conversion");
+
+    // DELETE removes registered model
+    let delete_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/models/hf/test/repo/model.gguf")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
+
+    let models_after = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body_after = to_bytes(models_after.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let val_after: serde_json::Value = serde_json::from_slice(&body_after).unwrap();
+    let data_after = val_after["data"].as_array().unwrap();
+    assert!(
+        !data_after
+            .iter()
+            .any(|m| m["id"] == "hf/test/repo/model.gguf"),
+        "deleted model must disappear from /v1/models"
+    );
 }

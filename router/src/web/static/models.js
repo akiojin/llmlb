@@ -154,6 +154,16 @@ async function registerModel(repo, filename, displayName) {
   return response.json();
 }
 
+async function deleteModel(modelName) {
+  const response = await fetch(`/api/models/${encodeURIComponent(modelName)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || `HTTP ${response.status}`);
+  }
+}
+
 function findDownloadTask(modelName) {
   return Array.from(downloadTasks.values()).find((t) => t.model_name === modelName) || null;
 }
@@ -627,6 +637,9 @@ function renderRegisteredModelCard(model) {
         <button class="btn btn-small" data-action="download" data-model="${escapeHtml(
           model.name
         )}" ${disabled ? 'disabled' : ''}>Download (all)</button>
+        <button class="btn btn-small btn-danger" data-action="delete" data-model="${escapeHtml(
+          model.name
+        )}">Delete</button>
       </div>
     </div>`
   );
@@ -741,6 +754,18 @@ function renderRegisteredModels(models) {
       const modelName = btn.dataset.model;
       await distributeModel(modelName, 'all');
       showSuccess('Download started for all nodes');
+    });
+  });
+  container.querySelectorAll('button[data-action="delete"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const modelName = btn.dataset.model;
+      try {
+        await deleteModel(modelName);
+        showSuccess(`Deleted ${modelName}`);
+        await refreshRegisteredModels();
+      } catch (e) {
+        showError(e.message || 'Failed to delete model');
+      }
     });
   });
 }
@@ -1257,15 +1282,13 @@ async function initModelsUI(agents) {
       const isRepoOnly = !filename;
       const isGguf = parsed.isGguf;
       try {
-        if (isRepoOnly || isGguf) {
-          const res = await registerModel(repo, filename, filename || repo);
+        const res = await registerModel(repo, filename, filename || repo);
+        if (res.status === 'pending_conversion') {
+          showSuccess(`Convert queued: ${res.name}`);
+          await refreshConvertTasks();
+        } else {
           showSuccess(`Registered ${res.name}`);
           await refreshRegisteredModels();
-        } else {
-          // filename may be null; backend will resolve/convert as needed
-          await convertModel(repo, filename, null, null, null);
-          showSuccess('Non-GGUFファイルをConvertキューに追加しました');
-          await refreshConvertTasks();
         }
       } catch (err) {
         showError(err.message || 'Failed to register model from URL');

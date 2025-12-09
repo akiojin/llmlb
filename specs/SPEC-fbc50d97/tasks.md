@@ -320,6 +320,39 @@
 
 ---
 
+## Phase 3.7: 追加改善
+
+### ページネーション改善 (2025-12-09)
+
+- [x] T040 [P] `router/src/api/dashboard.rs` のページネーションテストを作成（TDD RED）
+  - `RequestHistoryQuery` 構造体のデフォルト値テスト
+  - 許可されたページサイズ（10/25/50/100）のテスト
+  - 無効なページサイズの正規化テスト
+  - URLクエリパラメータのパーステスト
+  - 依存: T023
+
+- [x] T041 `router/src/api/dashboard.rs` のページネーション実装を改善（TDD GREEN）
+  - `ALLOWED_PAGE_SIZES` 定数を追加（10, 25, 50, 100）
+  - `DEFAULT_PAGE_SIZE` 定数を追加（10）
+  - `RequestHistoryQuery` 構造体を追加（page, per_page）
+  - `normalized_per_page()` メソッドで無効な値をデフォルトに正規化
+  - `list_request_responses()` をクエリパラメータ対応に変更
+  - 依存: T040
+
+- [x] T042 `router/Cargo.toml` に `serde_urlencoded` dev-dependency を追加
+  - テストでURLクエリパラメータのパースに使用
+  - 依存: T040
+
+- [x] T043 品質チェック＆コミット
+  - `cargo fmt --check` 合格
+  - `cargo clippy -- -D warnings` 合格
+  - `cargo test` 全テスト合格（171テスト）
+  - markdownlint 合格
+  - コミット: feat(dashboard): リクエスト一覧のページネーション改善
+  - 依存: T041, T042
+
+---
+
 ## 依存関係グラフ
 
 ```
@@ -339,6 +372,8 @@ UI実装 (T027-T032) → T027, T032 は並列、T028-T031 は順次
 E2E Test (T033)
   ↓
 Polish (T034-T039) → T034, T035 は並列、T036-T039 は順次
+  ↓
+追加改善 (T040-T043) → T040 (RED) → T041, T042 (GREEN) → T043 (コミット)
 ```
 
 ---

@@ -1263,11 +1263,12 @@ export async function initModelsUI(agents) {
         return;
       }
       let repo = parsed.repo;
-      let filename = parsed.filename; // may be null -> backend resolves/convert
+      let filename = parsed.filename; // may be null -> backend resolves
+      const isRepoOnly = !filename;
       const isGguf = filename ? filename.toLowerCase().endsWith('.gguf') : false;
       try {
-        if (isGguf) {
-          const res = await registerModel(repo, filename, filename);
+        if (isRepoOnly || isGguf) {
+          const res = await registerModel(repo, filename, filename || repo);
           showSuccess(`Registered ${res.name}`);
           await refreshRegisteredModels();
         } else {

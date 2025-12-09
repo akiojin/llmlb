@@ -202,21 +202,26 @@ function parseHfUrl(rawUrl) {
   }
 }
 
-async function findFirstGgufInRepo(repo) {
-  const params = new URLSearchParams({ source: 'hf', search: repo });
+/**
+ * Find first file in a HF repo, preferring GGUF.
+ * Returns { filename, isGguf } or null.
+ */
+async function findFirstFileInRepo(repo) {
+  const url = `https://huggingface.co/api/models/${encodeURIComponent(repo)}?expand=siblings`;
   try {
-    const res = await fetch(`/api/models/available?${params.toString()}`);
-    if (!res.ok) return null;
+    const res = await fetch(url, { headers: buildHfAuthHeaders() });
+    if (!res.ok) {
+      console.error('HF repo lookup failed', res.status);
+      return null;
+    }
     const data = await res.json();
-    const models = Array.isArray(data.models) ? data.models : [];
-    const match = models.find((m) => {
-      const repoFromName = m.name?.split('/').slice(1, -1).join('/') ?? '';
-      return (m.repo && m.repo === repo) || repoFromName === repo;
-    });
-    if (!match) return null;
-    return match.filename || match.name?.split('/').pop() || null;
+    const siblings = Array.isArray(data.siblings) ? data.siblings : [];
+    const gguf = siblings.find((s) => s.rfilename?.toLowerCase().endsWith('.gguf'));
+    if (gguf) return { filename: gguf.rfilename, isGguf: true };
+    if (siblings.length > 0) return { filename: siblings[0].rfilename, isGguf: false };
+    return null;
   } catch (e) {
-    console.error('Failed to search repo for gguf:', e);
+    console.error('Failed to query HF repo', e);
     return null;
   }
 }
@@ -1283,15 +1288,17 @@ export async function initModelsUI(agents) {
       }
       let repo = parsed.repo;
       let filename = parsed.filename;
+      let isGguf = filename?.toLowerCase().endsWith('.gguf');
       if (!filename) {
-        showSuccess('ファイルを検索中...');
-        filename = await findFirstGgufInRepo(repo);
-        if (!filename) {
-          showError('リポジトリ内に GGUF ファイルが見つかりませんでした。ファイルURLを指定してください。');
+        showSuccess('Repo をスキャン中...');
+        const resolved = await findFirstFileInRepo(repo);
+        if (!resolved) {
+          showError('リポジトリ内にファイルが見つかりませんでした。ファイルURLを指定してください。');
           return;
         }
+        filename = resolved.filename;
+        isGguf = resolved.isGguf;
       }
-      const isGguf = filename.endsWith('.gguf');
       try {
         if (isGguf) {
           const res = await registerModel(repo, filename, filename);

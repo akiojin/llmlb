@@ -202,30 +202,6 @@ function parseHfUrl(rawUrl) {
   }
 }
 
-/**
- * Find first file in a HF repo, preferring GGUF.
- * Returns { filename, isGguf } or null.
- */
-async function findFirstFileInRepo(repo) {
-  const url = `https://huggingface.co/api/models/${encodeURIComponent(repo)}?expand=siblings`;
-  try {
-    const res = await fetch(url, { headers: buildHfAuthHeaders() });
-    if (!res.ok) {
-      console.error('HF repo lookup failed', res.status);
-      return null;
-    }
-    const data = await res.json();
-    const siblings = Array.isArray(data.siblings) ? data.siblings : [];
-    const gguf = siblings.find((s) => s.rfilename?.toLowerCase().endsWith('.gguf'));
-    if (gguf) return { filename: gguf.rfilename, isGguf: true };
-    if (siblings.length > 0) return { filename: siblings[0].rfilename, isGguf: false };
-    return null;
-  } catch (e) {
-    console.error('Failed to query HF repo', e);
-    return null;
-  }
-}
-
 async function pullModelFromHf(repo, filename, chatTemplate) {
   const payload = { repo, filename, chat_template: chatTemplate };
   const response = await fetch('/api/models/pull', {
@@ -1287,24 +1263,15 @@ export async function initModelsUI(agents) {
         return;
       }
       let repo = parsed.repo;
-      let filename = parsed.filename;
-      let isGguf = filename?.toLowerCase().endsWith('.gguf');
-      if (!filename) {
-        showSuccess('Repo をスキャン中...');
-        const resolved = await findFirstFileInRepo(repo);
-        if (!resolved) {
-          showError('リポジトリ内にファイルが見つかりませんでした。ファイルURLを指定してください。');
-          return;
-        }
-        filename = resolved.filename;
-        isGguf = resolved.isGguf;
-      }
+      let filename = parsed.filename; // may be null -> backend resolves/convert
+      const isGguf = filename ? filename.toLowerCase().endsWith('.gguf') : false;
       try {
         if (isGguf) {
           const res = await registerModel(repo, filename, filename);
           showSuccess(`Registered ${res.name}`);
           await refreshRegisteredModels();
         } else {
+          // filename may be null; backend will resolve/convert as needed
           await convertModel(repo, filename, null, null, null);
           showSuccess('Non-GGUFファイルをConvertキューに追加しました');
           await refreshConvertTasks();

@@ -15,9 +15,9 @@ const ThemeManager = {
   // 3 color themes (layout is fixed for all)
   themes: ["dark", "light", "high-contrast"],
   themeLabels: {
-    dark: "Dark",
-    light: "Light",
-    "high-contrast": "High Contrast",
+    dark: "Terminal Noir",
+    light: "Papercraft",
+    "high-contrast": "Electric Signal",
   },
   // Migration map from old themes to new themes
   legacyThemeMap: {
@@ -37,24 +37,27 @@ const ThemeManager = {
   storageKey: "dashboard-theme",
 
   // Chart.js color palettes for each theme
+  // Terminal Noir: Neon green + pink accents
+  // Papercraft Studio: Terracotta + forest tones
+  // Electric Signal: Pure high-contrast colors
   chartColors: {
     dark: [
-      { border: "rgba(6, 182, 212, 0.85)", bg: "rgba(6, 182, 212, 0.12)" },
-      { border: "rgba(34, 197, 94, 0.85)", bg: "rgba(34, 197, 94, 0.12)" },
-      { border: "rgba(245, 158, 11, 0.85)", bg: "rgba(245, 158, 11, 0.12)" },
-      { border: "rgba(239, 68, 68, 0.85)", bg: "rgba(239, 68, 68, 0.12)" },
+      { border: "rgba(0, 255, 159, 0.9)", bg: "rgba(0, 255, 159, 0.15)" }, // Neon green (accent)
+      { border: "rgba(255, 51, 102, 0.9)", bg: "rgba(255, 51, 102, 0.15)" }, // Neon pink (danger)
+      { border: "rgba(0, 200, 255, 0.9)", bg: "rgba(0, 200, 255, 0.15)" }, // Cyan
+      { border: "rgba(255, 200, 0, 0.9)", bg: "rgba(255, 200, 0, 0.15)" }, // Yellow
     ],
     light: [
-      { border: "rgba(2, 132, 199, 0.85)", bg: "rgba(2, 132, 199, 0.08)" },
-      { border: "rgba(22, 163, 74, 0.85)", bg: "rgba(22, 163, 74, 0.08)" },
-      { border: "rgba(217, 119, 6, 0.85)", bg: "rgba(217, 119, 6, 0.08)" },
-      { border: "rgba(220, 38, 38, 0.85)", bg: "rgba(220, 38, 38, 0.08)" },
+      { border: "rgba(211, 84, 0, 0.85)", bg: "rgba(211, 84, 0, 0.1)" }, // Terracotta (accent)
+      { border: "rgba(39, 174, 96, 0.85)", bg: "rgba(39, 174, 96, 0.1)" }, // Forest green (success)
+      { border: "rgba(41, 128, 185, 0.85)", bg: "rgba(41, 128, 185, 0.1)" }, // Steel blue
+      { border: "rgba(192, 57, 43, 0.85)", bg: "rgba(192, 57, 43, 0.1)" }, // Brick red
     ],
     "high-contrast": [
-      { border: "rgba(0, 255, 255, 0.85)", bg: "rgba(0, 255, 255, 0.15)" },
-      { border: "rgba(0, 255, 0, 0.85)", bg: "rgba(0, 255, 0, 0.15)" },
-      { border: "rgba(255, 255, 0, 0.85)", bg: "rgba(255, 255, 0, 0.15)" },
-      { border: "rgba(255, 0, 0, 0.85)", bg: "rgba(255, 0, 0, 0.15)" },
+      { border: "rgba(0, 229, 255, 1)", bg: "rgba(0, 229, 255, 0.2)" }, // Electric cyan (accent)
+      { border: "rgba(0, 255, 0, 1)", bg: "rgba(0, 255, 0, 0.2)" }, // Pure green (success)
+      { border: "rgba(255, 255, 0, 1)", bg: "rgba(255, 255, 0, 0.2)" }, // Pure yellow (warning)
+      { border: "rgba(255, 0, 0, 1)", bg: "rgba(255, 0, 0, 0.2)" }, // Pure red (danger)
     ],
   },
 
@@ -1260,6 +1263,7 @@ function openNodeModal(node) {
   }
 
   modalRefs.modal.classList.remove("hidden");
+  document.body.classList.add("body--modal-open");
   modalRefs.modal.setAttribute("tabindex", "-1");
   loadModalNodeLogs(node.id, { force: true });
   window.requestAnimationFrame(() => modalRefs.close.focus());
@@ -1268,6 +1272,7 @@ function openNodeModal(node) {
 function closeNodeModal() {
   if (!modalRefs.modal) return;
   modalRefs.modal.classList.add("hidden");
+  document.body.classList.remove("body--modal-open");
   if (state.nodeMetricsAbortController) {
     state.nodeMetricsAbortController.abort();
     state.nodeMetricsAbortController = null;
@@ -1974,6 +1979,7 @@ async function showRequestDetail(id) {
     const modal = document.getElementById("request-modal");
     if (modal) {
       modal.classList.remove("hidden");
+      document.body.classList.add("body--modal-open");
     }
   } catch (error) {
     console.error("Failed to fetch request detail:", error);
@@ -2040,12 +2046,14 @@ document.addEventListener("DOMContentLoaded", () => {
   if (requestModalClose && requestModal) {
     requestModalClose.addEventListener("click", () => {
       requestModal.classList.add("hidden");
+      document.body.classList.remove("body--modal-open");
     });
   }
 
   if (requestModalOk && requestModal) {
     requestModalOk.addEventListener("click", () => {
       requestModal.classList.add("hidden");
+      document.body.classList.remove("body--modal-open");
     });
   }
 

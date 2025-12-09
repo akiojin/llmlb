@@ -62,7 +62,7 @@ async fn dashboard_contains_chat_modal() {
     );
     assert!(html.contains("id=\"chat-iframe\""), "chat iframe not found");
     assert!(
-        html.contains("src=\"/chat\""),
-        "chat iframe src should point to /chat"
+        html.contains("src=\"/playground\""),
+        "chat iframe src should point to /playground"
     );
 }

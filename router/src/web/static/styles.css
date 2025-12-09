@@ -1,12 +1,24 @@
+/* =========================================
+   テーマシステム
+   ========================================= */
+
 :root {
   color-scheme: dark;
+  font-family: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
 
-  /* === ベース背景 === */
+/* === Cyberpunkテーマ（デフォルト） === */
+:root,
+[data-theme="cyberpunk"] {
+  /* ベース背景 */
   --bg: #030712;
   --bg-card: rgba(10, 15, 30, 0.85);
   --bg-card-alt: rgba(15, 25, 45, 0.9);
+  --bg-gradient: radial-gradient(ellipse at top, rgba(0, 255, 255, 0.08), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(255, 0, 255, 0.05), transparent 50%),
+    var(--bg);
 
-  /* === ネオンカラー === */
+  /* ネオンカラー */
   --neon-cyan: #00ffff;
   --neon-cyan-glow: rgba(0, 255, 255, 0.5);
   --neon-magenta: #ff00ff;
@@ -18,7 +30,7 @@
   --neon-red: #ff0055;
   --neon-red-glow: rgba(255, 0, 85, 0.4);
 
-  /* === 機能別マッピング === */
+  /* 機能別マッピング */
   --accent: var(--neon-cyan);
   --accent-weak: rgba(0, 255, 255, 0.12);
   --accent-glow: var(--neon-cyan-glow);
@@ -29,7 +41,7 @@
   --danger: var(--neon-red);
   --danger-glow: var(--neon-red-glow);
 
-  /* === ボーダー・テキスト === */
+  /* ボーダー・テキスト */
   --border: rgba(0, 255, 255, 0.15);
   --border-glow: rgba(0, 255, 255, 0.4);
   --text: #e0f7fa;
@@ -37,7 +49,7 @@
   --text-dim: #406070;
   --btn-text-on-accent: #000;
 
-  /* === 特殊効果 === */
+  /* 特殊効果 */
   --scanline-opacity: 0.03;
   --grid-color: rgba(0, 255, 255, 0.04);
   --hologram-gradient: linear-gradient(
@@ -46,8 +58,102 @@
     rgba(255, 0, 255, 0.04) 50%,
     rgba(0, 255, 136, 0.08) 100%
   );
+  --crt-curvature: none;
+  --theme-font: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
 
-  font-family: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+/* === Retro Terminalテーマ === */
+[data-theme="retro"] {
+  /* ベース背景 */
+  --bg: #0a0a0a;
+  --bg-card: rgba(0, 20, 0, 0.9);
+  --bg-card-alt: rgba(0, 30, 0, 0.85);
+  --bg-gradient: radial-gradient(ellipse at center, rgba(0, 40, 0, 0.3), transparent 70%),
+    var(--bg);
+
+  /* レトログリーン */
+  --neon-cyan: #33ff33;
+  --neon-cyan-glow: rgba(51, 255, 51, 0.5);
+  --neon-magenta: #00cc00;
+  --neon-magenta-glow: rgba(0, 204, 0, 0.4);
+  --neon-green: #33ff33;
+  --neon-green-glow: rgba(51, 255, 51, 0.4);
+  --neon-orange: #ffaa00;
+  --neon-orange-glow: rgba(255, 170, 0, 0.4);
+  --neon-red: #ff3333;
+  --neon-red-glow: rgba(255, 51, 51, 0.4);
+
+  /* 機能別マッピング */
+  --accent: #33ff33;
+  --accent-weak: rgba(51, 255, 51, 0.12);
+  --accent-glow: rgba(51, 255, 51, 0.5);
+  --success: #33ff33;
+  --success-glow: rgba(51, 255, 51, 0.4);
+  --warning: #ffaa00;
+  --warning-glow: rgba(255, 170, 0, 0.4);
+  --danger: #ff3333;
+  --danger-glow: rgba(255, 51, 51, 0.4);
+
+  /* ボーダー・テキスト */
+  --border: rgba(51, 255, 51, 0.2);
+  --border-glow: rgba(51, 255, 51, 0.5);
+  --text: #33ff33;
+  --text-subtle: #22aa22;
+  --text-dim: #116611;
+  --btn-text-on-accent: #000;
+
+  /* 特殊効果 */
+  --scanline-opacity: 0.08;
+  --grid-color: rgba(51, 255, 51, 0.03);
+  --hologram-gradient: linear-gradient(
+    135deg,
+    rgba(51, 255, 51, 0.08) 0%,
+    rgba(0, 204, 0, 0.04) 100%
+  );
+  --crt-curvature: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.25) 100%);
+  --theme-font: "Courier New", "VT323", monospace;
+}
+
+/* Retroテーマ専用フォント */
+[data-theme="retro"] {
+  font-family: var(--theme-font);
+}
+
+/* Retroテーマ CRT曲面効果 */
+[data-theme="retro"] body::before {
+  background-image: var(--crt-curvature),
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+}
+
+/* Retroテーマ 太いスキャンライン */
+[data-theme="retro"] body::after {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    rgba(0, 0, 0, var(--scanline-opacity)) 1px,
+    rgba(0, 0, 0, var(--scanline-opacity)) 3px
+  );
+}
+
+/* Retroテーマ テキストグロー */
+[data-theme="retro"] .stat-value,
+[data-theme="retro"] h1,
+[data-theme="retro"] h2 {
+  text-shadow: 0 0 8px var(--accent-glow), 0 0 15px var(--accent-glow);
+}
+
+/* CRTフリッカーアニメーション（Retro専用） */
+@keyframes crt-flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.85; }
+  94% { opacity: 1; }
+}
+
+[data-theme="retro"] .dashboard-container {
+  animation: crt-flicker 4s infinite;
 }
 
 *,
@@ -318,6 +424,46 @@ body::after {
 .refresh-button:active {
   transform: translateY(0);
   box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* テーマ切り替えボタン */
+.theme-toggle-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--accent);
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 15px var(--accent-glow);
+  transform: translateY(-2px);
+}
+
+.theme-toggle-btn:active {
+  transform: translateY(0);
+}
+
+.theme-toggle-btn svg {
+  transition: transform 0.3s ease;
+}
+
+.theme-toggle-btn:hover svg {
+  transform: rotate(30deg);
+}
+
+[data-theme="retro"] .theme-toggle-btn svg {
+  filter: drop-shadow(0 0 3px var(--accent));
 }
 
 .banner {

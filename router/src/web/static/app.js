@@ -8,6 +8,102 @@ const NODE_METRICS_LIMIT = 120;
 const LOG_ENTRY_LIMIT = 200;
 const MODAL_LOG_ENTRY_LIMIT = 100;
 
+// ========================================
+// Theme Manager (FR-027)
+// ========================================
+const ThemeManager = {
+  themes: ["cyberpunk", "retro"],
+  storageKey: "dashboard-theme",
+
+  init() {
+    const saved = localStorage.getItem(this.storageKey) || "cyberpunk";
+    this.apply(saved);
+  },
+
+  apply(theme) {
+    if (!this.themes.includes(theme)) {
+      theme = "cyberpunk";
+    }
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(this.storageKey, theme);
+    this.updateCharts();
+    this.updateToggleButton();
+  },
+
+  toggle() {
+    const current = document.documentElement.getAttribute("data-theme") || "cyberpunk";
+    const nextIndex = (this.themes.indexOf(current) + 1) % this.themes.length;
+    this.apply(this.themes[nextIndex]);
+  },
+
+  getColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  },
+
+  updateCharts() {
+    // Chart.jsの色をテーマに合わせて更新
+    const accent = this.getColor("--accent") || "#00ffff";
+    const danger = this.getColor("--status-danger") || "#ff0055";
+    const success = this.getColor("--status-success") || "#00ff88";
+    const warning = this.getColor("--status-warning") || "#ff6b00";
+
+    // 既存のrequestsChartを更新
+    if (typeof requestsChart !== "undefined" && requestsChart) {
+      requestsChart.data.datasets[0].borderColor = accent.includes("#33ff33")
+        ? "rgba(51, 255, 51, 0.9)"
+        : "rgba(0, 255, 255, 0.9)";
+      requestsChart.data.datasets[0].backgroundColor = accent.includes("#33ff33")
+        ? "rgba(51, 255, 51, 0.15)"
+        : "rgba(0, 255, 255, 0.15)";
+      requestsChart.data.datasets[1].borderColor = "rgba(255, 0, 85, 0.9)";
+      requestsChart.data.datasets[1].backgroundColor = "rgba(255, 0, 85, 0.15)";
+      requestsChart.update("none");
+    }
+
+    // nodeMetricsChartを更新
+    if (typeof nodeMetricsChart !== "undefined" && nodeMetricsChart) {
+      const isRetro = document.documentElement.getAttribute("data-theme") === "retro";
+      if (isRetro) {
+        // Retro: 緑系のカラーパレット
+        const colors = [
+          { border: "rgba(51, 255, 51, 0.85)", bg: "rgba(51, 255, 51, 0.12)" },
+          { border: "rgba(170, 255, 0, 0.85)", bg: "rgba(170, 255, 0, 0.12)" },
+          { border: "rgba(0, 255, 170, 0.85)", bg: "rgba(0, 255, 170, 0.12)" },
+          { border: "rgba(255, 170, 0, 0.85)", bg: "rgba(255, 170, 0, 0.12)" },
+        ];
+        nodeMetricsChart.data.datasets.forEach((ds, i) => {
+          const color = colors[i % colors.length];
+          ds.borderColor = color.border;
+          ds.backgroundColor = color.bg;
+        });
+      } else {
+        // Cyberpunk: シアン/マゼンタ系
+        const colors = [
+          { border: "rgba(0, 255, 255, 0.85)", bg: "rgba(0, 255, 255, 0.12)" },
+          { border: "rgba(255, 0, 255, 0.85)", bg: "rgba(255, 0, 255, 0.12)" },
+          { border: "rgba(0, 255, 136, 0.85)", bg: "rgba(0, 255, 136, 0.12)" },
+          { border: "rgba(255, 107, 0, 0.85)", bg: "rgba(255, 107, 0, 0.12)" },
+        ];
+        nodeMetricsChart.data.datasets.forEach((ds, i) => {
+          const color = colors[i % colors.length];
+          ds.borderColor = color.border;
+          ds.backgroundColor = color.bg;
+        });
+      }
+      nodeMetricsChart.update("none");
+    }
+  },
+
+  updateToggleButton() {
+    const btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    const current = document.documentElement.getAttribute("data-theme") || "cyberpunk";
+    const label = current === "retro" ? "Terminal" : "Cyber";
+    btn.setAttribute("title", `Theme: ${label} (Click to switch)`);
+    btn.setAttribute("aria-label", `Current theme: ${label}. Click to switch theme.`);
+  },
+};
+
 const state = {
   nodes: [],
   stats: null,
@@ -111,6 +207,9 @@ const logRefs = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  // テーマ初期化（最初に実行）
+  ThemeManager.init();
+
   const refreshButton = document.getElementById("refresh-button");
   const statusSelect = document.getElementById("filter-status");
   const queryInput = document.getElementById("filter-query");
@@ -129,11 +228,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatClose = document.getElementById("chat-close");
   const chatIframe = document.getElementById("chat-iframe");
   const tbody = document.getElementById("nodes-body");
+  const themeToggle = document.getElementById("theme-toggle");
 
   // リロード直後に詳細モーダルが開いたままにならないよう、確実に非表示へ初期化
   modal?.classList.add("hidden");
   document.getElementById("request-modal")?.classList.add("hidden");
   chatModal?.classList.add("hidden");
+
+  // テーマ切り替えボタン
+  themeToggle?.addEventListener("click", () => ThemeManager.toggle());
 
   initTabs();
 

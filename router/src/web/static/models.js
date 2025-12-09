@@ -193,9 +193,30 @@ function parseHfUrl(rawUrl) {
       pickTail('blob') ||
       (parts.length >= 3 ? parts.slice(2).join('/') : null);
 
-    if (!filename || !filename.endsWith('.gguf')) return null;
+    // repo 直指定の場合は filename なしで返す（後段で解決）
+    if (!filename) return { repo, filename: null };
+    if (!filename.endsWith('.gguf')) return null;
     return { repo, filename };
   } catch (_) {
+    return null;
+  }
+}
+
+async function findFirstGgufInRepo(repo) {
+  const params = new URLSearchParams({ source: 'hf', search: repo });
+  try {
+    const res = await fetch(`/api/models/available?${params.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const models = Array.isArray(data.models) ? data.models : [];
+    const match = models.find((m) => {
+      const repoFromName = m.name?.split('/').slice(1, -1).join('/') ?? '';
+      return (m.repo && m.repo === repo) || repoFromName === repo;
+    });
+    if (!match) return null;
+    return match.filename || match.name?.split('/').pop() || null;
+  } catch (e) {
+    console.error('Failed to search repo for gguf:', e);
     return null;
   }
 }
@@ -1259,13 +1280,21 @@ export async function initModelsUI(agents) {
       const input = elements.hfRegisterUrlInput();
       const parsed = parseHfUrl(input?.value?.trim() || '');
       if (!parsed) {
-        showError(
-          'GGUFファイルのURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)'
-        );
+        showError('GGUFのURLまたはリポジトリURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)');
         return;
       }
+      let repo = parsed.repo;
+      let filename = parsed.filename;
+      if (!filename) {
+        showSuccess('ファイルを検索中...');
+        filename = await findFirstGgufInRepo(repo);
+        if (!filename) {
+          showError('リポジトリ内に GGUF ファイルが見つかりませんでした。ファイルURLを指定してください。');
+          return;
+        }
+      }
       try {
-        const res = await registerModel(parsed.repo, parsed.filename, parsed.filename);
+        const res = await registerModel(repo, filename, filename);
         showSuccess(`Registered ${res.name}`);
         await refreshRegisteredModels();
       } catch (err) {

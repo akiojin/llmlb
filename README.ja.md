@@ -629,12 +629,157 @@ GET /api/dashboard/request-responses/export
 
 ## API仕様
 
-### Coordinator API
+### Router API
 
-#### POST /api/agents
+#### 認証エンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| POST | `/api/auth/login` | ユーザー認証、JWTトークン発行 | 不要 |
+| POST | `/api/auth/logout` | ログアウト | 不要 |
+| GET | `/api/auth/me` | 認証済みユーザー情報取得 | JWT |
+
+#### ユーザー管理エンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| GET | `/api/users` | ユーザー一覧取得 | JWT+Admin |
+| POST | `/api/users` | ユーザー作成 | JWT+Admin |
+| PUT | `/api/users/:id` | ユーザー更新 | JWT+Admin |
+| DELETE | `/api/users/:id` | ユーザー削除 | JWT+Admin |
+
+#### APIキー管理エンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| GET | `/api/api-keys` | APIキー一覧取得 | JWT+Admin |
+| POST | `/api/api-keys` | APIキー発行 | JWT+Admin |
+| PUT | `/api/api-keys/:id` | APIキー更新 | JWT+Admin |
+| DELETE | `/api/api-keys/:id` | APIキー削除 | JWT+Admin |
+
+#### ノード管理エンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| POST | `/api/nodes` | ノード登録（GPU必須） | 不要 |
+| GET | `/api/nodes` | ノード一覧取得 | 不要 |
+| DELETE | `/api/nodes/:node_id` | ノード削除 | 不要 |
+| POST | `/api/nodes/:node_id/disconnect` | ノード強制オフライン化 | 不要 |
+| PUT | `/api/nodes/:node_id/settings` | ノード設定更新 | 不要 |
+| POST | `/api/nodes/:node_id/metrics` | ノードメトリクス更新 | 不要 |
+| GET | `/api/nodes/metrics` | ノードメトリクス一覧 | 不要 |
+| GET | `/api/metrics/summary` | システム統計サマリー | 不要 |
+
+#### ヘルスチェックエンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| POST | `/api/health` | ノードからのヘルスチェック受信 | エージェントトークン |
+
+#### OpenAI互換エンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| POST | `/v1/chat/completions` | チャット補完API | APIキー |
+| POST | `/v1/completions` | テキスト補完API | APIキー |
+| POST | `/v1/embeddings` | Embeddings API | APIキー |
+| GET | `/v1/models` | 利用可能モデル一覧 | APIキー |
+| GET | `/v1/models/:model_id` | 特定モデル情報取得 | APIキー |
+
+#### プロキシエンドポイント（レガシー）
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| POST | `/api/chat` | Chat APIプロキシ | 不要 |
+| POST | `/api/generate` | Generate APIプロキシ | 不要 |
+
+#### モデル管理エンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| GET | `/api/models/available` | 利用可能モデル一覧 | 不要 |
+| POST | `/api/models/register` | モデル登録 | 不要 |
+| POST | `/api/models/pull` | HuggingFaceからモデルプル | 不要 |
+| GET | `/api/models/registered` | 登録済みモデル一覧 | 不要 |
+| DELETE | `/api/models/*model_name` | モデル削除 | 不要 |
+| POST | `/api/models/discover-gguf` | GGUFモデル検出 | 不要 |
+| POST | `/api/models/convert` | モデル変換開始 | 不要 |
+| GET | `/api/models/convert` | 変換タスク一覧 | 不要 |
+| GET | `/api/models/convert/:task_id` | 変換タスク詳細 | 不要 |
+| DELETE | `/api/models/convert/:task_id` | 変換タスク削除 | 不要 |
+| GET | `/api/models/loaded` | ロード済みモデル取得 | 不要 |
+| POST | `/api/models/distribute` | モデル配布 | 不要 |
+| POST | `/api/models/download` | モデルダウンロード（alias） | 不要 |
+| GET | `/api/models/blob/:model_name` | モデルファイル配信 | 不要 |
+| GET | `/api/nodes/:node_id/models` | ノードのロード済みモデル | 不要 |
+| POST | `/api/nodes/:node_id/models/pull` | ノードへのモデルプル | 不要 |
+| GET | `/api/tasks` | ダウンロードタスク一覧 | 不要 |
+| GET | `/api/tasks/:task_id` | タスク詳細 | 不要 |
+| POST | `/api/tasks/:task_id/progress` | タスク進捗更新 | 不要 |
+
+#### ダッシュボードエンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| GET | `/api/dashboard/nodes` | ノード情報一覧 | 不要 |
+| GET | `/api/dashboard/stats` | システム統計 | 不要 |
+| GET | `/api/dashboard/request-history` | リクエスト履歴 | 不要 |
+| GET | `/api/dashboard/overview` | ダッシュボード概要 | 不要 |
+| GET | `/api/dashboard/metrics/:node_id` | ノードメトリクス履歴 | 不要 |
+| GET | `/api/dashboard/request-responses` | リクエスト・レスポンス一覧 | 不要 |
+| GET | `/api/dashboard/request-responses/:id` | リクエスト・レスポンス詳細 | 不要 |
+| GET | `/api/dashboard/request-responses/export` | リクエスト・レスポンスエクスポート | 不要 |
+
+#### ログエンドポイント
+
+| メソッド | パス | 機能 | 認証 |
+|---------|------|------|------|
+| GET | `/api/dashboard/logs/coordinator` | コーディネーターログ | 不要 |
+| GET | `/api/dashboard/logs/nodes/:node_id` | ノードログ | 不要 |
+| GET | `/api/nodes/:node_id/logs` | ノードログ（代替パス） | 不要 |
+
+#### 静的ファイル・メトリクス
+
+| メソッド | パス | 機能 |
+|---------|------|------|
+| GET | `/dashboard` | ダッシュボードUI |
+| GET | `/dashboard/*path` | ダッシュボード静的ファイル |
+| GET | `/playground` | チャットPlayground UI |
+| GET | `/playground/*path` | Playground静的ファイル |
+| GET | `/metrics/cloud` | Prometheusメトリクスエクスポート |
+
+### Node API (C++)
+
+#### OpenAI互換エンドポイント
+
+| メソッド | パス | 機能 |
+|---------|------|------|
+| GET | `/v1/models` | 利用可能モデル一覧 |
+| POST | `/v1/chat/completions` | チャット補完（ストリーミング対応） |
+| POST | `/v1/completions` | テキスト補完 |
+| POST | `/v1/embeddings` | Embeddings生成 |
+
+#### ノード管理エンドポイント
+
+| メソッド | パス | 機能 |
+|---------|------|------|
+| POST | `/pull` | モデルダウンロード要求 |
+| GET | `/health` | ヘルスチェック |
+| GET | `/startup` | スタートアップ状態確認 |
+| GET | `/metrics` | メトリクス取得（JSON形式） |
+| GET | `/metrics/prom` | Prometheusメトリクス |
+| GET | `/log/level` | 現在のログレベル取得 |
+| POST | `/log/level` | ログレベル変更 |
+| GET | `/internal-error` | 意図的エラー発生（デバッグ用） |
+
+### リクエスト・レスポンス例
+
+#### POST /api/nodes
+
 ノードを登録します。
 
 **リクエスト:**
+
 ```json
 {
   "machine_name": "my-machine",
@@ -649,6 +794,7 @@ GET /api/dashboard/request-responses/export
 ```
 
 **レスポンス:**
+
 ```json
 {
   "agent_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -656,47 +802,9 @@ GET /api/dashboard/request-responses/export
 }
 ```
 
-#### GET /api/agents
-登録されているノード一覧を取得します。
+#### POST /v1/chat/completions
 
-**レスポンス:**
-```json
-[
-  {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "machine_name": "my-machine",
-    "ip_address": "192.168.1.100",
-    "runtime_version": "0.1.0",
-    "runtime_port": 11434,
-    "status": "online",
-    "registered_at": "2025-10-30T12:00:00Z",
-    "last_seen": "2025-10-30T12:05:00Z",
-    "gpu_available": true,
-    "gpu_devices": [
-      { "model": "NVIDIA RTX 4090", "count": 2 }
-    ],
-    "gpu_count": 2,
-    "gpu_model": "NVIDIA RTX 4090"
-  }
-]
-```
-
-#### POST /api/health
-ヘルスチェック情報を受信します（Agent→Coordinator）。
-
-**リクエスト:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3
-}
-```
-
-#### POST /api/chat
-
-Chat APIへのプロキシエンドポイント（OpenAI互換形式）。
+チャット補完API（OpenAI互換）。
 
 **リクエスト:**
 
@@ -708,7 +816,7 @@ Chat APIへのプロキシエンドポイント（OpenAI互換形式）。
 }
 ```
 
-**レスポンス（OpenAI互換形式）:**
+**レスポンス:**
 
 ```json
 {
@@ -723,33 +831,23 @@ Chat APIへのプロキシエンドポイント（OpenAI互換形式）。
 ```
 
 > **重要**: LLM RouterはOpenAI互換レスポンス形式のみをサポートしています。
-> Ollamaネイティブ形式（`message`/`done`フィールド）は**サポートされていません**。
 
-#### POST /api/generate
+#### GET /api/tasks/:task_id
 
-Generate APIへのプロキシエンドポイント（OpenAI互換形式）。
+モデルダウンロードタスクの進捗を取得します。
 
-**リクエスト:**
-
-```json
-{
-  "model": "gpt-oss:20b",
-  "prompt": "Tell me a joke",
-  "stream": false
-}
-```
-
-**レスポンス（OpenAI互換形式）:**
+**レスポンス:**
 
 ```json
 {
-  "id": "cmpl-xxx",
-  "object": "text_completion",
-  "choices": [{
-    "text": "Why did the programmer quit? Because he didn't get arrays!",
-    "index": 0,
-    "finish_reason": "stop"
-  }]
+  "id": "770ea622-g49d-63f6-d938-668877662222",
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "model_name": "gpt-oss:7b",
+  "status": "downloading",
+  "progress": 0.45,
+  "download_speed_bps": 10485760,
+  "created_at": "2025-11-14T10:00:00Z",
+  "updated_at": "2025-11-14T10:05:30Z"
 }
 ```
 

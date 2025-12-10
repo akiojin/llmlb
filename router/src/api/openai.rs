@@ -1448,6 +1448,87 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn cloud_request_is_listed_in_dashboard_history() {
+        use axum::routing::Router;
+        use std::net::SocketAddr;
+        use tokio::net::TcpListener;
+
+        // mock cloud provider
+        let server = MockServer::start().await;
+        let tmpl = ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-dashboard",
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "hello cloud"},
+                "finish_reason": "stop"
+            }]
+        }));
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(tmpl)
+            .mount(&server)
+            .await;
+
+        // coordinator state with temp data dir
+        std::env::set_var("OPENAI_API_KEY", "testkey");
+        std::env::set_var("OPENAI_BASE_URL", server.uri());
+        std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
+        let (state, dir) = create_state_with_tempdir().await;
+
+        // spawn router
+        let app: Router = crate::api::create_router(state.clone());
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr: SocketAddr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .ok();
+        });
+
+        // send cloud request
+        let client = reqwest::Client::new();
+        let payload = json!({"model":"openai:gpt-4o","messages":[{"role":"user","content":"hi"}]});
+        let resp = client
+            .post(format!("http://{addr}/v1/chat/completions"))
+            .json(&payload)
+            .send()
+            .await
+            .expect("send cloud request");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+
+        // wait for async save_request_record
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // fetch dashboard history
+        let history_resp = client
+            .get(format!("http://{addr}/api/dashboard/request-responses"))
+            .send()
+            .await
+            .expect("history request");
+        assert_eq!(history_resp.status(), reqwest::StatusCode::OK);
+        let body: serde_json::Value = history_resp.json().await.expect("history json");
+        let records = body["records"].as_array().expect("records array");
+        assert!(
+            records.iter().any(|r| r["model"] == "openai:gpt-4o"),
+            "cloud request should be listed in history"
+        );
+
+        // cleanup env
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("OPENAI_BASE_URL");
+        std::env::remove_var("LLM_ROUTER_SKIP_API_KEY");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        drop(dir);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn non_prefixed_model_stays_on_local_path() {
         let state = create_local_state().await;
         let payload = json!({"model":"gpt-oss:20b","messages":[]});

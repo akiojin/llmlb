@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
@@ -392,13 +392,14 @@ impl ConvertTaskManager {
         };
 
         // Create progress callback that updates the task
+        // Get runtime handle here so it can be used inside spawn_blocking
+        let runtime_handle = tokio::runtime::Handle::current();
         let tasks_for_callback = tasks.clone();
         let progress_callback = move |progress: f32| {
-            // Use a blocking approach to update progress since we're in a sync context
+            // Use runtime handle to spawn async task from sync context
             let tasks = tasks_for_callback.clone();
             let task_id = task_id;
-            // Spawn a task to update progress asynchronously
-            tokio::spawn(async move {
+            runtime_handle.spawn(async move {
                 if let Some(task) = tasks.lock().await.get_mut(&task_id) {
                     task.progress = progress.clamp(0.0, 1.0);
                     task.updated_at = Utc::now();
@@ -587,7 +588,9 @@ where
             .arg(&target_path)
             .arg(&cmd_repo)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            // Force unbuffered output from Python so tqdm progress lines are flushed immediately
+            .env("PYTHONUNBUFFERED", "1");
 
         if let Some(token) = hf_token {
             cmd.env("HF_TOKEN", token);
@@ -603,16 +606,38 @@ where
         let stdout = child.stdout.take();
 
         // Collect stderr output while parsing progress
+        // tqdm uses \r (carriage return) to update progress lines, not \n
+        // So we need to read byte-by-byte and split on either \r or \n
         let mut stderr_output = String::new();
         if let Some(stderr_reader) = stderr {
-            let reader = BufReader::new(stderr_reader);
-            for line in reader.lines().map_while(Result::ok) {
-                // Try to parse progress from tqdm output
-                if let Some(progress) = parse_tqdm_progress(&line) {
+            let mut reader = BufReader::new(stderr_reader);
+            let mut line_buffer = String::new();
+            let mut byte = [0u8; 1];
+
+            while reader.read(&mut byte).unwrap_or(0) > 0 {
+                let ch = byte[0] as char;
+                if ch == '\r' || ch == '\n' {
+                    if !line_buffer.is_empty() {
+                        tracing::debug!(line=%line_buffer, "convert_stderr_line");
+                        // Try to parse progress from tqdm output
+                        if let Some(progress) = parse_tqdm_progress(&line_buffer) {
+                            tracing::debug!(progress, "convert_progress_parsed");
+                            progress_callback(progress);
+                        }
+                        stderr_output.push_str(&line_buffer);
+                        stderr_output.push('\n');
+                        line_buffer.clear();
+                    }
+                } else {
+                    line_buffer.push(ch);
+                }
+            }
+            // Handle any remaining content
+            if !line_buffer.is_empty() {
+                if let Some(progress) = parse_tqdm_progress(&line_buffer) {
                     progress_callback(progress);
                 }
-                stderr_output.push_str(&line);
-                stderr_output.push('\n');
+                stderr_output.push_str(&line_buffer);
             }
         }
 

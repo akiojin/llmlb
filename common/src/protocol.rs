@@ -187,9 +187,9 @@ pub struct RequestResponseRecord {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RequestType {
-    /// /api/chat エンドポイント
+    /// /v1/chat/completions エンドポイント
     Chat,
-    /// /api/generate エンドポイント
+    /// /v1/completions エンドポイント
     Generate,
     /// /v1/embeddings エンドポイント
     Embeddings,

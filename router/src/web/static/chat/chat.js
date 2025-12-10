@@ -69,7 +69,7 @@
     providerFilter: "local",
     loading: false,
     controller: null,
-    endpoint: "/api/chat",
+    endpoint: "/v1/chat/completions",
     pendingAssistant: null,
   };
 

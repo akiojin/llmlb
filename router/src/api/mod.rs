@@ -140,14 +140,8 @@ pub fn create_router(state: AppState) -> Router {
             "/api/dashboard/logs/coordinator",
             get(logs::get_coordinator_logs),
         )
-        .route(
-            "/api/dashboard/logs/nodes/:node_id",
-            get(logs::get_node_logs),
-        )
         // FR-002: node log proxy (spec path)
         .route("/api/nodes/:node_id/logs", get(logs::get_node_logs))
-        .route("/api/chat", post(proxy::proxy_chat))
-        .route("/api/generate", post(proxy::proxy_generate))
         // モデル管理API (SPEC-8ae67d67)
         .route("/api/models/available", get(models::get_available_models))
         .route("/api/models/register", post(models::register_model))

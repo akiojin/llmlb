@@ -96,7 +96,73 @@ jobs:
           tar -czf dist/llm-node-linux-cuda.tar.gz -C node/build-cuda llm-node
 
       - name: Semantic Release
+        id: semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm dlx semantic-release
+
+  publish-mcp-server:
+    name: Publish MCP Server to npm
+    needs: semantic-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Get release version
+        id: version
+        run: |
+          git fetch --tags
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if version already published
+        id: check
+        working-directory: mcp-server
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "@llm-router/mcp-server@${RELEASE_VERSION}" version 2>/dev/null; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Version ${RELEASE_VERSION} already published, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        run: pnpm build
+
+      - name: Update version
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

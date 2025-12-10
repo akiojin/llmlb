@@ -770,72 +770,6 @@ async fn finalize_model_registration(
     persist_registered_models().await;
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::registry::models::{ModelInfo, ModelSource};
-    use std::{env, time::Duration};
-
-    #[tokio::test]
-    async fn resume_pending_converts_enqueues_pending_only() {
-        // avoid touching real HOME / conversions
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", tmp.path());
-        std::env::set_var("LLM_CONVERT_FAKE", "1");
-
-        let manager = ConvertTaskManager::new(1);
-
-        let mut pending = ModelInfo::new(
-            "hf/openai/gpt-oss-20b/metal/model.bin".into(),
-            0,
-            "desc".into(),
-            0,
-            vec![],
-        );
-        pending.repo = Some("openai/gpt-oss-20b".into());
-        pending.filename = Some("metal/model.bin".into());
-        pending.status = Some("pending_conversion".into());
-        pending.source = ModelSource::HfPendingConversion;
-
-        let mut cached = ModelInfo::new("hf/other/model.gguf".into(), 0, "done".into(), 0, vec![]);
-        cached.repo = Some("other/model".into());
-        cached.filename = Some("model.gguf".into());
-        cached.status = Some("cached".into());
-
-        resume_pending_converts(&manager, vec![pending.clone(), cached]).await;
-
-        // give worker thread a moment to pick up the job
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        let tasks = manager.list().await;
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].repo, pending.repo.unwrap());
-        assert_eq!(tasks[0].filename, pending.filename.unwrap());
-        assert!(matches!(
-            tasks[0].status,
-            ConvertStatus::Queued | ConvertStatus::InProgress | ConvertStatus::Completed
-        ));
-    }
-
-    #[test]
-    fn verify_convert_ready_allows_custom_script_without_deps() {
-        let tmp = tempfile::tempdir().unwrap();
-        let script_path = tmp.path().join("mock_script.py");
-        std::fs::write(&script_path, "print('ok')").unwrap();
-        env::set_var("LLM_CONVERT_SCRIPT", &script_path);
-        let res = verify_convert_ready();
-        env::remove_var("LLM_CONVERT_SCRIPT");
-        assert!(res.is_ok());
-    }
-
-    #[test]
-    fn verify_convert_ready_errors_when_missing_script() {
-        env::remove_var("LLM_CONVERT_SCRIPT");
-        let res = verify_convert_ready();
-        assert!(res.is_err());
-    }
-}
-
 /// 非GGUF形式のHFモデルをGGUFに変換
 #[allow(dead_code)]
 async fn convert_to_gguf(
@@ -952,4 +886,70 @@ async fn convert_to_gguf(
     crate::api::models::persist_registered_models().await;
 
     Ok(target.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::models::{ModelInfo, ModelSource};
+    use std::{env, time::Duration};
+
+    #[tokio::test]
+    async fn resume_pending_converts_enqueues_pending_only() {
+        // avoid touching real HOME / conversions
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("LLM_CONVERT_FAKE", "1");
+
+        let manager = ConvertTaskManager::new(1);
+
+        let mut pending = ModelInfo::new(
+            "hf/openai/gpt-oss-20b/metal/model.bin".into(),
+            0,
+            "desc".into(),
+            0,
+            vec![],
+        );
+        pending.repo = Some("openai/gpt-oss-20b".into());
+        pending.filename = Some("metal/model.bin".into());
+        pending.status = Some("pending_conversion".into());
+        pending.source = ModelSource::HfPendingConversion;
+
+        let mut cached = ModelInfo::new("hf/other/model.gguf".into(), 0, "done".into(), 0, vec![]);
+        cached.repo = Some("other/model".into());
+        cached.filename = Some("model.gguf".into());
+        cached.status = Some("cached".into());
+
+        resume_pending_converts(&manager, vec![pending.clone(), cached]).await;
+
+        // give worker thread a moment to pick up the job
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let tasks = manager.list().await;
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].repo, pending.repo.unwrap());
+        assert_eq!(tasks[0].filename, pending.filename.unwrap());
+        assert!(matches!(
+            tasks[0].status,
+            ConvertStatus::Queued | ConvertStatus::InProgress | ConvertStatus::Completed
+        ));
+    }
+
+    #[test]
+    fn verify_convert_ready_allows_custom_script_without_deps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script_path = tmp.path().join("mock_script.py");
+        std::fs::write(&script_path, "print('ok')").unwrap();
+        env::set_var("LLM_CONVERT_SCRIPT", &script_path);
+        let res = verify_convert_ready();
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn verify_convert_ready_errors_when_missing_script() {
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        let res = verify_convert_ready();
+        assert!(res.is_err());
+    }
 }

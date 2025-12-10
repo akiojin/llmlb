@@ -1257,16 +1257,16 @@ async function initModelsUI(agents) {
       const isRepoOnly = !filename;
       const isGguf = parsed.isGguf;
       try {
-        if (isRepoOnly || isGguf) {
-          const res = await registerModel(repo, filename, filename || repo);
-          showSuccess(`Registered ${res.name}`);
-          await refreshRegisteredModels();
+        // 全てのケースでregisterModelを呼び出す（バックエンドがGGUF版を自動解決）
+        const res = await registerModel(repo, filename, filename || repo);
+
+        // 自動解決された場合は詳細メッセージを表示
+        if (res.auto_resolved && res.resolved_from) {
+          showSuccess(`GGUF版を使用: ${res.resolved_from} → ${res.name}`);
         } else {
-          // filename may be null; backend will resolve/convert as needed
-          await convertModel(repo, filename, null, null, null);
-          showSuccess('Non-GGUFファイルをConvertキューに追加しました');
-          await refreshConvertTasks();
+          showSuccess(`Registered ${res.name}`);
         }
+        await refreshRegisteredModels();
       } catch (err) {
         showError(err.message || 'Failed to register model from URL');
       }

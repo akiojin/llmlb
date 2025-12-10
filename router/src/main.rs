@@ -245,6 +245,12 @@ async fn run_server(config: ServerConfig) {
     // Load registered models (HF etc.)
     llm_router::api::models::load_registered_models_from_storage().await;
 
+    // venv環境をセットアップ（非GGUF変換に必要）
+    info!("Setting up Python venv for model conversion...");
+    if let Err(e) = llm_router::convert::setup_venv() {
+        tracing::warn!("venv setup failed (conversion may not work): {}", e);
+    }
+
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");
 

@@ -67,7 +67,6 @@ cmake --build build --config Release
 | `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU必須を無効化 |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
 | `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
 

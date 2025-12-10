@@ -307,7 +307,9 @@ pub fn remove_registered_model(name: &str) -> bool {
 /// 登録モデルを永続化（失敗はログのみ）
 pub async fn persist_registered_models() {
     if let Ok(store) = std::panic::catch_unwind(|| REGISTERED_MODELS.read().unwrap().clone()) {
-        let _ = crate::db::models::save_models(&store).await;
+        if let Err(e) = crate::db::models::save_models(&store).await {
+            tracing::error!("Failed to persist registered models: {}", e);
+        }
     }
 }
 
@@ -1032,9 +1034,17 @@ pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, 
 
     if let Some(path) = router_model_path(&model_name) {
         if path.exists() {
-            let _ = std::fs::remove_file(&path);
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!("Failed to remove model file {}: {}", path.display(), e);
+            }
             if let Some(parent) = path.parent() {
-                let _ = std::fs::remove_dir_all(parent);
+                if let Err(e) = std::fs::remove_dir_all(parent) {
+                    tracing::warn!(
+                        "Failed to remove model directory {}: {}",
+                        parent.display(),
+                        e
+                    );
+                }
             }
         }
     }

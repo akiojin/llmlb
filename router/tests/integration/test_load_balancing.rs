@@ -291,3 +291,94 @@ async fn test_load_based_balancing_prefers_lower_latency() {
     let selected = load_manager.select_agent().await.unwrap();
     assert_eq!(selected.id, fast_agent);
 }
+
+#[tokio::test]
+async fn test_load_balancer_excludes_registering_nodes() {
+    let registry = NodeRegistry::new();
+    let load_manager = LoadManager::new(registry.clone());
+
+    // Registering 状態のノード（メトリクスを記録しないので Registering のまま）
+    let registering_agent = registry
+        .register(RegisterRequest {
+            machine_name: "registering-agent".to_string(),
+            ip_address: "192.168.4.10".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: vec![GpuDeviceInfo {
+                model: "Test GPU".to_string(),
+                count: 1,
+                memory: None,
+            }],
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+        })
+        .await
+        .unwrap()
+        .node_id;
+
+    // Online 状態のノード（メトリクスを記録して Online に遷移）
+    let online_agent = registry
+        .register(RegisterRequest {
+            machine_name: "online-agent".to_string(),
+            ip_address: "192.168.4.11".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: vec![GpuDeviceInfo {
+                model: "Test GPU".to_string(),
+                count: 1,
+                memory: None,
+            }],
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+        })
+        .await
+        .unwrap()
+        .node_id;
+
+    // online_agent のみメトリクスを記録して Online に遷移
+    load_manager
+        .record_metrics(MetricsUpdate {
+            node_id: online_agent,
+            cpu_usage: 50.0,
+            memory_usage: 40.0,
+            gpu_usage: None,
+            gpu_memory_usage: None,
+            gpu_memory_total_mb: None,
+            gpu_memory_used_mb: None,
+            gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
+            active_requests: 0,
+            average_response_time_ms: Some(100.0),
+            initializing: false,
+            ready_models: Some((0, 0)),
+        })
+        .await
+        .unwrap();
+
+    // select_agent は Online のノードのみを選択すべき
+    for _ in 0..5 {
+        let selected = load_manager.select_agent().await.unwrap();
+        assert_eq!(
+            selected.id, online_agent,
+            "Load balancer should exclude Registering nodes and only select Online nodes"
+        );
+        assert_ne!(
+            selected.id, registering_agent,
+            "Registering node should not be selected"
+        );
+
+        load_manager.begin_request(selected.id).await.unwrap();
+        load_manager
+            .finish_request(
+                selected.id,
+                RequestOutcome::Success,
+                Duration::from_millis(50),
+            )
+            .await
+            .unwrap();
+    }
+}

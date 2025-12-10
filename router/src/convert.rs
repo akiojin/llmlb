@@ -129,7 +129,15 @@ impl ConvertTaskManager {
             let mut guard = self.tasks.lock().await;
             guard.insert(id, task);
         }
-        let _ = self.queue_tx.send(id).await;
+        if let Err(e) = self.queue_tx.send(id).await {
+            tracing::error!("Failed to enqueue convert task {}: {}", id, e);
+            // タスクをFailed状態に更新
+            if let Some(task) = self.tasks.lock().await.get_mut(&id) {
+                task.status = ConvertStatus::Failed;
+                task.error = Some(format!("Failed to enqueue: {}", e));
+                task.updated_at = Utc::now();
+            }
+        }
         self.tasks.lock().await.get(&id).cloned().unwrap()
     }
 
@@ -428,9 +436,13 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
 }
 
 fn should_use_fake_convert() -> bool {
-    std::env::var("LLM_CONVERT_FAKE")
+    let enabled = std::env::var("LLM_CONVERT_FAKE")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if enabled {
+        tracing::warn!("LLM_CONVERT_FAKE is enabled - using dummy GGUF output (for testing only)");
+    }
+    enabled
 }
 
 /// ルーター再起動時に pending_conversion の登録済みモデルを再キューする

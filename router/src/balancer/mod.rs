@@ -1753,7 +1753,7 @@ impl LoadManager {
 
         // レジストリの初期化フラグ/ready_models を最新の値で前倒し更新し、select_agent が stale な状態を返さないようにする
         if initializing || ready_models.is_some() {
-            let _ = self
+            if let Err(e) = self
                 .registry
                 .update_last_seen(
                     node_id,
@@ -1764,7 +1764,14 @@ impl LoadManager {
                     Some(initializing),
                     ready_models,
                 )
-                .await;
+                .await
+            {
+                tracing::warn!(
+                    "Failed to update initializing state for node {}: {}",
+                    node_id,
+                    e
+                );
+            }
         }
 
         let mut state = self.state.write().await;

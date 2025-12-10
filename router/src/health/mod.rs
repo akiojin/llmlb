@@ -56,7 +56,8 @@ impl HealthMonitor {
         let now = Utc::now();
 
         for agent in nodes {
-            if agent.status != NodeStatus::Online {
+            // Offlineのみスキップ（Registering も Online と同様にタイムアウト検知対象）
+            if agent.status == NodeStatus::Offline {
                 continue;
             }
 

@@ -507,7 +507,14 @@ fn is_default_convert_script(path: &Path) -> bool {
 /// 変換に必要なスクリプト・依存が利用可能かを起動時に検証する。
 /// - デフォルトスクリプトを使う場合のみ Python 依存チェックを行う。
 /// - カスタムスクリプト指定時は存在確認のみ。
+/// - `LLM_CONVERT_SKIP_CHECK=1` 設定時は検証をスキップ（開発環境向け）。
 pub fn verify_convert_ready() -> Result<(), RouterError> {
+    // 開発環境では起動時チェックをスキップ可能
+    if std::env::var("LLM_CONVERT_SKIP_CHECK").is_ok() {
+        tracing::warn!("Skipping HF convert dependency check (LLM_CONVERT_SKIP_CHECK is set)");
+        return Ok(());
+    }
+
     let script = locate_convert_script()
         .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
     if is_default_convert_script(&script) {

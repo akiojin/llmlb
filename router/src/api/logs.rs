@@ -72,7 +72,8 @@ pub async fn get_node_logs(
     State(state): State<AppState>,
 ) -> Result<Json<LogResponse>, AppError> {
     let node = state.registry.get(node_id).await?;
-    if node.status != NodeStatus::Online {
+    // Registering 状態でもログ取得は許可（Offline のみ拒否）
+    if node.status == NodeStatus::Offline {
         return Err(RouterError::AgentOffline(node_id).into());
     }
 

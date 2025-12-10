@@ -162,7 +162,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/models/convert", get(models::list_convert_tasks))
         .route(
             "/api/models/convert/:task_id",
-            get(models::get_convert_task),
+            get(models::get_convert_task).delete(models::delete_convert_task),
         )
         .route("/api/models/loaded", get(models::get_loaded_models))
         .route("/api/models/distribute", post(models::distribute_models))

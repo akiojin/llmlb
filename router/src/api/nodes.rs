@@ -14,7 +14,7 @@ use llm_router_common::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// POST /api/nodes - ノード登録
 pub async fn register_node(
@@ -168,7 +168,12 @@ pub async fn register_node(
     // エージェントトークンを生成（更新時は既存トークンを削除して再生成）
     if response.status == llm_router_common::protocol::RegisterStatus::Updated {
         // 既存トークンを削除
-        let _ = crate::db::agent_tokens::delete(&state.db_pool, response.node_id).await;
+        if let Err(e) = crate::db::agent_tokens::delete(&state.db_pool, response.node_id).await {
+            warn!(
+                "Failed to delete existing agent token for node {}: {}",
+                response.node_id, e
+            );
+        }
     }
     let agent_token_with_plaintext =
         crate::db::agent_tokens::create(&state.db_pool, response.node_id)
@@ -183,7 +188,7 @@ pub async fn register_node(
     response.agent_token = Some(agent_token_with_plaintext.token);
 
     // 取得した初期状態を反映
-    let _ = state
+    if let Err(e) = state
         .registry
         .update_last_seen(
             response.node_id,
@@ -194,7 +199,13 @@ pub async fn register_node(
             Some(initializing),
             ready_models,
         )
-        .await;
+        .await
+    {
+        warn!(
+            "Failed to update initial state for node {}: {}",
+            response.node_id, e
+        );
+    }
 
     state
         .load_manager

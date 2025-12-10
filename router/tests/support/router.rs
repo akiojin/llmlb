@@ -36,6 +36,7 @@ pub async fn spawn_test_router() -> TestServer {
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());

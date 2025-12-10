@@ -10,9 +10,11 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
+use std::sync::Arc;
+use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn build_app() -> Router {
@@ -24,6 +26,30 @@ async fn build_app() -> Router {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    // router_models_dir は HOME/USERPROFILE を見るためテスト用に上書き
+    std::env::set_var("HOME", &temp_dir);
+    std::env::set_var("USERPROFILE", &temp_dir);
+    // テスト用の軽量変換スクリプトを配置（依存ライブラリ不要）
+    let mock_script_path = temp_dir.join("mock_gguf_writer.py");
+    std::fs::write(
+        &mock_script_path,
+        r#"import sys, pathlib
+outfile = sys.argv[sys.argv.index("--outfile")+1]
+pathlib.Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+with open(outfile, "wb") as f:
+    f.write(b"gguf test")
+"#,
+    )
+    .unwrap();
+    std::env::set_var("LLM_CONVERT_SCRIPT", &mock_script_path);
+    // python依存チェック用にローカルの.venvがあれば優先
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join(".venv/bin/python3");
+        if candidate.exists() {
+            std::env::set_var("LLM_CONVERT_PYTHON", candidate);
+        }
+    }
+    // 変換スクリプトは各テストで個別に指定する
     llm_router::api::models::clear_registered_models();
     llm_router::api::models::clear_hf_cache();
 
@@ -634,4 +660,359 @@ async fn test_register_model_contract() {
         .await
         .unwrap();
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+
+    // repoのみ指定でGGUFなし→GGUFファイルが見つからないためエラー（新API仕様）
+    Mock::given(method("GET"))
+        .and(path("/api/models/non-gguf-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let repo_only = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "non-gguf-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // 新APIではGGUFが見つからない場合は400を返す
+    assert_eq!(repo_only.status(), StatusCode::BAD_REQUEST);
+
+    // repoのみ、GGUFなし → 400エラーを返す（新API仕様）
+    Mock::given(method("GET"))
+        .and(path("/api/models/unknown-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "other.txt"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let repo_only_fallback = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "unknown-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // 新APIではGGUFが見つからない場合は400を返す
+    assert_eq!(repo_only_fallback.status(), StatusCode::BAD_REQUEST);
+
+    // DELETE removes registered model
+    let delete_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/models/hf/test/repo/model.gguf")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
+
+    let models_after = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body_after = to_bytes(models_after.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let val_after: serde_json::Value = serde_json::from_slice(&body_after).unwrap();
+    let data_after = val_after["data"].as_array().unwrap();
+    assert!(
+        !data_after
+            .iter()
+            .any(|m| m["id"] == "hf/test/repo/model.gguf"),
+        "deleted model must disappear from /v1/models"
+    );
+
+    // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
+    let app_for_convert = build_app().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/models/convertible-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/convertible-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+        .mount(&mock)
+        .await;
+    // GETリクエスト（ダウンロード）用のモック - ダミーのGGUFファイルを返す
+    Mock::given(method("GET"))
+        .and(path("/convertible-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content"))
+        .mount(&mock)
+        .await;
+
+    let reg_convert = app_for_convert
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "convertible-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg_convert.status(), StatusCode::CREATED);
+
+    let mut converted = false;
+    for _ in 0..25 {
+        let resp = app_for_convert
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        if val["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "hf/convertible-repo/model.Q4_K_M.gguf")
+            })
+            .unwrap_or(false)
+        {
+            converted = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(converted, "converted model should appear in /v1/models");
+}
+
+/// T010: convert 失敗タスクを Restore で再キューできること
+#[tokio::test]
+#[serial]
+async fn test_convert_restore_requeues() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
+
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    // siblings returns GGUF file for registration to succeed
+    Mock::given(method("GET"))
+        .and(path("/api/models/restore-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
+        .mount(&mock)
+        .await;
+    // GETダウンロードを初回は失敗させる（500エラー）→リトライで成功させる
+    let download_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let counter_clone = download_counter.clone();
+    Mock::given(method("GET"))
+        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(move |_req: &wiremock::Request| {
+            let count = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                // 1回目: 失敗
+                ResponseTemplate::new(500)
+            } else {
+                // 2回目以降: 成功
+                ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content")
+            }
+        })
+        .mount(&mock)
+        .await;
+
+    let app = build_app().await;
+
+    // register -> convert fails
+    let reg = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "restore-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg.status(), StatusCode::CREATED);
+
+    // wait for failed task
+    let mut failed_seen = false;
+    let mut last_tasks = serde_json::Value::Null;
+    for _ in 0..60 {
+        let tasks_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/models/convert")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(tasks_resp.status(), StatusCode::OK);
+        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
+        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_tasks = tasks.clone();
+        if tasks
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|t| t["repo"] == "restore-repo" && t["status"] == "failed")
+            })
+            .unwrap_or(false)
+        {
+            failed_seen = true;
+            break;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        failed_seen,
+        "failed convert task should appear, tasks={:?}",
+        last_tasks
+    );
+
+    // 2回目以降はモックが成功を返すので、リトライでダウンロードが成功するはず
+    let retry = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/models/convert")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "repo": "restore-repo",
+                        "filename": "model.Q4_K_M.gguf"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(retry.status(), StatusCode::ACCEPTED);
+
+    // wait for success
+    let mut succeeded = false;
+    let mut last_tasks_after_retry = serde_json::Value::Null;
+    for _ in 0..60 {
+        let tasks_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/models/convert")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
+        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_tasks_after_retry = tasks.clone();
+        if tasks
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|t| {
+                    t["repo"] == "restore-repo"
+                        && t["status"] == "completed"
+                        && t["path"].is_string()
+                })
+            })
+            .unwrap_or(false)
+        {
+            succeeded = true;
+            break;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        succeeded,
+        "restore must requeue and complete, tasks={:?}",
+        last_tasks_after_retry
+    );
+
+    // /v1/models should now include the converted model
+    let models_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let present = val["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .any(|m| m["id"] == "hf/restore-repo/model.Q4_K_M.gguf")
+        })
+        .unwrap_or(false);
+    assert!(present, "/v1/models must include restored model");
 }

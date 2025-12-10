@@ -97,8 +97,10 @@ pub struct Node {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeStatus {
-    /// オンライン
+    /// オンライン（モデル同期完了）
     Online,
+    /// 登録中（モデル同期中）
+    Registering,
     /// オフライン
     Offline,
 }
@@ -294,6 +296,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&NodeStatus::Online).unwrap(),
             "\"online\""
+        );
+        assert_eq!(
+            serde_json::to_string(&NodeStatus::Registering).unwrap(),
+            "\"registering\""
         );
         assert_eq!(
             serde_json::to_string(&NodeStatus::Offline).unwrap(),

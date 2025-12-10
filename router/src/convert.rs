@@ -7,11 +7,12 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
+use tokio::task;
 use uuid::Uuid;
 
 use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
@@ -59,6 +60,7 @@ pub fn get_venv_python() -> Option<PathBuf> {
 }
 
 /// 変換スクリプトのパスを取得
+#[allow(dead_code)]
 fn find_convert_script() -> Option<PathBuf> {
     // 環境変数でオーバーライド
     if let Ok(custom) = std::env::var("LLM_CONVERT_SCRIPT") {
@@ -319,7 +321,15 @@ impl ConvertTaskManager {
             let mut guard = self.tasks.lock().await;
             guard.insert(id, task);
         }
-        let _ = self.queue_tx.send(id).await;
+        if let Err(e) = self.queue_tx.send(id).await {
+            tracing::error!("Failed to enqueue convert task {}: {}", id, e);
+            // タスクをFailed状態に更新
+            if let Some(task) = self.tasks.lock().await.get_mut(&id) {
+                task.status = ConvertStatus::Failed;
+                task.error = Some(format!("Failed to enqueue: {}", e));
+                task.updated_at = Utc::now();
+            }
+        }
         self.tasks.lock().await.get(&id).cloned().unwrap()
     }
 
@@ -334,6 +344,11 @@ impl ConvertTaskManager {
     /// 単一ジョブを取得
     pub async fn get(&self, id: Uuid) -> Option<ConvertTask> {
         self.tasks.lock().await.get(&id).cloned()
+    }
+
+    /// ジョブを削除
+    pub async fn delete(&self, id: Uuid) -> bool {
+        self.tasks.lock().await.remove(&id).is_some()
     }
 
     async fn process_task(
@@ -392,45 +407,67 @@ async fn download_and_maybe_convert(
     repo: &str,
     filename: &str,
     revision: Option<&str>,
-    quantization: Option<&str>,
+    _quantization: Option<&str>,
     chat_template: Option<String>,
 ) -> Result<String, RouterError> {
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
-
-    // 非GGUF形式の場合は変換を試みる
-    if !is_gguf {
-        return convert_to_gguf(repo, revision, quantization).await;
-    }
-
+    let model_name = format!("hf/{}/{}", repo, filename);
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
     let url = format!(
-        "https://huggingface.co/{}/resolve/{}/{}",
+        "{}/{}/resolve/{}/{}",
+        base_url,
         repo,
         revision.unwrap_or("main"),
         filename
     );
 
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
-    let dir = base.join(model_name_to_dir(&format!("hf/{}/{}", repo, filename)));
+    let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
     let target = dir.join("model.gguf");
 
-    // skip if already present
+    // skip if already present but make sure metadata is up-to-date
     if target.exists() {
+        finalize_model_registration(
+            &model_name,
+            repo,
+            filename,
+            &url,
+            &target,
+            chat_template.clone(),
+        )
+        .await;
         return Ok(target.to_string_lossy().to_string());
     }
 
+    if is_gguf {
+        download_file(&url, &target).await?;
+    } else {
+        convert_non_gguf(repo, revision, &target).await?;
+    }
+
+    finalize_model_registration(&model_name, repo, filename, &url, &target, chat_template).await;
+
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// HTTP GET to file and stream to path
+async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
     let client = reqwest::Client::new();
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(RouterError::Http(resp.status().to_string()));
     }
-    let mut file = tokio::fs::File::create(&target)
+    let mut file = tokio::fs::File::create(target)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
     let mut stream = resp.bytes_stream();
@@ -441,29 +478,300 @@ async fn download_and_maybe_convert(
             .await
             .map_err(|e| RouterError::Internal(e.to_string()))?;
     }
+    Ok(())
+}
 
-    // register model info
-    let mut model = ModelInfo::new(
-        format!("hf/{}/{}", repo, filename),
-        0,
-        repo.to_string(),
-        0,
-        vec!["gguf".into()],
-    );
-    model.download_url = Some(url);
-    model.path = Some(target.to_string_lossy().to_string());
-    model.chat_template = chat_template;
-    model.source = ModelSource::HfGguf;
-    if let Ok(meta) = tokio::fs::metadata(&target).await {
-        model.size = meta.len();
+/// 非GGUFをGGUFへコンバート（sync heavy → blocking thread）
+async fn convert_non_gguf(
+    repo: &str,
+    revision: Option<&str>,
+    target: &Path,
+) -> Result<(), RouterError> {
+    if should_use_fake_convert() {
+        write_dummy_gguf(target).await?;
+        return Ok(());
     }
-    let _ = crate::api::models::add_registered_model(model.clone());
-    crate::api::models::persist_registered_models().await;
 
-    Ok(target.to_string_lossy().to_string())
+    let script = locate_convert_script()
+        .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+    // デフォルトスクリプトを使う場合のみ依存チェックを行う。カスタムスクリプトは自己完結を想定。
+    if script
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.contains("convert_hf_to_gguf.py"))
+        .unwrap_or(false)
+    {
+        ensure_python_deps().await?;
+    }
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let hf_token = std::env::var("HF_TOKEN").ok();
+
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+    if target.exists() {
+        let _ = tokio::fs::remove_file(target).await;
+    }
+
+    let repo_with_rev = if let Some(rev) = revision {
+        format!("{}@{}", repo, rev)
+    } else {
+        repo.to_string()
+    };
+
+    let script_clone = script.clone();
+    let target_path = target.to_path_buf();
+    let cmd_repo = repo_with_rev.clone();
+    let python_bin_clone = python_bin.clone();
+    let output = task::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new(&python_bin_clone);
+        cmd.arg(script_clone)
+            .arg("--remote")
+            .arg("--outfile")
+            .arg(&target_path)
+            .arg(&cmd_repo);
+        if let Some(token) = hf_token {
+            cmd.env("HF_TOKEN", token);
+        }
+        cmd.output()
+    })
+    .await
+    .map_err(|e| RouterError::Internal(e.to_string()))?
+    .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(RouterError::Internal(format!(
+            "convert failed: {}{}{}",
+            output
+                .status
+                .code()
+                .map(|c| format!("exit code {}", c))
+                .unwrap_or_else(|| "terminated".into()),
+            if !stderr.trim().is_empty() {
+                format!(" stderr: {}", stderr.trim())
+            } else {
+                "".into()
+            },
+            if !stdout.trim().is_empty() {
+                format!(" stdout: {}", stdout.trim())
+            } else {
+                "".into()
+            },
+        )));
+    }
+
+    Ok(())
+}
+
+/// python依存が無いときは事前にエラーにする
+async fn ensure_python_deps() -> Result<(), RouterError> {
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+if missing:\n print(','.join(missing)); sys.exit(1)\n";
+
+    let python_bin_for_cmd = python_bin.clone();
+    let output = task::spawn_blocking(move || {
+        Command::new(&python_bin_for_cmd)
+            .arg("-c")
+            .arg(script)
+            .output()
+    })
+    .await
+    .map_err(|e| RouterError::Internal(e.to_string()))?
+    .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let deps = if missing.is_empty() {
+        "transformers, torch, sentencepiece".to_string()
+    } else {
+        missing
+    };
+    Err(RouterError::Internal(format!(
+        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt (python_bin={}, stderr={})",
+        deps,
+        python_bin,
+        stderr
+    )))
+}
+
+fn ensure_python_deps_sync() -> Result<(), RouterError> {
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+if missing:\n print(','.join(missing)); sys.exit(1)\n";
+    let output = std::process::Command::new(&python_bin)
+        .arg("-c")
+        .arg(script)
+        .output()
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let deps = if missing.is_empty() {
+        "transformers, torch, sentencepiece".to_string()
+    } else {
+        missing
+    };
+    Err(RouterError::Internal(format!(
+        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt (python_bin={}, stderr={})",
+        deps,
+        python_bin,
+        stderr
+    )))
+}
+
+fn should_use_fake_convert() -> bool {
+    let enabled = std::env::var("LLM_CONVERT_FAKE")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+        .unwrap_or(false);
+    if enabled {
+        tracing::warn!("LLM_CONVERT_FAKE is enabled - using dummy GGUF output (for testing only)");
+    }
+    enabled
+}
+
+/// ルーター再起動時に pending_conversion の登録済みモデルを再キューする
+pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<ModelInfo>) {
+    for model in models {
+        if model.status.as_deref() == Some("pending_conversion") {
+            if let (Some(repo), Some(filename)) = (model.repo.clone(), model.filename.clone()) {
+                let chat_template = model.chat_template.clone();
+                manager
+                    .enqueue(repo, filename, None, None, chat_template)
+                    .await;
+            }
+        }
+    }
+}
+
+async fn write_dummy_gguf(target: &Path) -> Result<(), RouterError> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+    let mut file = tokio::fs::File::create(target)
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    file.write_all(b"gguf dummy")
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    Ok(())
+}
+
+fn locate_convert_script() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("LLM_CONVERT_SCRIPT") {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    let candidates = vec![
+        PathBuf::from("node/third_party/llama.cpp/convert_hf_to_gguf.py"),
+        PathBuf::from("third_party/llama.cpp/convert_hf_to_gguf.py"),
+    ];
+
+    for cand in candidates {
+        if cand.exists() {
+            return Some(cand);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let cand = dir
+                .join("..")
+                .join("third_party")
+                .join("llama.cpp")
+                .join("convert_hf_to_gguf.py");
+            if cand.exists() {
+                return Some(cand);
+            }
+        }
+    }
+
+    None
+}
+
+fn is_default_convert_script(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.contains("convert_hf_to_gguf.py"))
+        .unwrap_or(false)
+}
+
+/// 変換に必要なスクリプト・依存が利用可能かを起動時に検証する。
+/// - デフォルトスクリプトを使う場合のみ Python 依存チェックを行う。
+/// - カスタムスクリプト指定時は存在確認のみ。
+pub fn verify_convert_ready() -> Result<(), RouterError> {
+    let script = locate_convert_script()
+        .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+    if is_default_convert_script(&script) {
+        // 起動前チェックは同期で実行し、依存不足なら即エラー
+        ensure_python_deps_sync()?;
+    }
+    Ok(())
+}
+
+async fn finalize_model_registration(
+    model_name: &str,
+    repo: &str,
+    filename: &str,
+    download_url: &str,
+    target: &Path,
+    chat_template: Option<String>,
+) {
+    use crate::api::models::{
+        list_registered_models, persist_registered_models, upsert_registered_model,
+    };
+
+    let size = tokio::fs::metadata(target)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+    const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+    let required_memory = ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+
+    let mut model = list_registered_models()
+        .into_iter()
+        .find(|m| m.name == model_name)
+        .unwrap_or_else(|| ModelInfo::new(model_name.to_string(), 0, repo.to_string(), 0, vec![]));
+
+    model.size = size;
+    model.required_memory = required_memory;
+    model.tags = vec!["gguf".into()];
+    model.source = ModelSource::HfGguf;
+    model.path = Some(target.to_string_lossy().to_string());
+    model.download_url = Some(download_url.to_string());
+    model.repo = Some(repo.to_string());
+    model.filename = Some(filename.to_string());
+    model.status = Some("cached".into());
+    if model.description.is_empty() {
+        model.description = repo.to_string();
+    }
+    if chat_template.is_some() || model.chat_template.is_none() {
+        model.chat_template = chat_template;
+    }
+
+    upsert_registered_model(model);
+    persist_registered_models().await;
 }
 
 /// 非GGUF形式のHFモデルをGGUFに変換
+#[allow(dead_code)]
 async fn convert_to_gguf(
     repo: &str,
     revision: Option<&str>,
@@ -578,4 +886,70 @@ async fn convert_to_gguf(
     crate::api::models::persist_registered_models().await;
 
     Ok(target.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::models::{ModelInfo, ModelSource};
+    use std::{env, time::Duration};
+
+    #[tokio::test]
+    async fn resume_pending_converts_enqueues_pending_only() {
+        // avoid touching real HOME / conversions
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("LLM_CONVERT_FAKE", "1");
+
+        let manager = ConvertTaskManager::new(1);
+
+        let mut pending = ModelInfo::new(
+            "hf/openai/gpt-oss-20b/metal/model.bin".into(),
+            0,
+            "desc".into(),
+            0,
+            vec![],
+        );
+        pending.repo = Some("openai/gpt-oss-20b".into());
+        pending.filename = Some("metal/model.bin".into());
+        pending.status = Some("pending_conversion".into());
+        pending.source = ModelSource::HfPendingConversion;
+
+        let mut cached = ModelInfo::new("hf/other/model.gguf".into(), 0, "done".into(), 0, vec![]);
+        cached.repo = Some("other/model".into());
+        cached.filename = Some("model.gguf".into());
+        cached.status = Some("cached".into());
+
+        resume_pending_converts(&manager, vec![pending.clone(), cached]).await;
+
+        // give worker thread a moment to pick up the job
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let tasks = manager.list().await;
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].repo, pending.repo.unwrap());
+        assert_eq!(tasks[0].filename, pending.filename.unwrap());
+        assert!(matches!(
+            tasks[0].status,
+            ConvertStatus::Queued | ConvertStatus::InProgress | ConvertStatus::Completed
+        ));
+    }
+
+    #[test]
+    fn verify_convert_ready_allows_custom_script_without_deps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script_path = tmp.path().join("mock_script.py");
+        std::fs::write(&script_path, "print('ok')").unwrap();
+        env::set_var("LLM_CONVERT_SCRIPT", &script_path);
+        let res = verify_convert_ready();
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn verify_convert_ready_errors_when_missing_script() {
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        let res = verify_convert_ready();
+        assert!(res.is_err());
+    }
 }

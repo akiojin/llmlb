@@ -544,7 +544,7 @@ mod tests {
         };
         let node_id = state.registry.register(register_req).await.unwrap().node_id;
 
-        // メトリクスを記録
+        // メトリクスを記録（ready_models を渡すと Registering → Online に遷移）
         state
             .load_manager
             .record_metrics(MetricsUpdate {
@@ -562,7 +562,7 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(110.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -611,7 +611,7 @@ mod tests {
             .unwrap()
             .node_id;
 
-        let _second_agent = state
+        let second_agent = state
             .registry
             .register(RegisterRequest {
                 machine_name: "agent-02".into(),
@@ -627,7 +627,7 @@ mod tests {
             .unwrap()
             .node_id;
 
-        // 1台分はメトリクスとリクエスト処理を記録
+        // 両ノードをOnline状態にするため、ready_modelsでメトリクスを記録
         state
             .load_manager
             .record_metrics(MetricsUpdate {
@@ -645,7 +645,28 @@ mod tests {
                 active_requests: 3,
                 average_response_time_ms: Some(95.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
+            })
+            .await
+            .unwrap();
+        state
+            .load_manager
+            .record_metrics(MetricsUpdate {
+                node_id: second_agent,
+                cpu_usage: 30.0,
+                memory_usage: 50.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                average_response_time_ms: None,
+                initializing: false,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -784,7 +805,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(110.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -805,7 +826,7 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(95.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();

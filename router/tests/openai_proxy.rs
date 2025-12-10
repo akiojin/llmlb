@@ -15,6 +15,7 @@ use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =

@@ -353,15 +353,17 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
 
-## Hugging Face catalog (GGUF)
+## Hugging Face registration (GGUF-first)
 
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
+- Web:
+  - Dashboard → モデル管理 → 「Register Model (HF URL)」
+  - Paste `https://huggingface.co/org/repo/...` **or** plain `org/repo`. The router picks the first GGUF; if none exists it queues a convert job from a convertible file (.safetensors/.bin/.pt/.pth).
+  - Non-GGUF inputs are converted on the router with `convert_hf_to_gguf.py`. Failed jobs stay in the Convert list with a Restoreボタン for retry; pending items are re-queued automatically after router restart.
+  - `/v1/models` and the dashboard only list models whose GGUF file exists on disk; no built-in presets are embedded in the source.
 - CLI:
-  - `llm-router model list --search llama --limit 10` to browse the HF GGUF catalog
-  - `llm-router model add <repo> --file <gguf>` to register (ID becomes `hf/<repo>/<file>`)
-  - `llm-router model download <id> --all|--node <uuid>` to start downloads
-- Web: Dashboard → モデル管理 → 「対応可能モデル（HF）」で登録し、「今すぐダウンロード」で配布
-- Registered HF entries appear in `/v1/models` with `download_url` for nodes to fetch
+  - `llm-router model add <repo> [--file <gguf>]` to register (ID becomes `hf/<repo>/<file>`)
+  - `llm-router model download <id> --all|--node <uuid>` to start downloads to nodes
 
 ## Installation
 
@@ -369,6 +371,13 @@ For a deeper walkthrough, including API references and customisation tips, see [
 
 - **Coordinator**: Linux / Windows 10+ / macOS 12+, Rust 1.70+
 - **Agent**: Windows 10+ / macOS 12+ (CLI-based application), Rust 1.70+
+- **HF非GGUFを登録する場合のPython依存**: `python3`, `transformers`, `torch`, `sentencepiece` など。以下で一括インストールできます:
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+  ```
+  - Pythonパスを変えたい場合: `LLM_CONVERT_PYTHON=/path/to/python`
 - **GPU**: NVIDIA / AMD / Apple Silicon GPU required for agent registration
   - Automatically detected on startup
   - Docker for Mac: Apple Silicon detection supported

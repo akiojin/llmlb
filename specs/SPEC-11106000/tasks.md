@@ -8,25 +8,22 @@
 - [x] 環境変数で HF_TOKEN を設定できるようドキュメントを確認。
 
 ## Contract Tests (router)
-- [x] /api/models/available: HFモックでGGUF一覧を返す。検索・ページング・cachedフラグ検証。
-- [x] /api/models/register: 正常系（登録）と重複/404/URL欠損の異常系。
-- [x] /api/models/download: all/specific ターゲット、バリデーション。
-- [x] /api/tasks/{id}: ダウンロードタスクのステータス/進捗が返る。
-- [x] /v1/models: HF登録モデルが含まれる。
+- [x] /api/models/register: 正常系（repo-only, file指定, GGUF/非GGUF）、重複/404。
+- [x] 非GGUF→convertタスクが作成されること。
+- [x] convert失敗→再キュー（Restore相当のAPI呼び出し）でタスクが新規作成され成功すること。
+- [x] /v1/models: 実体があるものだけ返す（未ダウンロード・削除後は含まれない）。
 
 ## Integration (router)
-- [x] HF API呼び出しのキャッシュ/429フォールバックをモックで確認。
-- [x] 登録→ダウンロードタスク生成→進捗更新の一連フロー。
+- [x] HF siblingsモック→自動ファイル選択→convertキュー→（FAKEモードで）/v1/models に反映。
+- [x] convert失敗時のエラー保持と再キュー成功の挙動を確認（APIベース）。
 - [x] サイズ・GPU要件警告の付与（required_memory超過時）。
 
 ## Backend Implementation
-- [x] ModelInfo/registry 拡張をDB永続化（HF登録モデルを保存・再起動復元）。
-- [x] ModelInfo/registry 拡張（source/URL/last_modified/status）。
-- [x] /api/models/available 実装（HF fetch + cache + pagination）。
-- [x] /api/models/register 実装（ID命名: hf/repo/file）。
-- [x] /api/models/download 実装（タスク生成、target all/specific）。
-- [x] HF呼び出しに Bearer トークン対応（オプション）。
-- [x] /v1/models に HF 登録分を統合。
+- [x] ModelInfo/registry 拡張と永続化（repo/filename/source/status/path）。
+- [x] /api/models/register 実装（repo-only対応、GGUF優先、自動変換キュー、重複・404バリデーション）。
+- [x] /api/models/convert 実装（再キュー用エンドポイントを維持）。
+- [x] convertマネージャ: 非GGUF→GGUF 変換（実行 or FAKE）、完了後にモデル登録を更新。
+- [x] /v1/models は実体GGUFがあるものだけ返す。
 - [x] 構造化ログ・エラー整備。
 
 ## CLI
@@ -36,25 +33,22 @@
 - [x] CLIエラー/重複/進捗表示のテスト。
 
 ## Frontend (web/static)
-- [x] 「対応可能モデル」「対応モデル」タブを分離表示。
-- [x] HFカタログ一覧（検索/ソース表示/cached表示）。
-- [x] 登録ボタンと状態表示（登録済み/重複抑止）。
-- [x] 「今すぐダウンロード」（全ノード/指定ノード選択）UI。
-- [x] ダウンロード進捗リスト（5秒ポーリング）。
-- [x] Download Tasks パネルの実データ反映確認と必要ならUI調整。
-- [x] HFモデルURL直貼り登録フォーム（textarea+button）を追加し、登録済み・進捗のカード表示を改善。
-- [x] 非GGUFのURLを入力した場合は自動でConvertジョブをキューし、GGUFは通常登録するフローをUIで提供。
+- [x] HFカタログUIを削除/非表示にし、URL登録フォームのみ残す。
+- [x] 登録済みモデル一覧（実体のみ）、削除ボタン。
+- [x] Convertタスク一覧表示、失敗時に Restore ボタンで再キュー。
+- [x] 登録・失敗バナーを × で閉じられ、4秒以上表示。
+- [x] Restore ボタンのE2E/Playwrightテストを追加。
 
 ## Node (最小)
-- [x] manifest に HF 直URLが来ても downloadModel が扱えることを確認（必要ならURL判定を緩和）。
+- [x] manifest に HF 直URL が来ても downloadModel が扱えることを確認。
 
 ## E2E/Scenario
-- [x] カタログ→登録→全ノードダウンロード→/v1/modelsで利用 の一連を通すシナリオ。
+- [x] URL登録（repo-only）→非GGUF→convert→/v1/models 反映→Restoreで再試行 の一連シナリオ（Playwrightでモック検証）。
 - [x] 429/障害時にキャッシュ結果が返るシナリオ。
 
 ## Docs
-- [x] README/CLAUDE.md に CLI/Web 手順を簡潔に追記。
-- [x] quickstart.md を最新UI/CLIに合わせて再確認。
+- [x] quickstart.md をURL登録・Restore手順に更新。
+- [x] tasks/plan/spec との整合確認（本タスクで更新）。
 
 ## 検証
 - [x] cargo fmt/clippy/test、make quality-checks。

@@ -25,6 +25,7 @@
   "devDependencies": {
     "@commitlint/cli": "^20.0.0",
     "@commitlint/config-conventional": "^20.0.0",
+    "@playwright/test": "^1.57.0",
     "bats": "^1.13.0",
     "husky": "^9.1.0",
     "markdownlint-cli2": "^0.19.0"

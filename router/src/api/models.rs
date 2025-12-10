@@ -308,7 +308,9 @@ pub fn remove_registered_model(name: &str) -> bool {
 /// 登録モデルを永続化（失敗はログのみ）
 pub async fn persist_registered_models() {
     if let Ok(store) = std::panic::catch_unwind(|| REGISTERED_MODELS.read().unwrap().clone()) {
-        let _ = crate::db::models::save_models(&store).await;
+        if let Err(e) = crate::db::models::save_models(&store).await {
+            tracing::error!("Failed to persist registered models: {}", e);
+        }
     }
 }
 
@@ -368,6 +370,51 @@ const TRUSTED_PROVIDERS: &[&str] = &[
     "unsloth",
     "TheBloke",
 ];
+
+/// リポジトリ内のGGUFファイルを解決
+async fn resolve_first_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+) -> Result<String, RouterError> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/api/models/{}?expand=siblings", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "指定されたリポジトリを取得できませんでした".into(),
+        )));
+    }
+    #[derive(Deserialize)]
+    struct RepoDetail {
+        siblings: Vec<HfSibling>,
+    }
+    let detail: RepoDetail = resp
+        .json()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    let filename = detail
+        .siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
+        .ok_or_else(|| {
+            RouterError::Common(CommonError::Validation(
+                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
+            ))
+        })?;
+    Ok(filename)
+}
 
 /// モデル名からGGUF版を検索
 pub async fn discover_gguf_versions(
@@ -660,50 +707,6 @@ async fn fetch_hf_models(
     }
 
     Ok((out, false))
-}
-
-async fn resolve_first_gguf_in_repo(
-    http_client: &reqwest::Client,
-    repo: &str,
-) -> Result<String, RouterError> {
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let url = format!("{}/api/models/{}?expand=siblings", base_url, repo);
-
-    let mut req = http_client.get(&url);
-    if let Ok(token) = std::env::var("HF_TOKEN") {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-    if !resp.status().is_success() {
-        return Err(RouterError::Common(CommonError::Validation(
-            "指定されたリポジトリを取得できませんでした".into(),
-        )));
-    }
-    #[derive(Deserialize)]
-    struct RepoDetail {
-        siblings: Vec<HfSibling>,
-    }
-    let detail: RepoDetail = resp
-        .json()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-    let filename = detail
-        .siblings
-        .iter()
-        .map(|s| s.rfilename.clone())
-        .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
-        .ok_or_else(|| {
-            RouterError::Common(CommonError::Validation(
-                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
-            ))
-        })?;
-    Ok(filename)
 }
 
 /// モデル配布リクエスト
@@ -1275,9 +1278,17 @@ pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, 
 
     if let Some(path) = router_model_path(&model_name) {
         if path.exists() {
-            let _ = std::fs::remove_file(&path);
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!("Failed to remove model file {}: {}", path.display(), e);
+            }
             if let Some(parent) = path.parent() {
-                let _ = std::fs::remove_dir_all(parent);
+                if let Err(e) = std::fs::remove_dir_all(parent) {
+                    tracing::warn!(
+                        "Failed to remove model directory {}: {}",
+                        parent.display(),
+                        e
+                    );
+                }
             }
         }
     }
@@ -1604,6 +1615,18 @@ pub async fn get_convert_task(
         .await
         .ok_or_else(|| RouterError::Internal("Task not found".into()))?;
     Ok(Json(task))
+}
+
+/// DELETE /api/models/convert/{task_id} - ジョブ削除（×ボタン用）
+pub async fn delete_convert_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    if state.convert_manager.delete(task_id).await {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(RouterError::Internal("Task not found".into()).into())
+    }
 }
 
 /// T031: GET /api/tasks/{task_id} - タスク進捗を取得

@@ -478,6 +478,25 @@ h1, h2, h3, h4, h5, h6 {
   border-color: var(--warning);
 }
 
+.status-pill--registering {
+  background: rgba(255, 204, 0, 0.1);
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+/* Status badges for node lists */
+.status--online {
+  color: var(--success);
+}
+
+.status--registering {
+  color: var(--warning);
+}
+
+.status--offline {
+  color: var(--danger);
+}
+
 /* Last Refreshed */
 .last-refreshed {
   font-size: var(--text-sm);
@@ -1316,6 +1335,73 @@ body.body--modal-open {
   margin-top: var(--space-1);
   font-size: var(--text-xs);
   color: var(--text-subtle);
+}
+
+/* Phase Indicator for Registering Tasks */
+.phase-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+  font-size: var(--text-xs);
+}
+
+.phase-step {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+}
+
+.phase-step--done {
+  color: var(--success);
+}
+
+.phase-step--active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.phase-step::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+.phase-step--done::before,
+.phase-step--active::before {
+  opacity: 1;
+}
+
+.phase-arrow {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* Delete Button for Tasks */
+.btn-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-delete:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(255, 51, 102, 0.1);
 }
 
 /* Logs Section */

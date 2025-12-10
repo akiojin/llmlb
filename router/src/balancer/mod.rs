@@ -204,6 +204,7 @@ mod tests {
             .unwrap()
             .node_id;
 
+        // ready_models を渡すと Registering → Online に遷移
         manager
             .record_metrics(MetricsUpdate {
                 node_id: slow_agent,
@@ -220,7 +221,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(240.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -240,7 +241,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(120.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -286,7 +287,7 @@ mod tests {
                     active_requests: 1,
                     average_response_time_ms: Some(100.0),
                     initializing: false,
-                    ready_models: None,
+                    ready_models: Some((0, 0)),
                 })
                 .await
                 .unwrap();
@@ -357,7 +358,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(100.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -380,7 +381,7 @@ mod tests {
                 active_requests: 5,
                 average_response_time_ms: Some(200.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -441,7 +442,7 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(120.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -462,7 +463,7 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(120.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -522,7 +523,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(180.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -543,7 +544,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(200.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -587,6 +588,29 @@ mod tests {
             .unwrap()
             .node_id;
 
+        // 両ノードをOnlineにする（ready_modelsで状態遷移）
+        // 使用率を同じにして、gpu_capability_scoreでスペック優先度をテスト
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id: fallback_agent,
+                cpu_usage: 30.0,
+                memory_usage: 30.0,
+                gpu_usage: Some(10.0),
+                gpu_memory_usage: Some(15.0),
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: Some(500), // 低スペック
+                active_requests: 0,
+                average_response_time_ms: Some(110.0),
+                initializing: false,
+                ready_models: Some((0, 0)),
+            })
+            .await
+            .unwrap();
+
         manager
             .record_metrics(MetricsUpdate {
                 node_id: high_spec_agent,
@@ -599,11 +623,11 @@ mod tests {
                 gpu_temperature: None,
                 gpu_model_name: None,
                 gpu_compute_capability: None,
-                gpu_capability_score: None,
+                gpu_capability_score: Some(1000), // 高スペック
                 active_requests: 0,
                 average_response_time_ms: Some(110.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -669,7 +693,7 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(90.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -690,7 +714,7 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(90.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -758,7 +782,7 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(150.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -821,7 +845,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(140.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -842,7 +866,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(140.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -886,6 +910,28 @@ mod tests {
             .unwrap()
             .node_id;
 
+        // 両ノードをOnlineにする（使用率を同じにして、スペックで差をつける）
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id: fallback_agent,
+                cpu_usage: 25.0,
+                memory_usage: 30.0,
+                gpu_usage: Some(20.0),
+                gpu_memory_usage: Some(25.0),
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: Some(500), // 低スペック
+                active_requests: 0,
+                average_response_time_ms: Some(90.0),
+                initializing: false,
+                ready_models: Some((0, 0)),
+            })
+            .await
+            .unwrap();
+
         manager
             .record_metrics(MetricsUpdate {
                 node_id: high_spec_agent,
@@ -898,11 +944,11 @@ mod tests {
                 gpu_temperature: None,
                 gpu_model_name: None,
                 gpu_compute_capability: None,
-                gpu_capability_score: None,
+                gpu_capability_score: Some(1000), // 高スペック
                 active_requests: 0,
                 average_response_time_ms: Some(90.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -926,7 +972,7 @@ mod tests {
                 active_requests: 4,
                 average_response_time_ms: Some(170.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -986,7 +1032,7 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(80.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -1007,7 +1053,7 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(80.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -1031,7 +1077,7 @@ mod tests {
                 active_requests: 3,
                 average_response_time_ms: Some(150.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -1595,6 +1641,8 @@ pub struct SystemSummary {
     pub total_agents: usize,
     /// オンラインノード数
     pub online_agents: usize,
+    /// 登録中ノード数（モデル同期中）
+    pub registering_agents: usize,
     /// オフラインノード数
     pub offline_agents: usize,
     /// 累積リクエスト数
@@ -1705,7 +1753,7 @@ impl LoadManager {
 
         // レジストリの初期化フラグ/ready_models を最新の値で前倒し更新し、select_agent が stale な状態を返さないようにする
         if initializing || ready_models.is_some() {
-            let _ = self
+            if let Err(e) = self
                 .registry
                 .update_last_seen(
                     node_id,
@@ -1716,7 +1764,14 @@ impl LoadManager {
                     Some(initializing),
                     ready_models,
                 )
-                .await;
+                .await
+            {
+                tracing::warn!(
+                    "Failed to update initializing state for node {}: {}",
+                    node_id,
+                    e
+                );
+            }
         }
 
         let mut state = self.state.write().await;
@@ -2090,6 +2145,10 @@ impl LoadManager {
             online_agents: nodes
                 .iter()
                 .filter(|agent| agent.status == NodeStatus::Online)
+                .count(),
+            registering_agents: nodes
+                .iter()
+                .filter(|agent| agent.status == NodeStatus::Registering)
                 .count(),
             offline_agents: nodes
                 .iter()

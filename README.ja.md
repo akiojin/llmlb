@@ -59,6 +59,61 @@ cargo build --release -p llm-router
 Windows 10以降およびmacOS 12以降では、システムトレイにアイコンが表示されます。
 ダブルクリックでダッシュボードを開きます。Docker/LinuxではCLIプロセスとして動作します。
 
+### CLI リファレンス（Linuxのみ）
+
+> **注意**: CLIサブコマンド（`user`, `model`）はLinuxでのみ利用可能です。
+> Windows/macOSではシステムトレイモードで起動するため、CLIオプションは無視されます。
+
+**基本オプション:**
+
+```bash
+llm-router --help                    # ヘルプ表示
+llm-router --version                 # バージョン表示
+llm-router --preload-model <spec>    # 起動時にHFモデルをプリロード（複数指定可）
+                                     # 形式: repo:filename または repo/filename
+```
+
+**ユーザー管理コマンド:**
+
+```bash
+llm-router user list                           # ユーザー一覧表示
+llm-router user add <username> -p <password>   # ユーザー追加（パスワード8文字以上）
+llm-router user delete <username>              # ユーザー削除
+```
+
+**モデル管理コマンド:**
+
+```bash
+# HF GGUFカタログ表示
+llm-router model list [OPTIONS]
+  --router <URL>      # ルーターURL（デフォルト: http://127.0.0.1:8080）
+  --search <QUERY>    # 検索クエリ
+  --limit <N>         # 取得件数（デフォルト: 20）
+  --offset <N>        # オフセット（デフォルト: 0）
+  --format <FORMAT>   # 出力形式: json | table（デフォルト: table）
+
+# HF GGUFモデル登録
+llm-router model add <REPO> -f <FILE> [--router <URL>]
+  # 例: llm-router model add TheBloke/Llama-2-7B-GGUF -f llama-2-7b.Q4_K_M.gguf
+
+# ノードへモデルダウンロード指示
+llm-router model download <NAME> --all [--router <URL>]        # 全ノードへ配布
+llm-router model download <NAME> --node <UUID> [--router <URL>] # 特定ノードへ配布
+```
+
+**ヘルプ出力に含まれる環境変数:**
+
+```
+ENVIRONMENT VARIABLES:
+    LLM_ROUTER_HOST              Bind address (default: 0.0.0.0)
+    LLM_ROUTER_PORT              Listen port (default: 8080)
+    LLM_ROUTER_LOG_LEVEL         Log level (default: info)
+    LLM_ROUTER_DATABASE_URL      Database URL
+    LLM_ROUTER_JWT_SECRET        JWT signing key (auto-generated if not set)
+    LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
+    LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
+```
+
 ### ノード (C++)
 
 **前提条件:**

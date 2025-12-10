@@ -179,7 +179,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         if (j.contains("heartbeat_interval_sec") && j["heartbeat_interval_sec"].is_number()) {
             cfg.heartbeat_interval_sec = j["heartbeat_interval_sec"].get<int>();
         }
-        if (j.contains("require_gpu") && j["require_gpu"].is_boolean()) cfg.require_gpu = j["require_gpu"].get<bool>();
         if (j.contains("bind_address") && j["bind_address"].is_string()) cfg.bind_address = j["bind_address"].get<std::string>();
     };
 
@@ -230,16 +229,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_ALLOW_NO_GPU", "LLM_ALLOW_NO_GPU")) {
-        std::string s = *v;
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-        if (s == "1" || s == "true" || s == "yes") {
-            cfg.require_gpu = false;
-            log << "env:ALLOW_NO_GPU=1 ";
-            used_env = true;
-        }
-    }
-
     if (auto v = getEnvWithFallback("LLM_NODE_BIND_ADDRESS", "LLM_BIND_ADDRESS")) {
         cfg.bind_address = *v;
         log << "env:BIND_ADDRESS=" << *v << " ";
@@ -253,24 +242,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         used_env = true;
     }
 
-    if (auto v = getEnvWithFallback("LLM_NODE_AUTO_REPAIR", "LLM_AUTO_REPAIR")) {
-        std::string s = *v;
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-        if (s == "1" || s == "true" || s == "yes") {
-            cfg.auto_repair = true;
-            log << "env:AUTO_REPAIR=1 ";
-            used_env = true;
-        }
-    }
-
-    if (auto v = getEnvWithFallback("LLM_NODE_REPAIR_TIMEOUT_SECS", "LLM_REPAIR_TIMEOUT_SECS")) {
-        try {
-            cfg.repair_timeout_secs = std::stoi(*v);
-            log << "env:REPAIR_TIMEOUT_SECS=" << cfg.repair_timeout_secs << " ";
-            used_env = true;
-        } catch (...) {}
-    }
-
     if (log.tellp() > 0) log << "|";
     log << "sources=";
     if (used_env) log << "env";
@@ -279,6 +250,9 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         log << "file";
     }
     if (!used_env && !used_file) log << "default";
+
+    // GPU必須を強制（設定・環境変数では無効化できない）
+    cfg.require_gpu = true;
 
     return {cfg, log.str()};
 }

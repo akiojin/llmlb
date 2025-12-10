@@ -22,6 +22,7 @@
   // Open modal
   function openModal() {
     apiKeysModal.classList.remove('hidden');
+    document.body.classList.add('body--modal-open');
     newKeyDisplay.classList.add('hidden');
     cancelEdit();
     loadApiKeys();
@@ -30,6 +31,7 @@
   // Close modal
   function closeModal() {
     apiKeysModal.classList.add('hidden');
+    document.body.classList.remove('body--modal-open');
     newKeyDisplay.classList.add('hidden');
     cancelEdit();
   }

@@ -17,6 +17,7 @@ async fn build_app() -> Router {
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = llm_router::tasks::DownloadTaskManager::new();
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -30,6 +31,7 @@ async fn build_app() -> Router {
         load_manager,
         request_history,
         task_manager,
+        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -68,35 +70,11 @@ async fn test_list_available_models_from_runtime_library() {
         result.get("models").is_some(),
         "Response must have 'models' field"
     );
-    let models = result["models"]
+    let _models = result["models"]
         .as_array()
         .expect("'models' must be an array");
 
-    // 事前定義モデルが含まれることを検証
-    let model_names: Vec<String> = models
-        .iter()
-        .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
-        .collect();
-
-    assert!(model_names.contains(&"gpt-oss:20b".to_string()));
-    assert!(model_names.contains(&"gpt-oss:120b".to_string()));
-    assert!(model_names.contains(&"gpt-oss-safeguard:20b".to_string()));
-    assert!(model_names.contains(&"qwen3-coder:30b".to_string()));
-
-    // 各モデルに必要な情報が含まれることを検証
-    for model in models {
-        assert!(model.get("name").is_some(), "Model must have 'name'");
-        assert!(model.get("size_gb").is_some(), "Model must have 'size_gb'");
-        assert!(
-            model.get("description").is_some(),
-            "Model must have 'description'"
-        );
-        assert!(
-            model.get("required_memory_gb").is_some(),
-            "Model must have 'required_memory_gb'"
-        );
-        assert!(model.get("tags").is_some(), "Model must have 'tags'");
-    }
+    // 事前定義モデルは廃止されたため、空配列でもよい（存在確認のみ）
 }
 
 /// T019: 特定ノードのインストール済みモデル一覧を取得
@@ -315,12 +293,14 @@ async fn test_v1_models_returns_fixed_list() {
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
     let task_manager = llm_router::tasks::DownloadTaskManager::new();
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
         task_manager,
+        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -352,15 +332,11 @@ async fn test_v1_models_returns_fixed_list() {
         .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
         .collect();
 
-    let expected = vec![
-        "gpt-oss:20b",
-        "gpt-oss:120b",
-        "gpt-oss-safeguard:20b",
-        "qwen3-coder:30b",
-    ];
+    let expected: Vec<String> = vec![];
 
-    assert_eq!(ids.len(), expected.len(), "should return exactly 4 models");
-    for id in expected {
-        assert!(ids.contains(&id.to_string()), "missing {id}");
-    }
+    assert_eq!(
+        ids.len(),
+        expected.len(),
+        "should return only downloaded models"
+    );
 }

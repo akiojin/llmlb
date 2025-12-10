@@ -153,25 +153,25 @@
     );
 
     if (dom.modelCount) {
-      dom.modelCount.textContent = `ローカル ${counts.local} / クラウド ${counts.cloud}`;
+      dom.modelCount.textContent = `Local ${counts.local} / Cloud ${counts.cloud}`;
     }
 
     if (dom.modelHint) {
       const filterLabel =
         state.providerFilter === "all"
-          ? "フィルター: すべて"
+          ? "Filter: All"
           : state.providerFilter === "local"
-            ? "フィルター: ローカル"
-            : "フィルター: クラウド";
+            ? "Filter: Local"
+            : "Filter: Cloud";
       const displayCount = displayed.length;
       const tail = fallbackUsed
-        ? "該当モデルがないため全モデルを表示中"
-        : `表示中: ${displayCount}件`;
+        ? "No matching models; showing all"
+        : `Showing: ${displayCount}`;
       dom.modelHint.textContent = `${filterLabel} · ${tail}`;
       if (dom.chatMeta) {
         const chosen = dom.modelSelect?.value || "-";
-        const scopeLabel = state.providerFilter === "all" ? "全モデル" : filterLabel.replace("フィルター: ", "");
-        dom.chatMeta.textContent = `${scopeLabel} · 選択モデル: ${chosen}`;
+        const scopeLabel = state.providerFilter === "all" ? "All models" : filterLabel.replace("Filter: ", "");
+        dom.chatMeta.textContent = `${scopeLabel} · Selected: ${chosen}`;
       }
     }
   }
@@ -223,7 +223,7 @@
       state.models = [...fallbackModels];
       renderModels(currentSession()?.modelId);
       setStatus("Failed to fetch model list", "error");
-      showError(`モデル一覧の取得に失敗しました: ${err.message ?? err}`);
+      showError(`Failed to fetch model list: ${err.message ?? err}`);
     }
   }
 
@@ -254,7 +254,7 @@
       }));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (_err) {
-      // 永続化失敗は致命的ではないため無視
+      // Persistence failure is non-fatal; ignore
     }
     renderSessionList();
   }
@@ -266,7 +266,7 @@
       const parsed = JSON.parse(raw);
       state.sessions = (parsed || []).map((session) => ({
         id: session.id,
-        title: session.title || "新規チャット",
+        title: session.title || "新規Playground",
         modelId: session.modelId,
         modelScope: session.modelScope || "local",
         createdAt: session.createdAt || new Date().toISOString(),
@@ -294,7 +294,7 @@
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch (_err) {
-      // 永続化失敗は致命的ではないため無視
+      // Persistence failure is non-fatal; ignore
     }
   }
 
@@ -313,7 +313,7 @@
         dom.apiKeyInput.value = settings.apiKey;
       }
     } catch (_err) {
-      // 復元失敗は無視
+      // Ignore restore errors
     }
   }
 
@@ -340,12 +340,13 @@
 
   function updateSessionHeader(session) {
     if (!session) return;
-    if (dom.activeSessionTitle) dom.activeSessionTitle.textContent = session.title || "新規チャット";
+    if (dom.activeSessionTitle) dom.activeSessionTitle.textContent = session.title || "新規Playground";
     if (dom.activeSessionMeta) {
       const messageCount = session.history?.length ?? 0;
       const updated = formatTime(session.updatedAt);
       const modelLabel = session.modelId || preferredModelId();
-      dom.activeSessionMeta.textContent = `${session.modelScope || "local"} · ${modelLabel} · メッセージ ${messageCount}件 · 更新 ${updated || "-"}`;
+      const scopeLabel = session.modelScope === "cloud" ? "Cloud" : "Local";
+      dom.activeSessionMeta.textContent = `${scopeLabel} · ${modelLabel} · Messages ${messageCount} · Updated ${updated || "-"}`;
     }
   }
 
@@ -356,7 +357,7 @@
     if (!state.sessions.length) {
       const empty = document.createElement("li");
       empty.className = "session-empty";
-      empty.textContent = "まだセッションがありません。新規チャットを作成してください。";
+      empty.textContent = "まだセッションがありません。新規Playgroundを作成してください。";
       dom.sessionList.appendChild(empty);
       return;
     }
@@ -369,12 +370,12 @@
 
       const title = document.createElement("p");
       title.className = "session-title";
-      title.textContent = session.title || "新規チャット";
+      title.textContent = session.title || "新規Playground";
 
       const meta = document.createElement("p");
       meta.className = "session-meta";
       const count = session.history?.length ?? 0;
-      meta.textContent = `${count}件 · 更新 ${formatTime(session.updatedAt) || "-"}`;
+      meta.textContent = `${count} messages · Updated ${formatTime(session.updatedAt) || "-"}`;
 
       const badges = document.createElement("div");
       badges.className = "session-badges";
@@ -405,7 +406,7 @@
     dom.chatLog.innerHTML = "";
     if (!history || !history.length) {
       dom.chatLog.innerHTML =
-        '<div class="chat-welcome"><h2>LLM Router Chat</h2><p>Select a model and start chatting</p></div>';
+        '<div class="chat-welcome"><h2>LLM Router Playground</h2><p>Select a model and start experimenting</p></div>';
       return;
     }
     for (const entry of history) {
@@ -428,7 +429,7 @@
     persistSessions();
   }
 
-  function createSession({ title = "新規チャット", persist = true } = {}) {
+  function createSession({ title = "新規Playground", persist = true } = {}) {
     const id =
       crypto.randomUUID?.() || `session-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const now = new Date().toISOString();
@@ -489,13 +490,13 @@
     // Avatar text is handled via CSS ::before pseudo-element
     if (roleEl) roleEl.textContent = messageLabel(entry.role);
     if (textEl) {
-      // Reasoning content を折りたたみ表示
+      // Fold reasoning content with details/summary
       if (entry.reasoning && entry.role === "assistant") {
         const details = document.createElement("details");
         details.className = "reasoning-block";
         const summary = document.createElement("summary");
         summary.className = "reasoning-summary";
-        summary.textContent = "思考過程を表示";
+        summary.textContent = "Show reasoning";
         const reasoningContent = document.createElement("div");
         reasoningContent.className = "reasoning-content";
         reasoningContent.textContent = entry.reasoning;
@@ -515,19 +516,19 @@
 
     dom.chatLog.querySelector(".chat-welcome")?.remove();
     dom.chatLog.appendChild(node);
-    scrollToBottom(true); // スムーズスクロール
+    scrollToBottom(true); // Smooth scroll
     entry.element = node;
   }
 
   function getScrollContainer() {
-    // chat-messagesの親要素(.chat-container)がスクロール可能
+    // The parent of chat-messages (.chat-container) is scrollable
     return dom.chatLog?.parentElement;
   }
 
   function isNearBottom() {
     const container = getScrollContainer();
     if (!container) return true;
-    const threshold = 100; // ピクセル単位のしきい値
+    const threshold = 100; // Threshold in pixels
     const { scrollTop, scrollHeight, clientHeight } = container;
     return scrollHeight - scrollTop - clientHeight < threshold;
   }
@@ -535,7 +536,7 @@
   function scrollToBottom(smooth = false) {
     const container = getScrollContainer();
     if (!container) return;
-    // ダブルrequestAnimationFrameでレイアウト完了後にスクロール
+    // Use double requestAnimationFrame to scroll after layout settles
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         container.scrollTo({
@@ -553,7 +554,7 @@
       const metaEl = entry.element.querySelector(".message-meta");
       if (textEl) textEl.textContent = content;
       if (metaEl) metaEl.textContent = messageMeta(entry);
-      // ストリーミング中は自動スクロール（ユーザーが下部付近にいる場合のみ）
+      // Auto-scroll during streaming only if user is near the bottom
       if (isNearBottom()) {
         scrollToBottom();
       }
@@ -605,7 +606,7 @@
 
     dom.chatLog.querySelector(".chat-welcome")?.remove();
     dom.chatLog.appendChild(node);
-    scrollToBottom(true); // スムーズスクロール
+    scrollToBottom(true); // Smooth scroll
 
     return { id, element: node };
   }
@@ -619,7 +620,7 @@
   function updateSessionTitleFrom(entry) {
     const session = currentSession();
     if (!session || entry.role !== "user") return;
-    const defaultTitle = "新規チャット";
+    const defaultTitle = "新規Playground";
     const shouldUpdate = session.title === defaultTitle || session.history.length === 1;
     if (!shouldUpdate) return;
     const preview = entry.content.slice(0, 32).replace(/\s+/g, " ");
@@ -751,7 +752,7 @@
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        // SSE形式の場合は "data: " プレフィックスを除去
+        // Strip "data: " prefix for SSE format
         const dataLine = line.startsWith("data: ") ? line.slice(6) : line;
         if (dataLine === "[DONE]") {
           buffer = "";
@@ -762,10 +763,10 @@
         if (parsed.error) {
           throw new Error(parsed.error.message || String(parsed.error));
         }
-        // OpenAI互換形式: choices[0].delta.content (ストリーミング)
+        // OpenAI-compatible: choices[0].delta.content (streaming)
         const delta = parsed.choices?.[0]?.delta?.content;
         if (delta) {
-          // 最初のトークン到着時にタイピングインジケーターを削除し、メッセージを表示
+          // On first token, remove typing indicator and reveal message
           if (!firstTokenReceived) {
             firstTokenReceived = true;
             removeTypingIndicator(typingEntry);
@@ -776,7 +777,7 @@
           assembled += delta;
           updateMessage(assistantEntry, assembled);
         }
-        // 終了判定
+        // Finish detection
         if (parsed.choices?.[0]?.finish_reason) {
           buffer = "";
         }
@@ -787,7 +788,7 @@
       const dataLine = buffer.trim().startsWith("data: ") ? buffer.trim().slice(6) : buffer.trim();
       if (dataLine !== "[DONE]") {
         const parsed = safeParse(dataLine);
-        // OpenAI互換形式: choices[0].delta.content
+        // OpenAI-compatible: choices[0].delta.content
         const delta = parsed?.choices?.[0]?.delta?.content;
         if (delta) {
           if (!firstTokenReceived) {
@@ -803,7 +804,7 @@
       }
     }
 
-    // 応答が空の場合もタイピングインジケーターを削除
+    // Remove typing indicator even when response is empty
     if (!firstTokenReceived) {
       removeTypingIndicator(typingEntry);
       if (assistantEntry.element) {
@@ -861,10 +862,10 @@
       setLoading(true, { streaming: payload.stream });
       let assistantContent = "";
       if (payload.stream) {
-        // ストリーミングモードでもタイピングインジケーターを表示
+        // Show typing indicator in streaming mode
         const typingEntry = addTypingIndicator(payload.model);
         const assistantEntry = addMessage("assistant", "", { model: payload.model });
-        assistantEntry.element.classList.add("hidden"); // 最初は非表示
+        assistantEntry.element.classList.add("hidden"); // Hidden until first token
         state.pendingAssistant = assistantEntry;
         try {
           assistantContent = await streamChat(payload, assistantEntry, typingEntry);
@@ -876,14 +877,14 @@
           throw err;
         }
       } else {
-        // 非ストリーミングモードでもタイピングインジケーターを表示
+        // Show typing indicator even in non-streaming mode
         const typingEntry = addTypingIndicator(payload.model);
         try {
           const body = await postChat(payload);
-          // OpenAI互換形式: choices[0].message.content
+          // OpenAI-compatible: choices[0].message.content
           const message = body?.choices?.[0]?.message;
           assistantContent = message?.content ?? "(Empty response)";
-          // reasoning_content をサポート（o1系モデル等）
+          // Support reasoning_content (e.g., o1 models)
           const reasoning = message?.reasoning_content || null;
           removeTypingIndicator(typingEntry);
           addMessage("assistant", assistantContent, { model: payload.model, reasoning });
@@ -952,7 +953,7 @@
   }
 
   function handleKeydown(event) {
-    // IME変換中のEnterは無視する（日本語入力など）
+    // Ignore Enter while IME composition is active (e.g., JP input)
     if (event.isComposing || event.keyCode === 229) {
       return;
     }

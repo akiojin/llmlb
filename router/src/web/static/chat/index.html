@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LLM Router Chat</title>
+    <title>LLM Router Playground</title>
     <link rel="stylesheet" href="/dashboard/styles.css" />
-    <link rel="stylesheet" href="/chat/chat.css" />
+    <link rel="stylesheet" href="/playground/chat.css" />
   </head>
   <body class="chat-app">
-    <!-- サイドバー -->
+    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
@@ -20,7 +20,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 5v14M5 12h14"/>
           </svg>
-          <span>New Chat</span>
+          <span>New Playground</span>
         </button>
       </div>
       <nav class="session-nav">
@@ -30,9 +30,9 @@
       </nav>
     </aside>
 
-    <!-- メインエリア -->
+    <!-- Main area -->
     <main class="chat-main">
-      <!-- ヘッダー -->
+      <!-- Header -->
       <header class="chat-header">
         <div class="header-left">
           <button type="button" class="sidebar-toggle-mobile" id="sidebar-toggle-mobile" aria-label="Toggle sidebar">
@@ -57,23 +57,23 @@
         </div>
       </header>
 
-      <!-- チャットコンテナ -->
+      <!-- Chat container -->
       <div class="chat-container">
         <div class="chat-messages" id="chat-log" aria-live="polite">
           <div class="chat-welcome">
-            <h2>LLM Router Chat</h2>
-            <p>Select a model and start chatting</p>
+            <h2>LLM Router Playground</h2>
+            <p>Select a model and start experimenting</p>
           </div>
         </div>
       </div>
 
-      <!-- エラーバナー -->
+      <!-- Error banner -->
       <div id="error-banner" class="error-banner hidden" role="alert">
         <span id="error-message"></span>
-        <button id="error-close" class="error-close" type="button" aria-label="閉じる">&times;</button>
+        <button id="error-close" class="error-close" type="button" aria-label="Close">&times;</button>
       </div>
 
-      <!-- 入力エリア -->
+      <!-- Input area -->
       <div class="chat-input-wrapper">
         <form id="chat-form" class="chat-input-form">
           <textarea
@@ -98,7 +98,7 @@
       </div>
     </main>
 
-    <!-- 設定モーダル -->
+    <!-- Settings modal -->
     <dialog id="settings-modal" class="settings-modal">
       <div class="modal-header">
         <h2>Settings</h2>
@@ -149,13 +149,13 @@
           ></textarea>
         </div>
         <div class="setting-actions">
-          <button type="button" id="reset-chat" class="action-btn action-btn--danger">Clear Chat</button>
+          <button type="button" id="reset-chat" class="action-btn action-btn--danger">Clear Playground</button>
           <button type="button" id="copy-curl" class="action-btn">Copy cURL</button>
         </div>
       </div>
     </dialog>
 
-    <!-- メッセージテンプレート -->
+    <!-- Message template -->
     <template id="message-template">
       <div class="message">
         <div class="message-avatar"></div>
@@ -167,7 +167,7 @@
       </div>
     </template>
 
-    <!-- 非表示要素（互換性維持） -->
+    <!-- Hidden legacy elements for compatibility -->
     <div hidden>
       <span id="model-count"></span>
       <span id="model-hint"></span>
@@ -177,6 +177,6 @@
       <button id="new-chat-inline"></button>
     </div>
 
-    <script src="/chat/chat.js" defer></script>
+    <script src="/playground/chat.js" defer></script>
   </body>
 </html>

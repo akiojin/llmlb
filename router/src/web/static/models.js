@@ -38,6 +38,7 @@ let registeredModels = [];
 let availableModelsMeta = { source: null };
 let selectedModel = null;
 let downloadTasks = new Map(); // task_id -> task info
+let convertTasks = new Map(); // task_id -> task info
 let progressPollingInterval = null;
 let modelFilterQuery = '';
 let cachedAgents = [];
@@ -54,6 +55,7 @@ const elements = {
   selectAllButton: () => document.getElementById('select-all-agents'),
   deselectAllButton: () => document.getElementById('deselect-all-agents'),
   downloadTasksList: () => document.getElementById('download-tasks-list'),
+  convertTasksList: () => document.getElementById('convert-tasks-list'),
   loadedModelsList: () => document.getElementById('loaded-models-list'),
   manualPanel: () => document.getElementById('manual-distribution-panel'),
   toggleManualBtn: () => document.getElementById('toggle-manual-distribution'),
@@ -73,7 +75,18 @@ const elements = {
   hfRefreshBtn: () => document.getElementById('hf-refresh'),
   registeredRefreshBtn: () => document.getElementById('registered-refresh'),
   hfStatus: () => document.getElementById('hf-models-status'),
+  hfRegisterUrlInput: () => document.getElementById('hf-register-url'),
+  hfRegisterUrlSubmit: () => document.getElementById('hf-register-url-submit'),
   tasksRefreshBtn: () => document.getElementById('download-tasks-refresh'),
+  convertModal: () => document.getElementById('convert-modal'),
+  convertModalOpen: () => document.getElementById('convert-modal-open'),
+  convertModalClose: () => document.getElementById('convert-modal-close'),
+  convertRepoInput: () => document.getElementById('convert-repo'),
+  convertFilenameInput: () => document.getElementById('convert-filename'),
+  convertRevisionInput: () => document.getElementById('convert-revision'),
+  convertChatTemplateInput: () => document.getElementById('convert-chat-template'),
+  convertSubmitBtn: () => document.getElementById('convert-submit'),
+  convertTasksRefreshBtn: () => document.getElementById('convert-tasks-refresh'),
 };
 
 // ========== API Functions ==========
@@ -129,15 +142,95 @@ async function registerModel(repo, filename, displayName) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
+    let msg = await response.text();
+    try {
+      const parsed = JSON.parse(msg);
+      msg = parsed.error || parsed.message || msg;
+    } catch (_) {
+      // keep raw text
+    }
+    throw new Error(msg || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function findDownloadTask(modelName) {
+  return Array.from(downloadTasks.values()).find((t) => t.model_name === modelName) || null;
+}
+
+function renderStatusBadge(status) {
+  if (!status) return '';
+  const normalized = normalizeDownloadStatus(status);
+  const label = translateStatus(normalized);
+  return `<span class="task-status task-status--${escapeHtml(normalized)}">${escapeHtml(label)}</span>`;
+}
+
+function renderProgressBar(progress, speedText = '') {
+  const p = Math.min(1, Math.max(0, progress ?? 0));
+  const pct = (p * 100).toFixed(1);
+  return `
+    <div class="task-progress">
+      <progress value="${p}" max="1"></progress>
+      <span class="task-progress-text">${pct}%</span>
+    </div>
+    ${speedText}
+  `;
+}
+
+function parseHfUrl(rawUrl) {
+  if (!rawUrl) return null;
+  try {
+    const url = new URL(rawUrl);
+    if (!url.hostname.endsWith('huggingface.co')) return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    const repo = `${parts[0]}/${parts[1]}`;
+
+    const pickTail = (marker) => {
+      const idx = parts.indexOf(marker);
+      if (idx >= 0 && idx + 2 <= parts.length) {
+        return parts.slice(idx + 2).join('/');
+      }
+      return null;
+    };
+
+    let filename =
+      pickTail('resolve') ||
+      pickTail('blob') ||
+      (parts.length >= 3 ? parts.slice(2).join('/') : null);
+
+    // repo 直指定の場合は filename なしで返す（後段で解決）
+    if (!filename) return { repo, filename: null, isGguf: false };
+    const isGguf = filename.toLowerCase().endsWith('.gguf');
+    return { repo, filename, isGguf };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function pullModelFromHf(repo, filename, chatTemplate) {
+  const payload = { repo, filename, chat_template: chatTemplate };
+  const response = await fetch('/api/models/pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
     const txt = await response.text();
     throw new Error(txt || `HTTP ${response.status}`);
   }
   return response.json();
 }
 
-async function pullModelFromHf(repo, filename, chatTemplate) {
-  const payload = { repo, filename, chat_template: chatTemplate };
-  const response = await fetch('/api/models/pull', {
+async function convertModel(repo, filename, revision, quantization, chatTemplate) {
+  const payload = {
+    repo,
+    filename,
+    revision: revision || undefined,
+    quantization: quantization || undefined,
+    chat_template: chatTemplate || undefined,
+  };
+  const response = await fetch('/api/models/convert', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -240,6 +333,23 @@ async function fetchLoadedModels() {
     return await response.json();
   } catch (error) {
     console.error('Failed to fetch loaded models:', error);
+    return [];
+  }
+}
+
+/**
+ * GET /api/models/convert - Fetch convert tasks
+ */
+async function fetchConvertTasks() {
+  try {
+    const response = await fetch('/api/models/convert');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch convert tasks:', error);
+    showError('Failed to fetch convert tasks');
     return [];
   }
 }
@@ -485,6 +595,9 @@ function renderHfModelCard(model) {
         <button class="btn btn-small" data-action="pull" data-repo="${escapeHtml(
           repo
         )}" data-file="${escapeHtml(filename)}">Pull</button>
+        <button class="btn btn-small" data-action="convert" data-repo="${escapeHtml(
+          repo
+        )}" data-file="${escapeHtml(filename)}">Convert</button>
       </div>
     </div>`
   );
@@ -492,13 +605,28 @@ function renderHfModelCard(model) {
 
 function renderRegisteredModelCard(model) {
   const card = renderModelCard(model);
+  const task = findDownloadTask(model.name);
+  const statusBadge = task ? renderStatusBadge(task.status) : '';
+  const progressBlock =
+    task && (normalizeDownloadStatus(task.status) === 'downloading')
+      ? renderProgressBar(
+          task.progress || 0,
+          task.download_speed_bps ? `<div class="task-speed">${formatSpeed(task.download_speed_bps)}</div>` : ''
+        )
+      : '';
+  const disabled =
+    task && ['pending', 'downloading', 'in_progress'].includes(normalizeDownloadStatus(task.status));
   return card.replace(
     '</div>',
     `
+      <div class="model-card__meta">
+        ${statusBadge}
+        ${progressBlock}
+      </div>
       <div class="model-card__actions">
         <button class="btn btn-small" data-action="download" data-model="${escapeHtml(
           model.name
-        )}">Download (all)</button>
+        )}" ${disabled ? 'disabled' : ''}>Download (all)</button>
       </div>
     </div>`
   );
@@ -555,7 +683,11 @@ function renderHfModels(models) {
   const container = elements.hfModelsList();
   const status = elements.hfStatus();
   if (!container) return;
-  if (status) status.textContent = availableModelsMeta.cached ? 'Cached' : '';
+  if (status) {
+    status.textContent = models.length
+      ? `HF models: ${models.length}${availableModelsMeta.cached ? ' (cached)' : ''}`
+      : '';
+  }
   if (models.length === 0) {
     container.innerHTML = '<p class="empty-message">No HF models</p>';
     return;
@@ -577,6 +709,20 @@ function renderHfModels(models) {
       } catch (e) {
         console.error(e);
         showError(e.message || 'Failed to pull model');
+      }
+    });
+  });
+  container.querySelectorAll('button[data-action="convert"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const repo = btn.dataset.repo;
+      const file = btn.dataset.file;
+      try {
+        await convertModel(repo, file, null, null, null);
+        await refreshConvertTasks();
+        showSuccess('Queued convert job');
+      } catch (e) {
+        console.error(e);
+        showError(e.message || 'Failed to queue convert job');
       }
     });
   });
@@ -699,8 +845,9 @@ function renderDownloadTasks() {
     .map((task) => {
       const modelLabel = escapeHtml(task.model_name ?? '-');
       const agentLabel = task.agent_id ? escapeHtml(task.agent_id.substring(0, 8)) : '-';
-      const statusClass = escapeHtml(task.status);
-      const statusLabel = escapeHtml(translateStatus(task.status));
+      const normalizedStatus = normalizeDownloadStatus(task.status);
+      const statusClass = escapeHtml(normalizedStatus);
+      const statusLabel = escapeHtml(translateStatus(normalizedStatus));
       const progressValue =
         typeof task.progress === 'number' && !Number.isNaN(task.progress) ? task.progress : 0;
       const normalizedProgress = Math.min(1, Math.max(0, progressValue));
@@ -709,7 +856,7 @@ function renderDownloadTasks() {
           ? `<div class="task-speed">${formatSpeed(task.download_speed_bps)}</div>`
           : '';
       const progressBlock =
-        task.status === 'downloading'
+        normalizedStatus === 'downloading'
           ? `
         <div class="task-progress">
           <progress value="${normalizedProgress}" max="1"></progress>
@@ -728,6 +875,47 @@ function renderDownloadTasks() {
           <div class="task-agent">Agent: ${agentLabel}${task.agent_id ? '...' : ''}</div>
           ${progressBlock}
           <div class="task-time">Started: ${formatTimestamp(task.created_at)}</div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function renderConvertTasks() {
+  const container = elements.convertTasksList();
+  if (!container) return;
+
+  const tasks = Array.from(convertTasks.values());
+  if (tasks.length === 0) {
+    container.innerHTML = '<p class="empty-message">No convert tasks</p>';
+    return;
+  }
+
+  container.innerHTML = tasks
+    .map((task) => {
+      const statusLabel = escapeHtml(task.status ?? '-');
+      const progress =
+        typeof task.progress === 'number' && !Number.isNaN(task.progress)
+          ? Math.min(1, Math.max(0, task.progress))
+          : 0;
+      const path = task.path ? escapeHtml(task.path) : '—';
+      const error = task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : '';
+      const progressBlock =
+        task.status === 'in_progress'
+          ? `<div class="task-progress"><progress value="${progress}" max="1"></progress><span class="task-progress-text">${(
+              progress * 100
+            ).toFixed(1)}%</span></div>`
+          : '';
+      return `
+        <div class="task-card" data-convert-task-id="${escapeHtml(task.id)}">
+          <div class="task-header">
+            <strong>${escapeHtml(task.repo)}/${escapeHtml(task.filename)}</strong>
+            <span class="task-status task-status--${statusLabel}">${statusLabel}</span>
+          </div>
+          ${progressBlock}
+          <div class="task-path">Path: ${path}</div>
+          ${error}
+          <div class="task-time">Updated: ${formatTimestamp(task.updated_at || task.created_at)}</div>
         </div>
       `;
     })
@@ -777,10 +965,18 @@ function translateStatus(status) {
   const statusMap = {
     pending: 'Pending',
     downloading: 'Downloading',
+    in_progress: 'Downloading',
+    queued: 'Queued',
     completed: 'Completed',
     failed: 'Failed',
   };
   return statusMap[status] || status;
+}
+
+function normalizeDownloadStatus(status) {
+  if (status === 'in_progress') return 'downloading';
+  if (status === 'queued') return 'pending';
+  return status || 'pending';
 }
 
 /**
@@ -813,26 +1009,24 @@ function formatTimestamp(isoString) {
  */
 function showError(message) {
   const banner = document.getElementById('error-banner');
-  if (banner) {
-    banner.textContent = message;
-    banner.classList.remove('hidden');
-    setTimeout(() => banner.classList.add('hidden'), 5000);
-  }
+  const text = document.getElementById('error-banner-text');
+  if (!banner || !text) return;
+  banner.classList.remove('success-banner');
+  text.textContent = message;
+  banner.classList.remove('hidden');
 }
 
 function showSuccess(message) {
   const banner = document.getElementById('error-banner');
-  if (banner) {
-    banner.textContent = message;
-    banner.classList.remove('hidden');
-    banner.classList.add('success-banner');
-    setTimeout(() => {
-      banner.classList.add('hidden');
-      banner.classList.remove('success-banner');
-    }, 3000);
-  } else {
-    console.info(message);
-  }
+  const text = document.getElementById('error-banner-text');
+  if (!banner || !text) return console.info(message);
+  text.textContent = message;
+  banner.classList.remove('hidden');
+  banner.classList.add('success-banner');
+  setTimeout(() => {
+    banner.classList.add('hidden');
+    banner.classList.remove('success-banner');
+  }, 4000);
 }
 
 // ========== Progress Monitoring ==========
@@ -913,7 +1107,7 @@ async function handleDistribute() {
   const taskIds = await distributeModel(selectedModel, 'specific', agentIds);
 
   if (taskIds.length > 0) {
-    // タスクを追加
+    // Add tasks
     for (const taskId of taskIds) {
       downloadTasks.set(taskId, {
         id: taskId,
@@ -928,7 +1122,7 @@ async function handleDistribute() {
     renderDownloadTasks();
     monitorProgress();
 
-    // チェックボックスをクリア
+    // Clear checkboxes
     checkboxes.forEach((cb) => (cb.checked = false));
     updateDistributeButtonState();
 
@@ -937,7 +1131,7 @@ async function handleDistribute() {
 }
 
 /**
- * すべて選択ボタンクリック
+ * Select-all button click
  */
 function handleSelectAll() {
   const manualPanel = elements.manualPanel();
@@ -950,7 +1144,7 @@ function handleSelectAll() {
 }
 
 /**
- * 選択解除ボタンクリック
+ * Deselect-all button click
  */
 function handleDeselectAll() {
   const manualPanel = elements.manualPanel();
@@ -962,33 +1156,36 @@ function handleDeselectAll() {
   updateDistributeButtonState();
 }
 
-// ========== 初期化 ==========
+// ========== Initialization ==========
 
 /**
- * モデル管理UIの初期化
+ * Initialize model management UI
  */
-export async function initModelsUI(agents) {
-  // 利用可能なモデルを取得
-  availableModels = await fetchAvailableModels();
+async function initModelsUI(agents) {
+  // HFカタログは表示しないため空で初期化
+  availableModels = [];
   modelFilterQuery = '';
-  renderAvailableModels(availableModels);
-  renderHfModels(availableModels);
+  renderAvailableModels([]);
+  renderHfModels([]);
 
   registeredModels = await fetchRegisteredModels();
   renderRegisteredModels(registeredModels);
 
-  // エージェント一覧を描画
+  // Render agent list
   renderAgentsForDistribution(agents);
 
-  // イベントリスナー登録
+  // Register event listeners
   const distributeButton = elements.distributeButton();
   const selectAllButton = elements.selectAllButton();
   const deselectAllButton = elements.deselectAllButton();
   const searchInput = elements.modelSearchInput();
   const toggleManualBtn = elements.toggleManualBtn();
-  const hfSearch = elements.hfSearchInput();
-  const hfRefresh = elements.hfRefreshBtn();
   const regRefresh = elements.registeredRefreshBtn();
+  const convertOpen = elements.convertModalOpen();
+  const convertClose = elements.convertModalClose();
+  const convertSubmit = elements.convertSubmitBtn();
+  const convertTasksRefresh = elements.convertTasksRefreshBtn();
+  const registerUrlBtn = elements.hfRegisterUrlSubmit();
 
   if (distributeButton) {
     distributeButton.addEventListener('click', handleDistribute);
@@ -1007,64 +1204,119 @@ export async function initModelsUI(agents) {
     searchInput.addEventListener('input', handleModelSearch);
   }
 
-  if (hfSearch) {
-    hfSearch.addEventListener('input', async () => {
-      availableModels = await fetchAvailableModels();
-      renderHfModels(availableModels);
-    });
-  }
-
-  if (hfRefresh) {
-    hfRefresh.addEventListener('click', async () => {
-      availableModels = await fetchAvailableModels();
-      renderHfModels(availableModels);
-    });
-  }
-
   if (regRefresh) {
     regRefresh.addEventListener('click', refreshRegisteredModels);
+  }
+
+  if (convertOpen) {
+    convertOpen.addEventListener('click', () => {
+      const modal = elements.convertModal();
+      if (modal) modal.classList.remove('hidden');
+    });
+  }
+  if (convertClose) {
+    convertClose.addEventListener('click', () => {
+      const modal = elements.convertModal();
+      if (modal) modal.classList.add('hidden');
+    });
+  }
+  if (convertSubmit) {
+    convertSubmit.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const repo = elements.convertRepoInput()?.value?.trim();
+      const file = elements.convertFilenameInput()?.value?.trim();
+      const rev = elements.convertRevisionInput()?.value?.trim() || null;
+      const chatTpl = elements.convertChatTemplateInput()?.value?.trim() || null;
+      if (!repo || !file) {
+        showError('Enter both repo and filename');
+        return;
+      }
+      try {
+        await convertModel(repo, file, rev, null, chatTpl);
+        showSuccess('Queued convert job');
+        await refreshConvertTasks();
+      } catch (err) {
+        showError(err.message || 'Failed to queue convert');
+      }
+    });
+  }
+  if (convertTasksRefresh) {
+    convertTasksRefresh.addEventListener('click', refreshConvertTasks);
+  }
+
+  if (registerUrlBtn) {
+    registerUrlBtn.addEventListener('click', async () => {
+      const input = elements.hfRegisterUrlInput();
+      const parsed = parseHfUrl(input?.value?.trim() || '');
+      if (!parsed) {
+        showError('HFのURLまたはリポジトリURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)');
+        return;
+      }
+      const repo = parsed.repo;
+      const filename = parsed.filename; // may be null -> backend resolves
+      const isRepoOnly = !filename;
+      const isGguf = parsed.isGguf;
+      try {
+        // 全てのケースでregisterModelを呼び出す（バックエンドがGGUF版を自動解決）
+        const res = await registerModel(repo, filename, filename || repo);
+
+        // 自動解決された場合は詳細メッセージを表示
+        if (res.auto_resolved && res.resolved_from) {
+          showSuccess(`GGUF版を使用: ${res.resolved_from} → ${res.name}`);
+        } else {
+          showSuccess(`Registered ${res.name}`);
+        }
+        await refreshRegisteredModels();
+      } catch (err) {
+        showError(err.message || 'Failed to register model from URL');
+      }
+    });
   }
 
   if (toggleManualBtn) {
     toggleManualBtn.addEventListener('click', toggleManualPanel);
   }
 
-  // 初期状態を設定
+  // Set initial state
   updateDistributeButtonState();
   renderDownloadTasks();
 
-  // ロード済みモデルを初期取得
+  // Fetch loaded models initially
   loadedModels = await fetchLoadedModels();
   renderLoadedModels();
 
-  // アクティブなタスクを初期取得
-  const activeTasks = await fetchActiveTasks();
-  for (const task of activeTasks) {
-    downloadTasks.set(task.id, task);
-  }
-  renderDownloadTasks();
+  // Fetch convert tasks initially
+  await refreshConvertTasks();
 
-  // 進捗監視開始
+  // Fetch active tasks initially
+  await refreshDownloadTasks();
+
+  // Start monitoring progress
   monitorProgress();
 
   const tasksRefresh = elements.tasksRefreshBtn();
   if (tasksRefresh) {
     tasksRefresh.addEventListener('click', async () => {
-      // サーバーからアクティブなタスク一覧を再取得
-      const tasks = await fetchActiveTasks();
-      downloadTasks.clear();
-      for (const task of tasks) {
-        downloadTasks.set(task.id, task);
-      }
-      renderDownloadTasks();
+      await refreshDownloadTasks();
+    });
+  }
+
+  // Banner dismiss button
+  const bannerClose = document.getElementById('error-banner-close');
+  const banner = document.getElementById('error-banner');
+  if (banner && bannerClose) {
+    bannerClose.addEventListener('click', () => {
+      banner.classList.add('hidden');
+      banner.classList.remove('success-banner');
     });
   }
 }
 
 /**
- * モデル管理UIの更新（エージェント一覧変更時）
+ * Update model management UI when agent list changes
  */
-export function updateModelsUI(agents) {
+function updateModelsUI(agents) {
+  cachedAgents = agents;
   renderAgentsForDistribution(agents);
 }
 
@@ -1072,3 +1324,29 @@ async function refreshRegisteredModels() {
   registeredModels = await fetchRegisteredModels();
   renderRegisteredModels(registeredModels);
 }
+
+async function refreshConvertTasks() {
+  const tasks = await fetchConvertTasks();
+  convertTasks.clear();
+  for (const task of tasks) {
+    convertTasks.set(task.id, task);
+  }
+  renderConvertTasks();
+}
+
+async function refreshDownloadTasks() {
+  const tasks = await fetchActiveTasks();
+  downloadTasks.clear();
+  for (const task of tasks) {
+    downloadTasks.set(task.id, task);
+  }
+  renderDownloadTasks();
+}
+
+// Expose to other scripts if needed
+window.updateModelsUI = updateModelsUI;
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initModelsUI(cachedAgents);
+});

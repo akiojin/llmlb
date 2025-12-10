@@ -99,7 +99,7 @@
 - [x] T029 `node/src/utils/config.cpp` の環境変数を更新
   - `LLM_MODELS_DIR` → `LLM_NODE_MODELS_DIR`（フォールバック付き）
   - `LLM_HEARTBEAT_SECS` → `LLM_NODE_HEARTBEAT_SECS`（フォールバック付き）
-  - `LLM_ALLOW_NO_GPU` → `LLM_NODE_ALLOW_NO_GPU`（フォールバック付き）
+  - `LLM_ALLOW_NO_GPU` → `LLM_NODE_ALLOW_NO_GPU`（削除）
   - `LLM_BIND_ADDRESS` → `LLM_NODE_BIND_ADDRESS`（フォールバック付き）
 - [x] T030 `node/src/utils/logger.cpp` の環境変数を更新
   - `LLM_LOG_DIR` → `LLM_NODE_LOG_DIR`（フォールバック付き）

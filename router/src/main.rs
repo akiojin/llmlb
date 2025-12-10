@@ -15,13 +15,18 @@ use tracing::info;
 struct ServerConfig {
     host: String,
     port: u16,
+    preload_models: Vec<String>,
 }
 
 impl ServerConfig {
     fn from_env() -> Self {
         let host = get_env_with_fallback_or("LLM_ROUTER_HOST", "ROUTER_HOST", "0.0.0.0");
         let port = get_env_with_fallback_parse("LLM_ROUTER_PORT", "ROUTER_PORT", 8080);
-        Self { host, port }
+        Self {
+            host,
+            port,
+            preload_models: Vec::new(),
+        }
     }
 
     fn bind_addr(&self) -> String {
@@ -89,7 +94,9 @@ async fn main() {
         None => {
             // No command = start server
             logging::init().expect("failed to initialize logging");
-            run_server(ServerConfig::from_env()).await;
+            let mut cfg = ServerConfig::from_env();
+            cfg.preload_models = cli.preload_models.clone();
+            run_server(cfg).await;
         }
     }
 }
@@ -238,6 +245,12 @@ async fn run_server(config: ServerConfig) {
     // Load registered models (HF etc.)
     llm_router::api::models::load_registered_models_from_storage().await;
 
+    // venv環境をセットアップ（非GGUF変換に必要）
+    info!("Setting up Python venv for model conversion...");
+    if let Err(e) = llm_router::convert::setup_venv() {
+        tracing::warn!("venv setup failed (conversion may not work): {}", e);
+    }
+
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");
 
@@ -270,6 +283,9 @@ async fn run_server(config: ServerConfig) {
     llm_router::db::request_history::start_cleanup_task(request_history.clone());
 
     let task_manager = tasks::DownloadTaskManager::new();
+    let convert_concurrency: usize =
+        get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 1);
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(convert_concurrency);
 
     // 認証システムを初期化
     // データベース接続プールを作成
@@ -316,10 +332,24 @@ async fn run_server(config: ServerConfig) {
         load_manager,
         request_history,
         task_manager,
+        convert_manager,
         db_pool,
         jwt_secret,
         http_client,
     };
+
+    // 起動時プリロードジョブを投入
+    for spec in &config.preload_models {
+        if let Some((repo, filename)) = parse_repo_filename(spec) {
+            info!("Queueing preload model: {}/{}", repo, filename);
+            state
+                .convert_manager
+                .enqueue(repo.to_string(), filename.to_string(), None, None, None)
+                .await;
+        } else {
+            tracing::warn!(spec, "Invalid preload model spec (expected repo:filename)");
+        }
+    }
 
     let router = api::create_router(state);
 
@@ -336,6 +366,21 @@ async fn run_server(config: ServerConfig) {
     )
     .await
     .expect("Server error");
+}
+
+/// repo:filename 形式（または repo/filename）をパース
+fn parse_repo_filename(input: &str) -> Option<(&str, &str)> {
+    if let Some((repo, file)) = input.rsplit_once(':') {
+        if !repo.is_empty() && !file.is_empty() {
+            return Some((repo, file));
+        }
+    }
+    if let Some((repo, file)) = input.rsplit_once('/') {
+        if !repo.is_empty() && !file.is_empty() {
+            return Some((repo, file));
+        }
+    }
+    None
 }
 
 #[cfg(test)]

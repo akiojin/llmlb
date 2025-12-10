@@ -52,7 +52,6 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
     setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
-    setenv("LLM_ALLOW_NO_GPU", "true", 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
 
     std::atomic<int> exit_code{0};
@@ -94,7 +93,6 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
     setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
-    setenv("LLM_ALLOW_NO_GPU", "true", 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
 
     std::atomic<int> exit_code{0};

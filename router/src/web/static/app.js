@@ -8,6 +8,127 @@ const NODE_METRICS_LIMIT = 120;
 const LOG_ENTRY_LIMIT = 200;
 const MODAL_LOG_ENTRY_LIMIT = 100;
 
+// ========================================
+// Theme Manager (FR-027) - 3 Color Themes
+// ========================================
+const ThemeManager = {
+  // 3 color themes (layout is fixed for all)
+  themes: ["dark", "light", "high-contrast"],
+  themeLabels: {
+    dark: "Terminal Noir",
+    light: "Papercraft",
+    "high-contrast": "Electric Signal",
+  },
+  // Migration map from old themes to new themes
+  legacyThemeMap: {
+    // Old 7-color themes
+    mono: "dark",
+    cyberpunk: "dark",
+    retro: "high-contrast",
+    synthwave: "dark",
+    ocean: "dark",
+    ember: "dark",
+    forest: "dark",
+    // Old 3-skin themes
+    minimal: "light",
+    tech: "high-contrast",
+    creative: "dark",
+  },
+  storageKey: "dashboard-theme",
+
+  // Chart.js color palettes for each theme
+  // Terminal Noir: Neon green + pink accents
+  // Papercraft Studio: Terracotta + forest tones
+  // Electric Signal: Pure high-contrast colors
+  chartColors: {
+    dark: [
+      { border: "rgba(0, 255, 159, 0.9)", bg: "rgba(0, 255, 159, 0.15)" }, // Neon green (accent)
+      { border: "rgba(255, 51, 102, 0.9)", bg: "rgba(255, 51, 102, 0.15)" }, // Neon pink (danger)
+      { border: "rgba(0, 200, 255, 0.9)", bg: "rgba(0, 200, 255, 0.15)" }, // Cyan
+      { border: "rgba(255, 200, 0, 0.9)", bg: "rgba(255, 200, 0, 0.15)" }, // Yellow
+    ],
+    light: [
+      { border: "rgba(211, 84, 0, 0.85)", bg: "rgba(211, 84, 0, 0.1)" }, // Terracotta (accent)
+      { border: "rgba(39, 174, 96, 0.85)", bg: "rgba(39, 174, 96, 0.1)" }, // Forest green (success)
+      { border: "rgba(41, 128, 185, 0.85)", bg: "rgba(41, 128, 185, 0.1)" }, // Steel blue
+      { border: "rgba(192, 57, 43, 0.85)", bg: "rgba(192, 57, 43, 0.1)" }, // Brick red
+    ],
+    "high-contrast": [
+      { border: "rgba(0, 229, 255, 1)", bg: "rgba(0, 229, 255, 0.2)" }, // Electric cyan (accent)
+      { border: "rgba(0, 255, 0, 1)", bg: "rgba(0, 255, 0, 0.2)" }, // Pure green (success)
+      { border: "rgba(255, 255, 0, 1)", bg: "rgba(255, 255, 0, 0.2)" }, // Pure yellow (warning)
+      { border: "rgba(255, 0, 0, 1)", bg: "rgba(255, 0, 0, 0.2)" }, // Pure red (danger)
+    ],
+  },
+
+  init() {
+    let saved = localStorage.getItem(this.storageKey) || "dark";
+    // Migrate from legacy themes if needed
+    if (this.legacyThemeMap[saved]) {
+      saved = this.legacyThemeMap[saved];
+      localStorage.setItem(this.storageKey, saved);
+    }
+    this.apply(saved);
+  },
+
+  apply(theme) {
+    // Migrate legacy theme names
+    if (this.legacyThemeMap[theme]) {
+      theme = this.legacyThemeMap[theme];
+    }
+    if (!this.themes.includes(theme)) {
+      theme = "dark";
+    }
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(this.storageKey, theme);
+    this.updateCharts();
+    this.updateToggleButton();
+  },
+
+  toggle() {
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const nextIndex = (this.themes.indexOf(current) + 1) % this.themes.length;
+    this.apply(this.themes[nextIndex]);
+  },
+
+  getColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  },
+
+  updateCharts() {
+    const theme = document.documentElement.getAttribute("data-theme") || "dark";
+    const colors = this.chartColors[theme] || this.chartColors.dark;
+
+    // Update requestsChart
+    if (typeof requestsChart !== "undefined" && requestsChart) {
+      requestsChart.data.datasets[0].borderColor = colors[0].border;
+      requestsChart.data.datasets[0].backgroundColor = colors[0].bg;
+      requestsChart.data.datasets[1].borderColor = colors[2].border;
+      requestsChart.data.datasets[1].backgroundColor = colors[2].bg;
+      requestsChart.update("none");
+    }
+
+    // Update nodeMetricsChart
+    if (typeof nodeMetricsChart !== "undefined" && nodeMetricsChart) {
+      nodeMetricsChart.data.datasets.forEach((ds, i) => {
+        const color = colors[i % colors.length];
+        ds.borderColor = color.border;
+        ds.backgroundColor = color.bg;
+      });
+      nodeMetricsChart.update("none");
+    }
+  },
+
+  updateToggleButton() {
+    const btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const label = this.themeLabels[current] || "Dark";
+    btn.setAttribute("title", `Theme: ${label} (Click to switch)`);
+    btn.setAttribute("aria-label", `Current theme: ${label}. Click to switch theme.`);
+  },
+};
+
 const state = {
   nodes: [],
   stats: null,
@@ -111,6 +232,9 @@ const logRefs = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  // テーマ初期化（最初に実行）
+  ThemeManager.init();
+
   const refreshButton = document.getElementById("refresh-button");
   const statusSelect = document.getElementById("filter-status");
   const queryInput = document.getElementById("filter-query");
@@ -129,11 +253,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatClose = document.getElementById("chat-close");
   const chatIframe = document.getElementById("chat-iframe");
   const tbody = document.getElementById("nodes-body");
+  const themeToggle = document.getElementById("theme-toggle");
 
   // リロード直後に詳細モーダルが開いたままにならないよう、確実に非表示へ初期化
   modal?.classList.add("hidden");
   document.getElementById("request-modal")?.classList.add("hidden");
   chatModal?.classList.add("hidden");
+
+  // テーマ切り替えボタン
+  themeToggle?.addEventListener("click", () => ThemeManager.toggle());
 
   initTabs();
 
@@ -721,8 +849,8 @@ function updateHistoryChart(canvas, labels, success, failures) {
             label: "Success Requests",
             data: success,
             tension: 0.3,
-            borderColor: "rgba(59, 130, 246, 0.9)",
-            backgroundColor: "rgba(59, 130, 246, 0.15)",
+            borderColor: "rgba(0, 255, 255, 0.9)",
+            backgroundColor: "rgba(0, 255, 255, 0.15)",
             fill: true,
             pointRadius: 0,
           },
@@ -730,8 +858,8 @@ function updateHistoryChart(canvas, labels, success, failures) {
             label: "Failed Requests",
             data: failures,
             tension: 0.3,
-            borderColor: "rgba(248, 113, 113, 0.9)",
-            backgroundColor: "rgba(248, 113, 113, 0.15)",
+            borderColor: "rgba(255, 0, 85, 0.9)",
+            backgroundColor: "rgba(255, 0, 85, 0.15)",
             fill: true,
             pointRadius: 0,
           },
@@ -1135,6 +1263,7 @@ function openNodeModal(node) {
   }
 
   modalRefs.modal.classList.remove("hidden");
+  document.body.classList.add("body--modal-open");
   modalRefs.modal.setAttribute("tabindex", "-1");
   loadModalNodeLogs(node.id, { force: true });
   window.requestAnimationFrame(() => modalRefs.close.focus());
@@ -1143,6 +1272,7 @@ function openNodeModal(node) {
 function closeNodeModal() {
   if (!modalRefs.modal) return;
   modalRefs.modal.classList.add("hidden");
+  document.body.classList.remove("body--modal-open");
   if (state.nodeMetricsAbortController) {
     state.nodeMetricsAbortController.abort();
     state.nodeMetricsAbortController = null;
@@ -1229,8 +1359,8 @@ function updateNodeMetrics(metrics) {
       key: "cpu",
       label: "CPU Usage",
       data: cpu,
-      borderColor: "rgba(59, 130, 246, 0.85)",
-      backgroundColor: "rgba(59, 130, 246, 0.12)",
+      borderColor: "rgba(0, 255, 255, 0.85)",
+      backgroundColor: "rgba(0, 255, 255, 0.12)",
     });
   }
   if (datasetHasValues(memory)) {
@@ -1238,8 +1368,8 @@ function updateNodeMetrics(metrics) {
       key: "memory",
       label: "Memory Usage",
       data: memory,
-      borderColor: "rgba(168, 85, 247, 0.85)",
-      backgroundColor: "rgba(168, 85, 247, 0.12)",
+      borderColor: "rgba(255, 0, 255, 0.85)",
+      backgroundColor: "rgba(255, 0, 255, 0.12)",
     });
   }
   if (datasetHasValues(gpu)) {
@@ -1247,8 +1377,8 @@ function updateNodeMetrics(metrics) {
       key: "gpu",
       label: "GPU Usage",
       data: gpu,
-      borderColor: "rgba(34, 197, 94, 0.85)",
-      backgroundColor: "rgba(34, 197, 94, 0.12)",
+      borderColor: "rgba(0, 255, 136, 0.85)",
+      backgroundColor: "rgba(0, 255, 136, 0.12)",
     });
   }
   if (datasetHasValues(gpuMemory)) {
@@ -1256,8 +1386,8 @@ function updateNodeMetrics(metrics) {
       key: "gpu-memory",
       label: "GPU Memory Usage",
       data: gpuMemory,
-      borderColor: "rgba(248, 113, 113, 0.85)",
-      backgroundColor: "rgba(248, 113, 113, 0.12)",
+      borderColor: "rgba(255, 107, 0, 0.85)",
+      backgroundColor: "rgba(255, 107, 0, 0.12)",
     });
   }
 
@@ -1562,17 +1692,35 @@ function updateLastRefreshed(date, serverDate = null) {
 
 function showError(message) {
   const banner = document.getElementById("error-banner");
-  if (!banner) return;
-  banner.textContent = message;
+  const text = document.getElementById("error-banner-text");
+  if (!banner || !text) return;
+  banner.classList.remove("success-banner");
+  text.textContent = message;
   banner.classList.remove("hidden");
 }
 
 function hideError() {
   const banner = document.getElementById("error-banner");
-  if (!banner) return;
+  const text = document.getElementById("error-banner-text");
+  if (!banner || !text) return;
   banner.classList.add("hidden");
-  banner.textContent = "";
+  banner.classList.remove("success-banner");
+  text.textContent = "";
 }
+
+// Setup global banner close button once DOM is ready
+document.addEventListener("DOMContentLoaded", () => {
+  const banner = document.getElementById("error-banner");
+  const close = document.getElementById("error-banner-close");
+  const text = document.getElementById("error-banner-text");
+  if (banner && close) {
+    close.addEventListener("click", () => {
+      banner.classList.add("hidden");
+      banner.classList.remove("success-banner");
+      if (text) text.textContent = "";
+    });
+  }
+});
 
 function formatDuration(seconds) {
   if (typeof seconds !== "number" || Number.isNaN(seconds)) {
@@ -1831,6 +1979,7 @@ async function showRequestDetail(id) {
     const modal = document.getElementById("request-modal");
     if (modal) {
       modal.classList.remove("hidden");
+      document.body.classList.add("body--modal-open");
     }
   } catch (error) {
     console.error("Failed to fetch request detail:", error);
@@ -1897,12 +2046,14 @@ document.addEventListener("DOMContentLoaded", () => {
   if (requestModalClose && requestModal) {
     requestModalClose.addEventListener("click", () => {
       requestModal.classList.add("hidden");
+      document.body.classList.remove("body--modal-open");
     });
   }
 
   if (requestModalOk && requestModal) {
     requestModalOk.addEventListener("click", () => {
       requestModal.classList.add("hidden");
+      document.body.classList.remove("body--modal-open");
     });
   }
 

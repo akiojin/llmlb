@@ -27,6 +27,7 @@ async fn build_app() -> Router {
         llm_router::db::request_history::RequestHistoryStorage::new().unwrap(),
     );
     let task_manager = llm_router::tasks::DownloadTaskManager::new();
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
 
@@ -35,6 +36,7 @@ async fn build_app() -> Router {
         load_manager,
         request_history,
         task_manager,
+        convert_manager,
         db_pool,
         jwt_secret,
     };

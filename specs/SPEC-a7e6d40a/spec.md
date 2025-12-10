@@ -227,7 +227,6 @@ Web UIからの登録に加えて、CLIからの一括登録やスクリプト�
 | `LLM_NODE_LOG_LEVEL` | ログレベル | info |
 | `LLM_NODE_LOG_DIR` | ログディレクトリ | `~/.llm-node/logs` |
 | `LLM_NODE_HEARTBEAT_SECS` | ハートビート間隔 | 10 |
-| `LLM_NODE_ALLOW_NO_GPU` | GPU必須を緩和 | false |
 | `LLM_NODE_BIND_ADDRESS` | バインドアドレス | 0.0.0.0 |
 
 ### JWT_SECRET要件

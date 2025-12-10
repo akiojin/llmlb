@@ -95,7 +95,7 @@ npm run start:node
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | 登録先ルーターのURL |
 | `LLM_NODE_PORT` | `11435` | ノードのリッスンポート |
 | `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデル保存ディレクトリ |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU無しでの起動を許可 |
+| `LLM_NODE_ALLOW_NO_GPU` | _削除_ | GPU必須 |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
 
@@ -457,7 +457,7 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 | `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_ALLOW_NO_GPU` | `false` | GPU必須を無効化 |
+| `LLM_NODE_ALLOW_NO_GPU` | _削除_ | GPU必須 |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
 | `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
 

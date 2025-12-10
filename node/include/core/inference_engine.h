@@ -78,6 +78,14 @@ public:
     /// サンプリング（互換性維持）
     std::string sampleNextToken(const std::vector<std::string>& tokens) const;
 
+    /// Embedding生成
+    /// @param input テキスト入力（単一または複数）
+    /// @param model モデル名
+    /// @return 各入力に対するembeddingベクトル
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>& inputs,
+        const std::string& model) const;
+
     /// 依存関係が注入されているか確認
     bool isInitialized() const { return manager_ != nullptr && model_storage_ != nullptr; }
 

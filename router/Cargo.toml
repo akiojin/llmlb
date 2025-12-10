@@ -55,6 +55,9 @@ rpassword = "7.3"
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
+# Progress parsing
+regex = "1.10"
+
 [build-dependencies]
 winresource = "0.1.27"
 

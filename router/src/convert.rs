@@ -5,10 +5,12 @@
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
@@ -389,13 +391,30 @@ impl ConvertTaskManager {
             )
         };
 
-        // execute download/convert
+        // Create progress callback that updates the task
+        let tasks_for_callback = tasks.clone();
+        let progress_callback = move |progress: f32| {
+            // Use a blocking approach to update progress since we're in a sync context
+            let tasks = tasks_for_callback.clone();
+            let task_id = task_id;
+            // Spawn a task to update progress asynchronously
+            tokio::spawn(async move {
+                if let Some(task) = tasks.lock().await.get_mut(&task_id) {
+                    task.progress = progress.clamp(0.0, 1.0);
+                    task.updated_at = Utc::now();
+                    tracing::debug!(task_id=?task_id, progress=progress, "convert_progress_updated");
+                }
+            });
+        };
+
+        // execute download/convert with progress callback
         let res = download_and_maybe_convert(
             &repo,
             &filename,
             revision.as_deref(),
             quantization.as_deref(),
             chat_template.clone(),
+            progress_callback,
         )
         .await;
 
@@ -421,13 +440,18 @@ impl ConvertTaskManager {
 }
 
 /// ダウンロードして必要なら変換する。
-async fn download_and_maybe_convert(
+/// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
+async fn download_and_maybe_convert<F>(
     repo: &str,
     filename: &str,
     revision: Option<&str>,
     _quantization: Option<&str>,
     chat_template: Option<String>,
-) -> Result<String, RouterError> {
+    progress_callback: F,
+) -> Result<String, RouterError>
+where
+    F: Fn(f32) + Send + Sync + Clone + 'static,
+{
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
     // モデル名 = リポジトリ名（例: openai/gpt-oss-20b）
     let model_name = repo.to_string();
@@ -452,6 +476,7 @@ async fn download_and_maybe_convert(
 
     // skip if already present but make sure metadata is up-to-date
     if target.exists() {
+        progress_callback(1.0);
         finalize_model_registration(
             &model_name,
             repo,
@@ -466,8 +491,9 @@ async fn download_and_maybe_convert(
 
     if is_gguf {
         download_file(&url, &target).await?;
+        progress_callback(1.0);
     } else {
-        convert_non_gguf(repo, revision, &target).await?;
+        convert_non_gguf(repo, revision, &target, progress_callback.clone()).await?;
     }
 
     finalize_model_registration(&model_name, repo, filename, &url, &target, chat_template).await;
@@ -501,13 +527,20 @@ async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
 }
 
 /// 非GGUFをGGUFへコンバート（sync heavy → blocking thread）
-async fn convert_non_gguf(
+/// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
+async fn convert_non_gguf<F>(
     repo: &str,
     revision: Option<&str>,
     target: &Path,
-) -> Result<(), RouterError> {
+    progress_callback: F,
+) -> Result<(), RouterError>
+where
+    F: Fn(f32) + Send + Sync + 'static,
+{
     if should_use_fake_convert() {
+        progress_callback(0.5);
         write_dummy_gguf(target).await?;
+        progress_callback(1.0);
         return Ok(());
     }
 
@@ -544,46 +577,87 @@ async fn convert_non_gguf(
     let target_path = target.to_path_buf();
     let cmd_repo = repo_with_rev.clone();
     let python_bin_clone = python_bin.clone();
-    let output = task::spawn_blocking(move || {
-        let mut cmd = std::process::Command::new(&python_bin_clone);
-        cmd.arg(script_clone)
+
+    // Use spawn() with piped stderr to capture progress output
+    let result = task::spawn_blocking(move || {
+        let mut cmd = Command::new(&python_bin_clone);
+        cmd.arg(&script_clone)
             .arg("--remote")
             .arg("--outfile")
             .arg(&target_path)
-            .arg(&cmd_repo);
+            .arg(&cmd_repo)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
         if let Some(token) = hf_token {
             cmd.env("HF_TOKEN", token);
         }
-        cmd.output()
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => return Err(format!("Failed to spawn convert process: {}", e)),
+        };
+
+        // tqdm outputs to stderr, so we read from there
+        let stderr = child.stderr.take();
+        let stdout = child.stdout.take();
+
+        // Collect stderr output while parsing progress
+        let mut stderr_output = String::new();
+        if let Some(stderr_reader) = stderr {
+            let reader = BufReader::new(stderr_reader);
+            for line in reader.lines().map_while(Result::ok) {
+                // Try to parse progress from tqdm output
+                if let Some(progress) = parse_tqdm_progress(&line) {
+                    progress_callback(progress);
+                }
+                stderr_output.push_str(&line);
+                stderr_output.push('\n');
+            }
+        }
+
+        // Collect stdout
+        let mut stdout_output = String::new();
+        if let Some(stdout_reader) = stdout {
+            let reader = BufReader::new(stdout_reader);
+            for line in reader.lines().map_while(Result::ok) {
+                stdout_output.push_str(&line);
+                stdout_output.push('\n');
+            }
+        }
+
+        // Wait for process to complete
+        let status = match child.wait() {
+            Ok(s) => s,
+            Err(e) => return Err(format!("Failed to wait for convert process: {}", e)),
+        };
+
+        if !status.success() {
+            return Err(format!(
+                "convert failed: {}{}{}",
+                status
+                    .code()
+                    .map(|c| format!("exit code {}", c))
+                    .unwrap_or_else(|| "terminated".into()),
+                if !stderr_output.trim().is_empty() {
+                    format!(" stderr: {}", stderr_output.trim())
+                } else {
+                    "".into()
+                },
+                if !stdout_output.trim().is_empty() {
+                    format!(" stdout: {}", stdout_output.trim())
+                } else {
+                    "".into()
+                },
+            ));
+        }
+
+        Ok(())
     })
     .await
-    .map_err(|e| RouterError::Internal(e.to_string()))?
     .map_err(|e| RouterError::Internal(e.to_string()))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(RouterError::Internal(format!(
-            "convert failed: {}{}{}",
-            output
-                .status
-                .code()
-                .map(|c| format!("exit code {}", c))
-                .unwrap_or_else(|| "terminated".into()),
-            if !stderr.trim().is_empty() {
-                format!(" stderr: {}", stderr.trim())
-            } else {
-                "".into()
-            },
-            if !stdout.trim().is_empty() {
-                format!(" stdout: {}", stdout.trim())
-            } else {
-                "".into()
-            },
-        )));
-    }
-
-    Ok(())
+    result.map_err(RouterError::Internal)
 }
 
 /// python依存が無いときは事前にエラーにする
@@ -907,11 +981,96 @@ async fn convert_to_gguf(
     Ok(target.to_string_lossy().to_string())
 }
 
+// ===== Progress Parsing =====
+
+/// Lazy-compiled regex patterns for parsing tqdm/progress output
+static PERCENT_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(\d+(?:\.\d+)?)\s*%").expect("Invalid percent regex"));
+
+static FRACTION_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(\d+)/(\d+)\b").expect("Invalid fraction regex"));
+
+/// Parse progress from tqdm-style output
+/// Supports formats:
+/// - Percentage: "45%", "99.5%"
+/// - Fraction: "45/100", "Writing: 1024/2048"
+fn parse_tqdm_progress(line: &str) -> Option<f32> {
+    // Pattern 1: Percentage (e.g., "45%" or "Writing: 99.5%|████░░░|")
+    if let Some(caps) = PERCENT_REGEX.captures(line) {
+        if let Some(percent_str) = caps.get(1) {
+            if let Ok(percent) = percent_str.as_str().parse::<f32>() {
+                return Some((percent / 100.0).clamp(0.0, 1.0));
+            }
+        }
+    }
+
+    // Pattern 2: Fraction (e.g., "45/100" or "Writing: 1024/2048 MB")
+    if let Some(caps) = FRACTION_REGEX.captures(line) {
+        if let (Some(current_str), Some(total_str)) = (caps.get(1), caps.get(2)) {
+            if let (Ok(current), Ok(total)) = (
+                current_str.as_str().parse::<f64>(),
+                total_str.as_str().parse::<f64>(),
+            ) {
+                if total > 0.0 {
+                    return Some(((current / total) as f32).clamp(0.0, 1.0));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::registry::models::{ModelInfo, ModelSource};
     use std::{env, time::Duration};
+
+    // ===== Progress Parser Tests =====
+
+    #[test]
+    fn parse_tqdm_progress_percentage() {
+        // Simple percentage
+        assert!((parse_tqdm_progress("45%").unwrap() - 0.45).abs() < 0.001);
+        assert!((parse_tqdm_progress("100%").unwrap() - 1.0).abs() < 0.001);
+        assert!((parse_tqdm_progress("0%").unwrap() - 0.0).abs() < 0.001);
+
+        // Percentage with decimals
+        assert!((parse_tqdm_progress("99.5%").unwrap() - 0.995).abs() < 0.001);
+
+        // Percentage in tqdm output format
+        assert!((parse_tqdm_progress("Writing: 45%|████░░░░░░|").unwrap() - 0.45).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_tqdm_progress_fraction() {
+        // Simple fraction
+        assert!((parse_tqdm_progress("45/100").unwrap() - 0.45).abs() < 0.001);
+        assert!((parse_tqdm_progress("100/100").unwrap() - 1.0).abs() < 0.001);
+        assert!((parse_tqdm_progress("0/100").unwrap() - 0.0).abs() < 0.001);
+
+        // Fraction with context
+        assert!((parse_tqdm_progress("Writing: 1024/2048 MB").unwrap() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_tqdm_progress_no_match() {
+        assert!(parse_tqdm_progress("No progress here").is_none());
+        assert!(parse_tqdm_progress("").is_none());
+        assert!(parse_tqdm_progress("Loading model...").is_none());
+    }
+
+    #[test]
+    fn parse_tqdm_progress_edge_cases() {
+        // Values > 100% should clamp to 1.0
+        assert!((parse_tqdm_progress("150%").unwrap() - 1.0).abs() < 0.001);
+
+        // Zero total should return None (avoid division by zero)
+        assert!(parse_tqdm_progress("5/0").is_none());
+    }
+
+    // ===== Existing Tests =====
 
     #[tokio::test]
     async fn resume_pending_converts_enqueues_pending_only() {

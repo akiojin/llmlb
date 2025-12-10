@@ -1340,14 +1340,16 @@ async function initModelsUI(agents) {
       const isRepoOnly = !filename;
       const isGguf = parsed.isGguf;
       try {
+        // 全てのケースでregisterModelを呼び出す（バックエンドがGGUF版を自動解決）
         const res = await registerModel(repo, filename, filename || repo);
-        if (res.status === 'pending_conversion') {
-          showSuccess(`Convert queued: ${res.name}`);
-          await refreshRegisteringTasks();
+
+        // 自動解決された場合は詳細メッセージを表示
+        if (res.auto_resolved && res.resolved_from) {
+          showSuccess(`GGUF版を使用: ${res.resolved_from} → ${res.name}`);
         } else {
           showSuccess(`Registered ${res.name}`);
-          await refreshRegisteredModels();
         }
+        await refreshRegisteredModels();
         await refreshRegisteringTasks();
         if (input) input.value = '';
       } catch (err) {

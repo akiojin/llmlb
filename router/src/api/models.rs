@@ -12,6 +12,7 @@ use futures::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
@@ -324,6 +325,237 @@ static HF_CACHE: Lazy<RwLock<Option<HfCache>>> = Lazy::new(|| RwLock::new(None))
 
 const HF_CACHE_TTL: Duration = Duration::from_secs(300);
 
+// ===== GGUF Discovery Cache =====
+
+/// GGUF版検索結果
+#[derive(Debug, Clone, Serialize)]
+pub struct GgufDiscoveryResult {
+    /// リポジトリ名 (例: ggml-org/gpt-oss-20b-GGUF)
+    pub repo: String,
+    /// プロバイダー名 (例: ggml-org)
+    pub provider: String,
+    /// 信頼プロバイダーかどうか
+    pub trusted: bool,
+    /// 利用可能なGGUFファイル
+    pub files: Vec<GgufFileInfo>,
+}
+
+/// GGUFファイル情報
+#[derive(Debug, Clone, Serialize)]
+pub struct GgufFileInfo {
+    /// ファイル名
+    pub filename: String,
+    /// ファイルサイズ（バイト）
+    pub size_bytes: u64,
+    /// 量子化タイプ（推測）
+    pub quantization: Option<String>,
+}
+
+#[derive(Clone)]
+struct GgufDiscoveryCache {
+    fetched_at: Instant,
+    results: Vec<GgufDiscoveryResult>,
+}
+
+static GGUF_DISCOVERY_CACHE: Lazy<RwLock<HashMap<String, GgufDiscoveryCache>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+const GGUF_DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// 信頼できるGGUFプロバイダーの優先順位
+const TRUSTED_PROVIDERS: &[&str] = &[
+    "ggml-org",
+    "bartowski",
+    "lmstudio-community",
+    "unsloth",
+    "TheBloke",
+];
+
+/// リポジトリ内のGGUFファイルを解決
+async fn resolve_first_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+) -> Result<String, RouterError> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/api/models/{}?expand=siblings", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "指定されたリポジトリを取得できませんでした".into(),
+        )));
+    }
+    #[derive(Deserialize)]
+    struct RepoDetail {
+        siblings: Vec<HfSibling>,
+    }
+    let detail: RepoDetail = resp
+        .json()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    let filename = detail
+        .siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
+        .ok_or_else(|| {
+            RouterError::Common(CommonError::Validation(
+                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
+            ))
+        })?;
+    Ok(filename)
+}
+
+/// モデル名からGGUF版を検索
+pub async fn discover_gguf_versions(
+    http_client: &reqwest::Client,
+    base_model_name: &str,
+) -> Result<Vec<GgufDiscoveryResult>, RouterError> {
+    // キャッシュチェック
+    {
+        let cache = GGUF_DISCOVERY_CACHE.read().unwrap();
+        if let Some(entry) = cache.get(base_model_name) {
+            if entry.fetched_at.elapsed() < GGUF_DISCOVERY_CACHE_TTL {
+                return Ok(entry.results.clone());
+            }
+        }
+    }
+
+    // モデル名を正規化 (org/model -> model)
+    let search_name = base_model_name
+        .split('/')
+        .next_back()
+        .unwrap_or(base_model_name);
+
+    // HuggingFace APIでGGUF版を検索
+    let token = std::env::var("HF_TOKEN").ok();
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+
+    // library=gguf で検索
+    let url = format!(
+        "{}/api/models?library=gguf&search={}&limit=50&expand=siblings",
+        base_url, search_name
+    );
+
+    let mut req = http_client.get(&url);
+    if let Some(t) = &token {
+        req = req.bearer_auth(t);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    if !resp.status().is_success() {
+        // キャッシュがあればそれを返す
+        let cache = GGUF_DISCOVERY_CACHE.read().unwrap();
+        if let Some(entry) = cache.get(base_model_name) {
+            return Ok(entry.results.clone());
+        }
+        return Err(RouterError::Http(format!(
+            "HF API returned {}",
+            resp.status()
+        )));
+    }
+
+    let models: Vec<HfModel> = resp
+        .json()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    let mut results: Vec<GgufDiscoveryResult> = Vec::new();
+
+    for model in models {
+        let provider = model.model_id.split('/').next().unwrap_or("").to_string();
+        let trusted = TRUSTED_PROVIDERS.contains(&provider.as_str());
+
+        // GGUFファイルを抽出
+        let gguf_files: Vec<GgufFileInfo> = model
+            .siblings
+            .iter()
+            .filter(|s| s.rfilename.to_lowercase().ends_with(".gguf"))
+            .map(|s| {
+                let size = s
+                    .lfs
+                    .as_ref()
+                    .and_then(|l| l.size)
+                    .unwrap_or(s.size.unwrap_or(0));
+                let quantization = extract_quantization(&s.rfilename);
+                GgufFileInfo {
+                    filename: s.rfilename.clone(),
+                    size_bytes: size,
+                    quantization,
+                }
+            })
+            .collect();
+
+        if !gguf_files.is_empty() {
+            results.push(GgufDiscoveryResult {
+                repo: model.model_id.clone(),
+                provider,
+                trusted,
+                files: gguf_files,
+            });
+        }
+    }
+
+    // 信頼プロバイダー順にソート
+    results.sort_by(|a, b| {
+        let a_priority = TRUSTED_PROVIDERS
+            .iter()
+            .position(|&p| p == a.provider)
+            .unwrap_or(usize::MAX);
+        let b_priority = TRUSTED_PROVIDERS
+            .iter()
+            .position(|&p| p == b.provider)
+            .unwrap_or(usize::MAX);
+        a_priority.cmp(&b_priority)
+    });
+
+    // キャッシュに保存
+    {
+        let mut cache = GGUF_DISCOVERY_CACHE.write().unwrap();
+        cache.insert(
+            base_model_name.to_string(),
+            GgufDiscoveryCache {
+                fetched_at: Instant::now(),
+                results: results.clone(),
+            },
+        );
+    }
+
+    Ok(results)
+}
+
+/// ファイル名から量子化タイプを推測
+fn extract_quantization(filename: &str) -> Option<String> {
+    let patterns = [
+        "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "Q4_K_M", "Q4_K_S", "Q4_0", "Q3_K_M", "Q3_K_S",
+        "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M", "F16", "F32", "BF16",
+    ];
+    let upper = filename.to_uppercase();
+    for pat in patterns {
+        if upper.contains(pat) {
+            return Some(pat.to_string());
+        }
+    }
+    None
+}
+
 /// テストやリカバリ用途でHFカタログキャッシュを強制クリアするユーティリティ。
 pub fn clear_hf_cache() {
     *HF_CACHE.write().unwrap() = None;
@@ -475,71 +707,6 @@ async fn fetch_hf_models(
     }
 
     Ok((out, false))
-}
-
-async fn select_file_in_repo(
-    http_client: &reqwest::Client,
-    repo: &str,
-) -> Result<(String, bool), RouterError> {
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let url = format!("{}/api/models/{}?expand=siblings", base_url, repo);
-
-    let mut req = http_client.get(&url);
-    if let Ok(token) = std::env::var("HF_TOKEN") {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-    if !resp.status().is_success() {
-        return Err(RouterError::Common(CommonError::Validation(
-            "指定されたリポジトリを取得できませんでした".into(),
-        )));
-    }
-    #[derive(Deserialize)]
-    struct RepoDetail {
-        siblings: Vec<HfSibling>,
-    }
-    let detail: RepoDetail = resp
-        .json()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-    // GGUF優先
-    if let Some(fname) = detail
-        .siblings
-        .iter()
-        .map(|s| s.rfilename.clone())
-        .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
-    {
-        return Ok((fname, true));
-    }
-
-    // それ以外で変換可能な拡張子を1つ選ぶ
-    const CONVERTIBLE_EXTS: &[&str] = &[".safetensors", ".bin", ".pth", ".pt"];
-    if let Some(fname) = detail
-        .siblings
-        .iter()
-        .map(|s| s.rfilename.clone())
-        .find(|f| {
-            let lower = f.to_ascii_lowercase();
-            CONVERTIBLE_EXTS.iter().any(|ext| lower.ends_with(ext))
-        })
-    {
-        return Ok((fname, false));
-    }
-
-    // 何でも良い: 最初のファイルを選択し、後段で変換を試みる
-    if let Some(fname) = detail.siblings.first().map(|s| s.rfilename.clone()) {
-        return Ok((fname, false));
-    }
-
-    Err(RouterError::Common(CommonError::Validation(
-        "リポジトリ内にファイルが見つかりませんでした".into(),
-    )))
 }
 
 /// モデル配布リクエスト
@@ -757,13 +924,127 @@ pub async fn register_model(
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let repo = req.repo.clone();
-    let (filename, is_gguf) = match req.filename.clone() {
-        Some(f) => {
-            let is = f.to_ascii_lowercase().ends_with(".gguf");
-            (f, is)
+    let original_input = repo.clone();
+
+    // ファイル名を解決
+    let (filename, auto_resolved, resolved_from) = match req.filename.clone() {
+        Some(f) if f.to_lowercase().ends_with(".gguf") => {
+            // 既にGGUF形式 - そのまま使用
+            (f, false, None)
         }
-        None => select_file_in_repo(&state.http_client, &repo).await?,
+        Some(f) => {
+            // 非GGUF形式 - GGUF版を検索
+            tracing::info!(repo = %repo, filename = %f, "Non-GGUF file specified, searching for GGUF alternatives");
+            match discover_gguf_versions(&state.http_client, &repo).await {
+                Ok(alternatives) if !alternatives.is_empty() => {
+                    // 最初の（最優先）プロバイダーのQ4_K_Mを優先、なければ最初のファイル
+                    let best = &alternatives[0];
+                    let gguf_file = best
+                        .files
+                        .iter()
+                        .find(|f| f.quantization.as_deref() == Some("Q4_K_M"))
+                        .or_else(|| best.files.first())
+                        .ok_or_else(|| RouterError::Internal("No GGUF files found".into()))?;
+
+                    tracing::info!(
+                        original_repo = %repo,
+                        resolved_repo = %best.repo,
+                        resolved_file = %gguf_file.filename,
+                        "Auto-resolved to GGUF version"
+                    );
+
+                    // 実際のrepoとfilenameを置き換える
+                    return register_model_internal(
+                        &state,
+                        &best.repo,
+                        &gguf_file.filename,
+                        req.display_name.clone(),
+                        req.chat_template.clone(),
+                        true,
+                        Some(original_input),
+                        Some(best.repo.clone()),
+                    )
+                    .await;
+                }
+                Ok(_) => {
+                    // GGUF版が見つからない - 変換を試みる
+                    tracing::info!(repo = %repo, "No GGUF alternatives found, will attempt conversion");
+                    (f, false, None)
+                }
+                Err(e) => {
+                    tracing::warn!(repo = %repo, error = ?e, "Failed to search for GGUF alternatives");
+                    (f, false, None)
+                }
+            }
+        }
+        None => {
+            // ファイル名指定なし
+            // まずリポジトリ内のGGUFを探す
+            match resolve_first_gguf_in_repo(&state.http_client, &repo).await {
+                Ok(f) => (f, false, None),
+                Err(_) => {
+                    // リポジトリ内にGGUFがない - 他のリポジトリでGGUF版を検索
+                    tracing::info!(repo = %repo, "No GGUF in repo, searching for GGUF alternatives");
+                    match discover_gguf_versions(&state.http_client, &repo).await {
+                        Ok(alternatives) if !alternatives.is_empty() => {
+                            let best = &alternatives[0];
+                            let gguf_file = best
+                                .files
+                                .iter()
+                                .find(|f| f.quantization.as_deref() == Some("Q4_K_M"))
+                                .or_else(|| best.files.first())
+                                .ok_or_else(|| {
+                                    RouterError::Internal("No GGUF files found".into())
+                                })?;
+
+                            return register_model_internal(
+                                &state,
+                                &best.repo,
+                                &gguf_file.filename,
+                                req.display_name.clone(),
+                                req.chat_template.clone(),
+                                true,
+                                Some(original_input),
+                                Some(best.repo.clone()),
+                            )
+                            .await;
+                        }
+                        _ => {
+                            return Err(RouterError::Common(CommonError::Validation(
+                                "GGUFファイルが見つかりません。GGUF版のリポジトリを指定してください。".into()
+                            )).into());
+                        }
+                    }
+                }
+            }
+        }
     };
+
+    register_model_internal(
+        &state,
+        &repo,
+        &filename,
+        req.display_name.clone(),
+        req.chat_template.clone(),
+        auto_resolved,
+        None,
+        resolved_from,
+    )
+    .await
+}
+
+/// モデル登録の内部実装
+#[allow(clippy::too_many_arguments)]
+async fn register_model_internal(
+    state: &AppState,
+    repo: &str,
+    filename: &str,
+    display_name: Option<String>,
+    chat_template: Option<String>,
+    auto_resolved: bool,
+    original_input: Option<String>,
+    resolved_from: Option<String>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let name = format!("hf/{}/{}", repo, filename);
 
     if find_model_by_name(&name).is_some() {
@@ -788,8 +1069,8 @@ pub async fn register_model(
         .map_err(|e| RouterError::Http(e.to_string()))?;
     if head_res.status() == reqwest::StatusCode::NOT_FOUND {
         tracing::warn!(
-            repo = %req.repo,
-            filename = %req.filename.as_deref().unwrap_or("<auto>"),
+            repo = %repo,
+            filename = %filename,
             status = ?head_res.status(),
             "hf_model_register_not_found"
         );
@@ -800,8 +1081,8 @@ pub async fn register_model(
     }
     if !head_res.status().is_success() {
         tracing::error!(
-            repo = %req.repo,
-            filename = %req.filename.as_deref().unwrap_or("<auto>"),
+            repo = %repo,
+            filename = %filename,
             status = ?head_res.status(),
             "hf_model_register_head_failed"
         );
@@ -824,103 +1105,66 @@ pub async fn register_model(
 
     let warnings = compute_gpu_warnings(&state.registry, required_memory).await;
 
-    if is_gguf {
-        let model = ModelInfo {
-            name: name.clone(),
-            size: content_length,
-            description: req.display_name.unwrap_or_else(|| repo.clone()),
-            required_memory,
-            tags: vec!["gguf".into()],
-            source: ModelSource::HfGguf,
-            download_url: Some(download_url),
-            path: None,
-            chat_template: req.chat_template.clone(),
-            repo: Some(repo.clone()),
-            filename: Some(filename.clone()),
-            last_modified: None,
-            status: Some("registered".into()),
-        };
+    let model = ModelInfo {
+        name: name.clone(),
+        size: content_length,
+        description: display_name.unwrap_or_else(|| repo.to_string()),
+        required_memory,
+        tags: vec!["gguf".into()],
+        source: ModelSource::HfGguf,
+        download_url: Some(download_url),
+        path: None,
+        chat_template: chat_template.clone(),
+        repo: Some(repo.to_string()),
+        filename: Some(filename.to_string()),
+        last_modified: None,
+        status: Some("registered".into()),
+    };
 
-        upsert_registered_model(model);
-        persist_registered_models().await;
+    upsert_registered_model(model);
+    persist_registered_models().await;
 
-        // 登録直後にコンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
-        let convert_manager = state.convert_manager.clone();
-        let repo_for_job = repo.clone();
-        let filename_for_job = filename.clone();
-        let chat_tpl_for_job = req.chat_template.clone();
-        tokio::spawn(async move {
-            convert_manager
-                .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
-                .await;
-        });
+    // 登録直後にコンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
+    let convert_manager = state.convert_manager.clone();
+    let repo_for_job = repo.to_string();
+    let filename_for_job = filename.to_string();
+    let chat_tpl_for_job = chat_template.clone();
+    tokio::spawn(async move {
+        convert_manager
+            .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
+            .await;
+    });
 
-        tracing::info!(
-            repo = %repo,
-            filename = %filename,
-            size_bytes = content_length,
-            required_memory_bytes = required_memory,
-            warnings = warnings.len(),
-            "hf_model_registered"
-        );
+    tracing::info!(
+        repo = %repo,
+        filename = %filename,
+        size_bytes = content_length,
+        required_memory_bytes = required_memory,
+        warnings = warnings.len(),
+        auto_resolved = auto_resolved,
+        "hf_model_registered"
+    );
 
-        Ok((
-            StatusCode::CREATED,
-            Json(serde_json::json!({
-                "name": name,
-                "status": "registered",
-                "size_bytes": content_length,
-                "required_memory_bytes": required_memory,
-                "warnings": warnings,
-            })),
-        ))
-    } else {
-        // 非GGUFはコンバートに投入し、登録情報はpendingとして保持
-        let model = ModelInfo {
-            name: name.clone(),
-            size: content_length,
-            description: req.display_name.unwrap_or_else(|| repo.clone()),
-            required_memory,
-            tags: vec!["pending_convert".into()],
-            source: ModelSource::HfPendingConversion,
-            download_url: Some(download_url.clone()),
-            path: None,
-            chat_template: req.chat_template.clone(),
-            repo: Some(repo.clone()),
-            filename: Some(filename.clone()),
-            last_modified: None,
-            status: Some("pending_conversion".into()),
-        };
+    let mut response = serde_json::json!({
+        "name": name,
+        "status": "registered",
+        "size_bytes": content_length,
+        "required_memory_bytes": required_memory,
+        "warnings": warnings,
+    });
 
-        upsert_registered_model(model);
-        persist_registered_models().await;
-
-        let convert_manager = state.convert_manager.clone();
-        let repo_for_job = repo.clone();
-        let filename_for_job = filename.clone();
-        let chat_tpl_for_job = req.chat_template.clone();
-        tokio::spawn(async move {
-            convert_manager
-                .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
-                .await;
-        });
-
-        tracing::info!(
-            repo = %repo,
-            filename = %filename,
-            status = "pending_conversion",
-            "hf_model_registered_pending_convert"
-        );
-
-        Ok((
-            StatusCode::CREATED,
-            Json(serde_json::json!({
-                "name": name,
-                "status": "pending_conversion",
-                "selected_filename": filename,
-            })),
-        ))
+    // 自動解決情報を追加
+    if auto_resolved {
+        if let Some(orig) = &original_input {
+            response["auto_resolved"] = serde_json::json!(true);
+            response["original_input"] = serde_json::json!(orig);
+        }
+        if let Some(resolved) = &resolved_from {
+            response["resolved_from"] = serde_json::json!(resolved);
+        }
     }
+
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// POST /api/models/pull - HFからダウンロードしローカルキャッシュに保存して登録
@@ -1289,6 +1533,38 @@ pub async fn pull_model_to_node(
     });
 
     Ok((StatusCode::ACCEPTED, Json(PullModelResponse { task_id })))
+}
+
+/// GGUF版検索リクエスト
+#[derive(Debug, Deserialize)]
+pub struct DiscoverGgufRequest {
+    /// 検索対象のモデル名（例: openai/gpt-oss-20b または gpt-oss-20b）
+    pub model: String,
+}
+
+/// GGUF版検索レスポンス
+#[derive(Debug, Serialize)]
+pub struct DiscoverGgufResponse {
+    /// 検索対象のモデル名
+    pub base_model: String,
+    /// 見つかったGGUF版の一覧（信頼プロバイダー順）
+    pub gguf_alternatives: Vec<GgufDiscoveryResult>,
+    /// キャッシュから取得したかどうか
+    pub cached: bool,
+}
+
+/// POST /api/models/discover-gguf - GGUF版を検索
+pub async fn discover_gguf_endpoint(
+    State(state): State<AppState>,
+    Json(req): Json<DiscoverGgufRequest>,
+) -> Result<Json<DiscoverGgufResponse>, AppError> {
+    let results = discover_gguf_versions(&state.http_client, &req.model).await?;
+
+    Ok(Json(DiscoverGgufResponse {
+        base_model: req.model,
+        gguf_alternatives: results,
+        cached: false, // TODO: キャッシュヒット判定
+    }))
 }
 
 /// POST /api/models/convert - HFモデルをダウンロード＆（必要なら）変換するジョブを作成

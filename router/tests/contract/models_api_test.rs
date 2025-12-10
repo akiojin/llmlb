@@ -10,8 +10,7 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
-use std::io::Write;
-use tempfile::NamedTempFile;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -662,7 +661,7 @@ async fn test_register_model_contract() {
         .unwrap();
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 
-    // repoのみ指定でGGUFなし→最初の変換可能ファイルを選んでpending_conversionになる
+    // repoのみ指定でGGUFなし→GGUFファイルが見つからないためエラー（新API仕様）
     Mock::given(method("GET"))
         .and(path("/api/models/non-gguf-repo"))
         .and(query_param("expand", "siblings"))
@@ -671,12 +670,6 @@ async fn test_register_model_contract() {
                 {"rfilename": "model.safetensors"}
             ]
         })))
-        .mount(&mock)
-        .await;
-
-    Mock::given(method("HEAD"))
-        .and(path("/non-gguf-repo/resolve/main/model.safetensors"))
-        .respond_with(ResponseTemplate::new(200).append_header("content-length", "100"))
         .mount(&mock)
         .await;
 
@@ -694,12 +687,10 @@ async fn test_register_model_contract() {
         )
         .await
         .unwrap();
-    assert_eq!(repo_only.status(), StatusCode::CREATED);
-    let repo_body = to_bytes(repo_only.into_body(), usize::MAX).await.unwrap();
-    let repo_json: serde_json::Value = serde_json::from_slice(&repo_body).unwrap();
-    assert_eq!(repo_json["status"], "pending_conversion");
+    // 新APIではGGUFが見つからない場合は400を返す
+    assert_eq!(repo_only.status(), StatusCode::BAD_REQUEST);
 
-    // repoのみ、変換可能拡張子もない → 最初のファイルを拾ってpending_conversion
+    // repoのみ、GGUFなし → 400エラーを返す（新API仕様）
     Mock::given(method("GET"))
         .and(path("/api/models/unknown-repo"))
         .and(query_param("expand", "siblings"))
@@ -709,12 +700,6 @@ async fn test_register_model_contract() {
                 {"rfilename": "other.txt"}
             ]
         })))
-        .mount(&mock)
-        .await;
-
-    Mock::given(method("HEAD"))
-        .and(path("/unknown-repo/resolve/main/config.json"))
-        .respond_with(ResponseTemplate::new(200).append_header("content-length", "50"))
         .mount(&mock)
         .await;
 
@@ -732,12 +717,8 @@ async fn test_register_model_contract() {
         )
         .await
         .unwrap();
-    assert_eq!(repo_only_fallback.status(), StatusCode::CREATED);
-    let repo_body_fb = to_bytes(repo_only_fallback.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let repo_json_fb: serde_json::Value = serde_json::from_slice(&repo_body_fb).unwrap();
-    assert_eq!(repo_json_fb["status"], "pending_conversion");
+    // 新APIではGGUFが見つからない場合は400を返す
+    assert_eq!(repo_only_fallback.status(), StatusCode::BAD_REQUEST);
 
     // DELETE removes registered model
     let delete_res = app
@@ -776,7 +757,7 @@ async fn test_register_model_contract() {
         "deleted model must disappear from /v1/models"
     );
 
-    // 非GGUFでも変換完了後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
+    // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
     let app_for_convert = build_app().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
     Mock::given(method("GET"))
@@ -784,14 +765,20 @@ async fn test_register_model_contract() {
         .and(query_param("expand", "siblings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "siblings": [
-                {"rfilename": "model.bin"}
+                {"rfilename": "model.Q4_K_M.gguf"}
             ]
         })))
         .mount(&mock)
         .await;
     Mock::given(method("HEAD"))
-        .and(path("/convertible-repo/resolve/main/model.bin"))
+        .and(path("/convertible-repo/resolve/main/model.Q4_K_M.gguf"))
         .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+        .mount(&mock)
+        .await;
+    // GETリクエスト（ダウンロード）用のモック - ダミーのGGUFファイルを返す
+    Mock::given(method("GET"))
+        .and(path("/convertible-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content"))
         .mount(&mock)
         .await;
 
@@ -831,7 +818,7 @@ async fn test_register_model_contract() {
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .any(|m| m["id"] == "hf/convertible-repo/model.bin")
+                    .any(|m| m["id"] == "hf/convertible-repo/model.Q4_K_M.gguf")
             })
             .unwrap_or(false)
         {
@@ -849,39 +836,45 @@ async fn test_register_model_contract() {
 async fn test_convert_restore_requeues() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
-    // 1回目は意図的に失敗させる（exit 1 の簡易スクリプト）
-    let mut fail_script = NamedTempFile::new().unwrap();
-    writeln!(fail_script, "import sys; sys.exit(1)").unwrap();
-    std::env::set_var("LLM_CONVERT_FAKE", "0");
-    std::env::set_var("LLM_CONVERT_SCRIPT", fail_script.path());
 
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 
-    // siblings returns non-gguf file
+    // siblings returns GGUF file for registration to succeed
     Mock::given(method("GET"))
         .and(path("/api/models/restore-repo"))
         .and(query_param("expand", "siblings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "siblings": [
-                {"rfilename": "model.bin"}
+                {"rfilename": "model.Q4_K_M.gguf"}
             ]
         })))
         .mount(&mock)
         .await;
     Mock::given(method("HEAD"))
-        .and(path("/restore-repo/resolve/main/model.bin"))
+        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
         .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
+        .mount(&mock)
+        .await;
+    // GETダウンロードを初回は失敗させる（500エラー）→リトライで成功させる
+    let download_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let counter_clone = download_counter.clone();
+    Mock::given(method("GET"))
+        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(move |_req: &wiremock::Request| {
+            let count = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                // 1回目: 失敗
+                ResponseTemplate::new(500)
+            } else {
+                // 2回目以降: 成功
+                ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content")
+            }
+        })
         .mount(&mock)
         .await;
 
     let app = build_app().await;
-
-    // 事前に成功用スクリプトを控えておく
-    let good_script = std::env::var("LLM_CONVERT_SCRIPT").unwrap();
-
-    // convert を失敗させるために存在しないスクリプトを指定
-    std::env::set_var("LLM_CONVERT_SCRIPT", "/nonexistent/convert_hf_to_gguf.py");
 
     // register -> convert fails
     let reg = app
@@ -938,23 +931,7 @@ async fn test_convert_restore_requeues() {
         last_tasks
     );
 
-    // 2回目はテスト用モックスクリプトで成功させる（依存なしでダミーgguf生成）
-    let mut mock_script = NamedTempFile::new().unwrap();
-    writeln!(
-        mock_script,
-        r#"import sys, pathlib
-outfile = sys.argv[sys.argv.index("--outfile")+1]
-pathlib.Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-with open(outfile, "wb") as f:
-    f.write(b"gguf test")
-"#
-    )
-    .unwrap();
-    let mock_path = mock_script.into_temp_path();
-    std::env::set_var("LLM_CONVERT_SCRIPT", &mock_path);
-
-    std::env::set_var("LLM_CONVERT_SCRIPT", good_script);
-
+    // 2回目以降はモックが成功を返すので、リトライでダウンロードが成功するはず
     let retry = app
         .clone()
         .oneshot(
@@ -965,7 +942,7 @@ with open(outfile, "wb") as f:
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "repo": "restore-repo",
-                        "filename": "model.bin"
+                        "filename": "model.Q4_K_M.gguf"
                     }))
                     .unwrap(),
                 ))
@@ -1032,7 +1009,10 @@ with open(outfile, "wb") as f:
     let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let present = val["data"]
         .as_array()
-        .map(|arr| arr.iter().any(|m| m["id"] == "hf/restore-repo/model.bin"))
+        .map(|arr| {
+            arr.iter()
+                .any(|m| m["id"] == "hf/restore-repo/model.Q4_K_M.gguf")
+        })
         .unwrap_or(false);
     assert!(present, "/v1/models must include restored model");
 }

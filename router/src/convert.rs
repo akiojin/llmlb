@@ -4,11 +4,12 @@
 //! Jobs are processed asynchronously in the background and progress can be queried via API.
 
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task;
@@ -16,6 +17,197 @@ use uuid::Uuid;
 
 use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
 use llm_router_common::error::RouterError;
+
+// ===== venv Auto-Setup =====
+
+/// venvのセットアップ状態
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VenvStatus {
+    /// 未チェック
+    Unknown,
+    /// セットアップ中
+    Setting,
+    /// 準備完了
+    Ready,
+    /// セットアップ失敗
+    Failed(String),
+}
+
+static VENV_STATUS: Lazy<RwLock<VenvStatus>> = Lazy::new(|| RwLock::new(VenvStatus::Unknown));
+
+/// venvディレクトリのパスを取得
+pub fn get_venv_dir() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(|h| PathBuf::from(h).join(".llm-router").join("venv"))
+}
+
+/// venv内のPython実行ファイルのパスを取得
+pub fn get_venv_python() -> Option<PathBuf> {
+    // 環境変数でオーバーライド可能
+    if let Ok(custom) = std::env::var("LLM_CONVERT_PYTHON") {
+        return Some(PathBuf::from(custom));
+    }
+
+    get_venv_dir().map(|venv| {
+        if cfg!(windows) {
+            venv.join("Scripts").join("python.exe")
+        } else {
+            venv.join("bin").join("python3")
+        }
+    })
+}
+
+/// 変換スクリプトのパスを取得
+#[allow(dead_code)]
+fn find_convert_script() -> Option<PathBuf> {
+    // 環境変数でオーバーライド
+    if let Ok(custom) = std::env::var("LLM_CONVERT_SCRIPT") {
+        return Some(PathBuf::from(custom));
+    }
+
+    // node/third_party/llama.cpp/convert_hf_to_gguf.py を探す
+    let candidates = [
+        PathBuf::from("node/third_party/llama.cpp/convert_hf_to_gguf.py"),
+        PathBuf::from("third_party/llama.cpp/convert_hf_to_gguf.py"),
+        PathBuf::from("../node/third_party/llama.cpp/convert_hf_to_gguf.py"),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // 実行ファイルの相対パスから探す
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let relative = exe_dir.join("../node/third_party/llama.cpp/convert_hf_to_gguf.py");
+            if relative.exists() {
+                return Some(relative);
+            }
+        }
+    }
+
+    None
+}
+
+/// requirementsファイルのパスを取得
+fn find_requirements_file() -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(
+            "node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt",
+        ),
+        PathBuf::from("third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt"),
+        PathBuf::from(
+            "../node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt",
+        ),
+    ];
+
+    candidates.into_iter().find(|candidate| candidate.exists())
+}
+
+/// venv環境をセットアップ（同期実行）
+pub fn setup_venv() -> Result<(), RouterError> {
+    // スキップフラグチェック
+    if std::env::var("LLM_CONVERT_SKIP_VENV").is_ok() {
+        tracing::info!("Skipping venv setup (LLM_CONVERT_SKIP_VENV set)");
+        *VENV_STATUS.write().unwrap() = VenvStatus::Ready;
+        return Ok(());
+    }
+
+    // カスタムPythonが指定されている場合はスキップ
+    if std::env::var("LLM_CONVERT_PYTHON").is_ok() {
+        tracing::info!("Using custom Python (LLM_CONVERT_PYTHON set)");
+        *VENV_STATUS.write().unwrap() = VenvStatus::Ready;
+        return Ok(());
+    }
+
+    let venv_dir =
+        get_venv_dir().ok_or_else(|| RouterError::Internal("HOME directory not set".into()))?;
+
+    let venv_python = get_venv_python()
+        .ok_or_else(|| RouterError::Internal("Cannot determine venv python path".into()))?;
+
+    // 既にvenvが存在し、pythonが実行可能なら完了
+    if venv_python.exists() {
+        let check = Command::new(&venv_python).arg("--version").output();
+        if let Ok(output) = check {
+            if output.status.success() {
+                tracing::info!("venv already exists at {:?}", venv_dir);
+                *VENV_STATUS.write().unwrap() = VenvStatus::Ready;
+                return Ok(());
+            }
+        }
+    }
+
+    {
+        let mut status = VENV_STATUS.write().unwrap();
+        *status = VenvStatus::Setting;
+    }
+
+    tracing::info!("Creating venv at {:?}", venv_dir);
+
+    // venvディレクトリを作成
+    if let Some(parent) = venv_dir.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| RouterError::Internal(format!("Failed to create dir: {}", e)))?;
+    }
+
+    // python3 -m venv を実行
+    let venv_output = Command::new("python3")
+        .args(["-m", "venv", &venv_dir.to_string_lossy()])
+        .output()
+        .map_err(|e| RouterError::Internal(format!("Failed to create venv: {}", e)))?;
+
+    if !venv_output.status.success() {
+        let err = String::from_utf8_lossy(&venv_output.stderr);
+        let msg = format!("venv creation failed: {}", err);
+        *VENV_STATUS.write().unwrap() = VenvStatus::Failed(msg.clone());
+        return Err(RouterError::Internal(msg));
+    }
+
+    // requirements.txtがあればインストール
+    if let Some(requirements) = find_requirements_file() {
+        tracing::info!("Installing dependencies from {:?}", requirements);
+
+        let pip_output = Command::new(&venv_python)
+            .args([
+                "-m",
+                "pip",
+                "install",
+                "-q",
+                "-r",
+                &requirements.to_string_lossy(),
+            ])
+            .output()
+            .map_err(|e| RouterError::Internal(format!("Failed to run pip: {}", e)))?;
+
+        if !pip_output.status.success() {
+            let err = String::from_utf8_lossy(&pip_output.stderr);
+            let msg = format!("pip install failed: {}", err);
+            *VENV_STATUS.write().unwrap() = VenvStatus::Failed(msg.clone());
+            return Err(RouterError::Internal(msg));
+        }
+    } else {
+        tracing::warn!("requirements file not found, skipping pip install");
+    }
+
+    tracing::info!("venv setup completed at {:?}", venv_dir);
+    *VENV_STATUS.write().unwrap() = VenvStatus::Ready;
+    Ok(())
+}
+
+/// venvが準備完了かどうか
+pub fn is_venv_ready() -> bool {
+    matches!(*VENV_STATUS.read().unwrap(), VenvStatus::Ready)
+}
+
+/// venvステータスを取得
+pub fn get_venv_status() -> VenvStatus {
+    VENV_STATUS.read().unwrap().clone()
+}
 
 /// ジョブ状態
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -220,8 +412,13 @@ async fn download_and_maybe_convert(
 ) -> Result<String, RouterError> {
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
     let model_name = format!("hf/{}/{}", repo, filename);
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
     let url = format!(
-        "https://huggingface.co/{}/resolve/{}/{}",
+        "{}/{}/resolve/{}/{}",
+        base_url,
         repo,
         revision.unwrap_or("main"),
         filename
@@ -637,4 +834,122 @@ mod tests {
         let res = verify_convert_ready();
         assert!(res.is_err());
     }
+}
+
+/// 非GGUF形式のHFモデルをGGUFに変換
+#[allow(dead_code)]
+async fn convert_to_gguf(
+    repo: &str,
+    revision: Option<&str>,
+    quantization: Option<&str>,
+) -> Result<String, RouterError> {
+    // venvが準備完了か確認
+    if !is_venv_ready() {
+        return Err(RouterError::Internal(
+            "venv is not ready. Run setup_venv() first or set LLM_CONVERT_SKIP_VENV=1".into(),
+        ));
+    }
+
+    // Python実行ファイルを取得
+    let python = get_venv_python()
+        .ok_or_else(|| RouterError::Internal("Cannot find Python executable".into()))?;
+
+    // 変換スクリプトを取得
+    let script = find_convert_script().ok_or_else(|| {
+        RouterError::Internal(
+            "convert_hf_to_gguf.py not found. Ensure llama.cpp is available at node/third_party/llama.cpp/".into(),
+        )
+    })?;
+
+    // 出力ディレクトリを準備
+    let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
+    let model_name_safe = repo.replace('/', "_");
+    let quant = quantization.unwrap_or("Q4_K_M");
+    let output_filename = format!("{}-{}.gguf", model_name_safe, quant);
+    let dir = base.join(model_name_to_dir(&format!(
+        "hf/{}/{}",
+        repo, output_filename
+    )));
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    let target = dir.join("model.gguf");
+
+    // 既に変換済みならスキップ
+    if target.exists() {
+        return Ok(target.to_string_lossy().to_string());
+    }
+
+    // HFリポジトリ指定
+    let repo_spec = if let Some(rev) = revision {
+        format!("{}@{}", repo, rev)
+    } else {
+        repo.to_string()
+    };
+
+    tracing::info!("Starting conversion: {} -> {:?}", repo_spec, target);
+
+    // 変換コマンドを実行（spawn_blockingで非同期に）
+    let python_clone = python.clone();
+    let script_clone = script.clone();
+    let target_clone = target.clone();
+    let repo_spec_clone = repo_spec.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let mut cmd = Command::new(&python_clone);
+        cmd.arg(&script_clone)
+            .arg("--remote")
+            .arg(&repo_spec_clone)
+            .arg("--outfile")
+            .arg(&target_clone);
+
+        // HF_TOKENがあれば環境変数として渡す
+        if let Ok(token) = std::env::var("HF_TOKEN") {
+            cmd.env("HF_TOKEN", token);
+        }
+
+        tracing::debug!("Running: {:?}", cmd);
+        cmd.output()
+    })
+    .await
+    .map_err(|e| RouterError::Internal(format!("Task join error: {}", e)))?
+    .map_err(|e| RouterError::Internal(format!("Failed to run convert script: {}", e)))?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        return Err(RouterError::Internal(format!(
+            "Conversion failed:\nstdout: {}\nstderr: {}",
+            stdout, stderr
+        )));
+    }
+
+    // 変換結果を確認
+    if !target.exists() {
+        return Err(RouterError::Internal(
+            "Conversion completed but output file not found".into(),
+        ));
+    }
+
+    tracing::info!("Conversion completed: {:?}", target);
+
+    // モデルを登録
+    let size = tokio::fs::metadata(&target)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let mut model = ModelInfo::new(
+        format!("hf/{}/{}", repo, output_filename),
+        size,
+        repo.to_string(),
+        0,
+        vec!["gguf".into(), "converted".into()],
+    );
+    model.path = Some(target.to_string_lossy().to_string());
+    model.source = ModelSource::HfGguf;
+    let _ = crate::api::models::add_registered_model(model.clone());
+    crate::api::models::persist_registered_models().await;
+
+    Ok(target.to_string_lossy().to_string())
 }

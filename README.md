@@ -370,6 +370,14 @@ For a deeper walkthrough, including API references and customisation tips, see [
 
 - **Coordinator**: Linux / Windows 10+ / macOS 12+, Rust 1.70+
 - **Agent**: Windows 10+ / macOS 12+ (CLI-based application), Rust 1.70+
+- **HF非GGUFを登録する場合のPython依存**: `python3`, `transformers`, `torch`, `sentencepiece` など。以下で一括インストールできます:
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+  ```
+  - Pythonパスを変えたい場合: `LLM_CONVERT_PYTHON=/path/to/python`
+  - 開発/CIで実変換をスキップしたい場合のみ: `LLM_CONVERT_FAKE=1`（本番非推奨）
 - **GPU**: NVIDIA / AMD / Apple Silicon GPU required for agent registration
   - Automatically detected on startup
   - Docker for Mac: Apple Silicon detection supported

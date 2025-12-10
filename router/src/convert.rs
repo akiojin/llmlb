@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
@@ -281,6 +282,8 @@ async fn convert_non_gguf(
         return Ok(());
     }
 
+    ensure_python_deps().await?;
+
     let script = locate_convert_script()
         .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
 
@@ -339,6 +342,34 @@ async fn convert_non_gguf(
     }
 
     Ok(())
+}
+
+/// python依存が無いときは事前にエラーにする
+async fn ensure_python_deps() -> Result<(), RouterError> {
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let script = "import importlib,sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+if missing:\n print(','.join(missing)); sys.exit(1)\n";
+
+    let output =
+        task::spawn_blocking(move || Command::new(&python_bin).arg("-c").arg(script).output())
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let deps = if missing.is_empty() {
+        "transformers, torch, sentencepiece".to_string()
+    } else {
+        missing
+    };
+    Err(RouterError::Internal(format!(
+        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt",
+        deps
+    )))
 }
 
 fn should_use_fake_convert() -> bool {

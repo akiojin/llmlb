@@ -645,9 +645,6 @@ function renderRegisteredModelCard(model) {
         ${progressBlock}
       </div>
       <div class="model-card__actions">
-        <button class="btn btn-small" data-action="download" data-model="${escapeHtml(
-          model.name
-        )}" ${disabled ? 'disabled' : ''}>Download (all)</button>
         <button class="btn btn-small btn-danger" data-action="delete" data-model="${escapeHtml(
           model.name
         )}">Delete</button>
@@ -760,13 +757,6 @@ function renderRegisteredModels(models) {
     return;
   }
   container.innerHTML = models.map((m) => renderRegisteredModelCard(m)).join('');
-  container.querySelectorAll('button[data-action="download"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const modelName = btn.dataset.model;
-      await distributeModel(modelName, 'all');
-      showSuccess('Download started for all nodes');
-    });
-  });
   container.querySelectorAll('button[data-action="delete"]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const modelName = btn.dataset.model;

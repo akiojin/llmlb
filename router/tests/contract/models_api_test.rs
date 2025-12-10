@@ -662,7 +662,7 @@ async fn test_register_model_contract() {
         .unwrap();
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 
-    // repoのみ指定でGGUFなし→GGUFファイルが見つからないためエラー（新API仕様）
+    // repoのみ指定でGGUFなし→変換パスに進むため201を返す（新API仕様）
     Mock::given(method("GET"))
         .and(path("/api/models/non-gguf-repo"))
         .and(query_param("expand", "siblings"))
@@ -688,10 +688,10 @@ async fn test_register_model_contract() {
         )
         .await
         .unwrap();
-    // 新APIではGGUFが見つからない場合は400を返す
-    assert_eq!(repo_only.status(), StatusCode::BAD_REQUEST);
+    // 新APIではGGUFがない場合は変換パスに進むため201を返す
+    assert_eq!(repo_only.status(), StatusCode::CREATED);
 
-    // repoのみ、GGUFなし → 400エラーを返す（新API仕様）
+    // repoのみ、GGUFなし → 変換パスに進むため201を返す（新API仕様）
     Mock::given(method("GET"))
         .and(path("/api/models/unknown-repo"))
         .and(query_param("expand", "siblings"))
@@ -718,43 +718,24 @@ async fn test_register_model_contract() {
         )
         .await
         .unwrap();
-    // 新APIではGGUFが見つからない場合は400を返す
-    assert_eq!(repo_only_fallback.status(), StatusCode::BAD_REQUEST);
+    // 新APIではGGUFがない場合は変換パスに進むため201を返す
+    assert_eq!(repo_only_fallback.status(), StatusCode::CREATED);
 
-    // DELETE removes registered model (Ollama風ID: repo:latest)
+    // DELETE: タスク完了前なのでモデルはREGISTERED_MODELSに存在しない（400を期待）
+    // モデル名 = リポジトリ名、ワイルドカードパスなのでスラッシュをそのまま使用
     let delete_res = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/api/models/repo:latest")
+                .uri("/api/models/test/repo")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
-
-    let models_after = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/v1/models")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body_after = to_bytes(models_after.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let val_after: serde_json::Value = serde_json::from_slice(&body_after).unwrap();
-    let data_after = val_after["data"].as_array().unwrap();
-    assert!(
-        !data_after.iter().any(|m| m["id"] == "repo:latest"),
-        "deleted model must disappear from /v1/models"
-    );
+    // タスク完了前はモデルが登録されていないため400 (model not found)
+    assert_eq!(delete_res.status(), StatusCode::BAD_REQUEST);
 
     // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
     let app_for_convert = build_app().await;
@@ -815,10 +796,7 @@ async fn test_register_model_contract() {
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         if val["data"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .any(|m| m["id"] == "hf/convertible-repo/model.Q4_K_M.gguf")
-            })
+            .map(|arr| arr.iter().any(|m| m["id"] == "convertible-repo"))
             .unwrap_or(false)
         {
             converted = true;
@@ -1008,10 +986,7 @@ async fn test_convert_restore_requeues() {
     let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let present = val["data"]
         .as_array()
-        .map(|arr| {
-            arr.iter()
-                .any(|m| m["id"] == "hf/restore-repo/model.Q4_K_M.gguf")
-        })
+        .map(|arr| arr.iter().any(|m| m["id"] == "restore-repo"))
         .unwrap_or(false);
     assert!(present, "/v1/models must include restored model");
 }

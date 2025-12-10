@@ -34,8 +34,10 @@ export const DashboardSelectors = {
     hfRegisterUrl: '#hf-register-url',
     hfRegisterSubmit: '#hf-register-url-submit',
     registeredModelsList: '#registered-models-list',
-    downloadTasksList: '#download-tasks-list',
-    convertTasksList: '#convert-tasks-list',
+    registeringTasksList: '#registering-tasks-list',
+    // Deprecated: downloadTasksList and convertTasksList are now unified into registeringTasksList
+    downloadTasksList: '#registering-tasks-list',
+    convertTasksList: '#registering-tasks-list',
     convertModal: '#convert-modal',
     convertModalClose: '#convert-modal-close',
     convertRepo: '#convert-repo',

@@ -15,9 +15,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task;
 use uuid::Uuid;
 
-use crate::registry::models::{
-    generate_ollama_style_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
-};
+use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
 use llm_router_common::error::RouterError;
 
 // ===== venv Auto-Setup =====
@@ -317,12 +315,20 @@ impl ConvertTaskManager {
         quantization: Option<String>,
         chat_template: Option<String>,
     ) -> ConvertTask {
-        let task = ConvertTask::new(repo, filename, revision, quantization, chat_template);
+        let task = ConvertTask::new(
+            repo.clone(),
+            filename.clone(),
+            revision,
+            quantization,
+            chat_template,
+        );
         let id = task.id;
+        tracing::info!(task_id=?id, repo=%repo, filename=%filename, "convert_task_enqueued");
         {
             let mut guard = self.tasks.lock().await;
             guard.insert(id, task);
         }
+        tracing::info!(task_id=?id, "convert_task_sending_to_queue");
         if let Err(e) = self.queue_tx.send(id).await {
             tracing::error!("Failed to enqueue convert task {}: {}", id, e);
             // タスクをFailed状態に更新
@@ -353,10 +359,19 @@ impl ConvertTaskManager {
         self.tasks.lock().await.remove(&id).is_some()
     }
 
+    /// 指定されたリポジトリのタスクが存在するかチェック（失敗状態を除く）
+    pub async fn has_task_for_repo(&self, repo: &str) -> bool {
+        let guard = self.tasks.lock().await;
+        guard
+            .values()
+            .any(|task| task.repo == repo && task.status != ConvertStatus::Failed)
+    }
+
     async fn process_task(
         tasks: Arc<Mutex<HashMap<Uuid, ConvertTask>>>,
         task_id: Uuid,
     ) -> Result<(), RouterError> {
+        tracing::info!(task_id=?task_id, "convert_task_started");
         let (repo, filename, revision, quantization, chat_template) = {
             let mut guard = tasks.lock().await;
             let task = guard
@@ -364,6 +379,7 @@ impl ConvertTaskManager {
                 .ok_or_else(|| RouterError::Internal("Task not found".into()))?;
             task.status = ConvertStatus::InProgress;
             task.updated_at = Utc::now();
+            tracing::info!(task_id=?task_id, repo=%task.repo, "convert_task_in_progress");
             (
                 task.repo.clone(),
                 task.filename.clone(),
@@ -413,7 +429,8 @@ async fn download_and_maybe_convert(
     chat_template: Option<String>,
 ) -> Result<String, RouterError> {
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
-    let model_name = format!("hf/{}/{}", repo, filename);
+    // モデル名 = リポジトリ名（例: openai/gpt-oss-20b）
+    let model_name = repo.to_string();
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -876,7 +893,7 @@ async fn convert_to_gguf(
         .unwrap_or(0);
 
     let mut model = ModelInfo::new(
-        generate_ollama_style_id(&output_filename, repo),
+        repo.to_string(), // モデル名 = リポジトリ名
         size,
         repo.to_string(),
         0,

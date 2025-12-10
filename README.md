@@ -353,15 +353,17 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
 
-## Hugging Face catalog (GGUF)
+## Hugging Face registration (GGUF-first)
 
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
+- Web:
+  - Dashboard → モデル管理 → 「Register Model (HF URL)」
+  - Paste `https://huggingface.co/org/repo/...` **or** plain `org/repo`. The router picks the first GGUF; if none exists it queues a convert job from a convertible file (.safetensors/.bin/.pt/.pth).
+  - Non-GGUF inputs are converted on the router with `convert_hf_to_gguf.py`. Failed jobs stay in the Convert list with a Restoreボタン for retry; pending items are re-queued automatically after router restart.
+  - `/v1/models` and the dashboard only list models whose GGUF file exists on disk; no built-in presets are embedded in the source.
 - CLI:
-  - `llm-router model list --search llama --limit 10` to browse the HF GGUF catalog
-  - `llm-router model add <repo> --file <gguf>` to register (ID becomes `hf/<repo>/<file>`)
-  - `llm-router model download <id> --all|--node <uuid>` to start downloads
-- Web: Dashboard → モデル管理 → 「対応可能モデル（HF）」で登録し、「今すぐダウンロード」で配布
-- Registered HF entries appear in `/v1/models` with `download_url` for nodes to fetch
+  - `llm-router model add <repo> [--file <gguf>]` to register (ID becomes `hf/<repo>/<file>`)
+  - `llm-router model download <id> --all|--node <uuid>` to start downloads to nodes
 
 ## Installation
 

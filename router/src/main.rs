@@ -280,6 +280,13 @@ async fn run_server(config: ServerConfig) {
     let convert_concurrency: usize =
         get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 1);
     let convert_manager = llm_router::convert::ConvertTaskManager::new(convert_concurrency);
+    // 再起動後に pending_conversion のモデルを自動で再キュー
+    let pending_models = llm_router::api::models::list_registered_models();
+    let convert_manager_for_resume = convert_manager.clone();
+    tokio::spawn(async move {
+        llm_router::convert::resume_pending_converts(&convert_manager_for_resume, pending_models)
+            .await;
+    });
 
     // 認証システムを初期化
     // データベース接続プールを作成

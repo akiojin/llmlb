@@ -417,15 +417,17 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
    curl http://coordinator:8080/api/agents
    ```
 
-### Hugging Faceカタログ (GGUF)
+### Hugging Face登録 (GGUF優先)
 
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定。
-- CLI
-  - `llm-router model list --search llama --limit 10` でHF GGUFカタログを取得
-  - `llm-router model add <repo> --file <gguf>` で対応モデル登録（IDは `hf/<repo>/<file>`）
+- Web:
+  - ダッシュボード → モデル管理 → 「Register Model (HF URL)」
+  - `https://huggingface.co/org/repo/...` またはプレーンな `org/repo` を貼り付け。GGUFがあれば自動選択、無ければ変換可能なファイル（.safetensors/.bin/.pt/.pth）を選んで変換キューへ投入。
+  - 非GGUF入力はルーターが `convert_hf_to_gguf.py` で変換。失敗したタスクは Convert リストに残り、Restore ボタンで再実行できる。pending_conversion はルーター再起動後も自動で再キューされる。
+  - `/v1/models` とダッシュボード登録済み一覧には、ディスク上に実体GGUFが存在するものだけが表示され、ソースにプリセットモデルは埋め込まれない。
+- CLI:
+  - `llm-router model add <repo> [--file <gguf>]` で登録（IDは `hf/<repo>/<file>`）
   - `llm-router model download <id> --all|--node <uuid>` で全ノード/指定ノードへダウンロード開始
-- Web: ダッシュボード → モデル管理 → 「対応可能モデル（HF）」から登録し、「今すぐダウンロード」で配布
-- 登録したモデルは `/v1/models` に `download_url` 付きで反映され、ノードが直接取得可能
 
 ### 環境変数
 

@@ -286,6 +286,8 @@ async fn convert_non_gguf(
 
     let script = locate_convert_script()
         .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let hf_token = std::env::var("HF_TOKEN").ok();
 
     if let Some(parent) = target.parent() {
         tokio::fs::create_dir_all(parent)
@@ -305,14 +307,18 @@ async fn convert_non_gguf(
     let script_clone = script.clone();
     let target_path = target.to_path_buf();
     let cmd_repo = repo_with_rev.clone();
+    let python_bin_clone = python_bin.clone();
     let output = task::spawn_blocking(move || {
-        std::process::Command::new("python3")
-            .arg(script_clone)
+        let mut cmd = std::process::Command::new(&python_bin_clone);
+        cmd.arg(script_clone)
             .arg("--remote")
             .arg("--outfile")
             .arg(&target_path)
-            .arg(&cmd_repo)
-            .output()
+            .arg(&cmd_repo);
+        if let Some(token) = hf_token {
+            cmd.env("HF_TOKEN", token);
+        }
+        cmd.output()
     })
     .await
     .map_err(|e| RouterError::Internal(e.to_string()))?
@@ -347,28 +353,36 @@ async fn convert_non_gguf(
 /// python依存が無いときは事前にエラーにする
 async fn ensure_python_deps() -> Result<(), RouterError> {
     let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
-    let script = "import importlib,sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
 
-    let output =
-        task::spawn_blocking(move || Command::new(&python_bin).arg("-c").arg(script).output())
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    let python_bin_for_cmd = python_bin.clone();
+    let output = task::spawn_blocking(move || {
+        Command::new(&python_bin_for_cmd)
+            .arg("-c")
+            .arg(script)
+            .output()
+    })
+    .await
+    .map_err(|e| RouterError::Internal(e.to_string()))?
+    .map_err(|e| RouterError::Internal(e.to_string()))?;
 
     if output.status.success() {
         return Ok(());
     }
 
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
         "transformers, torch, sentencepiece".to_string()
     } else {
         missing
     };
     Err(RouterError::Internal(format!(
-        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt",
-        deps
+        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt (python_bin={}, stderr={})",
+        deps,
+        python_bin,
+        stderr
     )))
 }
 
@@ -376,6 +390,20 @@ fn should_use_fake_convert() -> bool {
     std::env::var("LLM_CONVERT_FAKE")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false)
+}
+
+/// ルーター再起動時に pending_conversion の登録済みモデルを再キューする
+pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<ModelInfo>) {
+    for model in models {
+        if model.status.as_deref() == Some("pending_conversion") {
+            if let (Some(repo), Some(filename)) = (model.repo.clone(), model.filename.clone()) {
+                let chat_template = model.chat_template.clone();
+                manager
+                    .enqueue(repo, filename, None, None, chat_template)
+                    .await;
+            }
+        }
+    }
 }
 
 async fn write_dummy_gguf(target: &Path) -> Result<(), RouterError> {
@@ -470,4 +498,52 @@ async fn finalize_model_registration(
 
     upsert_registered_model(model);
     persist_registered_models().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::models::{ModelInfo, ModelSource};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn resume_pending_converts_enqueues_pending_only() {
+        // avoid touching real HOME / conversions
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("LLM_CONVERT_FAKE", "1");
+
+        let manager = ConvertTaskManager::new(1);
+
+        let mut pending = ModelInfo::new(
+            "hf/openai/gpt-oss-20b/metal/model.bin".into(),
+            0,
+            "desc".into(),
+            0,
+            vec![],
+        );
+        pending.repo = Some("openai/gpt-oss-20b".into());
+        pending.filename = Some("metal/model.bin".into());
+        pending.status = Some("pending_conversion".into());
+        pending.source = ModelSource::HfPendingConversion;
+
+        let mut cached = ModelInfo::new("hf/other/model.gguf".into(), 0, "done".into(), 0, vec![]);
+        cached.repo = Some("other/model".into());
+        cached.filename = Some("model.gguf".into());
+        cached.status = Some("cached".into());
+
+        resume_pending_converts(&manager, vec![pending.clone(), cached]).await;
+
+        // give worker thread a moment to pick up the job
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let tasks = manager.list().await;
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].repo, pending.repo.unwrap());
+        assert_eq!(tasks[0].filename, pending.filename.unwrap());
+        assert!(matches!(
+            tasks[0].status,
+            ConvertStatus::Queued | ConvertStatus::InProgress | ConvertStatus::Completed
+        ));
+    }
 }

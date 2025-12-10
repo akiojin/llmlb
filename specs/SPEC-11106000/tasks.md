@@ -48,7 +48,7 @@
 
 ## Docs
 - [x] quickstart.md をURL登録・Restore手順に更新。
-- [ ] tasks/plan/spec との整合確認（本タスクで更新）。
+- [x] tasks/plan/spec との整合確認（本タスクで更新）。
 
 ## 検証
 - [x] cargo fmt/clippy/test、make quality-checks。

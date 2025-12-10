@@ -191,8 +191,17 @@ function renderProgressBar(progress, speedText = '') {
 
 function parseHfUrl(rawUrl) {
   if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  // プレーンな "org/repo[/path]" 形式にも対応（プロトコルなし）
+  const plainParts = trimmed.replace(/^hf\//, '').split('/').filter(Boolean);
+  if (!trimmed.startsWith('http') && plainParts.length >= 2) {
+    const repo = `${plainParts[0]}/${plainParts[1]}`;
+    const filename = plainParts.length > 2 ? plainParts.slice(2).join('/') : null;
+    const isGguf = filename ? filename.toLowerCase().endsWith('.gguf') : false;
+    return { repo, filename, isGguf };
+  }
   try {
-    const url = new URL(rawUrl);
+    const url = new URL(trimmed);
     if (!url.hostname.endsWith('huggingface.co')) return null;
     const parts = url.pathname.split('/').filter(Boolean);
     if (parts.length < 2) return null;
@@ -1082,10 +1091,6 @@ function showSuccess(message) {
   text.textContent = message;
   banner.classList.remove('hidden');
   banner.classList.add('success-banner');
-  setTimeout(() => {
-    banner.classList.add('hidden');
-    banner.classList.remove('success-banner');
-  }, 4000);
 }
 
 // ========== Progress Monitoring ==========
@@ -1324,6 +1329,7 @@ async function initModelsUI(agents) {
           showSuccess(`Registered ${res.name}`);
           await refreshRegisteredModels();
         }
+        if (input) input.value = '';
       } catch (err) {
         showError(err.message || 'Failed to register model from URL');
       }

@@ -55,7 +55,7 @@
 
 ## 技術制約
 - HF 公開APIのレートリミット内で動作すること。
-- 非GGUF入力時は llama.cpp の `convert_hf_to_gguf.py` でルーター側1回のみ変換し、生成GGUFを /v1/models で返す。Python依存は環境で準備（テストは `LLM_CONVERT_FAKE=1` でダミー生成可）。
+- 非GGUF入力時は llama.cpp の `convert_hf_to_gguf.py` でルーター側1回のみ変換し、生成GGUFを /v1/models で返す。Python依存は環境で準備する（開発用のダミー変換フラグは廃止）。
 
 ## 前提条件
 - ルーターとノード間の既存配布・登録フローが動作していること。

@@ -378,7 +378,6 @@ For a deeper walkthrough, including API references and customisation tips, see [
   pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
   ```
   - Pythonパスを変えたい場合: `LLM_CONVERT_PYTHON=/path/to/python`
-  - 開発/CIで実変換をスキップしたい場合のみ: `LLM_CONVERT_FAKE=1`（本番非推奨）
 - **GPU**: NVIDIA / AMD / Apple Silicon GPU required for agent registration
   - Automatically detected on startup
   - Docker for Mac: Apple Silicon detection supported

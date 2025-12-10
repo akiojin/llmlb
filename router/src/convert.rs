@@ -282,10 +282,17 @@ async fn convert_non_gguf(
         return Ok(());
     }
 
-    ensure_python_deps().await?;
-
     let script = locate_convert_script()
         .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+    // デフォルトスクリプトを使う場合のみ依存チェックを行う。カスタムスクリプトは自己完結を想定。
+    if script
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.contains("convert_hf_to_gguf.py"))
+        .unwrap_or(false)
+    {
+        ensure_python_deps().await?;
+    }
     let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
     let hf_token = std::env::var("HF_TOKEN").ok();
 

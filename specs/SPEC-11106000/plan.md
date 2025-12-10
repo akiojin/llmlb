@@ -37,7 +37,7 @@
 ## Phase 0: アウトライン＆リサーチ
 - HF API: repoメタ（siblings）取得と認証要否のみ確認。カタログ一覧は扱わない。
 - モデルID命名: `hf/{repo}/{filename}` 固定。
-- 非GGUF変換: ルーター側で一度だけ `convert_hf_to_gguf.py` を使う。テストは `LLM_CONVERT_FAKE=1`。
+- 非GGUF変換: ルーター側で一度だけ `convert_hf_to_gguf.py` を使う。ダミー変換フラグは使わず、実変換を前提にする。
 
 ## Phase 1: 設計＆契約
 - data-model.md: ModelInfo 拡張（source, download_url, status, size, repo/filename）。

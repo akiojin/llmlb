@@ -30,9 +30,27 @@ async fn build_app() -> Router {
     // router_models_dir は HOME/USERPROFILE を見るためテスト用に上書き
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
-    if std::env::var("LLM_CONVERT_FAKE").is_err() {
-        std::env::set_var("LLM_CONVERT_FAKE", "1");
+    // テスト用の軽量変換スクリプトを配置（依存ライブラリ不要）
+    let mock_script_path = temp_dir.join("mock_gguf_writer.py");
+    std::fs::write(
+        &mock_script_path,
+        r#"import sys, pathlib
+outfile = sys.argv[sys.argv.index("--outfile")+1]
+pathlib.Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+with open(outfile, "wb") as f:
+    f.write(b"gguf test")
+"#,
+    )
+    .unwrap();
+    std::env::set_var("LLM_CONVERT_SCRIPT", &mock_script_path);
+    // python依存チェック用にローカルの.venvがあれば優先
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join(".venv/bin/python3");
+        if candidate.exists() {
+            std::env::set_var("LLM_CONVERT_PYTHON", candidate);
+        }
     }
+    // 変換スクリプトは各テストで個別に指定する
     llm_router::api::models::clear_registered_models();
     llm_router::api::models::clear_hf_cache();
 
@@ -859,6 +877,12 @@ async fn test_convert_restore_requeues() {
 
     let app = build_app().await;
 
+    // 事前に成功用スクリプトを控えておく
+    let good_script = std::env::var("LLM_CONVERT_SCRIPT").unwrap();
+
+    // convert を失敗させるために存在しないスクリプトを指定
+    std::env::set_var("LLM_CONVERT_SCRIPT", "/nonexistent/convert_hf_to_gguf.py");
+
     // register -> convert fails
     let reg = app
         .clone()
@@ -914,9 +938,22 @@ async fn test_convert_restore_requeues() {
         last_tasks
     );
 
-    // 2回目はFAKEで成功させる
-    std::env::set_var("LLM_CONVERT_FAKE", "1");
-    std::env::remove_var("LLM_CONVERT_SCRIPT");
+    // 2回目はテスト用モックスクリプトで成功させる（依存なしでダミーgguf生成）
+    let mut mock_script = NamedTempFile::new().unwrap();
+    writeln!(
+        mock_script,
+        r#"import sys, pathlib
+outfile = sys.argv[sys.argv.index("--outfile")+1]
+pathlib.Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+with open(outfile, "wb") as f:
+    f.write(b"gguf test")
+"#
+    )
+    .unwrap();
+    let mock_path = mock_script.into_temp_path();
+    std::env::set_var("LLM_CONVERT_SCRIPT", &mock_path);
+
+    std::env::set_var("LLM_CONVERT_SCRIPT", good_script);
 
     let retry = app
         .clone()

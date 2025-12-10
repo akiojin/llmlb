@@ -26,7 +26,7 @@ std::string getHelpMessage() {
     oss << "    LLM_NODE_LOG_LEVEL           Log level: trace, debug, info, warn, error (default: info)\n";
     oss << "    LLM_NODE_LOG_RETENTION_DAYS  Log retention days (default: 7)\n";
     oss << "\n";
-    oss << "    LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:11434)\n";
+    oss << "    LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:8080)\n";
     oss << "    LLM_NODE_IP                  Node IP address for registration (auto-detect)\n";
     oss << "    LLM_NODE_CONFIG              Path to config JSON file\n";
     oss << "\n";

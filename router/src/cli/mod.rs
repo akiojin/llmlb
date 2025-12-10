@@ -1,11 +1,9 @@
 //! CLI module for llm-router
 //!
 //! Provides command-line interface for router management.
+//! All operations are performed via API/Dashboard UI.
 
-pub mod model;
-pub mod user;
-
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
 /// LLM Router - Centralized management system for LLM inference nodes
 #[derive(Parser, Debug)]
@@ -20,29 +18,4 @@ use clap::{Parser, Subcommand};
     LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
     LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
 "#)]
-pub struct Cli {
-    /// Preload HF models at startup (format: repo:filename or repo/filename)
-    #[arg(long = "preload-model", value_parser, action = clap::ArgAction::Append)]
-    pub preload_models: Vec<String>,
-    /// Subcommand to execute
-    #[command(subcommand)]
-    pub command: Option<Commands>,
-}
-
-/// Available CLI commands
-#[derive(Subcommand, Debug)]
-pub enum Commands {
-    /// Manage users
-    User {
-        /// User management subcommand
-        #[command(subcommand)]
-        command: user::UserCommand,
-    },
-    /// Manage models (HF GGUF)
-    /// Manage models (HF GGUF)
-    Model {
-        /// Model management subcommand
-        #[command(subcommand)]
-        command: model::ModelCommand,
-    },
-}
+pub struct Cli;

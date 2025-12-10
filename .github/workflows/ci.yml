@@ -55,10 +55,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev clang-tidy cppcheck
+      - name: Setup C++ build environment
+        uses: ./.github/actions/setup-cpp
+        with:
+          with-linters: 'true'
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -122,10 +122,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev gcovr
+      - name: Setup C++ build environment
+        uses: ./.github/actions/setup-cpp
+        with:
+          with-coverage: 'true'
       - uses: actions/setup-node@v4
         with:
           node-version: '20'

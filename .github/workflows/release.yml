@@ -36,10 +36,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup C++ build environment
+        uses: ./.github/actions/setup-cpp
+        with:
+          with-cross-compile: 'true'
+
       - name: Build C++ binary (Linux amd64)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev
           cmake -S node -B node/build -DBUILD_TESTS=OFF
           cmake --build node/build --config Release
           mkdir -p dist
@@ -48,8 +51,6 @@ jobs:
       - name: Build C++ binary (macOS arm64) [cross]
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm lld cmake libssl-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
           cmake -S node -B node/build-macos \
             -DCMAKE_SYSTEM_NAME=Darwin \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -74,8 +75,6 @@ jobs:
       - name: Build C++ binary (Windows x64) [cross]
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64 cmake libssl-dev
           cmake -S node -B node/build-win \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_SYSTEM_VERSION=10.0 \
@@ -89,8 +88,6 @@ jobs:
 
       - name: Build C++ binary (Linux CUDA)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev
           cmake -S node -B node/build-cuda \
             -DBUILD_TESTS=OFF \
             -DBUILD_WITH_CUDA=ON

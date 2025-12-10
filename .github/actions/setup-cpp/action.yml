@@ -1,0 +1,45 @@
+name: Setup C++ Build Environment
+description: Install dependencies for building the C++ node binary
+
+inputs:
+  with-coverage:
+    description: Install gcovr for coverage builds
+    required: false
+    default: 'false'
+  with-linters:
+    description: Install clang-tidy and cppcheck for linting
+    required: false
+    default: 'false'
+  with-cross-compile:
+    description: Install cross-compilation toolchains
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install base dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev
+
+    - name: Install coverage tools
+      if: inputs.with-coverage == 'true'
+      shell: bash
+      run: sudo apt-get install -y gcovr
+
+    - name: Install linters
+      if: inputs.with-linters == 'true'
+      shell: bash
+      run: sudo apt-get install -y clang-tidy cppcheck
+
+    - name: Install cross-compilation toolchains
+      if: inputs.with-cross-compile == 'true'
+      shell: bash
+      run: |
+        sudo apt-get install -y \
+          clang llvm lld \
+          gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+          gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+          mingw-w64

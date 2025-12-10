@@ -64,6 +64,61 @@ cargo build --release -p llm-router
 On Windows 10+ and macOS 12+, the router displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
+### CLI Reference (Linux only)
+
+> **Note**: CLI subcommands (`user`, `model`) are only available on Linux.
+> On Windows/macOS, the application starts in system tray mode and CLI options are ignored.
+
+**Basic Options:**
+
+```bash
+llm-router --help                    # Show help
+llm-router --version                 # Show version
+llm-router --preload-model <spec>    # Preload HF model at startup (can be specified multiple times)
+                                     # Format: repo:filename or repo/filename
+```
+
+**User Management Commands:**
+
+```bash
+llm-router user list                           # List all users
+llm-router user add <username> -p <password>   # Add user (password min 8 chars)
+llm-router user delete <username>              # Delete user
+```
+
+**Model Management Commands:**
+
+```bash
+# List HF GGUF catalog
+llm-router model list [OPTIONS]
+  --router <URL>      # Router URL (default: http://127.0.0.1:8080)
+  --search <QUERY>    # Search query
+  --limit <N>         # Number of results (default: 20)
+  --offset <N>        # Offset (default: 0)
+  --format <FORMAT>   # Output format: json | table (default: table)
+
+# Register HF GGUF model
+llm-router model add <REPO> -f <FILE> [--router <URL>]
+  # Example: llm-router model add TheBloke/Llama-2-7B-GGUF -f llama-2-7b.Q4_K_M.gguf
+
+# Trigger model download to nodes
+llm-router model download <NAME> --all [--router <URL>]         # Distribute to all nodes
+llm-router model download <NAME> --node <UUID> [--router <URL>] # Distribute to specific node
+```
+
+**Environment Variables (shown in --help output):**
+
+```
+ENVIRONMENT VARIABLES:
+    LLM_ROUTER_HOST              Bind address (default: 0.0.0.0)
+    LLM_ROUTER_PORT              Listen port (default: 8080)
+    LLM_ROUTER_LOG_LEVEL         Log level (default: info)
+    LLM_ROUTER_DATABASE_URL      Database URL
+    LLM_ROUTER_JWT_SECRET        JWT signing key (auto-generated if not set)
+    LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
+    LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
+```
+
 ### Node (C++)
 
 **Prerequisites:**

@@ -733,7 +733,16 @@ mod tests {
         // レジストリ側のフラグも更新し、ロードバランサが初期化完了と判断できるようにする
         state
             .registry
-            .update_last_seen(node_id, None, None, None, None, Some(false), Some((4, 4)))
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((4, 4)),
+            )
             .await
             .ok();
 

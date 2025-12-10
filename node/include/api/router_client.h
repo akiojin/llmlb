@@ -50,6 +50,8 @@ public:
                        const std::string& agent_token,
                        const std::optional<std::string>& status = std::nullopt,
                        const std::optional<HeartbeatMetrics>& metrics = std::nullopt,
+                       const std::vector<std::string>& loaded_models = {},
+                       const std::vector<std::string>& loaded_embedding_models = {},
                        int max_retries = 2);
 
     /// T034: Report download progress to router

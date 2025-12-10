@@ -213,6 +213,7 @@ impl NodeRegistry {
                 tags: Vec::new(),
                 notes: None,
                 loaded_models: Vec::new(),
+                loaded_embedding_models: Vec::new(),
                 gpu_devices: req.gpu_devices,
                 gpu_available: req.gpu_available,
                 gpu_count: req.gpu_count,
@@ -265,6 +266,7 @@ impl NodeRegistry {
         &self,
         node_id: Uuid,
         loaded_models: Option<Vec<String>>,
+        loaded_embedding_models: Option<Vec<String>>,
         gpu_model_name: Option<String>,
         gpu_compute_capability: Option<String>,
         gpu_capability_score: Option<u32>,
@@ -281,6 +283,9 @@ impl NodeRegistry {
 
             if let Some(models) = loaded_models {
                 node.loaded_models = normalize_models(models);
+            }
+            if let Some(embedding_models) = loaded_embedding_models {
+                node.loaded_embedding_models = normalize_models(embedding_models);
             }
             // GPU能力情報を更新
             if gpu_model_name.is_some() {
@@ -699,6 +704,7 @@ mod tests {
                     "".into(),
                     "phi-3".into(),
                 ]),
+                None, // loaded_embedding_models
                 None,
                 None,
                 None,

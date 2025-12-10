@@ -95,7 +95,10 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
 
 bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& agent_token,
                                  const std::optional<std::string>& /*status_opt*/,
-                                 const std::optional<HeartbeatMetrics>& metrics, int max_retries) {
+                                 const std::optional<HeartbeatMetrics>& metrics,
+                                 const std::vector<std::string>& loaded_models,
+                                 const std::vector<std::string>& loaded_embedding_models,
+                                 int max_retries) {
     auto cli = make_client(base_url_, timeout_);
 
     // Build HealthCheckRequest payload matching router protocol
@@ -107,7 +110,8 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
                 static_cast<float>(metrics->mem_used_bytes) / static_cast<float>(metrics->mem_total_bytes) * 100.0f : 0.0f)
             : 0.0f},
         {"active_requests", 0},
-        {"loaded_models", json::array()},
+        {"loaded_models", loaded_models},
+        {"loaded_embedding_models", loaded_embedding_models},
         {"initializing", false},
     };
 

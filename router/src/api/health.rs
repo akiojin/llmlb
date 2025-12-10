@@ -15,11 +15,17 @@ pub async fn health_check(
     } else {
         Some(req.loaded_models.clone())
     };
+    let embedding_models = if req.loaded_embedding_models.is_empty() {
+        None
+    } else {
+        Some(req.loaded_embedding_models.clone())
+    };
     state
         .registry
         .update_last_seen(
             req.node_id,
             models,
+            embedding_models,
             req.gpu_model_name.clone(),
             req.gpu_compute_capability.clone(),
             req.gpu_capability_score,
@@ -125,6 +131,7 @@ mod tests {
             active_requests: 3,
             average_response_time_ms: Some(110.0),
             loaded_models: vec!["gpt-oss:20b".into()],
+            loaded_embedding_models: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
         };
@@ -157,6 +164,7 @@ mod tests {
             active_requests: 3,
             average_response_time_ms: None,
             loaded_models: Vec::new(),
+            loaded_embedding_models: Vec::new(),
             initializing: false,
             ready_models: None,
         };

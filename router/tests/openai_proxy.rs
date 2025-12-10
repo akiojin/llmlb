@@ -75,6 +75,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
                 "gpt-oss:120b".to_string(),
                 "test-model".to_string(),
             ]),
+            None, // loaded_embedding_models
             None,
             None,
             None,

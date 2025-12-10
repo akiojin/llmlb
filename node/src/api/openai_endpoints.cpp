@@ -8,8 +8,8 @@ namespace llm_node {
 
 using json = nlohmann::json;
 
-OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine)
-    : registry_(registry), engine_(engine) {}
+OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
+    : registry_(registry), engine_(engine), config_(config) {}
 
 void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     server.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
@@ -92,6 +92,10 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
+            // デフォルトembeddingモデルを適用
+            if (model.empty()) {
+                model = config_.default_embedding_model;
+            }
             if (!validateModel(model, res)) return;
 
             // inputを解析（文字列または文字列の配列）

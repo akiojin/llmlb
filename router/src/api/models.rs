@@ -21,8 +21,8 @@ use uuid::Uuid;
 use crate::{
     convert::ConvertTask,
     registry::models::{
-        ensure_router_model_cached, model_name_to_dir, router_model_path, router_models_dir,
-        DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
+        ensure_router_model_cached, generate_ollama_style_id, model_name_to_dir, router_model_path,
+        router_models_dir, DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
     },
     registry::NodeRegistry,
     AppState,
@@ -1045,7 +1045,8 @@ async fn register_model_internal(
     original_input: Option<String>,
     resolved_from: Option<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let name = format!("hf/{}/{}", repo, filename);
+    // Ollama風モデルID（例: llama-2:7b）を生成
+    let name = generate_ollama_style_id(filename, repo);
 
     if find_model_by_name(&name).is_some() {
         return Err(

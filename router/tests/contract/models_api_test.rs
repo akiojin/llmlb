@@ -615,8 +615,9 @@ async fn test_register_model_contract() {
     let data = body["data"]
         .as_array()
         .expect("'data' must be an array on /v1/models");
+    // Ollama風ID: model.gguf (generic) + test/repo → "repo:latest"
     assert!(
-        data.iter().all(|m| m["id"] != "hf/test/repo/model.gguf"),
+        data.iter().all(|m| m["id"] != "repo:latest"),
         "/v1/models must not expose models before download completes"
     );
 
@@ -720,13 +721,13 @@ async fn test_register_model_contract() {
     // 新APIではGGUFが見つからない場合は400を返す
     assert_eq!(repo_only_fallback.status(), StatusCode::BAD_REQUEST);
 
-    // DELETE removes registered model
+    // DELETE removes registered model (Ollama風ID: repo:latest)
     let delete_res = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/api/models/hf/test/repo/model.gguf")
+                .uri("/api/models/repo:latest")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -751,9 +752,7 @@ async fn test_register_model_contract() {
     let val_after: serde_json::Value = serde_json::from_slice(&body_after).unwrap();
     let data_after = val_after["data"].as_array().unwrap();
     assert!(
-        !data_after
-            .iter()
-            .any(|m| m["id"] == "hf/test/repo/model.gguf"),
+        !data_after.iter().any(|m| m["id"] == "repo:latest"),
         "deleted model must disappear from /v1/models"
     );
 

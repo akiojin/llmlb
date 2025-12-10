@@ -15,7 +15,9 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task;
 use uuid::Uuid;
 
-use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
+use crate::registry::models::{
+    generate_ollama_style_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
+};
 use llm_router_common::error::RouterError;
 
 // ===== venv Auto-Setup =====
@@ -874,7 +876,7 @@ async fn convert_to_gguf(
         .unwrap_or(0);
 
     let mut model = ModelInfo::new(
-        format!("hf/{}/{}", repo, output_filename),
+        generate_ollama_style_id(&output_filename, repo),
         size,
         repo.to_string(),
         0,

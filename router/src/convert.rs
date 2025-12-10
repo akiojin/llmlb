@@ -463,6 +463,27 @@ fn locate_convert_script() -> Option<PathBuf> {
     None
 }
 
+fn is_default_convert_script(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.contains("convert_hf_to_gguf.py"))
+        .unwrap_or(false)
+}
+
+/// 変換に必要なスクリプト・依存が利用可能かを起動時に検証する。
+/// - デフォルトスクリプトを使う場合のみ Python 依存チェックを行う。
+/// - カスタムスクリプト指定時は存在確認のみ。
+pub fn verify_convert_ready() -> Result<(), RouterError> {
+    let script = locate_convert_script()
+        .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+    if is_default_convert_script(&script) {
+        tokio::runtime::Runtime::new()
+            .map_err(|e| RouterError::Internal(e.to_string()))?
+            .block_on(async { ensure_python_deps().await })?;
+    }
+    Ok(())
+}
+
 async fn finalize_model_registration(
     model_name: &str,
     repo: &str,
@@ -511,7 +532,7 @@ async fn finalize_model_registration(
 mod tests {
     use super::*;
     use crate::registry::models::{ModelInfo, ModelSource};
-    use std::time::Duration;
+    use std::{env, time::Duration};
 
     #[tokio::test]
     async fn resume_pending_converts_enqueues_pending_only() {
@@ -552,5 +573,23 @@ mod tests {
             tasks[0].status,
             ConvertStatus::Queued | ConvertStatus::InProgress | ConvertStatus::Completed
         ));
+    }
+
+    #[test]
+    fn verify_convert_ready_allows_custom_script_without_deps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script_path = tmp.path().join("mock_script.py");
+        std::fs::write(&script_path, "print('ok')").unwrap();
+        env::set_var("LLM_CONVERT_SCRIPT", &script_path);
+        let res = verify_convert_ready();
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn verify_convert_ready_errors_when_missing_script() {
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        let res = verify_convert_ready();
+        assert!(res.is_err());
     }
 }

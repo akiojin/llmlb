@@ -1217,7 +1217,9 @@ function openNodeModal(node) {
     modalRefs.loadedModels.textContent = models.length ? models.join(", ") : "-";
   }
   modalRefs.uptime.textContent = formatDuration(node.uptime_seconds);
-  modalRefs.status.textContent = node.status === "online" ? "Online" : "Offline";
+  modalRefs.status.textContent =
+    node.status === "online" ? "Online" :
+    node.status === "registering" ? "Registering" : "Offline";
   modalRefs.lastSeen.textContent = formatTimestamp(node.last_seen);
   modalRefs.totalRequests.textContent = node.total_requests ?? 0;
   modalRefs.averageResponse.textContent = formatAverage(node.average_response_time_ms);
@@ -2339,7 +2341,9 @@ function renderLogsNodeOptions() {
         node.machine_name && node.machine_name.trim().length
           ? node.machine_name
           : node.id.slice(0, 8);
-      const statusLabel = node.status === "online" ? "Online" : "Offline";
+      const statusLabel =
+        node.status === "online" ? "Online" :
+        node.status === "registering" ? "Registering" : "Offline";
       return `<option value="${escapeHtml(node.id)}">${escapeHtml(label)} (${statusLabel})</option>`;
     })
     .join("");

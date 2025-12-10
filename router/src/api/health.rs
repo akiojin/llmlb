@@ -109,7 +109,7 @@ mod tests {
         };
         let register_response = state.registry.register(register_req).await.unwrap();
 
-        // ヘルスチェックを送信
+        // ヘルスチェックを送信（全モデル準備完了 → Online に遷移）
         let health_req = HealthCheckRequest {
             node_id: register_response.node_id,
             cpu_usage: 45.5,
@@ -126,7 +126,7 @@ mod tests {
             average_response_time_ms: Some(110.0),
             loaded_models: vec!["gpt-oss:20b".into()],
             initializing: false,
-            ready_models: Some((1, 5)),
+            ready_models: Some((1, 1)),
         };
 
         let result = health_check(State(state.clone()), Json(health_req)).await;

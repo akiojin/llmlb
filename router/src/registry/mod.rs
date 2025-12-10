@@ -178,7 +178,6 @@ impl NodeRegistry {
             // 既存ノードを更新
             let node = nodes.get_mut(&id).unwrap();
             let now = Utc::now();
-            let was_online = node.status == NodeStatus::Online;
             node.ip_address = req.ip_address;
             node.runtime_version = req.runtime_version.clone();
             node.runtime_port = req.runtime_port;
@@ -186,11 +185,11 @@ impl NodeRegistry {
             node.gpu_devices = req.gpu_devices.clone();
             node.gpu_count = req.gpu_count;
             node.gpu_model = req.gpu_model.clone();
-            node.status = NodeStatus::Online;
+            // 再登録時は Registering に戻す（モデル同期完了後に Online に遷移）
+            node.status = NodeStatus::Registering;
             node.last_seen = now;
-            if !was_online || node.online_since.is_none() {
-                node.online_since = Some(now);
-            }
+            // online_since はモデル同期完了（Online遷移）時に設定
+            node.online_since = None;
             node.agent_api_port = Some(req.runtime_port + 1);
             node.initializing = true;
             node.ready_models = Some((0, 0));
@@ -205,10 +204,11 @@ impl NodeRegistry {
                 ip_address: req.ip_address,
                 runtime_version: req.runtime_version,
                 runtime_port: req.runtime_port,
-                status: NodeStatus::Online,
+                status: NodeStatus::Registering,
                 registered_at: now,
                 last_seen: now,
-                online_since: Some(now),
+                // online_since はモデル同期完了（Online遷移）時に設定
+                online_since: None,
                 custom_name: None,
                 tags: Vec::new(),
                 notes: None,
@@ -277,9 +277,8 @@ impl NodeRegistry {
                 .get_mut(&node_id)
                 .ok_or(RouterError::AgentNotFound(node_id))?;
             let now = Utc::now();
-            let was_online = node.status == NodeStatus::Online;
             node.last_seen = now;
-            node.status = NodeStatus::Online;
+
             if let Some(models) = loaded_models {
                 node.loaded_models = normalize_models(models);
             }
@@ -293,14 +292,33 @@ impl NodeRegistry {
             if gpu_capability_score.is_some() {
                 node.gpu_capability_score = gpu_capability_score;
             }
-            if !was_online || node.online_since.is_none() {
-                node.online_since = Some(now);
-            }
             if let Some(init) = initializing {
                 node.initializing = init;
             }
             if ready_models.is_some() {
                 node.ready_models = ready_models;
+            }
+
+            // 状態遷移ロジック
+            let current_ready = ready_models.or(node.ready_models);
+            match node.status {
+                NodeStatus::Registering => {
+                    // モデル同期完了したらOnlineに遷移
+                    if let Some((ready, total)) = current_ready {
+                        if ready >= total {
+                            node.status = NodeStatus::Online;
+                            node.initializing = false;
+                            node.online_since = Some(now);
+                        }
+                    }
+                }
+                NodeStatus::Online => {
+                    // 既にOnlineならそのまま維持
+                }
+                NodeStatus::Offline => {
+                    // Offlineからの復帰はRegisteringへ
+                    node.status = NodeStatus::Registering;
+                }
             }
             node.clone()
         };
@@ -514,7 +532,8 @@ mod tests {
 
         let node = registry.get(response.node_id).await.unwrap();
         assert_eq!(node.machine_name, "test-machine");
-        assert_eq!(node.status, NodeStatus::Online);
+        // 新規登録時は Registering 状態（モデル同期完了で Online に遷移）
+        assert_eq!(node.status, NodeStatus::Registering);
         assert!(node.loaded_models.is_empty());
     }
 

@@ -133,8 +133,8 @@ mod tests {
         let result = monitor.check_agent_health().await;
         assert!(result.is_ok());
 
-        // ノードはまだオンライン
+        // 新規登録ノードは Registering 状態（ハートビートで Online に遷移）
         let nodes = registry.list().await;
-        assert_eq!(nodes[0].status, NodeStatus::Online);
+        assert_eq!(nodes[0].status, NodeStatus::Registering);
     }
 }

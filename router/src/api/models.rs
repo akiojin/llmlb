@@ -1331,6 +1331,18 @@ pub async fn get_convert_task(
     Ok(Json(task))
 }
 
+/// DELETE /api/models/convert/{task_id} - ジョブ削除（×ボタン用）
+pub async fn delete_convert_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    if state.convert_manager.delete(task_id).await {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(RouterError::Internal("Task not found".into()).into())
+    }
+}
+
 /// T031: GET /api/tasks/{task_id} - タスク進捗を取得
 pub async fn get_task_progress(
     State(state): State<AppState>,

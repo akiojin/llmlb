@@ -37,8 +37,7 @@ let availableModels = [];
 let registeredModels = [];
 let availableModelsMeta = { source: null };
 let selectedModel = null;
-let downloadTasks = new Map(); // task_id -> task info
-let convertTasks = new Map(); // task_id -> task info
+let registeringTasks = new Map(); // task_id -> task info (unified registration tasks)
 let progressPollingInterval = null;
 let modelFilterQuery = '';
 let cachedAgents = [];
@@ -54,8 +53,7 @@ const elements = {
   distributeButton: () => document.getElementById('distribute-model-button'),
   selectAllButton: () => document.getElementById('select-all-agents'),
   deselectAllButton: () => document.getElementById('deselect-all-agents'),
-  downloadTasksList: () => document.getElementById('download-tasks-list'),
-  convertTasksList: () => document.getElementById('convert-tasks-list'),
+  registeringTasksList: () => document.getElementById('registering-tasks-list'),
   loadedModelsList: () => document.getElementById('loaded-models-list'),
   manualPanel: () => document.getElementById('manual-distribution-panel'),
   toggleManualBtn: () => document.getElementById('toggle-manual-distribution'),
@@ -86,7 +84,6 @@ const elements = {
   convertRevisionInput: () => document.getElementById('convert-revision'),
   convertChatTemplateInput: () => document.getElementById('convert-chat-template'),
   convertSubmitBtn: () => document.getElementById('convert-submit'),
-  convertTasksRefreshBtn: () => document.getElementById('convert-tasks-refresh'),
 };
 
 // ========== API Functions ==========
@@ -166,8 +163,8 @@ async function deleteModel(modelName) {
   }
 }
 
-function findDownloadTask(modelName) {
-  return Array.from(downloadTasks.values()).find((t) => t.model_name === modelName) || null;
+function findRegisteringTask(modelName) {
+  return Array.from(registeringTasks.values()).find((t) => t.model_name === modelName || `hf/${t.repo}/${t.filename}` === modelName) || null;
 }
 
 function renderStatusBadge(status) {
@@ -626,20 +623,20 @@ function renderHfModelCard(model) {
 
 function renderRegisteredModelCard(model) {
   const card = renderModelCard(model);
-  const task = findDownloadTask(model.name);
+  const task = findRegisteringTask(model.name);
   const statusBadge = task ? renderStatusBadge(task.status) : '';
   const readyBadge = !task && model.status
     ? `<span class="task-status task-status--${escapeHtml(model.status)}">${escapeHtml(model.status)}</span>`
     : '';
   const progressBlock =
-    task && (normalizeDownloadStatus(task.status) === 'downloading')
+    task && (normalizeDownloadStatus(task.status) === 'downloading' || task.status === 'in_progress')
       ? renderProgressBar(
           task.progress || 0,
           task.download_speed_bps ? `<div class="task-speed">${formatSpeed(task.download_speed_bps)}</div>` : ''
         )
       : '';
   const disabled =
-    task && ['pending', 'downloading', 'in_progress'].includes(normalizeDownloadStatus(task.status));
+    task && ['pending', 'downloading', 'in_progress', 'queued'].includes(normalizeDownloadStatus(task.status));
   return card.replace(
     '</div>',
     `
@@ -745,7 +742,7 @@ function renderHfModels(models) {
       const file = btn.dataset.file;
       try {
         await convertModel(repo, file, null, null, null);
-        await refreshConvertTasks();
+        await refreshRegisteringTasks();
         showSuccess('Queued convert job');
       } catch (e) {
         console.error(e);
@@ -815,12 +812,17 @@ function renderAgentsForDistribution(agents) {
       if (agent.status !== 'online') {
         labelClasses.push('agent-checkbox--offline');
       }
+      // Registeringノードもチェックボックスは無効化
       const checkboxDisabled = agent.status === 'online' ? '' : 'disabled';
       const name = escapeHtml(agent.machine_name || agent.id?.substring(0, 8) || '-');
       const gpuModel = resolveGpuModel(agent);
       const gpuLine = gpuModel ? `<span class="agent-checkbox__gpu">${escapeHtml(gpuModel)}</span>` : '';
-      const statusLabel = agent.status === 'online' ? 'Online' : 'Offline';
-      const statusClass = agent.status === 'online' ? 'status--online' : 'status--offline';
+      const statusLabel =
+        agent.status === 'online' ? 'Online' :
+        agent.status === 'registering' ? 'Registering' : 'Offline';
+      const statusClass =
+        agent.status === 'online' ? 'status--online' :
+        agent.status === 'registering' ? 'status--registering' : 'status--offline';
 
       return `
         <label class="${labelClasses.join(' ')}">
@@ -867,124 +869,168 @@ function updateDistributeButtonState() {
 }
 
 /**
- * Render download tasks list
+ * Delete a registering task via API
  */
-function renderDownloadTasks() {
-  const container = elements.downloadTasksList();
-  if (!container) return;
-
-  const tasks = Array.from(downloadTasks.values());
-
-  if (tasks.length === 0) {
-    container.innerHTML = '<p class="empty-message">No running tasks</p>';
-    return;
+async function deleteRegisteringTask(taskId) {
+  const response = await fetch('/api/models/convert/' + encodeURIComponent(taskId), {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(txt || 'HTTP ' + response.status);
   }
-
-  container.innerHTML = tasks
-    .map((task) => {
-      const modelLabel = escapeHtml(task.model_name ?? '-');
-      const agentLabel = task.agent_id ? escapeHtml(task.agent_id.substring(0, 8)) : '-';
-      const normalizedStatus = normalizeDownloadStatus(task.status);
-      const statusClass = escapeHtml(normalizedStatus);
-      const statusLabel = escapeHtml(translateStatus(normalizedStatus));
-      const progressValue =
-        typeof task.progress === 'number' && !Number.isNaN(task.progress) ? task.progress : 0;
-      const normalizedProgress = Math.min(1, Math.max(0, progressValue));
-      const speedText =
-        typeof task.download_speed_bps === 'number'
-          ? `<div class="task-speed">${formatSpeed(task.download_speed_bps)}</div>`
-          : '';
-      const progressBlock =
-        normalizedStatus === 'downloading'
-          ? `
-        <div class="task-progress">
-          <progress value="${normalizedProgress}" max="1"></progress>
-          <span class="task-progress-text">${(normalizedProgress * 100).toFixed(1)}%</span>
-        </div>
-        ${speedText}
-      `
-          : '';
-
-      return `
-        <div class="task-card" data-task-id="${escapeHtml(task.id ?? '')}">
-          <div class="task-header">
-            <strong>${modelLabel}</strong>
-            <span class="task-status task-status--${statusClass}">${statusLabel}</span>
-          </div>
-          <div class="task-agent">Agent: ${agentLabel}${task.agent_id ? '...' : ''}</div>
-          ${progressBlock}
-          <div class="task-time">Started: ${formatTimestamp(task.created_at)}</div>
-        </div>
-      `;
-    })
-    .join('');
 }
 
-function renderConvertTasks() {
-  const container = elements.convertTasksList();
+/**
+ * Render phase indicator for registering tasks
+ * Note: Uses escapeHtml for all dynamic content (XSS protection)
+ */
+function renderPhaseIndicator(task) {
+  const phases = ['downloading', 'converting', 'done'];
+  const currentPhase = task.phase || (task.status === 'completed' ? 'done' :
+                        task.status === 'in_progress' ? 'converting' : 'downloading');
+
+  const phaseLabels = {
+    downloading: 'Downloading',
+    converting: 'Converting',
+    done: 'Done'
+  };
+
+  const items = phases.map(function(phase, idx) {
+    const isActive = phase === currentPhase;
+    const isCompleted = phases.indexOf(currentPhase) > idx ||
+                       (task.status === 'completed' && phase !== 'done');
+    const stateClass = isActive ? 'phase--active' :
+                      isCompleted ? 'phase--completed' : 'phase--pending';
+    return '<span class="phase-step ' + stateClass + '">' + phaseLabels[phase] + '</span>';
+  });
+
+  return '<div class="phase-indicator">' + items.join('<span class="phase-connector">→</span>') + '</div>';
+}
+
+/**
+ * Render registering tasks list (unified from Download + Convert tasks)
+ * Note: All user-supplied data is sanitized via escapeHtml
+ */
+function renderRegisteringTasks() {
+  const container = elements.registeringTasksList();
   if (!container) return;
 
-  const tasks = Array.from(convertTasks.values());
+  const tasks = Array.from(registeringTasks.values());
   if (tasks.length === 0) {
-    container.innerHTML = '<p class="empty-message">No convert tasks</p>';
+    container.textContent = '';
+    const emptyMsg = document.createElement('p');
+    emptyMsg.className = 'empty-message';
+    emptyMsg.textContent = 'No registering tasks';
+    container.appendChild(emptyMsg);
     return;
   }
 
-  container.innerHTML = tasks
-    .map((task) => {
-      const statusLabel = escapeHtml(task.status ?? '-');
-      const progress =
-        typeof task.progress === 'number' && !Number.isNaN(task.progress)
-          ? Math.min(1, Math.max(0, task.progress))
-          : 0;
-      const path = task.path ? escapeHtml(task.path) : '—';
-      const error = task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : '';
-      const progressBlock =
-        task.status === 'in_progress'
-          ? `<div class="task-progress"><progress value="${progress}" max="1"></progress><span class="task-progress-text">${(
-              progress * 100
-            ).toFixed(1)}%</span></div>`
-          : '';
-      const restoreBtn =
-        task.status === 'failed'
-          ? `<button class="btn btn-small" data-action="restore-convert" data-repo="${escapeHtml(
-              task.repo
-            )}" data-file="${escapeHtml(task.filename)}" data-rev="${escapeHtml(
-              task.revision || ''
-            )}" data-quant="${escapeHtml(task.quantization || '')}" data-chat="${escapeHtml(
-              task.chat_template || ''
-            )}">Restore</button>`
-          : '';
-      return `
-        <div class="task-card" data-convert-task-id="${escapeHtml(task.id)}">
-          <div class="task-header">
-            <strong>${escapeHtml(task.repo)}/${escapeHtml(task.filename)}</strong>
-            <span class="task-status task-status--${statusLabel}">${statusLabel}</span>
-          </div>
-          ${progressBlock}
-          <div class="task-path">Path: ${path}</div>
-          ${error}
-          ${restoreBtn ? `<div class="task-actions">${restoreBtn}</div>` : ''}
-          <div class="task-time">Updated: ${formatTimestamp(task.updated_at || task.created_at)}</div>
-        </div>
-      `;
-    })
-    .join('');
+  // Clear container
+  container.textContent = '';
 
-  container.querySelectorAll('button[data-action="restore-convert"]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const repo = btn.dataset.repo;
-      const filename = btn.dataset.file;
-      const revision = btn.dataset.rev || null;
-      const quantization = btn.dataset.quant || null;
-      const chatTemplate = btn.dataset.chat || null;
+  tasks.forEach(function(task) {
+    const modelLabel = task.repo && task.filename
+      ? escapeHtml(task.repo) + '/' + escapeHtml(task.filename)
+      : escapeHtml(task.model_name || '-');
+    const statusLabel = escapeHtml(task.status || '-');
+    const progress =
+      typeof task.progress === 'number' && !Number.isNaN(task.progress)
+        ? Math.min(1, Math.max(0, task.progress))
+        : 0;
+
+    const card = document.createElement('div');
+    card.className = 'task-card registering-task-card';
+    card.dataset.registeringTaskId = task.id;
+
+    // Build header
+    const header = document.createElement('div');
+    header.className = 'task-header';
+
+    const strong = document.createElement('strong');
+    strong.textContent = task.repo && task.filename
+      ? task.repo + '/' + task.filename
+      : (task.model_name || '-');
+    header.appendChild(strong);
+
+    const headerActions = document.createElement('div');
+    headerActions.className = 'task-header-actions';
+
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'task-status task-status--' + statusLabel;
+    statusSpan.textContent = task.status || '-';
+    headerActions.appendChild(statusSpan);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-small btn-delete';
+    deleteBtn.dataset.action = 'delete-task';
+    deleteBtn.dataset.taskId = task.id;
+    deleteBtn.title = 'Delete';
+    deleteBtn.textContent = '×';
+    headerActions.appendChild(deleteBtn);
+
+    header.appendChild(headerActions);
+    card.appendChild(header);
+
+    // Phase indicator (static content, safe)
+    const phaseDiv = document.createElement('div');
+    phaseDiv.className = 'phase-wrapper';
+    // Phase indicator uses only static labels, safe to use innerHTML
+    const phaseHtml = renderPhaseIndicator(task);
+    const phaseTemp = document.createElement('div');
+    phaseTemp.innerHTML = phaseHtml;
+    while (phaseTemp.firstChild) {
+      phaseDiv.appendChild(phaseTemp.firstChild);
+    }
+    card.appendChild(phaseDiv);
+
+    // Progress block
+    if (task.status === 'in_progress' || task.status === 'queued') {
+      const progressDiv = document.createElement('div');
+      progressDiv.className = 'task-progress';
+
+      const progressEl = document.createElement('progress');
+      progressEl.value = progress;
+      progressEl.max = 1;
+      progressDiv.appendChild(progressEl);
+
+      const progressText = document.createElement('span');
+      progressText.className = 'task-progress-text';
+      progressText.textContent = (progress * 100).toFixed(1) + '%';
+      progressDiv.appendChild(progressText);
+
+      card.appendChild(progressDiv);
+    }
+
+    // Error
+    if (task.error) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'task-error';
+      errorDiv.textContent = task.error;
+      card.appendChild(errorDiv);
+    }
+
+    // Timestamp
+    const timeDiv = document.createElement('div');
+    timeDiv.className = 'task-time';
+    timeDiv.textContent = 'Updated: ' + formatTimestamp(task.updated_at || task.created_at);
+    card.appendChild(timeDiv);
+
+    container.appendChild(card);
+  });
+
+  // Attach delete button handlers
+  container.querySelectorAll('button[data-action="delete-task"]').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      const taskId = btn.dataset.taskId;
       try {
-        await convertModel(repo, filename, revision, quantization, chatTemplate);
-        showSuccess('再キューしました');
-        await refreshConvertTasks();
+        await deleteRegisteringTask(taskId);
+        registeringTasks.delete(taskId);
+        renderRegisteringTasks();
+        showSuccess('Task deleted');
       } catch (e) {
         console.error(e);
-        showError(e.message || 'Restoreに失敗しました');
+        showError(e.message || 'Failed to delete task');
       }
     });
   });
@@ -1096,7 +1142,7 @@ function showSuccess(message) {
 // ========== Progress Monitoring ==========
 
 /**
- * Monitor download progress every 5 seconds
+ * Monitor registering task progress every 5 seconds
  */
 function monitorProgress() {
   if (progressPollingInterval) {
@@ -1104,30 +1150,18 @@ function monitorProgress() {
   }
 
   progressPollingInterval = setInterval(async () => {
-    const taskIds = Array.from(downloadTasks.keys());
+    // Refresh registering tasks from API
+    await refreshRegisteringTasks();
 
-    for (const taskId of taskIds) {
-      const task = await fetchTaskProgress(taskId);
-      if (task) {
-        downloadTasks.set(taskId, task);
-
-        // Remove completed or failed tasks after 10 seconds
-        if (task.status === 'completed' || task.status === 'failed') {
-          setTimeout(() => {
-            downloadTasks.delete(taskId);
-            renderDownloadTasks();
-          }, 10000);
-        }
-      }
-    }
-
-    renderDownloadTasks();
     // Update loaded models summary
     loadedModels = await fetchLoadedModels();
     renderLoadedModels();
 
-    // Stop polling when no tasks remain
-    if (downloadTasks.size === 0) {
+    // Stop polling when no active tasks remain
+    const hasActiveTasks = Array.from(registeringTasks.values()).some(
+      t => t.status === 'in_progress' || t.status === 'queued' || t.status === 'pending'
+    );
+    if (!hasActiveTasks && registeringTasks.size === 0) {
       clearInterval(progressPollingInterval);
       progressPollingInterval = null;
     }
@@ -1171,19 +1205,8 @@ async function handleDistribute() {
   const taskIds = await distributeModel(selectedModel, 'specific', agentIds);
 
   if (taskIds.length > 0) {
-    // Add tasks
-    for (const taskId of taskIds) {
-      downloadTasks.set(taskId, {
-        id: taskId,
-        model_name: selectedModel,
-        status: 'pending',
-        progress: 0,
-        agent_id: agentIds[taskIds.indexOf(taskId)] || agentIds[0],
-        created_at: new Date().toISOString(),
-      });
-    }
-
-    renderDownloadTasks();
+    // Refresh registering tasks to show new distribution tasks
+    await refreshRegisteringTasks();
     monitorProgress();
 
     // Clear checkboxes
@@ -1248,7 +1271,6 @@ async function initModelsUI(agents) {
   const convertOpen = elements.convertModalOpen();
   const convertClose = elements.convertModalClose();
   const convertSubmit = elements.convertSubmitBtn();
-  const convertTasksRefresh = elements.convertTasksRefreshBtn();
   const registerUrlBtn = elements.hfRegisterUrlSubmit();
 
   if (distributeButton) {
@@ -1298,14 +1320,11 @@ async function initModelsUI(agents) {
       try {
         await convertModel(repo, file, rev, null, chatTpl);
         showSuccess('Queued convert job');
-        await refreshConvertTasks();
+        await refreshRegisteringTasks();
       } catch (err) {
         showError(err.message || 'Failed to queue convert');
       }
     });
-  }
-  if (convertTasksRefresh) {
-    convertTasksRefresh.addEventListener('click', refreshConvertTasks);
   }
 
   if (registerUrlBtn) {
@@ -1324,11 +1343,12 @@ async function initModelsUI(agents) {
         const res = await registerModel(repo, filename, filename || repo);
         if (res.status === 'pending_conversion') {
           showSuccess(`Convert queued: ${res.name}`);
-          await refreshConvertTasks();
+          await refreshRegisteringTasks();
         } else {
           showSuccess(`Registered ${res.name}`);
           await refreshRegisteredModels();
         }
+        await refreshRegisteringTasks();
         if (input) input.value = '';
       } catch (err) {
         showError(err.message || 'Failed to register model from URL');
@@ -1342,17 +1362,14 @@ async function initModelsUI(agents) {
 
   // Set initial state
   updateDistributeButtonState();
-  renderDownloadTasks();
+  renderRegisteringTasks();
 
   // Fetch loaded models initially
   loadedModels = await fetchLoadedModels();
   renderLoadedModels();
 
-  // Fetch convert tasks initially
-  await refreshConvertTasks();
-
-  // Fetch active tasks initially
-  await refreshDownloadTasks();
+  // Fetch registering tasks initially
+  await refreshRegisteringTasks();
 
   // Start monitoring progress
   monitorProgress();
@@ -1360,7 +1377,7 @@ async function initModelsUI(agents) {
   const tasksRefresh = elements.tasksRefreshBtn();
   if (tasksRefresh) {
     tasksRefresh.addEventListener('click', async () => {
-      await refreshDownloadTasks();
+      await refreshRegisteringTasks();
     });
   }
 
@@ -1388,22 +1405,13 @@ async function refreshRegisteredModels() {
   renderRegisteredModels(registeredModels);
 }
 
-async function refreshConvertTasks() {
+async function refreshRegisteringTasks() {
   const tasks = await fetchConvertTasks();
-  convertTasks.clear();
+  registeringTasks.clear();
   for (const task of tasks) {
-    convertTasks.set(task.id, task);
+    registeringTasks.set(task.id, task);
   }
-  renderConvertTasks();
-}
-
-async function refreshDownloadTasks() {
-  const tasks = await fetchActiveTasks();
-  downloadTasks.clear();
-  for (const task of tasks) {
-    downloadTasks.set(task.id, task);
-  }
-  renderDownloadTasks();
+  renderRegisteringTasks();
 }
 
 // Expose to other scripts if needed

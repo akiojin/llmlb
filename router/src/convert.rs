@@ -146,6 +146,11 @@ impl ConvertTaskManager {
         self.tasks.lock().await.get(&id).cloned()
     }
 
+    /// ジョブを削除
+    pub async fn delete(&self, id: Uuid) -> bool {
+        self.tasks.lock().await.remove(&id).is_some()
+    }
+
     async fn process_task(
         tasks: Arc<Mutex<HashMap<Uuid, ConvertTask>>>,
         task_id: Uuid,

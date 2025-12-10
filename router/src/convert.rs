@@ -393,6 +393,35 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     )))
 }
 
+fn ensure_python_deps_sync() -> Result<(), RouterError> {
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+if missing:\n print(','.join(missing)); sys.exit(1)\n";
+    let output = std::process::Command::new(&python_bin)
+        .arg("-c")
+        .arg(script)
+        .output()
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let deps = if missing.is_empty() {
+        "transformers, torch, sentencepiece".to_string()
+    } else {
+        missing
+    };
+    Err(RouterError::Internal(format!(
+        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt (python_bin={}, stderr={})",
+        deps,
+        python_bin,
+        stderr
+    )))
+}
+
 fn should_use_fake_convert() -> bool {
     std::env::var("LLM_CONVERT_FAKE")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
@@ -477,9 +506,8 @@ pub fn verify_convert_ready() -> Result<(), RouterError> {
     let script = locate_convert_script()
         .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
     if is_default_convert_script(&script) {
-        tokio::runtime::Runtime::new()
-            .map_err(|e| RouterError::Internal(e.to_string()))?
-            .block_on(async { ensure_python_deps().await })?;
+        // 起動前チェックは同期で実行し、依存不足なら即エラー
+        ensure_python_deps_sync()?;
     }
     Ok(())
 }

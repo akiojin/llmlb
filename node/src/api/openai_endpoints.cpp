@@ -91,11 +91,12 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            std::string model = body.value("model", "");
-            // デフォルトembeddingモデルを適用
-            if (model.empty()) {
-                model = config_.default_embedding_model;
+            // モデルパラメータは必須（OpenAI API仕様準拠）
+            if (!body.contains("model") || !body["model"].is_string() || body["model"].get<std::string>().empty()) {
+                respondError(res, 400, "invalid_request", "model is required");
+                return;
             }
+            std::string model = body["model"].get<std::string>();
             if (!validateModel(model, res)) return;
 
             // inputを解析（文字列または文字列の配列）

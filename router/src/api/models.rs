@@ -31,30 +31,38 @@ use llm_router_common::error::{CommonError, RouterError};
 
 /// モデル名の妥当性を検証
 ///
-/// 有効なモデル名の形式: `name:tag` または `name`
-/// - name: 小文字英数字、ハイフン、アンダースコア
-/// - tag: 英数字、ピリオド、ハイフン
+/// 有効なモデル名の形式:
+/// - HuggingFace形式: `org/model` (例: openai/gpt-oss-20b, deepseek-ai/DeepSeek-V3.2)
+/// - レガシー形式: `name:tag` または `name`
 fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
-    if model_name.starts_with("hf/") {
-        // HF形式はプレフィックスだけ確認
-        if model_name.len() > 3 {
-            return Ok(());
-        }
-        return Err(RouterError::InvalidModelName(
-            "無効なHFモデル名".to_string(),
-        ));
-    }
     if model_name.is_empty() {
         return Err(RouterError::InvalidModelName(
-            "モデル名が空です".to_string(),
+            "Model name is empty".to_string(),
         ));
     }
 
-    // 基本的な形式チェック
+    // HuggingFace形式 (org/model) をチェック
+    if model_name.contains('/') {
+        let parts: Vec<&str> = model_name.split('/').collect();
+        if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            // org/model 形式は有効
+            return Ok(());
+        }
+        // hf/org/model 形式もサポート
+        if parts.len() == 3 && parts[0] == "hf" && !parts[1].is_empty() && !parts[2].is_empty() {
+            return Ok(());
+        }
+        return Err(RouterError::InvalidModelName(format!(
+            "Invalid model name format: {}",
+            model_name
+        )));
+    }
+
+    // レガシー形式 (name:tag) のチェック
     let parts: Vec<&str> = model_name.split(':').collect();
     if parts.len() > 2 {
         return Err(RouterError::InvalidModelName(format!(
-            "無効なモデル名形式: {}",
+            "Invalid model name format: {}",
             model_name
         )));
     }
@@ -67,7 +75,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
         })
     {
         return Err(RouterError::InvalidModelName(format!(
-            "無効なモデル名: {}",
+            "Invalid model name: {}",
             model_name
         )));
     }
@@ -81,7 +89,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
                 .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == 'b')
         {
             return Err(RouterError::InvalidModelName(format!(
-                "無効なモデルタグ: {}",
+                "Invalid model tag: {}",
                 model_name
             )));
         }
@@ -281,7 +289,9 @@ fn find_model_by_name(name: &str) -> Option<ModelInfo> {
 pub(crate) fn add_registered_model(model: ModelInfo) -> Result<(), RouterError> {
     let mut store = REGISTERED_MODELS.write().unwrap();
     if store.iter().any(|m| m.name == model.name) {
-        return Err(RouterError::InvalidModelName("重複登録されています".into()));
+        return Err(RouterError::InvalidModelName(
+            "Model already registered".into(),
+        ));
     }
     store.push(model);
     Ok(())
@@ -392,7 +402,7 @@ async fn resolve_first_gguf_in_repo(
         .map_err(|e| RouterError::Http(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(RouterError::Common(CommonError::Validation(
-            "指定されたリポジトリを取得できませんでした".into(),
+            "Failed to fetch specified repository".into(),
         )));
     }
     #[derive(Deserialize)]
@@ -410,7 +420,7 @@ async fn resolve_first_gguf_in_repo(
         .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
         .ok_or_else(|| {
             RouterError::Common(CommonError::Validation(
-                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
+                "No GGUF file found in repository".into(),
             ))
         })?;
     Ok(filename)
@@ -902,14 +912,14 @@ async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> 
     }
 
     if memories.is_empty() {
-        warnings.push("GPUメモリ情報が登録ノードにないため容量チェックできません".into());
+        warnings.push("No GPU memory info available from registered nodes".into());
         return warnings;
     }
 
     let max_mem = *memories.iter().max().unwrap();
     if required_memory > max_mem {
         warnings.push(format!(
-            "モデルの推奨メモリ{:.1}GBがノードの最大GPUメモリ{:.1}GBを超えています",
+            "Model requires {:.1}GB but max node GPU memory is {:.1}GB",
             required_memory as f64 / (1024.0 * 1024.0 * 1024.0),
             max_mem as f64 / (1024.0 * 1024.0 * 1024.0),
         ));
@@ -919,102 +929,33 @@ async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> 
 }
 
 /// POST /api/models/register - HF GGUFを対応モデルに登録
+///
+/// 新しい方針:
+/// - ユーザー指定リポジトリにGGUFがあれば使用
+/// - なければそのリポジトリのモデルをGGUFに変換
+/// - 他リポジトリからのGGUF自動取得は行わない
 pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let repo = req.repo.clone();
-    let original_input = repo.clone();
 
     // ファイル名を解決
-    let (filename, auto_resolved, resolved_from) = match req.filename.clone() {
-        Some(f) if f.to_lowercase().ends_with(".gguf") => {
-            // 既にGGUF形式 - そのまま使用
-            (f, false, None)
-        }
+    let filename = match req.filename.clone() {
         Some(f) => {
-            // 非GGUF形式 - GGUF版を検索
-            tracing::info!(repo = %repo, filename = %f, "Non-GGUF file specified, searching for GGUF alternatives");
-            match discover_gguf_versions(&state.http_client, &repo).await {
-                Ok(alternatives) if !alternatives.is_empty() => {
-                    // 最初の（最優先）プロバイダーのQ4_K_Mを優先、なければ最初のファイル
-                    let best = &alternatives[0];
-                    let gguf_file = best
-                        .files
-                        .iter()
-                        .find(|f| f.quantization.as_deref() == Some("Q4_K_M"))
-                        .or_else(|| best.files.first())
-                        .ok_or_else(|| RouterError::Internal("No GGUF files found".into()))?;
-
-                    tracing::info!(
-                        original_repo = %repo,
-                        resolved_repo = %best.repo,
-                        resolved_file = %gguf_file.filename,
-                        "Auto-resolved to GGUF version"
-                    );
-
-                    // 実際のrepoとfilenameを置き換える
-                    return register_model_internal(
-                        &state,
-                        &best.repo,
-                        &gguf_file.filename,
-                        req.display_name.clone(),
-                        req.chat_template.clone(),
-                        true,
-                        Some(original_input),
-                        Some(best.repo.clone()),
-                    )
-                    .await;
-                }
-                Ok(_) => {
-                    // GGUF版が見つからない - 変換を試みる
-                    tracing::info!(repo = %repo, "No GGUF alternatives found, will attempt conversion");
-                    (f, false, None)
-                }
-                Err(e) => {
-                    tracing::warn!(repo = %repo, error = ?e, "Failed to search for GGUF alternatives");
-                    (f, false, None)
-                }
-            }
+            // ファイル名が指定されている場合はそのまま使用
+            // （GGUFでない場合は後で変換される）
+            f
         }
         None => {
-            // ファイル名指定なし
-            // まずリポジトリ内のGGUFを探す
+            // ファイル名指定なし - リポジトリ内のGGUFを探す
             match resolve_first_gguf_in_repo(&state.http_client, &repo).await {
-                Ok(f) => (f, false, None),
+                Ok(f) => f,
                 Err(_) => {
-                    // リポジトリ内にGGUFがない - 他のリポジトリでGGUF版を検索
-                    tracing::info!(repo = %repo, "No GGUF in repo, searching for GGUF alternatives");
-                    match discover_gguf_versions(&state.http_client, &repo).await {
-                        Ok(alternatives) if !alternatives.is_empty() => {
-                            let best = &alternatives[0];
-                            let gguf_file = best
-                                .files
-                                .iter()
-                                .find(|f| f.quantization.as_deref() == Some("Q4_K_M"))
-                                .or_else(|| best.files.first())
-                                .ok_or_else(|| {
-                                    RouterError::Internal("No GGUF files found".into())
-                                })?;
-
-                            return register_model_internal(
-                                &state,
-                                &best.repo,
-                                &gguf_file.filename,
-                                req.display_name.clone(),
-                                req.chat_template.clone(),
-                                true,
-                                Some(original_input),
-                                Some(best.repo.clone()),
-                            )
-                            .await;
-                        }
-                        _ => {
-                            return Err(RouterError::Common(CommonError::Validation(
-                                "GGUFファイルが見つかりません。GGUF版のリポジトリを指定してください。".into()
-                            )).into());
-                        }
-                    }
+                    // リポジトリ内にGGUFがない → 変換対象として空文字列
+                    // （convert_managerが適切に処理する）
+                    tracing::info!(repo = %repo, "No GGUF in repo, will attempt conversion");
+                    String::new()
                 }
             }
         }
@@ -1026,114 +967,110 @@ pub async fn register_model(
         &filename,
         req.display_name.clone(),
         req.chat_template.clone(),
-        auto_resolved,
-        None,
-        resolved_from,
     )
     .await
 }
 
 /// モデル登録の内部実装
-#[allow(clippy::too_many_arguments)]
 async fn register_model_internal(
     state: &AppState,
     repo: &str,
     filename: &str,
-    display_name: Option<String>,
+    _display_name: Option<String>,
     chat_template: Option<String>,
-    auto_resolved: bool,
-    original_input: Option<String>,
-    resolved_from: Option<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let name = format!("hf/{}/{}", repo, filename);
+    // モデル名 = リポジトリ名（例: openai/gpt-oss-20b）
+    let name = repo.to_string();
 
+    // 重複チェック：登録済みモデルまたは処理中タスクに同じリポジトリがあればエラー
     if find_model_by_name(&name).is_some() {
-        return Err(
-            RouterError::Common(CommonError::Validation("重複登録されています".into())).into(),
-        );
-    }
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let download_url = format!("{}/{}/resolve/main/{}", base_url, repo, filename);
-
-    // HEADで存在確認（404時は明示的に返す）
-    let mut head = state.http_client.head(&download_url);
-    if let Ok(token) = std::env::var("HF_TOKEN") {
-        head = head.bearer_auth(token);
-    }
-    let head_res = head
-        .send()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-    if head_res.status() == reqwest::StatusCode::NOT_FOUND {
-        tracing::warn!(
-            repo = %repo,
-            filename = %filename,
-            status = ?head_res.status(),
-            "hf_model_register_not_found"
-        );
         return Err(RouterError::Common(CommonError::Validation(
-            "指定されたGGUFが見つかりません".into(),
+            "Model already registered".into(),
         ))
         .into());
     }
-    if !head_res.status().is_success() {
-        tracing::error!(
-            repo = %repo,
-            filename = %filename,
-            status = ?head_res.status(),
-            "hf_model_register_head_failed"
-        );
-        return Err(RouterError::Http(head_res.status().to_string()).into());
+    if state.convert_manager.has_task_for_repo(repo).await {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Model already registered".into(),
+        ))
+        .into());
     }
 
-    let content_length = head_res
-        .headers()
-        .get(reqwest::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
-    // llama.cpp runtimeは概ねサイズの1.5倍のメモリを使用するため同倍率で推定
-    const REQUIRED_MEMORY_RATIO: f64 = 1.5;
-    let required_memory = if content_length > 0 {
-        ((content_length as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64
+    // GGUFファイル名が空の場合は変換パスに進む（HEADチェックをスキップ）
+    let (content_length, required_memory, warnings) = if filename.is_empty() {
+        tracing::info!(repo = %repo, "No GGUF file specified, proceeding with conversion path");
+        (0_u64, 0_u64, vec![])
     } else {
-        0
+        let base_url = std::env::var("HF_BASE_URL")
+            .unwrap_or_else(|_| "https://huggingface.co".to_string())
+            .trim_end_matches('/')
+            .to_string();
+        let download_url = format!("{}/{}/resolve/main/{}", base_url, repo, filename);
+
+        // HEADで存在確認（404時は明示的に返す）
+        let mut head = state.http_client.head(&download_url);
+        if let Ok(token) = std::env::var("HF_TOKEN") {
+            head = head.bearer_auth(token);
+        }
+        let head_res = head
+            .send()
+            .await
+            .map_err(|e| RouterError::Http(e.to_string()))?;
+        if head_res.status() == reqwest::StatusCode::NOT_FOUND {
+            tracing::warn!(
+                repo = %repo,
+                filename = %filename,
+                status = ?head_res.status(),
+                "hf_model_register_not_found"
+            );
+            return Err(RouterError::Common(CommonError::Validation(
+                "Specified GGUF file not found".into(),
+            ))
+            .into());
+        }
+        if !head_res.status().is_success() {
+            tracing::error!(
+                repo = %repo,
+                filename = %filename,
+                status = ?head_res.status(),
+                "hf_model_register_head_failed"
+            );
+            return Err(RouterError::Http(head_res.status().to_string()).into());
+        }
+
+        let content_length = head_res
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        // llama.cpp runtimeは概ねサイズの1.5倍のメモリを使用するため同倍率で推定
+        const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+        let required_memory = if content_length > 0 {
+            ((content_length as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64
+        } else {
+            0
+        };
+
+        let warnings = compute_gpu_warnings(&state.registry, required_memory).await;
+        (content_length, required_memory, warnings)
     };
 
-    let warnings = compute_gpu_warnings(&state.registry, required_memory).await;
+    // NOTE: モデル登録は ConvertTask 完了時に finalize_model_registration() で行う
+    // ここでは REGISTERED_MODELS に追加しない（UI上の重複を防ぐため）
 
-    let model = ModelInfo {
-        name: name.clone(),
-        size: content_length,
-        description: display_name.unwrap_or_else(|| repo.to_string()),
-        required_memory,
-        tags: vec!["gguf".into()],
-        source: ModelSource::HfGguf,
-        download_url: Some(download_url),
-        path: None,
-        chat_template: chat_template.clone(),
-        repo: Some(repo.to_string()),
-        filename: Some(filename.to_string()),
-        last_modified: None,
-        status: Some("registered".into()),
-    };
-
-    upsert_registered_model(model);
-    persist_registered_models().await;
-
-    // 登録直後にコンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
-    let convert_manager = state.convert_manager.clone();
-    let repo_for_job = repo.to_string();
-    let filename_for_job = filename.to_string();
-    let chat_tpl_for_job = chat_template.clone();
-    tokio::spawn(async move {
-        convert_manager
-            .enqueue(repo_for_job, filename_for_job, None, None, chat_tpl_for_job)
-            .await;
-    });
+    // コンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
+    // 重複チェックのためenqueueはawaitして、タスクがキューに追加されてからレスポンスを返す
+    state
+        .convert_manager
+        .enqueue(
+            repo.to_string(),
+            filename.to_string(),
+            None,
+            None,
+            chat_template.clone(),
+        )
+        .await;
 
     tracing::info!(
         repo = %repo,
@@ -1141,28 +1078,16 @@ async fn register_model_internal(
         size_bytes = content_length,
         required_memory_bytes = required_memory,
         warnings = warnings.len(),
-        auto_resolved = auto_resolved,
         "hf_model_registered"
     );
 
-    let mut response = serde_json::json!({
+    let response = serde_json::json!({
         "name": name,
         "status": "registered",
         "size_bytes": content_length,
         "required_memory_bytes": required_memory,
         "warnings": warnings,
     });
-
-    // 自動解決情報を追加
-    if auto_resolved {
-        if let Some(orig) = &original_input {
-            response["auto_resolved"] = serde_json::json!(true);
-            response["original_input"] = serde_json::json!(orig);
-        }
-        if let Some(resolved) = &resolved_from {
-            response["resolved_from"] = serde_json::json!(resolved);
-        }
-    }
 
     Ok((StatusCode::CREATED, Json(response)))
 }
@@ -1967,7 +1892,7 @@ mod tests {
 
         let warnings = compute_gpu_warnings(&registry, 6 * 1024 * 1024 * 1024).await;
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("最大GPUメモリ"));
+        assert!(warnings[0].contains("max node GPU memory"));
     }
 
     #[tokio::test]

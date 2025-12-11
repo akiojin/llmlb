@@ -117,15 +117,15 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Initialize inference engine with dependencies
-        llm_node::InferenceEngine engine(llama_manager, model_storage);
-        spdlog::info("InferenceEngine initialized with llama.cpp support");
-
         // Create shared router client for both registration and progress reporting
         auto router_client = std::make_shared<llm_node::RouterClient>(router_url);
 
         // Create model_sync early so pull endpoint is ready for auto-distribution
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
+
+        // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
+        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());
+        spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
         llm_node::OpenAIEndpoints openai(registry, engine, cfg);

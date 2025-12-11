@@ -110,7 +110,9 @@ TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     server.stop();
 }
 
-TEST(ModelSyncTest, CopiesSharedPathWhenAvailable) {
+// Per SPEC-dcaeaec4 FR-3: When path is directly accessible, no download needed
+// (and no copy - InferenceEngine uses the path directly)
+TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     // Prepare shared model file
     TempDirGuard shared_guard;
     fs::create_directories(shared_guard.path);
@@ -140,15 +142,15 @@ TEST(ModelSyncTest, CopiesSharedPathWhenAvailable) {
 
     server.stop();
 
-    // Should not queue download because shared path was copied
+    // Should not queue download because shared path is accessible
     EXPECT_TRUE(result.to_download.empty()) << "to_download should be empty but has " << result.to_download.size() << " items";
 
+    // Per FR-3: No copy to local - InferenceEngine will use getRemotePath() directly
     auto target = local_guard.path / "gpt-oss_7b" / "model.gguf";
-    EXPECT_TRUE(fs::exists(target)) << "Target file not found: " << target;
-    std::ifstream ifs(target);
-    std::string content;
-    ifs >> content;
-    EXPECT_EQ(content, "abc");
+    EXPECT_FALSE(fs::exists(target)) << "Target file should NOT exist (no copy per spec)";
+
+    // Verify getRemotePath returns the accessible path
+    EXPECT_EQ(sync.getRemotePath("gpt-oss:7b"), shared_file.string());
 }
 
 TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {

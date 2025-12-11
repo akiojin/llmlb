@@ -33,9 +33,17 @@ export const DashboardSelectors = {
   models: {
     hfRegisterUrl: '#hf-register-url',
     hfRegisterSubmit: '#hf-register-url-submit',
-    registeredModelsList: '#registered-models-list',
-    downloadTasksList: '#download-tasks-list',
-    convertTasksList: '#convert-tasks-list',
+    // Unified local models view (registered + downloading)
+    localModelsList: '#local-models-list',
+    // Legacy selectors (hidden but kept for backward compatibility)
+    registeredModelsList: '#local-models-list',
+    registeringTasksList: '#local-models-list',
+    downloadTasksList: '#local-models-list',
+    convertTasksList: '#local-models-list',
+    // Local model card selectors
+    localModelCard: '.local-model-card',
+    localModelCardDownloading: '.local-model-card--downloading',
+    localModelCardRegistered: '.local-model-card--registered',
     convertModal: '#convert-modal',
     convertModalClose: '#convert-modal-close',
     convertRepo: '#convert-repo',

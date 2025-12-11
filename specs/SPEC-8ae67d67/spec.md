@@ -148,8 +148,38 @@
 - qwen3-coder:30b
 
 **制約**
+
 - 上記以外のモデルは「対応モデル」として扱わない。UIと /v1/models は常にこの固定リストのみ返す。
 - 旧GPU帯域別モデル（gpt-oss:7b/3b/1b 等）の自動選択は廃止する。
+
+---
+
+## モデルID形式（Ollama互換）
+
+モデルIDはOllama互換の`name:tag`形式を採用する。
+
+### ID生成ルール
+
+1. **GGUFファイル名から自動生成**: HuggingFaceリポジトリのファイル名からモデル名とサイズを抽出
+   - 例: `llama-2-7b.Q4_K_M.gguf` → `llama-2:7b`
+   - 例: `gemma-2-9b-it-Q4_K_M.gguf` → `gemma-2:9b-it`
+
+2. **量子化タグの除去**: Q4_K_M, Q5_0, IQ2_M等の量子化タグはIDから除外
+
+3. **バリアント情報の保持**: -it, -instruct, -chat等のバリアントはタグに含める
+   - 例: `Mistral-7B-Instruct-v0.2.Q5_K_M.gguf` → `mistral:7b-instruct-v0.2`
+
+4. **サイズ情報なしの場合**: `:latest`タグを付与
+   - 例: `mistral-small.gguf` → `mistral-small:latest`
+
+5. **汎用ファイル名のフォールバック**: `model.bin`等の場合はリポジトリ名を使用
+   - 例: `model.bin` + `openai/gpt-oss-20b` → `gpt-oss:20b`
+
+### API互換性
+
+- `/v1/models` は新形式のIDでモデルを返す
+- `/api/models/register` は新形式のIDでモデルを登録
+- `/api/models/{model_id}` は新形式のIDでモデルを削除
 
 ---
 

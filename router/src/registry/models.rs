@@ -366,9 +366,222 @@ pub enum DownloadStatus {
     Failed,
 }
 
+/// GGUFファイル名からOllama風モデルIDを生成
+///
+/// パターン解析:
+/// - "llama-2-7b.Q4_K_M.gguf" → "llama-2:7b"
+/// - "gemma-2-9b-it-Q4_K_M.gguf" → "gemma-2:9b-it"
+/// - "model.bin" (サイズ情報なし) → リポジトリ名から推測
+///
+/// 抽出ルール:
+/// 1. 拡張子 (.gguf, .bin) を除去
+/// 2. 量子化サフィックス (Q4_K_M, Q5_0, etc.) を除去
+/// 3. モデル名とサイズ/バリアントを分離
+/// 4. 小文字に正規化
+pub fn generate_ollama_style_id(filename: &str, fallback_repo: &str) -> String {
+    // 汎用ファイル名（model.bin, model.gguf等）の場合はリポジトリ名から生成
+    let base_name = filename
+        .trim_end_matches(".gguf")
+        .trim_end_matches(".bin")
+        .trim_end_matches(".safetensors");
+
+    let is_generic = matches!(base_name.to_lowercase().as_str(), "model" | "");
+
+    let name_to_parse = if is_generic {
+        // リポジトリ名の最後の部分を使用 (e.g., "openai/gpt-oss-20b" → "gpt-oss-20b")
+        fallback_repo
+            .split('/')
+            .next_back()
+            .unwrap_or(fallback_repo)
+    } else {
+        base_name
+    };
+
+    // 量子化サフィックスを除去 (Q4_K_M, Q5_0, Q8_0, IQ2_M, etc.)
+    let without_quant = remove_quantization_suffix(name_to_parse);
+
+    // -GGUF サフィックスを除去
+    let without_gguf = without_quant
+        .trim_end_matches("-GGUF")
+        .trim_end_matches("-gguf");
+
+    // モデル名とタグを抽出
+    extract_name_and_tag(without_gguf)
+}
+
+/// 量子化サフィックスを除去
+fn remove_quantization_suffix(name: &str) -> &str {
+    // パターン: .Q4_K_M, -Q5_0, _Q8_0, .IQ2_M, Q4_K_M (区切りなし) など
+    // 再帰的に量子化タグを除去（複数回あり得る場合に備える）
+
+    // まず区切り文字付きパターンを検索
+    if let Some(pos) = name.rfind(['.', '-', '_']) {
+        let suffix = &name[pos + 1..];
+        if is_quantization_tag(suffix) {
+            // 再帰的に残りも処理
+            return remove_quantization_suffix(&name[..pos]);
+        }
+    }
+
+    // 区切り文字なしでファイル名末尾に直接量子化タグがある場合
+    // 例: "llama-2-7b.Q4_K_M" (拡張子除去後)
+    // Q/q または IQ/iq で始まり、数字が続くパターンを末尾から検索
+    let lower = name.to_lowercase();
+    for pattern_start in ["q", "iq"] {
+        if let Some(idx) = lower.rfind(pattern_start) {
+            if idx > 0 {
+                let before = name.chars().nth(idx - 1);
+                // 量子化タグの前は区切り文字か数字以外
+                if before.is_some_and(|c| c == '.' || c == '-' || c == '_' || c == 'b' || c == 'B')
+                {
+                    let after_q = &name[idx + pattern_start.len()..];
+                    if after_q.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                        return &name[..idx - 1];
+                    }
+                }
+            }
+        }
+    }
+
+    name
+}
+
+/// 量子化タグかどうかを判定
+fn is_quantization_tag(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    // Q4_K_M, Q5_0, Q8_0, IQ2_M, IQ4_XS など
+    (lower.starts_with('q') || lower.starts_with("iq"))
+        && lower.len() > 1
+        && lower
+            .chars()
+            .nth(if lower.starts_with("iq") { 2 } else { 1 })
+            .is_some_and(|c| c.is_ascii_digit())
+}
+
+/// モデル名とタグを抽出して "name:tag" 形式で返す
+fn extract_name_and_tag(name: &str) -> String {
+    let lower = name.to_lowercase();
+
+    // サイズパターンを検索: 7b, 13b, 70b, 8x7b, 9b-it, 7b-instruct-v0.2 など
+    // パターン: -{数字}b または -{数字}x{数字}b
+    let size_pattern = find_size_pattern(&lower);
+
+    match size_pattern {
+        Some((model_name, tag)) => {
+            format!("{}:{}", model_name.trim_matches('-'), tag)
+        }
+        None => {
+            // サイズが見つからない場合は :latest を付与
+            format!("{}:latest", lower.trim_matches('-'))
+        }
+    }
+}
+
+/// サイズパターンを検索して (モデル名, タグ) を返す
+fn find_size_pattern(name: &str) -> Option<(String, String)> {
+    // パターン: -7b, -13b, -70b, -8x7b, -7b-it, -7b-instruct-v0.2
+    // または: llama-2-7b, gemma-2-9b-it
+    let chars: Vec<char> = name.chars().collect();
+    let len = chars.len();
+
+    for i in 0..len {
+        // '-' または数字の開始を探す
+        if chars[i] == '-' || (i > 0 && chars[i].is_ascii_digit()) {
+            let start = if chars[i] == '-' { i + 1 } else { i };
+            if start >= len {
+                continue;
+            }
+
+            // 数字を収集
+            let mut j = start;
+            while j < len && (chars[j].is_ascii_digit() || chars[j] == 'x') {
+                j += 1;
+            }
+
+            // 'b' または 'B' で終わるかチェック
+            if j < len && (chars[j] == 'b' || chars[j] == 'B') {
+                let size_end = j + 1;
+                let model_name = &name[..i];
+
+                // タグ部分: サイズ + 残りのバリアント
+                let tag = if size_end < len {
+                    // バリアント部分を含める (例: -it, -instruct-v0.2)
+                    let variant = &name[size_end..];
+                    let variant = variant.trim_start_matches('-');
+                    if variant.is_empty() {
+                        name[start..size_end].to_string()
+                    } else {
+                        format!("{}-{}", &name[start..size_end], variant)
+                    }
+                } else {
+                    name[start..size_end].to_string()
+                };
+
+                if !model_name.is_empty() {
+                    return Some((model_name.to_string(), tag));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ===== Ollama風ID生成テスト =====
+
+    #[test]
+    fn test_generate_ollama_id_standard_gguf() {
+        // 標準的なGGUFファイル名: llama-2-7b.Q4_K_M.gguf → llama-2:7b
+        assert_eq!(
+            generate_ollama_style_id("llama-2-7b.Q4_K_M.gguf", "TheBloke/Llama-2-7B-GGUF"),
+            "llama-2:7b"
+        );
+    }
+
+    #[test]
+    fn test_generate_ollama_id_with_variant() {
+        // バリアント付き: gemma-2-9b-it → gemma-2:9b-it
+        assert_eq!(
+            generate_ollama_style_id("gemma-2-9b-it-Q4_K_M.gguf", "bartowski/gemma-2-9b-it-GGUF"),
+            "gemma-2:9b-it"
+        );
+    }
+
+    #[test]
+    fn test_generate_ollama_id_generic_filename() {
+        // 汎用ファイル名(model.bin)の場合、リポジトリ名からフォールバック
+        assert_eq!(
+            generate_ollama_style_id("model.bin", "openai/gpt-oss-20b"),
+            "gpt-oss:20b"
+        );
+    }
+
+    #[test]
+    fn test_generate_ollama_id_no_size() {
+        // サイズ情報がない場合は :latest を付与
+        assert_eq!(
+            generate_ollama_style_id("mistral-small.gguf", "mistral/mistral-small"),
+            "mistral-small:latest"
+        );
+    }
+
+    #[test]
+    fn test_generate_ollama_id_instruct_variant() {
+        // Instructバリアント
+        assert_eq!(
+            generate_ollama_style_id(
+                "Mistral-7B-Instruct-v0.2.Q5_K_M.gguf",
+                "mistralai/Mistral-7B-Instruct-v0.2-GGUF"
+            ),
+            "mistral:7b-instruct-v0.2"
+        );
+    }
+
+    // ===== 既存テスト =====
 
     #[test]
     fn test_model_info_new() {

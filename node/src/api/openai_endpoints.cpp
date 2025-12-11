@@ -163,8 +163,16 @@ bool OpenAIEndpoints::validateModel(const std::string& model, httplib::Response&
         respondError(res, 400, "model_required", "model is required");
         return false;
     }
-    if (!registry_.hasModel(model)) {
-        respondError(res, 404, "model_not_found", "model not found");
+    // Check local registry first
+    if (registry_.hasModel(model)) {
+        return true;
+    }
+    // Try to load from remote path (SPEC-dcaeaec4 FR-3)
+    // loadModel() will check local storage first, then remote path
+    auto load_result = engine_.loadModel(model);
+    if (!load_result.success) {
+        respondError(res, 404, "model_not_found",
+            load_result.error_message.empty() ? "model not found" : load_result.error_message);
         return false;
     }
     return true;

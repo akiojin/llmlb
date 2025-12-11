@@ -11,6 +11,7 @@ namespace llm_node {
 // 前方宣言
 class LlamaManager;
 class ModelStorage;
+class ModelSync;
 
 struct ChatMessage {
     std::string role;
@@ -35,8 +36,8 @@ struct ModelLoadResult {
 
 class InferenceEngine {
 public:
-    /// コンストラクタ: LlamaManager と ModelStorage への参照を注入
-    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage);
+    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync への参照を注入
+    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
@@ -96,6 +97,7 @@ public:
 private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
+    ModelSync* model_sync_{nullptr};
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;

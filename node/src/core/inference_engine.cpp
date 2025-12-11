@@ -1,6 +1,7 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
 #include "models/model_storage.h"
+#include "models/model_sync.h"
 #include "include/llama.h"
 
 #include <spdlog/spdlog.h>
@@ -17,9 +18,10 @@ static std::string extractGptOssFinalMessage(const std::string& output);
 std::string extractGptOssFinalMessageForTest(const std::string& output);
 
 // コンストラクタ
-InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage)
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync)
     : manager_(&manager)
-    , model_storage_(&model_storage) {}
+    , model_storage_(&model_storage)
+    , model_sync_(model_sync) {}
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -792,6 +794,10 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
 }
 
 // モデルをロード（ローカルまたは共有パスから解決）
+// SPEC-dcaeaec4 FR-3: パス解決の優先順位
+//   1. ローカル ~/.llm-router/models/<name>/model.gguf
+//   2. ルーターから取得したpath（直接参照、コピーなし）
+//   3. download_url からダウンロード（sync()で処理済み）
 ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
     ModelLoadResult result;
 
@@ -800,20 +806,29 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    // 1. モデルパス解決（ローカル or 共有パス）
+    // 1. まずローカルストレージからパス解決を試行
     std::string gguf_path = model_storage_->resolveGguf(model_name);
+
+    // 2. ローカルになければ、ルーターのリモートパスを確認
+    if (gguf_path.empty() && model_sync_ != nullptr) {
+        gguf_path = model_sync_->getRemotePath(model_name);
+        if (!gguf_path.empty()) {
+            spdlog::info("Using remote path for model {}: {}", model_name, gguf_path);
+        }
+    }
+
     if (gguf_path.empty()) {
         result.error_message = "Model not found: " + model_name;
         return result;
     }
 
-    // 2. 既にロード済みならそのまま成功
+    // 3. 既にロード済みならそのまま成功
     if (manager_->isLoaded(gguf_path)) {
         result.success = true;
         return result;
     }
 
-    // 3. モデルをロード
+    // 4. モデルをロード
     if (!manager_->loadModelIfNeeded(gguf_path)) {
         result.error_message = "Failed to load model: " + gguf_path;
         return result;

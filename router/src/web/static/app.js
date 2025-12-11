@@ -2160,7 +2160,7 @@ async function fetchNodeLogs({ skipIfFetched = false } = {}) {
 
   try {
     const nodeId = encodeURIComponent(state.logs.selectedNodeId);
-    const data = await fetchJson(`/api/dashboard/logs/nodes/${nodeId}?limit=${LOG_ENTRY_LIMIT}`);
+    const data = await fetchJson(`/api/nodes/${nodeId}/logs?limit=${LOG_ENTRY_LIMIT}`);
     state.logs.node = Array.isArray(data.entries) ? data.entries : [];
     state.logs.nodePath = typeof data.path === "string" ? data.path : null;
     state.logs.nodeFetched = true;
@@ -2400,7 +2400,7 @@ async function loadModalNodeLogs(nodeId, { force = false } = {}) {
 
   try {
     const payload = await fetchJson(
-      `/api/dashboard/logs/nodes/${nodeId}?limit=${MODAL_LOG_ENTRY_LIMIT}`,
+      `/api/nodes/${nodeId}/logs?limit=${MODAL_LOG_ENTRY_LIMIT}`,
     );
     state.modalLog.entries = Array.isArray(payload.entries) ? payload.entries : [];
     state.modalLog.path = typeof payload.path === "string" ? payload.path : null;

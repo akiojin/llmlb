@@ -4,6 +4,20 @@
 # Serena MCP tool cache directory
 .serena/
 
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # Dependencies
 node_modules/
 node-compile-cache/
@@ -18,7 +32,19 @@ package-lock.json
 # Build output
 dist/
 build/
+out/
 *.tsbuildinfo
+
+# C++ build artifacts
+*.o
+*.a
+*.dylib
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.cmake
 
 # Environment variables
 .env
@@ -57,6 +83,12 @@ coverage/
 
 # nyc test coverage
 .nyc_output
+
+# Playwright test output
+**/test-results/
+**/playwright-report/
+**/reports/
+**/.playwright/
 
 # ESLint cache
 .eslintcache

@@ -35,7 +35,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
 
   test('M-06: Download (all) button does NOT exist', async ({ page }) => {
     // Download (all) button should be removed - nodes sync models automatically
-    const downloadAllBtn = page.locator('#registered-models-list button[data-action="download"]');
+    const downloadAllBtn = page.locator('#local-models-list button[data-action="download"]');
     await expect(downloadAllBtn).toHaveCount(0);
   });
 

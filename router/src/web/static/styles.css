@@ -1404,6 +1404,142 @@ body.body--modal-open {
   background: rgba(255, 51, 102, 0.1);
 }
 
+/* Local Model Card (unified view) */
+.local-model-card {
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.local-model-card:hover {
+  border-color: var(--accent);
+}
+
+.local-model-card--downloading {
+  border-left-color: var(--accent);
+}
+
+.local-model-card--registered {
+  border-left-color: var(--success);
+}
+
+.local-model-card--failed {
+  border-left-color: var(--danger);
+}
+
+.local-model-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.local-model-card__name {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  word-break: break-word;
+  flex: 1;
+}
+
+.local-model-card__status {
+  margin: var(--space-2) 0;
+}
+
+.status-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.status-label--downloading {
+  background: rgba(0, 255, 159, 0.15);
+  color: var(--accent);
+}
+
+.status-label--registered {
+  background: rgba(40, 167, 69, 0.15);
+  color: var(--success);
+}
+
+.status-label--failed {
+  background: rgba(220, 53, 69, 0.15);
+  color: var(--danger);
+}
+
+.local-model-card__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.local-model-card__progress progress {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  appearance: none;
+}
+
+.local-model-card__progress progress::-webkit-progress-bar {
+  background: var(--bg-card);
+  border-radius: 3px;
+}
+
+.local-model-card__progress progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.local-model-card__progress-text {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  min-width: 45px;
+  text-align: right;
+}
+
+.local-model-card__info {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.local-model-card__error {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--danger);
+  padding: var(--space-1) var(--space-2);
+  background: rgba(255, 51, 102, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+/* Cancel button for downloading tasks */
+.btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-cancel:hover {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(255, 170, 0, 0.1);
+}
+
 /* Logs Section */
 .logs-grid {
   display: grid;
@@ -1770,5 +1906,80 @@ body.body--modal-open {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* =========================================
+   8. Toast Notifications
+   ========================================= */
+
+.toast-container {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 400px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast--error {
+  border-color: var(--danger);
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.toast--success {
+  border-color: var(--success);
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.toast__message {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text);
+  word-break: break-word;
+}
+
+.toast__close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  line-height: 1;
+}
+
+.toast__close:hover {
+  color: var(--text);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }

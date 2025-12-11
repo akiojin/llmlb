@@ -49,6 +49,7 @@ const elements = {
   availableModelsList: () => document.getElementById('available-models-list'),
   hfModelsList: () => document.getElementById('hf-models-list'),
   registeredModelsList: () => document.getElementById('registered-models-list'),
+  localModelsList: () => document.getElementById('local-models-list'),
   agentsForDistribution: () => document.getElementById('agents-for-distribution'),
   distributeButton: () => document.getElementById('distribute-model-button'),
   selectAllButton: () => document.getElementById('select-all-agents'),
@@ -872,30 +873,219 @@ async function deleteRegisteringTask(taskId) {
 }
 
 /**
- * Render phase indicator for registering tasks
- * Note: Uses escapeHtml for all dynamic content (XSS protection)
+ * Render status label for local models
+ * Shows single status: "Downloading" during download, "Registered" when complete
  */
-function renderPhaseIndicator(task) {
-  const phases = ['downloading', 'converting', 'done'];
-  const currentPhase = task.phase || (task.status === 'completed' ? 'done' :
-                        task.status === 'in_progress' ? 'converting' : 'downloading');
+function renderStatusLabel(item) {
+  if (item.state === 'registered') {
+    return '<span class="status-label status-label--registered">Registered</span>';
+  } else if (item.state === 'failed') {
+    return '<span class="status-label status-label--failed">Failed</span>';
+  } else {
+    return '<span class="status-label status-label--downloading">Downloading</span>';
+  }
+}
 
-  const phaseLabels = {
-    downloading: 'Downloading',
-    converting: 'Converting',
-    done: 'Done'
-  };
+/**
+ * Merge registered models and registering tasks into unified local models list
+ * Priority: in-progress tasks > registered models (for same repo)
+ */
+function mergeModelsAndTasks(models, tasks) {
+  const merged = new Map();
 
-  const items = phases.map(function(phase, idx) {
-    const isActive = phase === currentPhase;
-    const isCompleted = phases.indexOf(currentPhase) > idx ||
-                       (task.status === 'completed' && phase !== 'done');
-    const stateClass = isActive ? 'phase--active' :
-                      isCompleted ? 'phase--completed' : 'phase--pending';
-    return '<span class="phase-step ' + stateClass + '">' + phaseLabels[phase] + '</span>';
+  // First, add all registered models
+  models.forEach(function(model) {
+    const key = model.name;
+    merged.set(key, {
+      id: model.name,
+      name: model.name,
+      state: 'registered',
+      size_bytes: model.size_bytes || 0,
+      required_memory_bytes: model.required_memory_bytes || 0,
+      progress: 1,
+      error: null,
+      updated_at: null
+    });
   });
 
-  return '<div class="phase-indicator">' + items.join('<span class="phase-connector">→</span>') + '</div>';
+  // Then, overlay with in-progress tasks (they take precedence)
+  tasks.forEach(function(task) {
+    const key = task.repo || task.model_name;
+    if (!key) return;
+    // In-progress or failed tasks override registered status
+    const state = task.status === 'completed' ? 'registered' :
+                  task.status === 'failed' ? 'failed' : 'downloading';
+    merged.set(key, {
+      id: task.id,
+      name: key,
+      state: state,
+      size_bytes: 0,
+      required_memory_bytes: 0,
+      progress: typeof task.progress === 'number' ? task.progress : 0,
+      error: task.error || null,
+      updated_at: task.updated_at || task.created_at
+    });
+  });
+
+  // Convert to array and sort: downloading first, then registered
+  return Array.from(merged.values()).sort(function(a, b) {
+    if (a.state === 'downloading' && b.state !== 'downloading') return -1;
+    if (a.state !== 'downloading' && b.state === 'downloading') return 1;
+    if (a.state === 'failed' && b.state !== 'failed') return -1;
+    if (a.state !== 'failed' && b.state === 'failed') return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Render unified local models list
+ * Combines registered models and registering tasks into single view
+ */
+function renderLocalModels() {
+  const container = elements.localModelsList();
+  if (!container) return;
+
+  const tasks = Array.from(registeringTasks.values());
+  const localModels = mergeModelsAndTasks(registeredModels, tasks);
+
+  if (localModels.length === 0) {
+    container.innerHTML = '<p class="empty-message">No local models</p>';
+    return;
+  }
+
+  container.textContent = '';
+
+  localModels.forEach(function(item) {
+    const card = document.createElement('div');
+    card.className = 'local-model-card local-model-card--' + item.state;
+    card.dataset.modelName = item.name;
+
+    // Header with model name and action button
+    const header = document.createElement('div');
+    header.className = 'local-model-card__header';
+
+    const nameEl = document.createElement('strong');
+    nameEl.className = 'local-model-card__name';
+    nameEl.textContent = item.name;
+    header.appendChild(nameEl);
+
+    const actionBtn = document.createElement('button');
+    actionBtn.className = 'btn btn-small';
+    if (item.state === 'registered') {
+      actionBtn.classList.add('btn-delete');
+      actionBtn.dataset.action = 'delete-model';
+      actionBtn.dataset.model = item.name;
+      actionBtn.title = 'Delete';
+      actionBtn.textContent = '×';
+    } else if (item.state === 'downloading') {
+      actionBtn.classList.add('btn-cancel');
+      actionBtn.dataset.action = 'cancel-task';
+      actionBtn.dataset.taskId = item.id;
+      actionBtn.title = 'Cancel';
+      actionBtn.textContent = '×';
+    } else {
+      // failed state - hide button or show retry
+      actionBtn.classList.add('btn-delete');
+      actionBtn.dataset.action = 'delete-task';
+      actionBtn.dataset.taskId = item.id;
+      actionBtn.title = 'Dismiss';
+      actionBtn.textContent = '×';
+    }
+    header.appendChild(actionBtn);
+    card.appendChild(header);
+
+    // Status label
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'local-model-card__status';
+    statusDiv.innerHTML = renderStatusLabel(item);
+    card.appendChild(statusDiv);
+
+    // Progress bar (only for downloading state)
+    if (item.state === 'downloading') {
+      const progressDiv = document.createElement('div');
+      progressDiv.className = 'local-model-card__progress';
+
+      const progressBar = document.createElement('progress');
+      progressBar.value = Math.min(1, Math.max(0, item.progress));
+      progressBar.max = 1;
+      progressDiv.appendChild(progressBar);
+
+      const progressText = document.createElement('span');
+      progressText.className = 'local-model-card__progress-text';
+      progressText.textContent = (item.progress * 100).toFixed(1) + '%';
+      progressDiv.appendChild(progressText);
+
+      card.appendChild(progressDiv);
+    }
+
+    // Size info (only for registered state)
+    if (item.state === 'registered' && item.size_bytes > 0) {
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'local-model-card__info';
+      infoDiv.textContent = formatBytes(item.size_bytes) + ' | Ready';
+      card.appendChild(infoDiv);
+    }
+
+    // Error message (for failed state)
+    if (item.state === 'failed' && item.error) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'local-model-card__error';
+      errorDiv.textContent = item.error;
+      card.appendChild(errorDiv);
+    }
+
+    container.appendChild(card);
+  });
+
+  // Attach delete handlers for registered models
+  container.querySelectorAll('button[data-action="delete-model"]').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      const modelName = btn.dataset.model;
+      // Show confirmation dialog
+      if (!confirm('Delete model "' + modelName + '"?\n\nThis will remove the model files from disk.')) {
+        return;
+      }
+      try {
+        await deleteModel(modelName);
+        // Also delete related task if exists (prevents state inconsistency)
+        const taskToDelete = Array.from(registeringTasks.values())
+          .find(function(t) { return t.repo === modelName; });
+        if (taskToDelete) {
+          try {
+            await deleteRegisteringTask(taskToDelete.id);
+            registeringTasks.delete(taskToDelete.id);
+          } catch (taskErr) {
+            // Ignore task deletion errors - model was already deleted
+            console.warn('Failed to delete related task:', taskErr);
+          }
+        }
+        showSuccess('Deleted ' + modelName);
+        await refreshRegisteredModels();
+        renderLocalModels();
+      } catch (e) {
+        showError(e.message || 'Failed to delete model');
+      }
+    });
+  });
+
+  // Attach cancel/delete handlers for tasks
+  container.querySelectorAll('button[data-action="cancel-task"], button[data-action="delete-task"]').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      const taskId = btn.dataset.taskId;
+      // Show confirmation dialog
+      if (!confirm('Cancel this download?\n\nProgress will be lost.')) {
+        return;
+      }
+      try {
+        await deleteRegisteringTask(taskId);
+        registeringTasks.delete(taskId);
+        renderLocalModels();
+        showSuccess('Task cancelled');
+      } catch (e) {
+        showError(e.message || 'Failed to cancel task');
+      }
+    });
+  });
 }
 
 /**
@@ -938,8 +1128,8 @@ function renderRegisteringTasks() {
     header.className = 'task-header';
 
     const strong = document.createElement('strong');
-    strong.textContent = task.repo && task.filename
-      ? task.repo + '/' + task.filename
+    strong.textContent = task.repo
+      ? (task.filename ? task.repo + '/' + task.filename : task.repo)
       : (task.model_name || '-');
     header.appendChild(strong);
 
@@ -1109,24 +1299,48 @@ function formatTimestamp(isoString) {
 }
 
 /**
- * Show error message
+ * Create and show a toast notification
+ * Toasts stack and must be dismissed manually with ×
  */
-function showError(message) {
-  const banner = document.getElementById('error-banner');
-  const text = document.getElementById('error-banner-text');
-  if (!banner || !text) return;
-  banner.classList.remove('success-banner');
-  text.textContent = message;
-  banner.classList.remove('hidden');
+function showToast(message, type) {
+  const container = document.getElementById('toast-container');
+  if (!container) {
+    console.error('Toast container not found');
+    return;
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'toast toast--' + type;
+
+  const msgSpan = document.createElement('span');
+  msgSpan.className = 'toast__message';
+  msgSpan.textContent = message;
+  toast.appendChild(msgSpan);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'toast__close';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.addEventListener('click', function() {
+    toast.remove();
+  });
+  toast.appendChild(closeBtn);
+
+  container.appendChild(toast);
 }
 
+/**
+ * Show error message (stacking toast, manual dismiss)
+ */
+function showError(message) {
+  showToast(message, 'error');
+}
+
+/**
+ * Show success message (stacking toast, manual dismiss)
+ */
 function showSuccess(message) {
-  const banner = document.getElementById('error-banner');
-  const text = document.getElementById('error-banner-text');
-  if (!banner || !text) return console.info(message);
-  text.textContent = message;
-  banner.classList.remove('hidden');
-  banner.classList.add('success-banner');
+  showToast(message, 'success');
 }
 
 // ========== Progress Monitoring ==========
@@ -1246,7 +1460,21 @@ async function initModelsUI(agents) {
   renderHfModels([]);
 
   registeredModels = await fetchRegisteredModels();
-  renderRegisteredModels(registeredModels);
+  // Also fetch registering tasks for unified view
+  const tasks = await fetchConvertTasks();
+  registeringTasks.clear();
+  for (const task of tasks) {
+    registeringTasks.set(task.id, task);
+  }
+  renderLocalModels();
+
+  // Start polling if there are active tasks
+  const hasActiveTasks = Array.from(registeringTasks.values()).some(
+    t => t.status === 'in_progress' || t.status === 'queued' || t.status === 'pending'
+  );
+  if (hasActiveTasks) {
+    monitorProgress();
+  }
 
   // Render agent list
   renderAgentsForDistribution(agents);
@@ -1322,7 +1550,7 @@ async function initModelsUI(agents) {
       const input = elements.hfRegisterUrlInput();
       const parsed = parseHfUrl(input?.value?.trim() || '');
       if (!parsed) {
-        showError('HFのURLまたはリポジトリURLを指定してください (例: https://huggingface.co/org/repo/resolve/main/model.Q4_K_M.gguf)');
+        showError('Please enter a HuggingFace URL or repo (e.g. https://huggingface.co/org/repo or org/repo)');
         return;
       }
       const repo = parsed.repo;
@@ -1341,6 +1569,10 @@ async function initModelsUI(agents) {
         }
         await refreshRegisteredModels();
         await refreshRegisteringTasks();
+        // Refresh again after a short delay to catch newly created tasks
+        setTimeout(async () => {
+          await refreshRegisteringTasks();
+        }, 500);
         if (input) input.value = '';
       } catch (err) {
         showError(err.message || 'Failed to register model from URL');
@@ -1394,7 +1626,7 @@ function updateModelsUI(agents) {
 
 async function refreshRegisteredModels() {
   registeredModels = await fetchRegisteredModels();
-  renderRegisteredModels(registeredModels);
+  renderLocalModels();
 }
 
 async function refreshRegisteringTasks() {
@@ -1403,7 +1635,7 @@ async function refreshRegisteringTasks() {
   for (const task of tasks) {
     registeringTasks.set(task.id, task);
   }
-  renderRegisteringTasks();
+  renderLocalModels();
 }
 
 // Expose to other scripts if needed

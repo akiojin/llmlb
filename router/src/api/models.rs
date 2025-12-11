@@ -37,7 +37,7 @@ use llm_router_common::error::{CommonError, RouterError};
 fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
     if model_name.is_empty() {
         return Err(RouterError::InvalidModelName(
-            "モデル名が空です".to_string(),
+            "Model name is empty".to_string(),
         ));
     }
 
@@ -53,7 +53,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
             return Ok(());
         }
         return Err(RouterError::InvalidModelName(format!(
-            "無効なモデル名形式: {}",
+            "Invalid model name format: {}",
             model_name
         )));
     }
@@ -62,7 +62,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
     let parts: Vec<&str> = model_name.split(':').collect();
     if parts.len() > 2 {
         return Err(RouterError::InvalidModelName(format!(
-            "無効なモデル名形式: {}",
+            "Invalid model name format: {}",
             model_name
         )));
     }
@@ -75,7 +75,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
         })
     {
         return Err(RouterError::InvalidModelName(format!(
-            "無効なモデル名: {}",
+            "Invalid model name: {}",
             model_name
         )));
     }
@@ -89,7 +89,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
                 .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == 'b')
         {
             return Err(RouterError::InvalidModelName(format!(
-                "無効なモデルタグ: {}",
+                "Invalid model tag: {}",
                 model_name
             )));
         }
@@ -289,7 +289,9 @@ fn find_model_by_name(name: &str) -> Option<ModelInfo> {
 pub(crate) fn add_registered_model(model: ModelInfo) -> Result<(), RouterError> {
     let mut store = REGISTERED_MODELS.write().unwrap();
     if store.iter().any(|m| m.name == model.name) {
-        return Err(RouterError::InvalidModelName("重複登録されています".into()));
+        return Err(RouterError::InvalidModelName(
+            "Model already registered".into(),
+        ));
     }
     store.push(model);
     Ok(())
@@ -400,7 +402,7 @@ async fn resolve_first_gguf_in_repo(
         .map_err(|e| RouterError::Http(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(RouterError::Common(CommonError::Validation(
-            "指定されたリポジトリを取得できませんでした".into(),
+            "Failed to fetch specified repository".into(),
         )));
     }
     #[derive(Deserialize)]
@@ -418,7 +420,7 @@ async fn resolve_first_gguf_in_repo(
         .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
         .ok_or_else(|| {
             RouterError::Common(CommonError::Validation(
-                "リポジトリ内にGGUFファイルが見つかりませんでした".into(),
+                "No GGUF file found in repository".into(),
             ))
         })?;
     Ok(filename)
@@ -910,14 +912,14 @@ async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> 
     }
 
     if memories.is_empty() {
-        warnings.push("GPUメモリ情報が登録ノードにないため容量チェックできません".into());
+        warnings.push("No GPU memory info available from registered nodes".into());
         return warnings;
     }
 
     let max_mem = *memories.iter().max().unwrap();
     if required_memory > max_mem {
         warnings.push(format!(
-            "モデルの推奨メモリ{:.1}GBがノードの最大GPUメモリ{:.1}GBを超えています",
+            "Model requires {:.1}GB but max node GPU memory is {:.1}GB",
             required_memory as f64 / (1024.0 * 1024.0 * 1024.0),
             max_mem as f64 / (1024.0 * 1024.0 * 1024.0),
         ));
@@ -982,14 +984,16 @@ async fn register_model_internal(
 
     // 重複チェック：登録済みモデルまたは処理中タスクに同じリポジトリがあればエラー
     if find_model_by_name(&name).is_some() {
-        return Err(
-            RouterError::Common(CommonError::Validation("重複登録されています".into())).into(),
-        );
+        return Err(RouterError::Common(CommonError::Validation(
+            "Model already registered".into(),
+        ))
+        .into());
     }
     if state.convert_manager.has_task_for_repo(repo).await {
-        return Err(
-            RouterError::Common(CommonError::Validation("重複登録されています".into())).into(),
-        );
+        return Err(RouterError::Common(CommonError::Validation(
+            "Model already registered".into(),
+        ))
+        .into());
     }
 
     // GGUFファイル名が空の場合は変換パスに進む（HEADチェックをスキップ）
@@ -1020,7 +1024,7 @@ async fn register_model_internal(
                 "hf_model_register_not_found"
             );
             return Err(RouterError::Common(CommonError::Validation(
-                "指定されたGGUFが見つかりません".into(),
+                "Specified GGUF file not found".into(),
             ))
             .into());
         }
@@ -1888,7 +1892,7 @@ mod tests {
 
         let warnings = compute_gpu_warnings(&registry, 6 * 1024 * 1024 * 1024).await;
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("最大GPUメモリ"));
+        assert!(warnings[0].contains("max node GPU memory"));
     }
 
     #[tokio::test]

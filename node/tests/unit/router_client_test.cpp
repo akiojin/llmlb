@@ -158,7 +158,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
 
     RouterClient client("http://127.0.0.1:18084");
     HeartbeatMetrics m{12.5, 34.5, 1024, 2048};
-    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, 2);
+    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, 2);
 
     server.stop();
 

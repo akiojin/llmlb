@@ -128,7 +128,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
-        llm_node::OpenAIEndpoints openai(registry, engine);
+        llm_node::OpenAIEndpoints openai(registry, engine, cfg);
         llm_node::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
         node_endpoints.setRouterClient(router_client);
@@ -214,9 +214,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Heartbeat thread
         std::cout << "Starting heartbeat thread..." << std::endl;
         std::string agent_token = reg.agent_token;
-        heartbeat_thread = std::thread([&router, node_id = reg.node_id, agent_token, &cfg]() {
+        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, agent_token, &cfg]() {
             while (llm_node::is_running()) {
-                router.sendHeartbeat(node_id, agent_token);
+                // 現在ロードされているモデルを取得
+                auto loaded_models = llama_manager.getLoadedModels();
+                // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
+                std::vector<std::string> loaded_embedding_models;
+                router.sendHeartbeat(node_id, agent_token, std::nullopt, std::nullopt,
+                                     loaded_models, loaded_embedding_models);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }
         });

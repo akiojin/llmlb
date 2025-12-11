@@ -62,6 +62,9 @@ pub struct Node {
     /// ロード済みモデル一覧
     #[serde(default)]
     pub loaded_models: Vec<String>,
+    /// ロード済みEmbeddingモデル一覧
+    #[serde(default)]
+    pub loaded_embedding_models: Vec<String>,
     /// 搭載GPUの詳細
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gpu_devices: Vec<GpuDeviceInfo>,
@@ -103,6 +106,17 @@ pub enum NodeStatus {
     Registering,
     /// オフライン
     Offline,
+}
+
+/// モデルタイプ
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelType {
+    /// 言語モデル（デフォルト）
+    #[default]
+    Llm,
+    /// Embeddingモデル
+    Embedding,
 }
 
 /// ヘルスメトリクス
@@ -221,6 +235,7 @@ mod tests {
             tags: vec!["primary".to_string()],
             notes: Some("memo".to_string()),
             loaded_models: vec!["gpt-oss:20b".to_string()],
+            loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),
                 count: 2,
@@ -262,6 +277,7 @@ mod tests {
         assert!(agent.tags.is_empty());
         assert!(agent.notes.is_none());
         assert!(agent.loaded_models.is_empty());
+        assert!(agent.loaded_embedding_models.is_empty());
         assert!(agent.gpu_devices.is_empty());
         assert!(!agent.gpu_available);
         assert!(agent.gpu_count.is_none());
@@ -401,5 +417,20 @@ mod tests {
         assert_eq!(metrics.memory_usage, 40.0);
         assert_eq!(metrics.active_requests, 2);
         assert_eq!(metrics.avg_response_time_ms, None);
+    }
+
+    #[test]
+    fn test_model_type_serialization() {
+        assert_eq!(serde_json::to_string(&ModelType::Llm).unwrap(), "\"llm\"");
+        assert_eq!(
+            serde_json::to_string(&ModelType::Embedding).unwrap(),
+            "\"embedding\""
+        );
+    }
+
+    #[test]
+    fn test_model_type_default() {
+        let default_type: ModelType = Default::default();
+        assert_eq!(default_type, ModelType::Llm);
     }
 }

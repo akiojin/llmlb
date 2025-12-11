@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include "utils/config.h"
 
 namespace llm_node {
 
@@ -12,13 +13,14 @@ class InferenceEngine;
 
 class OpenAIEndpoints {
 public:
-    OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine);
+    OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config);
 
     void registerRoutes(httplib::Server& server);
 
 private:
     ModelRegistry& registry_;
     InferenceEngine& engine_;
+    const NodeConfig& config_;
 
     static void setJson(httplib::Response& res, const nlohmann::json& body);
     void respondError(httplib::Response& res, int status, const std::string& code, const std::string& message);

@@ -65,7 +65,7 @@ pub async fn get_coordinator_logs(
     }))
 }
 
-/// GET /api/dashboard/logs/nodes/:node_id
+/// GET /api/nodes/:node_id/logs
 pub async fn get_node_logs(
     Path(node_id): Path<Uuid>,
     Query(query): Query<LogQuery>,

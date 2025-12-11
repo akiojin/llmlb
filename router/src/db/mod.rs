@@ -260,6 +260,7 @@ mod tests {
             tags: Vec::new(),
             notes: None,
             loaded_models: Vec::new(),
+            loaded_embedding_models: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -313,6 +314,7 @@ mod tests {
             tags: Vec::new(),
             notes: None,
             loaded_models: Vec::new(),
+            loaded_embedding_models: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -364,6 +366,7 @@ mod tests {
             tags: Vec::new(),
             notes: None,
             loaded_models: Vec::new(),
+            loaded_embedding_models: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -398,6 +401,7 @@ mod tests {
             tags: vec!["primary".into()],
             notes: None,
             loaded_models: vec!["gpt-oss:7b".into()],
+            loaded_embedding_models: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,

@@ -193,6 +193,7 @@ pub async fn register_node(
         .update_last_seen(
             response.node_id,
             Some(loaded_models),
+            None, // loaded_embedding_models
             None,
             None,
             None,

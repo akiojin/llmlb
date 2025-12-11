@@ -91,7 +91,7 @@ pub async fn embeddings(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
-    let model = extract_model(&payload)?;
+    let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
     proxy_openai_post(
         &state,
         payload,
@@ -208,6 +208,16 @@ fn extract_model(payload: &Value) -> Result<String, AppError> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| validation_error("`model` field is required for OpenAI-compatible requests"))
+}
+
+/// モデル名を抽出し、未指定または空の場合はデフォルト値を使用
+fn extract_model_with_default(payload: &Value, default: String) -> String {
+    payload
+        .get("model")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or(default)
 }
 
 fn extract_stream(payload: &Value) -> bool {

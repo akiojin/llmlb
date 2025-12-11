@@ -242,6 +242,12 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         used_env = true;
     }
 
+    if (const char* v = std::getenv("LLM_DEFAULT_EMBEDDING_MODEL")) {
+        cfg.default_embedding_model = v;
+        log << "env:DEFAULT_EMBEDDING_MODEL=" << v << " ";
+        used_env = true;
+    }
+
     if (log.tellp() > 0) log << "|";
     log << "sources=";
     if (used_env) log << "env";

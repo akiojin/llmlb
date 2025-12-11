@@ -7,6 +7,7 @@
 #include "api/node_endpoints.h"
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
+#include "utils/config.h"
 
 using namespace llm_node;
 
@@ -14,7 +15,8 @@ TEST(HttpServerTest, ServesHealthAndMetrics) {
     ModelRegistry registry;
     registry.setModels({"gpt-oss:7b"});
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18086, openai, node);
     server.start();
@@ -35,7 +37,8 @@ TEST(HttpServerTest, HandlesCorsPreflightAndHeaders) {
     ModelRegistry registry;
     registry.setModels({"gpt-oss:7b"});
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18089, openai, node);
     server.start();
@@ -58,7 +61,8 @@ TEST(HttpServerTest, HandlesCorsPreflightAndHeaders) {
 TEST(HttpServerTest, ReturnsJsonErrorsWithHandlers) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18090, openai, node);
     server.start();
@@ -83,7 +87,8 @@ TEST(HttpServerTest, ReturnsJsonErrorsWithHandlers) {
 TEST(HttpServerTest, MiddlewareCanShortCircuitRequests) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18091, openai, node);
     server.addMiddleware([](const httplib::Request& req, httplib::Response& res) {
@@ -113,7 +118,8 @@ TEST(HttpServerTest, MiddlewareCanShortCircuitRequests) {
 TEST(HttpServerTest, LoggerReceivesRequests) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18092, openai, node);
     std::atomic<bool> logged{false};

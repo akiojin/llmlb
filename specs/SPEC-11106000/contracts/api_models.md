@@ -42,9 +42,16 @@
 ```
 - **Errors**: 400 無効名/URL欠損, 409 重複, 424 HFから取得不可。
 
-## POST /api/models/download
-- **Purpose**: 登録済みモデルをノードにダウンロードさせる。
+## ~~POST /api/models/download~~ (廃止)
+
+**廃止日**: 2025-12-10
+**代替**: `POST /api/models/distribute` を使用してください。
+
+## POST /api/models/distribute
+
+- **Purpose**: 登録済みモデルをノードにダウンロード（配布）させる。
 - **Body**:
+
 ```json
 {
   "model_name": "hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf",
@@ -52,19 +59,29 @@
   "node_ids": ["..."]      // target=specific のとき必須
 }
 ```
+
 - **Response** 202:
+
 ```json
 { "task_ids": ["<uuid>", "..."] }
 ```
 
 ## GET /api/tasks/{task_id}
+
 - 既存を流用。`status/progress/speed` を含む DownloadTask を返す。
 
 ## GET /v1/models
+
 - 対応モデルに HF 登録分も含めて返す（idのみ。displayやsourceは拡張フィールドとしてオプション）。
 
 ---
-## CLI コマンド（仕様反映用）
-- `llm-router model list [--search <q>] [--limit N] [--offset M] [--format json|table]`
-- `llm-router model add <repo> --file <gguf>` → POST /api/models/register
-- `llm-router model download <name> (--all | --node <uuid>)`
+
+## CLI コマンド（廃止）
+
+**廃止日**: 2025-12-10
+
+CLIコマンドは廃止されました。以下のAPIを直接使用してください：
+
+- モデル一覧: `GET /api/models/available`
+- モデル登録: `POST /api/models/register`
+- モデル配布: `POST /api/models/distribute`

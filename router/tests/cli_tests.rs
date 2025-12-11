@@ -1,17 +1,11 @@
 //! CLI integration tests
 //!
 //! Tests for command-line interface parsing and behavior.
+//! The CLI only supports -h/--help and -V/--version flags.
+//! All other operations are performed via API/Dashboard UI.
 
 use clap::Parser;
-use llm_router::cli::{Cli, Commands};
-
-/// T005: Test --help shows user subcommand
-#[test]
-fn test_help_shows_user_subcommand() {
-    // Verify the CLI structure contains user subcommand
-    let cli = Cli::try_parse_from(["llm-router", "user", "list"]).unwrap();
-    assert!(matches!(cli.command, Some(Commands::User { .. })));
-}
+use llm_router::cli::Cli;
 
 /// T006: Test --version output contains version number
 #[test]
@@ -24,7 +18,7 @@ fn test_version_available() {
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
 }
 
-/// T005: Test help output contains user subcommand
+/// T005: Test --help is available
 #[test]
 fn test_help_available() {
     // Try parsing with --help should return error (because it prints and exits)
@@ -34,94 +28,42 @@ fn test_help_available() {
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
 }
 
-/// Test user list command parsing
+/// Test no arguments (should start server)
 #[test]
-fn test_user_list_parsing() {
-    let cli = Cli::try_parse_from(["llm-router", "user", "list"]).unwrap();
-    match cli.command {
-        Some(Commands::User { command }) => {
-            assert!(matches!(command, llm_router::cli::user::UserCommand::List));
-        }
-        _ => panic!("Expected User command"),
-    }
+fn test_no_args_starts_server() {
+    // Running without arguments should succeed and start the server
+    let cli = Cli::try_parse_from(["llm-router"]);
+    assert!(cli.is_ok());
 }
 
-/// Test user add command parsing
+/// Test short version flag
 #[test]
-fn test_user_add_parsing() {
-    let cli = Cli::try_parse_from([
-        "llm-router",
-        "user",
-        "add",
-        "testuser",
-        "--password",
-        "secret123",
-    ])
-    .unwrap();
-    match cli.command {
-        Some(Commands::User { command }) => {
-            if let llm_router::cli::user::UserCommand::Add(add) = command {
-                assert_eq!(add.username, "testuser");
-                assert_eq!(add.password, "secret123");
-            } else {
-                panic!("Expected Add command");
-            }
-        }
-        _ => panic!("Expected User command"),
-    }
+fn test_short_version_flag() {
+    let result = Cli::try_parse_from(["llm-router", "-V"]);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
 }
 
-/// Test user add command with short password flag
+/// Test short help flag
 #[test]
-fn test_user_add_short_flag() {
-    let cli =
-        Cli::try_parse_from(["llm-router", "user", "add", "testuser", "-p", "secret123"]).unwrap();
-    match cli.command {
-        Some(Commands::User { command }) => {
-            if let llm_router::cli::user::UserCommand::Add(add) = command {
-                assert_eq!(add.username, "testuser");
-                assert_eq!(add.password, "secret123");
-            } else {
-                panic!("Expected Add command");
-            }
-        }
-        _ => panic!("Expected User command"),
-    }
+fn test_short_help_flag() {
+    let result = Cli::try_parse_from(["llm-router", "-h"]);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
 }
 
-/// Test user delete command parsing
+/// Test unknown argument is rejected
 #[test]
-fn test_user_delete_parsing() {
-    let cli = Cli::try_parse_from(["llm-router", "user", "delete", "testuser"]).unwrap();
-    match cli.command {
-        Some(Commands::User { command }) => {
-            if let llm_router::cli::user::UserCommand::Delete(delete) = command {
-                assert_eq!(delete.username, "testuser");
-            } else {
-                panic!("Expected Delete command");
-            }
-        }
-        _ => panic!("Expected User command"),
-    }
-}
-
-/// Test no command (should start server)
-#[test]
-fn test_no_command_returns_none() {
-    let cli = Cli::try_parse_from(["llm-router"]).unwrap();
-    assert!(cli.command.is_none());
-}
-
-/// Test missing password for user add
-#[test]
-fn test_user_add_missing_password() {
-    let result = Cli::try_parse_from(["llm-router", "user", "add", "testuser"]);
+fn test_unknown_arg_rejected() {
+    let result = Cli::try_parse_from(["llm-router", "--unknown"]);
     assert!(result.is_err());
 }
 
-/// Test missing username for user delete
+/// Test subcommand is rejected (no subcommands available)
 #[test]
-fn test_user_delete_missing_username() {
-    let result = Cli::try_parse_from(["llm-router", "user", "delete"]);
+fn test_subcommand_rejected() {
+    let result = Cli::try_parse_from(["llm-router", "user"]);
     assert!(result.is_err());
 }

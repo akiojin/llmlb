@@ -8,8 +8,8 @@ namespace llm_node {
 
 using json = nlohmann::json;
 
-OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine)
-    : registry_(registry), engine_(engine) {}
+OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
+    : registry_(registry), engine_(engine), config_(config) {}
 
 void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     server.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
@@ -91,16 +91,58 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            std::string model = body.value("model", "");
+            // モデルパラメータは必須（OpenAI API仕様準拠）
+            if (!body.contains("model") || !body["model"].is_string() || body["model"].get<std::string>().empty()) {
+                respondError(res, 400, "invalid_request", "model is required");
+                return;
+            }
+            std::string model = body["model"].get<std::string>();
             if (!validateModel(model, res)) return;
-            std::string input = body.contains("input") ? body["input"].dump() : "";
-            // ダミー埋め込み（固定長3）
+
+            // inputを解析（文字列または文字列の配列）
+            std::vector<std::string> inputs;
+            if (body.contains("input")) {
+                if (body["input"].is_string()) {
+                    inputs.push_back(body["input"].get<std::string>());
+                } else if (body["input"].is_array()) {
+                    for (const auto& item : body["input"]) {
+                        if (item.is_string()) {
+                            inputs.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+            }
+
+            if (inputs.empty()) {
+                respondError(res, 400, "invalid_request", "input is required");
+                return;
+            }
+
+            // embeddingを生成
+            auto embeddings = engine_.generateEmbeddings(inputs, model);
+
+            // OpenAI互換レスポンスを構築
+            json data = json::array();
+            int total_tokens = 0;
+            for (size_t i = 0; i < embeddings.size(); ++i) {
+                data.push_back({
+                    {"object", "embedding"},
+                    {"embedding", embeddings[i]},
+                    {"index", static_cast<int>(i)}
+                });
+                // トークン数の概算（文字数 / 4）
+                total_tokens += static_cast<int>(inputs[i].size() / 4 + 1);
+            }
+
             json resp = {
-                {"data", json::array({{{"object", "embedding"}, {"embedding", {1.0, 0.0, -1.0}}, {"index", 0}}})},
-                {"model", body.value("model", "")},
-                {"usage", {{"prompt_tokens", static_cast<int>(input.size())}, {"total_tokens", static_cast<int>(input.size())}}}
+                {"object", "list"},
+                {"data", data},
+                {"model", model},
+                {"usage", {{"prompt_tokens", total_tokens}, {"total_tokens", total_tokens}}}
             };
             setJson(res, resp);
+        } catch (const std::exception& e) {
+            respondError(res, 500, "internal_error", std::string("embedding error: ") + e.what());
         } catch (...) {
             respondError(res, 400, "bad_request", "invalid JSON body");
         }

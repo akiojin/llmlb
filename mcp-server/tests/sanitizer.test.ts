@@ -91,6 +91,38 @@ describe("CurlSanitizer", () => {
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("shell injection");
     });
+
+    it("should reject short option with value concatenated (-o/path)", () => {
+      const result = sanitizer.sanitize(
+        "curl -o/tmp/file http://localhost:8080"
+      );
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("Forbidden option");
+    });
+
+    it("should reject -O with URL concatenated", () => {
+      const result = sanitizer.sanitize(
+        "curl -Ohttp://localhost:8080/file"
+      );
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("Forbidden option");
+    });
+
+    it("should reject -u with credentials concatenated", () => {
+      const result = sanitizer.sanitize(
+        "curl -uadmin:password http://localhost:8080"
+      );
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("Forbidden option");
+    });
+
+    it("should reject -K with config path concatenated", () => {
+      const result = sanitizer.sanitize(
+        "curl -K/etc/curlrc http://localhost:8080"
+      );
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("Forbidden option");
+    });
   });
 
   describe("extractUrl", () => {

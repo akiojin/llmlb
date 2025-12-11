@@ -107,6 +107,9 @@ pub struct HealthCheckRequest {
     /// ノードがロード済みのモデル一覧
     #[serde(default)]
     pub loaded_models: Vec<String>,
+    /// ノードがロード済みのEmbeddingモデル一覧
+    #[serde(default)]
+    pub loaded_embedding_models: Vec<String>,
     /// モデル起動中フラグ
     #[serde(default)]
     pub initializing: bool,
@@ -184,9 +187,9 @@ pub struct RequestResponseRecord {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RequestType {
-    /// /api/chat エンドポイント
+    /// /v1/chat/completions エンドポイント
     Chat,
-    /// /api/generate エンドポイント
+    /// /v1/completions エンドポイント
     Generate,
     /// /v1/embeddings エンドポイント
     Embeddings,
@@ -261,6 +264,7 @@ mod tests {
             active_requests: 3,
             average_response_time_ms: Some(123.4),
             loaded_models: vec!["gpt-oss:20b".to_string()],
+            loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             initializing: true,
             ready_models: Some((1, 2)),
         };
@@ -278,6 +282,10 @@ mod tests {
             deserialized.average_response_time_ms
         );
         assert_eq!(request.loaded_models, deserialized.loaded_models);
+        assert_eq!(
+            request.loaded_embedding_models,
+            deserialized.loaded_embedding_models
+        );
     }
 
     #[test]
@@ -297,6 +305,7 @@ mod tests {
             active_requests: 2,
             average_response_time_ms: Some(100.0),
             loaded_models: vec!["llama3:8b".to_string()],
+            loaded_embedding_models: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
         };

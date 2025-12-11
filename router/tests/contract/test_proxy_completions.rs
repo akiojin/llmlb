@@ -1,4 +1,4 @@
-//! Contract Test: OpenAI /api/generate proxy
+//! Contract Test: OpenAI /v1/completions proxy
 
 use std::sync::Arc;
 
@@ -97,6 +97,7 @@ async fn agent_tags_handler(State(state): State<Arc<AgentStubState>>) -> impl In
 #[serial]
 async fn proxy_completions_end_to_end_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
     let agent_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("gpt-oss:20b".to_string()),
         response: AgentGenerateStubResponse::Success(serde_json::json!({
@@ -117,7 +118,7 @@ async fn proxy_completions_end_to_end_success() {
 
     let client = Client::new();
     let response = client
-        .post(format!("http://{}/api/generate", coordinator.addr()))
+        .post(format!("http://{}/v1/completions", coordinator.addr()))
         .json(&serde_json::json!({
             "model": "gpt-oss:20b",
             "prompt": "ping",
@@ -136,6 +137,7 @@ async fn proxy_completions_end_to_end_success() {
 #[serial]
 async fn proxy_completions_propagates_upstream_error() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
     let agent_stub = spawn_agent_stub(AgentStubState {
         expected_model: Some("missing-model".to_string()),
         response: AgentGenerateStubResponse::Error(
@@ -153,7 +155,7 @@ async fn proxy_completions_propagates_upstream_error() {
 
     let client = Client::new();
     let response = client
-        .post(format!("http://{}/api/generate", coordinator.addr()))
+        .post(format!("http://{}/v1/completions", coordinator.addr()))
         .json(&serde_json::json!({
             "model": "missing-model",
             "prompt": "ping",

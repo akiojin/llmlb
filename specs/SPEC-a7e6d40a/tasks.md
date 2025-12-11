@@ -2,6 +2,7 @@
 
 **入力**: `/specs/SPEC-a7e6d40a/`の設計ドキュメント
 **前提条件**: plan.md (必須)
+**更新日**: 2025-12-10
 
 ## フォーマット: `[ID] [P?] 説明`
 
@@ -14,9 +15,8 @@
   - `clap = { version = "4", features = ["derive", "env"] }`
 - [x] T002 `router/src/cli/mod.rs` にCLIモジュールの基本構造を作成
   - Cliアーキタイプ構造体（clap derive）
-  - Commands enum（None/User）
-- [x] T003 `router/src/cli/user.rs` にuserサブコマンドモジュールを作成
-  - UserCommand enum（List/Add/Delete）
+  - ~~Commands enum（None/User）~~ → 廃止（Phase 4で削除）
+- [x] ~~T003~~ **廃止** `router/src/cli/user.rs` - Phase 4で完全削除
 - [x] T004 `router/src/lib.rs` に `pub mod cli;` を追加
 
 ## Phase 3.2: テストファースト (TDD)
@@ -25,7 +25,7 @@
 
 - [x] T005-T010 `router/tests/cli_tests.rs` にCLIパーステストを統合
   - `--help` / `--version` 表示テスト
-  - `user list` / `add` / `delete` コマンドパーステスト
+  - ~~`user list` / `add` / `delete` コマンドパーステスト~~ → 廃止（Phase 4で削除）
 
 ## Phase 3.3: コア実装 (テストが失敗した後のみ)
 
@@ -34,20 +34,13 @@
   - 引数なし → サーバー起動（既存動作維持）
   - `--help` → ヘルプ表示
   - `--version` → バージョン表示
-  - `user` → サブコマンドへディスパッチ
+  - ~~`user` → サブコマンドへディスパッチ~~ → 廃止（Phase 4で削除）
 - [x] T012 `router/src/cli/mod.rs` にCli構造体を実装
   - `#[command(version, about)]` 属性
   - 環境変数一覧をhelpに表示
-- [x] T013 `router/src/cli/user.rs` に user list を実装
-  - DBからユーザー一覧を取得
-  - ユーザー名とロールを表示
-- [x] T014 `router/src/cli/user.rs` に user add を実装
-  - パスワードバリデーション（8文字以上）
-  - bcryptでハッシュ化
-  - DBに挿入
-- [x] T015 `router/src/cli/user.rs` に user delete を実装
-  - ユーザー存在確認
-  - DBから削除
+- [x] ~~T013~~ **廃止** user list - API `GET /api/users` で代替
+- [x] ~~T014~~ **廃止** user add - API `POST /api/users` で代替
+- [x] ~~T015~~ **廃止** user delete - API `DELETE /api/users/:id` で代替
 
 ## Phase 3.4: 環境変数統一
 
@@ -122,17 +115,50 @@
   - `llm-node --help` → 環境変数一覧表示 ✓
   - `llm-node --version` → "llm-node 1.0.0" ✓
 
+## Phase 4: CLI簡素化（2025-12-10追加）
+
+**設計方針変更**: CLIはサーバー起動専用とし、すべての管理操作はAPI/Dashboard経由で行う。
+
+- [x] T036 `router/src/cli/user.rs` を削除
+  - ユーザー管理はAPI経由で実行
+- [x] T037 `router/src/cli/model.rs` を削除
+  - モデル管理はAPI経由で実行
+- [x] T038 `router/src/cli/mod.rs` を簡素化
+  - Commands enum を削除
+  - preload_models オプションを削除
+  - Cli 構造体のみ残す（-h/-V のみ）
+- [x] T039 `router/src/main.rs` を簡素化
+  - handle_user_command() を削除
+  - model コマンド処理を削除
+  - parse_repo_filename() を削除
+  - preload_models 処理を削除
+- [x] T040 `router/tests/cli_tests.rs` を更新
+  - user/model 関連テストを削除
+  - -h/-V のみのテストに簡素化
+- [x] T041 `router/tests/cli/model_cli_test.rs` を削除
+- [x] T042 `router/src/main.rs` で全プラットフォームCLI対応
+  - Windows/macOS でも -h/-V が動作するよう修正
+- [x] T043 spec.md を更新
+  - 廃止機能を明記
+  - ステータスを「実装済み」に更新
+- [x] T044 tasks.md を更新（本タスク）
+  - Phase 4 を追加
+
 ## 依存関係
 
 ```text
-# Router (Rust)
-T001 → T002 → T003 → T004
+# Router (Rust) - Phase 3
+T001 → T002 → T004
 T004 → T005-T010 (並列可能)
-T005-T010 → T011-T015
-T011 → T012 → T013, T014, T015
-T013, T014, T015 → T016
+T005-T010 → T011, T012
+T012 → T016
 T016 → T017, T018, T019, T020
 T017-T020 → T021-T023
+
+# Router (Rust) - Phase 4 (CLI簡素化)
+T023 → T036, T037, T038, T039
+T038, T039 → T040, T041
+T040, T041 → T042, T043, T044
 
 # Node (C++)
 T024-T025 (並列可能) → T026 → T027

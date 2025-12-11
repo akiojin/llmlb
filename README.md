@@ -30,6 +30,52 @@ LLM Router is a powerful centralized system that provides unified management and
 Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
 [TROUBLESHOOTING](./TROUBLESHOOTING.md)
 
+## MCP Server for LLM Agents
+
+LLM agents (like Claude Code) can interact with LLM Router through a dedicated
+MCP server. This is the recommended approach over using Bash with curl commands
+directly.
+
+### Why MCP Server over Bash + curl?
+
+| Feature | MCP Server | Bash + curl |
+|---------|------------|-------------|
+| Authentication | Auto-injected | Manual header management |
+| Security | Host whitelist, injection prevention | No built-in protection |
+| Shell injection | Protected (shell: false) | Vulnerable |
+| API documentation | Built-in as MCP resources | External reference needed |
+| Credential handling | Automatic masking in logs | Exposed in command history |
+| Timeout management | Configurable per-request | Manual implementation |
+| Error handling | Structured JSON responses | Raw text parsing |
+
+### Installation
+
+```bash
+npm install -g @llm-router/mcp-server
+# or
+npx @llm-router/mcp-server
+```
+
+### Configuration (.mcp.json)
+
+```json
+{
+  "mcpServers": {
+    "llm-router": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@llm-router/mcp-server"],
+      "env": {
+        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+      }
+    }
+  }
+}
+```
+
+For detailed documentation, see [mcp-server/README.md](./mcp-server/README.md).
+
 ## Quick Start
 
 ### Router (llm-router)

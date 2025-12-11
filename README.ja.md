@@ -25,6 +25,52 @@ LLM Routerは、複数のマシン上で動作するLLM runtimeインスタン�
 クイックリファレンス: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
 [TROUBLESHOOTING](./TROUBLESHOOTING.md)
 
+## LLMエージェント向けMCPサーバー
+
+LLMエージェント（Claude Codeなど）は、専用のMCPサーバーを通じてLLM Routerと
+連携できます。Bashでcurlコマンドを直接実行するよりも、MCPサーバーの利用を
+推奨します。
+
+### MCPサーバー vs Bash + curl
+
+| 機能 | MCPサーバー | Bash + curl |
+|------|-------------|-------------|
+| 認証 | 自動注入 | 手動でヘッダー管理 |
+| セキュリティ | ホストホワイトリスト、インジェクション防止 | 組み込み保護なし |
+| シェルインジェクション | 保護済み (shell: false) | 脆弱 |
+| APIドキュメント | MCPリソースとして組み込み | 外部参照が必要 |
+| 認証情報の取扱い | ログで自動マスキング | コマンド履歴に露出 |
+| タイムアウト管理 | リクエスト毎に設定可能 | 手動実装が必要 |
+| エラーハンドリング | 構造化JSONレスポンス | 生テキストの解析が必要 |
+
+### インストール
+
+```bash
+npm install -g @llm-router/mcp-server
+# または
+npx @llm-router/mcp-server
+```
+
+### 設定 (.mcp.json)
+
+```json
+{
+  "mcpServers": {
+    "llm-router": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@llm-router/mcp-server"],
+      "env": {
+        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+      }
+    }
+  }
+}
+```
+
+詳細なドキュメントは [mcp-server/README.md](./mcp-server/README.md) を参照。
+
 ## クイックスタート
 
 ### ルーター (llm-router)

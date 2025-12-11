@@ -1,9 +1,7 @@
 //! LLM Router Server Entry Point
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use clap::Parser;
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-use llm_router::cli::{Cli, Commands};
+use llm_router::cli::Cli;
 use llm_router::config::{get_env_with_fallback_or, get_env_with_fallback_parse};
 use llm_router::{api, auth, balancer, health, logging, registry, tasks, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
@@ -15,18 +13,13 @@ use tracing::info;
 struct ServerConfig {
     host: String,
     port: u16,
-    preload_models: Vec<String>,
 }
 
 impl ServerConfig {
     fn from_env() -> Self {
         let host = get_env_with_fallback_or("LLM_ROUTER_HOST", "ROUTER_HOST", "0.0.0.0");
         let port = get_env_with_fallback_parse("LLM_ROUTER_PORT", "ROUTER_PORT", 8080);
-        Self {
-            host,
-            port,
-            preload_models: Vec::new(),
-        }
+        Self { host, port }
     }
 
     fn bind_addr(&self) -> String {
@@ -54,6 +47,26 @@ impl ServerConfig {
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn main() {
+    // Parse CLI for -h/--help and -V/--version support on all platforms
+    match Cli::try_parse() {
+        Ok(_) => {
+            // No special flags, proceed with GUI tray mode
+        }
+        Err(e) => {
+            // Handle --help and --version which clap reports as errors
+            match e.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    // clap already printed the output, just exit
+                    e.exit();
+                }
+                _ => {
+                    // Actual error (unknown flag, etc.)
+                    e.exit();
+                }
+            }
+        }
+    }
+
     logging::init().expect("failed to initialize logging");
     use llm_router::gui::tray::{run_with_system_tray, TrayOptions};
     use std::thread;
@@ -78,135 +91,13 @@ fn main() {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
+    // Parse CLI (only -h/--help and -V/--version)
+    let _cli = Cli::parse();
 
-    match cli.command {
-        Some(Commands::User { command }) => {
-            // User commands don't need full logging
-            handle_user_command(command).await;
-        }
-        Some(Commands::Model { command }) => {
-            if let Err(e) = llm_router::cli::model::run(command) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
-        None => {
-            // No command = start server
-            logging::init().expect("failed to initialize logging");
-            let mut cfg = ServerConfig::from_env();
-            cfg.preload_models = cli.preload_models.clone();
-            run_server(cfg).await;
-        }
-    }
-}
-
-/// Handle user management CLI commands
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-async fn handle_user_command(command: llm_router::cli::user::UserCommand) {
-    use llm_router::cli::user::UserCommand;
-    use llm_router::db;
-    use llm_router_common::auth::UserRole;
-
-    // Initialize database
-    let database_url = std::env::var("LLM_ROUTER_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .expect("Failed to get home directory");
-            format!("sqlite:{}/.llm-router/router.db", home)
-        });
-
-    let db_pool = match init_db_pool(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => {
-            eprintln!("Error: Failed to connect to database: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Run migrations
-    if let Err(e) = sqlx::migrate!("./migrations").run(&db_pool).await {
-        eprintln!("Error: Failed to run database migrations: {}", e);
-        std::process::exit(1);
-    }
-
-    match command {
-        UserCommand::List => match db::users::list(&db_pool).await {
-            Ok(users) => {
-                if users.is_empty() {
-                    println!("No users registered.");
-                } else {
-                    println!("{:<20} {:<10}", "USERNAME", "ROLE");
-                    println!("{}", "-".repeat(30));
-                    for user in users {
-                        let role_str = match user.role {
-                            UserRole::Admin => "admin",
-                            UserRole::Viewer => "viewer",
-                        };
-                        println!("{:<20} {:<10}", user.username, role_str);
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Error: Failed to list users: {}", e);
-                std::process::exit(1);
-            }
-        },
-        UserCommand::Add(add) => {
-            // Validate password length
-            if add.password.len() < 8 {
-                eprintln!("Error: Password must be at least 8 characters.");
-                std::process::exit(1);
-            }
-
-            // Hash password
-            let password_hash = match auth::password::hash_password(&add.password) {
-                Ok(hash) => hash,
-                Err(e) => {
-                    eprintln!("Error: Failed to hash password: {}", e);
-                    std::process::exit(1);
-                }
-            };
-
-            match db::users::create(&db_pool, &add.username, &password_hash, UserRole::Viewer).await
-            {
-                Ok(_) => {
-                    println!("User '{}' created successfully.", add.username);
-                }
-                Err(e) => {
-                    eprintln!("Error: Failed to create user: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        UserCommand::Delete(delete) => {
-            // Find user by username first
-            match db::users::find_by_username(&db_pool, &delete.username).await {
-                Ok(Some(user)) => {
-                    // Delete by ID
-                    match db::users::delete(&db_pool, user.id).await {
-                        Ok(()) => {
-                            println!("User '{}' deleted successfully.", delete.username);
-                        }
-                        Err(e) => {
-                            eprintln!("Error: Failed to delete user: {}", e);
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                Ok(None) => {
-                    eprintln!("Error: User '{}' not found.", delete.username);
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("Error: Failed to find user: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-    }
+    // Start server
+    logging::init().expect("failed to initialize logging");
+    let cfg = ServerConfig::from_env();
+    run_server(cfg).await;
 }
 
 async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
@@ -348,19 +239,6 @@ async fn run_server(config: ServerConfig) {
         http_client,
     };
 
-    // 起動時プリロードジョブを投入
-    for spec in &config.preload_models {
-        if let Some((repo, filename)) = parse_repo_filename(spec) {
-            info!("Queueing preload model: {}/{}", repo, filename);
-            state
-                .convert_manager
-                .enqueue(repo.to_string(), filename.to_string(), None, None, None)
-                .await;
-        } else {
-            tracing::warn!(spec, "Invalid preload model spec (expected repo:filename)");
-        }
-    }
-
     let router = api::create_router(state);
 
     let bind_addr = config.bind_addr();
@@ -376,21 +254,6 @@ async fn run_server(config: ServerConfig) {
     )
     .await
     .expect("Server error");
-}
-
-/// repo:filename 形式（または repo/filename）をパース
-fn parse_repo_filename(input: &str) -> Option<(&str, &str)> {
-    if let Some((repo, file)) = input.rsplit_once(':') {
-        if !repo.is_empty() && !file.is_empty() {
-            return Some((repo, file));
-        }
-    }
-    if let Some((repo, file)) = input.rsplit_once('/') {
-        if !repo.is_empty() && !file.is_empty() {
-            return Some((repo, file));
-        }
-    }
-    None
 }
 
 #[cfg(test)]

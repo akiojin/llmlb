@@ -1758,6 +1758,7 @@ impl LoadManager {
                 .update_last_seen(
                     node_id,
                     None,
+                    None, // loaded_embedding_models
                     None,
                     None,
                     None,

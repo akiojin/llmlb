@@ -73,6 +73,15 @@ pub fn get_env_with_fallback_parse<T: std::str::FromStr>(
         .unwrap_or(default)
 }
 
+/// デフォルトembeddingモデルを取得
+///
+/// 環境変数 `LLM_DEFAULT_EMBEDDING_MODEL` から取得し、
+/// 未設定の場合は `nomic-embed-text-v1.5` を返す。
+pub fn get_default_embedding_model() -> String {
+    std::env::var("LLM_DEFAULT_EMBEDDING_MODEL")
+        .unwrap_or_else(|_| "nomic-embed-text-v1.5".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +154,22 @@ mod tests {
         assert_eq!(result, 8080);
 
         std::env::remove_var("TEST_NEW_VAR6");
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_default_embedding_model_default() {
+        std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
+        let result = get_default_embedding_model();
+        assert_eq!(result, "nomic-embed-text-v1.5");
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_default_embedding_model_custom() {
+        std::env::set_var("LLM_DEFAULT_EMBEDDING_MODEL", "bge-m3");
+        let result = get_default_embedding_model();
+        assert_eq!(result, "bge-m3");
+        std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
     }
 }

@@ -6,6 +6,7 @@
 #include "api/node_endpoints.h"
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
+#include "utils/config.h"
 
 using namespace llm_node;
 
@@ -13,7 +14,8 @@ TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     ModelRegistry registry;
     registry.setModels({"gpt-oss:7b"});
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18087, openai, node);
     server.start();
@@ -37,7 +39,8 @@ TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
     ModelRegistry registry;
     registry.setModels({"gpt-oss:7b"});
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18092, openai, node);
     server.start();

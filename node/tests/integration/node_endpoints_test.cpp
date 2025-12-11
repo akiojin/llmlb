@@ -7,13 +7,15 @@
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
+#include "utils/config.h"
 
 using namespace llm_node;
 
 TEST(NodeEndpointsTest, PullAndHealth) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18088, openai, node);
     server.start();
@@ -35,7 +37,8 @@ TEST(NodeEndpointsTest, PullAndHealth) {
 TEST(NodeEndpointsTest, LogLevelGetAndSet) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18087, openai, node);
     server.start();
@@ -57,7 +60,8 @@ TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
     llm_node::set_ready(false);
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18091, openai, node);
     server.start();
@@ -78,7 +82,8 @@ TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
 TEST(NodeEndpointsTest, MetricsReportsUptimeAndCounts) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18089, openai, node);
     server.start();
@@ -99,7 +104,8 @@ TEST(NodeEndpointsTest, MetricsReportsUptimeAndCounts) {
 TEST(HttpServerTest, RequestIdGeneratedAndEchoed) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18092, openai, node);
     server.start();
@@ -122,7 +128,8 @@ TEST(HttpServerTest, RequestIdGeneratedAndEchoed) {
 TEST(HttpServerTest, TraceparentPropagatesTraceId) {
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai(registry, engine);
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18093, openai, node);
     server.start();

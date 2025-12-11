@@ -64,6 +64,61 @@ cargo build --release -p llm-router
 On Windows 10+ and macOS 12+, the router displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
+### CLI Reference (Linux only)
+
+> **Note**: CLI subcommands (`user`, `model`) are only available on Linux.
+> On Windows/macOS, the application starts in system tray mode and CLI options are ignored.
+
+**Basic Options:**
+
+```bash
+llm-router --help                    # Show help
+llm-router --version                 # Show version
+llm-router --preload-model <spec>    # Preload HF model at startup (can be specified multiple times)
+                                     # Format: repo:filename or repo/filename
+```
+
+**User Management Commands:**
+
+```bash
+llm-router user list                           # List all users
+llm-router user add <username> -p <password>   # Add user (password min 8 chars)
+llm-router user delete <username>              # Delete user
+```
+
+**Model Management Commands:**
+
+```bash
+# List HF GGUF catalog
+llm-router model list [OPTIONS]
+  --router <URL>      # Router URL (default: http://127.0.0.1:8080)
+  --search <QUERY>    # Search query
+  --limit <N>         # Number of results (default: 20)
+  --offset <N>        # Offset (default: 0)
+  --format <FORMAT>   # Output format: json | table (default: table)
+
+# Register HF GGUF model
+llm-router model add <REPO> -f <FILE> [--router <URL>]
+  # Example: llm-router model add TheBloke/Llama-2-7B-GGUF -f llama-2-7b.Q4_K_M.gguf
+
+# Trigger model download to nodes
+llm-router model download <NAME> --all [--router <URL>]         # Distribute to all nodes
+llm-router model download <NAME> --node <UUID> [--router <URL>] # Distribute to specific node
+```
+
+**Environment Variables (shown in --help output):**
+
+```
+ENVIRONMENT VARIABLES:
+    LLM_ROUTER_HOST              Bind address (default: 0.0.0.0)
+    LLM_ROUTER_PORT              Listen port (default: 8080)
+    LLM_ROUTER_LOG_LEVEL         Log level (default: info)
+    LLM_ROUTER_DATABASE_URL      Database URL
+    LLM_ROUTER_JWT_SECRET        JWT signing key (auto-generated if not set)
+    LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
+    LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
+```
+
 ### Node (C++)
 
 **Prerequisites:**
@@ -745,12 +800,157 @@ The file is automatically managed with:
 
 ## API Specification
 
-### Coordinator API
+### Router API
 
-#### POST /api/agents
-Register an agent.
+#### Authentication Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/auth/login` | User authentication, JWT token issuance | None |
+| POST | `/api/auth/logout` | Logout | None |
+| GET | `/api/auth/me` | Get authenticated user info | JWT |
+
+#### User Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/users` | List users | JWT+Admin |
+| POST | `/api/users` | Create user | JWT+Admin |
+| PUT | `/api/users/:id` | Update user | JWT+Admin |
+| DELETE | `/api/users/:id` | Delete user | JWT+Admin |
+
+#### API Key Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/api-keys` | List API keys | JWT+Admin |
+| POST | `/api/api-keys` | Create API key | JWT+Admin |
+| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin |
+| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin |
+
+#### Node Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/nodes` | Register node (GPU required) | None |
+| GET | `/api/nodes` | List nodes | None |
+| DELETE | `/api/nodes/:node_id` | Delete node | None |
+| POST | `/api/nodes/:node_id/disconnect` | Force node offline | None |
+| PUT | `/api/nodes/:node_id/settings` | Update node settings | None |
+| POST | `/api/nodes/:node_id/metrics` | Update node metrics | None |
+| GET | `/api/nodes/metrics` | List node metrics | None |
+| GET | `/api/metrics/summary` | System statistics summary | None |
+
+#### Health Check Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/health` | Receive health check from node | Agent Token |
+
+#### OpenAI-Compatible Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v1/chat/completions` | Chat completions API | API Key |
+| POST | `/v1/completions` | Text completions API | API Key |
+| POST | `/v1/embeddings` | Embeddings API | API Key |
+| GET | `/v1/models` | List available models | API Key |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key |
+
+#### Proxy Endpoints (Legacy)
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/chat` | Chat API proxy | None |
+| POST | `/api/generate` | Generate API proxy | None |
+
+#### Model Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/models/available` | List available models | None |
+| POST | `/api/models/register` | Register model | None |
+| POST | `/api/models/pull` | Pull model from HuggingFace | None |
+| GET | `/api/models/registered` | List registered models | None |
+| DELETE | `/api/models/*model_name` | Delete model | None |
+| POST | `/api/models/discover-gguf` | Discover GGUF models | None |
+| POST | `/api/models/convert` | Start model conversion | None |
+| GET | `/api/models/convert` | List conversion tasks | None |
+| GET | `/api/models/convert/:task_id` | Get conversion task details | None |
+| DELETE | `/api/models/convert/:task_id` | Delete conversion task | None |
+| GET | `/api/models/loaded` | Get loaded models | None |
+| POST | `/api/models/distribute` | Distribute model | None |
+| POST | `/api/models/download` | Download model (alias) | None |
+| GET | `/api/models/blob/:model_name` | Serve model file | None |
+| GET | `/api/nodes/:node_id/models` | Get node's loaded models | None |
+| POST | `/api/nodes/:node_id/models/pull` | Pull model to node | None |
+| GET | `/api/tasks` | List download tasks | None |
+| GET | `/api/tasks/:task_id` | Get task details | None |
+| POST | `/api/tasks/:task_id/progress` | Update task progress | None |
+
+#### Dashboard Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/dashboard/nodes` | Node info list | None |
+| GET | `/api/dashboard/stats` | System statistics | None |
+| GET | `/api/dashboard/request-history` | Request history | None |
+| GET | `/api/dashboard/overview` | Dashboard overview | None |
+| GET | `/api/dashboard/metrics/:node_id` | Node metrics history | None |
+| GET | `/api/dashboard/request-responses` | Request/response list | None |
+| GET | `/api/dashboard/request-responses/:id` | Request/response details | None |
+| GET | `/api/dashboard/request-responses/export` | Export request/responses | None |
+
+#### Log Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/dashboard/logs/coordinator` | Coordinator logs | None |
+| GET | `/api/dashboard/logs/nodes/:node_id` | Node logs | None |
+| GET | `/api/nodes/:node_id/logs` | Node logs (alt path) | None |
+
+#### Static Files & Metrics
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/dashboard` | Dashboard UI |
+| GET | `/dashboard/*path` | Dashboard static files |
+| GET | `/playground` | Chat Playground UI |
+| GET | `/playground/*path` | Playground static files |
+| GET | `/metrics/cloud` | Prometheus metrics export |
+
+### Node API (C++)
+
+#### OpenAI-Compatible Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/models` | List available models |
+| POST | `/v1/chat/completions` | Chat completions (streaming supported) |
+| POST | `/v1/completions` | Text completions |
+| POST | `/v1/embeddings` | Embeddings generation |
+
+#### Node Management Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/pull` | Model download request |
+| GET | `/health` | Health check |
+| GET | `/startup` | Startup status check |
+| GET | `/metrics` | Metrics (JSON format) |
+| GET | `/metrics/prom` | Prometheus metrics |
+| GET | `/log/level` | Get current log level |
+| POST | `/log/level` | Change log level |
+| GET | `/internal-error` | Intentional error (debug) |
+
+### Request/Response Examples
+
+#### POST /api/nodes
+
+Register a node.
 
 **Request:**
+
 ```json
 {
   "machine_name": "my-machine",
@@ -765,6 +965,7 @@ Register an agent.
 ```
 
 **Response:**
+
 ```json
 {
   "agent_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -772,104 +973,17 @@ Register an agent.
 }
 ```
 
-#### GET /api/agents
-Get list of registered agents.
+#### POST /v1/chat/completions
 
-**Response:**
-```json
-[
-  {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "machine_name": "my-machine",
-    "ip_address": "192.168.1.100",
-    "runtime_version": "0.1.0",
-    "runtime_port": 11434,
-    "status": "online",
-    "registered_at": "2025-10-30T12:00:00Z",
-    "last_seen": "2025-10-30T12:05:00Z",
-    "gpu_available": true,
-    "gpu_devices": [
-      { "model": "NVIDIA RTX 4090", "count": 2 }
-    ],
-    "gpu_count": 2,
-    "gpu_model": "NVIDIA RTX 4090"
-  }
-]
-```
-
-#### POST /api/health
-Receive health check information (Agent→Coordinator).
-
-**Request:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3
-}
-```
-
-#### POST /api/agents/:id/metrics
-Update agent metrics for load balancing (Agent→Coordinator).
-
-**Request:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3,
-  "avg_response_time_ms": 250.5,
-  "timestamp": "2025-11-02T10:00:00Z"
-}
-```
-
-**Response:** `204 No Content`
-
-#### GET /api/models/available
-
-Get list of available models for distribution.
-
-**Response:**
-
-```json
-{
-  "models": [
-    {
-      "name": "gpt-oss:20b",
-      "display_name": "GPT OSS (20B)",
-      "size_gb": 12.5,
-      "description": "Large language model, 20 billion parameters"
-    }
-  ],
-  "source": "runtime_library"
-}
-```
-
-#### POST /api/models/distribute
-
-Distribute a model to one or more agents.
+Chat completions API (OpenAI-compatible).
 
 **Request:**
 
 ```json
 {
-  "model_name": "gpt-oss:7b",
-  "target": "all"
-}
-```
-
-Or for specific agents:
-
-```json
-{
-  "model_name": "gpt-oss:7b",
-  "target": "specific",
-  "agent_ids": [
-    "550e8400-e29b-41d4-a716-446655440000",
-    "660f9511-f39c-52e5-c827-557766551111"
-  ]
+  "model": "gpt-oss:20b",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "stream": false
 }
 ```
 
@@ -877,50 +991,19 @@ Or for specific agents:
 
 ```json
 {
-  "task_ids": [
-    "770ea622-g49d-63f6-d938-668877662222",
-    "880fb733-h59e-74g7-e049-779988773333"
-  ]
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
+    "finish_reason": "stop"
+  }]
 }
 ```
 
-#### POST /api/agents/:id/models/pull
+> **Important**: LLM Router only supports OpenAI-compatible response format.
 
-Instruct a specific agent to pull a model.
-
-**Request:**
-
-```json
-{
-  "model_name": "llama3.2:3b"
-}
-```
-
-**Response:**
-
-```json
-{
-  "task_id": "990gc844-i69f-85h8-f150-880099884444"
-}
-```
-
-#### GET /api/agents/:id/models
-
-Get list of installed models on a specific agent.
-
-**Response:**
-
-```json
-[
-  {
-    "name": "gpt-oss:20b",
-    "size_gb": 12.5,
-    "installed_at": "2025-11-14T10:00:00Z"
-  }
-]
-```
-
-#### GET /api/tasks/:id
+#### GET /api/tasks/:task_id
 
 Get progress of a model download task.
 
@@ -936,65 +1019,6 @@ Get progress of a model download task.
   "download_speed_bps": 10485760,
   "created_at": "2025-11-14T10:00:00Z",
   "updated_at": "2025-11-14T10:05:30Z"
-}
-```
-
-#### POST /api/chat
-
-Proxy endpoint for Chat API (OpenAI-compatible format).
-
-**Request:**
-
-```json
-{
-  "model": "gpt-oss:20b",
-  "messages": [{"role": "user", "content": "Hello!"}],
-  "stream": false
-}
-```
-
-**Response (OpenAI-compatible):**
-
-```json
-{
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion",
-  "choices": [{
-    "index": 0,
-    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
-    "finish_reason": "stop"
-  }]
-}
-```
-
-> **Important**: LLM Router only supports OpenAI-compatible response format.
-> Ollama-native format (`message`/`done` fields) is NOT supported.
-
-#### POST /api/generate
-
-Proxy endpoint for Generate API (OpenAI-compatible format).
-
-**Request:**
-
-```json
-{
-  "model": "gpt-oss:20b",
-  "prompt": "Tell me a joke",
-  "stream": false
-}
-```
-
-**Response (OpenAI-compatible):**
-
-```json
-{
-  "id": "cmpl-xxx",
-  "object": "text_completion",
-  "choices": [{
-    "text": "Why did the programmer quit? Because he didn't get arrays!",
-    "index": 0,
-    "finish_reason": "stop"
-  }]
 }
 ```
 

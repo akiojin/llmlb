@@ -8,6 +8,7 @@
 #include "api/node_endpoints.h"
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
+#include "utils/config.h"
 
 using namespace llm_node;
 using json = nlohmann::json;
@@ -26,7 +27,8 @@ protected:
 
     ModelRegistry registry;
     InferenceEngine engine;
-    OpenAIEndpoints openai{registry, engine};
+    NodeConfig config;
+    OpenAIEndpoints openai{registry, engine, config};
     NodeEndpoints node;
     std::unique_ptr<HttpServer> server;
 };

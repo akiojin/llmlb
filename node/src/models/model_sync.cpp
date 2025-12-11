@@ -210,36 +210,26 @@ ModelSyncResult ModelSync::sync() {
             auto it = remote_map.find(id);
             if (it != remote_map.end()) {
                 const auto& info = it->second;
+                // Check if router's path is directly accessible (no copy, just verify)
+                // Per SPEC-dcaeaec4 FR-3: use path directly if accessible
                 if (!info.path.empty()) {
                     std::error_code ec;
                     auto src = fs::path(info.path);
-                    if (fs::exists(src, ec) && fs::is_regular_file(src, ec)) {
-                        auto dest_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
-                        auto dest = dest_dir / "model.gguf";
-                        fs::create_directories(dest_dir, ec);
-                        if (!ec) {
-                            fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec);
-                            if (ec) {
-                                // Fallback: treat as success if file already exists or copy still resulted in a file
-                                if (fs::exists(dest)) {
-                                    ec.clear();
-                                    ok = true;
-                                }
-                            } else {
-                                ok = true;
-                            }
-                        }
+                    if (fs::exists(src, ec) && !ec && fs::is_regular_file(src, ec) && !ec) {
+                        // Path is accessible - InferenceEngine will use it directly
+                        ok = true;
                     }
                 }
 
+                // Only download if path is not accessible and download_url exists
                 if (!ok && !info.download_url.empty()) {
                     auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
                     auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
                     ok = !out.empty();
                 }
 
-                // metadata (chat_template)
-                if (ok && !info.chat_template.empty()) {
+                // metadata (chat_template) - only write if we downloaded locally
+                if (ok && info.path.empty() && !info.chat_template.empty()) {
                     auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
                     auto meta_path = meta_dir / "metadata.json";
                     nlohmann::json meta;
@@ -334,6 +324,26 @@ void ModelSync::setModelOverrides(std::unordered_map<std::string, ModelOverrides
         }
     }
     return downloader.downloadBlob(blob_url, filename, cb, expected_sha256, if_none_match);
+}
+
+std::string ModelSync::getRemotePath(const std::string& model_id) const {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    auto it = remote_models_.find(model_id);
+    if (it == remote_models_.end()) {
+        return "";
+    }
+
+    const auto& path = it->second.path;
+    if (path.empty()) {
+        return "";
+    }
+
+    // Verify path exists and is accessible
+    std::error_code ec;
+    if (fs::exists(path, ec) && !ec && fs::is_regular_file(path, ec) && !ec) {
+        return path;
+    }
+    return "";
 }
 
 bool ModelSync::downloadModel(ModelDownloader& downloader,

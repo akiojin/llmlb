@@ -95,6 +95,9 @@ public:
     const std::string& getModelsDir() const { return models_dir_; }
     const std::string& getBaseUrl() const { return base_url_; }
 
+    // Get remote model path from router (empty string if not found or not accessible)
+    std::string getRemotePath(const std::string& model_id) const;
+
 private:
     std::string base_url_;
     std::string models_dir_;

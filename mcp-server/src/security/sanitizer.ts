@@ -72,12 +72,20 @@ export class CurlSanitizer {
     // Tokenize and check for forbidden options
     const tokens = this.tokenize(trimmed);
     for (const token of tokens) {
-      // Check exact match for short options
-      if (FORBIDDEN_OPTIONS.includes(token)) {
-        return { valid: false, reason: `Forbidden option: ${token}` };
-      }
-      // Check for long options with = (e.g., --output=file)
       for (const opt of FORBIDDEN_OPTIONS) {
+        // Exact match
+        if (token === opt) {
+          return { valid: false, reason: `Forbidden option: ${opt}` };
+        }
+        // Short option with concatenated value (e.g., -o/tmp/file, -uuser:pass)
+        if (
+          opt.startsWith("-") &&
+          !opt.startsWith("--") &&
+          token.startsWith(opt)
+        ) {
+          return { valid: false, reason: `Forbidden option: ${opt}` };
+        }
+        // Long option with = (e.g., --output=file)
         if (opt.startsWith("--") && token.startsWith(`${opt}=`)) {
           return { valid: false, reason: `Forbidden option: ${opt}` };
         }

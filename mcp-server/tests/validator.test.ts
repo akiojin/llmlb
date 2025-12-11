@@ -71,5 +71,38 @@ describe("HostValidator", () => {
       const result = customValidator.validate("https://other.example.com/api");
       expect(result.valid).toBe(false);
     });
+
+    it("should reject same hostname with different port", () => {
+      const result = customValidator.validate(
+        "https://api.example.com:443/api"
+      );
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("Host not allowed");
+    });
+
+    it("should reject same hostname without port", () => {
+      const result = customValidator.validate("https://api.example.com/api");
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("Host not allowed");
+    });
+  });
+
+  describe("localhost port handling", () => {
+    const localhostValidator = new HostValidator("http://localhost:8080");
+
+    it("should accept localhost with configured port", () => {
+      const result = localhostValidator.validate("http://localhost:8080/api");
+      expect(result.valid).toBe(true);
+    });
+
+    it("should accept localhost with different port", () => {
+      const result = localhostValidator.validate("http://localhost:3000/api");
+      expect(result.valid).toBe(true);
+    });
+
+    it("should accept 127.0.0.1 with any port", () => {
+      const result = localhostValidator.validate("http://127.0.0.1:9999/api");
+      expect(result.valid).toBe(true);
+    });
   });
 });

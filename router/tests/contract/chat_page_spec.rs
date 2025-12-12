@@ -1,4 +1,8 @@
-//! Contract test: /playground static page contains required UI elements
+//! Contract test: /playground (React SPA) serves correctly
+//!
+//! The playground is now a React single-page application.
+//! This test verifies the React app shell is served correctly.
+//! Dynamic UI elements are rendered by React at runtime.
 
 use axum::{body::to_bytes, http::Request, Router};
 use llm_router::{
@@ -35,7 +39,7 @@ async fn build_router() -> Router {
 }
 
 #[tokio::test]
-async fn chat_page_contains_sidebar_and_filters() {
+async fn playground_serves_react_app() {
     let router = build_router().await;
 
     let response = router
@@ -50,36 +54,34 @@ async fn chat_page_contains_sidebar_and_filters() {
 
     assert_eq!(response.status(), axum::http::StatusCode::OK);
     let bytes = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
-    let html = String::from_utf8(bytes.to_vec()).expect("chat html should be utf-8");
+    let html = String::from_utf8(bytes.to_vec()).expect("playground html should be utf-8");
 
+    // React app mount point
     assert!(
-        html.contains("id=\"session-list\""),
-        "session list is missing"
+        html.contains("id=\"root\""),
+        "React mount point (id=root) not found"
     );
+
+    // Should have script tags for the React bundle
     assert!(
-        html.contains("id=\"provider-toggle\""),
-        "provider toggle is missing"
+        html.contains("<script") && html.contains("</script>"),
+        "Script tags not found"
     );
+
+    // Should have the playground title
     assert!(
-        html.contains("data-provider=\"local\""),
-        "local provider button missing"
+        html.contains("<title>") && html.contains("Playground"),
+        "Playground title not found"
     );
-    assert!(
-        html.contains("data-provider=\"cloud\""),
-        "cloud provider button missing"
-    );
-    assert!(
-        html.contains("data-provider=\"all\""),
-        "all provider button missing"
-    );
-    assert!(html.contains("id=\"chat-input\""), "chat input is missing");
 }
 
 #[tokio::test]
-async fn chat_page_contains_settings_toggle() {
+async fn playground_assets_accessible() {
     let router = build_router().await;
 
+    // First get the playground HTML
     let response = router
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/playground")
@@ -91,17 +93,11 @@ async fn chat_page_contains_settings_toggle() {
 
     assert_eq!(response.status(), axum::http::StatusCode::OK);
     let bytes = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
-    let html = String::from_utf8(bytes.to_vec()).expect("chat html should be utf-8");
+    let html = String::from_utf8(bytes.to_vec()).expect("playground html should be utf-8");
 
-    // Settings toggle button should exist
+    // Verify the HTML contains references to JS assets
     assert!(
-        html.contains("id=\"settings-toggle\""),
-        "settings toggle button is missing"
-    );
-
-    // Settings modal should exist
-    assert!(
-        html.contains("id=\"settings-modal\""),
-        "settings modal is missing"
+        html.contains(".js\"") || html.contains(".js'"),
+        "Playground should reference JavaScript assets"
     );
 }

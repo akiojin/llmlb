@@ -236,7 +236,7 @@ static bool isGptOssModel(llama_model* model) {
     if (arch_len > 0) {
         std::string arch(arch_buf);
         spdlog::info("isGptOssModel: checking architecture '{}'", arch);
-        if (arch == "gptoss") {
+        if (arch == "gpt-oss") {
             spdlog::info("Detected gpt-oss model by architecture: {}", arch);
             return true;
         }
@@ -456,7 +456,24 @@ std::string InferenceEngine::generateChat(
     std::string output;
     // int32_t n_cur = n_tokens; // unused
 
-    for (size_t i = 0; i < params.max_tokens; i++) {
+    // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
+    size_t effective_max_tokens = params.max_tokens;
+    int32_t model_n_ctx = llama_model_n_ctx_train(model);
+    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        // デフォルト値(2048)の場合は利用可能な全容量を使用、
+        // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
+        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            effective_max_tokens = available;
+        } else {
+            effective_max_tokens = std::min(params.max_tokens, available);
+        }
+        spdlog::info("Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
+            model_n_ctx, n_tokens, available, effective_max_tokens);
+    }
+
+    for (size_t i = 0; i < effective_max_tokens; i++) {
         // トークンサンプリング
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
@@ -663,7 +680,24 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     std::string accumulated_output;  // ストップシーケンス検出用の累積出力
     bool should_stop = false;
 
-    for (size_t i = 0; i < params.max_tokens && !should_stop; i++) {
+    // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
+    size_t effective_max_tokens = params.max_tokens;
+    int32_t model_n_ctx = llama_model_n_ctx_train(model);
+    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        // デフォルト値(2048)の場合は利用可能な全容量を使用、
+        // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
+        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            effective_max_tokens = available;
+        } else {
+            effective_max_tokens = std::min(params.max_tokens, available);
+        }
+        spdlog::info("Streaming: Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
+            model_n_ctx, n_tokens, available, effective_max_tokens);
+    }
+
+    for (size_t i = 0; i < effective_max_tokens && !should_stop; i++) {
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
         if (llama_vocab_is_eog(vocab, new_token)) {
@@ -832,6 +866,16 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
     if (!manager_->loadModelIfNeeded(gguf_path)) {
         result.error_message = "Failed to load model: " + gguf_path;
         return result;
+    }
+
+    // 5. モデルの最大コンテキストサイズを取得
+    llama_model* model = manager_->getModel(gguf_path);
+    if (model) {
+        int32_t n_ctx_train = llama_model_n_ctx_train(model);
+        if (n_ctx_train > 0) {
+            model_max_ctx_ = static_cast<size_t>(n_ctx_train);
+            spdlog::info("Model max context size: {}", model_max_ctx_);
+        }
     }
 
     result.success = true;

@@ -207,12 +207,19 @@
   async function loadModels() {
     setStatus("Fetching models...", "connecting");
     try {
-      const res = await fetch("/api/models/available");
+      // Use OpenAI-compatible /v1/models endpoint
+      const headers = {};
+      const apiKey = dom.apiKeyInput?.value?.trim();
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+      const res = await fetch("/v1/models", { headers });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const body = await res.json();
-      const models = (body?.models || []).map((item) => item.name).filter(Boolean);
+      // /v1/models returns {data: [{id: "model-name", ...}]}
+      const models = (body?.data || []).map((item) => item.id).filter(Boolean);
       if (!models.length) {
         throw new Error("Model list is empty");
       }

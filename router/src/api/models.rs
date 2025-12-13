@@ -1,6 +1,6 @@
 //! モデル管理API
 //!
-//! モデル一覧取得、配布、進捗追跡のエンドポイント
+//! モデル一覧取得、登録、変換、ファイル配信のエンドポイント
 
 use axum::{
     extract::{Path, Query, State},
@@ -21,8 +21,8 @@ use uuid::Uuid;
 use crate::{
     convert::ConvertTask,
     registry::models::{
-        ensure_router_model_cached, model_name_to_dir, router_model_path, router_models_dir,
-        DownloadStatus, DownloadTask, InstalledModel, ModelInfo, ModelSource,
+        model_name_to_dir, router_model_path, router_models_dir, DownloadStatus, DownloadTask,
+        InstalledModel, ModelInfo, ModelSource,
     },
     registry::NodeRegistry,
     AppState,
@@ -719,18 +719,6 @@ async fn fetch_hf_models(
     Ok((out, false))
 }
 
-/// モデル配布リクエスト
-#[derive(Debug, Deserialize)]
-pub struct DistributeModelsRequest {
-    /// モデル名
-    pub model_name: String,
-    /// ターゲット（"all" または "specific"）
-    pub target: String,
-    /// ノードID一覧（targetが"specific"の場合）
-    #[serde(default)]
-    pub node_ids: Vec<Uuid>,
-}
-
 /// HFからモデルをpullするリクエスト
 #[derive(Debug, Deserialize)]
 pub struct PullFromHfRequest {
@@ -750,27 +738,6 @@ pub struct PullFromHfResponse {
     pub name: String,
     /// ルーター側にキャッシュされたローカルパス
     pub path: String,
-}
-
-/// モデル配布レスポンス
-#[derive(Debug, Serialize)]
-pub struct DistributeModelsResponse {
-    /// タスクID一覧
-    pub task_ids: Vec<Uuid>,
-}
-
-/// モデルプルリクエスト
-#[derive(Debug, Deserialize)]
-pub struct PullModelRequest {
-    /// モデル名
-    pub model_name: String,
-}
-
-/// モデルプルレスポンス
-#[derive(Debug, Serialize)]
-pub struct PullModelResponse {
-    /// タスクID
-    pub task_id: Uuid,
 }
 
 /// モデル変換リクエスト
@@ -1226,141 +1193,6 @@ pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, 
     }
 }
 
-/// T028: POST /api/models/distribute - モデルを配布
-pub async fn distribute_models(
-    State(state): State<AppState>,
-    Json(request): Json<DistributeModelsRequest>,
-) -> Result<(StatusCode, Json<DistributeModelsResponse>), AppError> {
-    tracing::info!(
-        "Model distribution request: model={}, target={}",
-        request.model_name,
-        request.target
-    );
-
-    // モデル名のバリデーション
-    if let Err(e) = validate_model_name(&request.model_name) {
-        tracing::error!(
-            "Model name validation failed: model={}, error={}",
-            request.model_name,
-            e
-        );
-        return Err(e.into());
-    }
-
-    // ターゲットノードを決定
-    let node_ids = match request.target.as_str() {
-        "all" => {
-            // 全ノードを取得
-            let nodes = state.registry.list().await;
-            nodes.into_iter().map(|a| a.id).collect()
-        }
-        "specific" => {
-            if request.node_ids.is_empty() {
-                return Err(RouterError::Common(CommonError::Validation(
-                    "node_ids is required when target is 'specific'".into(),
-                ))
-                .into());
-            }
-            request.node_ids.clone()
-        }
-        _ => {
-            return Err(RouterError::Internal(
-                "Invalid target. Must be 'all' or 'specific'".to_string(),
-            )
-            .into());
-        }
-    };
-
-    // 各ノードID が存在することを確認し、タスクを作成
-    let mut task_ids = Vec::new();
-    for node_id in node_ids {
-        // ノードが存在することを確認
-        let node = state.registry.get(node_id).await?;
-
-        // ノードがオンラインであることを確認
-        if node.status != llm_router_common::types::NodeStatus::Online {
-            tracing::error!(
-                "Cannot distribute to offline node: node_id={}, status={:?}",
-                node_id,
-                node.status
-            );
-            return Err(RouterError::AgentOffline(node_id).into());
-        }
-
-        // タスクを作成
-        let task = state
-            .task_manager
-            .create_task(node_id, request.model_name.clone())
-            .await;
-        let task_id = task.id;
-        task_ids.push(task_id);
-
-        tracing::info!(
-            "Created distribution task {} for node {} with model {}",
-            task_id,
-            node_id,
-            request.model_name
-        );
-
-        // ノードにモデルプル要求を送信（バックグラウンド）
-        let node_api_port = node.runtime_port + 1;
-        let node_url = format!("http://{}:{}/pull", node.ip_address, node_api_port);
-        let model_name = request.model_name.clone();
-
-        let model_info = find_model_by_name(&model_name);
-        let cached = if let Some(mi) = &model_info {
-            ensure_router_model_cached(mi).await
-        } else {
-            None
-        };
-        let shared_path = cached
-            .or_else(|| model_info.as_ref().and_then(|m| router_model_path(&m.name)))
-            .map(|p| p.to_string_lossy().to_string());
-        let download_url = model_info.as_ref().and_then(|m| m.download_url.clone());
-        let chat_template = model_info.as_ref().and_then(|m| m.chat_template.clone());
-        let http_client = state.http_client.clone();
-
-        tokio::spawn(async move {
-            let pull_request = serde_json::json!({
-                "model": model_name,
-                "task_id": task_id,
-                "path": shared_path,
-                "download_url": download_url,
-                "chat_template": chat_template,
-            });
-
-            match http_client.post(&node_url).json(&pull_request).send().await {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        tracing::info!("Successfully sent pull request to node {}", node_id);
-                    } else {
-                        tracing::error!(
-                            "Node {} returned error status: {}",
-                            node_id,
-                            response.status()
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to send pull request to node {}: {}", node_id, e);
-                }
-            }
-        });
-    }
-
-    tracing::info!(
-        "Model distribution initiated: model={}, tasks_created={}, task_ids={:?}",
-        request.model_name,
-        task_ids.len(),
-        task_ids
-    );
-
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(DistributeModelsResponse { task_ids }),
-    ))
-}
-
 /// T029: GET /api/nodes/{node_id}/models - ノードのインストール済みモデル一覧を取得
 pub async fn get_node_models(
     State(state): State<AppState>,
@@ -1376,88 +1208,6 @@ pub async fn get_node_models(
     // TODO: ノードのOllama APIからモデル一覧を取得
     // 現在は空の配列を返す
     Ok(Json(Vec::new()))
-}
-
-/// T030: POST /api/nodes/{node_id}/models/pull - ノードにモデルプルを指示
-pub async fn pull_model_to_node(
-    State(state): State<AppState>,
-    Path(node_id): Path<Uuid>,
-    Json(request): Json<PullModelRequest>,
-) -> Result<(StatusCode, Json<PullModelResponse>), AppError> {
-    tracing::info!(
-        "Model pull request: node_id={}, model={}",
-        node_id,
-        request.model_name
-    );
-
-    // モデル名のバリデーション
-    if let Err(e) = validate_model_name(&request.model_name) {
-        tracing::error!(
-            "Model name validation failed: model={}, error={}",
-            request.model_name,
-            e
-        );
-        return Err(e.into());
-    }
-
-    // ノードが存在することを確認
-    let node = state.registry.get(node_id).await?;
-
-    // ノードがオンラインであることを確認
-    if node.status != llm_router_common::types::NodeStatus::Online {
-        tracing::error!(
-            "Cannot pull to offline node: node_id={}, status={:?}",
-            node_id,
-            node.status
-        );
-        return Err(RouterError::AgentOffline(node_id).into());
-    }
-
-    // タスクを作成
-    let task = state
-        .task_manager
-        .create_task(node_id, request.model_name.clone())
-        .await;
-    let task_id = task.id;
-
-    tracing::info!(
-        "Created pull task {} for node {} with model {}",
-        task_id,
-        node_id,
-        request.model_name
-    );
-
-    // ノードにモデルプル要求を送信（バックグラウンド）
-    let node_api_port = node.runtime_port + 1;
-    let node_url = format!("http://{}:{}/pull", node.ip_address, node_api_port);
-    let model_name = request.model_name.clone();
-    let http_client = state.http_client.clone();
-
-    tokio::spawn(async move {
-        let pull_request = serde_json::json!({
-            "model": model_name,
-            "task_id": task_id,
-        });
-
-        match http_client.post(&node_url).json(&pull_request).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    tracing::info!("Successfully sent pull request to node {}", node_id);
-                } else {
-                    tracing::error!(
-                        "Node {} returned error status: {}",
-                        node_id,
-                        response.status()
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to send pull request to node {}: {}", node_id, e);
-            }
-        }
-    });
-
-    Ok((StatusCode::ACCEPTED, Json(PullModelResponse { task_id })))
 }
 
 /// GGUF版検索リクエスト
@@ -1790,48 +1540,6 @@ mod tests {
         let json = serde_json::to_string(&summary).unwrap();
         assert!(json.contains("test:7b"));
         assert!(json.contains("\"total_nodes\":3"));
-    }
-
-    #[test]
-    fn test_distribute_models_request_deserialize() {
-        let json = r#"{"model_name": "test:7b", "target": "all"}"#;
-        let request: DistributeModelsRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.model_name, "test:7b");
-        assert_eq!(request.target, "all");
-        assert!(request.node_ids.is_empty());
-    }
-
-    #[test]
-    fn test_distribute_models_request_with_node_ids() {
-        let json = r#"{"model_name": "test:7b", "target": "specific", "node_ids": ["550e8400-e29b-41d4-a716-446655440000"]}"#;
-        let request: DistributeModelsRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.target, "specific");
-        assert_eq!(request.node_ids.len(), 1);
-    }
-
-    #[test]
-    fn test_distribute_models_response_serialize() {
-        let task_id = Uuid::new_v4();
-        let response = DistributeModelsResponse {
-            task_ids: vec![task_id],
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains(&task_id.to_string()));
-    }
-
-    #[test]
-    fn test_pull_model_request_deserialize() {
-        let json = r#"{"model_name": "gpt-oss:20b"}"#;
-        let request: PullModelRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.model_name, "gpt-oss:20b");
-    }
-
-    #[test]
-    fn test_pull_model_response_serialize() {
-        let task_id = Uuid::new_v4();
-        let response = PullModelResponse { task_id };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains(&task_id.to_string()));
     }
 
     #[test]

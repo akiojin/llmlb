@@ -809,11 +809,8 @@ GET /api/dashboard/request-responses/export
 | GET | `/api/models/convert/:task_id` | 変換タスク詳細 | 不要 |
 | DELETE | `/api/models/convert/:task_id` | 変換タスク削除 | 不要 |
 | GET | `/api/models/loaded` | ロード済みモデル取得 | 不要 |
-| POST | `/api/models/distribute` | モデル配布 | 不要 |
-| POST | `/api/models/download` | モデルダウンロード（alias） | 不要 |
-| GET | `/api/models/blob/:model_name` | モデルファイル配信 | 不要 |
+| GET | `/api/models/blob/:model_name` | モデルファイル配信（model_name内の`/`はURLエンコード） | 不要 |
 | GET | `/api/nodes/:node_id/models` | ノードのロード済みモデル | 不要 |
-| POST | `/api/nodes/:node_id/models/pull` | ノードへのモデルプル | 不要 |
 | GET | `/api/tasks` | ダウンロードタスク一覧 | 不要 |
 | GET | `/api/tasks/:task_id` | タスク詳細 | 不要 |
 | POST | `/api/tasks/:task_id/progress` | タスク進捗更新 | 不要 |
@@ -864,7 +861,6 @@ GET /api/dashboard/request-responses/export
 
 | メソッド | パス | 機能 |
 |---------|------|------|
-| POST | `/pull` | モデルダウンロード要求 |
 | GET | `/health` | ヘルスチェック |
 | GET | `/startup` | スタートアップ状態確認 |
 | GET | `/metrics` | メトリクス取得（JSON形式） |

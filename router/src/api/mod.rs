@@ -159,15 +159,10 @@ pub fn create_router(state: AppState) -> Router {
             get(models::get_convert_task).delete(models::delete_convert_task),
         )
         .route("/api/models/loaded", get(models::get_loaded_models))
-        .route("/api/models/distribute", post(models::distribute_models))
-        // Note: /api/models/download was removed (duplicate of /api/models/distribute)
+        // Note: model distribution is node-driven (no router push)
         // モデルファイル配信API (SPEC-48678000)
         .route("/api/models/blob/:model_name", get(models::get_model_blob))
         .route("/api/nodes/:node_id/models", get(models::get_node_models))
-        .route(
-            "/api/nodes/:node_id/models/pull",
-            post(models::pull_model_to_node),
-        )
         .route("/api/tasks", get(models::list_tasks))
         .route("/api/tasks/:task_id", get(models::get_task_progress))
         .route(

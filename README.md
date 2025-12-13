@@ -925,11 +925,8 @@ The file is automatically managed with:
 | GET | `/api/models/convert/:task_id` | Get conversion task details | None |
 | DELETE | `/api/models/convert/:task_id` | Delete conversion task | None |
 | GET | `/api/models/loaded` | Get loaded models | None |
-| POST | `/api/models/distribute` | Distribute model | None |
-| POST | `/api/models/download` | Download model (alias) | None |
-| GET | `/api/models/blob/:model_name` | Serve model file | None |
+| GET | `/api/models/blob/:model_name` | Serve model file (URL-encode `/` in model_name) | None |
 | GET | `/api/nodes/:node_id/models` | Get node's loaded models | None |
-| POST | `/api/nodes/:node_id/models/pull` | Pull model to node | None |
 | GET | `/api/tasks` | List download tasks | None |
 | GET | `/api/tasks/:task_id` | Get task details | None |
 | POST | `/api/tasks/:task_id/progress` | Update task progress | None |
@@ -980,7 +977,6 @@ The file is automatically managed with:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/pull` | Model download request |
 | GET | `/health` | Health check |
 | GET | `/startup` | Startup status check |
 | GET | `/metrics` | Metrics (JSON format) |

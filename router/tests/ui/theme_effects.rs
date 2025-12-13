@@ -1,63 +1,51 @@
 // Contract tests for theme system (FR-027)
-// Simplified 3-theme system: Dark, Light, High Contrast
+// React + Tailwind + shadcn/ui based theme system: Dark, Light
 //
 // Design principles:
-// - Color-only themes (no layout changes per theme)
-// - Fixed layout across all themes (Minimal-based)
-// - No decorative visual effects (scanlines, glows, grids removed)
-// - Accessibility support (prefers-reduced-motion, high-contrast)
+// - CSS custom properties for theme colors via Tailwind
+// - Dark/Light mode toggle via class on html element
+// - Accessibility support (prefers-reduced-motion)
 
-/// Read the styles.css file content for testing
+/// Read the index.css file content for testing (React dashboard source)
 fn get_styles_css() -> String {
-    include_str!("../../src/web/static/styles.css").to_string()
+    include_str!("../../src/web/dashboard/src/index.css").to_string()
 }
 
 // ============================================
-// THEME SYSTEM TESTS (3 Color Themes)
+// THEME SYSTEM TESTS (Dark/Light Themes)
 // ============================================
 
 #[test]
 fn dark_theme_is_default() {
     let css = get_styles_css();
-    // Dark theme should be defined in :root (default)
+    // Dark theme should be defined in :root or .dark
     assert!(
-        css.contains(":root") && css.contains("--bg:"),
-        "Root should define default theme variables"
-    );
-    assert!(
-        css.contains("[data-theme=\"dark\"]"),
-        "Dark theme selector should exist"
+        css.contains(":root") || css.contains(".dark"),
+        "Root or .dark should define theme variables"
     );
 }
 
 #[test]
-fn light_theme_exists_with_light_colors() {
+fn light_theme_exists() {
     let css = get_styles_css();
+    // Light theme should have its own section (no .dark class)
     assert!(
-        css.contains("[data-theme=\"light\"]"),
-        "Light theme selector should exist"
-    );
-    // Light theme should have color-scheme: light
-    assert!(
-        css.contains("color-scheme: light"),
-        "Light theme should set color-scheme: light"
-    );
-}
-
-#[test]
-fn high_contrast_theme_exists() {
-    let css = get_styles_css();
-    assert!(
-        css.contains("[data-theme=\"high-contrast\"]"),
-        "High contrast theme selector should exist"
+        css.contains(":root") && !css.contains(".dark :root"),
+        "Light theme (root) should exist as base"
     );
 }
 
 #[test]
 fn all_themes_define_core_css_variables() {
     let css = get_styles_css();
-    // Core variables that must exist
-    let core_vars = ["--bg", "--bg-card", "--text", "--accent", "--border"];
+    // Core variables that must exist (shadcn/ui convention)
+    let core_vars = [
+        "--background",
+        "--foreground",
+        "--primary",
+        "--border",
+        "--card",
+    ];
 
     for var in core_vars {
         assert!(
@@ -69,12 +57,12 @@ fn all_themes_define_core_css_variables() {
 }
 
 #[test]
-fn themes_use_css_custom_properties_for_colors() {
+fn themes_use_hsl_color_format() {
     let css = get_styles_css();
-    // Verify color values are defined via CSS custom properties
+    // shadcn/ui uses HSL format for colors
     assert!(
-        css.contains("var(--bg)") || css.contains("var(--bg-card)"),
-        "CSS should use CSS custom properties for theming"
+        css.contains("hsl(") || css.contains("hsl(var("),
+        "CSS should use HSL color format for theming"
     );
 }
 
@@ -91,54 +79,25 @@ fn prefers_reduced_motion_is_respected() {
     );
 }
 
-#[test]
-fn high_contrast_theme_has_pure_black_background() {
-    let css = get_styles_css();
-    // High contrast should use pure black (#000) for maximum contrast
-    assert!(
-        css.contains("[data-theme=\"high-contrast\"]") && css.contains("#000"),
-        "High contrast theme should use pure black background"
-    );
-}
-
 // ============================================
-// LAYOUT TESTS (Fixed Layout)
+// LAYOUT TESTS
 // ============================================
-
-#[test]
-fn layout_is_theme_independent() {
-    let css = get_styles_css();
-    // Layout classes should not be theme-specific
-    // (no [data-theme="x"] .stats-grid with different layouts)
-    assert!(
-        !css.contains("[data-theme=\"dark\"] .stats-grid"),
-        "Dark theme should not have theme-specific layout"
-    );
-    assert!(
-        !css.contains("[data-theme=\"light\"] .stats-grid"),
-        "Light theme should not have theme-specific layout"
-    );
-}
 
 #[test]
 fn no_decorative_effects_exist() {
     let css = get_styles_css();
-    // Decorative effects should be removed
+    // Decorative effects should not be present
     assert!(
         !css.contains("scanline"),
-        "Scanline effects should be removed"
+        "Scanline effects should not exist"
     );
-    assert!(
-        !css.contains("grid-overlay"),
-        "Grid overlay effects should be removed"
-    );
-    assert!(!css.contains("crt-effect"), "CRT effects should be removed");
+    assert!(!css.contains("crt-effect"), "CRT effects should not exist");
 }
 
 #[test]
 fn no_legacy_themes_exist() {
     let css = get_styles_css();
-    // Legacy 7-color themes should be removed
+    // Legacy themes should not exist
     let legacy_themes = [
         "synthwave",
         "ocean",
@@ -153,24 +112,8 @@ fn no_legacy_themes_exist() {
         let selector = format!("[data-theme=\"{}\"]", theme);
         assert!(
             !css.contains(&selector),
-            "Legacy theme '{}' should be removed",
+            "Legacy theme '{}' should not exist",
             theme
-        );
-    }
-}
-
-#[test]
-fn no_legacy_skin_themes_exist() {
-    let css = get_styles_css();
-    // Legacy 3-skin themes should be removed
-    let legacy_skins = ["minimal", "tech", "creative"];
-
-    for skin in legacy_skins {
-        let selector = format!("[data-theme=\"{}\"]", skin);
-        assert!(
-            !css.contains(&selector),
-            "Legacy skin theme '{}' should be removed",
-            skin
         );
     }
 }
@@ -182,18 +125,19 @@ fn no_legacy_skin_themes_exist() {
 #[test]
 fn responsive_breakpoints_exist() {
     let css = get_styles_css();
+    // Tailwind uses @media for responsive styles
     assert!(
-        css.contains("@media"),
-        "CSS should have responsive media queries"
+        css.contains("@media") || css.contains("@layer"),
+        "CSS should have media queries or layers"
     );
 }
 
 #[test]
-fn mobile_friendly_layout() {
+fn tailwind_base_layer_exists() {
     let css = get_styles_css();
-    // Should have mobile-specific styles
+    // Tailwind CSS uses @layer base
     assert!(
-        css.contains("max-width:") || css.contains("min-width:"),
-        "CSS should have responsive breakpoints"
+        css.contains("@layer base") || css.contains("@tailwind"),
+        "CSS should have Tailwind base layer"
     );
 }

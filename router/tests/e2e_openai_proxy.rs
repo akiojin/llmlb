@@ -95,7 +95,6 @@ async fn agent_generate_handler(
 #[tokio::test]
 async fn openai_proxy_end_to_end_updates_dashboard_history() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
     let node_stub = spawn_agent_stub(AgentStubState {
         // OpenAI互換形式のレスポンス
         chat_response: json!({
@@ -132,6 +131,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     // 正常系チャット（OpenAI互換API）
     let chat_response = client
         .post(format!("http://{}/v1/chat/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
             messages: vec![llm_router_common::protocol::ChatMessage {
@@ -153,6 +153,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     // ストリーミングチャット（OpenAI互換API）
     let streaming_response = client
         .post(format!("http://{}/v1/chat/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
         .json(&ChatRequest {
             model: "gpt-oss:20b".into(),
             messages: vec![llm_router_common::protocol::ChatMessage {
@@ -184,6 +185,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     // 生成API正常系（OpenAI互換API）
     let generate_response = client
         .post(format!("http://{}/v1/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
         .json(&GenerateRequest {
             model: "gpt-oss:20b".into(),
             prompt: "write something".into(),
@@ -202,6 +204,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     // 生成APIエラーケース（OpenAI互換API）
     let missing_model_response = client
         .post(format!("http://{}/v1/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
         .json(&GenerateRequest {
             model: "missing-model".into(),
             prompt: "fail please".into(),

@@ -107,6 +107,22 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 
 **テスト検証**: レスポンスが正常に返ることを確認
 
+### デバッグビルド時（固定デバッグAPIキー）
+
+デバッグビルド（`debug_assertions`）では、固定のデバッグAPIキー `sk_debug` を利用できる。
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "X-API-Key: sk_debug" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-oss:7b",
+    "messages": [
+      {"role": "user", "content": "Hello, debug build!"}
+    ]
+  }'
+```
+
 ### 無効なAPIキーでのアクセス（失敗テスト）
 
 ```bash

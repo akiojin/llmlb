@@ -74,19 +74,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model));
 
-    let skip_api_key = std::env::var("LLM_ROUTER_SKIP_API_KEY")
-        .ok()
-        .map(|v| v == "1")
-        .unwrap_or(false);
-
-    let api_key_protected_routes = if skip_api_key {
-        api_key_routes
-    } else {
-        api_key_routes.layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_auth_middleware,
-        ))
-    };
+    let api_key_protected_routes = api_key_routes.layer(middleware::from_fn_with_state(
+        state.db_pool.clone(),
+        crate::auth::middleware::api_key_auth_middleware,
+    ));
 
     Router::new()
         // 認証エンドポイント（認証不要）

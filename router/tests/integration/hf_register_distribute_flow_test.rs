@@ -69,7 +69,6 @@ async fn hf_catalog_register_distribute_flow() {
 
     std::env::set_var("HF_BASE_URL", mock.uri());
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
 
     let app = build_app().await;
 
@@ -186,6 +185,7 @@ async fn hf_catalog_register_distribute_flow() {
             Request::builder()
                 .method("GET")
                 .uri("/v1/models")
+                .header("x-api-key", "sk_debug")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
@@ -205,6 +205,5 @@ async fn hf_catalog_register_distribute_flow() {
 
     std::env::remove_var("HF_BASE_URL");
     std::env::remove_var("LLM_ROUTER_SKIP_HEALTH_CHECK");
-    std::env::remove_var("LLM_ROUTER_SKIP_API_KEY");
     clear_hf_cache();
 }

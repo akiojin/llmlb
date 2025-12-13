@@ -35,11 +35,11 @@ export const DashboardSelectors = {
     hfRegisterSubmit: '#hf-register-url-submit',
     // Unified local models view (registered + downloading)
     localModelsList: '#local-models-list',
-    // Legacy selectors (hidden but kept for backward compatibility)
-    registeredModelsList: '#local-models-list',
-    registeringTasksList: '#local-models-list',
-    downloadTasksList: '#local-models-list',
-    convertTasksList: '#local-models-list',
+    // Registered models and convert tasks grid
+    registeredModelsList: '#registering-tasks',
+    registeringTasksList: '#registering-tasks',
+    downloadTasksList: '#registering-tasks',
+    convertTasksList: '#registering-tasks',
     // Local model card selectors
     localModelCard: '.local-model-card',
     localModelCardDownloading: '.local-model-card--downloading',

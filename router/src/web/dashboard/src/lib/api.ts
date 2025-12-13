@@ -178,17 +178,113 @@ export interface DashboardOverview {
   generation_time_ms: number
 }
 
+// Internal type for API response
+interface ApiDashboardOverview {
+  nodes: Array<{
+    id: string
+    machine_name: string
+    custom_name?: string
+    ip_address: string
+    runtime_port: number
+    status: 'online' | 'offline'
+    runtime_version: string
+    gpu_model?: string
+    gpu_count?: number
+    cpu_usage?: number
+    memory_usage?: number
+    gpu_usage?: number | null
+    gpu_memory_usage?: number | null
+    total_requests: number
+    uptime_seconds: number
+    last_seen: string
+    tags?: string[]
+    notes?: string
+    loaded_models?: string[]
+  }>
+  stats: DashboardStats
+  history: Array<{ minute: string; success: number; error: number }>
+  generated_at: string
+  generation_time_ms: number
+}
+
 export const dashboardApi = {
-  getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
+  getOverview: async (): Promise<DashboardOverview> => {
+    const data = await fetchWithAuth<ApiDashboardOverview>('/api/dashboard/overview')
+
+    // Map API nodes to frontend DashboardNode format
+    const nodes: DashboardNode[] = (data.nodes || []).map((n) => ({
+      node_id: n.id,
+      machine_name: n.machine_name,
+      custom_name: n.custom_name,
+      ip_address: n.ip_address,
+      port: n.runtime_port,
+      status: n.status,
+      runtime_version: n.runtime_version,
+      gpu_model: n.gpu_model,
+      gpu_count: n.gpu_count,
+      cpu_usage: n.cpu_usage,
+      memory_usage: n.memory_usage,
+      gpu_usage: n.gpu_usage ?? undefined,
+      gpu_memory_usage: n.gpu_memory_usage ?? undefined,
+      total_requests: n.total_requests,
+      uptime_seconds: n.uptime_seconds,
+      last_seen: n.last_seen,
+      tags: n.tags,
+      notes: n.notes,
+      ready_models: n.loaded_models,
+    }))
+
+    // Convert aggregated history to RequestHistoryItem format (empty for now - need different API)
+    // The overview API returns aggregated stats, not individual requests
+    const history: RequestHistoryItem[] = []
+
+    return {
+      nodes,
+      stats: data.stats,
+      history,
+      generated_at: data.generated_at,
+      generation_time_ms: data.generation_time_ms,
+    }
+  },
 
   getNodes: () => fetchWithAuth<DashboardNode[]>('/api/dashboard/nodes'),
 
   getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
 
-  getRequestHistory: (limit?: number) =>
-    fetchWithAuth<RequestHistoryItem[]>('/api/dashboard/request-history', {
-      params: { limit },
-    }),
+  getRequestHistory: async (limit?: number): Promise<RequestHistoryItem[]> => {
+    interface ApiRequestRecord {
+      id: string
+      timestamp: string
+      model: string
+      node_id?: string
+      agent_machine_name?: string
+      status: { type: string; message?: string }
+      duration_ms: number
+      request_body?: unknown
+      response_body?: unknown
+    }
+    interface ApiResponse {
+      records: ApiRequestRecord[]
+      total_count: number
+      page: number
+      per_page: number
+    }
+    const data = await fetchWithAuth<ApiResponse>('/api/dashboard/request-responses', {
+      params: { per_page: limit || 100 },
+    })
+    return (data.records || []).map((r) => ({
+      request_id: r.id,
+      timestamp: r.timestamp,
+      model: r.model,
+      node_id: r.node_id,
+      node_name: r.agent_machine_name,
+      status: r.status.type === 'success' ? 'success' : 'error',
+      duration_ms: r.duration_ms,
+      error: r.status.type === 'error' ? r.status.message : undefined,
+      request_body: r.request_body,
+      response_body: r.response_body,
+    } as RequestHistoryItem))
+  },
 
   getNodeMetrics: (nodeId: string) =>
     fetchWithAuth<unknown[]>(`/api/dashboard/metrics/${nodeId}`),
@@ -208,11 +304,16 @@ export const dashboardApi = {
       params: { format },
     }),
 
-  getCoordinatorLogs: (params?: { limit?: number; level?: string; target?: string }) =>
-    fetchWithAuth<unknown[]>('/api/dashboard/logs/coordinator', { params }),
+  getRouterLogs: async (params?: { limit?: number; level?: string; target?: string }) => {
+    const data = await fetchWithAuth<{ entries: unknown[] }>('/api/dashboard/logs/router', { params })
+    return data?.entries || []
+  },
 
-  getLogs: (params?: { limit?: number; level?: string; target?: string }) =>
-    fetchWithAuth<unknown[]>('/api/dashboard/logs', { params }),
+  getLogs: async (params?: { limit?: number; level?: string; target?: string }) => {
+    // getLogs is an alias for getRouterLogs
+    const data = await fetchWithAuth<{ entries: unknown[] }>('/api/dashboard/logs/router', { params })
+    return data?.entries || []
+  },
 }
 
 // Nodes API
@@ -249,6 +350,21 @@ export interface RegisteredModel {
   error?: string
 }
 
+export interface ConvertTask {
+  id: string
+  repo: string
+  filename: string
+  revision?: string
+  quantization?: string
+  chat_template?: string
+  status: 'Queued' | 'InProgress' | 'Completed' | 'Failed'
+  progress: number
+  error?: string
+  path?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ModelInfo {
   name: string
   source?: string
@@ -268,19 +384,53 @@ export interface AvailableModel {
   likes?: number
 }
 
-export const modelsApi = {
-  getRegistered: () =>
-    fetchWithAuth<ModelInfo[]>('/api/models/registered'),
+// Response wrapper type for available models
+interface AvailableModelsResponse {
+  models: AvailableModel[]
+  source: string
+}
 
-  getAvailable: () => fetchWithAuth<AvailableModel[]>('/api/models/available'),
+export const modelsApi = {
+  getRegistered: async (): Promise<ModelInfo[]> => {
+    const data = await fetchWithAuth<unknown[]>('/api/models/registered')
+    // Map API response to ModelInfo format
+    return (data || []).map((item: unknown) => {
+      const m = item as Record<string, unknown>
+      return {
+        name: String(m.name || ''),
+        source: String(m.source || ''),
+        size_bytes: m.size_gb ? Number(m.size_gb) * 1024 * 1024 * 1024 : undefined,
+        format: m.tags ? (m.tags as string[])[0] : undefined,
+        state: m.ready ? 'ready' : (m.status === 'downloading' ? 'downloading' : 'pending'),
+        progress: m.progress as number | undefined,
+        error: m.error as string | undefined,
+      } as ModelInfo
+    })
+  },
+
+  getAvailable: async (): Promise<AvailableModel[]> => {
+    const data = await fetchWithAuth<AvailableModelsResponse | AvailableModel[]>('/api/models/available')
+    // Handle both object wrapper and direct array responses
+    if (Array.isArray(data)) {
+      return data
+    }
+    return data?.models || []
+  },
 
   getLoaded: () => fetchWithAuth<unknown[]>('/api/models/loaded'),
 
-  register: (urlOrName: string) =>
-    fetchWithAuth<{ task_id: string }>('/api/models/register', {
+  register: (urlOrName: string) => {
+    // フル URL からリポジトリ名を抽出
+    let repo = urlOrName.trim()
+    const hfMatch = repo.match(/huggingface\.co\/([^/]+\/[^/]+)/)
+    if (hfMatch) {
+      repo = hfMatch[1]
+    }
+    return fetchWithAuth<{ task_id: string }>('/api/models/register', {
       method: 'POST',
-      body: JSON.stringify({ url: urlOrName }),
-    }),
+      body: JSON.stringify({ repo }),
+    })
+  },
 
   pull: (modelName: string) =>
     fetchWithAuth<{ task_id: string }>('/api/models/pull', {
@@ -310,10 +460,10 @@ export const modelsApi = {
       body: JSON.stringify(params),
     }),
 
-  getConvertTasks: () => fetchWithAuth<unknown[]>('/api/models/convert'),
+  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/api/models/convert'),
 
   getConvertTask: (taskId: string) =>
-    fetchWithAuth<unknown>(`/api/models/convert/${taskId}`),
+    fetchWithAuth<ConvertTask>(`/api/models/convert/${taskId}`),
 
   deleteConvertTask: (taskId: string) =>
     fetchWithAuth<void>(`/api/models/convert/${taskId}`, { method: 'DELETE' }),
@@ -364,7 +514,13 @@ export interface CreateApiKeyResponse {
 }
 
 export const apiKeysApi = {
-  list: () => fetchWithAuth<ApiKey[]>('/api/api-keys'),
+  list: async (): Promise<ApiKey[]> => {
+    const data = await fetchWithAuth<{ api_keys: ApiKey[] } | ApiKey[]>('/api/api-keys')
+    if (Array.isArray(data)) {
+      return data
+    }
+    return data?.api_keys || []
+  },
 
   create: (data: { name: string; expires_at?: string }) =>
     fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
@@ -391,7 +547,13 @@ export interface User {
 }
 
 export const usersApi = {
-  list: () => fetchWithAuth<User[]>('/api/users'),
+  list: async (): Promise<User[]> => {
+    const data = await fetchWithAuth<{ users: User[] } | User[]>('/api/users')
+    if (Array.isArray(data)) {
+      return data
+    }
+    return data?.users || []
+  },
 
   create: (data: { username: string; password: string; role: string }) =>
     fetchWithAuth<User>('/api/users', {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { type DashboardNode, modelsApi, type ModelInfo, type AvailableModel } from '@/lib/api'
+import { type DashboardNode, modelsApi, type ModelInfo, type AvailableModel, type ConvertTask } from '@/lib/api'
 import { formatBytes, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -50,7 +50,6 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [registerUrl, setRegisterUrl] = useState('')
-  const [registerOpen, setRegisterOpen] = useState(false)
   const [distributeOpen, setDistributeOpen] = useState(false)
   const [convertOpen, setConvertOpen] = useState(false)
   const [selectedModel, setSelectedModel] = useState<ModelInfo | null>(null)
@@ -71,14 +70,26 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
     refetchInterval: 30000,
   })
 
+  // Fetch convert tasks (for showing converting/queued models)
+  const { data: convertTasks } = useQuery({
+    queryKey: ['convert-tasks'],
+    queryFn: modelsApi.getConvertTasks,
+    refetchInterval: 3000, // 3秒ごとに更新（進捗表示のため）
+  })
+
+  // Filter to show only non-completed tasks
+  const activeConvertTasks = convertTasks?.filter(
+    (t: ConvertTask) => t.status !== 'Completed'
+  )
+
   // Register model mutation
   const registerMutation = useMutation({
     mutationFn: (url: string) => modelsApi.register(url),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: 'Model registered successfully' })
+      queryClient.invalidateQueries({ queryKey: ['convert-tasks'] })
+      toast({ title: 'Model registration started' })
       setRegisterUrl('')
-      setRegisterOpen(false)
     },
     onError: (error) => {
       toast({
@@ -158,6 +169,22 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
     },
   })
 
+  // Delete convert task mutation (for failed tasks)
+  const deleteConvertTaskMutation = useMutation({
+    mutationFn: (taskId: string) => modelsApi.deleteConvertTask(taskId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['convert-tasks'] })
+      toast({ title: 'Task deleted' })
+    },
+    onError: (error) => {
+      toast({
+        title: 'Failed to delete task',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    },
+  })
+
   const filteredRegistered = (registeredModels as ModelInfo[] | undefined)?.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
   )
@@ -195,6 +222,36 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
     }
   }
 
+  const getConvertTaskStatusBadge = (status: ConvertTask['status']) => {
+    switch (status) {
+      case 'InProgress':
+        return <Badge variant="secondary">Converting</Badge>
+      case 'Queued':
+        return <Badge variant="outline">Queued</Badge>
+      case 'Failed':
+        return <Badge variant="destructive">Failed</Badge>
+      case 'Completed':
+        return <Badge variant="online">Completed</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  const getConvertTaskIcon = (status: ConvertTask['status']) => {
+    switch (status) {
+      case 'InProgress':
+        return <Loader2 className="h-4 w-4 animate-spin text-primary" />
+      case 'Queued':
+        return <Clock className="h-4 w-4 text-muted-foreground" />
+      case 'Failed':
+        return <AlertCircle className="h-4 w-4 text-destructive" />
+      case 'Completed':
+        return <CheckCircle2 className="h-4 w-4 text-success" />
+      default:
+        return <Clock className="h-4 w-4 text-muted-foreground" />
+    }
+  }
+
   const onlineNodes = nodes.filter((n) => n.status === 'online')
 
   return (
@@ -227,8 +284,23 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                 className="pl-9 w-64"
               />
             </div>
-            <Button onClick={() => setRegisterOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Input
+              id="hf-register-url"
+              placeholder="https://huggingface.co/... or model-name"
+              value={registerUrl}
+              onChange={(e) => setRegisterUrl(e.target.value)}
+              className="w-80"
+            />
+            <Button
+              id="hf-register-url-submit"
+              onClick={() => registerMutation.mutate(registerUrl)}
+              disabled={!registerUrl || registerMutation.isPending}
+            >
+              {registerMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
               Register
             </Button>
           </div>
@@ -243,25 +315,83 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                 Registered Models
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {isLoadingRegistered ? (
-                <div className="space-y-4">
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="h-24 shimmer rounded" />
+            <CardContent id="local-models-list">
+              <div id="registering-tasks">
+                {isLoadingRegistered ? (
+                  <div className="space-y-4">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-24 shimmer rounded" />
+                    ))}
+                  </div>
+                ) : (!filteredRegistered || filteredRegistered.length === 0) && (!activeConvertTasks || activeConvertTasks.length === 0) ? (
+                  <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
+                    <Box className="h-8 w-8" />
+                    <p>No registered models</p>
+                    <p className="text-xs">Use the input field above to register a model</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {/* Converting/Queued Tasks */}
+                  {activeConvertTasks?.map((task) => (
+                    <Card key={task.id} className="overflow-hidden border-dashed border-2">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <h4 className="font-medium flex items-center gap-2">
+                              {getConvertTaskIcon(task.status)}
+                              {task.repo}
+                            </h4>
+                            {task.filename && (
+                              <p className="text-xs text-muted-foreground">
+                                {task.filename}
+                              </p>
+                            )}
+                          </div>
+                          {getConvertTaskStatusBadge(task.status)}
+                        </div>
+
+                        {/* Progress bar for InProgress tasks */}
+                        {task.status === 'InProgress' && (
+                          <div className="mt-3">
+                            <div className="h-1.5 w-full rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all"
+                                style={{ width: `${task.progress * 100}%` }}
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {(task.progress * 100).toFixed(1)}%
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Error message for Failed tasks */}
+                        {task.status === 'Failed' && task.error && (
+                          <p className="mt-2 text-xs text-destructive line-clamp-2">
+                            {task.error}
+                          </p>
+                        )}
+
+                        {/* Delete button for Failed tasks */}
+                        {task.status === 'Failed' && (
+                          <div className="mt-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteConvertTaskMutation.mutate(task.id)}
+                              disabled={deleteConvertTaskMutation.isPending}
+                            >
+                              <Trash2 className="mr-1 h-3 w-3 text-destructive" />
+                              Delete
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   ))}
-                </div>
-              ) : !filteredRegistered || filteredRegistered.length === 0 ? (
-                <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
-                  <Box className="h-8 w-8" />
-                  <p>No registered models</p>
-                  <Button variant="outline" size="sm" onClick={() => setRegisterOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Register a model
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredRegistered.map((model) => (
+
+                  {/* Registered Models */}
+                  {filteredRegistered?.map((model) => (
                     <Card key={model.name} className="overflow-hidden">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
@@ -340,8 +470,9 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                       </CardContent>
                     </Card>
                   ))}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -414,43 +545,6 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Register Model Dialog */}
-      <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Register Model</DialogTitle>
-            <DialogDescription>
-              Enter a Hugging Face model URL or model name to register.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="model-url">Model URL or Name</Label>
-              <Input
-                id="model-url"
-                placeholder="https://huggingface.co/... or model-name"
-                value={registerUrl}
-                onChange={(e) => setRegisterUrl(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRegisterOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => registerMutation.mutate(registerUrl)}
-              disabled={!registerUrl || registerMutation.isPending}
-            >
-              {registerMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Register
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Distribute Model Dialog */}
       <Dialog open={distributeOpen} onOpenChange={setDistributeOpen}>

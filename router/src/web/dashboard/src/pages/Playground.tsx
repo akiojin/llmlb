@@ -465,15 +465,17 @@ export default function Playground() {
               </SelectTrigger>
               <SelectContent>
                 {readyModels.length === 0 ? (
-                  <SelectItem value="" disabled>
+                  <SelectItem value="__no_models__" disabled>
                     No models available
                   </SelectItem>
                 ) : (
-                  readyModels.map((model) => (
-                    <SelectItem key={model.name} value={model.name}>
-                      {model.name}
-                    </SelectItem>
-                  ))
+                  readyModels
+                    .filter((model) => model.name && model.name.length > 0)
+                    .map((model) => (
+                      <SelectItem key={model.name} value={model.name}>
+                        {model.name}
+                      </SelectItem>
+                    ))
                 )}
               </SelectContent>
             </Select>

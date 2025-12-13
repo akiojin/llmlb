@@ -73,6 +73,28 @@ export class DashboardPage {
 
   async goto() {
     await this.page.goto('/dashboard');
+    // Wait for page to settle
+    await this.page.waitForLoadState('networkidle');
+    // Handle login if redirected to login page
+    if (this.page.url().includes('login')) {
+      await this.login();
+    }
+  }
+
+  async gotoModels() {
+    await this.goto();
+    // Navigate to Models tab
+    await this.page.click('button[role="tab"]:has-text("Models")');
+    await this.page.waitForTimeout(500);
+  }
+
+  async login(username = 'admin', password = 'test') {
+    await this.page.fill('#username', username);
+    await this.page.fill('#password', password);
+    await this.page.click('button[type="submit"]');
+    // Wait for redirect to dashboard (the URL will NOT contain 'login' after successful login)
+    await this.page.waitForFunction(() => !window.location.href.includes('login'), { timeout: 10000 });
+    await this.page.waitForLoadState('networkidle');
   }
 
   async toggleTheme() {

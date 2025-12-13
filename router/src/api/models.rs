@@ -101,7 +101,7 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
 /// 利用可能なモデル一覧のレスポンスDTO
 #[derive(Debug, Serialize)]
 pub struct AvailableModelView {
-    /// モデルID（例: gpt-oss:20b）
+    /// モデルID（例: gpt-oss-20b）
     pub name: String,
     /// UI表示名
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1511,7 +1511,7 @@ mod tests {
     #[test]
     fn test_validate_model_name_valid() {
         assert!(validate_model_name("gpt-oss").is_ok());
-        assert!(validate_model_name("gpt-oss:7b").is_ok());
+        assert!(validate_model_name("gpt-oss-7b").is_ok());
         assert!(validate_model_name("llama3.2:latest").is_ok());
         assert!(validate_model_name("model_name:v1.0").is_ok());
     }
@@ -1535,7 +1535,7 @@ mod tests {
     #[test]
     fn test_available_model_view_serialize() {
         let view = AvailableModelView {
-            name: "gpt-oss:7b".to_string(),
+            name: "gpt-oss-7b".to_string(),
             display_name: Some("GPT-OSS 7B".to_string()),
             description: Some("Test model".to_string()),
             tags: Some(vec!["7b".to_string()]),
@@ -1543,7 +1543,7 @@ mod tests {
             required_memory_gb: Some(6.0),
         };
         let json = serde_json::to_string(&view).unwrap();
-        assert!(json.contains("gpt-oss:7b"));
+        assert!(json.contains("gpt-oss-7b"));
         assert!(json.contains("GPT-OSS 7B"));
     }
 
@@ -1608,7 +1608,7 @@ mod tests {
     #[test]
     fn test_model_info_to_view_conversion() {
         let mut model = crate::registry::models::ModelInfo::new(
-            "gpt-oss:7b".to_string(),
+            "gpt-oss-7b".to_string(),
             4 * 1024 * 1024 * 1024,
             "Test model".to_string(),
             6 * 1024 * 1024 * 1024,
@@ -1620,8 +1620,9 @@ mod tests {
         model.last_modified = None;
         model.status = None;
         let view = model_info_to_view(model);
-        assert_eq!(view.name, "gpt-oss:7b");
-        assert_eq!(view.display_name, Some("GPT-OSS 7B".to_string()));
+        assert_eq!(view.name, "gpt-oss-7b");
+        // 新形式（コロンなし）の場合、display_name はモデル名そのまま
+        assert_eq!(view.display_name, Some("gpt-oss-7b".to_string()));
         assert!((view.size_gb.unwrap() - 4.0).abs() < 0.001);
         assert!((view.required_memory_gb.unwrap() - 6.0).abs() < 0.001);
     }
@@ -1656,10 +1657,11 @@ mod tests {
 
         // テンポラリディレクトリにモデルファイルを作成
         // router_models_dir() は ~/.llm-router/models を返すため、
-        // temp_dir/.llm-router/models/gpt-oss_7b/model.gguf の構造が必要
+        // temp_dir/.llm-router/models/gpt-oss-7b/model.gguf の構造が必要
+        // （新形式ではディレクトリ名 = モデル名、コロン無しの場合はそのまま）
         let temp_dir = tempdir().expect("temp dir");
         let models_dir = temp_dir.path().join(".llm-router").join("models");
-        let model_dir = models_dir.join("gpt-oss_7b");
+        let model_dir = models_dir.join("gpt-oss-7b");
         std::fs::create_dir_all(&model_dir).expect("create model dir");
 
         // テスト用のGGUFファイルを作成（GGUFマジックナンバー付き）
@@ -1671,7 +1673,7 @@ mod tests {
         std::env::set_var("HOME", temp_dir.path());
 
         // router_model_path が正しいパスを返すことを確認
-        let result = router_model_path("gpt-oss:7b");
+        let result = router_model_path("gpt-oss-7b");
         assert!(result.is_some(), "router_model_path should return Some");
         assert!(result.unwrap().exists(), "model file should exist");
     }

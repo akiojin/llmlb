@@ -64,8 +64,8 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .update_last_seen(
             node_id,
             Some(vec![
-                "gpt-oss:20b".to_string(),
-                "gpt-oss:120b".to_string(),
+                "gpt-oss-20b".to_string(),
+                "gpt-oss-120b".to_string(),
                 "test-model".to_string(),
             ]),
             None, // loaded_embedding_models
@@ -435,7 +435,7 @@ async fn test_openai_models_list_success() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "object": "list",
             "data": [{
-                "id": "gpt-oss:20b",
+                "id": "gpt-oss-20b",
                 "object": "model",
                 "owned_by": "runtime"
             }]
@@ -479,9 +479,9 @@ async fn test_openai_model_detail_success() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/models/gpt-oss:20b"))
+        .and(path("/v1/models/gpt-oss-20b"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "gpt-oss:20b",
+            "id": "gpt-oss-20b",
             "object": "model",
             "owned_by": "runtime"
         })))
@@ -495,7 +495,7 @@ async fn test_openai_model_detail_success() {
         .oneshot(
             axum::http::Request::builder()
                 .method("GET")
-                .uri("/v1/models/gpt-oss:20b")
+                .uri("/v1/models/gpt-oss-20b")
                 .header("Authorization", format!("Bearer {}", api_key))
                 .body(axum::body::Body::empty())
                 .unwrap(),

@@ -12,7 +12,7 @@ mod tests {
     async fn test_task_lifecycle() {
         let manager = DownloadTaskManager::new();
         let node_id = Uuid::new_v4();
-        let model_name = "gpt-oss:20b".to_string();
+        let model_name = "gpt-oss-20b".to_string();
 
         // 1. タスク作成
         let task = manager.create_task(node_id, model_name.clone()).await;
@@ -85,9 +85,9 @@ mod tests {
         let agent2 = Uuid::new_v4();
 
         // 2つのタスクを作成
-        let task1 = manager.create_task(agent1, "gpt-oss:20b".to_string()).await;
+        let task1 = manager.create_task(agent1, "gpt-oss-20b".to_string()).await;
         let task2 = manager
-            .create_task(agent2, "gpt-oss:120b".to_string())
+            .create_task(agent2, "gpt-oss-120b".to_string())
             .await;
 
         // 両方のタスクが取得できることを確認
@@ -107,9 +107,9 @@ mod tests {
         let agent2 = Uuid::new_v4();
 
         // agent1に2つのタスク
-        manager.create_task(agent1, "gpt-oss:20b".to_string()).await;
+        manager.create_task(agent1, "gpt-oss-20b".to_string()).await;
         manager
-            .create_task(agent1, "gpt-oss:120b".to_string())
+            .create_task(agent1, "gpt-oss-120b".to_string())
             .await;
 
         // agent2に1つのタスク

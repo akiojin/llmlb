@@ -8,6 +8,20 @@ use axum::{
 };
 use llm_router_common::auth::{Claims, UserRole};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
+
+#[cfg(debug_assertions)]
+const DEBUG_API_KEY: &str = "sk_debug";
+
+#[cfg(debug_assertions)]
+fn debug_api_key_is_valid(request_key: &str) -> bool {
+    request_key == DEBUG_API_KEY
+}
+
+#[cfg(not(debug_assertions))]
+fn debug_api_key_is_valid(_request_key: &str) -> bool {
+    false
+}
 
 /// JWT認証ミドルウェア
 ///
@@ -108,6 +122,13 @@ pub async fn api_key_auth_middleware(
         )
             .into_response());
     };
+
+    // デバッグビルド時のみ: 固定のデバッグ用APIキーを許可
+    if debug_api_key_is_valid(&api_key) {
+        tracing::warn!("Authenticated via debug API key (debug build only)");
+        request.extensions_mut().insert(Uuid::nil());
+        return Ok(next.run(request).await);
+    }
 
     // SHA-256ハッシュ化
     let key_hash = hash_with_sha256(&api_key);
@@ -226,6 +247,7 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tower::ServiceExt;
 
     #[test]
     fn test_hash_with_sha256() {
@@ -243,5 +265,72 @@ mod tests {
         // 異なる入力は異なるハッシュを生成
         let hash3 = hash_with_sha256("different_input");
         assert_ne!(hash, hash3);
+    }
+
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn debug_api_key_is_accepted_in_debug_build_without_db() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite pool");
+
+        let app = axum::Router::new()
+            .route(
+                "/t",
+                axum::routing::get(
+                    |axum::extract::Extension(api_key_id): axum::extract::Extension<Uuid>| async move {
+                        api_key_id.to_string()
+                    },
+                ),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                pool,
+                api_key_auth_middleware,
+            ));
+
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/t")
+                    .header("x-api-key", DEBUG_API_KEY)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], Uuid::nil().to_string().as_bytes());
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[tokio::test]
+    async fn debug_api_key_is_rejected_in_release_build() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite pool");
+
+        let app = axum::Router::new()
+            .route("/t", axum::routing::get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(
+                pool,
+                api_key_auth_middleware,
+            ));
+
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/t")
+                    .header("x-api-key", "sk_debug")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 }

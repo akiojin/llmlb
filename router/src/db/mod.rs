@@ -400,7 +400,7 @@ mod tests {
             custom_name: Some("Updated".into()),
             tags: vec!["primary".into()],
             notes: None,
-            loaded_models: vec!["gpt-oss:7b".into()],
+            loaded_models: vec!["gpt-oss-7b".into()],
             loaded_embedding_models: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),

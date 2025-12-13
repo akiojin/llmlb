@@ -26,7 +26,7 @@ pub enum ModelSource {
 /// LLM runtimeモデル情報
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelInfo {
-    /// モデル名（例: "gpt-oss:20b", "llama3.2"）
+    /// モデル名（例: "gpt-oss-20b", "llama3.2"）
     pub name: String,
     /// モデルサイズ（バイト）
     pub size: u64,
@@ -99,13 +99,17 @@ impl ModelInfo {
     }
 }
 
-/// モデル名をディレクトリ名に変換（gpt-oss:20b -> gpt-oss_20b）
+/// モデル名をディレクトリ名に変換（gpt-oss-20b -> gpt-oss-20b）
+///
+/// 注: 従来のOllama形式（`:` 区切り）はサポート継続するが、新規登録ではファイル名ベース形式を使用
 pub fn model_name_to_dir(name: &str) -> String {
     if name.is_empty() {
         return "_latest".into();
     }
+    // 後方互換: コロン区切りの場合はアンダースコアに置換
     let mut dir = name.replace(':', "_");
-    if !name.contains(':') {
+    // ファイル名ベース形式（コロンなし）でサイズ情報がない場合も対応
+    if !name.contains(':') && !name.contains('-') {
         dir.push_str("_latest");
     }
     dir
@@ -223,12 +227,12 @@ mod cache_tests {
         let old_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", home);
 
-        let dir = home.join(".llm-router").join("models").join("gpt-oss_20b");
+        let dir = home.join(".llm-router").join("models").join("gpt-oss-20b");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("model.gguf");
         std::fs::write(&file, b"dummy").unwrap();
 
-        let info = ModelInfo::new("gpt-oss:20b".to_string(), 0, "test".to_string(), 0, vec![]);
+        let info = ModelInfo::new("gpt-oss-20b".to_string(), 0, "test".to_string(), 0, vec![]);
 
         let path = ensure_router_model_cached(&info).await;
         assert!(path.is_some());
@@ -366,18 +370,19 @@ pub enum DownloadStatus {
     Failed,
 }
 
-/// GGUFファイル名からOllama風モデルIDを生成
+/// GGUFファイル名からモデルIDを生成（ファイル名ベース形式）
 ///
 /// パターン解析:
-/// - "llama-2-7b.Q4_K_M.gguf" → "llama-2:7b"
-/// - "gemma-2-9b-it-Q4_K_M.gguf" → "gemma-2:9b-it"
-/// - "model.bin" (サイズ情報なし) → リポジトリ名から推測
+/// - "llama-2-7b.Q4_K_M.gguf" → "llama-2-7b"
+/// - "gemma-2-9b-it-Q4_K_M.gguf" → "gemma-2-9b-it"
+/// - "model.bin" (サイズ情報なし) → リポジトリ名から推測 → "gpt-oss-20b"
 ///
 /// 抽出ルール:
 /// 1. 拡張子 (.gguf, .bin) を除去
 /// 2. 量子化サフィックス (Q4_K_M, Q5_0, etc.) を除去
-/// 3. モデル名とサイズ/バリアントを分離
-/// 4. 小文字に正規化
+/// 3. 小文字に正規化
+///
+/// 注: 従来のOllama形式（name:tag）は廃止し、ファイル名/リポジトリ名をそのまま使用
 pub fn generate_ollama_style_id(filename: &str, fallback_repo: &str) -> String {
     // 汎用ファイル名（model.bin, model.gguf等）の場合はリポジトリ名から生成
     let base_name = filename
@@ -458,126 +463,65 @@ fn is_quantization_tag(s: &str) -> bool {
             .is_some_and(|c| c.is_ascii_digit())
 }
 
-/// モデル名とタグを抽出して "name:tag" 形式で返す
+/// モデル名を正規化して返す（ファイル名ベース形式）
+///
+/// 注: 従来のOllama形式（name:tag）は廃止し、ファイル名/リポジトリ名をそのまま使用
 fn extract_name_and_tag(name: &str) -> String {
-    let lower = name.to_lowercase();
-
-    // サイズパターンを検索: 7b, 13b, 70b, 8x7b, 9b-it, 7b-instruct-v0.2 など
-    // パターン: -{数字}b または -{数字}x{数字}b
-    let size_pattern = find_size_pattern(&lower);
-
-    match size_pattern {
-        Some((model_name, tag)) => {
-            format!("{}:{}", model_name.trim_matches('-'), tag)
-        }
-        None => {
-            // サイズが見つからない場合は :latest を付与
-            format!("{}:latest", lower.trim_matches('-'))
-        }
-    }
-}
-
-/// サイズパターンを検索して (モデル名, タグ) を返す
-fn find_size_pattern(name: &str) -> Option<(String, String)> {
-    // パターン: -7b, -13b, -70b, -8x7b, -7b-it, -7b-instruct-v0.2
-    // または: llama-2-7b, gemma-2-9b-it
-    let chars: Vec<char> = name.chars().collect();
-    let len = chars.len();
-
-    for i in 0..len {
-        // '-' または数字の開始を探す
-        if chars[i] == '-' || (i > 0 && chars[i].is_ascii_digit()) {
-            let start = if chars[i] == '-' { i + 1 } else { i };
-            if start >= len {
-                continue;
-            }
-
-            // 数字を収集
-            let mut j = start;
-            while j < len && (chars[j].is_ascii_digit() || chars[j] == 'x') {
-                j += 1;
-            }
-
-            // 'b' または 'B' で終わるかチェック
-            if j < len && (chars[j] == 'b' || chars[j] == 'B') {
-                let size_end = j + 1;
-                let model_name = &name[..i];
-
-                // タグ部分: サイズ + 残りのバリアント
-                let tag = if size_end < len {
-                    // バリアント部分を含める (例: -it, -instruct-v0.2)
-                    let variant = &name[size_end..];
-                    let variant = variant.trim_start_matches('-');
-                    if variant.is_empty() {
-                        name[start..size_end].to_string()
-                    } else {
-                        format!("{}-{}", &name[start..size_end], variant)
-                    }
-                } else {
-                    name[start..size_end].to_string()
-                };
-
-                if !model_name.is_empty() {
-                    return Some((model_name.to_string(), tag));
-                }
-            }
-        }
-    }
-
-    None
+    // 小文字に正規化してそのまま返す（コロン形式は廃止）
+    name.to_lowercase().trim_matches('-').to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ===== Ollama風ID生成テスト =====
+    // ===== モデルID生成テスト（ファイル名ベース形式） =====
 
     #[test]
-    fn test_generate_ollama_id_standard_gguf() {
-        // 標準的なGGUFファイル名: llama-2-7b.Q4_K_M.gguf → llama-2:7b
+    fn test_generate_model_id_standard_gguf() {
+        // 標準的なGGUFファイル名: llama-2-7b.Q4_K_M.gguf → llama-2-7b
         assert_eq!(
             generate_ollama_style_id("llama-2-7b.Q4_K_M.gguf", "TheBloke/Llama-2-7B-GGUF"),
-            "llama-2:7b"
+            "llama-2-7b"
         );
     }
 
     #[test]
-    fn test_generate_ollama_id_with_variant() {
-        // バリアント付き: gemma-2-9b-it → gemma-2:9b-it
+    fn test_generate_model_id_with_variant() {
+        // バリアント付き: gemma-2-9b-it → gemma-2-9b-it
         assert_eq!(
             generate_ollama_style_id("gemma-2-9b-it-Q4_K_M.gguf", "bartowski/gemma-2-9b-it-GGUF"),
-            "gemma-2:9b-it"
+            "gemma-2-9b-it"
         );
     }
 
     #[test]
-    fn test_generate_ollama_id_generic_filename() {
+    fn test_generate_model_id_generic_filename() {
         // 汎用ファイル名(model.bin)の場合、リポジトリ名からフォールバック
         assert_eq!(
             generate_ollama_style_id("model.bin", "openai/gpt-oss-20b"),
-            "gpt-oss:20b"
+            "gpt-oss-20b"
         );
     }
 
     #[test]
-    fn test_generate_ollama_id_no_size() {
-        // サイズ情報がない場合は :latest を付与
+    fn test_generate_model_id_no_size() {
+        // サイズ情報がない場合もファイル名ベース形式を維持
         assert_eq!(
             generate_ollama_style_id("mistral-small.gguf", "mistral/mistral-small"),
-            "mistral-small:latest"
+            "mistral-small"
         );
     }
 
     #[test]
-    fn test_generate_ollama_id_instruct_variant() {
+    fn test_generate_model_id_instruct_variant() {
         // Instructバリアント
         assert_eq!(
             generate_ollama_style_id(
                 "Mistral-7B-Instruct-v0.2.Q5_K_M.gguf",
                 "mistralai/Mistral-7B-Instruct-v0.2-GGUF"
             ),
-            "mistral:7b-instruct-v0.2"
+            "mistral-7b-instruct-v0.2"
         );
     }
 
@@ -586,14 +530,14 @@ mod tests {
     #[test]
     fn test_model_info_new() {
         let model = ModelInfo::new(
-            "gpt-oss:20b".to_string(),
+            "gpt-oss-20b".to_string(),
             10_000_000_000,
             "GPT-OSS 20B model".to_string(),
             16_000_000_000,
             vec!["llm".to_string(), "text".to_string()],
         );
 
-        assert_eq!(model.name, "gpt-oss:20b");
+        assert_eq!(model.name, "gpt-oss-20b");
         assert_eq!(model.size, 10_000_000_000);
         assert_eq!(model.required_memory_gb(), 14.901161193847656);
     }
@@ -609,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_download_task_lifecycle() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "gpt-oss:7b".to_string());
+        let mut task = DownloadTask::new(Uuid::new_v4(), "gpt-oss-7b".to_string());
 
         assert_eq!(task.status, DownloadStatus::Pending);
         assert_eq!(task.progress, 0.0);

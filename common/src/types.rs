@@ -234,7 +234,7 @@ mod tests {
             custom_name: Some("Custom".to_string()),
             tags: vec!["primary".to_string()],
             notes: Some("memo".to_string()),
-            loaded_models: vec!["gpt-oss:20b".to_string()],
+            loaded_models: vec!["gpt-oss-20b".to_string()],
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),

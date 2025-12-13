@@ -1,5 +1,7 @@
 #include "api/node_endpoints.h"
 
+#include <deque>
+#include <fstream>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include "runtime/state.h"
@@ -11,6 +13,96 @@ NodeEndpoints::NodeEndpoints() : health_status_("ok") {}
 
 void NodeEndpoints::registerRoutes(httplib::Server& server) {
     start_time_ = std::chrono::steady_clock::now();
+
+    server.Get("/api/logs", [](const httplib::Request& req, httplib::Response& res) {
+        int limit = 200;
+        if (req.has_param("tail")) {
+            try {
+                limit = std::stoi(req.get_param_value("tail"));
+            } catch (...) {
+                limit = 200;
+            }
+        }
+        if (limit < 1) limit = 1;
+        if (limit > 1000) limit = 1000;
+
+        const std::string log_path = logger::get_log_file_path();
+
+        nlohmann::json body;
+        body["entries"] = nlohmann::json::array();
+        body["path"] = log_path;
+
+        std::ifstream file(log_path);
+        if (!file.is_open()) {
+            res.set_content(body.dump(), "application/json");
+            return;
+        }
+
+        std::deque<nlohmann::json> entries;
+        std::string line;
+        while (std::getline(file, line)) {
+            auto j = nlohmann::json::parse(line, nullptr, false);
+            if (j.is_discarded() || !j.is_object()) continue;
+
+            nlohmann::json entry;
+
+            // timestamp: accept both tracing-subscriber style and node JSONL style
+            if (j.contains("timestamp")) {
+                entry["timestamp"] = j["timestamp"];
+            } else if (j.contains("ts")) {
+                entry["timestamp"] = j["ts"];
+            } else {
+                entry["timestamp"] = nullptr;
+            }
+
+            if (j.contains("level")) {
+                entry["level"] = j["level"];
+            } else {
+                entry["level"] = nullptr;
+            }
+
+            if (j.contains("target")) {
+                entry["target"] = j["target"];
+            } else {
+                entry["target"] = "llm-node";
+            }
+
+            // fields
+            if (j.contains("fields") && j["fields"].is_object()) {
+                entry["fields"] = j["fields"];
+            } else {
+                entry["fields"] = nlohmann::json::object();
+            }
+
+            // message: prefer explicit message, then msg, then fields.message
+            if (j.contains("message")) {
+                entry["message"] = j["message"];
+            } else if (j.contains("msg")) {
+                entry["message"] = j["msg"];
+            } else if (entry["fields"].is_object() && entry["fields"].contains("message")) {
+                entry["message"] = entry["fields"]["message"];
+            } else {
+                entry["message"] = nullptr;
+            }
+
+            if (j.contains("file")) {
+                entry["file"] = j["file"];
+            }
+            if (j.contains("line")) {
+                entry["line"] = j["line"];
+            }
+
+            entries.push_back(entry);
+            if (static_cast<int>(entries.size()) > limit) {
+                entries.pop_front();
+            }
+        }
+
+        for (const auto& e : entries) {
+            body["entries"].push_back(e);
+        }
+        res.set_content(body.dump(), "application/json");
+    });
 
     server.Get("/health", [this](const httplib::Request&, httplib::Response& res) {
         nlohmann::json body = {{"status", health_status_}};

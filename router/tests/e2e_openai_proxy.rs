@@ -38,10 +38,10 @@ async fn spawn_agent_stub(state: AgentStubState) -> TestServer {
         .route("/v1/chat/completions", post(agent_chat_handler))
         .route("/v1/completions", post(agent_generate_handler))
         .route("/v1/models", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({"data": [{"id": "gpt-oss:20b"}], "object": "list"}))
+            axum::Json(serde_json::json!({"data": [{"id": "gpt-oss-20b"}], "object": "list"}))
         }))
         .route("/api/tags", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({"models": [{"name": "gpt-oss:20b", "size": 10000000000i64}]}))
+            axum::Json(serde_json::json!({"models": [{"name": "gpt-oss-20b", "size": 10000000000i64}]}))
         }))
         .with_state(shared_state);
 
@@ -133,7 +133,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     let chat_response = client
         .post(format!("http://{}/v1/chat/completions", router.addr()))
         .json(&ChatRequest {
-            model: "gpt-oss:20b".into(),
+            model: "gpt-oss-20b".into(),
             messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "hello?".into(),
@@ -154,7 +154,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     let streaming_response = client
         .post(format!("http://{}/v1/chat/completions", router.addr()))
         .json(&ChatRequest {
-            model: "gpt-oss:20b".into(),
+            model: "gpt-oss-20b".into(),
             messages: vec![llm_router_common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "stream?".into(),
@@ -185,7 +185,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     let generate_response = client
         .post(format!("http://{}/v1/completions", router.addr()))
         .json(&GenerateRequest {
-            model: "gpt-oss:20b".into(),
+            model: "gpt-oss-20b".into(),
             prompt: "write something".into(),
             stream: false,
         })
@@ -338,9 +338,9 @@ async fn openai_v1_models_get_specific() {
 
     let client = Client::new();
 
-    // GET /v1/models/gpt-oss:20b （プリセット廃止のため未登録扱い）
+    // GET /v1/models/gpt-oss-20b （プリセット廃止のため未登録扱い）
     let model_response = client
-        .get(format!("http://{}/v1/models/gpt-oss:20b", router.addr()))
+        .get(format!("http://{}/v1/models/gpt-oss-20b", router.addr()))
         .header("authorization", format!("Bearer {}", api_key))
         .send()
         .await

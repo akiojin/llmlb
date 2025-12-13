@@ -57,7 +57,6 @@ with open(outfile, "wb") as f:
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -71,7 +70,6 @@ with open(outfile, "wb") as f:
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -89,7 +87,7 @@ async fn test_distribute_models_endpoint_is_removed() {
     let app = build_app().await;
 
     let request_body = json!({
-        "model_name": "gpt-oss:20b",
+        "model_name": "gpt-oss-20b",
         "target": "specific",
         "node_ids": []
     });
@@ -184,7 +182,8 @@ async fn test_get_available_models_contract() {
     assert!(
         models
             .iter()
-            .any(|m| m["name"] == "hf/test/repo/model.gguf"),
+            // model.gguf (generic) + test/repo → "repo"
+            .any(|m| m["name"] == "repo"),
         "hf catalog item should appear"
     );
 
@@ -207,86 +206,29 @@ async fn test_get_available_models_contract() {
     }
 }
 
-/// T006: GET /api/nodes/{node_id}/models の契約テスト
+/// ノードのモデル一覧取得APIは廃止（ロード済みモデルは /api/nodes と /api/dashboard/nodes から参照）
 #[tokio::test]
 #[serial]
-async fn test_get_agent_models_contract() {
+async fn test_get_node_models_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデル一覧を取得
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/nodes/{}/models", node_id))
+                .uri(format!("/api/nodes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/nodes/:id/models"
+        StatusCode::NOT_FOUND,
+        "node models endpoint should be removed"
     );
-
-    // レスポンスボディの検証（InstalledModelの配列）
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert!(body.is_array(), "Response must be an array");
-
-    // 配列の各要素の検証
-    if let Some(models) = body.as_array() {
-        for model in models {
-            assert!(model.get("name").is_some(), "Model must have 'name'");
-            assert!(model.get("size").is_some(), "Model must have 'size'");
-            assert!(
-                model.get("installed_at").is_some(),
-                "Model must have 'installed_at'"
-            );
-            // digestはオプション
-        }
-    }
 }
 
 /// ノードへのモデルpull指示APIは廃止（ノードが自律的に取得）
@@ -297,7 +239,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
     let app = build_app().await;
 
     let request_body = json!({
-        "model_name": "gpt-oss:3b"
+        "model_name": "gpt-oss-3b"
     });
 
     let response = app
@@ -319,10 +261,10 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
     );
 }
 
-/// GET /api/tasks は常に配列を返す（現行は未実行タスクなら空）
+/// ダウンロードタスクAPIは廃止（モデル同期はノード側でオンデマンドに実行）
 #[tokio::test]
 #[serial]
-async fn test_list_tasks_contract() {
+async fn test_tasks_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
@@ -339,13 +281,9 @@ async fn test_list_tasks_contract() {
 
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/tasks"
+        StatusCode::NOT_FOUND,
+        "tasks endpoint should be removed"
     );
-
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(body.is_array(), "Response must be an array");
 }
 
 /// T009: POST /api/models/register - 正常系と重複/404異常系
@@ -407,9 +345,9 @@ async fn test_register_model_contract() {
     let data = body["data"]
         .as_array()
         .expect("'data' must be an array on /v1/models");
-    // Ollama風ID: model.gguf (generic) + test/repo → "repo:latest"
+    // model.gguf (generic) + test/repo → "repo"
     assert!(
-        data.iter().all(|m| m["id"] != "repo:latest"),
+        data.iter().all(|m| m["id"] != "repo"),
         "/v1/models must not expose models before download completes"
     );
 

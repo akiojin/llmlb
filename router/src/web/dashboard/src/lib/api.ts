@@ -178,6 +178,20 @@ export interface DashboardOverview {
   generation_time_ms: number
 }
 
+export interface LogEntry {
+  timestamp: string
+  level: string
+  message?: string
+  target?: string
+  fields?: Record<string, unknown>
+}
+
+export interface LogResponse {
+  source: string
+  entries: LogEntry[]
+  path?: string
+}
+
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
 
@@ -203,16 +217,24 @@ export const dashboardApi = {
   getRequestResponseDetail: (id: string) =>
     fetchWithAuth<unknown>(`/api/dashboard/request-responses/${id}`),
 
-  exportRequestResponses: (format: 'csv' | 'json') =>
-    fetchWithAuth<Blob>('/api/dashboard/request-responses/export', {
-      params: { format },
-    }),
+  exportRequestResponses: async (format: 'csv' | 'json') => {
+    const token = getToken()
+    const headers: HeadersInit = {}
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    const response = await fetch(`${API_BASE}/api/dashboard/request-responses/export?format=${format}`, {
+      headers,
+    })
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new ApiError(response.status, response.statusText, errorText)
+    }
+    return response.blob()
+  },
 
-  getCoordinatorLogs: (params?: { limit?: number; level?: string; target?: string }) =>
-    fetchWithAuth<unknown[]>('/api/dashboard/logs/coordinator', { params }),
-
-  getLogs: (params?: { limit?: number; level?: string; target?: string }) =>
-    fetchWithAuth<unknown[]>('/api/dashboard/logs', { params }),
+  getRouterLogs: (params?: { limit?: number }) =>
+    fetchWithAuth<LogResponse>('/api/dashboard/logs/router', { params }),
 }
 
 // Nodes API
@@ -234,69 +256,88 @@ export const nodesApi = {
       body: JSON.stringify(settings),
     }),
 
-  getLogs: (nodeId: string, params?: { limit?: number; level?: string }) =>
-    fetchWithAuth<unknown[]>(`/api/nodes/${nodeId}/logs`, { params }),
+  getLogs: (nodeId: string, params?: { limit?: number }) =>
+    fetchWithAuth<LogResponse>(`/api/nodes/${nodeId}/logs`, { params }),
 }
 
 // Models API
-export interface RegisteredModel {
-  name: string
-  filename: string
-  repo: string
-  size_bytes?: number
-  state: 'registered' | 'downloading' | 'failed'
-  progress?: number
-  error?: string
-}
-
-export interface ModelInfo {
+export interface RegisteredModelView {
   name: string
   source?: string
-  size_bytes?: number
-  format?: string
-  state: 'ready' | 'downloading' | 'converting' | 'pending' | 'error'
-  progress?: number
-  error?: string
+  description?: string
+  status?: string
+  ready: boolean
+  path?: string
+  download_url?: string
+  repo?: string
+  filename?: string
+  size_gb?: number
+  required_memory_gb?: number
+  tags: string[]
 }
 
-export interface AvailableModel {
-  id?: string
-  provider?: string
+export interface AvailableModelView {
   name: string
-  url?: string
-  downloads?: number
-  likes?: number
+  display_name?: string
+  description?: string
+  tags?: string[]
+  size_gb?: number
+  required_memory_gb?: number
+  repo?: string
+  filename?: string
+  download_url?: string
+  quantization?: string
+}
+
+export interface AvailableModelsResponse {
+  models: AvailableModelView[]
+  source: string
+  cached?: boolean
+  pagination?: {
+    limit: number
+    offset: number
+    total: number
+  }
+}
+
+export interface ConvertTask {
+  id: string
+  repo: string
+  filename: string
+  revision?: string | null
+  quantization?: string | null
+  chat_template?: string | null
+  status: 'queued' | 'in_progress' | 'completed' | 'failed'
+  progress: number
+  error?: string | null
+  path?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export const modelsApi = {
-  getRegistered: () =>
-    fetchWithAuth<ModelInfo[]>('/api/models/registered'),
+  getRegistered: () => fetchWithAuth<RegisteredModelView[]>('/api/models/registered'),
 
-  getAvailable: () => fetchWithAuth<AvailableModel[]>('/api/models/available'),
-
-  getLoaded: () => fetchWithAuth<unknown[]>('/api/models/loaded'),
-
-  register: (urlOrName: string) =>
-    fetchWithAuth<{ task_id: string }>('/api/models/register', {
-      method: 'POST',
-      body: JSON.stringify({ url: urlOrName }),
+  getAvailable: () =>
+    fetchWithAuth<AvailableModelsResponse>('/api/models/available', {
+      params: { source: 'hf' },
     }),
 
-  pull: (modelName: string) =>
-    fetchWithAuth<{ task_id: string }>('/api/models/pull', {
+  register: (repo: string, filename?: string) =>
+    fetchWithAuth<unknown>('/api/models/register', {
       method: 'POST',
-      body: JSON.stringify({ model_name: modelName }),
+      body: JSON.stringify({ repo, filename }),
+    }),
+
+  pull: (repo: string, filename: string) =>
+    fetchWithAuth<{ name: string; path: string }>('/api/models/pull', {
+      method: 'POST',
+      body: JSON.stringify({ repo, filename }),
     }),
 
   delete: (modelName: string) =>
     fetchWithAuth<void>(`/api/models/${encodeURIComponent(modelName)}`, {
       method: 'DELETE',
-    }),
-
-  distribute: (modelName: string, nodeIds: string[]) =>
-    fetchWithAuth<{ task_ids: string[] }>('/api/models/distribute', {
-      method: 'POST',
-      body: JSON.stringify({ model_name: modelName, node_ids: nodeIds }),
     }),
 
   convert: (params: {
@@ -305,43 +346,18 @@ export const modelsApi = {
     revision?: string
     chat_template?: string
   }) =>
-    fetchWithAuth<{ task_id: string }>('/api/models/convert', {
+    fetchWithAuth<{ task_id: string; status: string }>('/api/models/convert', {
       method: 'POST',
       body: JSON.stringify(params),
     }),
 
-  getConvertTasks: () => fetchWithAuth<unknown[]>('/api/models/convert'),
+  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/api/models/convert'),
 
   getConvertTask: (taskId: string) =>
-    fetchWithAuth<unknown>(`/api/models/convert/${taskId}`),
+    fetchWithAuth<ConvertTask>(`/api/models/convert/${taskId}`),
 
   deleteConvertTask: (taskId: string) =>
     fetchWithAuth<void>(`/api/models/convert/${taskId}`, { method: 'DELETE' }),
-
-  getNodeModels: (nodeId: string) =>
-    fetchWithAuth<unknown[]>(`/api/nodes/${nodeId}/models`),
-
-  pullToNode: (nodeId: string, modelName: string) =>
-    fetchWithAuth<{ task_id: string }>(`/api/nodes/${nodeId}/models/pull`, {
-      method: 'POST',
-      body: JSON.stringify({ model_name: modelName }),
-    }),
-}
-
-// Tasks API
-export interface TaskProgress {
-  task_id: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  progress: number
-  message?: string
-  error?: string
-}
-
-export const tasksApi = {
-  list: () => fetchWithAuth<TaskProgress[]>('/api/tasks'),
-
-  getProgress: (taskId: string) =>
-    fetchWithAuth<TaskProgress>(`/api/tasks/${taskId}`),
 }
 
 // API Keys API

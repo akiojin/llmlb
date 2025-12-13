@@ -33,7 +33,7 @@ public:
 
     httplib::Server server_;
     std::thread thread_;
-    std::string response_body{"{\"data\":[{\"id\":\"gpt-oss:7b\"},{\"id\":\"gpt-oss:20b\"}]}"};
+    std::string response_body{"{\"data\":[{\"id\":\"gpt-oss-7b\"},{\"id\":\"gpt-oss-20b\"}]}"};
 };
 
 class TempDirGuard {
@@ -60,7 +60,7 @@ TEST(ModelSyncTest, DetectsMissingAndStaleModels) {
 
     TempDirGuard guard;
     // local has stale model and one existing
-    fs::create_directory(guard.path / "gpt-oss:7b");
+    fs::create_directory(guard.path / "gpt-oss-7b");
     fs::create_directory(guard.path / "old-model");
 
     ModelSync sync("http://127.0.0.1:18084", guard.path.string());
@@ -69,7 +69,7 @@ TEST(ModelSyncTest, DetectsMissingAndStaleModels) {
     server.stop();
 
     ASSERT_EQ(result.to_download.size(), 1);
-    EXPECT_EQ(result.to_download[0], "gpt-oss:20b");
+    EXPECT_EQ(result.to_download[0], "gpt-oss-20b");
     ASSERT_EQ(result.to_delete.size(), 1);
     EXPECT_EQ(result.to_delete[0], "old-model");
 }
@@ -129,7 +129,7 @@ TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     // HTTP server returning /v1/models with path pointing to shared_file
     const int port = 18097; // Unique port to avoid conflicts
     ModelServer server;
-    server.response_body = std::string(R"({"data":[{"id":"gpt-oss:7b","path":")") + shared_file.string() + R"("}]})";
+    server.response_body = std::string(R"({"data":[{"id":"gpt-oss-7b","path":")") + shared_file.string() + R"("}]})";
     server.start(port);
 
     // Give server time to fully initialize
@@ -146,11 +146,11 @@ TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     EXPECT_TRUE(result.to_download.empty()) << "to_download should be empty but has " << result.to_download.size() << " items";
 
     // Per FR-3: No copy to local - InferenceEngine will use getRemotePath() directly
-    auto target = local_guard.path / "gpt-oss_7b" / "model.gguf";
+    auto target = local_guard.path / "gpt-oss-7b" / "model.gguf";
     EXPECT_FALSE(fs::exists(target)) << "Target file should NOT exist (no copy per spec)";
 
     // Verify getRemotePath returns the accessible path
-    EXPECT_EQ(sync.getRemotePath("gpt-oss:7b"), shared_file.string());
+    EXPECT_EQ(sync.getRemotePath("gpt-oss-7b"), shared_file.string());
 }
 
 TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
@@ -173,7 +173,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
         };
     };
 
-    server.Get("/gpt-oss:prio/manifest.json", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/gpt-oss-prio/manifest.json", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
         res.set_content(R"({
             "files":[
@@ -197,7 +197,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     ModelDownloader dl("http://127.0.0.1:18110", dir.path.string());
     ModelSync sync("http://127.0.0.1:18110", dir.path.string());
 
-    bool ok = sync.downloadModel(dl, "gpt-oss:prio", nullptr);
+    bool ok = sync.downloadModel(dl, "gpt-oss-prio", nullptr);
 
     server.stop();
     if (th.joinable()) th.join();

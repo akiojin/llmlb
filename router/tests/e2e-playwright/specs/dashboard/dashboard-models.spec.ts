@@ -158,7 +158,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     await page.reload();
     await page.waitForTimeout(500);
 
-    // Check the model name is displayed in HF format (org/model), not Ollama format (name:tag)
+    // Check the model name is displayed in HF format (org/model), not colon-separated (name:tag)
     const registeredList = page.locator(DashboardSelectors.models.registeredModelsList);
     await expect(registeredList).toContainText('openai/gpt-oss-20b');
     // Should NOT contain colon-separated format

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { type DashboardNode, nodesApi, dashboardApi } from '@/lib/api'
+import { type DashboardNode, type LogEntry, nodesApi, dashboardApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,30 +23,23 @@ interface LogViewerProps {
 }
 
 type LogLevel = 'all' | 'error' | 'warn' | 'info' | 'debug'
-type LogSource = 'coordinator' | string
-
-interface LogEntry {
-  timestamp: string
-  level: string
-  message: string
-  target?: string
-}
+type LogSource = 'router' | string
 
 export function LogViewer({ nodes }: LogViewerProps) {
-  const [source, setSource] = useState<LogSource>('coordinator')
+  const [source, setSource] = useState<LogSource>('router')
   const [levelFilter, setLevelFilter] = useState<LogLevel>('all')
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Fetch coordinator logs
+  // Fetch router logs
   const {
-    data: coordinatorLogs,
-    refetch: refetchCoordinator,
-    isRefetching: isRefetchingCoordinator,
+    data: routerLogs,
+    refetch: refetchRouter,
+    isRefetching: isRefetchingRouter,
   } = useQuery({
-    queryKey: ['coordinator-logs'],
-    queryFn: () => dashboardApi.getLogs({ limit: 200 }),
-    enabled: source === 'coordinator',
+    queryKey: ['router-logs'],
+    queryFn: () => dashboardApi.getRouterLogs({ limit: 200 }),
+    enabled: source === 'router',
     refetchInterval: 5000,
   })
 
@@ -58,12 +51,13 @@ export function LogViewer({ nodes }: LogViewerProps) {
   } = useQuery({
     queryKey: ['node-logs', source],
     queryFn: () => nodesApi.getLogs(source, { limit: 200 }),
-    enabled: source !== 'coordinator',
+    enabled: source !== 'router',
     refetchInterval: 5000,
   })
 
-  const logs = (source === 'coordinator' ? coordinatorLogs : nodeLogs) as LogEntry[] | undefined
-  const isRefetching = source === 'coordinator' ? isRefetchingCoordinator : isRefetchingNode
+  const logsResponse = source === 'router' ? routerLogs : nodeLogs
+  const logs = logsResponse?.entries as LogEntry[] | undefined
+  const isRefetching = source === 'router' ? isRefetchingRouter : isRefetchingNode
 
   const filteredLogs = logs?.filter((log) => {
     if (levelFilter === 'all') return true
@@ -81,8 +75,8 @@ export function LogViewer({ nodes }: LogViewerProps) {
   }, [filteredLogs, autoScroll])
 
   const handleRefresh = () => {
-    if (source === 'coordinator') {
-      refetchCoordinator()
+    if (source === 'router') {
+      refetchRouter()
     } else {
       refetchNode()
     }
@@ -99,7 +93,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
     }
 
     const logText = filteredLogs
-      .map((log) => `[${log.timestamp}] [${log.level}] ${log.target ? `[${log.target}] ` : ''}${log.message}`)
+      .map((log) => `[${log.timestamp}] [${log.level}] ${log.target ? `[${log.target}] ` : ''}${log.message || ''}`)
       .join('\n')
 
     const blob = new Blob([logText], { type: 'text/plain' })
@@ -139,13 +133,13 @@ export function LogViewer({ nodes }: LogViewerProps) {
             {/* Source Select */}
             <Select value={source} onValueChange={(v) => setSource(v as LogSource)}>
               <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="coordinator">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="router">
                   <div className="flex items-center gap-2">
                     <Server className="h-4 w-4" />
-                    Coordinator
+                    Router
                   </div>
                 </SelectItem>
                 {nodes.map((node) => (
@@ -244,7 +238,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
                       [{log.target}]
                     </span>
                   )}
-                  <span className="break-all">{log.message}</span>
+                  <span className="break-all">{log.message || ''}</span>
                 </div>
               ))
             )}

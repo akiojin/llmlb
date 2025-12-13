@@ -7,9 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use std::net::IpAddr;
 use tower::ServiceExt;
@@ -30,7 +28,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
@@ -39,7 +36,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
@@ -279,7 +275,7 @@ async fn test_cloud_metrics_endpoint() {
 }
 
 #[tokio::test]
-async fn test_models_loaded_endpoint() {
+async fn test_models_loaded_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
@@ -295,20 +291,12 @@ async fn test_models_loaded_endpoint() {
         .await
         .unwrap();
 
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "GET /api/models/loaded should return OK"
-    );
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // get_loaded_models returns Vec<LoadedModelSummary> directly (an array)
     assert!(
-        models.is_array(),
-        "Response must be an array of loaded models"
+        matches!(
+            response.status(),
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+        ),
+        "/api/models/loaded should be removed (got {})",
+        response.status()
     );
 }

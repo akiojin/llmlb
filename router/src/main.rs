@@ -3,7 +3,7 @@
 use clap::Parser;
 use llm_router::cli::Cli;
 use llm_router::config::{get_env_with_fallback_or, get_env_with_fallback_parse};
-use llm_router::{api, auth, balancer, health, logging, registry, tasks, AppState};
+use llm_router::{api, auth, balancer, health, logging, registry, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -173,7 +173,6 @@ async fn run_server(config: ServerConfig) {
     );
     llm_router::db::request_history::start_cleanup_task(request_history.clone());
 
-    let task_manager = tasks::DownloadTaskManager::new();
     let convert_concurrency: usize =
         get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 1);
     let convert_manager = llm_router::convert::ConvertTaskManager::new(convert_concurrency);
@@ -232,7 +231,6 @@ async fn run_server(config: ServerConfig) {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,

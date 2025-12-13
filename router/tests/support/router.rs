@@ -1,8 +1,6 @@
 use std::net::SocketAddr;
 
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -42,7 +40,6 @@ pub async fn spawn_test_router() -> TestServer {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
     let jwt_secret = test_jwt_secret();
@@ -51,7 +48,6 @@ pub async fn spawn_test_router() -> TestServer {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -141,7 +137,6 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
     let jwt_secret = test_jwt_secret();
@@ -150,7 +145,6 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,

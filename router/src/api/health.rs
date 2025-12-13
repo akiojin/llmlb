@@ -130,7 +130,7 @@ mod tests {
             gpu_capability_score: None,
             active_requests: 3,
             average_response_time_ms: Some(110.0),
-            loaded_models: vec!["gpt-oss:20b".into()],
+            loaded_models: vec!["gpt-oss-20b".into()],
             loaded_embedding_models: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
@@ -142,7 +142,7 @@ mod tests {
         // ノードが更新されたことを確認
         let agent = state.registry.get(register_response.node_id).await.unwrap();
         assert_eq!(agent.status, llm_router_common::types::NodeStatus::Online);
-        assert_eq!(agent.loaded_models, vec!["gpt-oss:20b"]);
+        assert_eq!(agent.loaded_models, vec!["gpt-oss-20b"]);
     }
 
     #[tokio::test]

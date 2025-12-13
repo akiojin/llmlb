@@ -1531,12 +1531,12 @@ mod tests {
     #[serial]
     async fn non_prefixed_model_stays_on_local_path() {
         let state = create_local_state().await;
-        let payload = json!({"model":"gpt-oss:20b","messages":[]});
+        let payload = json!({"model":"gpt-oss-20b","messages":[]});
         let res = proxy_openai_post(
             &state,
             payload,
             "/v1/chat/completions",
-            "gpt-oss:20b".into(),
+            "gpt-oss-20b".into(),
             false,
             RequestType::Chat,
         )

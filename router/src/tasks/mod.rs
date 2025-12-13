@@ -132,10 +132,10 @@ mod tests {
         let manager = DownloadTaskManager::new();
         let node_id = Uuid::new_v4();
 
-        let task = manager.create_task(node_id, "gpt-oss:7b".to_string()).await;
+        let task = manager.create_task(node_id, "gpt-oss-7b".to_string()).await;
 
         assert_eq!(task.node_id, node_id);
-        assert_eq!(task.model_name, "gpt-oss:7b");
+        assert_eq!(task.model_name, "gpt-oss-7b");
         assert_eq!(task.status, DownloadStatus::Pending);
 
         // タスクが取得できることを確認

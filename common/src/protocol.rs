@@ -263,7 +263,7 @@ mod tests {
             gpu_capability_score: None,
             active_requests: 3,
             average_response_time_ms: Some(123.4),
-            loaded_models: vec!["gpt-oss:20b".to_string()],
+            loaded_models: vec!["gpt-oss-20b".to_string()],
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             initializing: true,
             ready_models: Some((1, 2)),

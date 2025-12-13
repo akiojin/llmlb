@@ -699,8 +699,8 @@ mod tests {
             .update_last_seen(
                 node_id,
                 Some(vec![
-                    " gpt-oss:20b ".into(),
-                    "gpt-oss:20b".into(),
+                    " gpt-oss-20b ".into(),
+                    "gpt-oss-20b".into(),
                     "".into(),
                     "phi-3".into(),
                 ]),
@@ -715,7 +715,7 @@ mod tests {
             .unwrap();
 
         let node = registry.get(node_id).await.unwrap();
-        assert_eq!(node.loaded_models, vec!["gpt-oss:20b", "phi-3"]);
+        assert_eq!(node.loaded_models, vec!["gpt-oss-20b", "phi-3"]);
     }
 
     #[test]

@@ -1471,7 +1471,6 @@ mod tests {
         // coordinator state with temp data dir
         std::env::set_var("OPENAI_API_KEY", "testkey");
         std::env::set_var("OPENAI_BASE_URL", server.uri());
-        std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
         let (state, dir) = create_state_with_tempdir().await;
 
         // spawn router
@@ -1494,6 +1493,7 @@ mod tests {
         let payload = json!({"model":"openai:gpt-4o","messages":[{"role":"user","content":"hi"}]});
         let resp = client
             .post(format!("http://{addr}/v1/chat/completions"))
+            .header("x-api-key", "sk_debug")
             .json(&payload)
             .send()
             .await
@@ -1520,7 +1520,6 @@ mod tests {
         // cleanup env
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("OPENAI_BASE_URL");
-        std::env::remove_var("LLM_ROUTER_SKIP_API_KEY");
         std::env::remove_var("LLM_ROUTER_DATA_DIR");
         drop(dir);
     }

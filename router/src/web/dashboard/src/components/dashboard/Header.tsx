@@ -1,0 +1,175 @@
+import { useState } from 'react'
+import { useAuth } from '@/hooks/useAuth'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ApiKeyModal } from '@/components/api-keys/ApiKeyModal'
+import { UserModal } from '@/components/users/UserModal'
+import {
+  Cpu,
+  Key,
+  LogOut,
+  Moon,
+  Sun,
+  User,
+  Users,
+  MessageSquare,
+  RefreshCw,
+} from 'lucide-react'
+
+interface HeaderProps {
+  user: { username: string; role: string } | null
+}
+
+export function Header({ user }: HeaderProps) {
+  const { logout } = useAuth()
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
+  const [userModalOpen, setUserModalOpen] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    document.documentElement.classList.toggle('dark', newTheme === 'dark')
+  }
+
+  const handleRefresh = () => {
+    setIsRefreshing(true)
+    window.location.reload()
+  }
+
+  const openPlayground = () => {
+    window.open('/dashboard/playground.html', '_blank')
+  }
+
+  return (
+    <>
+      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 glow-sm">
+              <Cpu className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-display text-lg font-semibold tracking-tight">
+                LLM Router
+              </h1>
+              <p className="text-xs text-muted-foreground">Dashboard</p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            {/* Playground Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openPlayground}
+              className="hidden sm:inline-flex"
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Playground
+            </Button>
+
+            {/* API Keys Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setApiKeyModalOpen(true)}
+              className="hidden sm:inline-flex"
+            >
+              <Key className="mr-2 h-4 w-4" />
+              API Keys
+            </Button>
+
+            {/* Refresh Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`}
+              />
+            </Button>
+
+            {/* Theme Toggle */}
+            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </Button>
+
+            {/* User Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <User className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{user?.username}</p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {user?.role}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+
+                {/* Mobile-only items */}
+                <DropdownMenuItem
+                  onClick={openPlayground}
+                  className="sm:hidden"
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Playground
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setApiKeyModalOpen(true)}
+                  className="sm:hidden"
+                >
+                  <Key className="mr-2 h-4 w-4" />
+                  API Keys
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="sm:hidden" />
+
+                {/* Admin-only items */}
+                {user?.role === 'admin' && (
+                  <>
+                    <DropdownMenuItem onClick={() => setUserModalOpen(true)}>
+                      <Users className="mr-2 h-4 w-4" />
+                      Manage Users
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+
+                <DropdownMenuItem onClick={logout} className="text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </header>
+
+      {/* Modals */}
+      <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />
+      <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />
+    </>
+  )
+}

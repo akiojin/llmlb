@@ -1,0 +1,144 @@
+import { type DashboardStats } from '@/lib/api'
+import { formatNumber, formatDuration, formatPercentage } from '@/lib/utils'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Server,
+  Activity,
+  Clock,
+  Cpu,
+  CheckCircle2,
+  XCircle,
+  Zap,
+  HardDrive,
+} from 'lucide-react'
+
+interface StatsCardsProps {
+  stats?: DashboardStats
+  isLoading: boolean
+}
+
+interface StatCardProps {
+  title: string
+  value: string | number
+  subtitle?: string
+  icon: React.ReactNode
+  trend?: 'up' | 'down' | 'neutral'
+  accentColor?: string
+  isLoading?: boolean
+  delay?: number
+}
+
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  accentColor = 'primary',
+  isLoading,
+  delay = 0,
+}: StatCardProps) {
+  return (
+    <Card
+      className={`stat-card group overflow-hidden animate-fade-up`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            {isLoading ? (
+              <div className="h-8 w-24 shimmer rounded" />
+            ) : (
+              <p className="text-3xl font-bold tracking-tight">{value}</p>
+            )}
+            {subtitle && !isLoading && (
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-lg bg-${accentColor}/10 transition-colors group-hover:bg-${accentColor}/20`}
+          >
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+export function StatsCards({ stats, isLoading }: StatsCardsProps) {
+  const cards = [
+    {
+      title: 'Total Nodes',
+      value: stats ? formatNumber(stats.total_nodes) : '—',
+      subtitle: stats
+        ? `${stats.online_nodes} online, ${stats.offline_nodes} offline`
+        : undefined,
+      icon: <Server className="h-5 w-5 text-primary" />,
+      accentColor: 'primary',
+    },
+    {
+      title: 'Total Requests',
+      value: stats ? formatNumber(stats.total_requests) : '—',
+      subtitle: stats
+        ? `${formatNumber(stats.successful_requests)} successful`
+        : undefined,
+      icon: <Activity className="h-5 w-5 text-chart-2" />,
+      accentColor: 'chart-2',
+    },
+    {
+      title: 'Success Rate',
+      value:
+        stats && stats.total_requests > 0
+          ? formatPercentage(
+              (stats.successful_requests / stats.total_requests) * 100
+            )
+          : '—',
+      subtitle: stats
+        ? `${formatNumber(stats.failed_requests)} failed`
+        : undefined,
+      icon:
+        stats && stats.failed_requests > 0 ? (
+          <XCircle className="h-5 w-5 text-destructive" />
+        ) : (
+          <CheckCircle2 className="h-5 w-5 text-success" />
+        ),
+      accentColor: stats && stats.failed_requests > 0 ? 'destructive' : 'success',
+    },
+    {
+      title: 'Avg Response Time',
+      value: stats
+        ? formatDuration(stats.average_response_time_ms)
+        : '—',
+      icon: <Clock className="h-5 w-5 text-warning" />,
+      accentColor: 'warning',
+    },
+    {
+      title: 'Avg GPU Usage',
+      value: stats ? formatPercentage(stats.average_gpu_usage) : '—',
+      icon: <Zap className="h-5 w-5 text-chart-3" />,
+      accentColor: 'chart-3',
+    },
+    {
+      title: 'Avg GPU Memory',
+      value: stats
+        ? formatPercentage(stats.average_gpu_memory_usage)
+        : '—',
+      icon: <HardDrive className="h-5 w-5 text-chart-4" />,
+      accentColor: 'chart-4',
+    },
+  ]
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {cards.map((card, index) => (
+        <StatCard
+          key={card.title}
+          {...card}
+          isLoading={isLoading}
+          delay={index * 50}
+        />
+      ))}
+    </div>
+  )
+}

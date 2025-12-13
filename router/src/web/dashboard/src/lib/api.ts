@@ -357,7 +357,7 @@ export interface ConvertTask {
   revision?: string
   quantization?: string
   chat_template?: string
-  status: 'Queued' | 'InProgress' | 'Completed' | 'Failed'
+  status: 'queued' | 'in_progress' | 'completed' | 'failed'
   progress: number
   error?: string
   path?: string

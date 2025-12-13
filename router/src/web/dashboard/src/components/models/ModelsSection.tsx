@@ -79,7 +79,7 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
 
   // Filter to show only non-completed tasks
   const activeConvertTasks = convertTasks?.filter(
-    (t: ConvertTask) => t.status !== 'Completed'
+    (t: ConvertTask) => t.status !== 'completed'
   )
 
   // Register model mutation
@@ -224,14 +224,14 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
 
   const getConvertTaskStatusBadge = (status: ConvertTask['status']) => {
     switch (status) {
-      case 'InProgress':
-        return <Badge variant="secondary">Converting</Badge>
-      case 'Queued':
-        return <Badge variant="outline">Queued</Badge>
-      case 'Failed':
-        return <Badge variant="destructive">Failed</Badge>
-      case 'Completed':
-        return <Badge variant="online">Completed</Badge>
+      case 'in_progress':
+        return <Badge variant="secondary">in_progress</Badge>
+      case 'queued':
+        return <Badge variant="outline">queued</Badge>
+      case 'failed':
+        return <Badge variant="destructive">failed</Badge>
+      case 'completed':
+        return <Badge variant="online">completed</Badge>
       default:
         return <Badge variant="outline">{status}</Badge>
     }
@@ -239,13 +239,13 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
 
   const getConvertTaskIcon = (status: ConvertTask['status']) => {
     switch (status) {
-      case 'InProgress':
+      case 'in_progress':
         return <Loader2 className="h-4 w-4 animate-spin text-primary" />
-      case 'Queued':
+      case 'queued':
         return <Clock className="h-4 w-4 text-muted-foreground" />
-      case 'Failed':
+      case 'failed':
         return <AlertCircle className="h-4 w-4 text-destructive" />
-      case 'Completed':
+      case 'completed':
         return <CheckCircle2 className="h-4 w-4 text-success" />
       default:
         return <Clock className="h-4 w-4 text-muted-foreground" />
@@ -350,8 +350,8 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                           {getConvertTaskStatusBadge(task.status)}
                         </div>
 
-                        {/* Progress bar for InProgress tasks */}
-                        {task.status === 'InProgress' && (
+                        {/* Progress bar for in_progress tasks */}
+                        {task.status === 'in_progress' && (
                           <div className="mt-3">
                             <div className="h-1.5 w-full rounded-full bg-muted">
                               <div
@@ -365,27 +365,25 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                           </div>
                         )}
 
-                        {/* Error message for Failed tasks */}
-                        {task.status === 'Failed' && task.error && (
+                        {/* Error message for failed tasks */}
+                        {task.status === 'failed' && task.error && (
                           <p className="mt-2 text-xs text-destructive line-clamp-2">
                             {task.error}
                           </p>
                         )}
 
-                        {/* Delete button for Failed tasks */}
-                        {task.status === 'Failed' && (
-                          <div className="mt-3">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deleteConvertTaskMutation.mutate(task.id)}
-                              disabled={deleteConvertTaskMutation.isPending}
-                            >
-                              <Trash2 className="mr-1 h-3 w-3 text-destructive" />
-                              Delete
-                            </Button>
-                          </div>
-                        )}
+                        {/* Delete/Cancel button for all non-completed tasks */}
+                        <div className="mt-3">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteConvertTaskMutation.mutate(task.id)}
+                            disabled={deleteConvertTaskMutation.isPending}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3 text-destructive" />
+                            {task.status === 'failed' ? 'Delete' : 'Cancel'}
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}

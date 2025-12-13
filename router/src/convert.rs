@@ -95,6 +95,119 @@ fn find_convert_script() -> Option<PathBuf> {
     None
 }
 
+/// gguf_new_metadata.py スクリプトのパスを取得
+fn find_gguf_metadata_script() -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from("node/third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py"),
+        PathBuf::from("third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py"),
+        PathBuf::from("../node/third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py"),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // 実行ファイルの相対パスから探す
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let relative = exe_dir
+                .join("../node/third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py");
+            if relative.exists() {
+                return Some(relative);
+            }
+        }
+    }
+
+    None
+}
+
+/// gguf-py ライブラリのパスを取得（PYTHONPATH用）
+fn find_gguf_py_path() -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from("node/third_party/llama.cpp/gguf-py"),
+        PathBuf::from("third_party/llama.cpp/gguf-py"),
+        PathBuf::from("../node/third_party/llama.cpp/gguf-py"),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let relative = exe_dir.join("../node/third_party/llama.cpp/gguf-py");
+            if relative.exists() {
+                return Some(relative);
+            }
+        }
+    }
+
+    None
+}
+
+/// GGUFファイルにchat_templateを追加
+async fn add_chat_template_to_gguf(
+    gguf_path: &Path,
+    chat_template: &str,
+) -> Result<(), RouterError> {
+    let script = find_gguf_metadata_script()
+        .ok_or_else(|| RouterError::Internal("gguf_new_metadata.py not found".into()))?;
+    let gguf_py_path = find_gguf_py_path()
+        .ok_or_else(|| RouterError::Internal("gguf-py library not found".into()))?;
+
+    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+
+    // 一時ファイルに出力し、成功したら置換
+    let temp_path = gguf_path.with_extension("gguf.tmp");
+
+    let script_clone = script.clone();
+    let gguf_path_clone = gguf_path.to_path_buf();
+    let temp_path_clone = temp_path.clone();
+    let chat_template_clone = chat_template.to_string();
+    let gguf_py_path_clone = gguf_py_path.clone();
+
+    let result = task::spawn_blocking(move || {
+        let output = Command::new(&python_bin)
+            .env("PYTHONPATH", &gguf_py_path_clone)
+            .arg(&script_clone)
+            .arg(&gguf_path_clone)
+            .arg(&temp_path_clone)
+            .arg("--chat-template")
+            .arg(&chat_template_clone)
+            .arg("--force")
+            .output();
+
+        match output {
+            Ok(out) => {
+                if out.status.success() {
+                    Ok(())
+                } else {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    Err(format!("gguf_new_metadata.py failed: {}", stderr))
+                }
+            }
+            Err(e) => Err(format!("Failed to run gguf_new_metadata.py: {}", e)),
+        }
+    })
+    .await
+    .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    result.map_err(RouterError::Internal)?;
+
+    // 成功したら置換
+    tokio::fs::rename(&temp_path, gguf_path)
+        .await
+        .map_err(|e| RouterError::Internal(format!("Failed to replace GGUF file: {}", e)))?;
+
+    tracing::info!(path=?gguf_path, template_len=chat_template.len(), "Added chat_template to GGUF");
+
+    Ok(())
+}
+
 /// requirementsファイルのパスを取得
 fn find_requirements_file() -> Option<PathBuf> {
     let candidates = [
@@ -495,6 +608,20 @@ where
         progress_callback(1.0);
     } else {
         convert_non_gguf(repo, revision, &target, progress_callback.clone()).await?;
+    }
+
+    // chat_templateが指定されている場合、GGUFに埋め込む
+    if let Some(ref template) = chat_template {
+        if !template.is_empty() {
+            tracing::info!(
+                template_len = template.len(),
+                "Embedding chat_template into GGUF"
+            );
+            if let Err(e) = add_chat_template_to_gguf(&target, template).await {
+                // 埋め込み失敗は警告のみ（モデル自体は使用可能）
+                tracing::warn!(error=%e, "Failed to embed chat_template, model may work with fallback detection");
+            }
+        }
     }
 
     finalize_model_registration(&model_name, repo, filename, &url, &target, chat_template).await;

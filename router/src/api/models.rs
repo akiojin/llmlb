@@ -426,6 +426,46 @@ async fn resolve_first_gguf_in_repo(
     Ok(filename)
 }
 
+/// HuggingFaceのtokenizer_config.jsonからchat_templateを取得
+async fn fetch_chat_template_from_hf(http_client: &reqwest::Client, repo: &str) -> Option<String> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/{}/resolve/main/tokenizer_config.json", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                let template = json
+                    .get("chat_template")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                if template.is_some() {
+                    tracing::info!(repo = %repo, "chat_template fetched from tokenizer_config.json");
+                }
+                template
+            } else {
+                tracing::debug!(repo = %repo, "Failed to parse tokenizer_config.json");
+                None
+            }
+        }
+        Ok(resp) => {
+            tracing::debug!(repo = %repo, status = ?resp.status(), "tokenizer_config.json not found");
+            None
+        }
+        Err(e) => {
+            tracing::debug!(repo = %repo, error = %e, "Failed to fetch tokenizer_config.json");
+            None
+        }
+    }
+}
+
 /// モデル名からGGUF版を検索
 pub async fn discover_gguf_versions(
     http_client: &reqwest::Client,
@@ -962,6 +1002,13 @@ async fn register_model_internal(
         ))
         .into());
     }
+
+    // chat_template: ユーザー指定がなければHFのtokenizer_config.jsonから自動取得
+    let chat_template = if chat_template.is_some() {
+        chat_template
+    } else {
+        fetch_chat_template_from_hf(&state.http_client, repo).await
+    };
 
     // GGUFファイル名が空の場合は変換パスに進む（HEADチェックをスキップ）
     let (content_length, required_memory, warnings) = if filename.is_empty() {

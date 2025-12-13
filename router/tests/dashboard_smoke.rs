@@ -96,7 +96,8 @@ async fn dashboard_serves_static_index() {
 }
 
 #[tokio::test]
-async fn dashboard_static_index_contains_gpu_labels() {
+async fn dashboard_static_index_is_react_app() {
+    // Dashboard is now a React SPA - verify app shell is served correctly
     let (router, _, _) = build_router().await;
 
     let response = router
@@ -114,13 +115,22 @@ async fn dashboard_static_index_contains_gpu_labels() {
     let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
     let html = String::from_utf8(bytes.to_vec()).expect("dashboard html should be valid utf-8");
 
+    // React app mount point
     assert!(
-        html.contains("<th>CPU / GPU</th>"),
-        "dashboard table should include GPU column: {html}"
+        html.contains("id=\"root\""),
+        "dashboard should have React mount point: {html}"
     );
+
+    // Should reference bundled JavaScript
     assert!(
-        html.contains("GPU Model"),
-        "dashboard modal should mention GPU model: {html}"
+        html.contains("<script") && html.contains("</script>"),
+        "dashboard should reference bundled scripts: {html}"
+    );
+
+    // Should have appropriate title
+    assert!(
+        html.contains("Dashboard"),
+        "dashboard should have Dashboard in title: {html}"
     );
 }
 

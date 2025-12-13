@@ -20,7 +20,7 @@ struct ChatMessage {
 
 /// 推論パラメータ
 struct InferenceParams {
-    size_t max_tokens{256};
+    size_t max_tokens{2048};  // デフォルト値を増加（256→2048）
     float temperature{0.8f};
     float top_p{0.9f};
     int top_k{40};
@@ -94,10 +94,14 @@ public:
     /// @return ロード結果（成功/失敗）
     ModelLoadResult loadModel(const std::string& model_name);
 
+    /// モデルの最大コンテキストサイズを取得
+    size_t getModelMaxContext() const { return model_max_ctx_; }
+
 private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
+    size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;

@@ -1,153 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/dashboard/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="LLM Router Dashboard - Login" />
     <title>Login - LLM Router</title>
-    <link rel="stylesheet" href="/dashboard/styles.css" />
-    <style>
-      .login-container {
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      }
-
-      .login-card {
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        padding: 2rem;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      .login-header {
-        text-align: center;
-        margin-bottom: 2rem;
-      }
-
-      .login-header h1 {
-        font-size: 1.75rem;
-        margin: 0 0 0.5rem 0;
-        color: #1a202c;
-      }
-
-      .login-header p {
-        font-size: 0.875rem;
-        color: #718096;
-        margin: 0;
-      }
-
-      .login-form {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-      }
-
-      .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-      }
-
-      .form-group label {
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: #2d3748;
-      }
-
-      .form-group input {
-        padding: 0.75rem 1rem;
-        border: 1px solid #cbd5e0;
-        border-radius: 4px;
-        font-size: 1rem;
-        transition: border-color 0.2s;
-      }
-
-      .form-group input:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-      }
-
-      .login-button {
-        padding: 0.75rem 1rem;
-        background: #667eea;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 1rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
-
-      .login-button:hover {
-        background: #5a67d8;
-      }
-
-      .login-button:disabled {
-        background: #a0aec0;
-        cursor: not-allowed;
-      }
-
-      .error-message {
-        background: #fed7d7;
-        color: #c53030;
-        padding: 0.75rem 1rem;
-        border-radius: 4px;
-        font-size: 0.875rem;
-        display: none;
-      }
-
-      .error-message.visible {
-        display: block;
-      }
-    </style>
+    <script type="module" crossorigin src="/dashboard/assets/login-BKjZvn1b.js"></script>
+    <link rel="modulepreload" crossorigin href="/dashboard/assets/index-CTEmsOsL.js">
+    <link rel="modulepreload" crossorigin href="/dashboard/assets/card-BVh940dQ.js">
+    <link rel="stylesheet" crossorigin href="/dashboard/assets/index-BG9YDedn.css">
   </head>
   <body>
-    <div class="login-container">
-      <div class="login-card">
-        <div class="login-header">
-          <h1>LLM Router</h1>
-          <p>Sign in to Dashboard</p>
-        </div>
-
-        <div id="error-message" class="error-message" role="alert"></div>
-
-        <form id="login-form" class="login-form">
-          <div class="form-group">
-            <label for="username">Username</label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              required
-              autocomplete="username"
-              autofocus
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              required
-              autocomplete="current-password"
-            />
-          </div>
-
-          <button type="submit" id="login-button" class="login-button">
-            Sign In
-          </button>
-        </form>
-      </div>
-    </div>
-
-    <script src="/dashboard/login.js" defer></script>
+    <div id="root"></div>
   </body>
 </html>

@@ -30,7 +30,7 @@ use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
 const DASHBOARD_INDEX: &str = "index.html";
-const PLAYGROUND_INDEX: &str = "chat/index.html";
+const PLAYGROUND_INDEX: &str = "playground.html";
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
@@ -241,7 +241,8 @@ fn normalize_playground_path(request_path: &str) -> Option<String> {
     if trimmed.contains("..") || trimmed.contains('\\') {
         return None;
     }
-    Some(format!("chat/{}", trimmed))
+    // Assets are shared with dashboard in the root assets/ directory
+    Some(trimmed.to_string())
 }
 
 #[cfg(test)]

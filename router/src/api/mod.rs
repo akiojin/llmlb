@@ -57,8 +57,8 @@ pub fn create_router(state: AppState) -> Router {
             crate::auth::middleware::jwt_auth_middleware,
         ));
 
-    // エージェントトークン認証が必要なルート
-    let agent_protected_routes = Router::new()
+    // ノードトークン認証が必要なルート
+    let node_protected_routes = Router::new()
         .route("/api/health", post(health::health_check))
         .layer(middleware::from_fn_with_state(
             state.db_pool.clone(),
@@ -76,7 +76,7 @@ pub fn create_router(state: AppState) -> Router {
         crate::auth::middleware::api_key_auth_middleware,
     ));
 
-    // `/v1/models*` は外部クライアント(APIキー)とノード(エージェントトークン)の両方から参照される
+    // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model));
@@ -92,7 +92,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/auth/logout", post(auth::logout))
         // 保護されたルート
         .merge(protected_routes)
-        .merge(agent_protected_routes)
+        .merge(node_protected_routes)
         .merge(api_key_protected_routes)
         .merge(models_protected_routes)
         // 既存のルート
@@ -137,10 +137,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/dashboard/logs/router", get(logs::get_router_logs))
         // FR-002: node log proxy (spec path)
         .route("/api/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (SPEC-8ae67d67)
+        // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
         .route("/api/models/available", get(models::get_available_models))
         .route("/api/models/register", post(models::register_model))
-        .route("/api/models/pull", post(models::pull_model_from_hf))
         .route("/api/models/registered", get(models::get_registered_models))
         .route("/api/models/*model_name", delete(models::delete_model))
         .route(

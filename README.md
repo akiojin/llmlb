@@ -29,9 +29,9 @@ LLM Router is a powerful centralized system that provides unified management and
 Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
 [TROUBLESHOOTING](./TROUBLESHOOTING.md)
 
-## MCP Server for LLM Agents
+## MCP Server for LLM Assistants
 
-LLM agents (like Claude Code) can interact with LLM Router through a dedicated
+LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
 MCP server. This is the recommended approach over using Bash with curl commands
 directly.
 
@@ -366,7 +366,7 @@ llm-router/
 ├── common/              # Shared library (types, protocol, errors)
 ├── router/              # Rust router (HTTP APIs, dashboard, proxy)
 ├── node/                # C++ node (llama.cpp, OpenAI-compatible /v1/*)
-├── mcp-server/          # MCP server (for LLM agents like Claude Code)
+├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
 
@@ -699,7 +699,6 @@ The file is automatically managed with:
 |--------|------|-------------|------|
 | GET | `/api/models/available?source=hf` | List available models (HF) | None |
 | POST | `/api/models/register` | Queue model download/convert (HF) | None |
-| POST | `/api/models/pull` | Pull model (sync download, HF) | None |
 | GET | `/api/models/registered` | List registered models | None |
 | DELETE | `/api/models/*model_name` | Delete model | None |
 | POST | `/api/models/discover-gguf` | Discover GGUF models | None |

@@ -40,7 +40,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 #[tokio::test]
 async fn test_complete_node_flow() {
-    // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
+    // ヘルスチェックをスキップ（E2Eテストでは実際のノード実体がない）
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
@@ -169,7 +169,7 @@ async fn test_complete_node_flow() {
 
 #[tokio::test]
 async fn test_node_token_persistence() {
-    // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
+    // ヘルスチェックをスキップ（E2Eテストでは実際のノード実体がない）
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 

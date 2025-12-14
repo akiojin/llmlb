@@ -18,33 +18,33 @@
 
 ## 概要
 
-複数マシンで動作するLLM runtimeインスタンスを中央集権的に管理するシステム。Coordinatorサーバー（中央管理）とAgentアプリ（各マシン）で構成され、統一APIエンドポイント、ロードバランシング、ヘルスチェック、リアルタイムダッシュボードを提供する。Rustで実装し、高いパフォーマンスとメモリ効率を追求する。
+複数マシンで動作するLLM runtimeインスタンスを中央集権的に管理するシステム。Routerサーバー（中央管理）とNodeアプリ（各マシン）で構成され、統一APIエンドポイント、ロードバランシング、ヘルスチェック、リアルタイムダッシュボードを提供する。Rustで実装し、高いパフォーマンスとメモリ効率を追求する。
 
 **主要コンポーネント**:
-- **Coordinator**: Axum（高速非同期Webフレームワーク）ベースのサーバー
-- **Agent**: Tauri（クロスプラットフォームGUI）ベースのシステムトレイアプリ
+- **Router**: Axum（高速非同期Webフレームワーク）ベースのサーバー
+- **Node**: Tauri（クロスプラットフォームGUI）ベースのシステムトレイアプリ
 - **Common**: 共通型定義、プロトコル定義、設定管理
 
 ## 技術コンテキスト
 
 **言語/バージョン**: Rust 1.75+ (stable)
 **主要依存関係**:
-- **Coordinator**: `axum` (Web)、`tokio` (非同期)、`reqwest` (HTTP)、`sqlx` (DB)、`tower-http` (CORS/ロギング)、`tracing` (構造化ログ)
-- **Agent**: `tauri` (GUI)、`tokio` (非同期)、`reqwest` (HTTP)、`sysinfo` (メトリクス)、`tray-icon` (システムトレイ)
+- **Router**: `axum` (Web)、`tokio` (非同期)、`reqwest` (HTTP)、`sqlx` (DB)、`tower-http` (CORS/ロギング)、`tracing` (構造化ログ)
+- **Node**: `tauri` (GUI)、`tokio` (非同期)、`reqwest` (HTTP)、`sysinfo` (メトリクス)、`tray-icon` (システムトレイ)
 - **Common**: `serde` (JSON)、`thiserror` (エラー)、`config` (設定)
 
-**ストレージ**: SQLite (Coordinator側、ノード情報・メトリクス履歴)
+**ストレージ**: SQLite (Router側、ノード情報・メトリクス履歴)
 **テスト**: `cargo test` (unit/integration)、`tokio::test` (非同期テスト)
-**対象プラットフォーム**: Windows 10+ (Agent), Linux/Windows (Coordinator)
-**プロジェクトタイプ**: multi (Cargo Workspace: coordinator, agent, common)
+**対象プラットフォーム**: Windows 10+ (Node), Linux/Windows (Router)
+**プロジェクトタイプ**: multi (Cargo Workspace: router, node, common)
 **パフォーマンス目標**: ノード登録<5秒、リクエスト振り分け<50ms、障害検知<60秒
-**制約**: Windows GUI必須（Tauri）、非同期I/O優先、メモリ消費<100MB/Agent
+**制約**: Windows GUI必須（Tauri）、非同期I/O優先、メモリ消費<100MB/Node
 **スケール/スコープ**: 10台のノード同時管理、100req/min処理、24時間連続稼働
 
 ## 憲章チェック
 
 **シンプルさ**:
-- プロジェクト数: 3 (coordinator, agent, common) ✅
+- プロジェクト数: 3 (router, node, common) ✅
 - フレームワークを直接使用? ✅ (Axum/Tauriを直接使用、ラッパークラスなし)
 - 単一データモデル? ✅ (Common crateで共通型定義、シリアライゼーション用以外にDTOなし)
 - パターン回避? ✅ (Repository/UoW不使用、SQLxで直接クエリ実行)
@@ -53,18 +53,18 @@
 - すべての機能をライブラリとして? ✅
 - ライブラリリスト:
   - `runtime_coordinator_common`: 共通型定義、プロトコル、設定、エラー型
-  - `runtime_coordinator_coordinator`: Coordinatorサーバー本体（バイナリ + ライブラリ）
-  - `runtime_coordinator_agent`: Agentアプリ本体（バイナリ + ライブラリ）
+  - `runtime_coordinator_coordinator`: Routerサーバー本体（バイナリ + ライブラリ）
+  - `runtime_coordinator_node`: Nodeアプリ本体（バイナリ + ライブラリ）
 - ライブラリごとのCLI:
-  - `coordinator`: `--help`, `--version`, `--config`, `--port` オプション
-  - `agent`: `--help`, `--version`, `--config`, `--coordinator-url` オプション
+  - `router`: `--help`, `--version`, `--config`, `--port` オプション
+  - `node`: `--help`, `--version`, `--config`, `--router-url` オプション
 
 **テスト (妥協不可)**:
 - RED-GREEN-Refactorサイクルを強制? ✅ (テストコミット → REDチェック → 実装コミット)
 - Gitコミットはテストが実装より先に表示? ✅ (コミット履歴で検証)
 - 順序: Contract→Integration→E2E→Unit を厳密に遵守? ✅
   - Contract tests: API契約テスト（エンドポイント定義）
-  - Integration tests: Coordinator↔Agent通信、Coordinator↔LLM runtime通信、DB永続化
+  - Integration tests: Router↔Node通信、Router↔LLM runtime通信、DB永続化
   - E2E tests: エンドツーエンドシナリオ（ノード登録→リクエスト振り分け→レスポンス）
   - Unit tests: 個別関数（ロードバランサーロジック、ヘルスチェックロジック）
 - 実依存関係を使用? ✅ (実SQLite DB、モックではない)
@@ -92,8 +92,8 @@ specs/SPEC-32e2b31a/
 ├── data-model.md        # Phase 1 出力 (データモデル定義)
 ├── quickstart.md        # Phase 1 出力 (開発者クイックスタート)
 ├── contracts/           # Phase 1 出力 (API契約定義)
-│   ├── coordinator-api.yaml    # Coordinator REST API (OpenAPI 3.0)
-│   └── agent-protocol.md       # Agent↔Coordinator通信プロトコル
+│   ├── router-api.yaml    # Router REST API (OpenAPI 3.0)
+│   └── node-protocol.md       # Node↔Router通信プロトコル
 └── tasks.md             # Phase 2 出力 (/speckit.tasks)
 ```
 
@@ -110,12 +110,12 @@ llm-router/
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
-│       ├── types.rs             # Agent, HealthStatus, Metrics
+│       ├── types.rs             # Node, HealthStatus, Metrics
 │       ├── protocol.rs          # 通信プロトコル (RegisterRequest, HealthCheckResponse)
 │       ├── config.rs            # 設定構造体
 │       └── error.rs             # 統一エラー型
 │
-├── coordinator/                 # Coordinatorサーバー
+├── router/                 # Routerサーバー
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── main.rs             # エントリポイント
@@ -123,7 +123,7 @@ llm-router/
 │   │   ├── config.rs           # 設定読み込み
 │   │   ├── api/                # REST APIハンドラー
 │   │   │   ├── mod.rs
-│   │   │   ├── agents.rs       # ノード登録・一覧
+│   │   │   ├── nodes.rs       # ノード登録・一覧
 │   │   │   ├── health.rs       # ヘルスチェック受信
 │   │   │   ├── proxy.rs        # LLM runtime統一APIプロキシ
 │   │   │   └── dashboard.rs    # ダッシュボードAPI (WebSocket)
@@ -146,7 +146,7 @@ llm-router/
 │       ├── integration/        # 統合テスト
 │       └── unit/               # ユニットテスト
 │
-├── agent/                       # Agentアプリ
+├── node/                       # Nodeアプリ
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── main.rs             # エントリポイント
@@ -156,7 +156,7 @@ llm-router/
 │   │   │   ├── mod.rs
 │   │   │   ├── tray.rs         # システムトレイ
 │   │   │   └── window.rs       # 設定ウィンドウ
-│   │   ├── client/             # Coordinator通信
+│   │   ├── client/             # Router通信
 │   │   │   ├── mod.rs
 │   │   │   ├── register.rs     # 自己登録
 │   │   │   └── heartbeat.rs    # ヘルスチェック送信
@@ -178,7 +178,7 @@ llm-router/
     └── e2e/                     # E2Eテスト
         ├── setup.rs             # テスト環境セットアップ
         └── scenarios/
-            ├── agent_registration.rs
+            ├── node_registration.rs
             ├── load_balancing.rs
             └── health_check.rs
 ```
@@ -228,20 +228,20 @@ llm-router/
 
 #### エンティティ定義
 
-**Agent**:
+**Node**:
 ```rust
-pub struct Agent {
+pub struct Node {
     pub id: Uuid,                  // 一意識別子
     pub machine_name: String,      // マシン名
     pub ip_address: IpAddr,        // IPアドレス
     pub runtime_version: String,    // LLM runtimeバージョン
     pub runtime_port: u16,          // LLM runtimeポート番号
-    pub status: AgentStatus,       // オンライン/オフライン
+    pub status: NodeStatus,       // オンライン/オフライン
     pub registered_at: DateTime<Utc>,  // 登録日時
     pub last_seen: DateTime<Utc>,      // 最終ヘルスチェック時刻
 }
 
-pub enum AgentStatus {
+pub enum NodeStatus {
     Online,
     Offline,
 }
@@ -250,7 +250,7 @@ pub enum AgentStatus {
 **HealthMetrics**:
 ```rust
 pub struct HealthMetrics {
-    pub agent_id: Uuid,
+    pub node_id: Uuid,
     pub cpu_usage: f32,            // CPU使用率 (0.0-100.0)
     pub memory_usage: f32,         // メモリ使用率 (0.0-100.0)
     pub active_requests: u32,      // 処理中リクエスト数
@@ -263,7 +263,7 @@ pub struct HealthMetrics {
 ```rust
 pub struct Request {
     pub id: Uuid,
-    pub agent_id: Uuid,            // 振り分け先ノード
+    pub node_id: Uuid,            // 振り分け先ノード
     pub endpoint: String,          // "/v1/chat/completions" など
     pub status: RequestStatus,     // 処理中/完了/エラー
     pub duration_ms: Option<u64>,  // 処理時間
@@ -279,28 +279,28 @@ pub enum RequestStatus {
 }
 ```
 
-**Config (Coordinator)**:
+**Config (Router)**:
 ```rust
 pub struct CoordinatorConfig {
     pub host: String,              // "0.0.0.0"
     pub port: u16,                 // 8080
-    pub database_url: String,      // "sqlite://coordinator.db"
+    pub database_url: String,      // "sqlite://router.db"
     pub health_check_interval_secs: u64,  // 30秒
-    pub agent_timeout_secs: u64,   // 60秒
+    pub node_timeout_secs: u64,   // 60秒
 }
 ```
 
-**Config (Agent)**:
+**Config (Node)**:
 ```rust
-pub struct AgentConfig {
-    pub coordinator_url: String,   // "http://coordinator:8080"
+pub struct NodeConfig {
+    pub coordinator_url: String,   // "http://router:8080"
     pub runtime_url: String,        // "http://localhost:11434"
     pub heartbeat_interval_secs: u64,  // 10秒
     pub auto_start: bool,          // Windows起動時の自動起動
 }
 ```
 
-### 2. API契約 (`contracts/coordinator-api.yaml`)
+### 2. API契約 (`contracts/router-api.yaml`)
 
 **OpenAPI 3.0仕様**:
 
@@ -352,7 +352,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Agent'
+                  $ref: '#/components/schemas/Node'
 
   /api/health:
     post:
@@ -444,14 +444,14 @@ components:
     RegisterResponse:
       type: object
       properties:
-        agent_id:
+        node_id:
           type: string
           format: uuid
         status:
           type: string
           enum: [registered, updated]
 
-    Agent:
+    Node:
       type: object
       properties:
         id:
@@ -475,9 +475,9 @@ components:
 
     HealthCheckRequest:
       type: object
-      required: [agent_id, cpu_usage, memory_usage, active_requests]
+      required: [node_id, cpu_usage, memory_usage, active_requests]
       properties:
-        agent_id:
+        node_id:
           type: string
           format: uuid
         cpu_usage:
@@ -522,7 +522,7 @@ components:
           type: boolean
 ```
 
-### 3. Agent↔Coordinator通信プロトコル (`contracts/agent-protocol.md`)
+### 3. Node↔Router通信プロトコル (`contracts/node-protocol.md`)
 
 **プロトコル仕様**:
 
@@ -531,17 +531,17 @@ components:
    - Router → Node: `RegisterResponse` (node_id返却)
 
 2. **ヘルスチェック（ハートビート）**:
-   - Agent → Coordinator: `POST /api/health` (10秒間隔)
+   - Node → Router: `POST /api/health` (10秒間隔)
    - Payload: CPU使用率、メモリ使用率、処理中リクエスト数
 
 3. **リクエスト振り分け**:
    - Client → Router: `POST /v1/chat/completions` or `POST /v1/completions`
-   - Coordinator → Agent: HTTP Proxy (選択されたノードのLLM runtime URLへ転送)
-   - Agent → LLM runtime: ローカルLLM runtime APIへ転送
-   - LLM runtime → Agent → Coordinator → Client: レスポンス返却
+   - Router → Node: HTTP Proxy (選択されたノードのLLM runtime URLへ転送)
+   - Node → LLM runtime: ローカルLLM runtime APIへ転送
+   - LLM runtime → Node → Router → Client: レスポンス返却
 
 4. **ノード切断検知**:
-   - Coordinator: 60秒以上ヘルスチェックがないノードを「オフライン」とマーク
+   - Router: 60秒以上ヘルスチェックがないノードを「オフライン」とマーク
 
 ### 4. Contract Tests生成
 
@@ -559,8 +559,8 @@ components:
 
 **ユーザーストーリーからのテストシナリオ**:
 
-1. **P1: ノード登録** (`tests/integration/test_agent_lifecycle.rs`):
-   - ノード起動 → 登録リクエスト送信 → Coordinator受信 → DB保存 → agent_id返却
+1. **P1: ノード登録** (`tests/integration/test_node_lifecycle.rs`):
+   - ノード起動 → 登録リクエスト送信 → Router受信 → DB保存 → node_id返却
    - ノード終了 → 60秒後にタイムアウト → オフライン状態に変更
 
 2. **P2: 統一APIプロキシ** (`tests/integration/test_proxy.rs`):
@@ -584,7 +584,7 @@ components:
 - 非同期処理パターン
 - エラーハンドリングベストプラクティス
 
-**出力**: `data-model.md`, `contracts/coordinator-api.yaml`, `contracts/agent-protocol.md`, contract tests (失敗), integration tests (失敗), `quickstart.md`, `CLAUDE.md`更新
+**出力**: `data-model.md`, `contracts/router-api.yaml`, `contracts/node-protocol.md`, contract tests (失敗), integration tests (失敗), `quickstart.md`, `CLAUDE.md`更新
 
 ## Phase 2: タスク計画アプローチ
 
@@ -593,7 +593,7 @@ components:
 1. **Setupタスク** ([P] 並列実行可):
    - Cargo Workspace初期化
    - 依存クレート追加 (axum, tokio, tauri, etc.)
-   - SQLiteスキーマ定義 (`coordinator/src/db/schema.sql`)
+   - SQLiteスキーマ定義 (`router/src/db/schema.sql`)
    - CI/CD設定 (GitHub Actions: テスト、ビルド、リリース)
    - リリース配布フォーマットの検証（Unix系=`.tar.gz`、Windows=`.zip`／主要ドキュメント同梱確認）
    - リリースワークフローで `main` ブランチへのマージ後のみ配布が行われるようガードを設置
@@ -609,7 +609,7 @@ components:
    - ヘルスチェック契約テスト (RED)
    - プロキシ契約テスト (RED)
 
-4. **Coordinator実装** (依存関係順):
+4. **Router実装** (依存関係順):
    - ノード登録API実装 → Contract Test GREEN
    - ヘルスチェックAPI実装 → Contract Test GREEN
    - プロキシAPI実装 → Contract Test GREEN
@@ -618,8 +618,8 @@ components:
    - DB永続化実装 → Integration Test
    - ダッシュボード実装 → Integration Test
 
-5. **Agent実装** (依存関係順):
-   - Coordinator通信クライアント → Integration Test
+5. **Node実装** (依存関係順):
+   - Router通信クライアント → Integration Test
    - LLM runtime監視 → Unit Test
    - メトリクス収集 → Unit Test
    - GUI（Tauri） → 手動テスト
@@ -640,7 +640,7 @@ components:
 
 **順序戦略**:
 - TDD順序: Contract Test → Integration Test → 実装 → Unit Test → E2E Test
-- 依存関係順序: Common → Coordinator → Agent
+- 依存関係順序: Common → Router → Node
 - 並列実行: Common内のモジュール、Contract Tests、Setup tasks
 
 **推定出力**: tasks.mdに約40-50個のタスク
@@ -649,7 +649,7 @@ components:
 
 ## LLM runtime自動ダウンロード機能強化（追加要件）
 
-**背景**: 基本的なLLM runtime自動ダウンロード・インストール機能は実装済み（`agent/src/runtime.rs:download()`）。以下の4つの機能強化を追加実装する。
+**背景**: 基本的なLLM runtime自動ダウンロード・インストール機能は実装済み（`node/src/runtime.rs:download()`）。以下の4つの機能強化を追加実装する。
 
 ### 新機能要件と技術設計
 
@@ -665,7 +665,7 @@ components:
   - `ProgressBar`で進捗率（パーセンテージ）、ダウンロード速度、ETA（推定残り時間）を表示
   - モデルプル時はLLM runtime APIの進捗情報をパース
 
-**実装場所**: `agent/src/runtime.rs:download()`, `agent/src/runtime.rs:pull_model()`
+**実装場所**: `node/src/runtime.rs:download()`, `node/src/runtime.rs:pull_model()`
 
 **環境変数**: `OLLAMA_DOWNLOAD_PROGRESS=false` で進捗表示を無効化可能
 
@@ -691,7 +691,7 @@ components:
   - HTTP 4xx系エラー（404, 403など）
   - ディスク容量不足エラー
 
-**実装場所**: `agent/src/runtime.rs:download()`, `agent/src/runtime.rs:pull_model()`
+**実装場所**: `node/src/runtime.rs:download()`, `node/src/runtime.rs:pull_model()`
 
 **環境変数**:
 - `OLLAMA_DOWNLOAD_MAX_RETRIES=5` (デフォルト: 5)
@@ -713,7 +713,7 @@ components:
   4. 一致の場合は展開・インストール継続
 - **フォールバック**: チェックサムファイルが取得できない場合は警告表示のみ（検証スキップ）
 
-**実装場所**: `agent/src/runtime.rs:download()` 内に`verify_checksum()`関数を追加
+**実装場所**: `node/src/runtime.rs:download()` 内に`verify_checksum()`関数を追加
 
 **環境変数**:
 - `OLLAMA_CHECKSUM=<sha256>` (手動チェックサム指定)
@@ -733,7 +733,7 @@ components:
   - `http://user:pass@proxy.example.com:8080` 形式をサポート
 - **プロキシ除外**: `NO_PROXY`環境変数で除外ホストを指定可能
 
-**実装場所**: `agent/src/runtime.rs:download()` でHTTPクライアント作成時にプロキシ設定
+**実装場所**: `node/src/runtime.rs:download()` でHTTPクライアント作成時にプロキシ設定
 
 **環境変数**:
 - `HTTP_PROXY=http://proxy.example.com:8080`
@@ -743,7 +743,7 @@ components:
 
 ### 依存関係追加
 
-**agent/Cargo.toml**:
+**node/Cargo.toml**:
 ```toml
 [dependencies]
 # 既存

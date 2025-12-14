@@ -18,17 +18,17 @@ pub(crate) async fn select_available_node(
     match mode.as_str() {
         "metrics" => {
             // メトリクスベース選択（T014-T015で実装）
-            state.load_manager.select_agent_by_metrics().await
+            state.load_manager.select_node_by_metrics().await
         }
         _ => {
             // デフォルト: 既存の高度なロードバランシング
-            let agent = state.load_manager.select_agent().await?;
-            if agent.initializing {
+            let node = state.load_manager.select_node().await?;
+            if node.initializing {
                 return Err(RouterError::ServiceUnavailable(
                     "All nodes are warming up models".into(),
                 ));
             }
-            Ok(agent)
+            Ok(node)
         }
     }
 }
@@ -157,10 +157,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_select_available_node_no_agents() {
+    async fn test_select_available_node_no_nodes() {
         let state = create_test_state().await;
         let result = select_available_node(&state).await;
-        assert!(matches!(result, Err(RouterError::NoAgentsAvailable)));
+        assert!(matches!(result, Err(RouterError::NoNodesAvailable)));
     }
 
     #[tokio::test]
@@ -191,8 +191,8 @@ mod tests {
         let result = select_available_node(&state).await;
         assert!(result.is_ok());
 
-        let agent = result.unwrap();
-        assert_eq!(agent.machine_name, "test-machine");
+        let node = result.unwrap();
+        assert_eq!(node.machine_name, "test-machine");
     }
 
     #[tokio::test]
@@ -240,13 +240,13 @@ mod tests {
         };
         let response2 = state.registry.register(register_req2).await.unwrap();
 
-        // mark second agent ready
+        // mark second node ready
         mark_ready(&state, response2.node_id).await;
 
         let result = select_available_node(&state).await;
         assert!(result.is_ok());
 
-        let agent = result.unwrap();
-        assert_eq!(agent.machine_name, "machine2");
+        let node = result.unwrap();
+        assert_eq!(node.machine_name, "machine2");
     }
 }

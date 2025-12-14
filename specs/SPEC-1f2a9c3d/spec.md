@@ -1,11 +1,11 @@
-# SPEC-log-api: Agent / Coordinator Log Retrieval API
+# SPEC-log-api: Node / Router Log Retrieval API
 
 ## 目的
 - ノードの最新ログを HTTP 経由で取得できるようにし、ルーター経由でも同じ内容を参照できること。
 - ダッシュボードのログパネルはこの API を利用してログを表示できること。
 
 ## 機能要件
-- **FR-001 (Agent Logs API)**: ノードは `GET /api/logs?tail=N` で自身のログを返す。  
+- **FR-001 (Node Logs API)**: ノードは `GET /api/logs?tail=N` で自身のログを返す。  
   - デフォルト `tail=200`。`1 <= tail <= 2000` を許容、超過は 400。  
   - レスポンスは `{"entries": LogEntry[], "path": "…"}` のJSON。LogEntryは既存JSONLと同じフィールドを持つ。  
   - ログファイル未存在時は 200 で `entries: []` を返す。内部エラー時は 500。

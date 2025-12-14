@@ -36,10 +36,10 @@ pub struct RequestResponseRecord {
     pub node_id: Uuid,
 
     /// ノードのマシン名
-    pub agent_machine_name: String,
+    pub node_machine_name: String,
 
     /// ノードのIPアドレス
-    pub agent_ip: IpAddr,
+    pub node_ip: IpAddr,
 
     /// リクエスト本文（JSON形式）
     pub request_body: serde_json::Value,
@@ -85,8 +85,8 @@ pub enum RecordStatus {
 | `request_type` | `RequestType` | Yes | "chat" または "generate" |
 | `model` | `String` | Yes | モデル名（例: "llama2", "codellama"） |
 | `node_id` | `Uuid` | Yes | ノードID（Node構造体のidと一致） |
-| `agent_machine_name` | `String` | Yes | ノードのマシン名（表示用） |
-| `agent_ip` | `IpAddr` | Yes | ノードのIPアドレス（デバッグ用） |
+| `node_machine_name` | `String` | Yes | ノードのマシン名（表示用） |
+| `node_ip` | `IpAddr` | Yes | ノードのIPアドレス（デバッグ用） |
 | `request_body` | `serde_json::Value` | Yes | リクエスト本文全体をJSON Value として保存 |
 | `response_body` | `Option<serde_json::Value>` | No | レスポンス本文、エラー時は None |
 | `duration_ms` | `u64` | Yes | リクエスト開始から完了までの時間（ミリ秒） |
@@ -131,7 +131,7 @@ pub enum RecordStatus {
 // エラー時
 {
   "type": "error",
-  "message": "Connection timeout to agent"
+  "message": "Connection timeout to node"
 }
 ```
 
@@ -150,14 +150,14 @@ pub enum RecordStatus {
 
 **参照整合性**:
 - ノード削除時、既存のレコードは残る（履歴保持のため）
-- `agent_machine_name` と `agent_ip` を非正規化して保存（表示用）
+- `node_machine_name` と `node_ip` を非正規化して保存（表示用）
 
 **図**:
 ```
 Node (1) ----< (N) RequestResponseRecord
   id                  node_id (参照)
-  machine_name        agent_machine_name (非正規化)
-  ip_address          agent_ip (非正規化)
+  machine_name        node_machine_name (非正規化)
+  ip_address          node_ip (非正規化)
 ```
 
 ---
@@ -183,8 +183,8 @@ Node (1) ----< (N) RequestResponseRecord
     "request_type": "chat",
     "model": "llama2",
     "node_id": "123e4567-e89b-12d3-a456-426614174000",
-    "agent_machine_name": "gpu-server-01",
-    "agent_ip": "192.168.1.10",
+    "node_machine_name": "gpu-server-01",
+    "node_ip": "192.168.1.10",
     "request_body": {
       "model": "llama2",
       "messages": [
@@ -209,8 +209,8 @@ Node (1) ----< (N) RequestResponseRecord
     "request_type": "generate",
     "model": "codellama",
     "node_id": "123e4567-e89b-12d3-a456-426614174000",
-    "agent_machine_name": "gpu-server-01",
-    "agent_ip": "192.168.1.10",
+    "node_machine_name": "gpu-server-01",
+    "node_ip": "192.168.1.10",
     "request_body": {
       "model": "codellama",
       "prompt": "Write a hello world in Rust",
@@ -220,7 +220,7 @@ Node (1) ----< (N) RequestResponseRecord
     "duration_ms": 5678,
     "status": {
       "type": "error",
-      "message": "Agent connection timeout"
+      "message": "Node connection timeout"
     },
     "completed_at": "2025-11-03T10:31:05Z"
   }
@@ -304,6 +304,6 @@ JSONファイルベースのため、インデックスは使用しない。
 ## まとめ
 
 **エンティティ数**: 1個（RequestResponseRecord）
-**関係性**: Agent との 1対多
+**関係性**: Node との 1対多
 **ストレージ**: JSONファイル（シンプル、憲章準拠）
 **スケール**: 7日間で10,000+件、100MB程度（問題なし）

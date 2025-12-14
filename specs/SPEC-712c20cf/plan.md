@@ -42,7 +42,7 @@ Webブラウザからアクセスできるリアルタイムダッシュボー�
 - `serde_json` - JSONシリアライゼーション（既存）
 - `Chart.js` - グラフ可視化（CDN経由）
 
-**ストレージ**: N/A（ノード情報は既存のAgentRegistryから取得）
+**ストレージ**: N/A（ノード情報は既存のNodeRegistryから取得）
 **テスト**: `cargo test`（単体・統合テスト）、手動E2Eテスト（ブラウザ）
 **対象プラットフォーム**: Linuxサーバー、Webブラウザ（クライアント）
 **プロジェクトタイプ**: web（backend + frontend静的ファイル）
@@ -56,22 +56,22 @@ Webブラウザからアクセスできるリアルタイムダッシュボー�
 *ゲート: Phase 0 research前に合格必須。Phase 1 design後に再チェック。*
 
 **シンプルさ**:
-- プロジェクト数: 1（coordinatorプロジェクトに統合）
+- プロジェクト数: 1（routerプロジェクトに統合）
 - フレームワークを直接使用? ✅ Yes（AxumのServeDir、Chart.js CDN）
-- 単一データモデル? ✅ Yes（既存のAgentとAgentMetricsを使用）
-- パターン回避? ✅ Yes（Repository/UoW不使用、直接AgentRegistry経由）
+- 単一データモデル? ✅ Yes（既存のNodeとNodeMetricsを使用）
+- パターン回避? ✅ Yes（Repository/UoW不使用、直接NodeRegistry経由）
 
 **アーキテクチャ**:
-- すべての機能をライブラリとして? N/A（coordinatorはバイナリクレート）
-- ライブラリリスト: coordinator/src（既存のregistryとapi）
-- ライブラリごとのCLI: coordinator binary（`--help`, `--version`対応予定）
+- すべての機能をライブラリとして? N/A（routerはバイナリクレート）
+- ライブラリリスト: router/src（既存のregistryとapi）
+- ライブラリごとのCLI: router binary（`--help`, `--version`対応予定）
 - ライブラリドキュメント: llms.txt形式を計画? N/A
 
 **テスト (妥協不可)**:
 - RED-GREEN-Refactorサイクルを強制? ✅ Yes
 - Gitコミットはテストが実装より先に表示? ✅ Yes
 - 順序: Contract→Integration→E2E→Unitを厳密に遵守? ✅ Yes
-- 実依存関係を使用? ✅ Yes（実AgentRegistry、モックなし）
+- 実依存関係を使用? ✅ Yes（実NodeRegistry、モックなし）
 - Integration testの対象: APIエンドポイント、静的ファイル配信
 - 禁止: テスト前の実装、REDフェーズのスキップ ✅
 
@@ -103,15 +103,15 @@ specs/SPEC-712c20cf/
 
 ### ソースコード (リポジトリルート)
 ```
-coordinator/
+router/
 ├── src/
 │   ├── api/
 │   │   ├── mod.rs
-│   │   ├── agent.rs         # 既存
+│   │   ├── node.rs         # 既存
 │   │   ├── proxy.rs         # 既存
 │   │   └── dashboard.rs     # 新規: ダッシュボードAPI
 │   ├── registry/
-│   │   └── mod.rs           # 既存: AgentRegistry
+│   │   └── mod.rs           # 既存: NodeRegistry
 │   ├── web/
 │   │   └── static/          # 新規: 静的ファイル
 │   │       ├── index.html   # ダッシュボードHTML
@@ -125,7 +125,7 @@ coordinator/
     └── dashboard_static_test.rs # 新規: 静的ファイルテスト
 ```
 
-**構造決定**: Webアプリケーション（backend + frontend静的ファイル）として実装、coordinatorプロジェクトに統合
+**構造決定**: Webアプリケーション（backend + frontend静的ファイル）として実装、routerプロジェクトに統合
 
 ## Phase 0: アウトライン＆リサーチ
 
@@ -265,8 +265,8 @@ coordinator/
 詳細は `data-model.md` を参照。
 
 **主要エンティティ**:
-- `Agent` (既存): ノード情報
-- `AgentMetrics` (将来拡張): パフォーマンスメトリクス
+- `Node` (既存): ノード情報
+- `NodeMetrics` (将来拡張): パフォーマンスメトリクス
 - `SystemStats` (新規): システム統計情報
 
 ### 契約テスト
@@ -274,7 +274,7 @@ coordinator/
 #### contract_test_dashboard_api.rs (RED)
 ```rust
 #[tokio::test]
-async fn test_get_agents_returns_json_array() {
+async fn test_get_nodes_returns_json_array() {
     // テストは失敗する必要がある（まだ実装なし）
 }
 
@@ -323,7 +323,7 @@ async fn test_dashboard_page_returns_html() {
 
 1. **Setup Tasks**:
    - S001: Cargo.tomlにtower-http依存関係を追加
-   - S002: coordinator/src/web/static/ディレクトリ作成
+   - S002: router/src/web/static/ディレクトリ作成
 
 2. **Contract Test Tasks** [P]:
    - C001: ダッシュボードAPI契約テスト作成（RED）

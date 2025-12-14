@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: コーディネーターAPIキー管理API
+  title: ルーターAPIキー管理API
   description: 外部アプリケーション向けAPIキーの発行・削除API（管理者専用）
   version: 1.0.0
 

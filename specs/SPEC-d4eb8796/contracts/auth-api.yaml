@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: コーディネーター認証API
+  title: ルーター認証API
   description: ユーザー認証とセッション管理API
   version: 1.0.0
 

@@ -111,11 +111,11 @@ async fn test_list_installed_models_on_node() {
     let body = to_bytes(register_response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let agent: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = agent["node_id"]
+    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let node_id = node["node_id"]
         .as_str()
         .expect("Node must have 'node_id' field");
-    let node_token = agent["node_token"]
+    let node_token = node["node_token"]
         .as_str()
         .expect("Node must have 'node_token' field");
 
@@ -187,7 +187,7 @@ async fn test_list_installed_models_on_node() {
 
 /// T020: 複数ノードのロード済みモデルが /api/nodes に反映される
 #[tokio::test]
-async fn test_model_matrix_view_multiple_agents() {
+async fn test_model_matrix_view_multiple_nodes() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
@@ -220,12 +220,12 @@ async fn test_model_matrix_view_multiple_agents() {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let agent: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let node_id = agent["node_id"]
+        let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let node_id = node["node_id"]
             .as_str()
             .expect("Node must have 'node_id'")
             .to_string();
-        let node_token = agent["node_token"]
+        let node_token = node["node_token"]
             .as_str()
             .expect("Node must have 'node_token'")
             .to_string();

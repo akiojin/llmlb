@@ -5,17 +5,23 @@
 
 本SPECの「ルーター主導の配布（push）」は採用しません。現行はノード主導のモデル同期です。
 
-## ルーター側: モデル取得（キャッシュ＆登録）
+## ルーター側: モデル登録（ダウンロード/変換キュー）
 
-Hugging Face からモデルファイルを取得して、ルーターに登録します。
+Hugging Face 上のモデルをルーターに登録します（必要に応じてダウンロード/変換をバックグラウンド実行）。
 
 ```bash
-curl -sS http://localhost:8080/api/models/pull \
+curl -sS http://localhost:8080/api/models/register \
   -H "Content-Type: application/json" \
   -d '{
     "repo": "TheBloke/gpt-oss-GGUF",
     "filename": "gpt-oss-20b.Q4_K_M.gguf"
   }' | jq .
+```
+
+進捗は変換タスク一覧から確認できます。
+
+```bash
+curl -sS http://localhost:8080/api/models/convert | jq .
 ```
 
 登録済みモデルを確認します。

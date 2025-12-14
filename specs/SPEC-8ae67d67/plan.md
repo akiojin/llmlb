@@ -13,7 +13,6 @@
   - `GET /api/models/blob/:model_name`
 - ルーター側のモデル管理API（管理者向け）
   - `GET /api/models/available`
-  - `POST /api/models/pull`
   - `POST /api/models/register`
   - `GET /api/models/registered`
   - `DELETE /api/models/*model_name`

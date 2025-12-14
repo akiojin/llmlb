@@ -42,28 +42,6 @@
 ```
 - **Errors**: 400 無効名/URL欠損, 409 重複, 424 HFから取得不可。
 
-## POST /api/models/pull
-
-- **Purpose**: HFからダウンロードし、ルーターのローカルキャッシュに保存して登録する。
-- **Body**:
-
-```json
-{
-  "repo": "TheBloke/Llama-2-7B-GGUF",
-  "filename": "llama-2-7b.Q4_K_M.gguf",
-  "chat_template": null
-}
-```
-
-- **Response** 201:
-
-```json
-{
-  "name": "hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf",
-  "path": "/home/user/.llm-router/models/..."
-}
-```
-
 ## GET /v1/models
 
 - 対応モデルに HF 登録分も含めて返す（idのみ。displayやsourceは拡張フィールドとしてオプション）。
@@ -79,6 +57,5 @@ CLIコマンドは廃止されました。以下のAPIを直接使用してく�
 
 - モデル一覧: `GET /api/models/available`
 - モデル登録: `POST /api/models/register`
-- モデル取得（ルーターへのキャッシュ）: `POST /api/models/pull`
 - ノード同期（一覧）: `GET /v1/models`
 - ノード同期（ファイル）: `GET /api/models/blob/:model_name`

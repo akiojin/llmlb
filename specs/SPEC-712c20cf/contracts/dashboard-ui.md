@@ -19,7 +19,7 @@
 │ └─────────────┘ └─────────────┘ └─────────────┘ └──────────┘ │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
-│ Agent List                                                      │
+│ Node List                                                      │
 │ ┌───────────┬─────────────┬─────────┬─────────┬────────────┐  │
 │ │ Name      │ IP Address  │ Status  │ Uptime  │ Action     │  │
 │ ├───────────┼─────────────┼─────────┼─────────┼────────────┤  │
@@ -50,12 +50,12 @@
 ```html
 <div class="stats-container">
   <div class="stat-card">
-    <h3>Total Agents</h3>
-    <p id="total-agents" class="stat-value">0</p>
+    <h3>Total Nodes</h3>
+    <p id="total-nodes" class="stat-value">0</p>
   </div>
   <div class="stat-card">
-    <h3>Online Agents</h3>
-    <p id="online-agents" class="stat-value">0</p>
+    <h3>Online Nodes</h3>
+    <p id="online-nodes" class="stat-value">0</p>
   </div>
   <div class="stat-card">
     <h3>Total Requests</h3>

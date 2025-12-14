@@ -15,7 +15,7 @@
 **ストレージ**: JSONファイル（ノード情報）+ インメモリ（メトリクス、Phase 2で追加）
 **テスト**: cargo test
 **対象プラットフォーム**: Linuxサーバー
-**プロジェクトタイプ**: single（coordinatorクレート内）
+**プロジェクトタイプ**: single（routerクレート内）
 **パフォーマンス目標**: ノード選択 < 10ms
 **制約**: メトリクス収集がプロキシ処理をブロックしない
 **スケール/スコープ**: 1000ノード対応
@@ -38,24 +38,24 @@
 
 **実装内容**:
 ```rust
-pub struct AgentRegistry {
-    agents: Arc<RwLock<HashMap<Uuid, Agent>>>,
+pub struct NodeRegistry {
+    nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
     round_robin_index: AtomicUsize,
 }
 
-pub async fn select_agent(&self) -> Option<Agent> {
-    let agents = self.agents.read().await;
-    let online_agents: Vec<_> = agents.values()
-        .filter(|a| a.status == AgentStatus::Online)
+pub async fn select_node(&self) -> Option<Node> {
+    let nodes = self.nodes.read().await;
+    let online_nodes: Vec<_> = nodes.values()
+        .filter(|a| a.status == NodeStatus::Online)
         .cloned()
         .collect();
 
-    if online_agents.is_empty() {
+    if online_nodes.is_empty() {
         return None;
     }
 
     let index = self.round_robin_index.fetch_add(1, Ordering::Relaxed);
-    Some(online_agents[index % online_agents.len()].clone())
+    Some(online_nodes[index % online_nodes.len()].clone())
 }
 ```
 
@@ -71,8 +71,8 @@ pub async fn select_agent(&self) -> Option<Agent> {
 #### データモデル（追加予定）
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentMetrics {
-    pub agent_id: Uuid,
+pub struct NodeMetrics {
+    pub node_id: Uuid,
     pub cpu_usage: f32,          // 0.0-100.0
     pub memory_usage: f32,       // 0.0-100.0
     pub active_requests: usize,
@@ -80,32 +80,32 @@ pub struct AgentMetrics {
     pub timestamp: DateTime<Utc>,
 }
 
-pub struct AgentRegistry {
-    agents: Arc<RwLock<HashMap<Uuid, Agent>>>,
-    metrics: Arc<RwLock<HashMap<Uuid, AgentMetrics>>>, // 追加
+pub struct NodeRegistry {
+    nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
+    metrics: Arc<RwLock<HashMap<Uuid, NodeMetrics>>>, // 追加
     round_robin_index: AtomicUsize,
 }
 ```
 
 #### メトリクスベース選択アルゴリズム（追加予定）
 ```rust
-pub async fn select_agent_by_metrics(&self) -> Option<Agent> {
-    let agents = self.agents.read().await;
+pub async fn select_node_by_metrics(&self) -> Option<Node> {
+    let nodes = self.nodes.read().await;
     let metrics = self.metrics.read().await;
 
-    let online_agents: Vec<_> = agents.values()
-        .filter(|a| a.status == AgentStatus::Online)
+    let online_nodes: Vec<_> = nodes.values()
+        .filter(|a| a.status == NodeStatus::Online)
         .cloned()
         .collect();
 
-    if online_agents.is_empty() {
+    if online_nodes.is_empty() {
         return None;
     }
 
     // 負荷スコア計算: CPU + Memory + Active Requests
-    let best_agent = online_agents.iter()
-        .min_by_key(|agent| {
-            if let Some(m) = metrics.get(&agent.id) {
+    let best_node = online_nodes.iter()
+        .min_by_key(|node| {
+            if let Some(m) = metrics.get(&node.id) {
                 let cpu_score = m.cpu_usage as usize;
                 let mem_score = m.memory_usage as usize;
                 let req_score = m.active_requests * 10;
@@ -115,7 +115,7 @@ pub async fn select_agent_by_metrics(&self) -> Option<Agent> {
             }
         })?;
 
-    Some(best_agent.clone())
+    Some(best_node.clone())
 }
 ```
 
@@ -124,7 +124,7 @@ pub async fn select_agent_by_metrics(&self) -> Option<Agent> {
 // POST /api/health (X-Node-Token required)
 pub async fn update_metrics(
     State(state): State<AppState>,
-    Json(metrics): Json<AgentMetrics>,
+    Json(metrics): Json<NodeMetrics>,
 ) -> Result<StatusCode, AppError> {
     let mut metrics_map = state.registry.metrics.write().await;
     let node_id = metrics.node_id;
@@ -144,7 +144,7 @@ pub async fn update_metrics(
 
 **未実施事項**:
 - メトリクス収集API契約定義
-- AgentMetrics データモデル設計
+- NodeMetrics データモデル設計
 - 負荷ベース選択アルゴリズム仕様
 
 ## Phase 2: タスク分解（Phase 2用）
@@ -154,7 +154,7 @@ pub async fn update_metrics(
 
 **タスク生成戦略**:
 - メトリクス収集API実装
-- AgentMetricsデータモデル実装
+- NodeMetricsデータモデル実装
 - 負荷ベース選択ロジック実装
 - メトリクス永続化（オプション）
 - パフォーマンステスト

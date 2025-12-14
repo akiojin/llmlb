@@ -3,7 +3,7 @@
 //! T014: JSONからSQLiteへのマイグレーション
 
 use llm_router::db::migrations::{
-    import_agents_from_json, initialize_database,
+    import_nodes_from_json, initialize_database,
 };
 
 /// T014: JSONからSQLiteへのマイグレーションテスト
@@ -38,7 +38,7 @@ async fn test_json_to_sqlite_migration() {
     assert!(result.is_ok(), "node_tokens table should be created");
 
     // JSONインポート（存在しないファイルでもエラーにならないことを確認）
-    let result = import_agents_from_json("/nonexistent/agents.json").await;
+    let result = import_nodes_from_json("/nonexistent/nodes.json").await;
     assert!(
         result.is_ok(),
         "Import should succeed even without JSON file"

@@ -13,7 +13,7 @@
 
 ### Phase 1: GPU検出機能の実装 ✅
 
-#### Agent側
+#### Node側
 
 - [x] AppleSiliconGpuCollectorの条件コンパイル制限を削除
 - [x] lscpuによるApple Silicon検出をLinux環境で有効化
@@ -33,7 +33,7 @@
 
 ### Phase 2: ダッシュボード表示の改善 ✅
 
-#### Coordinator側
+#### Router側
 
 - [x] app.jsのGPU表示ロジックを修正
 - [x] gpu_availableとgpu_modelを確認してモデル名表示
@@ -43,7 +43,7 @@
 
 #### テスト
 
-- [x] Coordinator APIレスポンスのテストを追加
+- [x] Router APIレスポンスのテストを追加
 - [x] GPU情報を含むノード登録のテストを確認
 
 ### Phase 3: ドキュメント更新 ⏳
@@ -75,12 +75,12 @@
 ### Phase 3.1 Setup
 
 - [x] **T001** [P] 現行GPU情報収集の挙動確認
-  - `agent/src/metrics.rs` で取得する GPU 情報の構造を調査
+  - `node/src/metrics.rs` で取得する GPU 情報の構造を調査
   - サンプルJSONを `/tmp/spec-5cd7b614/gpu-sample.json` に記録（コミット対象外）
 
 - [x] **T002** [P] テスト用ストレージ準備
-  - `coordinator/tests/support/fixtures/agents/gpu_missing.json`（GPU無し）追加
-  - `coordinator/tests/support/fixtures/agents/gpu_valid.json`（GPUあり）追加
+  - `router/tests/support/fixtures/nodes/gpu_missing.json`（GPU無し）追加
+  - `router/tests/support/fixtures/nodes/gpu_valid.json`（GPUあり）追加
 
 - [x] **T003** [P] 403応答フォーマット確認
   - バリデーションエラー応答をJSON統一に変更
@@ -89,39 +89,39 @@
 ### Phase 3.2 Tests (RED)
 
 - [x] **T010** [P] Contract Test: GPUあり登録成功
-  - `coordinator/tests/contract/test_agent_register_gpu.rs` を作成
+  - `router/tests/contract/test_node_register_gpu.rs` を作成
   - GPU情報ありpayloadで201、レスポンスにGPUフィールドが含まれることを確認
 
 - [x] **T011** [P] Contract Test: GPUなし登録失敗
   - 同テストで `gpu_devices: []` もしくは欠損payloadを送り、403とエラーJSONを確認
 
 - [x] **T012** Integration Test: 起動時クリーンアップ
-  - `coordinator/tests/integration/registry_cleanup.rs` を追加
+  - `router/tests/integration/registry_cleanup.rs` を追加
   - GPU無しノードが起動時に削除されることを検証
 
 - [x] **T013** Integration Test: Dashboard API 表示
   - `/api/dashboard/nodes` レスポンスで GPU 情報を検証
 
-- [x] **T014** Agent Unit Test: GPU情報必須
+- [x] **T014** Node Unit Test: GPU情報必須
   - GPU検出に失敗した際に登録処理をスキップする挙動をテスト（mock送信）
 
 ### Phase 3.3 Implementation (GREEN)
 
 - [x] **T020** 登録APIにGPUバリデーション追加
   - `common/src/types.rs` に `gpu_devices` 型（例: `Vec<GpuDeviceInfo>`）を追加
-  - `coordinator/src/api/agent.rs::register_agent` で必須チェック処理を実装
+  - `router/src/api/node.rs::register_node` で必須チェック処理を実装
   - エラーメッセージを `"GPU hardware is required"` として定義
 
-- [x] **T021** Agent側GPU情報送信を必須化
-  - `agent/src/main.rs` でGPU情報取得失敗時に登録を抑止し警告ログ
+- [x] **T021** Node側GPU情報送信を必須化
+  - `node/src/main.rs` でGPU情報取得失敗時に登録を抑止し警告ログ
   - 登録payloadへ `gpu_devices` を追加
 
 - [x] **T022** 起動時クリーンアップ実装
-  - `coordinator/src/registry/mod.rs` or `coordinator/src/main.rs` に削除処理を追加
+  - `router/src/registry/mod.rs` or `router/src/main.rs` に削除処理を追加
   - 削除件数を info ログへ出力
 
 - [x] **T023** Dashboard APIレスポンス拡張
-  - `coordinator/src/api/dashboard.rs` / `app.js` で GPU 情報を整合
+  - `router/src/api/dashboard.rs` / `app.js` で GPU 情報を整合
   - UIへの反映を確認
 
 ### Phase 3.4 Integration (REFACTOR)

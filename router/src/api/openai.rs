@@ -248,7 +248,7 @@ fn parse_cloud_model(model: &str) -> Option<(String, String)> {
 }
 
 /// クラウドプロバイダ用の仮想ノード情報を生成する
-fn cloud_virtual_agent(provider: &str) -> (Uuid, String, IpAddr) {
+fn cloud_virtual_node(provider: &str) -> (Uuid, String, IpAddr) {
     let node_id = match provider {
         "openai" => Uuid::parse_str("00000000-0000-0000-0000-00000000c001").unwrap(),
         "google" => Uuid::parse_str("00000000-0000-0000-0000-00000000c002").unwrap(),
@@ -256,8 +256,8 @@ fn cloud_virtual_agent(provider: &str) -> (Uuid, String, IpAddr) {
         _ => Uuid::parse_str("00000000-0000-0000-0000-00000000c0ff").unwrap(),
     };
     let machine_name = format!("cloud:{provider}");
-    let agent_ip: IpAddr = "0.0.0.0".parse().unwrap();
-    (node_id, machine_name, agent_ip)
+    let node_ip: IpAddr = "0.0.0.0".parse().unwrap();
+    (node_id, machine_name, node_ip)
 }
 
 struct CloudProxyResult {
@@ -688,7 +688,7 @@ async fn proxy_openai_cloud_post(
 ) -> Result<Response, AppError> {
     let (provider, model_name) = parse_cloud_model(model)
         .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
-    let (node_id, agent_machine_name, agent_ip) = cloud_virtual_agent(&provider);
+    let (node_id, node_machine_name, node_ip) = cloud_virtual_node(&provider);
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = payload.clone();
@@ -716,8 +716,8 @@ async fn proxy_openai_cloud_post(
                     request_type,
                     model: model.to_string(),
                     node_id,
-                    agent_machine_name,
-                    agent_ip,
+                    node_machine_name,
+                    node_ip,
                     client_ip: None,
                     request_body,
                     response_body: None,
@@ -758,8 +758,8 @@ async fn proxy_openai_cloud_post(
             request_type,
             model: model.to_string(),
             node_id,
-            agent_machine_name,
-            agent_ip,
+            node_machine_name,
+            node_ip,
             client_ip: None,
             request_body,
             response_body,
@@ -790,10 +790,10 @@ async fn proxy_openai_post(
     let timestamp = Utc::now();
     let request_body = payload.clone();
 
-    let agent = select_available_node(state).await?;
-    let node_id = agent.id;
-    let agent_machine_name = agent.machine_name.clone();
-    let agent_ip = agent.ip_address;
+    let node = select_available_node(state).await?;
+    let node_id = node.id;
+    let node_machine_name = node.machine_name.clone();
+    let node_ip = node.ip_address;
 
     state
         .load_manager
@@ -802,10 +802,10 @@ async fn proxy_openai_post(
         .map_err(AppError::from)?;
 
     let client = state.http_client.clone();
-    let agent_api_port = agent.runtime_port + 1;
+    let node_api_port = node.runtime_port + 1;
     let runtime_url = format!(
         "http://{}:{}{}",
-        agent.ip_address, agent_api_port, target_path
+        node.ip_address, node_api_port, target_path
     );
     let start = Instant::now();
 
@@ -827,8 +827,8 @@ async fn proxy_openai_post(
                     request_type,
                     model: model.clone(),
                     node_id,
-                    agent_machine_name: agent_machine_name.clone(),
-                    agent_ip,
+                    node_machine_name: node_machine_name.clone(),
+                    node_ip,
                     client_ip: None,
                     request_body: request_body.clone(),
                     response_body: None,
@@ -861,8 +861,8 @@ async fn proxy_openai_post(
                 request_type,
                 model: model.clone(),
                 node_id,
-                agent_machine_name: agent_machine_name.clone(),
-                agent_ip,
+                node_machine_name: node_machine_name.clone(),
+                node_ip,
                 client_ip: None,
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
@@ -900,8 +900,8 @@ async fn proxy_openai_post(
                 request_type,
                 model: model.clone(),
                 node_id,
-                agent_machine_name: agent_machine_name.clone(),
-                agent_ip,
+                node_machine_name: node_machine_name.clone(),
+                node_ip,
                 client_ip: None,
                 request_body: request_body.clone(),
                 response_body: None,
@@ -940,8 +940,8 @@ async fn proxy_openai_post(
                 request_type,
                 model,
                 node_id,
-                agent_machine_name,
-                agent_ip,
+                node_machine_name,
+                node_ip,
                 client_ip: None,
                 request_body,
                 response_body: None,
@@ -973,8 +973,8 @@ async fn proxy_openai_post(
                     request_type,
                     model,
                     node_id,
-                    agent_machine_name,
-                    agent_ip,
+                    node_machine_name,
+                    node_ip,
                     client_ip: None,
                     request_body,
                     response_body: Some(body.clone()),
@@ -1001,8 +1001,8 @@ async fn proxy_openai_post(
                     request_type,
                     model,
                     node_id,
-                    agent_machine_name,
-                    agent_ip,
+                    node_machine_name,
+                    node_ip,
                     client_ip: None,
                     request_body,
                     response_body: None,
@@ -1021,8 +1021,8 @@ async fn proxy_openai_post(
 
 #[allow(dead_code)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
-    let agent = select_available_node(state).await?;
-    let node_id = agent.id;
+    let node = select_available_node(state).await?;
+    let node_id = node.id;
 
     state
         .load_manager
@@ -1033,7 +1033,7 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
     let client = state.http_client.clone();
     let runtime_url = format!(
         "http://{}:{}{}",
-        agent.ip_address, agent.runtime_port, target_path
+        node.ip_address, node.runtime_port, target_path
     );
     let start = Instant::now();
 
@@ -1468,7 +1468,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        // coordinator state with temp data dir
+        // router state with temp data dir
         std::env::set_var("OPENAI_API_KEY", "testkey");
         std::env::set_var("OPENAI_BASE_URL", server.uri());
         let (state, dir) = create_state_with_tempdir().await;
@@ -1541,10 +1541,8 @@ mod tests {
         let err = res.unwrap_err();
         let msg = format!("{:?}", err);
         assert!(
-            msg.contains("NoAgentsAvailable")
-                || msg.contains("No available agents")
-                || msg.contains("No agents available"),
-            "expected local-path agent error, got {}",
+            msg.contains("NoNodesAvailable") || msg.contains("No available nodes"),
+            "expected local-path node error, got {}",
             msg
         );
     }

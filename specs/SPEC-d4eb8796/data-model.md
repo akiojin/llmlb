@@ -121,7 +121,7 @@ pub struct ApiKeyWithPlaintext {
 
 ### 3. NodeToken (ノードトークン)
 
-**説明**: エージェントがコーディネーターと安全に通信するための認証情報
+**説明**: ノードがルーターと安全に通信するための認証情報
 
 **フィールド**:
 | フィールド | 型 | 制約 | 説明 |
@@ -153,20 +153,20 @@ pub struct NodeTokenWithPlaintext {
 
 **状態遷移**:
 ```
-[エージェント登録] --トークン発行--> [アクティブ]
-[アクティブ] --エージェント削除--> [削除済み]
+[ノード登録] --トークン発行--> [アクティブ]
+[アクティブ] --ノード削除--> [削除済み]
 ```
 
 **ビジネスルール**:
-- 1エージェントにつき1トークン（1:1関係）
-- エージェント削除時、トークンも自動削除（CASCADE）
-- トークン再発行は不可（エージェント再登録が必要）
+- 1ノードにつき1トークン（1:1関係）
+- ノード削除時、トークンも自動削除（CASCADE）
+- トークン再発行は不可（ノード再登録が必要）
 
 ---
 
-### 4. Agent (既存エンティティ、変更)
+### 4. Node (既存エンティティ、変更)
 
-**説明**: 登録されたエージェント（既存のエンティティに認証トークンのリレーションを追加）
+**説明**: 登録されたノード（既存のエンティティに認証トークンのリレーションを追加）
 
 **追加されるリレーションシップ**:
 - `Node.id` ← `NodeToken.node_id` (1:1)
@@ -182,14 +182,14 @@ User (1) --< (N) ApiKey
   - 1人のユーザーは複数のAPIキーを発行可能
 
 Node (1) --- (1) NodeToken
-  - 1エージェントにつき1トークン
+  - 1ノードにつき1トークン
 ```
 
 ---
 
 ## SQLiteスキーマ
 
-**マイグレーションファイル**: `coordinator/migrations/001_auth_init.sql`
+**マイグレーションファイル**: `router/migrations/001_auth_init.sql`
 
 ```sql
 -- ユーザーテーブル
@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX idx_api_keys_created_by ON api_keys(created_by);
 
--- エージェントトークンテーブル
+-- ノードトークンテーブル
 CREATE TABLE IF NOT EXISTS node_tokens (
     node_id TEXT PRIMARY KEY,
     token_hash TEXT UNIQUE NOT NULL,
@@ -227,8 +227,8 @@ CREATE TABLE IF NOT EXISTS node_tokens (
 
 CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 
--- エージェントテーブル（既存）
--- 既存のagentsテーブルはそのまま維持
+-- ノードテーブル（既存）
+-- 既存のnodesテーブルはそのまま維持
 -- マイグレーションで外部キー制約のみ追加
 ```
 
@@ -265,7 +265,7 @@ CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 
 1. **パスワード**: bcrypt（cost=12）で不可逆ハッシュ化
 2. **APIキー**: SHA-256で不可逆ハッシュ化
-3. **エージェントトークン**: SHA-256で不可逆ハッシュ化
+3. **ノードトークン**: SHA-256で不可逆ハッシュ化
 4. **平文の保存禁止**: すべての認証情報はハッシュ化してDB保存
 5. **インデックス**: ハッシュ値にインデックスを作成（検索高速化）
 
@@ -274,7 +274,7 @@ CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 ## JSONからSQLiteへのマイグレーション
 
 **既存データ**:
-- `~/.llm-router/agents.json` → `agents` テーブル
+- `~/.llm-router/nodes.json` → `nodes` テーブル
 - `~/.llm-router/request_history.json` → `request_history` テーブル（新規作成）
 
 **マイグレーション手順**:

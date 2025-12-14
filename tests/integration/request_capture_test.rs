@@ -5,7 +5,7 @@
 /// T011: プロキシキャプチャ機能の integration test
 #[tokio::test]
 async fn test_chat_request_is_captured() {
-    // TODO: テストサーバー起動（coordinator + mock agent）
+    // TODO: テストサーバー起動（router + mock node）
     // TODO: POST /v1/chat/completions にリクエスト送信
     // TODO: request_history.json にレコードが保存されることを確認
     // TODO: レスポンスが正しくクライアントに返されることを確認
@@ -32,7 +32,7 @@ async fn test_captured_record_contents() {
     //   - timestamp: リクエスト受信時刻
     //   - request_type: Chat
     //   - model: リクエストと一致
-    //   - agent_id: 処理したエージェントのID
+    //   - node_id: 処理したノードのID
     //   - request_body: リクエスト本文
     //   - response_body: レスポンス本文
     //   - duration_ms: 処理時間
@@ -45,7 +45,7 @@ async fn test_captured_record_contents() {
 /// T012: エラーリクエストのキャプチャ integration test
 #[tokio::test]
 async fn test_error_request_is_captured() {
-    // TODO: エージェントがエラーを返すシナリオを作成
+    // TODO: ノードがエラーを返すシナリオを作成
     // TODO: リクエスト送信
     // TODO: エラー情報付きで保存されることを確認
     // TODO: status: Error { message } の検証
@@ -54,10 +54,10 @@ async fn test_error_request_is_captured() {
     assert!(false, "T012: Error request capture not implemented yet");
 }
 
-/// T012: エージェント接続失敗のキャプチャ
+/// T012: ノード接続失敗のキャプチャ
 #[tokio::test]
-async fn test_agent_connection_failure_capture() {
-    // TODO: エージェントがダウンしているシナリオ
+async fn test_node_connection_failure_capture() {
+    // TODO: ノードがダウンしているシナリオ
     // TODO: リクエスト送信
     // TODO: 接続エラーが記録されることを確認
 

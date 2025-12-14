@@ -244,7 +244,7 @@ impl NodeRegistry {
         nodes
             .get(&node_id)
             .cloned()
-            .ok_or(RouterError::AgentNotFound(node_id))
+            .ok_or(RouterError::NodeNotFound(node_id))
     }
 
     /// 全ノードを取得
@@ -272,7 +272,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             let now = Utc::now();
             node.last_seen = now;
 
@@ -337,7 +337,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             if !node.loaded_models.contains(&model) {
                 node.loaded_models.push(model);
                 node.loaded_models.sort();
@@ -363,7 +363,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             node.status = NodeStatus::Offline;
             node.online_since = None;
             node.clone()
@@ -396,7 +396,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
 
             if let Some(custom_name) = settings.custom_name {
                 node.custom_name = custom_name.and_then(|name| {
@@ -443,7 +443,7 @@ impl NodeRegistry {
         };
 
         if existed.is_none() {
-            return Err(RouterError::AgentNotFound(node_id));
+            return Err(RouterError::NodeNotFound(node_id));
         }
 
         if self.storage_enabled {

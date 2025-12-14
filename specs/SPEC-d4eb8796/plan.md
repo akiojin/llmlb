@@ -1,4 +1,4 @@
-# 実装計画: コーディネーター認証・アクセス制御
+# 実装計画: ルーター認証・アクセス制御
 
 **機能ID**: `SPEC-d4eb8796` | **日付**: 2025-11-17 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-d4eb8796/spec.md`の機能仕様
@@ -18,7 +18,7 @@
 
 ## 概要
 
-コーディネーターに認証・アクセス制御機能を追加し、管理APIとAI機能APIを保護します。
+ルーターに認証・アクセス制御機能を追加し、管理APIとAI機能APIを保護します。
 主要な要件：
 
 - 初回起動時の管理者アカウント作成（対話式または環境変数）
@@ -46,7 +46,7 @@
 - シリアライゼーション: serde 1.0, serde_json 1.0
 
 **ストレージ**: SQLite (既存のJSONファイルベースから移行)
-- データベースファイル: `~/.llm-router/coordinator.db`
+- データベースファイル: `~/.llm-router/router.db`
 - 自動マイグレーション機能（初回起動時にJSONからインポート）
 
 **テスト**: cargo test
@@ -56,7 +56,7 @@
 
 **対象プラットフォーム**: Windows, macOS, Linux（クロスプラットフォーム対応必須）
 
-**プロジェクトタイプ**: single (Rustワークスペース: common, coordinator, agent)
+**プロジェクトタイプ**: single (Rustワークスペース: common, router, node)
 
 **パフォーマンス目標**:
 - ログインレスポンス: < 500ms
@@ -64,34 +64,34 @@
 - JWT検証: < 5ms
 
 **制約**:
-- 既存のエージェント登録APIの後方互換性を維持
+- 既存のノード登録APIの後方互換性を維持
 - 認証無効化モード対応（環境変数で切り替え）
 - JSONファイルからSQLiteへの自動マイグレーション（データ損失なし）
 
 **スケール/スコープ**:
 - 想定ユーザー数: 1〜10人（小規模チーム運用）
 - APIキー: 10〜50個
-- エージェント: 5〜20台
+- ノード: 5〜20台
 
 ## 憲章チェック
 
 *ゲート: Phase 0 research前に合格必須。Phase 1 design後に再チェック。*
 
 **シンプルさ**:
-- プロジェクト数: 3 (coordinator, agent, common) ✓
+- プロジェクト数: 3 (router, node, common) ✓
 - フレームワークを直接使用? **はい** (axum/sqlxを直接使用、ラッパーなし) ✓
 - 単一データモデル? **はい** (DTO不使用、serde経由でシリアライゼーション) ✓
 - パターン回避? **はい** (Repository/UoWパターン不使用、直接的なDB操作) ✓
 
 **アーキテクチャ**:
-- すべての機能をライブラリとして? **はい** (coordinator/src/lib.rs経由で公開)
+- すべての機能をライブラリとして? **はい** (router/src/lib.rs経由で公開)
 - ライブラリリスト:
-  - `coordinator` - サーバー本体（認証、API、ルーティング）
-  - `agent` - エージェント実行ファイル
+  - `router` - サーバー本体（認証、API、ルーティング）
+  - `node` - ノード実行ファイル
   - `common` - 共有型定義・エラー定義
 - ライブラリごとのCLI:
-  - coordinator: `--help`, `--version`, `--port`, `--host`
-  - agent: `--help`, `--version`, `--coordinator-url`
+  - router: `--help`, `--version`, `--port`, `--host`
+  - node: `--help`, `--version`, `--router-url`
 - ライブラリドキュメント: README.md + CLAUDE.md (llms.txt形式を検討) ✓
 
 **テスト (妥協不可)**:
@@ -135,7 +135,7 @@ specs/SPEC-d4eb8796/
 ### ソースコード (リポジトリルート)
 
 ```
-coordinator/
+router/
 ├── src/
 │   ├── auth/           # 新規: 認証モジュール
 │   │   ├── mod.rs
@@ -173,7 +173,7 @@ coordinator/
         ├── password_test.rs
         └── jwt_test.rs
 
-agent/
+node/
 └── src/
     └── main.rs         # 変更: トークン保存・送信機能
 
@@ -242,11 +242,11 @@ frontendは静的ファイル（バニラJS）のため分離不要
   - expires_at: Option<DateTime<Utc>>
 
 - **NodeToken**: ノード通信用トークン
-  - agent_id: UUID (PRIMARY KEY, FOREIGN KEY → Agent.id)
+  - node_id: UUID (PRIMARY KEY, FOREIGN KEY → Node.id)
   - token_hash: String (UNIQUE, NOT NULL)
   - created_at: DateTime<Utc>
 
-- **Agent** (既存、変更):
+- **Node** (既存、変更):
   - トークンリレーションシップ追加
 
 **検証ルール:**
@@ -312,8 +312,8 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - 認証無効化モードでの全API許可
 - 認証有効化モードでの認証要求
 
-**ユーザーストーリー5** → `integration/agent_token_test.rs`:
-- エージェント登録時のトークン発行
+**ユーザーストーリー5** → `integration/node_token_test.rs`:
+- ノード登録時のトークン発行
 - トークン付きヘルスチェック成功
 - トークンなしヘルスチェック拒否
 
@@ -327,10 +327,10 @@ frontendは静的ファイル（バニラJS）のため分離不要
 ### 環境変数で管理者作成
 export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=secure123
-cargo run --bin coordinator
+cargo run --bin router
 
 ### 対話式で管理者作成
-cargo run --bin coordinator
+cargo run --bin router
 > ユーザー名: admin
 > パスワード: ********
 
@@ -357,7 +357,7 @@ curl -H "Authorization: Bearer sk_xxxxx" \
 ## 認証無効化（プライベートネットワーク用）
 
 export AUTH_DISABLED=true
-cargo run --bin coordinator
+cargo run --bin router
 ```
 
 **出力**: data-model.md, contracts/*.yaml, 失敗する契約テスト, quickstart.md
@@ -371,7 +371,7 @@ cargo run --bin coordinator
 **Phase 1設計ドキュメントからタスクを生成:**
 
 1. **Setup タスク** (並列実行可能 [P]):
-   - [ ] SQLiteスキーマファイル作成 `coordinator/migrations/001_init.sql` [P]
+   - [ ] SQLiteスキーマファイル作成 `router/migrations/001_init.sql` [P]
    - [ ] Cargo.toml に依存関係追加（bcrypt, jsonwebtoken, sqlx） [P]
    - [ ] 環境変数設定（AUTH_DISABLED, JWT_SECRET等） [P]
 
@@ -384,61 +384,61 @@ cargo run --bin coordinator
 3. **Data Model タスク** (並列実行可能 [P]):
    - [ ] User構造体実装（`common/src/auth.rs`） [P]
    - [ ] ApiKey構造体実装（`common/src/auth.rs`） [P]
-   - [ ] AgentToken構造体実装（`common/src/auth.rs`） [P]
+   - [ ] NodeToken構造体実装（`common/src/auth.rs`） [P]
    - [ ] エラー型追加（`common/src/error.rs`）
 
 4. **Database Migration タスク** (TDD: Integration Test):
    - [ ] マイグレーションテスト作成（`tests/integration/migration_test.rs`） → **RED**
-   - [ ] SQLiteマイグレーション実装（`coordinator/src/db/migrations.rs`） → **GREEN**
+   - [ ] SQLiteマイグレーション実装（`router/src/db/migrations.rs`） → **GREEN**
    - [ ] JSONインポート機能実装（既存データ移行）→ **GREEN**
 
 5. **Authentication Core タスク** (TDD: Unit Test):
    - [ ] パスワードハッシュ化テスト作成（`tests/unit/password_test.rs`） → **RED**
-   - [ ] パスワードハッシュ化実装（`coordinator/src/auth/password.rs`） → **GREEN**
+   - [ ] パスワードハッシュ化実装（`router/src/auth/password.rs`） → **GREEN**
    - [ ] JWT生成・検証テスト作成（`tests/unit/jwt_test.rs`） → **RED**
-   - [ ] JWT生成・検証実装（`coordinator/src/auth/jwt.rs`） → **GREEN**
+   - [ ] JWT生成・検証実装（`router/src/auth/jwt.rs`） → **GREEN**
 
 6. **Middleware タスク** (TDD: Integration Test):
    - [ ] JWT認証ミドルウェアテスト作成 → **RED**
-   - [ ] JWT認証ミドルウェア実装（`coordinator/src/auth/middleware.rs`） → **GREEN**
+   - [ ] JWT認証ミドルウェア実装（`router/src/auth/middleware.rs`） → **GREEN**
    - [ ] APIキー認証ミドルウェアテスト作成 → **RED**
    - [ ] APIキー認証ミドルウェア実装 → **GREEN**
    - [ ] ノードトークン認証ミドルウェアテスト作成 → **RED**
    - [ ] ノードトークン認証ミドルウェア実装 → **GREEN**
 
 7. **API Implementation タスク** (TDD: Contract Test → GREEN):
-   - [ ] 認証APIエンドポイント実装（`coordinator/src/api/auth.rs`） → 契約テスト **GREEN**
-   - [ ] ユーザー管理APIエンドポイント実装（`coordinator/src/api/users.rs`） → 契約テスト **GREEN**
-   - [ ] APIキー管理APIエンドポイント実装（`coordinator/src/api/api_keys.rs`） → 契約テスト **GREEN**
-   - [ ] エージェント登録API修正（agent_token追加） → 既存テスト **GREEN**
+   - [ ] 認証APIエンドポイント実装（`router/src/api/auth.rs`） → 契約テスト **GREEN**
+   - [ ] ユーザー管理APIエンドポイント実装（`router/src/api/users.rs`） → 契約テスト **GREEN**
+   - [ ] APIキー管理APIエンドポイント実装（`router/src/api/api_keys.rs`） → 契約テスト **GREEN**
+   - [ ] ノード登録API修正（node_token追加） → 既存テスト **GREEN**
 
 8. **Database Operations タスク**:
-   - [ ] ユーザーDB操作実装（`coordinator/src/db/users.rs`）
-   - [ ] APIキーDB操作実装（`coordinator/src/db/api_keys.rs`）
+   - [ ] ユーザーDB操作実装（`router/src/db/users.rs`）
+   - [ ] APIキーDB操作実装（`router/src/db/api_keys.rs`）
    - [ ] ノードトークンDB操作実装（`router/src/db/node_tokens.rs`）
 
 9. **Bootstrap タスク** (TDD: Integration Test):
    - [ ] 初回起動時管理者作成テスト → **RED**
-   - [ ] 初回起動時管理者作成実装（`coordinator/src/auth/bootstrap.rs`） → **GREEN**
+   - [ ] 初回起動時管理者作成実装（`router/src/auth/bootstrap.rs`） → **GREEN**
 
 10. **Router Integration タスク**:
-    - [ ] 認証ミドルウェアをルーターに適用（`coordinator/src/api/mod.rs`）
+    - [ ] 認証ミドルウェアをルーターに適用（`router/src/api/mod.rs`）
     - [ ] 認証無効化モード実装（環境変数チェック）
 
 11. **Frontend タスク** (並列実行可能 [P]):
-    - [ ] ログイン画面実装（`coordinator/src/web/static/login.html`） [P]
-    - [ ] APIキー管理画面実装（`coordinator/src/web/static/api-keys.js`） [P]
-    - [ ] ユーザー管理画面実装（`coordinator/src/web/static/users.js`） [P]
+    - [ ] ログイン画面実装（`router/src/web/static/login.html`） [P]
+    - [ ] APIキー管理画面実装（`router/src/web/static/api-keys.js`） [P]
+    - [ ] ユーザー管理画面実装（`router/src/web/static/users.js`） [P]
     - [ ] 認証状態管理実装（localStorage、JWT送信）
 
-12. **Agent Integration タスク**:
-    - [ ] エージェント側トークン保存実装（`agent/src/main.rs`）
-    - [ ] エージェント側トークン送信実装（ヘルスチェック、メトリクス）
+12. **Node Integration タスク**:
+    - [ ] ノード側トークン保存実装（`node/src/main.rs`）
+    - [ ] ノード側トークン送信実装（ヘルスチェック、メトリクス）
 
 13. **E2E Test タスク**:
     - [ ] 認証フロー E2E テスト（ログイン→API呼び出し→ログアウト）
     - [ ] APIキーフロー E2E テスト（発行→使用→削除）
-    - [ ] エージェントフロー E2E テスト（登録→トークン使用）
+    - [ ] ノードフロー E2E テスト（登録→トークン使用）
 
 14. **Documentation タスク**:
     - [ ] README.md更新（認証機能追加）
@@ -460,7 +460,7 @@ cargo run --bin coordinator
 9. Bootstrap
 10. Router Integration
 11. Frontend (並列)
-12. Agent Integration
+12. Node Integration
 13. E2E Tests
 14. Documentation
 

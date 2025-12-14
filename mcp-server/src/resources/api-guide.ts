@@ -297,19 +297,7 @@ curl -X POST ${routerUrl}/api/models/register \\
 \`\`\`
 
 If \`filename\` is omitted, the router tries to find a GGUF file in the repo. If none exists, it will queue a conversion task.
-
-## Pull Model (Cache GGUF to Router Storage)
-
-**Endpoint**: POST ${routerUrl}/api/models/pull
-
-\`\`\`bash
-curl -X POST ${routerUrl}/api/models/pull \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "repo": "TheBloke/Llama-2-7B-GGUF",
-    "filename": "llama-2-7b.Q4_K_M.gguf"
-  }'
-\`\`\`
+Track progress via **Convert Tasks** (\`GET ${routerUrl}/api/models/convert\`). When completed, the model becomes available in \`GET ${routerUrl}/v1/models\`.
 
 ## Delete Model
 

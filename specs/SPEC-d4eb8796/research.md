@@ -20,12 +20,12 @@
 
 **実装方針**:
 ```rust
-// coordinator/migrations/001_init.sql
+// router/migrations/001_init.sql
 CREATE TABLE IF NOT EXISTS users (...);
 CREATE TABLE IF NOT EXISTS api_keys (...);
 CREATE TABLE IF NOT EXISTS node_tokens (...);
 
-// coordinator/src/db/mod.rs
+// router/src/db/mod.rs
 pub async fn init_database() -> Result<SqlitePool> {
     let pool = SqlitePool::connect(&db_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -34,10 +34,10 @@ pub async fn init_database() -> Result<SqlitePool> {
 ```
 
 **JSONインポート戦略**:
-1. 起動時に `~/.llm-router/agents.json` の存在確認
+1. 起動時に `~/.llm-router/nodes.json` の存在確認
 2. 存在する場合、SQLiteにデータが未移行かチェック
 3. トランザクション内でJSONをパース→SQLiteに挿入
-4. 成功後、`agents.json.migrated` にリネーム（バックアップ）
+4. 成功後、`nodes.json.migrated` にリネーム（バックアップ）
 
 ## 2. bcryptベストプラクティス
 
@@ -188,7 +188,7 @@ Router::new()
 **ミドルウェア階層**:
 1. **JWT認証**: `/api/nodes`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
 2. **APIキー認証**: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-3. **エージェントトークン認証**: `/api/health`
+3. **ノードトークン認証**: `/api/health`
 
 **認証無効化モード**:
 ```rust
@@ -210,7 +210,7 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 - 標準ライブラリ使用（追加依存なし）
 
 **検討した代替案**:
-- **JWT**: エージェント通信には過剰（有効期限不要）
+- **JWT**: ノード通信には過剰（有効期限不要）
 - **HMAC**: 対称鍵管理が煩雑
 - **bcrypt**: 遅すぎる（毎リクエストで検証）
 

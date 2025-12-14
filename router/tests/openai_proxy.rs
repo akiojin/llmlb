@@ -30,11 +30,11 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         http_client: reqwest::Client::new(),
     };
 
-    // 登録済みエージェントを追加
+    // 登録済みノードを追加
     state
         .registry
         .register(llm_router_common::protocol::RegisterRequest {
-            machine_name: "mock-agent".into(),
+            machine_name: "mock-node".into(),
             ip_address: mock.address().ip(),
             runtime_version: "0.0.0".into(),
             // APIポート=runtime_port+1 となる仕様のため、実際のモックポートに合わせて -1 する
@@ -51,7 +51,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .await
         .unwrap();
 
-    // エージェントをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
+    // ノードをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
     let node_id = state.registry.list().await[0].id;
 
     // レジストリにロード済みモデル・初期化解除を反映

@@ -12,7 +12,6 @@
   - モデル取得: `GET /api/models/blob/:model_name`
 - ルーターはモデルの取得・登録・一覧化を担う（配布は行わない）
   - `GET /api/models/available`
-  - `POST /api/models/pull`
   - `POST /api/models/register`
   - `GET /api/models/registered`
 

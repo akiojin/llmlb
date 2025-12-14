@@ -15,23 +15,23 @@
 ```bash
 export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=secure123
-cargo run --bin coordinator
+cargo run --bin router
 ```
 
 または、起動スクリプトに記述：
 
 ```bash
-# start-coordinator.sh
+# start-router.sh
 #!/bin/bash
 export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=your_secure_password_here
-./coordinator
+./router
 ```
 
 ### 方法B: 対話式で管理者作成
 
 ```bash
-cargo run --bin coordinator
+cargo run --bin router
 ```
 
 初回起動時にプロンプトが表示されます：
@@ -41,7 +41,7 @@ cargo run --bin coordinator
 ユーザー名: admin
 パスワード: ********
 [INFO] 管理者ユーザー 'admin' を作成しました。
-[INFO] コーディネーターを起動しています...
+[INFO] ルーターを起動しています...
 [INFO] サーバーがポート 8080 で起動しました
 ```
 
@@ -273,7 +273,7 @@ unset AUTH_DISABLED
 # または
 export AUTH_DISABLED=false
 
-# コーディネーター再起動
+# ルーター再起動
 cargo run -p llm-router
 ```
 
@@ -310,13 +310,13 @@ curl -X PUT http://localhost:8080/api/users/{user_id} \
 
 ```bash
 # データベースをバックアップ
-cp ~/.llm-router/coordinator.db ~/.llm-router/coordinator.db.backup
+cp ~/.llm-router/router.db ~/.llm-router/router.db.backup
 
 # データベースを削除して再初期化
-rm ~/.llm-router/coordinator.db
+rm ~/.llm-router/router.db
 
-# コーディネーター再起動（新しい管理者作成）
-cargo run --bin coordinator
+# ルーター再起動（新しい管理者作成）
+cargo run --bin router
 ```
 
 ## 9. セキュリティベストプラクティス
@@ -342,5 +342,5 @@ cargo run --bin coordinator
 - [ ] APIキー発行が成功
 - [ ] 外部アプリケーションからAPIアクセスが成功
 - [ ] 無効なAPIキーでのアクセスが拒否される
-- [ ] エージェント登録とトークン使用が成功
+- [ ] ノード登録とトークン使用が成功
 - [ ] 認証無効化モードが動作する

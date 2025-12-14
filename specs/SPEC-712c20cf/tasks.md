@@ -29,10 +29,10 @@
 
 ## 本日のToDo (2025-10-31)
 
-- [x] **T601** `coordinator/src/api/mod.rs` のルーター結線スモークテストを修正し、静的配信・API経路の確認を通す
-- [x] **T602** `cargo test -p llm-router-coordinator` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
+- [x] **T601** `router/src/api/mod.rs` のルーター結線スモークテストを修正し、静的配信・API経路の確認を通す
+- [x] **T602** `cargo test -p llm-router-router` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
 - [x] **T603** 本ファイルを含む関連Specドキュメントのステータス更新と変更点のコミット準備
-- [x] **T604** `coordinator/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
+- [x] **T604** `router/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
 - [x] **T605** ダッシュボードSpecのタスク進捗（ページネーション等）を現状に合わせて更新
 - [x] **T606** ダッシュボードのDOM差分更新とポーリング処理の最適化（Phase 6 T002 着手）
 - [x] **T607** `GET /api/dashboard/overview` を追加し、ダッシュボードの3リクエストを集約する
@@ -51,7 +51,7 @@
 - **説明**: Axumで静的ファイルを配信
 - **詳細**:
   - `tower-http`の`ServeDir`ミドルウェア使用
-  - `coordinator/src/web/static/`ディレクトリ作成
+  - `router/src/web/static/`ディレクトリ作成
 - **完了条件**: `/dashboard`で静的HTMLが表示される
 - **推定時間**: 30分
 - **ステータス**: ✅ 完了
@@ -80,7 +80,7 @@
 ### U004: 手動リフレッシュ機能 ✅
 - **説明**: リフレッシュボタンでデータ更新
 - **詳細**:
-  - `fetchAgents()`関数実装
+  - `fetchNodes()`関数実装
   - ボタンクリックでデータ取得＆UI更新
 - **完了条件**: ボタンクリックでデータが更新される
 - **推定時間**: 30分
@@ -91,13 +91,13 @@
 ## Phase 2: バックエンドAPI実装 (TDD) 📋 (推定2時間)
 
 ### B001: ダッシュボードモジュール作成 ✅
-- **説明**: `coordinator/src/api/dashboard.rs`作成
+- **説明**: `router/src/api/dashboard.rs`作成
 - **完了条件**: コンパイル成功
 - **推定時間**: 5分
 - **ステータス**: ✅ 完了
 
 ### B002: ノード状態APIテスト作成 (RED) ✅
-- **説明**: test_get_agents_status作成
+- **説明**: test_get_nodes_status作成
 - **完了条件**: テスト失敗を確認
 - **推定時間**: 10分
 - **ステータス**: ✅ 完了
@@ -145,7 +145,7 @@
 - **説明**: 5秒ごとにAPIを呼び出し
 - **詳細**:
   - `setInterval`で定期実行
-  - `fetchAgents()`と`fetchStats()`を呼び出し
+  - `fetchNodes()`と`fetchStats()`を呼び出し
 - **完了条件**: 自動的にデータが更新される
 - **推定時間**: 30分
 - **ステータス**: ✅ 完了
@@ -153,7 +153,7 @@
 ### R002: UI更新ロジック実装 ✅
 - **説明**: API レスポンスからDOMを更新
 - **詳細**:
-  - `updateAgentTable(agents)`関数
+  - `updateNodeTable(nodes)`関数
   - `updateStats(stats)`関数
   - ステータス変更時のアニメーション
 - **完了条件**: UIがリアルタイムで更新される
@@ -253,7 +253,7 @@
 - **説明**: `PUT /api/nodes/:node_id/settings` 実装
 - **詳細**:
   - リクエスト: custom_name, tags, notes
-  - Agentモデルに設定フィールド追加
+  - Nodeモデルに設定フィールド追加
   - JSONストレージに永続化
 - **完了条件**: 設定が保存・取得できる
 - **推定時間**: 1時間
@@ -324,7 +324,7 @@
 - **詳細**: 100ノード以上の場合にページング
 - **完了条件**: ページ切り替えが動作する
 - **推定時間**: 30分
-- **ステータス**: ✅ 完了（`coordinator/src/web/static/app.js` で `pageSize=50` のページングを実装）
+- **ステータス**: ✅ 完了（`router/src/web/static/app.js` で `pageSize=50` のページングを実装）
 
 ---
 
@@ -338,7 +338,7 @@
   - リアルタイム更新が動作する
 - **完了条件**: 全シナリオが成功
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`coordinator/tests/dashboard_smoke.rs` で主要シナリオを検証）
+- **ステータス**: ✅ 完了（`router/tests/dashboard_smoke.rs` で主要シナリオを検証）
 
 ### T002: パフォーマンス最適化 ✅
 - **説明**: 初回ロード時間とポーリングの最適化
@@ -370,7 +370,7 @@
   - `/api/nodes` に対する統合テストを追加し、2件が登録されることを確認
 - **完了条件**: テストがCIで成功し、仕様がTDDで守られている
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`coordinator/src/registry/mod.rs` 更新と `test_register_same_machine_different_port_creates_multiple_agents` を追加）
+- **ステータス**: ✅ 完了（`router/src/registry/mod.rs` 更新と `test_register_same_machine_different_port_creates_multiple_nodes` を追加）
 
 ---
 

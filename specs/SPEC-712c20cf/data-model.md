@@ -4,11 +4,11 @@
 
 ## 概要
 
-管理ダッシュボード機能で使用するデータモデル定義。既存の`Agent`型を再利用し、新規に`SystemStats`型を追加する。
+管理ダッシュボード機能で使用するデータモデル定義。既存の`Node`型を再利用し、新規に`SystemStats`型を追加する。
 
 ## エンティティ
 
-### 1. Agent (既存)
+### 1. Node (既存)
 
 **説明**: ノード情報を表す構造体（既存の`common/src/types.rs`で定義済み）
 
@@ -16,19 +16,19 @@
 
 **フィールド**:
 ```rust
-pub struct Agent {
+pub struct Node {
     pub id: Uuid,
     pub machine_name: String,
     pub ip_address: String,
     pub runtime_version: String,
-    pub status: AgentStatus,
+    pub status: NodeStatus,
     pub registered_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub online_since: Option<DateTime<Utc>>,
     pub system_info: SystemInfo,
 }
 
-pub enum AgentStatus {
+pub enum NodeStatus {
     Online,
     Offline,
 }
@@ -59,9 +59,9 @@ pub struct SystemInfo {
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SystemStats {
-    pub total_agents: usize,
-    pub online_agents: usize,
-    pub offline_agents: usize,
+    pub total_nodes: usize,
+    pub online_nodes: usize,
+    pub offline_nodes: usize,
     pub total_requests: u64,      // 将来拡張
     pub avg_response_time_ms: u32, // 将来拡張
     pub errors_count: u64,         // 将来拡張
@@ -69,29 +69,29 @@ pub struct SystemStats {
 ```
 
 **検証ルール**:
-- `total_agents >= 0`
-- `online_agents + offline_agents == total_agents`
+- `total_nodes >= 0`
+- `online_nodes + offline_nodes == total_nodes`
 - `total_requests >= 0`
 - `avg_response_time_ms >= 0`
 
 **計算方法**:
-- `total_agents`: AgentRegistryの全ノード数
-- `online_agents`: `status == AgentStatus::Online`の数
-- `offline_agents`: `status == AgentStatus::Offline`の数
+- `total_nodes`: NodeRegistryの全ノード数
+- `online_nodes`: `status == NodeStatus::Online`の数
+- `offline_nodes`: `status == NodeStatus::Offline`の数
 - `total_requests`, `avg_response_time_ms`, `errors_count`: 将来拡張（初期実装では0）
 
-### 3. AgentWithUptime (新規レスポンス型)
+### 3. NodeWithUptime (新規レスポンス型)
 
 **説明**: ダッシュボードAPI用のノード情報（稼働時間を含む）
 
 **フィールド**:
 ```rust
 #[derive(Debug, Serialize)]
-pub struct AgentWithUptime {
+pub struct NodeWithUptime {
     pub id: Uuid,
     pub machine_name: String,
     pub ip_address: String,
-    pub status: AgentStatus,
+    pub status: NodeStatus,
     pub runtime_version: String,
     pub registered_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
@@ -104,42 +104,42 @@ pub struct AgentWithUptime {
 
 **API変換**:
 ```rust
-impl From<Agent> for AgentWithUptime {
-    fn from(agent: Agent) -> Self {
+impl From<Node> for NodeWithUptime {
+    fn from(node: Node) -> Self {
         let now = Utc::now();
-        let uptime_seconds = if let Some(online_since) = agent.online_since {
-            let end = if matches!(agent.status, AgentStatus::Online) {
+        let uptime_seconds = if let Some(online_since) = node.online_since {
+            let end = if matches!(node.status, NodeStatus::Online) {
                 now
             } else {
-                agent.last_seen
+                node.last_seen
             };
             (end - online_since).num_seconds().max(0)
         } else {
             0
         };
         Self {
-            id: agent.id,
-            machine_name: agent.machine_name,
-            ip_address: agent.ip_address,
-            status: agent.status,
-            runtime_version: agent.runtime_version,
-            registered_at: agent.registered_at,
-            last_seen: agent.last_seen,
+            id: node.id,
+            machine_name: node.machine_name,
+            ip_address: node.ip_address,
+            status: node.status,
+            runtime_version: node.runtime_version,
+            registered_at: node.registered_at,
+            last_seen: node.last_seen,
             uptime_seconds,
         }
     }
 }
 ```
 
-### 4. AgentMetrics (将来拡張、SPEC-589f2df1依存)
+### 4. NodeMetrics (将来拡張、SPEC-589f2df1依存)
 
 **説明**: ノードのパフォーマンスメトリクス（将来拡張用）
 
 **フィールド**:
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AgentMetrics {
-    pub agent_id: Uuid,
+pub struct NodeMetrics {
+    pub node_id: Uuid,
     pub cpu_usage: f64,           // %
     pub memory_usage: f64,        // %
     pub active_requests: u32,     // 件
@@ -154,7 +154,7 @@ pub struct AgentMetrics {
 
 ```
 ┌─────────────────┐
-│     Agent       │ (既存)
+│     Node       │ (既存)
 │─────────────────│
 │ + id            │
 │ + machine_name  │
@@ -166,7 +166,7 @@ pub struct AgentMetrics {
          │ 1:1 変換
          ▼
 ┌──────────────────┐
-│ AgentWithUptime  │ (新規レスポンス型)
+│ NodeWithUptime  │ (新規レスポンス型)
 │──────────────────│
 │ + id             │
 │ + machine_name   │
@@ -183,7 +183,7 @@ pub struct AgentMetrics {
 └──────────────────┘
 
 ┌──────────────────┐
-│  AgentMetrics    │ (将来拡張)
+│  NodeMetrics    │ (将来拡張)
 │──────────────────│
 │ + node_id        │
 │ + cpu_usage      │
@@ -242,11 +242,11 @@ Client ◄───────────────────────�
 
 ### システム統計取得
 ```
-Client ─GET /api/dashboard/stats→ Coordinator
+Client ─GET /api/dashboard/stats→ Router
                                        │
-                                       │ AgentRegistry.list_all()
+                                       │ NodeRegistry.list_all()
                                        ▼
-                                   Vec<Agent>
+                                   Vec<Node>
                                        │
                                        │ count(), filter()
                                        ▼
@@ -261,19 +261,19 @@ Client ◄───────────────────────�
 
 ```
 common/src/
-├── types.rs              # Agent, AgentStatus, SystemInfo (既存)
-└── dashboard.rs          # AgentWithUptime, SystemStats (新規)
+├── types.rs              # Node, NodeStatus, SystemInfo (既存)
+└── dashboard.rs          # NodeWithUptime, SystemStats (新規)
 
-coordinator/src/
+router/src/
 ├── api/
 │   └── dashboard.rs      # ダッシュボードAPI実装
 └── registry/
-    └── mod.rs            # AgentRegistry (既存)
+    └── mod.rs            # NodeRegistry (既存)
 ```
 
 ## テストデータ
 
-### サンプルAgent
+### サンプルNode
 ```json
 {
   "id": "123e4567-e89b-12d3-a456-426614174000",

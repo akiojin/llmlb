@@ -8,22 +8,17 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use futures::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use crate::{
     convert::ConvertTask,
-    registry::models::{
-        generate_ollama_style_id, model_name_to_dir, router_model_path, router_models_dir,
-        ModelInfo, ModelSource,
-    },
+    registry::models::{generate_ollama_style_id, router_model_path, ModelInfo, ModelSource},
     registry::NodeRegistry,
     AppState,
 };
@@ -754,27 +749,6 @@ async fn fetch_hf_models(
     Ok((out, false))
 }
 
-/// HFからモデルをpullするリクエスト
-#[derive(Debug, Deserialize)]
-pub struct PullFromHfRequest {
-    /// HFリポジトリ名 (例: TheBloke/gpt-oss-GGUF)
-    pub repo: String,
-    /// ファイル名 (例: gpt-oss-20b.Q4_K_M.gguf)
-    pub filename: String,
-    /// オプションのchat_template
-    #[serde(default)]
-    pub chat_template: Option<String>,
-}
-
-/// HF pull APIのレスポンス
-#[derive(Debug, Serialize)]
-pub struct PullFromHfResponse {
-    /// 登録名（モデルID）
-    pub name: String,
-    /// ルーター側にキャッシュされたローカルパス
-    pub path: String,
-}
-
 /// モデル変換リクエスト
 #[derive(Debug, Deserialize)]
 pub struct ConvertModelRequest {
@@ -815,10 +789,10 @@ impl From<RouterError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match &self.0 {
-            RouterError::AgentNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            RouterError::NoAgentsAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            RouterError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
+            RouterError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             RouterError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
-            RouterError::AgentOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            RouterError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             RouterError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),
             RouterError::InsufficientStorage(_) => {
                 (StatusCode::INSUFFICIENT_STORAGE, self.0.to_string())
@@ -843,32 +817,28 @@ pub async fn get_available_models(
     State(state): State<AppState>,
     Query(query): Query<AvailableQuery>,
 ) -> Result<Json<AvailableModelsResponse>, AppError> {
-    // Default to built-in model list for backward compatibility.
-    // Hugging Face catalog is available via `source=hf` query parameter.
-    let source = query.source.clone().unwrap_or_else(|| "builtin".into());
-
-    if source == "hf" {
-        tracing::debug!("Fetching available models from Hugging Face");
-        let (models, cached) = fetch_hf_models(&state.http_client, &query).await?;
-        let models_view = models.into_iter().map(model_info_to_view).collect();
-        return Ok(Json(AvailableModelsResponse {
-            models: models_view,
-            source: "hf".to_string(),
-            cached: Some(cached),
-            pagination: Some(Pagination {
-                limit: query.limit.unwrap_or(20),
-                offset: query.offset.unwrap_or(0),
-                total: 0,
-            }),
-        }));
+    // Hugging Face catalog is the only supported source.
+    // Default to `hf` to keep the API ergonomic.
+    let source = query.source.clone().unwrap_or_else(|| "hf".into());
+    if source != "hf" {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Only source=hf is supported".into(),
+        ))
+        .into());
     }
 
-    tracing::debug!("Builtin models are disabled; returning empty list");
+    tracing::debug!("Fetching available models from Hugging Face");
+    let (models, cached) = fetch_hf_models(&state.http_client, &query).await?;
+    let models_view = models.into_iter().map(model_info_to_view).collect();
     Ok(Json(AvailableModelsResponse {
-        models: Vec::new(),
-        source: "builtin".to_string(),
-        cached: None,
-        pagination: None,
+        models: models_view,
+        source: "hf".to_string(),
+        cached: Some(cached),
+        pagination: Some(Pagination {
+            limit: query.limit.unwrap_or(20),
+            offset: query.offset.unwrap_or(0),
+            total: 0,
+        }),
     }))
 }
 
@@ -1089,74 +1059,6 @@ async fn register_model_internal(
     });
 
     Ok((StatusCode::CREATED, Json(response)))
-}
-
-/// POST /api/models/pull - HFからダウンロードしローカルキャッシュに保存して登録
-pub async fn pull_model_from_hf(
-    State(state): State<AppState>,
-    Json(req): Json<PullFromHfRequest>,
-) -> Result<(StatusCode, Json<PullFromHfResponse>), AppError> {
-    let name = generate_ollama_style_id(&req.filename, &req.repo);
-    validate_model_name(&name)?;
-
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let download_url = format!("{}/{}/resolve/main/{}", base_url, req.repo, req.filename);
-
-    let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
-    let dir = base.join(model_name_to_dir(&name));
-    let target = dir.join("model.gguf");
-
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|e| RouterError::Internal(e.to_string()))?;
-
-    // ダウンロード
-    let resp = state
-        .http_client
-        .get(&download_url)
-        .send()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-    if !resp.status().is_success() {
-        return Err(RouterError::Http(resp.status().to_string()).into());
-    }
-
-    let mut file = tokio::fs::File::create(&target)
-        .await
-        .map_err(|e| RouterError::Internal(e.to_string()))?;
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| RouterError::Http(e.to_string()))?;
-        file.write_all(&bytes)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-    }
-
-    let mut model = ModelInfo::new(name.clone(), 0, req.repo.clone(), 0, vec!["gguf".into()]);
-    model.download_url = Some(download_url.clone());
-    model.path = Some(target.to_string_lossy().to_string());
-    model.chat_template = req.chat_template.clone();
-    model.repo = Some(req.repo.clone());
-    model.filename = Some(req.filename.clone());
-    model.status = Some("cached".into());
-
-    if let Ok(meta) = tokio::fs::metadata(&target).await {
-        model.size = meta.len();
-    }
-
-    add_registered_model(model)?;
-    persist_registered_models().await;
-
-    Ok((
-        StatusCode::CREATED,
-        Json(PullFromHfResponse {
-            name,
-            path: target.to_string_lossy().to_string(),
-        }),
-    ))
 }
 
 /// DELETE /api/models/:model_name - 登録モデル削除

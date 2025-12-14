@@ -1096,7 +1096,9 @@ fn validation_error(message: impl Into<String>) -> AppError {
 mod tests {
     use super::{parse_cloud_model, proxy_openai_cloud_post, proxy_openai_post};
     use crate::{
-        balancer::LoadManager, db::request_history::RequestHistoryStorage, registry::NodeRegistry,
+        balancer::LoadManager,
+        db::{request_history::RequestHistoryStorage, test_utils::TEST_LOCK},
+        registry::NodeRegistry,
         AppState,
     };
     use axum::body::to_bytes;
@@ -1163,6 +1165,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn openai_prefix_requires_api_key() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("OPENAI_API_KEY").ok();
         std::env::remove_var("OPENAI_API_KEY");
@@ -1196,6 +1199,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn google_prefix_requires_api_key() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("GOOGLE_API_KEY").ok();
         std::env::remove_var("GOOGLE_API_KEY");
@@ -1229,6 +1233,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn anthropic_prefix_requires_api_key() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("ANTHROPIC_API_KEY").ok();
         std::env::remove_var("ANTHROPIC_API_KEY");
@@ -1262,6 +1267,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn openai_prefix_streams_via_cloud() {
+        let _guard = TEST_LOCK.lock().await;
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200)
             .insert_header("content-type", "text/event-stream")
@@ -1303,6 +1309,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn google_prefix_proxies_and_maps_response() {
+        let _guard = TEST_LOCK.lock().await;
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200).set_body_json(json!({
             "candidates": [{"content": {"parts": [{"text": "hello from gemini"}]}}]
@@ -1345,10 +1352,11 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn anthropic_prefix_proxies_and_maps_response() {
+        let _guard = TEST_LOCK.lock().await;
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200).set_body_json(json!({
-            "id": "abc123",
-            "model": "claude-3",
+                "id": "abc123",
+                "model": "claude-3",
             "content": [{"text": "anthropic says hi"}]
         }));
         Mock::given(method("POST"))
@@ -1389,6 +1397,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn cloud_request_is_recorded_in_history() {
+        let _guard = TEST_LOCK.lock().await;
         let temp_dir = tempdir().expect("temp dir");
         std::env::set_var("LLM_ROUTER_DATA_DIR", temp_dir.path());
 
@@ -1451,10 +1460,12 @@ mod tests {
         use std::net::SocketAddr;
         use tokio::net::TcpListener;
 
+        let _guard = TEST_LOCK.lock().await;
+
         // mock cloud provider
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-dashboard",
+                "id": "chatcmpl-dashboard",
             "model": "gpt-4o",
             "choices": [{
                 "index": 0,
@@ -1527,6 +1538,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn non_prefixed_model_stays_on_local_path() {
+        let _guard = TEST_LOCK.lock().await;
         let state = create_local_state().await;
         let payload = json!({"model":"gpt-oss-20b","messages":[]});
         let res = proxy_openai_post(
@@ -1549,6 +1561,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn streaming_allowed_for_cloud_prefix() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("OPENAI_API_KEY").ok();
         std::env::remove_var("OPENAI_API_KEY");

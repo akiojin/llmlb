@@ -61,6 +61,27 @@ set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/llama.cpp)
 add_subdirectory(third_party/nlohmann-json)
+
+# whisper.cpp for ASR (Speech-to-Text)
+option(BUILD_WITH_WHISPER "Build with whisper.cpp support for ASR" ON)
+if(BUILD_WITH_WHISPER)
+    set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/whisper.cpp)
+endif()
+
+# ONNX Runtime for TTS (Text-to-Speech)
+option(BUILD_WITH_ONNX "Build with ONNX Runtime support for TTS" OFF)
+if(BUILD_WITH_ONNX)
+    find_package(onnxruntime QUIET)
+    if(onnxruntime_FOUND)
+        add_definitions(-DUSE_ONNX_RUNTIME)
+        message(STATUS "ONNX Runtime found: ${onnxruntime_VERSION}")
+    else()
+        message(STATUS "ONNX Runtime not found, TTS support disabled")
+        set(BUILD_WITH_ONNX OFF)
+    endif()
+endif()
 include(FetchContent)
 FetchContent_Declare(
     spdlog
@@ -79,6 +100,14 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/ggml/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
 )
+
+# whisper.cpp include directories
+if(BUILD_WITH_WHISPER)
+    include_directories(
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp/include
+    )
+endif()
 
 # Find required packages
 find_package(Threads REQUIRED)
@@ -161,6 +190,17 @@ target_link_libraries(llm-node
     OpenSSL::Crypto
 )
 
+# whisper.cpp support
+if(BUILD_WITH_WHISPER)
+    target_link_libraries(llm-node whisper)
+    target_compile_definitions(llm-node PRIVATE USE_WHISPER)
+endif()
+
+# ONNX Runtime support
+if(BUILD_WITH_ONNX)
+    target_link_libraries(llm-node onnxruntime::onnxruntime)
+endif()
+
 # Static linking if requested
 if(STATIC_BUILD)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -207,6 +247,8 @@ message(STATUS "  Compiler:          ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "  CUDA support:      ${BUILD_WITH_CUDA}")
 message(STATUS "  Metal support:     ${BUILD_WITH_METAL}")
 message(STATUS "  ROCm support:      ${BUILD_WITH_ROCM}")
+message(STATUS "  Whisper support:   ${BUILD_WITH_WHISPER}")
+message(STATUS "  ONNX support:      ${BUILD_WITH_ONNX}")
 message(STATUS "  Static build:      ${STATIC_BUILD}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")
 message(STATUS "")

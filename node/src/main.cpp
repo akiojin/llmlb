@@ -24,6 +24,15 @@
 #include "runtime/state.h"
 #include "utils/logger.h"
 
+#ifdef USE_WHISPER
+#include "core/whisper_manager.h"
+#include "api/audio_endpoints.h"
+#endif
+
+#ifdef USE_ONNX_RUNTIME
+#include "core/onnx_tts_manager.h"
+#endif
+
 int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
     llm_node::g_running_flag.store(true);
 
@@ -87,6 +96,18 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
+#ifdef USE_WHISPER
+        // Initialize WhisperManager for ASR
+        llm_node::WhisperManager whisper_manager(models_dir);
+        spdlog::info("WhisperManager initialized for ASR support");
+#endif
+
+#ifdef USE_ONNX_RUNTIME
+        // Initialize OnnxTtsManager for TTS
+        llm_node::OnnxTtsManager tts_manager(models_dir);
+        spdlog::info("OnnxTtsManager initialized for TTS support");
+#endif
+
         // Set GPU layers based on detection (use all layers on GPU if available)
         if (!gpu_devices.empty()) {
             // Use 99 layers for GPU offloading (most models have fewer layers)
@@ -134,6 +155,19 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         node_endpoints.setRouterClient(router_client);
         node_endpoints.setModelSync(model_sync);
         llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
+
+#ifdef USE_WHISPER
+        // Register audio endpoints for ASR (and TTS if available)
+#ifdef USE_ONNX_RUNTIME
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager, cfg);
+        spdlog::info("Audio endpoints registered for ASR + TTS");
+#else
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, cfg);
+        spdlog::info("Audio endpoints registered for ASR");
+#endif
+        audio_endpoints.registerRoutes(server.getServer());
+#endif
+
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();
         server_started = true;

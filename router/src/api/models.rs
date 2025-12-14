@@ -812,7 +812,7 @@ impl IntoResponse for AppError {
     }
 }
 
-/// T027: GET /api/models/available - 利用可能なモデル一覧を取得
+/// T027: GET /v0/models/available - 利用可能なモデル一覧を取得
 pub async fn get_available_models(
     State(state): State<AppState>,
     Query(query): Query<AvailableQuery>,
@@ -890,7 +890,7 @@ async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> 
     warnings
 }
 
-/// POST /api/models/register - HF GGUFを対応モデルに登録
+/// POST /v0/models/register - HF GGUFを対応モデルに登録
 ///
 /// 新しい方針:
 /// - ユーザー指定リポジトリにGGUFがあれば使用
@@ -1061,7 +1061,7 @@ async fn register_model_internal(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
-/// DELETE /api/models/:model_name - 登録モデル削除
+/// DELETE /v0/models/:model_name - 登録モデル削除
 pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, AppError> {
     let removed = remove_registered_model(&model_name);
 
@@ -1108,7 +1108,7 @@ pub struct DiscoverGgufResponse {
     pub cached: bool,
 }
 
-/// POST /api/models/discover-gguf - GGUF版を検索
+/// POST /v0/models/discover-gguf - GGUF版を検索
 pub async fn discover_gguf_endpoint(
     State(state): State<AppState>,
     Json(req): Json<DiscoverGgufRequest>,
@@ -1122,7 +1122,7 @@ pub async fn discover_gguf_endpoint(
     }))
 }
 
-/// POST /api/models/convert - HFモデルをダウンロード＆（必要なら）変換するジョブを作成
+/// POST /v0/models/convert - HFモデルをダウンロード＆（必要なら）変換するジョブを作成
 pub async fn convert_model(
     State(state): State<AppState>,
     Json(req): Json<ConvertModelRequest>,
@@ -1150,7 +1150,7 @@ pub async fn convert_model(
     ))
 }
 
-/// GET /api/models/convert - 変換ジョブ一覧
+/// GET /v0/models/convert - 変換ジョブ一覧
 pub async fn list_convert_tasks(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ConvertTask>>, AppError> {
@@ -1158,7 +1158,7 @@ pub async fn list_convert_tasks(
     Ok(Json(tasks))
 }
 
-/// GET /api/models/convert/{task_id} - 単一ジョブ取得
+/// GET /v0/models/convert/{task_id} - 単一ジョブ取得
 pub async fn get_convert_task(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
@@ -1171,7 +1171,7 @@ pub async fn get_convert_task(
     Ok(Json(task))
 }
 
-/// DELETE /api/models/convert/{task_id} - ジョブ削除（×ボタン用）
+/// DELETE /v0/models/convert/{task_id} - ジョブ削除（×ボタン用）
 pub async fn delete_convert_task(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
@@ -1183,7 +1183,7 @@ pub async fn delete_convert_task(
     }
 }
 
-/// GET /api/models/blob/{model_name} - モデルファイル（GGUF）をストリーミング配信
+/// GET /v0/models/blob/{model_name} - モデルファイル（GGUF）をストリーミング配信
 ///
 /// ノードがルーターからモデルファイルをHTTP経由でダウンロードするためのエンドポイント。
 /// 共有パスにアクセスできない環境でのフォールバック用。

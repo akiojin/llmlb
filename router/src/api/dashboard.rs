@@ -1,6 +1,6 @@
 //! ダッシュボードAPIハンドラー
 //!
-//! `/api/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
+//! `/v0/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
 //! システム統計を返却する。
 
 use super::nodes::AppError;
@@ -150,22 +150,22 @@ pub struct DashboardOverview {
     pub generation_time_ms: u64,
 }
 
-/// GET /api/dashboard/nodes
+/// GET /v0/dashboard/nodes
 pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardNode>> {
     Json(collect_nodes(&state).await)
 }
 
-/// GET /api/dashboard/stats
+/// GET /v0/dashboard/stats
 pub async fn get_stats(State(state): State<AppState>) -> Json<DashboardStats> {
     Json(collect_stats(&state).await)
 }
 
-/// GET /api/dashboard/request-history
+/// GET /v0/dashboard/request-history
 pub async fn get_request_history(State(state): State<AppState>) -> Json<Vec<RequestHistoryPoint>> {
     Json(collect_history(&state).await)
 }
 
-/// GET /api/dashboard/overview
+/// GET /v0/dashboard/overview
 pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOverview> {
     let started = Instant::now();
     let nodes = collect_nodes(&state).await;
@@ -182,7 +182,7 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     })
 }
 
-/// GET /api/dashboard/metrics/:node_id
+/// GET /v0/dashboard/metrics/:node_id
 pub async fn get_node_metrics(
     Path(node_id): Path<Uuid>,
     State(state): State<AppState>,

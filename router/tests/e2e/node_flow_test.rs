@@ -65,7 +65,7 @@ async fn test_complete_node_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -111,7 +111,7 @@ async fn test_complete_node_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/health")
+                .uri("/v0/health")
                 .header("content-type", "application/json")
                 .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
@@ -132,7 +132,7 @@ async fn test_complete_node_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/health")
+                .uri("/v0/health")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
                 .unwrap(),
@@ -151,7 +151,7 @@ async fn test_complete_node_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/health")
+                .uri("/v0/health")
                 .header("content-type", "application/json")
                 .header("x-node-token", "invalid-token-12345")
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
@@ -194,7 +194,7 @@ async fn test_node_token_persistence() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -223,7 +223,7 @@ async fn test_node_token_persistence() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .header("x-node-token", first_token)
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
@@ -284,7 +284,7 @@ async fn test_list_nodes() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -292,12 +292,12 @@ async fn test_list_nodes() {
         .await
         .unwrap();
 
-    // GET /api/nodes でノード一覧を取得
+    // GET /v0/nodes でノード一覧を取得
     let list_response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -307,7 +307,7 @@ async fn test_list_nodes() {
     assert_eq!(
         list_response.status(),
         StatusCode::OK,
-        "GET /api/nodes should return OK"
+        "GET /v0/nodes should return OK"
     );
 
     let body = axum::body::to_bytes(list_response.into_body(), usize::MAX)
@@ -357,7 +357,7 @@ async fn test_node_metrics_update() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -372,7 +372,7 @@ async fn test_node_metrics_update() {
     let node_id = register_data["node_id"].as_str().unwrap();
     let node_token = register_data["node_token"].as_str().unwrap();
 
-    // POST /api/health でヘルス/メトリクスを更新
+    // POST /v0/health でヘルス/メトリクスを更新
     let metrics_request = json!({
         "node_id": node_id,
         "cpu_usage": 45.5,
@@ -390,7 +390,7 @@ async fn test_node_metrics_update() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/health")
+                .uri("/v0/health")
                 .header("content-type", "application/json")
                 .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&metrics_request).unwrap()))
@@ -401,7 +401,7 @@ async fn test_node_metrics_update() {
 
     assert!(
         metrics_response.status() == StatusCode::OK,
-        "POST /api/health should return OK"
+        "POST /v0/health should return OK"
     );
 }
 
@@ -410,12 +410,12 @@ async fn test_list_node_metrics() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/nodes/metrics でメトリクス一覧を取得
+    // GET /v0/nodes/metrics でメトリクス一覧を取得
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes/metrics")
+                .uri("/v0/nodes/metrics")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -425,7 +425,7 @@ async fn test_list_node_metrics() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /api/nodes/metrics should return OK"
+        "GET /v0/nodes/metrics should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -445,12 +445,12 @@ async fn test_metrics_summary() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/metrics/summary
+    // GET /v0/metrics/summary
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/metrics/summary")
+                .uri("/v0/metrics/summary")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -460,7 +460,7 @@ async fn test_metrics_summary() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /api/metrics/summary should return OK"
+        "GET /v0/metrics/summary should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)

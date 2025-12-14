@@ -37,5 +37,5 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 
 ## Debugging Tips
 - Set `RUST_LOG=debug` for verbose router output.
-- Dashboard stats endpoint `/api/dashboard/stats` shows cloud key presence.
+- Dashboard stats endpoint `/v0/dashboard/stats` shows cloud key presence.
 - For cloud routing, confirm the key is logged as present at startup.

@@ -22,7 +22,7 @@ LLM_ROUTER_SKIP_HEALTH_CHECK=1 cargo run -p llm-router
 ### 2. ノード登録
 
 ```bash
-REGISTER_RES=$(curl -sS http://localhost:8080/api/nodes \
+REGISTER_RES=$(curl -sS http://localhost:8080/v0/nodes \
   -H "Content-Type: application/json" \
   -d '{
     "machine_name": "server-01",
@@ -39,18 +39,18 @@ echo "$REGISTER_RES" | jq .
 ### 3. ノード一覧確認
 
 ```bash
-curl -sS http://localhost:8080/api/nodes | jq .
+curl -sS http://localhost:8080/v0/nodes | jq .
 ```
 
 ## ヘルスチェック送信（curlで確認）
 
-`POST /api/nodes` のレスポンスに含まれる `node_token` を使って `POST /api/health` を呼び出します。
+`POST /v0/nodes` のレスポンスに含まれる `node_token` を使って `POST /v0/health` を呼び出します。
 
 ```bash
 NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
 NODE_TOKEN=$(echo "$REGISTER_RES" | jq -r .node_token)
 
-curl -sS http://localhost:8080/api/health \
+curl -sS http://localhost:8080/v0/health \
   -H "Content-Type: application/json" \
   -H "X-Node-Token: ${NODE_TOKEN}" \
   -d "{
@@ -59,7 +59,7 @@ curl -sS http://localhost:8080/api/health \
     \"memory_usage\": 45.6,
     \"active_requests\": 0,
     \"average_response_time_ms\": 110.0,
-    \"loaded_models\": [\"gpt-oss:20b\"],
+    \"loaded_models\": [\"gpt-oss-20b\"],
     \"loaded_embedding_models\": [],
     \"initializing\": false,
     \"ready_models\": [1, 1]

@@ -224,7 +224,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     for _ in 0..20 {
         let history = client
             .get(format!(
-                "http://{}/api/dashboard/request-history",
+                "http://{}/v0/dashboard/request-history",
                 router.addr()
             ))
             .send()

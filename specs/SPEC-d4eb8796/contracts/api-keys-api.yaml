@@ -9,7 +9,7 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /api/api-keys:
+  /v0/api-keys:
     get:
       summary: APIキー一覧取得
       description: 発行済みのすべてのAPIキーを取得（管理者専用）
@@ -98,7 +98,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /api/api-keys/{id}:
+  /v0/api-keys/{id}:
     parameters:
       - name: id
         in: path

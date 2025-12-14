@@ -60,11 +60,11 @@
 
 ### Contract Tests (並列実行可能)
 
-- [x] **T009** [P] `router/tests/contract/test_node_registration.rs` にノード登録 Contract Test (POST /api/nodes)
-- [x] **T010** [P] `router/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /api/health)
+- [x] **T009** [P] `router/tests/contract/test_node_registration.rs` にノード登録 Contract Test (POST /v0/nodes)
+- [x] **T010** [P] `router/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /v0/health)
 - [x] **T011** [P] `router/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /v1/chat/completions)
 - [x] **T012** [P] `router/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /v1/completions)
-- [x] **T013** [P] `router/tests/contract/test_nodes_list.rs` にノード一覧 Contract Test (GET /api/nodes)
+- [x] **T013** [P] `router/tests/contract/test_nodes_list.rs` にノード一覧 Contract Test (GET /v0/nodes)
 
 ### Integration Tests (並列実行可能)
 
@@ -85,7 +85,7 @@
 - [x] **T019** [P] `common/src/lib.rs` にモジュール公開設定
 - [x] **T020** [P] `common/src/types.rs` にNode, NodeStatus, HealthMetrics, Request, RequestStatus型定義
 - [x] **T021** [P] `common/src/protocol.rs` にRegisterRequest, RegisterResponse, HealthCheckRequest定義
-- [x] **T022** [P] `common/src/config.rs` にCoordinatorConfig, NodeConfig定義
+- [x] **T022** [P] `common/src/config.rs` にRouterConfig, NodeConfig定義
 - [x] **T023** [P] `common/src/error.rs` にエラー型定義 (thiserror使用)
 
 ### Common層Unit Tests (並列実行可能)
@@ -103,14 +103,14 @@
 ### ノード登録API (Contract Test T009をGREENに)
 
 - [x] **T027** `router/src/api/mod.rs` にAPIモジュール構造定義
-- [x] **T028** `router/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /api/nodes)
+- [x] **T028** `router/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /v0/nodes)
 - [x] **T029** `router/src/registry/mod.rs` にノード登録管理モジュール
 - [x] **T030** `router/src/registry/manager.rs` にNodeRegistryManager実装 (登録・更新・削除)
 - [x] **T031** **検証**: Contract Test T009が合格 (GREEN)
 
 ### ヘルスチェックAPI (Contract Test T010をGREENに)
 
-- [x] **T032** `router/src/api/health.rs` にヘルスチェックハンドラー実装 (POST /api/health)
+- [x] **T032** `router/src/api/health.rs` にヘルスチェックハンドラー実装 (POST /v0/health)
 - [x] **T033** `router/src/health/mod.rs` にヘルスチェックモジュール
 - [x] **T034** `router/src/health/monitor.rs` にHealthMonitor実装 (定期チェック、タイムアウト検知)
 - [x] **T035** **検証**: Contract Test T010が合格 (GREEN)
@@ -124,7 +124,7 @@
 
 ### ノード一覧API (Contract Test T013をGREENに)
 
-- [x] **T040** `router/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /api/nodes)
+- [x] **T040** `router/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /v0/nodes)
 - [x] **T041** **検証**: Contract Test T013が合格 (GREEN)
 
 ### DB永続化 (Integration Test T014をGREENに)
@@ -166,8 +166,8 @@
 ### Router通信クライアント (並列実行可能)
 
 - [x] **T057** [P] `node/src/client/mod.rs` にRouter通信モジュール
-- [x] **T058** [P] `node/src/client/register.rs` に自己登録クライアント実装 (POST /api/nodes)
-- [x] **T059** [P] `node/src/client/heartbeat.rs` にハートビートクライアント実装 (POST /api/health、10秒間隔)
+- [x] **T058** [P] `node/src/client/register.rs` に自己登録クライアント実装 (POST /v0/nodes)
+- [x] **T059** [P] `node/src/client/heartbeat.rs` にハートビートクライアント実装 (POST /v0/health、10秒間隔)
 
 ### LLM runtime管理 (並列実行可能)
 
@@ -185,7 +185,7 @@
 - [x] **T065** `node/src-tauri/tauri.conf.json` にTauri設定ファイル作成 (アプリ名、バージョン、アイコン)
 - [x] **T066** `node/src/gui/mod.rs` にGUIモジュール
 - [x] **T067** `node/src/gui/tray.rs` にシステムトレイ実装 (tray-icon使用)
-- [x] **T068** `node/src/gui/window.rs` に設定ウィンドウ実装 (CoordinatorURL設定、接続状態表示)
+- [x] **T068** `node/src/gui/window.rs` に設定ウィンドウ実装 (RouterURL設定、接続状態表示)
 - [x] **T069** `node/src-tauri/icons/` にアイコンファイル追加 (32x32.png, 128x128.png, icon.ico)
 
 ### Nodeメインアプリケーション

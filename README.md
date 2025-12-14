@@ -16,7 +16,7 @@ LLM Router is a powerful centralized system that provides unified management and
 - **Real-time Monitoring**: Comprehensive visualization of node states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **Self-registering Nodes**: Nodes automatically register with the Router
-- **Node-driven Model Sync**: Nodes pull models via router `/v1/models` and `/api/models/blob/:model_name` (no push-based distribution)
+- **Node-driven Model Sync**: Nodes pull models via router `/v1/models` and `/v0/models/blob/:model_name` (no push-based distribution)
 - **WebUI Management**: Manage node settings, monitoring, and control through
   browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
@@ -209,7 +209,7 @@ LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 
 Nodes report health + metrics to the Router for node status and load balancing decisions.
 
-**Endpoint:** `POST /api/health` (requires `X-Node-Token`)
+**Endpoint:** `POST /v0/health` (requires `X-Node-Token`)
 
 **Request:**
 ```json
@@ -219,7 +219,7 @@ Nodes report health + metrics to the Router for node status and load balancing d
   "memory_usage": 60.2,
   "active_requests": 3,
   "average_response_time_ms": 250.5,
-  "loaded_models": ["gpt-oss:20b"],
+  "loaded_models": ["gpt-oss-20b"],
   "loaded_embedding_models": [],
   "initializing": false,
   "ready_models": [1, 1]
@@ -335,7 +335,7 @@ curl http://router:8080/v1/chat/completions -d '...'
 - Nodes pull the router's model list via `GET /v1/models`.
 - For each model, nodes either:
   - use the router-provided `path` directly (shared storage), or
-  - download the model from `GET /api/models/blob/:model_name` and cache it locally.
+  - download the model from `GET /v0/models/blob/:model_name` and cache it locally.
 
 ### Benefits of Proxy Pattern
 
@@ -394,7 +394,7 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - Enter a Hugging Face repo (e.g. `TheBloke/Llama-2-7B-GGUF`) and (optionally) a filename (e.g. `llama-2-7b.Q4_K_M.gguf`).
   - Model IDs are normalized to a filename-based format (e.g. `llama-2-7b`).
   - `/v1/models` lists only models that are cached on the router filesystem.
-  - Nodes never receive push-based distribution; they pull models based on `/v1/models` and download via `/api/models/blob/:model_name` when needed.
+  - Nodes never receive push-based distribution; they pull models based on `/v1/models` and download via `/v0/models/blob/:model_name` when needed.
 
 ## Installation
 See [INSTALL.md](./INSTALL.md) for platform-specific installation steps.
@@ -435,7 +435,7 @@ See [INSTALL.md](./INSTALL.md) for platform-specific installation steps.
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
-       "model": "gpt-oss:20b",
+       "model": "gpt-oss-20b",
        "messages": [{"role": "user", "content": "Hello!"}],
        "stream": false
      }'
@@ -443,7 +443,7 @@ See [INSTALL.md](./INSTALL.md) for platform-specific installation steps.
 
 4. **List Registered Nodes**
    ```bash
-   curl http://router:8080/api/nodes
+   curl http://router:8080/v0/nodes
    ```
 
 ### Environment Variables
@@ -611,17 +611,17 @@ web interface
 
 **List Request History:**
 ```bash
-GET /api/dashboard/request-responses?page=1&per_page=50
+GET /v0/dashboard/request-responses?page=1&per_page=50
 ```
 
 **Get Request Details:**
 ```bash
-GET /api/dashboard/request-responses/{id}
+GET /v0/dashboard/request-responses/{id}
 ```
 
 **Export History:**
 ```bash
-GET /api/dashboard/request-responses/export
+GET /v0/dashboard/request-responses/export
 ```
 
 ### Storage
@@ -643,45 +643,45 @@ The file is automatically managed with:
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/auth/login` | User authentication, JWT token issuance | None |
-| POST | `/api/auth/logout` | Logout | None |
-| GET | `/api/auth/me` | Get authenticated user info | JWT |
+| POST | `/v0/auth/login` | User authentication, JWT token issuance | None |
+| POST | `/v0/auth/logout` | Logout | None |
+| GET | `/v0/auth/me` | Get authenticated user info | JWT |
 
 #### User Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/users` | List users | JWT+Admin |
-| POST | `/api/users` | Create user | JWT+Admin |
-| PUT | `/api/users/:id` | Update user | JWT+Admin |
-| DELETE | `/api/users/:id` | Delete user | JWT+Admin |
+| GET | `/v0/users` | List users | JWT+Admin |
+| POST | `/v0/users` | Create user | JWT+Admin |
+| PUT | `/v0/users/:id` | Update user | JWT+Admin |
+| DELETE | `/v0/users/:id` | Delete user | JWT+Admin |
 
 #### API Key Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/api-keys` | List API keys | JWT+Admin |
-| POST | `/api/api-keys` | Create API key | JWT+Admin |
-| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin |
-| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin |
+| GET | `/v0/api-keys` | List API keys | JWT+Admin |
+| POST | `/v0/api-keys` | Create API key | JWT+Admin |
+| PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin |
+| DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin |
 
 #### Node Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/nodes` | Register node (GPU required) | None |
-| GET | `/api/nodes` | List nodes | None |
-| DELETE | `/api/nodes/:node_id` | Delete node | None |
-| POST | `/api/nodes/:node_id/disconnect` | Force node offline | None |
-| PUT | `/api/nodes/:node_id/settings` | Update node settings | None |
-| GET | `/api/nodes/metrics` | List node metrics | None |
-| GET | `/api/metrics/summary` | System statistics summary | None |
+| POST | `/v0/nodes` | Register node (GPU required) | None |
+| GET | `/v0/nodes` | List nodes | None |
+| DELETE | `/v0/nodes/:node_id` | Delete node | None |
+| POST | `/v0/nodes/:node_id/disconnect` | Force node offline | None |
+| PUT | `/v0/nodes/:node_id/settings` | Update node settings | None |
+| GET | `/v0/nodes/metrics` | List node metrics | None |
+| GET | `/v0/metrics/summary` | System statistics summary | None |
 
 #### Health Check Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/health` | Receive health check from node | Node Token |
+| POST | `/v0/health` | Receive health check from node | Node Token |
 
 #### OpenAI-Compatible Endpoints
 
@@ -697,36 +697,36 @@ The file is automatically managed with:
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/models/available?source=hf` | List available models (HF) | None |
-| POST | `/api/models/register` | Queue model download/convert (HF) | None |
-| GET | `/api/models/registered` | List registered models | None |
-| DELETE | `/api/models/*model_name` | Delete model | None |
-| POST | `/api/models/discover-gguf` | Discover GGUF models | None |
-| POST | `/api/models/convert` | Start model conversion | None |
-| GET | `/api/models/convert` | List conversion tasks | None |
-| GET | `/api/models/convert/:task_id` | Get conversion task details | None |
-| DELETE | `/api/models/convert/:task_id` | Delete conversion task | None |
-| GET | `/api/models/blob/:model_name` | Serve model file (GGUF) | None |
+| GET | `/v0/models/available?source=hf` | List available models (HF) | None |
+| POST | `/v0/models/register` | Queue model download/convert (HF) | None |
+| GET | `/v0/models/registered` | List registered models | None |
+| DELETE | `/v0/models/*model_name` | Delete model | None |
+| POST | `/v0/models/discover-gguf` | Discover GGUF models | None |
+| POST | `/v0/models/convert` | Start model conversion | None |
+| GET | `/v0/models/convert` | List conversion tasks | None |
+| GET | `/v0/models/convert/:task_id` | Get conversion task details | None |
+| DELETE | `/v0/models/convert/:task_id` | Delete conversion task | None |
+| GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | None |
 
 #### Dashboard Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/dashboard/nodes` | Node info list | None |
-| GET | `/api/dashboard/stats` | System statistics | None |
-| GET | `/api/dashboard/request-history` | Request history | None |
-| GET | `/api/dashboard/overview` | Dashboard overview | None |
-| GET | `/api/dashboard/metrics/:node_id` | Node metrics history | None |
-| GET | `/api/dashboard/request-responses` | Request/response list | None |
-| GET | `/api/dashboard/request-responses/:id` | Request/response details | None |
-| GET | `/api/dashboard/request-responses/export` | Export request/responses | None |
+| GET | `/v0/dashboard/nodes` | Node info list | None |
+| GET | `/v0/dashboard/stats` | System statistics | None |
+| GET | `/v0/dashboard/request-history` | Request history | None |
+| GET | `/v0/dashboard/overview` | Dashboard overview | None |
+| GET | `/v0/dashboard/metrics/:node_id` | Node metrics history | None |
+| GET | `/v0/dashboard/request-responses` | Request/response list | None |
+| GET | `/v0/dashboard/request-responses/:id` | Request/response details | None |
+| GET | `/v0/dashboard/request-responses/export` | Export request/responses | None |
 
 #### Log Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/dashboard/logs/router` | Router logs | None |
-| GET | `/api/nodes/:node_id/logs` | Node logs | None |
+| GET | `/v0/dashboard/logs/router` | Router logs | None |
+| GET | `/v0/nodes/:node_id/logs` | Node logs | None |
 
 #### Static Files & Metrics
 
@@ -736,7 +736,7 @@ The file is automatically managed with:
 | GET | `/dashboard/*path` | Dashboard static files |
 | GET | `/playground` | Chat Playground UI |
 | GET | `/playground/*path` | Playground static files |
-| GET | `/metrics/cloud` | Prometheus metrics export |
+| GET | `/v0/metrics/cloud` | Prometheus metrics export |
 
 ### Node API (C++)
 
@@ -757,14 +757,14 @@ The file is automatically managed with:
 | GET | `/startup` | Startup status check |
 | GET | `/metrics` | Metrics (JSON format) |
 | GET | `/metrics/prom` | Prometheus metrics |
-| GET | `/api/logs?tail=200` | Tail node logs (JSON) |
+| GET | `/v0/logs?tail=200` | Tail node logs (JSON) |
 | GET | `/log/level` | Get current log level |
 | POST | `/log/level` | Change log level |
 | GET | `/internal-error` | Intentional error (debug) |
 
 ### Request/Response Examples
 
-#### POST /api/nodes
+#### POST /v0/nodes
 
 Register a node.
 
@@ -802,7 +802,7 @@ Chat completions API (OpenAI-compatible).
 
 ```json
 {
-  "model": "gpt-oss:20b",
+  "model": "gpt-oss-20b",
   "messages": [{"role": "user", "content": "Hello!"}],
   "stream": false
 }
@@ -842,4 +842,4 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
   - `GOOGLE_API_KEY` (required), `GOOGLE_API_BASE_URL` (optional, default `https://generativelanguage.googleapis.com/v1beta`)
   - `ANTHROPIC_API_KEY` (required), `ANTHROPIC_API_BASE_URL` (optional, default `https://api.anthropic.com`)
 - Behavior: prefix is stripped before forwarding; responses remain OpenAI-compatible. Streaming is passthrough as SSE.
-- Metrics: `/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).
+- Metrics: `/v0/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).

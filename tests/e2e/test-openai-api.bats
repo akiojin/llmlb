@@ -311,7 +311,7 @@ EOF
     sleep 1
 
     # Check request history
-    run api_request "/api/dashboard/request-responses"
+    run api_request "/v0/dashboard/request-responses"
     [ "$status" -eq 0 ]
 
     echo "$output" | jq -e '.records | type == "array"'

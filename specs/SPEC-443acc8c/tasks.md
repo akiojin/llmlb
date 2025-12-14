@@ -12,7 +12,7 @@
 ## Phase 3.1: セットアップ
 
 - [x] **T001** [P] 依存関係確認: `chrono`, `tokio::time::interval`
-- [x] **T002** [P] 環境変数定義: `AGENT_TIMEOUT`, `HEALTH_CHECK_INTERVAL`
+- [x] **T002** [P] 環境変数定義: `LLM_ROUTER_NODE_TIMEOUT`, `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（フォールバック: `NODE_TIMEOUT`, `HEALTH_CHECK_INTERVAL`）
 
 **実装時間**: 約10分
 
@@ -53,7 +53,7 @@
 - [x] **T007** `router/src/registry/mod.rs` にstart_timeout_monitor()実装
   - 機能: Tokio spawn でバックグラウンドタスク開始
   - ロジック: 定期的に全ノードをチェック、タイムアウトしたらOffline化
-  - 間隔: 環境変数`HEALTH_CHECK_INTERVAL`（デフォルト30秒）
+  - 間隔: 環境変数 `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（フォールバック `HEALTH_CHECK_INTERVAL`、デフォルト30秒）
 
 - [x] **T008** `router/src/registry/mod.rs` にタイムアウト判定ロジック実装
   - 条件: `Utc::now() - node.last_heartbeat > timeout`
@@ -80,11 +80,11 @@
 
 - [x] **T011** `router/src/main.rs` でタイムアウト監視タスク起動
   - 起動タイミング: サーバー起動時
-  - パラメータ: 環境変数から取得（`HEALTH_CHECK_INTERVAL`, `AGENT_TIMEOUT`）
+  - パラメータ: 環境変数から取得（`LLM_ROUTER_HEALTH_CHECK_INTERVAL`, `LLM_ROUTER_NODE_TIMEOUT`）
 
 - [x] **T012** `router/src/main.rs` に環境変数読み込み追加
-  - `HEALTH_CHECK_INTERVAL`: デフォルト30秒
-  - `AGENT_TIMEOUT`: デフォルト60秒
+  - `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（フォールバック `HEALTH_CHECK_INTERVAL`）: デフォルト30秒
+  - `LLM_ROUTER_NODE_TIMEOUT`（フォールバック `NODE_TIMEOUT`）: デフォルト60秒
 
 - [x] **T013** 起動ログにヘルスチェック設定情報追加
   - `tracing::info!("Health check interval: {}s, timeout: {}s", interval, timeout);`

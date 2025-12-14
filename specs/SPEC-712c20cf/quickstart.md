@@ -121,7 +121,7 @@
 ### 検証ポイント
 - [ ] 5秒以内に自動更新される
 - [ ] ページリロード不要
-- [ ] ブラウザコンソールでポーリングリクエストが確認できる（`GET /api/dashboard/nodes`）
+- [ ] ブラウザコンソールでポーリングリクエストが確認できる（`GET /v0/dashboard/nodes`）
 - [ ] ポーリング処理が100ms以内に完了（NFR-011）
 
 ---
@@ -186,7 +186,7 @@
 1. ノードを起動: `LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node`
 2. 登録APIを手動で呼び出し:
    ```bash
-   curl -X POST http://localhost:8080/api/nodes \
+   curl -X POST http://localhost:8080/v0/nodes \
      -H "Content-Type: application/json" \
      -d '{
        "machine_name": "test-node",

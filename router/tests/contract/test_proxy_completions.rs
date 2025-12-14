@@ -35,7 +35,6 @@ async fn spawn_node_stub(state: NodeStubState) -> TestServer {
         .route("/v1/completions", post(node_generate_handler))
         .route("/v1/chat/completions", post(node_generate_handler))
         .route("/v1/models", get(node_models_handler))
-        .route("/api/health", post(|| async { axum::http::StatusCode::OK }))
         .with_state(Arc::new(state));
 
     spawn_router(router).await

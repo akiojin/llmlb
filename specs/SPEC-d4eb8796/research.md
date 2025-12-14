@@ -60,12 +60,12 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 
 pub fn hash_password(password: &str) -> Result<String> {
     hash(password, DEFAULT_COST) // cost=12
-        .map_err(|e| CoordinatorError::PasswordHash(e.to_string()))
+        .map_err(|e| AuthError::PasswordHash(e.to_string()))
 }
 
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     verify(password, hash)
-        .map_err(|e| CoordinatorError::PasswordVerify(e.to_string()))
+        .map_err(|e| AuthError::PasswordVerify(e.to_string()))
 }
 ```
 
@@ -113,13 +113,13 @@ pub fn create_jwt(user_id: &str, role: UserRole) -> Result<String> {
     };
 
     encode(&Header::default(), &claims, &EncodingKey::from_secret(SECRET))
-        .map_err(|e| CoordinatorError::JwtCreation(e.to_string()))
+        .map_err(|e| AuthError::JwtCreation(e.to_string()))
 }
 
 pub fn verify_jwt(token: &str) -> Result<Claims> {
     decode::<Claims>(token, &DecodingKey::from_secret(SECRET), &Validation::default())
         .map(|data| data.claims)
-        .map_err(|e| CoordinatorError::JwtValidation(e.to_string()))
+        .map_err(|e| AuthError::JwtValidation(e.to_string()))
 }
 ```
 
@@ -181,14 +181,14 @@ async fn jwt_auth_middleware<B>(
 
 // ルーターへの適用
 Router::new()
-    .route("/api/nodes", get(list_nodes))
+    .route("/v0/nodes", get(list_nodes))
     .layer(middleware::from_fn_with_state(state.clone(), jwt_auth_middleware))
 ```
 
 **ミドルウェア階層**:
-1. **JWT認証**: `/api/nodes`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
+1. **JWT認証**: `/v0/nodes`, `/v0/models`, `/v0/dashboard`, `/v0/users`, `/v0/api-keys`
 2. **APIキー認証**: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-3. **ノードトークン認証**: `/api/health`
+3. **ノードトークン認証**: `/v0/health`
 
 **認証無効化モード**:
 ```rust

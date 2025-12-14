@@ -10,7 +10,7 @@
 Hugging Face 上のモデルをルーターに登録します（必要に応じてダウンロード/変換をバックグラウンド実行）。
 
 ```bash
-curl -sS http://localhost:8080/api/models/register \
+curl -sS http://localhost:8080/v0/models/register \
   -H "Content-Type: application/json" \
   -d '{
     "repo": "TheBloke/gpt-oss-GGUF",
@@ -21,13 +21,13 @@ curl -sS http://localhost:8080/api/models/register \
 進捗は変換タスク一覧から確認できます。
 
 ```bash
-curl -sS http://localhost:8080/api/models/convert | jq .
+curl -sS http://localhost:8080/v0/models/convert | jq .
 ```
 
 登録済みモデルを確認します。
 
 ```bash
-curl -sS http://localhost:8080/api/models/registered | jq .
+curl -sS http://localhost:8080/v0/models/registered | jq .
 ```
 
 ## ノード側: モデル同期
@@ -35,6 +35,6 @@ curl -sS http://localhost:8080/api/models/registered | jq .
 ノードはルーターのモデル一覧を参照してモデルを同期します。
 
 - モデル一覧: `GET /v1/models`
-- モデル取得: `GET /api/models/blob/:model_name`
+- モデル取得: `GET /v0/models/blob/:model_name`
 
 詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。

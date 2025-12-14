@@ -52,9 +52,9 @@
 **アーキテクチャ**:
 - すべての機能をライブラリとして? ✅
 - ライブラリリスト:
-  - `runtime_coordinator_common`: 共通型定義、プロトコル、設定、エラー型
-  - `runtime_coordinator_coordinator`: Routerサーバー本体（バイナリ + ライブラリ）
-  - `runtime_coordinator_node`: Nodeアプリ本体（バイナリ + ライブラリ）
+  - `common`: 共通型定義、プロトコル、設定、エラー型
+  - `router`: Routerサーバー本体（バイナリ + ライブラリ）
+  - `node`: Nodeアプリ本体（バイナリ + ライブラリ）
 - ライブラリごとのCLI:
   - `router`: `--help`, `--version`, `--config`, `--port` オプション
   - `node`: `--help`, `--version`, `--config`, `--router-url` オプション
@@ -281,7 +281,7 @@ pub enum RequestStatus {
 
 **Config (Router)**:
 ```rust
-pub struct CoordinatorConfig {
+pub struct RouterConfig {
     pub host: String,              // "0.0.0.0"
     pub port: u16,                 // 8080
     pub database_url: String,      // "sqlite://router.db"
@@ -293,7 +293,7 @@ pub struct CoordinatorConfig {
 **Config (Node)**:
 ```rust
 pub struct NodeConfig {
-    pub coordinator_url: String,   // "http://router:8080"
+    pub router_url: String,        // "http://router:8080"
     pub runtime_url: String,        // "http://localhost:11434"
     pub heartbeat_interval_secs: u64,  // 10秒
     pub auto_start: bool,          // Windows起動時の自動起動
@@ -316,7 +316,7 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /api/nodes:
+  /v0/nodes:
     post:
       summary: ノード登録
       operationId: registerNode
@@ -354,7 +354,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Node'
 
-  /api/health:
+  /v0/health:
     post:
       summary: ヘルスチェック情報送信（ノード→ルーター）
       operationId: reportHealth
@@ -527,11 +527,11 @@ components:
 **プロトコル仕様**:
 
 1. **ノード登録**:
-   - Node → Router: `POST /api/nodes` (起動時)
+   - Node → Router: `POST /v0/nodes` (起動時)
    - Router → Node: `RegisterResponse` (node_id返却)
 
 2. **ヘルスチェック（ハートビート）**:
-   - Node → Router: `POST /api/health` (10秒間隔)
+   - Node → Router: `POST /v0/health` (10秒間隔)
    - Payload: CPU使用率、メモリ使用率、処理中リクエスト数
 
 3. **リクエスト振り分け**:
@@ -546,8 +546,8 @@ components:
 ### 4. Contract Tests生成
 
 **テストファイル**:
-- `tests/contract/test_node_registration.rs`: `/api/nodes` の契約テスト
-- `tests/contract/test_health_check.rs`: `/api/health` の契約テスト
+- `tests/contract/test_node_registration.rs`: `/v0/nodes` の契約テスト
+- `tests/contract/test_health_check.rs`: `/v0/health` の契約テスト
 - `tests/contract/test_proxy_chat.rs`: `/v1/chat/completions` の契約テスト
 
 **テスト内容**:

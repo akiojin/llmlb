@@ -29,7 +29,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"gpt-oss:20b\",\n  \"prompt\": \"Write a haiku\",\n  \"stream\": true\n}"
+          "raw": "{\n  \"model\": \"gpt-oss-20b\",\n  \"prompt\": \"Write a haiku\",\n  \"stream\": true\n}"
         },
         "url": { "raw": "{{baseUrl}}/v1/completions", "host": ["{{baseUrl}}"], "path": ["v1", "completions"] }
       }
@@ -38,7 +38,7 @@
       "name": "Dashboard Stats",
       "request": {
         "method": "GET",
-        "url": { "raw": "{{baseUrl}}/api/dashboard/stats", "host": ["{{baseUrl}}"], "path": ["api", "dashboard", "stats"] }
+        "url": { "raw": "{{baseUrl}}/v0/dashboard/stats", "host": ["{{baseUrl}}"], "path": ["v0", "dashboard", "stats"] }
       }
     }
   ],

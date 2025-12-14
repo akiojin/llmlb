@@ -42,9 +42,9 @@
 ## Phase 1: 設計＆契約
 - data-model.md: ModelInfo 拡張（source, download_url, status, size, repo/filename）。
 - contracts:  
-  - `POST /api/models/register` repo-only/filename指定、GGUF/非GGUF、自動変換。  
-  - `POST /api/models/convert` 失敗時の再キュー。  
-  - `GET /api/models/convert` タスク一覧。  
+  - `POST /v0/models/register` repo-only/filename指定、GGUF/非GGUF、自動変換。  
+  - `POST /v0/models/convert` 失敗時の再キュー。  
+  - `GET /v0/models/convert` タスク一覧。  
   - `/v1/models` は実体があるもののみ。  
 - quickstart.md: URL貼付→登録→（変換）→/v1/models までの手順、Restore手順を記載。
 

@@ -56,7 +56,7 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
         payload["gpu_model"] = info.gpu_model.value();
     }
 
-    auto res = cli->Post("/api/nodes", payload.dump(), "application/json");
+    auto res = cli->Post("/v0/nodes", payload.dump(), "application/json");
 
     NodeRegistrationResult result;
     if (!res) {
@@ -128,7 +128,7 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
     };
 
     for (int attempt = 0; attempt <= max_retries; ++attempt) {
-        auto res = cli->Post("/api/health", headers, payload.dump(), "application/json");
+        auto res = cli->Post("/v0/health", headers, payload.dump(), "application/json");
         if (res && res->status >= 200 && res->status < 300) return true;
         if (attempt == max_retries) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(100 * (attempt + 1)));

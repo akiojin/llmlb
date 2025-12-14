@@ -10,6 +10,6 @@
 - ノードはルーターのモデル一覧を取得し、自律的にモデルを同期する
   - `GET /v1/models`
 - モデルファイルはルーターが公開するモデル配信APIから取得する
-  - `GET /api/models/blob/:model_name`
+  - `GET /v0/models/blob/:model_name`
 
 関連: `SPEC-dcaeaec4`, `SPEC-11106000/contracts/api_models.md`

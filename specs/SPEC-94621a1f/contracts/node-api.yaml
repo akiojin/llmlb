@@ -11,7 +11,7 @@ servers:
     description: 本番環境
 
 paths:
-  /api/nodes:
+  /v0/nodes:
     post:
       summary: ノード登録
       description: 新しいノードを登録し、`node_token` を発行する
@@ -65,7 +65,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Node'
 
-  /api/health:
+  /v0/health:
     post:
       summary: ヘルスチェック送信（ノード→ルーター）
       description: `X-Node-Token` で認証し、ノード状態/メトリクスを送信する

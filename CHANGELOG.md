@@ -2,7 +2,7 @@
 
 ### Features
 - cloud prefix routing for `openai:/google:/anthropic:` with SSE passthrough
-- cloud Prometheus metrics at `/metrics/cloud` (provider/status counters & latency histogram)
+- cloud Prometheus metrics at `/v0/metrics/cloud` (provider/status counters & latency histogram)
 
 ### Tests
 - mock integration tests for cloud prefixes (non/stream) and regression ensuring non-prefixed models stay on local path
@@ -221,7 +221,7 @@
 * **dashboard:** track uptime since last online ([3a557fd](https://github.com/akiojin/runtime-router/commit/3a557fde66caa59d65b93224de7541952f530384))
 * **db:** implement SQLite migrations (T039-T041 GREEN) ([0e4ee72](https://github.com/akiojin/runtime-router/commit/0e4ee728a68eb3925986f5d058fb3331a83bd05d))
 * **frontend:** t075-t087フロントエンド実装完了 ([693dba7](https://github.com/akiojin/runtime-router/commit/693dba725eb2dee06559a9ea9a6e5717e4bf150b))
-* **logs:** add node /api/logs and router proxy integration ([4c93462](https://github.com/akiojin/runtime-router/commit/4c9346221314531d49ceee4bbc80cf5f9a8694de))
+* **logs:** add node /v0/logs and router proxy integration ([4c93462](https://github.com/akiojin/runtime-router/commit/4c9346221314531d49ceee4bbc80cf5f9a8694de))
 * **models:** align available list to required five models ([9feb85d](https://github.com/akiojin/runtime-router/commit/9feb85d029a7f28c46e2f1afa70c3669cda1c097))
 * **models:** lock supported list to requested models ([c4a847c](https://github.com/akiojin/runtime-router/commit/c4a847c792b47628337188a29d59b2e63a84d941))
 * **proxy:** block until ready node (queue-like wait, max 1024 waiters) ([eee03dc](https://github.com/akiojin/runtime-router/commit/eee03dc11c8bacabf21b92d774071a77599497d1))
@@ -239,8 +239,7 @@
    * 新: ~/.llm-router/
 
 2. 環境変数更新:
-   * `COORDINATOR_*`→`ROUTER_*`
-   * `AGENT_*`→`NODE_*`
+   * `LLM_ROUTER_*` と `LLM_NODE_*` に統一
 
 3. 実行ファイル名:
    * `runtime-router-router`→`or-router`

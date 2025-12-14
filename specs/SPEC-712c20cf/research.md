@@ -69,8 +69,8 @@ const POLL_INTERVAL = 5000; // 5秒
 
 async function fetchDashboardData() {
   const [nodes, stats] = await Promise.all([
-    fetch('/api/dashboard/nodes').then(r => r.json()),
-    fetch('/api/dashboard/stats').then(r => r.json())
+    fetch('/v0/dashboard/nodes').then(r => r.json()),
+    fetch('/v0/dashboard/stats').then(r => r.json())
   ]);
   return { nodes, stats };
 }
@@ -122,8 +122,8 @@ use tower_http::services::ServeDir;
 
 let app = Router::new()
     // API エンドポイント
-    .route("/api/dashboard/nodes", get(get_nodes))
-    .route("/api/dashboard/stats", get(get_stats))
+    .route("/v0/dashboard/nodes", get(get_nodes))
+    .route("/v0/dashboard/stats", get(get_stats))
     // 静的ファイル配信
     .nest_service("/dashboard", ServeDir::new("router/src/dashboard/static"))
     // フォールバック: /dashboard/ → /dashboard/index.html

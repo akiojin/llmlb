@@ -14,7 +14,7 @@ NodeEndpoints::NodeEndpoints() : health_status_("ok") {}
 void NodeEndpoints::registerRoutes(httplib::Server& server) {
     start_time_ = std::chrono::steady_clock::now();
 
-    server.Get("/api/logs", [](const httplib::Request& req, httplib::Response& res) {
+    server.Get("/v0/logs", [](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
         if (req.has_param("tail")) {
             try {

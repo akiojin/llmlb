@@ -10,13 +10,13 @@
 
 ## API（実装済み）
 
-- `POST /api/nodes` - ノード登録（GPU必須）
-- `GET /api/nodes` - ノード一覧
-- `POST /api/health` - ヘルスチェック受信（`X-Node-Token` 必須）
+- `POST /v0/nodes` - ノード登録（GPU必須）
+- `GET /v0/nodes` - ノード一覧
+- `POST /v0/health` - ヘルスチェック受信（`X-Node-Token` 必須）
 
 ## 実装の要点
 
-### 登録（POST /api/nodes）
+### 登録（POST /v0/nodes）
 
 - **GPU必須**:
   - `gpu_available=true`
@@ -26,9 +26,9 @@
   - `LLM_ROUTER_SKIP_HEALTH_CHECK=1` でスキップ可能（テスト用途）
 - **レスポンス**:
   - `node_id`（UUID）
-  - `node_token`（以降の `/api/health` 用）
+  - `node_token`（以降の `/v0/health` 用）
 
-### ヘルスチェック（POST /api/health）
+### ヘルスチェック（POST /v0/health）
 
 - **認証**:
   - ヘッダー `X-Node-Token: <token>`
@@ -45,11 +45,11 @@
 - `router/src/api/health.rs`: `health_check`
 - `router/src/registry/mod.rs`: ノード状態管理（DB同期）
 - `router/src/auth/middleware.rs`: `node_token_auth_middleware`（`X-Node-Token`）
-- `node/src/api/router_client.cpp`: `/api/nodes` 登録 + `/api/health` 送信
+- `node/src/api/router_client.cpp`: `/v0/nodes` 登録 + `/v0/health` 送信
 
 ## リクエスト例
 
-### POST /api/nodes
+### POST /v0/nodes
 
 ```json
 {
@@ -64,7 +64,7 @@
 }
 ```
 
-### POST /api/health
+### POST /v0/health
 
 Headers:
 
@@ -79,7 +79,7 @@ Body:
   "memory_usage": 45.6,
   "active_requests": 0,
   "average_response_time_ms": 110.0,
-  "loaded_models": ["gpt-oss:20b"],
+  "loaded_models": ["gpt-oss-20b"],
   "loaded_embedding_models": [],
   "initializing": false,
   "ready_models": [1, 1]

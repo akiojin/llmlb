@@ -263,7 +263,7 @@ ModelSyncResult ModelSync::sync() {
                 // The router's endpoint uses a single path segment, so model id must be URL-encoded (slashes, etc).
                 if (!ok) {
                     const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    const auto blob_path = std::string("/api/models/blob/") + urlEncodePathSegment(id);
+                    const auto blob_path = std::string("/v0/models/blob/") + urlEncodePathSegment(id);
                     auto out = downloader.downloadBlob(blob_path, filename, nullptr);
                     ok = !out.empty();
                     downloaded = ok;

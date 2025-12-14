@@ -262,23 +262,23 @@ frontendは静的ファイル（バニラJS）のため分離不要
 ### 2. API契約設計 (`/contracts/`)
 
 **認証API** (`auth-api.yaml`):
-- `POST /api/auth/login` - ログイン
-- `POST /api/auth/logout` - ログアウト
-- `GET /api/auth/me` - 現在のユーザー情報
+- `POST /v0/auth/login` - ログイン
+- `POST /v0/auth/logout` - ログアウト
+- `GET /v0/auth/me` - 現在のユーザー情報
 
 **ユーザー管理API** (`users-api.yaml`):
-- `GET /api/users` - ユーザー一覧（Admin専用）
-- `POST /api/users` - ユーザー作成（Admin専用）
-- `PUT /api/users/:id` - ユーザー更新（Admin専用）
-- `DELETE /api/users/:id` - ユーザー削除（Admin専用）
+- `GET /v0/users` - ユーザー一覧（Admin専用）
+- `POST /v0/users` - ユーザー作成（Admin専用）
+- `PUT /v0/users/:id` - ユーザー更新（Admin専用）
+- `DELETE /v0/users/:id` - ユーザー削除（Admin専用）
 
 **APIキー管理API** (`api-keys-api.yaml`):
-- `GET /api/api-keys` - APIキー一覧（Admin専用）
-- `POST /api/api-keys` - APIキー発行（Admin専用）
-- `DELETE /api/api-keys/:id` - APIキー削除（Admin専用）
+- `GET /v0/api-keys` - APIキー一覧（Admin専用）
+- `POST /v0/api-keys` - APIキー発行（Admin専用）
+- `DELETE /v0/api-keys/:id` - APIキー削除（Admin専用）
 
 **ノード登録API** (既存、変更):
-- `POST /api/nodes` - レスポンスに `node_token` フィールド追加
+- `POST /v0/nodes` - レスポンスに `node_token` フィールド追加
 
 ### 3. 契約テスト生成
 

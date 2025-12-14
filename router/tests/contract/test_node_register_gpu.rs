@@ -70,7 +70,7 @@ async fn register_gpu_node_success() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -84,7 +84,7 @@ async fn register_gpu_node_success() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -132,7 +132,7 @@ async fn register_gpu_node_missing_devices_is_rejected() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),

@@ -208,12 +208,12 @@ pub struct NodeMetrics {
 │   (未登録)    │
 └──────────────┘
        │
-       │ POST /api/nodes
+       │ POST /v0/nodes
        ▼
 ┌──────────────┐
 │    Online    │ ◄──────┐
 └──────────────┘        │
-       │                │ POST /api/health (X-Node-Token)
+       │                │ POST /v0/health (X-Node-Token)
        │ timeout        │
        ▼                │
 ┌──────────────┐        │
@@ -225,7 +225,7 @@ pub struct NodeMetrics {
 
 ### ノード一覧取得
 ```
-Client ─GET /api/dashboard/nodes→ Router
+Client ─GET /v0/dashboard/nodes→ Router
                                         │
                                         │ NodeRegistry.list_all()
                                         ▼
@@ -242,7 +242,7 @@ Client ◄───────────────────────�
 
 ### システム統計取得
 ```
-Client ─GET /api/dashboard/stats→ Router
+Client ─GET /v0/dashboard/stats→ Router
                                        │
                                        │ NodeRegistry.list_all()
                                        ▼
@@ -310,8 +310,8 @@ router/src/
 
 ### メトリクス可視化（SPEC-589f2df1実装後）
 - `NodeMetrics`の実装
-- メトリクス収集API (`POST /api/health` / `X-Node-Token`)
-- メトリクス取得API (`GET /api/dashboard/metrics/:node_id`)
+- メトリクス収集API (`POST /v0/health` / `X-Node-Token`)
+- メトリクス取得API (`GET /v0/dashboard/metrics/:node_id`)
 - リクエスト履歴グラフ用のデータ構造
 
 ### リクエスト履歴

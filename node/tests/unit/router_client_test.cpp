@@ -16,13 +16,13 @@ public:
 
     void start(int port) {
         stop_flag_ = false;
-        server_.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+        server_.Post("/v0/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register_body = req.body;
             res.status = register_status;
             res.set_content(register_response_body, "application/json");
         });
 
-        server_.Post("/api/health", [this](const httplib::Request& req, httplib::Response& res) {
+        server_.Post("/v0/health", [this](const httplib::Request& req, httplib::Response& res) {
             last_heartbeat_body = req.body;
             last_heartbeat_token = req.get_header_value("X-Node-Token");
             res.status = heartbeat_status;
@@ -142,7 +142,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     RouterServer server;
     server.heartbeat_status = 500;
     int hit_count = 0;
-    server.server_.Post("/api/health", [&](const httplib::Request& req, httplib::Response& res) {
+    server.server_.Post("/v0/health", [&](const httplib::Request& req, httplib::Response& res) {
         hit_count++;
         server.last_heartbeat_body = req.body;
         server.last_heartbeat_token = req.get_header_value("X-Node-Token");

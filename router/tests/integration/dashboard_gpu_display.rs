@@ -58,7 +58,7 @@ async fn dashboard_nodes_include_gpu_devices() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -72,7 +72,7 @@ async fn dashboard_nodes_include_gpu_devices() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )

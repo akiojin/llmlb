@@ -6,7 +6,7 @@
     "description": "API契約: リクエスト/レスポンス履歴の取得、検索、エクスポート"
   },
   "paths": {
-    "/api/dashboard/request-responses": {
+    "/v0/dashboard/request-responses": {
       "get": {
         "summary": "リクエスト履歴の一覧取得",
         "description": "フィルタ条件に基づいてリクエスト履歴を取得。ページネーション対応。",
@@ -109,7 +109,7 @@
         }
       }
     },
-    "/api/dashboard/request-responses/{id}": {
+    "/v0/dashboard/request-responses/{id}": {
       "get": {
         "summary": "リクエスト履歴の詳細取得",
         "description": "指定されたIDのリクエスト履歴を取得",
@@ -165,7 +165,7 @@
         }
       }
     },
-    "/api/dashboard/request-responses/export": {
+    "/v0/dashboard/request-responses/export": {
       "get": {
         "summary": "リクエスト履歴のエクスポート",
         "description": "フィルタ条件に基づいてリクエスト履歴をJSON/CSV形式でエクスポート",

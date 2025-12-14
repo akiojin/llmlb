@@ -54,19 +54,19 @@
 ### Contract Tests（並列実行可能）
 
 - [x] T004 [P] `tests/contract/request_history_api_test.rs` に
-  List API (`GET /api/dashboard/request-responses`) の contract test を作成
+  List API (`GET /v0/dashboard/request-responses`) の contract test を作成
   - 空の履歴でも 200 OK を返すことをテスト
   - レスポンス構造（records, total_count, page, per_page）を検証
   - 依存: T001 (RequestResponseRecord 定義)
 
 - [x] T005 [P] `tests/contract/request_history_api_test.rs` に
-  Detail API (`GET /api/dashboard/request-responses/:id`) の contract test を作成
+  Detail API (`GET /v0/dashboard/request-responses/:id`) の contract test を作成
   - 存在しないIDで 404 を返すことをテスト
   - 存在するIDで RequestResponseRecord を返すことをテスト
   - 依存: T001
 
 - [x] T006 [P] `tests/contract/request_history_api_test.rs` に
-  Export API (`GET /api/dashboard/request-responses/export`) の contract test を作成
+  Export API (`GET /v0/dashboard/request-responses/export`) の contract test を作成
   - format=json で JSON 形式を返すことをテスト
   - format=csv で CSV 形式を返すことをテスト
   - Content-Disposition ヘッダーを検証
@@ -183,7 +183,7 @@
 ### ダッシュボードAPI実装
 
 - [x] T023 `router/src/api/dashboard.rs` に
-  List エンドポイント (`GET /api/dashboard/request-responses`) を実装
+  List エンドポイント (`GET /v0/dashboard/request-responses`) を実装
   - クエリパラメータのパース（model, node_id, status, start_time, end_time,
     page, per_page）
   - `filter_and_paginate()` 呼び出し
@@ -191,14 +191,14 @@
   - 依存: T016, T018, T004 (テストが先)
 
 - [x] T024 `router/src/api/dashboard.rs` に
-  Detail エンドポイント (`GET /api/dashboard/request-responses/:id`) を実装
+  Detail エンドポイント (`GET /v0/dashboard/request-responses/:id`) を実装
   - パスパラメータから UUID を取得
   - レコードを検索して返却
   - 見つからない場合は 404
   - 依存: T016, T005 (テストが先)
 
 - [x] T025 `router/src/api/dashboard.rs` に
-  Export エンドポイント (`GET /api/dashboard/request-responses/export`) を実装
+  Export エンドポイント (`GET /v0/dashboard/request-responses/export`) を実装
   - format パラメータ（json または csv）
   - JSON 形式: フィルタ済みレコードを JSON 配列で返却
   - CSV 形式: `csv` クレート使用、レコードを CSV に変換
@@ -207,9 +207,9 @@
 
 - [x] T026 `router/src/api/mod.rs` または `router/src/main.rs` に
   新しいエンドポイントをルーターに登録
-  - `/api/dashboard/request-responses` → list handler
-  - `/api/dashboard/request-responses/:id` → detail handler
-  - `/api/dashboard/request-responses/export` → export handler
+  - `/v0/dashboard/request-responses` → list handler
+  - `/v0/dashboard/request-responses/:id` → detail handler
+  - `/v0/dashboard/request-responses/export` → export handler
   - 依存: T023, T024, T025
 
 ---

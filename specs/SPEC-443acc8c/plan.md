@@ -92,7 +92,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 - パフォーマンス: プロキシ処理に影響なし
 
 **代替案検討**:
-- **Active polling**: ルーターからGET /api/healthでポーリング → ネットワーク負荷高、複雑
+- **Active polling**: ルーターからノードへHTTPポーリング → ネットワーク負荷高、複雑
 
 ### 決定2: 60秒タイムアウト
 
@@ -105,7 +105,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 
 ### 決定3: 環境変数設定可能化
 
-**選択**: `AGENT_TIMEOUT`環境変数でタイムアウト設定可能
+**選択**: `LLM_ROUTER_NODE_TIMEOUT`（フォールバック: `NODE_TIMEOUT`）環境変数でタイムアウト設定可能
 
 **理由**:
 - 柔軟性: 環境に応じてチューニング可能

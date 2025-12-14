@@ -48,7 +48,7 @@
 ## Integration
 
 - [ ] Router/Node同時起動でログ出力確認
-- [ ] /api/logsエンドポイント動作確認
+- [ ] /v0/logsエンドポイント動作確認
 
 ## Polish
 

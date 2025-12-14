@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tracing::{error, info, warn};
 
-/// POST /api/nodes - ノード登録
+/// POST /v0/nodes - ノード登録
 pub async fn register_node(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -221,13 +221,13 @@ pub async fn register_node(
     Ok((status_code, Json(response)))
 }
 
-/// GET /api/nodes - ノード一覧取得
+/// GET /v0/nodes - ノード一覧取得
 pub async fn list_nodes(State(state): State<AppState>) -> Json<Vec<Node>> {
     let nodes = state.registry.list().await;
     Json(nodes)
 }
 
-/// PUT /api/nodes/:id/settings - ノード設定更新
+/// PUT /v0/nodes/:id/settings - ノード設定更新
 pub async fn update_node_settings(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -258,19 +258,19 @@ pub struct UpdateNodeSettingsPayload {
     pub notes: Option<Option<String>>,
 }
 
-/// GET /api/nodes/metrics - ノードメトリクス取得
+/// GET /v0/nodes/metrics - ノードメトリクス取得
 pub async fn list_node_metrics(State(state): State<AppState>) -> Json<Vec<NodeLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;
     Json(snapshots)
 }
 
-/// GET /api/metrics/summary - システム統計
+/// GET /v0/metrics/summary - システム統計
 pub async fn metrics_summary(State(state): State<AppState>) -> Json<SystemSummary> {
     let summary = state.load_manager.summary().await;
     Json(summary)
 }
 
-/// DELETE /api/nodes/:id - ノードを削除
+/// DELETE /v0/nodes/:id - ノードを削除
 pub async fn delete_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -279,7 +279,7 @@ pub async fn delete_node(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// POST /api/nodes/:id/disconnect - ノードを強制オフラインにする
+/// POST /v0/nodes/:id/disconnect - ノードを強制オフラインにする
 pub async fn disconnect_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,

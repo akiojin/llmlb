@@ -1,6 +1,6 @@
 //! ダッシュボードフローE2Eテスト
 //!
-//! ダッシュボードAPI（/api/dashboard/*）のE2Eテスト
+//! ダッシュボードAPI（/v0/dashboard/*）のE2Eテスト
 
 use axum::{
     body::Body,
@@ -50,12 +50,12 @@ async fn test_dashboard_nodes_endpoint() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/dashboard/nodes
+    // GET /v0/dashboard/nodes
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -65,7 +65,7 @@ async fn test_dashboard_nodes_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /api/dashboard/nodes should return OK"
+        "GET /v0/dashboard/nodes should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -84,12 +84,12 @@ async fn test_dashboard_stats_endpoint() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/dashboard/stats
+    // GET /v0/dashboard/stats
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/stats")
+                .uri("/v0/dashboard/stats")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -99,7 +99,7 @@ async fn test_dashboard_stats_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /api/dashboard/stats should return OK"
+        "GET /v0/dashboard/stats should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -115,12 +115,12 @@ async fn test_dashboard_overview_endpoint() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/dashboard/overview
+    // GET /v0/dashboard/overview
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/overview")
+                .uri("/v0/dashboard/overview")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -130,7 +130,7 @@ async fn test_dashboard_overview_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /api/dashboard/overview should return OK"
+        "GET /v0/dashboard/overview should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -149,12 +149,12 @@ async fn test_dashboard_request_history_endpoint() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/dashboard/request-history
+    // GET /v0/dashboard/request-history
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/request-history")
+                .uri("/v0/dashboard/request-history")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -164,7 +164,7 @@ async fn test_dashboard_request_history_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /api/dashboard/request-history should return OK"
+        "GET /v0/dashboard/request-history should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -204,7 +204,7 @@ async fn test_dashboard_nodes_with_registered_node() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -217,7 +217,7 @@ async fn test_dashboard_nodes_with_registered_node() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -243,12 +243,12 @@ async fn test_cloud_metrics_endpoint() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /metrics/cloud
+    // GET /v0/metrics/cloud
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/metrics/cloud")
+                .uri("/v0/metrics/cloud")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -258,7 +258,7 @@ async fn test_cloud_metrics_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /metrics/cloud should return OK"
+        "GET /v0/metrics/cloud should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -279,12 +279,12 @@ async fn test_models_loaded_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // GET /api/models/loaded
+    // GET /v0/models/loaded
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/loaded")
+                .uri("/v0/models/loaded")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -296,7 +296,7 @@ async fn test_models_loaded_endpoint_is_removed() {
             response.status(),
             StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
         ),
-        "/api/models/loaded should be removed (got {})",
+        "/v0/models/loaded should be removed (got {})",
         response.status()
     );
 }

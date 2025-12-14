@@ -63,20 +63,20 @@ curl -X POST http://localhost:8080/v1/completions \
 
 ```bash
 # 一覧取得
-curl http://localhost:8080/api/dashboard/request-responses
+curl http://localhost:8080/v0/dashboard/request-responses
 
 # フィルタリング（モデル名指定）
-curl "http://localhost:8080/api/dashboard/request-responses?model=llama2"
+curl "http://localhost:8080/v0/dashboard/request-responses?model=llama2"
 
 # 特定レコードの詳細取得
-curl http://localhost:8080/api/dashboard/request-responses/{id}
+curl http://localhost:8080/v0/dashboard/request-responses/{id}
 
 # JSON形式でエクスポート
-curl "http://localhost:8080/api/dashboard/request-responses/export?format=json" \
+curl "http://localhost:8080/v0/dashboard/request-responses/export?format=json" \
   -o history.json
 
 # CSV形式でエクスポート
-curl "http://localhost:8080/api/dashboard/request-responses/export?format=csv" \
+curl "http://localhost:8080/v0/dashboard/request-responses/export?format=csv" \
   -o history.csv
 ```
 
@@ -138,8 +138,8 @@ open http://localhost:8080/dashboard
 **検証コマンド**:
 ```bash
 # APIで詳細取得
-RECORD_ID=$(curl -s http://localhost:8080/api/dashboard/request-responses | jq -r '.records[0].id')
-curl http://localhost:8080/api/dashboard/request-responses/$RECORD_ID | jq
+RECORD_ID=$(curl -s http://localhost:8080/v0/dashboard/request-responses | jq -r '.records[0].id')
+curl http://localhost:8080/v0/dashboard/request-responses/$RECORD_ID | jq
 ```
 
 ---
@@ -162,13 +162,13 @@ curl http://localhost:8080/api/dashboard/request-responses/$RECORD_ID | jq
 **検証コマンド**:
 ```bash
 # モデル名でフィルタ
-curl "http://localhost:8080/api/dashboard/request-responses?model=llama2"
+curl "http://localhost:8080/v0/dashboard/request-responses?model=llama2"
 
 # ステータスでフィルタ
-curl "http://localhost:8080/api/dashboard/request-responses?status=success"
+curl "http://localhost:8080/v0/dashboard/request-responses?status=success"
 
 # 日時範囲でフィルタ
-curl "http://localhost:8080/api/dashboard/request-responses?start_time=2025-11-03T00:00:00Z&end_time=2025-11-03T23:59:59Z"
+curl "http://localhost:8080/v0/dashboard/request-responses?start_time=2025-11-03T00:00:00Z&end_time=2025-11-03T23:59:59Z"
 ```
 
 ---
@@ -190,12 +190,12 @@ curl "http://localhost:8080/api/dashboard/request-responses?start_time=2025-11-0
 **検証コマンド**:
 ```bash
 # JSON エクスポート
-curl "http://localhost:8080/api/dashboard/request-responses/export?format=json" \
+curl "http://localhost:8080/v0/dashboard/request-responses/export?format=json" \
   -o history.json
 cat history.json | jq
 
 # CSV エクスポート
-curl "http://localhost:8080/api/dashboard/request-responses/export?format=csv" \
+curl "http://localhost:8080/v0/dashboard/request-responses/export?format=csv" \
   -o history.csv
 head history.csv
 ```
@@ -230,7 +230,7 @@ cat ~/.llm-router/request_history.json | jq
 **確認方法**:
 ```bash
 # エラーレスポンスを確認
-curl -v "http://localhost:8080/api/dashboard/request-responses/export?format=invalid"
+curl -v "http://localhost:8080/v0/dashboard/request-responses/export?format=invalid"
 ```
 
 **対処方法**:
@@ -270,7 +270,7 @@ done
 wait
 
 # レスポンスタイム確認
-time curl http://localhost:8080/api/dashboard/request-responses
+time curl http://localhost:8080/v0/dashboard/request-responses
 ```
 
 **期待パフォーマンス**:

@@ -60,7 +60,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     let deleteRequested = false;
 
     // Setup route BEFORE reload
-    await page.route('**/api/models/convert', async (route) => {
+    await page.route('**/v0/models/convert', async (route) => {
       const request = route.request();
       if (request.method() === 'GET') {
         await route.fulfill({
@@ -73,7 +73,9 @@ test.describe('Dashboard Models Tab @dashboard', () => {
       await route.continue();
     });
 
-    await page.route('**/api/models/convert/11111111-1111-1111-1111-111111111111', async (route) => {
+    await page.route(
+      '**/v0/models/convert/11111111-1111-1111-1111-111111111111',
+      async (route) => {
       const request = route.request();
       if (request.method() === 'DELETE') {
         deleteRequested = true;
@@ -111,7 +113,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
   test('M-08: Register button triggers API call', async ({ page }) => {
     // Setup request listener
     const requestPromise = page.waitForRequest(
-      (request) => request.url().includes('/api/models/register'),
+      (request) => request.url().includes('/v0/models/register'),
       { timeout: 5000 }
     ).catch(() => null);
 
@@ -147,7 +149,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
       },
     ];
 
-    await page.route('**/api/models/registered', async (route) => {
+    await page.route('**/v0/models/registered', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

@@ -1,6 +1,6 @@
 # 契約: Models API 拡張 (SPEC-11106000)
 
-## GET /api/models/available
+## GET /v0/models/available
 - **Purpose**: HF GGUF カタログを返す。
 - **Query**: `search`, `limit`, `offset`, `source=hf` (デフォルト hf)。
 - **Response** 200:
@@ -26,7 +26,7 @@
 }
 ```
 
-## POST /api/models/register
+## POST /v0/models/register
 - **Purpose**: HF GGUF を対応モデルとして登録。
 - **Body**:
 ```json
@@ -45,7 +45,7 @@
 ## GET /v1/models
 
 - 対応モデルに HF 登録分も含めて返す（idのみ。displayやsourceは拡張フィールドとしてオプション）。
-- ノードはこの一覧を参照し、`path` が参照できない場合は `GET /api/models/blob/:model_name` でモデルを取得する（ルーターからのpush配布は行わない）。
+- ノードはこの一覧を参照し、`path` が参照できない場合は `GET /v0/models/blob/:model_name` でモデルを取得する（ルーターからのpush配布は行わない）。
 
 ---
 
@@ -55,7 +55,7 @@
 
 CLIコマンドは廃止されました。以下のAPIを直接使用してください：
 
-- モデル一覧: `GET /api/models/available`
-- モデル登録: `POST /api/models/register`
+- モデル一覧: `GET /v0/models/available`
+- モデル登録: `POST /v0/models/register`
 - ノード同期（一覧）: `GET /v1/models`
-- ノード同期（ファイル）: `GET /api/models/blob/:model_name`
+- ノード同期（ファイル）: `GET /v0/models/blob/:model_name`

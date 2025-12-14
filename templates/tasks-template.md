@@ -49,8 +49,8 @@
 
 ## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
 **重要: これらのテストは記述され、実装前に失敗する必要がある**
-- [ ] T004 [P] tests/contract/test_users_post.py に POST /api/users の contract test
-- [ ] T005 [P] tests/contract/test_users_get.py に GET /api/users/{id} の contract test
+- [ ] T004 [P] tests/contract/test_users_post.py に POST /v0/users の contract test
+- [ ] T005 [P] tests/contract/test_users_get.py に GET /v0/users/{id} の contract test
 - [ ] T006 [P] tests/integration/test_registration.py にユーザー登録の integration test
 - [ ] T007 [P] tests/integration/test_auth.py に認証フローの integration test
 
@@ -58,8 +58,8 @@
 - [ ] T008 [P] src/models/user.py にユーザーモデル
 - [ ] T009 [P] src/services/user_service.py にUserService CRUD
 - [ ] T010 [P] src/cli/user_commands.py にCLI --create-user
-- [ ] T011 POST /api/users エンドポイント
-- [ ] T012 GET /api/users/{id} エンドポイント
+- [ ] T011 POST /v0/users エンドポイント
+- [ ] T012 GET /v0/users/{id} エンドポイント
 - [ ] T013 入力検証
 - [ ] T014 エラーハンドリングとロギング
 
@@ -85,8 +85,8 @@
 ## 並列実行例
 ```
 # T004-T007 を一緒に起動:
-Task: "tests/contract/test_users_post.py に POST /api/users の contract test"
-Task: "tests/contract/test_users_get.py に GET /api/users/{id} の contract test"
+Task: "tests/contract/test_users_post.py に POST /v0/users の contract test"
+Task: "tests/contract/test_users_get.py に GET /v0/users/{id} の contract test"
 Task: "tests/integration/test_registration.py に登録の integration test"
 Task: "tests/integration/test_auth.py に認証の integration test"
 ```

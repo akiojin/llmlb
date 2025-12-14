@@ -49,7 +49,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 2. ルーターは `download_url` をもつモデルについて **事前に自分の `~/.llm-router/models/` へキャッシュ** を試みる。成功すれば `path` を応答に含める。
 3. ノードはまずローカル `~/.llm-router/models/<name>/model.gguf` を探す。あれば採用。
 4. ルーターから受け取った `path` が存在し読み取り可能なら、それを直接使用（コピー可）。
-5. `path` が不可なら、ルーターの `/api/models/blob/:model_name` からダウンロードし、`~/.llm-router/models` に保存。
+5. `path` が不可なら、ルーターの `/v0/models/blob/:model_name` からダウンロードし、`~/.llm-router/models` に保存。
 6. いずれも不可なら、`download_url` を最後の手段としてダウンロードし、`~/.llm-router/models` に保存。
 7. いずれも不可ならエラーを返す。LLM runtime固有形式への暗黙フォールバックは禁止。
 

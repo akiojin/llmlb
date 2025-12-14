@@ -47,7 +47,7 @@ async fn test_list_available_models_from_runtime_library() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available")
+                .uri("/v0/models/available")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -75,7 +75,7 @@ async fn test_list_available_models_from_runtime_library() {
     // 事前定義モデルは廃止されたため、空配列でもよい（存在確認のみ）
 }
 
-/// T019: ノードが報告したロード済みモデルが /api/nodes に反映される
+/// T019: ノードが報告したロード済みモデルが /v0/nodes に反映される
 #[tokio::test]
 async fn test_list_installed_models_on_node() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
@@ -98,7 +98,7 @@ async fn test_list_installed_models_on_node() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -136,7 +136,7 @@ async fn test_list_installed_models_on_node() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/health")
+                .uri("/v0/health")
                 .header("content-type", "application/json")
                 .header("X-Node-Token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
@@ -151,12 +151,12 @@ async fn test_list_installed_models_on_node() {
         "health check should be accepted"
     );
 
-    // /api/nodes に反映される
+    // /v0/nodes に反映される
     let list_response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -185,7 +185,7 @@ async fn test_list_installed_models_on_node() {
     assert!(has_model, "loaded_models should contain reported model");
 }
 
-/// T020: 複数ノードのロード済みモデルが /api/nodes に反映される
+/// T020: 複数ノードのロード済みモデルが /v0/nodes に反映される
 #[tokio::test]
 async fn test_model_matrix_view_multiple_nodes() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
@@ -210,7 +210,7 @@ async fn test_model_matrix_view_multiple_nodes() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/api/nodes")
+                    .uri("/v0/nodes")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                     .unwrap(),
@@ -252,7 +252,7 @@ async fn test_model_matrix_view_multiple_nodes() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/api/health")
+                    .uri("/v0/health")
                     .header("content-type", "application/json")
                     .header("X-Node-Token", node_token)
                     .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
@@ -263,13 +263,13 @@ async fn test_model_matrix_view_multiple_nodes() {
         assert_eq!(health_response.status(), StatusCode::OK);
     }
 
-    // /api/nodes に反映される（マトリックス表示のデータソース）
+    // /v0/nodes に反映される（マトリックス表示のデータソース）
     let list_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -301,7 +301,7 @@ async fn test_model_matrix_view_multiple_nodes() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available")
+                .uri("/v0/models/available")
                 .body(Body::empty())
                 .unwrap(),
         )

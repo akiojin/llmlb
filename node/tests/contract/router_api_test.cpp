@@ -9,12 +9,12 @@ using namespace llm_node;
 class RouterContractFixture : public ::testing::Test {
 protected:
     void SetUp() override {
-        server.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+        server.Post("/v0/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register = req.body;
             res.status = 200;
             res.set_content(R"({"node_id":"node-123","node_token":"test-token"})", "application/json");
         });
-        server.Post("/api/health", [this](const httplib::Request& req, httplib::Response& res) {
+        server.Post("/v0/health", [this](const httplib::Request& req, httplib::Response& res) {
             last_heartbeat = req.body;
             last_heartbeat_token = req.get_header_value("X-Node-Token");
             res.status = 200;

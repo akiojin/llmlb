@@ -1516,7 +1516,7 @@ mod tests {
 
         // fetch dashboard history
         let history_resp = client
-            .get(format!("http://{addr}/api/dashboard/request-responses"))
+            .get(format!("http://{addr}/v0/dashboard/request-responses"))
             .send()
             .await
             .expect("history request");

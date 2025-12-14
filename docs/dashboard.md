@@ -9,16 +9,16 @@ The authoritative API list and setup instructions live in `README.md` / `README.
 
 ## Router endpoints used by the Dashboard
 
-- `GET /api/dashboard/overview`
-- `GET /api/dashboard/stats`
-- `GET /api/dashboard/nodes`
-- `GET /api/dashboard/metrics/:node_id`
-- `GET /api/dashboard/request-history`
-- `GET /api/dashboard/request-responses`
-- `GET /api/dashboard/request-responses/:id`
-- `GET /api/dashboard/request-responses/export`
-- `GET /api/dashboard/logs/router`
-- `GET /api/nodes/:node_id/logs`
+- `GET /v0/dashboard/overview`
+- `GET /v0/dashboard/stats`
+- `GET /v0/dashboard/nodes`
+- `GET /v0/dashboard/metrics/:node_id`
+- `GET /v0/dashboard/request-history`
+- `GET /v0/dashboard/request-responses`
+- `GET /v0/dashboard/request-responses/:id`
+- `GET /v0/dashboard/request-responses/export`
+- `GET /v0/dashboard/logs/router`
+- `GET /v0/nodes/:node_id/logs`
 
 ## Build (regenerate embedded assets)
 

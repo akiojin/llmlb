@@ -79,7 +79,10 @@ nodes.insert(id, node);
 - **60秒/120秒**: 障害検出遅い
 
 **実装詳細**:
-- 環境変数: `HEARTBEAT_INTERVAL=30`, `AGENT_TIMEOUT=60`
+- 環境変数（例）:
+  - Node: `LLM_NODE_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
+  - Router: `LLM_ROUTER_HEALTH_CHECK_INTERVAL=30`（フォールバック: `HEALTH_CHECK_INTERVAL`）
+  - Router: `LLM_ROUTER_NODE_TIMEOUT=60`（フォールバック: `NODE_TIMEOUT`）
 - ノード側: `tokio::time::interval(Duration::from_secs(30))`
 - ルーター側: `last_heartbeat + 60秒 < now` でOffline判定
 

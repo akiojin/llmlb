@@ -259,7 +259,7 @@ const POLL_INTERVAL = 5000; // 5秒
 async function refreshDashboard() {
   try {
     // ノード一覧を取得
-    const nodesResponse = await fetch('/api/dashboard/nodes');
+    const nodesResponse = await fetch('/v0/dashboard/nodes');
     if (!nodesResponse.ok) {
       throw new Error(`HTTP error! status: ${nodesResponse.status}`);
     }
@@ -267,7 +267,7 @@ async function refreshDashboard() {
     updateNodeTable(nodes);
 
     // システム統計を取得
-    const statsResponse = await fetch('/api/dashboard/stats');
+    const statsResponse = await fetch('/v0/dashboard/stats');
     if (!statsResponse.ok) {
       throw new Error(`HTTP error! status: ${statsResponse.status}`);
     }

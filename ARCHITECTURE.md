@@ -26,7 +26,7 @@ Router (OpenAI-compatible)
 ```
 
 ## Scheduling & Health
-- Nodes register via `/api/nodes`; router rejects nodes without GPUs by default.
+- Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
 - Heartbeats carry CPU/GPU/memory metrics used for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys
   are configured.

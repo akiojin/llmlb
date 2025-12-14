@@ -100,7 +100,7 @@
   - GPU無しノードが起動時に削除されることを検証
 
 - [x] **T013** Integration Test: Dashboard API 表示
-  - `/api/dashboard/nodes` レスポンスで GPU 情報を検証
+  - `/v0/dashboard/nodes` レスポンスで GPU 情報を検証
 
 - [x] **T014** Node Unit Test: GPU情報必須
   - GPU検出に失敗した際に登録処理をスキップする挙動をテスト（mock送信）

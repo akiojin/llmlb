@@ -54,8 +54,8 @@ Authentication headers are automatically injected from environment variables.
 Examples:
 - List models: curl http://localhost:8080/v1/models
 - Chat completion: curl -X POST http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"...", "messages":[...]}'
-- List nodes: curl http://localhost:8080/api/nodes
-- Dashboard stats: curl http://localhost:8080/api/dashboard/stats
+- List nodes: curl http://localhost:8080/v0/nodes
+- Dashboard stats: curl http://localhost:8080/v0/dashboard/stats
 
 Refer to the 'llm-router-openapi' resource for full API documentation.`;
 
@@ -177,7 +177,9 @@ Refer to the 'llm-router-openapi' resource for full API documentation.`;
     }
 
     const isManagementEndpoint =
-      url.includes("/api/users") || url.includes("/api/api-keys");
+      url.includes("/v0/users") ||
+      url.includes("/v0/api-keys") ||
+      url.includes("/v0/auth/me");
 
     let authHeader = "";
 

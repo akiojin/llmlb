@@ -64,7 +64,7 @@ pub async fn register_node(
     node_addr: SocketAddr,
 ) -> reqwest::Result<Response> {
     Client::new()
-        .post(format!("http://{router_addr}/api/nodes"))
+        .post(format!("http://{router_addr}/v0/nodes"))
         .json(&json!({
             "machine_name": "stub-node",
             "ip_address": node_addr.ip().to_string(),
@@ -93,7 +93,7 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
 
     // ログイン
     let login_response = client
-        .post(format!("http://{}/api/auth/login", router_addr))
+        .post(format!("http://{}/v0/auth/login", router_addr))
         .json(&json!({
             "username": "admin",
             "password": "password123"
@@ -107,7 +107,7 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
 
     // APIキーを発行
     let create_key_response = client
-        .post(format!("http://{}/api/api-keys", router_addr))
+        .post(format!("http://{}/v0/api-keys", router_addr))
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",

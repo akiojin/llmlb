@@ -224,7 +224,7 @@ pub enum RecordStatus {
 
 ```json
 {
-  "GET /api/dashboard/request-responses": {
+  "GET /v0/dashboard/request-responses": {
     "query_params": {
       "model": "string (optional)",
       "node_id": "uuid (optional)",
@@ -241,14 +241,14 @@ pub enum RecordStatus {
       "per_page": "integer"
     }
   },
-  "GET /api/dashboard/request-responses/:id": {
+  "GET /v0/dashboard/request-responses/:id": {
     "path_params": {
       "id": "uuid"
     },
     "response_200": "RequestResponseRecord",
     "response_404": { "error": "Record not found" }
   },
-  "GET /api/dashboard/request-responses/export": {
+  "GET /v0/dashboard/request-responses/export": {
     "query_params": {
       "format": "json|csv",
       "... (same filters as list endpoint)"
@@ -269,7 +269,7 @@ pub enum RecordStatus {
 #[tokio::test]
 async fn test_list_request_responses_contract() {
     // Arrange: テストサーバー起動、データなし
-    // Act: GET /api/dashboard/request-responses
+    // Act: GET /v0/dashboard/request-responses
     // Assert:
     //   - Status: 200
     //   - Body: { records: [], total_count: 0, page: 1, per_page: 100 }

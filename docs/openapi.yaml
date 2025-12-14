@@ -60,7 +60,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmbeddingResponse"
-  /api/dashboard/stats:
+  /v0/dashboard/stats:
     get:
       summary: Router stats including cloud key presence flags
       responses:

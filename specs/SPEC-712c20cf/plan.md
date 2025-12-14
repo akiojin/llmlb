@@ -189,7 +189,7 @@ router/
 - **機能**: ダッシュボードのメインページを返す
 
 #### 2. ノード状態API
-- **エンドポイント**: `GET /api/dashboard/nodes`
+- **エンドポイント**: `GET /v0/dashboard/nodes`
 - **レスポンス**: JSON
 ```json
 [
@@ -207,7 +207,7 @@ router/
 ```
 
 #### 3. システム統計API
-- **エンドポイント**: `GET /api/dashboard/stats`
+- **エンドポイント**: `GET /v0/dashboard/stats`
 - **レスポンス**: JSON
 ```json
 {
@@ -223,7 +223,7 @@ router/
 ```
 
 #### 4. ノード設定API（FR-023）
-- **エンドポイント**: `PUT /api/nodes/:node_id/settings`
+- **エンドポイント**: `PUT /v0/nodes/:node_id/settings`
 - **リクエスト**: JSON
 ```json
 {
@@ -235,17 +235,17 @@ router/
 - **レスポンス**: 200 OK, 更新されたノード情報
 
 #### 5. ノード削除API（FR-024）
-- **エンドポイント**: `DELETE /api/nodes/:node_id`
+- **エンドポイント**: `DELETE /v0/nodes/:node_id`
 - **レスポンス**: 204 No Content
 - **機能**: ノードを登録解除
 
 #### 6. ノード強制切断API（FR-024）
-- **エンドポイント**: `POST /api/nodes/:node_id/disconnect`
+- **エンドポイント**: `POST /v0/nodes/:node_id/disconnect`
 - **レスポンス**: 202 Accepted
 - **機能**: ノードを強制的にOffline状態に
 
 #### 7. メトリクスAPI（SPEC-589f2df1実装後）
-- **エンドポイント**: `GET /api/dashboard/metrics/:node_id`
+- **エンドポイント**: `GET /v0/dashboard/metrics/:node_id`
 - **レスポンス**: JSON
 ```json
 {
@@ -303,7 +303,7 @@ async fn test_dashboard_page_returns_html() {
 
 2. **シナリオ2**: ノード情報表示
    - 前提: 複数のノードが登録
-   - 実行: `GET /api/dashboard/nodes`
+   - 実行: `GET /v0/dashboard/nodes`
    - 結果: JSON配列で全ノード情報が返却
 
 3. **シナリオ3**: リアルタイム更新

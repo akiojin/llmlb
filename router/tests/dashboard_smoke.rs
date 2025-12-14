@@ -180,7 +180,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -205,7 +205,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/stats")
+                .uri("/v0/dashboard/stats")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -258,7 +258,7 @@ async fn dashboard_request_history_tracks_activity() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/request-history")
+                .uri("/v0/dashboard/request-history")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -310,7 +310,7 @@ async fn dashboard_overview_returns_combined_payload() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/overview")
+                .uri("/v0/dashboard/overview")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -374,7 +374,7 @@ async fn dashboard_node_metrics_endpoint_returns_history() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/api/dashboard/metrics/{node_id}"))
+                .uri(format!("/v0/dashboard/metrics/{node_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )

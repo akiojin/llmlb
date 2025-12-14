@@ -36,25 +36,25 @@ AUTH_DISABLED, JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD を定義
 ### Contract Tests (並列実行可能)
 
 - [x] **T004** [P] `router/tests/contract/auth_api_test.rs` に
-POST /api/auth/login の契約テスト（スキーマ検証、REDを確認）
+POST /v0/auth/login の契約テスト（スキーマ検証、REDを確認）
 - [x] **T005** [P] `router/tests/contract/auth_api_test.rs` に
-POST /api/auth/logout の契約テスト（スキーマ検証、REDを確認）
+POST /v0/auth/logout の契約テスト（スキーマ検証、REDを確認）
 - [x] **T006** [P] `router/tests/contract/auth_api_test.rs` に
-GET /api/auth/me の契約テスト（スキーマ検証、REDを確認）
+GET /v0/auth/me の契約テスト（スキーマ検証、REDを確認）
 - [x] **T007** [P] `router/tests/contract/users_api_test.rs` に
-GET /api/users の契約テスト（スキーマ検証、REDを確認）
+GET /v0/users の契約テスト（スキーマ検証、REDを確認）
 - [x] **T008** [P] `router/tests/contract/users_api_test.rs` に
-POST /api/users の契約テスト（スキーマ検証、REDを確認）
+POST /v0/users の契約テスト（スキーマ検証、REDを確認）
 - [x] **T009** [P] `router/tests/contract/users_api_test.rs` に
-PUT /api/users/:id の契約テスト（スキーマ検証、REDを確認）
+PUT /v0/users/:id の契約テスト（スキーマ検証、REDを確認）
 - [x] **T010** [P] `router/tests/contract/users_api_test.rs` に
-DELETE /api/users/:id の契約テスト（スキーマ検証、REDを確認）
+DELETE /v0/users/:id の契約テスト（スキーマ検証、REDを確認）
 - [x] **T011** [P] `router/tests/contract/api_keys_api_test.rs` に
-GET /api/api-keys の契約テスト（スキーマ検証、REDを確認）
+GET /v0/api-keys の契約テスト（スキーマ検証、REDを確認）
 - [x] **T012** [P] `router/tests/contract/api_keys_api_test.rs` に
-POST /api/api-keys の契約テスト（スキーマ検証、REDを確認）
+POST /v0/api-keys の契約テスト（スキーマ検証、REDを確認）
 - [x] **T013** [P] `router/tests/contract/api_keys_api_test.rs` に
-DELETE /api/api-keys/:id の契約テスト（スキーマ検証、REDを確認）
+DELETE /v0/api-keys/:id の契約テスト（スキーマ検証、REDを確認）
 
 ### Integration Tests (並列実行可能)
 
@@ -173,28 +173,28 @@ APIキー生成関数を実装（`sk_` + 32文字ランダム、SHA-256ハッシ
 ## Phase 3.8: API実装
 
 - [x] **T057** `router/src/api/auth.rs` に
-POST /api/auth/login エンドポイントを実装 → T004 GREEN
+POST /v0/auth/login エンドポイントを実装 → T004 GREEN
 - [x] **T058** `router/src/api/auth.rs` に
-POST /api/auth/logout エンドポイントを実装 → T005 GREEN
+POST /v0/auth/logout エンドポイントを実装 → T005 GREEN
 - [x] **T059** `router/src/api/auth.rs` に
-GET /api/auth/me エンドポイントを実装 → T006 GREEN
+GET /v0/auth/me エンドポイントを実装 → T006 GREEN
 - [x] **T060** `router/src/api/users.rs` に
-GET /api/users エンドポイントを実装（Admin専用） → T007 GREEN
+GET /v0/users エンドポイントを実装（Admin専用） → T007 GREEN
 - [x] **T061** `router/src/api/users.rs` に
-POST /api/users エンドポイントを実装（Admin専用） → T008 GREEN
+POST /v0/users エンドポイントを実装（Admin専用） → T008 GREEN
 - [x] **T062** `router/src/api/users.rs` に
-PUT /api/users/:id エンドポイントを実装（Admin専用） → T009 GREEN
+PUT /v0/users/:id エンドポイントを実装（Admin専用） → T009 GREEN
 - [x] **T063** `router/src/api/users.rs` に
-DELETE /api/users/:id エンドポイントを実装（Admin専用、最後の管理者チェック）
+DELETE /v0/users/:id エンドポイントを実装（Admin専用、最後の管理者チェック）
 → T010 GREEN
 - [x] **T064** `router/src/api/api_keys.rs` に
-GET /api/api-keys エンドポイントを実装（Admin専用） → T011 GREEN
+GET /v0/api-keys エンドポイントを実装（Admin専用） → T011 GREEN
 - [x] **T065** `router/src/api/api_keys.rs` に
-POST /api/api-keys エンドポイントを実装（Admin専用、平文キー返却） → T012 GREEN
+POST /v0/api-keys エンドポイントを実装（Admin専用、平文キー返却） → T012 GREEN
 - [x] **T066** `router/src/api/api_keys.rs` に
-DELETE /api/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
+DELETE /v0/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
 - [x] **T067** `router/src/api/nodes.rs` を修正して
-POST /api/nodes レスポンスに node_token フィールドを追加 → T024 GREEN
+POST /v0/nodes レスポンスに node_token フィールドを追加 → T024 GREEN
 
 ## Phase 3.9: 初回起動処理
 
@@ -209,14 +209,14 @@ POST /api/nodes レスポンスに node_token フィールドを追加 → T024 
 
 - [x] **T071** `router/src/api/mod.rs` に
 JWT認証ミドルウェアを管理APIに適用
-（/api/nodes, /api/models, /api/dashboard, /api/users, /api/api-keys）
+（/v0/nodes, /v0/models, /v0/dashboard, /v0/users, /v0/api-keys）
 → T015, T016, T017 GREEN
 - [x] **T072** `router/src/api/mod.rs` に
 APIキー認証ミドルウェアをOpenAI互換APIに適用
 （/v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models）
 - [x] **T073** `router/src/api/mod.rs` に
 ノードトークン認証ミドルウェアをノード通信APIに適用
-（/api/health）
+（/v0/health）
 - [x] **T074** `router/src/api/mod.rs` に
 認証無効化モードを実装（AUTH_DISABLED=true で全ミドルウェアスキップ）
 → T023 GREEN
@@ -226,7 +226,7 @@ APIキー認証ミドルウェアをOpenAI互換APIに適用
 - [x] **T075** [P] `router/src/web/static/login.html` に
 ログイン画面を作成（ユーザー名・パスワード入力フォーム）
 - [x] **T076** [P] `router/src/web/static/login.js` に
-ログイン処理を実装（POST /api/auth/login, JWTをlocalStorageに保存）
+ログイン処理を実装（POST /v0/auth/login, JWTをlocalStorageに保存）
 - [x] **T077** [P] `router/src/web/static/app.js` に
 認証状態管理を追加（localStorage JWT確認、全APIリクエストにBearer付与）
 - [x] **T078** [P] `router/src/web/static/app.js` に
@@ -234,21 +234,21 @@ APIキー認証ミドルウェアをOpenAI互換APIに適用
 - [x] **T079** [P] `router/src/web/static/api-keys.html` に
 APIキー管理画面を作成（タブ追加）
 - [x] **T080** [P] `router/src/web/static/api-keys.js` に
-APIキー一覧表示を実装（GET /api/api-keys）
+APIキー一覧表示を実装（GET /v0/api-keys）
 - [x] **T081** `router/src/web/static/api-keys.js` に
-APIキー発行機能を実装（POST /api/api-keys、平文キーのモーダル表示）
+APIキー発行機能を実装（POST /v0/api-keys、平文キーのモーダル表示）
 - [x] **T082** `router/src/web/static/api-keys.js` に
-APIキー削除機能を実装（DELETE /api/api-keys/:id）
+APIキー削除機能を実装（DELETE /v0/api-keys/:id）
 - [x] **T083** [P] `router/src/web/static/users.html` に
 ユーザー管理画面を作成（タブ追加、Admin専用）
 - [x] **T084** [P] `router/src/web/static/users.js` に
-ユーザー一覧表示を実装（GET /api/users）
+ユーザー一覧表示を実装（GET /v0/users）
 - [x] **T085** `router/src/web/static/users.js` に
-ユーザー作成機能を実装（POST /api/users）
+ユーザー作成機能を実装（POST /v0/users）
 - [x] **T086** `router/src/web/static/users.js` に
-パスワード変更機能を実装（PUT /api/users/:id）
+パスワード変更機能を実装（PUT /v0/users/:id）
 - [x] **T087** `router/src/web/static/users.js` に
-ユーザー削除機能を実装（DELETE /api/users/:id、最後の管理者警告）
+ユーザー削除機能を実装（DELETE /v0/users/:id、最後の管理者警告）
 
 ## Phase 3.12: ノード統合
 

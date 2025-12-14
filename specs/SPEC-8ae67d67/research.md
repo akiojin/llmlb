@@ -9,10 +9,10 @@
 
 - ノード主導でモデルを同期する
   - モデル一覧: `GET /v1/models`
-  - モデル取得: `GET /api/models/blob/:model_name`
+  - モデル取得: `GET /v0/models/blob/:model_name`
 - ルーターはモデルの取得・登録・一覧化を担う（配布は行わない）
-  - `GET /api/models/available`
-  - `POST /api/models/register`
-  - `GET /api/models/registered`
+  - `GET /v0/models/available`
+  - `POST /v0/models/register`
+  - `GET /v0/models/registered`
 
 詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。

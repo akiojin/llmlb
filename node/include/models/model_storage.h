@@ -11,7 +11,7 @@
 namespace llm_node {
 
 struct ModelInfo {
-    std::string name;       // Model name (e.g., "gpt-oss:20b")
+    std::string name;       // Model name (e.g., "gpt-oss-20b")
     std::string gguf_path;  // Full path to model.gguf
     bool valid{false};      // Whether the model file exists and is valid
 };
@@ -20,12 +20,10 @@ class ModelStorage {
 public:
     explicit ModelStorage(std::string models_dir);
 
-    // FR-2: Convert model name to directory name (colon to underscore)
-    // e.g., "gpt-oss:20b" -> "gpt-oss_20b"
+    // FR-2: Convert model name to directory name (sanitized, lowercase)
     static std::string modelNameToDir(const std::string& model_name);
 
-    // Reverse conversion: directory name to model name
-    // e.g., "gpt-oss_20b" -> "gpt-oss:20b"
+    // Reverse conversion: directory name to model name (best-effort)
     static std::string dirNameToModel(const std::string& dir_name);
 
     // FR-3: Resolve GGUF file path for a model

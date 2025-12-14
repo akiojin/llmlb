@@ -70,6 +70,21 @@ if(BUILD_WITH_WHISPER)
     add_subdirectory(third_party/whisper.cpp)
 endif()
 
+# stable-diffusion.cpp for Image Generation
+option(BUILD_WITH_SD "Build with stable-diffusion.cpp support for image generation" OFF)
+if(BUILD_WITH_SD)
+    set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    # stable-diffusion.cpp uses its own ggml, configure it to use system ggml if possible
+    # For now, let it build its own to avoid version conflicts
+    if(APPLE AND BUILD_WITH_METAL)
+        set(SD_METAL ON CACHE BOOL "" FORCE)
+    endif()
+    if(BUILD_WITH_CUDA)
+        set(SD_CUDA ON CACHE BOOL "" FORCE)
+    endif()
+    add_subdirectory(third_party/stable-diffusion.cpp)
+endif()
+
 # ONNX Runtime for TTS (Text-to-Speech)
 option(BUILD_WITH_ONNX "Build with ONNX Runtime support for TTS" OFF)
 if(BUILD_WITH_ONNX)
@@ -106,6 +121,13 @@ if(BUILD_WITH_WHISPER)
     include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp/include
+    )
+endif()
+
+# stable-diffusion.cpp include directories
+if(BUILD_WITH_SD)
+    include_directories(
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stable-diffusion.cpp
     )
 endif()
 
@@ -196,6 +218,12 @@ if(BUILD_WITH_WHISPER)
     target_compile_definitions(llm-node PRIVATE USE_WHISPER)
 endif()
 
+# stable-diffusion.cpp support
+if(BUILD_WITH_SD)
+    target_link_libraries(llm-node stable-diffusion)
+    target_compile_definitions(llm-node PRIVATE USE_SD)
+endif()
+
 # ONNX Runtime support
 if(BUILD_WITH_ONNX)
     target_link_libraries(llm-node onnxruntime::onnxruntime)
@@ -248,6 +276,7 @@ message(STATUS "  CUDA support:      ${BUILD_WITH_CUDA}")
 message(STATUS "  Metal support:     ${BUILD_WITH_METAL}")
 message(STATUS "  ROCm support:      ${BUILD_WITH_ROCM}")
 message(STATUS "  Whisper support:   ${BUILD_WITH_WHISPER}")
+message(STATUS "  SD support:        ${BUILD_WITH_SD}")
 message(STATUS "  ONNX support:      ${BUILD_WITH_ONNX}")
 message(STATUS "  Static build:      ${STATIC_BUILD}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")

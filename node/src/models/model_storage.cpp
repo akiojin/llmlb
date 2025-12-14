@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <cctype>
 #include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
@@ -12,36 +13,38 @@ using json = nlohmann::json;
 
 namespace llm_node {
 
+namespace {
+std::string sanitizeModelId(const std::string& input) {
+    if (input.empty()) return "_latest";
+
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+            out.push_back(static_cast<char>(c));
+            continue;
+        }
+        if (c >= 'A' && c <= 'Z') {
+            out.push_back(static_cast<char>(std::tolower(c)));
+            continue;
+        }
+        // Disallow path separators and other special characters by replacing them.
+        out.push_back('_');
+    }
+
+    if (out.empty() || out == "." || out == "..") return "_latest";
+    return out;
+}
+}  // namespace
+
 ModelStorage::ModelStorage(std::string models_dir) : models_dir_(std::move(models_dir)) {}
 
 std::string ModelStorage::modelNameToDir(const std::string& model_name) {
-    if (model_name.empty()) {
-        return "_latest";
-    }
-
-    std::string result = model_name;
-
-    // Replace all colons with underscores
-    std::replace(result.begin(), result.end(), ':', '_');
-
-    // If no tag was present (no colon), append _latest
-    if (model_name.find(':') == std::string::npos) {
-        result += "_latest";
-    }
-
-    return result;
+    return sanitizeModelId(model_name);
 }
 
 std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
-    std::string result = dir_name;
-
-    // Find the last underscore and replace with colon
-    auto last_underscore = result.rfind('_');
-    if (last_underscore != std::string::npos) {
-        result[last_underscore] = ':';
-    }
-
-    return result;
+    return sanitizeModelId(dir_name);
 }
 
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {

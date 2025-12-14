@@ -142,10 +142,7 @@ impl From<NodeLogPayload> for LogResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry,
-        tasks::DownloadTaskManager,
-    };
+    use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry};
     use axum::extract::State as AxumState;
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::{net::IpAddr, sync::Arc};
@@ -167,7 +164,6 @@ mod tests {
         let request_history = Arc::new(
             crate::db::request_history::RequestHistoryStorage::new().expect("history init"),
         );
-        let task_manager = DownloadTaskManager::new();
         let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
@@ -181,7 +177,6 @@ mod tests {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,

@@ -240,8 +240,6 @@ impl NodeRegistry {
             node_id,
             status,
             agent_api_port: Some(node.runtime_port + 1),
-            auto_distributed_model: None,
-            download_task_id: None,
             agent_token: None,
         })
     }

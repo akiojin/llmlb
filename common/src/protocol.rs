@@ -47,12 +47,6 @@ pub struct RegisterResponse {
     /// ノードAPIポート（OpenAI互換API）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_api_port: Option<u16>,
-    /// 自動配布されたモデル名（オプション）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_distributed_model: Option<String>,
-    /// ダウンロードタスクID（オプション）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub download_task_id: Option<Uuid>,
     /// エージェントトークン（認証用）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_token: Option<String>,
@@ -524,7 +518,7 @@ mod tests {
             gpu_capability_score: Some(9500),
             active_requests: 2,
             average_response_time_ms: Some(100.0),
-            loaded_models: vec!["llama3:8b".to_string()],
+            loaded_models: vec!["llama3-8b".to_string()],
             loaded_embedding_models: vec![],
             loaded_asr_models: vec![],
             loaded_tts_models: vec![],

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { type DashboardNode, nodesApi, dashboardApi } from '@/lib/api'
+import { type DashboardNode, type LogEntry, nodesApi, dashboardApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,13 +25,6 @@ interface LogViewerProps {
 type LogLevel = 'all' | 'error' | 'warn' | 'info' | 'debug'
 type LogSource = 'router' | string
 
-interface LogEntry {
-  timestamp: string
-  level: string
-  message: string
-  target?: string
-}
-
 export function LogViewer({ nodes }: LogViewerProps) {
   const [source, setSource] = useState<LogSource>('router')
   const [levelFilter, setLevelFilter] = useState<LogLevel>('all')
@@ -45,7 +38,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
     isRefetching: isRefetchingRouter,
   } = useQuery({
     queryKey: ['router-logs'],
-    queryFn: () => dashboardApi.getLogs({ limit: 200 }),
+    queryFn: () => dashboardApi.getRouterLogs({ limit: 200 }),
     enabled: source === 'router',
     refetchInterval: 5000,
   })
@@ -62,7 +55,8 @@ export function LogViewer({ nodes }: LogViewerProps) {
     refetchInterval: 5000,
   })
 
-  const logs = (source === 'router' ? routerLogs : nodeLogs) as LogEntry[] | undefined
+  const logsResponse = source === 'router' ? routerLogs : nodeLogs
+  const logs = logsResponse?.entries as LogEntry[] | undefined
   const isRefetching = source === 'router' ? isRefetchingRouter : isRefetchingNode
 
   const filteredLogs = logs?.filter((log) => {
@@ -99,7 +93,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
     }
 
     const logText = filteredLogs
-      .map((log) => `[${log.timestamp}] [${log.level}] ${log.target ? `[${log.target}] ` : ''}${log.message}`)
+      .map((log) => `[${log.timestamp}] [${log.level}] ${log.target ? `[${log.target}] ` : ''}${log.message || ''}`)
       .join('\n')
 
     const blob = new Blob([logText], { type: 'text/plain' })
@@ -139,9 +133,9 @@ export function LogViewer({ nodes }: LogViewerProps) {
             {/* Source Select */}
             <Select value={source} onValueChange={(v) => setSource(v as LogSource)}>
               <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
                 <SelectItem value="router">
                   <div className="flex items-center gap-2">
                     <Server className="h-4 w-4" />
@@ -244,7 +238,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
                       [{log.target}]
                     </span>
                   )}
-                  <span className="break-all">{log.message}</span>
+                  <span className="break-all">{log.message || ''}</span>
                 </div>
               ))
             )}

@@ -57,7 +57,6 @@ with open(outfile, "wb") as f:
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -71,7 +70,6 @@ with open(outfile, "wb") as f:
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -81,15 +79,15 @@ with open(outfile, "wb") as f:
     api::create_router(state)
 }
 
-/// T005b: POST /api/models/distribute のバリデーション（specificでnode_ids空）
+/// モデル配布APIは廃止（ノードが /v1/models と /api/models/blob から自律取得）
 #[tokio::test]
 #[serial]
-async fn test_distribute_models_requires_node_ids_for_specific() {
+async fn test_distribute_models_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let request_body = json!({
-        "model_name": "gpt-oss:20b",
+        "model_name": "gpt-oss-20b",
         "target": "specific",
         "node_ids": []
     });
@@ -106,10 +104,13 @@ async fn test_distribute_models_requires_node_ids_for_specific() {
         .await
         .unwrap();
 
-    assert_eq!(
-        response.status(),
-        StatusCode::BAD_REQUEST,
-        "specific target requires node_ids"
+    assert!(
+        matches!(
+            response.status(),
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+        ),
+        "model distribution endpoint should be removed (got {})",
+        response.status()
     );
 }
 
@@ -181,7 +182,8 @@ async fn test_get_available_models_contract() {
     assert!(
         models
             .iter()
-            .any(|m| m["name"] == "hf/test/repo/model.gguf"),
+            // model.gguf (generic) + test/repo → "repo"
+            .any(|m| m["name"] == "repo"),
         "hf catalog item should appear"
     );
 
@@ -204,197 +206,47 @@ async fn test_get_available_models_contract() {
     }
 }
 
-/// T005: POST /api/models/distribute の契約テスト
+/// ノードのモデル一覧取得APIは廃止（ロード済みモデルは /api/nodes と /api/dashboard/nodes から参照）
 #[tokio::test]
 #[serial]
-async fn test_distribute_models_contract() {
+async fn test_get_node_models_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // テスト用リクエスト
-    let request_body = json!({
-        "model_name": "gpt-oss:20b",
-        "target": "all",
-        "node_ids": []
-    });
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/models/distribute")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // ステータスコードの検証
-    assert_eq!(
-        response.status(),
-        StatusCode::ACCEPTED,
-        "Expected 202 ACCEPTED for POST /api/models/distribute"
-    );
-
-    // レスポンスボディの検証
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
-    assert!(
-        body.get("task_ids").is_some(),
-        "Response must have 'task_ids' field"
-    );
-    assert!(
-        body["task_ids"].is_array(),
-        "'task_ids' field must be an array"
-    );
-
-    // task_ids配列の各要素がUUID文字列であることを確認
-    if let Some(task_ids) = body["task_ids"].as_array() {
-        for task_id in task_ids {
-            let task_id_str = task_id.as_str().expect("task_id must be a string");
-            Uuid::parse_str(task_id_str).expect("task_id must be a valid UUID");
-        }
-    }
-}
-
-/// T006: GET /api/nodes/{node_id}/models の契約テスト
-#[tokio::test]
-#[serial]
-async fn test_get_agent_models_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let app = build_app().await;
-
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデル一覧を取得
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/nodes/{}/models", node_id))
+                .uri(format!("/api/nodes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/nodes/:id/models"
+        StatusCode::NOT_FOUND,
+        "node models endpoint should be removed"
     );
-
-    // レスポンスボディの検証（InstalledModelの配列）
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert!(body.is_array(), "Response must be an array");
-
-    // 配列の各要素の検証
-    if let Some(models) = body.as_array() {
-        for model in models {
-            assert!(model.get("name").is_some(), "Model must have 'name'");
-            assert!(model.get("size").is_some(), "Model must have 'size'");
-            assert!(
-                model.get("installed_at").is_some(),
-                "Model must have 'installed_at'"
-            );
-            // digestはオプション
-        }
-    }
 }
 
-/// T007: POST /api/nodes/{node_id}/models/pull の契約テスト
+/// ノードへのモデルpull指示APIは廃止（ノードが自律的に取得）
 #[tokio::test]
 #[serial]
-async fn test_pull_model_contract() {
+async fn test_pull_model_to_node_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデルプル
     let request_body = json!({
-        "model_name": "gpt-oss:3b"
+        "model_name": "gpt-oss-3b"
     });
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/nodes/{}/models/pull", node_id))
+                .uri(format!("/api/nodes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -402,158 +254,36 @@ async fn test_pull_model_contract() {
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::ACCEPTED,
-        "Expected 202 ACCEPTED for POST /api/nodes/:id/models/pull"
+        StatusCode::NOT_FOUND,
+        "node model pull endpoint should be removed"
     );
-
-    // レスポンスボディの検証
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
-    assert!(
-        body.get("task_id").is_some(),
-        "Response must have 'task_id' field"
-    );
-    let task_id_str = body["task_id"]
-        .as_str()
-        .expect("'task_id' must be a string");
-    Uuid::parse_str(task_id_str).expect("'task_id' must be a valid UUID");
 }
 
-/// T008: GET /api/tasks/{task_id} の契約テスト
+/// ダウンロードタスクAPIは廃止（モデル同期はノード側でオンデマンドに実行）
 #[tokio::test]
 #[serial]
-async fn test_get_task_progress_contract() {
+async fn test_tasks_endpoint_is_removed() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデルプルを開始してタスクIDを取得
-    let request_body = json!({
-        "model_name": "gpt-oss:3b"
-    });
-
-    let pull_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/api/nodes/{}/models/pull", node_id))
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    let body = to_bytes(pull_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let pull_result: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let task_id = pull_result["task_id"]
-        .as_str()
-        .expect("Pull response must have 'task_id'");
-
-    // タスク進捗を取得
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/tasks/{}", task_id))
+                .uri("/api/tasks")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/tasks/:id"
+        StatusCode::NOT_FOUND,
+        "tasks endpoint should be removed"
     );
-
-    // レスポンスボディの検証（DownloadTask構造体）
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
-    assert!(body.get("id").is_some(), "Task must have 'id'");
-    assert!(body.get("node_id").is_some(), "Task must have 'node_id'");
-    assert!(
-        body.get("model_name").is_some(),
-        "Task must have 'model_name'"
-    );
-    assert!(body.get("status").is_some(), "Task must have 'status'");
-    assert!(body.get("progress").is_some(), "Task must have 'progress'");
-    assert!(
-        body.get("started_at").is_some(),
-        "Task must have 'started_at'"
-    );
-
-    // statusフィールドの検証
-    let status = body["status"].as_str().expect("'status' must be a string");
-    assert!(
-        ["pending", "in_progress", "completed", "failed"].contains(&status),
-        "'status' must be one of: pending, in_progress, completed, failed"
-    );
-
-    // progressフィールドの検証（0.0-1.0の範囲）
-    let progress = body["progress"]
-        .as_f64()
-        .expect("'progress' must be a number");
-    assert!(
-        (0.0..=1.0).contains(&progress),
-        "'progress' must be between 0.0 and 1.0"
-    );
-
-    // UUIDの検証
-    let id_str = body["id"].as_str().expect("'id' must be a string");
-    Uuid::parse_str(id_str).expect("'id' must be a valid UUID");
-
-    let node_id_str = body["node_id"]
-        .as_str()
-        .expect("'node_id' must be a string");
-    Uuid::parse_str(node_id_str).expect("'node_id' must be a valid UUID");
 }
 
 /// T009: POST /api/models/register - 正常系と重複/404異常系
@@ -615,9 +345,9 @@ async fn test_register_model_contract() {
     let data = body["data"]
         .as_array()
         .expect("'data' must be an array on /v1/models");
-    // Ollama風ID: model.gguf (generic) + test/repo → "repo:latest"
+    // model.gguf (generic) + test/repo → "repo"
     assert!(
-        data.iter().all(|m| m["id"] != "repo:latest"),
+        data.iter().all(|m| m["id"] != "repo"),
         "/v1/models must not expose models before download completes"
     );
 

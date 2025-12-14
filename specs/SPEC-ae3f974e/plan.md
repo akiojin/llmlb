@@ -111,11 +111,11 @@ Response: (same as generations)
 |---------|------|
 | `router/tests/integration/images_api_test.rs` | 画像APIルーティング統合テスト |
 
-### Phase 5: Node側実装 - stable-diffusion.cpp - ⏳ 未着手
+### Phase 5: Node側実装 - stable-diffusion.cpp - ✅ 完了
 
 | ファイル | 変更内容 |
 |---------|---------|
-| `node/CMakeLists.txt` | stable-diffusion.cppサブモジュール追加 |
+| `node/CMakeLists.txt` | BUILD_WITH_SDオプション、stable-diffusion.cppリンク |
 | `node/include/core/sd_manager.h` | Stable Diffusionマネージャーヘッダー |
 | `node/src/core/sd_manager.cpp` | stable-diffusion.cpp統合実装 |
 | `node/include/api/image_endpoints.h` | 画像エンドポイントヘッダー |

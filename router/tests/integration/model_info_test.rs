@@ -16,7 +16,6 @@ async fn build_app() -> Router {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -30,7 +29,6 @@ async fn build_app() -> Router {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -77,7 +75,7 @@ async fn test_list_available_models_from_runtime_library() {
     // 事前定義モデルは廃止されたため、空配列でもよい（存在確認のみ）
 }
 
-/// T019: 特定ノードのインストール済みモデル一覧を取得
+/// T019: ノードが報告したロード済みモデルが /api/nodes に反映される
 #[tokio::test]
 async fn test_list_installed_models_on_agent() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
@@ -117,55 +115,84 @@ async fn test_list_installed_models_on_agent() {
     let node_id = agent["node_id"]
         .as_str()
         .expect("Node must have 'node_id' field");
+    let agent_token = agent["agent_token"]
+        .as_str()
+        .expect("Node must have 'agent_token' field");
 
-    // ノードのインストール済みモデル一覧を取得
-    let response = app
+    // ノードがロード済みモデルを報告
+    let health_payload = json!({
+        "node_id": node_id,
+        "cpu_usage": 0.0,
+        "memory_usage": 0.0,
+        "active_requests": 0,
+        "loaded_models": ["gpt-oss-20b"],
+        "loaded_embedding_models": [],
+        "initializing": false,
+        "ready_models": [1, 1]
+    });
+
+    let health_response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .method("GET")
-                .uri(format!("/api/nodes/{}/models", node_id))
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/health")
+                .header("content-type", "application/json")
+                .header("X-Agent-Token", agent_token)
+                .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                 .unwrap(),
         )
         .await
         .unwrap();
 
     assert_eq!(
-        response.status(),
+        health_response.status(),
         StatusCode::OK,
-        "Node models endpoint should return 200 OK"
+        "health check should be accepted"
     );
 
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    // /api/nodes に反映される
+    let list_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/nodes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 
-    // 配列であることを検証
-    assert!(
-        models.is_array(),
-        "Response must be an array of installed models"
-    );
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let body = to_bytes(list_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let nodes: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let target = nodes
+        .as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .find(|n| n.get("id").and_then(|v| v.as_str()) == Some(node_id))
+        })
+        .cloned()
+        .expect("registered node must exist");
 
-    // 各モデルに必要な情報が含まれることを検証（空でない場合）
-    if let Some(model_array) = models.as_array() {
-        for model in model_array {
-            assert!(model.get("name").is_some(), "Model must have 'name'");
-            assert!(model.get("size").is_some(), "Model must have 'size'");
-            assert!(
-                model.get("installed_at").is_some(),
-                "Model must have 'installed_at'"
-            );
-        }
-    }
+    let has_model = target
+        .get("loaded_models")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().any(|m| m.as_str() == Some("gpt-oss-20b")))
+        .unwrap_or(false);
+    assert!(has_model, "loaded_models should contain reported model");
 }
 
-/// T020: 全ノードのモデルマトリックス表示
+/// T020: 複数ノードのロード済みモデルが /api/nodes に反映される
 #[tokio::test]
 async fn test_model_matrix_view_multiple_agents() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // 複数のノードを登録
-    let mut node_ids = Vec::new();
+    // 複数のノードを登録（node_id と agent_token を保持）
+    let mut nodes: Vec<(String, String)> = Vec::new();
     for i in 0..3 {
         let register_payload = json!({
             "machine_name": format!("matrix-agent-{}", i),
@@ -190,44 +217,83 @@ async fn test_model_matrix_view_multiple_agents() {
             )
             .await
             .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let agent: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        node_ids.push(
-            agent["node_id"]
-                .as_str()
-                .expect("Node must have 'node_id'")
-                .to_string(),
-        );
+        let node_id = agent["node_id"]
+            .as_str()
+            .expect("Node must have 'node_id'")
+            .to_string();
+        let agent_token = agent["agent_token"]
+            .as_str()
+            .expect("Node must have 'agent_token'")
+            .to_string();
+        nodes.push((node_id, agent_token));
     }
 
-    // 各ノードのモデル一覧を取得
-    for node_id in &node_ids {
-        let response = app
+    // 各ノードがロード済みモデルを報告
+    let reported = ["gpt-oss-20b", "gpt-oss-120b", "qwen3-coder-30b"];
+    for (idx, (node_id, agent_token)) in nodes.iter().enumerate() {
+        let model = reported[idx % reported.len()];
+        let health_payload = json!({
+            "node_id": node_id,
+            "cpu_usage": 0.0,
+            "memory_usage": 0.0,
+            "active_requests": 0,
+            "loaded_models": [model],
+            "loaded_embedding_models": [],
+            "initializing": false,
+            "ready_models": [1, 1]
+        });
+
+        let health_response = app
             .clone()
             .oneshot(
                 Request::builder()
-                    .method("GET")
-                    .uri(format!("/api/nodes/{}/models", node_id))
-                    .body(Body::empty())
+                    .method("POST")
+                    .uri("/api/health")
+                    .header("content-type", "application/json")
+                    .header("X-Agent-Token", agent_token)
+                    .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                     .unwrap(),
             )
             .await
             .unwrap();
+        assert_eq!(health_response.status(), StatusCode::OK);
+    }
 
-        assert_eq!(
-            response.status(),
-            StatusCode::OK,
-            "Each agent should have accessible model list"
-        );
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        assert!(
-            models.is_array(),
-            "Each agent's model list must be an array"
-        );
+    // /api/nodes に反映される（マトリックス表示のデータソース）
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/nodes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let body = to_bytes(list_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let nodes_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let arr = nodes_json.as_array().expect("nodes list must be an array");
+    assert_eq!(arr.len(), 3);
+    for (idx, (node_id, _)) in nodes.iter().enumerate() {
+        let model = reported[idx % reported.len()];
+        let node = arr
+            .iter()
+            .find(|n| n.get("id").and_then(|v| v.as_str()) == Some(node_id.as_str()))
+            .expect("node must exist in list");
+        let has_model = node
+            .get("loaded_models")
+            .and_then(|v| v.as_array())
+            .map(|m| m.iter().any(|x| x.as_str() == Some(model)))
+            .unwrap_or(false);
+        assert!(has_model, "node should report loaded model");
     }
 
     // 利用可能なモデル一覧も取得できることを確認
@@ -292,14 +358,12 @@ async fn test_v1_models_returns_fixed_list() {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,

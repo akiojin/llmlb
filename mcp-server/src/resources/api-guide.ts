@@ -244,7 +244,21 @@ curl -X POST ${routerUrl}/api/nodes/NODE_ID/disconnect
 \`\`\`bash
 curl -X PUT ${routerUrl}/api/nodes/NODE_ID/settings \\
   -H "Content-Type: application/json" \\
-  -d '{"max_concurrent_requests": 10}'
+  -d '{
+    "custom_name": "Primary",
+    "tags": ["gpu", "primary"],
+    "notes": "Keep online"
+  }'
+\`\`\`
+
+To clear a nullable field, send \`null\` (for example, \`{"custom_name": null}\`).
+
+## Node Logs
+
+**Endpoint**: GET ${routerUrl}/api/nodes/:node_id/logs
+
+\`\`\`bash
+curl ${routerUrl}/api/nodes/NODE_ID/logs
 \`\`\`
 `;
 }
@@ -254,10 +268,10 @@ function getModelManagementGuide(routerUrl: string): string {
 
 ## List Available Models (HuggingFace)
 
-**Endpoint**: GET ${routerUrl}/api/models/available
+**Endpoint**: GET ${routerUrl}/api/models/available?source=hf
 
 \`\`\`bash
-curl ${routerUrl}/api/models/available
+curl "${routerUrl}/api/models/available?source=hf"
 \`\`\`
 
 ## List Registered Models
@@ -275,17 +289,25 @@ curl ${routerUrl}/api/models/registered
 \`\`\`bash
 curl -X POST ${routerUrl}/api/models/register \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://huggingface.co/TheBloke/Llama-2-7B-GGUF"}'
+  -d '{
+    "repo": "TheBloke/Llama-2-7B-GGUF",
+    "filename": "llama-2-7b.Q4_K_M.gguf"
+  }'
 \`\`\`
 
-## Pull Model
+If \`filename\` is omitted, the router tries to find a GGUF file in the repo. If none exists, it will queue a conversion task.
+
+## Pull Model (Cache GGUF to Router Storage)
 
 **Endpoint**: POST ${routerUrl}/api/models/pull
 
 \`\`\`bash
 curl -X POST ${routerUrl}/api/models/pull \\
   -H "Content-Type: application/json" \\
-  -d '{"model_name": "llama-2-7b.Q4_K_M.gguf"}'
+  -d '{
+    "repo": "TheBloke/Llama-2-7B-GGUF",
+    "filename": "llama-2-7b.Q4_K_M.gguf"
+  }'
 \`\`\`
 
 ## Delete Model
@@ -293,7 +315,7 @@ curl -X POST ${routerUrl}/api/models/pull \\
 **Endpoint**: DELETE ${routerUrl}/api/models/:model_name
 
 \`\`\`bash
-curl -X DELETE ${routerUrl}/api/models/llama-2-7b.Q4_K_M.gguf
+curl -X DELETE ${routerUrl}/api/models/llama-2-7b
 \`\`\`
 
 ## Discover GGUF Files
@@ -303,7 +325,7 @@ curl -X DELETE ${routerUrl}/api/models/llama-2-7b.Q4_K_M.gguf
 \`\`\`bash
 curl -X POST ${routerUrl}/api/models/discover-gguf \\
   -H "Content-Type: application/json" \\
-  -d '{"repo_id": "TheBloke/Llama-2-7B-GGUF"}'
+  -d '{"model": "openai/gpt-oss-20b"}'
 \`\`\`
 
 ## Convert Model
@@ -313,8 +335,30 @@ curl -X POST ${routerUrl}/api/models/discover-gguf \\
 \`\`\`bash
 curl -X POST ${routerUrl}/api/models/convert \\
   -H "Content-Type: application/json" \\
-  -d '{"source_model": "model.safetensors", "target_format": "gguf"}'
+  -d '{
+    "repo": "openai/gpt-oss-20b",
+    "filename": "model.bin",
+    "revision": "main"
+  }'
 \`\`\`
+
+## Convert Tasks
+
+- List tasks: GET ${routerUrl}/api/models/convert
+- Get task: GET ${routerUrl}/api/models/convert/:task_id
+- Delete task: DELETE ${routerUrl}/api/models/convert/:task_id
+
+## Model Blob Download
+
+**Endpoint**: GET ${routerUrl}/api/models/blob/:model_name
+
+\`\`\`bash
+curl -L ${routerUrl}/api/models/blob/gpt-oss-20b -o model.gguf
+\`\`\`
+
+## Model ID Format
+
+Model IDs are normalized to a filename-based format (for example \`gpt-oss-20b\`). Colons and slashes are not used.
 `;
 }
 
@@ -361,12 +405,28 @@ curl ${routerUrl}/api/dashboard/metrics/NODE_ID
 curl ${routerUrl}/api/dashboard/request-responses
 \`\`\`
 
+## Export Request/Response Logs
+
+**Endpoint**: GET ${routerUrl}/api/dashboard/request-responses/export
+
+\`\`\`bash
+curl -L ${routerUrl}/api/dashboard/request-responses/export -o request-responses.json
+\`\`\`
+
 ## Request Detail
 
 **Endpoint**: GET ${routerUrl}/api/dashboard/request-responses/:id
 
 \`\`\`bash
 curl ${routerUrl}/api/dashboard/request-responses/REQUEST_ID
+\`\`\`
+
+## Router Logs
+
+**Endpoint**: GET ${routerUrl}/api/dashboard/logs/router
+
+\`\`\`bash
+curl ${routerUrl}/api/dashboard/logs/router
 \`\`\`
 `;
 }

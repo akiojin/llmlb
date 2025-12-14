@@ -33,6 +33,11 @@
 #include "core/onnx_tts_manager.h"
 #endif
 
+#ifdef USE_SD
+#include "core/sd_manager.h"
+#include "api/image_endpoints.h"
+#endif
+
 int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
     llm_node::g_running_flag.store(true);
 
@@ -108,6 +113,12 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("OnnxTtsManager initialized for TTS support");
 #endif
 
+#ifdef USE_SD
+        // Initialize SDManager for image generation
+        llm_node::SDManager sd_manager(models_dir);
+        spdlog::info("SDManager initialized for image generation support");
+#endif
+
         // Set GPU layers based on detection (use all layers on GPU if available)
         if (!gpu_devices.empty()) {
             // Use 99 layers for GPU offloading (most models have fewer layers)
@@ -138,10 +149,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Create shared router client for both registration and progress reporting
-        auto router_client = std::make_shared<llm_node::RouterClient>(router_url);
-
-        // Create model_sync early so pull endpoint is ready for auto-distribution
+        // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
@@ -152,8 +160,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::OpenAIEndpoints openai(registry, engine, cfg);
         llm_node::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
-        node_endpoints.setRouterClient(router_client);
-        node_endpoints.setModelSync(model_sync);
         llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
 
 #ifdef USE_WHISPER
@@ -166,6 +172,13 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Audio endpoints registered for ASR");
 #endif
         audio_endpoints.registerRoutes(server.getServer());
+#endif
+
+#ifdef USE_SD
+        // Register image endpoints for image generation
+        llm_node::ImageEndpoints image_endpoints(sd_manager, cfg);
+        image_endpoints.registerRoutes(server.getServer());
+        spdlog::info("Image endpoints registered for image generation");
 #endif
 
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;

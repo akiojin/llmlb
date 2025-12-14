@@ -19,6 +19,26 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+std::string urlEncodePathSegment(const std::string& input) {
+    static const char* kHex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        const bool unreserved =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (unreserved) {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[(c >> 4) & 0x0F]);
+            out.push_back(kHex[c & 0x0F]);
+        }
+    }
+    return out;
+}
 }  // namespace
 
 size_t ModelSync::defaultConcurrency() {
@@ -207,6 +227,7 @@ ModelSyncResult ModelSync::sync() {
             if (local_set.count(id)) continue;
 
             bool ok = false;
+            bool downloaded = false;
             auto it = remote_map.find(id);
             if (it != remote_map.end()) {
                 const auto& info = it->second;
@@ -221,15 +242,26 @@ ModelSyncResult ModelSync::sync() {
                     }
                 }
 
-                // Only download if path is not accessible and download_url exists
-                if (!ok && !info.download_url.empty()) {
-                    auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
+                // If path is not accessible, download from router's blob endpoint as fallback.
+                // The router's endpoint uses a single path segment, so model id must be URL-encoded (slashes, etc).
+                if (!ok) {
+                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
+                    const auto blob_path = std::string("/api/models/blob/") + urlEncodePathSegment(id);
+                    auto out = downloader.downloadBlob(blob_path, filename, nullptr);
                     ok = !out.empty();
+                    downloaded = ok;
                 }
 
-                // metadata (chat_template) - only write if we downloaded locally
-                if (ok && info.path.empty() && !info.chat_template.empty()) {
+                // As a last resort, allow direct download_url (e.g. HF) if router blob is unavailable.
+                if (!ok && !info.download_url.empty()) {
+                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
+                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
+                    ok = !out.empty();
+                    downloaded = ok;
+                }
+
+                // metadata (chat_template) - persist only when we downloaded locally
+                if (ok && downloaded && !info.chat_template.empty()) {
                     auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
                     auto meta_path = meta_dir / "metadata.json";
                     nlohmann::json meta;

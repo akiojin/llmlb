@@ -68,10 +68,10 @@ async fn agent_models_handler(State(state): State<Arc<AgentStubState>>) -> impl 
         vec![serde_json::json!({"id": model})]
     } else {
         vec![
-            serde_json::json!({"id": "gpt-oss:20b"}),
-            serde_json::json!({"id": "gpt-oss:120b"}),
-            serde_json::json!({"id": "gpt-oss-safeguard:20b"}),
-            serde_json::json!({"id": "qwen3-coder:30b"}),
+            serde_json::json!({"id": "gpt-oss-20b"}),
+            serde_json::json!({"id": "gpt-oss-120b"}),
+            serde_json::json!({"id": "gpt-oss-safeguard-20b"}),
+            serde_json::json!({"id": "qwen3-coder-30b"}),
         ]
     };
 
@@ -83,10 +83,10 @@ async fn agent_tags_handler(State(state): State<Arc<AgentStubState>>) -> impl In
         vec![serde_json::json!({"name": model, "size": 10_000_000_000i64})]
     } else {
         vec![
-            serde_json::json!({"name": "gpt-oss:20b", "size": 10_000_000_000i64}),
-            serde_json::json!({"name": "gpt-oss:120b", "size": 120_000_000_000i64}),
-            serde_json::json!({"name": "gpt-oss-safeguard:20b", "size": 10_000_000_000i64}),
-            serde_json::json!({"name": "qwen3-coder:30b", "size": 30_000_000_000i64}),
+            serde_json::json!({"name": "gpt-oss-20b", "size": 10_000_000_000i64}),
+            serde_json::json!({"name": "gpt-oss-120b", "size": 120_000_000_000i64}),
+            serde_json::json!({"name": "gpt-oss-safeguard-20b", "size": 10_000_000_000i64}),
+            serde_json::json!({"name": "qwen3-coder-30b", "size": 30_000_000_000i64}),
         ]
     };
 
@@ -98,7 +98,7 @@ async fn agent_tags_handler(State(state): State<Arc<AgentStubState>>) -> impl In
 async fn proxy_completions_end_to_end_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let agent_stub = spawn_agent_stub(AgentStubState {
-        expected_model: Some("gpt-oss:20b".to_string()),
+        expected_model: Some("gpt-oss-20b".to_string()),
         response: AgentGenerateStubResponse::Success(serde_json::json!({
             "id": "cmpl-123",
             "object": "text_completion",
@@ -120,7 +120,7 @@ async fn proxy_completions_end_to_end_success() {
         .post(format!("http://{}/v1/completions", coordinator.addr()))
         .header("x-api-key", "sk_debug")
         .json(&serde_json::json!({
-            "model": "gpt-oss:20b",
+            "model": "gpt-oss-20b",
             "prompt": "ping",
             "max_tokens": 8
         }))

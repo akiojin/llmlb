@@ -7,6 +7,9 @@ mod support;
 #[path = "integration/model_info_test.rs"]
 mod model_info_test;
 
+#[path = "integration/audio_api_test.rs"]
+mod audio_api_test;
+
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 

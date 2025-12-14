@@ -12,6 +12,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task;
@@ -20,7 +21,153 @@ use uuid::Uuid;
 use crate::registry::models::{
     generate_ollama_style_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
 };
+use crate::registry::NodeRegistry;
 use llm_router_common::error::RouterError;
+use llm_router_common::types::NodeStatus;
+
+// ===== Push Notification Context (SPEC-dcaeaec4 FR-7) =====
+
+/// プッシュ通知用のコンテキスト
+struct NotificationContext {
+    registry: NodeRegistry,
+    http_client: reqwest::Client,
+}
+
+/// グローバルな通知コンテキスト
+static NOTIFICATION_CONTEXT: Lazy<RwLock<Option<NotificationContext>>> =
+    Lazy::new(|| RwLock::new(None));
+
+/// 通知コンテキストを設定（main.rsから呼び出し）
+pub fn set_notification_context(registry: NodeRegistry, http_client: reqwest::Client) {
+    let mut ctx = NOTIFICATION_CONTEXT.write().unwrap();
+    *ctx = Some(NotificationContext {
+        registry,
+        http_client,
+    });
+    tracing::info!("Push notification context initialized");
+}
+
+/// オンラインノードに新しいモデルの通知を送信
+/// SPEC-dcaeaec4 FR-7: 無限リトライ、指数バックオフ（1s, 2s, 4s, ... 最大60s）
+async fn notify_nodes_of_new_model(model_name: &str) {
+    let (registry, http_client) = {
+        let ctx = NOTIFICATION_CONTEXT.read().unwrap();
+        match ctx.as_ref() {
+            Some(c) => (c.registry.clone(), c.http_client.clone()),
+            None => {
+                tracing::warn!("Notification context not set, skipping push notification");
+                return;
+            }
+        }
+    };
+
+    let nodes = registry.list().await;
+    let online_nodes: Vec<_> = nodes
+        .into_iter()
+        .filter(|n| n.status == NodeStatus::Online)
+        .collect();
+
+    if online_nodes.is_empty() {
+        tracing::debug!("No online nodes to notify about model: {}", model_name);
+        return;
+    }
+
+    tracing::info!(
+        model = %model_name,
+        node_count = online_nodes.len(),
+        "Sending push notifications to online nodes"
+    );
+
+    // 各ノードへの通知を非同期で実行（メインフローをブロックしない）
+    for node in online_nodes {
+        let model_name = model_name.to_string();
+        let http_client = http_client.clone();
+        let node_id = node.id;
+        let node_addr = format!("http://{}:{}", node.ip_address, node.runtime_port);
+
+        tokio::spawn(async move {
+            notify_single_node_with_retry(&http_client, &node_addr, &model_name, node_id).await;
+        });
+    }
+}
+
+/// 単一ノードへの通知（指数バックオフ付きリトライ）
+async fn notify_single_node_with_retry(
+    http_client: &reqwest::Client,
+    node_addr: &str,
+    model_name: &str,
+    node_id: Uuid,
+) {
+    const MAX_BACKOFF_SECS: u64 = 60;
+    const MAX_ATTEMPTS: u32 = 20; // 無限ではなく実用的な上限を設定
+
+    let url = format!("{}/api/models/pull", node_addr);
+    let body = serde_json::json!({
+        "model": model_name
+    });
+
+    let mut attempt = 0u32;
+    let mut backoff_secs = 1u64;
+
+    loop {
+        attempt += 1;
+
+        match http_client
+            .post(&url)
+            .json(&body)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::info!(
+                    node_id = %node_id,
+                    model = %model_name,
+                    attempt = attempt,
+                    "Push notification sent successfully"
+                );
+                return;
+            }
+            Ok(resp) => {
+                tracing::warn!(
+                    node_id = %node_id,
+                    model = %model_name,
+                    status = %resp.status(),
+                    attempt = attempt,
+                    "Push notification failed with status"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    node_id = %node_id,
+                    model = %model_name,
+                    error = %e,
+                    attempt = attempt,
+                    "Push notification request failed"
+                );
+            }
+        }
+
+        if attempt >= MAX_ATTEMPTS {
+            tracing::error!(
+                node_id = %node_id,
+                model = %model_name,
+                "Push notification failed after {} attempts, giving up",
+                MAX_ATTEMPTS
+            );
+            return;
+        }
+
+        // 指数バックオフ（最大60秒）
+        tracing::debug!(
+            node_id = %node_id,
+            backoff_secs = backoff_secs,
+            "Retrying push notification after backoff"
+        );
+        tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+        backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+    }
+}
 
 // ===== venv Auto-Setup =====
 
@@ -1015,6 +1162,9 @@ async fn finalize_model_registration(
 
     upsert_registered_model(model);
     persist_registered_models().await;
+
+    // SPEC-dcaeaec4 FR-7: オンラインノードにプッシュ通知を送信
+    notify_nodes_of_new_model(model_name).await;
 }
 
 /// 非GGUF形式のHFモデルをGGUFに変換

@@ -227,6 +227,9 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
+    // SPEC-dcaeaec4 FR-7: プッシュ通知用コンテキストを初期化
+    llm_router::convert::set_notification_context(registry.clone(), http_client.clone());
+
     let state = AppState {
         registry,
         load_manager,

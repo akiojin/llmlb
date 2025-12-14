@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { chatApi, modelsApi, type ChatSession, type ChatMessage, type ModelInfo } from '@/lib/api'
+import { chatApi, modelsApi, type ChatSession, type ChatMessage, type RegisteredModelView } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -75,6 +75,12 @@ export default function Playground() {
   const [streamEnabled, setStreamEnabled] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(2048)
+  const [apiKey, setApiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('llm-router-api-key') || ''
+    }
+    return ''
+  })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -100,7 +106,7 @@ export default function Playground() {
   // Set default model
   useEffect(() => {
     if (models && !selectedModel) {
-      const readyModels = (models as ModelInfo[]).filter((m) => m.state === 'ready')
+      const readyModels = (models as RegisteredModelView[]).filter((m) => m.ready)
       if (readyModels.length > 0) {
         setSelectedModel(readyModels[0].name)
       }
@@ -117,6 +123,12 @@ export default function Playground() {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(newTheme)
     document.documentElement.classList.toggle('dark', newTheme === 'dark')
+  }
+
+  // Save API key to localStorage
+  const handleApiKeyChange = (value: string) => {
+    setApiKey(value)
+    localStorage.setItem('llm-router-api-key', value)
   }
 
   // Create new session
@@ -188,9 +200,16 @@ export default function Playground() {
 
       if (streamEnabled) {
         // Streaming response
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        if (apiKey) {
+          headers['Authorization'] = `Bearer ${apiKey}`
+        }
+
         const response = await fetch('/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             model: selectedModel,
             messages: requestMessages,
@@ -260,9 +279,16 @@ export default function Playground() {
         }
       } else {
         // Non-streaming response
+        const nonStreamHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        if (apiKey) {
+          nonStreamHeaders['Authorization'] = `Bearer ${apiKey}`
+        }
+
         const response = await fetch('/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: nonStreamHeaders,
           body: JSON.stringify({
             model: selectedModel,
             messages: requestMessages,
@@ -328,8 +354,10 @@ export default function Playground() {
       ? [{ role: 'system', content: systemPrompt }, ...messages]
       : messages
 
+    const authHeader = apiKey ? `\n  -H 'Authorization: Bearer ${apiKey}' \\` : ''
+
     return `curl -X POST 'http://localhost:8080/v1/chat/completions' \\
-  -H 'Content-Type: application/json' \\
+  -H 'Content-Type: application/json' \\${authHeader}
   -d '${JSON.stringify(
     {
       model: selectedModel,
@@ -355,7 +383,7 @@ export default function Playground() {
     }
   }
 
-  const readyModels = (models as ModelInfo[] | undefined)?.filter((m) => m.state === 'ready') || []
+  const readyModels = (models as RegisteredModelView[] | undefined)?.filter((m) => m.ready) || []
 
   return (
     <div className="flex h-screen bg-background">
@@ -484,6 +512,11 @@ export default function Playground() {
                 Streaming
               </Badge>
             )}
+            {!apiKey && (
+              <Badge variant="destructive" className="text-xs cursor-pointer" onClick={() => setSettingsOpen(true)}>
+                API Key Required
+              </Badge>
+            )}
           </div>
           <Button variant="outline" size="sm" onClick={() => setCurlOpen(true)}>
             <Code className="mr-2 h-4 w-4" />
@@ -579,6 +612,19 @@ export default function Playground() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>API Key</Label>
+              <Input
+                type="password"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Required for OpenAI compatible API authentication
+              </p>
+            </div>
+            <Separator />
             <div className="space-y-2">
               <Label>System Prompt</Label>
               <Textarea

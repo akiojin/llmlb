@@ -36,5 +36,14 @@ mod audio_transcriptions_test;
 #[path = "contract/audio_speech_test.rs"]
 mod audio_speech_test;
 
+#[path = "contract/images_generations_test.rs"]
+mod images_generations_test;
+
+#[path = "contract/images_edits_test.rs"]
+mod images_edits_test;
+
+#[path = "contract/images_variations_test.rs"]
+mod images_variations_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use uuid::Uuid;
 
-use crate::types::{AudioFormat, GpuDeviceInfo};
+use crate::types::{
+    AudioFormat, GpuDeviceInfo, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle,
+};
 
 /// ノード登録リクエスト
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -206,6 +208,12 @@ pub enum RequestType {
     Transcription,
     /// /v1/audio/speech エンドポイント (TTS)
     Speech,
+    /// /v1/images/generations エンドポイント
+    ImageGeneration,
+    /// /v1/images/edits エンドポイント
+    ImageEdit,
+    /// /v1/images/variations エンドポイント
+    ImageVariation,
 }
 
 /// レコードステータス
@@ -310,6 +318,109 @@ fn default_voice() -> String {
 
 fn default_speed() -> f64 {
     1.0
+}
+
+/// 画像生成リクエスト (Text-to-Image)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageGenerationRequest {
+    /// モデル名 (例: "stable-diffusion-xl", "dall-e-3")
+    pub model: String,
+    /// 生成プロンプト
+    pub prompt: String,
+    /// 生成画像数 (1-10、デフォルト1)
+    #[serde(default = "default_image_n")]
+    pub n: u8,
+    /// 出力サイズ
+    #[serde(default)]
+    pub size: ImageSize,
+    /// 品質設定
+    #[serde(default)]
+    pub quality: ImageQuality,
+    /// スタイル
+    #[serde(default)]
+    pub style: ImageStyle,
+    /// レスポンスフォーマット
+    #[serde(default)]
+    pub response_format: ImageResponseFormat,
+    /// ネガティブプロンプト（SD拡張）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub negative_prompt: Option<String>,
+    /// シード値（再現性用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i64>,
+}
+
+fn default_image_n() -> u8 {
+    1
+}
+
+/// 画像編集リクエスト (Inpainting)
+///
+/// multipart/form-dataとして送信されるため、画像データは別途処理
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageEditRequest {
+    /// モデル名
+    pub model: String,
+    /// 編集プロンプト
+    pub prompt: String,
+    /// 生成画像数 (1-10、デフォルト1)
+    #[serde(default = "default_image_n")]
+    pub n: u8,
+    /// 出力サイズ
+    #[serde(default)]
+    pub size: ImageSize,
+    /// レスポンスフォーマット
+    #[serde(default)]
+    pub response_format: ImageResponseFormat,
+}
+
+/// 画像バリエーションリクエスト
+///
+/// multipart/form-dataとして送信されるため、画像データは別途処理
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageVariationRequest {
+    /// モデル名
+    pub model: String,
+    /// 生成画像数 (1-10、デフォルト1)
+    #[serde(default = "default_image_n")]
+    pub n: u8,
+    /// 出力サイズ
+    #[serde(default)]
+    pub size: ImageSize,
+    /// レスポンスフォーマット
+    #[serde(default)]
+    pub response_format: ImageResponseFormat,
+}
+
+/// 画像レスポンス (generations/edits/variations共通)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageResponse {
+    /// 生成時刻 (Unix timestamp)
+    pub created: i64,
+    /// 生成された画像データ配列
+    pub data: Vec<ImageData>,
+}
+
+/// 画像データ
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum ImageData {
+    /// URL形式
+    Url {
+        /// 画像URL
+        url: String,
+        /// 改訂されたプロンプト（DALL-E 3等）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        revised_prompt: Option<String>,
+    },
+    /// Base64形式
+    Base64 {
+        /// Base64エンコードされた画像データ
+        b64_json: String,
+        /// 改訂されたプロンプト
+        #[serde(skip_serializing_if = "Option::is_none")]
+        revised_prompt: Option<String>,
+    },
 }
 
 #[cfg(test)]
@@ -564,5 +675,141 @@ mod tests {
         assert_eq!(request.input, "Hello");
         assert_eq!(request.voice, "nova"); // default
         assert_eq!(request.speed, 1.0); // default
+    }
+
+    #[test]
+    fn test_request_type_image_serialization() {
+        assert_eq!(
+            serde_json::to_string(&RequestType::ImageGeneration).unwrap(),
+            "\"imagegeneration\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestType::ImageEdit).unwrap(),
+            "\"imageedit\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestType::ImageVariation).unwrap(),
+            "\"imagevariation\""
+        );
+    }
+
+    #[test]
+    fn test_image_generation_request_serialization() {
+        use crate::types::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+
+        let request = ImageGenerationRequest {
+            model: "stable-diffusion-xl".to_string(),
+            prompt: "A white cat sitting on a windowsill".to_string(),
+            n: 2,
+            size: ImageSize::Size1024,
+            quality: ImageQuality::Standard,
+            style: ImageStyle::Vivid,
+            response_format: ImageResponseFormat::Url,
+            negative_prompt: Some("blurry".to_string()),
+            seed: Some(12345),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"model\":\"stable-diffusion-xl\""));
+        assert!(json.contains("\"prompt\":\"A white cat sitting on a windowsill\""));
+        assert!(json.contains("\"n\":2"));
+        assert!(json.contains("\"size\":\"1024x1024\""));
+        assert!(json.contains("\"negative_prompt\":\"blurry\""));
+
+        let deserialized: ImageGenerationRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.model, "stable-diffusion-xl");
+        assert_eq!(deserialized.n, 2);
+    }
+
+    #[test]
+    fn test_image_generation_request_defaults() {
+        let json = r#"{"model":"sd-xl","prompt":"A cat"}"#;
+        let request: ImageGenerationRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.model, "sd-xl");
+        assert_eq!(request.prompt, "A cat");
+        assert_eq!(request.n, 1); // default
+        assert_eq!(request.size, ImageSize::Size1024); // default
+        assert_eq!(request.quality, ImageQuality::Standard); // default
+        assert_eq!(request.style, ImageStyle::Vivid); // default
+        assert_eq!(request.response_format, ImageResponseFormat::Url); // default
+        assert_eq!(request.negative_prompt, None);
+        assert_eq!(request.seed, None);
+    }
+
+    #[test]
+    fn test_image_edit_request_serialization() {
+        let request = ImageEditRequest {
+            model: "stable-diffusion-xl".to_string(),
+            prompt: "Add a hat".to_string(),
+            n: 1,
+            size: ImageSize::Size512,
+            response_format: ImageResponseFormat::B64Json,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"model\":\"stable-diffusion-xl\""));
+        assert!(json.contains("\"prompt\":\"Add a hat\""));
+        assert!(json.contains("\"size\":\"512x512\""));
+        assert!(json.contains("\"response_format\":\"b64_json\""));
+
+        let deserialized: ImageEditRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.prompt, "Add a hat");
+    }
+
+    #[test]
+    fn test_image_variation_request_serialization() {
+        let request = ImageVariationRequest {
+            model: "stable-diffusion-xl".to_string(),
+            n: 3,
+            size: ImageSize::Size256,
+            response_format: ImageResponseFormat::Url,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"model\":\"stable-diffusion-xl\""));
+        assert!(json.contains("\"n\":3"));
+        assert!(json.contains("\"size\":\"256x256\""));
+
+        let deserialized: ImageVariationRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.n, 3);
+    }
+
+    #[test]
+    fn test_image_response_serialization_url() {
+        let response = ImageResponse {
+            created: 1699000000,
+            data: vec![ImageData::Url {
+                url: "https://example.com/image.png".to_string(),
+                revised_prompt: Some("A beautiful cat".to_string()),
+            }],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"created\":1699000000"));
+        assert!(json.contains("\"url\":\"https://example.com/image.png\""));
+        assert!(json.contains("\"revised_prompt\":\"A beautiful cat\""));
+
+        let deserialized: ImageResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.created, 1699000000);
+        assert_eq!(deserialized.data.len(), 1);
+    }
+
+    #[test]
+    fn test_image_response_serialization_base64() {
+        let response = ImageResponse {
+            created: 1699000000,
+            data: vec![ImageData::Base64 {
+                b64_json: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string(),
+                revised_prompt: None,
+            }],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"created\":1699000000"));
+        assert!(json.contains("\"b64_json\":"));
+
+        let deserialized: ImageResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.data.len(), 1);
     }
 }

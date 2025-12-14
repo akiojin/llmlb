@@ -7,6 +7,7 @@ pub mod audio;
 pub mod auth;
 pub mod dashboard;
 pub mod health;
+pub mod images;
 pub mod logs;
 pub mod metrics;
 pub mod models;
@@ -76,7 +77,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/models/:model_id", get(openai::get_model))
         // 音声API（OpenAI Audio API互換）
         .route("/v1/audio/transcriptions", post(audio::transcriptions))
-        .route("/v1/audio/speech", post(audio::speech));
+        .route("/v1/audio/speech", post(audio::speech))
+        // 画像API（OpenAI Images API互換）
+        .route("/v1/images/generations", post(images::generations))
+        .route("/v1/images/edits", post(images::edits))
+        .route("/v1/images/variations", post(images::variations));
 
     let api_key_protected_routes = api_key_routes.layer(middleware::from_fn_with_state(
         state.db_pool.clone(),

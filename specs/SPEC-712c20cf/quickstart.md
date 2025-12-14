@@ -8,7 +8,7 @@
 
 ## 前提条件
 
-- coordinator が起動している
+- router が起動している
 - 1台以上のノードが登録されている（SPEC-94621a1f実装済み）
 - Webブラウザ（Chrome, Firefox, Safari, Edge）
 
@@ -17,13 +17,13 @@
 **目的**: spec.mdの受け入れシナリオ1を検証
 
 ### ステップ
-1. coordinatorを起動
+1. routerを起動
    ```bash
-   cargo run --bin coordinator
+   cargo run -p llm-router
    ```
    期待される出力:
    ```
-   [INFO] Coordinator starting on 0.0.0.0:8080
+   [INFO] LLM Router starting on 0.0.0.0:8080
    [INFO] Dashboard available at http://localhost:8080/dashboard
    ```
 
@@ -32,7 +32,7 @@
 3. 期待される結果:
    - ダッシュボードページが表示される
    - ヘッダーに「LLM Router Dashboard」が表示される
-   - システム統計カードが表示される（Total Agents, Online Agents, etc.）
+   - システム統計カードが表示される（Total Nodes, Online Nodes, etc.）
    - ノード一覧テーブルが表示される
 
 ### 検証ポイント
@@ -49,14 +49,17 @@
 ### ステップ
 1. 複数のノード（最低3台）を登録
    ```bash
+   cmake -S node -B node/build
+   cmake --build node/build -j
+
    # ターミナル1
-   cargo run --bin agent -- --name server-01
+   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11435 ./node/build/llm-node
 
    # ターミナル2
-   cargo run --bin agent -- --name server-02
+   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11436 ./node/build/llm-node
 
    # ターミナル3
-   cargo run --bin agent -- --name server-03
+   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11437 ./node/build/llm-node
    ```
 
 2. ダッシュボードでノード一覧を確認
@@ -85,15 +88,15 @@
 1. ダッシュボードページでシステム統計カードを確認
 
 2. 期待される結果:
-   - Total Agents: 登録済みノード総数が表示
-   - Online Agents: オンラインノード数が表示
-   - Offline Agents: オフラインノード数が表示（将来拡張）
+   - Total Nodes: 登録済みノード総数が表示
+   - Online Nodes: オンラインノード数が表示
+   - Offline Nodes: オフラインノード数が表示
    - Total Requests: 総リクエスト数（初期実装では0）
    - Avg Response Time: 平均レスポンスタイム（初期実装では0ms）
 
 ### 検証ポイント
-- [ ] Total Agents の値が正しい
-- [ ] Online Agents + Offline Agents = Total Agents
+- [ ] Total Nodes の値が正しい
+- [ ] Online Nodes + Offline Nodes = Total Nodes
 - [ ] 統計が見やすくカード形式で表示される
 
 ---
@@ -107,18 +110,18 @@
 
 2. 新しいノードを登録
    ```bash
-   cargo run --bin agent -- --name server-04
+   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11438 ./node/build/llm-node
    ```
 
 3. 期待される結果:
    - **ページをリロードせずに**、5秒以内に新しいノードが一覧に表示される
-   - Total Agents の値が自動的にインクリメントされる
-   - Online Agents の値が自動的にインクリメントされる
+   - Total Nodes の値が自動的にインクリメントされる
+   - Online Nodes の値が自動的にインクリメントされる
 
 ### 検証ポイント
 - [ ] 5秒以内に自動更新される
 - [ ] ページリロード不要
-- [ ] ブラウザコンソールでポーリングリクエストが確認できる（`GET /api/dashboard/agents`）
+- [ ] ブラウザコンソールでポーリングリクエストが確認できる（`GET /v0/dashboard/nodes`）
 - [ ] ポーリング処理が100ms以内に完了（NFR-011）
 
 ---
@@ -135,12 +138,12 @@
    # server-01のプロセスをCtrl+Cで停止
    ```
 
-3. 60秒以上待機（AGENT_TIMEOUTのデフォルト値）
+3. 60秒以上待機（`LLM_ROUTER_NODE_TIMEOUT` のデフォルト値）
 
 4. 期待される結果:
    - ノードのステータスが自動的に「Offline」に変化
-   - Offline Agents の値がインクリメント
-   - Online Agents の値がデクリメント
+   - Offline Nodes の値がインクリメント
+   - Online Nodes の値がデクリメント
 
 ### 検証ポイント
 - [ ] タイムアウト後にステータスが正しく変化
@@ -173,22 +176,25 @@
 ### ダッシュボードが表示されない
 **原因**: 静的ファイルが正しく配信されていない
 **解決策**:
-1. `coordinator/src/web/static/index.html`が存在することを確認
+1. `router/src/web/static/index.html`が存在することを確認
 2. `tower-http`のServeDir設定を確認
 3. ルーターを再起動
 
 ### ノード一覧が空
 **原因**: ノードが登録されていない
 **解決策**:
-1. ノードを起動: `cargo run --bin agent`
+1. ノードを起動: `LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node`
 2. 登録APIを手動で呼び出し:
    ```bash
-   curl -X POST http://localhost:8080/api/agents/register \
+   curl -X POST http://localhost:8080/v0/nodes \
      -H "Content-Type: application/json" \
      -d '{
-       "machine_name": "test-agent",
+       "machine_name": "test-node",
        "ip_address": "127.0.0.1",
-       "runtime_version": "0.1.0"
+       "runtime_version": "0.1.0",
+       "runtime_port": 11434,
+       "gpu_available": true,
+       "gpu_devices": [{"model":"Test GPU","count":1}]
      }'
    ```
 
@@ -204,11 +210,12 @@
 **解決策**:
 1. ノードがハートビートを送信しているか確認:
    ```bash
-   # ルーターのログを確認
-   grep "heartbeat" logs/coordinator.log
+   # ルーターのログを確認（例）
+   ls ~/.llm-router/logs/llm-router.jsonl.*
+   tail -n 200 ~/.llm-router/logs/llm-router.jsonl.$(date +%Y-%m-%d)
    ```
-2. HEALTH_CHECK_INTERVAL環境変数を確認
-3. AGENT_TIMEOUT環境変数を確認
+2. `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（または互換の `HEALTH_CHECK_INTERVAL`）環境変数を確認
+3. `LLM_ROUTER_NODE_TIMEOUT` 環境変数を確認
 
 ---
 

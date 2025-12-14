@@ -9,7 +9,6 @@ pub mod dashboard;
 pub mod health;
 pub mod images;
 pub mod logs;
-pub mod metrics;
 pub mod models;
 pub mod nodes;
 pub mod openai;
@@ -36,23 +35,21 @@ const PLAYGROUND_INDEX: &str = "playground.html";
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
+    // `/v0/*`: llm-router独自API（管理/運用向け）
     // JWT認証が必要な保護されたルート
     let protected_routes = Router::new()
-        .route("/api/auth/me", get(auth::me))
+        .route("/auth/me", get(auth::me))
+        .route("/users", get(users::list_users).post(users::create_user))
         .route(
-            "/api/users",
-            get(users::list_users).post(users::create_user),
-        )
-        .route(
-            "/api/users/:id",
+            "/users/:id",
             put(users::update_user).delete(users::delete_user),
         )
         .route(
-            "/api/api-keys",
+            "/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
         )
         .route(
-            "/api/api-keys/:id",
+            "/api-keys/:id",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
         .layer(middleware::from_fn_with_state(
@@ -60,12 +57,12 @@ pub fn create_router(state: AppState) -> Router {
             crate::auth::middleware::jwt_auth_middleware,
         ));
 
-    // エージェントトークン認証が必要なルート
-    let agent_protected_routes = Router::new()
-        .route("/api/health", post(health::health_check))
+    // ノードトークン認証が必要なルート
+    let node_protected_routes = Router::new()
+        .route("/health", post(health::health_check))
         .layer(middleware::from_fn_with_state(
             state.db_pool.clone(),
-            crate::auth::middleware::agent_token_auth_middleware,
+            crate::auth::middleware::node_token_auth_middleware,
         ));
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
@@ -73,8 +70,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
-        .route("/v1/models", get(openai::list_models))
-        .route("/v1/models/:model_id", get(openai::get_model))
         // /v0/models - 拡張情報付きモデル一覧（ノード同期用）
         .route("/v0/models", get(openai::list_models_extended))
         // 音声API（OpenAI Audio API互換）
@@ -90,76 +85,84 @@ pub fn create_router(state: AppState) -> Router {
         crate::auth::middleware::api_key_auth_middleware,
     ));
 
+    // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
+    let models_routes = Router::new()
+        .route("/v1/models", get(openai::list_models))
+        .route("/v1/models/:model_id", get(openai::get_model));
+
+    let models_protected_routes = models_routes.layer(middleware::from_fn_with_state(
+        state.db_pool.clone(),
+        crate::auth::middleware::api_key_or_node_token_auth_middleware,
+    ));
+
     Router::new()
-        // 認証エンドポイント（認証不要）
-        .route("/api/auth/login", post(auth::login))
-        .route("/api/auth/logout", post(auth::logout))
-        // 保護されたルート
-        .merge(protected_routes)
-        .merge(agent_protected_routes)
+        // `/v0/*`: llm-router独自API（互換不要・versioned）
+        .nest(
+            "/v0",
+            Router::new()
+                // 認証エンドポイント（認証不要）
+                .route("/auth/login", post(auth::login))
+                .route("/auth/logout", post(auth::logout))
+                // 保護されたルート
+                .merge(protected_routes)
+                .merge(node_protected_routes)
+                // ノード管理
+                .route("/nodes", post(nodes::register_node).get(nodes::list_nodes))
+                .route("/nodes/:node_id", delete(nodes::delete_node))
+                .route("/nodes/:node_id/disconnect", post(nodes::disconnect_node))
+                .route("/nodes/:node_id/settings", put(nodes::update_node_settings))
+                .route("/nodes/metrics", get(nodes::list_node_metrics))
+                .route("/metrics/summary", get(nodes::metrics_summary))
+                // ダッシュボードAPI
+                .route("/dashboard/nodes", get(dashboard::get_nodes))
+                .route("/dashboard/stats", get(dashboard::get_stats))
+                .route(
+                    "/dashboard/request-history",
+                    get(dashboard::get_request_history),
+                )
+                .route("/dashboard/overview", get(dashboard::get_overview))
+                .route(
+                    "/dashboard/metrics/:node_id",
+                    get(dashboard::get_node_metrics),
+                )
+                .route(
+                    "/dashboard/request-responses",
+                    get(dashboard::list_request_responses),
+                )
+                .route(
+                    "/dashboard/request-responses/:id",
+                    get(dashboard::get_request_response_detail),
+                )
+                .route(
+                    "/dashboard/request-responses/export",
+                    get(dashboard::export_request_responses),
+                )
+                .route("/dashboard/logs/router", get(logs::get_router_logs))
+                // ノードログ取得（router→node proxy）
+                .route("/nodes/:node_id/logs", get(logs::get_node_logs))
+                // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
+                .route("/models/available", get(models::get_available_models))
+                .route("/models/register", post(models::register_model))
+                // /models/registered は廃止 - /v0/models に統合 (SPEC-dcaeaec4)
+                .route("/models/*model_name", delete(models::delete_model))
+                .route(
+                    "/models/discover-gguf",
+                    post(models::discover_gguf_endpoint),
+                )
+                .route("/models/convert", post(models::convert_model))
+                .route("/models/convert", get(models::list_convert_tasks))
+                .route(
+                    "/models/convert/:task_id",
+                    get(models::get_convert_task).delete(models::delete_convert_task),
+                )
+                // モデルファイル配信API (SPEC-48678000)
+                .route("/models/blob/:model_name", get(models::get_model_blob))
+                // Prometheus metrics（cloud prefix含む独自メトリクス）
+                .route("/metrics/cloud", get(cloud_metrics::export_metrics)),
+        )
+        // OpenAI互換API
         .merge(api_key_protected_routes)
-        // 既存のルート
-        .route(
-            "/api/nodes",
-            post(nodes::register_node).get(nodes::list_nodes),
-        )
-        .route("/api/nodes/:node_id", delete(nodes::delete_node))
-        .route(
-            "/api/nodes/:node_id/disconnect",
-            post(nodes::disconnect_node),
-        )
-        .route(
-            "/api/nodes/:node_id/settings",
-            put(nodes::update_node_settings),
-        )
-        .route("/api/nodes/:node_id/metrics", post(metrics::update_metrics))
-        .route("/api/nodes/metrics", get(nodes::list_node_metrics))
-        .route("/api/metrics/summary", get(nodes::metrics_summary))
-        .route("/api/dashboard/nodes", get(dashboard::get_nodes))
-        .route("/api/dashboard/stats", get(dashboard::get_stats))
-        .route(
-            "/api/dashboard/request-history",
-            get(dashboard::get_request_history),
-        )
-        .route("/api/dashboard/overview", get(dashboard::get_overview))
-        .route(
-            "/api/dashboard/metrics/:node_id",
-            get(dashboard::get_node_metrics),
-        )
-        .route(
-            "/api/dashboard/request-responses",
-            get(dashboard::list_request_responses),
-        )
-        .route(
-            "/api/dashboard/request-responses/:id",
-            get(dashboard::get_request_response_detail),
-        )
-        .route(
-            "/api/dashboard/request-responses/export",
-            get(dashboard::export_request_responses),
-        )
-        .route("/api/dashboard/logs/router", get(logs::get_router_logs))
-        // FR-002: node log proxy (spec path)
-        .route("/api/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (SPEC-8ae67d67)
-        .route("/api/models/available", get(models::get_available_models))
-        .route("/api/models/register", post(models::register_model))
-        .route("/api/models/pull", post(models::pull_model_from_hf))
-        // /api/models/registered は廃止 - /v0/models に統合 (SPEC-dcaeaec4)
-        .route("/api/models/*model_name", delete(models::delete_model))
-        .route(
-            "/api/models/discover-gguf",
-            post(models::discover_gguf_endpoint),
-        )
-        .route("/api/models/convert", post(models::convert_model))
-        .route("/api/models/convert", get(models::list_convert_tasks))
-        .route(
-            "/api/models/convert/:task_id",
-            get(models::get_convert_task).delete(models::delete_convert_task),
-        )
-        // モデルファイル配信API (SPEC-48678000)
-        .route("/api/models/blob/:model_name", get(models::get_model_blob))
-        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
+        .merge(models_protected_routes)
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
         .route("/dashboard/*path", get(serve_dashboard_asset))
@@ -357,7 +360,7 @@ mod tests {
         let response = router
             .call(
                 Request::builder()
-                    .uri("/api/dashboard/nodes")
+                    .uri("/v0/dashboard/nodes")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -392,7 +395,7 @@ mod tests {
         let response = router
             .call(
                 Request::builder()
-                    .uri("/api/dashboard/overview")
+                    .uri("/v0/dashboard/overview")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -453,7 +456,7 @@ mod tests {
         let response = router
             .call(
                 Request::builder()
-                    .uri(format!("/api/dashboard/metrics/{node_id}"))
+                    .uri(format!("/v0/dashboard/metrics/{node_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )

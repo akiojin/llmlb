@@ -63,22 +63,22 @@ pub struct ApiKeyWithPlaintext {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-/// エージェントトークン
+/// ノードトークン
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentToken {
-    /// エージェントID
-    pub agent_id: Uuid,
+pub struct NodeToken {
+    /// ノードID
+    pub node_id: Uuid,
     /// トークンのSHA-256ハッシュ
     pub token_hash: String,
     /// 作成日時
     pub created_at: DateTime<Utc>,
 }
 
-/// エージェントトークン（平文付き、発行時のレスポンス用）
+/// ノードトークン（平文付き、発行時のレスポンス用）
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentTokenWithPlaintext {
-    /// エージェントID
-    pub agent_id: Uuid,
+pub struct NodeTokenWithPlaintext {
+    /// ノードID
+    pub node_id: Uuid,
     /// 平文のトークン（発行時のみ表示）
     pub token: String,
     /// 作成日時

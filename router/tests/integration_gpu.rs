@@ -1,4 +1,4 @@
-//! Coordinator GPU-focused integration tests entrypoint
+//! Router GPU-focused integration tests entrypoint
 
 #[path = "integration/registry_cleanup.rs"]
 mod registry_cleanup;

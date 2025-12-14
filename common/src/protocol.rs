@@ -1,6 +1,6 @@
 //! 通信プロトコル定義
 //!
-//! Node↔Coordinator間の通信メッセージ
+//! Node↔Router間の通信メッセージ
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -46,10 +46,10 @@ pub struct RegisterResponse {
     pub status: RegisterStatus,
     /// ノードAPIポート（OpenAI互換API）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_api_port: Option<u16>,
-    /// エージェントトークン（認証用）
+    pub node_api_port: Option<u16>,
+    /// ノードトークン（認証用）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_token: Option<String>,
+    pub node_token: Option<String>,
 }
 
 /// 登録ステータス
@@ -170,9 +170,9 @@ pub struct RequestResponseRecord {
     /// 処理したノードのID
     pub node_id: Uuid,
     /// ノードのマシン名
-    pub agent_machine_name: String,
+    pub node_machine_name: String,
     /// ノードのIPアドレス
-    pub agent_ip: IpAddr,
+    pub node_ip: IpAddr,
     /// リクエスト元クライアントのIPアドレス
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_ip: Option<IpAddr>,

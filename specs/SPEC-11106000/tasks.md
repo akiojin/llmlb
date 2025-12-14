@@ -8,7 +8,7 @@
 - [x] 環境変数で HF_TOKEN を設定できるようドキュメントを確認。
 
 ## Contract Tests (router)
-- [x] /api/models/register: 正常系（repo-only, file指定, GGUF/非GGUF）、重複/404。
+- [x] /v0/models/register: 正常系（repo-only, file指定, GGUF/非GGUF）、重複/404。
 - [x] 非GGUF→convertタスクが作成されること。
 - [x] convert失敗→再キュー（Restore相当のAPI呼び出し）でタスクが新規作成され成功すること。
 - [x] /v1/models: 実体があるものだけ返す（未ダウンロード・削除後は含まれない）。
@@ -20,8 +20,8 @@
 
 ## Backend Implementation
 - [x] ModelInfo/registry 拡張と永続化（repo/filename/source/status/path）。
-- [x] /api/models/register 実装（repo-only対応、GGUF優先、自動変換キュー、重複・404バリデーション）。
-- [x] /api/models/convert 実装（再キュー用エンドポイントを維持）。
+- [x] /v0/models/register 実装（repo-only対応、GGUF優先、自動変換キュー、重複・404バリデーション）。
+- [x] /v0/models/convert 実装（再キュー用エンドポイントを維持）。
 - [x] convertマネージャ: 非GGUF→GGUF 変換（実行 or FAKE）、完了後にモデル登録を更新。
 - [x] /v1/models は実体GGUFがあるものだけ返す。
 - [x] 構造化ログ・エラー整備。

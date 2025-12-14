@@ -10,9 +10,9 @@ pub mod users;
 /// APIキー管理
 pub mod api_keys;
 
-/// エージェントトークン管理
-pub mod agent_tokens;
 pub mod models;
+/// ノードトークン管理
+pub mod node_tokens;
 
 /// データベースマイグレーション
 pub mod migrations;
@@ -275,7 +275,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };
@@ -332,7 +332,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };
@@ -387,7 +387,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };
@@ -425,7 +425,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };

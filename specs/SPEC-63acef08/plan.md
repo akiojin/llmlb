@@ -15,7 +15,7 @@
 **ストレージ**: N/A（ステートレスプロキシ）
 **テスト**: cargo test
 **対象プラットフォーム**: Linuxサーバー
-**プロジェクトタイプ**: single（Rust workspace内のcoordinatorクレート）
+**プロジェクトタイプ**: single（Rust workspace内のrouterクレート）
 **パフォーマンス目標**: プロキシオーバーヘッド < 50ms、同時100リクエスト処理
 **制約**: LLM runtime API v0.1.0以降との互換性
 **スケール/スコープ**: 100ノード対応
@@ -23,14 +23,14 @@
 ## 憲章チェック
 
 **シンプルさ**: ✅
-- プロジェクト数: 1（coordinatorクレート内）
+- プロジェクト数: 1（routerクレート内）
 - フレームワークを直接使用: ✅ Axum直接使用
-- 単一データモデル: ✅ Agentモデル再利用
+- 単一データモデル: ✅ Nodeモデル再利用
 - パターン回避: ✅ 直接HTTPプロキシ実装
 
 **アーキテクチャ**: ✅
-- ライブラリ化: ✅ coordinatorライブラリとして実装
-- CLI: ✅ `coordinator --help` 提供
+- ライブラリ化: ✅ routerライブラリとして実装
+- CLI: ✅ `router --help` 提供
 
 **テスト (妥協不可)**: ✅
 - TDDサイクル遵守: ✅ テスト先行で実装
@@ -49,7 +49,7 @@
 
 ### 実装されたソースコード
 ```
-coordinator/
+router/
 ├── src/
 │   ├── api/
 │   │   └── proxy.rs        # プロキシエンドポイント実装
@@ -66,25 +66,25 @@ coordinator/
 ### ノード選択ロジック（ラウンドロビン）
 
 ```rust
-pub struct AgentRegistry {
-    agents: Arc<RwLock<HashMap<Uuid, Agent>>>,
+pub struct NodeRegistry {
+    nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
     round_robin_index: AtomicUsize,
 }
 
-impl AgentRegistry {
-    pub async fn select_agent(&self) -> Option<Agent> {
-        let agents = self.agents.read().await;
-        let online_agents: Vec<_> = agents.values()
-            .filter(|a| a.status == AgentStatus::Online)
+impl NodeRegistry {
+    pub async fn select_node(&self) -> Option<Node> {
+        let nodes = self.nodes.read().await;
+        let online_nodes: Vec<_> = nodes.values()
+            .filter(|a| a.status == NodeStatus::Online)
             .cloned()
             .collect();
 
-        if online_agents.is_empty() {
+        if online_nodes.is_empty() {
             return None;
         }
 
         let index = self.round_robin_index.fetch_add(1, Ordering::Relaxed);
-        Some(online_agents[index % online_agents.len()].clone())
+        Some(online_nodes[index % online_nodes.len()].clone())
     }
 }
 ```
@@ -92,17 +92,17 @@ impl AgentRegistry {
 ### プロキシエンドポイント
 
 ```rust
-// POST /api/chat
+// POST /v1/chat/completions
 pub async fn proxy_chat(
     State(state): State<AppState>,
     Json(request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, AppError> {
     // 1. ノード選択
-    let agent = state.registry.select_agent().await
-        .ok_or(AppError::NoAgents)?;
+    let node = state.registry.select_node().await
+        .ok_or(AppError::NoNodes)?;
 
     // 2. リクエスト転送
-    let url = format!("http://{}:{}/api/chat", agent.ip_address, agent.port);
+    let url = format!("http://{}:{}/v1/chat/completions", node.ip_address, node.port);
     let response = state.http_client
         .post(&url)
         .json(&request)
@@ -167,7 +167,7 @@ pub async fn proxy_chat(
 
 **実施内容**:
 - OpenAPI契約定義: [contracts/proxy-api.yaml](./contracts/proxy-api.yaml)（作成予定）
-- データモデル: Agentモデル再利用
+- データモデル: Nodeモデル再利用
 - クイックスタートシナリオ: [quickstart.md](./quickstart.md)（作成予定）
 
 ## Phase 2: タスク分解
@@ -175,7 +175,7 @@ pub async fn proxy_chat(
 **出力**: [tasks.md](./tasks.md)
 
 **タスク生成戦略**:
-- 各エンドポイント（/api/chat, /api/generate） → contract test
+- 各エンドポイント（/v1/chat/completions, /v1/completions, /v1/embeddings） → contract test
 - ラウンドロビンロジック → unit test
 - プロキシフロー → integration test
 - エラーケース → integration test

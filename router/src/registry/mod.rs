@@ -8,7 +8,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
-    types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus},
+    types::{GpuDeviceInfo, Node, NodeStatus},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -20,7 +20,6 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct NodeRegistry {
     nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
-    metrics: Arc<RwLock<HashMap<Uuid, AgentMetrics>>>,
     storage_enabled: bool,
 }
 
@@ -29,7 +28,6 @@ impl NodeRegistry {
     pub fn new() -> Self {
         Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(HashMap::new())),
             storage_enabled: false,
         }
     }
@@ -41,7 +39,6 @@ impl NodeRegistry {
 
         let registry = Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(HashMap::new())),
             storage_enabled: true,
         };
 
@@ -190,7 +187,7 @@ impl NodeRegistry {
             node.last_seen = now;
             // online_since はモデル同期完了（Online遷移）時に設定
             node.online_since = None;
-            node.agent_api_port = Some(req.runtime_port + 1);
+            node.node_api_port = Some(req.runtime_port + 1);
             node.initializing = true;
             node.ready_models = Some((0, 0));
             (id, RegisterStatus::Updated, node.clone())
@@ -224,7 +221,7 @@ impl NodeRegistry {
                 gpu_model_name: None,
                 gpu_compute_capability: None,
                 gpu_capability_score: None,
-                agent_api_port: Some(req.runtime_port + 1),
+                node_api_port: Some(req.runtime_port + 1),
                 initializing: true,
                 ready_models: Some((0, 0)),
             };
@@ -239,8 +236,8 @@ impl NodeRegistry {
         Ok(RegisterResponse {
             node_id,
             status,
-            agent_api_port: Some(node.runtime_port + 1),
-            agent_token: None,
+            node_api_port: Some(node.runtime_port + 1),
+            node_token: None,
         })
     }
 
@@ -250,7 +247,7 @@ impl NodeRegistry {
         nodes
             .get(&node_id)
             .cloned()
-            .ok_or(RouterError::AgentNotFound(node_id))
+            .ok_or(RouterError::NodeNotFound(node_id))
     }
 
     /// 全ノードを取得
@@ -278,7 +275,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             let now = Utc::now();
             node.last_seen = now;
 
@@ -343,7 +340,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             if !node.loaded_models.contains(&model) {
                 node.loaded_models.push(model);
                 node.loaded_models.sort();
@@ -369,7 +366,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             node.status = NodeStatus::Offline;
             node.online_since = None;
             node.clone()
@@ -402,7 +399,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
 
             if let Some(custom_name) = settings.custom_name {
                 node.custom_name = custom_name.and_then(|name| {
@@ -449,7 +446,7 @@ impl NodeRegistry {
         };
 
         if existed.is_none() {
-            return Err(RouterError::AgentNotFound(node_id));
+            return Err(RouterError::NodeNotFound(node_id));
         }
 
         if self.storage_enabled {
@@ -457,26 +454,6 @@ impl NodeRegistry {
         } else {
             Ok(())
         }
-    }
-
-    /// ノードメトリクスを更新
-    ///
-    /// ノードから送信されたメトリクス情報（CPU使用率、メモリ使用率、アクティブリクエスト数等）を
-    /// メモリ内のHashMapに保存する。ノードが存在しない場合はエラーを返す。
-    pub async fn update_metrics(&self, metrics: AgentMetrics) -> RouterResult<()> {
-        // ノードが存在するか確認
-        {
-            let nodes = self.nodes.read().await;
-            if !nodes.contains_key(&metrics.node_id) {
-                return Err(RouterError::AgentNotFound(metrics.node_id));
-            }
-        }
-
-        // メトリクスを保存
-        let mut metrics_map = self.metrics.write().await;
-        metrics_map.insert(metrics.node_id, metrics);
-
-        Ok(())
     }
 }
 

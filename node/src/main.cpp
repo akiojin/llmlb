@@ -238,8 +238,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             return 1;
         }
 
-        // Sync models from router (model_sync already created earlier for pull endpoint)
+        // Sync models from router (model_sync already created earlier for remote path resolution & initial sync)
         std::cout << "Syncing models from router..." << std::endl;
+        model_sync->setNodeToken(reg.node_token);
         auto sync_result = model_sync->sync();
         if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
             // If nothing synced and no local models, treat as recoverable error and retry once
@@ -260,14 +261,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Heartbeat thread
         std::cout << "Starting heartbeat thread..." << std::endl;
-        std::string agent_token = reg.agent_token;
-        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, agent_token, &cfg]() {
+        std::string node_token = reg.node_token;
+        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
                 auto loaded_models = llama_manager.getLoadedModels();
                 // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
                 std::vector<std::string> loaded_embedding_models;
-                router.sendHeartbeat(node_id, agent_token, std::nullopt, std::nullopt,
+                router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
                                      loaded_models, loaded_embedding_models);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }

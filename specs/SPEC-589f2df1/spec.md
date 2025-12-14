@@ -38,7 +38,7 @@
   - 処理中のリクエスト数
   - 平均レスポンスタイム
 - 収集間隔: 30秒ごと
-- エンドポイント: `POST /api/agents/:id/metrics`
+- エンドポイント: `POST /v0/health`（`X-Node-Token` 必須、body に `node_id` を含める）
 
 ### FR-010: 負荷ベースのノード選択
 

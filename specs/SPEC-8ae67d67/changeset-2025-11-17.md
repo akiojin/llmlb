@@ -1,6 +1,6 @@
 ## 2025-11-17 仕様追記: モデル起動完了までの受付制御
 
-- 対応モデル4件（gpt-oss:20b / gpt-oss:120b / gpt-oss-safeguard:20b / qwen3-coder:30b）が全て起動・常駐するまでは、ノードは `initializing` 状態とする。
+- 対応モデル4件（gpt-oss-20b / gpt-oss-120b / gpt-oss-safeguard-20b / qwen3-coder-30b）が全て起動・常駐するまでは、ノードは `initializing` 状態とする。
 - `initializing` 状態のノードはルーターのロードバランサ選択対象から除外する。
 - ルーターが選択可能なノードが全て `initializing` の場合、OpenAI互換リクエストには「モデル起動中のため待機/後でリトライ」を示すレスポンスを返す（HTTP 503 推奨）。後続で待機キューを導入する。
 - ノードはハートビートで `initializing` フラグと `ready_models`（起動済みモデル数/総数）を送信する。

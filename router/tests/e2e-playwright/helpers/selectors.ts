@@ -81,8 +81,8 @@ export const DashboardSelectors = {
 
   // Logs Tab
   logs: {
-    coordinatorList: '#logs-coordinator-list',
-    coordinatorRefresh: '#logs-coordinator-refresh',
+    routerList: '#logs-router-list',
+    routerRefresh: '#logs-router-refresh',
     nodeSelect: '#logs-node-select',
     nodeList: '#logs-node-list',
     nodeRefresh: '#logs-node-refresh',

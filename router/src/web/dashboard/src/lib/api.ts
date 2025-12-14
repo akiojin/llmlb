@@ -91,7 +91,7 @@ async function fetchWithAuth<T>(
 // Auth API
 export const authApi = {
   login: async (username: string, password: string) => {
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
+    const response = await fetch(`${API_BASE}/v0/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -108,13 +108,14 @@ export const authApi = {
 
   logout: async () => {
     try {
-      await fetchWithAuth('/api/auth/logout', { method: 'POST' })
+      await fetchWithAuth('/v0/auth/logout', { method: 'POST' })
     } finally {
       removeToken()
     }
   },
 
-  me: () => fetchWithAuth<{ id: number; username: string; role: string }>('/api/auth/me'),
+  me: () =>
+    fetchWithAuth<{ id: number; username: string; role: string }>('/v0/auth/me'),
 }
 
 // Dashboard API
@@ -193,29 +194,29 @@ export interface LogResponse {
 }
 
 export const dashboardApi = {
-  getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
+  getOverview: () => fetchWithAuth<DashboardOverview>('/v0/dashboard/overview'),
 
-  getNodes: () => fetchWithAuth<DashboardNode[]>('/api/dashboard/nodes'),
+  getNodes: () => fetchWithAuth<DashboardNode[]>('/v0/dashboard/nodes'),
 
-  getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
+  getStats: () => fetchWithAuth<DashboardStats>('/v0/dashboard/stats'),
 
   getRequestHistory: (limit?: number) =>
-    fetchWithAuth<RequestHistoryItem[]>('/api/dashboard/request-history', {
+    fetchWithAuth<RequestHistoryItem[]>('/v0/dashboard/request-history', {
       params: { limit },
     }),
 
   getNodeMetrics: (nodeId: string) =>
-    fetchWithAuth<unknown[]>(`/api/dashboard/metrics/${nodeId}`),
+    fetchWithAuth<unknown[]>(`/v0/dashboard/metrics/${nodeId}`),
 
   getRequestResponses: (params?: {
     limit?: number
     offset?: number
     model?: string
     status?: string
-  }) => fetchWithAuth<unknown[]>('/api/dashboard/request-responses', { params }),
+  }) => fetchWithAuth<unknown[]>('/v0/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>
-    fetchWithAuth<unknown>(`/api/dashboard/request-responses/${id}`),
+    fetchWithAuth<unknown>(`/v0/dashboard/request-responses/${id}`),
 
   exportRequestResponses: async (format: 'csv' | 'json') => {
     const token = getToken()
@@ -223,9 +224,12 @@ export const dashboardApi = {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
-    const response = await fetch(`${API_BASE}/api/dashboard/request-responses/export?format=${format}`, {
+    const response = await fetch(
+      `${API_BASE}/v0/dashboard/request-responses/export?format=${format}`,
+      {
       headers,
-    })
+      }
+    )
     if (!response.ok) {
       const errorText = await response.text()
       throw new ApiError(response.status, response.statusText, errorText)
@@ -234,30 +238,30 @@ export const dashboardApi = {
   },
 
   getRouterLogs: (params?: { limit?: number }) =>
-    fetchWithAuth<LogResponse>('/api/dashboard/logs/router', { params }),
+    fetchWithAuth<LogResponse>('/v0/dashboard/logs/router', { params }),
 }
 
 // Nodes API
 export const nodesApi = {
-  list: () => fetchWithAuth<DashboardNode[]>('/api/nodes'),
+  list: () => fetchWithAuth<DashboardNode[]>('/v0/nodes'),
 
   delete: (nodeId: string) =>
-    fetchWithAuth<void>(`/api/nodes/${nodeId}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/nodes/${nodeId}`, { method: 'DELETE' }),
 
   disconnect: (nodeId: string) =>
-    fetchWithAuth<void>(`/api/nodes/${nodeId}/disconnect`, { method: 'POST' }),
+    fetchWithAuth<void>(`/v0/nodes/${nodeId}/disconnect`, { method: 'POST' }),
 
   updateSettings: (
     nodeId: string,
     settings: { custom_name?: string; tags?: string[]; notes?: string }
   ) =>
-    fetchWithAuth<void>(`/api/nodes/${nodeId}/settings`, {
+    fetchWithAuth<void>(`/v0/nodes/${nodeId}/settings`, {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
 
   getLogs: (nodeId: string, params?: { limit?: number }) =>
-    fetchWithAuth<LogResponse>(`/api/nodes/${nodeId}/logs`, { params }),
+    fetchWithAuth<LogResponse>(`/v0/nodes/${nodeId}/logs`, { params }),
 }
 
 // Models API
@@ -316,27 +320,21 @@ export interface ConvertTask {
 }
 
 export const modelsApi = {
-  getRegistered: () => fetchWithAuth<RegisteredModelView[]>('/api/models/registered'),
+  getRegistered: () => fetchWithAuth<RegisteredModelView[]>('/v0/models/registered'),
 
   getAvailable: () =>
-    fetchWithAuth<AvailableModelsResponse>('/api/models/available', {
+    fetchWithAuth<AvailableModelsResponse>('/v0/models/available', {
       params: { source: 'hf' },
     }),
 
   register: (repo: string, filename?: string) =>
-    fetchWithAuth<unknown>('/api/models/register', {
-      method: 'POST',
-      body: JSON.stringify({ repo, filename }),
-    }),
-
-  pull: (repo: string, filename: string) =>
-    fetchWithAuth<{ name: string; path: string }>('/api/models/pull', {
+    fetchWithAuth<unknown>('/v0/models/register', {
       method: 'POST',
       body: JSON.stringify({ repo, filename }),
     }),
 
   delete: (modelName: string) =>
-    fetchWithAuth<void>(`/api/models/${encodeURIComponent(modelName)}`, {
+    fetchWithAuth<void>(`/v0/models/${encodeURIComponent(modelName)}`, {
       method: 'DELETE',
     }),
 
@@ -346,18 +344,18 @@ export const modelsApi = {
     revision?: string
     chat_template?: string
   }) =>
-    fetchWithAuth<{ task_id: string; status: string }>('/api/models/convert', {
+    fetchWithAuth<{ task_id: string; status: string }>('/v0/models/convert', {
       method: 'POST',
       body: JSON.stringify(params),
     }),
 
-  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/api/models/convert'),
+  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/v0/models/convert'),
 
   getConvertTask: (taskId: string) =>
-    fetchWithAuth<ConvertTask>(`/api/models/convert/${taskId}`),
+    fetchWithAuth<ConvertTask>(`/v0/models/convert/${taskId}`),
 
   deleteConvertTask: (taskId: string) =>
-    fetchWithAuth<void>(`/api/models/convert/${taskId}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/models/convert/${taskId}`, { method: 'DELETE' }),
 }
 
 // API Keys API
@@ -380,22 +378,22 @@ export interface CreateApiKeyResponse {
 }
 
 export const apiKeysApi = {
-  list: () => fetchWithAuth<ApiKey[]>('/api/api-keys'),
+  list: () => fetchWithAuth<ApiKey[]>('/v0/api-keys'),
 
   create: (data: { name: string; expires_at?: string }) =>
-    fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
+    fetchWithAuth<CreateApiKeyResponse>('/v0/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   update: (id: string, data: { name?: string; expires_at?: string | null }) =>
-    fetchWithAuth<ApiKey>(`/api/api-keys/${id}`, {
+    fetchWithAuth<ApiKey>(`/v0/api-keys/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/api/api-keys/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/api-keys/${id}`, { method: 'DELETE' }),
 }
 
 // Users API
@@ -407,10 +405,10 @@ export interface User {
 }
 
 export const usersApi = {
-  list: () => fetchWithAuth<User[]>('/api/users'),
+  list: () => fetchWithAuth<User[]>('/v0/users'),
 
   create: (data: { username: string; password: string; role: string }) =>
-    fetchWithAuth<User>('/api/users', {
+    fetchWithAuth<User>('/v0/users', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -419,13 +417,13 @@ export const usersApi = {
     id: string,
     data: { username?: string; password?: string; role?: string }
   ) =>
-    fetchWithAuth<User>(`/api/users/${id}`, {
+    fetchWithAuth<User>(`/v0/users/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/api/users/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/users/${id}`, { method: 'DELETE' }),
 }
 
 // Chat API (OpenAI compatible)

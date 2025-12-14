@@ -79,7 +79,7 @@ with open(outfile, "wb") as f:
     api::create_router(state)
 }
 
-/// モデル配布APIは廃止（ノードが /v1/models と /api/models/blob から自律取得）
+/// モデル配布APIは廃止（ノードが /v1/models と /v0/models/blob から自律取得）
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
@@ -96,7 +96,7 @@ async fn test_distribute_models_endpoint_is_removed() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/distribute")
+                .uri("/v0/models/distribute")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -114,7 +114,7 @@ async fn test_distribute_models_endpoint_is_removed() {
     );
 }
 
-/// T004: GET /api/models/available の契約テスト
+/// T004: GET /v0/models/available の契約テスト
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_contract() {
@@ -139,7 +139,7 @@ async fn test_get_available_models_contract() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available?source=hf")
+                .uri("/v0/models/available?source=hf")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -150,7 +150,7 @@ async fn test_get_available_models_contract() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "Expected 200 OK for GET /api/models/available"
+        "Expected 200 OK for GET /v0/models/available"
     );
 
     // レスポンスボディの検証
@@ -206,7 +206,7 @@ async fn test_get_available_models_contract() {
     }
 }
 
-/// ノードのモデル一覧取得APIは廃止（ロード済みモデルは /api/nodes と /api/dashboard/nodes から参照）
+/// ノードのモデル一覧取得APIは廃止（ロード済みモデルは /v0/nodes と /v0/dashboard/nodes から参照）
 #[tokio::test]
 #[serial]
 async fn test_get_node_models_endpoint_is_removed() {
@@ -217,7 +217,7 @@ async fn test_get_node_models_endpoint_is_removed() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/nodes/{}/models", Uuid::new_v4()))
+                .uri(format!("/v0/nodes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -246,7 +246,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/nodes/{}/models/pull", Uuid::new_v4()))
+                .uri(format!("/v0/nodes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -272,7 +272,7 @@ async fn test_tasks_endpoint_is_removed() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/tasks")
+                .uri("/v0/tasks")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -286,7 +286,7 @@ async fn test_tasks_endpoint_is_removed() {
     );
 }
 
-/// T009: POST /api/models/register - 正常系と重複/404異常系
+/// T009: POST /v0/models/register - 正常系と重複/404異常系
 #[tokio::test]
 #[serial]
 async fn test_register_model_contract() {
@@ -316,7 +316,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -357,7 +357,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -383,7 +383,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&missing_payload).unwrap()))
                 .unwrap(),
@@ -409,7 +409,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "non-gguf-repo"})).unwrap(),
@@ -439,7 +439,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "unknown-repo"})).unwrap(),
@@ -458,7 +458,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/api/models/test/repo")
+                .uri("/v0/models/test/repo")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -497,7 +497,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "convertible-repo"})).unwrap(),
@@ -589,7 +589,7 @@ async fn test_convert_restore_requeues() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "restore-repo"})).unwrap(),
@@ -609,7 +609,7 @@ async fn test_convert_restore_requeues() {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/api/models/convert")
+                    .uri("/v0/models/convert")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -644,7 +644,7 @@ async fn test_convert_restore_requeues() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/convert")
+                .uri("/v0/models/convert")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -668,7 +668,7 @@ async fn test_convert_restore_requeues() {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/api/models/convert")
+                    .uri("/v0/models/convert")
                     .body(Body::empty())
                     .unwrap(),
             )

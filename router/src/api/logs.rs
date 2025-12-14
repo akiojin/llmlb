@@ -1,6 +1,6 @@
 //! ログ閲覧API
 //!
-//! `/api/dashboard/logs/*` エンドポイントを提供する。
+//! `/v0/dashboard/logs/*` エンドポイントを提供する。
 
 use super::nodes::AppError;
 use crate::{logging, AppState};
@@ -49,7 +49,7 @@ fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
-/// GET /api/dashboard/logs/router
+/// GET /v0/dashboard/logs/router
 pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogResponse>, AppError> {
     let log_path = logging::log_file_path().map_err(|err| {
         RouterError::Internal(format!("Failed to resolve router log path: {err}"))
@@ -63,7 +63,7 @@ pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRe
     }))
 }
 
-/// GET /api/nodes/:node_id/logs
+/// GET /v0/nodes/:node_id/logs
 pub async fn get_node_logs(
     Path(node_id): Path<Uuid>,
     Query(query): Query<LogQuery>,
@@ -72,13 +72,13 @@ pub async fn get_node_logs(
     let node = state.registry.get(node_id).await?;
     // Registering 状態でもログ取得は許可（Offline のみ拒否）
     if node.status == NodeStatus::Offline {
-        return Err(RouterError::AgentOffline(node_id).into());
+        return Err(RouterError::NodeOffline(node_id).into());
     }
 
     let limit = clamp_limit(query.limit);
     let node_api_port = node.runtime_port.saturating_add(1); // APIポートはLLM runtimeポート+1
     let url = format!(
-        "http://{}:{}/api/logs?tail={}",
+        "http://{}:{}/v0/logs?tail={}",
         node.ip_address, node_api_port, limit
     );
 
@@ -232,7 +232,7 @@ mod tests {
         let node_ip: IpAddr = mock.address().ip();
 
         Mock::given(method("GET"))
-            .and(path("/api/logs"))
+            .and(path("/v0/logs"))
             .respond_with(ResponseTemplate::new(200).set_body_raw(
                 r#"{"entries":[{"timestamp":"2025-11-14T00:00:00Z","level":"INFO","target":"node","message":"remote","fields":{}}],"path":"/var/log/node.log"}"#,
                 "application/json",

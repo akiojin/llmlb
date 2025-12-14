@@ -47,7 +47,7 @@ async fn test_list_available_models_from_runtime_library() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available")
+                .uri("/v0/models/available")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -75,15 +75,15 @@ async fn test_list_available_models_from_runtime_library() {
     // 事前定義モデルは廃止されたため、空配列でもよい（存在確認のみ）
 }
 
-/// T019: ノードが報告したロード済みモデルが /api/nodes に反映される
+/// T019: ノードが報告したロード済みモデルが /v0/nodes に反映される
 #[tokio::test]
-async fn test_list_installed_models_on_agent() {
+async fn test_list_installed_models_on_node() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用ノードを登録
     let register_payload = json!({
-        "machine_name": "model-info-agent",
+        "machine_name": "model-info-node",
         "ip_address": "192.168.1.230",
         "runtime_version": "0.1.42",
         "runtime_port": 11434,
@@ -98,7 +98,7 @@ async fn test_list_installed_models_on_agent() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -111,13 +111,13 @@ async fn test_list_installed_models_on_agent() {
     let body = to_bytes(register_response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let agent: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = agent["node_id"]
+    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let node_id = node["node_id"]
         .as_str()
         .expect("Node must have 'node_id' field");
-    let agent_token = agent["agent_token"]
+    let node_token = node["node_token"]
         .as_str()
-        .expect("Node must have 'agent_token' field");
+        .expect("Node must have 'node_token' field");
 
     // ノードがロード済みモデルを報告
     let health_payload = json!({
@@ -136,9 +136,9 @@ async fn test_list_installed_models_on_agent() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/health")
+                .uri("/v0/health")
                 .header("content-type", "application/json")
-                .header("X-Agent-Token", agent_token)
+                .header("X-Node-Token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                 .unwrap(),
         )
@@ -151,12 +151,12 @@ async fn test_list_installed_models_on_agent() {
         "health check should be accepted"
     );
 
-    // /api/nodes に反映される
+    // /v0/nodes に反映される
     let list_response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -185,17 +185,17 @@ async fn test_list_installed_models_on_agent() {
     assert!(has_model, "loaded_models should contain reported model");
 }
 
-/// T020: 複数ノードのロード済みモデルが /api/nodes に反映される
+/// T020: 複数ノードのロード済みモデルが /v0/nodes に反映される
 #[tokio::test]
-async fn test_model_matrix_view_multiple_agents() {
+async fn test_model_matrix_view_multiple_nodes() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // 複数のノードを登録（node_id と agent_token を保持）
+    // 複数のノードを登録（node_id と node_token を保持）
     let mut nodes: Vec<(String, String)> = Vec::new();
     for i in 0..3 {
         let register_payload = json!({
-            "machine_name": format!("matrix-agent-{}", i),
+            "machine_name": format!("matrix-node-{}", i),
             "ip_address": format!("192.168.1.{}", 240 + i),
             "runtime_version": "0.1.42",
             "runtime_port": 11434,
@@ -210,7 +210,7 @@ async fn test_model_matrix_view_multiple_agents() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/api/nodes")
+                    .uri("/v0/nodes")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                     .unwrap(),
@@ -220,21 +220,21 @@ async fn test_model_matrix_view_multiple_agents() {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let agent: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let node_id = agent["node_id"]
+        let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let node_id = node["node_id"]
             .as_str()
             .expect("Node must have 'node_id'")
             .to_string();
-        let agent_token = agent["agent_token"]
+        let node_token = node["node_token"]
             .as_str()
-            .expect("Node must have 'agent_token'")
+            .expect("Node must have 'node_token'")
             .to_string();
-        nodes.push((node_id, agent_token));
+        nodes.push((node_id, node_token));
     }
 
     // 各ノードがロード済みモデルを報告
     let reported = ["gpt-oss-20b", "gpt-oss-120b", "qwen3-coder-30b"];
-    for (idx, (node_id, agent_token)) in nodes.iter().enumerate() {
+    for (idx, (node_id, node_token)) in nodes.iter().enumerate() {
         let model = reported[idx % reported.len()];
         let health_payload = json!({
             "node_id": node_id,
@@ -252,9 +252,9 @@ async fn test_model_matrix_view_multiple_agents() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/api/health")
+                    .uri("/v0/health")
                     .header("content-type", "application/json")
-                    .header("X-Agent-Token", agent_token)
+                    .header("X-Node-Token", node_token)
                     .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                     .unwrap(),
             )
@@ -263,13 +263,13 @@ async fn test_model_matrix_view_multiple_agents() {
         assert_eq!(health_response.status(), StatusCode::OK);
     }
 
-    // /api/nodes に反映される（マトリックス表示のデータソース）
+    // /v0/nodes に反映される（マトリックス表示のデータソース）
     let list_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -301,7 +301,7 @@ async fn test_model_matrix_view_multiple_agents() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available")
+                .uri("/v0/models/available")
                 .body(Body::empty())
                 .unwrap(),
         )

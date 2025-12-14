@@ -32,11 +32,11 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
 
     // Stub router that accepts register/heartbeat and lists one model
     httplib::Server router;
-    router.Post("/api/nodes", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/v0/nodes", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
-        res.set_content(R"({"node_id":"test-node","agent_token":"test-token"})", "application/json");
+        res.set_content(R"({"node_id":"test-node","node_token":"test-token"})", "application/json");
     });
-    router.Post("/api/health", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/v0/health", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
         res.set_content("ok", "text/plain");
     });
@@ -82,7 +82,7 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
     const int node_port = 18133;
 
     httplib::Server router;
-    router.Post("/api/nodes", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/v0/nodes", [](const httplib::Request&, httplib::Response& res) {
         res.status = 500;
         res.set_content("error", "text/plain");
     });

@@ -1,7 +1,7 @@
 //! ノード登録APIハンドラー
 
 use crate::{
-    balancer::{AgentLoadSnapshot, SystemSummary},
+    balancer::{NodeLoadSnapshot, SystemSummary},
     registry::NodeSettingsUpdate,
     AppState,
 };
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tracing::{error, info, warn};
 
-/// POST /api/nodes - ノード登録
+/// POST /v0/nodes - ノード登録
 pub async fn register_node(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -33,7 +33,7 @@ pub async fn register_node(
         );
         return Err(AppError(RouterError::Common(
             llm_router_common::error::CommonError::Validation(
-                "GPU hardware is required for agent registration. gpu_available must be true."
+                "GPU hardware is required for node registration. gpu_available must be true."
                     .to_string(),
             ),
         )));
@@ -46,7 +46,7 @@ pub async fn register_node(
         );
         return Err(AppError(RouterError::Common(
             llm_router_common::error::CommonError::Validation(
-                "GPU hardware is required for agent registration. No GPU devices detected in gpu_devices array."
+                "GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
                     .to_string(),
             ),
         )));
@@ -59,7 +59,7 @@ pub async fn register_node(
         );
         return Err(AppError(RouterError::Common(
             llm_router_common::error::CommonError::Validation(
-                "GPU hardware is required for agent registration. Invalid GPU device information (empty model or zero count)."
+                "GPU hardware is required for node registration. Invalid GPU device information (empty model or zero count)."
                     .to_string(),
             ),
         )));
@@ -162,29 +162,29 @@ pub async fn register_node(
 
     // ヘルスチェックOKなら登録を実施
     let mut response = state.registry.register(req).await?;
-    response.agent_api_port = Some(node_api_port);
+    response.node_api_port = Some(node_api_port);
 
-    // エージェントトークンを生成（更新時は既存トークンを削除して再生成）
+    // ノードトークンを生成（更新時は既存トークンを削除して再生成）
     if response.status == llm_router_common::protocol::RegisterStatus::Updated {
         // 既存トークンを削除
-        if let Err(e) = crate::db::agent_tokens::delete(&state.db_pool, response.node_id).await {
+        if let Err(e) = crate::db::node_tokens::delete(&state.db_pool, response.node_id).await {
             warn!(
-                "Failed to delete existing agent token for node {}: {}",
+                "Failed to delete existing node token for node {}: {}",
                 response.node_id, e
             );
         }
     }
-    let agent_token_with_plaintext =
-        crate::db::agent_tokens::create(&state.db_pool, response.node_id)
+    let node_token_with_plaintext =
+        crate::db::node_tokens::create(&state.db_pool, response.node_id)
             .await
             .map_err(|e| {
-                error!("Failed to create agent token: {}", e);
+                error!("Failed to create node token: {}", e);
                 AppError(RouterError::Internal(format!(
-                    "Failed to create agent token: {}",
+                    "Failed to create node token: {}",
                     e
                 )))
             })?;
-    response.agent_token = Some(agent_token_with_plaintext.token);
+    response.node_token = Some(node_token_with_plaintext.token);
 
     // 取得した初期状態を反映
     if let Err(e) = state
@@ -221,13 +221,13 @@ pub async fn register_node(
     Ok((status_code, Json(response)))
 }
 
-/// GET /api/nodes - ノード一覧取得
+/// GET /v0/nodes - ノード一覧取得
 pub async fn list_nodes(State(state): State<AppState>) -> Json<Vec<Node>> {
     let nodes = state.registry.list().await;
     Json(nodes)
 }
 
-/// PUT /api/nodes/:id/settings - ノード設定更新
+/// PUT /v0/nodes/:id/settings - ノード設定更新
 pub async fn update_node_settings(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -258,19 +258,19 @@ pub struct UpdateNodeSettingsPayload {
     pub notes: Option<Option<String>>,
 }
 
-/// GET /api/nodes/metrics - ノードメトリクス取得
-pub async fn list_node_metrics(State(state): State<AppState>) -> Json<Vec<AgentLoadSnapshot>> {
+/// GET /v0/nodes/metrics - ノードメトリクス取得
+pub async fn list_node_metrics(State(state): State<AppState>) -> Json<Vec<NodeLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;
     Json(snapshots)
 }
 
-/// GET /api/metrics/summary - システム統計
+/// GET /v0/metrics/summary - システム統計
 pub async fn metrics_summary(State(state): State<AppState>) -> Json<SystemSummary> {
     let summary = state.load_manager.summary().await;
     Json(summary)
 }
 
-/// DELETE /api/nodes/:id - ノードを削除
+/// DELETE /v0/nodes/:id - ノードを削除
 pub async fn delete_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -279,7 +279,7 @@ pub async fn delete_node(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// POST /api/nodes/:id/disconnect - ノードを強制オフラインにする
+/// POST /v0/nodes/:id/disconnect - ノードを強制オフラインにする
 pub async fn disconnect_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -301,10 +301,10 @@ impl From<RouterError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match &self.0 {
-            RouterError::AgentNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            RouterError::NoAgentsAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            RouterError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
+            RouterError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             RouterError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
-            RouterError::AgentOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            RouterError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             RouterError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),
             RouterError::InsufficientStorage(_) => {
                 (StatusCode::INSUFFICIENT_STORAGE, self.0.to_string())
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let expected = "Validation error: GPU hardware is required for agent registration. gpu_available must be true.";
+        let expected = "Validation error: GPU hardware is required for node registration. gpu_available must be true.";
         assert_eq!(body["error"], expected);
     }
 
@@ -501,7 +501,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(
             body["error"],
-            "Validation error: GPU hardware is required for agent registration. No GPU devices detected in gpu_devices array."
+            "Validation error: GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
         );
     }
 
@@ -609,8 +609,8 @@ mod tests {
     async fn test_metrics_summary_empty() {
         let state = create_test_state().await;
         let summary = metrics_summary(State(state)).await;
-        assert_eq!(summary.total_agents, 0);
-        assert_eq!(summary.online_agents, 0);
+        assert_eq!(summary.total_nodes, 0);
+        assert_eq!(summary.online_nodes, 0);
         assert_eq!(summary.total_requests, 0);
         assert_eq!(summary.total_active_requests, 0);
         assert!(summary.average_response_time_ms.is_none());
@@ -693,8 +693,8 @@ mod tests {
             .unwrap();
 
         let summary = metrics_summary(State(state)).await;
-        assert_eq!(summary.total_agents, 1);
-        assert_eq!(summary.online_agents, 1);
+        assert_eq!(summary.total_nodes, 1);
+        assert_eq!(summary.online_nodes, 1);
         assert_eq!(summary.total_requests, 2);
         assert_eq!(summary.successful_requests, 1);
         assert_eq!(summary.failed_requests, 1);

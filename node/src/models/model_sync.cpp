@@ -91,6 +91,11 @@ ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::
 }
     
 
+void ModelSync::setNodeToken(std::string node_token) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    node_token_ = std::move(node_token);
+}
+
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Client cli(base_url_.c_str());
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
@@ -98,7 +103,19 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
 
     // SPEC-dcaeaec4 FR-8: /v0/models を使用（拡張情報を含む）
     // /v1/models はOpenAI互換（標準形式のみ）
-    auto res = cli.Get("/v0/models");
+    std::optional<std::string> node_token;
+    {
+        std::lock_guard<std::mutex> lock(etag_mutex_);
+        node_token = node_token_;
+    }
+
+    httplib::Result res;
+    if (node_token.has_value() && !node_token->empty()) {
+        httplib::Headers headers = {{"X-Node-Token", *node_token}};
+        res = cli.Get("/v0/models", headers);
+    } else {
+        res = cli.Get("/v0/models");
+    }
     if (!res || res->status < 200 || res->status >= 300) {
         return {};
     }
@@ -259,7 +276,7 @@ ModelSyncResult ModelSync::sync() {
                 // The router's endpoint uses a single path segment, so model id must be URL-encoded (slashes, etc).
                 if (!ok) {
                     const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    const auto blob_path = std::string("/api/models/blob/") + urlEncodePathSegment(id);
+                    const auto blob_path = std::string("/v0/models/blob/") + urlEncodePathSegment(id);
                     auto out = downloader.downloadBlob(blob_path, filename, nullptr);
                     ok = !out.empty();
                     downloaded = ok;

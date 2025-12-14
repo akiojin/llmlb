@@ -107,7 +107,7 @@ node/
 │   │   └── inference_engine.h   # 修正: 修復機能の依存注入
 │   └── models/
 │       ├── model_sync.h         # 既存
-│       └── model_repair.h       # 新規: 修復コーディネーター
+│       └── model_repair.h       # 新規: 修復マネージャ
 ├── src/
 │   ├── core/
 │   │   ├── llama_manager.cpp    # 修正: loadModelWithRepair追加

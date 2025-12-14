@@ -132,12 +132,12 @@ async fn dashboard_static_index_is_react_app() {
 }
 
 #[tokio::test]
-async fn dashboard_agents_and_stats_reflect_registry() {
+async fn dashboard_nodes_and_stats_reflect_registry() {
     let (router, registry, load_manager) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
-            machine_name: "agent-smoke".into(),
+            machine_name: "node-smoke".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 42)),
             runtime_version: "0.1.0".into(),
             runtime_port: 11434,
@@ -176,36 +176,36 @@ async fn dashboard_agents_and_stats_reflect_registry() {
         .await
         .unwrap();
 
-    let agents_response = router
+    let nodes_response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    assert_eq!(agents_response.status(), StatusCode::OK);
-    let body = to_bytes(agents_response.into_body(), 1024 * 1024)
+    assert_eq!(nodes_response.status(), StatusCode::OK);
+    let body = to_bytes(nodes_response.into_body(), 1024 * 1024)
         .await
         .unwrap();
     let nodes: Value = serde_json::from_slice(&body).unwrap();
 
     assert!(nodes.is_array(), "expected array payload, got {nodes:?}");
-    let agent = &nodes.as_array().unwrap()[0];
-    assert_eq!(agent["machine_name"], "agent-smoke");
-    assert_eq!(agent["status"], "online");
-    assert_eq!(agent["total_requests"], 1);
-    assert_eq!(agent["successful_requests"], 1);
-    assert!(agent["loaded_models"].is_array());
+    let node = &nodes.as_array().unwrap()[0];
+    assert_eq!(node["machine_name"], "node-smoke");
+    assert_eq!(node["status"], "online");
+    assert_eq!(node["total_requests"], 1);
+    assert_eq!(node["successful_requests"], 1);
+    assert!(node["loaded_models"].is_array());
 
     let stats_response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/stats")
+                .uri("/v0/dashboard/stats")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -230,7 +230,7 @@ async fn dashboard_request_history_tracks_activity() {
 
     let node_id = registry
         .register(RegisterRequest {
-            machine_name: "history-agent".into(),
+            machine_name: "history-node".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7)),
             runtime_version: "0.1.0".into(),
             runtime_port: 11434,
@@ -258,7 +258,7 @@ async fn dashboard_request_history_tracks_activity() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/request-history")
+                .uri("/v0/dashboard/request-history")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -310,7 +310,7 @@ async fn dashboard_overview_returns_combined_payload() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/overview")
+                .uri("/v0/dashboard/overview")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -322,8 +322,8 @@ async fn dashboard_overview_returns_combined_payload() {
     let overview: Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(overview["nodes"].as_array().unwrap().len(), 1);
-    let agent = overview["nodes"].as_array().unwrap().first().unwrap();
-    assert!(agent["loaded_models"].is_array());
+    let node = overview["nodes"].as_array().unwrap().first().unwrap();
+    assert!(node["loaded_models"].is_array());
     assert_eq!(overview["stats"]["total_nodes"], 1);
     assert_eq!(overview["history"].as_array().unwrap().len(), 60);
     assert!(overview["generated_at"].is_string());
@@ -331,7 +331,7 @@ async fn dashboard_overview_returns_combined_payload() {
 }
 
 #[tokio::test]
-async fn dashboard_agent_metrics_endpoint_returns_history() {
+async fn dashboard_node_metrics_endpoint_returns_history() {
     let (router, registry, load_manager) = build_router().await;
 
     let node_id = registry
@@ -374,7 +374,7 @@ async fn dashboard_agent_metrics_endpoint_returns_history() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/api/dashboard/metrics/{node_id}"))
+                .uri(format!("/v0/dashboard/metrics/{node_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )

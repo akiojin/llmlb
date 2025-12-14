@@ -8,7 +8,7 @@
 
 ### 決定1: JSONファイルストレージ
 
-**選択**: `~/.llm-router/agents.json` にノード情報を保存
+**選択**: `~/.llm-router/nodes.json` にノード情報を保存
 
 **理由**:
 - シンプル: データベースサーバー不要
@@ -23,7 +23,7 @@
 
 **実装詳細**:
 ```rust
-// ~/.llm-router/agents.json
+// ~/.llm-router/nodes.json
 [
   {
     "id": "uuid",
@@ -40,7 +40,7 @@
 
 ### 決定2: Arc<RwLock<HashMap>> によるメモリ内管理
 
-**選択**: `Arc<RwLock<HashMap<Uuid, Agent>>>` でノード情報をメモリ管理
+**選択**: `Arc<RwLock<HashMap<Uuid, Node>>>` でノード情報をメモリ管理
 
 **理由**:
 - 高速: O(1) アクセス
@@ -54,16 +54,16 @@
 
 **実装詳細**:
 ```rust
-pub struct AgentRegistry {
-    agents: Arc<RwLock<HashMap<Uuid, Agent>>>,
+pub struct NodeRegistry {
+    nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
 }
 
 // 読み取り（複数同時可）
-let agents = self.agents.read().await;
+let nodes = self.nodes.read().await;
 
 // 書き込み（排他）
-let mut agents = self.agents.write().await;
-agents.insert(id, agent);
+let mut nodes = self.nodes.write().await;
+nodes.insert(id, node);
 ```
 
 ### 決定3: 30秒ハートビート間隔 + 60秒タイムアウト
@@ -79,7 +79,10 @@ agents.insert(id, agent);
 - **60秒/120秒**: 障害検出遅い
 
 **実装詳細**:
-- 環境変数: `HEARTBEAT_INTERVAL=30`, `AGENT_TIMEOUT=60`
+- 環境変数（例）:
+  - Node: `LLM_NODE_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
+  - Router: `LLM_ROUTER_HEALTH_CHECK_INTERVAL=30`（フォールバック: `HEALTH_CHECK_INTERVAL`）
+  - Router: `LLM_ROUTER_NODE_TIMEOUT=60`（フォールバック: `NODE_TIMEOUT`）
 - ノード側: `tokio::time::interval(Duration::from_secs(30))`
 - ルーター側: `last_heartbeat + 60秒 < now` でOffline判定
 

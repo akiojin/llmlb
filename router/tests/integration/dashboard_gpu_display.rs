@@ -38,7 +38,7 @@ async fn build_router() -> Router {
 }
 
 #[tokio::test]
-async fn dashboard_agents_include_gpu_devices() {
+async fn dashboard_nodes_include_gpu_devices() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let router = build_router().await;
 
@@ -58,7 +58,7 @@ async fn dashboard_agents_include_gpu_devices() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -72,7 +72,7 @@ async fn dashboard_agents_include_gpu_devices() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -87,17 +87,17 @@ async fn dashboard_agents_include_gpu_devices() {
         payload.is_array(),
         "expected array response but got {payload:?}"
     );
-    let agent = payload
+    let node = payload
         .as_array()
         .and_then(|list| list.first())
         .cloned()
-        .expect("agent entry must exist");
-    assert_eq!(agent["machine_name"], "dashboard-gpu");
+        .expect("node entry must exist");
+    assert_eq!(node["machine_name"], "dashboard-gpu");
     assert!(
-        agent["gpu_devices"].is_array(),
+        node["gpu_devices"].is_array(),
         "gpu_devices should be present in dashboard payload"
     );
-    let devices = agent["gpu_devices"].as_array().unwrap();
+    let devices = node["gpu_devices"].as_array().unwrap();
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0]["model"], "Apple M3 Max");
     assert_eq!(devices[0]["count"], 1);

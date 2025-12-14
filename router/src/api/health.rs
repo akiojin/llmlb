@@ -4,7 +4,7 @@ use crate::{api::nodes::AppError, balancer::MetricsUpdate, AppState};
 use axum::{extract::State, Json};
 use llm_router_common::protocol::HealthCheckRequest;
 
-/// POST /api/health - ヘルスチェック受信
+/// POST /v0/health - ヘルスチェック受信
 pub async fn health_check(
     State(state): State<AppState>,
     Json(req): Json<HealthCheckRequest>,
@@ -141,13 +141,13 @@ mod tests {
         assert!(result.is_ok());
 
         // ノードが更新されたことを確認
-        let agent = state.registry.get(register_response.node_id).await.unwrap();
-        assert_eq!(agent.status, llm_router_common::types::NodeStatus::Online);
-        assert_eq!(agent.loaded_models, vec!["gpt-oss-20b"]);
+        let node = state.registry.get(register_response.node_id).await.unwrap();
+        assert_eq!(node.status, llm_router_common::types::NodeStatus::Online);
+        assert_eq!(node.loaded_models, vec!["gpt-oss-20b"]);
     }
 
     #[tokio::test]
-    async fn test_health_check_unknown_agent() {
+    async fn test_health_check_unknown_node() {
         let state = create_test_state().await;
 
         let health_req = HealthCheckRequest {

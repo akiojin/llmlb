@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:router/src/web/static/assets/login-bSrJZQ3R.js
-import{c as u,r as a,j as e,C as x,L as i,U as h,I as d,B as p,a as j,t as f,F as g,T as v,G as b}from"./index-DOarslIR.js";import{C as w,b as y,c as N,d as C,a as L}from"./card-C0OIZAHi.js";/**
-========
 import{c as u,r as a,j as e,C as x,L as i,U as h,I as d,B as p,a as j,t as f,E as g,T as v,F as b}from"./index-CRcaV-fI.js";import{C as w,b as y,c as N,d as C,a as L}from"./card-wIqx3mC_.js";/**
->>>>>>>> 8943d5a1cfc65bc45416998beda884c59722a468:router/src/web/static/assets/login-BrBMmcWj.js
  * @license lucide-react v0.460.0 - ISC
  *
  * This source code is licensed under the ISC license.

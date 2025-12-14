@@ -21,8 +21,8 @@ use uuid::Uuid;
 use crate::{
     convert::ConvertTask,
     registry::models::{
-        generate_ollama_style_id, model_name_to_dir, router_model_path, router_models_dir,
-        ModelInfo, ModelSource,
+        extract_repo_id, generate_ollama_style_id, model_name_to_dir, router_model_path,
+        router_models_dir, ModelInfo, ModelSource,
     },
     registry::NodeRegistry,
     AppState,
@@ -948,7 +948,8 @@ pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let repo = req.repo.clone();
+    // URLからrepo_idを抽出（フルURLが渡された場合はrepo_id形式に正規化）
+    let repo = extract_repo_id(&req.repo);
 
     // ファイル名を解決
     let filename = match req.filename.clone() {

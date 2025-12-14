@@ -33,6 +33,9 @@ use llm_router_common::error::{CommonError, RouterError};
 ///
 /// 有効なモデル名の形式:
 /// - `gpt-oss-20b`, `mistral-7b-instruct-v0.2` のようなファイル名ベース形式
+/// - `openai/gpt-oss-20b` のような階層形式（HuggingFace互換）
+///
+/// SPEC-dcaeaec4 FR-2: 階層形式を許可
 fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
     if model_name.is_empty() {
         return Err(RouterError::InvalidModelName(
@@ -40,11 +43,26 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
         ));
     }
 
-    // ファイル名ベース形式（`:` や `/` は禁止）
-    if !model_name
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.')
-    {
+    // 危険なパターンを禁止（パストラバーサル対策）
+    if model_name.contains("..") || model_name.contains('\0') {
+        return Err(RouterError::InvalidModelName(format!(
+            "Invalid model name (contains dangerous pattern): {}",
+            model_name
+        )));
+    }
+
+    // 先頭・末尾のスラッシュは禁止
+    if model_name.starts_with('/') || model_name.ends_with('/') {
+        return Err(RouterError::InvalidModelName(format!(
+            "Invalid model name (leading/trailing slash): {}",
+            model_name
+        )));
+    }
+
+    // 許可する文字: 小文字英数字、'-', '_', '.', '/'（ディレクトリセパレータ）
+    if !model_name.chars().all(|c| {
+        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.' || c == '/'
+    }) {
         return Err(RouterError::InvalidModelName(format!(
             "Invalid model name: {}",
             model_name
@@ -1376,6 +1394,14 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_model_name_hierarchical_valid() {
+        // SPEC-dcaeaec4 FR-2: 階層形式を許可
+        assert!(validate_model_name("openai/gpt-oss-20b").is_ok());
+        assert!(validate_model_name("meta/llama-3-8b").is_ok());
+        assert!(validate_model_name("org/sub/model").is_ok());
+    }
+
+    #[test]
     fn test_validate_model_name_empty() {
         assert!(validate_model_name("").is_err());
     }
@@ -1389,6 +1415,15 @@ mod tests {
     fn test_validate_model_name_invalid_characters() {
         assert!(validate_model_name("Model Name").is_err());
         assert!(validate_model_name("model@name").is_err());
+    }
+
+    #[test]
+    fn test_validate_model_name_dangerous_patterns_rejected() {
+        // パストラバーサル対策
+        assert!(validate_model_name("../etc/passwd").is_err());
+        assert!(validate_model_name("model/../other").is_err());
+        assert!(validate_model_name("/absolute/path").is_err());
+        assert!(validate_model_name("trailing/").is_err());
     }
 
     #[test]

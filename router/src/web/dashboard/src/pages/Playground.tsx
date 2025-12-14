@@ -77,7 +77,11 @@ export default function Playground() {
   const [maxTokens, setMaxTokens] = useState(2048)
   const [apiKey, setApiKey] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('llm-router-api-key') || ''
+      const stored = localStorage.getItem('llm-router-api-key')
+      if (stored) return stored
+      // ローカル環境ではsk_debugをデフォルトに（開発モード用）
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      if (isLocal) return 'sk_debug'
     }
     return ''
   })

@@ -103,13 +103,53 @@ pub async fn embeddings(
     .await
 }
 
-/// GET /v1/models - モデル一覧取得
+/// GET /v1/models - モデル一覧取得（OpenAI互換 - 標準形式のみ）
 pub async fn list_models(State(_state): State<AppState>) -> Result<Response, AppError> {
     // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
     let models = list_registered_models();
 
-    // OpenAI互換レスポンス形式に合わせる
+    // OpenAI互換レスポンス形式に合わせる（標準フィールドのみ）
     // https://platform.openai.com/docs/api-reference/models/list
+    let mut data: Vec<Value> = Vec::new();
+    for m in models {
+        let path = m
+            .path
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+            .or_else(|| router_model_path(&m.name));
+
+        // ダウンロードが完了していないモデルは一覧に出さない
+        if path.is_none() {
+            continue;
+        }
+
+        // OpenAI標準フォーマット（拡張フィールドなし）
+        let obj = json!({
+            "id": m.name,
+            "object": "model",
+            "created": 0,
+            "owned_by": "router",
+        });
+        data.push(obj);
+    }
+
+    let body = json!({
+        "object": "list",
+        "data": data,
+    });
+
+    Ok((StatusCode::OK, Json(body)).into_response())
+}
+
+/// GET /v0/models - モデル一覧取得（拡張情報付き - ノード同期用）
+///
+/// OpenAI互換APIと異なり、`path`, `download_url`, `chat_template`などの
+/// 拡張情報を含む。ノードがルーターからモデル情報を同期するために使用。
+pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Response, AppError> {
+    // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
+    let models = list_registered_models();
+
     let mut data: Vec<Value> = Vec::new();
     for m in models {
         let path = m
@@ -132,6 +172,7 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
             "owned_by": "router",
         });
 
+        // 拡張フィールド（ノード同期用）
         if let Some(p) = path.clone() {
             obj["path"] = json!(p);
         }

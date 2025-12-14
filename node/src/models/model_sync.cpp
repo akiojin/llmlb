@@ -96,7 +96,9 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
-    auto res = cli.Get("/v1/models");
+    // SPEC-dcaeaec4 FR-8: /v0/models を使用（拡張情報を含む）
+    // /v1/models はOpenAI互換（標準形式のみ）
+    auto res = cli.Get("/v0/models");
     if (!res || res->status < 200 || res->status >= 300) {
         return {};
     }
@@ -136,11 +138,22 @@ std::vector<std::string> ModelSync::listLocalModels() const {
     std::error_code ec;
     if (!fs::exists(models_dir_, ec) || ec) return models;
 
-    for (const auto& entry : fs::directory_iterator(models_dir_, ec)) {
+    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
+    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
         if (ec) break;
-        if (entry.is_directory()) {
-            models.push_back(entry.path().filename().string());
-        }
+        if (entry.is_directory()) continue;
+
+        // model.gguf ファイルを検索
+        if (entry.path().filename() != "model.gguf") continue;
+
+        // 親ディレクトリからモデル名を計算
+        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
+        const auto parent_dir = entry.path().parent_path();
+        ec.clear();
+        const auto relative = fs::relative(parent_dir, models_dir_, ec);
+        if (ec || relative.empty()) continue;
+
+        models.push_back(relative.string());
     }
     return models;
 }

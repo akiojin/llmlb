@@ -14,8 +14,18 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+/// モデルIDをサニタイズ
+/// SPEC-dcaeaec4 FR-2: 階層形式を許可
+/// - `gpt-oss-20b` → `gpt-oss-20b`
+/// - `openai/gpt-oss-20b` → `openai/gpt-oss-20b`（ネストディレクトリ）
+///
+/// `/` はディレクトリセパレータとして保持し、危険なパターンは除去。
 std::string sanitizeModelId(const std::string& input) {
     if (input.empty()) return "_latest";
+
+    // 危険なパターンを検出
+    if (input.find("..") != std::string::npos) return "_latest";
+    if (input.find('\0') != std::string::npos) return "_latest";
 
     std::string out;
     out.reserve(input.size());
@@ -28,9 +38,21 @@ std::string sanitizeModelId(const std::string& input) {
             out.push_back(static_cast<char>(std::tolower(c)));
             continue;
         }
-        // Disallow path separators and other special characters by replacing them.
+        // `/` はディレクトリセパレータとして許可
+        if (c == '/') {
+            out.push_back('/');
+            continue;
+        }
+        // その他の特殊文字は `_` に置換
         out.push_back('_');
     }
+
+    // 先頭・末尾のスラッシュを除去
+    size_t start = 0;
+    size_t end = out.size();
+    while (start < end && out[start] == '/') ++start;
+    while (end > start && out[end - 1] == '/') --end;
+    out = out.substr(start, end - start);
 
     if (out.empty() || out == "." || out == "..") return "_latest";
     return out;
@@ -70,22 +92,34 @@ std::vector<ModelInfo> ModelStorage::listAvailable() const {
         return out;
     }
 
-    for (const auto& entry : fs::directory_iterator(models_dir_)) {
-        if (!entry.is_directory()) continue;
+    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
+    for (const auto& entry : fs::recursive_directory_iterator(models_dir_)) {
+        if (entry.is_directory()) continue;
 
-        const auto dir_name = entry.path().filename().string();
-        const auto gguf_path = entry.path() / "model.gguf";
+        // model.gguf ファイルを検索
+        if (entry.path().filename() != "model.gguf") continue;
 
         std::error_code ec;
-        auto st = fs::symlink_status(gguf_path, ec);
+        auto st = fs::symlink_status(entry.path(), ec);
         if (st.type() != fs::file_type::regular && st.type() != fs::file_type::symlink) {
-            spdlog::debug("ModelStorage::listAvailable: skipping {} (no model.gguf)", dir_name);
             continue;
         }
 
+        // 親ディレクトリからモデル名を計算
+        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
+        const auto parent_dir = entry.path().parent_path();
+        const auto relative = fs::relative(parent_dir, models_dir_, ec);
+        if (ec || relative.empty()) {
+            spdlog::debug("ModelStorage::listAvailable: skipping {} (failed to compute relative path)", entry.path().string());
+            continue;
+        }
+
+        const std::string model_name = relative.string();
+        spdlog::debug("ModelStorage::listAvailable: found model {} at {}", model_name, entry.path().string());
+
         ModelInfo info;
-        info.name = dirNameToModel(dir_name);
-        info.gguf_path = gguf_path.string();
+        info.name = dirNameToModel(model_name);
+        info.gguf_path = entry.path().string();
         info.valid = true;
 
         out.push_back(std::move(info));

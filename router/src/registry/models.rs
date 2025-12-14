@@ -98,15 +98,32 @@ impl ModelInfo {
     }
 }
 
-/// モデル名をディレクトリ名に変換（ファイル名ベース形式）
+/// モデル名をディレクトリパスに変換
+///
+/// SPEC-dcaeaec4 FR-2: 階層形式を許可
+/// - `gpt-oss-20b` → `gpt-oss-20b`
+/// - `openai/gpt-oss-20b` → `openai/gpt-oss-20b`（ネストディレクトリ）
+///
+/// `/` はディレクトリセパレータとして保持し、危険なパターンは除去。
 pub fn model_name_to_dir(name: &str) -> String {
     if name.is_empty() {
         return "_latest".into();
     }
 
+    // 危険なパターンを除去
+    if name.contains("..") || name.contains('\0') {
+        return "_latest".into();
+    }
+
     let mut out = String::with_capacity(name.len());
     for c in name.chars() {
-        if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.' {
+        if c.is_ascii_lowercase()
+            || c.is_ascii_digit()
+            || c == '-'
+            || c == '_'
+            || c == '.'
+            || c == '/'
+        {
             out.push(c);
         } else if c.is_ascii_uppercase() {
             out.push(c.to_ascii_lowercase());
@@ -114,6 +131,9 @@ pub fn model_name_to_dir(name: &str) -> String {
             out.push('_');
         }
     }
+
+    // 先頭・末尾のスラッシュを除去
+    let out = out.trim_matches('/').to_string();
 
     if out.is_empty() || out == "." || out == ".." {
         "_latest".into()
@@ -428,6 +448,46 @@ mod tests {
             ),
             "mistral-7b-instruct-v0.2"
         );
+    }
+
+    // ===== model_name_to_dir テスト =====
+
+    #[test]
+    fn test_model_name_to_dir_flat() {
+        assert_eq!(model_name_to_dir("gpt-oss-20b"), "gpt-oss-20b");
+        assert_eq!(model_name_to_dir("llama3.2"), "llama3.2");
+    }
+
+    #[test]
+    fn test_model_name_to_dir_hierarchical() {
+        // SPEC-dcaeaec4 FR-2: 階層形式を許可
+        assert_eq!(
+            model_name_to_dir("openai/gpt-oss-20b"),
+            "openai/gpt-oss-20b"
+        );
+        assert_eq!(model_name_to_dir("meta/llama-3-8b"), "meta/llama-3-8b");
+    }
+
+    #[test]
+    fn test_model_name_to_dir_case_insensitive() {
+        assert_eq!(
+            model_name_to_dir("OpenAI/GPT-OSS-20B"),
+            "openai/gpt-oss-20b"
+        );
+    }
+
+    #[test]
+    fn test_model_name_to_dir_dangerous_patterns() {
+        // 危険なパターンは "_latest" に変換
+        assert_eq!(model_name_to_dir("../etc/passwd"), "_latest");
+        assert_eq!(model_name_to_dir("model/../other"), "_latest");
+    }
+
+    #[test]
+    fn test_model_name_to_dir_leading_trailing_slash() {
+        // 先頭・末尾のスラッシュは除去
+        assert_eq!(model_name_to_dir("/openai/gpt-oss/"), "openai/gpt-oss");
+        assert_eq!(model_name_to_dir("/model"), "model");
     }
 
     // ===== 既存テスト =====

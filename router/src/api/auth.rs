@@ -184,6 +184,16 @@ pub async fn me(
         (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
     })?;
 
+    // 開発モード: nil UUIDの場合は開発ユーザー情報を返す
+    #[cfg(debug_assertions)]
+    if user_id.is_nil() {
+        return Ok(Json(MeResponse {
+            user_id: user_id.to_string(),
+            username: "admin".to_string(),
+            role: "admin".to_string(),
+        }));
+    }
+
     // ユーザー情報を取得
     let user = crate::db::users::find_by_id(&app_state.db_pool, user_id)
         .await

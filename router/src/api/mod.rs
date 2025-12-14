@@ -75,6 +75,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/embeddings", post(openai::embeddings))
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model))
+        // /v0/models - 拡張情報付きモデル一覧（ノード同期用）
+        .route("/v0/models", get(openai::list_models_extended))
         // 音声API（OpenAI Audio API互換）
         .route("/v1/audio/transcriptions", post(audio::transcriptions))
         .route("/v1/audio/speech", post(audio::speech))
@@ -143,7 +145,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/models/available", get(models::get_available_models))
         .route("/api/models/register", post(models::register_model))
         .route("/api/models/pull", post(models::pull_model_from_hf))
-        .route("/api/models/registered", get(models::get_registered_models))
+        // /api/models/registered は廃止 - /v0/models に統合 (SPEC-dcaeaec4)
         .route("/api/models/*model_name", delete(models::delete_model))
         .route(
             "/api/models/discover-gguf",

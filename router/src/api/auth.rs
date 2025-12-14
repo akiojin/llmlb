@@ -70,6 +70,33 @@ pub async fn login(
     State(app_state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, Response> {
+    // 開発モード: admin/test で固定ログイン可能
+    #[cfg(debug_assertions)]
+    if request.username == "admin" && request.password == "test" {
+        let dev_user_id = uuid::Uuid::nil().to_string();
+        let expires_in = 86400;
+        let token = crate::auth::jwt::create_jwt(
+            &dev_user_id,
+            llm_router_common::auth::UserRole::Admin,
+            &app_state.jwt_secret,
+        )
+        .map_err(|e| {
+            tracing::error!("Failed to create JWT: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        })?;
+
+        tracing::info!("Development mode login: admin/test");
+        return Ok(Json(LoginResponse {
+            token,
+            expires_in,
+            user: UserInfo {
+                id: dev_user_id,
+                username: "admin".to_string(),
+                role: "admin".to_string(),
+            },
+        }));
+    }
+
     // ユーザーを検索
     let user = crate::db::users::find_by_username(&app_state.db_pool, &request.username)
         .await

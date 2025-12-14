@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { type DashboardNode, modelsApi, type ModelInfo, type AvailableModel } from '@/lib/api'
-import { formatBytes, cn } from '@/lib/utils'
+import {
+  modelsApi,
+  type AvailableModelView,
+  type ConvertTask,
+  type RegisteredModelView,
+} from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,7 +14,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -18,67 +22,63 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Box,
-  Search,
-  Plus,
-  Download,
-  Trash2,
-  Send,
-  RefreshCw,
-  Server,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  Loader2,
-  ExternalLink,
-} from 'lucide-react'
+import { Box, Search, Plus, Download, Trash2, RefreshCw, ExternalLink, Loader2 } from 'lucide-react'
 
-interface ModelsSectionProps {
-  nodes: DashboardNode[]
+function formatGb(value?: number): string {
+  if (value === undefined || Number.isNaN(value)) return '—'
+  return `${value.toFixed(1)} GB`
 }
 
-export function ModelsSection({ nodes }: ModelsSectionProps) {
+function taskStatusBadge(status: ConvertTask['status']) {
+  switch (status) {
+    case 'completed':
+      return <Badge variant="online">Completed</Badge>
+    case 'failed':
+      return <Badge variant="destructive">Failed</Badge>
+    case 'in_progress':
+      return <Badge variant="secondary">In progress</Badge>
+    case 'queued':
+      return <Badge variant="outline">Queued</Badge>
+    default:
+      return <Badge variant="outline">{status}</Badge>
+  }
+}
+
+export function ModelsSection() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [registerUrl, setRegisterUrl] = useState('')
   const [registerOpen, setRegisterOpen] = useState(false)
-  const [distributeOpen, setDistributeOpen] = useState(false)
-  const [convertOpen, setConvertOpen] = useState(false)
-  const [selectedModel, setSelectedModel] = useState<ModelInfo | null>(null)
-  const [selectedNodes, setSelectedNodes] = useState<string[]>([])
-  const [convertFormat, setConvertFormat] = useState('gguf')
+  const [registerRepo, setRegisterRepo] = useState('')
+  const [registerFilename, setRegisterFilename] = useState('')
 
-  // Fetch registered models
   const { data: registeredModels, isLoading: isLoadingRegistered } = useQuery({
     queryKey: ['registered-models'],
     queryFn: modelsApi.getRegistered,
     refetchInterval: 10000,
   })
 
-  // Fetch available models (from HF catalog)
-  const { data: availableModels, isLoading: isLoadingAvailable } = useQuery({
+  const { data: availableResponse, isLoading: isLoadingAvailable } = useQuery({
     queryKey: ['available-models'],
     queryFn: modelsApi.getAvailable,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   })
 
-  // Register model mutation
+  const { data: convertTasks, isLoading: isLoadingConvertTasks } = useQuery({
+    queryKey: ['convert-tasks'],
+    queryFn: modelsApi.getConvertTasks,
+    refetchInterval: 5000,
+  })
+
   const registerMutation = useMutation({
-    mutationFn: (url: string) => modelsApi.register(url),
+    mutationFn: (params: { repo: string; filename?: string }) =>
+      modelsApi.register(params.repo, params.filename),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: 'Model registered successfully' })
-      setRegisterUrl('')
+      queryClient.invalidateQueries({ queryKey: ['convert-tasks'] })
+      toast({ title: 'Model registration queued' })
       setRegisterOpen(false)
+      setRegisterRepo('')
+      setRegisterFilename('')
     },
     onError: (error) => {
       toast({
@@ -89,12 +89,12 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
     },
   })
 
-  // Pull model mutation
   const pullMutation = useMutation({
-    mutationFn: (modelName: string) => modelsApi.pull(modelName),
+    mutationFn: (params: { repo: string; filename: string }) =>
+      modelsApi.pull(params.repo, params.filename),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: 'Model pull started' })
+      toast({ title: 'Model pulled and cached' })
     },
     onError: (error) => {
       toast({
@@ -105,7 +105,6 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
     },
   })
 
-  // Delete model mutation
   const deleteMutation = useMutation({
     mutationFn: (modelName: string) => modelsApi.delete(modelName),
     onSuccess: () => {
@@ -121,81 +120,30 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
     },
   })
 
-  // Distribute model mutation
-  const distributeMutation = useMutation({
-    mutationFn: ({ modelName, nodeIds }: { modelName: string; nodeIds: string[] }) =>
-      modelsApi.distribute(modelName, nodeIds),
+  const deleteConvertTaskMutation = useMutation({
+    mutationFn: (taskId: string) => modelsApi.deleteConvertTask(taskId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: 'Model distribution started' })
-      setDistributeOpen(false)
-      setSelectedNodes([])
+      queryClient.invalidateQueries({ queryKey: ['convert-tasks'] })
+      toast({ title: 'Task deleted' })
     },
     onError: (error) => {
       toast({
-        title: 'Failed to distribute model',
+        title: 'Failed to delete task',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
     },
   })
 
-  // Convert model mutation
-  const convertMutation = useMutation({
-    mutationFn: ({ modelName, format }: { modelName: string; format: string }) =>
-      modelsApi.convert(modelName, format),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: 'Model conversion started' })
-      setConvertOpen(false)
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to start conversion',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
+  const availableModels = availableResponse?.models || []
 
-  const filteredRegistered = (registeredModels as ModelInfo[] | undefined)?.filter((m) =>
+  const filteredRegistered = (registeredModels as RegisteredModelView[] | undefined)?.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const filteredAvailable = (availableModels as AvailableModel[] | undefined)?.filter((m) =>
-    m.name.toLowerCase().includes(search.toLowerCase())
+  const filteredAvailable = (availableModels as AvailableModelView[]).filter((m) =>
+    `${m.name} ${m.repo ?? ''} ${m.filename ?? ''}`.toLowerCase().includes(search.toLowerCase())
   )
-
-  const getStateIcon = (state: string) => {
-    switch (state) {
-      case 'ready':
-        return <CheckCircle2 className="h-4 w-4 text-success" />
-      case 'downloading':
-      case 'converting':
-        return <Loader2 className="h-4 w-4 animate-spin text-primary" />
-      case 'pending':
-        return <Clock className="h-4 w-4 text-warning" />
-      default:
-        return <AlertCircle className="h-4 w-4 text-muted-foreground" />
-    }
-  }
-
-  const getStateBadge = (state: string) => {
-    switch (state) {
-      case 'ready':
-        return <Badge variant="online">Ready</Badge>
-      case 'downloading':
-        return <Badge variant="secondary">Downloading</Badge>
-      case 'converting':
-        return <Badge variant="secondary">Converting</Badge>
-      case 'pending':
-        return <Badge variant="outline">Pending</Badge>
-      default:
-        return <Badge variant="outline">{state}</Badge>
-    }
-  }
-
-  const onlineNodes = nodes.filter((n) => n.status === 'online')
 
   return (
     <>
@@ -207,13 +155,22 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
               Registered
               {registeredModels && (
                 <Badge variant="secondary" className="ml-1">
-                  {(registeredModels as ModelInfo[]).length}
+                  {(registeredModels as RegisteredModelView[]).length}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="available" className="gap-2">
               <Download className="h-4 w-4" />
               Available
+            </TabsTrigger>
+            <TabsTrigger value="tasks" className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Convert Tasks
+              {convertTasks && (
+                <Badge variant="secondary" className="ml-1">
+                  {(convertTasks as ConvertTask[]).length}
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -234,14 +191,10 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
           </div>
         </div>
 
-        {/* Registered Models Tab */}
         <TabsContent value="registered">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Box className="h-5 w-5" />
-                Registered Models
-              </CardTitle>
+              <CardTitle>Registered Models</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoadingRegistered ? (
@@ -254,52 +207,38 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                 <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Box className="h-8 w-8" />
                   <p>No registered models</p>
-                  <Button variant="outline" size="sm" onClick={() => setRegisterOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Register a model
-                  </Button>
                 </div>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {filteredRegistered.map((model) => (
                     <Card key={model.name} className="overflow-hidden">
                       <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <h4 className="font-medium flex items-center gap-2">
-                              {getStateIcon(model.state)}
-                              {model.name}
-                            </h4>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <h4 className="truncate font-medium">{model.name}</h4>
                             <p className="text-xs text-muted-foreground">
-                              {model.source || 'Local'}
+                              {model.source || 'local'}
+                              {model.status ? ` • ${model.status}` : ''}
                             </p>
                           </div>
-                          {getStateBadge(model.state)}
+                          {model.ready ? (
+                            <Badge variant="online">Ready</Badge>
+                          ) : (
+                            <Badge variant="outline">Not cached</Badge>
+                          )}
                         </div>
 
                         <div className="mt-3 space-y-1 text-sm">
-                          {model.size_bytes && (
-                            <p className="text-muted-foreground">
-                              Size: {formatBytes(model.size_bytes)}
+                          <p className="text-muted-foreground">
+                            Size: {formatGb(model.size_gb)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Required VRAM: {formatGb(model.required_memory_gb)}
+                          </p>
+                          {model.path && (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {model.path}
                             </p>
-                          )}
-                          {model.format && (
-                            <p className="text-muted-foreground">
-                              Format: {model.format}
-                            </p>
-                          )}
-                          {model.progress !== undefined && model.progress < 100 && (
-                            <div className="mt-2">
-                              <div className="h-1.5 w-full rounded-full bg-muted">
-                                <div
-                                  className="h-full rounded-full bg-primary transition-all"
-                                  style={{ width: `${model.progress}%` }}
-                                />
-                              </div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {model.progress.toFixed(1)}%
-                              </p>
-                            </div>
                           )}
                         </div>
 
@@ -307,34 +246,23 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                           <Button
                             variant="outline"
                             size="sm"
+                            disabled={!model.repo || !model.filename || pullMutation.isPending}
                             onClick={() => {
-                              setSelectedModel(model)
-                              setDistributeOpen(true)
+                              if (!model.repo || !model.filename) return
+                              pullMutation.mutate({ repo: model.repo, filename: model.filename })
                             }}
-                            disabled={model.state !== 'ready'}
                           >
-                            <Send className="mr-1 h-3 w-3" />
-                            Distribute
+                            <Download className="mr-1 h-3 w-3" />
+                            Pull
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedModel(model)
-                              setConvertOpen(true)
-                            }}
-                            disabled={model.state !== 'ready'}
-                          >
-                            <RefreshCw className="mr-1 h-3 w-3" />
-                            Convert
-                          </Button>
+
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => deleteMutation.mutate(model.name)}
                             disabled={deleteMutation.isPending}
                           >
-                            <Trash2 className="h-3 w-3 text-destructive" />
+                            <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
                       </CardContent>
@@ -346,14 +274,10 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
           </Card>
         </TabsContent>
 
-        {/* Available Models Tab */}
         <TabsContent value="available">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
-                Available Models (Hugging Face)
-              </CardTitle>
+              <CardTitle>Available Models (Hugging Face)</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoadingAvailable ? (
@@ -362,7 +286,7 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                     <div key={i} className="h-16 shimmer rounded" />
                   ))}
                 </div>
-              ) : !filteredAvailable || filteredAvailable.length === 0 ? (
+              ) : filteredAvailable.length === 0 ? (
                 <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Download className="h-8 w-8" />
                   <p>No available models found</p>
@@ -372,37 +296,53 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
                   <div className="space-y-2">
                     {filteredAvailable.map((model) => (
                       <div
-                        key={model.name}
-                        className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50"
+                        key={`${model.repo ?? ''}/${model.filename ?? ''}/${model.name}`}
+                        className="flex items-center justify-between gap-3 rounded-lg border p-3 hover:bg-muted/50"
                       >
-                        <div className="space-y-1">
-                          <h4 className="font-medium">{model.name}</h4>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            {model.downloads !== undefined && (
-                              <span>{model.downloads.toLocaleString()} downloads</span>
-                            )}
-                            {model.likes !== undefined && (
-                              <span>{model.likes.toLocaleString()} likes</span>
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="truncate font-medium">{model.name}</h4>
+                            {model.quantization && (
+                              <Badge variant="secondary" className="shrink-0">
+                                {model.quantization}
+                              </Badge>
                             )}
                           </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {model.repo}
+                            {model.filename ? ` • ${model.filename}` : ''}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Size: {formatGb(model.size_gb)} • Required VRAM: {formatGb(model.required_memory_gb)}
+                          </p>
                         </div>
-                        <div className="flex gap-2">
-                          {model.url && (
+
+                        <div className="flex shrink-0 gap-2">
+                          {model.download_url && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => window.open(model.url, '_blank')}
+                              onClick={() => window.open(model.download_url, '_blank')}
                             >
                               <ExternalLink className="h-4 w-4" />
                             </Button>
                           )}
+
                           <Button
                             size="sm"
-                            onClick={() => pullMutation.mutate(model.name)}
-                            disabled={pullMutation.isPending}
+                            disabled={!model.repo || registerMutation.isPending}
+                            onClick={() => {
+                              if (!model.repo) return
+                              registerMutation.mutate({
+                                repo: model.repo,
+                                filename: model.filename,
+                              })
+                            }}
                           >
-                            <Download className="mr-1 h-3 w-3" />
-                            Pull
+                            {registerMutation.isPending ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : null}
+                            Register
                           </Button>
                         </div>
                       </div>
@@ -413,155 +353,122 @@ export function ModelsSection({ nodes }: ModelsSectionProps) {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="tasks">
+          <Card>
+            <CardHeader>
+              <CardTitle>Convert Tasks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingConvertTasks ? (
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-20 shimmer rounded" />
+                  ))}
+                </div>
+              ) : !convertTasks || (convertTasks as ConvertTask[]).length === 0 ? (
+                <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <RefreshCw className="h-8 w-8" />
+                  <p>No tasks</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(convertTasks as ConvertTask[]).map((task) => {
+                    const percent = Math.round((task.progress || 0) * 100)
+                    return (
+                      <div key={task.id} className="rounded-lg border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{task.repo}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {task.filename}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {taskStatusBadge(task.status)}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={deleteConvertTaskMutation.isPending}
+                              onClick={() => deleteConvertTaskMutation.mutate(task.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <div className="h-1.5 w-full rounded-full bg-muted">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all',
+                                task.status === 'failed' ? 'bg-destructive' : 'bg-primary'
+                              )}
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{percent}%</span>
+                            {task.error ? <span className="truncate">{task.error}</span> : null}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Register Model Dialog */}
       <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Register Model</DialogTitle>
             <DialogDescription>
-              Enter a Hugging Face model URL or model name to register.
+              Queue a Hugging Face model for download/convert. Model IDs are normalized to a filename-based format (for example, <code>gpt-oss-20b</code>).
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="model-url">Model URL or Name</Label>
+              <Label htmlFor="hf-repo">Repo</Label>
               <Input
-                id="model-url"
-                placeholder="https://huggingface.co/... or model-name"
-                value={registerUrl}
-                onChange={(e) => setRegisterUrl(e.target.value)}
+                id="hf-repo"
+                placeholder="TheBloke/Llama-2-7B-GGUF"
+                value={registerRepo}
+                onChange={(e) => setRegisterRepo(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hf-filename">Filename (optional)</Label>
+              <Input
+                id="hf-filename"
+                placeholder="llama-2-7b.Q4_K_M.gguf"
+                value={registerFilename}
+                onChange={(e) => setRegisterFilename(e.target.value)}
               />
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setRegisterOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={() => registerMutation.mutate(registerUrl)}
-              disabled={!registerUrl || registerMutation.isPending}
+              onClick={() =>
+                registerMutation.mutate({
+                  repo: registerRepo.trim(),
+                  filename: registerFilename.trim() ? registerFilename.trim() : undefined,
+                })
+              }
+              disabled={!registerRepo.trim() || registerMutation.isPending}
             >
-              {registerMutation.isPending && (
+              {registerMutation.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+              ) : null}
               Register
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Distribute Model Dialog */}
-      <Dialog open={distributeOpen} onOpenChange={setDistributeOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Distribute Model</DialogTitle>
-            <DialogDescription>
-              Select nodes to distribute "{selectedModel?.name}" to.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {onlineNodes.length === 0 ? (
-              <div className="flex h-24 items-center justify-center text-muted-foreground">
-                No online nodes available
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {onlineNodes.map((node) => (
-                  <div
-                    key={node.node_id}
-                    className="flex items-center gap-3 rounded-lg border p-3"
-                  >
-                    <Checkbox
-                      id={node.node_id}
-                      checked={selectedNodes.includes(node.node_id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedNodes([...selectedNodes, node.node_id])
-                        } else {
-                          setSelectedNodes(selectedNodes.filter((id) => id !== node.node_id))
-                        }
-                      }}
-                    />
-                    <Label htmlFor={node.node_id} className="flex-1 cursor-pointer">
-                      <div className="flex items-center gap-2">
-                        <Server className="h-4 w-4" />
-                        {node.custom_name || node.machine_name}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{node.ip_address}</p>
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDistributeOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (selectedModel) {
-                  distributeMutation.mutate({
-                    modelName: selectedModel.name,
-                    nodeIds: selectedNodes,
-                  })
-                }
-              }}
-              disabled={selectedNodes.length === 0 || distributeMutation.isPending}
-            >
-              {distributeMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Distribute
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Convert Model Dialog */}
-      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Convert Model</DialogTitle>
-            <DialogDescription>
-              Convert "{selectedModel?.name}" to a different format.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="convert-format">Target Format</Label>
-              <Select value={convertFormat} onValueChange={setConvertFormat}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gguf">GGUF (llama.cpp)</SelectItem>
-                  <SelectItem value="ggml">GGML (legacy)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConvertOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (selectedModel) {
-                  convertMutation.mutate({
-                    modelName: selectedModel.name,
-                    format: convertFormat,
-                  })
-                }
-              }}
-              disabled={convertMutation.isPending}
-            >
-              {convertMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Convert
             </Button>
           </DialogFooter>
         </DialogContent>

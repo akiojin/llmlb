@@ -33,16 +33,15 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-1: モデルディレクトリ構造（ノードローカルキャッシュ）
 
-- デフォルトのモデル保存先は `~/.llm-router/models/`（固定。環境変数による上書きは廃止）
+- デフォルトのモデル保存先は `~/.llm-router/models/`
+- 環境変数で上書き可能（推奨: `LLM_NODE_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
 - 各モデルは `<models_dir>/<model-name>/model.gguf` に配置
 
 #### FR-2: モデル名の形式
 
-- モデル名は `<base>:<tag>` 形式（例: `gpt-oss:20b`）
-- ディレクトリ名への変換: コロンをアンダースコアに置換
-  - `gpt-oss:20b` → `gpt-oss_20b/model.gguf`
-- tagがない場合は `latest` として扱う
-  - `gpt-oss` → `gpt-oss_latest/model.gguf`
+- モデル名（モデルID）はファイル名ベース形式（例: `gpt-oss-20b`）
+- ディレクトリ名はモデルIDをそのまま使用（小文字に正規化し、危険な文字は `_` に置換）
+  - `gpt-oss-20b` → `gpt-oss-20b/model.gguf`
 
 #### FR-3: GGUFファイル解決（多段フロー）
 
@@ -50,8 +49,9 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 2. ルーターは `download_url` をもつモデルについて **事前に自分の `~/.llm-router/models/` へキャッシュ** を試みる。成功すれば `path` を応答に含める。
 3. ノードはまずローカル `~/.llm-router/models/<name>/model.gguf` を探す。あれば採用。
 4. ルーターから受け取った `path` が存在し読み取り可能なら、それを直接使用（コピー可）。
-5. `path` が不可でも `download_url` があればそれをダウンロードし、`~/.llm-router/models` に保存。
-6. いずれも不可ならエラーを返す。Ollama blob 等への暗黙フォールバックは禁止。
+5. `path` が不可なら、ルーターの `/api/models/blob/:model_name` からダウンロードし、`~/.llm-router/models` に保存。
+6. いずれも不可なら、`download_url` を最後の手段としてダウンロードし、`~/.llm-router/models` に保存。
+7. いずれも不可ならエラーを返す。LLM runtime固有形式への暗黙フォールバックは禁止。
 
 ※3の「直接使用」は共有ストレージ/NFSを想定。不可の場合でも4にフォールバックする。
 
@@ -83,12 +83,12 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ├── config.json          # 設定ファイル
 ├── router.db            # ルーターDB（SQLite）
 └── models/
-    ├── gpt-oss_20b/
+    ├── gpt-oss-20b/
     │   ├── model.gguf   # モデルファイル
     │   └── metadata.json # (optional)
-    ├── gpt-oss_7b/
+    ├── gpt-oss-7b/
     │   └── model.gguf
-    └── qwen3-coder_30b/
+    └── qwen3-coder-30b/
         └── model.gguf
 ```
 
@@ -110,7 +110,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ## 受け入れ基準
 
 1. `~/.llm-router/models/<model_name>/model.gguf` からモデルを読み込める
-2. モデルディレクトリは固定（環境変数による上書きは禁止）
-3. モデル名の `:` が `_` に変換される
+2. モデルディレクトリを環境変数で上書きできる
+3. モデルIDがディレクトリ名として安全に扱われる
 4. 既存の単体テスト・統合テストがパスする
 5. E2Eテストでモデル推論が成功する

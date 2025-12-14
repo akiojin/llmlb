@@ -129,7 +129,7 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
             "id": m.name,
             "object": "model",
             "created": 0,
-            "owned_by": "coordinator",
+            "owned_by": "router",
         });
 
         if let Some(p) = path.clone() {
@@ -188,7 +188,7 @@ pub async fn get_model(
         "id": model_id,
         "object": "model",
         "created": 0,
-        "owned_by": "coordinator",
+        "owned_by": "router",
     });
 
     body["path"] = json!(path.to_string_lossy().to_string());
@@ -1097,7 +1097,7 @@ mod tests {
     use super::{parse_cloud_model, proxy_openai_cloud_post, proxy_openai_post};
     use crate::{
         balancer::LoadManager, db::request_history::RequestHistoryStorage, registry::NodeRegistry,
-        tasks::DownloadTaskManager, AppState,
+        AppState,
     };
     use axum::body::to_bytes;
     use axum::http::StatusCode;
@@ -1116,7 +1116,6 @@ mod tests {
         let load_manager = LoadManager::new(registry.clone());
         let request_history =
             Arc::new(RequestHistoryStorage::new().expect("request history storage"));
-        let task_manager = DownloadTaskManager::new();
         let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = SqlitePool::connect("sqlite::memory:")
             .await
@@ -1129,7 +1128,6 @@ mod tests {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret: "test-secret".into(),

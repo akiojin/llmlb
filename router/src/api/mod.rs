@@ -127,10 +127,7 @@ pub fn create_router(state: AppState) -> Router {
             "/api/dashboard/request-responses/export",
             get(dashboard::export_request_responses),
         )
-        .route(
-            "/api/dashboard/logs/coordinator",
-            get(logs::get_coordinator_logs),
-        )
+        .route("/api/dashboard/logs/router", get(logs::get_router_logs))
         // FR-002: node log proxy (spec path)
         .route("/api/nodes/:node_id/logs", get(logs::get_node_logs))
         // モデル管理API (SPEC-8ae67d67)
@@ -149,22 +146,8 @@ pub fn create_router(state: AppState) -> Router {
             "/api/models/convert/:task_id",
             get(models::get_convert_task).delete(models::delete_convert_task),
         )
-        .route("/api/models/loaded", get(models::get_loaded_models))
-        .route("/api/models/distribute", post(models::distribute_models))
-        // Note: /api/models/download was removed (duplicate of /api/models/distribute)
         // モデルファイル配信API (SPEC-48678000)
         .route("/api/models/blob/:model_name", get(models::get_model_blob))
-        .route("/api/nodes/:node_id/models", get(models::get_node_models))
-        .route(
-            "/api/nodes/:node_id/models/pull",
-            post(models::pull_model_to_node),
-        )
-        .route("/api/tasks", get(models::list_tasks))
-        .route("/api/tasks/:task_id", get(models::get_task_progress))
-        .route(
-            "/api/tasks/:task_id/progress",
-            post(models::update_progress),
-        )
         .route("/metrics/cloud", get(cloud_metrics::export_metrics))
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
@@ -173,6 +156,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/playground", get(serve_playground_index))
         .route("/playground/", get(serve_playground_index))
         .route("/playground/*path", get(serve_playground_asset))
+        .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
 }
 
@@ -247,7 +231,6 @@ mod tests {
     use crate::{
         balancer::{LoadManager, MetricsUpdate},
         registry::NodeRegistry,
-        tasks::DownloadTaskManager,
     };
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
@@ -259,7 +242,6 @@ mod tests {
         let load_manager = LoadManager::new(registry.clone());
         let request_history =
             std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let task_manager = DownloadTaskManager::new();
         let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
@@ -273,7 +255,6 @@ mod tests {
             registry: registry.clone(),
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,

@@ -54,12 +54,6 @@ public:
                        const std::vector<std::string>& loaded_embedding_models = {},
                        int max_retries = 2);
 
-    /// T034: Report download progress to router
-    bool reportProgress(const std::string& task_id,
-                        double progress,
-                        std::optional<double> speed = std::nullopt,
-                        int max_retries = 2);
-
 private:
     std::string base_url_;
     std::chrono::milliseconds timeout_;

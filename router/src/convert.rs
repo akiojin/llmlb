@@ -17,7 +17,9 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task;
 use uuid::Uuid;
 
-use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
+use crate::registry::models::{
+    generate_ollama_style_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
+};
 use llm_router_common::error::RouterError;
 
 // ===== venv Auto-Setup =====
@@ -567,8 +569,8 @@ where
     F: Fn(f32) + Send + Sync + Clone + 'static,
 {
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
-    // モデル名 = リポジトリ名（例: openai/gpt-oss-20b）
-    let model_name = repo.to_string();
+    // モデルIDはファイル名ベース形式に正規化する (SPEC-dcaeaec4 / SPEC-8ae67d67)
+    let model_name = generate_ollama_style_id(filename, repo);
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -1042,13 +1044,11 @@ async fn convert_to_gguf(
 
     // 出力ディレクトリを準備
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
-    let model_name_safe = repo.replace('/', "_");
     let quant = quantization.unwrap_or("Q4_K_M");
-    let output_filename = format!("{}-{}.gguf", model_name_safe, quant);
-    let dir = base.join(model_name_to_dir(&format!(
-        "hf/{}/{}",
-        repo, output_filename
-    )));
+    let repo_slug = repo.split('/').next_back().unwrap_or(repo);
+    let output_filename = format!("{repo_slug}-{quant}.gguf");
+    let model_name = generate_ollama_style_id(&output_filename, repo);
+    let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
@@ -1233,19 +1233,13 @@ mod tests {
 
         let manager = ConvertTaskManager::new(1);
 
-        let mut pending = ModelInfo::new(
-            "hf/openai/gpt-oss-20b/metal/model.bin".into(),
-            0,
-            "desc".into(),
-            0,
-            vec![],
-        );
+        let mut pending = ModelInfo::new("gpt-oss-20b".into(), 0, "desc".into(), 0, vec![]);
         pending.repo = Some("openai/gpt-oss-20b".into());
         pending.filename = Some("metal/model.bin".into());
         pending.status = Some("pending_conversion".into());
         pending.source = ModelSource::HfPendingConversion;
 
-        let mut cached = ModelInfo::new("hf/other/model.gguf".into(), 0, "done".into(), 0, vec![]);
+        let mut cached = ModelInfo::new("other".into(), 0, "done".into(), 0, vec![]);
         cached.repo = Some("other/model".into());
         cached.filename = Some("model.gguf".into());
         cached.status = Some("cached".into());

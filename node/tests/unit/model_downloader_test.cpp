@@ -36,9 +36,9 @@ public:
 class RegistryServer {
 public:
     void start(int port) {
-        server.Get(R"(/gpt-oss:7b/manifest.json)", [this](const httplib::Request&, httplib::Response& res) {
+        server.Get(R"(/gpt-oss-7b/manifest.json)", [this](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            res.set_content("{\\\"model\\\":\\\"gpt-oss:7b\\\"}", "application/json");
+            res.set_content("{\\\"model\\\":\\\"gpt-oss-7b\\\"}", "application/json");
         });
         server.Get("/blob.bin", [this](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
@@ -156,7 +156,7 @@ TEST(ModelDownloaderTest, FetchesManifestToLocalPath) {
     TempDir tmp;
 
     ModelDownloader dl("http://127.0.0.1:18092", tmp.path.string());
-    auto path = dl.fetchManifest("gpt-oss:7b");
+    auto path = dl.fetchManifest("gpt-oss-7b");
 
     srv.stop();
 
@@ -173,7 +173,7 @@ TEST(ModelDownloaderTest, DownloadsBlobAndReportsProgress) {
     size_t last_total = 0;
     bool called = false;
     ModelDownloader dl("http://127.0.0.1:18093", tmp.path.string());
-    auto out = dl.downloadBlob("http://127.0.0.1:18093/blob.bin", "gpt-oss:7b/blob.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18093/blob.bin", "gpt-oss-7b/blob.bin",
                                [&](size_t d, size_t total) {
                                    last_downloaded = d;
                                    last_total = total;
@@ -220,8 +220,8 @@ TEST(ModelDownloaderTest, ResumesDownloadFromPartialFile) {
         ASSERT_EQ(res->status, 200);
     }
 
-    fs::create_directories(tmp.path / "gpt-oss:7b");
-    auto partial = tmp.path / "gpt-oss:7b/blob.bin";
+    fs::create_directories(tmp.path / "gpt-oss-7b");
+    auto partial = tmp.path / "gpt-oss-7b/blob.bin";
     {
         std::ofstream ofs(partial, std::ios::binary | std::ios::trunc);
         ofs << "abc";  // partial content (3/8 bytes)
@@ -231,7 +231,7 @@ TEST(ModelDownloaderTest, ResumesDownloadFromPartialFile) {
     size_t last_total = 0;
     bool called = false;
     ModelDownloader dl("http://127.0.0.1:18095", tmp.path.string());
-    auto out = dl.downloadBlob("http://127.0.0.1:18095/range.bin", "gpt-oss:7b/blob.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18095/range.bin", "gpt-oss-7b/blob.bin",
                                [&](size_t d, size_t total) {
                                    last_downloaded = d;
                                    last_total = total;
@@ -255,7 +255,7 @@ TEST(ModelDownloaderTest, VerifiesChecksumSuccess) {
     TempDir tmp;
 
     ModelDownloader dl("http://127.0.0.1:18096", tmp.path.string());
-    auto out = dl.downloadBlob("http://127.0.0.1:18096/checksum.bin", "gpt-oss:7b/checksum.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18096/checksum.bin", "gpt-oss-7b/checksum.bin",
                                nullptr,
                                "f0a72890897acefdb2c6c8c06134339a73cc6205833ca38dba6f9fdc94b60596");
 
@@ -271,14 +271,14 @@ TEST(ModelDownloaderTest, FailsWhenChecksumMismatch) {
     TempDir tmp;
 
     ModelDownloader dl("http://127.0.0.1:18097", tmp.path.string());
-    auto out = dl.downloadBlob("http://127.0.0.1:18097/checksum.bin", "gpt-oss:7b/checksum.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18097/checksum.bin", "gpt-oss-7b/checksum.bin",
                                nullptr,
                                "0000000000000000000000000000000000000000000000000000000000000000");
 
     srv.stop();
 
     EXPECT_TRUE(out.empty());
-    EXPECT_FALSE(fs::exists(tmp.path / "gpt-oss:7b/checksum.bin"));
+    EXPECT_FALSE(fs::exists(tmp.path / "gpt-oss-7b/checksum.bin"));
 }
 
 TEST(ModelDownloaderTest, RetriesAndSucceedsAfterFailure) {
@@ -287,7 +287,7 @@ TEST(ModelDownloaderTest, RetriesAndSucceedsAfterFailure) {
     TempDir tmp;
 
     ModelDownloader dl("http://127.0.0.1:18098", tmp.path.string(), std::chrono::milliseconds(500), 2, std::chrono::milliseconds(50));
-    auto out = dl.downloadBlob("http://127.0.0.1:18098/flaky.bin", "gpt-oss:7b/flaky.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18098/flaky.bin", "gpt-oss-7b/flaky.bin",
                                nullptr,
                                "61be55a8e2f6b4e172338bddf184d6dbee29c98853e0a0485ecee7f27b9af0b4");
 
@@ -303,8 +303,8 @@ TEST(ModelDownloaderTest, SkipsDownloadOnNotModifiedWhenEtagMatches) {
     srv.start(18099);
     TempDir tmp;
 
-    fs::create_directories(tmp.path / "gpt-oss:7b");
-    auto path = tmp.path / "gpt-oss:7b/etag.bin";
+    fs::create_directories(tmp.path / "gpt-oss-7b");
+    auto path = tmp.path / "gpt-oss-7b/etag.bin";
     std::ofstream(path) << "old";
 
     // connectivity sanity check
@@ -321,7 +321,7 @@ TEST(ModelDownloaderTest, SkipsDownloadOnNotModifiedWhenEtagMatches) {
 
     bool called = false;
     ModelDownloader dl("http://127.0.0.1:18099", tmp.path.string());
-    auto out = dl.downloadBlob("http://127.0.0.1:18099/etag.bin", "gpt-oss:7b/etag.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18099/etag.bin", "gpt-oss-7b/etag.bin",
                                [&](size_t, size_t) { called = true; },
                                "", "\"v2\"");
 
@@ -339,8 +339,8 @@ TEST(ModelDownloaderTest, DownloadsWhenEtagDiffers) {
     srv.start(18100);
     TempDir tmp;
 
-    fs::create_directories(tmp.path / "gpt-oss:7b");
-    auto path = tmp.path / "gpt-oss:7b/etag.bin";
+    fs::create_directories(tmp.path / "gpt-oss-7b");
+    auto path = tmp.path / "gpt-oss-7b/etag.bin";
     std::ofstream(path) << "old";
 
     {
@@ -355,7 +355,7 @@ TEST(ModelDownloaderTest, DownloadsWhenEtagDiffers) {
     }
 
     ModelDownloader dl("http://127.0.0.1:18100", tmp.path.string());
-    auto out = dl.downloadBlob("http://127.0.0.1:18100/etag.bin", "gpt-oss:7b/etag.bin",
+    auto out = dl.downloadBlob("http://127.0.0.1:18100/etag.bin", "gpt-oss-7b/etag.bin",
                                nullptr,
                                "8a7537e6f466adffc74ddbd0e721d8723c4817e7ee9ef65646e3e98bd2eb5461", // sha256 of newdata
                                "\"v1\"");

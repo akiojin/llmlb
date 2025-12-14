@@ -1,13 +1,12 @@
 //! モデル情報管理
 //!
-//! LLM runtimeモデルのメタデータとダウンロードタスク管理
+//! LLM runtimeモデルのメタデータ管理
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -99,20 +98,28 @@ impl ModelInfo {
     }
 }
 
-/// モデル名をディレクトリ名に変換（gpt-oss-20b -> gpt-oss-20b）
-///
-/// 注: 従来のOllama形式（`:` 区切り）はサポート継続するが、新規登録ではファイル名ベース形式を使用
+/// モデル名をディレクトリ名に変換（ファイル名ベース形式）
 pub fn model_name_to_dir(name: &str) -> String {
     if name.is_empty() {
         return "_latest".into();
     }
-    // 後方互換: コロン区切りの場合はアンダースコアに置換
-    let mut dir = name.replace(':', "_");
-    // ファイル名ベース形式（コロンなし）でサイズ情報がない場合も対応
-    if !name.contains(':') && !name.contains('-') {
-        dir.push_str("_latest");
+
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.' {
+            out.push(c);
+        } else if c.is_ascii_uppercase() {
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
     }
-    dir
+
+    if out.is_empty() || out == "." || out == ".." {
+        "_latest".into()
+    } else {
+        out
+    }
 }
 
 /// ルーター側のデフォルトモデルディレクトリ（~/.llm-router/models）
@@ -245,131 +252,6 @@ mod cache_tests {
     }
 }
 
-/// ノードにインストール済みのモデル
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct InstalledModel {
-    /// モデル名
-    pub name: String,
-    /// モデルサイズ（バイト）
-    pub size: u64,
-    /// インストール日時
-    pub installed_at: DateTime<Utc>,
-    /// digest（LLM runtimeのモデル識別子）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub digest: Option<String>,
-}
-
-impl InstalledModel {
-    /// 新しいInstalledModelを作成
-    pub fn new(name: String, size: u64) -> Self {
-        Self {
-            name,
-            size,
-            installed_at: Utc::now(),
-            digest: None,
-        }
-    }
-
-    /// digestを指定してInstalledModelを作成
-    pub fn with_digest(name: String, size: u64, digest: String) -> Self {
-        Self {
-            name,
-            size,
-            installed_at: Utc::now(),
-            digest: Some(digest),
-        }
-    }
-}
-
-/// ダウンロードタスク
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DownloadTask {
-    /// タスクID
-    pub id: Uuid,
-    /// ノードID
-    pub node_id: Uuid,
-    /// モデル名
-    pub model_name: String,
-    /// ステータス
-    pub status: DownloadStatus,
-    /// 進捗（0.0-1.0）
-    pub progress: f32,
-    /// ダウンロード速度（バイト/秒）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed: Option<u64>,
-    /// 開始日時
-    pub started_at: DateTime<Utc>,
-    /// 完了日時
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<DateTime<Utc>>,
-    /// エラーメッセージ
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-impl DownloadTask {
-    /// 新しいダウンロードタスクを作成
-    pub fn new(node_id: Uuid, model_name: String) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            node_id,
-            model_name,
-            status: DownloadStatus::Pending,
-            progress: 0.0,
-            speed: None,
-            started_at: Utc::now(),
-            completed_at: None,
-            error: None,
-        }
-    }
-
-    /// 進捗を更新
-    pub fn update_progress(&mut self, progress: f32, speed: Option<u64>) {
-        self.progress = progress.clamp(0.0, 1.0);
-        self.speed = speed;
-
-        if self.status == DownloadStatus::Pending && progress > 0.0 {
-            self.status = DownloadStatus::InProgress;
-        }
-    }
-
-    /// 完了として  マーク
-    pub fn mark_completed(&mut self) {
-        self.status = DownloadStatus::Completed;
-        self.progress = 1.0;
-        self.completed_at = Some(Utc::now());
-    }
-
-    /// 失敗としてマーク
-    pub fn mark_failed(&mut self, error: String) {
-        self.status = DownloadStatus::Failed;
-        self.completed_at = Some(Utc::now());
-        self.error = Some(error);
-    }
-
-    /// タスクが完了しているか（成功または失敗）
-    pub fn is_finished(&self) -> bool {
-        matches!(
-            self.status,
-            DownloadStatus::Completed | DownloadStatus::Failed
-        )
-    }
-}
-
-/// ダウンロードステータス
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DownloadStatus {
-    /// 待機中
-    Pending,
-    /// ダウンロード中
-    InProgress,
-    /// 完了
-    Completed,
-    /// 失敗
-    Failed,
-}
-
 /// GGUFファイル名からモデルIDを生成（ファイル名ベース形式）
 ///
 /// パターン解析:
@@ -382,28 +264,33 @@ pub enum DownloadStatus {
 /// 2. 量子化サフィックス (Q4_K_M, Q5_0, etc.) を除去
 /// 3. 小文字に正規化
 ///
-/// 注: 従来のOllama形式（name:tag）は廃止し、ファイル名/リポジトリ名をそのまま使用
+/// 注: コロン区切りの name:tag 形式は廃止し、ファイル名/リポジトリ名をそのまま使用
 pub fn generate_ollama_style_id(filename: &str, fallback_repo: &str) -> String {
+    // HFのrfilename等はディレクトリを含むことがあるため、常にbasenameで扱う
+    let basename = filename.rsplit(&['/', '\\'][..]).next().unwrap_or(filename);
+
     // 汎用ファイル名（model.bin, model.gguf等）の場合はリポジトリ名から生成
-    let base_name = filename
+    let base_name = basename
         .trim_end_matches(".gguf")
         .trim_end_matches(".bin")
         .trim_end_matches(".safetensors");
 
-    let is_generic = matches!(base_name.to_lowercase().as_str(), "model" | "");
-
-    let name_to_parse = if is_generic {
+    let parsed = normalize_model_id_candidate(base_name);
+    if parsed == "model" || parsed.is_empty() {
         // リポジトリ名の最後の部分を使用 (e.g., "openai/gpt-oss-20b" → "gpt-oss-20b")
-        fallback_repo
+        let repo_name = fallback_repo
             .split('/')
             .next_back()
-            .unwrap_or(fallback_repo)
-    } else {
-        base_name
-    };
+            .unwrap_or(fallback_repo);
+        return normalize_model_id_candidate(repo_name);
+    }
 
+    parsed
+}
+
+fn normalize_model_id_candidate(candidate: &str) -> String {
     // 量子化サフィックスを除去 (Q4_K_M, Q5_0, Q8_0, IQ2_M, etc.)
-    let without_quant = remove_quantization_suffix(name_to_parse);
+    let without_quant = remove_quantization_suffix(candidate);
 
     // -GGUF サフィックスを除去
     let without_gguf = without_quant
@@ -465,7 +352,7 @@ fn is_quantization_tag(s: &str) -> bool {
 
 /// モデル名を正規化して返す（ファイル名ベース形式）
 ///
-/// 注: 従来のOllama形式（name:tag）は廃止し、ファイル名/リポジトリ名をそのまま使用
+/// 注: コロン区切りの name:tag 形式は廃止し、ファイル名/リポジトリ名をそのまま使用
 fn extract_name_and_tag(name: &str) -> String {
     // 小文字に正規化してそのまま返す（コロン形式は廃止）
     name.to_lowercase().trim_matches('-').to_string()
@@ -500,6 +387,24 @@ mod tests {
         // 汎用ファイル名(model.bin)の場合、リポジトリ名からフォールバック
         assert_eq!(
             generate_ollama_style_id("model.bin", "openai/gpt-oss-20b"),
+            "gpt-oss-20b"
+        );
+    }
+
+    #[test]
+    fn test_generate_model_id_generic_quantized_filename_falls_back_to_repo() {
+        // `model.Q4_K_M.gguf` のような汎用ファイル名は、量子化タグ除去後に `model` になるため repo にフォールバックする
+        assert_eq!(
+            generate_ollama_style_id("model.Q4_K_M.gguf", "convertible-repo"),
+            "convertible-repo"
+        );
+    }
+
+    #[test]
+    fn test_generate_model_id_with_path_segments() {
+        // HFのrfilename等はディレクトリを含むことがある
+        assert_eq!(
+            generate_ollama_style_id("metal/model.bin", "openai/gpt-oss-20b"),
             "gpt-oss-20b"
         );
     }
@@ -540,59 +445,5 @@ mod tests {
         assert_eq!(model.name, "gpt-oss-20b");
         assert_eq!(model.size, 10_000_000_000);
         assert_eq!(model.required_memory_gb(), 14.901161193847656);
-    }
-
-    #[test]
-    fn test_installed_model_new() {
-        let model = InstalledModel::new("llama3.2".to_string(), 5_000_000_000);
-
-        assert_eq!(model.name, "llama3.2");
-        assert_eq!(model.size, 5_000_000_000);
-        assert!(model.digest.is_none());
-    }
-
-    #[test]
-    fn test_download_task_lifecycle() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "gpt-oss-7b".to_string());
-
-        assert_eq!(task.status, DownloadStatus::Pending);
-        assert_eq!(task.progress, 0.0);
-        assert!(!task.is_finished());
-
-        // 進捗更新
-        task.update_progress(0.5, Some(1_000_000));
-        assert_eq!(task.status, DownloadStatus::InProgress);
-        assert_eq!(task.progress, 0.5);
-        assert_eq!(task.speed, Some(1_000_000));
-
-        // 完了
-        task.mark_completed();
-        assert_eq!(task.status, DownloadStatus::Completed);
-        assert_eq!(task.progress, 1.0);
-        assert!(task.is_finished());
-        assert!(task.completed_at.is_some());
-    }
-
-    #[test]
-    fn test_download_task_failure() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "invalid-model".to_string());
-
-        task.mark_failed("Model not found".to_string());
-        assert_eq!(task.status, DownloadStatus::Failed);
-        assert!(task.is_finished());
-        assert_eq!(task.error, Some("Model not found".to_string()));
-        assert!(task.completed_at.is_some());
-    }
-
-    #[test]
-    fn test_progress_clamping() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "test-model".to_string());
-
-        // 範囲外の値はクランプされる
-        task.update_progress(1.5, None);
-        assert_eq!(task.progress, 1.0);
-
-        task.update_progress(-0.5, None);
-        assert_eq!(task.progress, 0.0);
     }
 }

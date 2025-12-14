@@ -36,13 +36,13 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
         res.status = 200;
         res.set_content(R"({"node_id":"test-node","agent_token":"test-token"})", "application/json");
     });
-    router.Post("/api/nodes/heartbeat", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/api/health", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
         res.set_content("ok", "text/plain");
     });
     router.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
-        res.set_content(R"({"data":[{"id":"gpt-oss:7b"}]})", "application/json");
+        res.set_content(R"({"data":[{"id":"gpt-oss-7b"}]})", "application/json");
     });
 
     std::thread router_thread([&]() { router.listen("127.0.0.1", router_port); });

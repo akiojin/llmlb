@@ -13,7 +13,7 @@ using namespace llm_node;
 
 TEST(HttpServerTest, ServesHealthAndMetrics) {
     ModelRegistry registry;
-    registry.setModels({"gpt-oss:7b"});
+    registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
     OpenAIEndpoints openai(registry, engine, config);
@@ -35,7 +35,7 @@ TEST(HttpServerTest, ServesHealthAndMetrics) {
 
 TEST(HttpServerTest, HandlesCorsPreflightAndHeaders) {
     ModelRegistry registry;
-    registry.setModels({"gpt-oss:7b"});
+    registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
     OpenAIEndpoints openai(registry, engine, config);

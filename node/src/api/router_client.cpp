@@ -136,27 +136,4 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
     return false;
 }
 
-bool RouterClient::reportProgress(const std::string& task_id, double progress,
-                                   std::optional<double> speed, int max_retries) {
-    auto cli = make_client(base_url_, timeout_);
-
-    json payload = {
-        {"progress", progress}
-    };
-
-    if (speed.has_value()) {
-        payload["speed"] = speed.value();
-    }
-
-    std::string path = "/api/tasks/" + task_id + "/progress";
-
-    for (int attempt = 0; attempt <= max_retries; ++attempt) {
-        auto res = cli->Post(path.c_str(), payload.dump(), "application/json");
-        if (res && res->status >= 200 && res->status < 300) return true;
-        if (attempt == max_retries) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100 * (attempt + 1)));
-    }
-    return false;
-}
-
 }  // namespace llm_node

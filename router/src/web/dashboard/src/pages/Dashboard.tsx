@@ -84,7 +84,7 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="models" className="animate-fade-in">
-            <ModelsSection nodes={data?.nodes || []} />
+            <ModelsSection />
           </TabsContent>
 
           <TabsContent value="history" className="animate-fade-in">

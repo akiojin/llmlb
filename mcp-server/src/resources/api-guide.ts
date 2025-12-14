@@ -104,12 +104,13 @@ curl -X POST ${routerUrl}/api/auth/login \\
   -d '{"username":"admin","password":"your_password"}'
 \`\`\`
 
-### 3. Agent Token (Node Communication)
+### 3. Node Token (Node Communication)
 
-**Header**: \`X-Agent-Token: at_xxx\`
+**Header**: \`X-Node-Token: nt_xxx\`
 
 **Used for**:
 - /api/health (internal node health reporting)
+- /v1/models (node model sync)
 
 ## API Categories
 
@@ -296,19 +297,7 @@ curl -X POST ${routerUrl}/api/models/register \\
 \`\`\`
 
 If \`filename\` is omitted, the router tries to find a GGUF file in the repo. If none exists, it will queue a conversion task.
-
-## Pull Model (Cache GGUF to Router Storage)
-
-**Endpoint**: POST ${routerUrl}/api/models/pull
-
-\`\`\`bash
-curl -X POST ${routerUrl}/api/models/pull \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "repo": "TheBloke/Llama-2-7B-GGUF",
-    "filename": "llama-2-7b.Q4_K_M.gguf"
-  }'
-\`\`\`
+Track progress via **Convert Tasks** (\`GET ${routerUrl}/api/models/convert\`). When completed, the model becomes available in \`GET ${routerUrl}/v1/models\`.
 
 ## Delete Model
 

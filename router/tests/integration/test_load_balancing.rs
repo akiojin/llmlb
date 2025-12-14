@@ -21,7 +21,7 @@ async fn test_round_robin_load_balancing() {
     let mut node_ids = Vec::new();
     for idx in 0..3 {
         let req = RegisterRequest {
-            machine_name: format!("round-robin-agent-{}", idx),
+            machine_name: format!("round-robin-node-{}", idx),
             ip_address: format!("192.168.1.{}", 200 + idx)
                 .parse::<IpAddr>()
                 .unwrap(),
@@ -68,13 +68,13 @@ async fn test_round_robin_load_balancing() {
     let mut distribution: HashMap<_, usize> = HashMap::new();
 
     for _ in 0..9 {
-        let agent = load_manager.select_agent().await.unwrap();
-        let entry = distribution.entry(agent.id).or_default();
+        let node = load_manager.select_node().await.unwrap();
+        let entry = distribution.entry(node.id).or_default();
         *entry += 1;
 
-        load_manager.begin_request(agent.id).await.unwrap();
+        load_manager.begin_request(node.id).await.unwrap();
         load_manager
-            .finish_request(agent.id, RequestOutcome::Success, Duration::from_millis(50))
+            .finish_request(node.id, RequestOutcome::Success, Duration::from_millis(50))
             .await
             .unwrap();
     }
@@ -101,13 +101,13 @@ async fn test_round_robin_load_balancing() {
 }
 
 #[tokio::test]
-async fn test_load_based_balancing_favors_low_cpu_agents() {
+async fn test_load_based_balancing_favors_low_cpu_nodes() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
 
-    let high_cpu_agent = registry
+    let high_cpu_node = registry
         .register(RegisterRequest {
-            machine_name: "high-cpu-agent".to_string(),
+            machine_name: "high-cpu-node".to_string(),
             ip_address: "192.168.2.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -124,9 +124,9 @@ async fn test_load_based_balancing_favors_low_cpu_agents() {
         .unwrap()
         .node_id;
 
-    let low_cpu_agent = registry
+    let low_cpu_node = registry
         .register(RegisterRequest {
-            machine_name: "low-cpu-agent".to_string(),
+            machine_name: "low-cpu-node".to_string(),
             ip_address: "192.168.2.11".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -146,7 +146,7 @@ async fn test_load_based_balancing_favors_low_cpu_agents() {
     // 高負荷ノードはCPU 95%、低負荷ノードはCPU 10%
     load_manager
         .record_metrics(MetricsUpdate {
-            node_id: high_cpu_agent,
+            node_id: high_cpu_node,
             cpu_usage: 95.0,
             memory_usage: 40.0,
             gpu_usage: None,
@@ -166,7 +166,7 @@ async fn test_load_based_balancing_favors_low_cpu_agents() {
         .unwrap();
     load_manager
         .record_metrics(MetricsUpdate {
-            node_id: low_cpu_agent,
+            node_id: low_cpu_node,
             cpu_usage: 10.0,
             memory_usage: 30.0,
             gpu_usage: None,
@@ -186,10 +186,10 @@ async fn test_load_based_balancing_favors_low_cpu_agents() {
         .unwrap();
 
     for _ in 0..10 {
-        let selected = load_manager.select_agent().await.unwrap();
+        let selected = load_manager.select_node().await.unwrap();
         assert_eq!(
-            selected.id, low_cpu_agent,
-            "Load-based balancer should prefer low CPU agent"
+            selected.id, low_cpu_node,
+            "Load-based balancer should prefer low CPU node"
         );
 
         load_manager.begin_request(selected.id).await.unwrap();
@@ -209,9 +209,9 @@ async fn test_load_based_balancing_prefers_lower_latency() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
 
-    let slow_agent = registry
+    let slow_node = registry
         .register(RegisterRequest {
-            machine_name: "slow-agent".to_string(),
+            machine_name: "slow-node".to_string(),
             ip_address: "192.168.3.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -228,9 +228,9 @@ async fn test_load_based_balancing_prefers_lower_latency() {
         .unwrap()
         .node_id;
 
-    let fast_agent = registry
+    let fast_node = registry
         .register(RegisterRequest {
-            machine_name: "fast-agent".to_string(),
+            machine_name: "fast-node".to_string(),
             ip_address: "192.168.3.11".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -249,7 +249,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
 
     load_manager
         .record_metrics(MetricsUpdate {
-            node_id: slow_agent,
+            node_id: slow_node,
             cpu_usage: 50.0,
             memory_usage: 40.0,
             gpu_usage: None,
@@ -269,7 +269,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
         .unwrap();
     load_manager
         .record_metrics(MetricsUpdate {
-            node_id: fast_agent,
+            node_id: fast_node,
             cpu_usage: 50.0,
             memory_usage: 40.0,
             gpu_usage: None,
@@ -288,8 +288,8 @@ async fn test_load_based_balancing_prefers_lower_latency() {
         .await
         .unwrap();
 
-    let selected = load_manager.select_agent().await.unwrap();
-    assert_eq!(selected.id, fast_agent);
+    let selected = load_manager.select_node().await.unwrap();
+    assert_eq!(selected.id, fast_node);
 }
 
 #[tokio::test]
@@ -298,9 +298,9 @@ async fn test_load_balancer_excludes_registering_nodes() {
     let load_manager = LoadManager::new(registry.clone());
 
     // Registering 状態のノード（メトリクスを記録しないので Registering のまま）
-    let registering_agent = registry
+    let registering_node = registry
         .register(RegisterRequest {
-            machine_name: "registering-agent".to_string(),
+            machine_name: "registering-node".to_string(),
             ip_address: "192.168.4.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -318,9 +318,9 @@ async fn test_load_balancer_excludes_registering_nodes() {
         .node_id;
 
     // Online 状態のノード（メトリクスを記録して Online に遷移）
-    let online_agent = registry
+    let online_node = registry
         .register(RegisterRequest {
-            machine_name: "online-agent".to_string(),
+            machine_name: "online-node".to_string(),
             ip_address: "192.168.4.11".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -340,7 +340,7 @@ async fn test_load_balancer_excludes_registering_nodes() {
     // online_agent のみメトリクスを記録して Online に遷移
     load_manager
         .record_metrics(MetricsUpdate {
-            node_id: online_agent,
+            node_id: online_node,
             cpu_usage: 50.0,
             memory_usage: 40.0,
             gpu_usage: None,
@@ -359,15 +359,15 @@ async fn test_load_balancer_excludes_registering_nodes() {
         .await
         .unwrap();
 
-    // select_agent は Online のノードのみを選択すべき
+    // select_node は Online のノードのみを選択すべき
     for _ in 0..5 {
-        let selected = load_manager.select_agent().await.unwrap();
+        let selected = load_manager.select_node().await.unwrap();
         assert_eq!(
-            selected.id, online_agent,
+            selected.id, online_node,
             "Load balancer should exclude Registering nodes and only select Online nodes"
         );
         assert_ne!(
-            selected.id, registering_agent,
+            selected.id, registering_node,
             "Registering node should not be selected"
         );
 

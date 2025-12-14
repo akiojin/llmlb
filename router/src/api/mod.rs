@@ -7,7 +7,6 @@ pub mod auth;
 pub mod dashboard;
 pub mod health;
 pub mod logs;
-pub mod metrics;
 pub mod models;
 pub mod nodes;
 pub mod openai;
@@ -58,25 +57,33 @@ pub fn create_router(state: AppState) -> Router {
             crate::auth::middleware::jwt_auth_middleware,
         ));
 
-    // エージェントトークン認証が必要なルート
-    let agent_protected_routes = Router::new()
+    // ノードトークン認証が必要なルート
+    let node_protected_routes = Router::new()
         .route("/api/health", post(health::health_check))
         .layer(middleware::from_fn_with_state(
             state.db_pool.clone(),
-            crate::auth::middleware::agent_token_auth_middleware,
+            crate::auth::middleware::node_token_auth_middleware,
         ));
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
     let api_key_routes = Router::new()
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
-        .route("/v1/embeddings", post(openai::embeddings))
-        .route("/v1/models", get(openai::list_models))
-        .route("/v1/models/:model_id", get(openai::get_model));
+        .route("/v1/embeddings", post(openai::embeddings));
 
     let api_key_protected_routes = api_key_routes.layer(middleware::from_fn_with_state(
         state.db_pool.clone(),
         crate::auth::middleware::api_key_auth_middleware,
+    ));
+
+    // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
+    let models_routes = Router::new()
+        .route("/v1/models", get(openai::list_models))
+        .route("/v1/models/:model_id", get(openai::get_model));
+
+    let models_protected_routes = models_routes.layer(middleware::from_fn_with_state(
+        state.db_pool.clone(),
+        crate::auth::middleware::api_key_or_node_token_auth_middleware,
     ));
 
     Router::new()
@@ -85,8 +92,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/auth/logout", post(auth::logout))
         // 保護されたルート
         .merge(protected_routes)
-        .merge(agent_protected_routes)
+        .merge(node_protected_routes)
         .merge(api_key_protected_routes)
+        .merge(models_protected_routes)
         // 既存のルート
         .route(
             "/api/nodes",
@@ -101,7 +109,6 @@ pub fn create_router(state: AppState) -> Router {
             "/api/nodes/:node_id/settings",
             put(nodes::update_node_settings),
         )
-        .route("/api/nodes/:node_id/metrics", post(metrics::update_metrics))
         .route("/api/nodes/metrics", get(nodes::list_node_metrics))
         .route("/api/metrics/summary", get(nodes::metrics_summary))
         .route("/api/dashboard/nodes", get(dashboard::get_nodes))
@@ -130,10 +137,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/dashboard/logs/router", get(logs::get_router_logs))
         // FR-002: node log proxy (spec path)
         .route("/api/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (SPEC-8ae67d67)
+        // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
         .route("/api/models/available", get(models::get_available_models))
         .route("/api/models/register", post(models::register_model))
-        .route("/api/models/pull", post(models::pull_model_from_hf))
         .route("/api/models/registered", get(models::get_registered_models))
         .route("/api/models/*model_name", delete(models::delete_model))
         .route(

@@ -29,12 +29,12 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 
 ## 技術コンテキスト
 
-- **対象領域**: Rust（coordinator, agent, common クレート）、前段 API/ダッシュボード (JS)、永続化層 (SQLite or JSON ストレージ)。
+- **対象領域**: Rust（router, node, common クレート）、前段 API/ダッシュボード (JS)、永続化層 (SQLite or JSON ストレージ)。
 - **既存機能**: 直近の `SPEC-47c6f44c` で自動マージ周りが更新済み。GPU 関連の導線は部分的に `feature/gpu-performance` で導入済み。
 - **利用可能な構成要素**:
-  - Agentサイド: GPU情報を収集する `sysinfo` / `nvml-wrapper`。
-  - Coordinator: 登録 API (`POST /api/agents`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
-  - Web UI: `coordinator/src/web/static/app.js`（GPU指標表示を既に追加済みのため連携確認のみ）。
+  - Nodeサイド: GPU情報を収集する `sysinfo` / `nvml-wrapper`。
+  - Router: 登録 API (`POST /api/nodes`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
+  - Web UI: `router/src/web/static/app.js`（GPU指標表示を既に追加済みのため連携確認のみ）。
 - **制約**: Spec Kit カスタム運用によりブランチ・Worktree操作不可。CI は Quality Checks + Auto Merge を利用し、ローカルで同等検証を必須。
 
 ## 憲章チェック（事前）
@@ -49,12 +49,12 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 ## 既存調査（着手予定）
 
 1. **GPU情報収集の現状**  
-   - `agent/src/metrics.rs` に GPU 指標取得ロジックが追加済み。フォーマット・送信箇所を確認。
+   - `node/src/metrics.rs` に GPU 指標取得ロジックが追加済み。フォーマット・送信箇所を確認。
 2. **登録 API の改修余地**  
-   - `coordinator/src/api/agent.rs` (`register_agent`) のバリデーションフロー把握。
-   - `common/src/types.rs` の `AgentRegistration` 構造体に GPU フィールドがあるか確認。
+   - `router/src/api/node.rs` (`register_node`) のバリデーションフロー把握。
+   - `common/src/types.rs` の `NodeRegistration` 構造体に GPU フィールドがあるか確認。
 3. **ストレージクリーンアップ**  
-   - `coordinator/src/db` / `registry` の起動シーケンスから削除処理を差し込む箇所を調査。
+   - `router/src/db` / `registry` の起動シーケンスから削除処理を差し込む箇所を調査。
 4. **ダッシュボード反映**  
    - `app.js` で GPU 情報の描画箇所を確認し、API レスポンス形式と整合させる。
 
@@ -64,18 +64,18 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 
 ### 登録時バリデーション
 
-- Agent から送信される `POST /api/agents` のペイロードに `gpu_info`（例: `[{model, count}]`）を要求。
-- Coordinator で `gpu_info` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
-- Agent 側では起動時に GPU DETECTION を行い、取得失敗時は登録リクエスト自体を中止する fallback を実装予定。
+- Node から送信される `POST /api/nodes` のペイロードに `gpu_devices`（例: `[{model, count}]`）を要求。
+- Router で `gpu_devices` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
+- Node 側では起動時に GPU 検出を行い、取得失敗時は登録リクエスト自体を中止する fallback を実装予定。
 
 ### 既存データクレンジング
 
-- Coordinator 起動時 (`coordinator/src/main.rs` or `registry::init`) でストレージをスキャン。
-- `gpu_info` が空 or 欠損のエントリを削除し、削除件数をログに出力。
+- Router 起動時にストレージ（DB）をスキャン。
+- `gpu_devices` が空 or 欠損（または `gpu_available=false`）のエントリを削除し、削除件数をログに出力。
 
 ### ダッシュボード & API
 
-- `GET /api/agents` レスポンスへ GPU 情報フィールドを含める。
+- `GET /api/nodes` レスポンスへ GPU 情報フィールドを含める。
 - フロントエンドで GPU 名／枚数表示。既にGPU列が前提のUIが存在するため整合性チェックのみ。
 
 ## テスト戦略
@@ -86,29 +86,29 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 2. **Integration Tests**  
    - 起動時クリーンアップ: 擬似ストレージに GPU無しノードを残した状態で起動→削除を検証。  
    - Dashboard API: GPU情報付きレスポンスが返ること。
-3. **Agent 側テスト**  
+3. **Node 側テスト**  
    - GPU情報収集ユニットテスト（NVMLが利用できない環境ではmockに切替）。
 
 ### 手動／E2E チェック
 
-- GPU搭載マシン（CI or ローカル）で Agent→Coordinator 登録フローを確認。
+- GPU搭載マシン（CI or ローカル）で Node→Router 登録フローを確認。
 - ダッシュボードで GPU 情報表示を目視確認（Spec Quickstart で手順化予定）。
 
 ## Phase 0: リサーチアウトライン
 
 | トピック | 調査内容 | 成果物 |
 |----------|----------|--------|
-| GPU情報取得実装 | Agent側での GPU detection の既存処理、返却フォーマット | `research.md` |
+| GPU情報取得実装 | Node側での GPU detection の既存処理、返却フォーマット | `research.md` |
 | 403 応答仕様 | API エラー応答フォーマット (既存の validation error 対応) | `research.md` |
 | ストレージ整合性 | 既存 DB (SQLite/JSON) の構造と削除手順 | `research.md` |
 
 ## Phase 1: 設計アウトライン
 
 - `contracts/`  
-  - `agents-register-gpu.contract.yml`: 登録 API の成功/失敗シナリオ。
-  - `agents-cleanup.contract.yml`: 起動時の削除処理を擬似的に検証。
+  - `nodes-register-gpu.contract.yml`: 登録 API の成功/失敗シナリオ。
+  - `nodes-cleanup.contract.yml`: 起動時の削除処理を擬似的に検証。
 - `data-model.md`  
-  - Agent レコードに `gpu_info` フィールドを追加した ER 図 / JSON スキーマ。
+  - Node レコードに `gpu_devices` フィールドを追加した ER 図 / JSON スキーマ。
   - API 応答サンプル。
 - `quickstart.md`  
   - GPU搭載/非搭載ノードの登録確認手順。
@@ -123,9 +123,9 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
    - 登録APIの成功/失敗テスト。  
    - 起動時削除テストの準備。
 3. **GREEN: 実装**  
-   - Agent登録 API にバリデーション追加。  
+   - Node登録 API にバリデーション追加。  
    - 起動時削除ロジック実装。  
-   - Agentサイドで GPU 情報送出を必須化。
+   - Nodeサイドで GPU 情報送出を必須化。
 4. **REFAC**  
    - ログ／エラーメッセージ整備。  
    - ダッシュボード描画調整とテスト。
@@ -137,7 +137,7 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 
 | リスク | 対応 |
 |--------|------|
-| GPU検出が環境依存で失敗 | Agent側で fallback ログを出して登録自体を抑止。テストでは mock を利用。 |
+| GPU検出が環境依存で失敗 | Node側で fallback ログを出して登録自体を抑止。テストでは mock を利用。 |
 | 既存データ削除の安全性 | 削除前にバックアップ用ログ出力。テスト用 DB を活用して検証。 |
 | UI 互換性 | APIレスポンス変更に合わせて `app.js` の描画ロジックを再確認しテスト。 |
 ## 次アクション

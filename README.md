@@ -29,9 +29,9 @@ LLM Router is a powerful centralized system that provides unified management and
 Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
 [TROUBLESHOOTING](./TROUBLESHOOTING.md)
 
-## MCP Server for LLM Agents
+## MCP Server for LLM Assistants
 
-LLM agents (like Claude Code) can interact with LLM Router through a dedicated
+LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
 MCP server. This is the recommended approach over using Bash with curl commands
 directly.
 
@@ -205,11 +205,11 @@ Combines multiple factors including response time, active requests, and CPU usag
 LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 ```
 
-### Metrics API
+### Health / Metrics API
 
-Nodes can report metrics to the Router for load balancing decisions.
+Nodes report health + metrics to the Router for node status and load balancing decisions.
 
-**Endpoint:** `POST /api/nodes/:node_id/metrics`
+**Endpoint:** `POST /api/health` (requires `X-Node-Token`)
 
 **Request:**
 ```json
@@ -218,12 +218,15 @@ Nodes can report metrics to the Router for load balancing decisions.
   "cpu_usage": 45.5,
   "memory_usage": 60.2,
   "active_requests": 3,
-  "avg_response_time_ms": 250.5,
-  "timestamp": "2025-11-02T10:00:00Z"
+  "average_response_time_ms": 250.5,
+  "loaded_models": ["gpt-oss:20b"],
+  "loaded_embedding_models": [],
+  "initializing": false,
+  "ready_models": [1, 1]
 }
 ```
 
-**Response:** `204 No Content`
+**Response:** `200 OK`
 
 ## Architecture
 
@@ -363,7 +366,7 @@ llm-router/
 ├── common/              # Shared library (types, protocol, errors)
 ├── router/              # Rust router (HTTP APIs, dashboard, proxy)
 ├── node/                # C++ node (llama.cpp, OpenAI-compatible /v1/*)
-├── mcp-server/          # MCP server (for LLM agents like Claude Code)
+├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
 
@@ -671,7 +674,6 @@ The file is automatically managed with:
 | DELETE | `/api/nodes/:node_id` | Delete node | None |
 | POST | `/api/nodes/:node_id/disconnect` | Force node offline | None |
 | PUT | `/api/nodes/:node_id/settings` | Update node settings | None |
-| POST | `/api/nodes/:node_id/metrics` | Update node metrics | None |
 | GET | `/api/nodes/metrics` | List node metrics | None |
 | GET | `/api/metrics/summary` | System statistics summary | None |
 
@@ -679,7 +681,7 @@ The file is automatically managed with:
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/health` | Receive health check from node | Agent Token |
+| POST | `/api/health` | Receive health check from node | Node Token |
 
 #### OpenAI-Compatible Endpoints
 
@@ -688,8 +690,8 @@ The file is automatically managed with:
 | POST | `/v1/chat/completions` | Chat completions API | API Key |
 | POST | `/v1/completions` | Text completions API | API Key |
 | POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List available models | API Key |
-| GET | `/v1/models/:model_id` | Get specific model info | API Key |
+| GET | `/v1/models` | List available models | API Key / Node Token |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key / Node Token |
 
 #### Model Management Endpoints
 
@@ -697,7 +699,6 @@ The file is automatically managed with:
 |--------|------|-------------|------|
 | GET | `/api/models/available?source=hf` | List available models (HF) | None |
 | POST | `/api/models/register` | Queue model download/convert (HF) | None |
-| POST | `/api/models/pull` | Pull model (sync download, HF) | None |
 | GET | `/api/models/registered` | List registered models | None |
 | DELETE | `/api/models/*model_name` | Delete model | None |
 | POST | `/api/models/discover-gguf` | Discover GGUF models | None |
@@ -788,8 +789,8 @@ Register a node.
 {
   "node_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
-  "agent_api_port": 11435,
-  "agent_token": "at_xxx"
+  "node_api_port": 11435,
+  "node_token": "nt_xxx"
 }
 ```
 

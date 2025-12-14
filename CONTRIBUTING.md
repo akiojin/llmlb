@@ -12,7 +12,7 @@ changes small, well-documented, and fully verified before pushing.
 - Default to simplicity; avoid adding dependencies unless necessary.
 
 ## Workflow
-1. Read relevant specs under `specs/` and `.agent/PLANS.md`.
+1. Read relevant specs under `specs/` and `.assistant/PLANS.md`.
 2. List the task in your TODOs, then start with a test (RED).
 3. Implement the minimum to turn tests green, refactor if needed.
 4. Verify locally:

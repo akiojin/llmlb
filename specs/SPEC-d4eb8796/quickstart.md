@@ -15,23 +15,23 @@
 ```bash
 export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=secure123
-cargo run --bin coordinator
+cargo run --bin router
 ```
 
 または、起動スクリプトに記述：
 
 ```bash
-# start-coordinator.sh
+# start-router.sh
 #!/bin/bash
 export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=your_secure_password_here
-./coordinator
+./router
 ```
 
 ### 方法B: 対話式で管理者作成
 
 ```bash
-cargo run --bin coordinator
+cargo run --bin router
 ```
 
 初回起動時にプロンプトが表示されます：
@@ -41,7 +41,7 @@ cargo run --bin coordinator
 ユーザー名: admin
 パスワード: ********
 [INFO] 管理者ユーザー 'admin' を作成しました。
-[INFO] コーディネーターを起動しています...
+[INFO] ルーターを起動しています...
 [INFO] サーバーがポート 8080 で起動しました
 ```
 
@@ -177,44 +177,51 @@ curl -X PUT http://localhost:8080/api/users/{user_id} \
   -d '{"password": "new_password456"}'
 ```
 
-## 6. エージェント登録とトークン使用
+## 6. ノード登録とトークン使用
 
-### エージェント登録
+### ノード登録
 
 ```bash
-# エージェント登録APIを呼び出す
-RESPONSE=$(curl -X POST http://localhost:8080/api/agents \
+# ノード登録APIを呼び出す
+RESPONSE=$(curl -X POST http://localhost:8080/api/nodes \
   -H "Content-Type: application/json" \
   -d '{
-    "machine_name": "test-agent",
+    "machine_name": "test-node",
     "ip_address": "192.168.1.100",
     "runtime_version": "0.1.0",
     "runtime_port": 11434,
     "gpu_available": true,
     "gpu_devices": [{
-      "name": "NVIDIA RTX 3090",
-      "memory_total": 24000000000,
-      "memory_free": 20000000000
+      "model": "NVIDIA RTX 3090",
+      "count": 1,
+      "memory": 24000000000
     }]
   }')
 
-# レスポンスからエージェントトークンを抽出
-AGENT_TOKEN=$(echo $RESPONSE | jq -r '.agent_token')
-echo "エージェントトークン: $AGENT_TOKEN"
+# レスポンスからノードID/トークンを抽出
+NODE_ID=$(echo $RESPONSE | jq -r '.node_id')
+NODE_TOKEN=$(echo $RESPONSE | jq -r '.node_token')
+echo "ノードトークン: $NODE_TOKEN"
 ```
 
-**テスト検証**: レスポンスに `agent_token` フィールドが含まれることを確認
+**テスト検証**: レスポンスに `node_token` フィールドが含まれることを確認
 
-### エージェントからのヘルスチェック
+### ノードからのヘルスチェック
 
 ```bash
-# エージェントトークンを使用してヘルスチェック
+# ノードトークンを使用してヘルスチェック（node_id 必須）
 curl -X POST http://localhost:8080/api/health \
-  -H "X-Agent-Token: $AGENT_TOKEN" \
+  -H "X-Node-Token: $NODE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_id": "{エージェントID}",
-    "status": "online"
+    "node_id": "'$NODE_ID'",
+    "cpu_usage": 12.3,
+    "memory_usage": 45.6,
+    "active_requests": 0,
+    "loaded_models": ["gpt-oss:20b"],
+    "loaded_embedding_models": [],
+    "initializing": false,
+    "ready_models": [1, 1]
   }'
 ```
 
@@ -226,8 +233,13 @@ curl -X POST http://localhost:8080/api/health \
 curl -X POST http://localhost:8080/api/health \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_id": "{エージェントID}",
-    "status": "online"
+    "node_id": "'$NODE_ID'",
+    "cpu_usage": 12.3,
+    "memory_usage": 45.6,
+    "active_requests": 0,
+    "loaded_models": [],
+    "loaded_embedding_models": [],
+    "initializing": false
   }'
 ```
 
@@ -239,14 +251,14 @@ curl -X POST http://localhost:8080/api/health \
 
 ```bash
 export AUTH_DISABLED=true
-cargo run --bin coordinator
+cargo run -p llm-router
 ```
 
 ### 動作確認
 
 ```bash
 # 認証なしでAPIにアクセス
-curl -X GET http://localhost:8080/api/agents
+curl -X GET http://localhost:8080/api/nodes
 
 # ダッシュボードにログインなしでアクセス可能
 open http://localhost:8080/dashboard
@@ -261,8 +273,8 @@ unset AUTH_DISABLED
 # または
 export AUTH_DISABLED=false
 
-# コーディネーター再起動
-cargo run --bin coordinator
+# ルーター再起動
+cargo run -p llm-router
 ```
 
 ## 8. トラブルシューティング
@@ -298,13 +310,13 @@ curl -X PUT http://localhost:8080/api/users/{user_id} \
 
 ```bash
 # データベースをバックアップ
-cp ~/.llm-router/coordinator.db ~/.llm-router/coordinator.db.backup
+cp ~/.llm-router/router.db ~/.llm-router/router.db.backup
 
 # データベースを削除して再初期化
-rm ~/.llm-router/coordinator.db
+rm ~/.llm-router/router.db
 
-# コーディネーター再起動（新しい管理者作成）
-cargo run --bin coordinator
+# ルーター再起動（新しい管理者作成）
+cargo run --bin router
 ```
 
 ## 9. セキュリティベストプラクティス
@@ -330,5 +342,5 @@ cargo run --bin coordinator
 - [ ] APIキー発行が成功
 - [ ] 外部アプリケーションからAPIアクセスが成功
 - [ ] 無効なAPIキーでのアクセスが拒否される
-- [ ] エージェント登録とトークン使用が成功
+- [ ] ノード登録とトークン使用が成功
 - [ ] 認証無効化モードが動作する

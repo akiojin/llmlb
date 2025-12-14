@@ -12,11 +12,11 @@ protected:
         server.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register = req.body;
             res.status = 200;
-            res.set_content(R"({"node_id":"node-123","agent_token":"test-token"})", "application/json");
+            res.set_content(R"({"node_id":"node-123","node_token":"test-token"})", "application/json");
         });
         server.Post("/api/health", [this](const httplib::Request& req, httplib::Response& res) {
             last_heartbeat = req.body;
-            last_heartbeat_token = req.get_header_value("X-Agent-Token");
+            last_heartbeat_token = req.get_header_value("X-Node-Token");
             res.status = 200;
             res.set_content("ok", "text/plain");
         });
@@ -49,7 +49,7 @@ TEST_F(RouterContractFixture, RegisterNodeReturnsId) {
     auto result = client.registerNode(info);
     EXPECT_TRUE(result.success);
     EXPECT_EQ(result.node_id, "node-123");
-    EXPECT_EQ(result.agent_token, "test-token");
+    EXPECT_EQ(result.node_token, "test-token");
     EXPECT_FALSE(last_register.empty());
 }
 

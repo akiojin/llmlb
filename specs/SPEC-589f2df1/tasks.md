@@ -11,17 +11,17 @@
 
 ### セットアップ＆実装
 
-- [x] **T001** `coordinator/src/registry/mod.rs` にround_robin_indexフィールド追加
+- [x] **T001** `router/src/registry/mod.rs` にround_robin_indexフィールド追加
   - フィールド: `round_robin_index: AtomicUsize`
   - 初期化: `AtomicUsize::new(0)`
 
-- [x] **T002** `coordinator/src/registry/mod.rs` にselect_agent()メソッド実装
+- [x] **T002** `router/src/registry/mod.rs` にselect_node()メソッド実装
   - 機能: オンラインノード一覧取得 → ラウンドロビンで選択
-  - アルゴリズム: `index % online_agents.len()`
+  - アルゴリズム: `index % online_nodes.len()`
 
 ### テスト
 
-- [x] **T003** `coordinator/tests/integration/proxy_test.rs` にラウンドロビン動作テスト
+- [x] **T003** `router/tests/integration/proxy_test.rs` にラウンドロビン動作テスト
   - 前提: 3台のノード登録済み
   - 実行: 9回連続リクエスト送信
   - 検証: 各ノードが3リクエストずつ処理
@@ -37,11 +37,11 @@
 ### Phase 2.1: セットアップ
 
 - [x] **T004** [P] Cargo.toml依存関係追加: `sysinfo`（CPU/メモリ監視）
-  - ✅ coordinator/Cargo.tomlにsysinfo 0.32を追加
-- [x] **T005** [P] モジュール宣言: `coordinator/src/metrics/mod.rs` 作成
-  - ✅ metricsモジュールとcoordinator/src/lib.rsに宣言を追加
-- [x] **T006** [P] データモデル定義: `common/src/types.rs` にAgentMetrics構造体追加
-  - ✅ agent_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestampフィールドを定義
+  - ✅ router/Cargo.tomlにsysinfo 0.32を追加
+- [x] **T005** [P] モジュール宣言: `router/src/metrics/mod.rs` 作成
+  - ✅ metricsモジュールとrouter/src/lib.rsに宣言を追加
+- [x] **T006** [P] データモデル定義: `common/src/types.rs` にNodeMetrics構造体追加
+  - ✅ node_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestampフィールドを定義
 
 **推定時間**: 30分 ✅ 完了
 
@@ -49,22 +49,22 @@
 
 #### Contract Tests
 
-- [x] **T007** [P] `coordinator/tests/contract/test_metrics.rs` に POST /api/agents/:id/metrics のcontract test
+- [x] **T007** [P] `router/tests/contract/test_metrics.rs` に POST /api/health のcontract test
   - ✅ 3つのContract Test作成（成功ケース、存在しないノード、不正な値）
-  - ✅ coordinator/tests/contract_tests.rs にエントリーポイント作成
+  - ✅ router/tests/contract_tests.rs にエントリーポイント作成
   - ✅ RED状態確認完了（TDD準拠）
 
 #### Integration Tests
 
-- [x] **T008** `coordinator/tests/integration/test_metrics.rs` にメトリクス収集テスト
+- [x] **T008** `router/tests/integration/test_metrics.rs` にメトリクス収集テスト
   - ✅ 3つのIntegration Test作成（収集と保存、更新、存在しないノード）
   - ✅ RED状態確認完了（TDD準拠）
 
-- [x] **T009** `coordinator/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
+- [x] **T009** `router/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
   - ✅ 3台ノード中1台高負荷時の低負荷優先選択テスト作成
   - ✅ RED状態確認完了（TDD準拠）
 
-- [x] **T010** `coordinator/tests/integration/loadbalancer_test.rs` に全ノード高負荷時のフォールバックテスト
+- [x] **T010** `router/tests/integration/loadbalancer_test.rs` に全ノード高負荷時のフォールバックテスト
   - ✅ 全ノードCPU 95%時のラウンドロビンフォールバックテスト作成
   - ✅ RED状態確認完了（TDD準拠）
 
@@ -74,46 +74,46 @@
 
 #### データモデル
 
-- [x] **T011** [P] `common/src/types.rs` にAgentMetrics実装
-  - ✅ T006で既に実装済み（agent_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestamp）
+- [x] **T011** [P] `common/src/types.rs` にNodeMetrics実装
+  - ✅ T006で既に実装済み（node_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestamp）
   - ✅ Debug, Clone, Serialize, Deserializeを実装
 
 #### メトリクスストレージ
 
-- [x] **T012** `coordinator/src/registry/mod.rs` にmetricsフィールド追加
-  - ✅ AgentRegistryにmetrics: Arc<RwLock<HashMap<Uuid, AgentMetrics>>>を追加
+- [x] **T012** `router/src/registry/mod.rs` にmetricsフィールド追加
+  - ✅ NodeRegistryにmetrics: Arc<RwLock<HashMap<Uuid, NodeMetrics>>>を追加
   - ✅ new()とwith_storage()で空のHashMapとして初期化
 
-- [x] **T013** `coordinator/src/registry/mod.rs` にupdate_metrics()メソッド実装
+- [x] **T013** `router/src/registry/mod.rs` にupdate_metrics()メソッド実装
   - ✅ ノード存在確認 → メトリクス保存の実装完了
 
 #### 負荷ベース選択ロジック
 
-- [x] **T014** `coordinator/src/balancer/mod.rs` にselect_agent_by_metrics()メソッド実装
+- [x] **T014** `router/src/balancer/mod.rs` にselect_node_by_metrics()メソッド実装
   - ✅ 負荷スコア計算: cpu_usage + memory_usage + (active_requests * 10)
   - ✅ 最小スコアノード選択ロジック実装
 
-- [x] **T015** `coordinator/src/balancer/mod.rs` にフォールバックロジック実装
+- [x] **T015** `router/src/balancer/mod.rs` にフォールバックロジック実装
   - ✅ 全ノードCPU > 80%時のラウンドロビンフォールバック実装
 
 #### メトリクス収集API
 
-- [x] **T016** `coordinator/src/api/metrics.rs` にupdate_metrics()ハンドラー実装
-  - ✅ POST /api/agents/:id/metrics エンドポイント実装
-  - ✅ AgentMetrics受信 → registry.update_metrics() → 204 No Content返却
-  - ✅ coordinator/src/api/mod.rsにルート登録
+- [x] **T016** `router/src/api/metrics.rs` にupdate_metrics()ハンドラー実装
+  - ✅ POST /api/health エンドポイント実装
+  - ✅ NodeMetrics受信 → registry.update_metrics() → 204 No Content返却
+  - ✅ router/src/api/mod.rsにルート登録
 
 **推定時間**: 3時間 ✅ 完了
 
 ### Phase 2.4: 統合
 
-- [x] **T017** `coordinator/src/main.rs` にメトリクスルート追加
+- [x] **T017** `router/src/main.rs` にメトリクスルート追加
   - ✅ T016でapi/mod.rsにルート登録済み（create_router()経由で有効）
 
-- [x] **T018** `coordinator/src/api/proxy.rs` でselect_agent_by_metrics()使用
+- [x] **T018** `router/src/api/proxy.rs` でselect_node_by_metrics()使用
   - ✅ 環境変数LOAD_BALANCER_MODEで切り替え実装
-  - ✅ "metrics": select_agent_by_metrics()使用
-  - ✅ その他（デフォルト）: 既存のselect_agent()使用
+  - ✅ "metrics": select_node_by_metrics()使用
+  - ✅ その他（デフォルト）: 既存のselect_node()使用
 
 - [x] **T019** 起動ログにロードバランサーモード追加
   - ✅ main.rsに`println!("Load balancer mode: {}", load_balancer_mode);`追加
@@ -124,11 +124,11 @@
 
 #### Unit Tests
 
-- [x] **T020** [P] `coordinator/src/registry/mod.rs` に負荷スコア計算のunit test
+- [x] **T020** [P] `router/src/registry/mod.rs` に負荷スコア計算のunit test
   - ✅ 正常ケース: 低負荷ノードが高スコア
   - ✅ エッジケース: メトリクスなしノードは最低優先度
 
-- [x] **T021** [P] `common/src/types.rs` にAgentMetrics型のunit test
+- [x] **T021** [P] `common/src/types.rs` にNodeMetrics型のunit test
   - ✅ JSONシリアライゼーション/デシリアライゼーションテスト
 
 #### ドキュメント
@@ -137,12 +137,12 @@
   - ✅ 使用例、エンドポイント説明、環境変数説明
 
 - [x] **T023** [P] Rustdocコメント追加
-  - ✅ select_agent_by_metrics() にドキュメントコメント
+  - ✅ select_node_by_metrics() にドキュメントコメント
 
 #### パフォーマンステスト
 
-- [x] **T024** [P] `coordinator/benches/loadbalancer_bench.rs` にベンチマーク追加
-  - ✅ 測定: select_agent_by_metrics() の実行時間
+- [x] **T024** [P] `router/benches/loadbalancer_bench.rs` にベンチマーク追加
+  - ✅ 測定: select_node_by_metrics() の実行時間
   - ✅ 目標: 1000ノードで < 10ms
   - ✅ **実測結果**（2025-11-02）:
     - 10ノード: 2.8 µs
@@ -189,14 +189,14 @@
 
 - [x] **T025** SPEC更新（FR-013追加）
   - GPU能力スコア優先、ビジー時フォールバック、メトリクス欠如時の扱いを仕様に追記
-- [x] **T026** `coordinator/src/balancer/mod.rs` の優先度ロジック刷新
-  - `agent_spec_score`/`compare_spec_*` ヘルパー追加
+- [x] **T026** `router/src/balancer/mod.rs` の優先度ロジック刷新
+  - `node_spec_score`/`compare_spec_*` ヘルパー追加
   - メトリクス有無に関わらず「スペック→ビジー判定→ラウンドロビン」の順序に統一
 - [x] **T027** 通常ロードバランサTDD（RED→GREEN）
-  - `select_agent_prefers_higher_spec_until_it_becomes_busy()` を追加し、高性能→次点フォールバックを検証
+  - `select_node_prefers_higher_spec_until_it_becomes_busy()` を追加し、高性能→次点フォールバックを検証
   - RED確認後、実装でGREEN化
 - [x] **T028** メトリクスモードTDD（RED→GREEN）
-  - `select_agent_by_metrics_prefers_higher_spec_until_busy()` を追加し、`LOAD_BALANCER_MODE=metrics` 相当の挙動を固定
+  - `select_node_by_metrics_prefers_higher_spec_until_busy()` を追加し、`LOAD_BALANCER_MODE=metrics` 相当の挙動を固定
   - RED確認後、実装でGREEN化
 
 **Phase 2（メトリクスベース）**:

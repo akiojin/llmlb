@@ -31,15 +31,15 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
 -- APIキー発行者インデックス（ユーザー削除時のCASCADE用）
 CREATE INDEX IF NOT EXISTS idx_api_keys_created_by ON api_keys(created_by);
 
--- エージェントトークンテーブル
-CREATE TABLE IF NOT EXISTS agent_tokens (
-    agent_id TEXT PRIMARY KEY NOT NULL,  -- エージェントUUID
+-- ノードトークンテーブル
+CREATE TABLE IF NOT EXISTS node_tokens (
+    node_id TEXT PRIMARY KEY NOT NULL,  -- ノードUUID
     token_hash TEXT UNIQUE NOT NULL,  -- SHA-256ハッシュ
     created_at TEXT NOT NULL  -- ISO8601形式
 );
 
--- エージェントトークンハッシュインデックス（認証時の高速検索用）
-CREATE INDEX IF NOT EXISTS idx_agent_tokens_token_hash ON agent_tokens(token_hash);
+-- ノードトークンハッシュインデックス（認証時の高速検索用）
+CREATE INDEX IF NOT EXISTS idx_node_tokens_token_hash ON node_tokens(token_hash);
 
 -- 外部キー制約を有効化
 PRAGMA foreign_keys = ON;

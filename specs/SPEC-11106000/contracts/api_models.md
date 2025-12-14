@@ -42,37 +42,10 @@
 ```
 - **Errors**: 400 無効名/URL欠損, 409 重複, 424 HFから取得不可。
 
-## ~~POST /api/models/download~~ (廃止)
-
-**廃止日**: 2025-12-10
-**代替**: `POST /api/models/distribute` を使用してください。
-
-## POST /api/models/distribute
-
-- **Purpose**: 登録済みモデルをノードにダウンロード（配布）させる。
-- **Body**:
-
-```json
-{
-  "model_name": "hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf",
-  "target": "all",         // or "specific"
-  "node_ids": ["..."]      // target=specific のとき必須
-}
-```
-
-- **Response** 202:
-
-```json
-{ "task_ids": ["<uuid>", "..."] }
-```
-
-## GET /api/tasks/{task_id}
-
-- 既存を流用。`status/progress/speed` を含む DownloadTask を返す。
-
 ## GET /v1/models
 
 - 対応モデルに HF 登録分も含めて返す（idのみ。displayやsourceは拡張フィールドとしてオプション）。
+- ノードはこの一覧を参照し、`path` が参照できない場合は `GET /api/models/blob/:model_name` でモデルを取得する（ルーターからのpush配布は行わない）。
 
 ---
 
@@ -84,4 +57,5 @@ CLIコマンドは廃止されました。以下のAPIを直接使用してく�
 
 - モデル一覧: `GET /api/models/available`
 - モデル登録: `POST /api/models/register`
-- モデル配布: `POST /api/models/distribute`
+- ノード同期（一覧）: `GET /v1/models`
+- ノード同期（ファイル）: `GET /api/models/blob/:model_name`

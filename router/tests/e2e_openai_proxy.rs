@@ -25,31 +25,31 @@ use support::{
 };
 
 #[derive(Clone)]
-struct AgentStubState {
+struct NodeStubState {
     chat_response: Value,
     chat_stream_payload: String,
     generate_response: Value,
     generate_stream_payload: String,
 }
 
-async fn spawn_agent_stub(state: AgentStubState) -> TestServer {
+async fn spawn_node_stub(state: NodeStubState) -> TestServer {
     let shared_state = Arc::new(state);
     let router = Router::new()
-        .route("/v1/chat/completions", post(agent_chat_handler))
-        .route("/v1/completions", post(agent_generate_handler))
-        .route("/v1/models", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({"data": [{"id": "gpt-oss-20b"}], "object": "list"}))
-        }))
-        .route("/api/tags", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({"models": [{"name": "gpt-oss-20b", "size": 10000000000i64}]}))
-        }))
+        .route("/v1/chat/completions", post(node_chat_handler))
+        .route("/v1/completions", post(node_generate_handler))
+        .route(
+            "/v1/models",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({"data": [{"id": "gpt-oss-20b"}], "object": "list"}))
+            }),
+        )
         .with_state(shared_state);
 
     spawn_router(router).await
 }
 
-async fn agent_chat_handler(
-    State(state): State<Arc<AgentStubState>>,
+async fn node_chat_handler(
+    State(state): State<Arc<NodeStubState>>,
     Json(request): Json<ChatRequest>,
 ) -> Response {
     if request.model == "missing-model" {
@@ -70,8 +70,8 @@ async fn agent_chat_handler(
     Json(&state.chat_response).into_response()
 }
 
-async fn agent_generate_handler(
-    State(state): State<Arc<AgentStubState>>,
+async fn node_generate_handler(
+    State(state): State<Arc<NodeStubState>>,
     Json(request): Json<GenerateRequest>,
 ) -> Response {
     if request.model == "missing-model" {
@@ -95,7 +95,7 @@ async fn agent_generate_handler(
 #[tokio::test]
 async fn openai_proxy_end_to_end_updates_dashboard_history() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let node_stub = spawn_agent_stub(AgentStubState {
+    let node_stub = spawn_node_stub(NodeStubState {
         // OpenAI互換形式のレスポンス
         chat_response: json!({
             "id": "chatcmpl-test",
@@ -104,7 +104,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": "Hello from agent"
+                    "content": "Hello from node"
                 },
                 "finish_reason": "stop"
             }]
@@ -124,7 +124,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
 
     register_node(router.addr(), node_stub.addr())
         .await
-        .expect("agent registration should succeed");
+        .expect("node registration should succeed");
 
     let client = Client::new();
 
@@ -147,7 +147,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     let chat_payload: Value = chat_response.json().await.expect("chat json response");
     assert_eq!(
         chat_payload["choices"][0]["message"]["content"],
-        "Hello from agent"
+        "Hello from node"
     );
 
     // ストリーミングチャット（OpenAI互換API）
@@ -179,7 +179,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .expect("streaming chat body");
     assert!(
         streaming_body.contains("Hello stream"),
-        "expected streaming payload to contain agent content"
+        "expected streaming payload to contain node content"
     );
 
     // 生成API正常系（OpenAI互換API）
@@ -264,7 +264,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
 #[tokio::test]
 async fn openai_v1_models_list_with_registered_node() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let node_stub = spawn_agent_stub(AgentStubState {
+    let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
             "done": true
@@ -279,7 +279,7 @@ async fn openai_v1_models_list_with_registered_node() {
 
     register_node(router.addr(), node_stub.addr())
         .await
-        .expect("agent registration should succeed");
+        .expect("node registration should succeed");
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;
@@ -319,7 +319,7 @@ async fn openai_v1_models_list_with_registered_node() {
 #[tokio::test]
 async fn openai_v1_models_get_specific() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let node_stub = spawn_agent_stub(AgentStubState {
+    let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
             "done": true
@@ -334,7 +334,7 @@ async fn openai_v1_models_get_specific() {
 
     register_node(router.addr(), node_stub.addr())
         .await
-        .expect("agent registration should succeed");
+        .expect("node registration should succeed");
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;
@@ -358,7 +358,7 @@ async fn openai_v1_models_get_specific() {
 #[tokio::test]
 async fn openai_v1_models_not_found() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let node_stub = spawn_agent_stub(AgentStubState {
+    let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
             "done": true
@@ -373,7 +373,7 @@ async fn openai_v1_models_not_found() {
 
     register_node(router.addr(), node_stub.addr())
         .await
-        .expect("agent registration should succeed");
+        .expect("node registration should succeed");
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;

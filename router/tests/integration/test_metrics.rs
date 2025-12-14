@@ -11,16 +11,16 @@ use uuid::Uuid;
 #[tokio::test]
 #[ignore = "TDD RED phase - metrics implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_metrics_collection_and_storage() {
-    // Arrange: Coordinatorサーバー起動、ノード登録
-    // let registry = coordinator::registry::NodeRegistry::new();
-    // let load_manager = coordinator::balancer::LoadManager::new(registry.clone());
-    // let state = coordinator::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
-    // let app = coordinator::api::create_app(state).await;
+    // Arrange: Routerサーバー起動、ノード登録
+    // let registry = llm_router::registry::NodeRegistry::new();
+    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
+    // let state = llm_router::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
+    // let app = llm_router::api::create_router(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
     // ノード登録
-    // let agent_req = json!({
-    //     "machine_name": "metrics-test-agent",
+    // let node_req = json!({
+    //     "machine_name": "metrics-test-node",
     //     "ip_address": "192.168.100.50",
     //     "runtime_version": "0.1.0",
     //     "runtime_port": 11434,
@@ -32,10 +32,10 @@ async fn test_metrics_collection_and_storage() {
     //     "gpu_count": 1,
     //     "gpu_model": "Test GPU"
     // });
-    // let agent_response = server.post("/api/nodes/register")
-    //     .json(&agent_req)
+    // let node_response = server.post("/api/nodes")
+    //     .json(&node_req)
     //     .await;
-    // let node_id: Uuid = agent_response.json().get("node_id").as_str().unwrap().parse().unwrap();
+    // let node_id: Uuid = node_response.json().get("node_id").as_str().unwrap().parse().unwrap();
 
     let _node_id = Uuid::new_v4(); // テスト用プレースホルダー
 
@@ -69,11 +69,11 @@ async fn test_metrics_collection_and_storage() {
 #[tokio::test]
 #[ignore = "TDD RED phase - metrics implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_metrics_update_existing_data() {
-    // Arrange: Coordinatorサーバー起動、ノード登録、初回メトリクス送信
-    // let registry = coordinator::registry::NodeRegistry::new();
-    // let load_manager = coordinator::balancer::LoadManager::new(registry.clone());
-    // let state = coordinator::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
-    // let app = coordinator::api::create_app(state).await;
+    // Arrange: Routerサーバー起動、ノード登録、初回メトリクス送信
+    // let registry = llm_router::registry::NodeRegistry::new();
+    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
+    // let state = llm_router::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
+    // let app = llm_router::api::create_router(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
     let _node_id = Uuid::new_v4();
@@ -120,12 +120,12 @@ async fn test_metrics_update_existing_data() {
 
 #[tokio::test]
 #[ignore = "TDD RED phase - metrics implemented in SPEC-589f2df1, covered by unit tests"]
-async fn test_metrics_for_nonexistent_agent_returns_error() {
-    // Arrange: Coordinatorサーバー起動（ノード未登録）
-    // let registry = coordinator::registry::NodeRegistry::new();
-    // let load_manager = coordinator::balancer::LoadManager::new(registry.clone());
-    // let state = coordinator::AppState { registry, load_manager };
-    // let app = coordinator::api::create_app(state).await;
+async fn test_metrics_for_nonexistent_node_returns_error() {
+    // Arrange: Routerサーバー起動（ノード未登録）
+    // let registry = llm_router::registry::NodeRegistry::new();
+    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
+    // let state = llm_router::AppState { registry, load_manager };
+    // let app = llm_router::api::create_router(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
     let _nonexistent_node_id = Uuid::new_v4();

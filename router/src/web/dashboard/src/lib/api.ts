@@ -329,12 +329,6 @@ export const modelsApi = {
       body: JSON.stringify({ repo, filename }),
     }),
 
-  pull: (repo: string, filename: string) =>
-    fetchWithAuth<{ name: string; path: string }>('/api/models/pull', {
-      method: 'POST',
-      body: JSON.stringify({ repo, filename }),
-    }),
-
   delete: (modelName: string) =>
     fetchWithAuth<void>(`/api/models/${encodeURIComponent(modelName)}`, {
       method: 'DELETE',

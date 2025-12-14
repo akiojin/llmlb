@@ -1,16 +1,16 @@
-# SPEC-log-api: Agent / Coordinator Log Retrieval API
+# SPEC-log-api: Node / Router Log Retrieval API
 
 ## 目的
 - ノードの最新ログを HTTP 経由で取得できるようにし、ルーター経由でも同じ内容を参照できること。
 - ダッシュボードのログパネルはこの API を利用してログを表示できること。
 
 ## 機能要件
-- **FR-001 (Agent Logs API)**: ノードは `GET /api/logs?tail=N` で自身のログを返す。  
+- **FR-001 (Node Logs API)**: ノードは `GET /api/logs?tail=N` で自身のログを返す。  
   - デフォルト `tail=200`。`1 <= tail <= 2000` を許容、超過は 400。  
   - レスポンスは `{"entries": LogEntry[], "path": "…"}` のJSON。LogEntryは既存JSONLと同じフィールドを持つ。  
   - ログファイル未存在時は 200 で `entries: []` を返す。内部エラー時は 500。
 
-- **FR-002 (Coordinator Proxy)**: ルーターは `GET /api/agents/:id/logs?tail=N` で対象ノードのログ API をプロキシする。  
+- **FR-002 (Router Proxy)**: ルーターは `GET /api/nodes/:node_id/logs?tail=N` で対象ノードのログ API をプロキシする。  
   - ノードが 200 を返した場合は本文をそのまま返す。  
   - ノードが応答しない/タイムアウト/非200 の場合は 502 を返し、`{"error": "...reason..."}` を含める。
 
@@ -28,6 +28,6 @@
 - AC-001: ノード `/api/logs?tail=5` が末尾5行の JSONL を返す。  
   - 事前にテスト用ログファイルを用意し、行末5が返ることを確認。  
 - AC-002: ログファイルが存在しない場合でも 200・空ボディ。  
-- AC-003: ルーター `/api/agents/:id/logs?tail=3` が 200 を返し、ノードからの3行がそのまま届く。  
+- AC-003: ルーター `/api/nodes/:node_id/logs?tail=3` が 200 を返し、ノードからの3行がそのまま届く。  
 - AC-004: ノード停止/到達不可時は 502 かつ `error` メッセージを含む。  
 - AC-005: ダッシュボードのログパネルで最新ログテキストが表示される（スモーク/E2E）。

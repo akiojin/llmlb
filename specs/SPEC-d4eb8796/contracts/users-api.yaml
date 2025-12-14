@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: コーディネーターユーザー管理API
+  title: ルーターユーザー管理API
   description: ユーザーアカウントの作成・更新・削除API（管理者専用）
   version: 1.0.0
 

@@ -24,7 +24,7 @@ public:
 
         server_.Post("/api/health", [this](const httplib::Request& req, httplib::Response& res) {
             last_heartbeat_body = req.body;
-            last_heartbeat_token = req.get_header_value("X-Agent-Token");
+            last_heartbeat_token = req.get_header_value("X-Node-Token");
             res.status = heartbeat_status;
             res.set_content("ok", "text/plain");
         });
@@ -50,7 +50,7 @@ public:
     std::atomic<bool> stop_flag_{true};
 
     int register_status{200};
-    std::string register_response_body{R"({"node_id":"node-1","agent_token":"test-token-123"})"};
+    std::string register_response_body{R"({"node_id":"node-1","node_token":"test-token-123"})"};
     std::string last_register_body;
 
     int heartbeat_status{200};
@@ -79,7 +79,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
 
     EXPECT_TRUE(result.success);
     EXPECT_EQ(result.node_id, "node-1");
-    EXPECT_EQ(result.agent_token, "test-token-123");
+    EXPECT_EQ(result.node_token, "test-token-123");
     EXPECT_FALSE(server.last_register_body.empty());
 
     // Verify JSON structure matches router protocol
@@ -120,13 +120,13 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     server.start(18083);
 
     RouterClient client("http://127.0.0.1:18083");
-    bool ok = client.sendHeartbeat("node-xyz", "test-agent-token", "initializing");
+    bool ok = client.sendHeartbeat("node-xyz", "test-node-token", "initializing");
 
     server.stop();
 
     EXPECT_TRUE(ok);
     EXPECT_FALSE(server.last_heartbeat_body.empty());
-    EXPECT_EQ(server.last_heartbeat_token, "test-agent-token");
+    EXPECT_EQ(server.last_heartbeat_token, "test-node-token");
 
     // Verify new HealthCheckRequest format
     auto body = nlohmann::json::parse(server.last_heartbeat_body);
@@ -145,7 +145,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     server.server_.Post("/api/health", [&](const httplib::Request& req, httplib::Response& res) {
         hit_count++;
         server.last_heartbeat_body = req.body;
-        server.last_heartbeat_token = req.get_header_value("X-Agent-Token");
+        server.last_heartbeat_token = req.get_header_value("X-Node-Token");
         if (hit_count >= 2) {
             res.status = 200;
             res.set_content("ok", "text/plain");

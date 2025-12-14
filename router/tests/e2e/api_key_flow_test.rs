@@ -133,11 +133,11 @@ async fn test_complete_api_key_flow() {
         .await
         .unwrap();
 
-    // エージェントが登録されていないため503エラーが返されるが、認証は成功している
+    // ノードが登録されていないため503エラーが返されるが、認証は成功している
     assert!(
         use_key_response.status() == StatusCode::SERVICE_UNAVAILABLE
             || use_key_response.status() == StatusCode::OK,
-        "API key should authenticate successfully (503 = no agents, OK = success)"
+        "API key should authenticate successfully (503 = no nodes, OK = success)"
     );
 
     // Step 4: APIキーの一覧を取得

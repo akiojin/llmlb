@@ -153,11 +153,11 @@
 ### Bug Fixes
 
 * add support module to integration_gpu test harness ([d70a080](https://github.com/akiojin/runtime-router/commit/d70a08014c448a127f0a2f5c6e8b740f2781c81b))
-* **agent:** advance ready_models on pull and resend heartbeat when all ready ([0c5f91b](https://github.com/akiojin/runtime-router/commit/0c5f91bd3e0fd763fba4be64d79664e5883535f1))
-* **agent:** heartbeat uses placeholder metrics when collection fails ([87bf821](https://github.com/akiojin/runtime-router/commit/87bf8210c05481000a8821a706037d5dcc53ce51))
-* **agent:** mark ready when counts reached and push initial heartbeat ([5076c71](https://github.com/akiojin/runtime-router/commit/5076c71a84408c90ab7e27c5c0ac2e033bd93749))
-* **agent:** start api server before registration for health check ([f4e3241](https://github.com/akiojin/runtime-router/commit/f4e3241cb92cc0234f17aa61b77e991769d778a5))
-* **agent:** stop forcing initializing true when some models not ready ([95973d5](https://github.com/akiojin/runtime-router/commit/95973d531eaa7a2b9989a189ba853aec6974163d))
+* **node:** advance ready_models on pull and resend heartbeat when all ready ([0c5f91b](https://github.com/akiojin/runtime-router/commit/0c5f91bd3e0fd763fba4be64d79664e5883535f1))
+* **node:** heartbeat uses placeholder metrics when collection fails ([87bf821](https://github.com/akiojin/runtime-router/commit/87bf8210c05481000a8821a706037d5dcc53ce51))
+* **node:** mark ready when counts reached and push initial heartbeat ([5076c71](https://github.com/akiojin/runtime-router/commit/5076c71a84408c90ab7e27c5c0ac2e033bd93749))
+* **node:** start api server before registration for health check ([f4e3241](https://github.com/akiojin/runtime-router/commit/f4e3241cb92cc0234f17aa61b77e991769d778a5))
+* **node:** stop forcing initializing true when some models not ready ([95973d5](https://github.com/akiojin/runtime-router/commit/95973d531eaa7a2b9989a189ba853aec6974163d))
 * **auth:** openAI互換エンドポイントへのAPIキー認証適用とテスト修正 ([d9a09d4](https://github.com/akiojin/runtime-router/commit/d9a09d4d99920ec04cd1918761ead6e8020e25ff))
 * **auth:** 認証機能のテスト修正とレスポンス改善 ([f0305fa](https://github.com/akiojin/runtime-router/commit/f0305fa50f4284c8371878b4a4dec5591b76b9cb))
 * **build:** macOSでホストclang/arを利用 ([c7b2bed](https://github.com/akiojin/runtime-router/commit/c7b2bedbbdf1efa8d60590d064fc957e8b674b9b))
@@ -167,10 +167,10 @@
 * **proxy:** sync registry readiness when recording metrics ([e3fea5c](https://github.com/akiojin/runtime-router/commit/e3fea5ccf1f86a505354ecd954754123a8fb3e87))
 * **proxy:** unify header types and init metrics fields ([c112d97](https://github.com/akiojin/runtime-router/commit/c112d97fc1fd00d1854dfb710ba8407dac38d27b))
 * remove needless borrow in users_api_test ([155747e](https://github.com/akiojin/runtime-router/commit/155747ebecfef228c92fe697478b17543017dd76))
-* **rename:** agent registryをnode registryに修正 ([c304ebc](https://github.com/akiojin/runtime-router/commit/c304ebc363900f5b7b1f6eaa0677f08a5bb8b336))
+* **rename:** node registryをnode registryに修正 ([c304ebc](https://github.com/akiojin/runtime-router/commit/c304ebc363900f5b7b1f6eaa0677f08a5bb8b336))
 * **rename:** guiコードのアイコンファイル参照を修正 ([a64bd2e](https://github.com/akiojin/runtime-router/commit/a64bd2eba638b4e2724bebf39a704dbe751a8261))
 * **rename:** rename作業の残存箇所を修正してテストを全て通過させる ([bcb4cf7](https://github.com/akiojin/runtime-router/commit/bcb4cf72f832674f046039b614049d4f37550f24))
-* **rename:** support::coordinatorをsupport::routerに修正 ([9657d87](https://github.com/akiojin/runtime-router/commit/9657d87b493658194edd64a7dfa2290896b672c6))
+* **rename:** support::routerをsupport::routerに修正 ([9657d87](https://github.com/akiojin/runtime-router/commit/9657d87b493658194edd64a7dfa2290896b672c6))
 * **rename:** テストコード内の環境変数名を統一 ([704a328](https://github.com/akiojin/runtime-router/commit/704a328bdf8acecf99729632612bb237d8f0f38f))
 * **rename:** テストファイル内のクレート名参照を修正 ([39d9b25](https://github.com/akiojin/runtime-router/commit/39d9b257a983765486fe2efc633ab7166ce5431e))
 * **rename:** リネーム漏れ修正によりCI失敗を解消 ([bd0104b](https://github.com/akiojin/runtime-router/commit/bd0104b30352cfadc8aa220169b9dea96e4a79c3))
@@ -192,27 +192,27 @@
 * **ui,api:** address review feedback (logs route, csv, readiness render, banner/colspan) ([3e8a63c](https://github.com/akiojin/runtime-router/commit/3e8a63cb6ab100b7acd6f8a0985a1a29588e3656))
 * **ui:** keep detail modals hidden until opened ([a6b0029](https://github.com/akiojin/runtime-router/commit/a6b0029c6a6b63f7c30306bc8593c1a52416d1bd))
 * **ui:** keep modals hidden on load and cover with tests ([fec1040](https://github.com/akiojin/runtime-router/commit/fec104032bb111ee652f5be7eaa5a92febe36c0d))
-* **ui:** open agent modal without reference errors ([51fef50](https://github.com/akiojin/runtime-router/commit/51fef50806b3fe2e7430403cff16316f070fa9cc))
+* **ui:** open node modal without reference errors ([51fef50](https://github.com/akiojin/runtime-router/commit/51fef50806b3fe2e7430403cff16316f070fa9cc))
 * **ui:** show request timestamps in browser local time with TZ label ([19bc1c5](https://github.com/akiojin/runtime-router/commit/19bc1c518b51dafaf5ce4a303d1d5022f72bd9de))
 * use fully qualified path for DownloadTaskManager ([a7ab672](https://github.com/akiojin/runtime-router/commit/a7ab67211f34b1631ee85d31541396963d831d17))
 
 
 ### Features
 
-* **agent-api:** proxy openai traffic via agent endpoint ([fbdc3fa](https://github.com/akiojin/runtime-router/commit/fbdc3fa2cb264bf88e9fd4a5ebab431099d24ce4))
-* **agent-init:** propagate initializing/ready_models in heartbeat ([f0bf8e9](https://github.com/akiojin/runtime-router/commit/f0bf8e9a7802afc430b599e0a431a90b1a080be9))
-* **agent-pool:** add per-model runtime pool and route via agent api ([a453b53](https://github.com/akiojin/runtime-router/commit/a453b53496dfdd9e527035f2bf347b04167d91a0))
-* **agent-reg:** parse agent /v1/models on register and sync readiness ([d6465aa](https://github.com/akiojin/runtime-router/commit/d6465aa4cefa7f69c97c5c69ba9bfc3993afbd11))
-* **agent:** allow skipping models via OLLAMA_SKIP_MODELS ([60aebbc](https://github.com/akiojin/runtime-router/commit/60aebbcd6583d900330ec10733b1181f581e76a8))
-* **agent:** bootstrap all coordinator models via pool ([8c6a239](https://github.com/akiojin/runtime-router/commit/8c6a239cd0c0301d39a1ae4d615e8b0a2cc35ed2))
-* **agent:** t088-t090エージェント認証トークン統合を実装 ([daee161](https://github.com/akiojin/runtime-router/commit/daee161e37edd4b669794638841c754d9dbedf80))
-* **auth:** add authentication endpoints and agent token support ([8fcd37d](https://github.com/akiojin/runtime-router/commit/8fcd37d0816b190ddeb6044c6dd44c8ecbcdd4bd))
+* **node-api:** proxy openai traffic via node endpoint ([fbdc3fa](https://github.com/akiojin/runtime-router/commit/fbdc3fa2cb264bf88e9fd4a5ebab431099d24ce4))
+* **node-init:** propagate initializing/ready_models in heartbeat ([f0bf8e9](https://github.com/akiojin/runtime-router/commit/f0bf8e9a7802afc430b599e0a431a90b1a080be9))
+* **node-pool:** add per-model runtime pool and route via node api ([a453b53](https://github.com/akiojin/runtime-router/commit/a453b53496dfdd9e527035f2bf347b04167d91a0))
+* **node-reg:** parse node /v1/models on register and sync readiness ([d6465aa](https://github.com/akiojin/runtime-router/commit/d6465aa4cefa7f69c97c5c69ba9bfc3993afbd11))
+* **node:** allow skipping models via OLLAMA_SKIP_MODELS ([60aebbc](https://github.com/akiojin/runtime-router/commit/60aebbcd6583d900330ec10733b1181f581e76a8))
+* **node:** bootstrap all router models via pool ([8c6a239](https://github.com/akiojin/runtime-router/commit/8c6a239cd0c0301d39a1ae4d615e8b0a2cc35ed2))
+* **node:** t088-t090ノード認証トークン統合を実装 ([daee161](https://github.com/akiojin/runtime-router/commit/daee161e37edd4b669794638841c754d9dbedf80))
+* **auth:** add authentication endpoints and node token support ([8fcd37d](https://github.com/akiojin/runtime-router/commit/8fcd37d0816b190ddeb6044c6dd44c8ecbcdd4bd))
 * **auth:** implement password hashing and JWT (T032-T046 GREEN) ([72e9b03](https://github.com/akiojin/runtime-router/commit/72e9b03bd4243c0bbdf876ebbe4e843e706aa3a0))
 * **auth:** t047-t056認証ミドルウェアとdb操作実装 ([5717eb4](https://github.com/akiojin/runtime-router/commit/5717eb4d2fe51af647de3280596caca76bc30958))
 * **auth:** t057-t059認証api実装とappstate拡張 ([a53dd34](https://github.com/akiojin/runtime-router/commit/a53dd34b5a988c1bfbcf52119827f0b0dd3ab9c9))
 * **auth:** t060-t063ユーザー管理api実装 ([6958fe7](https://github.com/akiojin/runtime-router/commit/6958fe7b17716509c61473e76678a0df2cc48789))
 * **auth:** t064-t066 apiキー管理api実装 ([17de595](https://github.com/akiojin/runtime-router/commit/17de5952ed082173a46e7d1ba3dcbc829745dd09))
-* **auth:** t067エージェント登録apiにagent_token追加 ([2a65c97](https://github.com/akiojin/runtime-router/commit/2a65c97496d0822ef230943ba385c0a399976e47))
+* **auth:** t067ノード登録APIにnode_token追加 ([2a65c97](https://github.com/akiojin/runtime-router/commit/2a65c97496d0822ef230943ba385c0a399976e47))
 * **auth:** t068-t070初回起動時の管理者作成処理を実装 ([60fc0e1](https://github.com/akiojin/runtime-router/commit/60fc0e1a5c910bfddef34ed67044c93906c6b71f))
 * **auth:** t071-t074ルーター統合と認証ミドルウェア適用 ([a360860](https://github.com/akiojin/runtime-router/commit/a360860c9584b9b70444e89a3980381253e0d338))
 * **auth:** マージ feature/authenticate into feature/rename ([7053963](https://github.com/akiojin/runtime-router/commit/705396351f09ba087b049576c1d6977dc41892fb))
@@ -221,11 +221,11 @@
 * **dashboard:** track uptime since last online ([3a557fd](https://github.com/akiojin/runtime-router/commit/3a557fde66caa59d65b93224de7541952f530384))
 * **db:** implement SQLite migrations (T039-T041 GREEN) ([0e4ee72](https://github.com/akiojin/runtime-router/commit/0e4ee728a68eb3925986f5d058fb3331a83bd05d))
 * **frontend:** t075-t087フロントエンド実装完了 ([693dba7](https://github.com/akiojin/runtime-router/commit/693dba725eb2dee06559a9ea9a6e5717e4bf150b))
-* **logs:** add agent /api/logs and coordinator proxy integration ([4c93462](https://github.com/akiojin/runtime-router/commit/4c9346221314531d49ceee4bbc80cf5f9a8694de))
+* **logs:** add node /api/logs and router proxy integration ([4c93462](https://github.com/akiojin/runtime-router/commit/4c9346221314531d49ceee4bbc80cf5f9a8694de))
 * **models:** align available list to required five models ([9feb85d](https://github.com/akiojin/runtime-router/commit/9feb85d029a7f28c46e2f1afa70c3669cda1c097))
 * **models:** lock supported list to requested models ([c4a847c](https://github.com/akiojin/runtime-router/commit/c4a847c792b47628337188a29d59b2e63a84d941))
-* **proxy:** block until ready agent (queue-like wait, max 1024 waiters) ([eee03dc](https://github.com/akiojin/runtime-router/commit/eee03dc11c8bacabf21b92d774071a77599497d1))
-* **proxy:** route openai traffic via agent api and stream passthrough ([9c333ea](https://github.com/akiojin/runtime-router/commit/9c333eaf1390af0e68e487b3b46936b260265109))
+* **proxy:** block until ready node (queue-like wait, max 1024 waiters) ([eee03dc](https://github.com/akiojin/runtime-router/commit/eee03dc11c8bacabf21b92d774071a77599497d1))
+* **proxy:** route openai traffic via node api and stream passthrough ([9c333ea](https://github.com/akiojin/runtime-router/commit/9c333eaf1390af0e68e487b3b46936b260265109))
 
 
 ### BREAKING CHANGES
@@ -235,7 +235,7 @@
 既存ユーザーは以下の対応が必要です:
 
 1. データ移行:
-   * 旧: ~/.runtime-coordinator/
+   * 旧: ~/.runtime-router/
    * 新: ~/.llm-router/
 
 2. 環境変数更新:
@@ -243,8 +243,8 @@
    * `AGENT_*`→`NODE_*`
 
 3. 実行ファイル名:
-   * `runtime-coordinator-coordinator`→`or-router`
-   * `runtime-coordinator-agent`→`or-node`
+   * `runtime-router-router`→`or-router`
+   * `runtime-router-node`→`or-node`
 
 4. Docker/設定ファイル:
    * docker-compose.ymlのサービス名変更
@@ -255,16 +255,16 @@
 
 ### Bug Fixes
 
-* **agent:** 設定フォームで空の数値入力を無視 ([c16a7fb](https://github.com/akiojin/runtime-router/commit/c16a7fb7e61e528c13fd9ff3278409ccb50207d7))
+* **node:** 設定フォームで空の数値入力を無視 ([c16a7fb](https://github.com/akiojin/runtime-router/commit/c16a7fb7e61e528c13fd9ff3278409ccb50207d7))
 * **ui:** モデル管理タブの初期化を修正 ([3cac7b6](https://github.com/akiojin/runtime-router/commit/3cac7b69edc1002375e61f63d326f155d6a0e229))
 
 
 ### Features
 
-* **agent:** enforce gpu usage ([49fe342](https://github.com/akiojin/runtime-router/commit/49fe342ae4a06330384b34099bd5c4ec24979b61))
+* **node:** enforce gpu usage ([49fe342](https://github.com/akiojin/runtime-router/commit/49fe342ae4a06330384b34099bd5c4ec24979b61))
 * **api:** add openai compatibility endpoints ([705cbe9](https://github.com/akiojin/runtime-router/commit/705cbe9dd27d2dbfe79e24b7d59936c62faa6ca8))
-* **balancer:** prioritize gpu-capable agents ([0163d79](https://github.com/akiojin/runtime-router/commit/0163d7999369bf254086ed9005cd1fa7ddd2066d))
-* **coordinator:** log client ip in request history ([d00e56b](https://github.com/akiojin/runtime-router/commit/d00e56b1ac237b2c4967d891870e707285e8debc))
+* **balancer:** prioritize gpu-capable nodes ([0163d79](https://github.com/akiojin/runtime-router/commit/0163d7999369bf254086ed9005cd1fa7ddd2066d))
+* **router:** log client ip in request history ([d00e56b](https://github.com/akiojin/runtime-router/commit/d00e56b1ac237b2c4967d891870e707285e8debc))
 * **installer:** windowsアイコンを統一しメニュー登録 ([aa828bd](https://github.com/akiojin/runtime-router/commit/aa828bdf48fb200b46fe50dd6c4c3a570af82f0f))
 * **logging:** ダッシュボードでノードログを確認できるようにする ([09cad04](https://github.com/akiojin/runtime-router/commit/09cad047b286286d402214439cfddf58f425074a))
 
@@ -273,22 +273,22 @@
 
 ### Bug Fixes
 
-* **coordinator:** ダッシュボードをバイナリに同梱 ([b8c6c7d](https://github.com/akiojin/runtime-router/commit/b8c6c7de14aec59a740f29d51d13511eff8dcbb4))
+* **router:** ダッシュボードをバイナリに同梱 ([b8c6c7d](https://github.com/akiojin/runtime-router/commit/b8c6c7de14aec59a740f29d51d13511eff8dcbb4))
 
 # [1.4.0](https://github.com/akiojin/runtime-router/compare/v1.3.1...v1.4.0) (2025-11-14)
 
 
 ### Bug Fixes
 
-* **agent:** windows環境でのnvidia gpu検出を修正 ([ef9a8a8](https://github.com/akiojin/runtime-router/commit/ef9a8a8091ad8c44e7b014e1b7147d23bfce968e))
+* **node:** windows環境でのnvidia gpu検出を修正 ([ef9a8a8](https://github.com/akiojin/runtime-router/commit/ef9a8a8091ad8c44e7b014e1b7147d23bfce968e))
 * **test:** windowsでnvidia gpu検出テストをスキップ ([9cd8a77](https://github.com/akiojin/runtime-router/commit/9cd8a7774d47eb6418424496dd28f4898c36e75e))
 
 
 ### Features
 
-* **coordinator:** add system tray support ([78a0ad2](https://github.com/akiojin/runtime-router/commit/78a0ad24b02447dbfb6501ebeabccc758fb92c40))
-* **coordinator:** add system tray support ([15ae54a](https://github.com/akiojin/runtime-router/commit/15ae54ade0f45310dab1c57e4e10b0e8c971f623))
-* **tray:** refresh agent/coordinator icons ([0cf6f7d](https://github.com/akiojin/runtime-router/commit/0cf6f7df2cad819907f50087745615e38334afe6))
+* **router:** add system tray support ([78a0ad2](https://github.com/akiojin/runtime-router/commit/78a0ad24b02447dbfb6501ebeabccc758fb92c40))
+* **router:** add system tray support ([15ae54a](https://github.com/akiojin/runtime-router/commit/15ae54ade0f45310dab1c57e4e10b0e8c971f623))
+* **tray:** refresh node/router icons ([0cf6f7d](https://github.com/akiojin/runtime-router/commit/0cf6f7df2cad819907f50087745615e38334afe6))
 * **tray:** システムトレイアイコンを刷新 ([a44569f](https://github.com/akiojin/runtime-router/commit/a44569f48581b56ee065c805471f3ed6fe6da98d))
 
 ## [1.3.1](https://github.com/akiojin/runtime-router/compare/v1.3.0...v1.3.1) (2025-11-14)
@@ -309,9 +309,9 @@
 
 ### Features
 
-* **agent:** ノード側HTTPサーバーとモデルプルAPI実装 (T033) ([2142f53](https://github.com/akiojin/runtime-router/commit/2142f53bc67d11550d7569bcc5b3c4e8848a36fb))
-* **coordinator:** ノード登録時の自動モデル配布機能を実装 (T032) ([7935be0](https://github.com/akiojin/runtime-router/commit/7935be05098c0ad458609dc53af66f94caf442bb))
-* **coordinator:** ルーター主導のモデル配布機能を実装 (Phase 3.1-3.3) ([62edaf7](https://github.com/akiojin/runtime-router/commit/62edaf7435e82cacd177ae3eb6939a0be72ff129))
+* **node:** ノード側HTTPサーバーとモデルプルAPI実装 (T033) ([2142f53](https://github.com/akiojin/runtime-router/commit/2142f53bc67d11550d7569bcc5b3c4e8848a36fb))
+* **router:** ノード登録時の自動モデル配布機能を実装 (T032) ([7935be0](https://github.com/akiojin/runtime-router/commit/7935be05098c0ad458609dc53af66f94caf442bb))
+* **router:** ルーター主導のモデル配布機能を実装 (Phase 3.1-3.3) ([62edaf7](https://github.com/akiojin/runtime-router/commit/62edaf7435e82cacd177ae3eb6939a0be72ff129))
 * **error:** エラーハンドリング強化 (T039) ([5350a31](https://github.com/akiojin/runtime-router/commit/5350a31bd9dae6b6c7690d25767ab18e1c3a42cb))
 * **logging:** ロギング強化 (T040) ([8cd8575](https://github.com/akiojin/runtime-router/commit/8cd85758bcaa5eeeef5e77e8d4dbb6ed8091f80e))
 * **models:** 進捗報告機能とノード自動配布を実装 (T034, T032拡張) ([9c81c48](https://github.com/akiojin/runtime-router/commit/9c81c4894c25b6403feafc802faf6adabd0b7404))
@@ -347,15 +347,15 @@
 
 ### Bug Fixes
 
-* **agent:** address tray clippy warnings ([ee119e0](https://github.com/akiojin/runtime-router/commit/ee119e04c467339c5a940d982a45a52f7e3c62a1))
-* **agent:** silence windows lint warnings ([17dcebc](https://github.com/akiojin/runtime-router/commit/17dcebc6f5a2f21ecbdfd3699fe28990a1fd95f5))
+* **node:** address tray clippy warnings ([ee119e0](https://github.com/akiojin/runtime-router/commit/ee119e04c467339c5a940d982a45a52f7e3c62a1))
+* **node:** silence windows lint warnings ([17dcebc](https://github.com/akiojin/runtime-router/commit/17dcebc6f5a2f21ecbdfd3699fe28990a1fd95f5))
 * satisfy clippy on tray module ([c5a38be](https://github.com/akiojin/runtime-router/commit/c5a38beaac113d2edfbb9b0a1e5a2c39f251f114))
 
 
 ### Features
 
-* **agent:** add system tray gui and installers ([727fd2d](https://github.com/akiojin/runtime-router/commit/727fd2dc5f69ed577d474e0dfdd5b3eaf8b95894))
-* **agent:** switch settings to env vars and panel ([a3fa0a3](https://github.com/akiojin/runtime-router/commit/a3fa0a30601b00d0ee541d2ff9682d9ea8d21d6c))
+* **node:** add system tray gui and installers ([727fd2d](https://github.com/akiojin/runtime-router/commit/727fd2dc5f69ed577d474e0dfdd5b3eaf8b95894))
+* **node:** switch settings to env vars and panel ([a3fa0a3](https://github.com/akiojin/runtime-router/commit/a3fa0a30601b00d0ee541d2ff9682d9ea8d21d6c))
 * **docker:** macOS SDKを使用したクロスコンパイル環境を追加 ([4b5b527](https://github.com/akiojin/runtime-router/commit/4b5b527c6456b6a5b2c1a8ca06987e696887997d))
 
 ## [1.1.1](https://github.com/akiojin/runtime-router/compare/v1.1.0...v1.1.1) (2025-11-11)
@@ -435,14 +435,14 @@
 ## Bug Fixes
 
 * .gitattributesで改行をLFに統一 ([a7d3add](https://github.com/akiojin/runtime-router/commit/a7d3add456699819409e7775f5b3b9639c5c0c22))
-* **agent:** default to cpu mode and detect premature runtime exit ([306e794](https://github.com/akiojin/runtime-router/commit/306e7941d3a9aa46be6b99e5f461e50b4ee3052b))
-* **agent:** detect runtime arch for runtime downloads ([2b38b41](https://github.com/akiojin/runtime-router/commit/2b38b410d616ab013c6f3a4b62d20bf6acd9f117))
-* **agent:** Docker for MacでApple Silicon GPUを検出可能に ([e80c2ac](https://github.com/akiojin/runtime-router/commit/e80c2acaf83f465938eb35e1fd2f338da4d680b7))
-* **agent:** follow github runtime download and allow override ([71d5257](https://github.com/akiojin/runtime-router/commit/71d525755fd2aa84c6f81e9bfb45b71150f1da9a))
-* **agent:** runtime psでruntimeバイナリの正しいパスを使用 ([5c04857](https://github.com/akiojin/runtime-router/commit/5c0485758e62eedf8865ec306067d215c00b3f2d))
-* **agent:** pick runtime archive based on architecture ([bc8578a](https://github.com/akiojin/runtime-router/commit/bc8578a9336f2109fd49ee060367737abe3deceb))
-* **agent:** point to archive assets for downloads ([db41214](https://github.com/akiojin/runtime-router/commit/db412148aade1f78225f3b76ed0e572178bcc0d2))
-* **agent:** set user-agent for runtime download ([5ec8dc8](https://github.com/akiojin/runtime-router/commit/5ec8dc8b17dfc8c59efb8df47108cfe76aa8cb7e))
+* **node:** default to cpu mode and detect premature runtime exit ([306e794](https://github.com/akiojin/runtime-router/commit/306e7941d3a9aa46be6b99e5f461e50b4ee3052b))
+* **node:** detect runtime arch for runtime downloads ([2b38b41](https://github.com/akiojin/runtime-router/commit/2b38b410d616ab013c6f3a4b62d20bf6acd9f117))
+* **node:** Docker for MacでApple Silicon GPUを検出可能に ([e80c2ac](https://github.com/akiojin/runtime-router/commit/e80c2acaf83f465938eb35e1fd2f338da4d680b7))
+* **node:** follow github runtime download and allow override ([71d5257](https://github.com/akiojin/runtime-router/commit/71d525755fd2aa84c6f81e9bfb45b71150f1da9a))
+* **node:** runtime psでruntimeバイナリの正しいパスを使用 ([5c04857](https://github.com/akiojin/runtime-router/commit/5c0485758e62eedf8865ec306067d215c00b3f2d))
+* **node:** pick runtime archive based on architecture ([bc8578a](https://github.com/akiojin/runtime-router/commit/bc8578a9336f2109fd49ee060367737abe3deceb))
+* **node:** point to archive assets for downloads ([db41214](https://github.com/akiojin/runtime-router/commit/db412148aade1f78225f3b76ed0e572178bcc0d2))
+* **node:** set user-node for runtime download ([5ec8dc8](https://github.com/akiojin/runtime-router/commit/5ec8dc8b17dfc8c59efb8df47108cfe76aa8cb7e))
 * **api:** clippyが警告するテストモジュール配置を調整 ([16720df](https://github.com/akiojin/runtime-router/commit/16720df8516b16d24c8218c21101f2232c182a34))
 * **api:** openai proxy returns upstream errors ([549ae48](https://github.com/akiojin/runtime-router/commit/549ae484565017d299f9fa7842c60128f9d68b5a))
 * **api:** ダッシュボード静的配信のルーターとテストを修正 ([02b7a24](https://github.com/akiojin/runtime-router/commit/02b7a246a47ad3d0ee62c263f5aece70cc68dfec))
@@ -461,7 +461,7 @@
 * clippy警告とドキュメントコメント混在を修正 ([f9fca44](https://github.com/akiojin/runtime-router/commit/f9fca44a4fb616a7a7035dc271b8d5107b4b8734))
 * clippy警告の解消とメトリクス更新の抽象化 ([6052d0d](https://github.com/akiojin/runtime-router/commit/6052d0d1e4eb1d1ed4532f9bc0358e50fe1284c5))
 * commitlint ジョブを常に実行 ([188dca3](https://github.com/akiojin/runtime-router/commit/188dca3a2cde4190155b35c4bc897e07ad14b8c7))
-* **coordinator:** allow multiple agents per machine/port ([ae9cf73](https://github.com/akiojin/runtime-router/commit/ae9cf73e321b25495c6567f0d69aa478af6121c7))
+* **router:** allow multiple nodes per machine/port ([ae9cf73](https://github.com/akiojin/runtime-router/commit/ae9cf73e321b25495c6567f0d69aa478af6121c7))
 * **dashboard:** Chart.jsのテキスト色をより明るく調整 ([cfcdf23](https://github.com/akiojin/runtime-router/commit/cfcdf23f9b84bd318535a53ff39be9b729bde8d3)), closes [#e2e8f0](https://github.com/akiojin/runtime-router/issues/e2e8f0)
 * **dashboard:** GPUモデル名を表示してユーザー体験を改善 ([6d9ee31](https://github.com/akiojin/runtime-router/commit/6d9ee3129395f326dc5b69b283de41cd04f1d03b))
 * **dashboard:** GPU情報をDashboardAgentに追加 ([9216198](https://github.com/akiojin/runtime-router/commit/921619811ee3abc7f466f05b7e2998e1d6f14de4))
@@ -479,7 +479,7 @@
 * **scripts:** finish-feature.shのブランチ名制限を緩和 ([0b70969](https://github.com/akiojin/runtime-router/commit/0b70969267fa6d2f7107e07edbee4aee19ed0d40))
 * **specify:** Worktree内でのSPEC作成をサポート ([d1f9244](https://github.com/akiojin/runtime-router/commit/d1f9244a2d2776eff61bcb2e66ef9d5c30c35637))
 * SQLiteをJSONファイルストレージに置き換え ([d03285f](https://github.com/akiojin/runtime-router/commit/d03285fd0c46fcfdc2c095af8a91454cd8b2df77))
-* **storage:** 破損したagents.jsonを自動復旧 ([e3249b7](https://github.com/akiojin/runtime-router/commit/e3249b7f649def1431917bdf53ddf00d152dfde8))
+* **storage:** 破損したnodes.jsonを自動復旧 ([e3249b7](https://github.com/akiojin/runtime-router/commit/e3249b7f649def1431917bdf53ddf00d152dfde8))
 * **test:** clippy警告を修正 - manual_range_containsルールに対応 ([e030a55](https://github.com/akiojin/runtime-router/commit/e030a55bafe06befc9088ae0b5ab8d25d934377c))
 * **test:** contract testsの未使用変数警告を修正 ([d01220f](https://github.com/akiojin/runtime-router/commit/d01220fff92637386e909b187f502d8282fd12bc))
 * **test:** GPU必須検証エラーメッセージのテスト期待値を修正 ([32dab36](https://github.com/akiojin/runtime-router/commit/32dab36192876af772a2fb0dc1e4c4bebdcc98b8))
@@ -493,51 +493,51 @@
 
 ## Features
 
-* **agent:** Agent構造体にGPU能力フィールドを追加してダッシュボード表示対応 ([7e293ab](https://github.com/akiojin/runtime-router/commit/7e293ab37467b55327ce7e0dbbc5eec6e5c3c382))
-* **agent:** allow configurable startup timeout and cpu fallback ([a847211](https://github.com/akiojin/runtime-router/commit/a847211461fde2bc9b7eae1053793dcd16974cca))
-* **agent:** extract runtime archives on download ([ca9af7c](https://github.com/akiojin/runtime-router/commit/ca9af7c34db58519edf66c1e565be3c8d2f60861))
-* **agent:** GPU検出PoCを作成しruntime ps検出を削除 ([9170e68](https://github.com/akiojin/runtime-router/commit/9170e68144e696dce9e21c0ab572deaea0d90712))
-* **agent:** GPU検出ロジックを強化（PoCからの統合） ([185544f](https://github.com/akiojin/runtime-router/commit/185544f2fab6a3f56f72f299ef81b95a827d8f27))
-* **agent:** improve registration retry and dashboard layout ([973096b](https://github.com/akiojin/runtime-router/commit/973096b50667210598adf97561206771d111a434))
-* **agent:** runtime psコマンドによるGPU検出を追加 ([46f1541](https://github.com/akiojin/runtime-router/commit/46f154102f784cc08a38735b6c9dd8683e98448b))
-* **agent:** LLM runtime自動ダウンロードのチェックサム検証機能実装 ([215b5b5](https://github.com/akiojin/runtime-router/commit/215b5b50e6a59bc444a3a6c66b91103cf9525f99))
-* **agent:** LLM runtime自動ダウンロードのプロキシ対応実装 ([f3b2c18](https://github.com/akiojin/runtime-router/commit/f3b2c189b2a51a1018840d67e2f8b4843431c30f))
-* **agent:** LLM runtime自動ダウンロードのリトライ機能実装 ([1f93d74](https://github.com/akiojin/runtime-router/commit/1f93d74cc181a2f98b72eac082c9039b501eecf5))
-* **agent:** LLM runtime自動ダウンロードの進捗表示機能実装 ([e3fb1ce](https://github.com/akiojin/runtime-router/commit/e3fb1ceb259be6bd8649b05dd6727e9fd873b81e))
-* **agent:** pull_model()にリトライ機能を統合 ([4784665](https://github.com/akiojin/runtime-router/commit/478466515824fc638edd1186049f1f996deeee74))
-* **agent:** pull_model()に進捗表示機能を統合 ([cda8961](https://github.com/akiojin/runtime-router/commit/cda89615f01755aedb80553ee19d86c5e2fd83a6))
-* **agent:** T058 - LLM runtime自動管理実装（自動ダウンロード・起動） ([04f886d](https://github.com/akiojin/runtime-router/commit/04f886d07db1d4a796372f984b1b95e3ce611355))
-* **agent:** T059-T062 - Agent基本機能実装（登録・ハートビート・メトリクス） ([2e3b9d0](https://github.com/akiojin/runtime-router/commit/2e3b9d0fac6adbdcf822d525e5b2d2918544379c))
-* **agent:** ノード削除フローを実装 ([ef9d28f](https://github.com/akiojin/runtime-router/commit/ef9d28f2cef3a11cad76febb924a38012858c516))
-* **agent:** カスタム設定の永続化を実装 ([2589219](https://github.com/akiojin/runtime-router/commit/25892190feb9adbddd76918b67acf133493c3f28))
-* **agent:** 強制切断APIとUI対応 ([d8b3072](https://github.com/akiojin/runtime-router/commit/d8b307278068cec54e817f72c837f52a7ead1917))
-* **api:** expose per-agent metrics history ([c28b9d7](https://github.com/akiojin/runtime-router/commit/c28b9d771e60cbac0ed28cd39cae56ae5944478c))
+* **node:** Node構造体にGPU能力フィールドを追加してダッシュボード表示対応 ([7e293ab](https://github.com/akiojin/runtime-router/commit/7e293ab37467b55327ce7e0dbbc5eec6e5c3c382))
+* **node:** allow configurable startup timeout and cpu fallback ([a847211](https://github.com/akiojin/runtime-router/commit/a847211461fde2bc9b7eae1053793dcd16974cca))
+* **node:** extract runtime archives on download ([ca9af7c](https://github.com/akiojin/runtime-router/commit/ca9af7c34db58519edf66c1e565be3c8d2f60861))
+* **node:** GPU検出PoCを作成しruntime ps検出を削除 ([9170e68](https://github.com/akiojin/runtime-router/commit/9170e68144e696dce9e21c0ab572deaea0d90712))
+* **node:** GPU検出ロジックを強化（PoCからの統合） ([185544f](https://github.com/akiojin/runtime-router/commit/185544f2fab6a3f56f72f299ef81b95a827d8f27))
+* **node:** improve registration retry and dashboard layout ([973096b](https://github.com/akiojin/runtime-router/commit/973096b50667210598adf97561206771d111a434))
+* **node:** runtime psコマンドによるGPU検出を追加 ([46f1541](https://github.com/akiojin/runtime-router/commit/46f154102f784cc08a38735b6c9dd8683e98448b))
+* **node:** LLM runtime自動ダウンロードのチェックサム検証機能実装 ([215b5b5](https://github.com/akiojin/runtime-router/commit/215b5b50e6a59bc444a3a6c66b91103cf9525f99))
+* **node:** LLM runtime自動ダウンロードのプロキシ対応実装 ([f3b2c18](https://github.com/akiojin/runtime-router/commit/f3b2c189b2a51a1018840d67e2f8b4843431c30f))
+* **node:** LLM runtime自動ダウンロードのリトライ機能実装 ([1f93d74](https://github.com/akiojin/runtime-router/commit/1f93d74cc181a2f98b72eac082c9039b501eecf5))
+* **node:** LLM runtime自動ダウンロードの進捗表示機能実装 ([e3fb1ce](https://github.com/akiojin/runtime-router/commit/e3fb1ceb259be6bd8649b05dd6727e9fd873b81e))
+* **node:** pull_model()にリトライ機能を統合 ([4784665](https://github.com/akiojin/runtime-router/commit/478466515824fc638edd1186049f1f996deeee74))
+* **node:** pull_model()に進捗表示機能を統合 ([cda8961](https://github.com/akiojin/runtime-router/commit/cda89615f01755aedb80553ee19d86c5e2fd83a6))
+* **node:** T058 - LLM runtime自動管理実装（自動ダウンロード・起動） ([04f886d](https://github.com/akiojin/runtime-router/commit/04f886d07db1d4a796372f984b1b95e3ce611355))
+* **node:** T059-T062 - Node基本機能実装（登録・ハートビート・メトリクス） ([2e3b9d0](https://github.com/akiojin/runtime-router/commit/2e3b9d0fac6adbdcf822d525e5b2d2918544379c))
+* **node:** ノード削除フローを実装 ([ef9d28f](https://github.com/akiojin/runtime-router/commit/ef9d28f2cef3a11cad76febb924a38012858c516))
+* **node:** カスタム設定の永続化を実装 ([2589219](https://github.com/akiojin/runtime-router/commit/25892190feb9adbddd76918b67acf133493c3f28))
+* **node:** 強制切断APIとUI対応 ([d8b3072](https://github.com/akiojin/runtime-router/commit/d8b307278068cec54e817f72c837f52a7ead1917))
+* **api:** expose per-node metrics history ([c28b9d7](https://github.com/akiojin/runtime-router/commit/c28b9d771e60cbac0ed28cd39cae56ae5944478c))
 * **api:** ノード設定APIを追加 ([6a760d4](https://github.com/akiojin/runtime-router/commit/6a760d4f2f78752a9acf7b4fb8e77d456db004c4))
 * **balancer:** implement load-aware balancing ([5c4da94](https://github.com/akiojin/runtime-router/commit/5c4da94e10e8751e12083848608050f85b234b2d))
 * **balancer:** improve summary averaging ([db2fca3](https://github.com/akiojin/runtime-router/commit/db2fca30d8aa9dc22fed37eaaff779e1caffac08))
-* **balancer:** prefer lower latency agents ([0f61057](https://github.com/akiojin/runtime-router/commit/0f61057adc2834cf0a433dbb9702032a54e21ef4))
+* **balancer:** prefer lower latency nodes ([0f61057](https://github.com/akiojin/runtime-router/commit/0f61057adc2834cf0a433dbb9702032a54e21ef4))
 * commitlint設定とci.ymlバックアップ作成 ([2056223](https://github.com/akiojin/runtime-router/commit/205622335d1349b38dbdad545332be9a1c679fa6))
 * commitlint設定とci.ymlバックアップ作成 ([de2c34e](https://github.com/akiojin/runtime-router/commit/de2c34e53937c5522e3d0cfaba56604f46fc08b0))
 * **common:** Phase 3.3完了 - Common層実装 (T019-T026) ([3c64c09](https://github.com/akiojin/runtime-router/commit/3c64c09271e6b59a12da11c2793b61279dbed446))
-* **coordinator:** AppStateにRequestHistoryStorage追加 ([83d1d5e](https://github.com/akiojin/runtime-router/commit/83d1d5ebddf4b82d8f29a1eac56b74836c47e4ed))
-* **coordinator:** GPU検証エラーとログの改善 ([746c617](https://github.com/akiojin/runtime-router/commit/746c6173ec4d7df097b698949ae6b687f685a30c))
-* **coordinator:** return json validation errors ([bd78d3a](https://github.com/akiojin/runtime-router/commit/bd78d3ac071f5483c55d3c0d3a4c6513bae0bd4d))
-* **coordinator:** Setup タスク完了（T001-T003） ([145074b](https://github.com/akiojin/runtime-router/commit/145074b6cc98ffea07b241c722c7f4f0ce4658b4))
-* **coordinator:** T027-T031 - Agent登録API実装（Contract Test T009対応） ([e87ce99](https://github.com/akiojin/runtime-router/commit/e87ce99e7f8a7ba415e33e50ae652ef77f25978d))
-* **coordinator:** T032, T034 - ヘルスチェックAPI実装（Contract Test T010対応） ([f43242a](https://github.com/akiojin/runtime-router/commit/f43242a3c6a590c38814f6397f87b70089775d10))
-* **coordinator:** T036-T039 - ProxyAPI実装（Contract Test T011-T012対応） ([28a2ca3](https://github.com/akiojin/runtime-router/commit/28a2ca3691fb88436ff014a9e9c6979700cb74fb))
-* **coordinator:** T040-T041 - Agent一覧API実装（Contract Test T013対応） ([eef5a9f](https://github.com/akiojin/runtime-router/commit/eef5a9f9430cdbd20a79ac34b02e57bd49f451d0))
-* **coordinator:** T042-T045 - DB永続化実装完了 ([303ca71](https://github.com/akiojin/runtime-router/commit/303ca71d39a140bc26201410d53f8e6d8debf41c))
-* **coordinator:** T046-T048 - バックグラウンドヘルスモニター実装 ([5d970f6](https://github.com/akiojin/runtime-router/commit/5d970f6598d7e8a3505b4b9b4f7bee2a7854e010))
-* **coordinator:** ストレージ層実装完了（T014-T019） ([68a60bc](https://github.com/akiojin/runtime-router/commit/68a60bc37760bde1503c449db035211881bf8408))
-* **coordinator:** メトリクスAPIハンドラー実装 (T016) - Phase 2.3完了 ([438242c](https://github.com/akiojin/runtime-router/commit/438242cf5512b124a7fd73b56512b509dab868a8))
-* **coordinator:** メトリクスベースロードバランシングのコア実装 (T011-T015) ([753c1c7](https://github.com/akiojin/runtime-router/commit/753c1c7bb38636ba0612475ef8db485c89da4eb8))
-* **coordinator:** メトリクスベースロードバランシングの基盤実装 ([cbee350](https://github.com/akiojin/runtime-router/commit/cbee35095d630b70d487d2bb8c577d083951ad6d))
-* **coordinator:** リクエスト/レスポンス履歴保存機能を実装 ([6655cba](https://github.com/akiojin/runtime-router/commit/6655cba3439ff801c728b86da9f28e19f727f566))
-* **coordinator:** 環境変数でロードバランサーモード切り替え実装 (T017-T019) - Phase 2.4完了 ([fe6e428](https://github.com/akiojin/runtime-router/commit/fe6e428c6dedfa153a7c9f93c21357181cc7c1aa))
+* **router:** AppStateにRequestHistoryStorage追加 ([83d1d5e](https://github.com/akiojin/runtime-router/commit/83d1d5ebddf4b82d8f29a1eac56b74836c47e4ed))
+* **router:** GPU検証エラーとログの改善 ([746c617](https://github.com/akiojin/runtime-router/commit/746c6173ec4d7df097b698949ae6b687f685a30c))
+* **router:** return json validation errors ([bd78d3a](https://github.com/akiojin/runtime-router/commit/bd78d3ac071f5483c55d3c0d3a4c6513bae0bd4d))
+* **router:** Setup タスク完了（T001-T003） ([145074b](https://github.com/akiojin/runtime-router/commit/145074b6cc98ffea07b241c722c7f4f0ce4658b4))
+* **router:** T027-T031 - Node登録API実装（Contract Test T009対応） ([e87ce99](https://github.com/akiojin/runtime-router/commit/e87ce99e7f8a7ba415e33e50ae652ef77f25978d))
+* **router:** T032, T034 - ヘルスチェックAPI実装（Contract Test T010対応） ([f43242a](https://github.com/akiojin/runtime-router/commit/f43242a3c6a590c38814f6397f87b70089775d10))
+* **router:** T036-T039 - ProxyAPI実装（Contract Test T011-T012対応） ([28a2ca3](https://github.com/akiojin/runtime-router/commit/28a2ca3691fb88436ff014a9e9c6979700cb74fb))
+* **router:** T040-T041 - Node一覧API実装（Contract Test T013対応） ([eef5a9f](https://github.com/akiojin/runtime-router/commit/eef5a9f9430cdbd20a79ac34b02e57bd49f451d0))
+* **router:** T042-T045 - DB永続化実装完了 ([303ca71](https://github.com/akiojin/runtime-router/commit/303ca71d39a140bc26201410d53f8e6d8debf41c))
+* **router:** T046-T048 - バックグラウンドヘルスモニター実装 ([5d970f6](https://github.com/akiojin/runtime-router/commit/5d970f6598d7e8a3505b4b9b4f7bee2a7854e010))
+* **router:** ストレージ層実装完了（T014-T019） ([68a60bc](https://github.com/akiojin/runtime-router/commit/68a60bc37760bde1503c449db035211881bf8408))
+* **router:** メトリクスAPIハンドラー実装 (T016) - Phase 2.3完了 ([438242c](https://github.com/akiojin/runtime-router/commit/438242cf5512b124a7fd73b56512b509dab868a8))
+* **router:** メトリクスベースロードバランシングのコア実装 (T011-T015) ([753c1c7](https://github.com/akiojin/runtime-router/commit/753c1c7bb38636ba0612475ef8db485c89da4eb8))
+* **router:** メトリクスベースロードバランシングの基盤実装 ([cbee350](https://github.com/akiojin/runtime-router/commit/cbee35095d630b70d487d2bb8c577d083951ad6d))
+* **router:** リクエスト/レスポンス履歴保存機能を実装 ([6655cba](https://github.com/akiojin/runtime-router/commit/6655cba3439ff801c728b86da9f28e19f727f566))
+* **router:** 環境変数でロードバランサーモード切り替え実装 (T017-T019) - Phase 2.4完了 ([fe6e428](https://github.com/akiojin/runtime-router/commit/fe6e428c6dedfa153a7c9f93c21357181cc7c1aa))
 * **dashboard:** GPU能力スコアをダッシュボードに表示 ([cc2d991](https://github.com/akiojin/runtime-router/commit/cc2d991639c2e84d724ca4d91aa90d5abe506b16))
 * **dashboard:** GPU非対応時に「非対応」と表示 ([1df423f](https://github.com/akiojin/runtime-router/commit/1df423f826fe1bb324fae807daadd758ab5a51c3))
-* **dashboard:** graph agent cpu and memory metrics ([3ad6866](https://github.com/akiojin/runtime-router/commit/3ad686696e1dba911a9a80ab15174d9c8d02a216))
+* **dashboard:** graph node cpu and memory metrics ([3ad6866](https://github.com/akiojin/runtime-router/commit/3ad686696e1dba911a9a80ab15174d9c8d02a216))
 * **dashboard:** surface gpu averages in stats ([3b6f8ff](https://github.com/akiojin/runtime-router/commit/3b6f8ff77bf07a12998c49fd02016a2a8f8ede94))
 * **dashboard:** surface gpu metrics in ui ([5a714f2](https://github.com/akiojin/runtime-router/commit/5a714f21c0973d152b51677f7c448179dd448f68))
 * **dashboard:** ノード一括操作に向けた選択UIを追加 ([b5a65b7](https://github.com/akiojin/runtime-router/commit/b5a65b72acd21723d34dacf766ff92fad08e9c9c))

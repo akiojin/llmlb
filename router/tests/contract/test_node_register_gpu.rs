@@ -50,7 +50,7 @@ async fn build_app() -> Router {
 
 #[tokio::test]
 #[serial]
-async fn register_gpu_agent_success() {
+async fn register_gpu_node_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
@@ -115,7 +115,7 @@ async fn register_gpu_agent_success() {
 
 #[tokio::test]
 #[serial]
-async fn register_gpu_agent_missing_devices_is_rejected() {
+async fn register_gpu_node_missing_devices_is_rejected() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
@@ -145,6 +145,6 @@ async fn register_gpu_agent_missing_devices_is_rejected() {
     let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         error["error"],
-        "Validation error: GPU hardware is required for agent registration. No GPU devices detected in gpu_devices array."
+        "Validation error: GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
     );
 }

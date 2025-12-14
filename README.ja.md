@@ -28,9 +28,9 @@ LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を�
 http://localhost:8080/dashboard
 ```
 
-## LLM エージェント向け MCP サーバー
+## LLM アシスタント向け MCP サーバー
 
-LLM エージェント（Claude Code など）は、専用の MCP サーバーを通じて LLM Router と連携できます。
+LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Router と連携できます。
 
 ### インストール
 
@@ -146,8 +146,8 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 - POST `/v1/chat/completions`
 - POST `/v1/completions`
 - POST `/v1/embeddings`
-- GET `/v1/models`
-- GET `/v1/models/:model_id`
+- GET `/v1/models`（API キーまたは `X-Node-Token`）
+- GET `/v1/models/:model_id`（API キーまたは `X-Node-Token`）
 
 #### ノード管理
 
@@ -156,15 +156,13 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 - DELETE `/api/nodes/:node_id`
 - POST `/api/nodes/:node_id/disconnect`
 - PUT `/api/nodes/:node_id/settings`
-- POST `/api/nodes/:node_id/metrics`
-- POST `/api/health`（ノードからのヘルス/メトリクス送信、`X-Agent-Token` 必須）
+- POST `/api/health`（ノードからのヘルス/メトリクス送信、`X-Node-Token` 必須）
 - GET `/api/nodes/:node_id/logs`
 
 #### モデル管理
 
 - GET `/api/models/available`（例: `?source=hf`）
 - POST `/api/models/register`
-- POST `/api/models/pull`
 - GET `/api/models/registered`
 - DELETE `/api/models/:model_name`
 - POST `/api/models/discover-gguf`

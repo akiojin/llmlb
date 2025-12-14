@@ -34,13 +34,13 @@
 
 **使用例**:
 ```javascript
-const ctx = document.getElementById('agentChart');
+const ctx = document.getElementById('nodeChart');
 new Chart(ctx, {
   type: 'bar',
   data: {
     labels: ['Online', 'Offline'],
     datasets: [{
-      label: 'Agents',
+      label: 'Nodes',
       data: [onlineCount, offlineCount],
       backgroundColor: ['#4CAF50', '#F44336']
     }]
@@ -68,11 +68,11 @@ new Chart(ctx, {
 const POLL_INTERVAL = 5000; // 5秒
 
 async function fetchDashboardData() {
-  const [agents, stats] = await Promise.all([
-    fetch('/api/dashboard/agents').then(r => r.json()),
+  const [nodes, stats] = await Promise.all([
+    fetch('/api/dashboard/nodes').then(r => r.json()),
     fetch('/api/dashboard/stats').then(r => r.json())
   ]);
-  return { agents, stats };
+  return { nodes, stats };
 }
 
 function startPolling() {
@@ -83,7 +83,7 @@ function startPolling() {
   setInterval(async () => {
     const data = await fetchDashboardData();
     updateCharts(data);
-    updateTable(data.agents);
+    updateTable(data.nodes);
   }, POLL_INTERVAL);
 }
 ```
@@ -122,12 +122,12 @@ use tower_http::services::ServeDir;
 
 let app = Router::new()
     // API エンドポイント
-    .route("/api/dashboard/agents", get(get_agents))
+    .route("/api/dashboard/nodes", get(get_nodes))
     .route("/api/dashboard/stats", get(get_stats))
     // 静的ファイル配信
-    .nest_service("/dashboard", ServeDir::new("coordinator/src/dashboard/static"))
+    .nest_service("/dashboard", ServeDir::new("router/src/dashboard/static"))
     // フォールバック: /dashboard/ → /dashboard/index.html
-    .fallback_service(ServeDir::new("coordinator/src/dashboard/static").fallback(ServeFile::new("coordinator/src/dashboard/static/index.html")));
+    .fallback_service(ServeDir::new("router/src/dashboard/static").fallback(ServeFile::new("router/src/dashboard/static/index.html")));
 ```
 
 **Cargo.toml追加**:
@@ -172,7 +172,7 @@ tower-http = { version = "0.5", features = ["fs"] }
 }
 
 /* ノードテーブル */
-.agent-table {
+.node-table {
   width: 100%;
   overflow-x: auto;
 }
@@ -190,7 +190,7 @@ tower-http = { version = "0.5", features = ["fs"] }
     grid-template-columns: 1fr;
   }
 
-  .agent-table {
+  .node-table {
     font-size: 0.875rem;
   }
 }

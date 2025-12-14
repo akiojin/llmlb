@@ -5,7 +5,7 @@
 ### Router (Rust)
 
 - **ファイル**: `router/src/logging.rs`
-- **出力先**: `~/.llm-router/logs/coordinator.log.jsonl`（ファイルのみ）
+- **出力先**: `~/.llm-router/logs/router.log.jsonl`（ファイルのみ）
 - **形式**: JSON Lines（tracing-subscriber fmt::layer().json()）
 - **ローテーション**: なし（append）
 - **環境変数**: `ROUTER_LOG_LEVEL`, `RUST_LOG`, `LLM_ROUTER_DATA_DIR`

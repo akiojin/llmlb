@@ -89,22 +89,6 @@ export function ModelsSection() {
     },
   })
 
-  const pullMutation = useMutation({
-    mutationFn: (params: { repo: string; filename: string }) =>
-      modelsApi.pull(params.repo, params.filename),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: 'Model pulled and cached' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to pull model',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
   const deleteMutation = useMutation({
     mutationFn: (modelName: string) => modelsApi.delete(modelName),
     onSuccess: () => {
@@ -243,19 +227,6 @@ export function ModelsSection() {
                         </div>
 
                         <div className="mt-4 flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={!model.repo || !model.filename || pullMutation.isPending}
-                            onClick={() => {
-                              if (!model.repo || !model.filename) return
-                              pullMutation.mutate({ repo: model.repo, filename: model.filename })
-                            }}
-                          >
-                            <Download className="mr-1 h-3 w-3" />
-                            Pull
-                          </Button>
-
                           <Button
                             variant="ghost"
                             size="sm"

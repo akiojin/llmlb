@@ -14,7 +14,7 @@
   },
   {
     "id": "22222222-2222-2222-2222-222222222222",
-    "machine_name": "legacy-agent",
+    "machine_name": "legacy-node",
     "ip_address": "10.0.0.20",
     "runtime_version": "0.1.25",
     "runtime_port": 11434,

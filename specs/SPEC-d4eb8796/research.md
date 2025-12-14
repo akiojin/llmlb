@@ -20,12 +20,12 @@
 
 **実装方針**:
 ```rust
-// coordinator/migrations/001_init.sql
+// router/migrations/001_init.sql
 CREATE TABLE IF NOT EXISTS users (...);
 CREATE TABLE IF NOT EXISTS api_keys (...);
-CREATE TABLE IF NOT EXISTS agent_tokens (...);
+CREATE TABLE IF NOT EXISTS node_tokens (...);
 
-// coordinator/src/db/mod.rs
+// router/src/db/mod.rs
 pub async fn init_database() -> Result<SqlitePool> {
     let pool = SqlitePool::connect(&db_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -34,10 +34,10 @@ pub async fn init_database() -> Result<SqlitePool> {
 ```
 
 **JSONインポート戦略**:
-1. 起動時に `~/.llm-router/agents.json` の存在確認
+1. 起動時に `~/.llm-router/nodes.json` の存在確認
 2. 存在する場合、SQLiteにデータが未移行かチェック
 3. トランザクション内でJSONをパース→SQLiteに挿入
-4. 成功後、`agents.json.migrated` にリネーム（バックアップ）
+4. 成功後、`nodes.json.migrated` にリネーム（バックアップ）
 
 ## 2. bcryptベストプラクティス
 
@@ -181,14 +181,14 @@ async fn jwt_auth_middleware<B>(
 
 // ルーターへの適用
 Router::new()
-    .route("/api/agents", get(list_agents))
+    .route("/api/nodes", get(list_nodes))
     .layer(middleware::from_fn_with_state(state.clone(), jwt_auth_middleware))
 ```
 
 **ミドルウェア階層**:
-1. **JWT認証**: `/api/agents`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
+1. **JWT認証**: `/api/nodes`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
 2. **APIキー認証**: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-3. **エージェントトークン認証**: `/api/health`, `/api/agents/:id/metrics`, `/api/tasks/:id/progress`
+3. **ノードトークン認証**: `/api/health`
 
 **認証無効化モード**:
 ```rust
@@ -199,7 +199,7 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 }
 ```
 
-## 5. エージェントトークン生成
+## 5. ノードトークン生成
 
 ### 決定: UUID v4 + SHA-256ハッシュ
 
@@ -210,7 +210,7 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 - 標準ライブラリ使用（追加依存なし）
 
 **検討した代替案**:
-- **JWT**: エージェント通信には過剰（有効期限不要）
+- **JWT**: ノード通信には過剰（有効期限不要）
 - **HMAC**: 対称鍵管理が煩雑
 - **bcrypt**: 遅すぎる（毎リクエストで検証）
 
@@ -219,8 +219,8 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 use uuid::Uuid;
 use sha2::{Sha256, Digest};
 
-pub fn generate_agent_token() -> (String, String) {
-    let token = format!("agt_{}", Uuid::new_v4().simple());
+pub fn generate_node_token() -> (String, String) {
+    let token = format!("nt_{}", Uuid::new_v4());
     let token_hash = hash_token(&token);
     (token, token_hash)
 }
@@ -231,18 +231,18 @@ fn hash_token(token: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn verify_agent_token(token: &str, stored_hash: &str) -> bool {
+pub fn verify_node_token(token: &str, stored_hash: &str) -> bool {
     hash_token(token) == stored_hash
 }
 ```
 
-**トークン形式**: `agt_` + UUID v4 simple形式（32文字の16進数）
-- 例: `agt_a1b2c3d4e5f67890a1b2c3d4e5f67890`
+**トークン形式**: `nt_` + UUID v4 形式（36文字、ハイフンあり）
+- 例: `nt_123e4567-e89b-12d3-a456-426614174000`
 - プレフィックスでAPIキーと区別
 
-**エージェント側の実装**:
+**ノード側の実装**:
 - トークンを `~/.llm-node/token` に保存
-- 全HTTPリクエストに `X-Agent-Token: agt_...` ヘッダーを追加
+- 全HTTPリクエストに `X-Node-Token: nt_...` ヘッダーを追加
 
 ## まとめ
 
@@ -254,6 +254,6 @@ pub fn verify_agent_token(token: &str, stored_hash: &str) -> bool {
 | パスワードハッシュ | bcrypt (cost=12) | 業界標準、調整可能、クロスプラットフォーム |
 | JWT | jsonwebtoken (HS256) | シンプル、セキュア、標準的 |
 | ミドルウェア | tower::middleware | Axum標準パターン、柔軟 |
-| エージェントトークン | UUID v4 + SHA-256 | セキュア、高速、シンプル |
+| ノードトークン | UUID v4 + SHA-256 | セキュア、高速、シンプル |
 
 次のPhase 1でデータモデルとAPI契約を設計します。

@@ -1,7 +1,10 @@
+// Include stable-diffusion.h FIRST to ensure sd_image_t typedef is defined
+// before the forward declaration in sd_manager.h is seen
+#include <stable-diffusion.h>
+
 #include "core/sd_manager.h"
 
 #include <spdlog/spdlog.h>
-#include <stable-diffusion.h>
 
 #include <algorithm>
 #include <cstring>
@@ -48,6 +51,30 @@ float getCfgScaleForStyle(const std::string& style, float default_cfg) {
         return std::min(default_cfg, 5.0f);  // Lower CFG for more natural results
     }
     return default_cfg;  // "vivid" uses default or higher
+}
+
+// Convert sd_image_t to PNG
+std::vector<uint8_t> encodeImageToPng(const sd_image_t* image) {
+    std::vector<uint8_t> png_data;
+    if (!image || !image->data) {
+        spdlog::error("Invalid image pointer");
+        return {};
+    }
+
+    int result = stbi_write_png_to_func(stbiWriteCallback,
+                                        &png_data,
+                                        static_cast<int>(image->width),
+                                        static_cast<int>(image->height),
+                                        static_cast<int>(image->channel),
+                                        image->data,
+                                        static_cast<int>(image->width * image->channel));
+
+    if (result == 0) {
+        spdlog::error("Failed to encode image to PNG");
+        return {};
+    }
+
+    return png_data;
 }
 
 }  // namespace
@@ -144,25 +171,6 @@ sd_ctx_t* SDManager::getContext(const std::string& model_path) const {
     return nullptr;
 }
 
-std::vector<uint8_t> SDManager::encodeImageToPng(const sd_image_t& image) const {
-    std::vector<uint8_t> png_data;
-
-    int result = stbi_write_png_to_func(stbiWriteCallback,
-                                        &png_data,
-                                        static_cast<int>(image.width),
-                                        static_cast<int>(image.height),
-                                        static_cast<int>(image.channel),
-                                        image.data,
-                                        static_cast<int>(image.width * image.channel));
-
-    if (result == 0) {
-        spdlog::error("Failed to encode image to PNG");
-        return {};
-    }
-
-    return png_data;
-}
-
 bool SDManager::decodePngToImage(const std::vector<uint8_t>& png_data,
                                  std::vector<uint8_t>& out_data,
                                  int& out_width,
@@ -245,7 +253,7 @@ std::vector<ImageGenerationResult> SDManager::generateImages(
         ImageGenerationResult result;
 
         if (images[i].data) {
-            result.image_data = encodeImageToPng(images[i]);
+            result.image_data = encodeImageToPng(&images[i]);
             result.width = static_cast<int>(images[i].width);
             result.height = static_cast<int>(images[i].height);
             result.success = !result.image_data.empty();
@@ -355,7 +363,7 @@ std::vector<ImageGenerationResult> SDManager::editImages(
         ImageGenerationResult result;
 
         if (images[i].data) {
-            result.image_data = encodeImageToPng(images[i]);
+            result.image_data = encodeImageToPng(&images[i]);
             result.width = static_cast<int>(images[i].width);
             result.height = static_cast<int>(images[i].height);
             result.success = !result.image_data.empty();

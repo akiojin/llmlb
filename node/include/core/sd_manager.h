@@ -10,7 +10,6 @@
 
 // stable-diffusion.cpp forward declarations
 struct sd_ctx_t;
-struct sd_image_t;
 
 namespace llm_node {
 
@@ -141,9 +140,6 @@ private:
 
     // Update access time
     void updateAccessTime(const std::string& model_path);
-
-    // Convert sd_image_t to PNG
-    std::vector<uint8_t> encodeImageToPng(const sd_image_t& image) const;
 
     // Decode PNG to image data
     bool decodePngToImage(const std::vector<uint8_t>& png_data,

@@ -1,0 +1,3 @@
+[submodule "node/third_party/whisper.cpp"]
+	path = node/third_party/whisper.cpp
+	url = https://github.com/ggerganov/whisper.cpp.git

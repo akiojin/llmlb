@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use uuid::Uuid;
 
-use crate::types::GpuDeviceInfo;
+use crate::types::{AudioFormat, GpuDeviceInfo};
 
 /// ノード登録リクエスト
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -110,6 +110,15 @@ pub struct HealthCheckRequest {
     /// ノードがロード済みのEmbeddingモデル一覧
     #[serde(default)]
     pub loaded_embedding_models: Vec<String>,
+    /// ノードがロード済みのASRモデル一覧 (音声認識)
+    #[serde(default)]
+    pub loaded_asr_models: Vec<String>,
+    /// ノードがロード済みのTTSモデル一覧 (音声合成)
+    #[serde(default)]
+    pub loaded_tts_models: Vec<String>,
+    /// サポートするランタイム一覧
+    #[serde(default)]
+    pub supported_runtimes: Vec<crate::types::RuntimeType>,
     /// モデル起動中フラグ
     #[serde(default)]
     pub initializing: bool,
@@ -193,6 +202,10 @@ pub enum RequestType {
     Generate,
     /// /v1/embeddings エンドポイント
     Embeddings,
+    /// /v1/audio/transcriptions エンドポイント (ASR)
+    Transcription,
+    /// /v1/audio/speech エンドポイント (TTS)
+    Speech,
 }
 
 /// レコードステータス
@@ -206,6 +219,97 @@ pub enum RecordStatus {
         /// エラーメッセージ
         message: String,
     },
+}
+
+/// 音声認識レスポンスフォーマット
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionResponseFormat {
+    /// JSON形式
+    #[default]
+    Json,
+    /// テキスト形式
+    Text,
+    /// SRT字幕形式
+    Srt,
+    /// VTT字幕形式
+    Vtt,
+    /// 詳細JSON形式（タイムスタンプ付き）
+    VerboseJson,
+}
+
+/// 音声認識リクエスト (ASR)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranscriptionRequest {
+    /// モデル名 (例: "whisper-large-v3")
+    pub model: String,
+    /// 音声の言語 (ISO-639-1形式、例: "ja", "en")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// レスポンスフォーマット
+    #[serde(default)]
+    pub response_format: TranscriptionResponseFormat,
+    /// サンプリング温度 (0.0-1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    /// タイムスタンプの粒度 (segment, word)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_granularities: Option<Vec<String>>,
+}
+
+/// 音声認識レスポンス (ASR)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranscriptionResponse {
+    /// 認識されたテキスト
+    pub text: String,
+    /// 検出された言語
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// 音声の長さ（秒）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
+    /// セグメント情報（verbose_json時）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Vec<TranscriptionSegment>>,
+}
+
+/// 音声認識セグメント
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranscriptionSegment {
+    /// セグメントID
+    pub id: u32,
+    /// 開始時間（秒）
+    pub start: f64,
+    /// 終了時間（秒）
+    pub end: f64,
+    /// セグメントテキスト
+    pub text: String,
+}
+
+/// 音声合成リクエスト (TTS)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SpeechRequest {
+    /// モデル名 (例: "vibevoice-v1", "tts-1")
+    pub model: String,
+    /// 読み上げテキスト
+    pub input: String,
+    /// ボイス名 (例: "nova", "alloy", "echo")
+    #[serde(default = "default_voice")]
+    pub voice: String,
+    /// 出力フォーマット
+    #[serde(default)]
+    pub response_format: AudioFormat,
+    /// 再生速度 (0.25-4.0、デフォルト1.0)
+    #[serde(default = "default_speed")]
+    pub speed: f64,
+}
+
+fn default_voice() -> String {
+    "nova".to_string()
+}
+
+fn default_speed() -> f64 {
+    1.0
 }
 
 #[cfg(test)]
@@ -265,6 +369,9 @@ mod tests {
             average_response_time_ms: Some(123.4),
             loaded_models: vec!["gpt-oss-20b".to_string()],
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
+            loaded_asr_models: vec!["whisper-large-v3".to_string()],
+            loaded_tts_models: vec!["vibevoice-v1".to_string()],
+            supported_runtimes: vec![crate::types::RuntimeType::LlamaCpp],
             initializing: true,
             ready_models: Some((1, 2)),
         };
@@ -286,6 +393,8 @@ mod tests {
             request.loaded_embedding_models,
             deserialized.loaded_embedding_models
         );
+        assert_eq!(request.loaded_asr_models, deserialized.loaded_asr_models);
+        assert_eq!(request.loaded_tts_models, deserialized.loaded_tts_models);
     }
 
     #[test]
@@ -306,6 +415,9 @@ mod tests {
             average_response_time_ms: Some(100.0),
             loaded_models: vec!["llama3:8b".to_string()],
             loaded_embedding_models: vec![],
+            loaded_asr_models: vec![],
+            loaded_tts_models: vec![],
+            supported_runtimes: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
         };
@@ -330,5 +442,127 @@ mod tests {
         let request: ChatRequest = serde_json::from_str(json).unwrap();
 
         assert!(!request.stream);
+    }
+
+    #[test]
+    fn test_request_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&RequestType::Chat).unwrap(),
+            "\"chat\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestType::Generate).unwrap(),
+            "\"generate\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestType::Embeddings).unwrap(),
+            "\"embeddings\""
+        );
+        // 音声リクエストタイプ
+        assert_eq!(
+            serde_json::to_string(&RequestType::Transcription).unwrap(),
+            "\"transcription\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestType::Speech).unwrap(),
+            "\"speech\""
+        );
+    }
+
+    #[test]
+    fn test_transcription_request_serialization() {
+        let request = TranscriptionRequest {
+            model: "whisper-large-v3".to_string(),
+            language: Some("ja".to_string()),
+            response_format: TranscriptionResponseFormat::Json,
+            temperature: None,
+            timestamp_granularities: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"model\":\"whisper-large-v3\""));
+        assert!(json.contains("\"language\":\"ja\""));
+        assert!(json.contains("\"response_format\":\"json\""));
+
+        let deserialized: TranscriptionRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.model, "whisper-large-v3");
+        assert_eq!(deserialized.language, Some("ja".to_string()));
+    }
+
+    #[test]
+    fn test_transcription_response_format_serialization() {
+        assert_eq!(
+            serde_json::to_string(&TranscriptionResponseFormat::Json).unwrap(),
+            "\"json\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscriptionResponseFormat::Text).unwrap(),
+            "\"text\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscriptionResponseFormat::Srt).unwrap(),
+            "\"srt\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscriptionResponseFormat::Vtt).unwrap(),
+            "\"vtt\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscriptionResponseFormat::VerboseJson).unwrap(),
+            "\"verbose_json\""
+        );
+    }
+
+    #[test]
+    fn test_transcription_response_serialization() {
+        let response = TranscriptionResponse {
+            text: "こんにちは".to_string(),
+            language: Some("ja".to_string()),
+            duration: Some(2.5),
+            segments: None,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"text\":\"こんにちは\""));
+        assert!(json.contains("\"language\":\"ja\""));
+
+        let deserialized: TranscriptionResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.text, "こんにちは");
+    }
+
+    #[test]
+    fn test_speech_request_serialization() {
+        use crate::types::AudioFormat;
+
+        let request = SpeechRequest {
+            model: "vibevoice-v1".to_string(),
+            input: "こんにちは".to_string(),
+            voice: "nova".to_string(),
+            response_format: AudioFormat::Mp3,
+            speed: 1.0,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"model\":\"vibevoice-v1\""));
+        assert!(json.contains("\"input\":\"こんにちは\""));
+        assert!(json.contains("\"voice\":\"nova\""));
+        assert!(json.contains("\"response_format\":\"mp3\""));
+        assert!(json.contains("\"speed\":1.0") || json.contains("\"speed\":1"));
+
+        let deserialized: SpeechRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.model, "vibevoice-v1");
+        assert_eq!(deserialized.input, "こんにちは");
+        assert_eq!(deserialized.voice, "nova");
+    }
+
+    #[test]
+    fn test_speech_request_defaults() {
+        let json = r#"{"model":"tts-1","input":"Hello"}"#;
+        let request: SpeechRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.model, "tts-1");
+        assert_eq!(request.input, "Hello");
+        assert_eq!(request.voice, "nova"); // default
+        assert_eq!(request.speed, 1.0); // default
     }
 }

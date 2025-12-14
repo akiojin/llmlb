@@ -3,6 +3,7 @@
 //! ノード登録、ヘルスチェック、プロキシAPI
 
 pub mod api_keys;
+pub mod audio;
 pub mod auth;
 pub mod dashboard;
 pub mod health;
@@ -72,7 +73,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
         .route("/v1/models", get(openai::list_models))
-        .route("/v1/models/:model_id", get(openai::get_model));
+        .route("/v1/models/:model_id", get(openai::get_model))
+        // 音声API（OpenAI Audio API互換）
+        .route("/v1/audio/transcriptions", post(audio::transcriptions))
+        .route("/v1/audio/speech", post(audio::speech));
 
     let api_key_protected_routes = api_key_routes.layer(middleware::from_fn_with_state(
         state.db_pool.clone(),

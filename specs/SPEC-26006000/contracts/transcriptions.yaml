@@ -1,0 +1,184 @@
+openapi: 3.0.3
+info:
+  title: Audio Transcriptions API
+  description: OpenAI互換の音声認識API
+  version: 1.0.0
+
+paths:
+  /v1/audio/transcriptions:
+    post:
+      operationId: createTranscription
+      summary: 音声ファイルをテキストに変換
+      description: |
+        音声ファイルをアップロードし、指定されたモデルで音声認識を実行します。
+        OpenAI Audio API互換のエンドポイントです。
+      tags:
+        - Audio
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - model
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: |
+                    音声ファイル（wav, mp3, flac, ogg形式）
+                    最大サイズ: 25MB
+                model:
+                  type: string
+                  description: 使用するモデル名
+                  example: whisper-large-v3
+                language:
+                  type: string
+                  description: |
+                    音声の言語（ISO 639-1コード）
+                    指定しない場合は自動検出
+                  example: ja
+                prompt:
+                  type: string
+                  description: 認識を補助するためのプロンプト
+                response_format:
+                  type: string
+                  enum: [json, text, srt, vtt, verbose_json]
+                  default: json
+                  description: レスポンス形式
+                temperature:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0
+                  description: サンプリング温度
+                timestamp_granularities:
+                  type: array
+                  items:
+                    type: string
+                    enum: [word, segment]
+                  description: タイムスタンプの粒度（verbose_json時のみ）
+      responses:
+        '200':
+          description: 認識成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptionResponse'
+            text/plain:
+              schema:
+                type: string
+                description: response_format=textの場合
+        '400':
+          description: リクエストエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: ファイルサイズ超過
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 利用可能なノードなし
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    TranscriptionResponse:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: 認識されたテキスト
+          example: こんにちは、今日はいい天気ですね。
+        language:
+          type: string
+          description: 検出された言語（verbose_json時）
+          example: ja
+        duration:
+          type: number
+          format: float
+          description: 音声の長さ（秒）
+          example: 3.5
+        segments:
+          type: array
+          description: セグメント情報（verbose_json時）
+          items:
+            $ref: '#/components/schemas/TranscriptionSegment'
+
+    TranscriptionSegment:
+      type: object
+      required:
+        - id
+        - start
+        - end
+        - text
+      properties:
+        id:
+          type: integer
+          description: セグメントID
+          example: 0
+        start:
+          type: number
+          format: float
+          description: 開始時間（秒）
+          example: 0.0
+        end:
+          type: number
+          format: float
+          description: 終了時間（秒）
+          example: 1.8
+        text:
+          type: string
+          description: セグメントのテキスト
+          example: こんにちは、
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+              description: エラーメッセージ
+            type:
+              type: string
+              description: エラータイプ
+              enum:
+                - invalid_request_error
+                - authentication_error
+                - rate_limit_error
+                - server_error
+            code:
+              type: string
+              description: エラーコード
+              example: unsupported_format

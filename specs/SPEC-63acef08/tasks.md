@@ -25,34 +25,34 @@
 
 ### Contract Tests
 
-- [x] **T004** [P] `coordinator/tests/contract/proxy_chat_test.rs` に POST /api/chat のcontract test
-  - リクエスト: ChatRequest（LLM runtime API互換）
+- [x] **T004** [P] `coordinator/tests/contract/proxy_chat_test.rs` に POST /v1/chat/completions のcontract test
+  - リクエスト: ChatRequest（OpenAI API互換）
   - 期待レスポンス: 200 OK, ChatResponse
 
-- [x] **T005** [P] `coordinator/tests/contract/proxy_generate_test.rs` に POST /api/generate のcontract test
-  - リクエスト: GenerateRequest（LLM runtime API互換）
+- [x] **T005** [P] `coordinator/tests/contract/proxy_generate_test.rs` に POST /v1/completions のcontract test
+  - リクエスト: GenerateRequest（OpenAI API互換）
   - 期待レスポンス: 200 OK, GenerateResponse
 
 ### Integration Tests
 
 - [x] **T006** `coordinator/tests/integration/proxy_test.rs` にプロキシ基本動作テスト
   - 前提: 1台のノード登録済み
-  - 実行: POST /api/chat でリクエスト送信
+  - 実行: POST /v1/chat/completions でリクエスト送信
   - 検証: ノードにリクエストが転送され、レスポンスが返される
 
 - [x] **T007** `coordinator/tests/integration/proxy_test.rs` にラウンドロビンテスト
   - 前提: 3台のノード登録済み
-  - 実行: 9回連続でPOST /api/chat リクエスト送信
+  - 実行: 9回連続でPOST /v1/chat/completions リクエスト送信
   - 検証: 各ノードが3リクエストずつ処理（均等分散）
 
 - [x] **T008** `coordinator/tests/integration/proxy_test.rs` にノード不在エラーテスト
   - 前提: 登録されたノードなし
-  - 実行: POST /api/chat リクエスト送信
+  - 実行: POST /v1/chat/completions リクエスト送信
   - 検証: 503 Service Unavailable、"No agents available"エラー
 
 - [x] **T009** `coordinator/tests/integration/proxy_test.rs` にタイムアウトテスト
   - 前提: 応答しないモックノード登録
-  - 実行: POST /api/chat リクエスト送信
+  - 実行: POST /v1/chat/completions リクエスト送信
   - 検証: 60秒後にタイムアウトエラー
 
 **実装時間**: 約2時間
@@ -83,12 +83,12 @@
   - Derive: Debug, Clone, Serialize, Deserialize
 
 - [x] **T014** `coordinator/src/api/proxy.rs` にproxy_chat()ハンドラー実装
-  - エンドポイント: POST /api/chat
+  - エンドポイント: POST /v1/chat/completions
   - 機能: select_agent() → HTTPリクエスト転送 → レスポンス返却
   - タイムアウト: 60秒
 
 - [x] **T015** `coordinator/src/api/proxy.rs` にproxy_generate()ハンドラー実装
-  - エンドポイント: POST /api/generate
+  - エンドポイント: POST /v1/completions
   - 機能: select_agent() → HTTPリクエスト転送 → レスポンス返却
   - タイムアウト: 60秒
 
@@ -104,15 +104,15 @@
 ## Phase 3.4: 統合
 
 - [x] **T017** `coordinator/src/main.rs` にプロキシルート追加
-  - /api/chat → proxy_chat
-  - /api/generate → proxy_generate
+  - /v1/chat/completions → proxy_chat
+  - /v1/completions → proxy_generate
 
 - [x] **T018** `coordinator/src/main.rs` にHTTPクライアント初期化
   - `reqwest::Client::new()` でクライアント作成
   - AppStateに追加
 
 - [x] **T019** 起動ログにプロキシエンドポイント情報追加
-  - `tracing::info!("Proxy endpoints: /api/chat, /api/generate");`
+  - `tracing::info!("Proxy endpoints: /v1/chat/completions, /v1/completions");`
 
 **実装時間**: 約30分
 

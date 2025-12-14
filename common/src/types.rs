@@ -170,7 +170,7 @@ pub struct Request {
     pub id: Uuid,
     /// 振り分け先ノードID
     pub node_id: Uuid,
-    /// エンドポイント ("/api/chat" など)
+    /// エンドポイント ("/v1/chat/completions" など)
     pub endpoint: String,
     /// ステータス
     pub status: RequestStatus,

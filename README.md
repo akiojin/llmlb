@@ -205,11 +205,11 @@ Combines multiple factors including response time, active requests, and CPU usag
 LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 ```
 
-### Metrics API
+### Health / Metrics API
 
-Nodes can report metrics to the Router for load balancing decisions.
+Nodes report health + metrics to the Router for node status and load balancing decisions.
 
-**Endpoint:** `POST /api/nodes/:node_id/metrics`
+**Endpoint:** `POST /api/health` (requires `X-Agent-Token`)
 
 **Request:**
 ```json
@@ -218,12 +218,15 @@ Nodes can report metrics to the Router for load balancing decisions.
   "cpu_usage": 45.5,
   "memory_usage": 60.2,
   "active_requests": 3,
-  "avg_response_time_ms": 250.5,
-  "timestamp": "2025-11-02T10:00:00Z"
+  "average_response_time_ms": 250.5,
+  "loaded_models": ["gpt-oss:20b"],
+  "loaded_embedding_models": [],
+  "initializing": false,
+  "ready_models": [1, 1]
 }
 ```
 
-**Response:** `204 No Content`
+**Response:** `200 OK`
 
 ## Architecture
 
@@ -671,7 +674,6 @@ The file is automatically managed with:
 | DELETE | `/api/nodes/:node_id` | Delete node | None |
 | POST | `/api/nodes/:node_id/disconnect` | Force node offline | None |
 | PUT | `/api/nodes/:node_id/settings` | Update node settings | None |
-| POST | `/api/nodes/:node_id/metrics` | Update node metrics | None |
 | GET | `/api/nodes/metrics` | List node metrics | None |
 | GET | `/api/metrics/summary` | System statistics summary | None |
 
@@ -688,8 +690,8 @@ The file is automatically managed with:
 | POST | `/v1/chat/completions` | Chat completions API | API Key |
 | POST | `/v1/completions` | Text completions API | API Key |
 | POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List available models | API Key |
-| GET | `/v1/models/:model_id` | Get specific model info | API Key |
+| GET | `/v1/models` | List available models | API Key / Agent Token |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key / Agent Token |
 
 #### Model Management Endpoints
 

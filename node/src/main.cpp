@@ -188,6 +188,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Sync models from router (model_sync already created earlier for pull endpoint)
         std::cout << "Syncing models from router..." << std::endl;
+        model_sync->setAgentToken(reg.agent_token);
         auto sync_result = model_sync->sync();
         if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
             // If nothing synced and no local models, treat as recoverable error and retry once

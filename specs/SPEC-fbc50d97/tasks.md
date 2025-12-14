@@ -104,7 +104,7 @@
 
 - [x] T011 `tests/integration/request_capture_test.rs` に
   プロキシキャプチャ機能の integration test を作成
-  - `/api/chat` へのリクエストがキャプチャされることをテスト
+  - `/v1/chat/completions` へのリクエストがキャプチャされることをテスト
   - request_history.json にレコードが保存されることを確認
   - レスポンスが正しくクライアントに返されることを確認
   - 依存: T001, T007 (保存機能のテストが先)

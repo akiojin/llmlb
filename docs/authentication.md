@@ -18,22 +18,28 @@ Clients send the token via `Authorization: Bearer <jwt>`.
 
 ## API keys (OpenAI-compatible `/v1/*`)
 
-Protected endpoints:
+Protected endpoints (API key required):
 
 - `POST /v1/chat/completions`
 - `POST /v1/completions`
 - `POST /v1/embeddings`
+
+Model discovery endpoints (API key **or** agent token):
+
 - `GET /v1/models`
 - `GET /v1/models/:model_id`
 
 Clients send the key via `Authorization: Bearer <api_key>`.
 
-Dev-only bypass:
+Alternatively, clients can send `X-API-Key: <api_key>`.
 
-- `LLM_ROUTER_SKIP_API_KEY=1`
+Debug builds only:
+
+- A fixed API key `sk_debug` is accepted for `/v1/*` to simplify local development.
 
 ## Agent token (node → router)
 
 - Node registration: `POST /api/nodes` (GPU is required)
 - Router response includes `agent_token`
+- Node model sync: `GET /v1/models` with `X-Agent-Token: <agent_token>`
 - Node heartbeat/metrics: `POST /api/health` with `X-Agent-Token: <agent_token>`

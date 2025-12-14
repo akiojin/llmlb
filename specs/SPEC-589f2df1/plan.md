@@ -121,14 +121,14 @@ pub async fn select_agent_by_metrics(&self) -> Option<Agent> {
 
 #### メトリクス収集API（追加予定）
 ```rust
-// POST /api/agents/:id/metrics
+// POST /api/health (X-Agent-Token required)
 pub async fn update_metrics(
     State(state): State<AppState>,
-    Path(agent_id): Path<Uuid>,
     Json(metrics): Json<AgentMetrics>,
 ) -> Result<StatusCode, AppError> {
     let mut metrics_map = state.registry.metrics.write().await;
-    metrics_map.insert(agent_id, metrics);
+    let node_id = metrics.node_id;
+    metrics_map.insert(node_id, metrics);
     Ok(StatusCode::NO_CONTENT)
 }
 ```

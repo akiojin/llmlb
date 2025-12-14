@@ -194,7 +194,7 @@ POST /api/api-keys エンドポイントを実装（Admin専用、平文キー�
 - [x] **T066** `coordinator/src/api/api_keys.rs` に
 DELETE /api/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
 - [x] **T067** `coordinator/src/api/agent.rs` を修正して
-POST /api/agents レスポンスに agent_token フィールドを追加 → T024 GREEN
+POST /api/nodes レスポンスに agent_token フィールドを追加 → T024 GREEN
 
 ## Phase 3.9: 初回起動処理
 
@@ -209,14 +209,14 @@ POST /api/agents レスポンスに agent_token フィールドを追加 → T02
 
 - [x] **T071** `coordinator/src/api/mod.rs` に
 JWT認証ミドルウェアを管理APIに適用
-（/api/agents, /api/models, /api/dashboard, /api/users, /api/api-keys）
+（/api/nodes, /api/models, /api/dashboard, /api/users, /api/api-keys）
 → T015, T016, T017 GREEN
 - [x] **T072** `coordinator/src/api/mod.rs` に
 APIキー認証ミドルウェアをOpenAI互換APIに適用
 （/v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models）
 - [x] **T073** `coordinator/src/api/mod.rs` に
 エージェントトークン認証ミドルウェアをエージェント通信APIに適用
-（/api/health, /api/agents/:id/metrics, /api/tasks/:id/progress）
+（/api/health）
 - [x] **T074** `coordinator/src/api/mod.rs` に
 認証無効化モードを実装（AUTH_DISABLED=true で全ミドルウェアスキップ）
 → T023 GREEN

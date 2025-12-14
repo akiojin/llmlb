@@ -92,7 +92,7 @@ impl AgentRegistry {
 ### プロキシエンドポイント
 
 ```rust
-// POST /api/chat
+// POST /v1/chat/completions
 pub async fn proxy_chat(
     State(state): State<AppState>,
     Json(request): Json<ChatRequest>,
@@ -102,7 +102,7 @@ pub async fn proxy_chat(
         .ok_or(AppError::NoAgents)?;
 
     // 2. リクエスト転送
-    let url = format!("http://{}:{}/api/chat", agent.ip_address, agent.port);
+    let url = format!("http://{}:{}/v1/chat/completions", agent.ip_address, agent.port);
     let response = state.http_client
         .post(&url)
         .json(&request)
@@ -175,7 +175,7 @@ pub async fn proxy_chat(
 **出力**: [tasks.md](./tasks.md)
 
 **タスク生成戦略**:
-- 各エンドポイント（/api/chat, /api/generate） → contract test
+- 各エンドポイント（/v1/chat/completions, /v1/completions, /v1/embeddings） → contract test
 - ラウンドロビンロジック → unit test
 - プロキシフロー → integration test
 - エラーケース → integration test

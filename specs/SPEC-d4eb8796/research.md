@@ -181,14 +181,14 @@ async fn jwt_auth_middleware<B>(
 
 // ルーターへの適用
 Router::new()
-    .route("/api/agents", get(list_agents))
+    .route("/api/nodes", get(list_nodes))
     .layer(middleware::from_fn_with_state(state.clone(), jwt_auth_middleware))
 ```
 
 **ミドルウェア階層**:
-1. **JWT認証**: `/api/agents`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
+1. **JWT認証**: `/api/nodes`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
 2. **APIキー認証**: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-3. **エージェントトークン認証**: `/api/health`, `/api/agents/:id/metrics`, `/api/tasks/:id/progress`
+3. **エージェントトークン認証**: `/api/health`
 
 **認証無効化モード**:
 ```rust

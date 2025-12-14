@@ -177,15 +177,15 @@ pub struct AgentMetrics {
 ┌──────────────────┐
 │   SystemStats    │ (新規)
 │──────────────────│
-│ + total_agents   │
-│ + online_agents  │
+│ + total_nodes    │
+│ + online_nodes   │
 │ + ...            │
 └──────────────────┘
 
 ┌──────────────────┐
 │  AgentMetrics    │ (将来拡張)
 │──────────────────│
-│ + agent_id       │
+│ + node_id        │
 │ + cpu_usage      │
 │ + ...            │
 └──────────────────┘
@@ -194,13 +194,13 @@ pub struct AgentMetrics {
          │
          ▼
 ┌─────────────────┐
-│     Agent       │
+│     Node        │
 └─────────────────┘
 ```
 
 ## 状態遷移
 
-### AgentStatus
+### NodeStatus
 
 ```
     register
@@ -208,12 +208,12 @@ pub struct AgentMetrics {
 │   (未登録)    │
 └──────────────┘
        │
-       │ POST /api/agents/register
+       │ POST /api/nodes
        ▼
 ┌──────────────┐
 │    Online    │ ◄──────┐
 └──────────────┘        │
-       │                │ POST /api/agents/:id/heartbeat
+       │                │ POST /api/health (X-Agent-Token)
        │ timeout        │
        ▼                │
 ┌──────────────┐        │
@@ -225,15 +225,15 @@ pub struct AgentMetrics {
 
 ### ノード一覧取得
 ```
-Client ─GET /api/dashboard/agents→ Coordinator
+Client ─GET /api/dashboard/nodes→ Router
                                         │
-                                        │ AgentRegistry.list_all()
+                                        │ NodeRegistry.list_all()
                                         ▼
-                                    Vec<Agent>
+                                    Vec<Node>
                                         │
-                                        │ map(Agent → AgentWithUptime)
+                                        │ map(Node → DashboardNode)
                                         ▼
-                                  Vec<AgentWithUptime>
+                                  Vec<DashboardNode>
                                         │
                                         │ JSON
                                         ▼
@@ -295,12 +295,14 @@ coordinator/src/
 ### サンプルSystemStats
 ```json
 {
-  "total_agents": 10,
-  "online_agents": 8,
-  "offline_agents": 2,
+  "total_nodes": 10,
+  "online_nodes": 8,
+  "offline_nodes": 2,
   "total_requests": 0,
-  "avg_response_time_ms": 0,
-  "errors_count": 0
+  "successful_requests": 0,
+  "failed_requests": 0,
+  "total_active_requests": 0,
+  "average_response_time_ms": null
 }
 ```
 
@@ -308,8 +310,8 @@ coordinator/src/
 
 ### メトリクス可視化（SPEC-589f2df1実装後）
 - `AgentMetrics`の実装
-- メトリクス収集API (`POST /api/agents/:id/metrics`)
-- メトリクス取得API (`GET /api/dashboard/metrics/:agent_id`)
+- メトリクス収集API (`POST /api/health` / `X-Agent-Token`)
+- メトリクス取得API (`GET /api/dashboard/metrics/:node_id`)
 - リクエスト履歴グラフ用のデータ構造
 
 ### リクエスト履歴

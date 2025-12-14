@@ -180,7 +180,7 @@
 - 保存方式はJSONファイルベースとし、SQLiteやPostgreSQL等のRDBMSは使用しない
   （既存のノード情報保存方式と統一）
 - 保存場所は `~/.llm-router/request_history.json` とし、環境変数
-  `OLLAMA_ROUTER_DATA_DIR` で変更可能とする
+  `LLM_ROUTER_DATA_DIR` で変更可能とする
 - ファイルの読み書きは排他制御（Mutex等）により、並行アクセスの安全性を保証する
 
 ---
@@ -199,10 +199,10 @@
 
 この機能は以下に依存します:
 
-- ルーターのプロキシAPI機能（`/api/chat`, `/api/generate`）
-- ダッシュボードのバックエンドAPI機能（`coordinator/src/api/dashboard.rs`）
-- ダッシュボードのフロントエンド（`coordinator/src/web/static/`）
-- 既存のストレージ層実装（`coordinator/src/db/mod.rs`のパターンを踏襲）
+- ルーターのプロキシAPI機能（`/v1/chat/completions`, `/v1/completions`）
+- ダッシュボードのバックエンドAPI機能（`router/src/api/dashboard.rs`）
+- ダッシュボードのフロントエンド（`router/src/web/static/`）
+- 既存のストレージ層実装（`router/src/db/mod.rs`のパターンを踏襲）
 
 ---
 

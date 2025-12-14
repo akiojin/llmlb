@@ -33,7 +33,7 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 - **既存機能**: 直近の `SPEC-47c6f44c` で自動マージ周りが更新済み。GPU 関連の導線は部分的に `feature/gpu-performance` で導入済み。
 - **利用可能な構成要素**:
   - Agentサイド: GPU情報を収集する `sysinfo` / `nvml-wrapper`。
-  - Coordinator: 登録 API (`POST /api/agents`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
+  - Router: 登録 API (`POST /api/nodes`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
   - Web UI: `coordinator/src/web/static/app.js`（GPU指標表示を既に追加済みのため連携確認のみ）。
 - **制約**: Spec Kit カスタム運用によりブランチ・Worktree操作不可。CI は Quality Checks + Auto Merge を利用し、ローカルで同等検証を必須。
 
@@ -64,18 +64,18 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 
 ### 登録時バリデーション
 
-- Agent から送信される `POST /api/agents` のペイロードに `gpu_info`（例: `[{model, count}]`）を要求。
-- Coordinator で `gpu_info` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
-- Agent 側では起動時に GPU DETECTION を行い、取得失敗時は登録リクエスト自体を中止する fallback を実装予定。
+- Node から送信される `POST /api/nodes` のペイロードに `gpu_devices`（例: `[{model, count}]`）を要求。
+- Router で `gpu_devices` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
+- Node 側では起動時に GPU 検出を行い、取得失敗時は登録リクエスト自体を中止する fallback を実装予定。
 
 ### 既存データクレンジング
 
-- Coordinator 起動時 (`coordinator/src/main.rs` or `registry::init`) でストレージをスキャン。
-- `gpu_info` が空 or 欠損のエントリを削除し、削除件数をログに出力。
+- Router 起動時にストレージ（DB）をスキャン。
+- `gpu_devices` が空 or 欠損（または `gpu_available=false`）のエントリを削除し、削除件数をログに出力。
 
 ### ダッシュボード & API
 
-- `GET /api/agents` レスポンスへ GPU 情報フィールドを含める。
+- `GET /api/nodes` レスポンスへ GPU 情報フィールドを含める。
 - フロントエンドで GPU 名／枚数表示。既にGPU列が前提のUIが存在するため整合性チェックのみ。
 
 ## テスト戦略
@@ -91,7 +91,7 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 
 ### 手動／E2E チェック
 
-- GPU搭載マシン（CI or ローカル）で Agent→Coordinator 登録フローを確認。
+- GPU搭載マシン（CI or ローカル）で Node→Router 登録フローを確認。
 - ダッシュボードで GPU 情報表示を目視確認（Spec Quickstart で手順化予定）。
 
 ## Phase 0: リサーチアウトライン
@@ -108,7 +108,7 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
   - `agents-register-gpu.contract.yml`: 登録 API の成功/失敗シナリオ。
   - `agents-cleanup.contract.yml`: 起動時の削除処理を擬似的に検証。
 - `data-model.md`  
-  - Agent レコードに `gpu_info` フィールドを追加した ER 図 / JSON スキーマ。
+  - Node レコードに `gpu_devices` フィールドを追加した ER 図 / JSON スキーマ。
   - API 応答サンプル。
 - `quickstart.md`  
   - GPU搭載/非搭載ノードの登録確認手順。

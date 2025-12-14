@@ -49,7 +49,7 @@
 
 #### Contract Tests
 
-- [x] **T007** [P] `coordinator/tests/contract/test_metrics.rs` に POST /api/agents/:id/metrics のcontract test
+- [x] **T007** [P] `coordinator/tests/contract/test_metrics.rs` に POST /api/health のcontract test
   - ✅ 3つのContract Test作成（成功ケース、存在しないノード、不正な値）
   - ✅ coordinator/tests/contract_tests.rs にエントリーポイント作成
   - ✅ RED状態確認完了（TDD準拠）
@@ -99,7 +99,7 @@
 #### メトリクス収集API
 
 - [x] **T016** `coordinator/src/api/metrics.rs` にupdate_metrics()ハンドラー実装
-  - ✅ POST /api/agents/:id/metrics エンドポイント実装
+  - ✅ POST /api/health エンドポイント実装
   - ✅ AgentMetrics受信 → registry.update_metrics() → 204 No Content返却
   - ✅ coordinator/src/api/mod.rsにルート登録
 

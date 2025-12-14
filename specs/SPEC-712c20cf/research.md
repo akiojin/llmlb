@@ -68,11 +68,11 @@ new Chart(ctx, {
 const POLL_INTERVAL = 5000; // 5秒
 
 async function fetchDashboardData() {
-  const [agents, stats] = await Promise.all([
-    fetch('/api/dashboard/agents').then(r => r.json()),
+  const [nodes, stats] = await Promise.all([
+    fetch('/api/dashboard/nodes').then(r => r.json()),
     fetch('/api/dashboard/stats').then(r => r.json())
   ]);
-  return { agents, stats };
+  return { nodes, stats };
 }
 
 function startPolling() {
@@ -83,7 +83,7 @@ function startPolling() {
   setInterval(async () => {
     const data = await fetchDashboardData();
     updateCharts(data);
-    updateTable(data.agents);
+    updateTable(data.nodes);
   }, POLL_INTERVAL);
 }
 ```
@@ -122,7 +122,7 @@ use tower_http::services::ServeDir;
 
 let app = Router::new()
     // API エンドポイント
-    .route("/api/dashboard/agents", get(get_agents))
+    .route("/api/dashboard/nodes", get(get_nodes))
     .route("/api/dashboard/stats", get(get_stats))
     // 静的ファイル配信
     .nest_service("/dashboard", ServeDir::new("coordinator/src/dashboard/static"))

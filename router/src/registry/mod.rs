@@ -8,7 +8,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
-    types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus},
+    types::{GpuDeviceInfo, Node, NodeStatus},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -20,7 +20,6 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct NodeRegistry {
     nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
-    metrics: Arc<RwLock<HashMap<Uuid, AgentMetrics>>>,
     storage_enabled: bool,
 }
 
@@ -29,7 +28,6 @@ impl NodeRegistry {
     pub fn new() -> Self {
         Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(HashMap::new())),
             storage_enabled: false,
         }
     }
@@ -41,7 +39,6 @@ impl NodeRegistry {
 
         let registry = Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(HashMap::new())),
             storage_enabled: true,
         };
 
@@ -454,26 +451,6 @@ impl NodeRegistry {
         } else {
             Ok(())
         }
-    }
-
-    /// ノードメトリクスを更新
-    ///
-    /// ノードから送信されたメトリクス情報（CPU使用率、メモリ使用率、アクティブリクエスト数等）を
-    /// メモリ内のHashMapに保存する。ノードが存在しない場合はエラーを返す。
-    pub async fn update_metrics(&self, metrics: AgentMetrics) -> RouterResult<()> {
-        // ノードが存在するか確認
-        {
-            let nodes = self.nodes.read().await;
-            if !nodes.contains_key(&metrics.node_id) {
-                return Err(RouterError::AgentNotFound(metrics.node_id));
-            }
-        }
-
-        // メトリクスを保存
-        let mut metrics_map = self.metrics.write().await;
-        metrics_map.insert(metrics.node_id, metrics);
-
-        Ok(())
     }
 }
 

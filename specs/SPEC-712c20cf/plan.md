@@ -189,7 +189,7 @@ coordinator/
 - **機能**: ダッシュボードのメインページを返す
 
 #### 2. ノード状態API
-- **エンドポイント**: `GET /api/dashboard/agents`
+- **エンドポイント**: `GET /api/dashboard/nodes`
 - **レスポンス**: JSON
 ```json
 [
@@ -211,17 +211,19 @@ coordinator/
 - **レスポンス**: JSON
 ```json
 {
-  "total_agents": 10,
-  "online_agents": 8,
-  "offline_agents": 2,
+  "total_nodes": 10,
+  "online_nodes": 8,
+  "offline_nodes": 2,
   "total_requests": 1523,
-  "avg_response_time_ms": 250,
-  "errors_count": 5
+  "successful_requests": 1518,
+  "failed_requests": 5,
+  "total_active_requests": 3,
+  "average_response_time_ms": 250.0
 }
 ```
 
 #### 4. ノード設定API（FR-023）
-- **エンドポイント**: `PUT /api/agents/:id/settings`
+- **エンドポイント**: `PUT /api/nodes/:node_id/settings`
 - **リクエスト**: JSON
 ```json
 {
@@ -233,21 +235,21 @@ coordinator/
 - **レスポンス**: 200 OK, 更新されたノード情報
 
 #### 5. ノード削除API（FR-024）
-- **エンドポイント**: `DELETE /api/agents/:id`
+- **エンドポイント**: `DELETE /api/nodes/:node_id`
 - **レスポンス**: 204 No Content
 - **機能**: ノードを登録解除
 
 #### 6. ノード強制切断API（FR-024）
-- **エンドポイント**: `POST /api/agents/:id/disconnect`
-- **レスポンス**: 200 OK
+- **エンドポイント**: `POST /api/nodes/:node_id/disconnect`
+- **レスポンス**: 202 Accepted
 - **機能**: ノードを強制的にOffline状態に
 
 #### 7. メトリクスAPI（SPEC-589f2df1実装後）
-- **エンドポイント**: `GET /api/dashboard/metrics/:agent_id`
+- **エンドポイント**: `GET /api/dashboard/metrics/:node_id`
 - **レスポンス**: JSON
 ```json
 {
-  "agent_id": "uuid",
+  "node_id": "uuid",
   "cpu_usage": 45.2,
   "memory_usage": 60.5,
   "active_requests": 3,
@@ -301,7 +303,7 @@ async fn test_dashboard_page_returns_html() {
 
 2. **シナリオ2**: ノード情報表示
    - 前提: 複数のノードが登録
-   - 実行: `GET /api/dashboard/agents`
+   - 実行: `GET /api/dashboard/nodes`
    - 結果: JSON配列で全ノード情報が返却
 
 3. **シナリオ3**: リアルタイム更新

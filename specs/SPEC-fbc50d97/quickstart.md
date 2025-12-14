@@ -19,7 +19,7 @@
 ### 1. ルーターを起動
 
 ```bash
-cargo run --bin coordinator
+cargo run -p llm-router
 ```
 
 デフォルトで `http://localhost:8080` で起動します。
@@ -28,8 +28,9 @@ cargo run --bin coordinator
 
 ```bash
 # Chat リクエスト
-curl -X POST http://localhost:8080/api/chat \
+curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: sk_debug" \
   -d '{
     "model": "llama2",
     "messages": [
@@ -39,8 +40,9 @@ curl -X POST http://localhost:8080/api/chat \
   }'
 
 # Generate リクエスト
-curl -X POST http://localhost:8080/api/generate \
+curl -X POST http://localhost:8080/v1/completions \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: sk_debug" \
   -d '{
     "model": "codellama",
     "prompt": "Write a hello world in Rust",
@@ -50,7 +52,7 @@ curl -X POST http://localhost:8080/api/generate \
 
 ### 3. ダッシュボードで履歴を確認
 
-ブラウザで `http://localhost:8080` にアクセスし、「リクエスト履歴」タブを開きます。
+ブラウザで `http://localhost:8080/dashboard` にアクセスし、「リクエスト履歴」タブを開きます。
 
 **確認項目**:
 - リクエストが時系列順に表示されている
@@ -105,15 +107,16 @@ cat ~/.llm-router/request_history.json | jq
 **検証コマンド**:
 ```bash
 # 成功リクエスト
-curl -X POST http://localhost:8080/api/chat \
+curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: sk_debug" \
   -d '{"model": "llama2", "messages": [{"role": "user", "content": "test"}], "stream": false}'
 
 # 失敗リクエスト（存在しないノード）
 # → システムで自動的にエラーとなる場合があります
 
 # ダッシュボードで確認
-open http://localhost:8080
+open http://localhost:8080/dashboard
 ```
 
 ---
@@ -259,8 +262,9 @@ du -h ~/.llm-router/request_history.json
 ```bash
 # 100リクエストを送信
 for i in {1..100}; do
-  curl -X POST http://localhost:8080/api/chat \
+  curl -X POST http://localhost:8080/v1/chat/completions \
     -H "Content-Type: application/json" \
+    -H "X-API-Key: sk_debug" \
     -d '{"model": "llama2", "messages": [{"role": "user", "content": "test"}], "stream": false}' &
 done
 wait

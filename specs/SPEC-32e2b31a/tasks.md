@@ -60,11 +60,11 @@
 
 ### Contract Tests (並列実行可能)
 
-- [x] **T009** [P] `coordinator/tests/contract/test_agent_registration.rs` にノード登録 Contract Test (POST /api/agents/register)
+- [x] **T009** [P] `coordinator/tests/contract/test_agent_registration.rs` にノード登録 Contract Test (POST /api/nodes)
 - [x] **T010** [P] `coordinator/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /api/health)
-- [x] **T011** [P] `coordinator/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /api/chat)
-- [x] **T012** [P] `coordinator/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /api/generate)
-- [x] **T013** [P] `coordinator/tests/contract/test_agents_list.rs` にノード一覧 Contract Test (GET /api/agents)
+- [x] **T011** [P] `coordinator/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /v1/chat/completions)
+- [x] **T012** [P] `coordinator/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /v1/completions)
+- [x] **T013** [P] `coordinator/tests/contract/test_agents_list.rs` にノード一覧 Contract Test (GET /api/nodes)
 
 ### Integration Tests (並列実行可能)
 
@@ -103,7 +103,7 @@
 ### ノード登録API (Contract Test T009をGREENに)
 
 - [x] **T027** `coordinator/src/api/mod.rs` にAPIモジュール構造定義
-- [x] **T028** `coordinator/src/api/agents.rs` にノード登録ハンドラー実装 (POST /api/agents/register)
+- [x] **T028** `router/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /api/nodes)
 - [x] **T029** `coordinator/src/registry/mod.rs` にノード登録管理モジュール
 - [x] **T030** `coordinator/src/registry/manager.rs` にAgentRegistryManager実装 (登録・更新・削除)
 - [x] **T031** **検証**: Contract Test T009が合格 (GREEN)
@@ -117,14 +117,14 @@
 
 ### プロキシAPI (Contract Test T011-T012をGREENに)
 
-- [x] **T036** `coordinator/src/api/proxy.rs` にLLM runtimeプロキシハンドラー実装 (POST /api/chat, /api/generate)
+- [x] **T036** `coordinator/src/api/proxy.rs` にLLM runtimeプロキシハンドラー実装 (POST /v1/chat/completions, /v1/completions)
 - [x] **T037** `coordinator/src/balancer/mod.rs` にロードバランサーモジュール
 - [x] **T038** `coordinator/src/balancer/round_robin.rs` にRoundRobinBalancer実装 (Atomicカウンター使用)
 - [x] **T039** **検証**: Contract Test T011-T012が合格 (GREEN)
 
 ### ノード一覧API (Contract Test T013をGREENに)
 
-- [x] **T040** `coordinator/src/api/agents.rs` にノード一覧ハンドラー追加 (GET /api/agents)
+- [x] **T040** `router/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /api/nodes)
 - [x] **T041** **検証**: Contract Test T013が合格 (GREEN)
 
 ### DB永続化 (Integration Test T014をGREENに)
@@ -166,7 +166,7 @@
 ### Coordinator通信クライアント (並列実行可能)
 
 - [x] **T057** [P] `agent/src/client/mod.rs` にCoordinator通信モジュール
-- [x] **T058** [P] `agent/src/client/register.rs` に自己登録クライアント実装 (POST /api/agents/register)
+- [x] **T058** [P] `agent/src/client/register.rs` に自己登録クライアント実装 (POST /api/nodes)
 - [x] **T059** [P] `agent/src/client/heartbeat.rs` にハートビートクライアント実装 (POST /api/health、10秒間隔)
 
 ### LLM runtime管理 (並列実行可能)

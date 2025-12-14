@@ -179,42 +179,49 @@ curl -X PUT http://localhost:8080/api/users/{user_id} \
 
 ## 6. エージェント登録とトークン使用
 
-### エージェント登録
+### ノード登録
 
 ```bash
-# エージェント登録APIを呼び出す
-RESPONSE=$(curl -X POST http://localhost:8080/api/agents \
+# ノード登録APIを呼び出す
+RESPONSE=$(curl -X POST http://localhost:8080/api/nodes \
   -H "Content-Type: application/json" \
   -d '{
-    "machine_name": "test-agent",
+    "machine_name": "test-node",
     "ip_address": "192.168.1.100",
     "runtime_version": "0.1.0",
     "runtime_port": 11434,
     "gpu_available": true,
     "gpu_devices": [{
-      "name": "NVIDIA RTX 3090",
-      "memory_total": 24000000000,
-      "memory_free": 20000000000
+      "model": "NVIDIA RTX 3090",
+      "count": 1,
+      "memory": 24000000000
     }]
   }')
 
-# レスポンスからエージェントトークンを抽出
+# レスポンスからノードID/トークンを抽出
+NODE_ID=$(echo $RESPONSE | jq -r '.node_id')
 AGENT_TOKEN=$(echo $RESPONSE | jq -r '.agent_token')
 echo "エージェントトークン: $AGENT_TOKEN"
 ```
 
 **テスト検証**: レスポンスに `agent_token` フィールドが含まれることを確認
 
-### エージェントからのヘルスチェック
+### ノードからのヘルスチェック
 
 ```bash
-# エージェントトークンを使用してヘルスチェック
+# エージェントトークンを使用してヘルスチェック（node_id 必須）
 curl -X POST http://localhost:8080/api/health \
   -H "X-Agent-Token: $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_id": "{エージェントID}",
-    "status": "online"
+    "node_id": "'$NODE_ID'",
+    "cpu_usage": 12.3,
+    "memory_usage": 45.6,
+    "active_requests": 0,
+    "loaded_models": ["gpt-oss:20b"],
+    "loaded_embedding_models": [],
+    "initializing": false,
+    "ready_models": [1, 1]
   }'
 ```
 
@@ -226,8 +233,13 @@ curl -X POST http://localhost:8080/api/health \
 curl -X POST http://localhost:8080/api/health \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_id": "{エージェントID}",
-    "status": "online"
+    "node_id": "'$NODE_ID'",
+    "cpu_usage": 12.3,
+    "memory_usage": 45.6,
+    "active_requests": 0,
+    "loaded_models": [],
+    "loaded_embedding_models": [],
+    "initializing": false
   }'
 ```
 
@@ -239,14 +251,14 @@ curl -X POST http://localhost:8080/api/health \
 
 ```bash
 export AUTH_DISABLED=true
-cargo run --bin coordinator
+cargo run -p llm-router
 ```
 
 ### 動作確認
 
 ```bash
 # 認証なしでAPIにアクセス
-curl -X GET http://localhost:8080/api/agents
+curl -X GET http://localhost:8080/api/nodes
 
 # ダッシュボードにログインなしでアクセス可能
 open http://localhost:8080/dashboard
@@ -262,7 +274,7 @@ unset AUTH_DISABLED
 export AUTH_DISABLED=false
 
 # コーディネーター再起動
-cargo run --bin coordinator
+cargo run -p llm-router
 ```
 
 ## 8. トラブルシューティング

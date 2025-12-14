@@ -296,7 +296,7 @@ async fn test_export_request_responses_contract() {
 async fn test_request_is_captured_and_stored() {
     // 1. ルーター起動
     // 2. テストノード登録
-    // 3. /api/chat にリクエスト送信
+    // 3. /v1/chat/completions にリクエスト送信
     // 4. request_history.json にレコードが保存されることを確認
     // 5. レコードの内容が正しいことを検証
 }

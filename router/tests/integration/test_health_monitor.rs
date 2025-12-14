@@ -34,7 +34,7 @@ async fn test_offline_agent_excluded_from_balancing() {
     //         "model": "llama2",
     //         "messages": [{"role": "user", "content": "Hello"}]
     //     });
-    //     coordinator.post("/api/chat", request).await;
+    //     coordinator.post("/v1/chat/completions", request).await;
     // }
 
     // Assert: オンラインのagent1のみが処理した

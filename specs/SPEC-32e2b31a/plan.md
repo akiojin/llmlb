@@ -206,7 +206,7 @@ llm-router/
    - タイムアウトとキャンセレーション (`tokio::time::timeout`, `tokio::select!`)
 
 4. **LLM runtime API統合**:
-   - LLM runtime HTTP API仕様 (`/api/chat`, `/api/generate`, `/api/tags`)
+   - OpenAI互換HTTP API仕様 (`/v1/chat/completions`, `/v1/completions`, `/v1/models`)
    - ストリーミングレスポンスの処理 (Server-Sent Events)
    - エラーハンドリングと再試行戦略
 
@@ -264,7 +264,7 @@ pub struct HealthMetrics {
 pub struct Request {
     pub id: Uuid,
     pub agent_id: Uuid,            // 振り分け先ノード
-    pub endpoint: String,          // "/api/chat" など
+    pub endpoint: String,          // "/v1/chat/completions" など
     pub status: RequestStatus,     // 処理中/完了/エラー
     pub duration_ms: Option<u64>,  // 処理時間
     pub created_at: DateTime<Utc>,
@@ -316,10 +316,10 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /api/agents/register:
+  /api/nodes:
     post:
       summary: ノード登録
-      operationId: registerAgent
+      operationId: registerNode
       requestBody:
         required: true
         content:
@@ -327,19 +327,23 @@ paths:
             schema:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
+        '201':
+          description: 新規登録
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
         '200':
-          description: 登録成功
+          description: 更新
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
         '400':
           description: 不正なリクエスト
-
-  /api/agents:
     get:
       summary: ノード一覧取得
-      operationId: listAgents
+      operationId: listNodes
       responses:
         '200':
           description: 成功
@@ -352,7 +356,7 @@ paths:
 
   /api/health:
     post:
-      summary: ヘルスチェック情報送信
+      summary: ヘルスチェック情報送信（ノード→ルーター）
       operationId: reportHealth
       requestBody:
         required: true
@@ -364,10 +368,10 @@ paths:
         '200':
           description: 受信成功
 
-  /api/chat:
+  /v1/chat/completions:
     post:
-      summary: LLM runtime Chat API プロキシ
-      operationId: proxyChat
+      summary: OpenAI互換 Chat Completions プロキシ
+      operationId: chatCompletions
       requestBody:
         required: true
         content:
@@ -384,10 +388,10 @@ paths:
         '503':
           description: 利用可能なノードなし
 
-  /api/generate:
+  /v1/completions:
     post:
-      summary: LLM runtime Generate API プロキシ
-      operationId: proxyGenerate
+      summary: OpenAI互換 Completions プロキシ
+      operationId: completions
       requestBody:
         required: true
         content:
@@ -410,13 +414,17 @@ paths:
               schema:
                 type: string
 
-  /ws/dashboard:
+  /playground:
     get:
-      summary: ダッシュボード WebSocket (リアルタイム更新)
-      operationId: dashboardWebSocket
+      summary: Playground (HTML)
+      operationId: getPlayground
       responses:
-        '101':
-          description: WebSocketアップグレード
+        '200':
+          description: HTMLページ
+          content:
+            text/html:
+              schema:
+                type: string
 
 components:
   schemas:
@@ -519,15 +527,15 @@ components:
 **プロトコル仕様**:
 
 1. **ノード登録**:
-   - Agent → Coordinator: `POST /api/agents/register` (起動時)
-   - Coordinator → Agent: `RegisterResponse` (agent_id返却)
+   - Node → Router: `POST /api/nodes` (起動時)
+   - Router → Node: `RegisterResponse` (node_id返却)
 
 2. **ヘルスチェック（ハートビート）**:
    - Agent → Coordinator: `POST /api/health` (10秒間隔)
    - Payload: CPU使用率、メモリ使用率、処理中リクエスト数
 
 3. **リクエスト振り分け**:
-   - Client → Coordinator: `POST /api/chat` or `POST /api/generate`
+   - Client → Router: `POST /v1/chat/completions` or `POST /v1/completions`
    - Coordinator → Agent: HTTP Proxy (選択されたノードのLLM runtime URLへ転送)
    - Agent → LLM runtime: ローカルLLM runtime APIへ転送
    - LLM runtime → Agent → Coordinator → Client: レスポンス返却
@@ -538,9 +546,9 @@ components:
 ### 4. Contract Tests生成
 
 **テストファイル**:
-- `tests/contract/test_agent_registration.rs`: `/api/agents/register` の契約テスト
+- `tests/contract/test_node_registration.rs`: `/api/nodes` の契約テスト
 - `tests/contract/test_health_check.rs`: `/api/health` の契約テスト
-- `tests/contract/test_proxy_chat.rs`: `/api/chat` の契約テスト
+- `tests/contract/test_proxy_chat.rs`: `/v1/chat/completions` の契約テスト
 
 **テスト内容**:
 - リクエスト/レスポンススキーマ検証

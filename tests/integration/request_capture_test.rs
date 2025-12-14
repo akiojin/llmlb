@@ -6,7 +6,7 @@
 #[tokio::test]
 async fn test_chat_request_is_captured() {
     // TODO: テストサーバー起動（coordinator + mock agent）
-    // TODO: POST /api/chat にリクエスト送信
+    // TODO: POST /v1/chat/completions にリクエスト送信
     // TODO: request_history.json にレコードが保存されることを確認
     // TODO: レスポンスが正しくクライアントに返されることを確認
 
@@ -17,7 +17,7 @@ async fn test_chat_request_is_captured() {
 /// T011: Generate リクエストのキャプチャ
 #[tokio::test]
 async fn test_generate_request_is_captured() {
-    // TODO: POST /api/generate にリクエスト送信
+    // TODO: POST /v1/completions にリクエスト送信
     // TODO: レコードが保存されることを確認
 
     assert!(false, "T011: Generate request capture not implemented yet");

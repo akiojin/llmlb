@@ -93,14 +93,14 @@
   - GPU情報ありpayloadで201、レスポンスにGPUフィールドが含まれることを確認
 
 - [x] **T011** [P] Contract Test: GPUなし登録失敗
-  - 同テストで `gpu_info: []` もしくは欠損payloadを送り、403とエラーJSONを確認
+  - 同テストで `gpu_devices: []` もしくは欠損payloadを送り、403とエラーJSONを確認
 
 - [x] **T012** Integration Test: 起動時クリーンアップ
   - `coordinator/tests/integration/registry_cleanup.rs` を追加
   - GPU無しノードが起動時に削除されることを検証
 
 - [x] **T013** Integration Test: Dashboard API 表示
-  - `/api/dashboard/agents` レスポンスで GPU 情報を検証
+  - `/api/dashboard/nodes` レスポンスで GPU 情報を検証
 
 - [x] **T014** Agent Unit Test: GPU情報必須
   - GPU検出に失敗した際に登録処理をスキップする挙動をテスト（mock送信）
@@ -108,13 +108,13 @@
 ### Phase 3.3 Implementation (GREEN)
 
 - [x] **T020** 登録APIにGPUバリデーション追加
-  - `common/src/types.rs` に `gpu_info` 型（例: `Vec<GpuInfo>`）を追加
+  - `common/src/types.rs` に `gpu_devices` 型（例: `Vec<GpuDeviceInfo>`）を追加
   - `coordinator/src/api/agent.rs::register_agent` で必須チェック処理を実装
   - エラーメッセージを `"GPU hardware is required"` として定義
 
 - [x] **T021** Agent側GPU情報送信を必須化
   - `agent/src/main.rs` でGPU情報取得失敗時に登録を抑止し警告ログ
-  - 登録payloadへ `gpu_info` を追加
+  - 登録payloadへ `gpu_devices` を追加
 
 - [x] **T022** 起動時クリーンアップ実装
   - `coordinator/src/registry/mod.rs` or `coordinator/src/main.rs` に削除処理を追加
@@ -135,7 +135,7 @@
 - [x] **T031** ログ整備
   - GPU未搭載ノード拒否時・クリーンアップ時のログを明瞭化
   - ✅ println!をtracing::info/warn/errorに置き換え
-  - ✅ 構造化ログ（agent_id, machine_name, reason）を追加
+  - ✅ 構造化ログ（node_id, machine_name, reason）を追加
 
 - [x] **T032** Web UI のUX調整
   - GPU情報が1枚/複数枚の表示フォーマットを調整

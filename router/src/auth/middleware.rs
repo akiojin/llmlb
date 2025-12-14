@@ -155,6 +155,95 @@ pub async fn api_key_auth_middleware(
     Ok(next.run(request).await)
 }
 
+/// APIキー or エージェントトークン認証ミドルウェア
+///
+/// `/v1/models*` のように「外部クライアント(APIキー)」と「ノード(エージェントトークン)」の両方から
+/// アクセスされるエンドポイント向け。
+///
+/// 優先順位:
+/// 1. `X-Agent-Token` が存在する場合はエージェントトークンで認証
+/// 2. それ以外は APIキー（`X-API-Key` または `Authorization: Bearer`）で認証
+pub async fn api_key_or_agent_token_auth_middleware(
+    State(pool): State<sqlx::SqlitePool>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // まず X-Agent-Token があればノード認証を優先
+    if let Some(agent_token) = request
+        .headers()
+        .get("X-Agent-Token")
+        .and_then(|h| h.to_str().ok())
+    {
+        let token_hash = hash_with_sha256(agent_token);
+        let agent_token_record = crate::db::agent_tokens::find_by_hash(&pool, &token_hash)
+            .await
+            .map_err(|e| {
+                tracing::warn!("Agent token verification failed: {}", e);
+                (StatusCode::UNAUTHORIZED, "Invalid agent token".to_string()).into_response()
+            })?
+            .ok_or_else(|| {
+                (StatusCode::UNAUTHORIZED, "Invalid agent token".to_string()).into_response()
+            })?;
+
+        request.extensions_mut().insert(agent_token_record.agent_id);
+        return Ok(next.run(request).await);
+    }
+
+    // 次に APIキーで認証
+    let api_key = if let Some(api_key) = request
+        .headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+    {
+        api_key.to_string()
+    } else if let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            token.to_string()
+        } else {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Invalid Authorization header format. Expected 'Bearer <token>'".to_string(),
+            )
+                .into_response());
+        }
+    } else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Missing X-Agent-Token header or API key".to_string(),
+        )
+            .into_response());
+    };
+
+    // デバッグビルド時のみ: 固定のデバッグ用APIキーを許可
+    if debug_api_key_is_valid(&api_key) {
+        tracing::warn!("Authenticated via debug API key (debug build only)");
+        request.extensions_mut().insert(Uuid::nil());
+        return Ok(next.run(request).await);
+    }
+
+    let key_hash = hash_with_sha256(&api_key);
+    let api_key_record = crate::db::api_keys::find_by_hash(&pool, &key_hash)
+        .await
+        .map_err(|e| {
+            tracing::warn!("API key verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response()
+        })?
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response())?;
+
+    if let Some(expires_at) = api_key_record.expires_at {
+        if expires_at < chrono::Utc::now() {
+            return Err((StatusCode::UNAUTHORIZED, "API key expired".to_string()).into_response());
+        }
+    }
+
+    request.extensions_mut().insert(api_key_record.id);
+    Ok(next.run(request).await)
+}
+
 /// エージェントトークン認証ミドルウェア
 ///
 /// X-Agent-Tokenヘッダーからトークンを抽出してSHA-256で検証を行う

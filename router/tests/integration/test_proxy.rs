@@ -17,7 +17,7 @@ async fn test_proxy_request_to_single_agent() {
     //     "model": "llama2",
     //     "messages": [{"role": "user", "content": "Hello"}]
     // });
-    // let response = coordinator.post("/api/chat", request).await;
+    // let response = coordinator.post("/v1/chat/completions", request).await;
 
     // Assert: 正常にレスポンスが返された
     // assert_eq!(response.status(), 200);
@@ -38,7 +38,7 @@ async fn test_proxy_no_agents_returns_503() {
     //     "model": "llama2",
     //     "messages": [{"role": "user", "content": "Hello"}]
     // });
-    // let response = coordinator.post("/api/chat", request).await;
+    // let response = coordinator.post("/v1/chat/completions", request).await;
 
     // Assert: 503 Service Unavailable
     // assert_eq!(response.status(), 503);

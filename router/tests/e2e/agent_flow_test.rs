@@ -7,7 +7,6 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use chrono::Utc;
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 use serde_json::json;
@@ -373,14 +372,17 @@ async fn test_node_metrics_update() {
     let node_id = register_data["node_id"].as_str().unwrap();
     let agent_token = register_data["agent_token"].as_str().unwrap();
 
-    // POST /api/nodes/:node_id/metrics でメトリクスを更新
+    // POST /api/health でヘルス/メトリクスを更新
     let metrics_request = json!({
         "node_id": node_id,
         "cpu_usage": 45.5,
         "memory_usage": 60.2,
         "active_requests": 3,
-        "avg_response_time_ms": 250.5,
-        "timestamp": Utc::now().to_rfc3339()
+        "average_response_time_ms": 250.5,
+        "loaded_models": ["gpt-oss:20b"],
+        "loaded_embedding_models": [],
+        "initializing": false,
+        "ready_models": [1, 1]
     });
 
     let metrics_response = app
@@ -388,7 +390,7 @@ async fn test_node_metrics_update() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/nodes/{}/metrics", node_id))
+                .uri("/api/health")
                 .header("content-type", "application/json")
                 .header("x-agent-token", agent_token)
                 .body(Body::from(serde_json::to_vec(&metrics_request).unwrap()))
@@ -398,9 +400,8 @@ async fn test_node_metrics_update() {
         .unwrap();
 
     assert!(
-        metrics_response.status() == StatusCode::OK
-            || metrics_response.status() == StatusCode::NO_CONTENT,
-        "POST /api/nodes/:id/metrics should return OK or NO_CONTENT"
+        metrics_response.status() == StatusCode::OK,
+        "POST /api/health should return OK"
     );
 }
 

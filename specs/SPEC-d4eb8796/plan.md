@@ -277,8 +277,8 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - `POST /api/api-keys` - APIキー発行（Admin専用）
 - `DELETE /api/api-keys/:id` - APIキー削除（Admin専用）
 
-**エージェント登録API** (既存、変更):
-- `POST /api/agents` - レスポンスに `agent_token` フィールド追加
+**ノード登録API** (既存、変更):
+- `POST /api/nodes` - レスポンスに `agent_token` フィールド追加
 
 ### 3. 契約テスト生成
 

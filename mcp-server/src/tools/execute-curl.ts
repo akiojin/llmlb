@@ -171,7 +171,7 @@ Refer to the 'llm-router-openapi' resource for full API documentation.`;
     if (
       command.includes("Authorization:") ||
       command.includes("X-API-Key:") ||
-      command.includes("X-Agent-Token:")
+      command.includes("X-Node-Token:")
     ) {
       return command;
     }
@@ -311,8 +311,8 @@ Refer to the 'llm-router-openapi' resource for full API documentation.`;
     return command
       .replace(/Bearer\s+[^\s"']+/gi, "Bearer ***")
       .replace(/X-API-Key:\s*[^\s"']+/gi, "X-API-Key: ***")
-      .replace(/X-Agent-Token:\s*[^\s"']+/gi, "X-Agent-Token: ***")
+      .replace(/X-Node-Token:\s*[^\s"']+/gi, "X-Node-Token: ***")
       .replace(/sk_[a-zA-Z0-9]+/g, "sk_***")
-      .replace(/at_[a-zA-Z0-9]+/g, "at_***");
+      .replace(/nt_[a-zA-Z0-9-]+/g, "nt_***");
   }
 }

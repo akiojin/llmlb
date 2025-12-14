@@ -114,9 +114,9 @@ cargo test
 （id, key_hash, name, created_by, created_at, expires_at）
 - [x] **T035** [P] `common/src/auth.rs` に ApiKeyWithPlaintext 構造体を実装
 （発行時のレスポンス用）
-- [x] **T036** [P] `common/src/auth.rs` に AgentToken 構造体を実装
-（agent_id, token_hash, created_at）
-- [x] **T037** [P] `common/src/auth.rs` に AgentTokenWithPlaintext 構造体を実装
+- [x] **T036** [P] `common/src/auth.rs` に NodeToken 構造体を実装
+（node_id, token_hash, created_at）
+- [x] **T037** [P] `common/src/auth.rs` に NodeTokenWithPlaintext 構造体を実装
 （発行時のレスポンス用）
 - [x] **T038** `common/src/error.rs` に認証関連エラーを追加
 （AuthError, PasswordHashError, JwtError, ApiKeyError, AgentTokenError）
@@ -124,7 +124,7 @@ cargo test
 ## Phase 3.4: データベースマイグレーション
 
 - [x] **T039** `coordinator/migrations/001_auth_init.sql` に SQLiteスキーマを作成
-（users, api_keys, agent_tokens テーブル、インデックス、外部キー制約）
+（users, api_keys, node_tokens テーブル、インデックス、外部キー制約）
 - [x] **T040** `coordinator/src/db/migrations.rs` に
 マイグレーション実行関数を実装（sqlx::migrate!使用） → T014 GREEN
 - [x] **T041** `coordinator/src/db/migrations.rs` に
@@ -151,7 +151,7 @@ JWT認証ミドルウェアを実装（tower::middleware::from_fn_with_state使�
 - [x] **T048** `coordinator/src/auth/middleware.rs` に
 APIキー認証ミドルウェアを実装（SHA-256検証） → T019, T020 GREEN
 - [x] **T049** `coordinator/src/auth/middleware.rs` に
-エージェントトークン認証ミドルウェアを実装（SHA-256検証） → T025, T026 GREEN
+ノードトークン認証ミドルウェアを実装（SHA-256検証） → T025, T026 GREEN
 
 ## Phase 3.7: データベース操作実装
 
@@ -165,10 +165,10 @@ APIキー認証ミドルウェアを実装（SHA-256検証） → T019, T020 GRE
 APIキーCRUD操作を実装（create, list, find_by_hash, delete）
 - [x] **T054** `coordinator/src/db/api_keys.rs` に
 APIキー生成関数を実装（`sk_` + 32文字ランダム、SHA-256ハッシュ）
-- [x] **T055** `coordinator/src/db/agent_tokens.rs` に
-エージェントトークンCRUD操作を実装（create, find_by_hash, delete）
-- [x] **T056** `coordinator/src/db/agent_tokens.rs` に
-エージェントトークン生成関数を実装（`agt_` + UUID, SHA-256ハッシュ）
+- [x] **T055** `router/src/db/node_tokens.rs` に
+ノードトークンCRUD操作を実装（create, find_by_hash, delete）
+- [x] **T056** `router/src/db/node_tokens.rs` に
+ノードトークン生成関数を実装（`nt_` + UUID, SHA-256ハッシュ）
 
 ## Phase 3.8: API実装
 
@@ -193,8 +193,8 @@ GET /api/api-keys エンドポイントを実装（Admin専用） → T011 GREEN
 POST /api/api-keys エンドポイントを実装（Admin専用、平文キー返却） → T012 GREEN
 - [x] **T066** `coordinator/src/api/api_keys.rs` に
 DELETE /api/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
-- [x] **T067** `coordinator/src/api/agent.rs` を修正して
-POST /api/nodes レスポンスに agent_token フィールドを追加 → T024 GREEN
+- [x] **T067** `router/src/api/nodes.rs` を修正して
+POST /api/nodes レスポンスに node_token フィールドを追加 → T024 GREEN
 
 ## Phase 3.9: 初回起動処理
 
@@ -215,7 +215,7 @@ JWT認証ミドルウェアを管理APIに適用
 APIキー認証ミドルウェアをOpenAI互換APIに適用
 （/v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models）
 - [x] **T073** `coordinator/src/api/mod.rs` に
-エージェントトークン認証ミドルウェアをエージェント通信APIに適用
+ノードトークン認証ミドルウェアをノード通信APIに適用
 （/api/health）
 - [x] **T074** `coordinator/src/api/mod.rs` に
 認証無効化モードを実装（AUTH_DISABLED=true で全ミドルウェアスキップ）
@@ -350,7 +350,7 @@ wait
 ## 検証チェックリスト
 
 - [x] すべてのcontracts（auth-api, users-api, api-keys-api）に対応するテストがある
-- [x] すべてのentities（User, ApiKey, AgentToken）にmodelタスクがある
+- [x] すべてのentities（User, ApiKey, NodeToken）にmodelタスクがある
 - [x] すべてのテストが実装より先にある（T004-T031 → T032以降）
 - [x] 並列タスクは本当に独立している（異なるファイル）
 - [x] 各タスクは正確なファイルパスを指定

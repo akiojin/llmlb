@@ -44,10 +44,10 @@ pub struct RegisterResponse {
     pub status: RegisterStatus,
     /// ノードAPIポート（OpenAI互換API）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_api_port: Option<u16>,
-    /// エージェントトークン（認証用）
+    pub node_api_port: Option<u16>,
+    /// ノードトークン（認証用）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_token: Option<String>,
+    pub node_token: Option<String>,
 }
 
 /// 登録ステータス

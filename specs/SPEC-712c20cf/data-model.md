@@ -213,7 +213,7 @@ pub struct AgentMetrics {
 ┌──────────────┐
 │    Online    │ ◄──────┐
 └──────────────┘        │
-       │                │ POST /api/health (X-Agent-Token)
+       │                │ POST /api/health (X-Node-Token)
        │ timeout        │
        ▼                │
 ┌──────────────┐        │
@@ -309,8 +309,8 @@ coordinator/src/
 ## 将来拡張
 
 ### メトリクス可視化（SPEC-589f2df1実装後）
-- `AgentMetrics`の実装
-- メトリクス収集API (`POST /api/health` / `X-Agent-Token`)
+- `NodeMetrics`の実装
+- メトリクス収集API (`POST /api/health` / `X-Node-Token`)
 - メトリクス取得API (`GET /api/dashboard/metrics/:node_id`)
 - リクエスト履歴グラフ用のデータ構造
 

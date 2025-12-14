@@ -23,7 +23,7 @@
 // coordinator/migrations/001_init.sql
 CREATE TABLE IF NOT EXISTS users (...);
 CREATE TABLE IF NOT EXISTS api_keys (...);
-CREATE TABLE IF NOT EXISTS agent_tokens (...);
+CREATE TABLE IF NOT EXISTS node_tokens (...);
 
 // coordinator/src/db/mod.rs
 pub async fn init_database() -> Result<SqlitePool> {
@@ -199,7 +199,7 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 }
 ```
 
-## 5. エージェントトークン生成
+## 5. ノードトークン生成
 
 ### 決定: UUID v4 + SHA-256ハッシュ
 
@@ -219,8 +219,8 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 use uuid::Uuid;
 use sha2::{Sha256, Digest};
 
-pub fn generate_agent_token() -> (String, String) {
-    let token = format!("agt_{}", Uuid::new_v4().simple());
+pub fn generate_node_token() -> (String, String) {
+    let token = format!("nt_{}", Uuid::new_v4());
     let token_hash = hash_token(&token);
     (token, token_hash)
 }
@@ -231,18 +231,18 @@ fn hash_token(token: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn verify_agent_token(token: &str, stored_hash: &str) -> bool {
+pub fn verify_node_token(token: &str, stored_hash: &str) -> bool {
     hash_token(token) == stored_hash
 }
 ```
 
-**トークン形式**: `agt_` + UUID v4 simple形式（32文字の16進数）
-- 例: `agt_a1b2c3d4e5f67890a1b2c3d4e5f67890`
+**トークン形式**: `nt_` + UUID v4 形式（36文字、ハイフンあり）
+- 例: `nt_123e4567-e89b-12d3-a456-426614174000`
 - プレフィックスでAPIキーと区別
 
-**エージェント側の実装**:
+**ノード側の実装**:
 - トークンを `~/.llm-node/token` に保存
-- 全HTTPリクエストに `X-Agent-Token: agt_...` ヘッダーを追加
+- 全HTTPリクエストに `X-Node-Token: nt_...` ヘッダーを追加
 
 ## まとめ
 
@@ -254,6 +254,6 @@ pub fn verify_agent_token(token: &str, stored_hash: &str) -> bool {
 | パスワードハッシュ | bcrypt (cost=12) | 業界標準、調整可能、クロスプラットフォーム |
 | JWT | jsonwebtoken (HS256) | シンプル、セキュア、標準的 |
 | ミドルウェア | tower::middleware | Axum標準パターン、柔軟 |
-| エージェントトークン | UUID v4 + SHA-256 | セキュア、高速、シンプル |
+| ノードトークン | UUID v4 + SHA-256 | セキュア、高速、シンプル |
 
 次のPhase 1でデータモデルとAPI契約を設計します。

@@ -1,6 +1,6 @@
-//! エージェントフローE2Eテスト
+//! ノードフローE2Eテスト
 //!
-//! T093: 完全なエージェントフロー（登録 → トークン使用 → ヘルスチェック）
+//! T093: 完全なノードフロー（登録 → トークン使用 → ヘルスチェック）
 
 use axum::{
     body::Body,
@@ -39,14 +39,14 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 }
 
 #[tokio::test]
-async fn test_complete_agent_flow() {
+async fn test_complete_node_flow() {
     // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // Step 1: エージェント登録
+    // Step 1: ノード登録
     let register_request = RegisterRequest {
-        machine_name: "test-agent".to_string(),
+        machine_name: "test-node".to_string(),
         ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 100)),
         runtime_version: "0.1.0".to_string(),
         runtime_port: 11434,
@@ -87,14 +87,14 @@ async fn test_complete_agent_flow() {
 
     let register_data: serde_json::Value = serde_json::from_slice(&register_body).unwrap();
 
-    let agent_id = Uuid::parse_str(register_data["node_id"].as_str().unwrap()).unwrap();
-    let agent_token = register_data["agent_token"].as_str().unwrap();
+    let node_id = Uuid::parse_str(register_data["node_id"].as_str().unwrap()).unwrap();
+    let node_token = register_data["node_token"].as_str().unwrap();
 
-    assert!(!agent_token.is_empty(), "Agent token should be returned");
+    assert!(!node_token.is_empty(), "Node token should be returned");
 
     // Step 2: トークンを使ってヘルスチェックを送信
     let heartbeat_request = json!({
-        "node_id": agent_id.to_string(),
+        "node_id": node_id.to_string(),
         "cpu_usage": 50.0,
         "memory_usage": 60.0,
         "gpu_usage": 40.0,
@@ -113,7 +113,7 @@ async fn test_complete_agent_flow() {
                 .method("POST")
                 .uri("/api/health")
                 .header("content-type", "application/json")
-                .header("x-agent-token", agent_token)
+                .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
                 .unwrap(),
         )
@@ -153,7 +153,7 @@ async fn test_complete_agent_flow() {
                 .method("POST")
                 .uri("/api/health")
                 .header("content-type", "application/json")
-                .header("x-agent-token", "invalid-token-12345")
+                .header("x-node-token", "invalid-token-12345")
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
                 .unwrap(),
         )
@@ -168,14 +168,14 @@ async fn test_complete_agent_flow() {
 }
 
 #[tokio::test]
-async fn test_agent_token_persistence() {
+async fn test_node_token_persistence() {
     // ヘルスチェックをスキップ（E2Eテストでは実際のエージェントAPIがない）
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
-    // エージェント登録
+    // ノード登録
     let register_request = RegisterRequest {
-        machine_name: "test-agent-2".to_string(),
+        machine_name: "test-node-2".to_string(),
         ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 101)),
         runtime_version: "0.1.0".to_string(),
         runtime_port: 11434,
@@ -209,15 +209,15 @@ async fn test_agent_token_persistence() {
         .unwrap();
     let first_data: serde_json::Value = serde_json::from_slice(&first_body).unwrap();
 
-    let agent_id = first_data["node_id"].as_str().unwrap();
-    let first_token = first_data["agent_token"].as_str().unwrap();
+    let node_id = first_data["node_id"].as_str().unwrap();
+    let first_token = first_data["node_token"].as_str().unwrap();
 
     assert!(
         !first_token.is_empty(),
         "First registration should return token"
     );
 
-    // 同じエージェントを再度登録（更新）
+    // 同じノードを再度登録（更新）
     let second_register_response = app
         .clone()
         .oneshot(
@@ -225,7 +225,7 @@ async fn test_agent_token_persistence() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
-                .header("x-agent-token", first_token)
+                .header("x-node-token", first_token)
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
         )
@@ -245,15 +245,15 @@ async fn test_agent_token_persistence() {
 
     let second_agent_id = second_data["node_id"].as_str().unwrap();
 
-    // 同じエージェントIDが返される
+    // 同じノードIDが返される
     assert_eq!(
-        agent_id, second_agent_id,
-        "Re-registration should return same agent ID"
+        node_id, second_agent_id,
+        "Re-registration should return same node ID"
     );
 
     // 2回目の登録でも新しいトークンが返される（プロトコル変更により、更新時もトークンを再生成）
     assert!(
-        second_data["agent_token"].is_string(),
+        second_data["node_token"].is_string(),
         "Re-registration should return a new token"
     );
 }
@@ -370,7 +370,7 @@ async fn test_node_metrics_update() {
         .unwrap();
     let register_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let node_id = register_data["node_id"].as_str().unwrap();
-    let agent_token = register_data["agent_token"].as_str().unwrap();
+    let node_token = register_data["node_token"].as_str().unwrap();
 
     // POST /api/health でヘルス/メトリクスを更新
     let metrics_request = json!({
@@ -392,7 +392,7 @@ async fn test_node_metrics_update() {
                 .method("POST")
                 .uri("/api/health")
                 .header("content-type", "application/json")
-                .header("x-agent-token", agent_token)
+                .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&metrics_request).unwrap()))
                 .unwrap(),
         )

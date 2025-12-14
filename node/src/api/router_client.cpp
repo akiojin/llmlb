@@ -71,16 +71,16 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
             if (body.contains("node_id")) {
                 result.node_id = body["node_id"].get<std::string>();
             }
-            // Extract agent_token for heartbeat authentication
-            if (body.contains("agent_token")) {
-                result.agent_token = body["agent_token"].get<std::string>();
+            // Extract node_token for heartbeat authentication
+            if (body.contains("node_token")) {
+                result.node_token = body["node_token"].get<std::string>();
             }
-            result.success = !result.node_id.empty() && !result.agent_token.empty();
+            result.success = !result.node_id.empty() && !result.node_token.empty();
             if (!result.success) {
                 if (result.node_id.empty()) {
                     result.error = "missing node_id";
                 } else {
-                    result.error = "missing agent_token";
+                    result.error = "missing node_token";
                 }
             }
         } catch (const std::exception& e) {
@@ -93,7 +93,7 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     return result;
 }
 
-bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& agent_token,
+bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& node_token,
                                  const std::optional<std::string>& /*status_opt*/,
                                  const std::optional<HeartbeatMetrics>& metrics,
                                  const std::vector<std::string>& loaded_models,
@@ -124,7 +124,7 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
 
     // Set authentication header
     httplib::Headers headers = {
-        {"X-Agent-Token", agent_token}
+        {"X-Node-Token", node_token}
     };
 
     for (int attempt = 0; attempt <= max_retries; ++attempt) {

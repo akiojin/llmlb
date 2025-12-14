@@ -119,36 +119,36 @@ pub struct ApiKeyWithPlaintext {
 
 ---
 
-### 3. AgentToken (エージェントトークン)
+### 3. NodeToken (ノードトークン)
 
 **説明**: エージェントがコーディネーターと安全に通信するための認証情報
 
 **フィールド**:
 | フィールド | 型 | 制約 | 説明 |
 |-----------|-----|------|------|
-| agent_id | UUID | PRIMARY KEY, FOREIGN KEY → Agent.id | エージェントID |
+| node_id | UUID | PRIMARY KEY | ノードID |
 | token_hash | String | UNIQUE, NOT NULL | SHA-256ハッシュ化されたトークン本体 |
 | created_at | DateTime<Utc> | NOT NULL | 発行日時 |
 
 **Rust型定義**:
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct AgentToken {
-    pub agent_id: Uuid,
+pub struct NodeToken {
+    pub node_id: Uuid,
     pub token_hash: String,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentTokenWithPlaintext {
-    pub agent_id: Uuid,
+pub struct NodeTokenWithPlaintext {
+    pub node_id: Uuid,
     pub token: String,  // 平文トークン（発行時のみ）
     pub created_at: DateTime<Utc>,
 }
 ```
 
 **検証ルール**:
-- token（発行時）: `agt_` + UUID v4 simple形式（32文字の16進数）
+- token（発行時）: `nt_` + UUID v4 形式（36文字、ハイフンあり）
 - token_hash: SHA-256ハッシュ（64文字の16進数）
 
 **状態遷移**:
@@ -169,7 +169,7 @@ pub struct AgentTokenWithPlaintext {
 **説明**: 登録されたエージェント（既存のエンティティに認証トークンのリレーションを追加）
 
 **追加されるリレーションシップ**:
-- `Agent.id` ← `AgentToken.agent_id` (1:1)
+- `Node.id` ← `NodeToken.node_id` (1:1)
 
 **変更なし**: 既存のフィールド（machine_name, ip_address, gpu_devices等）は維持
 
@@ -181,7 +181,7 @@ pub struct AgentTokenWithPlaintext {
 User (1) --< (N) ApiKey
   - 1人のユーザーは複数のAPIキーを発行可能
 
-Agent (1) --- (1) AgentToken
+Node (1) --- (1) NodeToken
   - 1エージェントにつき1トークン
 ```
 
@@ -219,14 +219,13 @@ CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX idx_api_keys_created_by ON api_keys(created_by);
 
 -- エージェントトークンテーブル
-CREATE TABLE IF NOT EXISTS agent_tokens (
-    agent_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS node_tokens (
+    node_id TEXT PRIMARY KEY,
     token_hash TEXT UNIQUE NOT NULL,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_agent_tokens_hash ON agent_tokens(token_hash);
+CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 
 -- エージェントテーブル（既存）
 -- 既存のagentsテーブルはそのまま維持
@@ -244,18 +243,18 @@ CREATE INDEX idx_agent_tokens_hash ON agent_tokens(token_hash);
 
 1. **外部キー制約**:
    - `api_keys.created_by` → `users.id` (CASCADE DELETE)
-   - `agent_tokens.agent_id` → `agents.id` (CASCADE DELETE)
+   - `node_tokens.node_id` → `nodes.id` (conceptual 1:1)
 
 2. **ユニーク制約**:
    - `users.username`
    - `api_keys.key_hash`
-   - `agent_tokens.token_hash`
+   - `node_tokens.token_hash`
 
 3. **NOT NULL制約**:
    - すべてのPRIMARY KEY
    - `users.password_hash`, `users.role`
    - `api_keys.key_hash`, `api_keys.name`, `api_keys.created_by`
-   - `agent_tokens.token_hash`
+   - `node_tokens.token_hash`
 
 4. **CHECK制約**:
    - `users.role` は `admin` または `viewer`

@@ -62,7 +62,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/health", post(health::health_check))
         .layer(middleware::from_fn_with_state(
             state.db_pool.clone(),
-            crate::auth::middleware::agent_token_auth_middleware,
+            crate::auth::middleware::node_token_auth_middleware,
         ));
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
@@ -83,7 +83,7 @@ pub fn create_router(state: AppState) -> Router {
 
     let models_protected_routes = models_routes.layer(middleware::from_fn_with_state(
         state.db_pool.clone(),
-        crate::auth::middleware::api_key_or_agent_token_auth_middleware,
+        crate::auth::middleware::api_key_or_node_token_auth_middleware,
     ));
 
     Router::new()

@@ -177,7 +177,7 @@ curl -X PUT http://localhost:8080/api/users/{user_id} \
   -d '{"password": "new_password456"}'
 ```
 
-## 6. エージェント登録とトークン使用
+## 6. ノード登録とトークン使用
 
 ### ノード登録
 
@@ -200,18 +200,18 @@ RESPONSE=$(curl -X POST http://localhost:8080/api/nodes \
 
 # レスポンスからノードID/トークンを抽出
 NODE_ID=$(echo $RESPONSE | jq -r '.node_id')
-AGENT_TOKEN=$(echo $RESPONSE | jq -r '.agent_token')
-echo "エージェントトークン: $AGENT_TOKEN"
+NODE_TOKEN=$(echo $RESPONSE | jq -r '.node_token')
+echo "ノードトークン: $NODE_TOKEN"
 ```
 
-**テスト検証**: レスポンスに `agent_token` フィールドが含まれることを確認
+**テスト検証**: レスポンスに `node_token` フィールドが含まれることを確認
 
 ### ノードからのヘルスチェック
 
 ```bash
-# エージェントトークンを使用してヘルスチェック（node_id 必須）
+# ノードトークンを使用してヘルスチェック（node_id 必須）
 curl -X POST http://localhost:8080/api/health \
-  -H "X-Agent-Token: $AGENT_TOKEN" \
+  -H "X-Node-Token: $NODE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "node_id": "'$NODE_ID'",

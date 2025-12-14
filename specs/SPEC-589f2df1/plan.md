@@ -121,7 +121,7 @@ pub async fn select_agent_by_metrics(&self) -> Option<Agent> {
 
 #### メトリクス収集API（追加予定）
 ```rust
-// POST /api/health (X-Agent-Token required)
+// POST /api/health (X-Node-Token required)
 pub async fn update_metrics(
     State(state): State<AppState>,
     Json(metrics): Json<AgentMetrics>,

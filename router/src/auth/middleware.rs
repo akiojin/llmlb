@@ -155,37 +155,37 @@ pub async fn api_key_auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// APIキー or エージェントトークン認証ミドルウェア
+/// APIキー or ノードトークン認証ミドルウェア
 ///
-/// `/v1/models*` のように「外部クライアント(APIキー)」と「ノード(エージェントトークン)」の両方から
+/// `/v1/models*` のように「外部クライアント(APIキー)」と「ノード(ノードトークン)」の両方から
 /// アクセスされるエンドポイント向け。
 ///
 /// 優先順位:
-/// 1. `X-Agent-Token` が存在する場合はエージェントトークンで認証
+/// 1. `X-Node-Token` が存在する場合はノードトークンで認証
 /// 2. それ以外は APIキー（`X-API-Key` または `Authorization: Bearer`）で認証
-pub async fn api_key_or_agent_token_auth_middleware(
+pub async fn api_key_or_node_token_auth_middleware(
     State(pool): State<sqlx::SqlitePool>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    // まず X-Agent-Token があればノード認証を優先
-    if let Some(agent_token) = request
+    // まず X-Node-Token があればノード認証を優先
+    if let Some(node_token) = request
         .headers()
-        .get("X-Agent-Token")
+        .get("X-Node-Token")
         .and_then(|h| h.to_str().ok())
     {
-        let token_hash = hash_with_sha256(agent_token);
-        let agent_token_record = crate::db::agent_tokens::find_by_hash(&pool, &token_hash)
+        let token_hash = hash_with_sha256(node_token);
+        let node_token_record = crate::db::node_tokens::find_by_hash(&pool, &token_hash)
             .await
             .map_err(|e| {
-                tracing::warn!("Agent token verification failed: {}", e);
-                (StatusCode::UNAUTHORIZED, "Invalid agent token".to_string()).into_response()
+                tracing::warn!("Node token verification failed: {}", e);
+                (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
             })?
             .ok_or_else(|| {
-                (StatusCode::UNAUTHORIZED, "Invalid agent token".to_string()).into_response()
+                (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
             })?;
 
-        request.extensions_mut().insert(agent_token_record.agent_id);
+        request.extensions_mut().insert(node_token_record.node_id);
         return Ok(next.run(request).await);
     }
 
@@ -213,7 +213,7 @@ pub async fn api_key_or_agent_token_auth_middleware(
     } else {
         return Err((
             StatusCode::UNAUTHORIZED,
-            "Missing X-Agent-Token header or API key".to_string(),
+            "Missing X-Node-Token header or API key".to_string(),
         )
             .into_response());
     };
@@ -244,9 +244,9 @@ pub async fn api_key_or_agent_token_auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// エージェントトークン認証ミドルウェア
+/// ノードトークン認証ミドルウェア
 ///
-/// X-Agent-Tokenヘッダーからトークンを抽出してSHA-256で検証を行う
+/// X-Node-Tokenヘッダーからトークンを抽出してSHA-256で検証を行う
 ///
 /// # Arguments
 /// * `State(pool)` - データベース接続プール
@@ -256,40 +256,40 @@ pub async fn api_key_or_agent_token_auth_middleware(
 /// # Returns
 /// * `Ok(Response)` - 認証成功
 /// * `Err(Response)` - 認証失敗、401 Unauthorized
-pub async fn agent_token_auth_middleware(
+pub async fn node_token_auth_middleware(
     State(pool): State<sqlx::SqlitePool>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    // X-Agent-Tokenヘッダーを取得
-    let agent_token = request
+    // X-Node-Tokenヘッダーを取得
+    let node_token = request
         .headers()
-        .get("X-Agent-Token")
+        .get("X-Node-Token")
         .and_then(|h| h.to_str().ok())
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                "Missing X-Agent-Token header".to_string(),
+                "Missing X-Node-Token header".to_string(),
             )
                 .into_response()
         })?;
 
     // SHA-256ハッシュ化
-    let token_hash = hash_with_sha256(agent_token);
+    let token_hash = hash_with_sha256(node_token);
 
-    // データベースでエージェントトークンを検証
-    let agent_token_record = crate::db::agent_tokens::find_by_hash(&pool, &token_hash)
+    // データベースでノードトークンを検証
+    let node_token_record = crate::db::node_tokens::find_by_hash(&pool, &token_hash)
         .await
         .map_err(|e| {
-            tracing::warn!("Agent token verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, "Invalid agent token".to_string()).into_response()
+            tracing::warn!("Node token verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
         })?
         .ok_or_else(|| {
-            (StatusCode::UNAUTHORIZED, "Invalid agent token".to_string()).into_response()
+            (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
         })?;
 
-    // エージェントIDをrequestの拡張データに格納
-    request.extensions_mut().insert(agent_token_record.agent_id);
+    // ノードIDをrequestの拡張データに格納
+    request.extensions_mut().insert(node_token_record.node_id);
 
     Ok(next.run(request).await)
 }

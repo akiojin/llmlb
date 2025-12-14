@@ -187,7 +187,7 @@ impl NodeRegistry {
             node.last_seen = now;
             // online_since はモデル同期完了（Online遷移）時に設定
             node.online_since = None;
-            node.agent_api_port = Some(req.runtime_port + 1);
+            node.node_api_port = Some(req.runtime_port + 1);
             node.initializing = true;
             node.ready_models = Some((0, 0));
             (id, RegisterStatus::Updated, node.clone())
@@ -218,7 +218,7 @@ impl NodeRegistry {
                 gpu_model_name: None,
                 gpu_compute_capability: None,
                 gpu_capability_score: None,
-                agent_api_port: Some(req.runtime_port + 1),
+                node_api_port: Some(req.runtime_port + 1),
                 initializing: true,
                 ready_models: Some((0, 0)),
             };
@@ -233,8 +233,8 @@ impl NodeRegistry {
         Ok(RegisterResponse {
             node_id,
             status,
-            agent_api_port: Some(node.runtime_port + 1),
-            agent_token: None,
+            node_api_port: Some(node.runtime_port + 1),
+            node_token: None,
         })
     }
 

@@ -44,15 +44,15 @@ curl -sS http://localhost:8080/api/nodes | jq .
 
 ## ヘルスチェック送信（curlで確認）
 
-`POST /api/nodes` のレスポンスに含まれる `agent_token` を使って `POST /api/health` を呼び出します。
+`POST /api/nodes` のレスポンスに含まれる `node_token` を使って `POST /api/health` を呼び出します。
 
 ```bash
 NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
-AGENT_TOKEN=$(echo "$REGISTER_RES" | jq -r .agent_token)
+NODE_TOKEN=$(echo "$REGISTER_RES" | jq -r .node_token)
 
 curl -sS http://localhost:8080/api/health \
   -H "Content-Type: application/json" \
-  -H "X-Agent-Token: ${AGENT_TOKEN}" \
+  -H "X-Node-Token: ${NODE_TOKEN}" \
   -d "{
     \"node_id\": \"${NODE_ID}\",
     \"cpu_usage\": 12.3,

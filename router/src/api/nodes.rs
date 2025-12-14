@@ -162,29 +162,29 @@ pub async fn register_node(
 
     // ヘルスチェックOKなら登録を実施
     let mut response = state.registry.register(req).await?;
-    response.agent_api_port = Some(node_api_port);
+    response.node_api_port = Some(node_api_port);
 
-    // エージェントトークンを生成（更新時は既存トークンを削除して再生成）
+    // ノードトークンを生成（更新時は既存トークンを削除して再生成）
     if response.status == llm_router_common::protocol::RegisterStatus::Updated {
         // 既存トークンを削除
-        if let Err(e) = crate::db::agent_tokens::delete(&state.db_pool, response.node_id).await {
+        if let Err(e) = crate::db::node_tokens::delete(&state.db_pool, response.node_id).await {
             warn!(
-                "Failed to delete existing agent token for node {}: {}",
+                "Failed to delete existing node token for node {}: {}",
                 response.node_id, e
             );
         }
     }
-    let agent_token_with_plaintext =
-        crate::db::agent_tokens::create(&state.db_pool, response.node_id)
+    let node_token_with_plaintext =
+        crate::db::node_tokens::create(&state.db_pool, response.node_id)
             .await
             .map_err(|e| {
-                error!("Failed to create agent token: {}", e);
+                error!("Failed to create node token: {}", e);
                 AppError(RouterError::Internal(format!(
-                    "Failed to create agent token: {}",
+                    "Failed to create node token: {}",
                     e
                 )))
             })?;
-    response.agent_token = Some(agent_token_with_plaintext.token);
+    response.node_token = Some(node_token_with_plaintext.token);
 
     // 取得した初期状態を反映
     if let Err(e) = state

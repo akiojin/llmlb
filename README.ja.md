@@ -146,8 +146,8 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 - POST `/v1/chat/completions`
 - POST `/v1/completions`
 - POST `/v1/embeddings`
-- GET `/v1/models`（API キーまたは `X-Agent-Token`）
-- GET `/v1/models/:model_id`（API キーまたは `X-Agent-Token`）
+- GET `/v1/models`（API キーまたは `X-Node-Token`）
+- GET `/v1/models/:model_id`（API キーまたは `X-Node-Token`）
 
 #### ノード管理
 
@@ -156,7 +156,7 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 - DELETE `/api/nodes/:node_id`
 - POST `/api/nodes/:node_id/disconnect`
 - PUT `/api/nodes/:node_id/settings`
-- POST `/api/health`（ノードからのヘルス/メトリクス送信、`X-Agent-Token` 必須）
+- POST `/api/health`（ノードからのヘルス/メトリクス送信、`X-Node-Token` 必須）
 - GET `/api/nodes/:node_id/logs`
 
 #### モデル管理

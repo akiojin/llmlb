@@ -104,12 +104,13 @@ curl -X POST ${routerUrl}/api/auth/login \\
   -d '{"username":"admin","password":"your_password"}'
 \`\`\`
 
-### 3. Agent Token (Node Communication)
+### 3. Node Token (Node Communication)
 
-**Header**: \`X-Agent-Token: at_xxx\`
+**Header**: \`X-Node-Token: nt_xxx\`
 
 **Used for**:
 - /api/health (internal node health reporting)
+- /v1/models (node model sync)
 
 ## API Categories
 

@@ -91,9 +91,9 @@ ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::
 }
     
 
-void ModelSync::setAgentToken(std::string agent_token) {
+void ModelSync::setNodeToken(std::string node_token) {
     std::lock_guard<std::mutex> lock(etag_mutex_);
-    agent_token_ = std::move(agent_token);
+    node_token_ = std::move(node_token);
 }
 
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
@@ -101,15 +101,15 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
-    std::optional<std::string> agent_token;
+    std::optional<std::string> node_token;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
-        agent_token = agent_token_;
+        node_token = node_token_;
     }
 
     httplib::Result res;
-    if (agent_token.has_value() && !agent_token->empty()) {
-        httplib::Headers headers = {{"X-Agent-Token", *agent_token}};
+    if (node_token.has_value() && !node_token->empty()) {
+        httplib::Headers headers = {{"X-Node-Token", *node_token}};
         res = cli.Get("/v1/models", headers);
     } else {
         res = cli.Get("/v1/models");

@@ -47,7 +47,7 @@ public:
     ModelSync(std::string base_url, std::string models_dir,
               std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
-    void setAgentToken(std::string agent_token);
+    void setNodeToken(std::string node_token);
 
     ModelSyncResult sync();
 
@@ -106,7 +106,7 @@ private:
     std::chrono::milliseconds timeout_;
 
     mutable std::mutex etag_mutex_;
-    std::optional<std::string> agent_token_;
+    std::optional<std::string> node_token_;
     std::unordered_map<std::string, std::string> etag_cache_;
     std::unordered_map<std::string, size_t> size_cache_;
     std::unordered_map<std::string, ModelOverrides> model_overrides_;

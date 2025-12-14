@@ -209,7 +209,7 @@ LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 
 Nodes report health + metrics to the Router for node status and load balancing decisions.
 
-**Endpoint:** `POST /api/health` (requires `X-Agent-Token`)
+**Endpoint:** `POST /api/health` (requires `X-Node-Token`)
 
 **Request:**
 ```json
@@ -681,7 +681,7 @@ The file is automatically managed with:
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/health` | Receive health check from node | Agent Token |
+| POST | `/api/health` | Receive health check from node | Node Token |
 
 #### OpenAI-Compatible Endpoints
 
@@ -690,8 +690,8 @@ The file is automatically managed with:
 | POST | `/v1/chat/completions` | Chat completions API | API Key |
 | POST | `/v1/completions` | Text completions API | API Key |
 | POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List available models | API Key / Agent Token |
-| GET | `/v1/models/:model_id` | Get specific model info | API Key / Agent Token |
+| GET | `/v1/models` | List available models | API Key / Node Token |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key / Node Token |
 
 #### Model Management Endpoints
 
@@ -790,8 +790,8 @@ Register a node.
 {
   "node_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
-  "agent_api_port": 11435,
-  "agent_token": "at_xxx"
+  "node_api_port": 11435,
+  "node_token": "nt_xxx"
 }
 ```
 

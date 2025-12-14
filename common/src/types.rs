@@ -87,7 +87,7 @@ pub struct Node {
     pub gpu_capability_score: Option<u32>,
     /// OpenAI互換APIポート（標準は runtime_port+1）
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_api_port: Option<u16>,
+    pub node_api_port: Option<u16>,
     /// モデル起動中フラグ（全対応モデルが揃うまで true）
     #[serde(default)]
     pub initializing: bool,
@@ -247,7 +247,7 @@ mod tests {
             gpu_model_name: Some("NVIDIA GeForce RTX 4090".to_string()),
             gpu_compute_capability: Some("8.9".to_string()),
             gpu_capability_score: Some(9850),
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: Some((1, 1)),
         };

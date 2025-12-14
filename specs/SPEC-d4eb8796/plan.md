@@ -24,7 +24,7 @@
 - 初回起動時の管理者アカウント作成（対話式または環境変数）
 - JWT認証による管理画面ログイン
 - APIキー発行・管理（外部アプリケーション向け）
-- 3種類の認証方式：JWT（管理API）、APIキー（OpenAI互換API）、エージェントトークン（エージェント通信）
+- 3種類の認証方式：JWT（管理API）、APIキー（OpenAI互換API）、ノードトークン（ノード通信）
 - 認証無効化モード（プライベートネットワーク用）
 - SQLiteへのデータ移行（既存のJSONファイルベースから）
 
@@ -113,7 +113,7 @@
 **バージョニング**:
 - バージョン番号割り当て済み? **はい** (semantic-release自動管理) ✓
 - 変更ごとにBUILDインクリメント? **はい** (feat: = MINOR, fix: = PATCH) ✓
-- 破壊的変更を処理? **はい** (エージェントトークン追加は後方互換、認証はオプトイン) ✓
+- 破壊的変更を処理? **はい** (ノードトークン追加は後方互換、認証はオプトイン) ✓
 
 ## プロジェクト構造
 
@@ -148,13 +148,13 @@ coordinator/
 │   │   ├── migrations.rs # 新規: マイグレーション
 │   │   ├── users.rs    # 新規: ユーザーDB操作
 │   │   ├── api_keys.rs # 新規: APIキーDB操作
-│   │   └── agent_tokens.rs # 新規: エージェントトークンDB操作
+│   │   └── node_tokens.rs # 新規: ノードトークンDB操作
 │   ├── api/            # 既存: APIルーティング
 │   │   ├── mod.rs      # 変更: 認証ミドルウェア追加
 │   │   ├── auth.rs     # 新規: 認証エンドポイント
 │   │   ├── users.rs    # 新規: ユーザー管理エンドポイント
 │   │   ├── api_keys.rs # 新規: APIキー管理エンドポイント
-│   │   └── agent.rs    # 変更: エージェントトークン発行
+│   │   └── nodes.rs    # 変更: ノードトークン発行
 │   └── web/            # 既存: ダッシュボード
 │       └── static/
 │           ├── login.html  # 新規: ログイン画面
@@ -210,7 +210,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
    - エラーハンドリング（401 Unauthorized）
    - ルーター階層でのミドルウェア適用
 
-5. **エージェントトークン生成**:
+5. **ノードトークン生成**:
    - セキュアなランダム生成（`uuid::Uuid::new_v4`）
    - ハッシュ化（SHA-256）
    - 衝突回避
@@ -241,7 +241,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
   - created_at: DateTime<Utc>
   - expires_at: Option<DateTime<Utc>>
 
-- **AgentToken**: エージェント通信用トークン
+- **NodeToken**: ノード通信用トークン
   - agent_id: UUID (PRIMARY KEY, FOREIGN KEY → Agent.id)
   - token_hash: String (UNIQUE, NOT NULL)
   - created_at: DateTime<Utc>
@@ -257,7 +257,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 **状態遷移:**
 - User: 作成 → アクティブ → (パスワード変更) → アクティブ → 削除
 - ApiKey: 発行 → アクティブ → 削除
-- AgentToken: 発行 → アクティブ (削除はエージェント削除時)
+- NodeToken: 発行 → アクティブ (削除はノード削除時)
 
 ### 2. API契約設計 (`/contracts/`)
 
@@ -278,7 +278,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - `DELETE /api/api-keys/:id` - APIキー削除（Admin専用）
 
 **ノード登録API** (既存、変更):
-- `POST /api/nodes` - レスポンスに `agent_token` フィールド追加
+- `POST /api/nodes` - レスポンスに `node_token` フィールド追加
 
 ### 3. 契約テスト生成
 
@@ -403,8 +403,8 @@ cargo run --bin coordinator
    - [ ] JWT認証ミドルウェア実装（`coordinator/src/auth/middleware.rs`） → **GREEN**
    - [ ] APIキー認証ミドルウェアテスト作成 → **RED**
    - [ ] APIキー認証ミドルウェア実装 → **GREEN**
-   - [ ] エージェントトークン認証ミドルウェアテスト作成 → **RED**
-   - [ ] エージェントトークン認証ミドルウェア実装 → **GREEN**
+   - [ ] ノードトークン認証ミドルウェアテスト作成 → **RED**
+   - [ ] ノードトークン認証ミドルウェア実装 → **GREEN**
 
 7. **API Implementation タスク** (TDD: Contract Test → GREEN):
    - [ ] 認証APIエンドポイント実装（`coordinator/src/api/auth.rs`） → 契約テスト **GREEN**
@@ -415,7 +415,7 @@ cargo run --bin coordinator
 8. **Database Operations タスク**:
    - [ ] ユーザーDB操作実装（`coordinator/src/db/users.rs`）
    - [ ] APIキーDB操作実装（`coordinator/src/db/api_keys.rs`）
-   - [ ] エージェントトークンDB操作実装（`coordinator/src/db/agent_tokens.rs`）
+   - [ ] ノードトークンDB操作実装（`router/src/db/node_tokens.rs`）
 
 9. **Bootstrap タスク** (TDD: Integration Test):
    - [ ] 初回起動時管理者作成テスト → **RED**

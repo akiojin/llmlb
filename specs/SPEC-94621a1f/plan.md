@@ -6,13 +6,13 @@
 
 ## 概要
 
-ノードは起動時にルーターへ自己登録し、`agent_token` を受け取る。以降は定期的にヘルスチェック（ハートビート＋メトリクス）を送信し、ルーターはノード状態（Online/Offline/initializing 等）と負荷情報を更新する。
+ノードは起動時にルーターへ自己登録し、`node_token` を受け取る。以降は定期的にヘルスチェック（ハートビート＋メトリクス）を送信し、ルーターはノード状態（Online/Offline/initializing 等）と負荷情報を更新する。
 
 ## API（実装済み）
 
 - `POST /api/nodes` - ノード登録（GPU必須）
 - `GET /api/nodes` - ノード一覧
-- `POST /api/health` - ヘルスチェック受信（`X-Agent-Token` 必須）
+- `POST /api/health` - ヘルスチェック受信（`X-Node-Token` 必須）
 
 ## 実装の要点
 
@@ -26,12 +26,12 @@
   - `LLM_ROUTER_SKIP_HEALTH_CHECK=1` でスキップ可能（テスト用途）
 - **レスポンス**:
   - `node_id`（UUID）
-  - `agent_token`（以降の `/api/health` 用）
+  - `node_token`（以降の `/api/health` 用）
 
 ### ヘルスチェック（POST /api/health）
 
 - **認証**:
-  - ヘッダー `X-Agent-Token: <token>`
+  - ヘッダー `X-Node-Token: <token>`
 - **ボディ**:
   - `HealthCheckRequest`（`node_id`、CPU/メモリ/GPU、`loaded_models`、`initializing` など）
 - **動作**:
@@ -44,7 +44,7 @@
 - `router/src/api/nodes.rs`: `register_node`, `list_nodes`
 - `router/src/api/health.rs`: `health_check`
 - `router/src/registry/mod.rs`: ノード状態管理（DB同期）
-- `router/src/auth/middleware.rs`: `agent_token_auth_middleware`（`X-Agent-Token`）
+- `router/src/auth/middleware.rs`: `node_token_auth_middleware`（`X-Node-Token`）
 - `node/src/api/router_client.cpp`: `/api/nodes` 登録 + `/api/health` 送信
 
 ## リクエスト例
@@ -68,7 +68,7 @@
 
 Headers:
 
-- `X-Agent-Token: <agent_token>`
+- `X-Node-Token: <node_token>`
 
 Body:
 

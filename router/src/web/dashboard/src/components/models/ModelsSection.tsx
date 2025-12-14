@@ -25,8 +25,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Box, Search, Plus, Download, Trash2, RefreshCw, ExternalLink, Loader2 } from 'lucide-react'
 
-function formatGb(value?: number): string {
-  if (value === undefined || Number.isNaN(value)) return '—'
+function formatGb(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '—'
   return `${value.toFixed(1)} GB`
 }
 

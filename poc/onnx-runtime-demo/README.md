@@ -8,6 +8,8 @@
 - ONNX Runtime (arm64)
   - Homebrew: `brew install onnxruntime`（※通常は **CPU EP のみ**。CoreML/XNNPACK は未同梱のことが多い）
   - CoreML EP を使う場合: ソースビルドして CMake package を用意する（下記参照）
+- `run_gpu_only_poc.sh` / `convert_and_run.sh` は Python 依存を `venv` にインストールします（PEP 668回避）。
+  必要に応じて `PYTHON_BIN` / `VENV_DIR` を指定できます。
 
 ## ビルド
 ```bash

@@ -8,6 +8,8 @@ ORT_CMAKE_DIR="${ORT_CMAKE_DIR:-/tmp/onnxruntime-coreml/install/lib/cmake/onnxru
 NODE_BUILD_DIR="${NODE_BUILD_DIR:-/tmp/llm_node_build_audio_poc}"
 MODEL_DIR="${MODEL_DIR:-/tmp/llm_router_audio_poc_models}"
 WHISPER_MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny.en.bin}"
+ASR_WAV_PATH="${ASR_WAV_PATH:-${ROOT_DIR}/node/third_party/whisper.cpp/samples/jfk.wav}"
+ASR_LANGUAGE="${ASR_LANGUAGE:-en}"
 
 ROUTER_HOST="${ROUTER_HOST:-127.0.0.1}"
 ROUTER_PORT="${ROUTER_PORT:-18080}"
@@ -85,9 +87,13 @@ if ! curl -fsS "http://${NODE_HOST}:${NODE_PORT}/v1/models" >/dev/null 2>&1; the
   exit 1
 fi
 
-echo "==> Generating test WAV (16kHz, 16-bit PCM, 1s sine)"
-TEST_WAV="${MODEL_DIR}/asr_test.wav"
-python3 - <<'PY' "${TEST_WAV}"
+TEST_WAV="${ASR_WAV_PATH}"
+if [[ -f "${TEST_WAV}" ]]; then
+  echo "==> Using ASR sample WAV: ${TEST_WAV}"
+else
+  echo "==> ASR sample not found, generating test WAV (16kHz, 16-bit PCM, 1s sine)"
+  TEST_WAV="${MODEL_DIR}/asr_test.wav"
+  python3 - <<'PY' "${TEST_WAV}"
 import math
 import struct
 import sys
@@ -109,12 +115,19 @@ with wave.open(out, "wb") as wf:
         wf.writeframes(struct.pack("<h", int(max(-1.0, min(1.0, v)) * 32767)))
 print(out)
 PY
+fi
 ls -lh "${TEST_WAV}"
 
 echo "==> [ASR input] POST /v1/audio/transcriptions"
+ASR_LANG_ARGS=()
+if [[ -n "${ASR_LANGUAGE}" && "${ASR_LANGUAGE}" != "auto" ]]; then
+  ASR_LANG_ARGS=(-F "language=${ASR_LANGUAGE}")
+fi
+
 ASR_JSON="$(curl -fsS "http://${NODE_HOST}:${NODE_PORT}/v1/audio/transcriptions" \
   -F "file=@${TEST_WAV};type=audio/wav" \
-  -F "model=${WHISPER_MODEL_NAME}")"
+  -F "model=${WHISPER_MODEL_NAME}" \
+  "${ASR_LANG_ARGS[@]}")"
 echo "${ASR_JSON}"
 
 echo "==> [TTS output] POST /v1/audio/speech -> out.wav"

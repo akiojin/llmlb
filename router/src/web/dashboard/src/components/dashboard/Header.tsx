@@ -70,6 +70,7 @@ export function Header({ user }: HeaderProps) {
           <div className="flex items-center gap-2">
             {/* Playground Button */}
             <Button
+              id="chat-open"
               variant="outline"
               size="sm"
               onClick={openPlayground}
@@ -81,6 +82,7 @@ export function Header({ user }: HeaderProps) {
 
             {/* API Keys Button */}
             <Button
+              id="api-keys-button"
               variant="outline"
               size="sm"
               onClick={() => setApiKeyModalOpen(true)}
@@ -92,6 +94,7 @@ export function Header({ user }: HeaderProps) {
 
             {/* Refresh Button */}
             <Button
+              id="refresh-button"
               variant="ghost"
               size="icon"
               onClick={handleRefresh}
@@ -103,7 +106,7 @@ export function Header({ user }: HeaderProps) {
             </Button>
 
             {/* Theme Toggle */}
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            <Button id="theme-toggle" variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === 'dark' ? (
                 <Sun className="h-4 w-4" />
               ) : (

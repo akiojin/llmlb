@@ -57,10 +57,10 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
       const searchLower = search.toLowerCase()
       result = result.filter(
         (node) =>
-          node.machine_name.toLowerCase().includes(searchLower) ||
+          node.machine_name?.toLowerCase().includes(searchLower) ||
           node.custom_name?.toLowerCase().includes(searchLower) ||
-          node.ip_address.toLowerCase().includes(searchLower) ||
-          node.node_id.toLowerCase().includes(searchLower)
+          node.ip_address?.toLowerCase().includes(searchLower) ||
+          node.node_id?.toLowerCase().includes(searchLower)
       )
     }
 
@@ -154,6 +154,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  id="filter-query"
                   placeholder="Search nodes..."
                   value={search}
                   onChange={(e) => {
@@ -172,7 +173,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                   setCurrentPage(1)
                 }}
               >
-                <SelectTrigger className="w-full sm:w-32">
+                <SelectTrigger id="filter-status" className="w-full sm:w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -240,7 +241,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody id="nodes-body">
                 {paginatedNodes.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="h-32 text-center">
@@ -348,6 +349,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
               </p>
               <div className="flex items-center gap-2">
                 <Button
+                  id="page-prev"
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -355,10 +357,11 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-sm">
+                <span id="page-info" className="text-sm">
                   Page {currentPage} of {totalPages}
                 </span>
                 <Button
+                  id="page-next"
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}

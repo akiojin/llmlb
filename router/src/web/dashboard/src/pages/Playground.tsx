@@ -392,7 +392,7 @@ export default function Playground() {
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
-      <div className="w-64 border-r flex flex-col">
+      <div id="sidebar" className="w-64 border-r flex flex-col">
         {/* Header */}
         <div className="p-4 border-b">
           <div className="flex items-center gap-2">
@@ -408,7 +408,7 @@ export default function Playground() {
 
         {/* New Chat Button */}
         <div className="p-3">
-          <Button className="w-full" onClick={createSession}>
+          <Button id="new-chat" className="w-full" onClick={createSession}>
             <Plus className="mr-2 h-4 w-4" />
             New Chat
           </Button>
@@ -416,7 +416,7 @@ export default function Playground() {
 
         {/* Sessions List */}
         <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+          <div id="session-list" className="p-2 space-y-1">
             {sessions.map((session) => (
               <div
                 key={session.id}
@@ -476,6 +476,7 @@ export default function Playground() {
               )}
             </Button>
             <Button
+              id="settings-toggle"
               variant="ghost"
               size="icon"
               onClick={() => setSettingsOpen(true)}
@@ -492,7 +493,7 @@ export default function Playground() {
         <div className="h-14 border-b flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger id="model-select" className="w-64">
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
               <SelectContent>
@@ -522,7 +523,7 @@ export default function Playground() {
               </Badge>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={() => setCurlOpen(true)}>
+          <Button id="copy-curl" variant="outline" size="sm" onClick={() => setCurlOpen(true)}>
             <Code className="mr-2 h-4 w-4" />
             cURL
           </Button>
@@ -530,9 +531,9 @@ export default function Playground() {
 
         {/* Messages */}
         <ScrollArea className="flex-1 p-4">
-          <div className="max-w-3xl mx-auto space-y-4">
+          <div id="chat-log" className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center">
+              <div className="chat-welcome flex flex-col items-center justify-center h-64 text-center">
                 <MessageSquare className="h-12 w-12 text-muted-foreground/50 mb-4" />
                 <h2 className="text-lg font-medium">Start a conversation</h2>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -545,7 +546,7 @@ export default function Playground() {
                   key={index}
                   className={cn(
                     'flex gap-3',
-                    message.role === 'user' && 'justify-end'
+                    message.role === 'user' ? 'message--user justify-end' : 'message--assistant'
                   )}
                 >
                   {message.role === 'assistant' && (
@@ -561,7 +562,7 @@ export default function Playground() {
                         : 'bg-muted'
                     )}
                   >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <p className="message-text text-sm whitespace-pre-wrap">{message.content}</p>
                   </div>
                   {message.role === 'user' && (
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -577,8 +578,9 @@ export default function Playground() {
 
         {/* Input */}
         <div className="border-t p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
+          <div id="chat-form" className="max-w-3xl mx-auto flex gap-2">
             <Input
+              id="chat-input"
               placeholder="Type a message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -592,12 +594,12 @@ export default function Playground() {
               className="flex-1"
             />
             {isStreaming ? (
-              <Button variant="destructive" onClick={stopGeneration}>
+              <Button id="stop-button" variant="destructive" onClick={stopGeneration}>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 Stop
               </Button>
             ) : (
-              <Button onClick={sendMessage} disabled={!input.trim() || !selectedModel}>
+              <Button id="send-button" onClick={sendMessage} disabled={!input.trim() || !selectedModel}>
                 <Send className="mr-2 h-4 w-4" />
                 Send
               </Button>
@@ -608,7 +610,7 @@ export default function Playground() {
 
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent>
+        <DialogContent id="settings-modal">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
             <DialogDescription>
@@ -619,6 +621,7 @@ export default function Playground() {
             <div className="space-y-2">
               <Label>API Key</Label>
               <Input
+                id="api-key-input"
                 type="password"
                 placeholder="sk-..."
                 value={apiKey}
@@ -632,6 +635,7 @@ export default function Playground() {
             <div className="space-y-2">
               <Label>System Prompt</Label>
               <Textarea
+                id="system-prompt"
                 placeholder="You are a helpful assistant..."
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
@@ -646,7 +650,7 @@ export default function Playground() {
                   Stream responses as they're generated
                 </p>
               </div>
-              <Switch checked={streamEnabled} onCheckedChange={setStreamEnabled} />
+              <Switch id="stream-toggle" checked={streamEnabled} onCheckedChange={setStreamEnabled} />
             </div>
             <Separator />
             <div className="space-y-2">

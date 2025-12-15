@@ -362,7 +362,8 @@ export const modelsApi = {
 export interface ApiKey {
   id: string
   name: string
-  key_prefix: string
+  key_prefix?: string
+  created_by?: string
   created_at: string
   expires_at?: string
   last_used_at?: string
@@ -378,7 +379,10 @@ export interface CreateApiKeyResponse {
 }
 
 export const apiKeysApi = {
-  list: () => fetchWithAuth<ApiKey[]>('/v0/api-keys'),
+  list: () =>
+    fetchWithAuth<{ api_keys: ApiKey[] }>('/v0/api-keys').then(
+      (res) => res.api_keys
+    ),
 
   create: (data: { name: string; expires_at?: string }) =>
     fetchWithAuth<CreateApiKeyResponse>('/v0/api-keys', {

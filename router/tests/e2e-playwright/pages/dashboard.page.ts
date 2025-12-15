@@ -16,14 +16,18 @@ export class DashboardPage {
 
   // Stats
   readonly totalNodes: Locator;
-  readonly onlineNodes: Locator;
-  readonly offlineNodes: Locator;
   readonly totalRequests: Locator;
+  readonly successRate: Locator;
+  readonly averageResponseTime: Locator;
 
   // Models
-  readonly hfRegisterUrl: Locator;
-  readonly hfRegisterSubmit: Locator;
-  readonly registeredModelsList: Locator;
+  readonly registerButton: Locator;
+  readonly convertModal: Locator;
+  readonly convertRepo: Locator;
+  readonly convertFilename: Locator;
+  readonly convertSubmit: Locator;
+  readonly localModelsList: Locator;
+  readonly registeringTasksList: Locator;
 
   // Nodes
   readonly nodesBody: Locator;
@@ -49,14 +53,18 @@ export class DashboardPage {
 
     // Stats
     this.totalNodes = page.locator(DashboardSelectors.stats.totalNodes);
-    this.onlineNodes = page.locator(DashboardSelectors.stats.onlineNodes);
-    this.offlineNodes = page.locator(DashboardSelectors.stats.offlineNodes);
     this.totalRequests = page.locator(DashboardSelectors.stats.totalRequests);
+    this.successRate = page.locator(DashboardSelectors.stats.successRate);
+    this.averageResponseTime = page.locator(DashboardSelectors.stats.averageResponseTime);
 
     // Models
-    this.hfRegisterUrl = page.locator(DashboardSelectors.models.hfRegisterUrl);
-    this.hfRegisterSubmit = page.locator(DashboardSelectors.models.hfRegisterSubmit);
-    this.registeredModelsList = page.locator(DashboardSelectors.models.registeredModelsList);
+    this.registerButton = page.locator(DashboardSelectors.models.registerButton);
+    this.convertModal = page.locator(DashboardSelectors.models.convertModal);
+    this.convertRepo = page.locator(DashboardSelectors.models.convertRepo);
+    this.convertFilename = page.locator(DashboardSelectors.models.convertFilename);
+    this.convertSubmit = page.locator(DashboardSelectors.models.convertSubmit);
+    this.localModelsList = page.locator(DashboardSelectors.models.localModelsList);
+    this.registeringTasksList = page.locator(DashboardSelectors.models.registeringTasksList);
 
     // Nodes
     this.nodesBody = page.locator(DashboardSelectors.nodes.nodesBody);
@@ -101,14 +109,25 @@ export class DashboardPage {
     await this.themeToggle.click();
   }
 
+  /**
+   * Opens the Playground in a new tab.
+   * Note: The Playground is a separate page, not a modal.
+   * @returns The new page object for the Playground tab
+   */
   async openPlayground() {
-    await this.playgroundButton.click();
-    await expect(this.chatModal).toBeVisible();
+    const [newPage] = await Promise.all([
+      this.page.context().waitForEvent('page'),
+      this.playgroundButton.click(),
+    ]);
+    await newPage.waitForLoadState('networkidle');
+    return newPage;
   }
 
+  /**
+   * @deprecated Playground is now a separate page, not a modal
+   */
   async closePlayground() {
-    await this.chatClose.click();
-    await expect(this.chatModal).toBeHidden();
+    // No-op - Playground is a separate page now
   }
 
   async openApiKeys() {
@@ -128,9 +147,18 @@ export class DashboardPage {
     await this.filterQuery.fill(query);
   }
 
-  async registerModelUrl(url: string) {
-    await this.hfRegisterUrl.fill(url);
-    await this.hfRegisterSubmit.click();
+  async openRegisterModal() {
+    await this.registerButton.click();
+    await expect(this.convertModal).toBeVisible();
+  }
+
+  async registerModel(repo: string, filename?: string) {
+    await this.openRegisterModal();
+    await this.convertRepo.fill(repo);
+    if (filename) {
+      await this.convertFilename.fill(filename);
+    }
+    await this.convertSubmit.click();
   }
 
   async getConnectionStatus(): Promise<string> {

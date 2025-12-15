@@ -138,7 +138,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
+        <DialogContent id="api-keys-modal" className="max-w-3xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Key className="h-5 w-5" />
@@ -152,7 +152,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
           <div className="space-y-4 py-4">
             {/* Actions */}
             <div className="flex justify-between">
-              <Button onClick={() => setCreateOpen(true)}>
+              <Button id="create-api-key" onClick={() => setCreateOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Key
               </Button>
@@ -186,6 +186,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     )}
                   </Button>
                   <Button
+                    id="copy-api-key"
                     variant="ghost"
                     size="icon"
                     onClick={() => copyToClipboard(createdKey, 'created')}
@@ -227,23 +228,29 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                       <TableRow key={key.id}>
                         <TableCell className="font-medium">{key.name}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <code className="text-xs font-mono">
-                              {key.key_prefix}...
-                            </code>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => copyToClipboard(key.key_prefix, key.id)}
-                            >
-                              {copiedId === key.id ? (
-                                <Check className="h-3 w-3" />
-                              ) : (
-                                <Copy className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </div>
+                          {key.key_prefix ? (
+                            <div className="flex items-center gap-2">
+                              <code className="text-xs font-mono">
+                                {key.key_prefix}...
+                              </code>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => copyToClipboard(key.key_prefix!, key.id)}
+                              >
+                                {copiedId === key.id ? (
+                                  <Check className="h-3 w-3" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              {key.id.slice(0, 8)}...
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatRelativeTime(key.created_at)}
@@ -292,9 +299,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="api-key-name">Name</Label>
               <Input
-                id="key-name"
+                id="api-key-name"
                 placeholder="My API Key"
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}

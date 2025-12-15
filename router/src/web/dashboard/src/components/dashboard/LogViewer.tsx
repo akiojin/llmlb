@@ -132,7 +132,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
           <div className="flex flex-wrap items-center gap-2">
             {/* Source Select */}
             <Select value={source} onValueChange={(v) => setSource(v as LogSource)}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger id="logs-node-select" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -191,6 +191,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
         {/* Actions */}
         <div className="mb-4 flex gap-2">
           <Button
+            id={source === 'router' ? 'logs-router-refresh' : 'logs-node-refresh'}
             variant="outline"
             size="sm"
             onClick={handleRefresh}
@@ -211,7 +212,10 @@ export function LogViewer({ nodes }: LogViewerProps) {
 
         {/* Log Content */}
         <ScrollArea className="h-96 rounded-md border bg-muted/30" ref={scrollRef}>
-          <div className="p-4 font-mono text-xs space-y-0.5">
+          <div
+            id={source === 'router' ? 'logs-router-list' : 'logs-node-list'}
+            className="p-4 font-mono text-xs space-y-0.5"
+          >
             {!filteredLogs || filteredLogs.length === 0 ? (
               <div className="flex h-32 items-center justify-center text-muted-foreground">
                 No logs available

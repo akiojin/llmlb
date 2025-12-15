@@ -193,7 +193,7 @@ export function ModelsSection() {
                   <p>No registered models</p>
                 </div>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div id="local-models-list" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {filteredRegistered.map((model) => (
                     <Card key={model.name} className="overflow-hidden">
                       <CardContent className="p-4">
@@ -343,7 +343,7 @@ export function ModelsSection() {
                   <p>No tasks</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div id="registering-tasks" className="space-y-3">
                   {(convertTasks as ConvertTask[]).map((task) => {
                     const percent = Math.round((task.progress || 0) * 100)
                     return (
@@ -394,7 +394,7 @@ export function ModelsSection() {
       </Tabs>
 
       <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
-        <DialogContent>
+        <DialogContent id="convert-modal">
           <DialogHeader>
             <DialogTitle>Register Model</DialogTitle>
             <DialogDescription>
@@ -404,18 +404,18 @@ export function ModelsSection() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="hf-repo">Repo</Label>
+              <Label htmlFor="convert-repo">Repo</Label>
               <Input
-                id="hf-repo"
+                id="convert-repo"
                 placeholder="TheBloke/Llama-2-7B-GGUF"
                 value={registerRepo}
                 onChange={(e) => setRegisterRepo(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="hf-filename">Filename (optional)</Label>
+              <Label htmlFor="convert-filename">Filename (optional)</Label>
               <Input
-                id="hf-filename"
+                id="convert-filename"
                 placeholder="llama-2-7b.Q4_K_M.gguf"
                 value={registerFilename}
                 onChange={(e) => setRegisterFilename(e.target.value)}
@@ -424,10 +424,11 @@ export function ModelsSection() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRegisterOpen(false)}>
+            <Button id="convert-modal-close" variant="outline" onClick={() => setRegisterOpen(false)}>
               Cancel
             </Button>
             <Button
+              id="convert-submit"
               onClick={() =>
                 registerMutation.mutate({
                   repo: registerRepo.trim(),

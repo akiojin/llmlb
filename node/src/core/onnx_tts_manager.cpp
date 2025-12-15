@@ -295,12 +295,10 @@ SpeechResult OnnxTtsManager::synthesize(
                 input_shape[1] = feature_len;
             }
 
+            // NOTE: This is a PoC-only "frontend". The toy model maps features[0] directly
+            // to an audible tone waveform so users can verify audio output.
             std::vector<float> features(static_cast<size_t>(feature_len), 0.0f);
-            const auto max_bytes = std::min(features.size(), text.size());
-            for (size_t i = 0; i < max_bytes; ++i) {
-                const auto b = static_cast<unsigned char>(text[i]);
-                features[i] = (static_cast<int>(b) - 128) / 128.0f;
-            }
+            features[0] = 1.0f;
 
             auto input_tensor = Ort::Value::CreateTensor<float>(
                 memory_info,

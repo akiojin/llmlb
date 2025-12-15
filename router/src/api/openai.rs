@@ -14,7 +14,7 @@ use llm_router_common::{
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{net::IpAddr, time::Instant};
+use std::{collections::HashSet, net::IpAddr, time::Instant};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -104,7 +104,13 @@ pub async fn embeddings(
 }
 
 /// GET /v1/models - モデル一覧取得（OpenAI互換 - 標準形式のみ）
-pub async fn list_models(State(_state): State<AppState>) -> Result<Response, AppError> {
+/// ノードが実際にロードしているモデルのみを返す。
+pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    // ノードがロードしているモデルを取得
+    let nodes = state.registry.list().await;
+    let loaded_models: HashSet<String> =
+        nodes.iter().flat_map(|n| n.loaded_models.clone()).collect();
+
     // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
     let models = list_registered_models();
 
@@ -121,6 +127,11 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
 
         // ダウンロードが完了していないモデルは一覧に出さない
         if path.is_none() {
+            continue;
+        }
+
+        // ノードがロードしていないモデルは一覧に出さない
+        if !loaded_models.is_empty() && !loaded_models.contains(&m.name) {
             continue;
         }
 
@@ -146,7 +157,13 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
 ///
 /// OpenAI互換APIと異なり、`path`, `download_url`, `chat_template`などの
 /// 拡張情報を含む。ノードがルーターからモデル情報を同期するために使用。
-pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Response, AppError> {
+/// ノードが実際にロードしているモデルのみを返す。
+pub async fn list_models_extended(State(state): State<AppState>) -> Result<Response, AppError> {
+    // ノードがロードしているモデルを取得
+    let nodes = state.registry.list().await;
+    let loaded_models: HashSet<String> =
+        nodes.iter().flat_map(|n| n.loaded_models.clone()).collect();
+
     // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
     let models = list_registered_models();
 
@@ -162,6 +179,11 @@ pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Resp
 
         // ダウンロードが完了していないモデルは一覧に出さない
         if path.is_none() {
+            continue;
+        }
+
+        // ノードがロードしていないモデルは一覧に出さない
+        if !loaded_models.is_empty() && !loaded_models.contains(&m.name) {
             continue;
         }
 

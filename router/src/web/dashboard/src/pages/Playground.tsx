@@ -88,6 +88,7 @@ export default function Playground() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Fetch models
   const { data: models } = useQuery({
@@ -343,6 +344,8 @@ export default function Playground() {
     } finally {
       setIsStreaming(false)
       abortControllerRef.current = null
+      // 送信完了後に入力欄にフォーカスを戻す
+      inputRef.current?.focus()
     }
   }
 
@@ -580,12 +583,14 @@ export default function Playground() {
         <div className="border-t p-4">
           <div id="chat-form" className="max-w-3xl mx-auto flex gap-2">
             <Input
+              ref={inputRef}
               id="chat-input"
               placeholder="Type a message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                // IME変換中のEnterは送信しない（日本語入力対応）
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   sendMessage()
                 }

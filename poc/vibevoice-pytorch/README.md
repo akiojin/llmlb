@@ -16,7 +16,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
-pip install --no-deps git+https://github.com/microsoft/VibeVoice.git
+pip install --no-deps --upgrade --force-reinstall git+https://github.com/microsoft/VibeVoice.git
 ```
 
 ## 実行例

@@ -120,7 +120,7 @@ ensure_vibevoice_venv_deps() {
     echo "==> Installing VibeVoice python deps into venv (this can take a while)"
     "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
     "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet -r "${ROOT_DIR}/poc/vibevoice-pytorch/requirements.txt"
-    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --no-deps git+https://github.com/microsoft/VibeVoice.git
+    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --no-deps --upgrade --force-reinstall git+https://github.com/microsoft/VibeVoice.git
   fi
 }
 

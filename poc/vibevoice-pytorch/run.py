@@ -190,6 +190,7 @@ def main() -> int:
     parser.add_argument("--ddpm-steps", type=int, default=5)
     parser.add_argument("--voice", default="default", help="Voice preset name (default: Carter)")
     parser.add_argument("--voice-cache-dir", default="", help="Directory to cache voice prompts (.pt)")
+    parser.add_argument("--show-progress", action="store_true", help="Show generation progress bar")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -203,7 +204,7 @@ def main() -> int:
     except Exception as e:
         print("Missing dependencies for VibeVoice PoC.", file=sys.stderr)
         print(
-            "Create a venv and run: pip install -r requirements.txt && pip install --no-deps git+https://github.com/microsoft/VibeVoice.git",
+            "Create a venv and run: pip install -r requirements.txt && pip install --no-deps --upgrade --force-reinstall git+https://github.com/microsoft/VibeVoice.git",
             file=sys.stderr,
         )
         print(f"Import error: {e}", file=sys.stderr)
@@ -322,6 +323,7 @@ def main() -> int:
         tokenizer=processor.tokenizer,
         generation_config={"do_sample": False},
         verbose=args.verbose,
+        show_progress_bar=args.show_progress,
         all_prefilled_outputs=copy.deepcopy(all_prefilled_outputs) if all_prefilled_outputs is not None else None,
     )
     elapsed = time.time() - start

@@ -15,9 +15,28 @@
 ./poc/audio-io-demo/run_audio_io_poc.sh
 ```
 
+既に別プロセスの `llm-node` / `router` がポートを使用している場合、PoC は自動で空きポートにずらします。
+固定したい場合は `NODE_PORT` / `ROUTER_PORT` を指定してください。
+
+```bash
+NODE_PORT=11445 ROUTER_PORT=28080 ./poc/audio-io-demo/run_audio_io_poc.sh
+```
+
 出力物:
 - ASR: JSON（`{"text": ...}`）
 - TTS: `MODEL_DIR/tts_out.wav`（WAV）
+
+macOSでの再生例:
+
+```bash
+afplay /tmp/llm_router_audio_poc_models/tts_out.wav
+```
+
+自動再生したい場合:
+
+```bash
+PLAY_TTS=1 ./poc/audio-io-demo/run_audio_io_poc.sh
+```
 
 環境変数で出力先などを変更できます:
 

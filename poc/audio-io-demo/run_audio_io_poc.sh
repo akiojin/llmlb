@@ -12,11 +12,42 @@ ASR_WAV_PATH="${ASR_WAV_PATH:-${ROOT_DIR}/node/third_party/whisper.cpp/samples/j
 ASR_LANGUAGE="${ASR_LANGUAGE:-en}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="${VENV_DIR:-/tmp/llm_router_audio_poc_venv}"
+PLAY_TTS="${PLAY_TTS:-0}"
 
 ROUTER_HOST="${ROUTER_HOST:-127.0.0.1}"
+ROUTER_PORT_ENV_SET=0
+if [[ -n "${ROUTER_PORT+x}" ]]; then
+  ROUTER_PORT_ENV_SET=1
+fi
 ROUTER_PORT="${ROUTER_PORT:-18080}"
 NODE_HOST="${NODE_HOST:-127.0.0.1}"
+NODE_PORT_ENV_SET=0
+if [[ -n "${NODE_PORT+x}" ]]; then
+  NODE_PORT_ENV_SET=1
+fi
 NODE_PORT="${NODE_PORT:-11435}"
+
+pick_free_port() {
+  local start_port="${1}"
+  local max_tries=50
+  local port="${start_port}"
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    echo "Error: lsof is required to check port availability on macOS." >&2
+    exit 1
+  fi
+
+  for _ in $(seq 1 "${max_tries}"); do
+    if ! lsof -iTCP:"${port}" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+      echo "${port}"
+      return 0
+    fi
+    port=$((port + 1))
+  done
+
+  echo "Error: could not find a free port starting from ${start_port}" >&2
+  exit 1
+}
 
 cleanup() {
   set +e
@@ -71,6 +102,28 @@ fi
 
 ensure_venv_deps
 
+if lsof -iTCP:"${ROUTER_PORT}" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+  if [[ "${ROUTER_PORT_ENV_SET}" -eq 1 ]]; then
+    echo "Error: ROUTER_PORT=${ROUTER_PORT} is already in use." >&2
+    echo "Hint: set ROUTER_PORT to a free port (example: ROUTER_PORT=28080)." >&2
+    exit 1
+  fi
+  NEW_ROUTER_PORT="$(pick_free_port "${ROUTER_PORT}")"
+  echo "==> ROUTER_PORT=${ROUTER_PORT} is already in use; using ROUTER_PORT=${NEW_ROUTER_PORT}"
+  ROUTER_PORT="${NEW_ROUTER_PORT}"
+fi
+
+if lsof -iTCP:"${NODE_PORT}" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+  if [[ "${NODE_PORT_ENV_SET}" -eq 1 ]]; then
+    echo "Error: NODE_PORT=${NODE_PORT} is already in use." >&2
+    echo "Hint: set NODE_PORT to a free port (example: NODE_PORT=11445)." >&2
+    exit 1
+  fi
+  NEW_NODE_PORT="$(pick_free_port "${NODE_PORT}")"
+  echo "==> NODE_PORT=${NODE_PORT} is already in use; using NODE_PORT=${NEW_NODE_PORT}"
+  NODE_PORT="${NEW_NODE_PORT}"
+fi
+
 echo "==> Generating toy TTS ONNX model"
 TOY_TTS_MODEL_PATH="$("${PYTHON_RUNTIME}" "${POC_DIR}/generate_toy_tts_model.py" --out "${MODEL_DIR}/toy_tts.onnx")"
 ls -lh "${TOY_TTS_MODEL_PATH}"
@@ -91,6 +144,7 @@ echo "==> Starting mock router"
 ROUTER_PID=$!
 
 echo "==> Starting llm-node"
+echo "==> Node URL: http://${NODE_HOST}:${NODE_PORT}"
 LLM_ROUTER_URL="http://${ROUTER_HOST}:${ROUTER_PORT}" \
 LLM_ROUTER_API_KEY="sk_poc" \
 LLM_NODE_MODELS_DIR="${MODEL_DIR}" \
@@ -101,14 +155,15 @@ NODE_PID=$!
 
 echo "==> Waiting for node to accept requests..."
 for _ in $(seq 1 60); do
-  if curl -fsS "http://${NODE_HOST}:${NODE_PORT}/v1/models" >/dev/null 2>&1; then
+  if curl -fsS "http://${NODE_HOST}:${NODE_PORT}/startup" >/dev/null 2>&1; then
     break
   fi
   sleep 0.2
 done
 
-if ! curl -fsS "http://${NODE_HOST}:${NODE_PORT}/v1/models" >/dev/null 2>&1; then
-  echo "Error: node did not start listening on ${NODE_HOST}:${NODE_PORT}" >&2
+if ! curl -fsS "http://${NODE_HOST}:${NODE_PORT}/startup" >/dev/null 2>&1; then
+  echo "Error: node did not become ready on ${NODE_HOST}:${NODE_PORT}" >&2
+  echo "Hint: check node log: ~/.llm-router/logs/llm-node.jsonl.*" >&2
   exit 1
 fi
 
@@ -149,25 +204,43 @@ if [[ -n "${ASR_LANGUAGE}" && "${ASR_LANGUAGE}" != "auto" ]]; then
   ASR_LANG_ARGS=(-F "language=${ASR_LANGUAGE}")
 fi
 
-ASR_JSON="$(curl -fsS "http://${NODE_HOST}:${NODE_PORT}/v1/audio/transcriptions" \
+ASR_TMP="${MODEL_DIR}/asr_response.json"
+ASR_STATUS="$(curl -sS "http://${NODE_HOST}:${NODE_PORT}/v1/audio/transcriptions" \
   -F "file=@${TEST_WAV};type=audio/wav" \
   -F "model=${WHISPER_MODEL_NAME}" \
-  "${ASR_LANG_ARGS[@]}")"
-echo "${ASR_JSON}"
+  "${ASR_LANG_ARGS[@]}" \
+  -o "${ASR_TMP}" \
+  -w "%{http_code}")"
+
+ASR_OK=1
+if [[ "${ASR_STATUS}" != "200" ]]; then
+  ASR_OK=0
+  echo "ASR failed: status=${ASR_STATUS}" >&2
+  cat "${ASR_TMP}" >&2 || true
+else
+  cat "${ASR_TMP}"
+fi
 
 echo "==> [TTS output] POST /v1/audio/speech -> out.wav"
 TTS_OUT="${MODEL_DIR}/tts_out.wav"
-curl -fsS "http://${NODE_HOST}:${NODE_PORT}/v1/audio/speech" \
+TTS_STATUS="$(curl -sS "http://${NODE_HOST}:${NODE_PORT}/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d "{\"model\":\"toy_tts.onnx\",\"input\":\"hello audio i/o poc\",\"voice\":\"default\",\"response_format\":\"wav\",\"speed\":1.0}" \
-  --output "${TTS_OUT}"
+  --output "${TTS_OUT}" \
+  -w "%{http_code}")"
+
+if [[ "${TTS_STATUS}" != "200" ]]; then
+  echo "TTS failed: status=${TTS_STATUS}" >&2
+  cat "${TTS_OUT}" >&2 || true
+  exit 1
+fi
 
 if [[ ! -s "${TTS_OUT}" ]]; then
   echo "Error: TTS output is empty" >&2
   exit 1
 fi
 
-python3 - <<'PY' "${TTS_OUT}"
+"${PYTHON_RUNTIME}" - <<'PY' "${TTS_OUT}"
 import sys
 path = sys.argv[1]
 with open(path, "rb") as f:
@@ -178,4 +251,18 @@ print(path)
 PY
 
 ls -lh "${TTS_OUT}"
+echo "To play (macOS):"
+echo "  afplay \"${TTS_OUT}\""
+
+if [[ "${PLAY_TTS}" == "1" ]]; then
+  if command -v afplay >/dev/null 2>&1; then
+    afplay "${TTS_OUT}" || true
+  else
+    echo "Warning: afplay not found; cannot auto-play." >&2
+  fi
+fi
+
+if [[ "${ASR_OK}" -ne 1 ]]; then
+  exit 1
+fi
 echo "OK: ASR(JSON) + TTS(WAV) round-trip succeeded."

@@ -60,5 +60,5 @@ MODEL=microsoft/VibeVoice-Realtime-0.5B ./convert_and_run.sh
 - `microsoft/VibeVoice-Realtime-0.5B` は Transformers の標準エクスポーター（sequence-classification 等）に未対応のカスタムアーキテクチャです。`transformers.onnx` では変換できず、独自のエクスポートスクリプトが必要です（音響トークナイザ＋拡散ヘッドを含むため）。
 
 ## メモ
-- CoreML EP が見つからない場合は CPU にフォールバックします。
+- CPUフォールバックは無効化しています（`session.disable_cpu_ep_fallback=1`）。CoreML EPで全ノードを実行できない場合、セッション生成が失敗します。
 - 実際の推論ループや I/O 前処理は入れていません。必要になったらこのサンプルをベースに拡張してください。

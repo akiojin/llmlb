@@ -6,6 +6,10 @@
 #include <cstring>
 #include <stdexcept>
 
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+#include <coreml_provider_factory.h>
+#endif
+
 namespace llm_node {
 
 OnnxTtsManager::OnnxTtsManager(std::string models_dir)
@@ -86,6 +90,8 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
         Ort::SessionOptions session_options;
         session_options.SetIntraOpNumThreads(4);
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        // CPUフォールバック禁止: EPがサポートできないノードがある場合はセッション生成を失敗させる。
+        session_options.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
 
         // CPUフォールバックは禁止: 非CPUのExecution Providerが必須。
         const auto providers = Ort::GetAvailableProviders();
@@ -133,8 +139,19 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
             throw std::runtime_error(
                 "No supported hardware execution provider found (expected CoreML/CUDA/ROCm/etc).");
         }
-        session_options.AppendExecutionProvider(selected);
-        spdlog::info("ONNX Runtime: {} enabled (TTS)", selected);
+        if (std::strcmp(selected, "CoreMLExecutionProvider") == 0) {
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+            const uint32_t coreml_flags = COREML_FLAG_ENABLE_ON_SUBGRAPH;
+            Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags));
+            spdlog::info("ONNX Runtime: CoreMLExecutionProvider enabled (TTS)");
+#else
+            throw std::runtime_error(
+                "CoreMLExecutionProvider is required but coreml_provider_factory.h is not available.");
+#endif
+        } else {
+            session_options.AppendExecutionProvider(selected);
+            spdlog::info("ONNX Runtime: {} enabled (TTS)", selected);
+        }
 
         auto session = std::make_unique<Ort::Session>(
             env_, canonical_path.c_str(), session_options);

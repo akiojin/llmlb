@@ -6,6 +6,10 @@
 
 #include <onnxruntime_cxx_api.h>
 
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+#include <coreml_provider_factory.h>
+#endif
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: onnx_poc <model.onnx>\n";
@@ -18,6 +22,8 @@ int main(int argc, char* argv[]) {
         Ort::Env env{ORT_LOGGING_LEVEL_INFO, "onnx-poc"};
         Ort::SessionOptions opts;
         opts.SetIntraOpNumThreads(2);
+        // CPUフォールバック禁止: EPがサポートできないノードがある場合はセッション生成を失敗させる。
+        opts.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
 
 #if defined(__APPLE__)
         // CoreML EP を必須とする（CPUフォールバック無し）。
@@ -33,7 +39,16 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        opts.AppendExecutionProvider("CoreMLExecutionProvider");
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+        // Small graphs are often left on CPU unless we explicitly allow subgraph partitioning.
+        const uint32_t coreml_flags = COREML_FLAG_ENABLE_ON_SUBGRAPH;
+        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(opts, coreml_flags));
+#else
+        std::cerr
+            << "Error: CoreML provider factory header not found (coreml_provider_factory.h).\n"
+            << "Install/build onnxruntime with CoreML EP enabled.\n";
+        return 1;
+#endif
         std::cout << "CoreML EP enabled\n";
 #endif
 

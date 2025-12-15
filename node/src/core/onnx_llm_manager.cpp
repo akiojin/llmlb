@@ -6,6 +6,10 @@
 #include <filesystem>
 #include <stdexcept>
 
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+#include <coreml_provider_factory.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace llm_node {
@@ -156,6 +160,8 @@ std::unique_ptr<Ort::Session> OnnxLlmManager::createSession(const std::string& c
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(4);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    // CPUフォールバック禁止: EPがサポートできないノードがある場合はセッション生成を失敗させる。
+    session_options.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
 
     // CPUフォールバックは禁止: 非CPUのExecution Providerが必須。
     const auto providers = Ort::GetAvailableProviders();
@@ -169,12 +175,24 @@ std::unique_ptr<Ort::Session> OnnxLlmManager::createSession(const std::string& c
         throw std::runtime_error(
             "No supported hardware execution provider found (expected CoreML/CUDA/ROCm/etc).");
     }
-    try {
-        session_options.AppendExecutionProvider(preferred->c_str());
-        spdlog::info("ONNX Runtime: {} enabled", *preferred);
-    } catch (const Ort::Exception& e) {
+    if (*preferred == "CoreMLExecutionProvider") {
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+        // For small graphs, CoreML EP may not take any nodes unless subgraph partitioning is enabled.
+        const uint32_t coreml_flags = COREML_FLAG_ENABLE_ON_SUBGRAPH;
+        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags));
+        spdlog::info("ONNX Runtime: CoreMLExecutionProvider enabled");
+#else
         throw std::runtime_error(
-            std::string("Failed to enable execution provider ") + *preferred + ": " + e.what());
+            "CoreMLExecutionProvider is required but coreml_provider_factory.h is not available.");
+#endif
+    } else {
+        try {
+            session_options.AppendExecutionProvider(preferred->c_str());
+            spdlog::info("ONNX Runtime: {} enabled", *preferred);
+        } catch (const Ort::Exception& e) {
+            throw std::runtime_error(
+                std::string("Failed to enable execution provider ") + *preferred + ": " + e.what());
+        }
     }
 
     return std::make_unique<Ort::Session>(env_, canonical_path.c_str(), session_options);

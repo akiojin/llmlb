@@ -2,6 +2,7 @@
 #include <httplib.h>
 #include <thread>
 #include <atomic>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 
 #include "api/router_client.h"
@@ -18,6 +19,7 @@ public:
         stop_flag_ = false;
         server_.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register_body = req.body;
+            last_register_api_key = req.get_header_value("X-API-Key");
             res.status = register_status;
             res.set_content(register_response_body, "application/json");
         });
@@ -52,6 +54,7 @@ public:
     int register_status{200};
     std::string register_response_body{R"({"node_id":"node-1","agent_token":"test-token-123"})"};
     std::string last_register_body;
+    std::string last_register_api_key;
 
     int heartbeat_status{200};
     std::string last_heartbeat_body;
@@ -59,6 +62,7 @@ public:
 };
 
 TEST(RouterClientTest, RegisterNodeSuccess) {
+    setenv("LLM_ROUTER_API_KEY", "sk_test", 1);
     RouterServer server;
     server.start(18081);
 
@@ -81,6 +85,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     EXPECT_EQ(result.node_id, "node-1");
     EXPECT_EQ(result.agent_token, "test-token-123");
     EXPECT_FALSE(server.last_register_body.empty());
+    EXPECT_EQ(server.last_register_api_key, "sk_test");
 
     // Verify JSON structure matches router protocol
     auto body = nlohmann::json::parse(server.last_register_body);
@@ -94,6 +99,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
 }
 
 TEST(RouterClientTest, RegisterNodeFailureWhenServerReturnsError) {
+    setenv("LLM_ROUTER_API_KEY", "sk_test", 1);
     RouterServer server;
     server.register_status = 400;
     server.register_response_body = "invalid";
@@ -135,6 +141,9 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     EXPECT_TRUE(body.contains("memory_usage"));
     EXPECT_TRUE(body.contains("active_requests"));
     EXPECT_TRUE(body.contains("loaded_models"));
+    EXPECT_TRUE(body.contains("loaded_asr_models"));
+    EXPECT_TRUE(body.contains("loaded_tts_models"));
+    EXPECT_TRUE(body.contains("supported_runtimes"));
     EXPECT_EQ(body["initializing"], false);
 }
 
@@ -158,7 +167,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
 
     RouterClient client("http://127.0.0.1:18084");
     HeartbeatMetrics m{12.5, 34.5, 1024, 2048};
-    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, 2);
+    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, {}, {}, {}, 2);
 
     server.stop();
 

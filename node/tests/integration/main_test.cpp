@@ -50,6 +50,7 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
 
     TempDir models;
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
+    setenv("LLM_ROUTER_API_KEY", "sk_test", 1);
     setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
@@ -91,6 +92,7 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
 
     TempDir models;
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
+    setenv("LLM_ROUTER_API_KEY", "sk_test", 1);
     setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);

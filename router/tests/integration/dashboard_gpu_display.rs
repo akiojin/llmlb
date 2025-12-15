@@ -64,6 +64,7 @@ async fn dashboard_agents_include_gpu_devices() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
         )

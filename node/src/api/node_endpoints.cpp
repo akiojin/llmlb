@@ -9,6 +9,7 @@
 #include "utils/logger.h"
 #include "models/model_sync.h"
 #include "models/model_downloader.h"
+#include "models/model_storage.h"
 #include "api/router_client.h"
 
 namespace llm_node {
@@ -48,26 +49,23 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             std::string path = j.value("path", "");
             std::string chat_template = j.value("chat_template", "");
 
-            // helper: model name -> dir (colon to underscore, append _latest when tagなし)
-            auto modelNameToDir = [](const std::string& name) {
-                std::string dir = name;
-                std::replace(dir.begin(), dir.end(), ':', '_');
-                if (name.find(':') == std::string::npos) {
-                    dir += "_latest";
-                }
-                return dir;
-            };
-
             std::string download_url = j.value("download_url", "");
+            std::string registry_url = j.value("registry_url", "");
 
-            std::thread([sync, client, model_name, task_id, path, download_url, chat_template, modelNameToDir]() {
+            std::thread([sync, client, model_name, task_id, path, download_url, registry_url, chat_template]() {
                 spdlog::info("Starting model pull: model={}, task_id={}, path='{}'",
                               model_name, task_id, path);
 
                 const std::string models_dir = sync->getModelsDir();
-                const std::string dir_name = modelNameToDir(model_name);
+                const std::string dir_name = ModelStorage::modelNameToDir(model_name);
                 const std::filesystem::path target_dir = std::filesystem::path(models_dir) / dir_name;
-                const std::filesystem::path target_path = target_dir / "model.gguf";
+                auto ends_with = [](const std::string& s, const std::string& suffix) -> bool {
+                    if (s.size() < suffix.size()) return false;
+                    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+                };
+
+                const bool is_onnx = !registry_url.empty() || ends_with(download_url, ".onnx");
+                const std::filesystem::path target_path = target_dir / (is_onnx ? "model.onnx" : "model.gguf");
 
                 bool success = false;
 
@@ -98,14 +96,41 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
 
                 // 2) 共有パスが利用不可なら download_url or Router API 経由でダウンロード
                 if (!success) {
-                    std::string blob = !download_url.empty()
-                        ? download_url
-                        : sync->getBaseUrl() + "/api/models/blob/" + model_name;
-                    spdlog::info("Shared path unavailable, downloading: {}", blob);
-                    ModelDownloader downloader(sync->getBaseUrl(), models_dir, std::chrono::milliseconds(30000));
-                    std::string filename = dir_name + "/model.gguf";
-                    auto out = downloader.downloadBlob(blob, filename, progress_cb);
-                    success = !out.empty();
+                    if (!registry_url.empty()) {
+                        // manifest-based multi-file download from router registry
+                        std::string base = registry_url;
+                        if (!(base.rfind("http://", 0) == 0 || base.rfind("https://", 0) == 0)) {
+                            const std::string router_base = sync->getBaseUrl();
+                            if (!base.empty() && base.front() == '/') {
+                                // join: http://host:port + /api/models/registry
+                                if (!router_base.empty() && router_base.back() == '/') {
+                                    base = router_base.substr(0, router_base.size() - 1) + base;
+                                } else {
+                                    base = router_base + base;
+                                }
+                            } else {
+                                // join: http://host:port + api/models/registry
+                                if (!router_base.empty() && router_base.back() == '/') {
+                                    base = router_base + base;
+                                } else {
+                                    base = router_base + "/" + base;
+                                }
+                            }
+                        }
+
+                        spdlog::info("Downloading model bundle via manifest: registry_base={}", base);
+                        ModelDownloader downloader(base, models_dir, std::chrono::milliseconds(30000));
+                        success = sync->downloadModel(downloader, model_name, progress_cb);
+                    } else {
+                        std::string blob = !download_url.empty()
+                            ? download_url
+                            : sync->getBaseUrl() + "/api/models/blob/" + model_name;
+                        spdlog::info("Shared path unavailable, downloading: {}", blob);
+                        ModelDownloader downloader(sync->getBaseUrl(), models_dir, std::chrono::milliseconds(30000));
+                        std::string filename = dir_name + (is_onnx ? "/model.onnx" : "/model.gguf");
+                        auto out = downloader.downloadBlob(blob, filename, progress_cb);
+                        success = !out.empty();
+                    }
                 }
 
                 if (success) {

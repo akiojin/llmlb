@@ -2,7 +2,7 @@
 
 ## 概要
 
-llama.cppが`gptoss`アーキテクチャ名（ハイフンなし）を認識できるようにする。
+旧GGUFベース実装が`gptoss`アーキテクチャ名（ハイフンなし）を認識できるようにする。
 
 ## ビジネス価値
 
@@ -49,7 +49,7 @@ LLM runtimeが生成するGGUFファイルは以下の形式を使用する:
 - アーキテクチャ名: `general.architecture = "gptoss"`
 - ハイパーパラメータキー: `gptoss.context_length`, `gptoss.embedding_length`等
 
-しかし、llama.cppのマッピングは`"gpt-oss"`（ハイフン付き）のみを認識していた。
+しかし、旧実装のマッピングは`"gpt-oss"`（ハイフン付き）のみを認識していた。
 
 ```cpp
 // llama-arch.cpp 99行目（修正前）
@@ -67,9 +67,9 @@ LLM runtimeが生成するGGUFファイルは以下の形式を使用する:
 `LLM_ARCH_NAMES`のマッピングを`"gptoss"`に変更し、
 `llm_arch_from_string`で`"gpt-oss"`のエイリアスも認識するようにした。
 
-### llama.cpp本家との同期
+### 上流実装との同期
 
-テンソル定義やグラフビルダーをllama.cpp本家と同期:
+テンソル定義やグラフビルダーを上流実装と同期:
 
 - `LLM_TENSOR_ATTN_POST_NORM` テンソル追加
 - `LLM_TENSOR_ATTN_SINKS` テンソル追加

@@ -1,0 +1,6 @@
+huggingface_hub>=0.24.0
+onnx>=1.16.0
+safetensors>=0.4.3
+sentencepiece>=0.2.0
+torch>=2.1.0
+transformers>=4.44.0

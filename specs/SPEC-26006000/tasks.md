@@ -41,7 +41,7 @@
 ## Phase 3.3: 型定義実装 (テスト失敗確認後)
 
 - [ ] T017 `common/src/types.rs` の ModelType に SpeechToText, TextToSpeech を追加
-- [ ] T018 `common/src/types.rs` に RuntimeType enum 実装 (LlamaCpp, WhisperCpp, OnnxRuntime)
+- [ ] T018 `common/src/types.rs` に RuntimeType enum 実装 (OnnxRuntime, WhisperCpp)
 - [ ] T019 `common/src/protocol.rs` の RequestType に Transcription, Speech を追加
 - [ ] T020 [P] `common/src/protocol.rs` に TranscriptionRequest 構造体を追加
 - [ ] T021 [P] `common/src/protocol.rs` に TranscriptionResponse 構造体を追加

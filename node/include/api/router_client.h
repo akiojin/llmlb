@@ -52,6 +52,9 @@ public:
                        const std::optional<HeartbeatMetrics>& metrics = std::nullopt,
                        const std::vector<std::string>& loaded_models = {},
                        const std::vector<std::string>& loaded_embedding_models = {},
+                       const std::vector<std::string>& loaded_asr_models = {},
+                       const std::vector<std::string>& loaded_tts_models = {},
+                       const std::vector<std::string>& supported_runtimes = {},
                        int max_retries = 2);
 
     /// T034: Report download progress to router
@@ -63,6 +66,7 @@ public:
 private:
     std::string base_url_;
     std::chrono::milliseconds timeout_;
+    std::string api_key_;
 };
 
 }  // namespace llm_node

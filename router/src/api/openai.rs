@@ -23,11 +23,14 @@ use crate::{
     api::{
         models::list_registered_models,
         nodes::AppError,
-        proxy::{forward_streaming_response, save_request_record, select_available_node},
+        proxy::{
+            forward_streaming_response, save_request_record, select_available_node_by_runtime,
+        },
     },
     balancer::RequestOutcome,
     cloud_metrics, AppState,
 };
+use llm_router_common::types::RuntimeType;
 
 fn map_reqwest_error(err: reqwest::Error) -> AppError {
     AppError::from(RouterError::Http(err.to_string()))
@@ -790,7 +793,7 @@ async fn proxy_openai_post(
     let timestamp = Utc::now();
     let request_body = payload.clone();
 
-    let agent = select_available_node(state).await?;
+    let agent = select_available_node_by_runtime(state, RuntimeType::OnnxRuntime).await?;
     let node_id = agent.id;
     let agent_machine_name = agent.machine_name.clone();
     let agent_ip = agent.ip_address;
@@ -1021,7 +1024,7 @@ async fn proxy_openai_post(
 
 #[allow(dead_code)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
-    let agent = select_available_node(state).await?;
+    let agent = select_available_node_by_runtime(state, RuntimeType::OnnxRuntime).await?;
     let node_id = agent.id;
 
     state
@@ -1545,7 +1548,8 @@ mod tests {
         assert!(
             msg.contains("NoAgentsAvailable")
                 || msg.contains("No available agents")
-                || msg.contains("No agents available"),
+                || msg.contains("No agents available")
+                || msg.contains("No nodes available"),
             "expected local-path agent error, got {}",
             msg
         );

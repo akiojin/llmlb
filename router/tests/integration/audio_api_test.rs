@@ -42,7 +42,7 @@ async fn build_app() -> Router {
 
 /// T013: ASRノード選択テスト
 ///
-/// RuntimeType.Whisperを持つノードが/v1/audio/transcriptionsにルーティングされる
+/// RuntimeType::WhisperCppを持つノードが/v1/audio/transcriptionsにルーティングされる
 #[tokio::test]
 #[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_asr_node_routing_selects_whisper_runtime() {
@@ -59,7 +59,7 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
         ],
-        "supported_runtimes": ["whisper"],
+        "supported_runtimes": ["whisper_cpp"],
         "loaded_asr_models": ["whisper-large-v3"]
     });
 
@@ -70,6 +70,7 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -107,19 +108,19 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
     let whisper_node = node_list.iter().find(|n| {
         n.get("supported_runtimes")
             .and_then(|r| r.as_array())
-            .map(|arr| arr.iter().any(|v| v.as_str() == Some("whisper")))
+            .map(|arr| arr.iter().any(|v| v.as_str() == Some("whisper_cpp")))
             .unwrap_or(false)
     });
 
     assert!(
         whisper_node.is_some(),
-        "A node with whisper runtime should be registered"
+        "A node with whisper_cpp capability should be registered"
     );
 }
 
 /// T014: TTSノード選択テスト
 ///
-/// RuntimeType.OnnxTtsを持つノードが/v1/audio/speechにルーティングされる
+/// RuntimeType::OnnxRuntimeを持つノードが/v1/audio/speechにルーティングされる
 #[tokio::test]
 #[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_tts_node_routing_selects_onnx_runtime() {
@@ -136,7 +137,7 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
         ],
-        "supported_runtimes": ["onnx_tts"],
+        "supported_runtimes": ["onnx_runtime"],
         "loaded_tts_models": ["vibevoice-v1"]
     });
 
@@ -147,6 +148,7 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -183,13 +185,13 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
     let tts_node = node_list.iter().find(|n| {
         n.get("supported_runtimes")
             .and_then(|r| r.as_array())
-            .map(|arr| arr.iter().any(|v| v.as_str() == Some("onnx_tts")))
+            .map(|arr| arr.iter().any(|v| v.as_str() == Some("onnx_runtime")))
             .unwrap_or(false)
     });
 
     assert!(
         tts_node.is_some(),
-        "A node with onnx_tts runtime should be registered"
+        "A node with onnx_runtime capability should be registered"
     );
 }
 
@@ -202,7 +204,7 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
-    // 複合ランタイム対応ノードを登録（LLM + ASR + TTS）
+    // 複合ランタイム対応ノードを登録（ONNX + ASR）
     let register_payload = json!({
         "machine_name": "multi-runtime-node",
         "ip_address": "192.168.1.102",
@@ -212,8 +214,8 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 2, "memory": 24576}
         ],
-        "supported_runtimes": ["llama_cpp", "whisper", "onnx_tts"],
-        "loaded_models": ["llama-3.1-8b-instruct"],
+        "supported_runtimes": ["onnx_runtime", "whisper_cpp"],
+        "loaded_models": ["gpt-oss-20b"],
         "loaded_asr_models": ["whisper-large-v3"],
         "loaded_tts_models": ["vibevoice-v1"]
     });
@@ -225,6 +227,7 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -280,8 +283,8 @@ async fn test_no_capable_node_returns_503() {
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
         ],
-        "supported_runtimes": ["llama_cpp"],
-        "loaded_models": ["llama-3.1-8b-instruct"]
+        "supported_runtimes": ["onnx_runtime"],
+        "loaded_models": ["gpt-oss-20b"]
     });
 
     let register_response = app
@@ -291,6 +294,7 @@ async fn test_no_capable_node_returns_503() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )

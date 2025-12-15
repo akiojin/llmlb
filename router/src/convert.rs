@@ -1,13 +1,15 @@
 //! Model download & conversion job manager
 //!
-//! Downloads models from Hugging Face and (if needed) converts them to GGUF.
+//! Downloads models from Hugging Face and (if needed) exports them to ONNX.
 //! Jobs are processed asynchronously in the background and progress can be queried via API.
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -61,163 +63,11 @@ pub fn get_venv_python() -> Option<PathBuf> {
     })
 }
 
-/// 変換スクリプトのパスを取得
-#[allow(dead_code)]
-fn find_convert_script() -> Option<PathBuf> {
-    // 環境変数でオーバーライド
-    if let Ok(custom) = std::env::var("LLM_CONVERT_SCRIPT") {
-        return Some(PathBuf::from(custom));
-    }
-
-    // node/third_party/llama.cpp/convert_hf_to_gguf.py を探す
-    let candidates = [
-        PathBuf::from("node/third_party/llama.cpp/convert_hf_to_gguf.py"),
-        PathBuf::from("third_party/llama.cpp/convert_hf_to_gguf.py"),
-        PathBuf::from("../node/third_party/llama.cpp/convert_hf_to_gguf.py"),
-    ];
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    // 実行ファイルの相対パスから探す
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let relative = exe_dir.join("../node/third_party/llama.cpp/convert_hf_to_gguf.py");
-            if relative.exists() {
-                return Some(relative);
-            }
-        }
-    }
-
-    None
-}
-
-/// gguf_new_metadata.py スクリプトのパスを取得
-fn find_gguf_metadata_script() -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from("node/third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py"),
-        PathBuf::from("third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py"),
-        PathBuf::from("../node/third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py"),
-    ];
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    // 実行ファイルの相対パスから探す
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let relative = exe_dir
-                .join("../node/third_party/llama.cpp/gguf-py/gguf/scripts/gguf_new_metadata.py");
-            if relative.exists() {
-                return Some(relative);
-            }
-        }
-    }
-
-    None
-}
-
-/// gguf-py ライブラリのパスを取得（PYTHONPATH用）
-fn find_gguf_py_path() -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from("node/third_party/llama.cpp/gguf-py"),
-        PathBuf::from("third_party/llama.cpp/gguf-py"),
-        PathBuf::from("../node/third_party/llama.cpp/gguf-py"),
-    ];
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let relative = exe_dir.join("../node/third_party/llama.cpp/gguf-py");
-            if relative.exists() {
-                return Some(relative);
-            }
-        }
-    }
-
-    None
-}
-
-/// GGUFファイルにchat_templateを追加
-async fn add_chat_template_to_gguf(
-    gguf_path: &Path,
-    chat_template: &str,
-) -> Result<(), RouterError> {
-    let script = find_gguf_metadata_script()
-        .ok_or_else(|| RouterError::Internal("gguf_new_metadata.py not found".into()))?;
-    let gguf_py_path = find_gguf_py_path()
-        .ok_or_else(|| RouterError::Internal("gguf-py library not found".into()))?;
-
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
-
-    // 一時ファイルに出力し、成功したら置換
-    let temp_path = gguf_path.with_extension("gguf.tmp");
-
-    let script_clone = script.clone();
-    let gguf_path_clone = gguf_path.to_path_buf();
-    let temp_path_clone = temp_path.clone();
-    let chat_template_clone = chat_template.to_string();
-    let gguf_py_path_clone = gguf_py_path.clone();
-
-    let result = task::spawn_blocking(move || {
-        let output = Command::new(&python_bin)
-            .env("PYTHONPATH", &gguf_py_path_clone)
-            .arg(&script_clone)
-            .arg(&gguf_path_clone)
-            .arg(&temp_path_clone)
-            .arg("--chat-template")
-            .arg(&chat_template_clone)
-            .arg("--force")
-            .output();
-
-        match output {
-            Ok(out) => {
-                if out.status.success() {
-                    Ok(())
-                } else {
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    Err(format!("gguf_new_metadata.py failed: {}", stderr))
-                }
-            }
-            Err(e) => Err(format!("Failed to run gguf_new_metadata.py: {}", e)),
-        }
-    })
-    .await
-    .map_err(|e| RouterError::Internal(e.to_string()))?;
-
-    result.map_err(RouterError::Internal)?;
-
-    // 成功したら置換
-    tokio::fs::rename(&temp_path, gguf_path)
-        .await
-        .map_err(|e| RouterError::Internal(format!("Failed to replace GGUF file: {}", e)))?;
-
-    tracing::info!(path=?gguf_path, template_len=chat_template.len(), "Added chat_template to GGUF");
-
-    Ok(())
-}
-
 /// requirementsファイルのパスを取得
 fn find_requirements_file() -> Option<PathBuf> {
     let candidates = [
-        PathBuf::from(
-            "node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt",
-        ),
-        PathBuf::from("third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt"),
-        PathBuf::from(
-            "../node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt",
-        ),
+        PathBuf::from("scripts/requirements-export-hf-to-onnx.txt"),
+        PathBuf::from("../scripts/requirements-export-hf-to-onnx.txt"),
     ];
 
     candidates.into_iter().find(|candidate| candidate.exists())
@@ -566,27 +416,31 @@ async fn download_and_maybe_convert<F>(
 where
     F: Fn(f32) + Send + Sync + Clone + 'static,
 {
-    let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
+    let is_onnx = filename.to_ascii_lowercase().ends_with(".onnx");
     // モデル名 = リポジトリ名（例: openai/gpt-oss-20b）
     let model_name = repo.to_string();
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
         .to_string();
-    let url = format!(
-        "{}/{}/resolve/{}/{}",
-        base_url,
-        repo,
-        revision.unwrap_or("main"),
-        filename
-    );
+    let url = if filename.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{}/{}/resolve/{}/{}",
+            base_url,
+            repo,
+            revision.unwrap_or("main"),
+            filename
+        )
+    };
 
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
     let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
-    let target = dir.join("model.gguf");
+    let target = dir.join("model.onnx");
 
     // skip if already present but make sure metadata is up-to-date
     if target.exists() {
@@ -595,36 +449,48 @@ where
             &model_name,
             repo,
             filename,
-            &url,
+            if url.is_empty() {
+                None
+            } else {
+                Some(url.as_str())
+            },
             &target,
             chat_template.clone(),
         )
         .await;
+        if let Err(e) = ensure_manifest(&dir, &model_name).await {
+            tracing::warn!(error=%e, model=%model_name, "failed_to_write_manifest");
+        }
         return Ok(target.to_string_lossy().to_string());
     }
 
-    if is_gguf {
+    if is_onnx {
+        if url.is_empty() {
+            return Err(RouterError::Internal("ONNX filename is empty".into()));
+        }
         download_file(&url, &target).await?;
         progress_callback(1.0);
     } else {
-        convert_non_gguf(repo, revision, &target, progress_callback.clone()).await?;
+        export_non_onnx(repo, revision, &target, progress_callback.clone()).await?;
     }
 
-    // chat_templateが指定されている場合、GGUFに埋め込む
-    if let Some(ref template) = chat_template {
-        if !template.is_empty() {
-            tracing::info!(
-                template_len = template.len(),
-                "Embedding chat_template into GGUF"
-            );
-            if let Err(e) = add_chat_template_to_gguf(&target, template).await {
-                // 埋め込み失敗は警告のみ（モデル自体は使用可能）
-                tracing::warn!(error=%e, "Failed to embed chat_template, model may work with fallback detection");
-            }
-        }
+    if let Err(e) = ensure_manifest(&dir, &model_name).await {
+        tracing::warn!(error=%e, model=%model_name, "failed_to_write_manifest");
     }
 
-    finalize_model_registration(&model_name, repo, filename, &url, &target, chat_template).await;
+    finalize_model_registration(
+        &model_name,
+        repo,
+        filename,
+        if url.is_empty() {
+            None
+        } else {
+            Some(url.as_str())
+        },
+        &target,
+        chat_template,
+    )
+    .await;
 
     Ok(target.to_string_lossy().to_string())
 }
@@ -654,9 +520,108 @@ async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
     Ok(())
 }
 
-/// 非GGUFをGGUFへコンバート（sync heavy → blocking thread）
+#[derive(Debug, Serialize)]
+struct ModelManifest {
+    model: String,
+    files: Vec<ModelManifestFile>,
+}
+
+#[derive(Debug, Serialize)]
+struct ModelManifestFile {
+    name: String,
+    digest: String,
+}
+
+async fn ensure_manifest(model_dir: &Path, model_name: &str) -> Result<(), RouterError> {
+    let dir = model_dir.to_path_buf();
+    let model = model_name.to_string();
+    task::spawn_blocking(move || write_manifest_sync(&dir, &model))
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?
+}
+
+fn write_manifest_sync(model_dir: &Path, model_name: &str) -> Result<(), RouterError> {
+    let manifest_path = model_dir.join("manifest.json");
+
+    let mut rel_files: Vec<PathBuf> = Vec::new();
+    collect_files_recursive(model_dir, model_dir, &mut rel_files)
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+    rel_files.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+
+    let mut files: Vec<ModelManifestFile> = Vec::with_capacity(rel_files.len());
+    for rel in rel_files {
+        let full = model_dir.join(&rel);
+        let digest = sha256_hex_of_file(&full).map_err(|e| RouterError::Internal(e.to_string()))?;
+        files.push(ModelManifestFile {
+            name: rel.to_string_lossy().to_string(),
+            digest,
+        });
+    }
+
+    let manifest = ModelManifest {
+        model: model_name.to_string(),
+        files,
+    };
+
+    let temp_path = manifest_path.with_extension("json.tmp");
+    let json = serde_json::to_vec_pretty(&manifest)
+        .map_err(|e| RouterError::Internal(format!("Failed to serialize manifest: {}", e)))?;
+    std::fs::write(&temp_path, json)
+        .map_err(|e| RouterError::Internal(format!("Failed to write manifest: {}", e)))?;
+    std::fs::rename(&temp_path, &manifest_path)
+        .map_err(|e| RouterError::Internal(format!("Failed to finalize manifest: {}", e)))?;
+
+    Ok(())
+}
+
+fn collect_files_recursive(
+    base_dir: &Path,
+    dir: &Path,
+    out: &mut Vec<PathBuf>,
+) -> Result<(), std::io::Error> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursive(base_dir, &path, out)?;
+            continue;
+        }
+        if path.file_name().and_then(|n| n.to_str()) == Some("manifest.json") {
+            continue;
+        }
+        let rel = path.strip_prefix(base_dir).unwrap_or(&path).to_path_buf();
+        out.push(rel);
+    }
+    Ok(())
+}
+
+fn sha256_hex_of_file(path: &Path) -> Result<String, std::io::Error> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 8 * 1024 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let digest = hasher.finalize();
+    Ok(hex_lower(&digest))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(&mut out, "{:02x}", b);
+    }
+    out
+}
+
+/// 非ONNXをONNXへエクスポート（sync heavy → blocking thread）
 /// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
-async fn convert_non_gguf<F>(
+async fn export_non_onnx<F>(
     repo: &str,
     revision: Option<&str>,
     target: &Path,
@@ -667,33 +632,51 @@ where
 {
     if should_use_fake_convert() {
         progress_callback(0.5);
-        write_dummy_gguf(target).await?;
+        write_dummy_onnx(target).await?;
         progress_callback(1.0);
         return Ok(());
     }
 
     let script = locate_convert_script()
-        .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+        .ok_or_else(|| RouterError::Internal("export_hf_to_onnx.py not found".into()))?;
     // デフォルトスクリプトを使う場合のみ依存チェックを行う。カスタムスクリプトは自己完結を想定。
     if script
         .file_name()
         .and_then(|n| n.to_str())
-        .map(|n| n.contains("convert_hf_to_gguf.py"))
+        .map(|n| n.contains("export_hf_to_onnx.py"))
         .unwrap_or(false)
     {
         ensure_python_deps().await?;
     }
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "python3".into());
     let hf_token = std::env::var("HF_TOKEN").ok();
 
     if let Some(parent) = target.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+        // Best-effort cleanup of previous ONNX artifacts to avoid stale external data.
+        let _ = tokio::fs::remove_file(parent.join("manifest.json")).await;
+        if let Ok(mut rd) = tokio::fs::read_dir(parent).await {
+            while let Ok(Some(entry)) = rd.next_entry().await {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if name == "model.onnx" || name.starts_with("model.onnx.") {
+                    let _ = tokio::fs::remove_file(&path).await;
+                }
+            }
+        }
     }
-    if target.exists() {
-        let _ = tokio::fs::remove_file(target).await;
-    }
+    let _ = tokio::fs::remove_file(target).await;
 
     let repo_with_rev = if let Some(rev) = revision {
         format!("{}@{}", repo, rev)
@@ -814,8 +797,11 @@ where
 
 /// python依存が無いときは事前にエラーにする
 async fn ensure_python_deps() -> Result<(), RouterError> {
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
-    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "python3".into());
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
 
     let python_bin_for_cmd = python_bin.clone();
@@ -836,12 +822,12 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
-        "transformers, torch, sentencepiece".to_string()
+        "transformers, torch, onnx, huggingface_hub".to_string()
     } else {
         missing
     };
     Err(RouterError::Internal(format!(
-        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt (python_bin={}, stderr={})",
+        "Missing python deps for HF ONNX export: {}. Install with: python3 -m pip install -r scripts/requirements-export-hf-to-onnx.txt (python_bin={}, stderr={})",
         deps,
         python_bin,
         stderr
@@ -849,8 +835,11 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
 }
 
 fn ensure_python_deps_sync() -> Result<(), RouterError> {
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
-    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "python3".into());
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let output = std::process::Command::new(&python_bin)
         .arg("-c")
@@ -865,12 +854,12 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
-        "transformers, torch, sentencepiece".to_string()
+        "transformers, torch, onnx, huggingface_hub".to_string()
     } else {
         missing
     };
     Err(RouterError::Internal(format!(
-        "Missing python deps for HF convert: {}. Install with: python3 -m pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt (python_bin={}, stderr={})",
+        "Missing python deps for HF ONNX export: {}. Install with: python3 -m pip install -r scripts/requirements-export-hf-to-onnx.txt (python_bin={}, stderr={})",
         deps,
         python_bin,
         stderr
@@ -882,7 +871,7 @@ fn should_use_fake_convert() -> bool {
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
     if enabled {
-        tracing::warn!("LLM_CONVERT_FAKE is enabled - using dummy GGUF output (for testing only)");
+        tracing::warn!("LLM_CONVERT_FAKE is enabled - using dummy ONNX output (for testing only)");
     }
     enabled
 }
@@ -901,7 +890,7 @@ pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<M
     }
 }
 
-async fn write_dummy_gguf(target: &Path) -> Result<(), RouterError> {
+async fn write_dummy_onnx(target: &Path) -> Result<(), RouterError> {
     if let Some(parent) = target.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -910,7 +899,7 @@ async fn write_dummy_gguf(target: &Path) -> Result<(), RouterError> {
     let mut file = tokio::fs::File::create(target)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
-    file.write_all(b"gguf dummy")
+    file.write_all(b"onnx dummy")
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
     Ok(())
@@ -925,8 +914,8 @@ fn locate_convert_script() -> Option<PathBuf> {
     }
 
     let candidates = vec![
-        PathBuf::from("node/third_party/llama.cpp/convert_hf_to_gguf.py"),
-        PathBuf::from("third_party/llama.cpp/convert_hf_to_gguf.py"),
+        PathBuf::from("scripts/export_hf_to_onnx.py"),
+        PathBuf::from("../scripts/export_hf_to_onnx.py"),
     ];
 
     for cand in candidates {
@@ -937,11 +926,7 @@ fn locate_convert_script() -> Option<PathBuf> {
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let cand = dir
-                .join("..")
-                .join("third_party")
-                .join("llama.cpp")
-                .join("convert_hf_to_gguf.py");
+            let cand = dir.join("../scripts/export_hf_to_onnx.py");
             if cand.exists() {
                 return Some(cand);
             }
@@ -954,7 +939,7 @@ fn locate_convert_script() -> Option<PathBuf> {
 fn is_default_convert_script(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
-        .map(|n| n.contains("convert_hf_to_gguf.py"))
+        .map(|n| n.contains("export_hf_to_onnx.py"))
         .unwrap_or(false)
 }
 
@@ -962,11 +947,20 @@ fn is_default_convert_script(path: &Path) -> bool {
 /// - デフォルトスクリプトを使う場合のみ Python 依存チェックを行う。
 /// - カスタムスクリプト指定時は存在確認のみ。
 pub fn verify_convert_ready() -> Result<(), RouterError> {
+    if should_use_fake_convert() {
+        return Ok(());
+    }
     let script = locate_convert_script()
-        .ok_or_else(|| RouterError::Internal("convert_hf_to_gguf.py not found".into()))?;
+        .ok_or_else(|| RouterError::Internal("export_hf_to_onnx.py not found".into()))?;
     if is_default_convert_script(&script) {
-        // 起動前チェックは同期で実行し、依存不足なら即エラー
-        ensure_python_deps_sync()?;
+        // 起動前の依存チェックはベストエフォート（不足しても起動自体は許可）。
+        // 実際の変換時に ensure_python_deps() がエラーを返す。
+        if let Err(e) = ensure_python_deps_sync() {
+            tracing::warn!(
+                "ONNX export deps check failed (conversion may not work): {}",
+                e
+            );
+        }
     }
     Ok(())
 }
@@ -975,7 +969,7 @@ async fn finalize_model_registration(
     model_name: &str,
     repo: &str,
     filename: &str,
-    download_url: &str,
+    download_url: Option<&str>,
     target: &Path,
     chat_template: Option<String>,
 ) {
@@ -997,10 +991,12 @@ async fn finalize_model_registration(
 
     model.size = size;
     model.required_memory = required_memory;
-    model.tags = vec!["gguf".into()];
-    model.source = ModelSource::HfGguf;
+    model.tags = vec!["onnx".into()];
+    model.source = ModelSource::HfOnnx;
     model.path = Some(target.to_string_lossy().to_string());
-    model.download_url = Some(download_url.to_string());
+    model.download_url = download_url
+        .map(|u| u.to_string())
+        .filter(|u| !u.is_empty());
     model.repo = Some(repo.to_string());
     model.filename = Some(filename.to_string());
     model.status = Some("cached".into());
@@ -1013,124 +1009,6 @@ async fn finalize_model_registration(
 
     upsert_registered_model(model);
     persist_registered_models().await;
-}
-
-/// 非GGUF形式のHFモデルをGGUFに変換
-#[allow(dead_code)]
-async fn convert_to_gguf(
-    repo: &str,
-    revision: Option<&str>,
-    quantization: Option<&str>,
-) -> Result<String, RouterError> {
-    // venvが準備完了か確認
-    if !is_venv_ready() {
-        return Err(RouterError::Internal(
-            "venv is not ready. Run setup_venv() first or set LLM_CONVERT_SKIP_VENV=1".into(),
-        ));
-    }
-
-    // Python実行ファイルを取得
-    let python = get_venv_python()
-        .ok_or_else(|| RouterError::Internal("Cannot find Python executable".into()))?;
-
-    // 変換スクリプトを取得
-    let script = find_convert_script().ok_or_else(|| {
-        RouterError::Internal(
-            "convert_hf_to_gguf.py not found. Ensure llama.cpp is available at node/third_party/llama.cpp/".into(),
-        )
-    })?;
-
-    // 出力ディレクトリを準備
-    let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
-    let model_name_safe = repo.replace('/', "_");
-    let quant = quantization.unwrap_or("Q4_K_M");
-    let output_filename = format!("{}-{}.gguf", model_name_safe, quant);
-    let dir = base.join(model_name_to_dir(&format!(
-        "hf/{}/{}",
-        repo, output_filename
-    )));
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|e| RouterError::Internal(e.to_string()))?;
-    let target = dir.join("model.gguf");
-
-    // 既に変換済みならスキップ
-    if target.exists() {
-        return Ok(target.to_string_lossy().to_string());
-    }
-
-    // HFリポジトリ指定
-    let repo_spec = if let Some(rev) = revision {
-        format!("{}@{}", repo, rev)
-    } else {
-        repo.to_string()
-    };
-
-    tracing::info!("Starting conversion: {} -> {:?}", repo_spec, target);
-
-    // 変換コマンドを実行（spawn_blockingで非同期に）
-    let python_clone = python.clone();
-    let script_clone = script.clone();
-    let target_clone = target.clone();
-    let repo_spec_clone = repo_spec.clone();
-
-    let result = tokio::task::spawn_blocking(move || {
-        let mut cmd = Command::new(&python_clone);
-        cmd.arg(&script_clone)
-            .arg("--remote")
-            .arg(&repo_spec_clone)
-            .arg("--outfile")
-            .arg(&target_clone);
-
-        // HF_TOKENがあれば環境変数として渡す
-        if let Ok(token) = std::env::var("HF_TOKEN") {
-            cmd.env("HF_TOKEN", token);
-        }
-
-        tracing::debug!("Running: {:?}", cmd);
-        cmd.output()
-    })
-    .await
-    .map_err(|e| RouterError::Internal(format!("Task join error: {}", e)))?
-    .map_err(|e| RouterError::Internal(format!("Failed to run convert script: {}", e)))?;
-
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        let stdout = String::from_utf8_lossy(&result.stdout);
-        return Err(RouterError::Internal(format!(
-            "Conversion failed:\nstdout: {}\nstderr: {}",
-            stdout, stderr
-        )));
-    }
-
-    // 変換結果を確認
-    if !target.exists() {
-        return Err(RouterError::Internal(
-            "Conversion completed but output file not found".into(),
-        ));
-    }
-
-    tracing::info!("Conversion completed: {:?}", target);
-
-    // モデルを登録
-    let size = tokio::fs::metadata(&target)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
-
-    let mut model = ModelInfo::new(
-        repo.to_string(), // モデル名 = リポジトリ名
-        size,
-        repo.to_string(),
-        0,
-        vec!["gguf".into(), "converted".into()],
-    );
-    model.path = Some(target.to_string_lossy().to_string());
-    model.source = ModelSource::HfGguf;
-    let _ = crate::api::models::add_registered_model(model.clone());
-    crate::api::models::persist_registered_models().await;
-
-    Ok(target.to_string_lossy().to_string())
 }
 
 // ===== Progress Parsing =====
@@ -1233,21 +1111,15 @@ mod tests {
 
         let manager = ConvertTaskManager::new(1);
 
-        let mut pending = ModelInfo::new(
-            "hf/openai/gpt-oss-20b/metal/model.bin".into(),
-            0,
-            "desc".into(),
-            0,
-            vec![],
-        );
+        let mut pending = ModelInfo::new("openai/gpt-oss-20b".into(), 0, "desc".into(), 0, vec![]);
         pending.repo = Some("openai/gpt-oss-20b".into());
-        pending.filename = Some("metal/model.bin".into());
+        pending.filename = Some("".into());
         pending.status = Some("pending_conversion".into());
         pending.source = ModelSource::HfPendingConversion;
 
-        let mut cached = ModelInfo::new("hf/other/model.gguf".into(), 0, "done".into(), 0, vec![]);
+        let mut cached = ModelInfo::new("other/model".into(), 0, "done".into(), 0, vec![]);
         cached.repo = Some("other/model".into());
-        cached.filename = Some("model.gguf".into());
+        cached.filename = Some("model.onnx".into());
         cached.status = Some("cached".into());
 
         resume_pending_converts(&manager, vec![pending.clone(), cached]).await;
@@ -1277,9 +1149,11 @@ mod tests {
     }
 
     #[test]
-    fn verify_convert_ready_errors_when_missing_script() {
-        env::remove_var("LLM_CONVERT_SCRIPT");
+    fn verify_convert_ready_falls_back_to_default_script_when_custom_missing() {
+        // When the custom script path is invalid, fall back to the default script.
+        env::set_var("LLM_CONVERT_SCRIPT", "/nonexistent/script.py");
         let res = verify_convert_ready();
-        assert!(res.is_err());
+        env::remove_var("LLM_CONVERT_SCRIPT");
+        assert!(res.is_ok());
     }
 }

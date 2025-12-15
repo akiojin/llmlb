@@ -41,25 +41,7 @@ endif()
 option(BUILD_WITH_ROCM "Build with ROCm support" OFF)
 option(STATIC_BUILD "Build statically linked executable" OFF)
 
-# ggml/llama.cpp の ARM ネイティブ最適化は、実行環境の命令対応を誤検出すると
-# ビルドエラーになるため、ポータブル設定に固定する。
-set(GGML_NATIVE OFF CACHE BOOL "Disable native cpu flags for portability" FORCE)
-set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "Baseline ARM arch" FORCE)
-set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "Single ARM backend variant" FORCE)
-set(GGML_INTERNAL_FP16_VECTOR_ARITHMETIC OFF CACHE BOOL "Force disable FP16 vector arithmetic" FORCE)
-set(GGML_INTERNAL_MATMUL_INT8 OFF CACHE BOOL "Force disable i8mm" FORCE)
-set(GGML_INTERNAL_DOTPROD OFF CACHE BOOL "Force disable dotprod" FORCE)
-set(GGML_INTERNAL_SVE OFF CACHE BOOL "Force disable SVE" FORCE)
-
 # Add third party libraries
-set(LLAMA_BUILD_GIT_VERSION OFF CACHE BOOL "" FORCE)
-set(GGML_BUILD_GIT_VERSION OFF CACHE BOOL "" FORCE)
-# Enable common library for chat template support (minja Jinja parser)
-set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory(third_party/llama.cpp)
 add_subdirectory(third_party/nlohmann-json)
 
 # whisper.cpp for ASR (Speech-to-Text)
@@ -70,18 +52,10 @@ if(BUILD_WITH_WHISPER)
     add_subdirectory(third_party/whisper.cpp)
 endif()
 
-# ONNX Runtime for TTS (Text-to-Speech)
-option(BUILD_WITH_ONNX "Build with ONNX Runtime support for TTS" OFF)
-if(BUILD_WITH_ONNX)
-    find_package(onnxruntime QUIET)
-    if(onnxruntime_FOUND)
-        add_definitions(-DUSE_ONNX_RUNTIME)
-        message(STATUS "ONNX Runtime found: ${onnxruntime_VERSION}")
-    else()
-        message(STATUS "ONNX Runtime not found, TTS support disabled")
-        set(BUILD_WITH_ONNX OFF)
-    endif()
-endif()
+# ONNX Runtime (LLM/TTS, generic inference)
+find_package(onnxruntime REQUIRED)
+add_definitions(-DUSE_ONNX_RUNTIME)
+message(STATUS "ONNX Runtime found")
 include(FetchContent)
 FetchContent_Declare(
     spdlog
@@ -95,10 +69,6 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/ggml/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
 )
 
 # whisper.cpp include directories
@@ -182,23 +152,17 @@ add_executable(llm-node ${SOURCES})
 
 # Link libraries
 target_link_libraries(llm-node
-    llama
-    common
     utils_lib
     ${CMAKE_THREAD_LIBS_INIT}
     OpenSSL::SSL
     OpenSSL::Crypto
+    onnxruntime::onnxruntime
 )
 
 # whisper.cpp support
 if(BUILD_WITH_WHISPER)
     target_link_libraries(llm-node whisper)
     target_compile_definitions(llm-node PRIVATE USE_WHISPER)
-endif()
-
-# ONNX Runtime support
-if(BUILD_WITH_ONNX)
-    target_link_libraries(llm-node onnxruntime::onnxruntime)
 endif()
 
 # Static linking if requested
@@ -224,7 +188,7 @@ endif()
 # Packaging (DEB/RPM via CPack) - only if LICENSE file exists
 set(CPACK_PACKAGE_NAME "llm-node")
 set(CPACK_PACKAGE_VENDOR "llm-router")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "LLM inference node with llama.cpp")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "LLM inference node with ONNX Runtime")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_CONTACT "oss@llm-router.local")
 set(LICENSE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE")
@@ -248,7 +212,7 @@ message(STATUS "  CUDA support:      ${BUILD_WITH_CUDA}")
 message(STATUS "  Metal support:     ${BUILD_WITH_METAL}")
 message(STATUS "  ROCm support:      ${BUILD_WITH_ROCM}")
 message(STATUS "  Whisper support:   ${BUILD_WITH_WHISPER}")
-message(STATUS "  ONNX support:      ${BUILD_WITH_ONNX}")
+message(STATUS "  ONNX support:      ON")
 message(STATUS "  Static build:      ${STATIC_BUILD}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")
 message(STATUS "")

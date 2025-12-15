@@ -1759,6 +1759,9 @@ impl LoadManager {
                     node_id,
                     None,
                     None, // loaded_embedding_models
+                    None, // loaded_asr_models
+                    None, // loaded_tts_models
+                    None, // supported_runtimes
                     None,
                     None,
                     None,

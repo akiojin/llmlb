@@ -45,7 +45,7 @@ public:
                             "application/json");
         });
 
-        registry_.Get("/blob.bin", [](const httplib::Request& req, httplib::Response& res) {
+        registry_.Get("/gpt-oss:7b/blob.bin", [](const httplib::Request& req, httplib::Response& res) {
             const std::string body = "abc";
             auto inm = req.get_header_value("If-None-Match");
             if (inm == "\"etag-1\"" || inm == "etag-1") {

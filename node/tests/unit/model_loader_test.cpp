@@ -4,7 +4,7 @@
 #include <chrono>
 #include <thread>
 
-#include "core/llama_manager.h"
+#include "core/onnx_llm_manager.h"
 
 using namespace llm_node;
 namespace fs = std::filesystem;
@@ -33,10 +33,10 @@ TEST(ModelLoaderTest, OnDemandLoadTriggersWhenModelNotLoaded) {
     TempModelDir tmp;
     fs::path model = tmp.base / "test_model.gguf";
     fs::create_directories(model.parent_path());
-    // ダミーGGUFファイル（llama.cppは拒否するが、ロード試行は確認できる）
+    // ダミーの不正モデルファイル（ONNX Runtimeは拒否するが、ロード試行は確認できる）
     std::ofstream(model) << "GGUF";
 
-    LlamaManager mgr(tmp.base.string());
+    OnnxLlmManager mgr(tmp.base.string());
 
     // 初期状態ではモデルはロードされていない
     EXPECT_FALSE(mgr.isLoaded("test_model.gguf"));
@@ -55,7 +55,7 @@ TEST(ModelLoaderTest, OnDemandLoadTriggersWhenModelNotLoaded) {
 TEST(ModelLoaderTest, IdleModelsAreUnloadedAfterTimeout) {
     TempModelDir tmp;
 
-    LlamaManager mgr(tmp.base.string());
+    OnnxLlmManager mgr(tmp.base.string());
 
     // 短いタイムアウトを設定（テスト用: 100ms）
     mgr.setIdleTimeout(std::chrono::milliseconds(100));
@@ -73,7 +73,7 @@ TEST(ModelLoaderTest, IdleModelsAreUnloadedAfterTimeout) {
 TEST(ModelLoaderTest, MemoryLimitRestrictsLoadedModels) {
     TempModelDir tmp;
 
-    LlamaManager mgr(tmp.base.string());
+    OnnxLlmManager mgr(tmp.base.string());
 
     // 最大ロード数を設定
     mgr.setMaxLoadedModels(2);
@@ -94,7 +94,7 @@ TEST(ModelLoaderTest, TracksLastAccessTime) {
     fs::create_directories(model.parent_path());
     std::ofstream(model) << "GGUF";
 
-    LlamaManager mgr(tmp.base.string());
+    OnnxLlmManager mgr(tmp.base.string());
 
     // モデルがロードされていない場合、アクセス時刻は無効
     auto access_time = mgr.getLastAccessTime("track_model.gguf");
@@ -105,7 +105,7 @@ TEST(ModelLoaderTest, TracksLastAccessTime) {
 TEST(ModelLoaderTest, LRUUnloadSelectsOldestAccessedModel) {
     TempModelDir tmp;
 
-    LlamaManager mgr(tmp.base.string());
+    OnnxLlmManager mgr(tmp.base.string());
     mgr.setMaxLoadedModels(2);
 
     // ロード済みモデルがない場合、LRUアンロード対象もなし

@@ -11,7 +11,7 @@ authentication and authorization system.
 4. [Getting Started](#getting-started)
 5. [User Management](#user-management)
 6. [API Keys](#api-keys)
-7. [Agent Authentication](#agent-authentication)
+7. [Node Authentication](#node-authentication)
 8. [Best Practices](#best-practices)
 9. [Troubleshooting](#troubleshooting)
 
@@ -43,7 +43,7 @@ external application integration.
 │  └────────────────────────────────────────────────────┘    │
 └──────────────┬──────────────────────────────────────────────┘
                │
-         Agent Token (at_*)
+               Agent Token (agt_*)
                │
                ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -58,7 +58,7 @@ external application integration.
 |------|---------|--------------|------------|---------|
 | **JWT** | Admin dashboard access | `eyJhbGci...` | 24 hours | Client-side |
 | **API Key** | External app integration | `sk_...` | Configurable | App config |
-| **Agent Token** | Agent authentication | `at_...` | Never | `~/.runtime-agent/token` |
+| **Agent Token** | Node authentication | `agt_...` | Never | Node runtime |
 
 ## Authentication Types
 
@@ -127,31 +127,26 @@ API keys can be used for:
 **Note**: API keys cannot be used for administrative operations
 (user management, API key management, etc.)
 
-### 3. Agent Token Authentication (Agents)
+### 3. Agent Token Authentication (Nodes)
 
-Agent tokens secure communication between agents and the coordinator.
+Agent tokens secure communication between nodes and the router.
 
 #### Token Format
 
-- **Prefix**: `at_` (agent token)
-- **Length**: 32 characters (hexadecimal)
-- **Example**: `at_1234567890abcdef1234567890abcdef`
+- **Prefix**: `agt_` (agent token)
+- **Example**: `agt_550e8400-e29b-41d4-a716-446655440000`
 
 #### Token Lifecycle
 
-1. **Registration**: Agent registers → Receives `agent_token` in response
-2. **Storage**: Token saved to `~/.runtime-agent/token`
-3. **Usage**: Token automatically included in all agent requests
-4. **Re-registration**: Existing token used for re-registration
-   (no new token issued)
+1. **Registration**: Node registers (`POST /api/nodes` with API key) → Receives `agent_token`
+2. **Usage**: Node includes `X-Agent-Token` in health checks (`POST /api/health`)
+3. **Re-registration**: Node re-registers → Receives a new `agent_token`
 
 #### Protected Endpoints
 
 Agent tokens are required for:
 
 - `POST /api/health` - Health check updates
-- `POST /api/agents/:id/metrics` - Metrics reporting
-- `POST /api/agents` - Re-registration (with existing token)
 
 ## Security Design
 
@@ -180,9 +175,9 @@ Agent tokens are required for:
 #### Agent Tokens
 
 - **Hashing**: SHA-256
-- **Storage**: Only hash stored in coordinator database
+- **Storage**: Only hash stored in router database
 - **Generation**: Cryptographically secure random bytes
-- **Prefix**: `at_` for easy identification
+- **Prefix**: `agt_` for easy identification
 
 ### Database Security
 
@@ -440,16 +435,19 @@ curl -X DELETE http://localhost:8080/api/api-keys/{key_id} \
 
 **Effect**: The API key is immediately invalidated and cannot be used.
 
-## Agent Authentication
+## Node Authentication
 
-### Agent Registration
+### Node Registration
 
-When an agent registers, it receives an authentication token:
+When a node registers, it receives an agent authentication token:
 
 **Request:**
 
 ```bash
-curl -X POST http://localhost:8080/api/agents \
+API_KEY="sk_1234567890abcdef1234567890abcdef"
+
+curl -X POST http://localhost:8080/api/nodes \
+  -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "machine_name": "my-machine",
@@ -467,47 +465,41 @@ curl -X POST http://localhost:8080/api/agents \
 
 ```json
 {
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "agent_token": "at_1234567890abcdef1234567890abcdef",
+  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "agent_token": "agt_550e8400-e29b-41d4-a716-446655440000",
   "status": "registered"
 }
 ```
 
-### Token Storage
-
-The agent automatically saves the token to:
-
-- **Linux/macOS**: `~/.runtime-agent/token`
-- **Windows**: `%USERPROFILE%\.runtime-agent\token`
-
 ### Using Agent Token
 
-The agent includes the token in all requests:
+The node includes the token in all requests:
 
 ```bash
-AGENT_TOKEN="at_1234567890abcdef1234567890abcdef"
+AGENT_TOKEN="agt_550e8400-e29b-41d4-a716-446655440000"
 
 # Health check
 curl -X POST http://localhost:8080/api/health \
   -H "X-Agent-Token: $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+    "node_id": "550e8400-e29b-41d4-a716-446655440000",
     "cpu_usage": 45.5,
     "memory_usage": 60.2,
     "active_requests": 3
   }'
 ```
 
-### Agent Re-registration
+### Node Re-registration
 
-When an agent restarts, it uses the existing token:
+When a node restarts, it can re-register:
 
 **Request:**
 
 ```bash
-curl -X POST http://localhost:8080/api/agents \
-  -H "X-Agent-Token: at_1234567890abcdef1234567890abcdef" \
+curl -X POST http://localhost:8080/api/nodes \
+  -H "X-API-Key: $API_KEY" \
+  -H "X-Agent-Token: agt_550e8400-e29b-41d4-a716-446655440000" \
   -H "Content-Type: application/json" \
   -d '{
     "machine_name": "my-machine",
@@ -519,13 +511,13 @@ curl -X POST http://localhost:8080/api/agents \
 
 ```json
 {
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "agent_token": null,
-  "status": "registered"
+  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "agent_token": "agt_11111111-2222-3333-4444-555555555555",
+  "status": "updated"
 }
 ```
 
-**Note**: No new token is issued for re-registration.
+**Note**: A new `agent_token` is issued for re-registration.
 
 ## Best Practices
 
@@ -573,17 +565,12 @@ curl -X POST http://localhost:8080/api/agents \
 
 ### Agent Token Security
 
-1. **File Permissions**
-   - Agent token file should be readable only by agent user
-   - `chmod 600 ~/.runtime-agent/token` (Linux/macOS)
-
-2. **Network Security**
+1. **Network Security**
    - Use HTTPS/TLS for production deployments
-   - Isolate agent network traffic when possible
+   - Isolate node network traffic when possible
 
-3. **Token Rotation**
-   - Delete agent from coordinator to invalidate token
-   - Re-register agent to receive new token
+2. **Token Rotation**
+   - Re-register node to receive a new token (old token becomes invalid)
 
 ### Production Deployment
 
@@ -665,34 +652,32 @@ curl -X POST http://localhost:8080/api/auth/login \
 2. Check if user exists in database
 3. Reset password if forgotten (requires database access)
 
-#### Agent Registration Fails
+#### Node Registration Fails
 
 **Symptoms:**
 
-- Agent cannot register with coordinator
+- Node cannot register with router
 - "Unauthorized" error during health checks
 
 **Solutions:**
 
-1. **Delete token file and re-register:**
+1. **Verify API key is set (required for registration):**
 
    ```bash
-   rm ~/.runtime-agent/token
-   # Re-run the node
-   npm run start:node
+   echo "$LLM_ROUTER_API_KEY"
    ```
 
-2. **Verify coordinator URL:**
+2. **Verify router URL:**
 
    ```bash
-   echo $COORDINATOR_URL
-   # Should be http://coordinator:8080 (no trailing slash)
+   echo "$LLM_ROUTER_URL"
+   # Should be http://router-host:8080 (no trailing slash)
    ```
 
 3. **Check network connectivity:**
 
    ```bash
-   curl http://coordinator:8080/api/agents
+   curl http://router-host:8080/api/nodes
    ```
 
 #### API Key Not Working

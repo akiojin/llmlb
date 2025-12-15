@@ -116,11 +116,50 @@ std::vector<std::string> ModelSync::listLocalModels() const {
     std::error_code ec;
     if (!fs::exists(models_dir_, ec) || ec) return models;
 
-    for (const auto& entry : fs::directory_iterator(models_dir_, ec)) {
-        if (ec) break;
-        if (entry.is_directory()) {
-            models.push_back(entry.path().filename().string());
+    fs::recursive_directory_iterator it(models_dir_, ec);
+    fs::recursive_directory_iterator end;
+    for (; it != end && !ec; it.increment(ec)) {
+        const auto& entry = *it;
+        if (!entry.is_directory(ec) || ec) continue;
+
+        const auto dir_path = entry.path();
+        const auto onnx_path = dir_path / "model.onnx";
+        const auto gguf_path = dir_path / "model.gguf";
+
+        auto onnx_st = fs::symlink_status(onnx_path, ec);
+        const bool has_onnx =
+            onnx_st.type() == fs::file_type::regular || onnx_st.type() == fs::file_type::symlink;
+        auto gguf_st = fs::symlink_status(gguf_path, ec);
+        const bool has_gguf =
+            gguf_st.type() == fs::file_type::regular || gguf_st.type() == fs::file_type::symlink;
+
+        if (!has_onnx && !has_gguf) {
+            continue;
         }
+
+        it.disable_recursion_pending();
+
+        fs::path rel = fs::relative(dir_path, fs::path(models_dir_), ec);
+        if (ec) {
+            rel = dir_path.filename();
+            ec.clear();
+        }
+        std::vector<std::string> parts;
+        for (const auto& p : rel) {
+            parts.push_back(p.string());
+        }
+
+        std::string model_id;
+        if (parts.size() <= 1) {
+            model_id = ModelStorage::dirNameToModel(rel.string());
+        } else {
+            model_id = parts[0];
+            for (size_t i = 1; i < parts.size(); ++i) {
+                model_id += "/";
+                model_id += parts[i];
+            }
+        }
+        models.push_back(std::move(model_id));
     }
     return models;
 }
@@ -223,7 +262,9 @@ ModelSyncResult ModelSync::sync() {
 
                 // Only download if path is not accessible and download_url exists
                 if (!ok && !info.download_url.empty()) {
-                    auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
+                    const bool is_onnx = info.download_url.size() >= 5 &&
+                        info.download_url.compare(info.download_url.size() - 5, 5, ".onnx") == 0;
+                    auto filename = ModelStorage::modelNameToDir(id) + (is_onnx ? "/model.onnx" : "/model.gguf");
                     auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
                     ok = !out.empty();
                 }
@@ -379,6 +420,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             std::string url = f.value("url", "");
             if (url.empty()) {
                 url = downloader.getRegistryBase();
+                if (!url.empty() && url.back() != '/') url.push_back('/');
+                url += model_id;
                 if (!url.empty() && url.back() != '/') url.push_back('/');
                 url += name;
             }

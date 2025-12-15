@@ -381,8 +381,8 @@ const TRUSTED_PROVIDERS: &[&str] = &[
     "TheBloke",
 ];
 
-/// リポジトリ内のGGUFファイルを解決
-async fn resolve_first_gguf_in_repo(
+/// リポジトリ内のONNXファイルを解決
+async fn resolve_first_onnx_in_repo(
     http_client: &reqwest::Client,
     repo: &str,
 ) -> Result<String, RouterError> {
@@ -417,10 +417,10 @@ async fn resolve_first_gguf_in_repo(
         .siblings
         .iter()
         .map(|s| s.rfilename.clone())
-        .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
+        .find(|f| f.to_ascii_lowercase().ends_with(".onnx"))
         .ok_or_else(|| {
             RouterError::Common(CommonError::Validation(
-                "No GGUF file found in repository".into(),
+                "No ONNX file found in repository".into(),
             ))
         })?;
     Ok(filename)
@@ -968,12 +968,11 @@ async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> 
     warnings
 }
 
-/// POST /api/models/register - HF GGUFを対応モデルに登録
+/// POST /api/models/register - HFモデルをONNXとして対応モデルに登録
 ///
 /// 新しい方針:
-/// - ユーザー指定リポジトリにGGUFがあれば使用
-/// - なければそのリポジトリのモデルをGGUFに変換
-/// - 他リポジトリからのGGUF自動取得は行わない
+/// - ユーザー指定リポジトリにONNXがあれば使用（単一`.onnx`想定）
+/// - なければそのリポジトリのモデルをONNXへエクスポート（ルーター側で変換）
 pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
@@ -982,23 +981,25 @@ pub async fn register_model(
 
     // ファイル名を解決
     let filename = match req.filename.clone() {
-        Some(f) => {
-            // ファイル名が指定されている場合はそのまま使用
-            // （GGUFでない場合は後で変換される）
-            f
-        }
+        Some(f) => f,
         None => {
-            // ファイル名指定なし - リポジトリ内のGGUFを探す
-            match resolve_first_gguf_in_repo(&state.http_client, &repo).await {
+            // ファイル名指定なし - リポジトリ内のONNXを探す
+            match resolve_first_onnx_in_repo(&state.http_client, &repo).await {
                 Ok(f) => f,
                 Err(_) => {
-                    // リポジトリ内にGGUFがない → 変換対象として空文字列
-                    // （convert_managerが適切に処理する）
-                    tracing::info!(repo = %repo, "No GGUF in repo, will attempt conversion");
+                    // リポジトリ内にONNXがない → 変換対象として空文字列（convert_managerが処理する）
+                    tracing::info!(repo = %repo, "No ONNX in repo, will attempt export");
                     String::new()
                 }
             }
         }
+    };
+
+    let filename = if filename.to_ascii_lowercase().ends_with(".onnx") || filename.is_empty() {
+        filename
+    } else {
+        tracing::info!(repo=%repo, filename=%filename, "Ignoring non-ONNX filename; using export path");
+        String::new()
     };
 
     register_model_internal(
@@ -1043,9 +1044,9 @@ async fn register_model_internal(
         fetch_chat_template_from_hf(&state.http_client, repo).await
     };
 
-    // GGUFファイル名が空の場合は変換パスに進む（HEADチェックをスキップ）
+    // ONNXファイル名が空の場合はエクスポートパスに進む（HEADチェックをスキップ）
     let (content_length, required_memory, warnings) = if filename.is_empty() {
-        tracing::info!(repo = %repo, "No GGUF file specified, proceeding with conversion path");
+        tracing::info!(repo = %repo, "No ONNX file specified, proceeding with export path");
         (0_u64, 0_u64, vec![])
     } else {
         let base_url = std::env::var("HF_BASE_URL")
@@ -1071,7 +1072,7 @@ async fn register_model_internal(
                 "hf_model_register_not_found"
             );
             return Err(RouterError::Common(CommonError::Validation(
-                "Specified GGUF file not found".into(),
+                "Specified ONNX file not found".into(),
             ))
             .into());
         }
@@ -1091,7 +1092,7 @@ async fn register_model_internal(
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0);
-        // llama.cpp runtimeは概ねサイズの1.5倍のメモリを使用するため同倍率で推定
+        // PoC: モデルサイズから必要メモリを推定（ざっくり1.5倍）
         const REQUIRED_MEMORY_RATIO: f64 = 1.5;
         let required_memory = if content_length > 0 {
             ((content_length as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64
@@ -1355,15 +1356,39 @@ pub async fn distribute_models(
         let model_name = request.model_name.clone();
 
         let model_info = find_model_by_name(&model_name);
-        let cached = if let Some(mi) = &model_info {
-            ensure_router_model_cached(mi).await
+        let is_onnx = model_info
+            .as_ref()
+            .map(|m| m.tags.iter().any(|t| t == "onnx"))
+            .unwrap_or(false);
+
+        let cached = if !is_onnx {
+            if let Some(mi) = &model_info {
+                ensure_router_model_cached(mi).await
+            } else {
+                None
+            }
         } else {
             None
         };
-        let shared_path = cached
-            .or_else(|| model_info.as_ref().and_then(|m| router_model_path(&m.name)))
-            .map(|p| p.to_string_lossy().to_string());
-        let download_url = model_info.as_ref().and_then(|m| m.download_url.clone());
+
+        let shared_path = if !is_onnx {
+            cached
+                .or_else(|| model_info.as_ref().and_then(|m| router_model_path(&m.name)))
+                .map(|p| p.to_string_lossy().to_string())
+        } else {
+            None
+        };
+
+        let download_url = if !is_onnx {
+            model_info.as_ref().and_then(|m| m.download_url.clone())
+        } else {
+            None
+        };
+        let registry_url = if is_onnx {
+            Some("/api/models/registry".to_string())
+        } else {
+            None
+        };
         let chat_template = model_info.as_ref().and_then(|m| m.chat_template.clone());
         let http_client = state.http_client.clone();
 
@@ -1373,6 +1398,7 @@ pub async fn distribute_models(
                 "task_id": task_id,
                 "path": shared_path,
                 "download_url": download_url,
+                "registry_url": registry_url,
                 "chat_template": chat_template,
             });
 
@@ -1539,14 +1565,13 @@ pub async fn discover_gguf_endpoint(
     }))
 }
 
-/// POST /api/models/convert - HFモデルをダウンロード＆（必要なら）変換するジョブを作成
+/// POST /api/models/convert - HFモデルをダウンロード＆（必要なら）ONNXへエクスポートするジョブを作成
 pub async fn convert_model(
     State(state): State<AppState>,
     Json(req): Json<ConvertModelRequest>,
 ) -> Result<(StatusCode, Json<ConvertModelResponse>), AppError> {
-    // 名前のバリデーション（hf/ を付与して再利用）
-    let name = format!("hf/{}/{}", req.repo, req.filename);
-    validate_model_name(&name)?;
+    // repo（モデルID）をバリデーション
+    validate_model_name(&req.repo)?;
 
     let task = state
         .convert_manager
@@ -1679,6 +1704,7 @@ pub async fn update_progress(
 pub async fn get_model_blob(Path(model_name): Path<String>) -> axum::response::Response {
     use axum::body::Body;
     use axum::response::Response;
+    use std::path::Path as StdPath;
     use tokio_util::io::ReaderStream;
 
     // モデル名のバリデーション
@@ -1689,7 +1715,7 @@ pub async fn get_model_blob(Path(model_name): Path<String>) -> axum::response::R
             .unwrap();
     }
 
-    // モデルファイルのパスを取得
+    // モデルファイルのパスを取得（ONNX優先、なければGGUF）
     let model_path = match router_model_path(&model_name) {
         Some(path) => path,
         None => {
@@ -1748,9 +1774,267 @@ pub async fn get_model_blob(Path(model_name): Path<String>) -> axum::response::R
         .status(StatusCode::OK)
         .header("content-type", "application/octet-stream")
         .header("content-length", file_size.to_string())
-        .header("content-disposition", "attachment; filename=\"model.gguf\"")
+        .header(
+            "content-disposition",
+            format!(
+                "attachment; filename=\"{}\"",
+                StdPath::new(&model_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("model.bin")
+            ),
+        )
         .body(body)
         .unwrap()
+}
+
+/// GET /api/models/registry/*path - manifest.json とモデルファイル群を配信
+///
+/// ノードが manifest + 複数ファイルをダウンロードするためのエンドポイント。
+/// レイアウト:
+/// - `/api/models/registry/<model_id>/manifest.json`
+/// - `/api/models/registry/<model_id>/<file>`
+pub async fn get_model_registry(
+    Path(path): Path<String>,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    use axum::body::Body;
+    use axum::http::header::{
+        ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, ETAG, IF_NONE_MATCH, RANGE,
+    };
+    use axum::response::Response;
+    use std::io::SeekFrom;
+    use std::path::Component;
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    use tokio_util::io::ReaderStream;
+
+    let (model_id, rel_path) = match split_registry_path(&path) {
+        Some(v) => v,
+        None => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("{\"error\":\"invalid registry path\"}"))
+                .unwrap();
+        }
+    };
+
+    if let Err(e) = validate_model_name(&model_id) {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(format!("{{\"error\":\"{}\"}}", e)))
+            .unwrap();
+    }
+
+    let base = match router_models_dir() {
+        Some(p) => p,
+        None => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("{\"error\":\"HOME not set\"}"))
+                .unwrap();
+        }
+    };
+    let model_dir = base.join(model_name_to_dir(&model_id));
+
+    // Prevent path traversal.
+    let rel = std::path::Path::new(&rel_path);
+    if rel.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from("{\"error\":\"invalid path\"}"))
+            .unwrap();
+    }
+
+    let full_path = model_dir.join(rel);
+    if !full_path.exists() {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("{\"error\":\"not found\"}"))
+            .unwrap();
+    }
+
+    // Try to get digest from manifest for ETag.
+    let manifest_path = model_dir.join("manifest.json");
+    let digest = if manifest_path.exists() {
+        tokio::fs::read(&manifest_path)
+            .await
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|v| v.get("files").and_then(|f| f.as_array()).cloned())
+            .and_then(|files| {
+                files.into_iter().find_map(|f| {
+                    let name = f.get("name")?.as_str()?;
+                    if name != rel_path {
+                        return None;
+                    }
+                    let d = f.get("digest")?.as_str()?;
+                    Some(d.to_string())
+                })
+            })
+    } else {
+        None
+    };
+
+    if let Some(d) = &digest {
+        if let Some(inm) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
+            let inm_trim = inm.trim().trim_matches('"');
+            if inm_trim == d {
+                return Response::builder()
+                    .status(StatusCode::NOT_MODIFIED)
+                    .header(ETAG, format!("\"{}\"", d))
+                    .body(Body::empty())
+                    .unwrap();
+            }
+        }
+    }
+
+    // Open file
+    let file = match tokio::fs::File::open(&full_path).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to open {:?}: {}", full_path, e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("{\"error\":\"open failed\"}"))
+                .unwrap();
+        }
+    };
+
+    let meta = match tokio::fs::metadata(&full_path).await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!("Failed to stat {:?}: {}", full_path, e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("{\"error\":\"stat failed\"}"))
+                .unwrap();
+        }
+    };
+    let size = meta.len();
+
+    let content_type = if rel_path.to_ascii_lowercase().ends_with(".json") {
+        "application/json"
+    } else {
+        "application/octet-stream"
+    };
+
+    // Range support (single range).
+    if let Some(range_header) = headers.get(RANGE).and_then(|v| v.to_str().ok()) {
+        match parse_range_header(range_header, size) {
+            Ok(Some((start, end))) => {
+                let mut file = file;
+                if let Err(e) = file.seek(SeekFrom::Start(start)).await {
+                    tracing::error!("seek failed {:?}: {}", full_path, e);
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("{\"error\":\"seek failed\"}"))
+                        .unwrap();
+                }
+                let len = end - start + 1;
+                let stream = ReaderStream::new(file.take(len));
+                let mut builder = Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(ACCEPT_RANGES, "bytes")
+                    .header(CONTENT_LENGTH, len.to_string())
+                    .header(CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, size))
+                    .header("content-type", content_type);
+                if let Some(d) = digest {
+                    builder = builder.header(ETAG, format!("\"{}\"", d));
+                }
+                return builder.body(Body::from_stream(stream)).unwrap();
+            }
+            Ok(None) => {
+                // Invalid/unsupported Range (ignore and return full content).
+            }
+            Err(_) => {
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(CONTENT_RANGE, format!("bytes */{}", size))
+                    .body(Body::empty())
+                    .unwrap();
+            }
+        }
+    }
+
+    // Full content
+    let stream = ReaderStream::new(file);
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(ACCEPT_RANGES, "bytes")
+        .header(CONTENT_LENGTH, size.to_string())
+        .header("content-type", content_type);
+    if let Some(d) = digest {
+        builder = builder.header(ETAG, format!("\"{}\"", d));
+    }
+    builder.body(Body::from_stream(stream)).unwrap()
+}
+
+fn split_registry_path(path: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    if parts[0] == "hf" {
+        // hf/<org>/<model>/<file...>
+        if parts.len() < 4 {
+            return None;
+        }
+        let model_id = parts[0..3].join("/");
+        let file = parts[3..].join("/");
+        return Some((model_id, file));
+    }
+    if parts.len() >= 3 {
+        // <org>/<model>/<file...>
+        let model_id = parts[0..2].join("/");
+        let file = parts[2..].join("/");
+        return Some((model_id, file));
+    }
+    // legacy: <model>/<file>
+    let model_id = parts[0].to_string();
+    let file = parts[1..].join("/");
+    Some((model_id, file))
+}
+
+fn parse_range_header(range: &str, size: u64) -> Result<Option<(u64, u64)>, ()> {
+    let range = range.trim();
+    if !range.starts_with("bytes=") {
+        return Ok(None);
+    }
+    let spec = &range["bytes=".len()..];
+    if spec.contains(',') {
+        // multiple ranges not supported
+        return Err(());
+    }
+    let (start_s, end_s) = spec.split_once('-').ok_or(())?;
+    if size == 0 {
+        return Err(());
+    }
+    if start_s.is_empty() {
+        // suffix: bytes=-N
+        let n: u64 = end_s.parse().map_err(|_| ())?;
+        if n == 0 {
+            return Err(());
+        }
+        if n >= size {
+            return Ok(Some((0, size - 1)));
+        }
+        return Ok(Some((size - n, size - 1)));
+    }
+    let start: u64 = start_s.parse().map_err(|_| ())?;
+    let end: u64 = if end_s.is_empty() {
+        size - 1
+    } else {
+        end_s.parse().map_err(|_| ())?
+    };
+    if start > end || end >= size {
+        return Err(());
+    }
+    Ok(Some((start, end)))
 }
 
 #[cfg(test)]

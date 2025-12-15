@@ -22,9 +22,6 @@ pub mod registry;
 /// データベースアクセス
 pub mod db;
 
-/// LLM runtime公式ライブラリAPI通信
-pub mod runtime;
-
 /// ダウンロードタスク管理
 pub mod tasks;
 

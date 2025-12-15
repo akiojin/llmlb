@@ -13,7 +13,7 @@
 #include "models/model_sync.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
-#include "core/llama_manager.h"
+#include "core/onnx_llm_manager.h"
 #include "core/inference_engine.h"
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
@@ -37,7 +37,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
     llm_node::g_running_flag.store(true);
 
     bool server_started = false;
-    bool llama_backend_initialized = false;
     std::thread heartbeat_thread;
 
     try {
@@ -45,11 +44,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::set_ready(false);
         std::string router_url = cfg.router_url;
         int node_port = cfg.node_port;
-
-        // Initialize llama.cpp backend
-        spdlog::info("Initializing llama.cpp backend...");
-        llm_node::LlamaManager::initBackend();
-        llama_backend_initialized = true;
 
         spdlog::info("Router URL: {}", router_url);
         spdlog::info("Node port: {}", node_port);
@@ -92,8 +86,8 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                                      ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.llm-router/models"
                                      : cfg.models_dir;
 
-        // Initialize LlamaManager and ModelStorage for inference engine
-        llm_node::LlamaManager llama_manager(models_dir);
+        // Initialize OnnxLlmManager and ModelStorage for inference engine
+        llm_node::OnnxLlmManager llm_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
 #ifdef USE_WHISPER
@@ -108,32 +102,25 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("OnnxTtsManager initialized for TTS support");
 #endif
 
-        // Set GPU layers based on detection (use all layers on GPU if available)
-        if (!gpu_devices.empty()) {
-            // Use 99 layers for GPU offloading (most models have fewer layers)
-            llama_manager.setGpuLayerSplit(99);
-            spdlog::info("GPU offloading enabled with {} layers", 99);
-        }
-
         // Configure on-demand model loading settings from environment variables
         if (const char* idle_timeout_env = std::getenv("LLM_MODEL_IDLE_TIMEOUT")) {
             int timeout_secs = std::atoi(idle_timeout_env);
             if (timeout_secs > 0) {
-                llama_manager.setIdleTimeout(std::chrono::seconds(timeout_secs));
+                llm_manager.setIdleTimeout(std::chrono::seconds(timeout_secs));
                 spdlog::info("Model idle timeout set to {} seconds", timeout_secs);
             }
         }
         if (const char* max_models_env = std::getenv("LLM_MAX_LOADED_MODELS")) {
             int max_models = std::atoi(max_models_env);
             if (max_models > 0) {
-                llama_manager.setMaxLoadedModels(static_cast<size_t>(max_models));
+                llm_manager.setMaxLoadedModels(static_cast<size_t>(max_models));
                 spdlog::info("Max loaded models set to {}", max_models);
             }
         }
         if (const char* max_memory_env = std::getenv("LLM_MAX_MEMORY_BYTES")) {
             long long max_memory = std::atoll(max_memory_env);
             if (max_memory > 0) {
-                llama_manager.setMaxMemoryBytes(static_cast<size_t>(max_memory));
+                llm_manager.setMaxMemoryBytes(static_cast<size_t>(max_memory));
                 spdlog::info("Max memory limit set to {} bytes", max_memory);
             }
         }
@@ -145,8 +132,8 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
-        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());
-        spdlog::info("InferenceEngine initialized with llama.cpp support");
+        llm_node::InferenceEngine engine(llm_manager, model_storage, model_sync.get());
+        spdlog::info("InferenceEngine initialized with ONNX Runtime support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
         llm_node::OpenAIEndpoints openai(registry, engine, cfg);
@@ -248,14 +235,37 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Heartbeat thread
         std::cout << "Starting heartbeat thread..." << std::endl;
         std::string agent_token = reg.agent_token;
-        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, agent_token, &cfg]() {
+        heartbeat_thread = std::thread([&router, &llm_manager,
+#ifdef USE_WHISPER
+                                        &whisper_manager,
+#endif
+#ifdef USE_ONNX_RUNTIME
+                                        &tts_manager,
+#endif
+                                        node_id = reg.node_id, agent_token, &cfg]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
-                auto loaded_models = llama_manager.getLoadedModels();
+                auto loaded_models = llm_manager.getLoadedModels();
                 // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
                 std::vector<std::string> loaded_embedding_models;
+                std::vector<std::string> loaded_asr_models;
+                std::vector<std::string> loaded_tts_models;
+                std::vector<std::string> supported_runtimes;
+
+#ifdef USE_ONNX_RUNTIME
+                // Text/Embedding/TTS are currently ONNX Runtime based.
+                supported_runtimes.push_back("onnx_runtime");
+                loaded_tts_models = tts_manager.getLoadedModels();
+#endif
+
+#ifdef USE_WHISPER
+                supported_runtimes.push_back("whisper_cpp");
+                loaded_asr_models = whisper_manager.getLoadedModels();
+#endif
+
                 router.sendHeartbeat(node_id, agent_token, std::nullopt, std::nullopt,
-                                     loaded_models, loaded_embedding_models);
+                                     loaded_models, loaded_embedding_models, loaded_asr_models,
+                                     loaded_tts_models, supported_runtimes);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }
         });
@@ -278,20 +288,11 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             heartbeat_thread.join();
         }
 
-        // Free llama.cpp backend
-        if (llama_backend_initialized) {
-            spdlog::info("Freeing llama.cpp backend...");
-            llm_node::LlamaManager::freeBackend();
-        }
-
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
         if (heartbeat_thread.joinable()) {
             llm_node::request_shutdown();
             heartbeat_thread.join();
-        }
-        if (llama_backend_initialized) {
-            llm_node::LlamaManager::freeBackend();
         }
         if (server_started) {
             // best-effort stop

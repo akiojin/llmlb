@@ -35,7 +35,7 @@ llm-routerに音声モデル対応を追加する:
 ## 技術コンテキスト
 
 **言語/バージョン**: Rust 1.75+, C++20
-**主要依存関係**: llama.cpp (既存), whisper.cpp (新規ASR), ONNX Runtime (新規TTS)
+**主要依存関係**: ONNX Runtime, whisper.cpp
 **ストレージ**: 既存のモデル管理システム
 **テスト**: cargo test, Google Test (C++)
 **対象プラットフォーム**: Linux (CUDA), macOS (Metal)
@@ -136,7 +136,7 @@ node/CMakeLists.txt      # 変更: whisper.cpp, ONNX Runtime追加
 
 ### 技術コンテキストの不明点
 
-1. **whisper.cpp統合方法**: llama.cppと同じggml基盤のため、サブモジュールとして追加可能
+1. **whisper.cpp統合方法**: ggml基盤のため、サブモジュールとして追加可能
 2. **ONNX Runtime統合方法**: FetchContentまたはシステムインストールで依存追加
 3. **GPUメモリ競合**: ランタイムごとにメモリ分離（別プロセスまたはコンテキスト分離）
 
@@ -144,7 +144,7 @@ node/CMakeLists.txt      # 変更: whisper.cpp, ONNX Runtime追加
 
 | 項目 | 決定 | 理由 |
 |------|------|------|
-| ASRランタイム | whisper.cpp | llama.cppと同じ作者、ggml互換、Metal/CUDA対応 |
+| ASRランタイム | whisper.cpp | ggml互換、Metal/CUDA対応 |
 | TTSランタイム | ONNX Runtime | クロスプラットフォーム、GPU対応、VibeVoice等対応 |
 | 音声フォーマット | WAV, MP3, FLAC | libsndfile/ffmpeg経由でデコード |
 | APIフォーマット | OpenAI Audio API互換 | multipart/form-data (ASR), JSON (TTS) |
@@ -172,7 +172,6 @@ pub enum ModelType {
 
 ```rust
 pub enum RuntimeType {
-    LlamaCpp,      // 既存のllama.cpp
     WhisperCpp,    // 新規: whisper.cpp
     OnnxRuntime,   // 新規: ONNX Runtime
 }

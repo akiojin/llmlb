@@ -47,6 +47,7 @@ async fn build_app() -> Router {
 async fn hf_catalog_register_distribute_flow() {
     clear_hf_cache();
     let mock = MockServer::start().await;
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
 
     // カタログレスポンス
     Mock::given(method("GET"))
@@ -57,13 +58,6 @@ async fn hf_catalog_register_distribute_flow() {
             "siblings": [ {"rfilename": "model.gguf", "size": 1024u64 * 1024 * 1024 } ],
             "lastModified": "2024-02-01T00:00:00Z"
         })]))
-        .mount(&mock)
-        .await;
-
-    // HEAD for register
-    Mock::given(method("HEAD"))
-        .and(path("/test/repo/resolve/main/model.gguf"))
-        .respond_with(ResponseTemplate::new(200).insert_header("Content-Length", (1024u64 * 1024 * 1024).to_string()))
         .mount(&mock)
         .await;
 
@@ -90,6 +84,7 @@ async fn hf_catalog_register_distribute_flow() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(axum::body::Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -118,10 +113,7 @@ async fn hf_catalog_register_distribute_flow() {
     assert_eq!(available_json["cached"], serde_json::Value::Bool(false));
 
     // 登録
-    let register_model = json!({
-        "repo": "test/repo",
-        "filename": "model.gguf"
-    });
+    let register_model = json!({ "repo": "test/repo" });
     let reg = app
         .clone()
         .oneshot(
@@ -135,10 +127,11 @@ async fn hf_catalog_register_distribute_flow() {
         .await
         .unwrap();
     assert_eq!(reg.status(), axum::http::StatusCode::CREATED);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // 全ノードにダウンロード
     let distribute = json!({
-        "model_name": "hf/test/repo/model.gguf",
+        "model_name": "test/repo",
         "target": "all",
         "node_ids": []
     });
@@ -176,7 +169,7 @@ async fn hf_catalog_register_distribute_flow() {
     assert_eq!(task_res.status(), axum::http::StatusCode::OK);
     let task_body = to_bytes(task_res.into_body(), usize::MAX).await.unwrap();
     let task_json: serde_json::Value = serde_json::from_slice(&task_body).unwrap();
-    assert_eq!(task_json["model_name"], "hf/test/repo/model.gguf");
+    assert_eq!(task_json["model_name"], "test/repo");
     assert_eq!(task_json["node_id"], node_id);
 
     // /v1/models に登録モデルが含まれる
@@ -199,10 +192,11 @@ async fn hf_catalog_register_distribute_flow() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|m| m["id"] == "hf/test/repo/model.gguf" && m["download_url"].is_string()),
+            .any(|m| m["id"] == "test/repo"),
         "/v1/models must include registered HF model"
     );
 
+    std::env::remove_var("LLM_CONVERT_FAKE");
     std::env::remove_var("HF_BASE_URL");
     std::env::remove_var("LLM_ROUTER_SKIP_HEALTH_CHECK");
     clear_hf_cache();

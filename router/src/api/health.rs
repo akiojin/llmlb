@@ -20,12 +20,30 @@ pub async fn health_check(
     } else {
         Some(req.loaded_embedding_models.clone())
     };
+    let asr_models = if req.loaded_asr_models.is_empty() {
+        None
+    } else {
+        Some(req.loaded_asr_models.clone())
+    };
+    let tts_models = if req.loaded_tts_models.is_empty() {
+        None
+    } else {
+        Some(req.loaded_tts_models.clone())
+    };
+    let supported_runtimes = if req.supported_runtimes.is_empty() {
+        None
+    } else {
+        Some(req.supported_runtimes.clone())
+    };
     state
         .registry
         .update_last_seen(
             req.node_id,
             models,
             embedding_models,
+            asr_models,
+            tts_models,
+            supported_runtimes,
             req.gpu_model_name.clone(),
             req.gpu_compute_capability.clone(),
             req.gpu_capability_score,

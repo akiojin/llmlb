@@ -3,6 +3,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <thread>
+#include <cstdlib>
 
 namespace llm_node {
 
@@ -20,10 +21,20 @@ std::unique_ptr<httplib::Client> make_client(const std::string& base_url, std::c
 }  // namespace
 
 RouterClient::RouterClient(std::string base_url, std::chrono::milliseconds timeout)
-    : base_url_(std::move(base_url)), timeout_(timeout) {}
+    : base_url_(std::move(base_url)), timeout_(timeout) {
+    if (const char* key = std::getenv("LLM_ROUTER_API_KEY")) {
+        api_key_ = key;
+    }
+}
 
 NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     auto cli = make_client(base_url_, timeout_);
+
+    if (api_key_.empty()) {
+        NodeRegistrationResult result;
+        result.error = "missing LLM_ROUTER_API_KEY";
+        return result;
+    }
 
     // Build gpu_devices array
     json gpu_devices_json = json::array();
@@ -56,7 +67,10 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
         payload["gpu_model"] = info.gpu_model.value();
     }
 
-    auto res = cli->Post("/api/nodes", payload.dump(), "application/json");
+    httplib::Headers headers = {
+        {"X-API-Key", api_key_}
+    };
+    auto res = cli->Post("/api/nodes", headers, payload.dump(), "application/json");
 
     NodeRegistrationResult result;
     if (!res) {
@@ -98,6 +112,9 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
                                  const std::optional<HeartbeatMetrics>& metrics,
                                  const std::vector<std::string>& loaded_models,
                                  const std::vector<std::string>& loaded_embedding_models,
+                                 const std::vector<std::string>& loaded_asr_models,
+                                 const std::vector<std::string>& loaded_tts_models,
+                                 const std::vector<std::string>& supported_runtimes,
                                  int max_retries) {
     auto cli = make_client(base_url_, timeout_);
 
@@ -112,6 +129,9 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
         {"active_requests", 0},
         {"loaded_models", loaded_models},
         {"loaded_embedding_models", loaded_embedding_models},
+        {"loaded_asr_models", loaded_asr_models},
+        {"loaded_tts_models", loaded_tts_models},
+        {"supported_runtimes", supported_runtimes},
         {"initializing", false},
     };
 

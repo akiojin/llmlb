@@ -18,7 +18,8 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_storage.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
-    ../../src/core/llama_manager.cpp
+    ../../src/core/onnx_llm_manager.cpp
+    ../../src/core/onnx_tts_manager.cpp
 )
 
 # Use platform-specific gpu_detector source
@@ -35,12 +36,11 @@ add_executable(llm-node-integration-tests
 target_link_libraries(llm-node-integration-tests
     PRIVATE
         test_common
-        llama
-        common
         nlohmann_json::nlohmann_json
         utils_lib
         OpenSSL::SSL
         OpenSSL::Crypto
+        onnxruntime::onnxruntime
 )
 
 # Link Metal frameworks on macOS

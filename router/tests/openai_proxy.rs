@@ -2,7 +2,7 @@ use axum::http::{header::CONTENT_TYPE, StatusCode};
 use llm_router::{
     api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
 };
-use llm_router_common::types::GpuDeviceInfo;
+use llm_router_common::types::{GpuDeviceInfo, RuntimeType};
 use tower::ServiceExt;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -69,9 +69,12 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
                 "test-model".to_string(),
             ]),
             None, // loaded_embedding_models
-            None,
-            None,
-            None,
+            None, // loaded_asr_models
+            None, // loaded_tts_models
+            Some(vec![RuntimeType::OnnxRuntime]),
+            None, // gpu_model_name
+            None, // gpu_compute_capability
+            None, // gpu_capability_score
             Some(false),
             Some((4, 4)),
         )

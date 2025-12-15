@@ -70,6 +70,7 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -136,8 +137,8 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 2, "memory": 24576}
         ],
-        "supported_runtimes": ["llama_cpp", "stable_diffusion"],
-        "loaded_models": ["llama-3.1-8b-instruct"],
+        "supported_runtimes": ["onnx_runtime", "stable_diffusion"],
+        "loaded_models": ["gpt-oss-20b"],
         "loaded_image_models": ["stable-diffusion-xl"]
     });
 
@@ -148,6 +149,7 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -201,8 +203,8 @@ async fn test_no_image_capable_node_returns_503() {
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
         ],
-        "supported_runtimes": ["llama_cpp"],
-        "loaded_models": ["llama-3.1-8b-instruct"]
+        "supported_runtimes": ["onnx_runtime"],
+        "loaded_models": ["gpt-oss-20b"]
     });
 
     let register_response = app
@@ -212,6 +214,7 @@ async fn test_no_image_capable_node_returns_503() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )

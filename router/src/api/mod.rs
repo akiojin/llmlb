@@ -97,9 +97,14 @@ pub fn create_router(state: AppState) -> Router {
         .merge(agent_protected_routes)
         .merge(api_key_protected_routes)
         // 既存のルート
+        .route("/api/nodes", get(nodes::list_nodes))
+        // ノード登録はAPIキー必須（勝手な登録を防ぐ）
         .route(
             "/api/nodes",
-            post(nodes::register_node).get(nodes::list_nodes),
+            post(nodes::register_node).layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::api_key_auth_middleware,
+            )),
         )
         .route("/api/nodes/:node_id", delete(nodes::delete_node))
         .route(
@@ -159,7 +164,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/models/distribute", post(models::distribute_models))
         // Note: /api/models/download was removed (duplicate of /api/models/distribute)
         // モデルファイル配信API (SPEC-48678000)
-        .route("/api/models/blob/:model_name", get(models::get_model_blob))
+        .route(
+            "/api/models/registry/*path",
+            get(models::get_model_registry),
+        )
+        .route("/api/models/blob/*model_name", get(models::get_model_blob))
         .route("/api/nodes/:node_id/models", get(models::get_node_models))
         .route(
             "/api/nodes/:node_id/models/pull",

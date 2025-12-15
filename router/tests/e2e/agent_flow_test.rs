@@ -72,6 +72,7 @@ async fn test_complete_agent_flow() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
         )
@@ -201,6 +202,7 @@ async fn test_agent_token_persistence() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
         )
@@ -231,6 +233,7 @@ async fn test_agent_token_persistence() {
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
                 .header("x-agent-token", first_token)
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
         )
@@ -291,6 +294,7 @@ async fn test_list_nodes() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
         )
@@ -364,6 +368,7 @@ async fn test_node_metrics_update() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
         )

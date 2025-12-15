@@ -110,59 +110,13 @@ cargo build --release -p llm-router
 On Windows 10+ and macOS 12+, the router displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
-### CLI Reference (Linux only)
+### CLI Reference
 
-> **Note**: CLI subcommands (`user`, `model`) are only available on Linux.
-> On Windows/macOS, the application starts in system tray mode and CLI options are ignored.
-
-**Basic Options:**
+The `llm-router` binary is primarily a server process; the CLI surface is intentionally minimal.
 
 ```bash
-llm-router --help                    # Show help
-llm-router --version                 # Show version
-llm-router --preload-model <spec>    # Preload HF model at startup (can be specified multiple times)
-                                     # Format: repo:filename or repo/filename
-```
-
-**User Management Commands:**
-
-```bash
-llm-router user list                           # List all users
-llm-router user add <username> -p <password>   # Add user (password min 8 chars)
-llm-router user delete <username>              # Delete user
-```
-
-**Model Management Commands:**
-
-```bash
-# List HF GGUF catalog
-llm-router model list [OPTIONS]
-  --router <URL>      # Router URL (default: http://127.0.0.1:8080)
-  --search <QUERY>    # Search query
-  --limit <N>         # Number of results (default: 20)
-  --offset <N>        # Offset (default: 0)
-  --format <FORMAT>   # Output format: json | table (default: table)
-
-# Register HF GGUF model
-llm-router model add <REPO> -f <FILE> [--router <URL>]
-  # Example: llm-router model add TheBloke/Llama-2-7B-GGUF -f llama-2-7b.Q4_K_M.gguf
-
-# Trigger model download to nodes
-llm-router model download <NAME> --all [--router <URL>]         # Distribute to all nodes
-llm-router model download <NAME> --node <UUID> [--router <URL>] # Distribute to specific node
-```
-
-**Environment Variables (shown in --help output):**
-
-```
-ENVIRONMENT VARIABLES:
-    LLM_ROUTER_HOST              Bind address (default: 0.0.0.0)
-    LLM_ROUTER_PORT              Listen port (default: 8080)
-    LLM_ROUTER_LOG_LEVEL         Log level (default: info)
-    LLM_ROUTER_DATABASE_URL      Database URL
-    LLM_ROUTER_JWT_SECRET        JWT signing key (auto-generated if not set)
-    LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
-    LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
+llm-router --help
+llm-router --version
 ```
 
 ### Node (C++)
@@ -191,7 +145,7 @@ npm run start:node
 
 # Or manually:
 # cd node && cmake -B build -S . && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
+# LLM_ROUTER_URL=http://localhost:8080 LLM_ROUTER_API_KEY=sk_your_api_key ./node/build/llm-node
 ```
 
 **Environment Variables:**
@@ -199,6 +153,7 @@ npm run start:node
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router listens on 8080) |
+| `LLM_ROUTER_API_KEY` | - | API key required for node registration (`X-API-Key`) |
 | `LLM_NODE_PORT` | `11435` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
@@ -421,11 +376,11 @@ llm-router/
 │   │   └── main.rs
 │   ├── migrations/      # Database migrations
 │   └── Cargo.toml
-├── node/                # C++ Node (llama.cpp integrated)
+├── node/                # C++ Node (ONNX Runtime based)
 │   ├── src/
 │   │   ├── main.cpp     # Entry point
 │   │   ├── api/         # OpenAI-compatible API
-│   │   ├── core/        # llama.cpp inference engine
+│   │   ├── core/        # inference engine (ONNX Runtime / whisper.cpp)
 │   │   └── models/      # Model management
 │   ├── tests/           # TDD tests
 │   └── CMakeLists.txt
@@ -454,96 +409,66 @@ The dashboard ships with the coordinator process. Once the server is running you
 
 For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
 
-## Hugging Face registration (GGUF-first)
+## Hugging Face registration (ONNX-first)
 
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web:
   - Dashboard → モデル管理 → 「Register Model (HF URL)」
-  - Paste `https://huggingface.co/org/repo/...` **or** plain `org/repo`. The router picks the first GGUF; if none exists it queues a convert job from a convertible file (.safetensors/.bin/.pt/.pth).
-  - Non-GGUF inputs are converted on the router with `convert_hf_to_gguf.py`. Failed jobs stay in the Convert list with a Restoreボタン for retry; pending items are re-queued automatically after router restart.
-  - `/v1/models` and the dashboard only list models whose GGUF file exists on disk; no built-in presets are embedded in the source.
-- CLI:
-  - `llm-router model add <repo> [--file <gguf>]` to register (ID becomes `hf/<repo>/<file>`)
-  - `llm-router model download <id> --all|--node <uuid>` to start downloads to nodes
+  - Paste `https://huggingface.co/org/repo/...` **or** plain `org/repo` (optionally `org/repo@revision`).
+  - The router prefers an existing `.onnx` file; if none exists it queues an export job and produces `model.onnx` + `manifest.json` in the router cache.
+  - Export is performed via `scripts/export_hf_to_onnx.py` (override with `LLM_CONVERT_SCRIPT`).
+  - Nodes download models via `/api/models/registry/...` described by the manifest.
 
 ## Installation
 
 ### Requirements
 
-- **Coordinator**: Linux / Windows 10+ / macOS 12+, Rust 1.70+
-- **Agent**: Windows 10+ / macOS 12+ (CLI-based application), Rust 1.70+
-- **HF非GGUFを登録する場合のPython依存**: `python3`, `transformers`, `torch`, `sentencepiece` など。以下で一括インストールできます:
+- **Router**: Linux / Windows 10+ / macOS 12+, Rust 1.70+
+- **Node**: macOS 12+ / Windows 10+ / Linux, CMake + C++ toolchain (see "Node (C++)" above)
+- **Python for ONNX export (when HF repo has no `.onnx`)**: `python3` is required. The router auto-creates `~/.llm-router/venv` and installs `scripts/requirements-export-hf-to-onnx.txt` (router still starts even if this fails, but exports will fail). To provision manually:
   ```bash
   python3 -m venv .venv
   source .venv/bin/activate
-  pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+  pip install -r scripts/requirements-export-hf-to-onnx.txt
   ```
-  - Pythonパスを変えたい場合: `LLM_CONVERT_PYTHON=/path/to/python`
-- **GPU**: NVIDIA / AMD / Apple Silicon GPU required for agent registration
+  - To override Python: `LLM_CONVERT_PYTHON=/path/to/python`
+- **GPU**: NVIDIA / AMD / Apple Silicon GPU required for node registration
   - Automatically detected on startup
   - Docker for Mac: Apple Silicon detection supported
 - **Docker memory**: When running via `docker-compose`, allocate at least 16 GiB RAM to the container (`mem_limit: 16g`, `mem_reservation: 13g`, `memswap_limit: 18g`). On Docker Desktop, open **Settings → Resources** and raise the memory slider to ≥16 GiB before running `docker compose up`. Without this, large models such as `gpt-oss:20b` will fail to start with "requires more system memory" errors.
-- **LLM runtime**: Automatically downloaded and installed when not present
-  - Progress display during download
-  - Automatic retry on network errors
-  - SHA256 checksum verification
-  - Proxy support (HTTP_PROXY, HTTPS_PROXY environment variables)
-- **LLM Models**: Automatically downloaded on first startup
-  - Memory-based model selection (appropriate model size for available RAM)
-  - Real-time progress display with streaming status updates
-  - Automatic retry on network errors
-  - Models pulled via LLM runtime API
-- **Management**: Browser-based WebUI dashboard for agent settings and monitoring
+- **Management**: Browser-based WebUI dashboard for node settings and monitoring
 
-### Coordinator Setup
+### Router Setup
 
 ```bash
 # Clone repository
 git clone https://github.com/your-org/llm-router.git
 cd llm-router
 
-# Build Coordinator
-cd coordinator
-cargo build --release
+# Build Router
+cargo build --release -p llm-router
 
-# Start Coordinator
+# Start Router
 ./target/release/llm-router
 # Default: http://0.0.0.0:8080
 ```
 
-### Agent Setup
+### Node Setup
 
 ```bash
-# Build Agent
-cd agent
-cargo build --release
+# Build Node
+npm run build:node
 
-# Start Agent (環境変数で上書き)
-ROUTER_URL=http://coordinator-host:8080 ./target/release/llm-node
-
-# 環境変数を指定しない場合はローカル設定パネルで保存した値、なければ http://localhost:8080
-./target/release/llm-node
+# Start Node (registers to router)
+LLM_ROUTER_URL=http://localhost:8080 LLM_ROUTER_API_KEY=sk_your_api_key ./node/build/llm-node
 ```
 
-**Note**: LLM runtime is automatically downloaded and installed on first startup if not already present. The agent will:
-- Detect the platform (Linux, macOS, Windows)
-- Download the appropriate LLM runtime binary
-- Verify integrity with SHA256 checksum
-- Install to `~/.runtime-agent/bin/`
-- **Automatically download LLM models**:
-  - Memory-based model selection (chooses appropriate model size)
-  - Real-time progress display during model download
-  - Automatic retry on network errors (configurable via environment variables)
-  - Streaming response processing for live status updates
-- Start LLM runtime and register with the coordinator
-
-Manual installation is also supported. Download LLM runtime from [runtime.ai](https://runtime.ai).
+**Note**: The node is built from this repository and registers to the router using `LLM_ROUTER_API_KEY`. There is no separate external "LLM runtime" download step.
 
 #### System tray (Windows / macOS)
 
-- On Windows 10+ and macOS 12+, both the **agent** *and* the **coordinator** expose tray / menu bar icons when launched as binaries.
-- The agent tray icon behaves as before: double-click or **Open Settings** to launch the local settings panel, edit coordinator URL / LLM runtime port / heartbeat interval, and jump to `ROUTER_URL/dashboard`. **Quit Agent** stops the background process. Linux builds continue to run as a headless CLI daemon (settings URL is printed to stdout).
-- The coordinator tray icon lets you open the local dashboard (`http://127.0.0.1:<port>/dashboard` by default) or exit the server directly from the system tray. Double-clicking the icon also launches the dashboard in your default browser.
+- On Windows 10+ and macOS 12+, the router binary exposes a tray / menu bar icon to open the dashboard and exit the server.
+- The node is a CLI process.
 - Tray icons are derived from [Open Iconic](https://github.com/iconic/open-iconic) (MIT License); a copy of the license is included at `assets/icons/ICON-LICENSE.txt`.
 
 ### Release Automation
@@ -670,13 +595,14 @@ Cloud / external services:
 | `ANTHROPIC_API_KEY` | - | API key for `anthropic:` models | required |
 | `ANTHROPIC_API_BASE_URL` | `https://api.anthropic.com` | Override Anthropic base URL | optional |
 | `HF_TOKEN` | - | Hugging Face token for model pulls | optional |
-| `LLM_ROUTER_API_KEY` | - | API key used by e2e tests/clients | client/test use |
+| `LLM_ROUTER_API_KEY` | - | API key used by clients (and node registration) | client/node use |
 
 #### Node (llm-node)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router runs on 8080) | - |
+| `LLM_ROUTER_API_KEY` | - | Router API key used for node registration | client/node use |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
@@ -878,7 +804,7 @@ The file is automatically managed with:
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/nodes` | Register node (GPU required) | None |
+| POST | `/api/nodes` | Register node (GPU required) | API Key |
 | GET | `/api/nodes` | List nodes | None |
 | DELETE | `/api/nodes/:node_id` | Delete node | None |
 | POST | `/api/nodes/:node_id/disconnect` | Force node offline | None |
@@ -926,8 +852,8 @@ The file is automatically managed with:
 | DELETE | `/api/models/convert/:task_id` | Delete conversion task | None |
 | GET | `/api/models/loaded` | Get loaded models | None |
 | POST | `/api/models/distribute` | Distribute model | None |
-| POST | `/api/models/download` | Download model (alias) | None |
-| GET | `/api/models/blob/:model_name` | Serve model file | None |
+| GET | `/api/models/registry/*path` | Serve model registry artifacts | None |
+| GET | `/api/models/blob/*model_name` | Serve model file | None |
 | GET | `/api/nodes/:node_id/models` | Get node's loaded models | None |
 | POST | `/api/nodes/:node_id/models/pull` | Pull model to node | None |
 | GET | `/api/tasks` | List download tasks | None |
@@ -951,9 +877,8 @@ The file is automatically managed with:
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/dashboard/logs/coordinator` | Coordinator logs | None |
-| GET | `/api/dashboard/logs/nodes/:node_id` | Node logs | None |
-| GET | `/api/nodes/:node_id/logs` | Node logs (alt path) | None |
+| GET | `/api/dashboard/logs/router` | Router logs | None |
+| GET | `/api/nodes/:node_id/logs` | Node logs | None |
 
 #### Static Files & Metrics
 

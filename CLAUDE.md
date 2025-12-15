@@ -6,7 +6,10 @@
 
 ## まず読む 90秒版
 
-- 何を作る: Rust 製ルーター（`router/`）＋ llama.cpp ベースの C++ ノード（`node/`）。Ollama は一切使わない／復活させない。
+- 何を作る: Rust 製ルーター（`router/`）＋ ONNX Runtime ベースの C++ ノード（`node/`）。Ollama は一切使わない／復活させない。
+- モデル配布: HFリポジトリに`.onnx`が無い場合は router が自動でONNXへエクスポートし、`model.onnx`＋`manifest.json` を `/api/models/registry` から配布する（node は `registry_url` を見て一括取得）。
+- 変換スクリプト: デフォルトは `scripts/export_hf_to_onnx.py`。モデル固有のエクスポートが必要なら `LLM_CONVERT_SCRIPT` で差し替える。
+- ノード登録: node は `LLM_ROUTER_API_KEY` を設定して起動し、`POST /api/nodes` を `X-API-Key` 付きで登録する（以降のヘルスチェックは `agent_token`）。
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
 - 守る: ブランチ／worktree 作成・切替禁止、作業ディレクトリ移動禁止、GPU 非搭載ノード登録禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は `HF_TOKEN`（任意）と必要に応じ `HF_BASE_URL` を環境にセットしておく。

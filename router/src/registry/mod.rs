@@ -8,7 +8,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
-    types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus},
+    types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus, RuntimeType},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -270,6 +270,9 @@ impl NodeRegistry {
         node_id: Uuid,
         loaded_models: Option<Vec<String>>,
         loaded_embedding_models: Option<Vec<String>>,
+        loaded_asr_models: Option<Vec<String>>,
+        loaded_tts_models: Option<Vec<String>>,
+        supported_runtimes: Option<Vec<RuntimeType>>,
         gpu_model_name: Option<String>,
         gpu_compute_capability: Option<String>,
         gpu_capability_score: Option<u32>,
@@ -289,6 +292,15 @@ impl NodeRegistry {
             }
             if let Some(embedding_models) = loaded_embedding_models {
                 node.loaded_embedding_models = normalize_models(embedding_models);
+            }
+            if let Some(asr_models) = loaded_asr_models {
+                node.loaded_asr_models = normalize_models(asr_models);
+            }
+            if let Some(tts_models) = loaded_tts_models {
+                node.loaded_tts_models = normalize_models(tts_models);
+            }
+            if let Some(runtimes) = supported_runtimes {
+                node.supported_runtimes = normalize_runtimes(runtimes);
             }
             // GPU能力情報を更新
             if gpu_model_name.is_some() {
@@ -507,6 +519,16 @@ fn normalize_models(models: Vec<String>) -> Vec<String> {
     normalized
 }
 
+fn normalize_runtimes(runtimes: Vec<RuntimeType>) -> Vec<RuntimeType> {
+    let mut normalized = Vec::new();
+    for rt in runtimes {
+        if !normalized.contains(&rt) {
+            normalized.push(rt);
+        }
+    }
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -708,6 +730,9 @@ mod tests {
                     "phi-3".into(),
                 ]),
                 None, // loaded_embedding_models
+                None, // loaded_asr_models
+                None, // loaded_tts_models
+                None, // supported_runtimes
                 None,
                 None,
                 None,

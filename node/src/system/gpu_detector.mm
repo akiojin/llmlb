@@ -3,6 +3,7 @@
 
 #include "system/gpu_detector.h"
 #include <iostream>
+#include <string>
 
 #ifdef USE_METAL
 #import <Metal/Metal.h>
@@ -85,8 +86,20 @@ double GpuDetector::getCapabilityScore() const {
         // Base score from memory (GB)
         double mem_score = static_cast<double>(dev.memory_bytes) / (1024.0 * 1024.0 * 1024.0);
 
-        // Apple Silicon GPUs are generally efficient
-        double cc_factor = 1.5;
+        // Keep scoring logic consistent across platforms.
+        double cc_factor = 1.0;
+        if (dev.vendor == "nvidia") {
+            try {
+                double cc = std::stod(dev.compute_capability);
+                cc_factor = cc / 5.0;  // Normalize around 5.0 as baseline
+            } catch (...) {
+                cc_factor = 1.0;
+            }
+        } else if (dev.vendor == "amd") {
+            cc_factor = 1.2;
+        } else if (dev.vendor == "apple") {
+            cc_factor = 1.5;
+        }
 
         score += mem_score * cc_factor;
     }

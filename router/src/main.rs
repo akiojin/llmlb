@@ -136,10 +136,10 @@ async fn run_server(config: ServerConfig) {
     // Load registered models (HF etc.)
     llm_router::api::models::load_registered_models_from_storage().await;
 
-    // venv環境をセットアップ（非GGUF変換に必要）
-    info!("Setting up Python venv for model conversion...");
+    // venv環境をセットアップ（HFモデル→ONNXエクスポートに必要）
+    info!("Setting up Python venv for ONNX export...");
     if let Err(e) = llm_router::convert::setup_venv() {
-        tracing::warn!("venv setup failed (conversion may not work): {}", e);
+        tracing::warn!("venv setup failed (ONNX export may not work): {}", e);
     }
 
     let load_manager = balancer::LoadManager::new(registry.clone());
@@ -178,8 +178,7 @@ async fn run_server(config: ServerConfig) {
         get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 1);
     let convert_manager = llm_router::convert::ConvertTaskManager::new(convert_concurrency);
     // 起動時に変換用スクリプトと依存をチェック（不足ならエラー終了）
-    llm_router::convert::verify_convert_ready()
-        .expect("HF変換スクリプトまたはPython依存が不足しています");
+    llm_router::convert::verify_convert_ready().expect("HF→ONNX変換スクリプトが見つかりません");
     // 再起動後に pending_conversion のモデルを自動で再キュー
     let pending_models = llm_router::api::models::list_registered_models();
     let convert_manager_for_resume = convert_manager.clone();

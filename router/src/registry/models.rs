@@ -17,6 +17,8 @@ pub enum ModelSource {
     /// 事前定義モデル
     #[default]
     Predefined,
+    /// HFのONNXモデル（ルーターでキャッシュ/変換済み）
+    HfOnnx,
     /// HFのGGUFモデル
     HfGguf,
     /// HF非GGUFで変換待ち
@@ -109,7 +111,8 @@ pub fn model_name_to_dir(name: &str) -> String {
     // 後方互換: コロン区切りの場合はアンダースコアに置換
     let mut dir = name.replace(':', "_");
     // ファイル名ベース形式（コロンなし）でサイズ情報がない場合も対応
-    if !name.contains(':') && !name.contains('-') {
+    // HFの org/model 形式（スラッシュ含む）はそのまま扱い、"_latest" を付けない
+    if !name.contains(':') && !name.contains('-') && !name.contains('/') {
         dir.push_str("_latest");
     }
     dir
@@ -124,12 +127,16 @@ pub fn router_models_dir() -> Option<PathBuf> {
 /// モデルのggufパスを返す（存在しない場合はNone）
 pub fn router_model_path(name: &str) -> Option<PathBuf> {
     let base = router_models_dir()?;
-    let path = base.join(model_name_to_dir(name)).join("model.gguf");
-    if path.exists() {
-        Some(path)
-    } else {
-        None
+    let dir = base.join(model_name_to_dir(name));
+    let onnx_path = dir.join("model.onnx");
+    if onnx_path.exists() {
+        return Some(onnx_path);
     }
+    let gguf_path = dir.join("model.gguf");
+    if gguf_path.exists() {
+        return Some(gguf_path);
+    }
+    None
 }
 
 /// ルーター側にモデルをキャッシュする（ベストエフォート）。
@@ -152,7 +159,11 @@ pub async fn ensure_router_model_cached(model: &ModelInfo) -> Option<PathBuf> {
     };
 
     let dir = base.join(model_name_to_dir(&model.name));
-    let target = dir.join("model.gguf");
+    let target = if url.to_ascii_lowercase().ends_with(".onnx") {
+        dir.join("model.onnx")
+    } else {
+        dir.join("model.gguf")
+    };
 
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         tracing::warn!(dir=?dir, err=?e, "cache_model:create_dir_failed");

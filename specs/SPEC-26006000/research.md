@@ -8,7 +8,6 @@
 
 **理由**:
 
-- llama.cppと同じ作者（Georgi Gerganov）によるプロジェクト
 - ggml基盤で統一されており、既存のビルドシステムと親和性が高い
 - Metal (macOS) と CUDA (Linux) の両方をネイティブサポート
 - OpenAI Whisperモデル（tiny〜large-v3）を直接実行可能
@@ -45,7 +44,7 @@ target_link_libraries(llm-node PRIVATE whisper)
 
 | 代替案 | 却下理由 |
 |--------|---------|
-| llama.cpp (音声) | TTSモデルのサポートなし |
+| 既存のLLMエンジン | TTSモデルのサポートなし |
 | TensorRT | NVIDIA専用、移植性なし |
 | PyTorch C++ | ビルド複雑、バイナリサイズ大 |
 | espeak-ng | 品質が低い（合成音声） |
@@ -109,7 +108,6 @@ std::vector<float> decode_audio(const std::string& path);
 ```rust
 // common/src/types.rs
 pub enum RuntimeType {
-    LlamaCpp,      // テキスト生成
     WhisperCpp,    // 音声認識
     OnnxRuntime,   // TTS/汎用
 }
@@ -128,7 +126,7 @@ pub struct HealthCheckRequest {
 
 **理由**:
 
-- llama.cppとwhisper.cppは両方ggml使用、メモリ競合の可能性
+- ggmlベースの実装同士はメモリ競合の可能性
 - ONNX Runtimeは独自のGPUメモリ管理
 - 同時実行時の安定性確保が必要
 

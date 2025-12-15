@@ -5,14 +5,20 @@
 ## 必要環境
 - macOS (Apple Silicon、M4 想定)
 - CMake 3.20+
-- ONNX Runtime (CoreML EP を含む arm64 ビルド)
-  - Homebrew 例: `brew install onnxruntime`
-  - もしくは pip wheel: `pip install onnxruntime`（C++ 連携時はヘッダとライブラリのパスを自前で通す必要があります）
+- ONNX Runtime (arm64)
+  - Homebrew: `brew install onnxruntime`（※通常は **CPU EP のみ**。CoreML/XNNPACK は未同梱のことが多い）
+  - CoreML EP を使う場合: ソースビルドして CMake package を用意する（下記参照）
 
 ## ビルド
 ```bash
-cd poc/onnx-runtime-demo
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S poc/onnx-runtime-demo -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+CoreML EP 付きの onnxruntime を自前ビルドした場合は `onnxruntime_DIR` を指定します:
+```bash
+cmake -S poc/onnx-runtime-demo -B build -DCMAKE_BUILD_TYPE=Release \
+  -Donnxruntime_DIR=/path/to/onnxruntime/install/lib/cmake/onnxruntime
 cmake --build build -j
 ```
 
@@ -33,6 +39,14 @@ Inputs: 1
 Session initialization OK.
 ```
 
+## CoreML EP 付き onnxruntime のビルド（macOS）
+このリポジトリの `scripts/build-onnxruntime-coreml.sh` を使うと、CoreML EP 有効の onnxruntime を
+ビルドして `find_package(onnxruntime)` で参照できる形（CMake package）までインストールします。
+
+```bash
+./scripts/build-onnxruntime-coreml.sh
+```
+
 ## HFモデルの直接変換（例）
 `convert_and_run.sh` で PyTorch→ONNX 変換と PoC 実行を一括実行できます。
 
@@ -42,7 +56,7 @@ MODEL=microsoft/VibeVoice-Realtime-0.5B ./convert_and_run.sh
 ```
 
 ### 既知の制約
-- Homebrew の onnxruntime ボトルは CoreML/XNNPACK EP 非同梱のため CPU 実行のみ。M4 の GPU/ANE を使うには `--use_coreml` 付きで onnxruntime をソースビルドする必要があります。
+- Homebrew の onnxruntime ボトルは CoreML/XNNPACK EP 非同梱のことが多く、PoC は CPU 実行のみになります。M4 の GPU/ANE を使うには `--use_coreml` 付きで onnxruntime をソースビルドする必要があります。
 - `microsoft/VibeVoice-Realtime-0.5B` は Transformers の標準エクスポーター（sequence-classification 等）に未対応のカスタムアーキテクチャです。`transformers.onnx` では変換できず、独自のエクスポートスクリプトが必要です（音響トークナイザ＋拡散ヘッドを含むため）。
 
 ## メモ

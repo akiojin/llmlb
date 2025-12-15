@@ -10,7 +10,6 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
-use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -30,14 +29,14 @@ async fn build_app() -> Router {
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
     // テスト用の軽量変換スクリプトを配置（依存ライブラリ不要）
-    let mock_script_path = temp_dir.join("mock_gguf_writer.py");
+    let mock_script_path = temp_dir.join("mock_onnx_writer.py");
     std::fs::write(
         &mock_script_path,
         r#"import sys, pathlib
 outfile = sys.argv[sys.argv.index("--outfile")+1]
 pathlib.Path(outfile).parent.mkdir(parents=True, exist_ok=True)
 with open(outfile, "wb") as f:
-    f.write(b"gguf test")
+    f.write(b"onnx test")
 "#,
     )
     .unwrap();
@@ -286,6 +285,7 @@ async fn test_get_agent_models_contract() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -368,6 +368,7 @@ async fn test_pull_model_contract() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -450,6 +451,7 @@ async fn test_get_task_progress_contract() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -563,13 +565,6 @@ async fn test_register_model_contract() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let mock = MockServer::start().await;
 
-    // HEAD 200 for existence
-    Mock::given(method("HEAD"))
-        .and(path("/test/repo/resolve/main/model.gguf"))
-        .respond_with(ResponseTemplate::new(200))
-        .mount(&mock)
-        .await;
-
     std::env::set_var("HF_BASE_URL", mock.uri());
 
     let app = build_app().await;
@@ -577,7 +572,6 @@ async fn test_register_model_contract() {
     // 正常登録
     let payload = json!({
         "repo": "test/repo",
-        "filename": "model.gguf",
         "display_name": "Test Model"
     });
 
@@ -636,16 +630,16 @@ async fn test_register_model_contract() {
         .unwrap();
     assert_eq!(dup.status(), StatusCode::BAD_REQUEST);
 
-    // 404ケース: HEADが404を返す
+    // 404ケース: ONNXファイル指定時に HEAD が404を返す
     Mock::given(method("HEAD"))
-        .and(path("/missing/repo/resolve/main/absent.gguf"))
+        .and(path("/missing/repo/resolve/main/absent.onnx"))
         .respond_with(ResponseTemplate::new(404))
         .mount(&mock)
         .await;
 
     let missing_payload = json!({
         "repo": "missing/repo",
-        "filename": "absent.gguf"
+        "filename": "absent.onnx"
     });
 
     let missing = app
@@ -817,41 +811,24 @@ async fn test_convert_restore_requeues() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 
-    // siblings returns GGUF file for registration to succeed
-    Mock::given(method("GET"))
-        .and(path("/api/models/restore-repo"))
-        .and(query_param("expand", "siblings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "siblings": [
-                {"rfilename": "model.Q4_K_M.gguf"}
-            ]
-        })))
-        .mount(&mock)
-        .await;
-    Mock::given(method("HEAD"))
-        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
-        .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
-        .mount(&mock)
-        .await;
-    // GETダウンロードを初回は失敗させる（500エラー）→リトライで成功させる
-    let download_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let counter_clone = download_counter.clone();
-    Mock::given(method("GET"))
-        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
-        .respond_with(move |_req: &wiremock::Request| {
-            let count = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if count == 0 {
-                // 1回目: 失敗
-                ResponseTemplate::new(500)
-            } else {
-                // 2回目以降: 成功
-                ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content")
-            }
-        })
-        .mount(&mock)
-        .await;
-
     let app = build_app().await;
+
+    // override convert script: fail for the first run
+    let ok_script = std::env::var("LLM_CONVERT_SCRIPT").unwrap();
+    let fail_script_path = std::env::temp_dir().join(format!(
+        "or-fail-{}-{}.py",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &fail_script_path,
+        r#"import sys
+print("0%", file=sys.stderr, flush=True)
+sys.exit(1)
+"#,
+    )
+    .unwrap();
+    std::env::set_var("LLM_CONVERT_SCRIPT", &fail_script_path);
 
     // register -> convert fails
     let reg = app
@@ -908,7 +885,8 @@ async fn test_convert_restore_requeues() {
         last_tasks
     );
 
-    // 2回目以降はモックが成功を返すので、リトライでダウンロードが成功するはず
+    // restore: switch back to the ok script and re-queue
+    std::env::set_var("LLM_CONVERT_SCRIPT", ok_script);
     let retry = app
         .clone()
         .oneshot(
@@ -919,7 +897,7 @@ async fn test_convert_restore_requeues() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "repo": "restore-repo",
-                        "filename": "model.Q4_K_M.gguf"
+                        "filename": ""
                     }))
                     .unwrap(),
                 ))

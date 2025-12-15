@@ -18,6 +18,9 @@ mod test_agent_register_gpu;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 
+#[path = "contract/node_registration_auth_test.rs"]
+mod node_registration_auth_test;
+
 #[path = "contract/test_metrics.rs"]
 mod test_metrics;
 

@@ -7,7 +7,7 @@ namespace llm_node {
 
 std::string getHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-node " << LLM_NODE_VERSION << " - LLM inference node with llama.cpp\n";
+    oss << "llm-node " << LLM_NODE_VERSION << " - LLM inference node with ONNX Runtime\n";
     oss << "\n";
     oss << "USAGE:\n";
     oss << "    llm-node [OPTIONS]\n";
@@ -27,6 +27,7 @@ std::string getHelpMessage() {
     oss << "    LLM_NODE_LOG_RETENTION_DAYS  Log retention days (default: 7)\n";
     oss << "\n";
     oss << "    LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:8080)\n";
+    oss << "    LLM_ROUTER_API_KEY           Router API key for node registration\n";
     oss << "    LLM_NODE_IP                  Node IP address for registration (auto-detect)\n";
     oss << "    LLM_NODE_CONFIG              Path to config JSON file\n";
     oss << "\n";

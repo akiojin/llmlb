@@ -1,6 +1,5 @@
 //! ノード登録APIハンドラー
 
-use crate::registry::models::{ensure_router_model_cached, router_model_path};
 use crate::{
     balancer::{AgentLoadSnapshot, SystemSummary},
     registry::NodeSettingsUpdate,
@@ -83,8 +82,15 @@ pub async fn register_node(
     let health_url = format!("{}/v1/models", node_api_base);
 
     let skip_health_check = cfg!(test) || std::env::var("LLM_ROUTER_SKIP_HEALTH_CHECK").is_ok();
-    let (loaded_models, initializing, ready_models) = if skip_health_check {
-        (Vec::new(), false, None)
+    let (loaded_models, initializing, ready_models, supported_runtimes) = if skip_health_check {
+        // In test/dev mode, we skip probing the node. Treat the node as immediately ready so it
+        // can be selected by the proxy layer.
+        (
+            Vec::new(),
+            false,
+            Some((0, 0)),
+            Some(vec![llm_router_common::types::RuntimeType::OnnxRuntime]),
+        )
     } else {
         let health_res = state.http_client.get(&health_url).send().await;
         if let Err(e) = health_res {
@@ -158,7 +164,7 @@ pub async fn register_node(
                     .unwrap_or(false)
             });
 
-        (models, initializing, ready_models)
+        (models, initializing, ready_models, None)
     };
 
     // ヘルスチェックOKなら登録を実施
@@ -194,6 +200,9 @@ pub async fn register_node(
             response.node_id,
             Some(loaded_models),
             None, // loaded_embedding_models
+            None, // loaded_asr_models
+            None, // loaded_tts_models
+            supported_runtimes,
             None,
             None,
             None,
@@ -224,79 +233,6 @@ pub async fn register_node(
     if skip_health_check {
         info!("Auto-distribution skipped in test mode");
         return Ok((status_code, Json(response)));
-    }
-
-    let node_id = response.node_id;
-    let task_manager = state.task_manager.clone();
-    let registry = state.registry.clone();
-    let client = crate::runtime::RuntimeClient::new()?;
-    let supported_models = client.get_predefined_models();
-
-    let mut created_tasks = Vec::new();
-
-    for model in supported_models {
-        let task = task_manager.create_task(node_id, model.name.clone()).await;
-        let task_id = task.id;
-        created_tasks.push((model.name.clone(), task_id));
-
-        let cached = ensure_router_model_cached(&model).await;
-        let shared_path = cached
-            .or_else(|| router_model_path(&model.name))
-            .map(|p| p.to_string_lossy().to_string());
-        let download_url = model.download_url.clone();
-
-        info!(
-            "Auto-distribution started: node_id={}, model={}, task_id={}",
-            node_id, model.name, task_id
-        );
-
-        // ノードにモデルプル要求を送信（バックグラウンド）
-        let registry = registry.clone();
-        let http_client = state.http_client.clone();
-        tokio::spawn(async move {
-            match registry.get(node_id).await {
-                Ok(node) => {
-                    // ノードAPIのポート（デフォルト: LLM runtime port + 1）
-                    let node_api_port = node.agent_api_port.unwrap_or(node.runtime_port + 1);
-                    let node_url = format!("http://{}:{}/pull", node.ip_address, node_api_port);
-
-                    info!("Sending pull request to node: {}", node_url);
-
-                    let pull_request = serde_json::json!({
-                        "model": model.name,
-                        "task_id": task_id,
-                        "path": shared_path,
-                        "download_url": download_url,
-                    });
-
-                    match http_client.post(&node_url).json(&pull_request).send().await {
-                        Ok(response) => {
-                            if response.status().is_success() {
-                                info!("Successfully sent pull request to node {}", node_id);
-                            } else {
-                                error!(
-                                    "Node {} returned error status: {}",
-                                    node_id,
-                                    response.status()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to send pull request to node {}: {}", node_id, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to get node {} info: {}", node_id, e);
-                }
-            }
-        });
-    }
-
-    // レスポンスには先頭のタスク情報だけ添える（後方互換のため）
-    if let Some((first_model, first_task)) = created_tasks.first() {
-        response.auto_distributed_model = Some(first_model.clone());
-        response.download_task_id = Some(*first_task);
     }
 
     Ok((status_code, Json(response)))

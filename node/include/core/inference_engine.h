@@ -9,7 +9,7 @@
 namespace llm_node {
 
 // 前方宣言
-class LlamaManager;
+class OnnxLlmManager;
 class ModelStorage;
 class ModelSync;
 
@@ -36,13 +36,13 @@ struct ModelLoadResult {
 
 class InferenceEngine {
 public:
-    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync への参照を注入
-    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr);
+    /// コンストラクタ: OnnxLlmManager, ModelStorage, ModelSync への参照を注入
+    InferenceEngine(OnnxLlmManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
 
-    /// チャット生成（llama.cpp API使用）
+    /// チャット生成（ONNX Runtime）
     std::string generateChat(const std::vector<ChatMessage>& messages,
                             const std::string& model,
                             const InferenceParams& params = {}) const;
@@ -98,7 +98,7 @@ public:
     size_t getModelMaxContext() const { return model_max_ctx_; }
 
 private:
-    LlamaManager* manager_{nullptr};
+    OnnxLlmManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ

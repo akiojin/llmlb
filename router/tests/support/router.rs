@@ -69,6 +69,7 @@ pub async fn register_node(
 ) -> reqwest::Result<Response> {
     Client::new()
         .post(format!("http://{router_addr}/api/nodes"))
+        .header("x-api-key", "sk_debug")
         .json(&json!({
             "machine_name": "stub-node",
             "ip_address": node_addr.ip().to_string(),

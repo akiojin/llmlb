@@ -62,6 +62,16 @@ TEST(ModelSyncTest, DetectsMissingAndStaleModels) {
     // local has stale model and one existing
     fs::create_directory(guard.path / "gpt-oss:7b");
     fs::create_directory(guard.path / "old-model");
+    {
+        std::ofstream ofs(guard.path / "gpt-oss:7b" / "model.gguf");
+        ofs << "dummy";
+        ofs.flush();
+    }
+    {
+        std::ofstream ofs(guard.path / "old-model" / "model.gguf");
+        ofs << "dummy";
+        ofs.flush();
+    }
 
     ModelSync sync("http://127.0.0.1:18084", guard.path.string());
     auto result = sync.sync();
@@ -89,6 +99,11 @@ TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
 
     TempDirGuard guard;
     fs::create_directory(guard.path / "m1");  // already present
+    {
+        std::ofstream ofs(guard.path / "m1" / "model.gguf");
+        ofs << "dummy";
+        ofs.flush();
+    }
 
     ModelSync sync("http://127.0.0.1:18086", guard.path.string());
 

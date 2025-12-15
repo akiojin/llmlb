@@ -102,6 +102,7 @@ async fn test_list_installed_models_on_agent() {
                 .method("POST")
                 .uri("/api/nodes")
                 .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
         )
@@ -185,6 +186,7 @@ async fn test_model_matrix_view_multiple_agents() {
                     .method("POST")
                     .uri("/api/nodes")
                     .header("content-type", "application/json")
+                    .header("x-api-key", "sk_debug")
                     .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                     .unwrap(),
             )

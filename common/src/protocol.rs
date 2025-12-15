@@ -18,7 +18,7 @@ pub struct RegisterRequest {
     pub machine_name: String,
     /// IPアドレス
     pub ip_address: IpAddr,
-    /// ランタイムバージョン（llama.cpp）
+    /// ランタイムバージョン
     #[serde(rename = "runtime_version", alias = "runtime_version")]
     pub runtime_version: String,
     /// ランタイムポート番号（推論用）
@@ -482,7 +482,7 @@ mod tests {
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             loaded_asr_models: vec!["whisper-large-v3".to_string()],
             loaded_tts_models: vec!["vibevoice-v1".to_string()],
-            supported_runtimes: vec![crate::types::RuntimeType::LlamaCpp],
+            supported_runtimes: vec![crate::types::RuntimeType::OnnxRuntime],
             initializing: true,
             ready_models: Some((1, 2)),
         };

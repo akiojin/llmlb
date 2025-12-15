@@ -10,7 +10,7 @@ set(CONTRACT_TEST_SOURCES
     ../../src/models/model_storage.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
-    ../../src/core/llama_manager.cpp
+    ../../src/core/onnx_llm_manager.cpp
     ../../src/api/router_client.cpp
     ../../src/runtime/state.cpp
 )
@@ -22,12 +22,11 @@ add_executable(llm-node-contract-tests
 target_link_libraries(llm-node-contract-tests
     PRIVATE
         test_common
-        llama
-        common
         nlohmann_json::nlohmann_json
         utils_lib
         OpenSSL::SSL
         OpenSSL::Crypto
+        onnxruntime::onnxruntime
 )
 
 target_include_directories(llm-node-contract-tests

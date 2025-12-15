@@ -34,7 +34,7 @@
 ## 技術コンテキスト
 
 **言語/バージョン**: C++17
-**主要依存関係**: llama.cpp, httplib, spdlog, nlohmann/json
+**主要依存関係**: ONNX Runtime, httplib, spdlog, nlohmann/json
 **ストレージ**: ファイルシステム（LLM runtime形式）
 **テスト**: Google Test (gtest)
 **対象プラットフォーム**: Linux (Docker), macOS
@@ -132,7 +132,7 @@ node/
 
 主要決定:
 
-1. llama.cppロード失敗 + ファイルサイズ検証で破損検出
+1. モデルロード失敗 + ファイルサイズ検証で破損検出
 2. 既存のModelDownloader + ModelSyncを再利用
 3. std::condition_variableで同時修復の待機を実装
 4. 5分（300秒）デフォルトタイムアウト

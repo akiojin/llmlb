@@ -7,6 +7,7 @@ use axum::{
     response::Response,
 };
 use futures::TryStreamExt;
+use llm_router_common::types::{NodeStatus, RuntimeType};
 use llm_router_common::{error::RouterError, protocol::RequestResponseRecord};
 use std::{io, sync::Arc};
 
@@ -31,6 +32,44 @@ pub(crate) async fn select_available_node(
             Ok(agent)
         }
     }
+}
+
+pub(crate) async fn select_available_node_by_runtime(
+    state: &AppState,
+    runtime_type: RuntimeType,
+) -> Result<llm_router_common::types::Node, RouterError> {
+    // Prefer the existing load-balancer selection when it already matches the requested runtime.
+    if let Ok(agent) = select_available_node(state).await {
+        if agent.supported_runtimes.contains(&runtime_type) {
+            return Ok(agent);
+        }
+    }
+
+    let nodes = state.registry.list().await;
+
+    let capable_nodes: Vec<_> = nodes
+        .into_iter()
+        .filter(|n| {
+            n.status == NodeStatus::Online
+                && !n.initializing
+                && n.supported_runtimes.contains(&runtime_type)
+        })
+        .collect();
+
+    if capable_nodes.is_empty() {
+        let runtime_name = match runtime_type {
+            RuntimeType::WhisperCpp => "whisper.cpp",
+            RuntimeType::OnnxRuntime => "onnxruntime",
+            RuntimeType::StableDiffusion => "stable-diffusion.cpp",
+        };
+        return Err(RouterError::ServiceUnavailable(format!(
+            "No nodes available with {} capability",
+            runtime_name
+        )));
+    }
+
+    // Keep selection simple for now. Load-balancing enhancements can be added later.
+    Ok(capable_nodes.into_iter().next().unwrap())
 }
 
 pub(crate) fn forward_streaming_response(
@@ -125,6 +164,9 @@ mod tests {
             .registry
             .update_last_seen(
                 node_id,
+                None,
+                None,
+                None,
                 None,
                 None,
                 None,

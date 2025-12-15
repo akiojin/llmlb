@@ -24,8 +24,12 @@ std::string ModelStorage::modelNameToDir(const std::string& model_name) {
     // Replace all colons with underscores
     std::replace(result.begin(), result.end(), ':', '_');
 
-    // If no tag was present (no colon), append _latest
-    if (model_name.find(':') == std::string::npos) {
+    // Router compatibility:
+    // - Filename-based ids (e.g. "gpt-oss-20b") are already versioned and should not get "_latest".
+    // - Plain ids without ':' and without '-' get "_latest" (e.g. "llama3" -> "llama3_latest").
+    // - Hugging Face ids (e.g. "org/model") are nested dirs and must not get "_latest".
+    if (model_name.find('/') == std::string::npos && model_name.find(':') == std::string::npos &&
+        model_name.find('-') == std::string::npos) {
         result += "_latest";
     }
 
@@ -33,15 +37,15 @@ std::string ModelStorage::modelNameToDir(const std::string& model_name) {
 }
 
 std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
-    std::string result = dir_name;
-
-    // Find the last underscore and replace with colon
-    auto last_underscore = result.rfind('_');
-    if (last_underscore != std::string::npos) {
-        result[last_underscore] = ':';
+    // Lossy reverse conversion:
+    // - Strip "_latest" suffix used for non-versioned ids.
+    // - Otherwise keep directory name as model id (router uses filename-based ids).
+    constexpr const char* kLatestSuffix = "_latest";
+    if (dir_name.size() > std::char_traits<char>::length(kLatestSuffix) &&
+        dir_name.rfind(kLatestSuffix) == dir_name.size() - std::char_traits<char>::length(kLatestSuffix)) {
+        return dir_name.substr(0, dir_name.size() - std::char_traits<char>::length(kLatestSuffix));
     }
-
-    return result;
+    return dir_name;
 }
 
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {
@@ -59,6 +63,21 @@ std::string ModelStorage::resolveGguf(const std::string& model_name) const {
     return "";
 }
 
+std::string ModelStorage::resolveOnnx(const std::string& model_name) const {
+    const std::string dir_name = modelNameToDir(model_name);
+    const auto onnx_path = fs::path(models_dir_) / dir_name / "model.onnx";
+
+    std::error_code ec;
+    auto st = fs::symlink_status(onnx_path, ec);
+    const bool ok = st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
+    spdlog::debug("ModelStorage::resolveOnnx: model={}, dir={}, path={}, exists={}",
+        model_name, dir_name, onnx_path.string(), ok);
+
+    if (ok) return onnx_path.string();
+
+    return "";
+}
+
 std::vector<ModelInfo> ModelStorage::listAvailable() const {
     std::vector<ModelInfo> out;
 
@@ -67,22 +86,59 @@ std::vector<ModelInfo> ModelStorage::listAvailable() const {
         return out;
     }
 
-    for (const auto& entry : fs::directory_iterator(models_dir_)) {
-        if (!entry.is_directory()) continue;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(models_dir_, ec);
+    fs::recursive_directory_iterator end;
+    for (; it != end && !ec; it.increment(ec)) {
+        const auto& entry = *it;
+        if (!entry.is_directory(ec) || ec) continue;
 
-        const auto dir_name = entry.path().filename().string();
-        const auto gguf_path = entry.path() / "model.gguf";
+        const auto dir_path = entry.path();
+        const auto onnx_path = dir_path / "model.onnx";
+        const auto gguf_path = dir_path / "model.gguf";
 
-        std::error_code ec;
-        auto st = fs::symlink_status(gguf_path, ec);
-        if (st.type() != fs::file_type::regular && st.type() != fs::file_type::symlink) {
-            spdlog::debug("ModelStorage::listAvailable: skipping {} (no model.gguf)", dir_name);
+        auto onnx_st = fs::symlink_status(onnx_path, ec);
+        const bool has_onnx =
+            onnx_st.type() == fs::file_type::regular || onnx_st.type() == fs::file_type::symlink;
+        auto gguf_st = fs::symlink_status(gguf_path, ec);
+        const bool has_gguf =
+            gguf_st.type() == fs::file_type::regular || gguf_st.type() == fs::file_type::symlink;
+
+        if (!has_onnx && !has_gguf) {
             continue;
         }
 
+        // This directory is a model root; don't recurse further.
+        it.disable_recursion_pending();
+
+        // Derive model id from relative path:
+        // - depth==1: legacy dir name (apply lossy reverse conversion)
+        // - depth>=2: keep path segments joined by '/' (Hugging Face org/model, etc.)
+        fs::path rel = fs::relative(dir_path, fs::path(models_dir_), ec);
+        if (ec) {
+            rel = dir_path.filename();
+            ec.clear();
+        }
+        std::vector<std::string> parts;
+        for (const auto& p : rel) {
+            parts.push_back(p.string());
+        }
+
+        std::string model_id;
+        if (parts.size() <= 1) {
+            model_id = dirNameToModel(rel.string());
+        } else {
+            model_id = parts[0];
+            for (size_t i = 1; i < parts.size(); ++i) {
+                model_id += "/";
+                model_id += parts[i];
+            }
+        }
+
         ModelInfo info;
-        info.name = dirNameToModel(dir_name);
-        info.gguf_path = gguf_path.string();
+        info.name = std::move(model_id);
+        if (has_onnx) info.onnx_path = onnx_path.string();
+        if (has_gguf) info.gguf_path = gguf_path.string();
         info.valid = true;
 
         out.push_back(std::move(info));
@@ -112,9 +168,14 @@ std::optional<nlohmann::json> ModelStorage::loadMetadata(const std::string& mode
 
 bool ModelStorage::validateModel(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
+    const auto onnx_path = fs::path(models_dir_) / dir_name / "model.onnx";
     const auto gguf_path = fs::path(models_dir_) / dir_name / "model.gguf";
 
     std::error_code ec;
+    auto st_onnx = fs::symlink_status(onnx_path, ec);
+    if (st_onnx.type() == fs::file_type::regular || st_onnx.type() == fs::file_type::symlink) {
+        return true;
+    }
     auto st = fs::symlink_status(gguf_path, ec);
     return st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
 }

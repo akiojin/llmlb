@@ -37,18 +37,15 @@ pub enum ModelType {
 
 ```rust
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum RuntimeType {
-    /// llama.cpp (テキスト生成、Embedding)
+    /// ONNX Runtime (テキスト生成、Embedding、TTS、汎用推論)
     #[default]
-    #[serde(rename = "llama_cpp")]
-    LlamaCpp,
-    /// whisper.cpp (音声認識)
-    #[serde(rename = "whisper_cpp")]
-    WhisperCpp,
-    /// ONNX Runtime (TTS、汎用推論)
-    #[serde(rename = "onnx_runtime")]
     OnnxRuntime,
+    /// whisper.cpp (音声認識)
+    WhisperCpp,
+    /// stable-diffusion.cpp (画像生成)
+    StableDiffusion,
 }
 ```
 
@@ -56,8 +53,8 @@ pub enum RuntimeType {
 
 | ModelType | RuntimeType |
 |-----------|-------------|
-| Llm | LlamaCpp |
-| Embedding | LlamaCpp |
+| Llm | OnnxRuntime |
+| Embedding | OnnxRuntime |
 | SpeechToText | WhisperCpp |
 | TextToSpeech | OnnxRuntime |
 

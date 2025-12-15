@@ -35,7 +35,7 @@ pub struct Node {
     pub machine_name: String,
     /// IPアドレス
     pub ip_address: IpAddr,
-    /// ランタイムバージョン（llama.cpp）
+    /// ランタイムバージョン
     #[serde(rename = "runtime_version", alias = "runtime_version")]
     pub runtime_version: String,
     /// ランタイムポート番号（推論用）
@@ -141,13 +141,11 @@ pub enum ModelType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeType {
-    /// llama.cpp (テキスト生成、Embedding)
+    /// ONNX Runtime (テキスト生成、Embedding、TTS、汎用推論)
     #[default]
-    LlamaCpp,
+    OnnxRuntime,
     /// whisper.cpp (音声認識)
     WhisperCpp,
-    /// ONNX Runtime (TTS、汎用推論)
-    OnnxRuntime,
     /// stable-diffusion.cpp (画像生成)
     StableDiffusion,
 }
@@ -343,7 +341,7 @@ mod tests {
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             loaded_asr_models: vec!["whisper-large-v3".to_string()],
             loaded_tts_models: vec!["vibevoice-v1".to_string()],
-            supported_runtimes: vec![RuntimeType::LlamaCpp, RuntimeType::WhisperCpp],
+            supported_runtimes: vec![RuntimeType::OnnxRuntime, RuntimeType::WhisperCpp],
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),
                 count: 2,
@@ -564,10 +562,6 @@ mod tests {
     #[test]
     fn test_runtime_type_serialization() {
         assert_eq!(
-            serde_json::to_string(&RuntimeType::LlamaCpp).unwrap(),
-            "\"llama_cpp\""
-        );
-        assert_eq!(
             serde_json::to_string(&RuntimeType::WhisperCpp).unwrap(),
             "\"whisper_cpp\""
         );
@@ -580,14 +574,11 @@ mod tests {
     #[test]
     fn test_runtime_type_default() {
         let default_runtime: RuntimeType = Default::default();
-        assert_eq!(default_runtime, RuntimeType::LlamaCpp);
+        assert_eq!(default_runtime, RuntimeType::OnnxRuntime);
     }
 
     #[test]
     fn test_runtime_type_deserialization() {
-        let llama: RuntimeType = serde_json::from_str("\"llama_cpp\"").unwrap();
-        assert_eq!(llama, RuntimeType::LlamaCpp);
-
         let whisper: RuntimeType = serde_json::from_str("\"whisper_cpp\"").unwrap();
         assert_eq!(whisper, RuntimeType::WhisperCpp);
 

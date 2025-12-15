@@ -44,7 +44,6 @@ async fn build_app() -> Router {
 #[tokio::test]
 #[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // StableDiffusion対応ノードを登録
@@ -121,7 +120,6 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
 #[tokio::test]
 #[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_multi_runtime_node_handles_llm_and_image() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // 複合ランタイム対応ノードを登録（LLM + StableDiffusion）
@@ -186,7 +184,6 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
 #[tokio::test]
 #[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_no_image_capable_node_returns_503() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // LLMノードのみを登録（StableDiffusionなし）
@@ -274,7 +271,6 @@ async fn test_no_image_capable_node_returns_503() {
 #[tokio::test]
 #[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_image_api_routes_exist() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // テスト用DBとAPIキーを作成
@@ -372,7 +368,6 @@ async fn test_image_api_routes_exist() {
 #[tokio::test]
 #[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_image_generation_without_auth_returns_401() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let image_request = json!({

@@ -172,8 +172,6 @@ fn create_dummy_png() -> Vec<u8> {
 #[serial]
 #[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageEditStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageEditStubResponse::SuccessUrl(vec![
@@ -225,8 +223,6 @@ async fn images_edits_success() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_with_mask() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageEditStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageEditStubResponse::SuccessUrl(vec![
@@ -277,8 +273,6 @@ async fn images_edits_with_mask() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_missing_image() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageEditStubState {
         expected_model: None,
         response: ImageEditStubResponse::SuccessUrl(vec![]),
@@ -317,8 +311,6 @@ async fn images_edits_missing_image() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_missing_prompt() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageEditStubState {
         expected_model: None,
         response: ImageEditStubResponse::SuccessUrl(vec![]),
@@ -360,8 +352,6 @@ async fn images_edits_missing_prompt() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_unauthorized() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let router = spawn_test_router().await;
 
     let client = Client::new();
@@ -392,8 +382,6 @@ async fn images_edits_unauthorized() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_no_node_available() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let router = spawn_test_router().await;
 
     let client = Client::new();

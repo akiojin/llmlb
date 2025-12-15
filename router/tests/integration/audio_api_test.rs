@@ -44,7 +44,6 @@ async fn build_app() -> Router {
 #[tokio::test]
 #[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_asr_node_routing_selects_whisper_runtime() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // Whisper対応ノードを登録
@@ -121,7 +120,6 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
 #[tokio::test]
 #[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_tts_node_routing_selects_onnx_runtime() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // TTS対応ノードを登録
@@ -197,7 +195,6 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
 #[tokio::test]
 #[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_multi_runtime_node_handles_both_asr_and_tts() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // 複合ランタイム対応ノードを登録（LLM + ASR + TTS）
@@ -265,7 +262,6 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
 #[tokio::test]
 #[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_no_capable_node_returns_503() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     // LLMノードのみを登録（ASR/TTSなし）

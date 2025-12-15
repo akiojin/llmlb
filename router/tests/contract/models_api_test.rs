@@ -83,7 +83,6 @@ with open(outfile, "wb") as f:
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let request_body = json!({
@@ -118,7 +117,6 @@ async fn test_distribute_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let mock = MockServer::start().await;
     // HF mock responds once with gguf list
     Mock::given(method("GET"))
@@ -210,7 +208,6 @@ async fn test_get_available_models_contract() {
 #[tokio::test]
 #[serial]
 async fn test_get_node_models_endpoint_is_removed() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let response = app
@@ -235,7 +232,6 @@ async fn test_get_node_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_pull_model_to_node_endpoint_is_removed() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let request_body = json!({
@@ -265,7 +261,6 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_tasks_endpoint_is_removed() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
     let response = app
@@ -290,7 +285,6 @@ async fn test_tasks_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_register_model_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let mock = MockServer::start().await;
 
     // HEAD 200 for existence
@@ -542,8 +536,6 @@ async fn test_register_model_contract() {
 #[tokio::test]
 #[serial]
 async fn test_convert_restore_requeues() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 

@@ -92,8 +92,6 @@ async fn tags_handler(State(state): State<Arc<AsrStubState>>) -> impl IntoRespon
 #[serial]
 #[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_end_to_end_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let asr_stub = spawn_asr_stub(AsrStubState {
         expected_model: Some("whisper-large-v3".to_string()),
         response: AsrStubResponse::Success("こんにちは".to_string()),
@@ -160,8 +158,6 @@ async fn transcriptions_end_to_end_success() {
 #[serial]
 #[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_unsupported_format_returns_400() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let asr_stub = spawn_asr_stub(AsrStubState {
         expected_model: None,
         response: AsrStubResponse::Error(
@@ -218,8 +214,6 @@ async fn transcriptions_unsupported_format_returns_400() {
 #[serial]
 #[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_without_auth_returns_401() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let coordinator = spawn_test_router().await;
 
     let dummy_wav = vec![0x52, 0x49, 0x46, 0x46]; // 最小限のWAVヘッダ
@@ -257,8 +251,6 @@ async fn transcriptions_without_auth_returns_401() {
 #[serial]
 #[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_no_available_node_returns_503() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     // ノードを登録しない
     let coordinator = spawn_test_router().await;
 

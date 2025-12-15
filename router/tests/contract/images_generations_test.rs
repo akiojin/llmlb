@@ -134,8 +134,6 @@ async fn tags_handler(State(state): State<Arc<ImageGenStubState>>) -> impl IntoR
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageGenStubResponse::SuccessUrl(vec![
@@ -182,8 +180,6 @@ async fn images_generations_success() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_base64_response() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     // 1x1ピクセルの透明PNGをBase64エンコード
     let dummy_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string();
 
@@ -225,8 +221,6 @@ async fn images_generations_base64_response() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_multiple() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageGenStubResponse::SuccessUrl(vec![
@@ -269,8 +263,6 @@ async fn images_generations_multiple() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_missing_prompt() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: None,
         response: ImageGenStubResponse::SuccessUrl(vec![]),
@@ -307,8 +299,6 @@ async fn images_generations_missing_prompt() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_unauthorized() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let router = spawn_test_router().await;
 
     let client = Client::new();
@@ -331,8 +321,6 @@ async fn images_generations_unauthorized() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_no_node_available() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let router = spawn_test_router().await;
 
     // ノードを登録しない
@@ -357,8 +345,6 @@ async fn images_generations_no_node_available() {
 #[serial]
 #[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_with_options() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageGenStubResponse::SuccessUrl(vec![

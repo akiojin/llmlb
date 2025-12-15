@@ -27,3 +27,6 @@ MODEL_DIR=/tmp/llm_router_audio_poc_models ./poc/audio-io-demo/run_audio_io_poc.
 
 ASRの入力WAVは `ASR_WAV_PATH` で差し替えできます（デフォルトは `node/third_party/whisper.cpp/samples/jfk.wav`）。
 言語は `ASR_LANGUAGE` で指定できます（デフォルト: `en`、自動検出したい場合は `auto`）。
+
+Python依存（`onnx`, `numpy`）はスクリプト内で `venv` を作ってインストールします（Homebrewの `externally-managed-environment` 回避）。
+必要に応じて `VENV_DIR` / `PYTHON_BIN` で変更できます。

@@ -10,6 +10,8 @@ MODEL_DIR="${MODEL_DIR:-/tmp/llm_router_audio_poc_models}"
 WHISPER_MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny.en.bin}"
 ASR_WAV_PATH="${ASR_WAV_PATH:-${ROOT_DIR}/node/third_party/whisper.cpp/samples/jfk.wav}"
 ASR_LANGUAGE="${ASR_LANGUAGE:-en}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="${VENV_DIR:-/tmp/llm_router_audio_poc_venv}"
 
 ROUTER_HOST="${ROUTER_HOST:-127.0.0.1}"
 ROUTER_PORT="${ROUTER_PORT:-18080}"
@@ -36,6 +38,30 @@ fi
 
 mkdir -p "${MODEL_DIR}"
 
+ensure_python() {
+  if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+    echo "Error: python is required (PYTHON_BIN=${PYTHON_BIN} not found)" >&2
+    exit 1
+  fi
+}
+
+ensure_venv_deps() {
+  ensure_python
+
+  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+    echo "==> Creating python venv: ${VENV_DIR}"
+    "${PYTHON_BIN}" -m venv "${VENV_DIR}"
+  fi
+
+  PYTHON_RUNTIME="${VENV_DIR}/bin/python"
+
+  if ! "${PYTHON_RUNTIME}" -c "import onnx, numpy" >/dev/null 2>&1; then
+    echo "==> Installing python deps into venv (onnx/numpy)"
+    "${PYTHON_RUNTIME}" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+    "${PYTHON_RUNTIME}" -m pip install --quiet onnx numpy
+  fi
+}
+
 if [[ ! -d "${ORT_CMAKE_DIR}" ]]; then
   echo "==> CoreML-enabled onnxruntime not found at:" >&2
   echo "    ${ORT_CMAKE_DIR}" >&2
@@ -43,11 +69,10 @@ if [[ ! -d "${ORT_CMAKE_DIR}" ]]; then
   "${ROOT_DIR}/scripts/build-onnxruntime-coreml.sh"
 fi
 
-echo "==> Ensuring python deps (onnx/numpy)"
-python3 -c "import onnx, numpy" >/dev/null 2>&1 || python3 -m pip install --quiet onnx numpy
+ensure_venv_deps
 
 echo "==> Generating toy TTS ONNX model"
-TOY_TTS_MODEL_PATH="$(python3 "${POC_DIR}/generate_toy_tts_model.py" --out "${MODEL_DIR}/toy_tts.onnx")"
+TOY_TTS_MODEL_PATH="$("${PYTHON_RUNTIME}" "${POC_DIR}/generate_toy_tts_model.py" --out "${MODEL_DIR}/toy_tts.onnx")"
 ls -lh "${TOY_TTS_MODEL_PATH}"
 
 echo "==> Downloading whisper model (${WHISPER_MODEL_NAME}) if missing"
@@ -62,7 +87,7 @@ cmake -S "${ROOT_DIR}/node" -B "${NODE_BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release -D
 cmake --build "${NODE_BUILD_DIR}" -j
 
 echo "==> Starting mock router"
-python3 "${POC_DIR}/mock_router.py" --host "${ROUTER_HOST}" --port "${ROUTER_PORT}" &
+"${PYTHON_RUNTIME}" "${POC_DIR}/mock_router.py" --host "${ROUTER_HOST}" --port "${ROUTER_PORT}" &
 ROUTER_PID=$!
 
 echo "==> Starting llm-node"
@@ -93,7 +118,7 @@ if [[ -f "${TEST_WAV}" ]]; then
 else
   echo "==> ASR sample not found, generating test WAV (16kHz, 16-bit PCM, 1s sine)"
   TEST_WAV="${MODEL_DIR}/asr_test.wav"
-  python3 - <<'PY' "${TEST_WAV}"
+  "${PYTHON_RUNTIME}" - <<'PY' "${TEST_WAV}"
 import math
 import struct
 import sys

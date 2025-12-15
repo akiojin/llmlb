@@ -5,13 +5,79 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <stdexcept>
 
 #if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
 #include <coreml_provider_factory.h>
 #endif
 
+#if defined(__APPLE__)
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char** environ;
+#endif
+
 namespace llm_node {
+
+namespace {
+
+#if defined(__APPLE__)
+int run_command(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return -1;
+    }
+
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& a : args) {
+        argv.push_back(const_cast<char*>(a.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    pid_t pid;
+    int spawn_result = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ);
+    if (spawn_result != 0) {
+        return spawn_result;
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) == -1) {
+        return -1;
+    }
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
+}
+
+std::vector<uint8_t> read_file_bytes(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("Failed to open file: " + path.string());
+    }
+
+    in.seekg(0, std::ios::end);
+    std::streamsize size = in.tellg();
+    if (size < 0) {
+        throw std::runtime_error("Failed to stat file size: " + path.string());
+    }
+    in.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!in.read(reinterpret_cast<char*>(data.data()), size)) {
+        throw std::runtime_error("Failed to read file: " + path.string());
+    }
+    return data;
+}
+
+#endif
+
+}  // namespace
 
 OnnxTtsManager::OnnxTtsManager(std::string models_dir)
     : models_dir_(std::move(models_dir))
@@ -69,6 +135,15 @@ bool OnnxTtsManager::canLoadMore() const {
 }
 
 bool OnnxTtsManager::loadModel(const std::string& model_path) {
+#if defined(__APPLE__)
+    if (model_path == kMacosSayModelName) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        updateAccessTime(model_path);
+        spdlog::info("Using macOS built-in TTS backend: {}", kMacosSayModelName);
+        return true;
+    }
+#endif
+
 #ifdef USE_ONNX_RUNTIME
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -173,6 +248,12 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
 }
 
 bool OnnxTtsManager::isLoaded(const std::string& model_path) const {
+#if defined(__APPLE__)
+    if (model_path == kMacosSayModelName) {
+        return true;
+    }
+#endif
+
 #ifdef USE_ONNX_RUNTIME
     std::lock_guard<std::mutex> lock(mutex_);
     std::string canonical_path = canonicalizePath(model_path);
@@ -184,6 +265,14 @@ bool OnnxTtsManager::isLoaded(const std::string& model_path) const {
 }
 
 bool OnnxTtsManager::loadModelIfNeeded(const std::string& model_path) {
+#if defined(__APPLE__)
+    if (model_path == kMacosSayModelName) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        updateAccessTime(model_path);
+        return true;
+    }
+#endif
+
     if (isLoaded(model_path)) {
         std::lock_guard<std::mutex> lock(mutex_);
         updateAccessTime(canonicalizePath(model_path));
@@ -198,6 +287,84 @@ SpeechResult OnnxTtsManager::synthesize(
     const SpeechParams& params) {
 
     SpeechResult result;
+
+#if defined(__APPLE__)
+    if (model_path == kMacosSayModelName) {
+        if (text.empty()) {
+            result.error = "Empty text input";
+            return result;
+        }
+        if (params.response_format != "wav") {
+            result.error =
+                "Only 'wav' response_format is supported for macos_say (requested: " + params.response_format +
+                ")";
+            return result;
+        }
+
+        try {
+            auto temp_base = std::filesystem::temp_directory_path() / "llm_router_tts";
+            std::filesystem::create_directories(temp_base);
+
+            const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            auto temp_dir = temp_base / ("macos_say_" + std::to_string(getpid()) + "_" + std::to_string(ts_ms));
+            std::filesystem::create_directories(temp_dir);
+
+            struct Cleanup {
+                std::filesystem::path p;
+                ~Cleanup() {
+                    std::error_code ec;
+                    std::filesystem::remove_all(p, ec);
+                }
+            } cleanup{temp_dir};
+
+            auto aiff_path = temp_dir / "out.aiff";
+            auto wav_path = temp_dir / "out.wav";
+
+            std::vector<std::string> say_args = {"say"};
+            if (!params.voice.empty() && params.voice != "default") {
+                say_args.push_back("-v");
+                say_args.push_back(params.voice);
+            }
+            say_args.push_back("-o");
+            say_args.push_back(aiff_path.string());
+            say_args.push_back(text);
+
+            const int say_rc = run_command(say_args);
+            if (say_rc != 0) {
+                result.error = "macos_say failed (say exit code=" + std::to_string(say_rc) + ")";
+                return result;
+            }
+
+            const int afc_rc = run_command({
+                "afconvert",
+                "-f",
+                "WAVE",
+                "-d",
+                "LEI16@16000",
+                "-c",
+                "1",
+                aiff_path.string(),
+                wav_path.string(),
+            });
+            if (afc_rc != 0) {
+                result.error = "macos_say failed (afconvert exit code=" + std::to_string(afc_rc) + ")";
+                return result;
+            }
+
+            result.audio_data = read_file_bytes(wav_path);
+            result.format = "wav";
+            result.sample_rate = 16000;
+            result.channels = 1;
+            result.bits_per_sample = 16;
+            result.success = true;
+            return result;
+        } catch (const std::exception& e) {
+            result.error = std::string("macos_say failed: ") + e.what();
+            return result;
+        }
+    }
+#endif
 
 #ifdef USE_ONNX_RUNTIME
     if (text.empty()) {

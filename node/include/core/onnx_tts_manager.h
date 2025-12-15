@@ -79,6 +79,8 @@ public:
     static bool isRuntimeAvailable();
 
 private:
+    static constexpr const char* kMacosSayModelName = "macos_say";
+
     std::string models_dir_;
     mutable std::mutex mutex_;
 

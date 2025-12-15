@@ -10,9 +10,12 @@ MODEL_DIR="${MODEL_DIR:-/tmp/llm_router_audio_poc_models}"
 WHISPER_MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny.en.bin}"
 ASR_WAV_PATH="${ASR_WAV_PATH:-${ROOT_DIR}/node/third_party/whisper.cpp/samples/jfk.wav}"
 ASR_LANGUAGE="${ASR_LANGUAGE:-en}"
+TTS_MODEL="${TTS_MODEL:-macos_say}"
+TTS_TEXT="${TTS_TEXT:-}"
+TTS_VOICE="${TTS_VOICE:-default}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="${VENV_DIR:-/tmp/llm_router_audio_poc_venv}"
-PLAY_TTS="${PLAY_TTS:-0}"
+PLAY_TTS="${PLAY_TTS:-1}"
 
 ROUTER_HOST="${ROUTER_HOST:-127.0.0.1}"
 ROUTER_PORT_ENV_SET=0
@@ -69,6 +72,8 @@ fi
 
 mkdir -p "${MODEL_DIR}"
 
+PYTHON_RUNTIME="${PYTHON_BIN}"
+
 ensure_python() {
   if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
     echo "Error: python is required (PYTHON_BIN=${PYTHON_BIN} not found)" >&2
@@ -100,7 +105,30 @@ if [[ ! -d "${ORT_CMAKE_DIR}" ]]; then
   "${ROOT_DIR}/scripts/build-onnxruntime-coreml.sh"
 fi
 
-ensure_venv_deps
+ensure_python
+
+if [[ "${TTS_MODEL}" == "toy_tts.onnx" ]]; then
+  ensure_venv_deps
+  echo "==> Generating toy TTS ONNX model"
+  TOY_TTS_MODEL_PATH="$("${PYTHON_RUNTIME}" "${POC_DIR}/generate_toy_tts_model.py" --out "${MODEL_DIR}/toy_tts.onnx")"
+  ls -lh "${TOY_TTS_MODEL_PATH}"
+else
+  # macos_say is a built-in TTS backend in the node (no model file required).
+  if [[ "${TTS_MODEL}" != "macos_say" ]]; then
+    if [[ "${TTS_MODEL}" = /* ]]; then
+      if [[ ! -f "${TTS_MODEL}" ]]; then
+        echo "Error: TTS_MODEL not found: ${TTS_MODEL}" >&2
+        exit 1
+      fi
+    else
+      if [[ ! -f "${MODEL_DIR}/${TTS_MODEL}" ]]; then
+        echo "Error: TTS model file not found in MODEL_DIR: ${MODEL_DIR}/${TTS_MODEL}" >&2
+        echo "Hint: set TTS_MODEL=macos_say (macOS built-in) or TTS_MODEL=toy_tts.onnx (toy model)." >&2
+        exit 1
+      fi
+    fi
+  fi
+fi
 
 if lsof -iTCP:"${ROUTER_PORT}" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
   if [[ "${ROUTER_PORT_ENV_SET}" -eq 1 ]]; then
@@ -123,10 +151,6 @@ if lsof -iTCP:"${NODE_PORT}" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
   echo "==> NODE_PORT=${NODE_PORT} is already in use; using NODE_PORT=${NEW_NODE_PORT}"
   NODE_PORT="${NEW_NODE_PORT}"
 fi
-
-echo "==> Generating toy TTS ONNX model"
-TOY_TTS_MODEL_PATH="$("${PYTHON_RUNTIME}" "${POC_DIR}/generate_toy_tts_model.py" --out "${MODEL_DIR}/toy_tts.onnx")"
-ls -lh "${TOY_TTS_MODEL_PATH}"
 
 echo "==> Downloading whisper model (${WHISPER_MODEL_NAME}) if missing"
 if [[ ! -f "${MODEL_DIR}/${WHISPER_MODEL_NAME}" ]]; then
@@ -231,11 +255,53 @@ else
   cat "${ASR_TMP}"
 fi
 
+ASR_TEXT=""
+if [[ "${ASR_OK}" -eq 1 ]]; then
+  ASR_TEXT="$("${PYTHON_RUNTIME}" - <<'PY' "${ASR_TMP}"
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+print(data.get("text", ""))
+PY
+)"
+fi
+
+TTS_TEXT_EFFECTIVE="${TTS_TEXT}"
+if [[ -z "${TTS_TEXT_EFFECTIVE}" && "${ASR_OK}" -eq 1 ]]; then
+  TTS_TEXT_EFFECTIVE="${ASR_TEXT}"
+fi
+if [[ -z "${TTS_TEXT_EFFECTIVE}" ]]; then
+  TTS_TEXT_EFFECTIVE="hello from llm-router audio io poc"
+fi
+
+echo "==> TTS model: ${TTS_MODEL} (voice=${TTS_VOICE})"
+echo "==> TTS input text: ${TTS_TEXT_EFFECTIVE}"
+
+TTS_REQ_JSON="${MODEL_DIR}/tts_request.json"
+"${PYTHON_RUNTIME}" - <<'PY' "${TTS_REQ_JSON}" "${TTS_MODEL}" "${TTS_TEXT_EFFECTIVE}" "${TTS_VOICE}"
+import json
+import sys
+
+out_path, model, text, voice = sys.argv[1:5]
+payload = {
+    "model": model,
+    "input": text,
+    "voice": voice,
+    "response_format": "wav",
+    "speed": 1.0,
+}
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump(payload, f, ensure_ascii=False)
+PY
+
 echo "==> [TTS output] POST /v1/audio/speech -> out.wav"
 TTS_OUT="${MODEL_DIR}/tts_out.wav"
 TTS_STATUS="$(curl -sS "http://${NODE_HOST}:${NODE_PORT}/v1/audio/speech" \
   -H "Content-Type: application/json" \
-  -d "{\"model\":\"toy_tts.onnx\",\"input\":\"hello audio i/o poc\",\"voice\":\"default\",\"response_format\":\"wav\",\"speed\":1.0}" \
+  --data-binary "@${TTS_REQ_JSON}" \
   --output "${TTS_OUT}" \
   -w "%{http_code}")"
 

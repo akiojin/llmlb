@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 
@@ -204,6 +205,13 @@ SpeechResult OnnxTtsManager::synthesize(
         return result;
     }
 
+    if (params.response_format != "wav") {
+        result.error =
+            "Only 'wav' response_format is supported for now (requested: " + params.response_format +
+            ")";
+        return result;
+    }
+
     std::string canonical_path = canonicalizePath(model_path);
 
     Ort::Session* session = nullptr;
@@ -221,10 +229,6 @@ SpeechResult OnnxTtsManager::synthesize(
     spdlog::debug("Running TTS synthesis on {} characters", text.size());
 
     try {
-        // Note: Actual ONNX model inference depends on the specific model architecture
-        // This is a placeholder showing the general pattern
-        // Real implementation would need model-specific input/output handling
-
         Ort::AllocatorWithDefaultOptions allocator;
         Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(
             OrtArenaAllocator, OrtMemTypeDefault);
@@ -232,6 +236,11 @@ SpeechResult OnnxTtsManager::synthesize(
         // Get input/output names
         size_t num_inputs = session->GetInputCount();
         size_t num_outputs = session->GetOutputCount();
+
+        if (num_inputs < 1 || num_outputs < 1) {
+            result.error = "Invalid TTS model: expected at least 1 input and 1 output tensor";
+            return result;
+        }
 
         std::vector<const char*> input_names;
         std::vector<const char*> output_names;
@@ -249,13 +258,156 @@ SpeechResult OnnxTtsManager::synthesize(
             output_name_ptrs.push_back(std::move(name));
         }
 
-        // This is a simplified placeholder - actual implementation
-        // depends on the specific TTS model's input format
-        // Most TTS models expect tokenized/encoded text input
+        // Minimal implementation for PoC:
+        // - Require first input to be float tensor
+        // - Encode raw UTF-8 bytes of `text` into a fixed-size float feature vector
+        // - Require first output to be float/float16 tensor representing waveform samples
+        {
+            Ort::TypeInfo input_type_info = session->GetInputTypeInfo(0);
+            auto input_tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
+            const auto input_elem_type = input_tensor_info.GetElementType();
+            if (input_elem_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+                result.error = "Unsupported TTS input tensor type (expected float)";
+                return result;
+            }
 
-        // For now, return an error indicating model-specific implementation needed
-        result.error = "TTS model inference not yet implemented for this model type";
-        return result;
+            auto input_shape = input_tensor_info.GetShape();
+            if (input_shape.empty()) {
+                result.error = "Unsupported TTS input shape (empty)";
+                return result;
+            }
+
+            // Normalize to 2-D shape [1, N] for the PoC.
+            int64_t feature_len = -1;
+            if (input_shape.size() == 1) {
+                feature_len = input_shape[0];
+                input_shape = {1, input_shape[0]};
+            } else if (input_shape.size() == 2) {
+                feature_len = input_shape[1];
+                input_shape[0] = 1;
+            } else {
+                result.error = "Unsupported TTS input rank (expected 1 or 2)";
+                return result;
+            }
+
+            if (feature_len <= 0) {
+                feature_len = 32;
+                input_shape[1] = feature_len;
+            }
+
+            std::vector<float> features(static_cast<size_t>(feature_len), 0.0f);
+            const auto max_bytes = std::min(features.size(), text.size());
+            for (size_t i = 0; i < max_bytes; ++i) {
+                const auto b = static_cast<unsigned char>(text[i]);
+                features[i] = (static_cast<int>(b) - 128) / 128.0f;
+            }
+
+            auto input_tensor = Ort::Value::CreateTensor<float>(
+                memory_info,
+                features.data(),
+                features.size(),
+                input_shape.data(),
+                input_shape.size());
+
+            auto outputs = session->Run(
+                Ort::RunOptions{nullptr},
+                &input_names[0],
+                &input_tensor,
+                1,
+                &output_names[0],
+                1);
+
+            if (outputs.empty() || !outputs[0].IsTensor()) {
+                result.error = "TTS inference returned no tensor output";
+                return result;
+            }
+
+            auto out_info = outputs[0].GetTensorTypeAndShapeInfo();
+            const auto out_elem_type = out_info.GetElementType();
+            auto out_shape = out_info.GetShape();
+
+            if (out_shape.empty()) {
+                result.error = "TTS output has empty shape";
+                return result;
+            }
+
+            // Flatten output to 1-D samples.
+            size_t num_samples = 1;
+            for (const auto d : out_shape) {
+                if (d <= 0) {
+                    result.error = "TTS output has dynamic/unknown shape";
+                    return result;
+                }
+                num_samples *= static_cast<size_t>(d);
+            }
+
+            std::vector<float> samples;
+            samples.reserve(num_samples);
+
+            if (out_elem_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+                const float* data = outputs[0].GetTensorData<float>();
+                samples.assign(data, data + num_samples);
+            } else if (out_elem_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+                const uint16_t* data = outputs[0].GetTensorData<uint16_t>();
+                // IEEE 754 half -> float conversion (minimal, sufficient for PoC).
+                auto half_to_float = [](uint16_t h) -> float {
+                    const uint16_t sign = (h >> 15) & 0x1;
+                    const uint16_t exp = (h >> 10) & 0x1F;
+                    const uint16_t frac = h & 0x3FF;
+
+                    uint32_t f_sign = static_cast<uint32_t>(sign) << 31;
+                    uint32_t f_exp;
+                    uint32_t f_frac;
+
+                    if (exp == 0) {
+                        if (frac == 0) {
+                            f_exp = 0;
+                            f_frac = 0;
+                        } else {
+                            // Subnormal
+                            int shift = 0;
+                            uint16_t mant = frac;
+                            while ((mant & 0x400) == 0) {
+                                mant <<= 1;
+                                ++shift;
+                            }
+                            mant &= 0x3FF;
+                            f_exp = static_cast<uint32_t>(127 - 15 - shift) << 23;
+                            f_frac = static_cast<uint32_t>(mant) << 13;
+                        }
+                    } else if (exp == 31) {
+                        // Inf/NaN
+                        f_exp = 0xFFu << 23;
+                        f_frac = static_cast<uint32_t>(frac) << 13;
+                    } else {
+                        f_exp = static_cast<uint32_t>(exp + (127 - 15)) << 23;
+                        f_frac = static_cast<uint32_t>(frac) << 13;
+                    }
+
+                    uint32_t f_bits = f_sign | f_exp | f_frac;
+                    float out;
+                    std::memcpy(&out, &f_bits, sizeof(out));
+                    return out;
+                };
+
+                for (size_t i = 0; i < num_samples; ++i) {
+                    samples.push_back(half_to_float(data[i]));
+                }
+            } else {
+                result.error = "Unsupported TTS output tensor type (expected float/float16)";
+                return result;
+            }
+
+            // Encode to WAV (16-bit PCM).
+            constexpr int kSampleRate = 16000;
+            result.audio_data = createWavFile(samples, kSampleRate, /*channels=*/1, /*bits_per_sample=*/16);
+            result.format = "wav";
+            result.sample_rate = kSampleRate;
+            result.channels = 1;
+            result.bits_per_sample = 16;
+            result.success = true;
+            return result;
+        }
 
     } catch (const Ort::Exception& e) {
         result.error = std::string("ONNX inference failed: ") + e.what();

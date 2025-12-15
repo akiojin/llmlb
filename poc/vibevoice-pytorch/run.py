@@ -131,6 +131,12 @@ def main() -> int:
             if not Path(p).exists():
                 print(f"Error: voice sample not found: {p}", file=sys.stderr)
                 return 1
+    else:
+        print(
+            "Error: VibeVoice requires a voice sample. Pass --voice /path/to/sample.wav (or repeat for multiple).",
+            file=sys.stderr,
+        )
+        return 1
 
     if device == "cuda":
         load_dtype = torch.bfloat16

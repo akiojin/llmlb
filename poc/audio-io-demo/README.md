@@ -77,5 +77,12 @@ TTS_MODEL=vibevoice ./poc/audio-io-demo/run_audio_io_poc.sh
 VIBEVOICE_DEVICE=mps TTS_MODEL=vibevoice ./poc/audio-io-demo/run_audio_io_poc.sh
 ```
 
+VibeVoice は voice sample が必須です。PoCではデフォルトで **ASR入力音声をそのまま voice sample として使用**します。
+別の音声を使いたい場合は `TTS_VOICE` にファイルパス（`.wav` / `.m4a` など）を指定してください。
+
+```bash
+TTS_MODEL=vibevoice TTS_VOICE="/path/to/voice_sample.wav" ./poc/audio-io-demo/run_audio_io_poc.sh
+```
+
 `TTS_MODEL=toy_tts.onnx` を使う場合のみ、Python依存（`onnx`, `numpy`）をスクリプト内で `venv` にインストールします（Homebrewの `externally-managed-environment` 回避）。
 必要に応じて `VENV_DIR` / `PYTHON_BIN` で変更できます。

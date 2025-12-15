@@ -445,6 +445,27 @@ SpeechResult OnnxTtsManager::synthesize(
             }
         }
 
+        if (voice_sample_path.empty()) {
+            if (const char* default_voice_env = std::getenv("LLM_NODE_VIBEVOICE_DEFAULT_VOICE_SAMPLE")) {
+                std::filesystem::path p(default_voice_env);
+                if (p.is_absolute() && std::filesystem::exists(p)) {
+                    voice_sample_path = p.string();
+                } else {
+                    auto rel = std::filesystem::path(models_dir_) / p;
+                    if (std::filesystem::exists(rel)) {
+                        voice_sample_path = rel.string();
+                    }
+                }
+            }
+        }
+
+        if (voice_sample_path.empty()) {
+            result.error =
+                "VibeVoice requires a voice sample. Set 'voice' to a local audio path (wav/mp3/m4a/etc), "
+                "or set LLM_NODE_VIBEVOICE_DEFAULT_VOICE_SAMPLE.";
+            return result;
+        }
+
         try {
             auto temp_base = std::filesystem::temp_directory_path() / "llm_router_tts";
             std::filesystem::create_directories(temp_base);

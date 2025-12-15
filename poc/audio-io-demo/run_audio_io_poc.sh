@@ -317,6 +317,12 @@ if [[ -z "${TTS_TEXT_EFFECTIVE}" ]]; then
   TTS_TEXT_EFFECTIVE="hello from llm-router audio io poc"
 fi
 
+if is_vibevoice && [[ "${TTS_VOICE}" == "default" ]]; then
+  # VibeVoice は voice sample が必須なため、デフォルトでは ASR 入力音声をそのまま使う。
+  echo "==> VibeVoice voice sample (default): ${TEST_WAV}"
+  TTS_VOICE="${TEST_WAV}"
+fi
+
 TTS_MODEL_REQUEST="${TTS_MODEL}"
 if [[ "${TTS_MODEL}" == "vibevoice" ]]; then
   TTS_MODEL_REQUEST="${VIBEVOICE_MODEL_ID}"

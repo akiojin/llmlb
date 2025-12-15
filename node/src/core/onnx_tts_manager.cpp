@@ -432,38 +432,39 @@ SpeechResult OnnxTtsManager::synthesize(
             }
         }
 
-        std::string voice_sample_path;
-        if (!params.voice.empty() && params.voice != "default") {
-            std::filesystem::path p(params.voice);
+        // VibeVoice-Realtime uses embedded voice prompts (.pt). We accept:
+        // - voice preset name (e.g. "Carter", "Emma", "jp-Spk1_woman")
+        // - local .pt path (absolute or relative to models_dir_)
+        //
+        // If voice is omitted/default, runner will use its default voice preset.
+        std::string voice = params.voice;
+        if (voice.empty() || voice == "default") {
+            if (const char* default_voice_env = std::getenv("LLM_NODE_VIBEVOICE_DEFAULT_VOICE")) {
+                if (default_voice_env && std::string(default_voice_env).size() > 0) {
+                    voice = default_voice_env;
+                }
+            } else if (const char* legacy = std::getenv("LLM_NODE_VIBEVOICE_DEFAULT_VOICE_SAMPLE")) {
+                // Backward compatible env var (deprecated).
+                if (legacy && std::string(legacy).size() > 0) {
+                    spdlog::warn(
+                        "LLM_NODE_VIBEVOICE_DEFAULT_VOICE_SAMPLE is deprecated; use LLM_NODE_VIBEVOICE_DEFAULT_VOICE "
+                        "(voice preset name or .pt path).");
+                    voice = legacy;
+                }
+            }
+        }
+
+        // Resolve local .pt path if the provided voice matches a file under models_dir_.
+        if (!voice.empty() && voice != "default") {
+            std::filesystem::path p(voice);
             if (p.is_absolute() && std::filesystem::exists(p)) {
-                voice_sample_path = p.string();
+                voice = p.string();
             } else {
                 auto rel = std::filesystem::path(models_dir_) / p;
                 if (std::filesystem::exists(rel)) {
-                    voice_sample_path = rel.string();
+                    voice = rel.string();
                 }
             }
-        }
-
-        if (voice_sample_path.empty()) {
-            if (const char* default_voice_env = std::getenv("LLM_NODE_VIBEVOICE_DEFAULT_VOICE_SAMPLE")) {
-                std::filesystem::path p(default_voice_env);
-                if (p.is_absolute() && std::filesystem::exists(p)) {
-                    voice_sample_path = p.string();
-                } else {
-                    auto rel = std::filesystem::path(models_dir_) / p;
-                    if (std::filesystem::exists(rel)) {
-                        voice_sample_path = rel.string();
-                    }
-                }
-            }
-        }
-
-        if (voice_sample_path.empty()) {
-            result.error =
-                "VibeVoice requires a voice sample. Set 'voice' to a local audio path (wav/mp3/m4a/etc), "
-                "or set LLM_NODE_VIBEVOICE_DEFAULT_VOICE_SAMPLE.";
-            return result;
         }
 
         try {
@@ -504,10 +505,14 @@ SpeechResult OnnxTtsManager::synthesize(
                 wav_path.string(),
             };
 
-            if (!voice_sample_path.empty()) {
+            if (!voice.empty()) {
                 args.push_back("--voice");
-                args.push_back(voice_sample_path);
+                args.push_back(voice);
             }
+
+            // Cache downloaded voice prompts under models_dir_ so repeated requests don't re-download.
+            args.push_back("--voice-cache-dir");
+            args.push_back((std::filesystem::path(models_dir_) / "vibevoice_voices").string());
 
             const int rc = run_command(args);
             if (rc != 0) {

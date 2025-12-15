@@ -6,5 +6,3 @@ tqdm
 numpy
 scipy
 soundfile
-ml-collections
-absl-py

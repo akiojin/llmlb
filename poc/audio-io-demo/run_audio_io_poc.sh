@@ -116,11 +116,11 @@ ensure_vibevoice_venv_deps() {
 
   VIBEVOICE_PYTHON_RUNTIME="${VIBEVOICE_VENV_DIR}/bin/python"
 
-  if ! "${VIBEVOICE_PYTHON_RUNTIME}" -c "import torch, transformers, diffusers, accelerate, numpy, soundfile, vibevoice" >/dev/null 2>&1; then
+  if ! "${VIBEVOICE_PYTHON_RUNTIME}" -c "import torch, transformers, diffusers, accelerate, numpy, soundfile; from vibevoice.modular.modeling_vibevoice_streaming_inference import VibeVoiceStreamingForConditionalGenerationInference; from vibevoice.processor.vibevoice_streaming_processor import VibeVoiceStreamingProcessor" >/dev/null 2>&1; then
     echo "==> Installing VibeVoice python deps into venv (this can take a while)"
     "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
     "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet -r "${ROOT_DIR}/poc/vibevoice-pytorch/requirements.txt"
-    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --no-deps vibevoice==0.0.1
+    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --no-deps git+https://github.com/microsoft/VibeVoice.git
   fi
 }
 
@@ -318,9 +318,9 @@ if [[ -z "${TTS_TEXT_EFFECTIVE}" ]]; then
 fi
 
 if is_vibevoice && [[ "${TTS_VOICE}" == "default" ]]; then
-  # VibeVoice は voice sample が必須なため、デフォルトでは ASR 入力音声をそのまま使う。
-  echo "==> VibeVoice voice sample (default): ${TEST_WAV}"
-  TTS_VOICE="${TEST_WAV}"
+  # VibeVoice の voice は preset 名（例: Carter/Emma/jp-Spk1_woman）または .pt voice prompt のパス。
+  # "default" の場合は runner 側のデフォルト preset を利用する。
+  :
 fi
 
 TTS_MODEL_REQUEST="${TTS_MODEL}"

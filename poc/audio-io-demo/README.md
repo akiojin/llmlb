@@ -3,7 +3,7 @@
 目的: Node の音声APIの **入力（ASR）** と **出力（TTS）** を、最低限の形でエンドツーエンドに確認します。
 
 - ASR: `/v1/audio/transcriptions`（whisper.cpp）
-- TTS: `/v1/audio/speech`（ONNX Runtime）
+- TTS: `/v1/audio/speech`（複数バックエンド: macOS `say` / VibeVoice(PyTorch) / toy ONNX）
 
 注意:
 - デフォルトのTTSは macOS 標準の `say` を使い、**人の声**で読み上げます（`TTS_MODEL=macos_say`）。
@@ -77,11 +77,14 @@ TTS_MODEL=vibevoice ./poc/audio-io-demo/run_audio_io_poc.sh
 VIBEVOICE_DEVICE=mps TTS_MODEL=vibevoice ./poc/audio-io-demo/run_audio_io_poc.sh
 ```
 
-VibeVoice は voice sample が必須です。PoCではデフォルトで **ASR入力音声をそのまま voice sample として使用**します。
-別の音声を使いたい場合は `TTS_VOICE` にファイルパス（`.wav` / `.m4a` など）を指定してください。
+VibeVoice の `voice` は **preset 名**（例: `Carter`, `Emma`, `jp-Spk1_woman`）または **`.pt` voice prompt のローカルパス**です。
+デフォルト（`TTS_VOICE=default`）は runner 側の既定値（`Carter`）を使用します。
 
 ```bash
-TTS_MODEL=vibevoice TTS_VOICE="/path/to/voice_sample.wav" ./poc/audio-io-demo/run_audio_io_poc.sh
+TTS_MODEL=vibevoice TTS_VOICE="Emma" ./poc/audio-io-demo/run_audio_io_poc.sh
+
+# 日本語ボイス preset（音声品質は入力言語に依存します）
+TTS_MODEL=vibevoice TTS_VOICE="jp-Spk1_woman" TTS_TEXT="こんにちは。これは音声IO PoCです。" ./poc/audio-io-demo/run_audio_io_poc.sh
 ```
 
 `TTS_MODEL=toy_tts.onnx` を使う場合のみ、Python依存（`onnx`, `numpy`）をスクリプト内で `venv` にインストールします（Homebrewの `externally-managed-environment` 回避）。

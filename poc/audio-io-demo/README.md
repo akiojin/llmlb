@@ -47,5 +47,8 @@ MODEL_DIR=/tmp/llm_router_audio_poc_models ./poc/audio-io-demo/run_audio_io_poc.
 ASRの入力WAVは `ASR_WAV_PATH` で差し替えできます（デフォルトは `node/third_party/whisper.cpp/samples/jfk.wav`）。
 言語は `ASR_LANGUAGE` で指定できます（デフォルト: `en`、自動検出したい場合は `auto`）。
 
+`ASR_WAV_PATH` は `.m4a` 等でも指定できます。macOS 標準の `afconvert` で入力を
+`16kHz / mono / 16-bit PCM WAV` に正規化してから送信します（node 側は現状 WAV のみ対応）。
+
 Python依存（`onnx`, `numpy`）はスクリプト内で `venv` を作ってインストールします（Homebrewの `externally-managed-environment` 回避）。
 必要に応じて `VENV_DIR` / `PYTHON_BIN` で変更できます。

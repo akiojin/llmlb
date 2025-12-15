@@ -389,8 +389,30 @@ bool AudioEndpoints::parseWavHeader(const std::string& data, int& sample_rate,
             uint16_t audio_format;
             std::memcpy(&audio_format, buf + pos + 8, 2);
 
-            // PCM (1) またはIEEE float (3)のみサポート
-            if (audio_format != 1 && audio_format != 3) {
+            // PCM (1), IEEE float (3), WAVE_FORMAT_EXTENSIBLE (65534) をサポート
+            if (audio_format == 65534) {
+                // WAVE_FORMAT_EXTENSIBLE:
+                // - fmt chunk size should be at least 40 bytes (WAVEFORMATEXTENSIBLE)
+                // - SubFormat GUID at offset 24 from fmt chunk data.
+                if (chunk_size < 40 || pos + 8 + 24 + 16 > data.size()) {
+                    spdlog::error("Invalid WAVE_FORMAT_EXTENSIBLE fmt chunk: size={}", chunk_size);
+                    return false;
+                }
+
+                uint8_t subformat_guid[16];
+                std::memcpy(subformat_guid, buf + pos + 8 + 24, 16);
+
+                // GUID is little-endian for the first 3 fields. We only need the format tag.
+                // PCM:  00000001-0000-0010-8000-00AA00389B71
+                // Float:00000003-0000-0010-8000-00AA00389B71
+                uint32_t subformat_tag;
+                std::memcpy(&subformat_tag, subformat_guid, 4);
+
+                if (subformat_tag != 1 && subformat_tag != 3) {
+                    spdlog::error("Unsupported WAVE_FORMAT_EXTENSIBLE subformat: {}", subformat_tag);
+                    return false;
+                }
+            } else if (audio_format != 1 && audio_format != 3) {
                 spdlog::error("Unsupported WAV format: {}", audio_format);
                 return false;
             }

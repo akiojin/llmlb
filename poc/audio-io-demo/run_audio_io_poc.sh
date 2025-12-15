@@ -169,7 +169,7 @@ fi
 
 TEST_WAV="${ASR_WAV_PATH}"
 if [[ -f "${TEST_WAV}" ]]; then
-  echo "==> Using ASR sample WAV: ${TEST_WAV}"
+  echo "==> Using ASR input audio: ${TEST_WAV}"
 else
   echo "==> ASR sample not found, generating test WAV (16kHz, 16-bit PCM, 1s sine)"
   TEST_WAV="${MODEL_DIR}/asr_test.wav"
@@ -196,6 +196,16 @@ with wave.open(out, "wb") as wf:
 print(out)
 PY
 fi
+
+# Normalize ASR input to a format the node currently supports: WAV (16kHz, mono, 16-bit PCM).
+ASR_INPUT_WAV="${MODEL_DIR}/asr_input.wav"
+if ! command -v afconvert >/dev/null 2>&1; then
+  echo "Error: afconvert is required on macOS to normalize ASR input audio." >&2
+  exit 1
+fi
+echo "==> Normalizing ASR input to WAV (16kHz mono 16-bit): ${ASR_INPUT_WAV}"
+afconvert -f WAVE -d LEI16@16000 -c 1 "${TEST_WAV}" "${ASR_INPUT_WAV}"
+TEST_WAV="${ASR_INPUT_WAV}"
 ls -lh "${TEST_WAV}"
 
 echo "==> [ASR input] POST /v1/audio/transcriptions"

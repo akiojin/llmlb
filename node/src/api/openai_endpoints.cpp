@@ -41,7 +41,16 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 res.set_chunked_content_provider("text/event-stream",
                     [output](size_t offset, httplib::DataSink& sink) {
                         if (offset == 0) {
-                            json event_data = {{"content", output}};
+                            // OpenAI compatible streaming format
+                            json event_data = {
+                                {"id", "chatcmpl-1"},
+                                {"object", "chat.completion.chunk"},
+                                {"choices", json::array({{
+                                    {"index", 0},
+                                    {"delta", {{"content", output}}},
+                                    {"finish_reason", nullptr}
+                                }})}
+                            };
                             std::string chunk = "data: " + event_data.dump() + "\n\n";
                             sink.write(chunk.data(), chunk.size());
                             std::string done = "data: [DONE]\n\n";

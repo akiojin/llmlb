@@ -16,6 +16,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
+pip install --no-deps vibevoice==0.0.1
 ```
 
 ## 実行例
@@ -27,20 +28,21 @@ HF_TOKEN=xxx python3 run.py --text "Hello from VibeVoice on PyTorch."
 デフォルトでは:
 - モデル: `microsoft/VibeVoice-Realtime-0.5B`
 - 出力 WAV: `out.wav`
-- デバイス: 自動選択（`cuda`→`mps`→`cpu` の順）
-- voice prompt: Microsoft/VibeVoice の GitHub から `.pt` を初回だけダウンロードしてキャッシュ
+- デバイス: 自動選択（`cuda`→`mps` の順。`--require-gpu` を付けると GPU が無い場合は失敗）
+- 入力: `Speaker 0: ...` のようなスクリプト形式を推奨（通常の文章は自動で `Speaker 0:` を付与）
 
 ## 注意点
 - VibeVoice は音響トークナイザ＋拡散ヘッドを含むカスタム実装で、Transformers 標準の ONNX エクスポートは難しい（ブロック分割＋独自統合が必要）。
-- `vibevoice` パッケージは依存が重い（`diffusers` / `gradio` 等も入る）。PoC用途で割り切る。
-- 生成品質/速度は `--device` / `--ddpm-steps` / `--cfg-scale` に依存。M4 の場合は `mps` 推奨。
+- 生成品質/速度は `--device` / `--ddpm-steps` / `--cfg-scale` に依存。Apple Silicon の場合は `mps` 推奨。
 
 ## よく使うオプション
 ```bash
-# MPS 固定 + 速め
-python3 run.py --device mps --ddpm-steps 5 --cfg-scale 1.5 --text "Hello!"
+# MPS 固定 + GPU必須
+python3 run.py --device mps --require-gpu --ddpm-steps 5 --cfg-scale 1.5 --text "Hello!"
 
-# voice prompt を指定（プリセット名 or ローカルパス）
-python3 run.py --voice en-Carter_man --text "Hello!"
-python3 run.py --voice /path/to/en-Carter_man.pt --text "Hello!"
+# スクリプト形式（複数行・複数話者）
+python3 run.py --require-gpu --text $'Speaker 0: Hello\\nSpeaker 1: Hi!'
+
+# voice sample を指定（任意・ローカルパス）
+python3 run.py --require-gpu --voice /path/to/voice_sample.wav --text "Hello!"
 ```

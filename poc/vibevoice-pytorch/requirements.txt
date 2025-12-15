@@ -1,1 +1,10 @@
-vibevoice==0.0.1
+torch
+accelerate==1.6.0
+transformers==4.51.3
+diffusers
+tqdm
+numpy
+scipy
+soundfile
+ml-collections
+absl-py

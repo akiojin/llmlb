@@ -13,6 +13,9 @@ ASR_LANGUAGE="${ASR_LANGUAGE:-en}"
 TTS_MODEL="${TTS_MODEL:-macos_say}"
 TTS_TEXT="${TTS_TEXT:-}"
 TTS_VOICE="${TTS_VOICE:-default}"
+VIBEVOICE_VENV_DIR="${VIBEVOICE_VENV_DIR:-/tmp/llm_router_vibevoice_poc_venv}"
+VIBEVOICE_DEVICE="${VIBEVOICE_DEVICE:-mps}"
+VIBEVOICE_MODEL_ID="${VIBEVOICE_MODEL_ID:-microsoft/VibeVoice-Realtime-0.5B}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="${VENV_DIR:-/tmp/llm_router_audio_poc_venv}"
 PLAY_TTS="${PLAY_TTS:-1}"
@@ -73,12 +76,17 @@ fi
 mkdir -p "${MODEL_DIR}"
 
 PYTHON_RUNTIME="${PYTHON_BIN}"
+VIBEVOICE_PYTHON_RUNTIME="${PYTHON_BIN}"
 
 ensure_python() {
   if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
     echo "Error: python is required (PYTHON_BIN=${PYTHON_BIN} not found)" >&2
     exit 1
   fi
+}
+
+is_vibevoice() {
+  [[ "${TTS_MODEL}" == "vibevoice" || "${TTS_MODEL}" == "microsoft/VibeVoice-Realtime-0.5B" ]]
 }
 
 ensure_venv_deps() {
@@ -98,6 +106,24 @@ ensure_venv_deps() {
   fi
 }
 
+ensure_vibevoice_venv_deps() {
+  ensure_python
+
+  if [[ ! -x "${VIBEVOICE_VENV_DIR}/bin/python" ]]; then
+    echo "==> Creating VibeVoice python venv: ${VIBEVOICE_VENV_DIR}"
+    "${PYTHON_BIN}" -m venv "${VIBEVOICE_VENV_DIR}"
+  fi
+
+  VIBEVOICE_PYTHON_RUNTIME="${VIBEVOICE_VENV_DIR}/bin/python"
+
+  if ! "${VIBEVOICE_PYTHON_RUNTIME}" -c "import torch, transformers, diffusers, accelerate, numpy, soundfile, vibevoice" >/dev/null 2>&1; then
+    echo "==> Installing VibeVoice python deps into venv (this can take a while)"
+    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet -r "${ROOT_DIR}/poc/vibevoice-pytorch/requirements.txt"
+    "${VIBEVOICE_PYTHON_RUNTIME}" -m pip install --quiet --no-deps vibevoice==0.0.1
+  fi
+}
+
 if [[ ! -d "${ORT_CMAKE_DIR}" ]]; then
   echo "==> CoreML-enabled onnxruntime not found at:" >&2
   echo "    ${ORT_CMAKE_DIR}" >&2
@@ -112,6 +138,8 @@ if [[ "${TTS_MODEL}" == "toy_tts.onnx" ]]; then
   echo "==> Generating toy TTS ONNX model"
   TOY_TTS_MODEL_PATH="$("${PYTHON_RUNTIME}" "${POC_DIR}/generate_toy_tts_model.py" --out "${MODEL_DIR}/toy_tts.onnx")"
   ls -lh "${TOY_TTS_MODEL_PATH}"
+elif is_vibevoice; then
+  ensure_vibevoice_venv_deps
 else
   # macos_say is a built-in TTS backend in the node (no model file required).
   if [[ "${TTS_MODEL}" != "macos_say" ]]; then
@@ -169,12 +197,24 @@ ROUTER_PID=$!
 
 echo "==> Starting llm-node"
 echo "==> Node URL: http://${NODE_HOST}:${NODE_PORT}"
-LLM_ROUTER_URL="http://${ROUTER_HOST}:${ROUTER_PORT}" \
-LLM_ROUTER_API_KEY="sk_poc" \
-LLM_NODE_MODELS_DIR="${MODEL_DIR}" \
-LLM_NODE_PORT="${NODE_PORT}" \
-LLM_NODE_BIND_ADDRESS="${NODE_HOST}" \
-"${NODE_BUILD_DIR}/llm-node" &
+NODE_ENV=(
+  "LLM_ROUTER_URL=http://${ROUTER_HOST}:${ROUTER_PORT}"
+  "LLM_ROUTER_API_KEY=sk_poc"
+  "LLM_NODE_MODELS_DIR=${MODEL_DIR}"
+  "LLM_NODE_PORT=${NODE_PORT}"
+  "LLM_NODE_BIND_ADDRESS=${NODE_HOST}"
+)
+if is_vibevoice; then
+  # node の /v1/audio/speech が VibeVoice 推論を呼び出せるように、python runner を渡す。
+  NODE_ENV+=(
+    "LLM_NODE_VIBEVOICE_PYTHON=${VIBEVOICE_PYTHON_RUNTIME}"
+    "LLM_NODE_VIBEVOICE_RUNNER=${ROOT_DIR}/poc/vibevoice-pytorch/run.py"
+    "LLM_NODE_VIBEVOICE_DEVICE=${VIBEVOICE_DEVICE}"
+    "LLM_NODE_VIBEVOICE_MODEL=${VIBEVOICE_MODEL_ID}"
+  )
+fi
+
+env "${NODE_ENV[@]}" "${NODE_BUILD_DIR}/llm-node" &
 NODE_PID=$!
 
 echo "==> Waiting for node to accept requests..."
@@ -277,11 +317,16 @@ if [[ -z "${TTS_TEXT_EFFECTIVE}" ]]; then
   TTS_TEXT_EFFECTIVE="hello from llm-router audio io poc"
 fi
 
-echo "==> TTS model: ${TTS_MODEL} (voice=${TTS_VOICE})"
+TTS_MODEL_REQUEST="${TTS_MODEL}"
+if [[ "${TTS_MODEL}" == "vibevoice" ]]; then
+  TTS_MODEL_REQUEST="${VIBEVOICE_MODEL_ID}"
+fi
+
+echo "==> TTS model: ${TTS_MODEL_REQUEST} (voice=${TTS_VOICE})"
 echo "==> TTS input text: ${TTS_TEXT_EFFECTIVE}"
 
 TTS_REQ_JSON="${MODEL_DIR}/tts_request.json"
-"${PYTHON_RUNTIME}" - <<'PY' "${TTS_REQ_JSON}" "${TTS_MODEL}" "${TTS_TEXT_EFFECTIVE}" "${TTS_VOICE}"
+"${PYTHON_RUNTIME}" - <<'PY' "${TTS_REQ_JSON}" "${TTS_MODEL_REQUEST}" "${TTS_TEXT_EFFECTIVE}" "${TTS_VOICE}"
 import json
 import sys
 

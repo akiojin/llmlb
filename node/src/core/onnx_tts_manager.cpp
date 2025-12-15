@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
 #include <stdexcept>
 
@@ -142,6 +143,13 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
         spdlog::info("Using macOS built-in TTS backend: {}", kMacosSayModelName);
         return true;
     }
+
+    if (model_path == kVibeVoiceAlias || model_path == kVibeVoiceModelId) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        updateAccessTime(model_path);
+        spdlog::info("Using VibeVoice (PyTorch) TTS backend: {}", model_path);
+        return true;
+    }
 #endif
 
 #ifdef USE_ONNX_RUNTIME
@@ -252,6 +260,10 @@ bool OnnxTtsManager::isLoaded(const std::string& model_path) const {
     if (model_path == kMacosSayModelName) {
         return true;
     }
+
+    if (model_path == kVibeVoiceAlias || model_path == kVibeVoiceModelId) {
+        return true;
+    }
 #endif
 
 #ifdef USE_ONNX_RUNTIME
@@ -267,6 +279,12 @@ bool OnnxTtsManager::isLoaded(const std::string& model_path) const {
 bool OnnxTtsManager::loadModelIfNeeded(const std::string& model_path) {
 #if defined(__APPLE__)
     if (model_path == kMacosSayModelName) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        updateAccessTime(model_path);
+        return true;
+    }
+
+    if (model_path == kVibeVoiceAlias || model_path == kVibeVoiceModelId) {
         std::lock_guard<std::mutex> lock(mutex_);
         updateAccessTime(model_path);
         return true;
@@ -361,6 +379,142 @@ SpeechResult OnnxTtsManager::synthesize(
             return result;
         } catch (const std::exception& e) {
             result.error = std::string("macos_say failed: ") + e.what();
+            return result;
+        }
+    }
+
+    if (model_path == kVibeVoiceAlias || model_path == kVibeVoiceModelId) {
+        if (text.empty()) {
+            result.error = "Empty text input";
+            return result;
+        }
+        if (params.response_format != "wav") {
+            result.error =
+                "Only 'wav' response_format is supported for VibeVoice PoC (requested: " +
+                params.response_format + ")";
+            return result;
+        }
+
+        const char* runner_env = std::getenv("LLM_NODE_VIBEVOICE_RUNNER");
+        if (runner_env == nullptr || std::string(runner_env).empty()) {
+            result.error =
+                "VibeVoice runner not configured. Set LLM_NODE_VIBEVOICE_RUNNER to a python script path.";
+            return result;
+        }
+        const std::string runner_path = runner_env;
+
+        const char* python_env = std::getenv("LLM_NODE_VIBEVOICE_PYTHON");
+        const std::string python_bin = (python_env && std::string(python_env).size() > 0)
+                                           ? std::string(python_env)
+                                           : std::string("python3");
+
+        const char* device_env = std::getenv("LLM_NODE_VIBEVOICE_DEVICE");
+        const std::string device = (device_env && std::string(device_env).size() > 0)
+                                       ? std::string(device_env)
+                                       : std::string("mps");
+
+        const char* model_env = std::getenv("LLM_NODE_VIBEVOICE_MODEL");
+        const std::string hf_model_id = (model_env && std::string(model_env).size() > 0)
+                                            ? std::string(model_env)
+                                            : std::string(kVibeVoiceModelId);
+
+        int ddpm_steps = 5;
+        if (const char* ddpm_env = std::getenv("LLM_NODE_VIBEVOICE_DDPM_STEPS")) {
+            int v = std::atoi(ddpm_env);
+            if (v > 0) ddpm_steps = v;
+        }
+
+        float cfg_scale = 1.5f;
+        if (const char* cfg_env = std::getenv("LLM_NODE_VIBEVOICE_CFG_SCALE")) {
+            try {
+                cfg_scale = std::stof(cfg_env);
+            } catch (...) {
+            }
+        }
+
+        std::string voice_sample_path;
+        if (!params.voice.empty() && params.voice != "default") {
+            std::filesystem::path p(params.voice);
+            if (p.is_absolute() && std::filesystem::exists(p)) {
+                voice_sample_path = p.string();
+            } else {
+                auto rel = std::filesystem::path(models_dir_) / p;
+                if (std::filesystem::exists(rel)) {
+                    voice_sample_path = rel.string();
+                }
+            }
+        }
+
+        try {
+            auto temp_base = std::filesystem::temp_directory_path() / "llm_router_tts";
+            std::filesystem::create_directories(temp_base);
+
+            const auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                                   .count();
+            auto temp_dir = temp_base / ("vibevoice_" + std::to_string(getpid()) + "_" + std::to_string(ts_ms));
+            std::filesystem::create_directories(temp_dir);
+
+            struct Cleanup {
+                std::filesystem::path p;
+                ~Cleanup() {
+                    std::error_code ec;
+                    std::filesystem::remove_all(p, ec);
+                }
+            } cleanup{temp_dir};
+
+            auto wav_path = temp_dir / "out.wav";
+
+            std::vector<std::string> args = {
+                python_bin,
+                runner_path,
+                "--require-gpu",
+                "--model",
+                hf_model_id,
+                "--device",
+                device,
+                "--ddpm-steps",
+                std::to_string(ddpm_steps),
+                "--cfg-scale",
+                std::to_string(cfg_scale),
+                "--text",
+                text,
+                "--out",
+                wav_path.string(),
+            };
+
+            if (!voice_sample_path.empty()) {
+                args.push_back("--voice");
+                args.push_back(voice_sample_path);
+            }
+
+            const int rc = run_command(args);
+            if (rc != 0) {
+                result.error = "VibeVoice runner failed (exit code=" + std::to_string(rc) + ")";
+                return result;
+            }
+
+            if (!std::filesystem::exists(wav_path) || std::filesystem::file_size(wav_path) == 0) {
+                result.error = "VibeVoice produced no output WAV file";
+                return result;
+            }
+
+            result.audio_data = read_file_bytes(wav_path);
+            if (result.audio_data.size() < 4 ||
+                std::memcmp(result.audio_data.data(), "RIFF", 4) != 0) {
+                result.error = "VibeVoice output is not a WAV file (missing RIFF header)";
+                result.audio_data.clear();
+                return result;
+            }
+
+            result.format = "wav";
+            result.sample_rate = 24000;
+            result.channels = 1;
+            result.bits_per_sample = 16;
+            result.success = true;
+            return result;
+        } catch (const std::exception& e) {
+            result.error = std::string("VibeVoice backend failed: ") + e.what();
             return result;
         }
     }

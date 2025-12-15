@@ -39,6 +39,20 @@ Inputs: 1
 Session initialization OK.
 ```
 
+## GPU前提（CPUフォールバック無し）検証（推奨）
+CoreML EP を必須にし、かつ `session.disable_cpu_ep_fallback=1` により CPU EP へのフォールバックを禁止しているため、
+GPU/ANE で実行できないモデルは **セッション生成が失敗** します。
+
+この検証を手早く再現するため、最小の ONNX モデルを自動生成して成功/失敗の両方を確認します。
+
+```bash
+./poc/onnx-runtime-demo/run_gpu_only_poc.sh
+```
+
+期待結果:
+- `conv.onnx` は成功（数値演算グラフ）
+- `string_identity.onnx` は失敗（文字列テンソルは CoreML で扱えないため。CPUフォールバック無し）
+
 ## CoreML EP 付き onnxruntime のビルド（macOS）
 このリポジトリの `scripts/build-onnxruntime-coreml.sh` を使うと、CoreML EP 有効の onnxruntime を
 ビルドして `find_package(onnxruntime)` で参照できる形（CMake package）までインストールします。

@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
     const std::string model_path = argv[1];
 
     try {
-        Ort::Env env{ORT_LOGGING_LEVEL_INFO, "onnx-poc"};
+        Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "onnx-poc"};
         Ort::SessionOptions opts;
         opts.SetIntraOpNumThreads(2);
         // CPUフォールバック禁止: EPがサポートできないノードがある場合はセッション生成を失敗させる。

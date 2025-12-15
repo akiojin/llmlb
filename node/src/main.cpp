@@ -6,6 +6,7 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <unistd.h>
 
 #include "system/gpu_detector.h"
@@ -89,6 +90,41 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Initialize OnnxLlmManager and ModelStorage for inference engine
         llm_node::OnnxLlmManager llm_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
+
+#ifdef USE_ONNX_RUNTIME
+        // CPUフォールバックは禁止: 非CPUのExecution Providerが必須。
+        {
+            const auto providers = Ort::GetAvailableProviders();
+            auto has_provider = [&](const char* name) {
+                return std::find(providers.begin(), providers.end(), name) != providers.end();
+            };
+
+            bool has_non_cpu = false;
+            for (const auto& p : providers) {
+                if (p == "CPUExecutionProvider") continue;
+                if (p == "XnnpackExecutionProvider") continue;
+                has_non_cpu = true;
+                break;
+            }
+
+#if defined(__APPLE__)
+            if (!has_provider("CoreMLExecutionProvider")) {
+                spdlog::error(
+                    "ONNX Runtime CoreMLExecutionProvider is required on macOS, but it is not "
+                    "available in this build. Build onnxruntime with CoreML EP enabled "
+                    "(see scripts/build-onnxruntime-coreml.sh).");
+                return 1;
+            }
+#endif
+
+            if (!has_non_cpu) {
+                spdlog::error(
+                    "ONNX Runtime has no non-CPU execution providers (CPU-only build). "
+                    "CPU fallback is disabled.");
+                return 1;
+            }
+        }
+#endif
 
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR

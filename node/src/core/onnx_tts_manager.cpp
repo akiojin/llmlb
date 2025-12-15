@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 namespace llm_node {
 
@@ -86,6 +87,55 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
         session_options.SetIntraOpNumThreads(4);
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
+        // CPUフォールバックは禁止: 非CPUのExecution Providerが必須。
+        const auto providers = Ort::GetAvailableProviders();
+        auto has_provider = [&](const char* name) {
+            return std::find(providers.begin(), providers.end(), name) != providers.end();
+        };
+        auto has_non_cpu = [&]() {
+            for (const auto& p : providers) {
+                if (p == "CPUExecutionProvider") continue;
+                if (p == "XnnpackExecutionProvider") continue;
+                return true;
+            }
+            return false;
+        };
+        if (!has_non_cpu()) {
+            throw std::runtime_error(
+                "ONNX Runtime build has no non-CPU execution providers (CPU-only build).");
+        }
+
+        const char* selected = nullptr;
+#if defined(__APPLE__)
+        if (has_provider("CoreMLExecutionProvider")) {
+            selected = "CoreMLExecutionProvider";
+        }
+#endif
+        if (selected == nullptr && has_provider("CUDAExecutionProvider")) {
+            selected = "CUDAExecutionProvider";
+        }
+        if (selected == nullptr && has_provider("TensorrtExecutionProvider")) {
+            selected = "TensorrtExecutionProvider";
+        }
+        if (selected == nullptr && has_provider("TensorRTExecutionProvider")) {
+            selected = "TensorRTExecutionProvider";
+        }
+        if (selected == nullptr && has_provider("ROCMExecutionProvider")) {
+            selected = "ROCMExecutionProvider";
+        }
+        if (selected == nullptr && has_provider("DirectMLExecutionProvider")) {
+            selected = "DirectMLExecutionProvider";
+        }
+        if (selected == nullptr && has_provider("OpenVINOExecutionProvider")) {
+            selected = "OpenVINOExecutionProvider";
+        }
+        if (selected == nullptr) {
+            throw std::runtime_error(
+                "No supported hardware execution provider found (expected CoreML/CUDA/ROCm/etc).");
+        }
+        session_options.AppendExecutionProvider(selected);
+        spdlog::info("ONNX Runtime: {} enabled (TTS)", selected);
+
         auto session = std::make_unique<Ort::Session>(
             env_, canonical_path.c_str(), session_options);
 
@@ -94,7 +144,7 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
 
         spdlog::info("TTS model loaded successfully: {}", canonical_path);
         return true;
-    } catch (const Ort::Exception& e) {
+    } catch (const std::exception& e) {
         spdlog::error("Failed to load TTS model: {} - {}", canonical_path, e.what());
         return false;
     }

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -40,6 +41,48 @@ size_t fileSizeOrZero(const std::string& path) {
     if (ec) return 0;
     return static_cast<size_t>(size);
 }
+
+#ifdef USE_ONNX_RUNTIME
+bool providerAvailable(const std::vector<std::string>& providers, const std::string& name) {
+    return std::find(providers.begin(), providers.end(), name) != providers.end();
+}
+
+bool hasNonCpuProvider(const std::vector<std::string>& providers) {
+    for (const auto& p : providers) {
+        if (p == "CPUExecutionProvider") continue;
+        if (p == "XnnpackExecutionProvider") continue;
+        return true;
+    }
+    return false;
+}
+
+std::optional<std::string> selectPreferredProvider(const std::vector<std::string>& providers) {
+#if defined(__APPLE__)
+    if (providerAvailable(providers, "CoreMLExecutionProvider")) {
+        return "CoreMLExecutionProvider";
+    }
+#endif
+    if (providerAvailable(providers, "CUDAExecutionProvider")) {
+        return "CUDAExecutionProvider";
+    }
+    if (providerAvailable(providers, "TensorrtExecutionProvider")) {
+        return "TensorrtExecutionProvider";
+    }
+    if (providerAvailable(providers, "TensorRTExecutionProvider")) {
+        return "TensorRTExecutionProvider";
+    }
+    if (providerAvailable(providers, "ROCMExecutionProvider")) {
+        return "ROCMExecutionProvider";
+    }
+    if (providerAvailable(providers, "DirectMLExecutionProvider")) {
+        return "DirectMLExecutionProvider";
+    }
+    if (providerAvailable(providers, "OpenVINOExecutionProvider")) {
+        return "OpenVINOExecutionProvider";
+    }
+    return std::nullopt;
+}
+#endif
 
 }  // namespace
 
@@ -114,21 +157,24 @@ std::unique_ptr<Ort::Session> OnnxLlmManager::createSession(const std::string& c
     session_options.SetIntraOpNumThreads(4);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-#if defined(__APPLE__)
-    // Try CoreML first (if the runtime was built with CoreML EP). Failure should fall back to CPU EP.
-    try {
-        session_options.AppendExecutionProvider("CoreMLExecutionProvider");
-        spdlog::info("ONNX Runtime: CoreML EP enabled");
-    } catch (const Ort::Exception& e) {
-        spdlog::debug("ONNX Runtime: CoreML EP not available: {}", e.what());
+    // CPUフォールバックは禁止: 非CPUのExecution Providerが必須。
+    const auto providers = Ort::GetAvailableProviders();
+    if (!hasNonCpuProvider(providers)) {
+        throw std::runtime_error(
+            "ONNX Runtime build has no non-CPU execution providers (CPU-only build).");
     }
-#endif
-    // Try XNNPACK (CPU acceleration) when available.
+
+    const auto preferred = selectPreferredProvider(providers);
+    if (!preferred.has_value()) {
+        throw std::runtime_error(
+            "No supported hardware execution provider found (expected CoreML/CUDA/ROCm/etc).");
+    }
     try {
-        session_options.AppendExecutionProvider("XnnpackExecutionProvider");
-        spdlog::info("ONNX Runtime: XNNPACK EP enabled");
+        session_options.AppendExecutionProvider(preferred->c_str());
+        spdlog::info("ONNX Runtime: {} enabled", *preferred);
     } catch (const Ort::Exception& e) {
-        spdlog::debug("ONNX Runtime: XNNPACK EP not available: {}", e.what());
+        throw std::runtime_error(
+            std::string("Failed to enable execution provider ") + *preferred + ": " + e.what());
     }
 
     return std::make_unique<Ort::Session>(env_, canonical_path.c_str(), session_options);
@@ -171,7 +217,7 @@ bool OnnxLlmManager::loadModel(const std::string& model_path) {
         updateAccessTime(canonical_path);
         spdlog::info("ONNX model loaded successfully: {}", canonical_path);
         return true;
-    } catch (const Ort::Exception& e) {
+    } catch (const std::exception& e) {
         spdlog::error("Failed to load ONNX model: {} - {}", canonical_path, e.what());
         return false;
     }

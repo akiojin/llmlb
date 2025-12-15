@@ -31,7 +31,7 @@ cmake --build build -j
 ```
 CoreML EP enabled
 Loaded model: /path/to/model.onnx
-Execution providers (priority order):
+Available providers:
   - CoreMLExecutionProvider
   - CPUExecutionProvider
 Inputs: 1
@@ -56,7 +56,7 @@ MODEL=microsoft/VibeVoice-Realtime-0.5B ./convert_and_run.sh
 ```
 
 ### 既知の制約
-- Homebrew の onnxruntime ボトルは CoreML/XNNPACK EP 非同梱のことが多く、PoC は CPU 実行のみになります。M4 の GPU/ANE を使うには `--use_coreml` 付きで onnxruntime をソースビルドする必要があります。
+- Homebrew の onnxruntime ボトルは CoreML EP 非同梱のことが多く、この PoC は **エラー終了** します（CPUフォールバック無し）。M4 の GPU/ANE を使うには `--use_coreml` 付きで onnxruntime をソースビルドする必要があります。
 - `microsoft/VibeVoice-Realtime-0.5B` は Transformers の標準エクスポーター（sequence-classification 等）に未対応のカスタムアーキテクチャです。`transformers.onnx` では変換できず、独自のエクスポートスクリプトが必要です（音響トークナイザ＋拡散ヘッドを含むため）。
 
 ## メモ

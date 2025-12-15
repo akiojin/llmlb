@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include <onnxruntime_cxx_api.h>
 
@@ -19,23 +20,22 @@ int main(int argc, char* argv[]) {
         opts.SetIntraOpNumThreads(2);
 
 #if defined(__APPLE__)
-        // CoreML EP を最優先で登録。失敗しても CPU にフォールバックする。
-        try {
-            opts.AppendExecutionProvider("CoreMLExecutionProvider");
-            std::cout << "CoreML EP enabled\n";
-        } catch (const Ort::Exception& e) {
-            std::cerr << "CoreML EP not available: " << e.what()
-                      << " (fallback to XNNPACK/CPU)\n";
+        // CoreML EP を必須とする（CPUフォールバック無し）。
+        {
+            const auto providers = Ort::GetAvailableProviders();
+            const bool has_coreml = std::find(providers.begin(), providers.end(),
+                                              "CoreMLExecutionProvider") != providers.end();
+            if (!has_coreml) {
+                std::cerr
+                    << "Error: CoreMLExecutionProvider is required but not available in this build.\n"
+                    << "Build onnxruntime with CoreML EP enabled and re-run.\n"
+                    << "Hint: ./scripts/build-onnxruntime-coreml.sh\n";
+                return 1;
+            }
         }
+        opts.AppendExecutionProvider("CoreMLExecutionProvider");
+        std::cout << "CoreML EP enabled\n";
 #endif
-        // XNNPACK を明示的に追加（CPU高速化）。失敗してもデフォルトCPUに落ちる。
-        try {
-            opts.AppendExecutionProvider("XnnpackExecutionProvider");
-            std::cout << "XNNPACK EP enabled\n";
-        } catch (const Ort::Exception& e) {
-            std::cerr << "XNNPACK EP not available: " << e.what()
-                      << " (fallback to default CPU)\n";
-        }
 
         Ort::Session session{env, model_path.c_str(), opts};
 

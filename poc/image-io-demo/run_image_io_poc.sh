@@ -63,8 +63,14 @@ install_deps_if_needed
 
 mkdir -p "${MODEL_DIR}"
 
-# Hugging Face Large File download optimization (optional).
-export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
+# Hugging Face download settings (large model repos).
+#
+# NOTE: Z-Image-Turbo + GLM-4.6V-Flash can download ~50GiB+ on first run.
+# If you see `Killed: 9` during download on macOS, use more conservative settings.
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+export HF_HUB_MAX_WORKERS="${HF_HUB_MAX_WORKERS:-1}"
+export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-0}"
+echo "==> HF download settings: HF_HUB_DISABLE_XET=${HF_HUB_DISABLE_XET} HF_HUB_MAX_WORKERS=${HF_HUB_MAX_WORKERS} HF_XET_HIGH_PERFORMANCE=${HF_XET_HIGH_PERFORMANCE}"
 
 OUT_PNG="${MODEL_DIR}/z_image_out.png"
 CAPTION_TXT="${MODEL_DIR}/glm_caption.txt"

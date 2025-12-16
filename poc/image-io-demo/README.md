@@ -7,7 +7,10 @@
 - Image-to-Text: `zai-org/GLM-4.6V-Flash`（transformers）
 
 注意:
-- 初回は venv 作成＋依存導入＋モデルDLで時間がかかります（モデルが大きいです）。
+- 初回は venv 作成＋依存導入＋モデルDLで時間がかかります（モデルが非常に大きいです）。
+  - `Tongyi-MAI/Z-Image-Turbo`: 約 30.6GiB
+  - `zai-org/GLM-4.6V-Flash`: 約 19.2GiB
+  - 合計で **50GiB+** のダウンロードになります（HFキャッシュの都合で実使用はさらに増える場合があります）。
 - GPU前提: `--require-gpu` 相当で動かし、GPUが無い場合は失敗します。
 - このPoCは「HF配布モデルをそのまま使う」ため、GGUF変換は不要です。
 
@@ -48,3 +51,18 @@ GLM_MAX_NEW_TOKENS=256
 GLM_DEVICE=auto       # auto|cuda|mps
 ```
 
+## トラブルシューティング
+
+### `Killed: 9` で落ちる（macOS）
+
+モデルDL中に Python が `Killed: 9` で落ちる場合、HFの並列DLやXetバックエンドが原因で
+落ちるケースがあります。より保守的な設定で実行してください（遅くなりますが安定します）:
+
+```bash
+HF_HUB_DISABLE_XET=1 HF_HUB_MAX_WORKERS=1 ./poc/image-io-demo/run_image_io_poc.sh
+```
+
+### CUDAが無い警告が出る
+
+macOSではCUDAは使えないため、`cuda is not available` という警告が出ても `mps` を使っていれば問題ありません。
+ログに `Using device: mps` が出ていることを確認してください。

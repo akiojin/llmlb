@@ -101,7 +101,8 @@ def main() -> int:
         if device == "cuda":
             torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
         elif device == "mps":
-            torch_dtype = torch.float16
+            # MPS + fp16 can produce NaNs for some pipelines; prefer fp32 for stability in the PoC.
+            torch_dtype = torch.float32
         else:
             torch_dtype = torch.float32
     else:

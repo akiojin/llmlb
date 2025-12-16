@@ -138,7 +138,7 @@ ensure_venv() {
 install_deps_if_needed() {
   local py="${VENV_DIR}/bin/python"
 
-  if "${py}" -c "import torch; from diffusers import ZImagePipeline; from transformers import AutoProcessor, Glm4vForConditionalGeneration; import PIL" >/dev/null 2>&1; then
+  if "${py}" -c "import torch; import torchvision; from torchvision.transforms.v2 import functional as _tvF; from diffusers import ZImagePipeline; from transformers import AutoProcessor, Glm4vForConditionalGeneration; import PIL" >/dev/null 2>&1; then
     return 0
   fi
 
@@ -146,7 +146,7 @@ install_deps_if_needed() {
   "${py}" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
 
   # Core deps
-  "${py}" -m pip install --quiet torch pillow accelerate safetensors numpy scipy tqdm importlib-metadata
+  "${py}" -m pip install --quiet torch torchvision pillow accelerate safetensors numpy scipy tqdm importlib-metadata
 
   # Z-Image requires recent diffusers features (install from source).
   "${py}" -m pip install --quiet --upgrade --force-reinstall git+https://github.com/huggingface/diffusers

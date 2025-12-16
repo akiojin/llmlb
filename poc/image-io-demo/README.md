@@ -13,6 +13,7 @@
   - 合計で **50GiB+** のダウンロードになります（HFキャッシュの都合で実使用はさらに増える場合があります）。
 - GPU前提: `--require-gpu` 相当で動かし、GPUが無い場合は失敗します。
 - このPoCは「HF配布モデルをそのまま使う」ため、GGUF変換は不要です。
+- `GLM-4.6V-Flash` の Processor は `torchvision.transforms.v2` を利用するため、PoCは `torchvision` も venv に導入します。
 
 ## 実行
 

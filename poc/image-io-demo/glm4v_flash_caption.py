@@ -74,11 +74,13 @@ def main() -> int:
 
     try:
         import torch
+        import torchvision  # required for BaseVideoProcessor (torchvision.transforms.v2)
+        from torchvision.transforms.v2 import functional as _tvF  # noqa: F401
         from transformers import AutoProcessor, Glm4vForConditionalGeneration
     except Exception as e:
         print("Missing dependencies for GLM-4.6V PoC.", file=sys.stderr)
         print(
-            "Create a venv and install: torch, pillow, accelerate, and transformers (>=5.0.0rc0) including Glm4vForConditionalGeneration.",
+            "Create a venv and install: torch, torchvision, pillow, accelerate, and transformers (>=5.0.0rc0) including Glm4vForConditionalGeneration.",
             file=sys.stderr,
         )
         print(f"Import error: {e}", file=sys.stderr)
@@ -163,4 +165,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

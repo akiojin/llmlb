@@ -42,9 +42,8 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
 
         // Process download in background thread
-        if (model_sync_ && router_client_ && !task_id.empty()) {
+        if (model_sync_ && !task_id.empty()) {
             auto sync = model_sync_;
-            auto client = router_client_;
 
             // optional fields from request
             std::string path = j.value("path", "");
@@ -53,7 +52,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             std::string download_url = j.value("download_url", "");
             std::string registry_url = j.value("registry_url", "");
 
-            std::thread([sync, client, model_name, task_id, path, download_url, registry_url, chat_template]() {
+            std::thread([sync, model_name, task_id, path, download_url, registry_url, chat_template]() {
                 spdlog::info("Starting model pull: model={}, task_id={}, path='{}'",
                               model_name, task_id, path);
 
@@ -70,10 +69,10 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
 
                 bool success = false;
 
-                auto progress_cb = [&client, &task_id](size_t downloaded, size_t total) {
+                auto progress_cb = [&task_id](size_t downloaded, size_t total) {
                     if (total > 0) {
                         double progress = static_cast<double>(downloaded) / static_cast<double>(total);
-                        client->reportProgress(task_id, progress, std::nullopt);
+                        spdlog::debug("Download progress for task {}: {:.1f}%", task_id, progress * 100.0);
                     }
                 };
 
@@ -147,13 +146,12 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
                         }
                     }
                     spdlog::info("Model pull complete: model={}, task_id={}", model_name, task_id);
-                    client->reportProgress(task_id, 1.0, std::nullopt);
                 } else {
                     spdlog::error("Model pull failed: model={}, task_id={}", model_name, task_id);
                 }
             }).detach();
         } else {
-            spdlog::warn("Pull request ignored: model_sync or router_client not set, or no task_id");
+            spdlog::warn("Pull request ignored: model_sync not set or no task_id");
         }
     });
 
@@ -279,7 +277,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         exporter_.set_gauge("llm_node_requests_total", static_cast<double>(request_count_.load()), "Total requests served");
         exporter_.set_gauge("llm_node_pulls_total", static_cast<double>(pull_count_.load()), "Total pull requests served");
 
-        res.set_content(exporter_.to_prometheus_text_format(), "text/plain; charset=utf-8");
+        res.set_content(exporter_.render(), "text/plain; charset=utf-8");
     });
 
     server.Post("/log/level", [](const httplib::Request& req, httplib::Response& res) {

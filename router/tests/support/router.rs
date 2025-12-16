@@ -63,6 +63,15 @@ pub async fn register_node(
     router_addr: SocketAddr,
     node_addr: SocketAddr,
 ) -> reqwest::Result<Response> {
+    register_node_with_runtimes(router_addr, node_addr, vec!["onnx_runtime".to_string()]).await
+}
+
+/// 指定したルーターにノードを登録する（サポートするランタイムを指定）
+pub async fn register_node_with_runtimes(
+    router_addr: SocketAddr,
+    node_addr: SocketAddr,
+    supported_runtimes: Vec<String>,
+) -> reqwest::Result<Response> {
     Client::new()
         .post(format!("http://{router_addr}/api/nodes"))
         .header("x-api-key", "sk_debug")
@@ -75,7 +84,8 @@ pub async fn register_node(
             "gpu_available": true,
             "gpu_devices": [
                 {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
-            ]
+            ],
+            "supported_runtimes": supported_runtimes
         }))
         .send()
         .await

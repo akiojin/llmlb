@@ -35,6 +35,9 @@ pub struct RegisterRequest {
     /// GPUモデル名
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_model: Option<String>,
+    /// サポートするランタイム一覧
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_runtimes: Vec<crate::types::RuntimeType>,
 }
 
 /// ノード登録レスポンス
@@ -436,6 +439,7 @@ mod tests {
             }],
             gpu_count: Some(2),
             gpu_model: Some("NVIDIA RTX 4090".to_string()),
+            supported_runtimes: vec![crate::types::RuntimeType::OnnxRuntime],
         };
 
         let json = serde_json::to_string(&request).unwrap();

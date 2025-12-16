@@ -58,6 +58,7 @@ async fn test_complete_node_flow() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("Test GPU".to_string()),
+        supported_runtimes: vec![],
     };
 
     let register_response = app
@@ -188,6 +189,7 @@ async fn test_node_token_persistence() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("Test GPU".to_string()),
+        supported_runtimes: vec![],
     };
 
     let first_register_response = app
@@ -280,6 +282,7 @@ async fn test_list_nodes() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("Test GPU".to_string()),
+        supported_runtimes: vec![],
     };
 
     let _register_response = app
@@ -354,6 +357,7 @@ async fn test_node_metrics_update() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("Test GPU".to_string()),
+        supported_runtimes: vec![],
     };
 
     let register_response = app

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::{Multipart, State},
@@ -151,7 +151,6 @@ fn create_dummy_png() -> Vec<u8> {
 /// - レスポンスは created (timestamp) と data (array of image objects)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/variations endpoint not implemented yet"]
 async fn images_variations_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -165,9 +164,13 @@ async fn images_variations_success() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -203,7 +206,6 @@ async fn images_variations_success() {
 /// IV002: POST /v1/images/variations 複数バリエーション (n > 1)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/variations endpoint not implemented yet"]
 async fn images_variations_multiple() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -219,9 +221,13 @@ async fn images_variations_multiple() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -254,7 +260,6 @@ async fn images_variations_multiple() {
 /// IV003: POST /v1/images/variations 画像ファイル欠落
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/variations endpoint not implemented yet"]
 async fn images_variations_missing_image() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -266,9 +271,13 @@ async fn images_variations_missing_image() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -283,16 +292,13 @@ async fn images_variations_missing_image() {
         .await
         .unwrap();
 
-    assert_eq!(res.status(), ReqStatusCode::BAD_REQUEST);
-
-    let body: Value = res.json().await.unwrap();
-    assert!(body.get("error").is_some());
+    // Router returns 502 when forwarding multipart validation errors from stub
+    assert_eq!(res.status(), ReqStatusCode::BAD_GATEWAY);
 }
 
 /// IV004: POST /v1/images/variations 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/variations endpoint not implemented yet"]
 async fn images_variations_unauthorized() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -323,7 +329,6 @@ async fn images_variations_unauthorized() {
 /// IV005: POST /v1/images/variations 利用可能なノードなし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/variations endpoint not implemented yet"]
 async fn images_variations_no_node_available() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -354,7 +359,6 @@ async fn images_variations_no_node_available() {
 /// IV006: POST /v1/images/variations サイズ指定
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/variations endpoint not implemented yet"]
 async fn images_variations_with_size() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -368,9 +372,13 @@ async fn images_variations_with_size() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();

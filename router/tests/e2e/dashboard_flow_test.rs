@@ -197,6 +197,7 @@ async fn test_dashboard_nodes_with_registered_node() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("RTX 4090".to_string()),
+        supported_runtimes: vec![],
     };
 
     let _register_response = app

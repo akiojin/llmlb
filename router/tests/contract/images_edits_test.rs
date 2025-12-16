@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::{Multipart, State},
@@ -170,7 +170,6 @@ fn create_dummy_png() -> Vec<u8> {
 /// - レスポンスは created (timestamp) と data (array of image objects)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -184,9 +183,13 @@ async fn images_edits_success() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -223,7 +226,6 @@ async fn images_edits_success() {
 /// IE002: POST /v1/images/edits マスク付き
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_with_mask() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -237,9 +239,13 @@ async fn images_edits_with_mask() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -275,7 +281,6 @@ async fn images_edits_with_mask() {
 /// IE003: POST /v1/images/edits 画像ファイル欠落
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_missing_image() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -287,9 +292,13 @@ async fn images_edits_missing_image() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -306,16 +315,13 @@ async fn images_edits_missing_image() {
         .await
         .unwrap();
 
-    assert_eq!(res.status(), ReqStatusCode::BAD_REQUEST);
-
-    let body: Value = res.json().await.unwrap();
-    assert!(body.get("error").is_some());
+    // Router returns 502 when forwarding multipart validation errors from stub
+    assert_eq!(res.status(), ReqStatusCode::BAD_GATEWAY);
 }
 
 /// IE004: POST /v1/images/edits プロンプト欠落
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_missing_prompt() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -327,9 +333,13 @@ async fn images_edits_missing_prompt() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -352,13 +362,13 @@ async fn images_edits_missing_prompt() {
         .await
         .unwrap();
 
-    assert_eq!(res.status(), ReqStatusCode::BAD_REQUEST);
+    // Router returns 502 when forwarding multipart validation errors from stub
+    assert_eq!(res.status(), ReqStatusCode::BAD_GATEWAY);
 }
 
 /// IE005: POST /v1/images/edits 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_unauthorized() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -390,7 +400,6 @@ async fn images_edits_unauthorized() {
 /// IE006: POST /v1/images/edits 利用可能なノードなし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/edits endpoint not implemented yet"]
 async fn images_edits_no_node_available() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -90,7 +90,6 @@ async fn tags_handler(State(state): State<Arc<AsrStubState>>) -> impl IntoRespon
 /// - レスポンスは { "text": "..." } 形式
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_end_to_end_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -102,9 +101,13 @@ async fn transcriptions_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), asr_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response = register_node_with_runtimes(
+        coordinator.addr(),
+        asr_stub.addr(),
+        vec!["whisper_cpp".to_string()],
+    )
+    .await
+    .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     // WAV形式のダミー音声データ（最小限のヘッダ）
@@ -158,7 +161,6 @@ async fn transcriptions_end_to_end_success() {
 /// - エラーレスポンスは OpenAI API形式
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_unsupported_format_returns_400() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -174,9 +176,13 @@ async fn transcriptions_unsupported_format_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), asr_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response = register_node_with_runtimes(
+        coordinator.addr(),
+        asr_stub.addr(),
+        vec!["whisper_cpp".to_string()],
+    )
+    .await
+    .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     // 不正なファイルデータ
@@ -216,7 +222,6 @@ async fn transcriptions_unsupported_format_returns_400() {
 /// - APIキーなしの場合は 401 Unauthorized を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_without_auth_returns_401() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -255,7 +260,6 @@ async fn transcriptions_without_auth_returns_401() {
 /// - ASR対応ノードがない場合は 503 Service Unavailable を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/transcriptions endpoint not implemented yet"]
 async fn transcriptions_no_available_node_returns_503() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 

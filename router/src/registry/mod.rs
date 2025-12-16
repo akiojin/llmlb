@@ -530,6 +530,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
 
         let response = registry.register(req).await.unwrap();
@@ -554,6 +555,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
 
         let first_response = registry.register(req.clone()).await.unwrap();
@@ -580,6 +582,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         registry.register(req1).await.unwrap();
 
@@ -592,6 +595,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         registry.register(req2).await.unwrap();
 
@@ -611,6 +615,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
 
         let response = registry.register(req).await.unwrap();
@@ -633,6 +638,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
 
         let node_id = registry.register(req).await.unwrap().node_id;
@@ -668,6 +674,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             })
             .await
             .unwrap()
@@ -690,6 +697,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             })
             .await
             .unwrap()

@@ -85,12 +85,13 @@ pub async fn register_node(
     let (loaded_models, initializing, ready_models, supported_runtimes) = if skip_health_check {
         // In test/dev mode, we skip probing the node. Treat the node as immediately ready so it
         // can be selected by the proxy layer.
-        (
-            Vec::new(),
-            false,
-            Some((0, 0)),
-            Some(vec![llm_router_common::types::RuntimeType::OnnxRuntime]),
-        )
+        // Use the supported_runtimes from the request, or default to OnnxRuntime if not provided.
+        let runtimes = if req.supported_runtimes.is_empty() {
+            vec![llm_router_common::types::RuntimeType::OnnxRuntime]
+        } else {
+            req.supported_runtimes.clone()
+        };
+        (Vec::new(), false, Some((0, 0)), Some(runtimes))
     } else {
         let health_res = state.http_client.get(&health_url).send().await;
         if let Err(e) = health_res {
@@ -415,6 +416,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
 
         let result = register_node(State(state), Json(req)).await;
@@ -445,6 +447,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         let _ = register_node(State(state.clone()), Json(req1))
             .await
@@ -459,6 +462,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         let _ = register_node(State(state.clone()), Json(req2))
             .await
@@ -480,6 +484,7 @@ mod tests {
             gpu_devices: Vec::new(),
             gpu_count: None,
             gpu_model: None,
+            supported_runtimes: vec![],
         };
 
         let response = register_node(State(state), Json(req))
@@ -506,6 +511,7 @@ mod tests {
             gpu_devices: Vec::new(),
             gpu_count: None,
             gpu_model: None,
+            supported_runtimes: vec![],
         };
 
         let response = register_node(State(state), Json(req))
@@ -535,6 +541,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         let res1 = register_node(State(state.clone()), Json(req1))
             .await
@@ -552,6 +559,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         let res2 = register_node(State(state.clone()), Json(req2))
             .await
@@ -578,6 +586,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
 
         let response = register_node(State(state.clone()), Json(req))
@@ -648,6 +657,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         let response = register_node(State(state.clone()), Json(register_req))
             .await
@@ -736,6 +746,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             }),
         )
         .await
@@ -778,6 +789,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             }),
         )
         .await
@@ -808,6 +820,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             }),
         )
         .await
@@ -837,6 +850,7 @@ mod tests {
             gpu_devices: Vec::new(),
             gpu_count: None,
             gpu_model: None,
+            supported_runtimes: vec![],
         };
 
         let result = register_node(State(state), Json(req)).await;

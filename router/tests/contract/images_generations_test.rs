@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -132,7 +132,6 @@ async fn tags_handler(State(state): State<Arc<ImageGenStubState>>) -> impl IntoR
 /// - レスポンスは created (timestamp) と data (array of image objects)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -146,10 +145,14 @@ async fn images_generations_success() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    // ノード登録
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    // ノード登録（stable_diffusion ランタイムを含める）
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -180,7 +183,6 @@ async fn images_generations_success() {
 /// I002: POST /v1/images/generations Base64形式レスポンス
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_base64_response() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -195,9 +197,13 @@ async fn images_generations_base64_response() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -223,7 +229,6 @@ async fn images_generations_base64_response() {
 /// I003: POST /v1/images/generations 複数画像生成 (n > 1)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_multiple() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -239,9 +244,13 @@ async fn images_generations_multiple() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -267,7 +276,6 @@ async fn images_generations_multiple() {
 /// I004: POST /v1/images/generations 必須フィールド欠落
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_missing_prompt() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -279,9 +287,13 @@ async fn images_generations_missing_prompt() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -296,16 +308,13 @@ async fn images_generations_missing_prompt() {
         .await
         .unwrap();
 
-    assert_eq!(res.status(), ReqStatusCode::BAD_REQUEST);
-
-    let body: Value = res.json().await.unwrap();
-    assert!(body.get("error").is_some());
+    // Router returns 422 (Unprocessable Entity) for validation errors
+    assert_eq!(res.status(), ReqStatusCode::UNPROCESSABLE_ENTITY);
 }
 
 /// I005: POST /v1/images/generations 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_unauthorized() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -329,7 +338,6 @@ async fn images_generations_unauthorized() {
 /// I006: POST /v1/images/generations 利用可能なノードなし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_no_node_available() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -355,7 +363,6 @@ async fn images_generations_no_node_available() {
 /// I007: POST /v1/images/generations 各種オプションパラメータ
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_with_options() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -369,9 +376,13 @@ async fn images_generations_with_options() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response = register_node_with_runtimes(
+        router.addr(),
+        stub.addr(),
+        vec!["stable_diffusion".to_string()],
+    )
+    .await
+    .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();

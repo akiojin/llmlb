@@ -128,6 +128,7 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: vec![],
         };
         let register_response = state.registry.register(register_req).await.unwrap();
 

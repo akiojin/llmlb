@@ -419,6 +419,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             })
             .await
             .unwrap();
@@ -454,6 +455,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             })
             .await
             .unwrap();
@@ -492,6 +494,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: vec![],
             })
             .await
             .unwrap()

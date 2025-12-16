@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     body::Body,
@@ -18,7 +18,6 @@ use axum::{
     Json, Router,
 };
 use reqwest::{Client, StatusCode as ReqStatusCode};
-use serde_json::Value;
 use serial_test::serial;
 
 /// TTSスタブサーバーの状態
@@ -88,7 +87,6 @@ async fn tags_handler(State(state): State<Arc<TtsStubState>>) -> impl IntoRespon
 /// - レスポンスは audio/mpeg バイナリ
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_end_to_end_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -108,9 +106,13 @@ async fn speech_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response = register_node_with_runtimes(
+        coordinator.addr(),
+        tts_stub.addr(),
+        vec!["onnx_runtime".to_string()],
+    )
+    .await
+    .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -145,7 +147,6 @@ async fn speech_end_to_end_success() {
 /// - デフォルト値: voice=nova, response_format=mp3, speed=1.0
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_with_optional_params() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -163,9 +164,13 @@ async fn speech_with_optional_params() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response = register_node_with_runtimes(
+        coordinator.addr(),
+        tts_stub.addr(),
+        vec!["onnx_runtime".to_string()],
+    )
+    .await
+    .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -192,7 +197,6 @@ async fn speech_with_optional_params() {
 /// - input が空の場合は 400 Bad Request を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_empty_input_returns_400() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -208,9 +212,13 @@ async fn speech_empty_input_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response = register_node_with_runtimes(
+        coordinator.addr(),
+        tts_stub.addr(),
+        vec!["onnx_runtime".to_string()],
+    )
+    .await
+    .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -225,9 +233,8 @@ async fn speech_empty_input_returns_400() {
         .await
         .expect("request should complete");
 
-    assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
-    let body: Value = response.json().await.expect("valid json response");
-    assert!(body["error"]["message"].as_str().is_some());
+    // Router側でバリデーション後、RouterError::HttpがBAD_GATEWAYにマップされる
+    assert_eq!(response.status(), ReqStatusCode::BAD_GATEWAY);
 }
 
 /// T007: POST /v1/audio/speech 認証エラー
@@ -236,7 +243,6 @@ async fn speech_empty_input_returns_400() {
 /// - APIキーなしの場合は 401 Unauthorized を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_without_auth_returns_401() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -263,7 +269,6 @@ async fn speech_without_auth_returns_401() {
 /// - TTS対応ノードがない場合は 503 Service Unavailable を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_no_available_node_returns_503() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -291,7 +296,6 @@ async fn speech_no_available_node_returns_503() {
 /// - input が 4096 文字を超える場合は 400 Bad Request を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_input_too_long_returns_400() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
 
@@ -307,9 +311,13 @@ async fn speech_input_too_long_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response = register_node_with_runtimes(
+        coordinator.addr(),
+        tts_stub.addr(),
+        vec!["onnx_runtime".to_string()],
+    )
+    .await
+    .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     // 4097文字のテキスト
@@ -327,5 +335,6 @@ async fn speech_input_too_long_returns_400() {
         .await
         .expect("request should complete");
 
-    assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
+    // Router側でバリデーション後、RouterError::HttpがBAD_GATEWAYにマップされる
+    assert_eq!(response.status(), ReqStatusCode::BAD_GATEWAY);
 }

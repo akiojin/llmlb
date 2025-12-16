@@ -40,16 +40,16 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 #[tokio::test]
 async fn test_complete_node_flow() {
-    // ヘルスチェックをスキップ（E2Eテストでは実際のノード実体がない）
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // モックノードサーバーを起動
+    let mock_node = support::node::MockNodeServer::start().await;
     let (app, _db_pool) = build_app().await;
 
-    // Step 1: ノード登録
+    // Step 1: ノード登録（モックサーバーのポートを使用）
     let register_request = RegisterRequest {
         machine_name: "test-node".to_string(),
-        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 100)),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: mock_node.runtime_port,
         gpu_available: true,
         gpu_devices: vec![GpuDeviceInfo {
             model: "Test GPU".to_string(),
@@ -169,16 +169,16 @@ async fn test_complete_node_flow() {
 
 #[tokio::test]
 async fn test_node_token_persistence() {
-    // ヘルスチェックをスキップ（E2Eテストでは実際のノード実体がない）
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // モックノードサーバーを起動
+    let mock_node = support::node::MockNodeServer::start().await;
     let (app, _db_pool) = build_app().await;
 
     // ノード登録
     let register_request = RegisterRequest {
         machine_name: "test-node-2".to_string(),
-        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 101)),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: mock_node.runtime_port,
         gpu_available: true,
         gpu_devices: vec![GpuDeviceInfo {
             model: "Test GPU".to_string(),
@@ -260,15 +260,16 @@ async fn test_node_token_persistence() {
 
 #[tokio::test]
 async fn test_list_nodes() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // モックノードサーバーを起動
+    let mock_node = support::node::MockNodeServer::start().await;
     let (app, _db_pool) = build_app().await;
 
     // ノードを登録
     let register_request = RegisterRequest {
         machine_name: "list-test-node".to_string(),
-        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 200)),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: mock_node.runtime_port,
         gpu_available: true,
         gpu_devices: vec![GpuDeviceInfo {
             model: "Test GPU".to_string(),
@@ -333,15 +334,16 @@ async fn test_list_nodes() {
 
 #[tokio::test]
 async fn test_node_metrics_update() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // モックノードサーバーを起動
+    let mock_node = support::node::MockNodeServer::start().await;
     let (app, _db_pool) = build_app().await;
 
     // ノードを登録
     let register_request = RegisterRequest {
         machine_name: "metrics-test-node".to_string(),
-        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 201)),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: mock_node.runtime_port,
         gpu_available: true,
         gpu_devices: vec![GpuDeviceInfo {
             model: "Test GPU".to_string(),
@@ -407,7 +409,6 @@ async fn test_node_metrics_update() {
 
 #[tokio::test]
 async fn test_list_node_metrics() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/nodes/metrics でメトリクス一覧を取得
@@ -442,7 +443,6 @@ async fn test_list_node_metrics() {
 
 #[tokio::test]
 async fn test_metrics_summary() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/metrics/summary

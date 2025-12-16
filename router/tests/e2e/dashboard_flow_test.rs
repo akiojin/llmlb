@@ -47,7 +47,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 #[tokio::test]
 async fn test_dashboard_nodes_endpoint() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/dashboard/nodes
@@ -81,7 +80,6 @@ async fn test_dashboard_nodes_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/dashboard/stats
@@ -112,7 +110,6 @@ async fn test_dashboard_stats_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_overview_endpoint() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/dashboard/overview
@@ -146,7 +143,6 @@ async fn test_dashboard_overview_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_request_history_endpoint() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/dashboard/request-history
@@ -180,15 +176,16 @@ async fn test_dashboard_request_history_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_nodes_with_registered_node() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // モックノードサーバーを起動
+    let mock_node = support::node::MockNodeServer::start().await;
     let (app, _db_pool) = build_app().await;
 
-    // ノードを登録
+    // ノードを登録（モックサーバーのポートを使用）
     let register_request = RegisterRequest {
         machine_name: "dashboard-test-node".to_string(),
-        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 150)),
+        ip_address: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: mock_node.runtime_port,
         gpu_available: true,
         gpu_devices: vec![GpuDeviceInfo {
             model: "RTX 4090".to_string(),
@@ -240,7 +237,6 @@ async fn test_dashboard_nodes_with_registered_node() {
 
 #[tokio::test]
 async fn test_cloud_metrics_endpoint() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/metrics/cloud
@@ -276,7 +272,6 @@ async fn test_cloud_metrics_endpoint() {
 
 #[tokio::test]
 async fn test_models_loaded_endpoint_is_removed() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let (app, _db_pool) = build_app().await;
 
     // GET /v0/models/loaded

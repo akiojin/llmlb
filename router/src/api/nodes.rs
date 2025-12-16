@@ -81,7 +81,8 @@ pub async fn register_node(
     let node_api_base = format!("http://{}:{}", req.ip_address, node_api_port);
     let health_url = format!("{}/v1/models", node_api_base);
 
-    let skip_health_check = cfg!(test) || std::env::var("LLM_ROUTER_SKIP_HEALTH_CHECK").is_ok();
+    // テスト時のみヘルスチェックをスキップ（cfg!(test)はコンパイル時に評価）
+    let skip_health_check = cfg!(test);
     let (loaded_models, initializing, ready_models) = if skip_health_check {
         (Vec::new(), false, None)
     } else {

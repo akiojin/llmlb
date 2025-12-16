@@ -185,6 +185,22 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         server.start();
         server_started = true;
 
+        // Wait for server to be ready by self-connecting
+        {
+            httplib::Client self_check("127.0.0.1", node_port);
+            self_check.set_connection_timeout(1, 0);
+            self_check.set_read_timeout(1, 0);
+            const int max_wait = 50;  // 50 * 100ms = 5s max
+            for (int i = 0; i < max_wait; ++i) {
+                auto res = self_check.Get("/v1/models");
+                if (res && res->status == 200) {
+                    spdlog::info("Server ready after {}ms", (i + 1) * 100);
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+
         // Register with router (retry)
         std::cout << "Registering with router..." << std::endl;
         llm_node::RouterClient router(router_url);

@@ -11,12 +11,12 @@
 ## ノード登録（curlで確認）
 
 > NOTE: ルーターは登録時にノードの OpenAI互換API（`runtime_port+1`）へ疎通確認を行います。
-> ローカルでAPI契約だけを確認したい場合は、ルーター起動時に `LLM_ROUTER_SKIP_HEALTH_CHECK=1` を付けてください。
+> 実際のノード（llm-node）が起動している必要があります。
 
 ### 1. ルーター起動
 
 ```bash
-LLM_ROUTER_SKIP_HEALTH_CHECK=1 cargo run -p llm-router
+cargo run -p llm-router
 ```
 
 ### 2. ノード登録

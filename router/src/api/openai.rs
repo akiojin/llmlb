@@ -106,10 +106,20 @@ pub async fn embeddings(
 /// GET /v1/models - モデル一覧取得（OpenAI互換 - 標準形式のみ）
 /// ノードが実際にロードしているモデルのみを返す。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    // ノードがロードしているモデルを取得
+    // ノードがロードしているモデルを取得（パスからモデル名を抽出）
     let nodes = state.registry.list().await;
-    let loaded_models: HashSet<String> =
-        nodes.iter().flat_map(|n| n.loaded_models.clone()).collect();
+    let loaded_models: HashSet<String> = nodes
+        .iter()
+        .flat_map(|n| n.loaded_models.clone())
+        .filter_map(|path| {
+            // パスからモデル名を抽出: /.../.llm-router/models/{model_name}/model.gguf
+            std::path::Path::new(&path)
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
 
     // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
     let models = list_registered_models();
@@ -157,13 +167,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 ///
 /// OpenAI互換APIと異なり、`path`, `download_url`, `chat_template`などの
 /// 拡張情報を含む。ノードがルーターからモデル情報を同期するために使用。
-/// ノードが実際にロードしているモデルのみを返す。
-pub async fn list_models_extended(State(state): State<AppState>) -> Result<Response, AppError> {
-    // ノードがロードしているモデルを取得
-    let nodes = state.registry.list().await;
-    let loaded_models: HashSet<String> =
-        nodes.iter().flat_map(|n| n.loaded_models.clone()).collect();
-
+/// SPEC-dcaeaec4: ルーターがサポートする（ファイルが存在する）モデルをすべて返す。
+pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Response, AppError> {
     // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
     let models = list_registered_models();
 
@@ -179,11 +184,6 @@ pub async fn list_models_extended(State(state): State<AppState>) -> Result<Respo
 
         // ダウンロードが完了していないモデルは一覧に出さない
         if path.is_none() {
-            continue;
-        }
-
-        // ノードがロードしていないモデルは一覧に出さない
-        if !loaded_models.is_empty() && !loaded_models.contains(&m.name) {
             continue;
         }
 

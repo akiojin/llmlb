@@ -319,8 +319,42 @@ export interface ConvertTask {
   updated_at: string
 }
 
+// OpenAI format model response
+interface OpenAIModelResponse {
+  data: Array<{
+    id: string
+    object: string
+    owned_by: string
+    path?: string
+    download_url?: string
+    created?: number
+  }>
+  object: string
+}
+
 export const modelsApi = {
-  getRegistered: () => fetchWithAuth<RegisteredModelView[]>('/v0/models/registered'),
+  getRegistered: async (): Promise<RegisteredModelView[]> => {
+    // /v0/models/registered は廃止され /v0/models に統合された (SPEC-dcaeaec4)
+    // APIキー認証が必要なため、ローカルストレージのAPIキーを使用
+    const apiKey = localStorage.getItem('playground_api_key') || 'sk_debug'
+    const response = await fetch('/v0/models', {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    if (!response.ok) {
+      return []
+    }
+    const data = (await response.json()) as OpenAIModelResponse
+    // OpenAI形式からRegisteredModelView形式に変換
+    return data.data.map((model) => ({
+      name: model.id,
+      source: model.owned_by,
+      ready: true,
+      tags: [],
+      path: model.path,
+    }))
+  },
 
   getAvailable: () =>
     fetchWithAuth<AvailableModelsResponse>('/v0/models/available', {

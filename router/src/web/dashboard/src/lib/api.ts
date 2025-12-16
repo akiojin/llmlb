@@ -443,7 +443,10 @@ export interface User {
 }
 
 export const usersApi = {
-  list: () => fetchWithAuth<User[]>('/v0/users'),
+  list: async (): Promise<User[]> => {
+    const res = await fetchWithAuth<{ users: User[] }>('/v0/users')
+    return res.users
+  },
 
   create: (data: { username: string; password: string; role: string }) =>
     fetchWithAuth<User>('/v0/users', {

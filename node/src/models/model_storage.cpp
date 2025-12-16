@@ -157,4 +157,24 @@ bool ModelStorage::validateModel(const std::string& model_name) const {
     return st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
 }
 
+bool ModelStorage::deleteModel(const std::string& model_name) {
+    const std::string dir_name = modelNameToDir(model_name);
+    const auto model_dir = fs::path(models_dir_) / dir_name;
+
+    if (!fs::exists(model_dir)) {
+        spdlog::debug("ModelStorage::deleteModel: model directory does not exist: {}", model_dir.string());
+        return true;  // Already deleted
+    }
+
+    std::error_code ec;
+    fs::remove_all(model_dir, ec);
+    if (ec) {
+        spdlog::error("ModelStorage::deleteModel: failed to delete {}: {}", model_dir.string(), ec.message());
+        return false;
+    }
+
+    spdlog::info("ModelStorage::deleteModel: deleted model directory: {}", model_dir.string());
+    return true;
+}
+
 }  // namespace llm_node

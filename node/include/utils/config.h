@@ -28,6 +28,7 @@ struct NodeConfig {
     std::string bind_address{"0.0.0.0"};
     std::string ip_address;  // Empty means auto-detect
     std::string default_embedding_model{"nomic-embed-text-v1.5"};
+    std::string image_scripts_dir;  // T2I/I2T Python scripts directory
 };
 
 NodeConfig loadNodeConfig();

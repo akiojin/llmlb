@@ -34,6 +34,9 @@
 #include "core/onnx_tts_manager.h"
 #endif
 
+#include "core/image_manager.h"
+#include "api/image_endpoints.h"
+
 int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
     llm_node::g_running_flag.store(true);
 
@@ -138,6 +141,13 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("OnnxTtsManager initialized for TTS support");
 #endif
 
+        // Initialize ImageManager for T2I/I2T (Python subprocess)
+        std::string image_scripts_dir = cfg.image_scripts_dir.empty()
+                                            ? std::string("poc/image-io-demo")
+                                            : cfg.image_scripts_dir;
+        llm_node::ImageManager image_manager(image_scripts_dir);
+        spdlog::info("ImageManager initialized for T2I/I2T support");
+
         // Configure on-demand model loading settings from environment variables
         if (const char* idle_timeout_env = std::getenv("LLM_MODEL_IDLE_TIMEOUT")) {
             int timeout_secs = std::atoi(idle_timeout_env);
@@ -190,6 +200,11 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #endif
         audio_endpoints.registerRoutes(server.getServer());
 #endif
+
+        // Register image endpoints for T2I (Python subprocess)
+        llm_node::ImageEndpoints image_endpoints(image_manager, cfg);
+        image_endpoints.registerRoutes(server.getServer());
+        spdlog::info("Image endpoints registered for T2I support");
 
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();
@@ -278,6 +293,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_ONNX_RUNTIME
                                         &tts_manager,
 #endif
+                                        &image_manager,
                                         node_id = reg.node_id, agent_token, &cfg]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
@@ -298,6 +314,11 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 supported_runtimes.push_back("whisper_cpp");
                 loaded_asr_models = whisper_manager.getLoadedModels();
 #endif
+
+                // Image generation (Python subprocess T2I)
+                if (image_manager.isT2IAvailable()) {
+                    supported_runtimes.push_back("stable_diffusion");
+                }
 
                 router.sendHeartbeat(node_id, agent_token, std::nullopt, std::nullopt,
                                      loaded_models, loaded_embedding_models, loaded_asr_models,

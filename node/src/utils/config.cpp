@@ -248,6 +248,12 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         used_env = true;
     }
 
+    if (const char* v = std::getenv("LLM_NODE_IMAGE_SCRIPTS_DIR")) {
+        cfg.image_scripts_dir = v;
+        log << "env:IMAGE_SCRIPTS_DIR=" << v << " ";
+        used_env = true;
+    }
+
     if (log.tellp() > 0) log << "|";
     log << "sources=";
     if (used_env) log << "env";

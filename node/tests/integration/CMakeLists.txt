@@ -20,6 +20,8 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/core/inference_engine.cpp
     ../../src/core/onnx_llm_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
+    ../../src/core/image_manager.cpp
+    ../../src/api/image_endpoints.cpp
 )
 
 # Use platform-specific gpu_detector source

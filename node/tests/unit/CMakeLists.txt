@@ -12,6 +12,7 @@ set(UNIT_TEST_SOURCES
     utils_config_test.cpp
     utils_misc_test.cpp
     cli_test.cpp
+    image_manager_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp
     ../../src/models/model_sync.cpp
@@ -21,6 +22,7 @@ set(UNIT_TEST_SOURCES
     ../../src/models/hf_client.cpp
     ../../src/core/onnx_llm_manager.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/image_manager.cpp
 )
 
 # Use platform-specific gpu_detector source

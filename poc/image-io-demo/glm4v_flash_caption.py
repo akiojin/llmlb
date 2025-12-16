@@ -53,6 +53,40 @@ def _choose_device(requested: str, require_gpu: bool) -> str:
     raise RuntimeError(f"Invalid device: {requested} (expected auto|cuda|mps)")
 
 
+def _strip_thinking_tokens(text: str) -> str:
+    """Remove thinking/reasoning tokens from GLM output.
+
+    GLM models may include internal reasoning in special token blocks.
+    This function strips common patterns like <think>...</think> and similar markers.
+    """
+    import re
+
+    # Remove <think>...</think> blocks (greedy, handles multiline)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    # Remove <reasoning>...</reasoning> blocks
+    text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    # Remove common special tokens
+    tokens_to_remove = [
+        "<|endoftext|>",
+        "<|end|>",
+        "<|assistant|>",
+        "<|user|>",
+        "<|system|>",
+        "</s>",
+        "<s>",
+    ]
+    for token in tokens_to_remove:
+        text = text.replace(token, "")
+
+    # Strip leading/trailing whitespace and collapse multiple newlines
+    text = text.strip()
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -63,6 +97,9 @@ def main() -> int:
     parser.add_argument("--require-gpu", action="store_true", help="Fail if cuda/mps is not available")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress progress logs")
+    parser.add_argument("--json-output", action="store_true", help="Output caption in JSON format")
+    parser.add_argument("--strip-thinking", action="store_true", help="Remove thinking tokens from output")
     args = parser.parse_args()
 
     if args.require_gpu and os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1":
@@ -168,13 +205,26 @@ def main() -> int:
         skip_special_tokens=False,
     )
 
+    # Strip thinking tokens if requested
+    if args.strip_thinking:
+        output_text = _strip_thinking_tokens(output_text)
+
+    # Format output
+    if args.json_output:
+        import json
+        result = {"caption": output_text, "model": args.model, "image": args.image}
+        output_str = json.dumps(result, ensure_ascii=False, indent=2)
+    else:
+        output_str = output_text
+
     if args.out:
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(output_text, encoding="utf-8")
-        print(f"Caption written: {out_path}")
+        out_path.write_text(output_str, encoding="utf-8")
+        if not args.quiet:
+            print(f"Caption written: {out_path}")
     else:
-        print(output_text)
+        print(output_str)
 
     return 0
 

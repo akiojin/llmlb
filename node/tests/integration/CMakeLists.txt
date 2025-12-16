@@ -3,6 +3,7 @@ set(INTEGRATION_TEST_SOURCES
     openai_endpoints_test.cpp
     node_endpoints_test.cpp
     node_prometheus_test.cpp
+    image_endpoints_test.cpp
     main_test.cpp
     model_sync_download_test.cpp
     model_lifecycle_test.cpp

@@ -66,6 +66,7 @@ def main() -> int:
     parser.add_argument("--guidance", type=float, default=0.0, help="Turbo recommends 0.0")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dtype", default="auto", help="auto | float32 | float16 | bfloat16 (default: auto)")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress progress logs")
     args = parser.parse_args()
 
     if args.require_gpu and os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1":
@@ -116,8 +117,9 @@ def main() -> int:
             print(f"Error: invalid dtype={args.dtype} (expected auto|float32|float16|bfloat16)", file=sys.stderr)
             return 1
 
-    print(f"Using device: {device} (dtype={torch_dtype})")
-    print(f"Loading pipeline: {args.model}")
+    if not args.quiet:
+        print(f"Using device: {device} (dtype={torch_dtype})")
+        print(f"Loading pipeline: {args.model}")
 
     pipe = ZImagePipeline.from_pretrained(
         args.model,
@@ -139,7 +141,8 @@ def main() -> int:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(out_path)
-    print(f"PNG written: {out_path}")
+    if not args.quiet:
+        print(f"PNG written: {out_path}")
     return 0
 
 

@@ -94,9 +94,10 @@ pub async fn generations(
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;
+    let node_api_port = node.runtime_port + 1; // APIポートはLLM runtimeポート+1
     let url = format!(
         "http://{}:{}/v1/images/generations",
-        node.ip_address, node.runtime_port
+        node.ip_address, node_api_port
     );
 
     let response = client
@@ -277,9 +278,10 @@ pub async fn edits(
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
+    let node_api_port = node.runtime_port + 1; // APIポートはLLM runtimeポート+1
     let url = format!(
         "http://{}:{}/v1/images/edits",
-        node.ip_address, node.runtime_port
+        node.ip_address, node_api_port
     );
 
     let mut form = reqwest::multipart::Form::new().part(
@@ -464,9 +466,10 @@ pub async fn variations(
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
+    let node_api_port = node.runtime_port + 1; // APIポートはLLM runtimeポート+1
     let url = format!(
         "http://{}:{}/v1/images/variations",
-        node.ip_address, node.runtime_port
+        node.ip_address, node_api_port
     );
 
     let mut form = reqwest::multipart::Form::new().part(

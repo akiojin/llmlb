@@ -154,9 +154,10 @@ pub async fn transcriptions(
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
+    let node_api_port = node.runtime_port + 1; // APIポートはLLM runtimeポート+1
     let url = format!(
         "http://{}:{}/v1/audio/transcriptions",
-        node.ip_address, node.runtime_port
+        node.ip_address, node_api_port
     );
 
     let mut form = reqwest::multipart::Form::new().part(
@@ -261,9 +262,10 @@ pub async fn speech(
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;
+    let node_api_port = node.runtime_port + 1; // APIポートはLLM runtimeポート+1
     let url = format!(
         "http://{}:{}/v1/audio/speech",
-        node.ip_address, node.runtime_port
+        node.ip_address, node_api_port
     );
 
     let response = client

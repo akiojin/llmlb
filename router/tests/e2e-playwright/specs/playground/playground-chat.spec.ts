@@ -63,7 +63,7 @@ test.describe('Playground Chat @playground', () => {
     expect(value).toContain('Line 1');
   });
 
-  test.skip('PC-07: Router status indicator exists', async () => {
+  test('PC-07: Router status indicator exists', async () => {
     // Router status indicator not implemented in current Playground
     await expect(playground.routerStatus).toBeVisible();
   });

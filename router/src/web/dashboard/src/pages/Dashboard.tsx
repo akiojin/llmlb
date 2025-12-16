@@ -1,3 +1,4 @@
+import { useState, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { dashboardApi, type DashboardOverview } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -12,10 +13,22 @@ import { AlertCircle, Server, History, FileText, Box } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
+  const fetchStartRef = useRef<number | null>(null)
+
+  const fetchWithTiming = useCallback(async () => {
+    fetchStartRef.current = performance.now()
+    const result = await dashboardApi.getOverview()
+    const endTime = performance.now()
+    setFetchTimeMs(Math.round(endTime - (fetchStartRef.current || endTime)))
+    setLastRefreshed(new Date())
+    return result
+  }, [])
 
   const { data, isLoading, error, refetch } = useQuery<DashboardOverview>({
     queryKey: ['dashboard-overview'],
-    queryFn: dashboardApi.getOverview,
+    queryFn: fetchWithTiming,
     refetchInterval: 5000,
   })
 
@@ -49,7 +62,12 @@ export default function Dashboard() {
       <div className="fixed inset-0 bg-grid opacity-20 pointer-events-none" />
 
       {/* Header */}
-      <Header user={user} />
+      <Header
+        user={user}
+        isConnected={!error}
+        lastRefreshed={lastRefreshed}
+        fetchTimeMs={fetchTimeMs}
+      />
 
       {/* Main Content */}
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">

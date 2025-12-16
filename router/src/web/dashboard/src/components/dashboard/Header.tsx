@@ -25,9 +25,12 @@ import {
 
 interface HeaderProps {
   user: { username: string; role: string } | null
+  isConnected?: boolean
+  lastRefreshed?: Date | null
+  fetchTimeMs?: number | null
 }
 
-export function Header({ user }: HeaderProps) {
+export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }: HeaderProps) {
   const { logout } = useAuth()
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
@@ -64,6 +67,37 @@ export function Header({ user }: HeaderProps) {
               </h1>
               <p className="text-xs text-muted-foreground">Dashboard</p>
             </div>
+          </div>
+
+          {/* Status Indicators */}
+          <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
+            {/* Connection Status */}
+            <span id="connection-status" className="flex items-center gap-1.5">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isConnected ? 'bg-green-500' : 'bg-red-500'
+                }`}
+              />
+              Connection: {isConnected ? 'Online' : 'Offline'}
+            </span>
+
+            {/* Last Refreshed */}
+            {lastRefreshed && (
+              <span id="last-refreshed">
+                Last updated: {lastRefreshed.toLocaleTimeString()}
+              </span>
+            )}
+            {!lastRefreshed && (
+              <span id="last-refreshed">Last updated: --:--:--</span>
+            )}
+
+            {/* Performance Metrics */}
+            {fetchTimeMs !== null && fetchTimeMs !== undefined && (
+              <span id="refresh-metrics">Fetch time: {fetchTimeMs}ms</span>
+            )}
+            {(fetchTimeMs === null || fetchTimeMs === undefined) && (
+              <span id="refresh-metrics">Fetch time: --ms</span>
+            )}
           </div>
 
           {/* Actions */}

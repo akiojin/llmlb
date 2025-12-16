@@ -17,12 +17,12 @@ test.describe('Playground Settings @playground', () => {
 
   test('PST-02: Settings modal can be closed', async ({ page }) => {
     await playground.openSettings();
-    // Click the Done button to close the modal
-    await page.locator('#settings-modal button:has-text("Done")').click();
+    // Close the modal using Escape key (Radix Dialog closes on Escape)
+    await page.keyboard.press('Escape');
     await expect(playground.settingsModal).toBeHidden();
   });
 
-  test.skip('PST-03: Provider Local button is clickable', async () => {
+  test('PST-03: Provider Local button is clickable', async () => {
     // Provider filter buttons not implemented in current Playground
     await playground.openSettings();
     await playground.setProvider('local');
@@ -33,7 +33,7 @@ test.describe('Playground Settings @playground', () => {
     expect(isActive).toBe(true);
   });
 
-  test.skip('PST-04: Provider Cloud button is clickable', async () => {
+  test('PST-04: Provider Cloud button is clickable', async () => {
     // Provider filter buttons not implemented in current Playground
     await playground.openSettings();
     await playground.setProvider('cloud');
@@ -44,7 +44,7 @@ test.describe('Playground Settings @playground', () => {
     expect(isActive).toBe(true);
   });
 
-  test.skip('PST-05: Provider All button is clickable', async () => {
+  test('PST-05: Provider All button is clickable', async () => {
     // Provider filter buttons not implemented in current Playground
     await playground.openSettings();
     await playground.setProvider('all');
@@ -96,7 +96,7 @@ test.describe('Playground Settings @playground', () => {
     await expect(playground.systemPrompt).toHaveValue(testPrompt);
   });
 
-  test.skip('PST-12: Clear Playground button exists', async () => {
+  test('PST-12: Clear Playground button exists', async () => {
     // Reset chat button not implemented in current Playground
     await playground.openSettings();
     await expect(playground.resetChat).toBeVisible();

@@ -48,20 +48,17 @@ test.describe('Dashboard Header Controls @dashboard', () => {
     expect(page.url()).toContain('dashboard');
   });
 
-  test.skip('H-05: Connection status displays correctly', async () => {
-    // Note: Connection status element not currently implemented in the dashboard
+  test('H-05: Connection status displays correctly', async () => {
     const status = await dashboard.getConnectionStatus();
     expect(status).toContain('Connection');
   });
 
-  test.skip('H-06: Last refreshed timestamp is displayed', async ({ page }) => {
-    // Note: Last refreshed element not currently implemented in the dashboard
+  test('H-06: Last refreshed timestamp is displayed', async ({ page }) => {
     const lastRefreshed = await page.locator('#last-refreshed').textContent();
     expect(lastRefreshed).toContain('Last');
   });
 
-  test.skip('H-07: Performance metrics are displayed', async ({ page }) => {
-    // Note: Performance metrics element not currently implemented in the dashboard
+  test('H-07: Performance metrics are displayed', async ({ page }) => {
     const metrics = await page.locator('#refresh-metrics').textContent();
     expect(metrics).toContain('Fetch');
   });

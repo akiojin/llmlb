@@ -66,7 +66,7 @@ test.describe('Dashboard Nodes Tab @dashboard', () => {
     }
   });
 
-  test.skip('N-07: Pagination controls appear with many nodes', async ({ page }) => {
+  test('N-07: Pagination controls appear with many nodes', async ({ page }) => {
     // Pagination only appears when there are more than PAGE_SIZE (10) nodes
     // This test requires mock data with >10 nodes
     const pagePrev = page.locator(DashboardSelectors.nodes.pagePrev);
@@ -75,19 +75,19 @@ test.describe('Dashboard Nodes Tab @dashboard', () => {
     expect(true).toBe(true);
   });
 
-  test.skip('N-08: Select all checkbox exists', async ({ page }) => {
+  test('N-08: Select all checkbox exists', async ({ page }) => {
     // Note: Select all checkbox not currently implemented in the dashboard
     const selectAll = page.locator(DashboardSelectors.nodes.selectAll);
     await expect(selectAll).toBeVisible();
   });
 
-  test.skip('N-09: Export JSON button is clickable', async ({ page }) => {
+  test('N-09: Export JSON button is clickable', async ({ page }) => {
     // Note: Export buttons not currently implemented in the dashboard
     await dashboard.exportJson.click();
     expect(true).toBe(true);
   });
 
-  test.skip('N-10: Export CSV button is clickable', async ({ page }) => {
+  test('N-10: Export CSV button is clickable', async ({ page }) => {
     // Note: Export buttons not currently implemented in the dashboard
     await dashboard.exportCsv.click();
     expect(true).toBe(true);

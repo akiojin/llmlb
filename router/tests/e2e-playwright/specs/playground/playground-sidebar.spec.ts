@@ -13,7 +13,7 @@ test.describe('Playground Sidebar @playground', () => {
     await expect(playground.sidebar).toBeVisible();
   });
 
-  test.skip('PS-02: Sidebar toggle collapses and expands', async ({ page }) => {
+  test('PS-02: Sidebar toggle collapses and expands', async ({ page }) => {
     // Sidebar toggle not implemented in current Playground (sidebar is always visible)
     const initialClass = await playground.sidebar.getAttribute('class');
 

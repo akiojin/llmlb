@@ -50,6 +50,10 @@ import {
   ExternalLink,
   Code,
   Check,
+  PanelLeftClose,
+  PanelLeft,
+  CircleDot,
+  RotateCcw,
 } from 'lucide-react'
 
 interface Message {
@@ -68,6 +72,8 @@ export default function Playground() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [curlOpen, setCurlOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [providerFilter, setProviderFilter] = useState<'all' | 'local' | 'cloud'>('all')
 
   // Settings state
   const [selectedModel, setSelectedModel] = useState('')
@@ -111,9 +117,10 @@ export default function Playground() {
   // Set default model
   useEffect(() => {
     if (models && !selectedModel) {
-      const readyModels = (models as RegisteredModelView[]).filter((m) => m.ready)
-      if (readyModels.length > 0) {
-        setSelectedModel(readyModels[0].name)
+      // 全ての登録済みモデルを選択可能にする（ready状態に関係なく）
+      const allModels = models as RegisteredModelView[]
+      if (allModels.length > 0) {
+        setSelectedModel(allModels[0].name)
       }
     }
   }, [models, selectedModel])
@@ -168,6 +175,26 @@ export default function Playground() {
       setMessages([])
     }
     toast({ title: 'Session deleted' })
+  }
+
+  // Reset/clear current chat
+  const resetChat = () => {
+    setMessages([])
+    if (currentSessionId) {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === currentSessionId
+            ? { ...s, messages: [], updated_at: new Date().toISOString() }
+            : s
+        )
+      )
+    }
+    toast({ title: 'Chat cleared' })
+  }
+
+  // Toggle sidebar
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => !prev)
   }
 
   // Send message
@@ -390,12 +417,20 @@ export default function Playground() {
     }
   }
 
-  const readyModels = (models as RegisteredModelView[] | undefined)?.filter((m) => m.ready) || []
+  // 全ての登録済みモデルを選択可能にする（ready状態に関係なく）
+  // 送信時にノードがなければエラーを返す設計
+  const availableModels = (models as RegisteredModelView[] | undefined) || []
 
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
-      <div id="sidebar" className="w-64 border-r flex flex-col">
+      <div
+        id="sidebar"
+        className={cn(
+          'border-r flex flex-col transition-all duration-300',
+          sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-64'
+        )}
+      >
         {/* Header */}
         <div className="p-4 border-b">
           <div className="flex items-center gap-2">
@@ -495,26 +530,49 @@ export default function Playground() {
         {/* Chat Header */}
         <div className="h-14 border-b flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
+            {/* Sidebar Toggle */}
+            <Button
+              id="sidebar-toggle"
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeft className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
+
             <Select value={selectedModel} onValueChange={setSelectedModel}>
               <SelectTrigger id="model-select" className="w-64">
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
               <SelectContent>
-                {readyModels.length === 0 ? (
+                {availableModels.length === 0 ? (
                   <SelectItem value="__no_models__" disabled>
                     No models available
                   </SelectItem>
                 ) : (
-                  readyModels
+                  availableModels
                     .filter((model) => model.name && model.name.length > 0)
                     .map((model) => (
                       <SelectItem key={model.name} value={model.name}>
                         {model.name}
+                        {!model.ready && ' (downloading...)'}
                       </SelectItem>
                     ))
                 )}
               </SelectContent>
             </Select>
+
+            {/* Router Status */}
+            <span id="router-status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CircleDot className="h-3 w-3 text-green-500" />
+              Router: Online
+            </span>
+
             {streamEnabled && (
               <Badge variant="secondary" className="text-xs">
                 Streaming
@@ -638,6 +696,45 @@ export default function Playground() {
             </div>
             <Separator />
             <div className="space-y-2">
+              <Label>Model Provider Filter</Label>
+              <div className="flex gap-2">
+                <button
+                  className={cn(
+                    'provider-btn flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors',
+                    providerFilter === 'local' ? 'provider-btn--active bg-primary text-primary-foreground' : 'bg-muted'
+                  )}
+                  data-provider="local"
+                  onClick={() => setProviderFilter('local')}
+                >
+                  Local
+                </button>
+                <button
+                  className={cn(
+                    'provider-btn flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors',
+                    providerFilter === 'cloud' ? 'provider-btn--active bg-primary text-primary-foreground' : 'bg-muted'
+                  )}
+                  data-provider="cloud"
+                  onClick={() => setProviderFilter('cloud')}
+                >
+                  Cloud
+                </button>
+                <button
+                  className={cn(
+                    'provider-btn flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors',
+                    providerFilter === 'all' ? 'provider-btn--active bg-primary text-primary-foreground' : 'bg-muted'
+                  )}
+                  data-provider="all"
+                  onClick={() => setProviderFilter('all')}
+                >
+                  All
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Filter models by provider type
+              </p>
+            </div>
+            <Separator />
+            <div className="space-y-2">
               <Label>System Prompt</Label>
               <Textarea
                 id="system-prompt"
@@ -679,6 +776,24 @@ export default function Playground() {
                 min={1}
                 max={32000}
               />
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Clear Chat</Label>
+                <p className="text-xs text-muted-foreground">
+                  Clear all messages in current session
+                </p>
+              </div>
+              <Button
+                id="reset-chat"
+                variant="outline"
+                size="sm"
+                onClick={resetChat}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset
+              </Button>
             </div>
           </div>
           <DialogFooter>

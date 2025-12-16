@@ -21,6 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { NodeDetailModal } from './NodeDetailModal'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Search,
   ChevronUp,
@@ -29,6 +30,9 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Download,
+  FileJson,
+  FileSpreadsheet,
 } from 'lucide-react'
 
 interface NodeTableProps {
@@ -48,6 +52,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedNode, setSelectedNode] = useState<DashboardNode | null>(null)
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
 
   const filteredAndSortedNodes = useMemo(() => {
     let result = [...nodes]
@@ -106,6 +111,65 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
       setSortDirection('desc')
     }
   }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedNodes(new Set(filteredAndSortedNodes.map((n) => n.node_id)))
+    } else {
+      setSelectedNodes(new Set())
+    }
+  }
+
+  const handleSelectNode = (nodeId: string, checked: boolean) => {
+    const newSelected = new Set(selectedNodes)
+    if (checked) {
+      newSelected.add(nodeId)
+    } else {
+      newSelected.delete(nodeId)
+    }
+    setSelectedNodes(newSelected)
+  }
+
+  const exportToJson = () => {
+    const dataToExport =
+      selectedNodes.size > 0
+        ? filteredAndSortedNodes.filter((n) => selectedNodes.has(n.node_id))
+        : filteredAndSortedNodes
+    const json = JSON.stringify(dataToExport, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'nodes.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportToCsv = () => {
+    const dataToExport =
+      selectedNodes.size > 0
+        ? filteredAndSortedNodes.filter((n) => selectedNodes.has(n.node_id))
+        : filteredAndSortedNodes
+    const headers = ['node_id', 'machine_name', 'ip_address', 'port', 'status', 'gpu_model', 'gpu_usage', 'uptime_seconds', 'total_requests']
+    const rows = dataToExport.map((node) =>
+      headers.map((h) => {
+        const value = node[h as keyof DashboardNode]
+        return value !== undefined && value !== null ? String(value) : ''
+      }).join(',')
+    )
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'nodes.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const isAllSelected =
+    filteredAndSortedNodes.length > 0 &&
+    filteredAndSortedNodes.every((n) => selectedNodes.has(n.node_id))
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null
@@ -182,6 +246,28 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                   <SelectItem value="offline">Offline</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Export Buttons */}
+              <div className="flex gap-1">
+                <Button
+                  id="export-json"
+                  variant="outline"
+                  size="sm"
+                  onClick={exportToJson}
+                  title="Export to JSON"
+                >
+                  <FileJson className="h-4 w-4" />
+                </Button>
+                <Button
+                  id="export-csv"
+                  variant="outline"
+                  size="sm"
+                  onClick={exportToCsv}
+                  title="Export to CSV"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -191,6 +277,14 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      id="select-all"
+                      checked={isAllSelected}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all nodes"
+                    />
+                  </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort('machine_name')}
@@ -244,7 +338,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
               <TableBody id="nodes-body">
                 {paginatedNodes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center">
+                    <TableCell colSpan={9} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <Server className="h-8 w-8" />
                         <p>No nodes found</p>
@@ -258,6 +352,15 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => setSelectedNode(node)}
                     >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedNodes.has(node.node_id)}
+                          onCheckedChange={(checked) =>
+                            handleSelectNode(node.node_id, checked === true)
+                          }
+                          aria-label={`Select ${node.machine_name}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">

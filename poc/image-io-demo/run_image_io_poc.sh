@@ -121,7 +121,7 @@ for _, blob, _ in bad:
     except Exception as e:
         print(f"Warning: failed to delete blob {blob}: {e}", file=sys.stderr)
 
-print(f\"==> Deleted {deleted} corrupt blob(s). Re-run will re-download them.\")
+print(f"==> Deleted {deleted} corrupt blob(s). Re-run will re-download them.")
 raise SystemExit(0)
 PY
 }

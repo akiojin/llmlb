@@ -62,6 +62,15 @@ GLM_DEVICE=auto       # auto|cuda|mps
 HF_HUB_DISABLE_XET=1 HF_HUB_MAX_WORKERS=1 ./poc/image-io-demo/run_image_io_poc.sh
 ```
 
+### `SafetensorError: invalid JSON in header` が出る
+
+過去にDLが中断された場合などに、HFキャッシュ内に **0埋めの壊れた `.safetensors`** が残ることがあります。
+PoCは壊れたblob検出に対応しているので、次のように自動修復（壊れたblobだけ削除→再DL）してください:
+
+```bash
+FIX_HF_CORRUPT_SAFETENSORS=1 ./poc/image-io-demo/run_image_io_poc.sh
+```
+
 ### CUDAが無い警告が出る
 
 macOSではCUDAは使えないため、`cuda is not available` という警告が出ても `mps` を使っていれば問題ありません。

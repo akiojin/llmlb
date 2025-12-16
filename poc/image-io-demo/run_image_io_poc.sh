@@ -22,11 +22,108 @@ GLM_PROMPT="${GLM_PROMPT:-describe this image in Japanese}"
 GLM_DEVICE="${GLM_DEVICE:-auto}"
 GLM_MAX_NEW_TOKENS="${GLM_MAX_NEW_TOKENS:-256}"
 
+FIX_HF_CORRUPT_SAFETENSORS="${FIX_HF_CORRUPT_SAFETENSORS:-0}"
+
 ensure_python() {
   if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
     echo "Error: python is required (PYTHON_BIN=${PYTHON_BIN} not found)" >&2
     exit 1
   fi
+}
+
+check_hf_safetensors_cache() {
+  local model_id="${1}"
+  local fix="${FIX_HF_CORRUPT_SAFETENSORS}"
+  local py="${VENV_DIR}/bin/python"
+
+  if [[ ! -x "${py}" ]]; then
+    return 0
+  fi
+
+  "${py}" - <<'PY' "${model_id}" "${fix}"
+import os
+import struct
+import sys
+from pathlib import Path
+
+model_id = sys.argv[1]
+fix = sys.argv[2] == "1"
+
+try:
+    from huggingface_hub.constants import HF_HUB_CACHE
+    from huggingface_hub.file_download import repo_folder_name
+except Exception:
+    # If huggingface_hub is not available yet, skip cache validation.
+    raise SystemExit(0)
+
+cache_root = Path(HF_HUB_CACHE)
+repo_dir = cache_root / repo_folder_name(repo_id=model_id, repo_type="model")
+ref_main = repo_dir / "refs" / "main"
+if not ref_main.exists():
+    print(f"==> HF cache check: {model_id} (not cached yet)")
+    raise SystemExit(0)
+
+snapshot = ref_main.read_text(encoding="utf-8").strip()
+snap_dir = repo_dir / "snapshots" / snapshot
+if not snap_dir.exists():
+    print(f"==> HF cache check: {model_id} (snapshot dir missing: {snap_dir})")
+    raise SystemExit(0)
+
+bad = []
+for p in snap_dir.rglob("*.safetensors"):
+    try:
+        target = os.readlink(p)
+    except OSError:
+        continue
+    blob = (p.parent / target).resolve()
+    if not blob.exists():
+        bad.append((p, blob, "missing_blob"))
+        continue
+    try:
+        with open(blob, "rb") as f:
+            head = f.read(8)
+    except Exception:
+        bad.append((p, blob, "read_error"))
+        continue
+    if len(head) < 8:
+        bad.append((p, blob, "too_short"))
+        continue
+    header_len = struct.unpack("<Q", head)[0]
+    # A valid safetensors file always has a non-empty JSON header.
+    if header_len == 0:
+        bad.append((p, blob, "zero_header"))
+        continue
+    # Guardrail: unrealistic header length.
+    if header_len > 100_000_000:
+        bad.append((p, blob, f"suspicious_header_len={header_len}"))
+        continue
+
+if not bad:
+    print(f"==> HF cache check: {model_id} (OK)")
+    raise SystemExit(0)
+
+print(f"==> HF cache check: {model_id} (CORRUPT safetensors blobs detected: {len(bad)})")
+for p, blob, reason in bad[:20]:
+    rel = p.relative_to(snap_dir)
+    print(f"  - {rel} -> {blob.name} ({reason})")
+if len(bad) > 20:
+    print(f"  ... and {len(bad) - 20} more")
+
+if not fix:
+    print("==> To auto-fix: set FIX_HF_CORRUPT_SAFETENSORS=1 and re-run this script.")
+    raise SystemExit(1)
+
+deleted = 0
+for _, blob, _ in bad:
+    try:
+        blob.unlink(missing_ok=True)
+        deleted += 1
+    except Exception as e:
+        print(f"Warning: failed to delete blob {blob}: {e}", file=sys.stderr)
+
+print(f\"==> Deleted {deleted} corrupt blob(s). Re-run will re-download them.\")
+raise SystemExit(0)
+PY
 }
 
 ensure_venv() {
@@ -77,6 +174,7 @@ CAPTION_TXT="${MODEL_DIR}/glm_caption.txt"
 
 echo "==> [T2I] ${Z_IMAGE_MODEL_ID}"
 echo "prompt: ${Z_IMAGE_PROMPT}"
+check_hf_safetensors_cache "${Z_IMAGE_MODEL_ID}"
 "${VENV_DIR}/bin/python" "${POC_DIR}/generate_z_image_turbo.py" \
   --require-gpu \
   --device "${Z_IMAGE_DEVICE}" \
@@ -95,6 +193,7 @@ echo "  open \"${OUT_PNG}\""
 
 echo "==> [I2T] ${GLM_MODEL_ID}"
 echo "prompt: ${GLM_PROMPT}"
+check_hf_safetensors_cache "${GLM_MODEL_ID}"
 "${VENV_DIR}/bin/python" "${POC_DIR}/glm4v_flash_caption.py" \
   --require-gpu \
   --device "${GLM_DEVICE}" \

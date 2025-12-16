@@ -121,7 +121,7 @@ def main() -> int:
     pipe = ZImagePipeline.from_pretrained(
         args.model,
         torch_dtype=torch_dtype,
-        low_cpu_mem_usage=False,
+        low_cpu_mem_usage=True,
     )
     pipe.to(device)
 
@@ -144,4 +144,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

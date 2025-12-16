@@ -49,10 +49,10 @@ install_deps_if_needed() {
   "${py}" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
 
   # Core deps
-  "${py}" -m pip install --quiet torch pillow accelerate safetensors numpy scipy tqdm
+  "${py}" -m pip install --quiet torch pillow accelerate safetensors numpy scipy tqdm importlib-metadata
 
   # Z-Image requires recent diffusers features (install from source).
-  "${py}" -m pip install --quiet --no-deps --upgrade --force-reinstall git+https://github.com/huggingface/diffusers
+  "${py}" -m pip install --quiet --upgrade --force-reinstall git+https://github.com/huggingface/diffusers
 
   # GLM-4.6V-Flash uses transformers APIs that may require a newer (pre-release) version.
   "${py}" -m pip install --quiet --pre "transformers>=5.0.0rc0"
@@ -62,6 +62,10 @@ ensure_venv
 install_deps_if_needed
 
 mkdir -p "${MODEL_DIR}"
+
+# Keep HF caches under MODEL_DIR so users can control disk usage by changing MODEL_DIR.
+export HF_HOME="${HF_HOME:-${MODEL_DIR}/hf_home}"
+export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 
 OUT_PNG="${MODEL_DIR}/z_image_out.png"
 CAPTION_TXT="${MODEL_DIR}/glm_caption.txt"
@@ -99,4 +103,3 @@ echo "==> Caption:"
 cat "${CAPTION_TXT}"
 
 echo "OK: T2I(PNG) + I2T(TEXT) round-trip succeeded."
-

@@ -63,8 +63,7 @@ install_deps_if_needed
 
 mkdir -p "${MODEL_DIR}"
 
-# Keep HF caches under MODEL_DIR so users can control disk usage by changing MODEL_DIR.
-export HF_HOME="${HF_HOME:-${MODEL_DIR}/hf_home}"
+# Hugging Face Large File download optimization (optional).
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 
 OUT_PNG="${MODEL_DIR}/z_image_out.png"

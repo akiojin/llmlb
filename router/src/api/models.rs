@@ -333,6 +333,124 @@ pub async fn persist_registered_models() {
     }
 }
 
+/// 登録モデルの整合性チェックを実行
+///
+/// チェック内容:
+/// 1. DBとメモリの整合性確認
+/// 2. ファイル存在確認（存在しないモデルをログ出力）
+/// 3. 不整合があれば警告ログを出力
+///
+/// NOTE: 自動削除は行わない（手動介入を想定）
+pub async fn sync_registered_models(registry: &NodeRegistry) {
+    tracing::debug!("Starting model consistency check");
+
+    // 1. DBからモデルをロード
+    let db_models = match crate::db::models::load_models().await {
+        Ok(models) => models,
+        Err(e) => {
+            tracing::error!("Failed to load models from DB: {}", e);
+            return;
+        }
+    };
+
+    // 2. メモリ上のモデルを取得
+    let memory_models = list_registered_models();
+
+    // 3. DB vs メモリの整合性チェック
+    let db_names: std::collections::HashSet<_> = db_models.iter().map(|m| m.name.clone()).collect();
+    let memory_names: std::collections::HashSet<_> =
+        memory_models.iter().map(|m| m.name.clone()).collect();
+
+    // DBにあってメモリにないモデル
+    let in_db_only: Vec<_> = db_names.difference(&memory_names).collect();
+    if !in_db_only.is_empty() {
+        tracing::warn!(
+            models=?in_db_only,
+            "Models in DB but not in memory - reloading from DB"
+        );
+        // DBからメモリに復元
+        let mut store = REGISTERED_MODELS.write().unwrap();
+        for model in &db_models {
+            if in_db_only.contains(&&model.name) {
+                store.push(model.clone());
+            }
+        }
+    }
+
+    // メモリにあってDBにないモデル
+    let in_memory_only: Vec<_> = memory_names.difference(&db_names).collect();
+    if !in_memory_only.is_empty() {
+        tracing::warn!(
+            models=?in_memory_only,
+            "Models in memory but not in DB - persisting to DB"
+        );
+        // メモリからDBに永続化
+        persist_registered_models().await;
+    }
+
+    // 4. ファイル存在チェック
+    let mut missing_files = Vec::new();
+    for model in list_registered_models() {
+        if router_model_path(&model.name).is_none() {
+            missing_files.push(model.name.clone());
+        }
+    }
+
+    if !missing_files.is_empty() {
+        tracing::warn!(
+            models=?missing_files,
+            "Registered models with missing files"
+        );
+    }
+
+    // 5. ノードロード状態の確認
+    let nodes = registry.list().await;
+    let mut loaded_on_nodes: std::collections::HashMap<String, Vec<String>> = HashMap::new();
+    for node in &nodes {
+        for model_name in &node.loaded_models {
+            loaded_on_nodes
+                .entry(model_name.clone())
+                .or_default()
+                .push(node.id.to_string());
+        }
+    }
+
+    // 登録済みモデルのノードロード状態をログ
+    let registered_names: std::collections::HashSet<_> = list_registered_models()
+        .iter()
+        .map(|m| m.name.clone())
+        .collect();
+    let loaded_names: std::collections::HashSet<_> = loaded_on_nodes.keys().cloned().collect();
+
+    // ノードにロード済みだが未登録のモデル
+    let loaded_but_unregistered: Vec<_> = loaded_names.difference(&registered_names).collect();
+    if !loaded_but_unregistered.is_empty() {
+        tracing::info!(
+            models=?loaded_but_unregistered,
+            "Models loaded on nodes but not registered"
+        );
+    }
+
+    tracing::debug!(
+        db_count = db_models.len(),
+        memory_count = memory_models.len(),
+        missing_files = missing_files.len(),
+        nodes_count = nodes.len(),
+        "Model consistency check completed"
+    );
+}
+
+/// 定期的な整合性チェックを開始（5分間隔）
+pub fn start_periodic_sync(registry: NodeRegistry) {
+    tokio::spawn(async move {
+        let interval = Duration::from_secs(300); // 5分
+        loop {
+            tokio::time::sleep(interval).await;
+            sync_registered_models(&registry).await;
+        }
+    });
+}
+
 // ===== GGUF Discovery Cache =====
 
 /// GGUF版検索結果

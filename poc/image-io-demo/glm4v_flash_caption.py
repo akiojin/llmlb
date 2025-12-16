@@ -76,6 +76,7 @@ def main() -> int:
         import torch
         import torchvision  # required for BaseVideoProcessor (torchvision.transforms.v2)
         from torchvision.transforms.v2 import functional as _tvF  # noqa: F401
+        from torch.nn import functional as torch_nn_F
         from transformers import AutoProcessor, Glm46VForConditionalGeneration
     except Exception as e:
         print("Missing dependencies for GLM-4.6V PoC.", file=sys.stderr)
@@ -122,6 +123,18 @@ def main() -> int:
             torch_dtype="auto",
             device_map="cpu",
         )
+
+    # Torch MPS backend does not support padding_mode="border" in grid_sample,
+    # which GLM uses for the visual embeddings. Patch it here so PoC still runs.
+    if torch.backends.mps.is_available():
+        orig_grid_sample = torch_nn_F.grid_sample
+
+        def _patched_grid_sample(*args, **kwargs):
+            if kwargs.get("padding_mode") == "border":
+                kwargs["padding_mode"] = "zeros"
+            return orig_grid_sample(*args, **kwargs)
+
+        torch_nn_F.grid_sample = _patched_grid_sample
 
     model.eval()
 

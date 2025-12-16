@@ -124,14 +124,17 @@ def main() -> int:
             device_map="cpu",
         )
 
-    # Torch MPS backend does not support padding_mode="border" in grid_sample,
-    # which GLM uses for the visual embeddings. Patch it here so PoC still runs.
+    # Torch MPS backend does not support padding_mode="border" or mode="bicubic"
+    # in grid_sample, which GLM uses for the visual embeddings.
+    # Patch it here so PoC still runs on Apple Silicon.
     if torch.backends.mps.is_available():
         orig_grid_sample = torch_nn_F.grid_sample
 
         def _patched_grid_sample(*args, **kwargs):
             if kwargs.get("padding_mode") == "border":
                 kwargs["padding_mode"] = "zeros"
+            if kwargs.get("mode") == "bicubic":
+                kwargs["mode"] = "bilinear"
             return orig_grid_sample(*args, **kwargs)
 
         torch_nn_F.grid_sample = _patched_grid_sample

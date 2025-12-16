@@ -746,3 +746,84 @@ tokenizer.ggml.add_eos_token = false
 EOG tokens: 199999 ('<|endoftext|>'), 200002 ('<|return|>'), 200012 ('<|call|>')
 Note: '<|end|>' は return/call トークンがあるため EOG から除外
 ```
+
+## 現在の PoC 状況（引き継ぎ用）
+
+- **目的**: `feature/replace-llama-to-onnx-runtime` ブランチでは、`llama.cpp`/GGUF依存を極力減らし、Hugging Face 配布モデル（Z-Image-Turbo / GLM-4.6V-Flash / VibeVoice など）をそのまま利用する GPU前提の PoC を整備し、router/node の音声・画像入出力仕様を確認する。
+- **これまでの経緯**
+  - 音声PoC (`poc/audio-io-demo`) は ONNX/TTS + VibeVoice runner でASR+TTSのラウンドトリップを完走。`toy_tts` はビープ音・VibeVoiceは実音声。`VIBEVOICE_DEVICE`/`whisper` モデルを選べるように改修済み。
+  - 画像PoC (`poc/image-io-demo`) を追加。Z-Image Turbo の T2I、GLM-4.6V-Flash の I2T を `run_image_io_poc.sh` で連続実行。大容量モデル（50GiB超）への耐性を `HF_*` 環境変数と `FIX_HF_CORRUPT_SAFETENSORS` で強化。
+  - MPS環境での NaN・border padding 問題には、T2I は `torch_dtype=float32`、GLM は `torch.nn.functional.grid_sample` をパッチして対応。`torchvision.transforms.v2`と`torchvision`依存も Venv へ導入。
+  - README/PoC スクリプトに実行手順・トラブルシューティング（`Killed: 9` / `SafetensorError` / GLM の torch/torchvision 依存）を反映。
+- **残作業**
+  1. `FIX_HF_CORRUPT_SAFETENSORS=1 ./poc/image-io-demo/run_image_io_poc.sh` で T2I から GLM まで毎回通るか確認し、GPU環境意外が混ざらないか本番マシンでUTC。
+  2. PoC 出力（`/tmp/.../z_image_out.png`, `glm_caption.txt`, ASR+TTS WAV/JSON）をレビューし、「音が出る」「画像が人の声で説明される」ことを検証ログで記録。
+  3. 画像 PoC の router/node API 連携（`/v1/images/*`）が未着手なので、今後は Node 側に stable-diffusion.cpp もしくは ONNX/GLM のエンドポイントを追加する方向で要件整理。
+  4. PoC で使用したモデルのライセンス/容量/ダウンロード元に変更があれば都度 README (PoC/README) を更新。
+
+## PoC 実行ログ (2025-12-16)
+
+### 画像PoC (T2I + I2T) 実行結果
+
+**環境**: macOS (Apple Silicon M-series) + MPS
+
+**実行コマンド**:
+
+```bash
+FIX_HF_CORRUPT_SAFETENSORS=1 ./poc/image-io-demo/run_image_io_poc.sh
+```
+
+**結果**: ✅ **成功** - T2I (PNG) + I2T (TEXT) round-trip succeeded
+
+| ステップ | モデル | 結果 |
+|----------|--------|------|
+| T2I | Tongyi-MAI/Z-Image-Turbo | ✅ `z_image_out.png` (310KB) |
+| I2T | zai-org/GLM-4.6V-Flash | ✅ `glm_caption.txt` (1KB) |
+
+**T2I プロンプト**: "A cute shiba inu wearing sunglasses, high quality, 4k"
+
+**I2T キャプション（抜粋）**:
+
+> シェiba（柴犬）の犬が黒いサングラスをかけている姿を描いています。
+> 犬の毛は赤みがかった茶色で、顔の部分には白い毛が生えています。
+> サングラスのフレームは黒で、金の部分が入っています。
+> 犬は口を開けて舌を出し、元気で幸せそうな表情をしています。
+
+**MPS パッチ適用状況**:
+
+- `padding_mode="border"` → `"zeros"` (既存)
+- `mode="bicubic"` → `"bilinear"` (今回追加) ← **MPS非対応のbicubic補間を回避**
+
+### 修正内容
+
+`poc/image-io-demo/glm4v_flash_caption.py` の `_patched_grid_sample` 関数を拡張:
+
+```python
+def _patched_grid_sample(*args, **kwargs):
+    if kwargs.get("padding_mode") == "border":
+        kwargs["padding_mode"] = "zeros"
+    if kwargs.get("mode") == "bicubic":
+        kwargs["mode"] = "bilinear"  # ← 追加
+    return orig_grid_sample(*args, **kwargs)
+```
+
+---
+
+## 次のエージェントへの引き継ぎ
+
+1. **PoCの品質確認** ✅ **完了 (2025-12-16)**
+   - Z-Image の出力画像（`/tmp/llm_router_image_poc_models/z_image_out.png`）と GLM のキャプション（`glm_caption.txt`）を目視確認済み。
+   - キャプションが画像内容を正確に日本語で説明していることを確認。
+   - `FIX_HF_CORRUPT_SAFETENSORS` スイッチでキャッシュ検証→正常動作を確認。
+2. **GLM-4.6V の進行** ✅ **パッチ追加完了**
+   - `grid_sample` の `padding_mode="border"` → `"zeros"` (既存)
+   - `mode="bicubic"` → `"bilinear"` (今回追加)
+   - `Glm46V` モデルのバージョンアップ時は `Glm46VProcessor`/`video_processor` に変更がないか差分チェック。
+3. **router/node API への展開** ⏳ **未着手**
+   - Router側は `/v1/images/*` エンドポイントを既に実装済み（OpenAI互換）
+   - Node側に `RuntimeType::StableDiffusion` 対応の実装が必要
+   - 画像PoCで得た `z_image_out.png` を router/node の `/v1/images/generations` に繋げるための仕様設計（stable-diffusion.cpp vs ONNX runtime）。
+   - オンラインデプロイでは `HF_TOKEN` や `HF_BASE_URL` を環境変数としてどう扱うかを整理。
+4. **コミット・ドキュメント** ⏳ **進行中**
+   - 追加変更があれば `make quality-checks` を必ず通した上で、Conventional Commits で記録・push。
+   - README/PoC ドキュメントに「bicubic→bilinear パッチ」のトラブルシューティングを追記予定。

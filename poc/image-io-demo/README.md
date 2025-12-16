@@ -76,3 +76,27 @@ FIX_HF_CORRUPT_SAFETENSORS=1 ./poc/image-io-demo/run_image_io_poc.sh
 
 macOSではCUDAは使えないため、`cuda is not available` という警告が出ても `mps` を使っていれば問題ありません。
 ログに `Using device: mps` が出ていることを確認してください。
+
+### MPS での grid_sample エラー
+
+GLM-4.6V-Flash は内部で `torch.nn.functional.grid_sample` を使用しますが、
+MPS バックエンドでは一部のオプションがサポートされていません。
+
+- `padding_mode="border"` → 非サポート
+- `mode="bicubic"` → 非サポート
+
+このPoCでは自動的にこれらを MPS 互換のオプションに変換するパッチを適用しています:
+
+- `padding_mode="border"` → `"zeros"`
+- `mode="bicubic"` → `"bilinear"`
+
+これにより画質に若干の差が出る可能性がありますが、PoC としては十分な精度で動作します。
+
+### メモリ不足で落ちる
+
+GLM-4.6V-Flash（19GiB+）は大量のメモリを消費します。32GB 以上の RAM を推奨します。
+メモリが不足する場合は、以下を試してください:
+
+- 他のアプリケーションを終了する
+- `GLM_MAX_NEW_TOKENS` を小さくする（デフォルト: 256）
+- スワップ領域を拡張する（macOS: ディスク空き容量を確保）

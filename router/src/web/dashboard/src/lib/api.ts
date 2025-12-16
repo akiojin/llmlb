@@ -265,11 +265,22 @@ export const nodesApi = {
 }
 
 // Models API
+export type LifecycleStatus = 'pending' | 'downloading' | 'cached' | 'ready' | 'error'
+
+export interface DownloadProgress {
+  percent: number
+  bytes_downloaded?: number
+  bytes_total?: number
+  error?: string
+}
+
 export interface RegisteredModelView {
   name: string
   source?: string
   description?: string
   status?: string
+  lifecycle_status: LifecycleStatus
+  download_progress?: DownloadProgress
   ready: boolean
   path?: string
   download_url?: string
@@ -280,61 +291,13 @@ export interface RegisteredModelView {
   tags: string[]
 }
 
-export interface AvailableModelView {
-  name: string
-  display_name?: string
-  description?: string
-  tags?: string[]
-  size_gb?: number
-  required_memory_gb?: number
-  repo?: string
-  filename?: string
-  download_url?: string
-  quantization?: string
-}
-
-export interface AvailableModelsResponse {
-  models: AvailableModelView[]
-  source: string
-  cached?: boolean
-  pagination?: {
-    limit: number
-    offset: number
-    total: number
-  }
-}
-
-export interface ConvertTask {
-  id: string
-  repo: string
-  filename: string
-  revision?: string | null
-  quantization?: string | null
-  chat_template?: string | null
-  status: 'queued' | 'in_progress' | 'completed' | 'failed'
-  progress: number
-  error?: string | null
-  path?: string | null
-  created_at: string
-  updated_at: string
-}
-
-// OpenAI format model response
-interface OpenAIModelResponse {
-  data: Array<{
-    id: string
-    object: string
-    owned_by: string
-    path?: string
-    download_url?: string
-    created?: number
-  }>
-  object: string
-}
+// NOTE: AvailableModelView, AvailableModelsResponse, ConvertTask は廃止
+// HFカタログは直接 https://huggingface.co を参照
+// ダウンロード状態は /v0/models の lifecycle_status で確認
 
 export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
-    // /v0/models/registered は廃止され /v0/models に統合された (SPEC-dcaeaec4)
+    // /v0/models - 登録モデル一覧（lifecycle_status含む）
     // APIキー認証が必要なため、ローカルストレージのAPIキーを使用
     const apiKey = localStorage.getItem('playground_api_key') || 'sk_debug'
     const response = await fetch('/v0/models', {
@@ -345,21 +308,11 @@ export const modelsApi = {
     if (!response.ok) {
       return []
     }
-    const data = (await response.json()) as OpenAIModelResponse
-    // OpenAI形式からRegisteredModelView形式に変換
-    return data.data.map((model) => ({
-      name: model.id,
-      source: model.owned_by,
-      ready: true,
-      tags: [],
-      path: model.path,
-    }))
+    // 直接 RegisteredModelView[] を返す
+    return (await response.json()) as RegisteredModelView[]
   },
 
-  getAvailable: () =>
-    fetchWithAuth<AvailableModelsResponse>('/v0/models/available', {
-      params: { source: 'hf' },
-    }),
+  // NOTE: getAvailable は廃止 - HFカタログは直接 https://huggingface.co を参照
 
   register: (repo: string, filename?: string) =>
     fetchWithAuth<unknown>('/v0/models/register', {
@@ -372,24 +325,8 @@ export const modelsApi = {
       method: 'DELETE',
     }),
 
-  convert: (params: {
-    repo: string
-    filename: string
-    revision?: string
-    chat_template?: string
-  }) =>
-    fetchWithAuth<{ task_id: string; status: string }>('/v0/models/convert', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }),
-
-  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/v0/models/convert'),
-
-  getConvertTask: (taskId: string) =>
-    fetchWithAuth<ConvertTask>(`/v0/models/convert/${taskId}`),
-
-  deleteConvertTask: (taskId: string) =>
-    fetchWithAuth<void>(`/v0/models/convert/${taskId}`, { method: 'DELETE' }),
+  // NOTE: convert, getConvertTasks, getConvertTask, deleteConvertTask は廃止
+  // ダウンロード状態は getRegistered の lifecycle_status で確認 (Phase 2で実装)
 }
 
 // API Keys API

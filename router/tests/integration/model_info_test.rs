@@ -44,9 +44,10 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
-/// T018: LLM runtimeライブラリから利用可能なモデル一覧を取得
+/// T018: /v0/models/available は廃止され、/v0/models に統合
+/// NOTE: HuggingFaceカタログ参照は廃止。登録済みモデル一覧は /v0/models で取得
 #[tokio::test]
-async fn test_list_available_models_from_runtime_library() {
+async fn test_available_models_endpoint_is_removed() {
     let app = build_app().await;
 
     let response = app
@@ -60,25 +61,14 @@ async fn test_list_available_models_from_runtime_library() {
         .await
         .unwrap();
 
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Available models endpoint should return 200 OK"
-    );
-
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // modelsフィールドが配列であることを検証
+    // エンドポイントは削除済み
+    // NOTE: 405 (Method Not Allowed) は /v0/models/*model_name (DELETE用) にマッチするため
     assert!(
-        result.get("models").is_some(),
-        "Response must have 'models' field"
+        response.status() == StatusCode::NOT_FOUND
+            || response.status() == StatusCode::METHOD_NOT_ALLOWED,
+        "/v0/models/available GET endpoint should be removed (got {})",
+        response.status()
     );
-    let _models = result["models"]
-        .as_array()
-        .expect("'models' must be an array");
-
-    // 事前定義モデルは廃止されたため、空配列でもよい（存在確認のみ）
 }
 
 /// T019: ノードが報告したロード済みモデルが /v0/nodes に反映される
@@ -341,12 +331,14 @@ async fn test_model_matrix_view_multiple_nodes() {
         assert!(has_model, "node should report loaded model");
     }
 
-    // 利用可能なモデル一覧も取得できることを確認
-    let available_response = app
+    // 登録済みモデル一覧も取得できることを確認
+    // NOTE: /v0/models/available は廃止され、/v0/models に統合
+    let models_response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/v0/models/available")
+                .uri("/v0/models")
+                .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -354,24 +346,18 @@ async fn test_model_matrix_view_multiple_nodes() {
         .unwrap();
 
     assert_eq!(
-        available_response.status(),
+        models_response.status(),
         StatusCode::OK,
-        "Available models should be accessible for matrix view"
+        "Registered models should be accessible"
     );
 
-    let body = to_bytes(available_response.into_body(), usize::MAX)
+    let body = to_bytes(models_response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let available: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(
-        available.get("models").is_some(),
-        "Available models must have 'models' field"
-    );
-    assert!(
-        available["models"].is_array(),
-        "Available models must be an array"
-    );
+    // /v0/models は配列を直接返す
+    assert!(models.is_array(), "Models response must be an array");
 }
 
 /// T021: /v1/models は対応モデル5件のみを返す（APIキー認証必須）

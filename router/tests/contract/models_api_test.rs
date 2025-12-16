@@ -10,7 +10,6 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
-use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -51,7 +50,7 @@ with open(outfile, "wb") as f:
     }
     // 変換スクリプトは各テストで個別に指定する
     llm_router::api::models::clear_registered_models();
-    llm_router::api::models::clear_hf_cache();
+    // NOTE: clear_hf_cache() は廃止 - HFカタログは直接参照する方針
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
@@ -113,24 +112,10 @@ async fn test_distribute_models_endpoint_is_removed() {
     );
 }
 
-/// T004: GET /v0/models/available の契約テスト
+/// T004: GET /v0/models/available は廃止（HFは直接参照する方針）
 #[tokio::test]
 #[serial]
-async fn test_get_available_models_contract() {
-    let mock = MockServer::start().await;
-    // HF mock responds once with gguf list
-    Mock::given(method("GET"))
-        .and(path("/api/models"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![json!({
-            "modelId": "test/repo",
-            "tags": ["gguf"],
-            "siblings": [{"rfilename": "model.gguf", "size": 1234}],
-            "lastModified": "2024-01-01T00:00:00Z"
-        })]))
-        .mount(&mock)
-        .await;
-    std::env::set_var("HF_BASE_URL", mock.uri());
-
+async fn test_get_available_models_endpoint_is_removed() {
     let app = build_app().await;
 
     let response = app
@@ -144,64 +129,15 @@ async fn test_get_available_models_contract() {
         .await
         .unwrap();
 
-    // ステータスコードの検証
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /v0/models/available"
-    );
-
-    // レスポンスボディの検証
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
+    // エンドポイントは削除済み
+    // NOTE: 405 (Method Not Allowed) は /v0/models/*model_name (DELETE用) にマッチするため
+    //       404 (Not Found) または 405 のどちらかが返される
     assert!(
-        body.get("models").is_some(),
-        "Response must have 'models' field"
+        response.status() == StatusCode::NOT_FOUND
+            || response.status() == StatusCode::METHOD_NOT_ALLOWED,
+        "/v0/models/available GET endpoint should be removed (got {})",
+        response.status()
     );
-    assert!(body["models"].is_array(), "'models' field must be an array");
-
-    // source フィールドが存在することを確認
-    assert!(
-        body.get("source").is_some(),
-        "Response must have 'source' field"
-    );
-    let source = body["source"].as_str().expect("'source' must be a string");
-    assert!(
-        ["builtin", "nodes", "hf"].contains(&source),
-        "'source' must be 'builtin', 'nodes', or 'hf'"
-    );
-
-    // HFモックが返した1件が含まれること
-    let models = body["models"]
-        .as_array()
-        .expect("'models' must be an array");
-    assert!(
-        models
-            .iter()
-            // model.gguf (generic) + test/repo → "repo"
-            .any(|m| m["name"] == "repo"),
-        "hf catalog item should appear"
-    );
-
-    // models配列の各要素の検証
-    if let Some(models) = body["models"].as_array() {
-        for model in models {
-            assert!(model.get("name").is_some(), "Model must have 'name'");
-            assert!(model.get("size_gb").is_some(), "Model must have 'size_gb'");
-            assert!(
-                model.get("description").is_some(),
-                "Model must have 'description'"
-            );
-            assert!(
-                model.get("required_memory_gb").is_some(),
-                "Model must have 'required_memory_gb'"
-            );
-            assert!(model.get("tags").is_some(), "Model must have 'tags'");
-            assert!(model["tags"].is_array(), "'tags' must be an array");
-        }
-    }
 }
 
 /// ノードのモデル一覧取得APIは廃止（ロード済みモデルは /v0/nodes と /v0/dashboard/nodes から参照）
@@ -445,7 +381,7 @@ async fn test_register_model_contract() {
     // 新APIではGGUFがない場合は変換パスに進むため201を返す
     assert_eq!(repo_only_fallback.status(), StatusCode::CREATED);
 
-    // DELETE: タスク完了前なのでモデルはREGISTERED_MODELSに存在しない（400を期待）
+    // DELETE: タスク完了前でもConvertTaskを削除できる（204を期待）
     // モデル名 = リポジトリ名、ワイルドカードパスなのでスラッシュをそのまま使用
     let delete_res = app
         .clone()
@@ -458,8 +394,8 @@ async fn test_register_model_contract() {
         )
         .await
         .unwrap();
-    // タスク完了前はモデルが登録されていないため400 (model not found)
-    assert_eq!(delete_res.status(), StatusCode::BAD_REQUEST);
+    // タスク完了前でもConvertTaskを削除してダウンロードをキャンセルできる
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
 
     // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
     let app_for_convert = build_app().await;
@@ -532,16 +468,18 @@ async fn test_register_model_contract() {
     assert!(converted, "converted model should appear in /v1/models");
 }
 
-/// T010: convert 失敗タスクを Restore で再キューできること
+/// T010: ダウンロード失敗時に lifecycle_status が error になること
+/// NOTE: /v0/models/convert は廃止され、/v0/models に統合された
+/// NOTE: 失敗後のリトライ機能は別途実装予定
 #[tokio::test]
 #[serial]
-async fn test_convert_restore_requeues() {
+async fn test_download_failure_shows_error_status() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 
     // siblings returns GGUF file for registration to succeed
     Mock::given(method("GET"))
-        .and(path("/api/models/restore-repo"))
+        .and(path("/api/models/error-test-repo"))
         .and(query_param("expand", "siblings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "siblings": [
@@ -551,31 +489,20 @@ async fn test_convert_restore_requeues() {
         .mount(&mock)
         .await;
     Mock::given(method("HEAD"))
-        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
+        .and(path("/error-test-repo/resolve/main/model.Q4_K_M.gguf"))
         .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
         .mount(&mock)
         .await;
-    // GETダウンロードを初回は失敗させる（500エラー）→リトライで成功させる
-    let download_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let counter_clone = download_counter.clone();
+    // ダウンロードは常に失敗
     Mock::given(method("GET"))
-        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
-        .respond_with(move |_req: &wiremock::Request| {
-            let count = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if count == 0 {
-                // 1回目: 失敗
-                ResponseTemplate::new(500)
-            } else {
-                // 2回目以降: 成功
-                ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content")
-            }
-        })
+        .and(path("/error-test-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(500))
         .mount(&mock)
         .await;
 
     let app = build_app().await;
 
-    // register -> convert fails
+    // register -> download fails
     let reg = app
         .clone()
         .oneshot(
@@ -584,7 +511,7 @@ async fn test_convert_restore_requeues() {
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({"repo": "restore-repo"})).unwrap(),
+                    serde_json::to_vec(&json!({"repo": "error-test-repo"})).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -592,124 +519,77 @@ async fn test_convert_restore_requeues() {
         .unwrap();
     assert_eq!(reg.status(), StatusCode::CREATED);
 
-    // wait for failed task
-    let mut failed_seen = false;
-    let mut last_tasks = serde_json::Value::Null;
+    // wait for error status via /v0/models lifecycle_status
+    let mut error_seen = false;
+    let mut last_models = serde_json::Value::Null;
     for _ in 0..60 {
-        let tasks_resp = app
+        let models_resp = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v0/models/convert")
+                    .uri("/v0/models")
+                    .header("x-api-key", "sk_debug")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(tasks_resp.status(), StatusCode::OK);
-        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
-        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        last_tasks = tasks.clone();
-        if tasks
+        assert_eq!(models_resp.status(), StatusCode::OK);
+        let body = to_bytes(models_resp.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_models = models.clone();
+        if models
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .any(|t| t["repo"] == "restore-repo" && t["status"] == "failed")
+                    .any(|m| m["name"] == "error-test-repo" && m["lifecycle_status"] == "error")
             })
             .unwrap_or(false)
         {
-            failed_seen = true;
+            error_seen = true;
             break;
         }
         sleep(Duration::from_millis(200)).await;
     }
     assert!(
-        failed_seen,
-        "failed convert task should appear, tasks={:?}",
-        last_tasks
+        error_seen,
+        "model should have lifecycle_status=error, models={:?}",
+        last_models
     );
 
-    // 2回目以降はモックが成功を返すので、リトライでダウンロードが成功するはず
-    let retry = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v0/models/convert")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({
-                        "repo": "restore-repo",
-                        "filename": "model.Q4_K_M.gguf"
-                    }))
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
+    // エラーモデルは download_progress.error にエラーメッセージが含まれる
+    let model = last_models
+        .as_array()
+        .and_then(|arr| arr.iter().find(|m| m["name"] == "error-test-repo"))
         .unwrap();
-    assert_eq!(retry.status(), StatusCode::ACCEPTED);
-
-    // wait for success
-    let mut succeeded = false;
-    let mut last_tasks_after_retry = serde_json::Value::Null;
-    for _ in 0..60 {
-        let tasks_resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri("/v0/models/convert")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
-        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        last_tasks_after_retry = tasks.clone();
-        if tasks
-            .as_array()
-            .map(|arr| {
-                arr.iter().any(|t| {
-                    t["repo"] == "restore-repo"
-                        && t["status"] == "completed"
-                        && t["path"].is_string()
-                })
-            })
-            .unwrap_or(false)
-        {
-            succeeded = true;
-            break;
-        }
-        sleep(Duration::from_millis(200)).await;
-    }
     assert!(
-        succeeded,
-        "restore must requeue and complete, tasks={:?}",
-        last_tasks_after_retry
+        model["download_progress"]["error"].is_string(),
+        "download_progress.error should contain error message"
     );
 
-    // /v1/models should now include the converted model
-    let models_res = app
+    // エラー状態のモデルは削除可能
+    let delete_resp = app
         .clone()
         .oneshot(
             Request::builder()
-                .method("GET")
-                .uri("/v1/models")
+                .method("DELETE")
+                .uri("/v0/models/error-test-repo")
                 .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(models_res.status(), StatusCode::OK);
-    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
-    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let present = val["data"]
-        .as_array()
-        .map(|arr| arr.iter().any(|m| m["id"] == "restore-repo"))
-        .unwrap_or(false);
-    assert!(present, "/v1/models must include restored model");
+    let delete_status = delete_resp.status();
+    let delete_body = to_bytes(delete_resp.into_body(), usize::MAX).await.unwrap();
+    let delete_body_str = String::from_utf8_lossy(&delete_body);
+    assert!(
+        delete_status == StatusCode::NO_CONTENT
+            || delete_status == StatusCode::OK
+            || delete_status == StatusCode::NOT_FOUND, // モデルが既に存在しない場合も許容
+        "should be able to delete error model (status={}, body={})",
+        delete_status,
+        delete_body_str
+    );
 }

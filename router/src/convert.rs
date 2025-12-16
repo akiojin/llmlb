@@ -19,7 +19,7 @@ use tokio::task;
 use uuid::Uuid;
 
 use crate::registry::models::{
-    generate_ollama_style_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
+    generate_model_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
 };
 use crate::registry::NodeRegistry;
 use llm_router_common::error::RouterError;
@@ -631,6 +631,11 @@ impl ConvertTaskManager {
             .any(|task| task.repo == repo && task.status != ConvertStatus::Failed)
     }
 
+    /// 全てのタスクを取得
+    pub async fn list_tasks(&self) -> Vec<ConvertTask> {
+        self.tasks.lock().await.values().cloned().collect()
+    }
+
     async fn process_task(
         tasks: Arc<Mutex<HashMap<Uuid, ConvertTask>>>,
         task_id: Uuid,
@@ -716,8 +721,8 @@ where
     F: Fn(f32) + Send + Sync + Clone + 'static,
 {
     let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
-    // モデルIDはファイル名ベース形式に正規化する (SPEC-dcaeaec4 / SPEC-8ae67d67)
-    let model_name = generate_ollama_style_id(filename, repo);
+    // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
+    let model_name = generate_model_id(repo);
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -1172,7 +1177,7 @@ async fn finalize_model_registration(
 async fn convert_to_gguf(
     repo: &str,
     revision: Option<&str>,
-    quantization: Option<&str>,
+    _quantization: Option<&str>,
 ) -> Result<String, RouterError> {
     // venvが準備完了か確認
     if !is_venv_ready() {
@@ -1194,10 +1199,8 @@ async fn convert_to_gguf(
 
     // 出力ディレクトリを準備
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
-    let quant = quantization.unwrap_or("Q4_K_M");
-    let repo_slug = repo.split('/').next_back().unwrap_or(repo);
-    let output_filename = format!("{repo_slug}-{quant}.gguf");
-    let model_name = generate_ollama_style_id(&output_filename, repo);
+    // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
+    let model_name = generate_model_id(repo);
     let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await

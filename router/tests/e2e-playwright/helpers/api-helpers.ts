@@ -16,27 +16,46 @@ const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 // Model API Helpers
 // ============================================================================
 
-export interface ModelInfo {
-  name: string;
-  repo?: string;
-  status?: string;
-  path?: string;
+/**
+ * Lifecycle status of a registered model
+ */
+export type LifecycleStatus = 'pending' | 'downloading' | 'cached' | 'ready' | 'error';
+
+/**
+ * Download progress information
+ */
+export interface DownloadProgress {
+  percent: number;
+  downloaded_bytes?: number;
+  total_bytes?: number;
+  error?: string;
 }
 
-export interface ModelsResponse {
-  data: ModelInfo[];
-  object: string;
+export interface RegisteredModel {
+  name: string;
+  repo?: string;
+  source?: string;
+  path?: string;
+  size_gb?: number;
+  required_memory_gb?: number;
+  lifecycle_status: LifecycleStatus;
+  download_progress?: DownloadProgress;
 }
+
+// Legacy alias for backward compatibility
+export type ModelInfo = RegisteredModel;
 
 /**
  * Get list of registered models
+ * NOTE: /v0/models now returns an array directly (not wrapped in { data: [] })
  */
-export async function getModels(request: APIRequestContext): Promise<ModelInfo[]> {
+export async function getModels(request: APIRequestContext): Promise<RegisteredModel[]> {
   const response = await request.get(`${API_BASE}/v0/models`, {
     headers: AUTH_HEADER,
   });
-  const data = (await response.json()) as ModelsResponse;
-  return data.data || [];
+  const data = await response.json();
+  // Handle both array and { data: [] } response formats for backward compatibility
+  return Array.isArray(data) ? data : (data.data || []);
 }
 
 /**
@@ -128,109 +147,85 @@ export async function registerModel(
 }
 
 // ============================================================================
-// Convert Task API Helpers
+// Model Status Helpers (replaced Convert Task API)
 // ============================================================================
 
-export interface ConvertTask {
-  id: string;
-  repo: string;
-  filename: string;
-  status: 'queued' | 'in_progress' | 'completed' | 'failed';
-  progress: number;
-  error?: string;
-  path?: string;
-  created_at: string;
-  updated_at: string;
+/**
+ * Get models that are currently downloading
+ */
+export async function getDownloadingModels(request: APIRequestContext): Promise<RegisteredModel[]> {
+  const models = await getModels(request);
+  return models.filter((m) => m.lifecycle_status === 'downloading' || m.lifecycle_status === 'pending');
 }
 
 /**
- * Get list of convert tasks
+ * Get models with errors
  */
-export async function getConvertTasks(request: APIRequestContext): Promise<ConvertTask[]> {
-  const response = await request.get(`${API_BASE}/v0/models/convert`, {
-    headers: AUTH_HEADER,
-  });
-  return (await response.json()) as ConvertTask[];
+export async function getErrorModels(request: APIRequestContext): Promise<RegisteredModel[]> {
+  const models = await getModels(request);
+  return models.filter((m) => m.lifecycle_status === 'error');
 }
 
 /**
- * Get a specific convert task by ID
+ * Get a specific model by name
  */
-export async function getConvertTask(
+export async function getModelByName(
   request: APIRequestContext,
-  taskId: string
-): Promise<ConvertTask | null> {
-  const response = await request.get(`${API_BASE}/v0/models/convert/${taskId}`, {
-    headers: AUTH_HEADER,
-  });
-  if (response.status() === 404) {
-    return null;
-  }
-  return (await response.json()) as ConvertTask;
+  modelName: string
+): Promise<RegisteredModel | null> {
+  const models = await getModels(request);
+  return models.find((m) => m.name === modelName) || null;
 }
 
 /**
- * Delete a convert task
+ * Wait for a model to reach ready or cached status
  */
-export async function deleteConvertTask(
+export async function waitForModelReady(
   request: APIRequestContext,
-  taskId: string
-): Promise<boolean> {
-  const response = await request.delete(`${API_BASE}/v0/models/convert/${taskId}`, {
-    headers: AUTH_HEADER,
-  });
-  return response.status() === 204;
-}
-
-/**
- * Clear all convert tasks
- */
-export async function clearAllConvertTasks(request: APIRequestContext): Promise<void> {
-  const tasks = await getConvertTasks(request);
-  for (const task of tasks) {
-    await deleteConvertTask(request, task.id);
-  }
-}
-
-/**
- * Get the latest convert task
- */
-export async function getLatestTask(request: APIRequestContext): Promise<ConvertTask | null> {
-  const tasks = await getConvertTasks(request);
-  if (tasks.length === 0) return null;
-  // Tasks are sorted by updated_at desc
-  return tasks[0];
-}
-
-/**
- * Wait for a convert task to complete
- */
-export async function waitForConvertTaskComplete(
-  request: APIRequestContext,
-  taskId: string,
+  modelName: string,
   options: { timeout?: number; pollInterval?: number } = {}
-): Promise<ConvertTask> {
+): Promise<RegisteredModel> {
   const { timeout = 300000, pollInterval = 2000 } = options;
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeout) {
-    const task = await getConvertTask(request, taskId);
-    if (!task) {
-      throw new Error(`Task ${taskId} not found`);
+    const model = await getModelByName(request, modelName);
+    if (!model) {
+      throw new Error(`Model ${modelName} not found`);
     }
 
-    if (task.status === 'completed') {
-      return task;
+    if (model.lifecycle_status === 'ready' || model.lifecycle_status === 'cached') {
+      return model;
     }
 
-    if (task.status === 'failed') {
-      throw new Error(`Task ${taskId} failed: ${task.error}`);
+    if (model.lifecycle_status === 'error') {
+      throw new Error(`Model ${modelName} failed: ${model.download_progress?.error || 'Unknown error'}`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  throw new Error(`Task ${taskId} did not complete within ${timeout}ms`);
+  throw new Error(`Model ${modelName} did not become ready within ${timeout}ms`);
+}
+
+// ============================================================================
+// Deprecated Convert Task API Helpers (for backward compatibility)
+// NOTE: /v0/models/convert endpoint has been removed
+// ============================================================================
+
+/**
+ * @deprecated Use getDownloadingModels() instead
+ */
+export async function getConvertTasks(request: APIRequestContext): Promise<RegisteredModel[]> {
+  return getDownloadingModels(request);
+}
+
+/**
+ * @deprecated Use clearAllModels() instead
+ */
+export async function clearAllConvertTasks(request: APIRequestContext): Promise<void> {
+  // Clearing models will also cancel any pending downloads
+  await clearAllModels(request);
 }
 
 // ============================================================================
@@ -334,7 +329,7 @@ export async function ensureDashboardLogin(page: Page): Promise<void> {
  */
 export async function cleanTestState(request: APIRequestContext): Promise<void> {
   await clearAllModels(request);
-  await clearAllConvertTasks(request);
+  // NOTE: clearAllConvertTasks is now a no-op since tasks are integrated into models
 }
 
 /**
@@ -342,9 +337,10 @@ export async function cleanTestState(request: APIRequestContext): Promise<void> 
  */
 export async function verifyCleanState(request: APIRequestContext): Promise<{
   models: number;
+  /** @deprecated tasks count is now always derived from models */
   tasks: number;
 }> {
   const models = await getModelCount(request);
-  const tasks = (await getConvertTasks(request)).length;
-  return { models, tasks };
+  const downloadingModels = await getDownloadingModels(request);
+  return { models, tasks: downloadingModels.length };
 }

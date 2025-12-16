@@ -5,22 +5,23 @@
  * - API-based registration
  * - UI-based registration
  * - Duplicate detection
- * - ConvertTask lifecycle
+ * - Model lifecycle (lifecycle_status field)
  * - State verification
+ *
+ * NOTE: /v0/models/convert has been removed. Model download status is now
+ * exposed via the lifecycle_status field in /v0/models response.
  */
 
 import { test, expect } from '@playwright/test';
 import {
   cleanTestState,
-  verifyCleanState,
   getModelCount,
   getModels,
-  getConvertTasks,
+  getDownloadingModels,
   registerModel,
   ensureDashboardLogin,
   registerModelViaUI,
   clearAllModels,
-  clearAllConvertTasks,
 } from '../../helpers/api-helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -61,10 +62,10 @@ test.describe('Model Registration Workflow', () => {
         expect(result.modelName).toBeTruthy();
         expect(await getModelCount(request)).toBe(initialCount + 1);
       } else if (result.status === 202) {
-        // Model needs download, ConvertTask created
+        // Model needs download, shows as downloading/pending in lifecycle_status
         expect(result.taskId).toBeTruthy();
-        const tasks = await getConvertTasks(request);
-        expect(tasks.length).toBeGreaterThan(0);
+        const downloadingModels = await getDownloadingModels(request);
+        expect(downloadingModels.length).toBeGreaterThan(0);
       } else {
         // Already registered (400) - also valid if state wasn't clean
         expect(result.error).toContain('already registered');
@@ -240,7 +241,7 @@ test.describe('Model Registration Workflow', () => {
 
     test('cleanup removes all models', async ({ request }) => {
       // 1. Try to register a model (may fail if persistence/memory out of sync)
-      const result = await registerModel(
+      await registerModel(
         request,
         'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
@@ -249,22 +250,20 @@ test.describe('Model Registration Workflow', () => {
       // 2. Get current model count
       const beforeCount = await getModelCount(request);
 
-      // 3. If no models in memory, test cleanup of ConvertTasks only
+      // 3. If no models in memory, nothing to clean
       if (beforeCount === 0) {
-        // Still verify ConvertTask cleanup works
-        await clearAllConvertTasks(request);
-        expect((await getConvertTasks(request)).length).toBe(0);
+        // Verify no downloading models either
+        expect((await getDownloadingModels(request)).length).toBe(0);
         return;
       }
 
-      // 4. Clean up via API
+      // 4. Clean up via API (this also cancels downloads)
       await clearAllModels(request);
-      await clearAllConvertTasks(request);
 
       // 5. Verify API cleanup worked
       const afterCount = await getModelCount(request);
       expect(afterCount).toBeLessThanOrEqual(beforeCount);
-      expect((await getConvertTasks(request)).length).toBe(0);
+      expect((await getDownloadingModels(request)).length).toBe(0);
     });
   });
 });

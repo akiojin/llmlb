@@ -31,8 +31,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/nodes":
             # Minimal node registration response expected by node/src/api/router_client.cpp
             self._send_json(
-                200,
-                {"node_id": str(uuid.uuid4()), "agent_token": str(uuid.uuid4())},
+                201,
+                {"node_id": str(uuid.uuid4()), "node_token": str(uuid.uuid4())},
             )
             return
 

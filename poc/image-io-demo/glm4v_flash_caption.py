@@ -76,11 +76,11 @@ def main() -> int:
         import torch
         import torchvision  # required for BaseVideoProcessor (torchvision.transforms.v2)
         from torchvision.transforms.v2 import functional as _tvF  # noqa: F401
-        from transformers import AutoProcessor, Glm4vForConditionalGeneration
+        from transformers import AutoProcessor, Glm46VForConditionalGeneration
     except Exception as e:
         print("Missing dependencies for GLM-4.6V PoC.", file=sys.stderr)
         print(
-            "Create a venv and install: torch, torchvision, pillow, accelerate, and transformers (>=5.0.0rc0) including Glm4vForConditionalGeneration.",
+            "Create a venv and install: torch, torchvision, pillow, accelerate, and transformers (>=5.0.0rc0) including Glm46VForConditionalGeneration.",
             file=sys.stderr,
         )
         print(f"Import error: {e}", file=sys.stderr)
@@ -104,20 +104,20 @@ def main() -> int:
     processor = AutoProcessor.from_pretrained(args.model)
 
     if device == "cuda":
-        model = Glm4vForConditionalGeneration.from_pretrained(
+        model = Glm46VForConditionalGeneration.from_pretrained(
             pretrained_model_name_or_path=args.model,
             torch_dtype="auto",
             device_map="auto",
         )
     elif device == "mps":
-        model = Glm4vForConditionalGeneration.from_pretrained(
+        model = Glm46VForConditionalGeneration.from_pretrained(
             pretrained_model_name_or_path=args.model,
             torch_dtype="auto",
             device_map=None,
         )
         model.to("mps")
     else:
-        model = Glm4vForConditionalGeneration.from_pretrained(
+        model = Glm46VForConditionalGeneration.from_pretrained(
             pretrained_model_name_or_path=args.model,
             torch_dtype="auto",
             device_map="cpu",

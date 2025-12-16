@@ -138,7 +138,7 @@ ensure_venv() {
 install_deps_if_needed() {
   local py="${VENV_DIR}/bin/python"
 
-  if "${py}" -c "import torch; import torchvision; from torchvision.transforms.v2 import functional as _tvF; from diffusers import ZImagePipeline; from transformers import AutoProcessor, Glm4vForConditionalGeneration; import PIL" >/dev/null 2>&1; then
+  if "${py}" -c "import torch; import torchvision; from torchvision.transforms.v2 import functional as _tvF; from diffusers import ZImagePipeline; from transformers import AutoProcessor, Glm46VForConditionalGeneration; import PIL" >/dev/null 2>&1; then
     return 0
   fi
 

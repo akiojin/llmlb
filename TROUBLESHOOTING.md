@@ -7,7 +7,7 @@
 
 ## クラウドモデルが 401/400 を返す
 - ルーター側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
-- ダッシュボード `/api/dashboard/stats` の `*_key_present` が false なら未設定
+- ダッシュボード `/v0/dashboard/stats` の `*_key_present` が false なら未設定
 - プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
 
 ## ポート競合で起動しない
@@ -24,7 +24,7 @@
 - リバースプロキシ経由の場合は `/dashboard/*` の静的配信設定を確認
 
 ## OpenAI互換APIで 503 / モデル未登録
-- 全ノードが `initializing` の場合 503 を返すことがあります。ノードのモデルロードを待つか、`/api/dashboard/agents` で状態を確認
+- 全ノードが `initializing` の場合 503 を返すことがあります。ノードのモデルロードを待つか、`/v0/dashboard/nodes` で状態を確認
 - モデル指定がローカルに存在しない場合、ノードが自動プルするまで待機
 
 ## ログが多すぎる / 少なすぎる

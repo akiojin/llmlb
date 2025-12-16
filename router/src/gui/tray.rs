@@ -26,7 +26,7 @@ const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(450);
 use image;
 use tracing::error;
 
-/// Options required to build the coordinator tray.
+/// Options required to build the router tray.
 #[derive(Debug, Clone)]
 pub struct TrayOptions {
     dashboard_url: String,
@@ -34,7 +34,7 @@ pub struct TrayOptions {
 }
 
 impl TrayOptions {
-    /// Construct options from the coordinator base URL.
+    /// Construct options from the router base URL.
     pub fn new(base_url: &str, dashboard_url: &str) -> Self {
         Self {
             dashboard_url: dashboard_url.to_string(),
@@ -58,7 +58,7 @@ pub struct TrayEventProxy {
 }
 
 impl TrayEventProxy {
-    /// Notify the tray that the coordinator server stopped.
+    /// Notify the tray that the router server stopped.
     pub fn notify_server_exit(&self) {
         let _ = self.proxy.send_event(RuntimeEvent::ServerExited);
     }
@@ -71,7 +71,7 @@ enum RuntimeEvent {
     ServerExited,
 }
 
-/// Run the system tray loop and bootstrap the coordinator runtime.
+/// Run the system tray loop and bootstrap the router runtime.
 pub fn run_with_system_tray<F>(options: TrayOptions, bootstrap: F)
 where
     F: FnOnce(TrayEventProxy) + Send + 'static,
@@ -258,7 +258,7 @@ fn create_icon() -> Icon {
 
 fn load_icon_from_png(bytes: &[u8]) -> Icon {
     let image = image::load_from_memory(bytes)
-        .expect("failed to decode coordinator tray icon")
+        .expect("failed to decode router tray icon")
         .to_rgba8();
     let (width, height) = image.dimensions();
     Icon::from_rgba(image.into_raw(), width, height)

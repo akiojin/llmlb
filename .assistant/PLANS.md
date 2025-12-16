@@ -83,7 +83,7 @@ node/
 - [x] サブモジュール追加（llama.cpp, cpp-httplib, nlohmann-json）
 - [x] main.cpp の基本実装
 - [x] specs/feature/ ディレクトリの削除
-- [x] PLANS.md の作成（.agent/に配置）
+- [x] PLANS.md の作成（.assistant/に配置）
 
 ### Phase 2: コア機能実装（TDD） 🚧
 
@@ -289,15 +289,16 @@ node/
 
 #### ノード管理API (api/) - RED-GREEN-REFACTOR
 - [x] **TEST FIRST**: tests/integration/node_endpoints_test.cpp
-  - [x] モデルプルテスト
+  - [x] ログ取得テスト
   - [x] ヘルスチェックテスト
   - [x] メトリクス取得テスト
 - [x] node_endpoints.h の作成
 - [x] node_endpoints.cpp の実装
-  - [x] POST /pull（モデルプル要求受信）
+  - [x] GET /api/logs（ノードログ）
   - [x] GET /health（ヘルスチェック）
   - [x] GET /metrics（メトリクス）
-- [x] **REFACTOR**: コードクリーンアップ（メトリクスJSON化、プル回数カウント）
+  - [x] GET /metrics/prom（Prometheusメトリクス）
+- [x] **REFACTOR**: コードクリーンアップ（ログ/メトリクス整形）
 
 ### Phase 5: 統合とテスト
 
@@ -718,7 +719,7 @@ bool parse_special = is_gptoss; // gpt-oss は特殊トークンをパース
 1. Router `/v1/models` スキーマ拡張: `path`, `download_url` をオプションで返す（spec反映済み） **実装完了**。`path` はルーター側キャッシュ成功時にセット。
 2. Node model resolver 改修:
    - ローカル固定パスのみを見るようにする（フォールバック削除済み）。
-   - `/v1/models` / `/pull` から受け取った `path` が読めればコピー、不可なら `download_url` でダウンロードして `~/.llm-router/models` に保存。
+   - `/v1/models` から受け取った `path` が読めればそれを優先し、不可なら `GET /api/models/blob/:model_name` でダウンロードして `~/.llm-router/models` に保存（必要なら `download_url` を最後の手段として使用）。
 3. テスト (TDD):
    - ルーターキャッシュ有りで `path` が返るユニットテスト。
    - pathのみ有効 / downloadのみ有効 / 両方無効（エラー）のユニットテスト。

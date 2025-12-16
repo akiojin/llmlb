@@ -69,9 +69,9 @@
   - 短時間の連続呼び出しで同一ノードを返すことを確認
   - **スキップ**: 微細最適化のため、現時点では不要と判断
 
-- [~] T014 router/src/balancer/mod.rs に `CachedSelection` 構造体と `select_agent_cached` メソッドを実装（GREEN）
+- [~] T014 router/src/balancer/mod.rs に `CachedSelection` 構造体と `select_node_cached` メソッドを実装（GREEN）
   - 短TTL（10ms程度）のキャッシュ
-  - **スキップ**: 現在のselect_agent()は十分高速
+  - **スキップ**: 現在のselect_node()は十分高速
 
 ## Phase 3.5: 統合
 

@@ -38,9 +38,9 @@
 - [x] T012 `router/src/cli/mod.rs` にCli構造体を実装
   - `#[command(version, about)]` 属性
   - 環境変数一覧をhelpに表示
-- [x] ~~T013~~ **廃止** user list - API `GET /api/users` で代替
-- [x] ~~T014~~ **廃止** user add - API `POST /api/users` で代替
-- [x] ~~T015~~ **廃止** user delete - API `DELETE /api/users/:id` で代替
+- [x] ~~T013~~ **廃止** user list - API `GET /v0/users` で代替
+- [x] ~~T014~~ **廃止** user add - API `POST /v0/users` で代替
+- [x] ~~T015~~ **廃止** user delete - API `DELETE /v0/users/:id` で代替
 
 ## Phase 3.4: 環境変数統一
 

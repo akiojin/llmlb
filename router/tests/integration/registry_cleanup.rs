@@ -1,6 +1,6 @@
 //! Integration Test: GPUなしノードの起動時クリーンアップ
 //!
-//! ストレージに保存されたGPU無しノードが、Coordinator起動時に自動削除されることを確認する。
+//! ストレージに保存されたGPU無しノードが、Router起動時に自動削除されることを確認する。
 
 use llm_router::registry::NodeRegistry;
 use once_cell::sync::Lazy;
@@ -17,14 +17,14 @@ fn load_fixture(name: &str) -> Vec<Value> {
         .join("tests")
         .join("support")
         .join("fixtures")
-        .join("agents")
+        .join("nodes")
         .join(name);
     let content = fs::read_to_string(path).expect("fixture must exist");
     serde_json::from_str(&content).expect("fixture must be valid JSON array")
 }
 
 #[tokio::test]
-async fn gpu_less_agents_are_removed_on_startup() {
+async fn gpu_less_nodes_are_removed_on_startup() {
     let _guard = ENV_LOCK.lock().await;
     let temp = tempdir().expect("create temp dir");
 
@@ -51,7 +51,7 @@ async fn gpu_less_agents_are_removed_on_startup() {
         2,
         "only GPU-capable nodes should remain after cleanup"
     );
-    assert!(remaining.iter().all(|agent| agent.gpu_available));
+    assert!(remaining.iter().all(|node| node.gpu_available));
 
     // nodes.jsonが上書きされ、GPU無しノードが削除されていることを確認
     let persisted: Vec<Value> =
@@ -59,8 +59,8 @@ async fn gpu_less_agents_are_removed_on_startup() {
     assert_eq!(persisted.len(), 2);
     assert!(persisted
         .iter()
-        .all(|agent| agent["gpu_available"] == Value::Bool(true)));
-    assert!(persisted.iter().all(|agent| agent["gpu_devices"]
+        .all(|node| node["gpu_available"] == Value::Bool(true)));
+    assert!(persisted.iter().all(|node| node["gpu_devices"]
         .as_array()
         .map(|list| !list.is_empty())
         .unwrap_or(false)));

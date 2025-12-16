@@ -4,9 +4,7 @@
 //! This test verifies the React app shell is served correctly.
 
 use axum::{body::to_bytes, http::Request, Router};
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use tower::ServiceExt;
 
 async fn build_router() -> Router {
@@ -14,7 +12,6 @@ async fn build_router() -> Router {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -28,7 +25,6 @@ async fn build_router() -> Router {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,

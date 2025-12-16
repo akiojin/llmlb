@@ -34,7 +34,7 @@
 
 ## 関係
 - ModelInfo は router の対応モデルリストに格納され、/v1/models で exposed。
-- AvailableModelView は /api/models/available で HF カタログを提供。
+- AvailableModelView は /v0/models/available で HF カタログを提供。
 - DownloadTask はモデル配布・ダウンロード進行を表し、ノードのタスク更新と紐づく。
 
 ## バリデーション

@@ -6,7 +6,7 @@
 
 ## エンティティ
 
-### Agent
+### Node
 
 ノード情報を表すメインエンティティ
 
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Agent {
+pub struct Node {
     /// ノードの一意識別子
     pub id: Uuid,
 
@@ -35,7 +35,7 @@ pub struct Agent {
     pub runtime_version: String,
 
     /// 現在のステータス
-    pub status: AgentStatus,
+    pub status: NodeStatus,
 
     /// 最後のハートビート受信時刻
     pub last_heartbeat: DateTime<Utc>,
@@ -54,13 +54,13 @@ pub struct Agent {
 - `last_heartbeat <= Utc::now()`
 - `registered_at <= Utc::now()`
 
-### AgentStatus
+### NodeStatus
 
 ノードの稼働状態
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AgentStatus {
+pub enum NodeStatus {
     /// オンライン（ハートビート受信中）
     Online,
 
@@ -114,7 +114,7 @@ pub struct RegisterRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterResponse {
     pub status: RegisterStatus,
-    pub agent_id: Option<Uuid>,
+    pub node_id: Option<Uuid>,
     pub message: String,
 }
 
@@ -132,13 +132,13 @@ pub enum RegisterStatus {
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatRequest {
-    pub agent_id: Uuid,
+    pub node_id: Uuid,
 }
 ```
 
 ## ストレージスキーマ
 
-**ファイル**: `~/.llm-router/agents.json`
+**ファイル**: `~/.llm-router/nodes.json`
 
 ```json
 [
@@ -164,20 +164,20 @@ pub struct HeartbeatRequest {
          │
          ↓ register()
 ┌─────────────────────────┐
-│ Agent                   │
+│ Node                   │
 ├─────────────────────────┤
 │ id: Uuid                │
 │ hostname: String        │
 │ ip_address: String      │
 │ port: u16               │
 │ runtime_version: String  │
-│ status: AgentStatus ◄───┼──┐
+│ status: NodeStatus ◄───┼──┐
 │ last_heartbeat: DateTime│  │
 │ registered_at: DateTime │  │
 └─────────────────────────┘  │
                              │
             ┌────────────────┴──────────┐
-            │ AgentStatus (enum)        │
+            │ NodeStatus (enum)        │
             ├───────────────────────────┤
             │ • Online                  │
             │ • Offline                 │
@@ -189,17 +189,17 @@ pub struct HeartbeatRequest {
 ### 1. ノード登録
 ```
 RegisterRequest
-    → AgentRegistry::register()
-    → Agent 生成（UUID割り当て、status=Online）
+    → NodeRegistry::register()
+    → Node 生成（UUID割り当て、status=Online）
     → メモリ保存（HashMap）
-    → ファイル永続化（agents.json）
+    → ファイル永続化（nodes.json）
     → RegisterResponse
 ```
 
 ### 2. ハートビート
 ```
 HeartbeatRequest
-    → AgentRegistry::heartbeat()
+    → NodeRegistry::heartbeat()
     → last_heartbeat 更新
     → status = Online
     → ファイル永続化
@@ -215,7 +215,7 @@ HeartbeatRequest
 
 ## 実装メモ
 
-- **メモリ管理**: `HashMap<Uuid, Agent>` をArc<RwLock>でラップ
+- **メモリ管理**: `HashMap<Uuid, Node>` をArc<RwLock>でラップ
 - **永続化**: 非同期ファイルI/O（`tokio::fs`）
 - **並行制御**: RwLock で読み取り並行、書き込み排他
 - **JSON**: `serde_json` でシリアライズ/デシリアライズ

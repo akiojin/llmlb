@@ -1,11 +1,11 @@
 //! ダッシュボードAPIハンドラー
 //!
-//! `/api/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
+//! `/v0/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
 //! システム統計を返却する。
 
 use super::nodes::AppError;
 use crate::{
-    balancer::{AgentLoadSnapshot, RequestHistoryPoint},
+    balancer::{NodeLoadSnapshot, RequestHistoryPoint},
     AppState,
 };
 use axum::{
@@ -150,22 +150,22 @@ pub struct DashboardOverview {
     pub generation_time_ms: u64,
 }
 
-/// GET /api/dashboard/nodes
+/// GET /v0/dashboard/nodes
 pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardNode>> {
     Json(collect_nodes(&state).await)
 }
 
-/// GET /api/dashboard/stats
+/// GET /v0/dashboard/stats
 pub async fn get_stats(State(state): State<AppState>) -> Json<DashboardStats> {
     Json(collect_stats(&state).await)
 }
 
-/// GET /api/dashboard/request-history
+/// GET /v0/dashboard/request-history
 pub async fn get_request_history(State(state): State<AppState>) -> Json<Vec<RequestHistoryPoint>> {
     Json(collect_history(&state).await)
 }
 
-/// GET /api/dashboard/overview
+/// GET /v0/dashboard/overview
 pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOverview> {
     let started = Instant::now();
     let nodes = collect_nodes(&state).await;
@@ -182,7 +182,7 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     })
 }
 
-/// GET /api/dashboard/metrics/:node_id
+/// GET /v0/dashboard/metrics/:node_id
 pub async fn get_node_metrics(
     Path(node_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -200,25 +200,25 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
     let snapshot_map = snapshots
         .into_iter()
         .map(|snapshot| (snapshot.node_id, snapshot))
-        .collect::<HashMap<Uuid, AgentLoadSnapshot>>();
+        .collect::<HashMap<Uuid, NodeLoadSnapshot>>();
 
     let now = Utc::now();
 
     nodes
         .into_iter()
-        .map(|agent| {
-            let uptime_seconds = if let Some(online_since) = agent.online_since {
-                let end = if agent.status == NodeStatus::Online {
+        .map(|node| {
+            let uptime_seconds = if let Some(online_since) = node.online_since {
+                let end = if node.status == NodeStatus::Online {
                     now
                 } else {
-                    agent.last_seen
+                    node.last_seen
                 };
                 (end - online_since).num_seconds().max(0)
             } else {
                 0
             };
 
-            let snapshot = snapshot_map.get(&agent.id);
+            let snapshot = snapshot_map.get(&node.id);
             let (
                 cpu_usage,
                 memory_usage,
@@ -265,16 +265,16 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
             };
 
             DashboardNode {
-                id: agent.id,
-                machine_name: agent.machine_name,
-                ip_address: agent.ip_address.to_string(),
-                runtime_version: agent.runtime_version,
-                runtime_port: agent.runtime_port,
-                status: agent.status,
-                registered_at: agent.registered_at,
-                last_seen: agent.last_seen,
+                id: node.id,
+                machine_name: node.machine_name,
+                ip_address: node.ip_address.to_string(),
+                runtime_version: node.runtime_version,
+                runtime_port: node.runtime_port,
+                status: node.status,
+                registered_at: node.registered_at,
+                last_seen: node.last_seen,
                 uptime_seconds,
-                loaded_models: agent.loaded_models.clone(),
+                loaded_models: node.loaded_models.clone(),
                 cpu_usage,
                 memory_usage,
                 gpu_usage,
@@ -283,7 +283,7 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
                 gpu_memory_used_mb,
                 gpu_temperature,
                 gpu_model_name,
-                gpu_devices: agent.gpu_devices.clone(),
+                gpu_devices: node.gpu_devices.clone(),
                 gpu_compute_capability,
                 gpu_capability_score,
                 active_requests,
@@ -293,9 +293,9 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
                 average_response_time_ms,
                 metrics_last_updated_at,
                 metrics_stale,
-                gpu_available: Some(agent.gpu_available),
-                gpu_model: agent.gpu_model.clone(),
-                gpu_count: agent.gpu_count,
+                gpu_available: Some(node.gpu_available),
+                gpu_model: node.gpu_model.clone(),
+                gpu_count: node.gpu_count,
             }
         })
         .collect::<Vec<DashboardNode>>()
@@ -308,17 +308,17 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     let summary = load_manager.summary().await;
     let nodes = registry.list().await;
 
-    let last_registered_at = nodes.iter().map(|agent| agent.registered_at).max();
-    let last_seen_at = nodes.iter().map(|agent| agent.last_seen).max();
+    let last_registered_at = nodes.iter().map(|node| node.registered_at).max();
+    let last_seen_at = nodes.iter().map(|node| node.last_seen).max();
 
     let openai_key_present = std::env::var("OPENAI_API_KEY").is_ok();
     let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
     let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
 
     DashboardStats {
-        total_nodes: summary.total_agents,
-        online_nodes: summary.online_agents,
-        offline_nodes: summary.offline_agents,
+        total_nodes: summary.total_nodes,
+        online_nodes: summary.online_nodes,
+        offline_nodes: summary.offline_nodes,
         total_requests: summary.total_requests,
         successful_requests: summary.successful_requests,
         failed_requests: summary.failed_requests,
@@ -423,8 +423,8 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
         "request_type",
         "model",
         "node_id",
-        "agent_machine_name",
-        "agent_ip",
+        "node_machine_name",
+        "node_ip",
         "client_ip",
         "duration_ms",
         "status",
@@ -448,8 +448,8 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
             format!("{:?}", record.request_type),
             record.model,
             record.node_id.to_string(),
-            record.agent_machine_name,
-            record.agent_ip.to_string(),
+            record.node_machine_name,
+            record.node_ip.to_string(),
             record
                 .client_ip
                 .map(|ip| ip.to_string())
@@ -486,7 +486,6 @@ mod tests {
     use crate::{
         balancer::{LoadManager, MetricsUpdate, RequestOutcome},
         registry::NodeRegistry,
-        tasks::DownloadTaskManager,
     };
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::{IpAddr, Ipv4Addr};
@@ -497,7 +496,6 @@ mod tests {
         let load_manager = LoadManager::new(registry.clone());
         let request_history =
             std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let task_manager = DownloadTaskManager::new();
         let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
@@ -511,7 +509,6 @@ mod tests {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,
@@ -533,7 +530,7 @@ mod tests {
 
         // ノードを登録
         let register_req = RegisterRequest {
-            machine_name: "agent-01".into(),
+            machine_name: "node-01".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
             runtime_version: "0.1.0".into(),
             runtime_port: 11434,
@@ -577,28 +574,28 @@ mod tests {
         let body = response.0;
 
         assert_eq!(body.len(), 1);
-        let agent = &body[0];
-        assert_eq!(agent.machine_name, "agent-01");
-        assert_eq!(agent.status, NodeStatus::Online);
-        assert_eq!(agent.runtime_port, 11434);
-        assert_eq!(agent.total_requests, 1);
-        assert_eq!(agent.successful_requests, 1);
-        assert_eq!(agent.failed_requests, 0);
-        assert_eq!(agent.average_response_time_ms, Some(120.0));
-        assert!(agent.cpu_usage.is_some());
-        assert!(agent.memory_usage.is_some());
-        assert_eq!(agent.gpu_usage, Some(72.0));
-        assert_eq!(agent.gpu_memory_usage, Some(68.0));
+        let node = &body[0];
+        assert_eq!(node.machine_name, "node-01");
+        assert_eq!(node.status, NodeStatus::Online);
+        assert_eq!(node.runtime_port, 11434);
+        assert_eq!(node.total_requests, 1);
+        assert_eq!(node.successful_requests, 1);
+        assert_eq!(node.failed_requests, 0);
+        assert_eq!(node.average_response_time_ms, Some(120.0));
+        assert!(node.cpu_usage.is_some());
+        assert!(node.memory_usage.is_some());
+        assert_eq!(node.gpu_usage, Some(72.0));
+        assert_eq!(node.gpu_memory_usage, Some(68.0));
     }
 
     #[tokio::test]
     async fn test_get_stats_summarises_registry_and_metrics() {
         let state = create_state().await;
 
-        let first_agent = state
+        let first_node = state
             .registry
             .register(RegisterRequest {
-                machine_name: "agent-01".into(),
+                machine_name: "node-01".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
                 runtime_version: "0.1.0".into(),
                 runtime_port: 11434,
@@ -611,10 +608,10 @@ mod tests {
             .unwrap()
             .node_id;
 
-        let second_agent = state
+        let second_node = state
             .registry
             .register(RegisterRequest {
-                machine_name: "agent-02".into(),
+                machine_name: "node-02".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
                 runtime_version: "0.1.0".into(),
                 runtime_port: 11434,
@@ -631,7 +628,7 @@ mod tests {
         state
             .load_manager
             .record_metrics(MetricsUpdate {
-                node_id: first_agent,
+                node_id: first_node,
                 cpu_usage: 40.0,
                 memory_usage: 65.0,
                 gpu_usage: None,
@@ -652,7 +649,7 @@ mod tests {
         state
             .load_manager
             .record_metrics(MetricsUpdate {
-                node_id: second_agent,
+                node_id: second_node,
                 cpu_usage: 30.0,
                 memory_usage: 50.0,
                 gpu_usage: None,
@@ -670,11 +667,11 @@ mod tests {
             })
             .await
             .unwrap();
-        state.load_manager.begin_request(first_agent).await.unwrap();
+        state.load_manager.begin_request(first_node).await.unwrap();
         state
             .load_manager
             .finish_request(
-                first_agent,
+                first_node,
                 RequestOutcome::Error,
                 Duration::from_millis(150),
             )
@@ -700,7 +697,7 @@ mod tests {
         let node_id = state
             .registry
             .register(RegisterRequest {
-                machine_name: "agent-history".into(),
+                machine_name: "node-history".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
                 runtime_version: "0.1.0".into(),
                 runtime_port: 11434,
@@ -774,7 +771,7 @@ mod tests {
         let response = state
             .registry
             .register(RegisterRequest {
-                machine_name: "metrics-agent".into(),
+                machine_name: "metrics-node".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 31)),
                 runtime_version: "0.1.0".into(),
                 runtime_port: 11434,

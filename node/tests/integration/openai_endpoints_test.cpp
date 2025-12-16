@@ -12,7 +12,7 @@ using namespace llm_node;
 
 TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     ModelRegistry registry;
-    registry.setModels({"gpt-oss:7b"});
+    registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
     OpenAIEndpoints openai(registry, engine, config);
@@ -24,9 +24,9 @@ TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     auto models = cli.Get("/v1/models");
     ASSERT_TRUE(models);
     EXPECT_EQ(models->status, 200);
-    EXPECT_NE(models->body.find("gpt-oss:7b"), std::string::npos);
+    EXPECT_NE(models->body.find("gpt-oss-7b"), std::string::npos);
 
-    std::string body = R"({"model":"gpt-oss:7b","messages":[{"role":"user","content":"hello"}]})";
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}]})";
     auto chat = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(chat);
     EXPECT_EQ(chat->status, 200);
@@ -37,7 +37,7 @@ TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
 
 TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
     ModelRegistry registry;
-    registry.setModels({"gpt-oss:7b"});
+    registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
     OpenAIEndpoints openai(registry, engine, config);

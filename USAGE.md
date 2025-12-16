@@ -20,7 +20,7 @@
 - `stream: true` でクラウドSSE/チャンクをそのままパススルー。
 
 ## メトリクス
-- `GET /metrics/cloud` （Prometheus text）
+- `GET /v0/metrics/cloud` （Prometheus text）
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`
 

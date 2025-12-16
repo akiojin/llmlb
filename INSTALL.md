@@ -84,7 +84,7 @@ cargo run -p llm-router
 
 ## 6) 動作確認
 - ダッシュボード: `http://localhost:8080/dashboard`
-- 健康チェック: `curl http://localhost:8080/api/health`
+- 健康チェック: `curl http://localhost:8080/v0/health`
 - OpenAI互換: `curl http://localhost:8080/v1/models`
 
 ## 7) 品質チェック（必須）

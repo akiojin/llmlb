@@ -54,7 +54,7 @@ pub struct MeResponse {
     pub role: String,
 }
 
-/// POST /api/auth/login - ログイン
+/// POST /v0/auth/login - ログイン
 ///
 /// ユーザー名とパスワードで認証し、JWTトークンを発行
 ///
@@ -121,7 +121,7 @@ pub async fn login(
     }))
 }
 
-/// POST /api/auth/logout - ログアウト
+/// POST /v0/auth/logout - ログアウト
 ///
 /// JWTはステートレスなのでクライアント側でトークンを破棄するだけ
 /// このエンドポイントは主にログ記録用
@@ -134,7 +134,7 @@ pub async fn logout() -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
-/// GET /api/auth/me - 認証情報確認
+/// GET /v0/auth/me - 認証情報確認
 ///
 /// 現在の認証済みユーザー情報を返す
 ///

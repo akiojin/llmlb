@@ -171,10 +171,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Create shared router client for both registration and progress reporting
-        auto router_client = std::make_shared<llm_node::RouterClient>(router_url);
-
-        // Create model_sync early so pull endpoint is ready for auto-distribution
+        // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
@@ -185,8 +182,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::OpenAIEndpoints openai(registry, engine, cfg);
         llm_node::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
-        node_endpoints.setRouterClient(router_client);
-        node_endpoints.setModelSync(model_sync);
         llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
 
 #ifdef USE_WHISPER
@@ -263,8 +258,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             return 1;
         }
 
-        // Sync models from router (model_sync already created earlier for pull endpoint)
+        // Sync models from router (model_sync already created earlier for remote path resolution & initial sync)
         std::cout << "Syncing models from router..." << std::endl;
+        model_sync->setNodeToken(reg.node_token);
         auto sync_result = model_sync->sync();
         if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
             // If nothing synced and no local models, treat as recoverable error and retry once
@@ -285,7 +281,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Heartbeat thread
         std::cout << "Starting heartbeat thread..." << std::endl;
-        std::string agent_token = reg.agent_token;
+        std::string node_token = reg.node_token;
         heartbeat_thread = std::thread([&router, &llm_manager,
 #ifdef USE_WHISPER
                                         &whisper_manager,
@@ -294,7 +290,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                                         &tts_manager,
 #endif
                                         &image_manager,
-                                        node_id = reg.node_id, agent_token, &cfg]() {
+                                        node_id = reg.node_id, node_token, &cfg]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
                 auto loaded_models = llm_manager.getLoadedModels();
@@ -320,7 +316,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                     supported_runtimes.push_back("stable_diffusion");
                 }
 
-                router.sendHeartbeat(node_id, agent_token, std::nullopt, std::nullopt,
+                router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
                                      loaded_models, loaded_embedding_models, loaded_asr_models,
                                      loaded_tts_models, supported_runtimes);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));

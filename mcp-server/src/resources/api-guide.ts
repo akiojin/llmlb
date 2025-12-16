@@ -19,17 +19,17 @@ const GUIDE_CATEGORIES = [
   {
     id: "node-management",
     name: "llm-router-node-api",
-    description: "Node management endpoints: /api/nodes (list, register, delete, configure)",
+    description: "Node management endpoints: /v0/nodes (list, register, delete, configure)",
   },
   {
     id: "model-management",
     name: "llm-router-model-api",
-    description: "Model management endpoints: /api/models/* (register, pull, convert, list)",
+    description: "Model management endpoints: /v0/models/* (register, convert, list)",
   },
   {
     id: "dashboard",
     name: "llm-router-dashboard-api",
-    description: "Dashboard and monitoring endpoints: /api/dashboard/* (stats, overview, metrics)",
+    description: "Dashboard and monitoring endpoints: /v0/dashboard/* (stats, overview, metrics)",
   },
 ];
 
@@ -94,32 +94,33 @@ ${routerUrl}
 **Header**: \`Authorization: Bearer <jwt_token>\`
 
 **Used for**:
-- /api/users (user management)
-- /api/api-keys (API key management)
+- /v0/users (user management)
+- /v0/api-keys (API key management)
 
 **Obtain JWT via**:
 \`\`\`bash
-curl -X POST ${routerUrl}/api/auth/login \\
+curl -X POST ${routerUrl}/v0/auth/login \\
   -H "Content-Type: application/json" \\
   -d '{"username":"admin","password":"your_password"}'
 \`\`\`
 
-### 3. Agent Token (Node Communication)
+### 3. Node Token (Node Communication)
 
-**Header**: \`X-Agent-Token: at_xxx\`
+**Header**: \`X-Node-Token: nt_xxx\`
 
 **Used for**:
-- /api/health (internal node health reporting)
+- /v0/health (internal node health reporting)
+- /v1/models (node model sync)
 
 ## API Categories
 
 | Category | Base Path | Description |
 |----------|-----------|-------------|
 | OpenAI-Compatible | /v1/* | Chat, completions, embeddings, models |
-| Node Management | /api/nodes | Register/manage inference nodes |
-| Model Management | /api/models/* | Pull, convert, register models |
-| Dashboard | /api/dashboard/* | Stats, metrics, overview |
-| Authentication | /api/auth/* | Login, logout, user info |
+| Node Management | /v0/nodes | Register/manage inference nodes |
+| Model Management | /v0/models/* | Convert, register models |
+| Dashboard | /v0/dashboard/* | Stats, metrics, overview |
+| Authentication | /v0/auth/* | Login, logout, user info |
 
 ## Cloud Model Routing
 
@@ -196,18 +197,18 @@ function getNodeManagementGuide(routerUrl: string): string {
 
 ## List Nodes
 
-**Endpoint**: GET ${routerUrl}/api/nodes
+**Endpoint**: GET ${routerUrl}/v0/nodes
 
 \`\`\`bash
-curl ${routerUrl}/api/nodes
+curl ${routerUrl}/v0/nodes
 \`\`\`
 
 ## Register Node
 
-**Endpoint**: POST ${routerUrl}/api/nodes
+**Endpoint**: POST ${routerUrl}/v0/nodes
 
 \`\`\`bash
-curl -X POST ${routerUrl}/api/nodes \\
+curl -X POST ${routerUrl}/v0/nodes \\
   -H "Content-Type: application/json" \\
   -d '{
     "machine_name": "gpu-server-1",
@@ -223,28 +224,42 @@ curl -X POST ${routerUrl}/api/nodes \\
 
 ## Delete Node
 
-**Endpoint**: DELETE ${routerUrl}/api/nodes/:node_id
+**Endpoint**: DELETE ${routerUrl}/v0/nodes/:node_id
 
 \`\`\`bash
-curl -X DELETE ${routerUrl}/api/nodes/NODE_ID
+curl -X DELETE ${routerUrl}/v0/nodes/NODE_ID
 \`\`\`
 
 ## Disconnect Node
 
-**Endpoint**: POST ${routerUrl}/api/nodes/:node_id/disconnect
+**Endpoint**: POST ${routerUrl}/v0/nodes/:node_id/disconnect
 
 \`\`\`bash
-curl -X POST ${routerUrl}/api/nodes/NODE_ID/disconnect
+curl -X POST ${routerUrl}/v0/nodes/NODE_ID/disconnect
 \`\`\`
 
 ## Update Node Settings
 
-**Endpoint**: PUT ${routerUrl}/api/nodes/:node_id/settings
+**Endpoint**: PUT ${routerUrl}/v0/nodes/:node_id/settings
 
 \`\`\`bash
-curl -X PUT ${routerUrl}/api/nodes/NODE_ID/settings \\
+curl -X PUT ${routerUrl}/v0/nodes/NODE_ID/settings \\
   -H "Content-Type: application/json" \\
-  -d '{"max_concurrent_requests": 10}'
+  -d '{
+    "custom_name": "Primary",
+    "tags": ["gpu", "primary"],
+    "notes": "Keep online"
+  }'
+\`\`\`
+
+To clear a nullable field, send \`null\` (for example, \`{"custom_name": null}\`).
+
+## Node Logs
+
+**Endpoint**: GET ${routerUrl}/v0/nodes/:node_id/logs
+
+\`\`\`bash
+curl ${routerUrl}/v0/nodes/NODE_ID/logs
 \`\`\`
 `;
 }
@@ -254,67 +269,85 @@ function getModelManagementGuide(routerUrl: string): string {
 
 ## List Available Models (HuggingFace)
 
-**Endpoint**: GET ${routerUrl}/api/models/available
+**Endpoint**: GET ${routerUrl}/v0/models/available?source=hf
 
 \`\`\`bash
-curl ${routerUrl}/api/models/available
+curl "${routerUrl}/v0/models/available?source=hf"
 \`\`\`
 
 ## List Registered Models
 
-**Endpoint**: GET ${routerUrl}/api/models/registered
+**Endpoint**: GET ${routerUrl}/v0/models/registered
 
 \`\`\`bash
-curl ${routerUrl}/api/models/registered
+curl ${routerUrl}/v0/models/registered
 \`\`\`
 
 ## Register Model
 
-**Endpoint**: POST ${routerUrl}/api/models/register
+**Endpoint**: POST ${routerUrl}/v0/models/register
 
 \`\`\`bash
-curl -X POST ${routerUrl}/api/models/register \\
+curl -X POST ${routerUrl}/v0/models/register \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://huggingface.co/TheBloke/Llama-2-7B-GGUF"}'
+  -d '{
+    "repo": "TheBloke/Llama-2-7B-GGUF",
+    "filename": "llama-2-7b.Q4_K_M.gguf"
+  }'
 \`\`\`
 
-## Pull Model
-
-**Endpoint**: POST ${routerUrl}/api/models/pull
-
-\`\`\`bash
-curl -X POST ${routerUrl}/api/models/pull \\
-  -H "Content-Type: application/json" \\
-  -d '{"model_name": "llama-2-7b.Q4_K_M.gguf"}'
-\`\`\`
+If \`filename\` is omitted, the router tries to find a GGUF file in the repo. If none exists, it will queue a conversion task.
+Track progress via **Convert Tasks** (\`GET ${routerUrl}/v0/models/convert\`). When completed, the model becomes available in \`GET ${routerUrl}/v1/models\`.
 
 ## Delete Model
 
-**Endpoint**: DELETE ${routerUrl}/api/models/:model_name
+**Endpoint**: DELETE ${routerUrl}/v0/models/:model_name
 
 \`\`\`bash
-curl -X DELETE ${routerUrl}/api/models/llama-2-7b.Q4_K_M.gguf
+curl -X DELETE ${routerUrl}/v0/models/llama-2-7b
 \`\`\`
 
 ## Discover GGUF Files
 
-**Endpoint**: POST ${routerUrl}/api/models/discover-gguf
+**Endpoint**: POST ${routerUrl}/v0/models/discover-gguf
 
 \`\`\`bash
-curl -X POST ${routerUrl}/api/models/discover-gguf \\
+curl -X POST ${routerUrl}/v0/models/discover-gguf \\
   -H "Content-Type: application/json" \\
-  -d '{"repo_id": "TheBloke/Llama-2-7B-GGUF"}'
+  -d '{"model": "openai/gpt-oss-20b"}'
 \`\`\`
 
 ## Convert Model
 
-**Endpoint**: POST ${routerUrl}/api/models/convert
+**Endpoint**: POST ${routerUrl}/v0/models/convert
 
 \`\`\`bash
-curl -X POST ${routerUrl}/api/models/convert \\
+curl -X POST ${routerUrl}/v0/models/convert \\
   -H "Content-Type: application/json" \\
-  -d '{"source_model": "model.safetensors", "target_format": "gguf"}'
+  -d '{
+    "repo": "openai/gpt-oss-20b",
+    "filename": "model.bin",
+    "revision": "main"
+  }'
 \`\`\`
+
+## Convert Tasks
+
+- List tasks: GET ${routerUrl}/v0/models/convert
+- Get task: GET ${routerUrl}/v0/models/convert/:task_id
+- Delete task: DELETE ${routerUrl}/v0/models/convert/:task_id
+
+## Model Blob Download
+
+**Endpoint**: GET ${routerUrl}/v0/models/blob/:model_name
+
+\`\`\`bash
+curl -L ${routerUrl}/v0/models/blob/gpt-oss-20b -o model.gguf
+\`\`\`
+
+## Model ID Format
+
+Model IDs are normalized to a filename-based format (for example \`gpt-oss-20b\`). Colons and slashes are not used.
 `;
 }
 
@@ -323,50 +356,66 @@ function getDashboardGuide(routerUrl: string): string {
 
 ## Dashboard Overview
 
-**Endpoint**: GET ${routerUrl}/api/dashboard/overview
+**Endpoint**: GET ${routerUrl}/v0/dashboard/overview
 
 \`\`\`bash
-curl ${routerUrl}/api/dashboard/overview
+curl ${routerUrl}/v0/dashboard/overview
 \`\`\`
 
 ## Dashboard Statistics
 
-**Endpoint**: GET ${routerUrl}/api/dashboard/stats
+**Endpoint**: GET ${routerUrl}/v0/dashboard/stats
 
 \`\`\`bash
-curl ${routerUrl}/api/dashboard/stats
+curl ${routerUrl}/v0/dashboard/stats
 \`\`\`
 
 ## Node Information
 
-**Endpoint**: GET ${routerUrl}/api/dashboard/nodes
+**Endpoint**: GET ${routerUrl}/v0/dashboard/nodes
 
 \`\`\`bash
-curl ${routerUrl}/api/dashboard/nodes
+curl ${routerUrl}/v0/dashboard/nodes
 \`\`\`
 
 ## Node Metrics History
 
-**Endpoint**: GET ${routerUrl}/api/dashboard/metrics/:node_id
+**Endpoint**: GET ${routerUrl}/v0/dashboard/metrics/:node_id
 
 \`\`\`bash
-curl ${routerUrl}/api/dashboard/metrics/NODE_ID
+curl ${routerUrl}/v0/dashboard/metrics/NODE_ID
 \`\`\`
 
 ## Request/Response Logs
 
-**Endpoint**: GET ${routerUrl}/api/dashboard/request-responses
+**Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses
 
 \`\`\`bash
-curl ${routerUrl}/api/dashboard/request-responses
+curl ${routerUrl}/v0/dashboard/request-responses
+\`\`\`
+
+## Export Request/Response Logs
+
+**Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses/export
+
+\`\`\`bash
+curl -L ${routerUrl}/v0/dashboard/request-responses/export -o request-responses.json
 \`\`\`
 
 ## Request Detail
 
-**Endpoint**: GET ${routerUrl}/api/dashboard/request-responses/:id
+**Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses/:id
 
 \`\`\`bash
-curl ${routerUrl}/api/dashboard/request-responses/REQUEST_ID
+curl ${routerUrl}/v0/dashboard/request-responses/REQUEST_ID
+\`\`\`
+
+## Router Logs
+
+**Endpoint**: GET ${routerUrl}/v0/dashboard/logs/router
+
+\`\`\`bash
+curl ${routerUrl}/v0/dashboard/logs/router
 \`\`\`
 `;
 }

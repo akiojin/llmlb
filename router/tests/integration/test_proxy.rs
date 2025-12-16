@@ -6,18 +6,18 @@
 use serde_json::json;
 
 #[tokio::test]
-async fn test_proxy_request_to_single_agent() {
-    // Arrange: Coordinatorサーバー起動、1台のノード登録、モックLLM runtime起動
-    // let coordinator = start_test_coordinator().await;
+async fn test_proxy_request_to_single_node() {
+    // Arrange: Routerサーバー起動、1台のノード登録、モックLLM runtime起動
+    // let router = start_test_router().await;
     // let mock_runtime = start_mock_runtime().await;
-    // register_test_agent(&coordinator, mock_runtime.url()).await;
+    // register_test_node(&router, mock_runtime.url()).await;
 
     // Act: チャットリクエスト送信
     // let request = json!({
     //     "model": "llama2",
     //     "messages": [{"role": "user", "content": "Hello"}]
     // });
-    // let response = coordinator.post("/api/chat", request).await;
+    // let response = router.post("/v1/chat/completions", request).await;
 
     // Assert: 正常にレスポンスが返された
     // assert_eq!(response.status(), 200);
@@ -29,16 +29,16 @@ async fn test_proxy_request_to_single_agent() {
 }
 
 #[tokio::test]
-async fn test_proxy_no_agents_returns_503() {
-    // Arrange: Coordinatorサーバー起動（ノード未登録）
-    // let coordinator = start_test_coordinator().await;
+async fn test_proxy_no_nodes_returns_503() {
+    // Arrange: Routerサーバー起動（ノード未登録）
+    // let router = start_test_router().await;
 
     // Act: チャットリクエスト送信
     // let request = json!({
     //     "model": "llama2",
     //     "messages": [{"role": "user", "content": "Hello"}]
     // });
-    // let response = coordinator.post("/api/chat", request).await;
+    // let response = router.post("/v1/chat/completions", request).await;
 
     // Assert: 503 Service Unavailable
     // assert_eq!(response.status(), 503);

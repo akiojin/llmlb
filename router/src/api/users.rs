@@ -78,7 +78,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
     Ok(())
 }
 
-/// GET /api/users - ユーザー一覧取得
+/// GET /v0/users - ユーザー一覧取得
 ///
 /// Admin専用。全ユーザーの一覧を返す（パスワードハッシュは除外）
 ///
@@ -108,7 +108,7 @@ pub async fn list_users(
     }))
 }
 
-/// POST /api/users - ユーザー作成
+/// POST /v0/users - ユーザー作成
 ///
 /// Admin専用。新しいユーザーを作成する
 ///
@@ -163,7 +163,7 @@ pub async fn create_user(
     Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
 }
 
-/// PUT /api/users/:id - ユーザー更新
+/// PUT /v0/users/:id - ユーザー更新
 ///
 /// Admin専用。既存ユーザーの情報を更新する
 ///
@@ -238,7 +238,7 @@ pub async fn update_user(
     Ok(Json(UserResponse::from(user)))
 }
 
-/// DELETE /api/users/:id - ユーザー削除
+/// DELETE /v0/users/:id - ユーザー削除
 ///
 /// Admin専用。ユーザーを削除する。最後の管理者は削除不可
 ///

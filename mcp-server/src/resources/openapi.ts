@@ -96,20 +96,20 @@ const DEFAULT_OPENAPI_SPEC = {
         },
       },
     },
-    "/api/nodes": {
+    "/v0/nodes": {
       get: { summary: "List registered nodes" },
       post: { summary: "Register a new node" },
     },
-    "/api/dashboard/stats": {
+    "/v0/dashboard/stats": {
       get: { summary: "Get dashboard statistics" },
     },
-    "/api/dashboard/overview": {
+    "/v0/dashboard/overview": {
       get: { summary: "Get dashboard overview" },
     },
-    "/api/models/available": {
-      get: { summary: "List available models for pull" },
+    "/v0/models/available": {
+      get: { summary: "List available models" },
     },
-    "/api/models/registered": {
+    "/v0/models/registered": {
       get: { summary: "List registered models" },
     },
   },

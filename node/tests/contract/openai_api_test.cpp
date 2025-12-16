@@ -16,7 +16,7 @@ using json = nlohmann::json;
 class OpenAIContractFixture : public ::testing::Test {
 protected:
     void SetUp() override {
-        registry.setModels({"gpt-oss:7b"});
+        registry.setModels({"gpt-oss-7b"});
         server = std::make_unique<HttpServer>(18090, openai, node);
         server->start();
     }
@@ -45,7 +45,7 @@ TEST_F(OpenAIContractFixture, ModelsEndpointReturnsArray) {
 
 TEST_F(OpenAIContractFixture, ChatCompletionsReturnsMessage) {
     httplib::Client cli("127.0.0.1", 18090);
-    std::string body = R"({"model":"gpt-oss:7b","messages":[{"role":"user","content":"ping"}]})";
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"ping"}]})";
     auto res = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
@@ -56,7 +56,7 @@ TEST_F(OpenAIContractFixture, ChatCompletionsReturnsMessage) {
 
 TEST_F(OpenAIContractFixture, ChatCompletionsSupportsStreamingSSE) {
     httplib::Client cli("127.0.0.1", 18090);
-    std::string body = R"({"model":"gpt-oss:7b","messages":[{"role":"user","content":"stream"}],"stream":true})";
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"stream"}],"stream":true})";
     auto res = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
@@ -68,7 +68,7 @@ TEST_F(OpenAIContractFixture, ChatCompletionsSupportsStreamingSSE) {
 
 TEST_F(OpenAIContractFixture, EmbeddingsReturnsVectorWithSingleInput) {
     httplib::Client cli("127.0.0.1", 18090);
-    std::string body = R"({"model":"gpt-oss:7b","input":"Hello, world!"})";
+    std::string body = R"({"model":"gpt-oss-7b","input":"Hello, world!"})";
     auto res = cli.Post("/v1/embeddings", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
@@ -84,7 +84,7 @@ TEST_F(OpenAIContractFixture, EmbeddingsReturnsVectorWithSingleInput) {
 
 TEST_F(OpenAIContractFixture, EmbeddingsReturnsVectorsWithArrayInput) {
     httplib::Client cli("127.0.0.1", 18090);
-    std::string body = R"({"model":"gpt-oss:7b","input":["Hello","World"]})";
+    std::string body = R"({"model":"gpt-oss-7b","input":["Hello","World"]})";
     auto res = cli.Post("/v1/embeddings", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
@@ -98,7 +98,7 @@ TEST_F(OpenAIContractFixture, EmbeddingsReturnsVectorsWithArrayInput) {
 
 TEST_F(OpenAIContractFixture, EmbeddingsRequiresInput) {
     httplib::Client cli("127.0.0.1", 18090);
-    std::string body = R"({"model":"gpt-oss:7b"})";
+    std::string body = R"({"model":"gpt-oss-7b"})";
     auto res = cli.Post("/v1/embeddings", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 400);
@@ -111,4 +111,3 @@ TEST_F(OpenAIContractFixture, EmbeddingsRequiresModel) {
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 400);
 }
-

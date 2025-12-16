@@ -60,7 +60,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmbeddingResponse"
-  /api/dashboard/stats:
+  /v0/dashboard/stats:
     get:
       summary: Router stats including cloud key presence flags
       responses:
@@ -172,10 +172,35 @@ components:
     DashboardStats:
       type: object
       properties:
-        total_agents:
+        total_nodes:
           type: integer
-        online_agents:
+        online_nodes:
           type: integer
+        offline_nodes:
+          type: integer
+        total_requests:
+          type: integer
+        successful_requests:
+          type: integer
+        failed_requests:
+          type: integer
+        total_active_requests:
+          type: integer
+        average_response_time_ms:
+          type: [number, "null"]
+        average_gpu_usage:
+          type: [number, "null"]
+        average_gpu_memory_usage:
+          type: [number, "null"]
+        last_metrics_updated_at:
+          type: [string, "null"]
+          format: date-time
+        last_registered_at:
+          type: [string, "null"]
+          format: date-time
+        last_seen_at:
+          type: [string, "null"]
+          format: date-time
         openai_key_present:
           type: boolean
         google_key_present:

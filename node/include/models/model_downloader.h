@@ -16,7 +16,7 @@ public:
                     int max_retries = 2,
                     std::chrono::milliseconds backoff = std::chrono::milliseconds(200));
 
-    // Fetch manifest JSON for a model id (e.g., gpt-oss:7b). Returns local manifest path.
+    // Fetch manifest JSON for a model id (e.g., gpt-oss-7b). Returns local manifest path.
     std::string fetchManifest(const std::string& model_id);
 
     // Download a blob by URL to the model directory. Reports progress if provided.

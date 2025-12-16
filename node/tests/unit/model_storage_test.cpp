@@ -32,19 +32,11 @@ static void create_model(const fs::path& models_dir, const std::string& dir_name
     std::ofstream(model_dir / "model.gguf") << "dummy gguf content";
 }
 
-// FR-2: Model name format conversion (colon to underscore)
+// FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
-    EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss:20b"), "gpt-oss_20b");
-    EXPECT_EQ(ModelStorage::modelNameToDir("qwen3-coder:30b"), "qwen3-coder_30b");
-    EXPECT_EQ(ModelStorage::modelNameToDir("org:model:tag"), "org_model_tag");
-    // Filename-based ids should not be modified.
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
-    EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss"), "gpt-oss");
-}
-
-// FR-2: Default tag is "latest"
-TEST(ModelStorageTest, DefaultTagIsLatest) {
-    EXPECT_EQ(ModelStorage::modelNameToDir("llama3"), "llama3_latest");
+    EXPECT_EQ(ModelStorage::modelNameToDir("Mistral-7B-Instruct-v0.2"), "mistral-7b-instruct-v0.2");
+    EXPECT_EQ(ModelStorage::modelNameToDir("model@name"), "model_name");
 }
 
 // FR-3: resolveGguf returns correct path
@@ -64,15 +56,15 @@ TEST(ModelStorageTest, ResolveGgufReturnsPathWhenPresent) {
 TEST(ModelStorageTest, ResolveGgufReturnsEmptyWhenMissing) {
     TempModelDir tmp;
     ModelStorage storage(tmp.base.string());
-    EXPECT_EQ(storage.resolveGguf("nonexistent:model"), "");
+    EXPECT_EQ(storage.resolveGguf("nonexistent"), "");
 }
 
 // FR-4: listAvailable returns all models with model.gguf
 TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
     TempModelDir tmp;
     create_model(tmp.base, "gpt-oss-20b");
+    create_model(tmp.base, "gpt-oss-7b");
     create_model(tmp.base, "qwen3-coder-30b");
-    create_model(tmp.base, "llama3_latest");
 
     ModelStorage storage(tmp.base.string());
     auto list = storage.listAvailable();
@@ -86,7 +78,7 @@ TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
     std::sort(names.begin(), names.end());
 
     EXPECT_EQ(names[0], "gpt-oss-20b");
-    EXPECT_EQ(names[1], "llama3");
+    EXPECT_EQ(names[1], "gpt-oss-7b");
     EXPECT_EQ(names[2], "qwen3-coder-30b");
 }
 
@@ -140,12 +132,11 @@ TEST(ModelStorageTest, ValidateModelWithGguf) {
 
     ModelStorage storage(tmp.base.string());
     EXPECT_TRUE(storage.validateModel("gpt-oss-20b"));
-    EXPECT_FALSE(storage.validateModel("nonexistent:model"));
+    EXPECT_FALSE(storage.validateModel("nonexistent"));
 }
 
-// Directory conversion: underscore to colon (reverse)
+// Directory conversion: directory name to model id (best-effort)
 TEST(ModelStorageTest, ConvertDirNameToModelName) {
-    EXPECT_EQ(ModelStorage::dirNameToModel("gpt-oss_20b"), "gpt-oss_20b");
-    EXPECT_EQ(ModelStorage::dirNameToModel("qwen3-coder-30b"), "qwen3-coder-30b");
-    EXPECT_EQ(ModelStorage::dirNameToModel("llama3_latest"), "llama3");
+    EXPECT_EQ(ModelStorage::dirNameToModel("gpt-oss-20b"), "gpt-oss-20b");
+    EXPECT_EQ(ModelStorage::dirNameToModel("Qwen3-Coder-30B"), "qwen3-coder-30b");
 }

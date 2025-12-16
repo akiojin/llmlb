@@ -7,9 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
 use tower::ServiceExt;
@@ -28,7 +26,6 @@ async fn build_app() -> Router {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -42,7 +39,6 @@ async fn build_app() -> Router {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -54,7 +50,7 @@ async fn build_app() -> Router {
 
 #[tokio::test]
 #[serial]
-async fn register_gpu_agent_success() {
+async fn register_gpu_node_success() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
@@ -74,7 +70,7 @@ async fn register_gpu_agent_success() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -89,7 +85,7 @@ async fn register_gpu_agent_success() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -120,7 +116,7 @@ async fn register_gpu_agent_success() {
 
 #[tokio::test]
 #[serial]
-async fn register_gpu_agent_missing_devices_is_rejected() {
+async fn register_gpu_node_missing_devices_is_rejected() {
     std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let app = build_app().await;
 
@@ -137,7 +133,7 @@ async fn register_gpu_agent_missing_devices_is_rejected() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -151,6 +147,6 @@ async fn register_gpu_agent_missing_devices_is_rejected() {
     let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         error["error"],
-        "Validation error: GPU hardware is required for agent registration. No GPU devices detected in gpu_devices array."
+        "Validation error: GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
     );
 }

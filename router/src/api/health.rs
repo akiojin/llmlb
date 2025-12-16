@@ -4,7 +4,7 @@ use crate::{api::nodes::AppError, balancer::MetricsUpdate, AppState};
 use axum::{extract::State, Json};
 use llm_router_common::protocol::HealthCheckRequest;
 
-/// POST /api/health - ヘルスチェック受信
+/// POST /v0/health - ヘルスチェック受信
 pub async fn health_check(
     State(state): State<AppState>,
     Json(req): Json<HealthCheckRequest>,
@@ -80,7 +80,7 @@ pub async fn health_check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager};
+    use crate::{balancer::LoadManager, registry::NodeRegistry};
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
     use uuid::Uuid;
@@ -90,7 +90,6 @@ mod tests {
         let load_manager = LoadManager::new(registry.clone());
         let request_history =
             std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let task_manager = DownloadTaskManager::new();
         let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
@@ -104,7 +103,6 @@ mod tests {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,
@@ -161,13 +159,13 @@ mod tests {
         assert!(result.is_ok());
 
         // ノードが更新されたことを確認
-        let agent = state.registry.get(register_response.node_id).await.unwrap();
-        assert_eq!(agent.status, llm_router_common::types::NodeStatus::Online);
-        assert_eq!(agent.loaded_models, vec!["gpt-oss-20b"]);
+        let node = state.registry.get(register_response.node_id).await.unwrap();
+        assert_eq!(node.status, llm_router_common::types::NodeStatus::Online);
+        assert_eq!(node.loaded_models, vec!["gpt-oss-20b"]);
     }
 
     #[tokio::test]
-    async fn test_health_check_unknown_agent() {
+    async fn test_health_check_unknown_node() {
         let state = create_test_state().await;
 
         let health_req = HealthCheckRequest {

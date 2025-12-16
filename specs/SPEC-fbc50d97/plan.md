@@ -30,7 +30,7 @@ JSONファイルに保存し、Webダッシュボードで履歴を可視化す�
 **ストレージ**: JSONファイル (`~/.llm-router/request_history.json`)
 **テスト**: cargo test (unit/integration/e2e)
 **対象プラットフォーム**: Linux server (ubuntu-latest, windows-latest対応)
-**プロジェクトタイプ**: single (既存の coordinator クレート内に実装)
+**プロジェクトタイプ**: single (既存の router クレート内に実装)
 **パフォーマンス目標**: プロキシオーバーヘッド < 5ms, ダッシュボード初期表示 < 1秒
 **制約**: 非同期保存必須, ストリーミング対応, ファイルロック（排他制御）
 **スケール/スコープ**: 7日間で10,000+ レコード, 100件/ページのページネーション
@@ -40,17 +40,17 @@ JSONファイルに保存し、Webダッシュボードで履歴を可視化す�
 *ゲート: Phase 0 research前に合格必須。Phase 1 design後に再チェック。*
 
 **シンプルさ**:
-- プロジェクト数: 1 (coordinatorクレートのみ) ✓
+- プロジェクト数: 1 (routerクレートのみ) ✓
 - フレームワークを直接使用? Yes (Axum直接使用、ラッパーなし) ✓
 - 単一データモデル? Yes (RequestResponseRecord構造体のみ) ✓
 - パターン回避? Yes (Repository パターン不使用、直接ファイルI/O) ✓
 
 **アーキテクチャ**:
-- すべての機能をライブラリとして? Yes (coordinator/src/ 以下にモジュール実装) ✓
+- すべての機能をライブラリとして? Yes (router/src/ 以下にモジュール実装) ✓
 - ライブラリリスト:
-  - `coordinator::db::request_history` - ストレージ層
-  - `coordinator::api::proxy` - プロキシ + キャプチャ機能
-  - `coordinator::api::dashboard` - ダッシュボードAPI
+  - `router::db::request_history` - ストレージ層
+  - `router::api::proxy` - プロキシ + キャプチャ機能
+  - `router::api::dashboard` - ダッシュボードAPI
 - ライブラリごとのCLI: `llm-router --help/--version` (既存CLIを拡張) ✓
 - ライブラリドキュメント: llms.txt形式を計画? 既存パターンに従う
 
@@ -91,7 +91,7 @@ specs/SPEC-fbc50d97/
 ### ソースコード (リポジトリルート)
 
 ```
-coordinator/
+router/
 ├── src/
 │   ├── db/
 │   │   ├── mod.rs                 # 既存（ノード保存）
@@ -119,7 +119,7 @@ tests/
     └── request_history_flow_test.rs # NEW: E2Eフロー
 ```
 
-**構造決定**: 既存の単一プロジェクト構造を維持し、coordinator クレート内に
+**構造決定**: 既存の単一プロジェクト構造を維持し、router クレート内に
 機能を追加
 
 ## Phase 0: アウトライン＆リサーチ
@@ -192,9 +192,9 @@ pub struct RequestResponseRecord {
     pub timestamp: DateTime<Utc>,
     pub request_type: RequestType,
     pub model: String,
-    pub agent_id: Uuid,
-    pub agent_machine_name: String,
-    pub agent_ip: IpAddr,
+    pub node_id: Uuid,
+    pub node_machine_name: String,
+    pub node_ip: IpAddr,
     pub request_body: serde_json::Value,
     pub response_body: Option<serde_json::Value>,
     pub duration_ms: u64,
@@ -216,7 +216,7 @@ pub enum RecordStatus {
 ```
 
 **関係性**:
-- `Agent` (既存) ← (N:1) → `RequestResponseRecord` (agent_id で参照)
+- `Node` (既存) ← (N:1) → `RequestResponseRecord` (node_id で参照)
 
 ### 2. API契約 (`contracts/`)
 
@@ -224,10 +224,10 @@ pub enum RecordStatus {
 
 ```json
 {
-  "GET /api/dashboard/request-responses": {
+  "GET /v0/dashboard/request-responses": {
     "query_params": {
       "model": "string (optional)",
-      "agent_id": "uuid (optional)",
+      "node_id": "uuid (optional)",
       "status": "success|error (optional)",
       "start_time": "ISO8601 (optional)",
       "end_time": "ISO8601 (optional)",
@@ -241,14 +241,14 @@ pub enum RecordStatus {
       "per_page": "integer"
     }
   },
-  "GET /api/dashboard/request-responses/:id": {
+  "GET /v0/dashboard/request-responses/:id": {
     "path_params": {
       "id": "uuid"
     },
     "response_200": "RequestResponseRecord",
     "response_404": { "error": "Record not found" }
   },
-  "GET /api/dashboard/request-responses/export": {
+  "GET /v0/dashboard/request-responses/export": {
     "query_params": {
       "format": "json|csv",
       "... (same filters as list endpoint)"
@@ -269,7 +269,7 @@ pub enum RecordStatus {
 #[tokio::test]
 async fn test_list_request_responses_contract() {
     // Arrange: テストサーバー起動、データなし
-    // Act: GET /api/dashboard/request-responses
+    // Act: GET /v0/dashboard/request-responses
     // Assert:
     //   - Status: 200
     //   - Body: { records: [], total_count: 0, page: 1, per_page: 100 }
@@ -296,7 +296,7 @@ async fn test_export_request_responses_contract() {
 async fn test_request_is_captured_and_stored() {
     // 1. ルーター起動
     // 2. テストノード登録
-    // 3. /api/chat にリクエスト送信
+    // 3. /v1/chat/completions にリクエスト送信
     // 4. request_history.json にレコードが保存されることを確認
     // 5. レコードの内容が正しいことを検証
 }

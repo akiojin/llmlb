@@ -98,8 +98,8 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 
 以下の機能は廃止され、完全に削除されました：
 
-- `user` サブコマンド（list/add/delete）- API経由 `POST /api/users/*` を使用
-- `model` サブコマンド（list/add/download）- API経由 `POST /api/models/*` を使用
+- `user` サブコマンド（list/add/delete）- API経由 `/v0/users/*` を使用
+- `model` サブコマンド（list/add/download）- API経由 `/v0/models/*` を使用
 - `--preload-model` オプション - Dashboard経由でモデル配布を実行
 
 ### 環境変数（設定）
@@ -204,8 +204,8 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 
 - インタラクティブモード（対話形式での設定）
 - 設定ファイル（YAML/TOML）からの読み込み
-- CLI経由のユーザー管理（API `POST /api/users/*` で対応済み）
-- CLI経由のモデル管理（API `POST /api/models/*` で対応済み）
+- CLI経由のユーザー管理（API `/v0/users/*` で対応済み）
+- CLI経由のモデル管理（API `/v0/models/*` で対応済み）
 
 ---
 

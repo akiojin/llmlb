@@ -1,6 +1,6 @@
 //! ログ閲覧API
 //!
-//! `/api/dashboard/logs/*` エンドポイントを提供する。
+//! `/v0/dashboard/logs/*` エンドポイントを提供する。
 
 use super::nodes::AppError;
 use crate::{logging, AppState};
@@ -63,7 +63,7 @@ pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRe
     }))
 }
 
-/// GET /api/nodes/:node_id/logs
+/// GET /v0/nodes/:node_id/logs
 pub async fn get_node_logs(
     Path(node_id): Path<Uuid>,
     Query(query): Query<LogQuery>,
@@ -72,13 +72,13 @@ pub async fn get_node_logs(
     let node = state.registry.get(node_id).await?;
     // Registering 状態でもログ取得は許可（Offline のみ拒否）
     if node.status == NodeStatus::Offline {
-        return Err(RouterError::AgentOffline(node_id).into());
+        return Err(RouterError::NodeOffline(node_id).into());
     }
 
     let limit = clamp_limit(query.limit);
     let node_api_port = node.runtime_port.saturating_add(1); // APIポートはLLM runtimeポート+1
     let url = format!(
-        "http://{}:{}/api/logs?tail={}",
+        "http://{}:{}/v0/logs?tail={}",
         node.ip_address, node_api_port, limit
     );
 
@@ -142,10 +142,7 @@ impl From<NodeLogPayload> for LogResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry,
-        tasks::DownloadTaskManager,
-    };
+    use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry};
     use axum::extract::State as AxumState;
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::{net::IpAddr, sync::Arc};
@@ -167,7 +164,6 @@ mod tests {
         let request_history = Arc::new(
             crate::db::request_history::RequestHistoryStorage::new().expect("history init"),
         );
-        let task_manager = DownloadTaskManager::new();
         let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
@@ -181,7 +177,6 @@ mod tests {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,
@@ -237,7 +232,7 @@ mod tests {
         let node_ip: IpAddr = mock.address().ip();
 
         Mock::given(method("GET"))
-            .and(path("/api/logs"))
+            .and(path("/v0/logs"))
             .respond_with(ResponseTemplate::new(200).set_body_raw(
                 r#"{"entries":[{"timestamp":"2025-11-14T00:00:00Z","level":"INFO","target":"node","message":"remote","fields":{}}],"path":"/var/log/node.log"}"#,
                 "application/json",

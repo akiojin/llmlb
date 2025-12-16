@@ -90,7 +90,7 @@ test.describe('Playground Chat @playground', () => {
 
     // Listen for potential request
     const requestPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/chat') || req.url().includes('/v1/chat'),
+      (req) => req.url().includes('/v1/chat'),
       { timeout: 3000 }
     ).catch(() => null);
 

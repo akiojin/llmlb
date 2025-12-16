@@ -5,12 +5,37 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <cctype>
 #include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace llm_node {
+
+namespace {
+std::string sanitizeModelId(const std::string& input) {
+    if (input.empty()) return "_latest";
+
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+            out.push_back(static_cast<char>(c));
+            continue;
+        }
+        if (c >= 'A' && c <= 'Z') {
+            out.push_back(static_cast<char>(std::tolower(c)));
+            continue;
+        }
+        // Disallow path separators and other special characters by replacing them.
+        out.push_back('_');
+    }
+
+    if (out.empty() || out == "." || out == "..") return "_latest";
+    return out;
+}
+}  // namespace
 
 ModelStorage::ModelStorage(std::string models_dir) : models_dir_(std::move(models_dir)) {}
 

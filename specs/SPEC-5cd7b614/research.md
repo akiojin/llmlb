@@ -6,7 +6,7 @@
 
 ## 調査目的
 
-LLM RouterのAgentが起動時にGPUを自動検出する方法を確立する。
+LLM RouterのNodeが起動時にGPUを自動検出する方法を確立する。
 当初実装した `runtime ps` ベースの検出が、モデル非実行時にはGPU情報を返さないことが判明したため、代替手段を検証する。
 
 ## 問題の発見
@@ -14,7 +14,7 @@ LLM RouterのAgentが起動時にGPUを自動検出する方法を確立する�
 ### runtime psコマンドの制限
 
 `runtime ps` コマンドは、モデルが実行中の場合のみPROCESSOR列にGPU情報を表示する。
-Agent起動時にはモデルが実行されていないため、以下のように空の出力が返される：
+Node起動時にはモデルが実行されていないため、以下のように空の出力が返される：
 
 ```
 NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL
@@ -155,7 +155,7 @@ LLM runtimeの実装 (`/gpu/cpu_common.go`):
 
 ### 変更対象
 
-`agent/src/metrics.rs` の `GpuCollector` 実装
+`node/src/metrics.rs` の `GpuCollector` 実装
 
 ### 変更内容
 
@@ -200,14 +200,14 @@ LLM runtimeの実装 (`/gpu/cpu_common.go`):
 
 ## 2025-11-02 追加検証ログ
 
-- `agent/src/metrics.rs` にテスト専用の環境変数オーバーライド（`OLLAMA_TEST_*` 系）を追加し、Docker for Mac を想定した `lscpu` / `/proc/cpuinfo` のモック出力で Apple Silicon を判定できることをユニットテストで検証。
+- `node/src/metrics.rs` にテスト専用の環境変数オーバーライド（`OLLAMA_TEST_*` 系）を追加し、Docker for Mac を想定した `lscpu` / `/proc/cpuinfo` のモック出力で Apple Silicon を判定できることをユニットテストで検証。
 - AMD GPU については KFD topology / `/dev/kfd` / `/sys/class/drm` を一時ディレクトリで再現し、`AmdGpuCollector::new()` が1台検出することを確認。
 - NVIDIA GPU は `/dev/nvidia0` と `/proc/driver/nvidia/version` のモックファイルで `is_nvidia_gpu_present()` が真を返すテストを追加。
 - これらのテストにより CI 環境（GPU非搭載）でも検出ロジックを安全に回帰テストできるようになった。
 
 1. **E2Eテスト**
-   - Agent起動時の自動登録フロー
-   - GPU情報がCoordinatorに正しく送信されることを確認
+   - Node起動時の自動登録フロー
+   - GPU情報がRouterに正しく送信されることを確認
 
 ## 参考資料
 
@@ -221,7 +221,7 @@ LLM runtimeの実装 (`/gpu/cpu_common.go`):
 
 ## 次のステップ
 
-1. `agent/src/metrics.rs` から `LLM runtimePsGpuCollector` を削除
+1. `node/src/metrics.rs` から `LLM runtimePsGpuCollector` を削除
 2. PoCで検証した検出ロジックを各GPUコレクタに統合
 3. テストの更新と実行
 4. ドキュメントの更新

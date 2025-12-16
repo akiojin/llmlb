@@ -199,7 +199,7 @@ Response::builder()
 1. timestamp
 2. request_type
 3. model
-4. agent_machine_name
+4. node_machine_name
 5. status
 6. duration_ms
 7. request_body (JSON文字列)

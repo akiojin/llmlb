@@ -22,9 +22,6 @@ pub mod registry;
 /// データベースアクセス
 pub mod db;
 
-/// ダウンロードタスク管理
-pub mod tasks;
-
 /// メトリクス収集・管理
 pub mod metrics;
 
@@ -62,8 +59,6 @@ pub struct AppState {
     pub load_manager: balancer::LoadManager,
     /// リクエスト履歴ストレージ
     pub request_history: std::sync::Arc<db::request_history::RequestHistoryStorage>,
-    /// ダウンロードタスクマネージャー
-    pub task_manager: tasks::DownloadTaskManager,
     /// 変換タスクマネージャー
     pub convert_manager: convert::ConvertTaskManager,
     /// データベース接続プール

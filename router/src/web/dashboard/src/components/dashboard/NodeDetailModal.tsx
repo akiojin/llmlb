@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { type DashboardNode, nodesApi, dashboardApi } from '@/lib/api'
+import { type DashboardNode, type LogEntry, nodesApi, dashboardApi } from '@/lib/api'
 import { formatUptime, formatPercentage, formatRelativeTime, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -300,8 +300,8 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
             </div>
             <ScrollArea className="h-64 rounded-md border">
               <div className="p-4 font-mono text-xs space-y-1">
-                {(logs as Array<{ timestamp: string; level: string; message: string }>) ? (
-                  (logs as Array<{ timestamp: string; level: string; message: string }>).map((log, i) => (
+                {logs?.entries?.length ? (
+                  (logs.entries as LogEntry[]).map((log, i) => (
                     <div key={i} className="flex gap-2">
                       <span className="text-muted-foreground">
                         {new Date(log.timestamp).toLocaleTimeString()}
@@ -318,7 +318,7 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
                       >
                         {log.level}
                       </span>
-                      <span>{log.message}</span>
+                      <span>{log.message || ''}</span>
                     </div>
                   ))
                 ) : (

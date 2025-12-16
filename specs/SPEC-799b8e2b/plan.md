@@ -5,7 +5,7 @@
 ### Router (Rust)
 
 - **ファイル**: `router/src/logging.rs`
-- **出力先**: `~/.llm-router/logs/coordinator.log.jsonl`（ファイルのみ）
+- **出力先**: `~/.llm-router/logs/router.log.jsonl`（ファイルのみ）
 - **形式**: JSON Lines（tracing-subscriber fmt::layer().json()）
 - **ローテーション**: なし（append）
 - **環境変数**: `ROUTER_LOG_LEVEL`, `RUST_LOG`, `LLM_ROUTER_DATA_DIR`
@@ -117,4 +117,4 @@ spdlogの既存機能で対応可能（daily_file_sink_mtを使用）。
 ### Phase 3: 統合確認
 
 1. Router/Node両方を起動してログ出力確認
-2. 既存の`/api/logs`エンドポイント動作確認
+2. `GET /v0/logs` エンドポイント動作確認

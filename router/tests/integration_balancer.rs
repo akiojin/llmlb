@@ -1,4 +1,4 @@
-//! Coordinator load balancing integration tests entrypoint
+//! Router load balancing integration tests entrypoint
 
 #[path = "integration/test_load_balancing.rs"]
 mod test_load_balancing;

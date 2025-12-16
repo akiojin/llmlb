@@ -5,11 +5,11 @@
 
 #[tokio::test]
 async fn test_dashboard_websocket_connection() {
-    // Arrange: Coordinatorサーバー起動
-    // let coordinator = start_test_coordinator().await;
+    // Arrange: Routerサーバー起動
+    // let router = start_test_router().await;
 
     // Act: WebSocket接続
-    // let ws_client = connect_websocket(&coordinator, "/ws/dashboard").await;
+    // let ws_client = connect_websocket(&router, "/ws/dashboard").await;
 
     // Assert: 接続成功
     // assert!(ws_client.is_connected());
@@ -19,17 +19,17 @@ async fn test_dashboard_websocket_connection() {
 }
 
 #[tokio::test]
-async fn test_dashboard_receives_agent_registration_event() {
-    // Arrange: Coordinatorサーバー起動、WebSocket接続
-    // let coordinator = start_test_coordinator().await;
-    // let ws_client = connect_websocket(&coordinator, "/ws/dashboard").await;
+async fn test_dashboard_receives_node_registration_event() {
+    // Arrange: Routerサーバー起動、WebSocket接続
+    // let router = start_test_router().await;
+    // let ws_client = connect_websocket(&router, "/ws/dashboard").await;
 
     // Act: ノード登録
-    // let node_id = register_test_agent(&coordinator).await;
+    // let node_id = register_test_node(&router).await;
 
     // Assert: WebSocketクライアントがノード登録イベントを受信
     // let event = ws_client.receive_message().await;
-    // assert_eq!(event["type"], "agent_registered");
+    // assert_eq!(event["type"], "node_registered");
     // assert_eq!(event["node_id"], node_id.to_string());
 
     // TODO: T050-T053で実装後にアンコメント
@@ -37,18 +37,18 @@ async fn test_dashboard_receives_agent_registration_event() {
 }
 
 #[tokio::test]
-async fn test_dashboard_receives_agent_status_change() {
-    // Arrange: Coordinatorサーバー起動、WebSocket接続、ノード登録
-    // let coordinator = start_test_coordinator().await;
-    // let ws_client = connect_websocket(&coordinator, "/ws/dashboard").await;
-    // let node_id = register_test_agent(&coordinator).await;
+async fn test_dashboard_receives_node_status_change() {
+    // Arrange: Routerサーバー起動、WebSocket接続、ノード登録
+    // let router = start_test_router().await;
+    // let ws_client = connect_websocket(&router, "/ws/dashboard").await;
+    // let node_id = register_test_node(&router).await;
 
     // Act: ノードをオフラインにする
-    // simulate_agent_offline(&coordinator, node_id).await;
+    // simulate_node_offline(&router, node_id).await;
 
     // Assert: WebSocketクライアントが状態変化イベントを受信
     // let event = ws_client.receive_message().await;
-    // assert_eq!(event["type"], "agent_status_changed");
+    // assert_eq!(event["type"], "node_status_changed");
     // assert_eq!(event["node_id"], node_id.to_string());
     // assert_eq!(event["status"], "offline");
 

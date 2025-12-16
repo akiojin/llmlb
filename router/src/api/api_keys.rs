@@ -92,7 +92,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
     Ok(())
 }
 
-/// GET /api/api-keys - APIキー一覧取得
+/// GET /v0/api-keys - APIキー一覧取得
 ///
 /// Admin専用。全APIキーの一覧を返す（key_hashは除外）
 ///
@@ -122,7 +122,7 @@ pub async fn list_api_keys(
     }))
 }
 
-/// POST /api/api-keys - APIキー発行
+/// POST /v0/api-keys - APIキー発行
 ///
 /// Admin専用。新しいAPIキーを発行する。平文キーは発行時のみ返却
 ///
@@ -187,7 +187,7 @@ pub struct UpdateApiKeyRequest {
     pub expires_at: Option<String>,
 }
 
-/// PUT /api/api-keys/:id - APIキー更新
+/// PUT /v0/api-keys/:id - APIキー更新
 ///
 /// Admin専用。APIキーの名前と有効期限を更新する
 ///
@@ -240,7 +240,7 @@ pub async fn update_api_key(
     }
 }
 
-/// DELETE /api/api-keys/:id - APIキー削除
+/// DELETE /v0/api-keys/:id - APIキー削除
 ///
 /// Admin専用。APIキーを削除する
 ///

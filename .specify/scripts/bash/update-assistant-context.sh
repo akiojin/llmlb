@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Update agent context files with information from plan.md
+# Update assistant context files with information from plan.md
 #
-# This script maintains AI agent context files by parsing feature specifications 
-# and updating agent-specific configuration files with project information.
+# This script maintains AI assistant context files by parsing feature specifications
+# and updating assistant-specific configuration files with project information.
 #
 # MAIN FUNCTIONS:
 # 1. Environment Validation
@@ -16,9 +16,9 @@
 #    - Identifies language/version, frameworks, databases, and project types
 #    - Handles missing or incomplete specification data gracefully
 #
-# 3. Agent File Management
-#    - Creates new agent context files from templates when needed
-#    - Updates existing agent files with new project information
+# 3. Assistant File Management
+#    - Creates new assistant context files from templates when needed
+#    - Updates existing assistant files with new project information
 #    - Preserves manual additions and custom configurations
 #    - Supports multiple AI agent formats and directory structures
 #
@@ -28,15 +28,15 @@
 #    - Updates technology stacks and recent changes sections
 #    - Maintains consistent formatting and timestamps
 #
-# 5. Multi-Agent Support
-#    - Handles agent-specific file paths and naming conventions
+# 5. Multi-Assistant Support
+#    - Handles assistant-specific file paths and naming conventions
 #    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Amp, or Amazon Q Developer CLI
-#    - Can update single agents or all existing agent files
-#    - Creates default Claude file if no agent files exist
+#    - Can update a single assistant or all existing assistant files
+#    - Creates default Claude file if no assistant files exist
 #
-# Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|q
-# Leave empty to update all existing agent files
+# Usage: ./update-assistant-context.sh [assistant_type]
+# Assistant types: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|q
+# Leave empty to update all existing assistant files
 
 set -e
 
@@ -58,7 +58,7 @@ eval $(get_feature_paths)
 NEW_PLAN="$IMPL_PLAN"  # Alias for compatibility with existing code
 AGENT_TYPE="${1:-}"
 
-# Agent-specific file paths  
+# Assistant-specific file paths
 CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/copilot-instructions.md"
@@ -74,7 +74,7 @@ AMP_FILE="$REPO_ROOT/AGENTS.md"
 Q_FILE="$REPO_ROOT/AGENTS.md"
 
 # Template file
-TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
+TEMPLATE_FILE="$REPO_ROOT/.specify/templates/assistant-file-template.md"
 
 # Global variables for parsed plan data
 NEW_LANG=""
@@ -105,7 +105,7 @@ log_warning() {
 # Cleanup function for temporary files
 cleanup() {
     local exit_code=$?
-    rm -f /tmp/agent_update_*_$$
+    rm -f /tmp/assistant_update_*_$$
     rm -f /tmp/manual_additions_$$
     exit $exit_code
 }
@@ -588,7 +588,7 @@ update_specific_agent() {
         copilot)
             update_agent_file "$COPILOT_FILE" "GitHub Copilot"
             ;;
-        cursor-agent)
+        cursor|cursor-agent)
             update_agent_file "$CURSOR_FILE" "Cursor IDE"
             ;;
         qwen)
@@ -623,7 +623,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|q"
+            log_error "Expected: claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|q"
             exit 1
             ;;
     esac
@@ -717,7 +717,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|q]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|q]"
 }
 
 #==============================================================================
@@ -728,7 +728,7 @@ main() {
     # Validate environment before proceeding
     validate_environment
     
-    log_info "=== Updating agent context files for feature $CURRENT_BRANCH ==="
+    log_info "=== Updating assistant context files for feature $CURRENT_BRANCH ==="
     
     # Parse the plan file to extract project information
     if ! parse_plan_data "$NEW_PLAN"; then
@@ -736,18 +736,18 @@ main() {
         exit 1
     fi
     
-    # Process based on agent type argument
+    # Process based on assistant type argument
     local success=true
     
     if [[ -z "$AGENT_TYPE" ]]; then
-        # No specific agent provided - update all existing agent files
-        log_info "No agent specified, updating all existing agent files..."
+        # No specific assistant provided - update all existing assistant files
+        log_info "No assistant specified, updating all existing assistant files..."
         if ! update_all_existing_agents; then
             success=false
         fi
     else
-        # Specific agent provided - update only that agent
-        log_info "Updating specific agent: $AGENT_TYPE"
+        # Specific assistant provided - update only that assistant
+        log_info "Updating specific assistant: $AGENT_TYPE"
         if ! update_specific_agent "$AGENT_TYPE"; then
             success=false
         fi
@@ -757,10 +757,10 @@ main() {
     print_summary
     
     if [[ "$success" == true ]]; then
-        log_success "Agent context update completed successfully"
+        log_success "Assistant context update completed successfully"
         exit 0
     else
-        log_error "Agent context update completed with errors"
+        log_error "Assistant context update completed with errors"
         exit 1
     fi
 }
@@ -769,4 +769,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
-

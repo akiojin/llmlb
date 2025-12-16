@@ -7,7 +7,7 @@ use std::path::Path;
 /// SQLiteデータベース接続プールを作成してマイグレーションを実行
 ///
 /// # Arguments
-/// * `database_url` - データベースURL（例: "sqlite:data/coordinator.db"）
+/// * `database_url` - データベースURL（例: "sqlite:data/router.db"）
 ///
 /// # Returns
 /// * `Ok(SqlitePool)` - 初期化済みデータベースプール
@@ -55,30 +55,30 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), RouterError> {
     Ok(())
 }
 
-/// JSONファイルからエージェントデータをインポート（マイグレーション用）
+/// JSONファイルからノードデータをインポート（マイグレーション用）
 ///
-/// 注: この機能は将来的にエージェントデータもSQLiteに移行する際に使用
-/// 現在のところ、認証機能はエージェントデータとは独立して動作
+/// 注: この機能は将来的にノードデータもSQLiteに移行する際に使用
+/// 現在のところ、認証機能はノードデータとは独立して動作
 ///
 /// # Arguments
-/// * `json_path` - agents.jsonのパス
+/// * `json_path` - nodes.jsonのパス
 ///
 /// # Returns
 /// * `Ok(())` - インポート成功、元ファイルを.migratedにリネーム
 /// * `Err(RouterError)` - インポート失敗
-pub async fn import_agents_from_json(json_path: &str) -> Result<(), RouterError> {
+pub async fn import_nodes_from_json(json_path: &str) -> Result<(), RouterError> {
     let path = Path::new(json_path);
 
     // ファイルが存在しない場合はスキップ
     if !path.exists() {
-        tracing::info!("No agents.json found at {}, skipping import", json_path);
+        tracing::info!("No nodes.json found at {}, skipping import", json_path);
         return Ok(());
     }
 
-    // TODO: 将来的にエージェントデータをSQLiteに移行する場合、ここで実装
-    // 現在は認証機能のみSQLiteを使用し、エージェントデータは既存のJSONベース実装を継続
+    // TODO: 将来的にノードデータをSQLiteに移行する場合、ここで実装
+    // 現在は認証機能のみSQLiteを使用し、ノードデータは既存のJSONベース実装を継続
 
-    tracing::info!("Agent data import not yet implemented (agents remain in JSON format)");
+    tracing::info!("Node data import not yet implemented (nodes remain in JSON format)");
 
     // マイグレーション完了マーク（ファイルリネーム）
     let migrated_path = format!("{}.migrated", json_path);
@@ -134,9 +134,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_import_agents_from_json_no_file() {
+    async fn test_import_nodes_from_json_no_file() {
         // 存在しないファイルの場合はエラーなく完了
-        let result = import_agents_from_json("/nonexistent/agents.json").await;
+        let result = import_nodes_from_json("/nonexistent/nodes.json").await;
         assert!(result.is_ok());
     }
 }

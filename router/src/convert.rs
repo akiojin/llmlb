@@ -19,7 +19,9 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task;
 use uuid::Uuid;
 
-use crate::registry::models::{model_name_to_dir, router_models_dir, ModelInfo, ModelSource};
+use crate::registry::models::{
+    generate_ollama_style_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
+};
 use llm_router_common::error::RouterError;
 
 // ===== venv Auto-Setup =====
@@ -417,8 +419,8 @@ where
     F: Fn(f32) + Send + Sync + Clone + 'static,
 {
     let is_onnx = filename.to_ascii_lowercase().ends_with(".onnx");
-    // モデル名 = リポジトリ名（例: openai/gpt-oss-20b）
-    let model_name = repo.to_string();
+    // モデルIDはファイル名ベース形式に正規化する (SPEC-dcaeaec4 / SPEC-8ae67d67)
+    let model_name = generate_ollama_style_id(filename, repo);
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -1111,13 +1113,13 @@ mod tests {
 
         let manager = ConvertTaskManager::new(1);
 
-        let mut pending = ModelInfo::new("openai/gpt-oss-20b".into(), 0, "desc".into(), 0, vec![]);
+        let mut pending = ModelInfo::new("gpt-oss-20b".into(), 0, "desc".into(), 0, vec![]);
         pending.repo = Some("openai/gpt-oss-20b".into());
         pending.filename = Some("".into());
         pending.status = Some("pending_conversion".into());
         pending.source = ModelSource::HfPendingConversion;
 
-        let mut cached = ModelInfo::new("other/model".into(), 0, "done".into(), 0, vec![]);
+        let mut cached = ModelInfo::new("other".into(), 0, "done".into(), 0, vec![]);
         cached.repo = Some("other/model".into());
         cached.filename = Some("model.onnx".into());
         cached.status = Some("cached".into());

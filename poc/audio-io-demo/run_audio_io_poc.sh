@@ -183,7 +183,20 @@ fi
 echo "==> Downloading whisper model (${WHISPER_MODEL_NAME}) if missing"
 if [[ ! -f "${MODEL_DIR}/${WHISPER_MODEL_NAME}" ]]; then
   # Use whisper.cpp's official downloader script (HF mirror).
-  "${ROOT_DIR}/node/third_party/whisper.cpp/models/download-ggml-model.sh" tiny.en "${MODEL_DIR}"
+  #
+  # We derive the downloader "model name" from WHISPER_MODEL_NAME:
+  #   ggml-tiny.en.bin -> tiny.en
+  #   ggml-tiny.bin    -> tiny
+  #   ggml-small.bin   -> small
+  WHISPER_MODEL_TAG="${WHISPER_MODEL_NAME}"
+  if [[ "${WHISPER_MODEL_TAG}" != ggml-*.bin ]]; then
+    echo "Error: WHISPER_MODEL_NAME must be a whisper.cpp ggml model filename like ggml-tiny.en.bin" >&2
+    echo "Hint: download the model into MODEL_DIR yourself, or set WHISPER_MODEL_NAME to a known ggml model filename." >&2
+    exit 1
+  fi
+  WHISPER_MODEL_TAG="${WHISPER_MODEL_TAG#ggml-}"
+  WHISPER_MODEL_TAG="${WHISPER_MODEL_TAG%.bin}"
+  "${ROOT_DIR}/node/third_party/whisper.cpp/models/download-ggml-model.sh" "${WHISPER_MODEL_TAG}" "${MODEL_DIR}"
 fi
 ls -lh "${MODEL_DIR}/${WHISPER_MODEL_NAME}"
 

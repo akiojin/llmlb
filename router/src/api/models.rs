@@ -486,11 +486,11 @@ const TRUSTED_PROVIDERS: &[&str] = &[
     "TheBloke",
 ];
 
-/// リポジトリ内のONNXファイルを解決
-async fn resolve_first_onnx_in_repo(
+/// HFリポジトリのsiblings情報を取得
+async fn fetch_repo_siblings(
     http_client: &reqwest::Client,
     repo: &str,
-) -> Result<String, RouterError> {
+) -> Result<Vec<HfSibling>, RouterError> {
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -518,17 +518,7 @@ async fn resolve_first_onnx_in_repo(
         .json()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
-    let filename = detail
-        .siblings
-        .iter()
-        .map(|s| s.rfilename.clone())
-        .find(|f| f.to_ascii_lowercase().ends_with(".onnx"))
-        .ok_or_else(|| {
-            RouterError::Common(CommonError::Validation(
-                "No ONNX file found in repository".into(),
-            ))
-        })?;
-    Ok(filename)
+    Ok(detail.siblings)
 }
 
 /// HFリポジトリの存在確認（エクスポート経路の事前バリデーション用）
@@ -878,6 +868,12 @@ pub async fn register_model(
     // ファイル名を解決
     let filename = match req.filename.clone() {
         Some(f) => {
+            if f.to_ascii_lowercase().ends_with(".gguf") {
+                return Err(RouterError::Common(CommonError::Validation(
+                    "GGUF files are not supported. Please provide an .onnx file or omit filename to export a Transformers model.".into(),
+                ))
+                .into());
+            }
             // エクスポート経路（filename無し or 非ONNX）は、事前にrepoの存在確認をしておく。
             // Playwright E2Eの「invalid repository」はここで 400 を返すべき。
             if !f.to_ascii_lowercase().ends_with(".onnx") {
@@ -887,16 +883,26 @@ pub async fn register_model(
         }
         None => {
             // ファイル名指定なし - リポジトリ内のONNXを探す
-            match resolve_first_onnx_in_repo(&state.http_client, &repo).await {
-                Ok(f) => f,
-                Err(RouterError::Common(CommonError::Validation(msg)))
-                    if msg.contains("No ONNX file found") =>
-                {
-                    // リポジトリ内にONNXがない → 変換対象として空文字列（convert_managerが処理する）
-                    tracing::info!(repo = %repo, "No ONNX in repo, will attempt export");
-                    String::new()
-                }
-                Err(e) => return Err(e.into()),
+            let siblings = fetch_repo_siblings(&state.http_client, &repo).await?;
+
+            if let Some(onnx) = siblings
+                .iter()
+                .find(|s| s.rfilename.to_ascii_lowercase().ends_with(".onnx"))
+                .map(|s| s.rfilename.clone())
+            {
+                onnx
+            } else if siblings
+                .iter()
+                .any(|s| s.rfilename.to_ascii_lowercase().ends_with(".gguf"))
+            {
+                return Err(RouterError::Common(CommonError::Validation(
+                    "No ONNX file found; this repository appears to contain GGUF files. Please register an ONNX model.".into(),
+                ))
+                .into());
+            } else {
+                // リポジトリ内にONNXがない → 変換対象として空文字列（convert_managerが処理する）
+                tracing::info!(repo = %repo, "No ONNX in repo, will attempt export");
+                String::new()
             }
         }
     };

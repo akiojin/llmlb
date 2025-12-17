@@ -304,6 +304,29 @@ fn find_requirements_file() -> Option<PathBuf> {
     candidates.into_iter().find(|candidate| candidate.exists())
 }
 
+fn select_python_for_venv_creation() -> String {
+    let candidates: &[&str] = if cfg!(windows) {
+        &["python"]
+    } else {
+        // Prefer a modern Homebrew / pyenv Python on macOS/Linux.
+        &["python3.12", "python3.11", "python3.10", "python3"]
+    };
+
+    for cand in candidates {
+        if let Ok(output) = Command::new(cand).arg("--version").output() {
+            if output.status.success() {
+                return cand.to_string();
+            }
+        }
+    }
+
+    if cfg!(windows) {
+        "python".into()
+    } else {
+        "python3".into()
+    }
+}
+
 /// venv環境をセットアップ（同期実行）
 pub fn setup_venv() -> Result<(), RouterError> {
     // スキップフラグチェック
@@ -326,11 +349,41 @@ pub fn setup_venv() -> Result<(), RouterError> {
     let venv_python = get_venv_python()
         .ok_or_else(|| RouterError::Internal("Cannot determine venv python path".into()))?;
 
-    // 既にvenvが存在し、pythonが実行可能なら完了
+    // 既にvenvが存在し、pythonが実行可能なら完了（ただし依存が欠けていれば補完する）
     if venv_python.exists() {
         let check = Command::new(&venv_python).arg("--version").output();
         if let Ok(output) = check {
             if output.status.success() {
+                if let Some(requirements) = find_requirements_file() {
+                    if let Err(err) = ensure_python_deps_sync() {
+                        tracing::info!(
+                            "venv exists but python deps missing; reinstalling requirements: {}",
+                            err
+                        );
+
+                        let pip_output = Command::new(&venv_python)
+                            .args([
+                                "-m",
+                                "pip",
+                                "install",
+                                "-q",
+                                "-r",
+                                &requirements.to_string_lossy(),
+                            ])
+                            .output()
+                            .map_err(|e| {
+                                RouterError::Internal(format!("Failed to run pip: {}", e))
+                            })?;
+
+                        if !pip_output.status.success() {
+                            let err = String::from_utf8_lossy(&pip_output.stderr);
+                            let msg = format!("pip install failed: {}", err);
+                            *VENV_STATUS.write().unwrap() = VenvStatus::Failed(msg.clone());
+                            return Err(RouterError::Internal(msg));
+                        }
+                    }
+                }
+
                 tracing::info!("venv already exists at {:?}", venv_dir);
                 *VENV_STATUS.write().unwrap() = VenvStatus::Ready;
                 return Ok(());
@@ -351,8 +404,9 @@ pub fn setup_venv() -> Result<(), RouterError> {
             .map_err(|e| RouterError::Internal(format!("Failed to create dir: {}", e)))?;
     }
 
-    // python3 -m venv を実行
-    let venv_output = Command::new("python3")
+    // python -m venv を実行（python3.12等を優先して選択）
+    let python_for_venv = select_python_for_venv_creation();
+    let venv_output = Command::new(&python_for_venv)
         .args(["-m", "venv", &venv_dir.to_string_lossy()])
         .output()
         .map_err(|e| RouterError::Internal(format!("Failed to create venv: {}", e)))?;
@@ -1161,7 +1215,7 @@ async fn ensure_python_deps() -> Result<(), RouterError> {
         .filter(|p| p.exists())
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "python3".into());
-    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub'] if importlib.util.find_spec(m) is None];\n\
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub','onnxscript','optimum','onnxruntime'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
 
     let python_bin_for_cmd = python_bin.clone();
@@ -1182,7 +1236,7 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
-        "transformers, torch, onnx, huggingface_hub".to_string()
+        "transformers, torch, onnx, huggingface_hub, onnxscript, optimum, onnxruntime".to_string()
     } else {
         missing
     };
@@ -1199,7 +1253,7 @@ fn ensure_python_deps_sync() -> Result<(), RouterError> {
         .filter(|p| p.exists())
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "python3".into());
-    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub'] if importlib.util.find_spec(m) is None];\n\
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub','onnxscript','optimum','onnxruntime'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let output = std::process::Command::new(&python_bin)
         .arg("-c")
@@ -1214,7 +1268,7 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
-        "transformers, torch, onnx, huggingface_hub".to_string()
+        "transformers, torch, onnx, huggingface_hub, onnxscript, optimum, onnxruntime".to_string()
     } else {
         missing
     };

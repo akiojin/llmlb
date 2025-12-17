@@ -125,6 +125,7 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         registry.register(req).await.unwrap();
 

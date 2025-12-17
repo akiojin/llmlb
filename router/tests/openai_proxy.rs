@@ -47,6 +47,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap();

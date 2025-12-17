@@ -250,6 +250,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         let register_res = state.registry.register(register_req).await.unwrap();
         let node_id = register_res.node_id;

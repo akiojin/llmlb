@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node, register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     body::Body,
@@ -88,7 +88,6 @@ async fn tags_handler(State(state): State<Arc<TtsStubState>>) -> impl IntoRespon
 /// - レスポンスは audio/mpeg バイナリ
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_end_to_end_success() {
     // ダミーMP3データ（ID3タグの最小ヘッダ）
     let dummy_mp3 = vec![
@@ -106,9 +105,10 @@ async fn speech_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -143,7 +143,6 @@ async fn speech_end_to_end_success() {
 /// - デフォルト値: voice=nova, response_format=mp3, speed=1.0
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_with_optional_params() {
     let dummy_wav = vec![
         0x52, 0x49, 0x46, 0x46, // "RIFF"
@@ -159,9 +158,10 @@ async fn speech_with_optional_params() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -188,7 +188,6 @@ async fn speech_with_optional_params() {
 /// - input が空の場合は 400 Bad Request を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_empty_input_returns_400() {
     let tts_stub = spawn_tts_stub(TtsStubState {
         expected_model: None,
@@ -230,7 +229,6 @@ async fn speech_empty_input_returns_400() {
 /// - APIキーなしの場合は 401 Unauthorized を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_without_auth_returns_401() {
     let coordinator = spawn_test_router().await;
 
@@ -255,7 +253,6 @@ async fn speech_without_auth_returns_401() {
 /// - TTS対応ノードがない場合は 503 Service Unavailable を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_no_available_node_returns_503() {
     // ノードを登録しない
     let coordinator = spawn_test_router().await;
@@ -281,7 +278,6 @@ async fn speech_no_available_node_returns_503() {
 /// - input が 4096 文字を超える場合は 400 Bad Request を返す
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/audio/speech endpoint not implemented yet"]
 async fn speech_input_too_long_returns_400() {
     let tts_stub = spawn_tts_stub(TtsStubState {
         expected_model: None,

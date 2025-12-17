@@ -183,6 +183,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -198,6 +199,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -264,6 +266,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -318,6 +321,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -334,6 +338,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -405,6 +410,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -420,6 +426,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -486,6 +493,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -501,6 +509,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -567,6 +576,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -582,6 +592,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -656,6 +667,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX4090".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -671,6 +683,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX3080".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -743,6 +756,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -759,6 +773,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -808,6 +823,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -823,6 +839,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -889,6 +906,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -904,6 +922,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -995,6 +1014,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX4090".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1010,6 +1030,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX2060".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1100,6 +1121,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1179,6 +1201,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1305,6 +1328,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1334,6 +1358,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1377,6 +1402,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()

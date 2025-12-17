@@ -35,6 +35,25 @@ pub struct RegisterRequest {
     /// GPUモデル名
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_model: Option<String>,
+    /// サポートするランタイム一覧
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_runtimes: Vec<crate::types::RuntimeType>,
+}
+
+impl Default for RegisterRequest {
+    fn default() -> Self {
+        Self {
+            machine_name: "localhost".to_string(),
+            ip_address: "127.0.0.1".parse().unwrap(),
+            runtime_version: "0.0.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: false,
+            gpu_devices: Vec::new(),
+            gpu_count: None,
+            gpu_model: None,
+            supported_runtimes: Vec::new(),
+        }
+    }
 }
 
 /// ノード登録レスポンス
@@ -436,6 +455,7 @@ mod tests {
             }],
             gpu_count: Some(2),
             gpu_model: Some("NVIDIA RTX 4090".to_string()),
+            supported_runtimes: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();

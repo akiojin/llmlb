@@ -94,31 +94,6 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 
 ### システム構成
 
-```
-┌───────────────────────────────────────┐
-│               Client                  │
-│     (apps / users / integrations)     │
-└───────────────────┬───────────────────┘
-                    │ OpenAI-compatible (/v1/*)
-                    ▼
-┌───────────────────────────────────────┐
-│                Router                 │
-│  - /v1/* proxy + load balancing       │
-│  - /v0/* (nodes, models, dashboard)   │
-│  - /dashboard (Web UI)                │
-└──────────────┬───────────────┬────────┘
-               │               │
-               │ OpenAI-compatible (/v1/*)
-               ▼               ▼
-        ┌────────────┐   ┌────────────┐
-        │    Node    │   │    Node    │
-        │ llama.cpp  │   │ llama.cpp  │
-        └────────────┘   └────────────┘
-               ▲               ▲
-               │ /v0/nodes, /v0/health (registration/heartbeat)
-               └───────────────┘
-```
-
 ![システム構成](docs/diagrams/architecture.readme.ja.svg)
 
 Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成 (README.ja.md)）

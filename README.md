@@ -232,36 +232,6 @@ Nodes report health + metrics to the Router for node status and load balancing d
 
 ### System Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                          Client                              │
-│                (Users, Applications, etc.)                   │
-└────────────────────┬────────────────────────────────────────┘
-                     │ POST /v1/chat/completions
-                     │ POST /v1/completions
-                     │ POST /v1/embeddings
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                         Router                               │
-│                  (Central Management Server)                 │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 1. Select Node (Load Balancing)                      │   │
-│  │ 2. Proxy Request to Selected Node                     │   │
-│  │ 3. Return Response to Client                           │   │
-│  └─────────────────────────────────────────────────────┘   │
-└────┬──────────────────┬──────────────────┬─────────────────┘
-     │                  │                  │
-     │ OpenAI Proxy     │ OpenAI Proxy     │ OpenAI Proxy
-     ▼                  ▼                  ▼
-┌─────────┐        ┌─────────┐        ┌─────────┐
-│ Node 1  │        │ Node 2  │        │ Node 3  │
-│         │        │         │        │         │
-│  /v1/* API │     │  /v1/* API │     │  /v1/* API │
-└─────────┘        └─────────┘        └─────────┘
-Machine 1          Machine 2          Machine 3
-```
-
 ![System Overview](docs/diagrams/architecture.readme.en.svg)
 
 Draw.io source: `docs/diagrams/architecture.drawio` (Page: System Overview (README.md))

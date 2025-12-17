@@ -84,15 +84,18 @@ std::string ModelStorage::modelNameToDir(const std::string& model_name) {
 }
 
 std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
+    const std::string normalized = sanitizeModelId(dir_name);
+
     // Lossy reverse conversion:
     // - Strip "_latest" suffix used for non-versioned ids.
     // - Otherwise keep directory name as model id (router uses filename-based ids).
     constexpr const char* kLatestSuffix = "_latest";
-    if (dir_name.size() > std::char_traits<char>::length(kLatestSuffix) &&
-        dir_name.rfind(kLatestSuffix) == dir_name.size() - std::char_traits<char>::length(kLatestSuffix)) {
-        return dir_name.substr(0, dir_name.size() - std::char_traits<char>::length(kLatestSuffix));
+    const size_t suffix_len = std::char_traits<char>::length(kLatestSuffix);
+    if (normalized.size() > suffix_len &&
+        normalized.rfind(kLatestSuffix) == normalized.size() - suffix_len) {
+        return normalized.substr(0, normalized.size() - suffix_len);
     }
-    return dir_name;
+    return normalized;
 }
 
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {

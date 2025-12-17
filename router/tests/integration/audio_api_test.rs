@@ -10,6 +10,10 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use tower::ServiceExt;
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
 async fn build_app() -> Router {
     let registry = NodeRegistry::new();
@@ -38,20 +42,39 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
+async fn start_mock_node_models_endpoint() -> (MockServer, u16) {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": []
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let mock_port = mock_server.address().port();
+    let runtime_port = mock_port
+        .checked_sub(1)
+        .expect("mock_server port must be > 0");
+
+    (mock_server, runtime_port)
+}
+
 /// T013: ASRノード選択テスト
 ///
 /// RuntimeType::WhisperCppを持つノードが/v1/audio/transcriptionsにルーティングされる
 #[tokio::test]
-#[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_asr_node_routing_selects_whisper_runtime() {
+    let (_mock_server, runtime_port) = start_mock_node_models_endpoint().await;
     let app = build_app().await;
 
     // Whisper対応ノードを登録
     let register_payload = json!({
         "machine_name": "whisper-node",
-        "ip_address": "192.168.1.100",
+        "ip_address": "127.0.0.1",
         "runtime_version": "0.1.0",
-        "runtime_port": 8080,
+        "runtime_port": runtime_port,
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
@@ -119,16 +142,16 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
 ///
 /// RuntimeType::OnnxRuntimeを持つノードが/v1/audio/speechにルーティングされる
 #[tokio::test]
-#[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_tts_node_routing_selects_onnx_runtime() {
+    let (_mock_server, runtime_port) = start_mock_node_models_endpoint().await;
     let app = build_app().await;
 
     // TTS対応ノードを登録
     let register_payload = json!({
         "machine_name": "tts-node",
-        "ip_address": "192.168.1.101",
+        "ip_address": "127.0.0.1",
         "runtime_version": "0.1.0",
-        "runtime_port": 8080,
+        "runtime_port": runtime_port,
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
@@ -195,16 +218,16 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
 ///
 /// 複数のRuntimeTypeを持つノードが適切に処理される
 #[tokio::test]
-#[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_multi_runtime_node_handles_both_asr_and_tts() {
+    let (_mock_server, runtime_port) = start_mock_node_models_endpoint().await;
     let app = build_app().await;
 
     // 複合ランタイム対応ノードを登録（ONNX + ASR）
     let register_payload = json!({
         "machine_name": "multi-runtime-node",
-        "ip_address": "192.168.1.102",
+        "ip_address": "127.0.0.1",
         "runtime_version": "0.1.0",
-        "runtime_port": 8080,
+        "runtime_port": runtime_port,
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 2, "memory": 24576}
@@ -237,25 +260,43 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
     let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let node_id = node["node_id"].as_str().expect("node_id should exist");
 
-    // ノード詳細を取得して複数のランタイムが登録されていることを確認
-    let detail_response = app
+    // ノード一覧を確認して複数のランタイムが登録されていることを確認
+    let nodes_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/nodes/{}", node_id))
+                .uri("/api/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ノードが存在し、複数のランタイムをサポートしていることを確認
-    // 実際のエンドポイント実装後に詳細な検証を追加
+    assert_eq!(nodes_response.status(), StatusCode::OK);
+    let body = to_bytes(nodes_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let nodes: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    let node_list = nodes.as_array().expect("nodes should be an array");
+    let multi_runtime_node = node_list
+        .iter()
+        .find(|n| n.get("id").and_then(|id| id.as_str()) == Some(node_id))
+        .expect("registered node should appear in /api/nodes");
+
+    let supported = multi_runtime_node
+        .get("supported_runtimes")
+        .and_then(|v| v.as_array())
+        .expect("supported_runtimes should be an array");
+
     assert!(
-        detail_response.status() == StatusCode::OK
-            || detail_response.status() == StatusCode::NOT_FOUND,
-        "Node detail endpoint should be accessible"
+        supported.iter().any(|v| v.as_str() == Some("onnx_runtime")),
+        "A multi-runtime node should include onnx_runtime"
+    );
+    assert!(
+        supported.iter().any(|v| v.as_str() == Some("whisper_cpp")),
+        "A multi-runtime node should include whisper_cpp"
     );
 }
 
@@ -263,22 +304,22 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
 ///
 /// 要求されたRuntimeTypeを持つノードがない場合、503を返す
 #[tokio::test]
-#[ignore = "TDD RED: Audio API routing not implemented yet"]
 async fn test_no_capable_node_returns_503() {
+    let (_mock_server, runtime_port) = start_mock_node_models_endpoint().await;
     let app = build_app().await;
 
-    // LLMノードのみを登録（ASR/TTSなし）
+    // ASRノードのみを登録（TTSなし）
     let register_payload = json!({
-        "machine_name": "llm-only-node",
-        "ip_address": "192.168.1.103",
+        "machine_name": "asr-only-node",
+        "ip_address": "127.0.0.1",
         "runtime_version": "0.1.0",
-        "runtime_port": 8080,
+        "runtime_port": runtime_port,
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
         ],
-        "supported_runtimes": ["onnx_runtime"],
-        "loaded_models": ["gpt-oss-20b"]
+        "supported_runtimes": ["whisper_cpp"],
+        "loaded_asr_models": ["whisper-large-v3"]
     });
 
     let register_response = app
@@ -297,31 +338,7 @@ async fn test_no_capable_node_returns_503() {
 
     assert_eq!(register_response.status(), StatusCode::CREATED);
 
-    // テスト用DBとAPIキーを作成
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
-    let test_user = llm_router::db::users::create(
-        &db_pool,
-        "test-admin",
-        "testpassword",
-        llm_router_common::auth::UserRole::Admin,
-    )
-    .await
-    .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
-
-    // ASRリクエスト（対応ノードなし）- 503を期待
-    // 注: 実際のmultipartリクエストは契約テストでカバー
-    // ここではルーティングロジックのテストに焦点
-
-    // TTSリクエストを試行（JSON形式）
+    // TTSリクエストを試行（JSON形式）: TTS対応ノードがないため503を期待
     let tts_request = json!({
         "model": "vibevoice-v1",
         "input": "テスト",
@@ -335,7 +352,7 @@ async fn test_no_capable_node_returns_503() {
                 .method("POST")
                 .uri("/v1/audio/speech")
                 .header("content-type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key.key))
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&tts_request).unwrap()))
                 .unwrap(),
         )

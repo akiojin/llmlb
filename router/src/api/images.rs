@@ -11,7 +11,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::{Node, RuntimeType},
+    types::RuntimeType,
 };
 use serde_json::json;
 use std::time::Instant;
@@ -21,33 +21,12 @@ use uuid::Uuid;
 use crate::{
     api::{
         nodes::AppError,
-        proxy::{forward_streaming_response, save_request_record},
+        proxy::{
+            forward_streaming_response, save_request_record, select_available_node_by_runtime,
+        },
     },
     AppState,
 };
-
-/// RuntimeType::StableDiffusion に基づいてノードを選択
-async fn select_image_node(state: &AppState) -> Result<Node, RouterError> {
-    let nodes = state.registry.list().await;
-
-    // StableDiffusion対応のオンラインノードを探す
-    let capable_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| {
-            n.status == llm_router_common::types::NodeStatus::Online
-                && n.supported_runtimes.contains(&RuntimeType::StableDiffusion)
-        })
-        .collect();
-
-    if capable_nodes.is_empty() {
-        return Err(RouterError::ServiceUnavailable(
-            "No nodes available with image generation (Stable Diffusion) capability".to_string(),
-        ));
-    }
-
-    // 最初の利用可能なノードを返す（将来的にはロードバランシングを追加）
-    Ok(capable_nodes.into_iter().next().unwrap())
-}
 
 /// POST /v1/images/generations - 画像生成（Text-to-Image）
 ///
@@ -90,7 +69,7 @@ pub async fn generations(
     );
 
     // 画像生成対応ノードを選択
-    let node = select_image_node(&state).await?;
+    let node = select_available_node_by_runtime(&state, RuntimeType::StableDiffusion).await?;
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;
@@ -274,7 +253,7 @@ pub async fn edits(
     );
 
     // 画像生成対応ノードを選択
-    let node = select_image_node(&state).await?;
+    let node = select_available_node_by_runtime(&state, RuntimeType::StableDiffusion).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
@@ -462,7 +441,7 @@ pub async fn variations(
     );
 
     // 画像生成対応ノードを選択
-    let node = select_image_node(&state).await?;
+    let node = select_available_node_by_runtime(&state, RuntimeType::StableDiffusion).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;

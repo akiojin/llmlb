@@ -13,7 +13,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::{Node, RuntimeType},
+    types::RuntimeType,
 };
 use serde_json::json;
 use std::time::Instant;
@@ -23,42 +23,12 @@ use uuid::Uuid;
 use crate::{
     api::{
         nodes::AppError,
-        proxy::{forward_streaming_response, save_request_record},
+        proxy::{
+            forward_streaming_response, save_request_record, select_available_node_by_runtime,
+        },
     },
     AppState,
 };
-
-/// RuntimeType に基づいてノードを選択
-async fn select_node_by_runtime(
-    state: &AppState,
-    runtime_type: RuntimeType,
-) -> Result<Node, RouterError> {
-    let nodes = state.registry.list().await;
-
-    // 対応するRuntimeTypeを持つオンラインノードを探す
-    let capable_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| {
-            n.status == llm_router_common::types::NodeStatus::Online
-                && n.supported_runtimes.contains(&runtime_type)
-        })
-        .collect();
-
-    if capable_nodes.is_empty() {
-        let runtime_name = match runtime_type {
-            RuntimeType::WhisperCpp => "ASR (whisper.cpp)",
-            RuntimeType::OnnxRuntime => "TTS (ONNX Runtime)",
-            _ => "required runtime",
-        };
-        return Err(RouterError::ServiceUnavailable(format!(
-            "No nodes available with {} capability",
-            runtime_name
-        )));
-    }
-
-    // 最初の利用可能なノードを返す（将来的にはロードバランシングを追加）
-    Ok(capable_nodes.into_iter().next().unwrap())
-}
 
 /// POST /v1/audio/transcriptions - 音声認識（ASR）
 ///
@@ -150,7 +120,7 @@ pub async fn transcriptions(
     );
 
     // ASR対応ノードを選択
-    let node = select_node_by_runtime(&state, RuntimeType::WhisperCpp).await?;
+    let node = select_available_node_by_runtime(&state, RuntimeType::WhisperCpp).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
@@ -258,7 +228,7 @@ pub async fn speech(
     );
 
     // TTS対応ノードを選択
-    let node = select_node_by_runtime(&state, RuntimeType::OnnxRuntime).await?;
+    let node = select_available_node_by_runtime(&state, RuntimeType::OnnxRuntime).await?;
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;

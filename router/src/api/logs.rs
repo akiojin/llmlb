@@ -49,7 +49,9 @@ fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
-/// GET /api/dashboard/logs/router
+/// GET /v0/dashboard/logs/router
+///
+/// (legacy) GET /api/dashboard/logs/router
 pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogResponse>, AppError> {
     let log_path = logging::log_file_path().map_err(|err| {
         RouterError::Internal(format!("Failed to resolve router log path: {err}"))

@@ -59,8 +59,10 @@ export function formatDate(date: Date | string): string {
   })
 }
 
-export function formatRelativeTime(date: Date | string): string {
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (date == null) return '-'
   const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '-'
   const now = new Date()
   const diff = now.getTime() - d.getTime()
   const seconds = Math.floor(diff / 1000)

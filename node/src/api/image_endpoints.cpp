@@ -1,10 +1,11 @@
 #include "api/image_endpoints.h"
+
 #include "core/image_manager.h"
 
-#include <spdlog/spdlog.h>
 #include <chrono>
-#include <sstream>
 #include <regex>
+
+#include <spdlog/spdlog.h>
 
 namespace llm_node {
 
@@ -15,31 +16,30 @@ static const char* base64_chars =
     "0123456789+/";
 
 ImageEndpoints::ImageEndpoints(ImageManager& image_manager, const NodeConfig& config)
-    : image_manager_(image_manager), config_(config) {
-}
+    : image_manager_(image_manager), config_(config) {}
 
 void ImageEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
     res.set_content(body.dump(), "application/json");
 }
 
-void ImageEndpoints::respondError(httplib::Response& res, int status,
-                                   const std::string& code, const std::string& message) {
+void ImageEndpoints::respondError(httplib::Response& res,
+                                  int status,
+                                  const std::string& code,
+                                  const std::string& message) {
     res.status = status;
-    setJson(res, {
-        {"error", {
-            {"message", message},
-            {"type", "invalid_request_error"},
-            {"code", code}
-        }}
-    });
+    setJson(res,
+            {{"error",
+              {{"message", message},
+               {"type", "invalid_request_error"},
+               {"code", code}}}});
 }
 
 void ImageEndpoints::registerRoutes(httplib::Server& server) {
     // T2I endpoint
     server.Post("/v1/images/generations",
-        [this](const httplib::Request& req, httplib::Response& res) {
-            handleGenerations(req, res);
-        });
+                [this](const httplib::Request& req, httplib::Response& res) {
+                    handleGenerations(req, res);
+                });
 
     spdlog::info("Image endpoints registered: /v1/images/generations");
 }
@@ -98,7 +98,7 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req, httplib::Res
     nlohmann::json body;
     try {
         body = nlohmann::json::parse(req.body);
-    } catch (const nlohmann::json::parse_error& e) {
+    } catch (const nlohmann::json::parse_error&) {
         respondError(res, 400, "invalid_json", "Invalid JSON body");
         return;
     }
@@ -125,7 +125,9 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req, httplib::Res
     // サイズのパース
     int width = 512, height = 512;
     if (!parseSize(size_str, width, height)) {
-        respondError(res, 400, "invalid_size",
+        respondError(res,
+                     400,
+                     "invalid_size",
                      "Invalid size format. Use WIDTHxHEIGHT (e.g., '512x512')");
         return;
     }
@@ -138,7 +140,8 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req, httplib::Res
 
     // 現在はn=1のみサポート
     if (n > 1) {
-        spdlog::warn("ImageEndpoints: n={} requested, but only n=1 supported. Using n=1.", n);
+        spdlog::warn(
+            "ImageEndpoints: n={} requested, but only n=1 supported. Using n=1.", n);
         n = 1;
     }
 
@@ -155,8 +158,12 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req, httplib::Res
         params.seed = body["seed"].get<int64_t>();
     }
 
-    spdlog::info("ImageEndpoints: T2I request model={}, prompt_len={}, size={}x{}",
-                 model, prompt.size(), width, height);
+    spdlog::info(
+        "ImageEndpoints: T2I request model={}, prompt_len={}, size={}x{}",
+        model,
+        prompt.size(),
+        width,
+        height);
 
     // 画像生成を実行
     T2IResult result = image_manager_.generateImage(params);
@@ -169,12 +176,12 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req, httplib::Res
 
     // レスポンスを構築
     auto now = std::chrono::system_clock::now();
-    auto epoch = std::chrono::duration_cast<std::chrono::seconds>(
-        now.time_since_epoch()).count();
+    auto epoch =
+        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
 
     nlohmann::json response = {
         {"created", epoch},
-        {"data", nlohmann::json::array()}
+        {"data", nlohmann::json::array()},
     };
 
     nlohmann::json image_data;
@@ -194,8 +201,8 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req, httplib::Res
     res.status = 200;
     setJson(res, response);
 
-    spdlog::info("ImageEndpoints: T2I success, response_size={} bytes",
-                 res.body.size());
+    spdlog::info("ImageEndpoints: T2I success, response_size={} bytes", res.body.size());
 }
 
 }  // namespace llm_node
+

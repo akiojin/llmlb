@@ -12,50 +12,48 @@ test.describe('Dashboard Stats Grid @dashboard', () => {
     await page.waitForTimeout(500);
   });
 
-  test('S-01: Registered Nodes stat is displayed', async () => {
+  test('S-01: Total Nodes stat card is displayed', async () => {
     await expect(dashboard.totalNodes).toBeVisible();
     const text = await dashboard.getTotalNodes();
     expect(text).toBeDefined();
   });
 
-  test('S-02: Online/Offline node counts are displayed', async () => {
-    await expect(dashboard.onlineNodes).toBeVisible();
-    await expect(dashboard.offlineNodes).toBeVisible();
-  });
-
-  test('S-03: Total Requests stat is displayed', async () => {
+  test('S-02: Total Requests stat card is displayed', async () => {
     await expect(dashboard.totalRequests).toBeVisible();
   });
 
-  test('S-04: Success/Failed request counts are displayed', async ({ page }) => {
-    const success = page.locator(DashboardSelectors.stats.successfulRequests);
-    const failed = page.locator(DashboardSelectors.stats.failedRequests);
-    await expect(success).toBeVisible();
-    await expect(failed).toBeVisible();
+  test('S-03: Success Rate stat card is displayed', async ({ page }) => {
+    const successRate = page.locator(DashboardSelectors.stats.successRate);
+    await expect(successRate).toBeVisible();
   });
 
-  test('S-05: Average Response Time is displayed', async ({ page }) => {
-    const avgResponse = page.locator(DashboardSelectors.stats.averageResponseTime);
-    await expect(avgResponse).toBeVisible();
+  test('S-04: Average Response Time stat card is displayed', async () => {
+    await expect(dashboard.averageResponseTime).toBeVisible();
   });
 
-  test('S-06: GPU Usage is displayed', async ({ page }) => {
+  test('S-05: Average GPU Usage stat card is displayed', async ({ page }) => {
     const gpuUsage = page.locator(DashboardSelectors.stats.averageGpuUsage);
     await expect(gpuUsage).toBeVisible();
   });
 
-  test('S-07: Active Requests is displayed', async ({ page }) => {
-    const activeRequests = page.locator(DashboardSelectors.stats.activeRequests);
-    await expect(activeRequests).toBeVisible();
+  test('S-06: Average GPU Memory stat card is displayed', async ({ page }) => {
+    const gpuMemory = page.locator(DashboardSelectors.stats.averageGpuMemory);
+    await expect(gpuMemory).toBeVisible();
+  });
+
+  test('S-07: Stats grid contains 6 cards', async ({ page }) => {
+    // All 6 stat cards should be visible
+    const statCards = page.locator('[data-stat]');
+    await expect(statCards).toHaveCount(6);
   });
 
   test('S-08: Stats update on refresh', async ({ page }) => {
     // Store initial values
     const initialTotal = await dashboard.totalRequests.textContent();
 
-    // Trigger refresh
+    // Trigger refresh (note: refresh reloads the page)
     await dashboard.refresh();
-    await page.waitForTimeout(1000);
+    await page.waitForLoadState('networkidle');
 
     // Values should still be present (may or may not change)
     const newTotal = await dashboard.totalRequests.textContent();

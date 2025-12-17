@@ -23,7 +23,7 @@
   - `gpu_devices` が空の場合は拒否
 - **登録時の到達性確認**:
   - ノードの OpenAI互換API を `http://{ip}:{runtime_port+1}` とみなし、`GET /v1/models` で疎通確認
-  - `LLM_ROUTER_SKIP_HEALTH_CHECK=1` でスキップ可能（テスト用途）
+  - テスト実行時（`cfg!(test)`）のみスキップ
 - **レスポンス**:
   - `node_id`（UUID）
   - `node_token`（以降の `/v0/health` 用）

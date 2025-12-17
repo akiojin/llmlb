@@ -81,17 +81,17 @@ pub async fn register_node(
     let node_api_base = format!("http://{}:{}", req.ip_address, node_api_port);
     let health_url = format!("{}/v1/models", node_api_base);
 
-    let skip_health_check = cfg!(test) || std::env::var("LLM_ROUTER_SKIP_HEALTH_CHECK").is_ok();
-    let (loaded_models, initializing, ready_models, supported_runtimes) = if skip_health_check {
-        // In test/dev mode, we skip probing the node. Treat the node as immediately ready so it
-        // can be selected by the proxy layer.
-        // Use the supported_runtimes from the request, or default to OnnxRuntime if not provided.
-        let runtimes = if req.supported_runtimes.is_empty() {
-            vec![llm_router_common::types::RuntimeType::OnnxRuntime]
-        } else {
-            req.supported_runtimes.clone()
-        };
-        (Vec::new(), false, Some((0, 0)), Some(runtimes))
+    // テスト時のみヘルスチェックをスキップ（cfg!(test)はコンパイル時に評価）
+    let skip_health_check = cfg!(test);
+    // supported_runtimes を確定（未送信ノードは互換性のため onnx_runtime 扱い）
+    let supported_runtimes = Some(if req.supported_runtimes.is_empty() {
+        vec![llm_router_common::types::RuntimeType::OnnxRuntime]
+    } else {
+        req.supported_runtimes.clone()
+    });
+
+    let (loaded_models, initializing, ready_models) = if skip_health_check {
+        (Vec::new(), false, None)
     } else {
         let health_res = state.http_client.get(&health_url).send().await;
         if let Err(e) = health_res {
@@ -165,7 +165,7 @@ pub async fn register_node(
                     .unwrap_or(false)
             });
 
-        (models, initializing, ready_models, None)
+        (models, initializing, ready_models)
     };
 
     // ヘルスチェックOKなら登録を実施

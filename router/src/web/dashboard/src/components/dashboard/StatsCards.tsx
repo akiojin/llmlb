@@ -26,6 +26,7 @@ interface StatCardProps {
   accentColor?: string
   isLoading?: boolean
   delay?: number
+  dataStat?: string
 }
 
 function StatCard({
@@ -36,11 +37,13 @@ function StatCard({
   accentColor = 'primary',
   isLoading,
   delay = 0,
+  dataStat,
 }: StatCardProps) {
   return (
     <Card
       className={`stat-card group overflow-hidden animate-fade-up`}
       style={{ animationDelay: `${delay}ms` }}
+      data-stat={dataStat}
     >
       <CardContent className="p-6">
         <div className="flex items-start justify-between">
@@ -76,6 +79,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
         : undefined,
       icon: <Server className="h-5 w-5 text-primary" />,
       accentColor: 'primary',
+      dataStat: 'total-nodes',
     },
     {
       title: 'Total Requests',
@@ -85,6 +89,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
         : undefined,
       icon: <Activity className="h-5 w-5 text-chart-2" />,
       accentColor: 'chart-2',
+      dataStat: 'total-requests',
     },
     {
       title: 'Success Rate',
@@ -104,6 +109,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
           <CheckCircle2 className="h-5 w-5 text-success" />
         ),
       accentColor: stats && stats.failed_requests > 0 ? 'destructive' : 'success',
+      dataStat: 'success-rate',
     },
     {
       title: 'Avg Response Time',
@@ -112,12 +118,14 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
         : '—',
       icon: <Clock className="h-5 w-5 text-warning" />,
       accentColor: 'warning',
+      dataStat: 'average-response-time-ms',
     },
     {
       title: 'Avg GPU Usage',
       value: stats ? formatPercentage(stats.average_gpu_usage) : '—',
       icon: <Zap className="h-5 w-5 text-chart-3" />,
       accentColor: 'chart-3',
+      dataStat: 'average-gpu-usage',
     },
     {
       title: 'Avg GPU Memory',
@@ -126,6 +134,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
         : '—',
       icon: <HardDrive className="h-5 w-5 text-chart-4" />,
       accentColor: 'chart-4',
+      dataStat: 'average-gpu-memory-usage',
     },
   ]
 

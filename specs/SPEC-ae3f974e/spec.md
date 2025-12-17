@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-ae3f974e`
 **作成日**: 2024-12-14
-**ステータス**: 実装中
+**ステータス**: 実装完了（コンパイル検証待ち）
 **入力**: ユーザー説明: "画像生成モデル対応 - llm-routerに画像生成モデル対応を追加する。stable-diffusion.cppを使用し、OpenAI API互換のエンドポイント（/v1/images/generations, /v1/images/edits, /v1/images/variations）を実装する。"
 
 ## ユーザーシナリオ＆テスト *(必須)*
@@ -168,11 +168,13 @@
 | `router/tests/contract/images_*.rs` | ✅ 完了 | 契約テスト（TDD RED Phase） |
 | `router/tests/integration/images_api_test.rs` | ✅ 完了 | 統合テスト（TDD RED Phase） |
 
-### Node側（C++）- 未着手
+### Node側（C++）- 完了
 
 | ファイル | 状態 | 内容 |
 |---------|------|------|
-| `node/CMakeLists.txt` | ⏳ 未着手 | stable-diffusion.cppサブモジュール追加 |
-| `node/include/core/sd_manager.h` | ⏳ 未着手 | Stable Diffusionマネージャーヘッダー |
-| `node/src/core/sd_manager.cpp` | ⏳ 未着手 | stable-diffusion.cpp統合実装 |
-| `node/src/api/image_endpoints.cpp` | ⏳ 未着手 | 画像エンドポイント実装 |
+| `node/CMakeLists.txt` | ✅ 完了 | BUILD_WITH_SDオプション、stable-diffusion.cppリンク |
+| `node/include/core/sd_manager.h` | ✅ 完了 | Stable Diffusionマネージャーヘッダー |
+| `node/src/core/sd_manager.cpp` | ✅ 完了 | stable-diffusion.cpp統合実装 |
+| `node/include/api/image_endpoints.h` | ✅ 完了 | 画像エンドポイントヘッダー |
+| `node/src/api/image_endpoints.cpp` | ✅ 完了 | 画像エンドポイント実装 |
+| `node/src/main.cpp` | ✅ 完了 | SDManager・ImageEndpoints登録 |

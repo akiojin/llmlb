@@ -200,10 +200,63 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::ImageEndpoints image_endpoints(image_manager, cfg);
         image_endpoints.registerRoutes(server.getServer());
         spdlog::info("Image endpoints registered for T2I support");
+        // SPEC-dcaeaec4 FR-7: POST /api/models/pull - receive sync notification from router
+        server.getServer().Post(
+            "/api/models/pull",
+            [&model_sync, &model_storage, &registry](const httplib::Request&,
+                                                    httplib::Response& res) {
+                try {
+                    spdlog::info("Received model pull notification from router");
+
+                    // Sync with router
+                    auto sync_result = model_sync->sync();
+
+                    // Delete models not in router
+                    for (const auto& model_id : sync_result.to_delete) {
+                        spdlog::info("Deleting model not in router: {}", model_id);
+                        model_storage.deleteModel(model_id);
+                    }
+
+                    // Update registry with current local models
+                    auto local_model_infos = model_storage.listAvailable();
+                    std::vector<std::string> local_model_names;
+                    local_model_names.reserve(local_model_infos.size());
+                    for (const auto& info : local_model_infos) {
+                        local_model_names.push_back(info.name);
+                    }
+                    registry.setModels(local_model_names);
+                    spdlog::info(
+                        "Model sync completed, {} models available", local_model_names.size());
+
+                    res.status = 200;
+                    res.set_content(R"({"status":"ok"})", "application/json");
+                } catch (const std::exception& e) {
+                    spdlog::error("Model pull failed: {}", e.what());
+                    res.status = 500;
+                    res.set_content(R"({"error":"sync failed"})", "application/json");
+                }
+            });
+        spdlog::info("Model pull endpoint registered: POST /api/models/pull");
 
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();
         server_started = true;
+
+        // Wait for server to be ready by self-connecting
+        {
+            httplib::Client self_check("127.0.0.1", node_port);
+            self_check.set_connection_timeout(1, 0);
+            self_check.set_read_timeout(1, 0);
+            const int max_wait = 50;  // 50 * 100ms = 5s max
+            for (int i = 0; i < max_wait; ++i) {
+                auto res = self_check.Get("/v1/models");
+                if (res && res->status == 200) {
+                    spdlog::info("Server ready after {}ms", (i + 1) * 100);
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
 
         // Register with router (retry)
         std::cout << "Registering with router..." << std::endl;
@@ -267,6 +320,17 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             sync_result = model_sync->sync();
         }
+
+        // Delete models not in router (router is source of truth)
+        for (const auto& model_id : sync_result.to_delete) {
+            std::cout << "Deleting model not in router: " << model_id << std::endl;
+            if (model_storage.deleteModel(model_id)) {
+                std::cout << "  Deleted: " << model_id << std::endl;
+            } else {
+                std::cerr << "  Failed to delete: " << model_id << std::endl;
+            }
+        }
+
         // Update registry with local models (models actually available on this node)
         auto local_model_infos = model_storage.listAvailable();
         std::vector<std::string> local_model_names;

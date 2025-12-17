@@ -133,8 +133,6 @@ async fn tags_handler(State(state): State<Arc<ImageGenStubState>>) -> impl IntoR
 #[tokio::test]
 #[serial]
 async fn images_generations_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageGenStubResponse::SuccessUrl(vec![
@@ -184,8 +182,6 @@ async fn images_generations_success() {
 #[tokio::test]
 #[serial]
 async fn images_generations_base64_response() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     // 1x1ピクセルの透明PNGをBase64エンコード
     let dummy_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string();
 
@@ -230,8 +226,6 @@ async fn images_generations_base64_response() {
 #[tokio::test]
 #[serial]
 async fn images_generations_multiple() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageGenStubResponse::SuccessUrl(vec![
@@ -277,8 +271,6 @@ async fn images_generations_multiple() {
 #[tokio::test]
 #[serial]
 async fn images_generations_missing_prompt() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: None,
         response: ImageGenStubResponse::SuccessUrl(vec![]),
@@ -316,8 +308,6 @@ async fn images_generations_missing_prompt() {
 #[tokio::test]
 #[serial]
 async fn images_generations_unauthorized() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let router = spawn_test_router().await;
 
     let client = Client::new();
@@ -339,8 +329,6 @@ async fn images_generations_unauthorized() {
 #[tokio::test]
 #[serial]
 async fn images_generations_no_node_available() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let router = spawn_test_router().await;
 
     // ノードを登録しない
@@ -364,8 +352,6 @@ async fn images_generations_no_node_available() {
 #[tokio::test]
 #[serial]
 async fn images_generations_with_options() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
         response: ImageGenStubResponse::SuccessUrl(vec![

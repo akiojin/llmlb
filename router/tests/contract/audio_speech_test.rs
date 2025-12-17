@@ -88,8 +88,6 @@ async fn tags_handler(State(state): State<Arc<TtsStubState>>) -> impl IntoRespon
 #[tokio::test]
 #[serial]
 async fn speech_end_to_end_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     // ダミーMP3データ（ID3タグの最小ヘッダ）
     let dummy_mp3 = vec![
         0x49, 0x44, 0x33, // "ID3"
@@ -148,8 +146,6 @@ async fn speech_end_to_end_success() {
 #[tokio::test]
 #[serial]
 async fn speech_with_optional_params() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let dummy_wav = vec![
         0x52, 0x49, 0x46, 0x46, // "RIFF"
         0x00, 0x00, 0x00, 0x00, // size
@@ -198,8 +194,6 @@ async fn speech_with_optional_params() {
 #[tokio::test]
 #[serial]
 async fn speech_empty_input_returns_400() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let tts_stub = spawn_tts_stub(TtsStubState {
         expected_model: None,
         response: TtsStubResponse::Error(
@@ -244,8 +238,6 @@ async fn speech_empty_input_returns_400() {
 #[tokio::test]
 #[serial]
 async fn speech_without_auth_returns_401() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let coordinator = spawn_test_router().await;
 
     let client = Client::new();
@@ -270,8 +262,6 @@ async fn speech_without_auth_returns_401() {
 #[tokio::test]
 #[serial]
 async fn speech_no_available_node_returns_503() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     // ノードを登録しない
     let coordinator = spawn_test_router().await;
 
@@ -297,8 +287,6 @@ async fn speech_no_available_node_returns_503() {
 #[tokio::test]
 #[serial]
 async fn speech_input_too_long_returns_400() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-
     let tts_stub = spawn_tts_stub(TtsStubState {
         expected_model: None,
         response: TtsStubResponse::Error(

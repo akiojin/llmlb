@@ -91,7 +91,7 @@ async function fetchWithAuth<T>(
 // Auth API
 export const authApi = {
   login: async (username: string, password: string) => {
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
+    const response = await fetch(`${API_BASE}/v0/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -108,13 +108,14 @@ export const authApi = {
 
   logout: async () => {
     try {
-      await fetchWithAuth('/api/auth/logout', { method: 'POST' })
+      await fetchWithAuth('/v0/auth/logout', { method: 'POST' })
     } finally {
       removeToken()
     }
   },
 
-  me: () => fetchWithAuth<{ id: number; username: string; role: string }>('/api/auth/me'),
+  me: () =>
+    fetchWithAuth<{ id: number; username: string; role: string }>('/v0/auth/me'),
 }
 
 // Dashboard API
@@ -170,6 +171,29 @@ export interface RequestHistoryItem {
   response_body?: unknown
 }
 
+// /v0/dashboard/request-responses APIのレスポンス型
+export interface RequestResponseRecord {
+  id: string
+  timestamp: string
+  request_type: string
+  model: string
+  node_id?: string
+  node_machine_name?: string
+  node_ip?: string
+  request_body?: unknown
+  response_body?: unknown
+  duration_ms: number
+  status: { type: 'success' } | { type: 'error'; message: string }
+  completed_at?: string
+}
+
+export interface RequestResponsesPage {
+  records: RequestResponseRecord[]
+  total_count: number
+  page: number
+  per_page: number
+}
+
 export interface DashboardOverview {
   nodes: DashboardNode[]
   stats: DashboardStats
@@ -178,327 +202,162 @@ export interface DashboardOverview {
   generation_time_ms: number
 }
 
-// Internal type for API response
-interface ApiDashboardOverview {
-  nodes: Array<{
-    id: string
-    machine_name: string
-    custom_name?: string
-    ip_address: string
-    runtime_port: number
-    status: 'online' | 'offline'
-    runtime_version: string
-    gpu_model?: string
-    gpu_count?: number
-    cpu_usage?: number
-    memory_usage?: number
-    gpu_usage?: number | null
-    gpu_memory_usage?: number | null
-    total_requests: number
-    uptime_seconds: number
-    last_seen: string
-    tags?: string[]
-    notes?: string
-    loaded_models?: string[]
-  }>
-  stats: DashboardStats
-  history: Array<{ minute: string; success: number; error: number }>
-  generated_at: string
-  generation_time_ms: number
+export interface LogEntry {
+  timestamp: string
+  level: string
+  message?: string
+  target?: string
+  fields?: Record<string, unknown>
+}
+
+export interface LogResponse {
+  source: string
+  entries: LogEntry[]
+  path?: string
 }
 
 export const dashboardApi = {
-  getOverview: async (): Promise<DashboardOverview> => {
-    const data = await fetchWithAuth<ApiDashboardOverview>('/api/dashboard/overview')
+  getOverview: () => fetchWithAuth<DashboardOverview>('/v0/dashboard/overview'),
 
-    // Map API nodes to frontend DashboardNode format
-    const nodes: DashboardNode[] = (data.nodes || []).map((n) => ({
-      node_id: n.id,
-      machine_name: n.machine_name,
-      custom_name: n.custom_name,
-      ip_address: n.ip_address,
-      port: n.runtime_port,
-      status: n.status,
-      runtime_version: n.runtime_version,
-      gpu_model: n.gpu_model,
-      gpu_count: n.gpu_count,
-      cpu_usage: n.cpu_usage,
-      memory_usage: n.memory_usage,
-      gpu_usage: n.gpu_usage ?? undefined,
-      gpu_memory_usage: n.gpu_memory_usage ?? undefined,
-      total_requests: n.total_requests,
-      uptime_seconds: n.uptime_seconds,
-      last_seen: n.last_seen,
-      tags: n.tags,
-      notes: n.notes,
-      ready_models: n.loaded_models,
-    }))
+  getNodes: () => fetchWithAuth<DashboardNode[]>('/v0/dashboard/nodes'),
 
-    // Convert aggregated history to RequestHistoryItem format (empty for now - need different API)
-    // The overview API returns aggregated stats, not individual requests
-    const history: RequestHistoryItem[] = []
+  getStats: () => fetchWithAuth<DashboardStats>('/v0/dashboard/stats'),
 
-    return {
-      nodes,
-      stats: data.stats,
-      history,
-      generated_at: data.generated_at,
-      generation_time_ms: data.generation_time_ms,
-    }
-  },
-
-  getNodes: () => fetchWithAuth<DashboardNode[]>('/api/dashboard/nodes'),
-
-  getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
-
-  getRequestHistory: async (limit?: number): Promise<RequestHistoryItem[]> => {
-    interface ApiRequestRecord {
-      id: string
-      timestamp: string
-      model: string
-      node_id?: string
-      agent_machine_name?: string
-      status: { type: string; message?: string }
-      duration_ms: number
-      request_body?: unknown
-      response_body?: unknown
-    }
-    interface ApiResponse {
-      records: ApiRequestRecord[]
-      total_count: number
-      page: number
-      per_page: number
-    }
-    const data = await fetchWithAuth<ApiResponse>('/api/dashboard/request-responses', {
-      params: { per_page: limit || 100 },
-    })
-    return (data.records || []).map((r) => ({
-      request_id: r.id,
-      timestamp: r.timestamp,
-      model: r.model,
-      node_id: r.node_id,
-      node_name: r.agent_machine_name,
-      status: r.status.type === 'success' ? 'success' : 'error',
-      duration_ms: r.duration_ms,
-      error: r.status.type === 'error' ? r.status.message : undefined,
-      request_body: r.request_body,
-      response_body: r.response_body,
-    } as RequestHistoryItem))
-  },
+  getRequestHistory: (limit?: number) =>
+    fetchWithAuth<RequestHistoryItem[]>('/v0/dashboard/request-history', {
+      params: { limit },
+    }),
 
   getNodeMetrics: (nodeId: string) =>
-    fetchWithAuth<unknown[]>(`/api/dashboard/metrics/${nodeId}`),
+    fetchWithAuth<unknown[]>(`/v0/dashboard/metrics/${nodeId}`),
 
   getRequestResponses: (params?: {
     limit?: number
     offset?: number
     model?: string
     status?: string
-  }) => fetchWithAuth<unknown[]>('/api/dashboard/request-responses', { params }),
+  }) => fetchWithAuth<RequestResponsesPage>('/v0/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>
-    fetchWithAuth<unknown>(`/api/dashboard/request-responses/${id}`),
+    fetchWithAuth<unknown>(`/v0/dashboard/request-responses/${id}`),
 
-  exportRequestResponses: (format: 'csv' | 'json') =>
-    fetchWithAuth<Blob>('/api/dashboard/request-responses/export', {
-      params: { format },
-    }),
-
-  getRouterLogs: async (params?: { limit?: number; level?: string; target?: string }) => {
-    const data = await fetchWithAuth<{ entries: unknown[] }>('/api/dashboard/logs/router', { params })
-    return data?.entries || []
+  exportRequestResponses: async (format: 'csv' | 'json') => {
+    const token = getToken()
+    const headers: HeadersInit = {}
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    const response = await fetch(
+      `${API_BASE}/v0/dashboard/request-responses/export?format=${format}`,
+      {
+      headers,
+      }
+    )
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new ApiError(response.status, response.statusText, errorText)
+    }
+    return response.blob()
   },
 
-  getLogs: async (params?: { limit?: number; level?: string; target?: string }) => {
-    // getLogs is an alias for getRouterLogs
-    const data = await fetchWithAuth<{ entries: unknown[] }>('/api/dashboard/logs/router', { params })
-    return data?.entries || []
-  },
+  getRouterLogs: (params?: { limit?: number }) =>
+    fetchWithAuth<LogResponse>('/v0/dashboard/logs/router', { params }),
 }
 
 // Nodes API
 export const nodesApi = {
-  list: () => fetchWithAuth<DashboardNode[]>('/api/nodes'),
+  list: () => fetchWithAuth<DashboardNode[]>('/v0/nodes'),
 
   delete: (nodeId: string) =>
-    fetchWithAuth<void>(`/api/nodes/${nodeId}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/nodes/${nodeId}`, { method: 'DELETE' }),
 
   disconnect: (nodeId: string) =>
-    fetchWithAuth<void>(`/api/nodes/${nodeId}/disconnect`, { method: 'POST' }),
+    fetchWithAuth<void>(`/v0/nodes/${nodeId}/disconnect`, { method: 'POST' }),
 
   updateSettings: (
     nodeId: string,
     settings: { custom_name?: string; tags?: string[]; notes?: string }
   ) =>
-    fetchWithAuth<void>(`/api/nodes/${nodeId}/settings`, {
+    fetchWithAuth<void>(`/v0/nodes/${nodeId}/settings`, {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
 
-  getLogs: (nodeId: string, params?: { limit?: number; level?: string }) =>
-    fetchWithAuth<unknown[]>(`/api/nodes/${nodeId}/logs`, { params }),
+  getLogs: (nodeId: string, params?: { limit?: number }) =>
+    fetchWithAuth<LogResponse>(`/v0/nodes/${nodeId}/logs`, { params }),
 }
 
 // Models API
-export interface RegisteredModel {
-  name: string
-  filename: string
-  repo: string
-  size_bytes?: number
-  state: 'registered' | 'downloading' | 'failed'
-  progress?: number
+export type LifecycleStatus = 'pending' | 'caching' | 'registered' | 'error'
+
+export interface DownloadProgress {
+  percent: number
+  bytes_downloaded?: number
+  bytes_total?: number
   error?: string
 }
 
-export interface ConvertTask {
-  id: string
-  repo: string
-  filename: string
-  revision?: string
-  quantization?: string
-  chat_template?: string
-  status: 'queued' | 'in_progress' | 'completed' | 'failed'
-  progress: number
-  error?: string
-  path?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface ModelInfo {
+export interface RegisteredModelView {
   name: string
   source?: string
-  size_bytes?: number
-  format?: string
-  state: 'ready' | 'downloading' | 'converting' | 'pending' | 'error'
-  progress?: number
-  error?: string
+  description?: string
+  status?: string
+  lifecycle_status: LifecycleStatus
+  download_progress?: DownloadProgress
+  ready: boolean
+  path?: string
+  download_url?: string
+  repo?: string
+  filename?: string
+  size_gb?: number
+  required_memory_gb?: number
+  tags: string[]
 }
 
-export interface AvailableModel {
-  id?: string
-  provider?: string
-  name: string
-  url?: string
-  downloads?: number
-  likes?: number
-}
-
-// Response wrapper type for available models
-interface AvailableModelsResponse {
-  models: AvailableModel[]
-  source: string
-}
+// NOTE: AvailableModelView, AvailableModelsResponse, ConvertTask は廃止
+// HFカタログは直接 https://huggingface.co を参照
+// ダウンロード状態は /v0/models の lifecycle_status で確認
 
 export const modelsApi = {
-  getRegistered: async (): Promise<ModelInfo[]> => {
-    const data = await fetchWithAuth<unknown[]>('/api/models/registered')
-    // Map API response to ModelInfo format
-    return (data || []).map((item: unknown) => {
-      const m = item as Record<string, unknown>
-      return {
-        name: String(m.name || ''),
-        source: String(m.source || ''),
-        size_bytes: m.size_gb ? Number(m.size_gb) * 1024 * 1024 * 1024 : undefined,
-        format: m.tags ? (m.tags as string[])[0] : undefined,
-        state: m.ready ? 'ready' : (m.status === 'downloading' ? 'downloading' : 'pending'),
-        progress: m.progress as number | undefined,
-        error: m.error as string | undefined,
-      } as ModelInfo
+  getRegistered: async (): Promise<RegisteredModelView[]> => {
+    // /v0/models - 登録モデル一覧（lifecycle_status含む）
+    // APIキー認証が必要なため、ローカルストレージのAPIキーを使用
+    const apiKey = localStorage.getItem('playground_api_key') || 'sk_debug'
+    const response = await fetch('/v0/models', {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
     })
-  },
-
-  getAvailable: async (): Promise<AvailableModel[]> => {
-    const data = await fetchWithAuth<AvailableModelsResponse | AvailableModel[]>('/api/models/available')
-    // Handle both object wrapper and direct array responses
-    if (Array.isArray(data)) {
-      return data
+    if (!response.ok) {
+      return []
     }
-    return data?.models || []
+    // 直接 RegisteredModelView[] を返す
+    return (await response.json()) as RegisteredModelView[]
   },
 
-  getLoaded: () => fetchWithAuth<unknown[]>('/api/models/loaded'),
+  // NOTE: getAvailable は廃止 - HFカタログは直接 https://huggingface.co を参照
 
-  register: (urlOrName: string) => {
-    // フル URL からリポジトリ名を抽出
-    let repo = urlOrName.trim()
-    const hfMatch = repo.match(/huggingface\.co\/([^/]+\/[^/]+)/)
-    if (hfMatch) {
-      repo = hfMatch[1]
-    }
-    return fetchWithAuth<{ task_id: string }>('/api/models/register', {
+  register: (repo: string, filename?: string) =>
+    fetchWithAuth<unknown>('/v0/models/register', {
       method: 'POST',
-      body: JSON.stringify({ repo }),
-    })
-  },
-
-  pull: (modelName: string) =>
-    fetchWithAuth<{ task_id: string }>('/api/models/pull', {
-      method: 'POST',
-      body: JSON.stringify({ model_name: modelName }),
+      body: JSON.stringify({ repo, filename }),
     }),
 
   delete: (modelName: string) =>
-    fetchWithAuth<void>(`/api/models/${encodeURIComponent(modelName)}`, {
+    fetchWithAuth<void>(`/v0/models/${encodeURIComponent(modelName)}`, {
       method: 'DELETE',
     }),
 
-  distribute: (modelName: string, nodeIds: string[]) =>
-    fetchWithAuth<{ task_ids: string[] }>('/api/models/distribute', {
-      method: 'POST',
-      body: JSON.stringify({ model_name: modelName, node_ids: nodeIds }),
-    }),
-
-  convert: (params: {
-    repo: string
-    filename: string
-    revision?: string
-    chat_template?: string
-  }) =>
-    fetchWithAuth<{ task_id: string }>('/api/models/convert', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }),
-
-  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/api/models/convert'),
-
-  getConvertTask: (taskId: string) =>
-    fetchWithAuth<ConvertTask>(`/api/models/convert/${taskId}`),
-
-  deleteConvertTask: (taskId: string) =>
-    fetchWithAuth<void>(`/api/models/convert/${taskId}`, { method: 'DELETE' }),
-
-  getNodeModels: (nodeId: string) =>
-    fetchWithAuth<unknown[]>(`/api/nodes/${nodeId}/models`),
-
-  pullToNode: (nodeId: string, modelName: string) =>
-    fetchWithAuth<{ task_id: string }>(`/api/nodes/${nodeId}/models/pull`, {
-      method: 'POST',
-      body: JSON.stringify({ model_name: modelName }),
-    }),
-}
-
-// Tasks API
-export interface TaskProgress {
-  task_id: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  progress: number
-  message?: string
-  error?: string
-}
-
-export const tasksApi = {
-  list: () => fetchWithAuth<TaskProgress[]>('/api/tasks'),
-
-  getProgress: (taskId: string) =>
-    fetchWithAuth<TaskProgress>(`/api/tasks/${taskId}`),
+  // NOTE: convert, getConvertTasks, getConvertTask, deleteConvertTask は廃止
+  // ダウンロード状態は getRegistered の lifecycle_status で確認 (Phase 2で実装)
 }
 
 // API Keys API
 export interface ApiKey {
   id: string
   name: string
-  key_prefix: string
+  key_prefix?: string
+  created_by?: string
   created_at: string
   expires_at?: string
   last_used_at?: string
@@ -514,28 +373,25 @@ export interface CreateApiKeyResponse {
 }
 
 export const apiKeysApi = {
-  list: async (): Promise<ApiKey[]> => {
-    const data = await fetchWithAuth<{ api_keys: ApiKey[] } | ApiKey[]>('/api/api-keys')
-    if (Array.isArray(data)) {
-      return data
-    }
-    return data?.api_keys || []
-  },
+  list: () =>
+    fetchWithAuth<{ api_keys: ApiKey[] }>('/v0/api-keys').then(
+      (res) => res.api_keys
+    ),
 
   create: (data: { name: string; expires_at?: string }) =>
-    fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
+    fetchWithAuth<CreateApiKeyResponse>('/v0/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   update: (id: string, data: { name?: string; expires_at?: string | null }) =>
-    fetchWithAuth<ApiKey>(`/api/api-keys/${id}`, {
+    fetchWithAuth<ApiKey>(`/v0/api-keys/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/api/api-keys/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/api-keys/${id}`, { method: 'DELETE' }),
 }
 
 // Users API
@@ -548,15 +404,12 @@ export interface User {
 
 export const usersApi = {
   list: async (): Promise<User[]> => {
-    const data = await fetchWithAuth<{ users: User[] } | User[]>('/api/users')
-    if (Array.isArray(data)) {
-      return data
-    }
-    return data?.users || []
+    const res = await fetchWithAuth<{ users: User[] }>('/v0/users')
+    return res.users
   },
 
   create: (data: { username: string; password: string; role: string }) =>
-    fetchWithAuth<User>('/api/users', {
+    fetchWithAuth<User>('/v0/users', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -565,13 +418,13 @@ export const usersApi = {
     id: string,
     data: { username?: string; password?: string; role?: string }
   ) =>
-    fetchWithAuth<User>(`/api/users/${id}`, {
+    fetchWithAuth<User>(`/v0/users/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/api/users/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/v0/users/${id}`, { method: 'DELETE' }),
 }
 
 // Chat API (OpenAI compatible)

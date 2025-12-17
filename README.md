@@ -581,7 +581,6 @@ LLM_GPU_COUNT=1 \
 | `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Node health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
-| `LLM_ROUTER_SKIP_HEALTH_CHECK` | unset | Skip health checks (tests) | test-only |
 | `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 
 Cloud / external services:

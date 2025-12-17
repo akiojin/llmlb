@@ -1,8 +1,9 @@
 #pragma once
 
 #include <httplib.h>
-#include <string>
 #include <nlohmann/json.hpp>
+#include <string>
+#include <vector>
 #include "utils/config.h"
 
 namespace llm_node {

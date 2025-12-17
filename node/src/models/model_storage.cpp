@@ -14,8 +14,18 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+/// モデルIDをサニタイズ
+/// SPEC-dcaeaec4 FR-2: 階層形式を許可
+/// - `gpt-oss-20b` → `gpt-oss-20b`
+/// - `openai/gpt-oss-20b` → `openai/gpt-oss-20b`（ネストディレクトリ）
+///
+/// `/` はディレクトリセパレータとして保持し、危険なパターンは除去。
 std::string sanitizeModelId(const std::string& input) {
     if (input.empty()) return "_latest";
+
+    // 危険なパターンを検出
+    if (input.find("..") != std::string::npos) return "_latest";
+    if (input.find('\0') != std::string::npos) return "_latest";
 
     std::string out;
     out.reserve(input.size());
@@ -28,9 +38,21 @@ std::string sanitizeModelId(const std::string& input) {
             out.push_back(static_cast<char>(std::tolower(c)));
             continue;
         }
-        // Disallow path separators and other special characters by replacing them.
+        // `/` はディレクトリセパレータとして許可
+        if (c == '/') {
+            out.push_back('/');
+            continue;
+        }
+        // その他の特殊文字は `_` に置換
         out.push_back('_');
     }
+
+    // 先頭・末尾のスラッシュを除去
+    size_t start = 0;
+    size_t end = out.size();
+    while (start < end && out[start] == '/') ++start;
+    while (end > start && out[end - 1] == '/') --end;
+    out = out.substr(start, end - start);
 
     if (out.empty() || out == "." || out == "..") return "_latest";
     return out;
@@ -203,6 +225,26 @@ bool ModelStorage::validateModel(const std::string& model_name) const {
     }
     auto st = fs::symlink_status(gguf_path, ec);
     return st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
+}
+
+bool ModelStorage::deleteModel(const std::string& model_name) {
+    const std::string dir_name = modelNameToDir(model_name);
+    const auto model_dir = fs::path(models_dir_) / dir_name;
+
+    if (!fs::exists(model_dir)) {
+        spdlog::debug("ModelStorage::deleteModel: model directory does not exist: {}", model_dir.string());
+        return true;  // Already deleted
+    }
+
+    std::error_code ec;
+    fs::remove_all(model_dir, ec);
+    if (ec) {
+        spdlog::error("ModelStorage::deleteModel: failed to delete {}: {}", model_dir.string(), ec.message());
+        return false;
+    }
+
+    spdlog::info("ModelStorage::deleteModel: deleted model directory: {}", model_dir.string());
+    return true;
 }
 
 }  // namespace llm_node

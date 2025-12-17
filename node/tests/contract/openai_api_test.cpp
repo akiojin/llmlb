@@ -9,6 +9,7 @@
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "utils/config.h"
+#include "runtime/state.h"
 
 using namespace llm_node;
 using json = nlohmann::json;
@@ -16,6 +17,7 @@ using json = nlohmann::json;
 class OpenAIContractFixture : public ::testing::Test {
 protected:
     void SetUp() override {
+        llm_node::set_ready(true);  // Ensure node is ready for contract tests
         registry.setModels({"gpt-oss-7b"});
         server = std::make_unique<HttpServer>(18090, openai, node);
         server->start();

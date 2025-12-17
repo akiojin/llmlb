@@ -140,3 +140,24 @@ TEST(ModelStorageTest, ConvertDirNameToModelName) {
     EXPECT_EQ(ModelStorage::dirNameToModel("gpt-oss-20b"), "gpt-oss-20b");
     EXPECT_EQ(ModelStorage::dirNameToModel("Qwen3-Coder-30B"), "qwen3-coder-30b");
 }
+
+// Delete model directory (SPEC-dcaeaec4 FR-6/FR-7)
+TEST(ModelStorageTest, DeleteModelRemovesDirectory) {
+    TempModelDir tmp;
+    create_model(tmp.base, "to-delete");
+
+    ModelStorage storage(tmp.base.string());
+    EXPECT_TRUE(storage.validateModel("to-delete"));
+
+    bool result = storage.deleteModel("to-delete");
+    EXPECT_TRUE(result);
+    EXPECT_FALSE(storage.validateModel("to-delete"));
+    EXPECT_FALSE(fs::exists(tmp.base / "to-delete"));
+}
+
+// Delete nonexistent model returns true (idempotent)
+TEST(ModelStorageTest, DeleteNonexistentModelReturnsTrue) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+    EXPECT_TRUE(storage.deleteModel("nonexistent"));
+}

@@ -101,6 +101,8 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
+    // SPEC-dcaeaec4 FR-8: /v0/models を使用（拡張情報を含む）
+    // /v1/models はOpenAI互換（標準形式のみ）
     std::optional<std::string> node_token;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
@@ -110,9 +112,9 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Result res;
     if (node_token.has_value() && !node_token->empty()) {
         httplib::Headers headers = {{"X-Node-Token", *node_token}};
-        res = cli.Get("/v1/models", headers);
+        res = cli.Get("/v0/models", headers);
     } else {
-        res = cli.Get("/v1/models");
+        res = cli.Get("/v0/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
         return {};

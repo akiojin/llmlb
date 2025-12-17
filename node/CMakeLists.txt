@@ -52,6 +52,25 @@ if(BUILD_WITH_WHISPER)
     add_subdirectory(third_party/whisper.cpp)
 endif()
 
+# stable-diffusion.cpp for Image Generation
+option(BUILD_WITH_SD "Build with stable-diffusion.cpp support for image generation" OFF)
+if(BUILD_WITH_SD)
+    set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    # stable-diffusion.cpp uses its own ggml, configure it to use system ggml if possible
+    # For now, let it build its own to avoid version conflicts
+    if(APPLE AND BUILD_WITH_METAL)
+        set(SD_METAL ON CACHE BOOL "" FORCE)
+    endif()
+    if(BUILD_WITH_CUDA)
+        set(SD_CUDA ON CACHE BOOL "" FORCE)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stable-diffusion.cpp/CMakeLists.txt")
+    add_subdirectory(third_party/stable-diffusion.cpp)
+    else()
+        message(FATAL_ERROR "stable-diffusion.cpp submodule is not initialized. Run: git submodule update --init --recursive")
+    endif()
+endif()
+
 # ONNX Runtime (LLM/TTS, generic inference)
 find_package(onnxruntime REQUIRED)
 add_definitions(-DUSE_ONNX_RUNTIME)
@@ -76,6 +95,13 @@ if(BUILD_WITH_WHISPER)
     include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp/include
+    )
+endif()
+
+# stable-diffusion.cpp include directories
+if(BUILD_WITH_SD)
+    include_directories(
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stable-diffusion.cpp
     )
 endif()
 
@@ -139,6 +165,10 @@ target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
+# Avoid building SD sources unless explicitly enabled (submodule may not be present).
+if(NOT BUILD_WITH_SD)
+    list(REMOVE_ITEM SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/core/sd_manager.cpp)
+endif()
 # Include Objective-C++ files on Apple platforms
 if(APPLE)
     file(GLOB_RECURSE OBJCXX_SOURCES
@@ -165,6 +195,11 @@ if(BUILD_WITH_WHISPER)
     target_compile_definitions(llm-node PRIVATE USE_WHISPER)
 endif()
 
+# stable-diffusion.cpp support
+if(BUILD_WITH_SD)
+    target_link_libraries(llm-node stable-diffusion)
+    target_compile_definitions(llm-node PRIVATE USE_SD)
+endif()
 # Static linking if requested
 if(STATIC_BUILD)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -212,6 +247,7 @@ message(STATUS "  CUDA support:      ${BUILD_WITH_CUDA}")
 message(STATUS "  Metal support:     ${BUILD_WITH_METAL}")
 message(STATUS "  ROCm support:      ${BUILD_WITH_ROCM}")
 message(STATUS "  Whisper support:   ${BUILD_WITH_WHISPER}")
+message(STATUS "  SD support:        ${BUILD_WITH_SD}")
 message(STATUS "  ONNX support:      ON")
 message(STATUS "  Static build:      ${STATIC_BUILD}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")

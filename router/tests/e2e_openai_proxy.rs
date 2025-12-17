@@ -94,7 +94,6 @@ async fn node_generate_handler(
 
 #[tokio::test]
 async fn openai_proxy_end_to_end_updates_dashboard_history() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_node_stub(NodeStubState {
         // OpenAI互換形式のレスポンス
         chat_response: json!({
@@ -263,7 +262,6 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
 
 #[tokio::test]
 async fn openai_v1_models_list_with_registered_node() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
@@ -318,7 +316,6 @@ async fn openai_v1_models_list_with_registered_node() {
 
 #[tokio::test]
 async fn openai_v1_models_get_specific() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
@@ -357,7 +354,6 @@ async fn openai_v1_models_get_specific() {
 
 #[tokio::test]
 async fn openai_v1_models_not_found() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},

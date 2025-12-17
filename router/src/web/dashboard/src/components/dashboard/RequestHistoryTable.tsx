@@ -112,7 +112,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   setCurrentPage(1)
                 }}
               >
-                <SelectTrigger className="w-20">
+                <SelectTrigger id="history-per-page" className="w-20">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -141,7 +141,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   <TableHead>Tokens</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody id="request-history-tbody">
                 {paginatedHistory.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="h-32 text-center">
@@ -205,6 +205,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               </p>
               <div className="flex items-center gap-2">
                 <Button
+                  id="history-page-prev"
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -212,10 +213,11 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-sm">
+                <span id="history-page-info" className="text-sm">
                   Page {currentPage} of {totalPages}
                 </span>
                 <Button
+                  id="history-page-next"
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
@@ -231,7 +233,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
 
       {/* Request Detail Modal */}
       <Dialog open={!!selectedRequest} onOpenChange={() => setSelectedRequest(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
+        <DialogContent id="request-modal" className="max-w-2xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />

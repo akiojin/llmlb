@@ -164,7 +164,7 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 - GET `/v0/models/available`（例: `?source=hf`）
 - POST `/v0/models/register`
 - GET `/v0/models/registered`
-- DELETE `/v0/models/:model_name`
+- DELETE `/v0/models/*model_name`
 - POST `/v0/models/discover-gguf`
 - POST `/v0/models/convert`
 - GET `/v0/models/convert`

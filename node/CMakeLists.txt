@@ -71,7 +71,7 @@ if(BUILD_WITH_WHISPER)
 endif()
 
 # stable-diffusion.cpp for Image Generation
-option(BUILD_WITH_SD "Build with stable-diffusion.cpp support for image generation" OFF)
+option(BUILD_WITH_SD "Build with stable-diffusion.cpp support for image generation" ON)
 if(BUILD_WITH_SD)
     set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     # stable-diffusion.cpp uses its own ggml, configure it to use system ggml if possible
@@ -191,6 +191,7 @@ target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
+
 # Include Objective-C++ files on Apple platforms
 if(APPLE)
     file(GLOB_RECURSE OBJCXX_SOURCES

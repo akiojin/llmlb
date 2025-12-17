@@ -288,7 +288,7 @@ export const nodesApi = {
 }
 
 // Models API
-export type LifecycleStatus = 'pending' | 'downloading' | 'cached' | 'ready' | 'error'
+export type LifecycleStatus = 'pending' | 'downloading' | 'registered' | 'error'
 
 export interface DownloadProgress {
   percent: number

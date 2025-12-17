@@ -114,13 +114,13 @@ export default function Playground() {
     }
   }, [fetchedSessions])
 
-  // Set default model
+  // Set default model (registered モデルのみから選択)
   useEffect(() => {
     if (models && !selectedModel) {
-      // 全ての登録済みモデルを選択可能にする（ready状態に関係なく）
       const allModels = models as RegisteredModelView[]
-      if (allModels.length > 0) {
-        setSelectedModel(allModels[0].name)
+      const registeredModels = allModels.filter(m => m.lifecycle_status === 'registered')
+      if (registeredModels.length > 0) {
+        setSelectedModel(registeredModels[0].name)
       }
     }
   }, [models, selectedModel])
@@ -417,9 +417,9 @@ export default function Playground() {
     }
   }
 
-  // 全ての登録済みモデルを選択可能にする（ready状態に関係なく）
-  // 送信時にノードがなければエラーを返す設計
-  const availableModels = (models as RegisteredModelView[] | undefined) || []
+  // ルーターにキャッシュ完了（registered）のモデルのみを選択可能にする
+  const allModels = (models as RegisteredModelView[] | undefined) || []
+  const availableModels = allModels.filter(m => m.lifecycle_status === 'registered')
 
   return (
     <div className="flex h-screen bg-background">
@@ -560,7 +560,6 @@ export default function Playground() {
                     .map((model) => (
                       <SelectItem key={model.name} value={model.name}>
                         {model.name}
-                        {!model.ready && ' (downloading...)'}
                       </SelectItem>
                     ))
                 )}

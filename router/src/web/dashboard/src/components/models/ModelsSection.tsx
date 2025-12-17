@@ -25,10 +25,8 @@ function formatGb(value?: number | null): string {
 
 function lifecycleStatusBadge(status: LifecycleStatus) {
   switch (status) {
-    case 'ready':
-      return <Badge variant="online">Ready</Badge>
-    case 'cached':
-      return <Badge variant="secondary">Cached</Badge>
+    case 'registered':
+      return <Badge variant="online">Registered</Badge>
     case 'downloading':
       return <Badge variant="secondary"><Download className="mr-1 h-3 w-3 animate-pulse" />Downloading</Badge>
     case 'pending':

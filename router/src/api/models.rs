@@ -75,10 +75,8 @@ pub enum LifecycleStatus {
     Pending,
     /// ダウンロード中
     Downloading,
-    /// ダウンロード完了、ノード未ロード
-    Cached,
-    /// ノードロード済み、推論可能
-    Ready,
+    /// ルーターにキャッシュ完了（ノードがアクセス可能）
+    Registered,
     /// エラー発生
     Error,
 }
@@ -105,7 +103,7 @@ pub struct RegisteredModelView {
     pub description: Option<String>,
     /// 登録ステータス（registered/cached/failedなど）- 後方互換用
     pub status: Option<String>,
-    /// ライフサイクル状態（pending/downloading/cached/ready/error）
+    /// ライフサイクル状態（pending/downloading/registered/error）
     pub lifecycle_status: LifecycleStatus,
     /// ダウンロード進行状況（downloading時のみ）
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -152,7 +150,7 @@ fn model_info_to_registered_view(model: ModelInfo) -> RegisteredModelView {
     // ライフサイクル状態を決定
     // NOTE: ノードロード状態は別途 get_registered_models_with_state で取得
     let lifecycle_status = if ready {
-        LifecycleStatus::Cached
+        LifecycleStatus::Registered
     } else {
         // ファイルがない場合はpending（ConvertTaskチェックは後で追加）
         LifecycleStatus::Pending
@@ -248,7 +246,7 @@ pub async fn get_registered_models(
                 ConvertStatus::Queued => LifecycleStatus::Pending,
                 ConvertStatus::InProgress => LifecycleStatus::Downloading,
                 ConvertStatus::Failed => LifecycleStatus::Error,
-                ConvertStatus::Completed => LifecycleStatus::Cached,
+                ConvertStatus::Completed => LifecycleStatus::Registered,
             };
             let download_progress = if task.status != ConvertStatus::Completed {
                 Some(DownloadProgress {

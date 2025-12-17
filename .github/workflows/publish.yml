@@ -197,6 +197,21 @@ jobs:
           rm -rf "$pkg_root_router"
           echo "router_pkg=$pkg_router" >> "$GITHUB_OUTPUT"
 
+      - name: Build macOS llm-node installer (.pkg)
+        if: matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin'
+        id: package_macos_node_installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_VERSION}"
+          if [[ -z "$version" ]]; then
+            echo "::error::Release version is not available."
+            exit 1
+          fi
+          pkg_node="llm-node-${{ matrix.artifact }}.pkg"
+          scripts/build-node-installer-macos.sh "$version" "$pkg_node"
+          echo "node_pkg=$pkg_node" >> "$GITHUB_OUTPUT"
+
       - name: Build Windows installers (.msi)
         if: runner.os == 'Windows'
         id: package_windows_installers
@@ -241,6 +256,14 @@ jobs:
           path: ${{ steps.package_macos_installers.outputs.router_pkg }}
           if-no-files-found: error
 
+      - name: Upload macOS llm-node installer
+        if: (matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin') && steps.package_macos_node_installer.outputs.node_pkg != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-node-pkg
+          path: ${{ steps.package_macos_node_installer.outputs.node_pkg }}
+          if-no-files-found: error
+
       - name: Upload Windows router installer
         if: runner.os == 'Windows' && steps.package_windows_installers.outputs.router_msi != ''
         uses: actions/upload-artifact@v4
@@ -270,4 +293,3 @@ jobs:
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

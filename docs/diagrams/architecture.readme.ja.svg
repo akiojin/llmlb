@@ -32,13 +32,12 @@
 
   <!-- Router -> Nodes -->
   <path d="M410 380 L410 410 L310 410 L310 430" fill="none" stroke="#333333" stroke-width="2.5" marker-end="url(#arrow)" />
-  <text x="310" y="424" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#111111">OpenAI-compatible (/v1/*)</text>
 
   <path d="M410 380 L410 410 L560 410 L560 430" fill="none" stroke="#333333" stroke-width="2.5" marker-end="url(#arrow)" />
-  <text x="560" y="424" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#111111">OpenAI-compatible (/v1/*)</text>
 
   <!-- Node -> Router (registration/heartbeat) -->
-  <path d="M330 430 L330 402 L380 402 L380 380" fill="none" stroke="#666666" stroke-width="2.5" stroke-dasharray="5 5" marker-end="url(#arrow)" />
-  <path d="M540 430 L540 402 L440 402 L440 380" fill="none" stroke="#666666" stroke-width="2.5" stroke-dasharray="5 5" marker-end="url(#arrow)" />
-  <text x="410" y="398" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">/v0/nodes, /v0/health (registration/heartbeat)</text>
+  <path d="M330 430 L330 418 L380 418 L380 380" fill="none" stroke="#666666" stroke-width="2.5" stroke-dasharray="5 5" marker-end="url(#arrow)" />
+  <path d="M540 430 L540 418 L440 418 L440 380" fill="none" stroke="#666666" stroke-width="2.5" stroke-dasharray="5 5" marker-end="url(#arrow)" />
+  <rect x="260" y="392" width="300" height="18" rx="6" ry="6" fill="#ffffff" stroke="none" opacity="0.85" />
+  <text x="410" y="405" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">/v0/nodes, /v0/health (registration/heartbeat)</text>
 </svg>

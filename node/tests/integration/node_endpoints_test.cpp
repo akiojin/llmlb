@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
 #include "api/http_server.h"
 #include "api/openai_endpoints.h"
@@ -42,11 +43,21 @@ TEST(NodeEndpointsTest, LogLevelGetAndSet) {
     auto get1 = cli.Get("/log/level");
     ASSERT_TRUE(get1);
     EXPECT_EQ(get1->status, 200);
+    auto j1 = nlohmann::json::parse(get1->body);
+    EXPECT_TRUE(j1.contains("level"));
 
     auto set = cli.Post("/log/level", R"({"level":"debug"})", "application/json");
     ASSERT_TRUE(set);
     EXPECT_EQ(set->status, 200);
-    EXPECT_NE(set->body.find("debug"), std::string::npos);
+    auto j2 = nlohmann::json::parse(set->body);
+    EXPECT_EQ(j2.value("status", ""), "ok");
+    EXPECT_EQ(j2.value("level", ""), "debug");
+
+    auto get2 = cli.Get("/log/level");
+    ASSERT_TRUE(get2);
+    EXPECT_EQ(get2->status, 200);
+    auto j3 = nlohmann::json::parse(get2->body);
+    EXPECT_EQ(j3.value("level", ""), "debug");
 
     server.stop();
 }
@@ -89,8 +100,11 @@ TEST(NodeEndpointsTest, MetricsReportsUptimeAndCounts) {
     ASSERT_TRUE(metrics);
     EXPECT_EQ(metrics->status, 200);
     EXPECT_EQ(metrics->get_header_value("Content-Type"), "application/json");
-    EXPECT_NE(metrics->body.find("uptime_seconds"), std::string::npos);
-    EXPECT_NE(metrics->body.find("gpu_devices"), std::string::npos);
+    auto body = nlohmann::json::parse(metrics->body);
+    EXPECT_TRUE(body.contains("uptime_seconds"));
+    EXPECT_TRUE(body.contains("gpu_devices"));
+    EXPECT_TRUE(body.contains("request_count"));
+    EXPECT_TRUE(body.contains("pull_count"));
 
     server.stop();
 }

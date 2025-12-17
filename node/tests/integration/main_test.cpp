@@ -32,7 +32,7 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
 
     // Stub router that accepts register/heartbeat and lists one model
     httplib::Server router;
-    router.Post("/v0/nodes", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/api/nodes", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
         res.set_content(R"({"node_id":"test-node","node_token":"test-token"})", "application/json");
     });
@@ -40,9 +40,9 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
         res.status = 200;
         res.set_content("ok", "text/plain");
     });
-    router.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+    router.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
-        res.set_content(R"({"data":[{"id":"gpt-oss-7b"}]})", "application/json");
+        res.set_content(R"([{"name":"gpt-oss-7b"}])", "application/json");
     });
 
     std::thread router_thread([&]() { router.listen("127.0.0.1", router_port); });
@@ -83,7 +83,7 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
     const int node_port = 18133;
 
     httplib::Server router;
-    router.Post("/v0/nodes", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/api/nodes", [](const httplib::Request&, httplib::Response& res) {
         res.status = 500;
         res.set_content("error", "text/plain");
     });

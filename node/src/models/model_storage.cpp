@@ -62,40 +62,16 @@ std::string sanitizeModelId(const std::string& input) {
 ModelStorage::ModelStorage(std::string models_dir) : models_dir_(std::move(models_dir)) {}
 
 std::string ModelStorage::modelNameToDir(const std::string& model_name) {
-    if (model_name.empty()) {
-        return "_latest";
-    }
-
-    std::string result = model_name;
-
-    // Replace all colons with underscores
-    std::replace(result.begin(), result.end(), ':', '_');
-
-    // Router compatibility:
-    // - Filename-based ids (e.g. "gpt-oss-20b") are already versioned and should not get "_latest".
-    // - Plain ids without ':' and without '-' get "_latest" (e.g. "llama3" -> "llama3_latest").
-    // - Hugging Face ids (e.g. "org/model") are nested dirs and must not get "_latest".
-    if (model_name.find('/') == std::string::npos && model_name.find(':') == std::string::npos &&
-        model_name.find('-') == std::string::npos) {
-        result += "_latest";
-    }
-
-    return result;
+    // Keep directory naming consistent with router's `model_name_to_dir()`:
+    // - lowercase normalization
+    // - allow hierarchical ids (org/model)
+    // - reject dangerous patterns
+    return sanitizeModelId(model_name);
 }
 
 std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
-    const std::string normalized = sanitizeModelId(dir_name);
-
-    // Lossy reverse conversion:
-    // - Strip "_latest" suffix used for non-versioned ids.
-    // - Otherwise keep directory name as model id (router uses filename-based ids).
-    constexpr const char* kLatestSuffix = "_latest";
-    const size_t suffix_len = std::char_traits<char>::length(kLatestSuffix);
-    if (normalized.size() > suffix_len &&
-        normalized.rfind(kLatestSuffix) == normalized.size() - suffix_len) {
-        return normalized.substr(0, normalized.size() - suffix_len);
-    }
-    return normalized;
+    // Keep model id consistent and safe (lowercase normalization).
+    return sanitizeModelId(dir_name);
 }
 
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {

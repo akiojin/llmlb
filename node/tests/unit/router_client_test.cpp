@@ -17,7 +17,7 @@ public:
 
     void start(int port) {
         stop_flag_ = false;
-        server_.Post("/v0/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+        server_.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register_body = req.body;
             last_register_api_key = req.get_header_value("X-API-Key");
             res.status = register_status;

@@ -9,8 +9,11 @@ using namespace llm_node;
 class RouterContractFixture : public ::testing::Test {
 protected:
     void SetUp() override {
-        server.Post("/v0/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+        setenv("LLM_ROUTER_API_KEY", "sk_test", 1);
+
+        server.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register = req.body;
+            last_register_api_key = req.get_header_value("X-API-Key");
             res.status = 200;
             res.set_content(R"({"node_id":"node-123","node_token":"test-token"})", "application/json");
         });
@@ -32,6 +35,7 @@ protected:
     httplib::Server server;
     std::thread thread;
     std::string last_register;
+    std::string last_register_api_key;
     std::string last_heartbeat;
     std::string last_heartbeat_token;
 };
@@ -51,6 +55,7 @@ TEST_F(RouterContractFixture, RegisterNodeReturnsId) {
     EXPECT_EQ(result.node_id, "node-123");
     EXPECT_EQ(result.node_token, "test-token");
     EXPECT_FALSE(last_register.empty());
+    EXPECT_EQ(last_register_api_key, "sk_test");
 }
 
 TEST_F(RouterContractFixture, HeartbeatSendsStatus) {

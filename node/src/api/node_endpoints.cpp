@@ -250,7 +250,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
     });
 
-    server.Get("/startup", [this](const httplib::Request&, httplib::Response& res) {
+    server.Get("/startup", [](const httplib::Request&, httplib::Response& res) {
         if (llm_node::is_ready()) {
             res.set_content(R"({"status":"ready"})", "application/json");
         } else {
@@ -270,14 +270,57 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
     });
 
+    // Metrics (JSON format)
     server.Get("/metrics", [this](const httplib::Request&, httplib::Response& res) {
         auto uptime_seconds = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time_).count();
-        exporter_.set_gauge("llm_node_uptime_seconds", static_cast<double>(uptime_seconds), "Node uptime in seconds");
-        exporter_.set_gauge("llm_node_requests_total", static_cast<double>(request_count_.load()), "Total requests served");
-        exporter_.set_gauge("llm_node_pulls_total", static_cast<double>(pull_count_.load()), "Total pull requests served");
+        nlohmann::json body = {
+            {"uptime_seconds", uptime_seconds},
+            {"request_count", request_count_.load()},
+            {"pull_count", pull_count_.load()},
+            {"gpu_devices", gpu_devices_},
+            {"gpu_total_mem_bytes", gpu_total_mem_},
+            {"gpu_capability_score", gpu_capability_},
+        };
+        res.set_content(body.dump(), "application/json");
+    });
+
+    // Prometheus metrics
+    server.Get("/metrics/prom", [this](const httplib::Request&, httplib::Response& res) {
+        auto uptime_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start_time_).count();
+        exporter_.set_gauge(
+            "llm_node_uptime_seconds",
+            static_cast<double>(uptime_seconds),
+            "Node uptime in seconds");
+        exporter_.set_gauge(
+            "llm_node_requests_total",
+            static_cast<double>(request_count_.load()),
+            "Total requests served");
+        exporter_.set_gauge(
+            "llm_node_pulls_total",
+            static_cast<double>(pull_count_.load()),
+            "Total pull requests served");
+        exporter_.set_gauge(
+            "llm_node_gpu_devices",
+            static_cast<double>(gpu_devices_),
+            "Number of available GPU devices");
+        exporter_.set_gauge(
+            "llm_node_gpu_total_mem_bytes",
+            static_cast<double>(gpu_total_mem_),
+            "Total GPU memory in bytes");
+        exporter_.set_gauge(
+            "llm_node_gpu_capability_score",
+            gpu_capability_,
+            "GPU capability score (for routing)");
 
         res.set_content(exporter_.render(), "text/plain; charset=utf-8");
+    });
+
+    server.Get("/log/level", [](const httplib::Request&, httplib::Response& res) {
+        const auto level_view = spdlog::level::to_string_view(spdlog::get_level());
+        nlohmann::json body = {{"level", std::string(level_view.data(), level_view.size())}};
+        res.set_content(body.dump(), "application/json");
     });
 
     server.Post("/log/level", [](const httplib::Request& req, httplib::Response& res) {
@@ -304,7 +347,13 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         spdlog::set_level(level);
         spdlog::info("Log level set to {}", level_str);
 
-        res.set_content(R"({"status":"ok"})", "application/json");
+        nlohmann::json body = {{"status", "ok"}, {"level", level_str}};
+        res.set_content(body.dump(), "application/json");
+    });
+
+    // Debug endpoint: intentionally triggers 500 to verify error handling.
+    server.Get("/internal-error", [](const httplib::Request&, httplib::Response&) {
+        throw std::runtime_error("intentional error");
     });
 }
 

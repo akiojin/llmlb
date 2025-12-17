@@ -23,6 +23,85 @@ use crate::registry::models::{
 };
 use crate::registry::NodeRegistry;
 use llm_router_common::error::RouterError;
+
+// ===== GGUF Validation =====
+
+/// GGUFファイルの検証結果
+#[derive(Debug)]
+pub struct GgufValidation {
+    /// マジックバイト ("GGUF")
+    pub magic: [u8; 4],
+    /// GGUFバージョン
+    pub version: u32,
+    /// テンソル数
+    pub tensor_count: u64,
+    /// メタデータKV数
+    pub kv_count: u64,
+    /// ファイルサイズ（バイト）
+    pub file_size: u64,
+}
+
+/// GGUFファイルを検証し、ヘッダ情報を返す
+pub fn validate_gguf_file(path: &Path) -> Result<GgufValidation, RouterError> {
+    use std::fs::File;
+    use std::io::Read as StdRead;
+
+    // ファイル存在確認
+    if !path.exists() {
+        return Err(RouterError::Internal(format!(
+            "GGUF file not found: {}",
+            path.display()
+        )));
+    }
+
+    let mut file =
+        File::open(path).map_err(|e| RouterError::Internal(format!("Cannot open GGUF: {}", e)))?;
+
+    // ファイルサイズ取得
+    let file_size = file
+        .metadata()
+        .map(|m| m.len())
+        .map_err(|e| RouterError::Internal(format!("Cannot get file size: {}", e)))?;
+
+    // 最小ヘッダサイズチェック（magic 4 + version 4 + tensor_count 8 + kv_count 8 = 24）
+    if file_size < 24 {
+        return Err(RouterError::Internal(format!(
+            "GGUF file too small: {} bytes (minimum 24 bytes for header)",
+            file_size
+        )));
+    }
+
+    // ヘッダ読み取り（24バイト）
+    let mut header = [0u8; 24];
+    file.read_exact(&mut header)
+        .map_err(|e| RouterError::Internal(format!("Cannot read GGUF header: {}", e)))?;
+
+    // マジックバイト検証 ("GGUF" = 0x46554747 little-endian)
+    let magic: [u8; 4] = header[0..4].try_into().unwrap();
+    if &magic != b"GGUF" {
+        return Err(RouterError::Internal(format!(
+            "Invalid GGUF magic: expected 'GGUF', got {:?}",
+            magic
+        )));
+    }
+
+    // バージョン（u32 little-endian）
+    let version = u32::from_le_bytes(header[4..8].try_into().unwrap());
+
+    // テンソル数（u64 little-endian）
+    let tensor_count = u64::from_le_bytes(header[8..16].try_into().unwrap());
+
+    // KV数（u64 little-endian）
+    let kv_count = u64::from_le_bytes(header[16..24].try_into().unwrap());
+
+    Ok(GgufValidation {
+        magic,
+        version,
+        tensor_count,
+        kv_count,
+        file_size,
+    })
+}
 use llm_router_common::types::NodeStatus;
 
 // ===== Push Notification Context (SPEC-dcaeaec4 FR-7) =====
@@ -963,7 +1042,40 @@ where
     .await
     .map_err(|e| RouterError::Internal(e.to_string()))?;
 
-    result.map_err(RouterError::Internal)
+    result.map_err(RouterError::Internal)?;
+
+    // Phase 1: GGUF検証 - 変換後のファイルを検証
+    let validation = validate_gguf_file(target)?;
+
+    // テンソル数が0の場合はエラー（空のGGUFファイル）
+    if validation.tensor_count == 0 {
+        return Err(RouterError::Internal(
+            "Conversion produced empty GGUF file (0 tensors)".into(),
+        ));
+    }
+
+    let file_size_mb = validation.file_size / 1_000_000;
+
+    // Phase 3: サイズ妥当性警告（500MB未満は警告）
+    if file_size_mb < 500 {
+        tracing::warn!(
+            path = %target.display(),
+            file_size_mb = file_size_mb,
+            tensor_count = validation.tensor_count,
+            "GGUF file is unusually small - conversion may be incomplete"
+        );
+    }
+
+    tracing::info!(
+        path = %target.display(),
+        version = validation.version,
+        tensor_count = validation.tensor_count,
+        kv_count = validation.kv_count,
+        file_size_mb = file_size_mb,
+        "GGUF validation passed"
+    );
+
+    Ok(())
 }
 
 /// python依存が無いときは事前にエラーにする
@@ -1428,5 +1540,100 @@ mod tests {
         env::remove_var("LLM_CONVERT_SCRIPT");
         let res = verify_convert_ready();
         assert!(res.is_err());
+    }
+
+    // ===== GGUF Validation Tests =====
+
+    #[test]
+    fn validate_gguf_file_valid_header() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("test.gguf");
+
+        // Create a valid GGUF header (24 bytes minimum)
+        // Magic: "GGUF" (4 bytes)
+        // Version: 3 (4 bytes, little-endian)
+        // Tensor count: 100 (8 bytes, little-endian)
+        // KV count: 10 (8 bytes, little-endian)
+        let mut header = Vec::with_capacity(24);
+        header.extend_from_slice(b"GGUF");
+        header.extend_from_slice(&3u32.to_le_bytes()); // version
+        header.extend_from_slice(&100u64.to_le_bytes()); // tensor_count
+        header.extend_from_slice(&10u64.to_le_bytes()); // kv_count
+
+        std::fs::write(&gguf_path, &header).unwrap();
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_ok());
+
+        let validation = result.unwrap();
+        assert_eq!(&validation.magic, b"GGUF");
+        assert_eq!(validation.version, 3);
+        assert_eq!(validation.tensor_count, 100);
+        assert_eq!(validation.kv_count, 10);
+        assert_eq!(validation.file_size, 24);
+    }
+
+    #[test]
+    fn validate_gguf_file_invalid_magic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("invalid.gguf");
+
+        // Create header with invalid magic
+        let mut header = Vec::with_capacity(24);
+        header.extend_from_slice(b"XXXX"); // Invalid magic
+        header.extend_from_slice(&3u32.to_le_bytes());
+        header.extend_from_slice(&100u64.to_le_bytes());
+        header.extend_from_slice(&10u64.to_le_bytes());
+
+        std::fs::write(&gguf_path, &header).unwrap();
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid GGUF magic"));
+    }
+
+    #[test]
+    fn validate_gguf_file_too_small() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("small.gguf");
+
+        // Create file smaller than minimum header size (24 bytes)
+        std::fs::write(&gguf_path, b"GGUF123").unwrap(); // Only 7 bytes
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too small"));
+    }
+
+    #[test]
+    fn validate_gguf_file_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("nonexistent.gguf");
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn validate_gguf_file_zero_tensors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("empty.gguf");
+
+        // Create header with 0 tensors
+        let mut header = Vec::with_capacity(24);
+        header.extend_from_slice(b"GGUF");
+        header.extend_from_slice(&3u32.to_le_bytes());
+        header.extend_from_slice(&0u64.to_le_bytes()); // 0 tensors
+        header.extend_from_slice(&10u64.to_le_bytes());
+
+        std::fs::write(&gguf_path, &header).unwrap();
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().tensor_count, 0);
     }
 }

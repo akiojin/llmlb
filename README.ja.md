@@ -119,6 +119,8 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
                └───────────────┘
 ```
 
+Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成 (README.ja.md)）
+
 ### モデル同期（push配布なし）
 
 - ルーターは、登録・変換・キャッシュされたモデルだけを `/v1/models` に掲載します。

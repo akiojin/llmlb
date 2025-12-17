@@ -262,6 +262,8 @@ Nodes report health + metrics to the Router for node status and load balancing d
 Machine 1          Machine 2          Machine 3
 ```
 
+Draw.io source: `docs/diagrams/architecture.drawio` (Page: System Overview (README.md))
+
 ### Communication Flow (Proxy Pattern)
 
 LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.

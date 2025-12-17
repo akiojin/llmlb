@@ -1,0 +1,87 @@
+<mxfile host="app.diagrams.net" modified="2025-12-18T11:10:00.000Z" agent="Codex" version="21.0.0" type="device">
+  <diagram name="System Overview (README.md)" id="system-overview-readme-md">
+    <mxGraphModel dx="1000" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0" defaultFontFamily="Noto Sans JP">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Client&lt;br&gt;(Users, Applications, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Noto Sans JP;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="120" y="80" width="600" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Router&lt;br&gt;(Central Management Server)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontFamily=Noto Sans JP;fontSize=16;align=center;verticalAlign=top;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="120" y="210" width="600" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="1. Select Node (Load Balancing)&lt;br&gt;2. Proxy Request to Selected Node&lt;br&gt;3. Return Response to Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;fontFamily=Noto Sans JP;fontSize=14;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=14;" vertex="1" parent="1">
+          <mxGeometry x="165" y="265" width="510" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="Node 1&lt;br&gt;/v1/* API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontFamily=Noto Sans JP;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="120" y="460" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="Node 2&lt;br&gt;/v1/* API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontFamily=Noto Sans JP;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="330" y="460" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="Node 3&lt;br&gt;/v1/* API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontFamily=Noto Sans JP;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="540" y="460" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="Machine 1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Noto Sans JP;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="120" y="550" width="180" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="Machine 2" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Noto Sans JP;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="550" width="180" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="Machine 3" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Noto Sans JP;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="540" y="550" width="180" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="POST /v1/chat/completions&lt;br&gt;POST /v1/completions&lt;br&gt;POST /v1/embeddings" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="OpenAI Proxy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="3" target="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="OpenAI Proxy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="3" target="6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="OpenAI Proxy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="3" target="7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="システム構成 (README.ja.md)" id="system-configuration-readme-ja-md">
+    <mxGraphModel dx="1000" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0" defaultFontFamily="Noto Sans JP">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Client&lt;br&gt;(apps / users / integrations)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Noto Sans JP;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="150" y="80" width="520" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Router&lt;br&gt;- /v1/* proxy + load balancing&lt;br&gt;- /v0/* (nodes, models, dashboard)&lt;br&gt;- /dashboard (Web UI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontFamily=Noto Sans JP;fontSize=14;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=14;" vertex="1" parent="1">
+          <mxGeometry x="150" y="200" width="520" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="Node&lt;br&gt;llama.cpp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontFamily=Noto Sans JP;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="210" y="430" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="Node&lt;br&gt;llama.cpp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontFamily=Noto Sans JP;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="460" y="430" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="OpenAI-compatible (/v1/*)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="OpenAI-compatible (/v1/*)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="3" target="4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="OpenAI-compatible (/v1/*)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontFamily=Noto Sans JP;fontSize=12;align=center;verticalAlign=middle;" edge="1" parent="1" source="3" target="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;dashPattern=1 4;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="4" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;dashPattern=1 4;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="5" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="/v0/nodes, /v0/health&lt;br&gt;(registration/heartbeat)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Noto Sans JP;fontSize=12;fontColor=#444444;" vertex="1" parent="1">
+          <mxGeometry x="270" y="380" width="280" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

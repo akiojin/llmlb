@@ -123,12 +123,30 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     try {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
-        if (body.contains("data") && body["data"].is_array()) {
-            for (const auto& m : body["data"]) {
-                if (!m.contains("id")) continue;
+
+        // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
+        // 配列の場合は直接処理、そうでなければ data フィールドを参照
+        const json* models_array = nullptr;
+        if (body.is_array()) {
+            models_array = &body;
+        } else if (body.contains("data") && body["data"].is_array()) {
+            models_array = &body["data"];
+        }
+
+        if (models_array) {
+            for (const auto& m : *models_array) {
+                // /v0/models では "name" フィールドを使用（/v1/models では "id"）
+                std::string model_id;
+                if (m.contains("name") && m["name"].is_string()) {
+                    model_id = m["name"].get<std::string>();
+                } else if (m.contains("id") && m["id"].is_string()) {
+                    model_id = m["id"].get<std::string>();
+                } else {
+                    continue;
+                }
 
                 RemoteModel rm;
-                rm.id = m["id"].get<std::string>();
+                rm.id = model_id;
                 rm.path = m.value("path", "");
                 rm.download_url = m.value("download_url", "");
                 rm.chat_template = m.value("chat_template", "");
@@ -170,7 +188,10 @@ std::vector<std::string> ModelSync::listLocalModels() const {
         const auto relative = fs::relative(parent_dir, models_dir_, ec);
         if (ec || relative.empty()) continue;
 
-        models.push_back(relative.string());
+        // SPEC-dcaeaec4: ルーターとの比較のため小文字に正規化
+        // ルーターは model_name_to_dir() で正規化済みの名前を返すため、
+        // ローカルモデル名も同じ正規化を適用する
+        models.push_back(ModelStorage::modelNameToDir(relative.string()));
     }
     return models;
 }

@@ -160,7 +160,7 @@ export function ModelsSection() {
                     </div>
 
                     {/* ダウンロード進行状況 */}
-                    {model.download_progress && (model.lifecycle_status === 'downloading' || model.lifecycle_status === 'pending') && (
+                    {model.download_progress && (model.lifecycle_status === 'caching' || model.lifecycle_status === 'pending') && (
                       <div className="mt-3">
                         <div className="h-1.5 w-full rounded-full bg-muted">
                           <div
@@ -199,7 +199,7 @@ export function ModelsSection() {
                         variant="ghost"
                         size="sm"
                         onClick={() => deleteMutation.mutate(model.name)}
-                        disabled={deleteMutation.isPending || model.lifecycle_status === 'downloading'}
+                        disabled={deleteMutation.isPending || model.lifecycle_status === 'caching'}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>

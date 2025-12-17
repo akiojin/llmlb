@@ -1,112 +1,72 @@
-import { test, expect } from '@playwright/test';
-import { PlaygroundPage } from '../../pages/playground.page';
+import { test, expect, type Page } from '@playwright/test';
+
+function mockRegisteredModels(page: Page) {
+  return page.route('**/api/models/registered', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          name: 'openai:gpt-4o',
+          state: 'ready',
+          capabilities: { input_image: 'supported', input_audio: 'supported' },
+        },
+      ]),
+    });
+  });
+}
 
 test.describe('Playground Settings @playground', () => {
-  let playground: PlaygroundPage;
-
   test.beforeEach(async ({ page }) => {
-    playground = new PlaygroundPage(page);
-    await playground.goto();
-    await playground.dismissError();
+    await mockRegisteredModels(page);
+    await page.goto('/playground');
   });
 
-  test('PST-01: Settings button opens modal', async () => {
-    await playground.openSettings();
-    await expect(playground.settingsModal).toBeVisible();
+  test('PST-01: Settings button opens modal', async ({ page }) => {
+    await page.getByTestId('playground-open-settings').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('Settings')).toBeVisible();
   });
 
-  test('PST-02: Settings modal can be closed', async () => {
-    await playground.openSettings();
-    await playground.closeSettings();
-    await expect(playground.settingsModal).toBeHidden();
+  test('PST-02: Settings modal can be closed', async ({ page }) => {
+    await page.getByTestId('playground-open-settings').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByRole('dialog')).toBeHidden();
   });
 
-  test('PST-03: Provider Local button is clickable', async () => {
-    await playground.openSettings();
-    await playground.setProvider('local');
+  test('PST-03: Stream toggle exists and is clickable', async ({ page }) => {
+    await page.getByTestId('playground-open-settings').click();
+    const dialog = page.getByRole('dialog');
+    const toggle = dialog.getByRole('switch');
+    await expect(toggle).toBeVisible();
 
-    // Check button has active state
-    const isActive = await playground.providerLocal.evaluate(
-      (el) => el.classList.contains('provider-btn--active')
-    );
-    expect(isActive).toBe(true);
+    const initial = await toggle.getAttribute('aria-checked');
+    await toggle.click();
+    const next = await toggle.getAttribute('aria-checked');
+    expect(next).not.toBe(initial);
   });
 
-  test('PST-04: Provider Cloud button is clickable', async () => {
-    await playground.openSettings();
-    await playground.setProvider('cloud');
-
-    const isActive = await playground.providerCloud.evaluate(
-      (el) => el.classList.contains('provider-btn--active')
-    );
-    expect(isActive).toBe(true);
+  test('PST-04: System prompt field exists and can be edited', async ({ page }) => {
+    await page.getByTestId('playground-open-settings').click();
+    const prompt = page.getByPlaceholder('You are a helpful assistant...');
+    await expect(prompt).toBeVisible();
+    await prompt.fill('You are a helpful assistant for testing.');
+    await expect(prompt).toHaveValue('You are a helpful assistant for testing.');
   });
 
-  test('PST-05: Provider All button is clickable', async () => {
-    await playground.openSettings();
-    await playground.setProvider('all');
-
-    const isActive = await playground.providerAll.evaluate(
-      (el) => el.classList.contains('provider-btn--active')
-    );
-    expect(isActive).toBe(true);
+  test('PST-05: Temperature slider exists', async ({ page }) => {
+    await page.getByTestId('playground-open-settings').click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('input[type="range"]')).toBeVisible();
   });
 
-  test('PST-06: API Key input field exists', async () => {
-    await playground.openSettings();
-    await expect(playground.apiKeyInput).toBeVisible();
-  });
-
-  test('PST-07: API Key can be entered', async () => {
-    await playground.openSettings();
-    const testKey = 'sk-test-key-12345';
-    await playground.apiKeyInput.fill(testKey);
-    await expect(playground.apiKeyInput).toHaveValue(testKey);
-  });
-
-  test('PST-08: Stream toggle exists', async () => {
-    await playground.openSettings();
-    await expect(playground.streamToggle).toBeVisible();
-  });
-
-  test('PST-09: Stream toggle is clickable', async () => {
-    await playground.openSettings();
-    const initialState = await playground.streamToggle.isChecked();
-    await playground.streamToggle.click();
-    const newState = await playground.streamToggle.isChecked();
-    expect(newState).toBe(!initialState);
-  });
-
-  test('PST-10: System prompt field exists', async () => {
-    await playground.openSettings();
-    await expect(playground.systemPrompt).toBeVisible();
-  });
-
-  test('PST-11: System prompt can be edited', async () => {
-    await playground.openSettings();
-    const testPrompt = 'You are a helpful assistant for testing.';
-    await playground.setSystemPrompt(testPrompt);
-    await expect(playground.systemPrompt).toHaveValue(testPrompt);
-  });
-
-  test('PST-12: Clear Playground button exists', async () => {
-    await playground.openSettings();
-    await expect(playground.resetChat).toBeVisible();
-  });
-
-  test('PST-13: Copy cURL button exists', async () => {
-    await playground.openSettings();
-    await expect(playground.copyCurl).toBeVisible();
-  });
-
-  test('PST-14: Copy cURL button is clickable', async ({ page }) => {
-    await playground.openSettings();
-
-    // Click copy button
-    await playground.copyCurl.click();
-
-    // Should not throw error - clipboard access may be restricted
-    await page.waitForTimeout(300);
-    expect(true).toBe(true);
+  test('PST-06: Max tokens input exists and can be edited', async ({ page }) => {
+    await page.getByTestId('playground-open-settings').click();
+    const dialog = page.getByRole('dialog');
+    const maxTokens = dialog.locator('input[type="number"]').first();
+    await expect(maxTokens).toBeVisible();
+    await maxTokens.fill('2048');
+    await expect(maxTokens).toHaveValue('2048');
   });
 });

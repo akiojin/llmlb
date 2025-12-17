@@ -141,9 +141,9 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     const mockModels = [
       {
         name: 'openai/gpt-oss-20b',
-        status: 'cached',
-        repo: 'openai/gpt-oss-20b',
-        filename: '',
+        source: 'hf',
+        state: 'ready',
+        capabilities: { input_image: 'unknown', input_audio: 'unknown' },
       },
     ];
 

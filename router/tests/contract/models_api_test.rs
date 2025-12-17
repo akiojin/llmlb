@@ -81,6 +81,61 @@ with open(outfile, "wb") as f:
     api::create_router(state)
 }
 
+/// T004b: GET /api/models/registered が capabilities を含むこと（Playground用）
+#[tokio::test]
+#[serial]
+async fn test_get_registered_models_includes_capabilities() {
+    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    let app = build_app().await;
+
+    let temp_dir = std::env::var("LLM_ROUTER_DATA_DIR").expect("LLM_ROUTER_DATA_DIR must be set");
+    let file_path = std::path::Path::new(&temp_dir).join("model.gguf");
+    std::fs::write(&file_path, b"GGUF\x03\x00\x00\x00").unwrap();
+
+    let mut model = llm_router::registry::models::ModelInfo::new(
+        "gpt-oss-7b".to_string(),
+        0,
+        "Test model".to_string(),
+        0,
+        vec!["vision".into(), "audio".into(), "gguf".into()],
+    );
+    model.path = Some(file_path.to_string_lossy().to_string());
+
+    llm_router::api::models::upsert_registered_model(model);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/models/registered")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Expected 200 OK for GET /api/models/registered"
+    );
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(body.is_array(), "Response must be an array");
+
+    let item = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == "gpt-oss-7b")
+        .expect("Model must exist in response");
+
+    assert_eq!(item["state"], "ready");
+    assert_eq!(item["capabilities"]["input_image"], "supported");
+    assert_eq!(item["capabilities"]["input_audio"], "supported");
+}
+
 /// T005b: POST /api/models/distribute のバリデーション（specificでnode_ids空）
 #[tokio::test]
 #[serial]

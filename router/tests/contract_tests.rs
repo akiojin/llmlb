@@ -30,5 +30,8 @@ mod chat_modal_embed;
 #[path = "contract/chat_page_spec.rs"]
 mod chat_page_spec;
 
+#[path = "contract/openai_request_sanitization_spec.rs"]
+mod openai_request_sanitization_spec;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

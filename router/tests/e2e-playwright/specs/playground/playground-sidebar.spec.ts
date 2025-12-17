@@ -1,74 +1,48 @@
-import { test, expect } from '@playwright/test';
-import { PlaygroundPage } from '../../pages/playground.page';
+import { test, expect, type Page } from '@playwright/test';
+
+function mockRegisteredModels(page: Page) {
+  return page.route('**/api/models/registered', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          name: 'openai:gpt-4o',
+          state: 'ready',
+          capabilities: { input_image: 'supported', input_audio: 'supported' },
+        },
+      ]),
+    });
+  });
+}
 
 test.describe('Playground Sidebar @playground', () => {
-  let playground: PlaygroundPage;
-
   test.beforeEach(async ({ page }) => {
-    playground = new PlaygroundPage(page);
-    await playground.goto();
+    await mockRegisteredModels(page);
+    await page.goto('/playground');
   });
 
-  test('PS-01: Sidebar is visible on load', async () => {
-    await expect(playground.sidebar).toBeVisible();
+  test('PS-01: Sidebar is visible on load', async ({ page }) => {
+    await expect(page.getByTestId('playground-sidebar')).toBeVisible();
+    await expect(page.getByText('LLM Router')).toBeVisible();
   });
 
-  test('PS-02: Sidebar toggle collapses and expands', async ({ page }) => {
-    // Get initial state
-    const initialClass = await playground.sidebar.getAttribute('class');
-
-    // Toggle sidebar
-    await playground.toggleSidebar();
-    await page.waitForTimeout(300); // Wait for animation
-
-    const collapsedClass = await playground.sidebar.getAttribute('class');
-    expect(collapsedClass).not.toBe(initialClass);
-
-    // Toggle back
-    await playground.toggleSidebar();
-    await page.waitForTimeout(300);
-
-    const expandedClass = await playground.sidebar.getAttribute('class');
-    expect(expandedClass).toBeDefined();
+  test('PS-02: New Chat button is visible', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'New Chat' })).toBeVisible();
   });
 
-  test('PS-03: New Playground button is visible', async () => {
-    await expect(playground.newChatButton).toBeVisible();
+  test('PS-03: Session list container exists', async ({ page }) => {
+    await expect(page.getByTestId('playground-session-list')).toBeVisible();
   });
 
-  test('PS-04: Session list container exists', async () => {
-    await expect(playground.sessionList).toBeVisible();
-  });
+  test('PS-04: New chat creates a session entry', async ({ page }) => {
+    const sessionList = page.getByTestId('playground-session-list');
+    const initialCount = await sessionList.locator('[data-testid^="playground-session-"]').count();
 
-  test('PS-05: New chat creates a session', async ({ page }) => {
-    // Count initial sessions
-    const initialSessions = await playground.sessionList.locator('li').count();
+    await page.getByRole('button', { name: 'New Chat' }).click();
 
-    // Create new chat
-    await playground.newChat();
-    await page.waitForTimeout(500);
-
-    // Session list should update
-    const newSessions = await playground.sessionList.locator('li').count();
-    expect(newSessions).toBeGreaterThanOrEqual(initialSessions);
-  });
-
-  test('PS-06: Session items are clickable', async ({ page }) => {
-    // Look for session items
-    const sessionItem = playground.sessionList.locator('li').first();
-
-    if (await sessionItem.isVisible()) {
-      await sessionItem.click();
-      // Should not throw error
-      expect(true).toBe(true);
-    } else {
-      // No sessions, create one first
-      await playground.newChat();
-      await page.waitForTimeout(500);
-      const newSession = playground.sessionList.locator('li').first();
-      if (await newSession.isVisible()) {
-        await newSession.click();
-      }
-    }
+    await expect(sessionList.locator('[data-testid^="playground-session-"]')).toHaveCount(
+      initialCount + 1
+    );
   });
 });

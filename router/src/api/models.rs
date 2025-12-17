@@ -190,33 +190,127 @@ fn model_info_to_view(model: ModelInfo) -> AvailableModelView {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 /// 登録モデル一覧をUIに返すビュー
 pub struct RegisteredModelView {
-    /// モデル名（hf/{repo}/{file}形式）
+    /// モデル名
     pub name: String,
-    /// 表示用説明
-    pub description: Option<String>,
-    /// 登録ステータス（registered/cached/failedなど）
-    pub status: Option<String>,
-    /// ルーターにモデルファイルが存在するか
-    pub ready: bool,
-    /// ルーター上のパス
-    pub path: Option<String>,
-    /// 元のダウンロードURL（存在する場合）
-    pub download_url: Option<String>,
     /// ソース（hf/predefinedなど）
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// HFリポジトリ
-    pub repo: Option<String>,
-    /// HFファイル名
-    pub filename: Option<String>,
-    /// サイズ(GB)
-    pub size_gb: Option<f64>,
-    /// 必要メモリ(GB)
-    pub required_memory_gb: Option<f64>,
-    /// タグ
-    pub tags: Vec<String>,
+    /// サイズ（bytes）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+    /// フォーマット（gguf 等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// モデルの状態
+    pub state: RegisteredModelState,
+    /// 進捗（0-100）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f32>,
+    /// エラー（失敗時のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Playground用のマルチモーダル対応状況（3状態）
+    pub capabilities: ModelCapabilitiesView,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+/// モデルの状態（UI表示用）
+pub enum RegisteredModelState {
+    /// 利用可能（モデルファイルが存在する）
+    Ready,
+    /// ダウンロード中
+    Downloading,
+    /// 変換中
+    Converting,
+    /// キュー待ち/準備中
+    Pending,
+    /// 失敗
+    Error,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+/// 画像/音声入力の対応状況（3状態）
+pub enum CapabilitySupport {
+    /// 対応している
+    Supported,
+    /// 非対応
+    Unsupported,
+    /// 不明（判定できない）
+    Unknown,
+}
+
+#[derive(Debug, Serialize, Clone)]
+/// Playgroundの添付可否判定に使うcapabilities
+pub struct ModelCapabilitiesView {
+    /// 画像入力
+    pub input_image: CapabilitySupport,
+    /// 音声入力
+    pub input_audio: CapabilitySupport,
+}
+
+fn infer_capability_from_tags(tags: &[String], tag: &str) -> CapabilitySupport {
+    if tags.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+        CapabilitySupport::Supported
+    } else {
+        CapabilitySupport::Unsupported
+    }
+}
+
+fn infer_model_capabilities(name: &str, tags: &[String]) -> ModelCapabilitiesView {
+    if name.starts_with("openai:") {
+        return ModelCapabilitiesView {
+            input_image: CapabilitySupport::Supported,
+            input_audio: CapabilitySupport::Supported,
+        };
+    }
+
+    if name.starts_with("google:")
+        || name.starts_with("anthropic:")
+        || name.starts_with("ahtnorpic:")
+    {
+        return ModelCapabilitiesView {
+            input_image: CapabilitySupport::Unknown,
+            input_audio: CapabilitySupport::Unknown,
+        };
+    }
+
+    ModelCapabilitiesView {
+        input_image: infer_capability_from_tags(tags, "vision"),
+        input_audio: infer_capability_from_tags(tags, "audio"),
+    }
+}
+
+fn infer_model_format(
+    path: Option<&std::path::PathBuf>,
+    filename: Option<&str>,
+    tags: &[String],
+) -> Option<String> {
+    if let Some(p) = path {
+        if p.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case("gguf"))
+            .unwrap_or(false)
+        {
+            return Some("gguf".into());
+        }
+    }
+
+    if let Some(f) = filename {
+        if f.to_ascii_lowercase().ends_with(".gguf") {
+            return Some("gguf".into());
+        }
+    }
+
+    if tags.iter().any(|t| t.eq_ignore_ascii_case("gguf")) {
+        return Some("gguf".into());
+    }
+
+    None
 }
 
 fn model_info_to_registered_view(model: ModelInfo) -> RegisteredModelView {
@@ -227,30 +321,80 @@ fn model_info_to_registered_view(model: ModelInfo) -> RegisteredModelView {
         .filter(|p| p.exists())
         .or_else(|| router_model_path(&model.name));
     let ready = path.is_some();
-    let size_gb = if model.size > 0 {
-        Some((model.size as f64) / (1024.0 * 1024.0 * 1024.0))
+    let state = if ready {
+        RegisteredModelState::Ready
+    } else {
+        RegisteredModelState::Pending
+    };
+    let size_bytes = if model.size > 0 {
+        Some(model.size)
     } else {
         None
     };
-    let required_memory_gb = if model.required_memory > 0 {
-        Some((model.required_memory as f64) / (1024.0 * 1024.0 * 1024.0))
-    } else {
-        None
-    };
+    let capabilities = infer_model_capabilities(&model.name, &model.tags);
 
     RegisteredModelView {
         name: model.name,
-        description: Some(model.description),
-        status: model.status,
-        ready,
-        path: path.map(|p| p.to_string_lossy().to_string()),
-        download_url: model.download_url,
         source: Some(format!("{:?}", model.source)).map(|s| s.to_lowercase()),
-        repo: model.repo,
-        filename: model.filename,
-        size_gb,
-        required_memory_gb,
-        tags: model.tags,
+        size_bytes,
+        format: infer_model_format(path.as_ref(), model.filename.as_deref(), &model.tags),
+        state,
+        progress: None,
+        error: None,
+        capabilities,
+    }
+}
+
+fn state_rank(state: RegisteredModelState) -> u8 {
+    match state {
+        RegisteredModelState::Error => 4,
+        RegisteredModelState::Converting => 3,
+        RegisteredModelState::Downloading => 2,
+        RegisteredModelState::Pending => 1,
+        RegisteredModelState::Ready => 0,
+    }
+}
+
+fn merge_state_from_task(
+    mut base: RegisteredModelView,
+    task: RegisteredModelView,
+) -> RegisteredModelView {
+    if state_rank(task.state) > state_rank(base.state) {
+        base.state = task.state;
+    }
+    if task.progress.is_some() {
+        base.progress = task.progress;
+    }
+    if task.error.is_some() {
+        base.error = task.error;
+    }
+    if base.format.is_none() && task.format.is_some() {
+        base.format = task.format;
+    }
+    if base.source.is_none() && task.source.is_some() {
+        base.source = task.source;
+    }
+    base
+}
+
+fn convert_task_to_registered_view(task: &ConvertTask) -> RegisteredModelView {
+    let state = match task.status {
+        crate::convert::ConvertStatus::Queued => RegisteredModelState::Pending,
+        crate::convert::ConvertStatus::InProgress => RegisteredModelState::Converting,
+        crate::convert::ConvertStatus::Completed => RegisteredModelState::Ready,
+        crate::convert::ConvertStatus::Failed => RegisteredModelState::Error,
+    };
+    let progress = Some((task.progress * 100.0).clamp(0.0, 100.0));
+
+    RegisteredModelView {
+        name: task.repo.clone(),
+        source: Some("hf".into()),
+        size_bytes: None,
+        format: Some("gguf".into()),
+        state,
+        progress,
+        error: task.error.clone(),
+        capabilities: infer_model_capabilities(&task.repo, &[] as &[String]),
     }
 }
 
@@ -266,12 +410,31 @@ pub async fn load_registered_models_from_storage() {
 }
 
 /// 登録モデルの状態を返す（ダウンロード完了判定含む）
-pub async fn get_registered_models() -> Result<Json<Vec<RegisteredModelView>>, AppError> {
-    let list: Vec<RegisteredModelView> = list_registered_models()
+pub async fn get_registered_models(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<RegisteredModelView>>, AppError> {
+    use std::collections::BTreeMap;
+
+    let mut map: BTreeMap<String, RegisteredModelView> = list_registered_models()
         .into_iter()
-        .map(model_info_to_registered_view)
+        .map(|m| {
+            let view = model_info_to_registered_view(m);
+            (view.name.clone(), view)
+        })
         .collect();
-    Ok(Json(list))
+
+    let tasks = state.convert_manager.list().await;
+    for task in tasks {
+        let view = convert_task_to_registered_view(&task);
+        map.entry(view.name.clone())
+            .and_modify(|existing| {
+                let merged = merge_state_from_task(existing.clone(), view.clone());
+                *existing = merged;
+            })
+            .or_insert(view);
+    }
+
+    Ok(Json(map.into_values().collect()))
 }
 
 /// 登録済みモデル一覧を取得

@@ -255,6 +255,7 @@ export interface ModelInfo {
   size_bytes?: number
   format?: string
   state: 'ready' | 'downloading' | 'converting' | 'pending' | 'error'
+  capabilities: ModelCapabilities
   progress?: number
   error?: string
 }
@@ -413,9 +414,46 @@ export const usersApi = {
 }
 
 // Chat API (OpenAI compatible)
+export type CapabilitySupport = 'supported' | 'unsupported' | 'unknown'
+
+export interface ModelCapabilities {
+  input_image: CapabilitySupport
+  input_audio: CapabilitySupport
+}
+
+export interface AttachmentBase {
+  kind: 'image' | 'audio'
+  mime: string
+  name?: string
+  size_bytes: number
+}
+
+export interface ImageAttachment extends AttachmentBase {
+  kind: 'image'
+  // Used for preview and OpenAI "image_url.url" (data URL or URL)
+  data_url: string
+}
+
+export interface AudioAttachment extends AttachmentBase {
+  kind: 'audio'
+  // OpenAI "input_audio.data" base64 (no data URL prefix)
+  base64_data: string
+  // e.g. "wav", "mp3"
+  format: string
+  // Used for preview (object URL or data URL)
+  preview_url: string
+}
+
+export type ChatAttachment = ImageAttachment | AudioAttachment
+
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: string } }
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | ChatContentPart[]
 }
 
 export interface ChatSession {

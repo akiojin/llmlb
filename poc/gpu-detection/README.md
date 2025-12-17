@@ -1,10 +1,10 @@
 # GPU Detection PoC
 
-このPoCは、LLM RouterのAgentが起動時にGPUを自動検出するための方法を検証します。
+このPoCは、LLM RouterのNodeが起動時にGPUを自動検出するための方法を検証します。
 
 ## 目的
 
-`runtime ps` コマンドは、モデルが実行中でない場合にGPU情報を返さないため、Agent起動時のGPU検出には使用できません。
+`runtime ps` コマンドは、モデルが実行中でない場合にGPU情報を返さないため、Node起動時のGPU検出には使用できません。
 このPoCでは、LLM runtimeの実装を参考に、デバイスファイルやsysfs、システムコマンドを使用した代替検出方法を検証します。
 
 ## 検出方法
@@ -101,7 +101,7 @@ Docker for Mac環境でも、`lscpu` と `/proc/cpuinfo` を使用してApple Si
 
 ## 統合方針
 
-このPoCで有効性が確認できた検出方法を、`agent/src/metrics.rs` の `GpuCollector::detect_gpu()` に統合します。
+このPoCで有効性が確認できた検出方法を、Node側のGPU検出ロジック（例: `node/src/system/gpu_detector.*`）に統合します。
 
 ### 変更内容
 

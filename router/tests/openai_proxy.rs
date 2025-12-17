@@ -1,7 +1,5 @@
 use axum::http::{header::CONTENT_TYPE, StatusCode};
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::types::GpuDeviceInfo;
 use tower::ServiceExt;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -13,7 +11,6 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -27,18 +24,17 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
     };
 
-    // 登録済みエージェントを追加
+    // 登録済みノードを追加
     state
         .registry
         .register(llm_router_common::protocol::RegisterRequest {
-            machine_name: "mock-agent".into(),
+            machine_name: "mock-node".into(),
             ip_address: mock.address().ip(),
             runtime_version: "0.0.0".into(),
             // APIポート=runtime_port+1 となる仕様のため、実際のモックポートに合わせて -1 する
@@ -55,7 +51,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .await
         .unwrap();
 
-    // エージェントをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
+    // ノードをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
     let node_id = state.registry.list().await[0].id;
 
     // レジストリにロード済みモデル・初期化解除を反映

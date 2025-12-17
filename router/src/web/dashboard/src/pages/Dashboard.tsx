@@ -1,5 +1,11 @@
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { dashboardApi, type DashboardOverview } from '@/lib/api'
+import {
+  dashboardApi,
+  type DashboardOverview,
+  type RequestHistoryItem,
+  type RequestResponsesPage,
+} from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
@@ -12,12 +18,49 @@ import { AlertCircle, Server, History, FileText, Box } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
+  const fetchStartRef = useRef<number | null>(null)
+
+  const fetchWithTiming = useCallback(async () => {
+    fetchStartRef.current = performance.now()
+    const result = await dashboardApi.getOverview()
+    const endTime = performance.now()
+    setFetchTimeMs(Math.round(endTime - (fetchStartRef.current || endTime)))
+    setLastRefreshed(new Date())
+    return result
+  }, [])
 
   const { data, isLoading, error, refetch } = useQuery<DashboardOverview>({
     queryKey: ['dashboard-overview'],
-    queryFn: dashboardApi.getOverview,
+    queryFn: fetchWithTiming,
     refetchInterval: 5000,
   })
+
+  // リクエスト履歴（個別リクエスト詳細）を取得
+  const { data: requestResponsesData, isLoading: isLoadingHistory } =
+    useQuery<RequestResponsesPage>({
+      queryKey: ['request-responses'],
+      queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
+      refetchInterval: 5000,
+    })
+
+  // RequestResponseRecord を RequestHistoryItem にマッピング
+  const historyItems: RequestHistoryItem[] = useMemo(() => {
+    if (!requestResponsesData?.records) return []
+    return requestResponsesData.records.map((record) => ({
+      request_id: record.id,
+      timestamp: record.timestamp,
+      model: record.model,
+      node_id: record.node_id,
+      node_name: record.node_machine_name,
+      status: record.status.type,
+      duration_ms: record.duration_ms,
+      error: record.status.type === 'error' ? record.status.message : undefined,
+      request_body: record.request_body,
+      response_body: record.response_body,
+    }))
+  }, [requestResponsesData])
 
   if (error) {
     return (
@@ -49,7 +92,12 @@ export default function Dashboard() {
       <div className="fixed inset-0 bg-grid opacity-20 pointer-events-none" />
 
       {/* Header */}
-      <Header user={user} />
+      <Header
+        user={user}
+        isConnected={!error}
+        lastRefreshed={lastRefreshed}
+        fetchTimeMs={fetchTimeMs}
+      />
 
       {/* Main Content */}
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
@@ -84,13 +132,13 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="models" className="animate-fade-in">
-            <ModelsSection nodes={data?.nodes || []} />
+            <ModelsSection />
           </TabsContent>
 
           <TabsContent value="history" className="animate-fade-in">
             <RequestHistoryTable
-              history={data?.history || []}
-              isLoading={isLoading}
+              history={historyItems}
+              isLoading={isLoadingHistory}
             />
           </TabsContent>
 

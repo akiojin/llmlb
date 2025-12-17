@@ -1,13 +1,12 @@
 //! モデル情報管理
 //!
-//! LLM runtimeモデルのメタデータとダウンロードタスク管理
+//! LLM runtimeモデルのメタデータ管理
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -99,20 +98,48 @@ impl ModelInfo {
     }
 }
 
-/// モデル名をディレクトリ名に変換（gpt-oss-20b -> gpt-oss-20b）
+/// モデル名をディレクトリパスに変換
 ///
-/// 注: 従来のOllama形式（`:` 区切り）はサポート継続するが、新規登録ではファイル名ベース形式を使用
+/// SPEC-dcaeaec4 FR-2: 階層形式を許可
+/// - `gpt-oss-20b` → `gpt-oss-20b`
+/// - `openai/gpt-oss-20b` → `openai/gpt-oss-20b`（ネストディレクトリ）
+///
+/// `/` はディレクトリセパレータとして保持し、危険なパターンは除去。
 pub fn model_name_to_dir(name: &str) -> String {
     if name.is_empty() {
         return "_latest".into();
     }
-    // 後方互換: コロン区切りの場合はアンダースコアに置換
-    let mut dir = name.replace(':', "_");
-    // ファイル名ベース形式（コロンなし）でサイズ情報がない場合も対応
-    if !name.contains(':') && !name.contains('-') {
-        dir.push_str("_latest");
+
+    // 危険なパターンを除去
+    if name.contains("..") || name.contains('\0') {
+        return "_latest".into();
     }
-    dir
+
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c.is_ascii_lowercase()
+            || c.is_ascii_digit()
+            || c == '-'
+            || c == '_'
+            || c == '.'
+            || c == '/'
+        {
+            out.push(c);
+        } else if c.is_ascii_uppercase() {
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+
+    // 先頭・末尾のスラッシュを除去
+    let out = out.trim_matches('/').to_string();
+
+    if out.is_empty() || out == "." || out == ".." {
+        "_latest".into()
+    } else {
+        out
+    }
 }
 
 /// ルーター側のデフォルトモデルディレクトリ（~/.llm-router/models）
@@ -245,284 +272,199 @@ mod cache_tests {
     }
 }
 
-/// ノードにインストール済みのモデル
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct InstalledModel {
-    /// モデル名
-    pub name: String,
-    /// モデルサイズ（バイト）
-    pub size: u64,
-    /// インストール日時
-    pub installed_at: DateTime<Utc>,
-    /// digest（LLM runtimeのモデル識別子）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub digest: Option<String>,
-}
-
-impl InstalledModel {
-    /// 新しいInstalledModelを作成
-    pub fn new(name: String, size: u64) -> Self {
-        Self {
-            name,
-            size,
-            installed_at: Utc::now(),
-            digest: None,
-        }
-    }
-
-    /// digestを指定してInstalledModelを作成
-    pub fn with_digest(name: String, size: u64, digest: String) -> Self {
-        Self {
-            name,
-            size,
-            installed_at: Utc::now(),
-            digest: Some(digest),
-        }
-    }
-}
-
-/// ダウンロードタスク
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DownloadTask {
-    /// タスクID
-    pub id: Uuid,
-    /// ノードID
-    pub node_id: Uuid,
-    /// モデル名
-    pub model_name: String,
-    /// ステータス
-    pub status: DownloadStatus,
-    /// 進捗（0.0-1.0）
-    pub progress: f32,
-    /// ダウンロード速度（バイト/秒）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed: Option<u64>,
-    /// 開始日時
-    pub started_at: DateTime<Utc>,
-    /// 完了日時
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<DateTime<Utc>>,
-    /// エラーメッセージ
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-impl DownloadTask {
-    /// 新しいダウンロードタスクを作成
-    pub fn new(node_id: Uuid, model_name: String) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            node_id,
-            model_name,
-            status: DownloadStatus::Pending,
-            progress: 0.0,
-            speed: None,
-            started_at: Utc::now(),
-            completed_at: None,
-            error: None,
-        }
-    }
-
-    /// 進捗を更新
-    pub fn update_progress(&mut self, progress: f32, speed: Option<u64>) {
-        self.progress = progress.clamp(0.0, 1.0);
-        self.speed = speed;
-
-        if self.status == DownloadStatus::Pending && progress > 0.0 {
-            self.status = DownloadStatus::InProgress;
-        }
-    }
-
-    /// 完了として  マーク
-    pub fn mark_completed(&mut self) {
-        self.status = DownloadStatus::Completed;
-        self.progress = 1.0;
-        self.completed_at = Some(Utc::now());
-    }
-
-    /// 失敗としてマーク
-    pub fn mark_failed(&mut self, error: String) {
-        self.status = DownloadStatus::Failed;
-        self.completed_at = Some(Utc::now());
-        self.error = Some(error);
-    }
-
-    /// タスクが完了しているか（成功または失敗）
-    pub fn is_finished(&self) -> bool {
-        matches!(
-            self.status,
-            DownloadStatus::Completed | DownloadStatus::Failed
-        )
-    }
-}
-
-/// ダウンロードステータス
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DownloadStatus {
-    /// 待機中
-    Pending,
-    /// ダウンロード中
-    InProgress,
-    /// 完了
-    Completed,
-    /// 失敗
-    Failed,
-}
-
-/// GGUFファイル名からモデルIDを生成（ファイル名ベース形式）
+/// HuggingFace URLからrepo_idを抽出
 ///
-/// パターン解析:
-/// - "llama-2-7b.Q4_K_M.gguf" → "llama-2-7b"
-/// - "gemma-2-9b-it-Q4_K_M.gguf" → "gemma-2-9b-it"
-/// - "model.bin" (サイズ情報なし) → リポジトリ名から推測 → "gpt-oss-20b"
+/// 入力例:
+/// - "https://huggingface.co/openai/gpt-oss-20b" → "openai/gpt-oss-20b"
+/// - "http://huggingface.co/openai/gpt-oss-20b" → "openai/gpt-oss-20b"
+/// - "openai/gpt-oss-20b" → "openai/gpt-oss-20b" (そのまま)
+/// - "gpt-oss-20b" → "gpt-oss-20b" (そのまま)
 ///
-/// 抽出ルール:
-/// 1. 拡張子 (.gguf, .bin) を除去
-/// 2. 量子化サフィックス (Q4_K_M, Q5_0, etc.) を除去
-/// 3. 小文字に正規化
-///
-/// 注: 従来のOllama形式（name:tag）は廃止し、ファイル名/リポジトリ名をそのまま使用
-pub fn generate_ollama_style_id(filename: &str, fallback_repo: &str) -> String {
-    // 汎用ファイル名（model.bin, model.gguf等）の場合はリポジトリ名から生成
-    let base_name = filename
-        .trim_end_matches(".gguf")
-        .trim_end_matches(".bin")
-        .trim_end_matches(".safetensors");
+/// 備考:
+/// - huggingface_hubのsnapshot_downloadはrepo_id形式（namespace/repo_name）を期待する
+/// - フルURLが渡された場合はrepo_id部分のみを抽出して返す
+pub fn extract_repo_id(input: &str) -> String {
+    // HuggingFace URLパターンを検出
+    let hf_patterns = [
+        "https://huggingface.co/",
+        "http://huggingface.co/",
+        "https://www.huggingface.co/",
+        "http://www.huggingface.co/",
+    ];
 
-    let is_generic = matches!(base_name.to_lowercase().as_str(), "model" | "");
-
-    let name_to_parse = if is_generic {
-        // リポジトリ名の最後の部分を使用 (e.g., "openai/gpt-oss-20b" → "gpt-oss-20b")
-        fallback_repo
-            .split('/')
-            .next_back()
-            .unwrap_or(fallback_repo)
-    } else {
-        base_name
-    };
-
-    // 量子化サフィックスを除去 (Q4_K_M, Q5_0, Q8_0, IQ2_M, etc.)
-    let without_quant = remove_quantization_suffix(name_to_parse);
-
-    // -GGUF サフィックスを除去
-    let without_gguf = without_quant
-        .trim_end_matches("-GGUF")
-        .trim_end_matches("-gguf");
-
-    // モデル名とタグを抽出
-    extract_name_and_tag(without_gguf)
-}
-
-/// 量子化サフィックスを除去
-fn remove_quantization_suffix(name: &str) -> &str {
-    // パターン: .Q4_K_M, -Q5_0, _Q8_0, .IQ2_M, Q4_K_M (区切りなし) など
-    // 再帰的に量子化タグを除去（複数回あり得る場合に備える）
-
-    // まず区切り文字付きパターンを検索
-    if let Some(pos) = name.rfind(['.', '-', '_']) {
-        let suffix = &name[pos + 1..];
-        if is_quantization_tag(suffix) {
-            // 再帰的に残りも処理
-            return remove_quantization_suffix(&name[..pos]);
+    for pattern in hf_patterns {
+        if let Some(rest) = input.strip_prefix(pattern) {
+            // URLの残り部分からrepo_idを抽出
+            // "openai/gpt-oss-20b/tree/main" → "openai/gpt-oss-20b"
+            let parts: Vec<&str> = rest.split('/').collect();
+            if parts.len() >= 2 {
+                // namespace/repo_name を返す
+                return format!("{}/{}", parts[0], parts[1]);
+            } else if parts.len() == 1 && !parts[0].is_empty() {
+                return parts[0].to_string();
+            }
         }
     }
 
-    // 区切り文字なしでファイル名末尾に直接量子化タグがある場合
-    // 例: "llama-2-7b.Q4_K_M" (拡張子除去後)
-    // Q/q または IQ/iq で始まり、数字が続くパターンを末尾から検索
-    let lower = name.to_lowercase();
-    for pattern_start in ["q", "iq"] {
-        if let Some(idx) = lower.rfind(pattern_start) {
-            if idx > 0 {
-                let before = name.chars().nth(idx - 1);
-                // 量子化タグの前は区切り文字か数字以外
-                if before.is_some_and(|c| c == '.' || c == '-' || c == '_' || c == 'b' || c == 'B')
-                {
-                    let after_q = &name[idx + pattern_start.len()..];
-                    if after_q.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                        return &name[..idx - 1];
-                    }
+    // HF_BASE_URL環境変数が設定されている場合、そのURLも考慮
+    if let Ok(base_url) = std::env::var("HF_BASE_URL") {
+        let base_url = base_url.trim_end_matches('/');
+        let patterns = [
+            format!("{}/", base_url),
+            format!("{}//", base_url.replace("https://", "http://")),
+        ];
+        for pattern in patterns {
+            if let Some(rest) = input.strip_prefix(&pattern) {
+                let parts: Vec<&str> = rest.split('/').collect();
+                if parts.len() >= 2 {
+                    return format!("{}/{}", parts[0], parts[1]);
+                } else if parts.len() == 1 && !parts[0].is_empty() {
+                    return parts[0].to_string();
                 }
             }
         }
     }
 
-    name
+    // URLパターンに一致しない場合はそのまま返す
+    input.to_string()
 }
 
-/// 量子化タグかどうかを判定
-fn is_quantization_tag(s: &str) -> bool {
-    let lower = s.to_lowercase();
-    // Q4_K_M, Q5_0, Q8_0, IQ2_M, IQ4_XS など
-    (lower.starts_with('q') || lower.starts_with("iq"))
-        && lower.len() > 1
-        && lower
-            .chars()
-            .nth(if lower.starts_with("iq") { 2 } else { 1 })
-            .is_some_and(|c| c.is_ascii_digit())
-}
-
-/// モデル名を正規化して返す（ファイル名ベース形式）
+/// HuggingFaceリポジトリ名からモデルIDを生成（階層形式）
 ///
-/// 注: 従来のOllama形式（name:tag）は廃止し、ファイル名/リポジトリ名をそのまま使用
-fn extract_name_and_tag(name: &str) -> String {
-    // 小文字に正規化してそのまま返す（コロン形式は廃止）
-    name.to_lowercase().trim_matches('-').to_string()
+/// SPEC-dcaeaec4 FR-2に準拠:
+/// - `openai/gpt-oss-20b` → `openai/gpt-oss-20b`
+/// - `TheBloke/Llama-2-7B-GGUF` → `thebloke/llama-2-7b-gguf`
+///
+/// 正規化ルール:
+/// 1. 小文字に変換
+/// 2. 先頭・末尾のスラッシュを除去
+/// 3. 危険なパターン (`..`, `\0`) は "_latest" に変換
+pub fn generate_model_id(repo: &str) -> String {
+    if repo.is_empty() {
+        return "_latest".into();
+    }
+
+    // 危険なパターンをチェック
+    if repo.contains("..") || repo.contains('\0') {
+        return "_latest".into();
+    }
+
+    // 小文字に変換し、先頭・末尾のスラッシュを除去
+    let normalized = repo.to_lowercase();
+    let trimmed = normalized.trim_matches('/');
+
+    if trimmed.is_empty() {
+        "_latest".into()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ===== モデルID生成テスト（ファイル名ベース形式） =====
+    // ===== モデルID生成テスト（階層形式） =====
 
     #[test]
-    fn test_generate_model_id_standard_gguf() {
-        // 標準的なGGUFファイル名: llama-2-7b.Q4_K_M.gguf → llama-2-7b
+    fn test_generate_model_id_hierarchical() {
+        // 階層形式: org/model → org/model (小文字化)
         assert_eq!(
-            generate_ollama_style_id("llama-2-7b.Q4_K_M.gguf", "TheBloke/Llama-2-7B-GGUF"),
-            "llama-2-7b"
+            generate_model_id("TheBloke/Llama-2-7B-GGUF"),
+            "thebloke/llama-2-7b-gguf"
         );
     }
 
     #[test]
-    fn test_generate_model_id_with_variant() {
-        // バリアント付き: gemma-2-9b-it → gemma-2-9b-it
+    fn test_generate_model_id_with_org() {
+        // 組織名付き
         assert_eq!(
-            generate_ollama_style_id("gemma-2-9b-it-Q4_K_M.gguf", "bartowski/gemma-2-9b-it-GGUF"),
-            "gemma-2-9b-it"
+            generate_model_id("bartowski/gemma-2-9b-it-GGUF"),
+            "bartowski/gemma-2-9b-it-gguf"
         );
     }
 
     #[test]
-    fn test_generate_model_id_generic_filename() {
-        // 汎用ファイル名(model.bin)の場合、リポジトリ名からフォールバック
+    fn test_generate_model_id_simple() {
+        // シンプルなリポジトリ名
         assert_eq!(
-            generate_ollama_style_id("model.bin", "openai/gpt-oss-20b"),
-            "gpt-oss-20b"
+            generate_model_id("openai/gpt-oss-20b"),
+            "openai/gpt-oss-20b"
         );
     }
 
     #[test]
-    fn test_generate_model_id_no_size() {
-        // サイズ情報がない場合もファイル名ベース形式を維持
+    fn test_generate_model_id_single_name() {
+        // 単一名（組織なし）
+        assert_eq!(generate_model_id("convertible-repo"), "convertible-repo");
+    }
+
+    #[test]
+    fn test_generate_model_id_uppercase() {
+        // 大文字を含む
         assert_eq!(
-            generate_ollama_style_id("mistral-small.gguf", "mistral/mistral-small"),
-            "mistral-small"
+            generate_model_id("MistralAI/Mistral-7B-Instruct-v0.2-GGUF"),
+            "mistralai/mistral-7b-instruct-v0.2-gguf"
         );
     }
 
     #[test]
-    fn test_generate_model_id_instruct_variant() {
-        // Instructバリアント
+    fn test_generate_model_id_empty() {
+        // 空文字列
+        assert_eq!(generate_model_id(""), "_latest");
+    }
+
+    #[test]
+    fn test_generate_model_id_dangerous() {
+        // 危険なパターン
+        assert_eq!(generate_model_id("../etc/passwd"), "_latest");
+        assert_eq!(generate_model_id("model/../other"), "_latest");
+    }
+
+    #[test]
+    fn test_generate_model_id_trim_slashes() {
+        // 先頭・末尾のスラッシュを除去
+        assert_eq!(generate_model_id("/openai/gpt-oss/"), "openai/gpt-oss");
+    }
+
+    // ===== model_name_to_dir テスト =====
+
+    #[test]
+    fn test_model_name_to_dir_flat() {
+        assert_eq!(model_name_to_dir("gpt-oss-20b"), "gpt-oss-20b");
+        assert_eq!(model_name_to_dir("llama3.2"), "llama3.2");
+    }
+
+    #[test]
+    fn test_model_name_to_dir_hierarchical() {
+        // SPEC-dcaeaec4 FR-2: 階層形式を許可
         assert_eq!(
-            generate_ollama_style_id(
-                "Mistral-7B-Instruct-v0.2.Q5_K_M.gguf",
-                "mistralai/Mistral-7B-Instruct-v0.2-GGUF"
-            ),
-            "mistral-7b-instruct-v0.2"
+            model_name_to_dir("openai/gpt-oss-20b"),
+            "openai/gpt-oss-20b"
         );
+        assert_eq!(model_name_to_dir("meta/llama-3-8b"), "meta/llama-3-8b");
+    }
+
+    #[test]
+    fn test_model_name_to_dir_case_insensitive() {
+        assert_eq!(
+            model_name_to_dir("OpenAI/GPT-OSS-20B"),
+            "openai/gpt-oss-20b"
+        );
+    }
+
+    #[test]
+    fn test_model_name_to_dir_dangerous_patterns() {
+        // 危険なパターンは "_latest" に変換
+        assert_eq!(model_name_to_dir("../etc/passwd"), "_latest");
+        assert_eq!(model_name_to_dir("model/../other"), "_latest");
+    }
+
+    #[test]
+    fn test_model_name_to_dir_leading_trailing_slash() {
+        // 先頭・末尾のスラッシュは除去
+        assert_eq!(model_name_to_dir("/openai/gpt-oss/"), "openai/gpt-oss");
+        assert_eq!(model_name_to_dir("/model"), "model");
     }
 
     // ===== 既存テスト =====
@@ -542,57 +484,50 @@ mod tests {
         assert_eq!(model.required_memory_gb(), 14.901161193847656);
     }
 
-    #[test]
-    fn test_installed_model_new() {
-        let model = InstalledModel::new("llama3.2".to_string(), 5_000_000_000);
+    // ===== extract_repo_id テスト =====
 
-        assert_eq!(model.name, "llama3.2");
-        assert_eq!(model.size, 5_000_000_000);
-        assert!(model.digest.is_none());
+    #[test]
+    fn test_extract_repo_id_https_url() {
+        assert_eq!(
+            extract_repo_id("https://huggingface.co/openai/gpt-oss-20b"),
+            "openai/gpt-oss-20b"
+        );
     }
 
     #[test]
-    fn test_download_task_lifecycle() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "gpt-oss-7b".to_string());
-
-        assert_eq!(task.status, DownloadStatus::Pending);
-        assert_eq!(task.progress, 0.0);
-        assert!(!task.is_finished());
-
-        // 進捗更新
-        task.update_progress(0.5, Some(1_000_000));
-        assert_eq!(task.status, DownloadStatus::InProgress);
-        assert_eq!(task.progress, 0.5);
-        assert_eq!(task.speed, Some(1_000_000));
-
-        // 完了
-        task.mark_completed();
-        assert_eq!(task.status, DownloadStatus::Completed);
-        assert_eq!(task.progress, 1.0);
-        assert!(task.is_finished());
-        assert!(task.completed_at.is_some());
+    fn test_extract_repo_id_http_url() {
+        assert_eq!(
+            extract_repo_id("http://huggingface.co/openai/gpt-oss-20b"),
+            "openai/gpt-oss-20b"
+        );
     }
 
     #[test]
-    fn test_download_task_failure() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "invalid-model".to_string());
-
-        task.mark_failed("Model not found".to_string());
-        assert_eq!(task.status, DownloadStatus::Failed);
-        assert!(task.is_finished());
-        assert_eq!(task.error, Some("Model not found".to_string()));
-        assert!(task.completed_at.is_some());
+    fn test_extract_repo_id_with_tree_path() {
+        // URLにtree/mainなどが含まれている場合もrepo_idのみを抽出
+        assert_eq!(
+            extract_repo_id("https://huggingface.co/openai/gpt-oss-20b/tree/main"),
+            "openai/gpt-oss-20b"
+        );
     }
 
     #[test]
-    fn test_progress_clamping() {
-        let mut task = DownloadTask::new(Uuid::new_v4(), "test-model".to_string());
+    fn test_extract_repo_id_www_prefix() {
+        assert_eq!(
+            extract_repo_id("https://www.huggingface.co/openai/gpt-oss-20b"),
+            "openai/gpt-oss-20b"
+        );
+    }
 
-        // 範囲外の値はクランプされる
-        task.update_progress(1.5, None);
-        assert_eq!(task.progress, 1.0);
+    #[test]
+    fn test_extract_repo_id_already_repo_format() {
+        // 既にrepo_id形式の場合はそのまま返す
+        assert_eq!(extract_repo_id("openai/gpt-oss-20b"), "openai/gpt-oss-20b");
+    }
 
-        task.update_progress(-0.5, None);
-        assert_eq!(task.progress, 0.0);
+    #[test]
+    fn test_extract_repo_id_simple_name() {
+        // シンプルな名前の場合はそのまま返す
+        assert_eq!(extract_repo_id("gpt-oss-20b"), "gpt-oss-20b");
     }
 }

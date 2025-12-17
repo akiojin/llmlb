@@ -32,26 +32,20 @@ static void create_model(const fs::path& models_dir, const std::string& dir_name
     std::ofstream(model_dir / "model.gguf") << "dummy gguf content";
 }
 
-// FR-2: Model name format conversion (colon to underscore)
+// FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
-    EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss:20b"), "gpt-oss_20b");
-    EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss:7b"), "gpt-oss_7b");
-    EXPECT_EQ(ModelStorage::modelNameToDir("qwen3-coder:30b"), "qwen3-coder_30b");
-}
-
-// FR-2: Default tag is "latest"
-TEST(ModelStorageTest, DefaultTagIsLatest) {
-    EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss"), "gpt-oss_latest");
-    EXPECT_EQ(ModelStorage::modelNameToDir("llama3"), "llama3_latest");
+    EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
+    EXPECT_EQ(ModelStorage::modelNameToDir("Mistral-7B-Instruct-v0.2"), "mistral-7b-instruct-v0.2");
+    EXPECT_EQ(ModelStorage::modelNameToDir("model@name"), "model_name");
 }
 
 // FR-3: resolveGguf returns correct path
 TEST(ModelStorageTest, ResolveGgufReturnsPathWhenPresent) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss_20b");
+    create_model(tmp.base, "gpt-oss-20b");
 
     ModelStorage storage(tmp.base.string());
-    auto path = storage.resolveGguf("gpt-oss:20b");
+    auto path = storage.resolveGguf("gpt-oss-20b");
 
     EXPECT_FALSE(path.empty());
     EXPECT_TRUE(fs::exists(path));
@@ -62,15 +56,15 @@ TEST(ModelStorageTest, ResolveGgufReturnsPathWhenPresent) {
 TEST(ModelStorageTest, ResolveGgufReturnsEmptyWhenMissing) {
     TempModelDir tmp;
     ModelStorage storage(tmp.base.string());
-    EXPECT_EQ(storage.resolveGguf("nonexistent:model"), "");
+    EXPECT_EQ(storage.resolveGguf("nonexistent"), "");
 }
 
 // FR-4: listAvailable returns all models with model.gguf
 TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss_20b");
-    create_model(tmp.base, "gpt-oss_7b");
-    create_model(tmp.base, "qwen3-coder_30b");
+    create_model(tmp.base, "gpt-oss-20b");
+    create_model(tmp.base, "gpt-oss-7b");
+    create_model(tmp.base, "qwen3-coder-30b");
 
     ModelStorage storage(tmp.base.string());
     auto list = storage.listAvailable();
@@ -83,9 +77,9 @@ TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
     }
     std::sort(names.begin(), names.end());
 
-    EXPECT_EQ(names[0], "gpt-oss:20b");
-    EXPECT_EQ(names[1], "gpt-oss:7b");
-    EXPECT_EQ(names[2], "qwen3-coder:30b");
+    EXPECT_EQ(names[0], "gpt-oss-20b");
+    EXPECT_EQ(names[1], "gpt-oss-7b");
+    EXPECT_EQ(names[2], "qwen3-coder-30b");
 }
 
 // FR-4: Directories without model.gguf are ignored
@@ -99,17 +93,17 @@ TEST(ModelStorageTest, IgnoresDirectoriesWithoutGguf) {
     auto list = storage.listAvailable();
 
     ASSERT_EQ(list.size(), 1u);
-    EXPECT_EQ(list[0].name, "valid:model");
+    EXPECT_EQ(list[0].name, "valid_model");
 }
 
 // FR-5: Load optional metadata
 TEST(ModelStorageTest, LoadMetadataWhenPresent) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss_20b");
-    std::ofstream(tmp.base / "gpt-oss_20b" / "metadata.json") << R"({"size_gb": 40})";
+    create_model(tmp.base, "gpt-oss-20b");
+    std::ofstream(tmp.base / "gpt-oss-20b" / "metadata.json") << R"({"size_gb": 40})";
 
     ModelStorage storage(tmp.base.string());
-    auto meta = storage.loadMetadata("gpt-oss:20b");
+    auto meta = storage.loadMetadata("gpt-oss-20b");
 
     ASSERT_TRUE(meta.has_value());
     EXPECT_EQ((*meta)["size_gb"].get<int>(), 40);
@@ -118,17 +112,12 @@ TEST(ModelStorageTest, LoadMetadataWhenPresent) {
 // FR-5: Metadata is optional - returns nullopt when missing
 TEST(ModelStorageTest, LoadMetadataReturnsNulloptWhenMissing) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss_20b");
+    create_model(tmp.base, "gpt-oss-20b");
 
     ModelStorage storage(tmp.base.string());
-    auto meta = storage.loadMetadata("gpt-oss:20b");
+    auto meta = storage.loadMetadata("gpt-oss-20b");
 
     EXPECT_FALSE(meta.has_value());
-}
-
-// Edge case: Handle multiple colons in model name
-TEST(ModelStorageTest, HandleMultipleColonsInName) {
-    EXPECT_EQ(ModelStorage::modelNameToDir("org:model:tag"), "org_model_tag");
 }
 
 // Edge case: Empty model name
@@ -139,15 +128,36 @@ TEST(ModelStorageTest, HandleEmptyModelName) {
 // Validation: Model with valid GGUF file
 TEST(ModelStorageTest, ValidateModelWithGguf) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss_20b");
+    create_model(tmp.base, "gpt-oss-20b");
 
     ModelStorage storage(tmp.base.string());
-    EXPECT_TRUE(storage.validateModel("gpt-oss:20b"));
-    EXPECT_FALSE(storage.validateModel("nonexistent:model"));
+    EXPECT_TRUE(storage.validateModel("gpt-oss-20b"));
+    EXPECT_FALSE(storage.validateModel("nonexistent"));
 }
 
-// Directory conversion: underscore to colon (reverse)
+// Directory conversion: directory name to model id (best-effort)
 TEST(ModelStorageTest, ConvertDirNameToModelName) {
-    EXPECT_EQ(ModelStorage::dirNameToModel("gpt-oss_20b"), "gpt-oss:20b");
-    EXPECT_EQ(ModelStorage::dirNameToModel("qwen3-coder_30b"), "qwen3-coder:30b");
+    EXPECT_EQ(ModelStorage::dirNameToModel("gpt-oss-20b"), "gpt-oss-20b");
+    EXPECT_EQ(ModelStorage::dirNameToModel("Qwen3-Coder-30B"), "qwen3-coder-30b");
+}
+
+// Delete model directory (SPEC-dcaeaec4 FR-6/FR-7)
+TEST(ModelStorageTest, DeleteModelRemovesDirectory) {
+    TempModelDir tmp;
+    create_model(tmp.base, "to-delete");
+
+    ModelStorage storage(tmp.base.string());
+    EXPECT_TRUE(storage.validateModel("to-delete"));
+
+    bool result = storage.deleteModel("to-delete");
+    EXPECT_TRUE(result);
+    EXPECT_FALSE(storage.validateModel("to-delete"));
+    EXPECT_FALSE(fs::exists(tmp.base / "to-delete"));
+}
+
+// Delete nonexistent model returns true (idempotent)
+TEST(ModelStorageTest, DeleteNonexistentModelReturnsTrue) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+    EXPECT_TRUE(storage.deleteModel("nonexistent"));
 }

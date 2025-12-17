@@ -1,0 +1,147 @@
+openapi: 3.0.3
+info:
+  title: Audio Speech API
+  description: OpenAI互換の音声合成API
+  version: 1.0.0
+
+paths:
+  /v1/audio/speech:
+    post:
+      operationId: createSpeech
+      summary: テキストを音声に変換
+      description: |
+        テキストを入力し、指定されたモデルとボイスで音声を生成します。
+        OpenAI Audio API互換のエンドポイントです。
+      tags:
+        - Audio
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeechRequest'
+      responses:
+        '200':
+          description: 音声生成成功
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+                description: MP3音声データ
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+                description: WAV音声データ
+            audio/flac:
+              schema:
+                type: string
+                format: binary
+                description: FLAC音声データ
+            audio/opus:
+              schema:
+                type: string
+                format: binary
+                description: Opus音声データ
+        '400':
+          description: リクエストエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 利用可能なノードなし
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    SpeechRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          description: 使用するTTSモデル名
+          example: vibevoice-v1
+        input:
+          type: string
+          description: 読み上げるテキスト（最大4096文字）
+          maxLength: 4096
+          minLength: 1
+          example: こんにちは、今日はいい天気ですね。
+        voice:
+          type: string
+          description: 音声タイプ
+          default: nova
+          enum:
+            - alloy
+            - echo
+            - fable
+            - onyx
+            - nova
+            - shimmer
+          example: nova
+        response_format:
+          type: string
+          description: 出力フォーマット
+          default: mp3
+          enum:
+            - mp3
+            - wav
+            - flac
+            - opus
+          example: mp3
+        speed:
+          type: number
+          format: float
+          description: 読み上げ速度（0.25〜4.0）
+          default: 1.0
+          minimum: 0.25
+          maximum: 4.0
+          example: 1.0
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+              description: エラーメッセージ
+            type:
+              type: string
+              description: エラータイプ
+              enum:
+                - invalid_request_error
+                - authentication_error
+                - rate_limit_error
+                - server_error
+            code:
+              type: string
+              description: エラーコード
+              example: model_not_found

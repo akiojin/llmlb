@@ -12,10 +12,10 @@
 
 **言語/バージョン**: Rust 1.75+
 **主要依存関係**: Tokio（非同期ランタイム）, chrono（タイムスタンプ）
-**ストレージ**: JSONファイル（agents.jsonにステータス永続化）
+**ストレージ**: JSONファイル（nodes.jsonにステータス永続化）
 **テスト**: cargo test
 **対象プラットフォーム**: Linuxサーバー
-**プロジェクトタイプ**: single（coordinatorクレート内）
+**プロジェクトタイプ**: single（routerクレート内）
 **パフォーマンス目標**: ヘルスチェック処理がプロキシ処理に影響を与えない
 **制約**: バックグラウンド非同期実行
 **スケール/スコープ**: 100ノード対応
@@ -24,7 +24,7 @@
 
 **シンプルさ**: ✅
 - パッシブヘルスチェック: ✅ ハートビートベース（ルーターからポーリングなし）
-- 単一データモデル: ✅ Agentモデル再利用、statusフィールド使用
+- 単一データモデル: ✅ Nodeモデル再利用、statusフィールド使用
 - パターン回避: ✅ シンプルなタイムアウト判定ロジック
 
 **アーキテクチャ**: ✅
@@ -42,12 +42,12 @@
 
 ```rust
 // ハートビート受信時にlast_heartbeatを更新、自動的にOnlineに
-pub async fn heartbeat(&self, agent_id: Uuid) -> Result<()> {
-    let mut agents = self.agents.write().await;
-    if let Some(agent) = agents.get_mut(&agent_id) {
-        agent.last_heartbeat = Utc::now();
-        agent.status = AgentStatus::Online; // 自動復旧
-        tracing::info!("Agent {} heartbeat received", agent_id);
+pub async fn heartbeat(&self, node_id: Uuid) -> Result<()> {
+    let mut nodes = self.nodes.write().await;
+    if let Some(node) = nodes.get_mut(&node_id) {
+        node.last_heartbeat = Utc::now();
+        node.status = NodeStatus::Online; // 自動復旧
+        tracing::info!("Node {} heartbeat received", node_id);
     }
     Ok(())
 }
@@ -58,19 +58,19 @@ pub async fn heartbeat(&self, agent_id: Uuid) -> Result<()> {
 ```rust
 // 定期的にタイムアウトをチェックし、Offline化
 pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration) {
-    let agents = self.agents.clone();
+    let nodes = self.nodes.clone();
     tokio::spawn(async move {
         let mut interval_timer = tokio::time::interval(interval);
         loop {
             interval_timer.tick().await;
-            let mut agents_lock = agents.write().await;
+            let mut nodes_lock = nodes.write().await;
             let now = Utc::now();
-            for agent in agents_lock.values_mut() {
-                if agent.status == AgentStatus::Online {
-                    let elapsed = now - agent.last_heartbeat;
+            for node in nodes_lock.values_mut() {
+                if node.status == NodeStatus::Online {
+                    let elapsed = now - node.last_heartbeat;
                     if elapsed > timeout {
-                        agent.status = AgentStatus::Offline;
-                        tracing::warn!("Agent {} timed out", agent.id);
+                        node.status = NodeStatus::Offline;
+                        tracing::warn!("Node {} timed out", node.id);
                     }
                 }
             }
@@ -92,7 +92,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 - パフォーマンス: プロキシ処理に影響なし
 
 **代替案検討**:
-- **Active polling**: ルーターからGET /api/healthでポーリング → ネットワーク負荷高、複雑
+- **Active polling**: ルーターからノードへHTTPポーリング → ネットワーク負荷高、複雑
 
 ### 決定2: 60秒タイムアウト
 
@@ -105,7 +105,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 
 ### 決定3: 環境変数設定可能化
 
-**選択**: `AGENT_TIMEOUT`環境変数でタイムアウト設定可能
+**選択**: `LLM_ROUTER_NODE_TIMEOUT`（フォールバック: `NODE_TIMEOUT`）環境変数でタイムアウト設定可能
 
 **理由**:
 - 柔軟性: 環境に応じてチューニング可能

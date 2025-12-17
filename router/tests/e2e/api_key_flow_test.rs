@@ -7,9 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use serde_json::json;
 use tower::ServiceExt;
@@ -21,7 +19,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
@@ -36,7 +33,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
@@ -56,7 +52,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/auth/login")
+                .uri("/v0/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -85,7 +81,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/api-keys")
+                .uri("/v0/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -137,11 +133,11 @@ async fn test_complete_api_key_flow() {
         .await
         .unwrap();
 
-    // エージェントが登録されていないため503エラーが返されるが、認証は成功している
+    // ノードが登録されていないため503エラーが返されるが、認証は成功している
     assert!(
         use_key_response.status() == StatusCode::SERVICE_UNAVAILABLE
             || use_key_response.status() == StatusCode::OK,
-        "API key should authenticate successfully (503 = no agents, OK = success)"
+        "API key should authenticate successfully (503 = no nodes, OK = success)"
     );
 
     // Step 4: APIキーの一覧を取得
@@ -150,7 +146,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/api-keys")
+                .uri("/v0/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -185,7 +181,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/api/api-keys/{}", api_key_id))
+                .uri(format!("/v0/api-keys/{}", api_key_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -234,7 +230,7 @@ async fn test_api_key_with_expiration() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/auth/login")
+                .uri("/v0/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -261,7 +257,7 @@ async fn test_api_key_with_expiration() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/api-keys")
+                .uri("/v0/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(

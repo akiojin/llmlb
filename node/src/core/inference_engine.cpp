@@ -348,7 +348,7 @@ std::string InferenceEngine::generateChat(
         throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
     }
 
-    // 2. モデルロード（オンデマンドロードのみ。Ollama blob 等へのフォールバックはしない）
+    // 2. モデルロード（オンデマンドロードのみ。blob download 等への暗黙フォールバックはしない）
     if (!manager_->loadModelIfNeeded(gguf_path)) {
         throw std::runtime_error("Failed to load model: " + gguf_path);
     }

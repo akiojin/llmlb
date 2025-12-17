@@ -1,8 +1,6 @@
 use std::net::SocketAddr;
 
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -42,7 +40,6 @@ pub async fn spawn_test_router() -> TestServer {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
     let jwt_secret = test_jwt_secret();
@@ -51,7 +48,6 @@ pub async fn spawn_test_router() -> TestServer {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -68,7 +64,7 @@ pub async fn register_node(
     node_addr: SocketAddr,
 ) -> reqwest::Result<Response> {
     Client::new()
-        .post(format!("http://{router_addr}/api/nodes"))
+        .post(format!("http://{router_addr}/v0/nodes"))
         .json(&json!({
             "machine_name": "stub-node",
             "ip_address": node_addr.ip().to_string(),
@@ -97,7 +93,7 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
 
     // ログイン
     let login_response = client
-        .post(format!("http://{}/api/auth/login", router_addr))
+        .post(format!("http://{}/v0/auth/login", router_addr))
         .json(&json!({
             "username": "admin",
             "password": "password123"
@@ -111,7 +107,7 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
 
     // APIキーを発行
     let create_key_response = client
-        .post(format!("http://{}/api/api-keys", router_addr))
+        .post(format!("http://{}/v0/api-keys", router_addr))
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
@@ -141,7 +137,6 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
     let jwt_secret = test_jwt_secret();
@@ -150,7 +145,6 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,

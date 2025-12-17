@@ -19,6 +19,26 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+std::string urlEncodePathSegment(const std::string& input) {
+    static const char* kHex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        const bool unreserved =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (unreserved) {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[(c >> 4) & 0x0F]);
+            out.push_back(kHex[c & 0x0F]);
+        }
+    }
+    return out;
+}
 }  // namespace
 
 size_t ModelSync::defaultConcurrency() {
@@ -71,12 +91,31 @@ ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::
 }
     
 
+void ModelSync::setNodeToken(std::string node_token) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    node_token_ = std::move(node_token);
+}
+
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Client cli(base_url_.c_str());
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
-    auto res = cli.Get("/v1/models");
+    // SPEC-dcaeaec4 FR-8: /v0/models を使用（拡張情報を含む）
+    // /v1/models はOpenAI互換（標準形式のみ）
+    std::optional<std::string> node_token;
+    {
+        std::lock_guard<std::mutex> lock(etag_mutex_);
+        node_token = node_token_;
+    }
+
+    httplib::Result res;
+    if (node_token.has_value() && !node_token->empty()) {
+        httplib::Headers headers = {{"X-Node-Token", *node_token}};
+        res = cli.Get("/v0/models", headers);
+    } else {
+        res = cli.Get("/v0/models");
+    }
     if (!res || res->status < 200 || res->status >= 300) {
         return {};
     }
@@ -84,12 +123,30 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     try {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
-        if (body.contains("data") && body["data"].is_array()) {
-            for (const auto& m : body["data"]) {
-                if (!m.contains("id")) continue;
+
+        // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
+        // 配列の場合は直接処理、そうでなければ data フィールドを参照
+        const json* models_array = nullptr;
+        if (body.is_array()) {
+            models_array = &body;
+        } else if (body.contains("data") && body["data"].is_array()) {
+            models_array = &body["data"];
+        }
+
+        if (models_array) {
+            for (const auto& m : *models_array) {
+                // /v0/models では "name" フィールドを使用（/v1/models では "id"）
+                std::string model_id;
+                if (m.contains("name") && m["name"].is_string()) {
+                    model_id = m["name"].get<std::string>();
+                } else if (m.contains("id") && m["id"].is_string()) {
+                    model_id = m["id"].get<std::string>();
+                } else {
+                    continue;
+                }
 
                 RemoteModel rm;
-                rm.id = m["id"].get<std::string>();
+                rm.id = model_id;
                 rm.path = m.value("path", "");
                 rm.download_url = m.value("download_url", "");
                 rm.chat_template = m.value("chat_template", "");
@@ -116,11 +173,25 @@ std::vector<std::string> ModelSync::listLocalModels() const {
     std::error_code ec;
     if (!fs::exists(models_dir_, ec) || ec) return models;
 
-    for (const auto& entry : fs::directory_iterator(models_dir_, ec)) {
+    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
+    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
         if (ec) break;
-        if (entry.is_directory()) {
-            models.push_back(entry.path().filename().string());
-        }
+        if (entry.is_directory()) continue;
+
+        // model.gguf ファイルを検索
+        if (entry.path().filename() != "model.gguf") continue;
+
+        // 親ディレクトリからモデル名を計算
+        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
+        const auto parent_dir = entry.path().parent_path();
+        ec.clear();
+        const auto relative = fs::relative(parent_dir, models_dir_, ec);
+        if (ec || relative.empty()) continue;
+
+        // SPEC-dcaeaec4: ルーターとの比較のため小文字に正規化
+        // ルーターは model_name_to_dir() で正規化済みの名前を返すため、
+        // ローカルモデル名も同じ正規化を適用する
+        models.push_back(ModelStorage::modelNameToDir(relative.string()));
     }
     return models;
 }
@@ -207,6 +278,7 @@ ModelSyncResult ModelSync::sync() {
             if (local_set.count(id)) continue;
 
             bool ok = false;
+            bool downloaded = false;
             auto it = remote_map.find(id);
             if (it != remote_map.end()) {
                 const auto& info = it->second;
@@ -221,15 +293,26 @@ ModelSyncResult ModelSync::sync() {
                     }
                 }
 
-                // Only download if path is not accessible and download_url exists
-                if (!ok && !info.download_url.empty()) {
-                    auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
+                // If path is not accessible, download from router's blob endpoint as fallback.
+                // The router's endpoint uses a single path segment, so model id must be URL-encoded (slashes, etc).
+                if (!ok) {
+                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
+                    const auto blob_path = std::string("/v0/models/blob/") + urlEncodePathSegment(id);
+                    auto out = downloader.downloadBlob(blob_path, filename, nullptr);
                     ok = !out.empty();
+                    downloaded = ok;
                 }
 
-                // metadata (chat_template) - only write if we downloaded locally
-                if (ok && info.path.empty() && !info.chat_template.empty()) {
+                // As a last resort, allow direct download_url (e.g. HF) if router blob is unavailable.
+                if (!ok && !info.download_url.empty()) {
+                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
+                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
+                    ok = !out.empty();
+                    downloaded = ok;
+                }
+
+                // metadata (chat_template) - persist only when we downloaded locally
+                if (ok && downloaded && !info.chat_template.empty()) {
                     auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
                     auto meta_path = meta_dir / "metadata.json";
                     nlohmann::json meta;

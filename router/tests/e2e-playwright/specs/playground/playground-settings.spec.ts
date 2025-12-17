@@ -1,72 +1,121 @@
-import { test, expect, type Page } from '@playwright/test';
-
-function mockRegisteredModels(page: Page) {
-  return page.route('**/api/models/registered', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          name: 'openai:gpt-4o',
-          state: 'ready',
-          capabilities: { input_image: 'supported', input_audio: 'supported' },
-        },
-      ]),
-    });
-  });
-}
+import { test, expect } from '@playwright/test';
+import { PlaygroundPage } from '../../pages/playground.page';
 
 test.describe('Playground Settings @playground', () => {
+  let playground: PlaygroundPage;
+
   test.beforeEach(async ({ page }) => {
-    await mockRegisteredModels(page);
-    await page.goto('/playground');
+    playground = new PlaygroundPage(page);
+    await playground.goto();
+    await playground.dismissError();
   });
 
-  test('PST-01: Settings button opens modal', async ({ page }) => {
-    await page.getByTestId('playground-open-settings').click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByRole('dialog').getByText('Settings')).toBeVisible();
+  test('PST-01: Settings button opens modal', async () => {
+    await playground.openSettings();
+    await expect(playground.settingsModal).toBeVisible();
   });
 
   test('PST-02: Settings modal can be closed', async ({ page }) => {
-    await page.getByTestId('playground-open-settings').click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByRole('dialog')).toBeHidden();
+    await playground.openSettings();
+    // Close the modal using Escape key (Radix Dialog closes on Escape)
+    await page.keyboard.press('Escape');
+    await expect(playground.settingsModal).toBeHidden();
   });
 
-  test('PST-03: Stream toggle exists and is clickable', async ({ page }) => {
-    await page.getByTestId('playground-open-settings').click();
-    const dialog = page.getByRole('dialog');
-    const toggle = dialog.getByRole('switch');
-    await expect(toggle).toBeVisible();
+  test('PST-03: Provider Local button is clickable', async () => {
+    // Provider filter buttons not implemented in current Playground
+    await playground.openSettings();
+    await playground.setProvider('local');
 
-    const initial = await toggle.getAttribute('aria-checked');
+    const isActive = await playground.providerLocal.evaluate(
+      (el) => el.classList.contains('provider-btn--active')
+    );
+    expect(isActive).toBe(true);
+  });
+
+  test('PST-04: Provider Cloud button is clickable', async () => {
+    // Provider filter buttons not implemented in current Playground
+    await playground.openSettings();
+    await playground.setProvider('cloud');
+
+    const isActive = await playground.providerCloud.evaluate(
+      (el) => el.classList.contains('provider-btn--active')
+    );
+    expect(isActive).toBe(true);
+  });
+
+  test('PST-05: Provider All button is clickable', async () => {
+    // Provider filter buttons not implemented in current Playground
+    await playground.openSettings();
+    await playground.setProvider('all');
+
+    const isActive = await playground.providerAll.evaluate(
+      (el) => el.classList.contains('provider-btn--active')
+    );
+    expect(isActive).toBe(true);
+  });
+
+  test('PST-06: API Key input field exists', async () => {
+    await playground.openSettings();
+    await expect(playground.apiKeyInput).toBeVisible();
+  });
+
+  test('PST-07: API Key can be entered', async () => {
+    await playground.openSettings();
+    const testKey = 'sk-test-key-12345';
+    await playground.apiKeyInput.fill(testKey);
+    await expect(playground.apiKeyInput).toHaveValue(testKey);
+  });
+
+  test('PST-08: Stream toggle exists', async () => {
+    await playground.openSettings();
+    await expect(playground.streamToggle).toBeVisible();
+  });
+
+  test('PST-09: Stream toggle is clickable', async ({ page }) => {
+    await playground.openSettings();
+    // Stream toggle is a shadcn Switch component, check if it can be toggled
+    const toggle = playground.streamToggle;
+    const initialState = await toggle.getAttribute('data-state');
     await toggle.click();
-    const next = await toggle.getAttribute('aria-checked');
-    expect(next).not.toBe(initial);
+    await page.waitForTimeout(100);
+    const newState = await toggle.getAttribute('data-state');
+    // Should have changed state
+    expect(newState).not.toBe(initialState);
   });
 
-  test('PST-04: System prompt field exists and can be edited', async ({ page }) => {
-    await page.getByTestId('playground-open-settings').click();
-    const prompt = page.getByPlaceholder('You are a helpful assistant...');
-    await expect(prompt).toBeVisible();
-    await prompt.fill('You are a helpful assistant for testing.');
-    await expect(prompt).toHaveValue('You are a helpful assistant for testing.');
+  test('PST-10: System prompt field exists', async () => {
+    await playground.openSettings();
+    await expect(playground.systemPrompt).toBeVisible();
   });
 
-  test('PST-05: Temperature slider exists', async ({ page }) => {
-    await page.getByTestId('playground-open-settings').click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.locator('input[type="range"]')).toBeVisible();
+  test('PST-11: System prompt can be edited', async () => {
+    await playground.openSettings();
+    const testPrompt = 'You are a helpful assistant for testing.';
+    await playground.setSystemPrompt(testPrompt);
+    await expect(playground.systemPrompt).toHaveValue(testPrompt);
   });
 
-  test('PST-06: Max tokens input exists and can be edited', async ({ page }) => {
-    await page.getByTestId('playground-open-settings').click();
-    const dialog = page.getByRole('dialog');
-    const maxTokens = dialog.locator('input[type="number"]').first();
-    await expect(maxTokens).toBeVisible();
-    await maxTokens.fill('2048');
-    await expect(maxTokens).toHaveValue('2048');
+  test('PST-12: Clear Playground button exists', async () => {
+    // Reset chat button not implemented in current Playground
+    await playground.openSettings();
+    await expect(playground.resetChat).toBeVisible();
+  });
+
+  test('PST-13: Copy cURL button exists', async () => {
+    // cURL button is in the header, not in settings
+    await expect(playground.copyCurl).toBeVisible();
+  });
+
+  test('PST-14: Copy cURL button is clickable', async ({ page }) => {
+    // cURL button is in the header, clicks to open dialog
+    await playground.copyCurl.click();
+
+    // Wait for cURL dialog to open
+    await page.waitForTimeout(300);
+
+    // Should show cURL command dialog
+    const curlDialog = page.locator('[role="dialog"]:has-text("cURL")');
+    await expect(curlDialog).toBeVisible();
   });
 });

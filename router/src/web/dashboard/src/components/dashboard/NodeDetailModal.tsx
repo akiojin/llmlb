@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { type DashboardNode, nodesApi, dashboardApi } from '@/lib/api'
+import { type DashboardNode, type LogEntry, nodesApi, dashboardApi } from '@/lib/api'
 import { formatUptime, formatPercentage, formatRelativeTime, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -120,12 +120,18 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
 
   if (!node) return null
 
-  const metricsData = (metrics as Array<{
+  // Sanitize metrics data to handle null values (Recharts Tooltip calls toFixed on values)
+  const metricsData = ((metrics as Array<{
     timestamp: string
-    cpu_usage: number
-    memory_usage: number
-    gpu_usage?: number
-  }>) || []
+    cpu_usage: number | null
+    memory_usage: number | null
+    gpu_usage?: number | null
+  }>) || []).map(m => ({
+    ...m,
+    cpu_usage: m.cpu_usage ?? undefined,
+    memory_usage: m.memory_usage ?? undefined,
+    gpu_usage: m.gpu_usage ?? undefined,
+  }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -300,8 +306,8 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
             </div>
             <ScrollArea className="h-64 rounded-md border">
               <div className="p-4 font-mono text-xs space-y-1">
-                {(logs as Array<{ timestamp: string; level: string; message: string }>) ? (
-                  (logs as Array<{ timestamp: string; level: string; message: string }>).map((log, i) => (
+                {logs?.entries?.length ? (
+                  (logs.entries as LogEntry[]).map((log, i) => (
                     <div key={i} className="flex gap-2">
                       <span className="text-muted-foreground">
                         {new Date(log.timestamp).toLocaleTimeString()}
@@ -318,7 +324,7 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
                       >
                         {log.level}
                       </span>
-                      <span>{log.message}</span>
+                      <span>{log.message || ''}</span>
                     </div>
                   ))
                 ) : (

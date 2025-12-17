@@ -5,8 +5,8 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatBytes(bytes: number, decimals = 2): string {
-  if (bytes === 0) return '0 Bytes'
+export function formatBytes(bytes: number | null | undefined, decimals = 2): string {
+  if (bytes == null || bytes === 0) return '0 Bytes'
 
   const k = 1024
   const dm = decimals < 0 ? 0 : decimals
@@ -17,14 +17,16 @@ export function formatBytes(bytes: number, decimals = 2): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
 }
 
-export function formatDuration(ms: number): string {
+export function formatDuration(ms: number | null | undefined): string {
+  if (ms == null) return '-'
   if (ms < 1000) return `${ms.toFixed(0)}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
   if (ms < 3600000) return `${(ms / 60000).toFixed(1)}m`
   return `${(ms / 3600000).toFixed(1)}h`
 }
 
-export function formatUptime(seconds: number): string {
+export function formatUptime(seconds: number | null | undefined): string {
+  if (seconds == null) return '-'
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
@@ -34,13 +36,15 @@ export function formatUptime(seconds: number): string {
   return `${minutes}m`
 }
 
-export function formatNumber(num: number): string {
+export function formatNumber(num: number | null | undefined): string {
+  if (num == null) return '-'
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
   return num.toLocaleString()
 }
 
-export function formatPercentage(value: number, decimals = 1): string {
+export function formatPercentage(value: number | null | undefined, decimals = 1): string {
+  if (value == null) return '-'
   return `${value.toFixed(decimals)}%`
 }
 
@@ -55,8 +59,10 @@ export function formatDate(date: Date | string): string {
   })
 }
 
-export function formatRelativeTime(date: Date | string): string {
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (date == null) return '-'
   const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '-'
   const now = new Date()
   const diff = now.getTime() - d.getTime()
   const seconds = Math.floor(diff / 1000)

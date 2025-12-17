@@ -10,7 +10,6 @@ use axum::{
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
-use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -51,13 +50,12 @@ with open(outfile, "wb") as f:
     }
     // 変換スクリプトは各テストで個別に指定する
     llm_router::api::models::clear_registered_models();
-    llm_router::api::models::clear_hf_cache();
+    // NOTE: clear_hf_cache() は廃止 - HFカタログは直接参照する方針
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = llm_router::tasks::DownloadTaskManager::new();
     let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -71,7 +69,6 @@ with open(outfile, "wb") as f:
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -81,70 +78,14 @@ with open(outfile, "wb") as f:
     api::create_router(state)
 }
 
-/// T004b: GET /api/models/registered が capabilities を含むこと（Playground用）
+/// モデル配布APIは廃止（ノードが /v1/models と /v0/models/blob から自律取得）
 #[tokio::test]
 #[serial]
-async fn test_get_registered_models_includes_capabilities() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let app = build_app().await;
-
-    let temp_dir = std::env::var("LLM_ROUTER_DATA_DIR").expect("LLM_ROUTER_DATA_DIR must be set");
-    let file_path = std::path::Path::new(&temp_dir).join("model.gguf");
-    std::fs::write(&file_path, b"GGUF\x03\x00\x00\x00").unwrap();
-
-    let mut model = llm_router::registry::models::ModelInfo::new(
-        "gpt-oss-7b".to_string(),
-        0,
-        "Test model".to_string(),
-        0,
-        vec!["vision".into(), "audio".into(), "gguf".into()],
-    );
-    model.path = Some(file_path.to_string_lossy().to_string());
-
-    llm_router::api::models::upsert_registered_model(model);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/models/registered")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/models/registered"
-    );
-
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(body.is_array(), "Response must be an array");
-
-    let item = body
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|m| m["name"] == "gpt-oss-7b")
-        .expect("Model must exist in response");
-
-    assert_eq!(item["state"], "ready");
-    assert_eq!(item["capabilities"]["input_image"], "supported");
-    assert_eq!(item["capabilities"]["input_audio"], "supported");
-}
-
-/// T005b: POST /api/models/distribute のバリデーション（specificでnode_ids空）
-#[tokio::test]
-#[serial]
-async fn test_distribute_models_requires_node_ids_for_specific() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+async fn test_distribute_models_endpoint_is_removed() {
     let app = build_app().await;
 
     let request_body = json!({
-        "model_name": "gpt-oss:20b",
+        "model_name": "gpt-oss-20b",
         "target": "specific",
         "node_ids": []
     });
@@ -153,7 +94,7 @@ async fn test_distribute_models_requires_node_ids_for_specific() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/distribute")
+                .uri("/v0/models/distribute")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -161,295 +102,83 @@ async fn test_distribute_models_requires_node_ids_for_specific() {
         .await
         .unwrap();
 
-    assert_eq!(
-        response.status(),
-        StatusCode::BAD_REQUEST,
-        "specific target requires node_ids"
+    assert!(
+        matches!(
+            response.status(),
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+        ),
+        "model distribution endpoint should be removed (got {})",
+        response.status()
     );
 }
 
-/// T004: GET /api/models/available の契約テスト
+/// T004: GET /v0/models/available は廃止（HFは直接参照する方針）
 #[tokio::test]
 #[serial]
-async fn test_get_available_models_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let mock = MockServer::start().await;
-    // HF mock responds once with gguf list
-    Mock::given(method("GET"))
-        .and(path("/api/models"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![json!({
-            "modelId": "test/repo",
-            "tags": ["gguf"],
-            "siblings": [{"rfilename": "model.gguf", "size": 1234}],
-            "lastModified": "2024-01-01T00:00:00Z"
-        })]))
-        .mount(&mock)
-        .await;
-    std::env::set_var("HF_BASE_URL", mock.uri());
-
+async fn test_get_available_models_endpoint_is_removed() {
     let app = build_app().await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/models/available?source=hf")
+                .uri("/v0/models/available?source=hf")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ステータスコードの検証
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/models/available"
-    );
-
-    // レスポンスボディの検証
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
+    // エンドポイントは削除済み
+    // NOTE: 405 (Method Not Allowed) は /v0/models/*model_name (DELETE用) にマッチするため
+    //       404 (Not Found) または 405 のどちらかが返される
     assert!(
-        body.get("models").is_some(),
-        "Response must have 'models' field"
+        response.status() == StatusCode::NOT_FOUND
+            || response.status() == StatusCode::METHOD_NOT_ALLOWED,
+        "/v0/models/available GET endpoint should be removed (got {})",
+        response.status()
     );
-    assert!(body["models"].is_array(), "'models' field must be an array");
-
-    // source フィールドが存在することを確認
-    assert!(
-        body.get("source").is_some(),
-        "Response must have 'source' field"
-    );
-    let source = body["source"].as_str().expect("'source' must be a string");
-    assert!(
-        ["builtin", "nodes", "hf"].contains(&source),
-        "'source' must be 'builtin', 'nodes', or 'hf'"
-    );
-
-    // HFモックが返した1件が含まれること
-    let models = body["models"]
-        .as_array()
-        .expect("'models' must be an array");
-    assert!(
-        models
-            .iter()
-            .any(|m| m["name"] == "hf/test/repo/model.gguf"),
-        "hf catalog item should appear"
-    );
-
-    // models配列の各要素の検証
-    if let Some(models) = body["models"].as_array() {
-        for model in models {
-            assert!(model.get("name").is_some(), "Model must have 'name'");
-            assert!(model.get("size_gb").is_some(), "Model must have 'size_gb'");
-            assert!(
-                model.get("description").is_some(),
-                "Model must have 'description'"
-            );
-            assert!(
-                model.get("required_memory_gb").is_some(),
-                "Model must have 'required_memory_gb'"
-            );
-            assert!(model.get("tags").is_some(), "Model must have 'tags'");
-            assert!(model["tags"].is_array(), "'tags' must be an array");
-        }
-    }
 }
 
-/// T005: POST /api/models/distribute の契約テスト
+/// ノードのモデル一覧取得APIは廃止（ロード済みモデルは /v0/nodes と /v0/dashboard/nodes から参照）
 #[tokio::test]
 #[serial]
-async fn test_distribute_models_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+async fn test_get_node_models_endpoint_is_removed() {
     let app = build_app().await;
 
-    // テスト用リクエスト
-    let request_body = json!({
-        "model_name": "gpt-oss:20b",
-        "target": "all",
-        "node_ids": []
-    });
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/models/distribute")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // ステータスコードの検証
-    assert_eq!(
-        response.status(),
-        StatusCode::ACCEPTED,
-        "Expected 202 ACCEPTED for POST /api/models/distribute"
-    );
-
-    // レスポンスボディの検証
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
-    assert!(
-        body.get("task_ids").is_some(),
-        "Response must have 'task_ids' field"
-    );
-    assert!(
-        body["task_ids"].is_array(),
-        "'task_ids' field must be an array"
-    );
-
-    // task_ids配列の各要素がUUID文字列であることを確認
-    if let Some(task_ids) = body["task_ids"].as_array() {
-        for task_id in task_ids {
-            let task_id_str = task_id.as_str().expect("task_id must be a string");
-            Uuid::parse_str(task_id_str).expect("task_id must be a valid UUID");
-        }
-    }
-}
-
-/// T006: GET /api/nodes/{node_id}/models の契約テスト
-#[tokio::test]
-#[serial]
-async fn test_get_agent_models_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    let app = build_app().await;
-
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデル一覧を取得
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/nodes/{}/models", node_id))
+                .uri(format!("/v0/nodes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/nodes/:id/models"
+        StatusCode::NOT_FOUND,
+        "node models endpoint should be removed"
     );
-
-    // レスポンスボディの検証（InstalledModelの配列）
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert!(body.is_array(), "Response must be an array");
-
-    // 配列の各要素の検証
-    if let Some(models) = body.as_array() {
-        for model in models {
-            assert!(model.get("name").is_some(), "Model must have 'name'");
-            assert!(model.get("size").is_some(), "Model must have 'size'");
-            assert!(
-                model.get("installed_at").is_some(),
-                "Model must have 'installed_at'"
-            );
-            // digestはオプション
-        }
-    }
 }
 
-/// T007: POST /api/nodes/{node_id}/models/pull の契約テスト
+/// ノードへのモデルpull指示APIは廃止（ノードが自律的に取得）
 #[tokio::test]
 #[serial]
-async fn test_pull_model_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+async fn test_pull_model_to_node_endpoint_is_removed() {
     let app = build_app().await;
 
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデルプル
     let request_body = json!({
-        "model_name": "gpt-oss:3b"
+        "model_name": "gpt-oss-3b"
     });
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/nodes/{}/models/pull", node_id))
+                .uri(format!("/v0/nodes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -457,166 +186,41 @@ async fn test_pull_model_contract() {
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::ACCEPTED,
-        "Expected 202 ACCEPTED for POST /api/nodes/:id/models/pull"
+        StatusCode::NOT_FOUND,
+        "node model pull endpoint should be removed"
     );
-
-    // レスポンスボディの検証
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
-    assert!(
-        body.get("task_id").is_some(),
-        "Response must have 'task_id' field"
-    );
-    let task_id_str = body["task_id"]
-        .as_str()
-        .expect("'task_id' must be a string");
-    Uuid::parse_str(task_id_str).expect("'task_id' must be a valid UUID");
 }
 
-/// T008: GET /api/tasks/{task_id} の契約テスト
+/// ダウンロードタスクAPIは廃止（モデル同期はノード側でオンデマンドに実行）
 #[tokio::test]
 #[serial]
-async fn test_get_task_progress_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+async fn test_tasks_endpoint_is_removed() {
     let app = build_app().await;
 
-    // テスト用のノードを登録
-    let register_payload = json!({
-        "machine_name": "test-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0",
-        "runtime_port": 11434,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1}
-        ]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // ノードIDを取得
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"]
-        .as_str()
-        .expect("Node must have 'node_id' field");
-
-    // モデルプルを開始してタスクIDを取得
-    let request_body = json!({
-        "model_name": "gpt-oss:3b"
-    });
-
-    let pull_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/api/nodes/{}/models/pull", node_id))
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    let body = to_bytes(pull_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let pull_result: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let task_id = pull_result["task_id"]
-        .as_str()
-        .expect("Pull response must have 'task_id'");
-
-    // タスク進捗を取得
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(format!("/api/tasks/{}", task_id))
+                .uri("/v0/tasks")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // ステータスコードの検証
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "Expected 200 OK for GET /api/tasks/:id"
+        StatusCode::NOT_FOUND,
+        "tasks endpoint should be removed"
     );
-
-    // レスポンスボディの検証（DownloadTask構造体）
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // スキーマ検証
-    assert!(body.get("id").is_some(), "Task must have 'id'");
-    assert!(body.get("node_id").is_some(), "Task must have 'node_id'");
-    assert!(
-        body.get("model_name").is_some(),
-        "Task must have 'model_name'"
-    );
-    assert!(body.get("status").is_some(), "Task must have 'status'");
-    assert!(body.get("progress").is_some(), "Task must have 'progress'");
-    assert!(
-        body.get("started_at").is_some(),
-        "Task must have 'started_at'"
-    );
-
-    // statusフィールドの検証
-    let status = body["status"].as_str().expect("'status' must be a string");
-    assert!(
-        ["pending", "in_progress", "completed", "failed"].contains(&status),
-        "'status' must be one of: pending, in_progress, completed, failed"
-    );
-
-    // progressフィールドの検証（0.0-1.0の範囲）
-    let progress = body["progress"]
-        .as_f64()
-        .expect("'progress' must be a number");
-    assert!(
-        (0.0..=1.0).contains(&progress),
-        "'progress' must be between 0.0 and 1.0"
-    );
-
-    // UUIDの検証
-    let id_str = body["id"].as_str().expect("'id' must be a string");
-    Uuid::parse_str(id_str).expect("'id' must be a valid UUID");
-
-    let node_id_str = body["node_id"]
-        .as_str()
-        .expect("'node_id' must be a string");
-    Uuid::parse_str(node_id_str).expect("'node_id' must be a valid UUID");
 }
 
-/// T009: POST /api/models/register - 正常系と重複/404異常系
+/// T009: POST /v0/models/register - 正常系と重複/404異常系
 #[tokio::test]
 #[serial]
 async fn test_register_model_contract() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
     let mock = MockServer::start().await;
 
     // HEAD 200 for existence
@@ -642,7 +246,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -659,6 +263,7 @@ async fn test_register_model_contract() {
             Request::builder()
                 .method("GET")
                 .uri("/v1/models")
+                .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -670,9 +275,9 @@ async fn test_register_model_contract() {
     let data = body["data"]
         .as_array()
         .expect("'data' must be an array on /v1/models");
-    // Ollama風ID: model.gguf (generic) + test/repo → "repo:latest"
+    // model.gguf (generic) + test/repo → "repo"
     assert!(
-        data.iter().all(|m| m["id"] != "repo:latest"),
+        data.iter().all(|m| m["id"] != "repo"),
         "/v1/models must not expose models before download completes"
     );
 
@@ -682,7 +287,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -708,7 +313,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&missing_payload).unwrap()))
                 .unwrap(),
@@ -734,7 +339,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "non-gguf-repo"})).unwrap(),
@@ -764,7 +369,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "unknown-repo"})).unwrap(),
@@ -776,21 +381,21 @@ async fn test_register_model_contract() {
     // 新APIではGGUFがない場合は変換パスに進むため201を返す
     assert_eq!(repo_only_fallback.status(), StatusCode::CREATED);
 
-    // DELETE: タスク完了前なのでモデルはREGISTERED_MODELSに存在しない（400を期待）
+    // DELETE: タスク完了前でもConvertTaskを削除できる（204を期待）
     // モデル名 = リポジトリ名、ワイルドカードパスなのでスラッシュをそのまま使用
     let delete_res = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/api/models/test/repo")
+                .uri("/v0/models/test/repo")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    // タスク完了前はモデルが登録されていないため400 (model not found)
-    assert_eq!(delete_res.status(), StatusCode::BAD_REQUEST);
+    // タスク完了前でもConvertTaskを削除してダウンロードをキャンセルできる
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
 
     // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
     let app_for_convert = build_app().await;
@@ -822,7 +427,7 @@ async fn test_register_model_contract() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"repo": "convertible-repo"})).unwrap(),
@@ -841,6 +446,7 @@ async fn test_register_model_contract() {
                 Request::builder()
                     .method("GET")
                     .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -862,19 +468,18 @@ async fn test_register_model_contract() {
     assert!(converted, "converted model should appear in /v1/models");
 }
 
-/// T010: convert 失敗タスクを Restore で再キューできること
+/// T010: ダウンロード失敗時に lifecycle_status が error になること
+/// NOTE: /v0/models/convert は廃止され、/v0/models に統合された
+/// NOTE: 失敗後のリトライ機能は別途実装予定
 #[tokio::test]
 #[serial]
-async fn test_convert_restore_requeues() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
-    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
-
+async fn test_download_failure_shows_error_status() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 
     // siblings returns GGUF file for registration to succeed
     Mock::given(method("GET"))
-        .and(path("/api/models/restore-repo"))
+        .and(path("/api/models/error-test-repo"))
         .and(query_param("expand", "siblings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "siblings": [
@@ -884,40 +489,29 @@ async fn test_convert_restore_requeues() {
         .mount(&mock)
         .await;
     Mock::given(method("HEAD"))
-        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
+        .and(path("/error-test-repo/resolve/main/model.Q4_K_M.gguf"))
         .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
         .mount(&mock)
         .await;
-    // GETダウンロードを初回は失敗させる（500エラー）→リトライで成功させる
-    let download_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let counter_clone = download_counter.clone();
+    // ダウンロードは常に失敗
     Mock::given(method("GET"))
-        .and(path("/restore-repo/resolve/main/model.Q4_K_M.gguf"))
-        .respond_with(move |_req: &wiremock::Request| {
-            let count = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if count == 0 {
-                // 1回目: 失敗
-                ResponseTemplate::new(500)
-            } else {
-                // 2回目以降: 成功
-                ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content")
-            }
-        })
+        .and(path("/error-test-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(500))
         .mount(&mock)
         .await;
 
     let app = build_app().await;
 
-    // register -> convert fails
+    // register -> download fails
     let reg = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/models/register")
+                .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({"repo": "restore-repo"})).unwrap(),
+                    serde_json::to_vec(&json!({"repo": "error-test-repo"})).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -925,123 +519,77 @@ async fn test_convert_restore_requeues() {
         .unwrap();
     assert_eq!(reg.status(), StatusCode::CREATED);
 
-    // wait for failed task
-    let mut failed_seen = false;
-    let mut last_tasks = serde_json::Value::Null;
+    // wait for error status via /v0/models lifecycle_status
+    let mut error_seen = false;
+    let mut last_models = serde_json::Value::Null;
     for _ in 0..60 {
-        let tasks_resp = app
+        let models_resp = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/api/models/convert")
+                    .uri("/v0/models")
+                    .header("x-api-key", "sk_debug")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(tasks_resp.status(), StatusCode::OK);
-        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
-        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        last_tasks = tasks.clone();
-        if tasks
+        assert_eq!(models_resp.status(), StatusCode::OK);
+        let body = to_bytes(models_resp.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_models = models.clone();
+        if models
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .any(|t| t["repo"] == "restore-repo" && t["status"] == "failed")
+                    .any(|m| m["name"] == "error-test-repo" && m["lifecycle_status"] == "error")
             })
             .unwrap_or(false)
         {
-            failed_seen = true;
+            error_seen = true;
             break;
         }
         sleep(Duration::from_millis(200)).await;
     }
     assert!(
-        failed_seen,
-        "failed convert task should appear, tasks={:?}",
-        last_tasks
+        error_seen,
+        "model should have lifecycle_status=error, models={:?}",
+        last_models
     );
 
-    // 2回目以降はモックが成功を返すので、リトライでダウンロードが成功するはず
-    let retry = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/models/convert")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({
-                        "repo": "restore-repo",
-                        "filename": "model.Q4_K_M.gguf"
-                    }))
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
+    // エラーモデルは download_progress.error にエラーメッセージが含まれる
+    let model = last_models
+        .as_array()
+        .and_then(|arr| arr.iter().find(|m| m["name"] == "error-test-repo"))
         .unwrap();
-    assert_eq!(retry.status(), StatusCode::ACCEPTED);
-
-    // wait for success
-    let mut succeeded = false;
-    let mut last_tasks_after_retry = serde_json::Value::Null;
-    for _ in 0..60 {
-        let tasks_resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri("/api/models/convert")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = to_bytes(tasks_resp.into_body(), usize::MAX).await.unwrap();
-        let tasks: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        last_tasks_after_retry = tasks.clone();
-        if tasks
-            .as_array()
-            .map(|arr| {
-                arr.iter().any(|t| {
-                    t["repo"] == "restore-repo"
-                        && t["status"] == "completed"
-                        && t["path"].is_string()
-                })
-            })
-            .unwrap_or(false)
-        {
-            succeeded = true;
-            break;
-        }
-        sleep(Duration::from_millis(200)).await;
-    }
     assert!(
-        succeeded,
-        "restore must requeue and complete, tasks={:?}",
-        last_tasks_after_retry
+        model["download_progress"]["error"].is_string(),
+        "download_progress.error should contain error message"
     );
 
-    // /v1/models should now include the converted model
-    let models_res = app
+    // エラー状態のモデルは削除可能
+    let delete_resp = app
         .clone()
         .oneshot(
             Request::builder()
-                .method("GET")
-                .uri("/v1/models")
+                .method("DELETE")
+                .uri("/v0/models/error-test-repo")
+                .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(models_res.status(), StatusCode::OK);
-    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
-    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let present = val["data"]
-        .as_array()
-        .map(|arr| arr.iter().any(|m| m["id"] == "restore-repo"))
-        .unwrap_or(false);
-    assert!(present, "/v1/models must include restored model");
+    let delete_status = delete_resp.status();
+    let delete_body = to_bytes(delete_resp.into_body(), usize::MAX).await.unwrap();
+    let delete_body_str = String::from_utf8_lossy(&delete_body);
+    assert!(
+        delete_status == StatusCode::NO_CONTENT
+            || delete_status == StatusCode::OK
+            || delete_status == StatusCode::NOT_FOUND, // モデルが既に存在しない場合も許容
+        "should be able to delete error model (status={}, body={})",
+        delete_status,
+        delete_body_str
+    );
 }

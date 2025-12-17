@@ -6,9 +6,9 @@
 **依存SPEC**: SPEC-94621a1f, SPEC-63acef08, SPEC-443acc8c
 
 ## 追加要件（2025-11-01更新）
-- 同一マシン上で複数のノードを起動する場合でも、`OLLAMA_PORT` が異なれば別インスタンスとして自動登録できること。
-- OpenAI互換API (`/api/chat`, `/api/generate`) のハッピーパス/エラーケースを自動テスト（TDD）で保証すること。
-- ノード起動時にデフォルトモデル `gpt-oss:20b` を自動プルし、必要に応じて環境変数 `OLLAMA_DEFAULT_MODEL` で上書きできること。
+- 同一マシン上で複数のノードを起動する場合でも、`runtime_port` が異なれば別インスタンスとして自動登録できること。
+- OpenAI互換API (`/v1/chat/completions`, `/v1/completions`) のハッピーパス/エラーケースを自動テスト（TDD）で保証すること。
+- ノード起動時にルーターの `GET /v1/models` を参照し、必要に応じて `GET /v0/models/blob/:model_name` でモデルを同期できること（ルーターからのpush配布はしない）。
 - ダッシュボードのノード一覧でロード済みモデル列を表示し、詳細モーダルでも全モデルを確認できること。
 - ダッシュボードのノード一覧テーブルはヘッダーと行の列幅が一致し、視覚的なずれが発生しないこと。
 
@@ -22,27 +22,27 @@
 
 ## 本日のToDo (2025-11-01)
 
-- [x] **T608** `GET /api/dashboard/overview` に集計時間と生成タイムスタンプを追加し、バックエンド処理時間を計測
+- [x] **T608** `GET /v0/dashboard/overview` に集計時間と生成タイムスタンプを追加し、バックエンド処理時間を計測
 - [x] **T609** ダッシュボードのパフォーマンスインジケーターを拡張し、閾値評価とサーバー生成時刻の表示を実装
-- [x] **T610** `GET /api/dashboard/metrics/:agent_id` を実装し、ノードごとのCPU/メモリ履歴を返却
+- [x] **T610** `GET /v0/dashboard/metrics/:node_id` を実装し、ノードごとのCPU/メモリ履歴を返却
 - [x] **T611** ノード詳細モーダルにCPU/メモリ折れ線グラフを追加し、最新指標とエラーハンドリングを表示
 
 ## 本日のToDo (2025-10-31)
 
-- [x] **T601** `coordinator/src/api/mod.rs` のルーター結線スモークテストを修正し、静的配信・API経路の確認を通す
-- [x] **T602** `cargo test -p llm-router-coordinator` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
+- [x] **T601** `router/src/api/mod.rs` のルーター結線スモークテストを修正し、静的配信・API経路の確認を通す
+- [x] **T602** `cargo test -p llm-router-router` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
 - [x] **T603** 本ファイルを含む関連Specドキュメントのステータス更新と変更点のコミット準備
-- [x] **T604** `coordinator/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
+- [x] **T604** `router/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
 - [x] **T605** ダッシュボードSpecのタスク進捗（ページネーション等）を現状に合わせて更新
 - [x] **T606** ダッシュボードのDOM差分更新とポーリング処理の最適化（Phase 6 T002 着手）
-- [x] **T607** `GET /api/dashboard/overview` を追加し、ダッシュボードの3リクエストを集約する
+- [x] **T607** `GET /v0/dashboard/overview` を追加し、ダッシュボードの3リクエストを集約する
 
 ## 本日のToDo (2025-11-30)
 
 - [x] **T710 (RED)** `router/tests/contract/chat_modal_embed.rs` を作成し、`GET /dashboard` のHTMLに `id="chat-open"` ボタンと `id="chat-modal"` iframe（src=/chat）が存在することをスナップショットで検証
 - [x] **T711 (GREEN)** 上記テストをパスするようダッシュボードHTML/JS/スタイルを整備（モーダル表示/ESC・背景クリック閉鎖/iframe再読み込み）
-- [x] **T712 (RED)** `router/tests/contract/chat_page_spec.rs` を追加し、`GET /chat` でサイドバーセッションリスト、プロバイダー切替(ローカル/クラウド/すべて)が含まれることを検証
-- [x] **T713 (GREEN)** `/chat` の静的アセットをビルドに含め、モデルフィルタ・セッション永続化が壊れていないことを手動確認＆必要なら追加単体テスト
+- [x] **T712 (RED)** `router/tests/contract/chat_page_spec.rs` を追加し、`GET /playground` でUIが提供されることを検証
+- [x] **T713 (GREEN)** `/playground` の静的アセットをビルドに含め、モデルフィルタ・セッション永続化が壊れていないことを手動確認＆必要なら追加単体テスト
 - [x] **T714 (DOCS)** `specs/SPEC-712c20cf/spec.md` にチャットモーダル要件と受け入れシナリオを追記
 
 ## Phase 1: 基本UI実装 📋 (推定3時間)
@@ -51,7 +51,7 @@
 - **説明**: Axumで静的ファイルを配信
 - **詳細**:
   - `tower-http`の`ServeDir`ミドルウェア使用
-  - `coordinator/src/web/static/`ディレクトリ作成
+  - `router/src/web/static/`ディレクトリ作成
 - **完了条件**: `/dashboard`で静的HTMLが表示される
 - **推定時間**: 30分
 - **ステータス**: ✅ 完了
@@ -80,7 +80,7 @@
 ### U004: 手動リフレッシュ機能 ✅
 - **説明**: リフレッシュボタンでデータ更新
 - **詳細**:
-  - `fetchAgents()`関数実装
+  - `fetchNodes()`関数実装
   - ボタンクリックでデータ取得＆UI更新
 - **完了条件**: ボタンクリックでデータが更新される
 - **推定時間**: 30分
@@ -91,19 +91,19 @@
 ## Phase 2: バックエンドAPI実装 (TDD) 📋 (推定2時間)
 
 ### B001: ダッシュボードモジュール作成 ✅
-- **説明**: `coordinator/src/api/dashboard.rs`作成
+- **説明**: `router/src/api/dashboard.rs`作成
 - **完了条件**: コンパイル成功
 - **推定時間**: 5分
 - **ステータス**: ✅ 完了
 
 ### B002: ノード状態APIテスト作成 (RED) ✅
-- **説明**: test_get_agents_status作成
+- **説明**: test_get_nodes_status作成
 - **完了条件**: テスト失敗を確認
 - **推定時間**: 10分
 - **ステータス**: ✅ 完了
 
 ### B003: ノード状態API実装 (GREEN) ✅
-- **説明**: `GET /api/dashboard/agents`実装
+- **説明**: `GET /v0/dashboard/nodes`実装
 - **詳細**:
   - レジストリから全ノード取得
   - uptimeを計算（online_sinceがあればそこから現在時刻まで、未設定なら0秒）
@@ -119,9 +119,9 @@
 - **ステータス**: ✅ 完了
 
 ### B005: システム統計API実装 (GREEN) ✅
-- **説明**: `GET /api/dashboard/stats`実装
+- **説明**: `GET /v0/dashboard/stats`実装
 - **詳細**:
-  - total_agents, online_agents, offline_agentsを計算
+  - total_nodes, online_nodes, offline_nodesを計算
   - リクエスト統計（将来拡張）
 - **完了条件**: テスト合格
 - **推定時間**: 45分
@@ -131,8 +131,8 @@
 - **説明**: main.rsにダッシュボードエンドポイント追加
 - **詳細**:
   - `/dashboard` → index.html
-  - `/api/dashboard/agents` → get_agents
-  - `/api/dashboard/stats` → get_stats
+  - `/v0/dashboard/nodes` → get_nodes
+  - `/v0/dashboard/stats` → get_stats
 - **完了条件**: エンドポイントが正常に動作
 - **推定時間**: 10分
 - **ステータス**: ✅ 完了
@@ -145,7 +145,7 @@
 - **説明**: 5秒ごとにAPIを呼び出し
 - **詳細**:
   - `setInterval`で定期実行
-  - `fetchAgents()`と`fetchStats()`を呼び出し
+  - `fetchNodes()`と`fetchStats()`を呼び出し
 - **完了条件**: 自動的にデータが更新される
 - **推定時間**: 30分
 - **ステータス**: ✅ 完了
@@ -153,7 +153,7 @@
 ### R002: UI更新ロジック実装 ✅
 - **説明**: API レスポンスからDOMを更新
 - **詳細**:
-  - `updateAgentTable(agents)`関数
+  - `updateNodeTable(nodes)`関数
   - `updateStats(stats)`関数
   - ステータス変更時のアニメーション
 - **完了条件**: UIがリアルタイムで更新される
@@ -182,7 +182,7 @@
 - **ステータス**: ✅ 完了
 
 ### M002: リクエスト履歴API実装 ✅
-- **説明**: `GET /api/dashboard/request-history`実装
+- **説明**: `GET /v0/dashboard/request-history`実装
 - **詳細**:
   - 最新1時間のリクエスト数を1分単位で返却
   - メモリに履歴を保持（リングバッファ）
@@ -201,7 +201,7 @@
 - **ステータス**: ✅ 完了
 
 ### M004: メトリクスAPI実装（SPEC-589f2df1依存） ✅
-- **説明**: `GET /api/dashboard/metrics/:agent_id`実装
+- **説明**: `GET /v0/dashboard/metrics/:node_id`実装
 - **詳細**: SPEC-589f2df1のメトリクス収集が完了後に実装
 - **完了条件**: ノードごとのメトリクスが取得可能
 - **推定時間**: 30分
@@ -250,10 +250,10 @@
 - **ステータス**: ✅ 完了
 
 ### A004: ノード設定API実装 ✅ (FR-023)
-- **説明**: `PUT /api/agents/:id/settings` 実装
+- **説明**: `PUT /v0/nodes/:node_id/settings` 実装
 - **詳細**:
   - リクエスト: custom_name, tags, notes
-  - Agentモデルに設定フィールド追加
+  - Nodeモデルに設定フィールド追加
   - JSONストレージに永続化
 - **完了条件**: 設定が保存・取得できる
 - **推定時間**: 1時間
@@ -271,7 +271,7 @@
 - **ステータス**: ✅ 完了
 
 ### A006: ノード削除API実装 ✅ (FR-024)
-- **説明**: `DELETE /api/agents/:id` 実装
+- **説明**: `DELETE /v0/nodes/:node_id` 実装
 - **詳細**:
   - ノード情報削除
   - JSONストレージから削除
@@ -291,7 +291,7 @@
 - **ステータス**: ✅ 完了
 
 ### A008: ノード強制切断API実装 ✅ (FR-024)
-- **説明**: `POST /api/agents/:id/disconnect` 実装
+- **説明**: `POST /v0/nodes/:node_id/disconnect` 実装
 - **詳細**:
   - ノードステータスをOfflineに変更
   - 強制切断フラグ設定
@@ -324,7 +324,7 @@
 - **詳細**: 100ノード以上の場合にページング
 - **完了条件**: ページ切り替えが動作する
 - **推定時間**: 30分
-- **ステータス**: ✅ 完了（`coordinator/src/web/static/app.js` で `pageSize=50` のページングを実装）
+- **ステータス**: ✅ 完了（`router/src/web/static/app.js` で `pageSize=50` のページングを実装）
 
 ---
 
@@ -338,7 +338,7 @@
   - リアルタイム更新が動作する
 - **完了条件**: 全シナリオが成功
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`coordinator/tests/dashboard_smoke.rs` で主要シナリオを検証）
+- **ステータス**: ✅ 完了（`router/tests/dashboard_smoke.rs` で主要シナリオを検証）
 
 ### T002: パフォーマンス最適化 ✅
 - **説明**: 初回ロード時間とポーリングの最適化
@@ -348,10 +348,10 @@
   - リクエストのバッチ化
 - **完了条件**: 初回ロード<2秒、ポーリング<100ms
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`GET /api/dashboard/overview` に集計時間を付加、フロントで取得/描画/サーバー集計の各メトリクスを計測し閾値評価を表示。警告・フォールバック検知を実装して性能予算を監視可能に）
+- **ステータス**: ✅ 完了（`GET /v0/dashboard/overview` に集計時間を付加、フロントで取得/描画/サーバー集計の各メトリクスを計測し閾値評価を表示。警告・フォールバック検知を実装して性能予算を監視可能に）
 
 ### T003: OpenAI互換APIの自動検証 ✅
-- **説明**: `/api/chat` `/api/generate` エンドポイントがOpenAI互換仕様に沿って応答することを確認する
+- **説明**: `/v1/chat/completions` `/v1/completions` エンドポイントがOpenAI互換仕様に沿って応答することを確認する
 - **詳細**:
   - ノード（またはモック）を用意し、API経由でリクエストを送信する統合テストを追加
   - 正常系（レスポンス形式・ステータスコード）／異常系（ノード未登録時など）の評価を含める
@@ -359,18 +359,18 @@
 - **推定時間**: 2時間
 - **ステータス**: ✅ 完了
 - **検証ログ (2025-11-02)**:
-  - `make openai-tests`（内部で `cargo test -p llm-router-coordinator --test openai_proxy` を実行）により、`/api/chat`・`/api/generate` の正常系／未登録ノード／404エラーがOpenAI互換レスポンスで返ることを確認
-  - `curl http://127.0.0.1:8080/api/chat` でノードを経由した疎通を手動確認済み（`gpt-oss:20b` 応答およびメモリ不足エラーの両ケースを取得）
+  - `make openai-tests` により、`/v1/chat/completions`・`/v1/completions` の正常系／未登録ノード／404エラーがOpenAI互換レスポンスで返ることを確認
+  - `curl http://127.0.0.1:8080/v1/chat/completions` でノードを経由した疎通を手動確認済み（`gpt-oss-20b` 応答およびメモリ不足エラーの両ケースを取得）
   - `make openai-tests` のストリーミングケースを追加し、`stream: true` 指定時にSSEレスポンスがそのまま転送されることを確認（2025-11-03）
 
 ### T004: 同一マシン複数ノードE2E ✅
 - **説明**: 同一マシン名でもポート差異で複数ノードを登録できることをTDDで保証
 - **詳細**:
   - レジストリの登録ロジック変更（マシン名+ポートで識別）
-  - `/api/agents` に対する統合テストを追加し、2件が登録されることを確認
+  - `/v0/nodes` に対する統合テストを追加し、2件が登録されることを確認
 - **完了条件**: テストがCIで成功し、仕様がTDDで守られている
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`coordinator/src/registry/mod.rs` 更新と `test_register_same_machine_different_port_creates_multiple_agents` を追加）
+- **ステータス**: ✅ 完了（`router/src/registry/mod.rs` 更新と `test_register_same_machine_different_port_creates_multiple_nodes` を追加）
 
 ---
 

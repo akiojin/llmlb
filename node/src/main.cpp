@@ -24,6 +24,20 @@
 #include "runtime/state.h"
 #include "utils/logger.h"
 
+#ifdef USE_WHISPER
+#include "core/whisper_manager.h"
+#include "api/audio_endpoints.h"
+#endif
+
+#ifdef USE_ONNX_RUNTIME
+#include "core/onnx_tts_manager.h"
+#endif
+
+#ifdef USE_SD
+#include "core/sd_manager.h"
+#include "api/image_endpoints.h"
+#endif
+
 int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
     llm_node::g_running_flag.store(true);
 
@@ -87,6 +101,24 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
+#ifdef USE_WHISPER
+        // Initialize WhisperManager for ASR
+        llm_node::WhisperManager whisper_manager(models_dir);
+        spdlog::info("WhisperManager initialized for ASR support");
+#endif
+
+#ifdef USE_ONNX_RUNTIME
+        // Initialize OnnxTtsManager for TTS
+        llm_node::OnnxTtsManager tts_manager(models_dir);
+        spdlog::info("OnnxTtsManager initialized for TTS support");
+#endif
+
+#ifdef USE_SD
+        // Initialize SDManager for image generation
+        llm_node::SDManager sd_manager(models_dir);
+        spdlog::info("SDManager initialized for image generation support");
+#endif
+
         // Set GPU layers based on detection (use all layers on GPU if available)
         if (!gpu_devices.empty()) {
             // Use 99 layers for GPU offloading (most models have fewer layers)
@@ -117,10 +149,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Create shared router client for both registration and progress reporting
-        auto router_client = std::make_shared<llm_node::RouterClient>(router_url);
-
-        // Create model_sync early so pull endpoint is ready for auto-distribution
+        // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
@@ -131,12 +160,79 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::OpenAIEndpoints openai(registry, engine, cfg);
         llm_node::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
-        node_endpoints.setRouterClient(router_client);
-        node_endpoints.setModelSync(model_sync);
         llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
+
+#ifdef USE_WHISPER
+        // Register audio endpoints for ASR (and TTS if available)
+#ifdef USE_ONNX_RUNTIME
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager, cfg);
+        spdlog::info("Audio endpoints registered for ASR + TTS");
+#else
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, cfg);
+        spdlog::info("Audio endpoints registered for ASR");
+#endif
+        audio_endpoints.registerRoutes(server.getServer());
+#endif
+
+#ifdef USE_SD
+        // Register image endpoints for image generation
+        llm_node::ImageEndpoints image_endpoints(sd_manager, cfg);
+        image_endpoints.registerRoutes(server.getServer());
+        spdlog::info("Image endpoints registered for image generation");
+#endif
+
+        // SPEC-dcaeaec4 FR-7: POST /api/models/pull - receive sync notification from router
+        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry](const httplib::Request&, httplib::Response& res) {
+            try {
+                spdlog::info("Received model pull notification from router");
+
+                // Sync with router
+                auto sync_result = model_sync->sync();
+
+                // Delete models not in router
+                for (const auto& model_id : sync_result.to_delete) {
+                    spdlog::info("Deleting model not in router: {}", model_id);
+                    model_storage.deleteModel(model_id);
+                }
+
+                // Update registry with current local models
+                auto local_model_infos = model_storage.listAvailable();
+                std::vector<std::string> local_model_names;
+                local_model_names.reserve(local_model_infos.size());
+                for (const auto& info : local_model_infos) {
+                    local_model_names.push_back(info.name);
+                }
+                registry.setModels(local_model_names);
+                spdlog::info("Model sync completed, {} models available", local_model_names.size());
+
+                res.set_content(R"({"status":"ok"})", "application/json");
+            } catch (const std::exception& e) {
+                spdlog::error("Model pull failed: {}", e.what());
+                res.status = 500;
+                res.set_content(R"({"error":"sync failed"})", "application/json");
+            }
+        });
+        spdlog::info("Model pull endpoint registered: POST /api/models/pull");
+
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();
         server_started = true;
+
+        // Wait for server to be ready by self-connecting
+        {
+            httplib::Client self_check("127.0.0.1", node_port);
+            self_check.set_connection_timeout(1, 0);
+            self_check.set_read_timeout(1, 0);
+            const int max_wait = 50;  // 50 * 100ms = 5s max
+            for (int i = 0; i < max_wait; ++i) {
+                auto res = self_check.Get("/v1/models");
+                if (res && res->status == 200) {
+                    spdlog::info("Server ready after {}ms", (i + 1) * 100);
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
 
         // Register with router (retry)
         std::cout << "Registering with router..." << std::endl;
@@ -191,14 +287,26 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             return 1;
         }
 
-        // Sync models from router (model_sync already created earlier for pull endpoint)
+        // Sync models from router (model_sync already created earlier for remote path resolution & initial sync)
         std::cout << "Syncing models from router..." << std::endl;
+        model_sync->setNodeToken(reg.node_token);
         auto sync_result = model_sync->sync();
         if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
             // If nothing synced and no local models, treat as recoverable error and retry once
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             sync_result = model_sync->sync();
         }
+
+        // Delete models not in router (router is source of truth)
+        for (const auto& model_id : sync_result.to_delete) {
+            std::cout << "Deleting model not in router: " << model_id << std::endl;
+            if (model_storage.deleteModel(model_id)) {
+                std::cout << "  Deleted: " << model_id << std::endl;
+            } else {
+                std::cerr << "  Failed to delete: " << model_id << std::endl;
+            }
+        }
+
         // Update registry with local models (models actually available on this node)
         auto local_model_infos = model_storage.listAvailable();
         std::vector<std::string> local_model_names;
@@ -213,14 +321,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Heartbeat thread
         std::cout << "Starting heartbeat thread..." << std::endl;
-        std::string agent_token = reg.agent_token;
-        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, agent_token, &cfg]() {
+        std::string node_token = reg.node_token;
+        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
                 auto loaded_models = llama_manager.getLoadedModels();
                 // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
                 std::vector<std::string> loaded_embedding_models;
-                router.sendHeartbeat(node_id, agent_token, std::nullopt, std::nullopt,
+                router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
                                      loaded_models, loaded_embedding_models);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }

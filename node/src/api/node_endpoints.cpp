@@ -1,15 +1,11 @@
 #include "api/node_endpoints.h"
 
-#include <stdexcept>
-#include <thread>
-#include <filesystem>
+#include <deque>
 #include <fstream>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 #include "runtime/state.h"
 #include "utils/logger.h"
-#include "models/model_sync.h"
-#include "models/model_downloader.h"
-#include "api/router_client.h"
 
 namespace llm_node {
 
@@ -18,117 +14,94 @@ NodeEndpoints::NodeEndpoints() : health_status_("ok") {}
 void NodeEndpoints::registerRoutes(httplib::Server& server) {
     start_time_ = std::chrono::steady_clock::now();
 
-    server.Post("/pull", [this](const httplib::Request& req, httplib::Response& res) {
-        pull_count_.fetch_add(1);
-        exporter_.inc_counter("llm_node_pull_total", 1.0, "Number of pull requests received");
+    server.Get("/v0/logs", [](const httplib::Request& req, httplib::Response& res) {
+        int limit = 200;
+        if (req.has_param("tail")) {
+            try {
+                limit = std::stoi(req.get_param_value("tail"));
+            } catch (...) {
+                limit = 200;
+            }
+        }
+        if (limit < 1) limit = 1;
+        if (limit > 1000) limit = 1000;
 
-        // Parse request JSON
-        auto j = nlohmann::json::parse(req.body, nullptr, false);
-        if (j.is_discarded() || !j.contains("model")) {
-            res.status = 400;
-            res.set_content(R"({"error":"model required"})", "application/json");
+        const std::string log_path = logger::get_log_file_path();
+
+        nlohmann::json body;
+        body["entries"] = nlohmann::json::array();
+        body["path"] = log_path;
+
+        std::ifstream file(log_path);
+        if (!file.is_open()) {
+            res.set_content(body.dump(), "application/json");
             return;
         }
 
-        std::string model_name = j["model"].get<std::string>();
-        std::string task_id = j.value("task_id", "");
+        std::deque<nlohmann::json> entries;
+        std::string line;
+        while (std::getline(file, line)) {
+            auto j = nlohmann::json::parse(line, nullptr, false);
+            if (j.is_discarded() || !j.is_object()) continue;
 
-        spdlog::info("Pull request received: model={}, task_id={}", model_name, task_id);
+            nlohmann::json entry;
 
-        // Return accepted immediately, process in background
-        nlohmann::json body = {{"status", "accepted"}};
-        res.set_content(body.dump(), "application/json");
+            // timestamp: accept both tracing-subscriber style and node JSONL style
+            if (j.contains("timestamp")) {
+                entry["timestamp"] = j["timestamp"];
+            } else if (j.contains("ts")) {
+                entry["timestamp"] = j["ts"];
+            } else {
+                entry["timestamp"] = nullptr;
+            }
 
-        // Process download in background thread
-        if (model_sync_ && router_client_ && !task_id.empty()) {
-            auto sync = model_sync_;
-            auto client = router_client_;
+            if (j.contains("level")) {
+                entry["level"] = j["level"];
+            } else {
+                entry["level"] = nullptr;
+            }
 
-            // optional fields from request
-            std::string path = j.value("path", "");
-            std::string chat_template = j.value("chat_template", "");
+            if (j.contains("target")) {
+                entry["target"] = j["target"];
+            } else {
+                entry["target"] = "llm-node";
+            }
 
-            // helper: model name -> dir (colon to underscore, append _latest when tagなし)
-            auto modelNameToDir = [](const std::string& name) {
-                std::string dir = name;
-                std::replace(dir.begin(), dir.end(), ':', '_');
-                if (name.find(':') == std::string::npos) {
-                    dir += "_latest";
-                }
-                return dir;
-            };
+            // fields
+            if (j.contains("fields") && j["fields"].is_object()) {
+                entry["fields"] = j["fields"];
+            } else {
+                entry["fields"] = nlohmann::json::object();
+            }
 
-            std::string download_url = j.value("download_url", "");
+            // message: prefer explicit message, then msg, then fields.message
+            if (j.contains("message")) {
+                entry["message"] = j["message"];
+            } else if (j.contains("msg")) {
+                entry["message"] = j["msg"];
+            } else if (entry["fields"].is_object() && entry["fields"].contains("message")) {
+                entry["message"] = entry["fields"]["message"];
+            } else {
+                entry["message"] = nullptr;
+            }
 
-            std::thread([sync, client, model_name, task_id, path, download_url, chat_template, modelNameToDir]() {
-                spdlog::info("Starting model pull: model={}, task_id={}, path='{}'",
-                              model_name, task_id, path);
+            if (j.contains("file")) {
+                entry["file"] = j["file"];
+            }
+            if (j.contains("line")) {
+                entry["line"] = j["line"];
+            }
 
-                const std::string models_dir = sync->getModelsDir();
-                const std::string dir_name = modelNameToDir(model_name);
-                const std::filesystem::path target_dir = std::filesystem::path(models_dir) / dir_name;
-                const std::filesystem::path target_path = target_dir / "model.gguf";
-
-                bool success = false;
-
-                auto progress_cb = [&client, &task_id](size_t downloaded, size_t total) {
-                    if (total > 0) {
-                        double progress = static_cast<double>(downloaded) / static_cast<double>(total);
-                        client->reportProgress(task_id, progress, std::nullopt);
-                    }
-                };
-
-                // 1) 共有パスがあれば直接参照（シンボリックリンク）
-                if (!path.empty()) {
-                    std::error_code ec;
-                    if (std::filesystem::exists(path, ec) && std::filesystem::is_regular_file(path, ec)) {
-                        std::filesystem::create_directories(target_dir, ec);
-                        if (!ec) {
-                            // 既存のファイル/シンボリックリンクを削除
-                            std::filesystem::remove(target_path, ec);
-                            // シンボリックリンクを作成（コピーなし）
-                            std::filesystem::create_symlink(path, target_path, ec);
-                            if (!ec) {
-                                spdlog::info("Created symlink to shared path: {} -> {}", target_path.string(), path);
-                                success = true;
-                            }
-                        }
-                    }
-                }
-
-                // 2) 共有パスが利用不可なら download_url or Router API 経由でダウンロード
-                if (!success) {
-                    std::string blob = !download_url.empty()
-                        ? download_url
-                        : sync->getBaseUrl() + "/api/models/blob/" + model_name;
-                    spdlog::info("Shared path unavailable, downloading: {}", blob);
-                    ModelDownloader downloader(sync->getBaseUrl(), models_dir, std::chrono::milliseconds(30000));
-                    std::string filename = dir_name + "/model.gguf";
-                    auto out = downloader.downloadBlob(blob, filename, progress_cb);
-                    success = !out.empty();
-                }
-
-                if (success) {
-                    // persist chat_template if provided
-                    if (!chat_template.empty()) {
-                        std::error_code ec;
-                        std::filesystem::create_directories(target_dir, ec);
-                        if (!ec) {
-                            nlohmann::json meta;
-                            meta["chat_template"] = chat_template;
-                            std::ofstream ofs(target_dir / "metadata.json", std::ios::binary | std::ios::trunc);
-                            ofs << meta.dump();
-                        }
-                    }
-                    spdlog::info("Model pull complete: model={}, task_id={}", model_name, task_id);
-                    client->reportProgress(task_id, 1.0, std::nullopt);
-                } else {
-                    spdlog::error("Model pull failed: model={}, task_id={}", model_name, task_id);
-                }
-            }).detach();
-        } else {
-            spdlog::warn("Pull request ignored: model_sync or router_client not set, or no task_id");
+            entries.push_back(entry);
+            if (static_cast<int>(entries.size()) > limit) {
+                entries.pop_front();
+            }
         }
+
+        for (const auto& e : entries) {
+            body["entries"].push_back(e);
+        }
+        res.set_content(body.dump(), "application/json");
     });
 
     server.Get("/health", [this](const httplib::Request&, httplib::Response& res) {
@@ -150,7 +123,9 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             std::chrono::steady_clock::now() - start_time_).count();
         nlohmann::json body = {
             {"uptime_seconds", uptime},
-            {"pull_count", pull_count_.load()}
+            {"gpu_devices", gpu_devices_},
+            {"gpu_memory_bytes", gpu_total_mem_},
+            {"gpu_capability", gpu_capability_}
         };
         res.set_content(body.dump(), "application/json");
     });
@@ -159,7 +134,6 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time_).count();
         exporter_.set_gauge("llm_node_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
-        exporter_.set_gauge("llm_node_pulls_total", static_cast<double>(pull_count_.load()), "Total pull requests served");
         exporter_.set_gauge("llm_node_gpu_devices", static_cast<double>(gpu_devices_), "Detected GPU devices");
         exporter_.set_gauge("llm_node_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
         exporter_.set_gauge("llm_node_gpu_capability", gpu_capability_, "Aggregated GPU capability score");

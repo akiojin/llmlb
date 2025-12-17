@@ -65,6 +65,15 @@ pub struct Node {
     /// ロード済みEmbeddingモデル一覧
     #[serde(default)]
     pub loaded_embedding_models: Vec<String>,
+    /// ロード済みASRモデル一覧 (音声認識)
+    #[serde(default)]
+    pub loaded_asr_models: Vec<String>,
+    /// ロード済みTTSモデル一覧 (音声合成)
+    #[serde(default)]
+    pub loaded_tts_models: Vec<String>,
+    /// サポートするランタイム一覧
+    #[serde(default)]
+    pub supported_runtimes: Vec<RuntimeType>,
     /// 搭載GPUの詳細
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gpu_devices: Vec<GpuDeviceInfo>,
@@ -87,7 +96,7 @@ pub struct Node {
     pub gpu_capability_score: Option<u32>,
     /// OpenAI互換APIポート（標準は runtime_port+1）
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_api_port: Option<u16>,
+    pub node_api_port: Option<u16>,
     /// モデル起動中フラグ（全対応モデルが揃うまで true）
     #[serde(default)]
     pub initializing: bool,
@@ -117,6 +126,102 @@ pub enum ModelType {
     Llm,
     /// Embeddingモデル
     Embedding,
+    /// 音声認識モデル (ASR: Speech-to-Text)
+    #[serde(rename = "speech_to_text")]
+    SpeechToText,
+    /// 音声合成モデル (TTS: Text-to-Speech)
+    #[serde(rename = "text_to_speech")]
+    TextToSpeech,
+    /// 画像生成モデル (Text-to-Image)
+    #[serde(rename = "image_generation")]
+    ImageGeneration,
+}
+
+/// ランタイムタイプ
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeType {
+    /// llama.cpp (テキスト生成、Embedding)
+    #[default]
+    LlamaCpp,
+    /// whisper.cpp (音声認識)
+    WhisperCpp,
+    /// ONNX Runtime (TTS、汎用推論)
+    OnnxRuntime,
+    /// stable-diffusion.cpp (画像生成)
+    StableDiffusion,
+}
+
+/// 音声フォーマット
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioFormat {
+    /// WAV (PCM)
+    Wav,
+    /// MP3
+    #[default]
+    Mp3,
+    /// FLAC (ロスレス)
+    Flac,
+    /// Ogg Vorbis
+    Ogg,
+    /// Opus
+    Opus,
+}
+
+/// 画像サイズ
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ImageSize {
+    /// 256x256
+    #[serde(rename = "256x256")]
+    Size256,
+    /// 512x512
+    #[serde(rename = "512x512")]
+    Size512,
+    /// 1024x1024 (デフォルト)
+    #[default]
+    #[serde(rename = "1024x1024")]
+    Size1024,
+    /// 1792x1024 (横長)
+    #[serde(rename = "1792x1024")]
+    Size1792x1024,
+    /// 1024x1792 (縦長)
+    #[serde(rename = "1024x1792")]
+    Size1024x1792,
+}
+
+/// 画像品質
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageQuality {
+    /// 標準品質 (デフォルト)
+    #[default]
+    Standard,
+    /// 高品質
+    Hd,
+}
+
+/// 画像スタイル
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageStyle {
+    /// 鮮やかなスタイル (デフォルト)
+    #[default]
+    Vivid,
+    /// 自然なスタイル
+    Natural,
+}
+
+/// 画像レスポンス形式
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageResponseFormat {
+    /// URL形式 (デフォルト)
+    #[default]
+    Url,
+    /// Base64エンコード形式
+    #[serde(rename = "b64_json")]
+    B64Json,
 }
 
 /// ヘルスメトリクス
@@ -170,7 +275,7 @@ pub struct Request {
     pub id: Uuid,
     /// 振り分け先ノードID
     pub node_id: Uuid,
-    /// エンドポイント ("/api/chat" など)
+    /// エンドポイント ("/v1/chat/completions" など)
     pub endpoint: String,
     /// ステータス
     pub status: RequestStatus,
@@ -200,7 +305,7 @@ pub enum RequestStatus {
 ///
 /// ノードから定期的に送信される負荷情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentMetrics {
+pub struct NodeMetrics {
     /// ノードID
     pub node_id: Uuid,
     /// CPU使用率（0.0〜100.0）
@@ -220,8 +325,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_agent_serialization() {
-        let agent = Node {
+    fn test_node_serialization() {
+        let node = Node {
             id: Uuid::new_v4(),
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
@@ -236,6 +341,9 @@ mod tests {
             notes: Some("memo".to_string()),
             loaded_models: vec!["gpt-oss-20b".to_string()],
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
+            loaded_asr_models: vec!["whisper-large-v3".to_string()],
+            loaded_tts_models: vec!["vibevoice-v1".to_string()],
+            supported_runtimes: vec![RuntimeType::LlamaCpp, RuntimeType::WhisperCpp],
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),
                 count: 2,
@@ -247,19 +355,19 @@ mod tests {
             gpu_model_name: Some("NVIDIA GeForce RTX 4090".to_string()),
             gpu_compute_capability: Some("8.9".to_string()),
             gpu_capability_score: Some(9850),
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: Some((1, 1)),
         };
 
-        let json = serde_json::to_string(&agent).unwrap();
+        let json = serde_json::to_string(&node).unwrap();
         let deserialized: Node = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(agent, deserialized);
+        assert_eq!(node, deserialized);
     }
 
     #[test]
-    fn test_agent_defaults() {
+    fn test_node_defaults() {
         let json = r#"{
             "id": "00000000-0000-0000-0000-000000000000",
             "machine_name": "machine",
@@ -272,24 +380,24 @@ mod tests {
             "gpu_available": false
         }"#;
 
-        let agent: Node = serde_json::from_str(json).unwrap();
-        assert!(agent.custom_name.is_none());
-        assert!(agent.tags.is_empty());
-        assert!(agent.notes.is_none());
-        assert!(agent.loaded_models.is_empty());
-        assert!(agent.loaded_embedding_models.is_empty());
-        assert!(agent.gpu_devices.is_empty());
-        assert!(!agent.gpu_available);
-        assert!(agent.gpu_count.is_none());
-        assert!(agent.gpu_model.is_none());
-        assert!(agent.gpu_model_name.is_none());
-        assert!(agent.gpu_compute_capability.is_none());
-        assert!(agent.gpu_capability_score.is_none());
-        assert!(agent.online_since.is_none());
+        let node: Node = serde_json::from_str(json).unwrap();
+        assert!(node.custom_name.is_none());
+        assert!(node.tags.is_empty());
+        assert!(node.notes.is_none());
+        assert!(node.loaded_models.is_empty());
+        assert!(node.loaded_embedding_models.is_empty());
+        assert!(node.gpu_devices.is_empty());
+        assert!(!node.gpu_available);
+        assert!(node.gpu_count.is_none());
+        assert!(node.gpu_model.is_none());
+        assert!(node.gpu_model_name.is_none());
+        assert!(node.gpu_compute_capability.is_none());
+        assert!(node.gpu_capability_score.is_none());
+        assert!(node.online_since.is_none());
     }
 
     #[test]
-    fn test_agent_runtime_fields() {
+    fn test_node_runtime_fields() {
         let json = r#"{
             "id": "00000000-0000-0000-0000-000000000000",
             "machine_name": "machine",
@@ -302,13 +410,13 @@ mod tests {
             "gpu_available": false
         }"#;
 
-        let agent: Node = serde_json::from_str(json).unwrap();
-        assert_eq!(agent.runtime_version, "0.1.0");
-        assert_eq!(agent.runtime_port, 11434);
+        let node: Node = serde_json::from_str(json).unwrap();
+        assert_eq!(node.runtime_version, "0.1.0");
+        assert_eq!(node.runtime_port, 11434);
     }
 
     #[test]
-    fn test_agent_status_serialization() {
+    fn test_node_status_serialization() {
         assert_eq!(
             serde_json::to_string(&NodeStatus::Online).unwrap(),
             "\"online\""
@@ -368,13 +476,13 @@ mod tests {
     }
 
     #[test]
-    fn test_agent_metrics_serialization() {
+    fn test_node_metrics_serialization() {
         let node_id = Uuid::parse_str("12345678-1234-1234-1234-123456789012").unwrap();
         let timestamp = DateTime::parse_from_rfc3339("2025-11-02T10:00:00Z")
             .unwrap()
             .with_timezone(&Utc);
 
-        let metrics = AgentMetrics {
+        let metrics = NodeMetrics {
             node_id,
             cpu_usage: 45.5,
             memory_usage: 60.2,
@@ -392,7 +500,7 @@ mod tests {
         assert!(json.contains("\"avg_response_time_ms\":250.5"));
 
         // JSON deserialization
-        let deserialized: AgentMetrics = serde_json::from_str(&json).unwrap();
+        let deserialized: NodeMetrics = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.node_id, node_id);
         assert_eq!(deserialized.cpu_usage, 45.5);
         assert_eq!(deserialized.memory_usage, 60.2);
@@ -402,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn test_agent_metrics_deserialization_without_avg_response_time() {
+    fn test_node_metrics_deserialization_without_avg_response_time() {
         let json = r#"{
             "node_id": "12345678-1234-1234-1234-123456789012",
             "cpu_usage": 30.0,
@@ -412,7 +520,7 @@ mod tests {
             "timestamp": "2025-11-02T10:00:00Z"
         }"#;
 
-        let metrics: AgentMetrics = serde_json::from_str(json).unwrap();
+        let metrics: NodeMetrics = serde_json::from_str(json).unwrap();
         assert_eq!(metrics.cpu_usage, 30.0);
         assert_eq!(metrics.memory_usage, 40.0);
         assert_eq!(metrics.active_requests, 2);
@@ -426,11 +534,206 @@ mod tests {
             serde_json::to_string(&ModelType::Embedding).unwrap(),
             "\"embedding\""
         );
+        // 音声モデルタイプのシリアライズテスト
+        assert_eq!(
+            serde_json::to_string(&ModelType::SpeechToText).unwrap(),
+            "\"speech_to_text\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelType::TextToSpeech).unwrap(),
+            "\"text_to_speech\""
+        );
     }
 
     #[test]
     fn test_model_type_default() {
         let default_type: ModelType = Default::default();
         assert_eq!(default_type, ModelType::Llm);
+    }
+
+    #[test]
+    fn test_model_type_deserialization() {
+        // 音声モデルタイプのデシリアライズテスト
+        let speech_to_text: ModelType = serde_json::from_str("\"speech_to_text\"").unwrap();
+        assert_eq!(speech_to_text, ModelType::SpeechToText);
+
+        let text_to_speech: ModelType = serde_json::from_str("\"text_to_speech\"").unwrap();
+        assert_eq!(text_to_speech, ModelType::TextToSpeech);
+    }
+
+    #[test]
+    fn test_runtime_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&RuntimeType::LlamaCpp).unwrap(),
+            "\"llama_cpp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RuntimeType::WhisperCpp).unwrap(),
+            "\"whisper_cpp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RuntimeType::OnnxRuntime).unwrap(),
+            "\"onnx_runtime\""
+        );
+    }
+
+    #[test]
+    fn test_runtime_type_default() {
+        let default_runtime: RuntimeType = Default::default();
+        assert_eq!(default_runtime, RuntimeType::LlamaCpp);
+    }
+
+    #[test]
+    fn test_runtime_type_deserialization() {
+        let llama: RuntimeType = serde_json::from_str("\"llama_cpp\"").unwrap();
+        assert_eq!(llama, RuntimeType::LlamaCpp);
+
+        let whisper: RuntimeType = serde_json::from_str("\"whisper_cpp\"").unwrap();
+        assert_eq!(whisper, RuntimeType::WhisperCpp);
+
+        let onnx: RuntimeType = serde_json::from_str("\"onnx_runtime\"").unwrap();
+        assert_eq!(onnx, RuntimeType::OnnxRuntime);
+    }
+
+    #[test]
+    fn test_audio_format_serialization() {
+        assert_eq!(serde_json::to_string(&AudioFormat::Wav).unwrap(), "\"wav\"");
+        assert_eq!(serde_json::to_string(&AudioFormat::Mp3).unwrap(), "\"mp3\"");
+        assert_eq!(
+            serde_json::to_string(&AudioFormat::Flac).unwrap(),
+            "\"flac\""
+        );
+        assert_eq!(serde_json::to_string(&AudioFormat::Ogg).unwrap(), "\"ogg\"");
+        assert_eq!(
+            serde_json::to_string(&AudioFormat::Opus).unwrap(),
+            "\"opus\""
+        );
+    }
+
+    #[test]
+    fn test_audio_format_default() {
+        let default_format: AudioFormat = Default::default();
+        assert_eq!(default_format, AudioFormat::Mp3);
+    }
+
+    #[test]
+    fn test_audio_format_deserialization() {
+        let wav: AudioFormat = serde_json::from_str("\"wav\"").unwrap();
+        assert_eq!(wav, AudioFormat::Wav);
+
+        let mp3: AudioFormat = serde_json::from_str("\"mp3\"").unwrap();
+        assert_eq!(mp3, AudioFormat::Mp3);
+
+        let flac: AudioFormat = serde_json::from_str("\"flac\"").unwrap();
+        assert_eq!(flac, AudioFormat::Flac);
+    }
+
+    #[test]
+    fn test_image_model_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ModelType::ImageGeneration).unwrap(),
+            "\"image_generation\""
+        );
+    }
+
+    #[test]
+    fn test_image_model_type_deserialization() {
+        let image_gen: ModelType = serde_json::from_str("\"image_generation\"").unwrap();
+        assert_eq!(image_gen, ModelType::ImageGeneration);
+    }
+
+    #[test]
+    fn test_stable_diffusion_runtime_serialization() {
+        assert_eq!(
+            serde_json::to_string(&RuntimeType::StableDiffusion).unwrap(),
+            "\"stable_diffusion\""
+        );
+    }
+
+    #[test]
+    fn test_stable_diffusion_runtime_deserialization() {
+        let sd: RuntimeType = serde_json::from_str("\"stable_diffusion\"").unwrap();
+        assert_eq!(sd, RuntimeType::StableDiffusion);
+    }
+
+    #[test]
+    fn test_image_size_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ImageSize::Size256).unwrap(),
+            "\"256x256\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ImageSize::Size512).unwrap(),
+            "\"512x512\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ImageSize::Size1024).unwrap(),
+            "\"1024x1024\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ImageSize::Size1792x1024).unwrap(),
+            "\"1792x1024\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ImageSize::Size1024x1792).unwrap(),
+            "\"1024x1792\""
+        );
+    }
+
+    #[test]
+    fn test_image_size_default() {
+        let default_size: ImageSize = Default::default();
+        assert_eq!(default_size, ImageSize::Size1024);
+    }
+
+    #[test]
+    fn test_image_quality_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ImageQuality::Standard).unwrap(),
+            "\"standard\""
+        );
+        assert_eq!(serde_json::to_string(&ImageQuality::Hd).unwrap(), "\"hd\"");
+    }
+
+    #[test]
+    fn test_image_quality_default() {
+        let default_quality: ImageQuality = Default::default();
+        assert_eq!(default_quality, ImageQuality::Standard);
+    }
+
+    #[test]
+    fn test_image_style_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ImageStyle::Vivid).unwrap(),
+            "\"vivid\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ImageStyle::Natural).unwrap(),
+            "\"natural\""
+        );
+    }
+
+    #[test]
+    fn test_image_style_default() {
+        let default_style: ImageStyle = Default::default();
+        assert_eq!(default_style, ImageStyle::Vivid);
+    }
+
+    #[test]
+    fn test_image_response_format_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ImageResponseFormat::Url).unwrap(),
+            "\"url\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ImageResponseFormat::B64Json).unwrap(),
+            "\"b64_json\""
+        );
+    }
+
+    #[test]
+    fn test_image_response_format_default() {
+        let default_format: ImageResponseFormat = Default::default();
+        assert_eq!(default_format, ImageResponseFormat::Url);
     }
 }

@@ -10,9 +10,9 @@ pub mod users;
 /// APIキー管理
 pub mod api_keys;
 
-/// エージェントトークン管理
-pub mod agent_tokens;
 pub mod models;
+/// ノードトークン管理
+pub mod node_tokens;
 
 /// データベースマイグレーション
 pub mod migrations;
@@ -261,6 +261,9 @@ mod tests {
             notes: None,
             loaded_models: Vec::new(),
             loaded_embedding_models: Vec::new(),
+            loaded_asr_models: Vec::new(),
+            loaded_tts_models: Vec::new(),
+            supported_runtimes: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -272,7 +275,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };
@@ -315,6 +318,9 @@ mod tests {
             notes: None,
             loaded_models: Vec::new(),
             loaded_embedding_models: Vec::new(),
+            loaded_asr_models: Vec::new(),
+            loaded_tts_models: Vec::new(),
+            supported_runtimes: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -326,7 +332,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };
@@ -367,6 +373,9 @@ mod tests {
             notes: None,
             loaded_models: Vec::new(),
             loaded_embedding_models: Vec::new(),
+            loaded_asr_models: Vec::new(),
+            loaded_tts_models: Vec::new(),
+            supported_runtimes: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -378,7 +387,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };
@@ -402,6 +411,9 @@ mod tests {
             notes: None,
             loaded_models: vec!["gpt-oss-7b".into()],
             loaded_embedding_models: Vec::new(),
+            loaded_asr_models: Vec::new(),
+            loaded_tts_models: Vec::new(),
+            supported_runtimes: Vec::new(),
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
                 count: 1,
@@ -413,7 +425,7 @@ mod tests {
             gpu_model_name: None,
             gpu_compute_capability: None,
             gpu_capability_score: None,
-            agent_api_port: Some(11435),
+            node_api_port: Some(11435),
             initializing: false,
             ready_models: None,
         };

@@ -8,7 +8,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_list_request_responses_contract_empty() {
     // TODO: テストサーバーを起動
-    // TODO: GET /api/dashboard/request-responses にリクエスト
+    // TODO: GET /v0/dashboard/request-responses にリクエスト
     // TODO: 空の履歴でも 200 OK を返すことを検証
     // TODO: レスポンス構造（records, total_count, page, per_page）を検証
 
@@ -29,7 +29,7 @@ async fn test_list_request_responses_with_filters() {
 #[tokio::test]
 async fn test_get_request_response_detail_contract_not_found() {
     // TODO: テストサーバーを起動
-    // TODO: 存在しないIDで GET /api/dashboard/request-responses/:id
+    // TODO: 存在しないIDで GET /v0/dashboard/request-responses/:id
     // TODO: 404 を返すことを検証
 
     assert!(false, "T005: Detail API endpoint not implemented yet");
@@ -39,7 +39,7 @@ async fn test_get_request_response_detail_contract_not_found() {
 #[tokio::test]
 async fn test_get_request_response_detail_contract_found() {
     // TODO: テストデータを作成
-    // TODO: 存在するIDで GET /api/dashboard/request-responses/:id
+    // TODO: 存在するIDで GET /v0/dashboard/request-responses/:id
     // TODO: 200 OK と RequestResponseRecord を返すことを検証
 
     assert!(false, "T005: Detail API with valid ID not implemented yet");
@@ -49,7 +49,7 @@ async fn test_get_request_response_detail_contract_found() {
 #[tokio::test]
 async fn test_export_request_responses_json_contract() {
     // TODO: テストサーバーを起動
-    // TODO: GET /api/dashboard/request-responses/export?format=json
+    // TODO: GET /v0/dashboard/request-responses/export?format=json
     // TODO: 200 OK と JSON 配列を返すことを検証
     // TODO: Content-Disposition ヘッダーを検証
 
@@ -60,7 +60,7 @@ async fn test_export_request_responses_json_contract() {
 #[tokio::test]
 async fn test_export_request_responses_csv_contract() {
     // TODO: テストサーバーを起動
-    // TODO: GET /api/dashboard/request-responses/export?format=csv
+    // TODO: GET /v0/dashboard/request-responses/export?format=csv
     // TODO: 200 OK と CSV 形式を返すことを検証
     // TODO: Content-Disposition ヘッダーを検証
     // TODO: Content-Type: text/csv を検証

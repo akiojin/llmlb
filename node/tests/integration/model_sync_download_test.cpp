@@ -34,14 +34,16 @@ public:
 class RouterAndRegistryServer {
 public:
     void start(int router_port, int registry_port) {
-        router_.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+        // SPEC-dcaeaec4: ModelSync uses /v0/models (extended format)
+        router_.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            res.set_content(R"({"data":[{"id":"gpt-oss:7b","etag":"\"etag-1\"","size":3}]})", "application/json");
+            // /v0/models returns array directly with "name" field
+            res.set_content(R"([{"name":"gpt-oss-7b","etag":"\"etag-1\"","size":3}])", "application/json");
         });
 
-        registry_.Get(R"(/gpt-oss:7b/manifest.json)", [](const httplib::Request&, httplib::Response& res) {
+        registry_.Get(R"(/gpt-oss-7b/manifest.json)", [](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            res.set_content(R"({"model":"gpt-oss:7b","files":[{"name":"blob.bin","digest":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}]})",
+            res.set_content(R"({"model":"gpt-oss-7b","files":[{"name":"blob.bin","digest":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}]})",
                             "application/json");
         });
 
@@ -92,25 +94,25 @@ TEST(ModelSyncIntegrationTest, SyncsAndDownloadsMissingModel) {
     ModelSync sync("http://127.0.0.1:18110", tmp.path.string());
     auto diff = sync.sync();
     ASSERT_EQ(diff.to_download.size(), 1u);
-    EXPECT_EQ(diff.to_download[0], "gpt-oss:7b");
+    EXPECT_EQ(diff.to_download[0], "gpt-oss-7b");
 
-    auto cached = sync.getCachedEtag("gpt-oss:7b");
+    auto cached = sync.getCachedEtag("gpt-oss-7b");
     EXPECT_EQ(cached, "\"etag-1\"");
-    auto cached_size = sync.getCachedSize("gpt-oss:7b");
+    auto cached_size = sync.getCachedSize("gpt-oss-7b");
     ASSERT_TRUE(cached_size.has_value());
     EXPECT_EQ(*cached_size, 3u);
 
     ModelDownloader dl("http://127.0.0.1:18111", tmp.path.string());
 
-    ASSERT_TRUE(sync.downloadModel(dl, "gpt-oss:7b"));
+    ASSERT_TRUE(sync.downloadModel(dl, "gpt-oss-7b"));
 
-    auto hint = sync.getDownloadHint("gpt-oss:7b");
+    auto hint = sync.getDownloadHint("gpt-oss-7b");
     ASSERT_FALSE(hint.etag.empty());
     ASSERT_TRUE(hint.size.has_value());
 
     // 2nd run with matching ETag should avoid re-download
-    ASSERT_TRUE(sync.downloadModel(dl, "gpt-oss:7b"));
-    auto blob_path = tmp.path / "gpt-oss:7b/blob.bin";
+    ASSERT_TRUE(sync.downloadModel(dl, "gpt-oss-7b"));
+    auto blob_path = tmp.path / "gpt-oss-7b/blob.bin";
     EXPECT_TRUE(fs::exists(blob_path));
 
     server.stop();

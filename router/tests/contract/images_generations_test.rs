@@ -29,6 +29,7 @@ struct ImageGenStubState {
 
 /// 画像生成スタブのレスポンス種別
 #[derive(Clone)]
+#[allow(dead_code)] // Error variant prepared for future TDD GREEN phase
 enum ImageGenStubResponse {
     /// 成功レスポンス（URL形式）
     SuccessUrl(Vec<String>),

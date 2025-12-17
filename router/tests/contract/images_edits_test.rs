@@ -32,6 +32,7 @@ struct ImageEditStubState {
 
 /// 画像編集スタブのレスポンス種別
 #[derive(Clone)]
+#[allow(dead_code)] // Error variant prepared for future TDD GREEN phase
 enum ImageEditStubResponse {
     /// 成功レスポンス（URL形式）
     SuccessUrl(Vec<String>),

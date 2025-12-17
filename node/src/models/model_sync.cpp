@@ -89,7 +89,6 @@ ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::
         }
     }
 }
-    
 
 void ModelSync::setNodeToken(std::string node_token) {
     std::lock_guard<std::mutex> lock(etag_mutex_);
@@ -123,12 +122,30 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     try {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
-        if (body.contains("data") && body["data"].is_array()) {
-            for (const auto& m : body["data"]) {
-                if (!m.contains("id")) continue;
+
+        // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
+        // 配列の場合は直接処理、そうでなければ data フィールドを参照
+        const json* models_array = nullptr;
+        if (body.is_array()) {
+            models_array = &body;
+        } else if (body.contains("data") && body["data"].is_array()) {
+            models_array = &body["data"];
+        }
+
+        if (models_array) {
+            for (const auto& m : *models_array) {
+                // /v0/models では "name" フィールドを使用（/v1/models では "id"）
+                std::string model_id;
+                if (m.contains("name") && m["name"].is_string()) {
+                    model_id = m["name"].get<std::string>();
+                } else if (m.contains("id") && m["id"].is_string()) {
+                    model_id = m["id"].get<std::string>();
+                } else {
+                    continue;
+                }
 
                 RemoteModel rm;
-                rm.id = m["id"].get<std::string>();
+                rm.id = model_id;
                 rm.path = m.value("path", "");
                 rm.download_url = m.value("download_url", "");
                 rm.chat_template = m.value("chat_template", "");
@@ -183,22 +200,15 @@ std::vector<std::string> ModelSync::listLocalModels() const {
             rel = dir_path.filename();
             ec.clear();
         }
-        std::vector<std::string> parts;
-        for (const auto& p : rel) {
-            parts.push_back(p.string());
-        }
 
-        std::string model_id;
-        if (parts.size() <= 1) {
-            model_id = ModelStorage::dirNameToModel(rel.string());
-        } else {
-            model_id = parts[0];
-            for (size_t i = 1; i < parts.size(); ++i) {
-                model_id += "/";
-                model_id += parts[i];
-            }
+        // SPEC-dcaeaec4: ルーター側の model_name_to_dir() と同じ正規化を適用して比較する。
+        // - 大文字小文字差分で誤って削除/再ダウンロードしないため
+        // - Windows の path separator を避けるため generic_string() を使う
+        const std::string relative_str = rel.generic_string();
+        if (relative_str.empty()) {
+            continue;
         }
-        models.push_back(std::move(model_id));
+        models.push_back(ModelStorage::modelNameToDir(relative_str));
     }
     return models;
 }

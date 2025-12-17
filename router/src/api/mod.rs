@@ -70,8 +70,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
-        // /v0/models - 登録モデル一覧（lifecycle_status含む）
-        .route("/v0/models", get(models::get_registered_models))
         // 音声API（OpenAI Audio API互換）
         .route("/v1/audio/transcriptions", post(audio::transcriptions))
         .route("/v1/audio/speech", post(audio::speech))
@@ -94,6 +92,15 @@ pub fn create_router(state: AppState) -> Router {
         state.db_pool.clone(),
         crate::auth::middleware::api_key_or_node_token_auth_middleware,
     ));
+
+    // /v0/models - ノード同期用（APIキーまたはノードトークンで認証）
+    // /v0 ネスト内に配置する必要がある（Axumのルーティング順序のため）
+    let v0_models_route = Router::new()
+        .route("/models", get(models::get_registered_models))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_or_node_token_auth_middleware,
+        ));
 
     Router::new()
         // `/v0/*`: llm-router独自API（互換不要・versioned）
@@ -142,6 +149,8 @@ pub fn create_router(state: AppState) -> Router {
                 .route("/nodes/:node_id/logs", get(logs::get_node_logs))
                 // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
                 // NOTE: /models/available, /models/convert は廃止 - /v0/models に統合
+                // /models - 登録モデル一覧（ノード同期用、APIキーまたはノードトークンで認証）
+                .merge(v0_models_route)
                 .route("/models/register", post(models::register_model))
                 .route("/models/*model_name", delete(models::delete_model))
                 .route(

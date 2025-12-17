@@ -25,6 +25,85 @@ use crate::registry::models::{
 };
 use crate::registry::NodeRegistry;
 use llm_router_common::error::RouterError;
+
+// ===== GGUF Validation =====
+
+/// GGUFファイルの検証結果
+#[derive(Debug)]
+pub struct GgufValidation {
+    /// マジックバイト ("GGUF")
+    pub magic: [u8; 4],
+    /// GGUFバージョン
+    pub version: u32,
+    /// テンソル数
+    pub tensor_count: u64,
+    /// メタデータKV数
+    pub kv_count: u64,
+    /// ファイルサイズ（バイト）
+    pub file_size: u64,
+}
+
+/// GGUFファイルを検証し、ヘッダ情報を返す
+pub fn validate_gguf_file(path: &Path) -> Result<GgufValidation, RouterError> {
+    use std::fs::File;
+    use std::io::Read as StdRead;
+
+    // ファイル存在確認
+    if !path.exists() {
+        return Err(RouterError::Internal(format!(
+            "GGUF file not found: {}",
+            path.display()
+        )));
+    }
+
+    let mut file =
+        File::open(path).map_err(|e| RouterError::Internal(format!("Cannot open GGUF: {}", e)))?;
+
+    // ファイルサイズ取得
+    let file_size = file
+        .metadata()
+        .map(|m| m.len())
+        .map_err(|e| RouterError::Internal(format!("Cannot get file size: {}", e)))?;
+
+    // 最小ヘッダサイズチェック（magic 4 + version 4 + tensor_count 8 + kv_count 8 = 24）
+    if file_size < 24 {
+        return Err(RouterError::Internal(format!(
+            "GGUF file too small: {} bytes (minimum 24 bytes for header)",
+            file_size
+        )));
+    }
+
+    // ヘッダ読み取り（24バイト）
+    let mut header = [0u8; 24];
+    file.read_exact(&mut header)
+        .map_err(|e| RouterError::Internal(format!("Cannot read GGUF header: {}", e)))?;
+
+    // マジックバイト検証 ("GGUF" = 0x46554747 little-endian)
+    let magic: [u8; 4] = header[0..4].try_into().unwrap();
+    if &magic != b"GGUF" {
+        return Err(RouterError::Internal(format!(
+            "Invalid GGUF magic: expected 'GGUF', got {:?}",
+            magic
+        )));
+    }
+
+    // バージョン（u32 little-endian）
+    let version = u32::from_le_bytes(header[4..8].try_into().unwrap());
+
+    // テンソル数（u64 little-endian）
+    let tensor_count = u64::from_le_bytes(header[8..16].try_into().unwrap());
+
+    // KV数（u64 little-endian）
+    let kv_count = u64::from_le_bytes(header[16..24].try_into().unwrap());
+
+    Ok(GgufValidation {
+        magic,
+        version,
+        tensor_count,
+        kv_count,
+        file_size,
+    })
+}
 use llm_router_common::types::NodeStatus;
 
 // ===== Push Notification Context (SPEC-dcaeaec4 FR-7) =====
@@ -404,16 +483,37 @@ pub struct ConvertTaskManager {
 
 impl ConvertTaskManager {
     /// 新しいマネージャーを生成し、ワーカーを起動
-    pub fn new(_concurrency: usize) -> Self {
+    /// concurrency: 同時に実行可能な変換タスクの最大数
+    pub fn new(concurrency: usize) -> Self {
+        let concurrency = concurrency.max(1); // 最低1つは確保
         let (tx, mut rx) = mpsc::channel::<Uuid>(128);
         let tasks = Arc::new(Mutex::new(HashMap::new()));
         let tasks_clone = tasks.clone();
 
+        // Semaphoreで同時実行数を制限
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+
         tokio::spawn(async move {
             while let Some(task_id) = rx.recv().await {
-                if let Err(e) = Self::process_task(tasks_clone.clone(), task_id).await {
-                    tracing::error!(task_id=?task_id, error=?e, "convert_task_failed");
-                }
+                let tasks = tasks_clone.clone();
+                let sem = semaphore.clone();
+
+                // Semaphoreのpermitを取得してから並列実行
+                tokio::spawn(async move {
+                    // acquire_owned()でpermitを取得（タスク完了まで保持）
+                    let _permit = match sem.acquire_owned().await {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            tracing::error!(task_id=?task_id, "Semaphore closed");
+                            return;
+                        }
+                    };
+
+                    if let Err(e) = Self::process_task(tasks, task_id).await {
+                        tracing::error!(task_id=?task_id, error=?e, "convert_task_failed");
+                    }
+                    // _permit is dropped here, releasing the semaphore
+                });
             }
         });
 
@@ -776,8 +876,34 @@ fn hex_lower(bytes: &[u8]) -> String {
     out
 }
 
+/// リトライ可能なエラーかどうかを判定
+fn is_retryable_error(error_msg: &str) -> bool {
+    let retryable_patterns = [
+        "connection reset",
+        "connection refused",
+        "timeout",
+        "timed out",
+        "temporary failure",
+        "network",
+        "ECONNRESET",
+        "ETIMEDOUT",
+        "ECONNREFUSED",
+        "no space left",
+        "out of memory",
+        "OOM",
+        "CUDA",
+        "cannot allocate",
+    ];
+
+    let error_lower = error_msg.to_lowercase();
+    retryable_patterns
+        .iter()
+        .any(|pattern| error_lower.contains(&pattern.to_lowercase()))
+}
+
 /// 非ONNXをONNXへエクスポート（sync heavy → blocking thread）
 /// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
+/// リトライ機能付き: 一時的なエラーの場合は最大3回リトライ（指数バックオフ）
 async fn export_non_onnx<F>(
     repo: &str,
     revision: Option<&str>,
@@ -785,10 +911,19 @@ async fn export_non_onnx<F>(
     progress_callback: F,
 ) -> Result<(), RouterError>
 where
-    F: Fn(f32) + Send + Sync + 'static,
+    F: Fn(f32) + Send + Sync + Clone + 'static,
 {
+    const MAX_ATTEMPTS: u32 = 3;
+    const INITIAL_BACKOFF_SECS: u64 = 5;
+
     if should_use_fake_convert() {
         progress_callback(0.5);
+        // Test delay for concurrency testing (LLM_CONVERT_FAKE_DELAY_MS)
+        if let Ok(delay_ms) = std::env::var("LLM_CONVERT_FAKE_DELAY_MS") {
+            if let Ok(ms) = delay_ms.parse::<u64>() {
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+            }
+        }
         write_dummy_onnx(target).await?;
         progress_callback(1.0);
         return Ok(());
@@ -833,123 +968,191 @@ where
             }
         }
     }
-    let _ = tokio::fs::remove_file(target).await;
-
     let repo_with_rev = if let Some(rev) = revision {
         format!("{}@{}", repo, rev)
     } else {
         repo.to_string()
     };
 
-    let script_clone = script.clone();
-    let target_path = target.to_path_buf();
-    let cmd_repo = repo_with_rev.clone();
-    let python_bin_clone = python_bin.clone();
+    let mut attempt = 0u32;
+    let mut backoff_secs = INITIAL_BACKOFF_SECS;
+    let mut last_error: Option<String> = None;
 
-    // Use spawn() with piped stderr to capture progress output
-    let result = task::spawn_blocking(move || {
-        let mut cmd = Command::new(&python_bin_clone);
-        cmd.arg(&script_clone)
-            .arg("--remote")
-            .arg("--outfile")
-            .arg(&target_path)
-            .arg(&cmd_repo)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            // Force unbuffered output from Python so tqdm progress lines are flushed immediately
-            .env("PYTHONUNBUFFERED", "1");
+    while attempt < MAX_ATTEMPTS {
+        attempt += 1;
 
-        if let Some(token) = hf_token {
-            cmd.env("HF_TOKEN", token);
+        // 既存のターゲットファイルを削除（リトライ時にも必要）
+        if target.exists() {
+            let _ = tokio::fs::remove_file(target).await;
         }
 
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => return Err(format!("Failed to spawn convert process: {}", e)),
-        };
+        let script_clone = script.clone();
+        let target_path = target.to_path_buf();
+        let cmd_repo = repo_with_rev.clone();
+        let python_bin_clone = python_bin.clone();
+        let hf_token_clone = hf_token.clone();
+        let progress_callback_clone = progress_callback.clone();
 
-        // tqdm outputs to stderr, so we read from there
-        let stderr = child.stderr.take();
-        let stdout = child.stdout.take();
+        if attempt > 1 {
+            tracing::info!(
+                repo = %repo,
+                attempt = attempt,
+                max_attempts = MAX_ATTEMPTS,
+                "Retrying conversion"
+            );
+        }
 
-        // Collect stderr output while parsing progress
-        // tqdm uses \r (carriage return) to update progress lines, not \n
-        // So we need to read byte-by-byte and split on either \r or \n
-        let mut stderr_output = String::new();
-        if let Some(stderr_reader) = stderr {
-            let mut reader = BufReader::new(stderr_reader);
-            let mut line_buffer = String::new();
-            let mut byte = [0u8; 1];
+        // Use spawn() with piped stderr to capture progress output
+        let result = task::spawn_blocking(move || {
+            let mut cmd = Command::new(&python_bin_clone);
+            cmd.arg(&script_clone)
+                .arg("--remote")
+                .arg("--outfile")
+                .arg(&target_path)
+                .arg(&cmd_repo)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                // Force unbuffered output from Python so tqdm progress lines are flushed immediately
+                .env("PYTHONUNBUFFERED", "1");
 
-            while reader.read(&mut byte).unwrap_or(0) > 0 {
-                let ch = byte[0] as char;
-                if ch == '\r' || ch == '\n' {
-                    if !line_buffer.is_empty() {
-                        tracing::debug!(line=%line_buffer, "convert_stderr_line");
-                        // Try to parse progress from tqdm output
-                        if let Some(progress) = parse_tqdm_progress(&line_buffer) {
-                            tracing::debug!(progress, "convert_progress_parsed");
-                            progress_callback(progress);
+            if let Some(token) = hf_token_clone {
+                cmd.env("HF_TOKEN", token);
+            }
+
+            let mut child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => return Err(format!("Failed to spawn convert process: {}", e)),
+            };
+
+            // tqdm outputs to stderr, so we read from there
+            let stderr = child.stderr.take();
+            let stdout = child.stdout.take();
+
+            // Collect stderr output while parsing progress
+            // tqdm uses \r (carriage return) to update progress lines, not \n
+            // So we need to read byte-by-byte and split on either \r or \n
+            let mut stderr_output = String::new();
+            if let Some(stderr_reader) = stderr {
+                let mut reader = BufReader::new(stderr_reader);
+                let mut line_buffer = String::new();
+                let mut byte = [0u8; 1];
+
+                while reader.read(&mut byte).unwrap_or(0) > 0 {
+                    let ch = byte[0] as char;
+                    if ch == '\r' || ch == '\n' {
+                        if !line_buffer.is_empty() {
+                            tracing::debug!(line=%line_buffer, "convert_stderr_line");
+                            // Try to parse progress from tqdm output
+                            if let Some(progress) = parse_tqdm_progress(&line_buffer) {
+                                tracing::debug!(progress, "convert_progress_parsed");
+                                progress_callback_clone(progress);
+                            }
+                            stderr_output.push_str(&line_buffer);
+                            stderr_output.push('\n');
+                            line_buffer.clear();
                         }
-                        stderr_output.push_str(&line_buffer);
-                        stderr_output.push('\n');
-                        line_buffer.clear();
+                    } else {
+                        line_buffer.push(ch);
                     }
-                } else {
-                    line_buffer.push(ch);
+                }
+                // Handle any remaining content
+                if !line_buffer.is_empty() {
+                    if let Some(progress) = parse_tqdm_progress(&line_buffer) {
+                        progress_callback_clone(progress);
+                    }
+                    stderr_output.push_str(&line_buffer);
                 }
             }
-            // Handle any remaining content
-            if !line_buffer.is_empty() {
-                if let Some(progress) = parse_tqdm_progress(&line_buffer) {
-                    progress_callback(progress);
+
+            // Collect stdout
+            let mut stdout_output = String::new();
+            if let Some(stdout_reader) = stdout {
+                let reader = BufReader::new(stdout_reader);
+                for line in reader.lines().map_while(Result::ok) {
+                    stdout_output.push_str(&line);
+                    stdout_output.push('\n');
                 }
-                stderr_output.push_str(&line_buffer);
+            }
+
+            // Wait for process to complete
+            let status = match child.wait() {
+                Ok(s) => s,
+                Err(e) => return Err(format!("Failed to wait for convert process: {}", e)),
+            };
+
+            if !status.success() {
+                return Err(format!(
+                    "convert failed: {}{}{}",
+                    status
+                        .code()
+                        .map(|c| format!("exit code {}", c))
+                        .unwrap_or_else(|| "terminated".into()),
+                    if !stderr_output.trim().is_empty() {
+                        format!(" stderr: {}", stderr_output.trim())
+                    } else {
+                        "".into()
+                    },
+                    if !stdout_output.trim().is_empty() {
+                        format!(" stdout: {}", stdout_output.trim())
+                    } else {
+                        "".into()
+                    },
+                ));
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+
+        // Handle the result and check for retryable errors
+        match result {
+            Ok(()) => {
+                let meta = tokio::fs::metadata(target)
+                    .await
+                    .map_err(|e| RouterError::Internal(format!("ONNX output is missing: {}", e)))?;
+                if meta.len() == 0 {
+                    return Err(RouterError::Internal(
+                        "Conversion produced empty ONNX file (0 bytes)".into(),
+                    ));
+                }
+
+                tracing::info!(
+                    path = %target.display(),
+                    file_size_mb = meta.len() / 1_000_000,
+                    "ONNX export completed"
+                );
+
+                progress_callback(1.0);
+                return Ok(());
+            }
+            Err(error_msg) => {
+                // Check if this is a retryable error
+                if attempt < MAX_ATTEMPTS && is_retryable_error(&error_msg) {
+                    last_error = Some(error_msg.clone());
+                    tracing::warn!(
+                        repo = %repo,
+                        attempt = attempt,
+                        error = %error_msg,
+                        backoff_secs = backoff_secs,
+                        "Conversion failed with retryable error, will retry"
+                    );
+                    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                    backoff_secs *= 2;
+                    continue;
+                }
+                // Non-retryable error or max attempts reached
+                return Err(RouterError::Internal(error_msg));
             }
         }
+    }
 
-        // Collect stdout
-        let mut stdout_output = String::new();
-        if let Some(stdout_reader) = stdout {
-            let reader = BufReader::new(stdout_reader);
-            for line in reader.lines().map_while(Result::ok) {
-                stdout_output.push_str(&line);
-                stdout_output.push('\n');
-            }
-        }
-
-        // Wait for process to complete
-        let status = match child.wait() {
-            Ok(s) => s,
-            Err(e) => return Err(format!("Failed to wait for convert process: {}", e)),
-        };
-
-        if !status.success() {
-            return Err(format!(
-                "convert failed: {}{}{}",
-                status
-                    .code()
-                    .map(|c| format!("exit code {}", c))
-                    .unwrap_or_else(|| "terminated".into()),
-                if !stderr_output.trim().is_empty() {
-                    format!(" stderr: {}", stderr_output.trim())
-                } else {
-                    "".into()
-                },
-                if !stdout_output.trim().is_empty() {
-                    format!(" stdout: {}", stdout_output.trim())
-                } else {
-                    "".into()
-                },
-            ));
-        }
-
-        Ok(())
-    })
-    .await
-    .map_err(|e| RouterError::Internal(e.to_string()))?;
-
-    result.map_err(RouterError::Internal)
+    // All retries exhausted
+    Err(RouterError::Internal(format!(
+        "Conversion failed after {} attempts: {}",
+        MAX_ATTEMPTS,
+        last_error.unwrap_or_else(|| "Unknown error".to_string())
+    )))
 }
 
 /// python依存が無いときは事前にエラーにする
@@ -1314,5 +1517,218 @@ mod tests {
         let res = verify_convert_ready();
         env::remove_var("LLM_CONVERT_SCRIPT");
         assert!(res.is_ok());
+    }
+
+    // ===== GGUF Validation Tests =====
+
+    #[test]
+    fn validate_gguf_file_valid_header() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("test.gguf");
+
+        // Create a valid GGUF header (24 bytes minimum)
+        // Magic: "GGUF" (4 bytes)
+        // Version: 3 (4 bytes, little-endian)
+        // Tensor count: 100 (8 bytes, little-endian)
+        // KV count: 10 (8 bytes, little-endian)
+        let mut header = Vec::with_capacity(24);
+        header.extend_from_slice(b"GGUF");
+        header.extend_from_slice(&3u32.to_le_bytes()); // version
+        header.extend_from_slice(&100u64.to_le_bytes()); // tensor_count
+        header.extend_from_slice(&10u64.to_le_bytes()); // kv_count
+
+        std::fs::write(&gguf_path, &header).unwrap();
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_ok());
+
+        let validation = result.unwrap();
+        assert_eq!(&validation.magic, b"GGUF");
+        assert_eq!(validation.version, 3);
+        assert_eq!(validation.tensor_count, 100);
+        assert_eq!(validation.kv_count, 10);
+        assert_eq!(validation.file_size, 24);
+    }
+
+    #[test]
+    fn validate_gguf_file_invalid_magic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("invalid.gguf");
+
+        // Create header with invalid magic
+        let mut header = Vec::with_capacity(24);
+        header.extend_from_slice(b"XXXX"); // Invalid magic
+        header.extend_from_slice(&3u32.to_le_bytes());
+        header.extend_from_slice(&100u64.to_le_bytes());
+        header.extend_from_slice(&10u64.to_le_bytes());
+
+        std::fs::write(&gguf_path, &header).unwrap();
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid GGUF magic"));
+    }
+
+    #[test]
+    fn validate_gguf_file_too_small() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("small.gguf");
+
+        // Create file smaller than minimum header size (24 bytes)
+        std::fs::write(&gguf_path, b"GGUF123").unwrap(); // Only 7 bytes
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too small"));
+    }
+
+    #[test]
+    fn validate_gguf_file_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("nonexistent.gguf");
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn validate_gguf_file_zero_tensors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gguf_path = tmp.path().join("empty.gguf");
+
+        // Create header with 0 tensors
+        let mut header = Vec::with_capacity(24);
+        header.extend_from_slice(b"GGUF");
+        header.extend_from_slice(&3u32.to_le_bytes());
+        header.extend_from_slice(&0u64.to_le_bytes()); // 0 tensors
+        header.extend_from_slice(&10u64.to_le_bytes());
+
+        std::fs::write(&gguf_path, &header).unwrap();
+
+        let result = validate_gguf_file(&gguf_path);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().tensor_count, 0);
+    }
+
+    // ===== Retry Logic Tests =====
+
+    #[test]
+    fn is_retryable_error_network_errors() {
+        // Network-related errors should be retryable
+        assert!(is_retryable_error("connection reset by peer"));
+        assert!(is_retryable_error("Connection refused"));
+        assert!(is_retryable_error("request timeout"));
+        assert!(is_retryable_error("operation timed out"));
+        assert!(is_retryable_error("temporary failure in name resolution"));
+        assert!(is_retryable_error("network is unreachable"));
+        assert!(is_retryable_error("ECONNRESET"));
+        assert!(is_retryable_error("ETIMEDOUT"));
+        assert!(is_retryable_error("ECONNREFUSED"));
+    }
+
+    #[test]
+    fn is_retryable_error_resource_errors() {
+        // Resource-related errors should be retryable
+        assert!(is_retryable_error("no space left on device"));
+        assert!(is_retryable_error("out of memory"));
+        assert!(is_retryable_error("OOM killed"));
+        assert!(is_retryable_error("CUDA out of memory"));
+        assert!(is_retryable_error("cannot allocate memory"));
+    }
+
+    #[test]
+    fn is_retryable_error_non_retryable() {
+        // Non-retryable errors
+        assert!(!is_retryable_error("file not found"));
+        assert!(!is_retryable_error("permission denied"));
+        assert!(!is_retryable_error("invalid argument"));
+        assert!(!is_retryable_error("syntax error in script"));
+        assert!(!is_retryable_error("model format not supported"));
+        assert!(!is_retryable_error(""));
+    }
+
+    #[test]
+    fn is_retryable_error_case_insensitive() {
+        // Should be case-insensitive
+        assert!(is_retryable_error("CONNECTION RESET"));
+        assert!(is_retryable_error("Timeout"));
+        assert!(is_retryable_error("OUT OF MEMORY"));
+    }
+
+    // ===== Concurrency Tests =====
+
+    #[tokio::test]
+    async fn convert_task_manager_processes_tasks_concurrently() {
+        // Setup: use fake conversion with a delay
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("LLM_CONVERT_FAKE", "1");
+        std::env::set_var("LLM_CONVERT_FAKE_DELAY_MS", "100"); // 100ms per task
+
+        // Create manager with concurrency=2
+        let manager = ConvertTaskManager::new(2);
+
+        // Enqueue 2 tasks
+        let start = std::time::Instant::now();
+        let _task1 = manager
+            .enqueue(
+                "test/model1".into(),
+                "model.safetensors".into(),
+                None,
+                None,
+                None,
+            )
+            .await;
+        let _task2 = manager
+            .enqueue(
+                "test/model2".into(),
+                "model.safetensors".into(),
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        // Wait for both tasks to complete (with timeout)
+        let timeout = Duration::from_millis(500);
+        let poll_interval = Duration::from_millis(20);
+        let deadline = std::time::Instant::now() + timeout;
+
+        loop {
+            let tasks = manager.list().await;
+            let completed = tasks
+                .iter()
+                .filter(|t| matches!(t.status, ConvertStatus::Completed | ConvertStatus::Failed))
+                .count();
+
+            if completed == 2 {
+                break;
+            }
+
+            if std::time::Instant::now() > deadline {
+                panic!("Timeout waiting for tasks to complete");
+            }
+
+            tokio::time::sleep(poll_interval).await;
+        }
+
+        let elapsed = start.elapsed();
+
+        // With concurrency=2 and 100ms delay each, both tasks should complete
+        // in approximately 100ms (running in parallel), not 200ms (sequential).
+        // Allow some overhead, but should be under 180ms if truly concurrent.
+        assert!(
+            elapsed.as_millis() < 180,
+            "Expected concurrent execution (< 180ms), but took {}ms. \
+             This suggests tasks ran sequentially.",
+            elapsed.as_millis()
+        );
+
+        // Cleanup
+        std::env::remove_var("LLM_CONVERT_FAKE_DELAY_MS");
     }
 }

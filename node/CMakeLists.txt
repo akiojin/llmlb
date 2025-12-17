@@ -53,6 +53,7 @@ if(BUILD_WITH_WHISPER)
 endif()
 
 # stable-diffusion.cpp for Image Generation
+# Default OFF: stable-diffusion.cpp is a submodule and should not be required for a basic build.
 option(BUILD_WITH_SD "Build with stable-diffusion.cpp support for image generation" OFF)
 if(BUILD_WITH_SD)
     set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -65,7 +66,7 @@ if(BUILD_WITH_SD)
         set(SD_CUDA ON CACHE BOOL "" FORCE)
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stable-diffusion.cpp/CMakeLists.txt")
-    add_subdirectory(third_party/stable-diffusion.cpp)
+        add_subdirectory(third_party/stable-diffusion.cpp)
     else()
         message(FATAL_ERROR "stable-diffusion.cpp submodule is not initialized. Run: git submodule update --init --recursive")
     endif()

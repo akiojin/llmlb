@@ -10,12 +10,14 @@ use wiremock::{
 };
 
 /// ノード登録テスト用のモックサーバー
+#[allow(dead_code)] // Prepared for future integration tests
 pub struct MockNodeServer {
     pub server: MockServer,
     pub port: u16,
     pub runtime_port: u16,
 }
 
+#[allow(dead_code)] // Prepared for future integration tests
 impl MockNodeServer {
     /// モックノードサーバーを起動
     ///

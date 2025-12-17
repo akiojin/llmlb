@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="640" viewBox="0 0 840 640">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#333333" />
+    </marker>
+  </defs>
+
+  <!-- Client -->
+  <rect x="120" y="80" width="600" height="80" rx="14" ry="14" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2" />
+  <text x="420" y="112" font-family="Noto Sans JP, Arial, sans-serif" font-size="18" font-weight="600" text-anchor="middle" fill="#111111">Client</text>
+  <text x="420" y="138" font-family="Noto Sans JP, Arial, sans-serif" font-size="14" text-anchor="middle" fill="#111111">(Users, Applications, etc.)</text>
+
+  <!-- Router -->
+  <rect x="120" y="210" width="600" height="180" rx="14" ry="14" fill="#f5f5f5" stroke="#666666" stroke-width="2" />
+  <text x="420" y="242" font-family="Noto Sans JP, Arial, sans-serif" font-size="18" font-weight="600" text-anchor="middle" fill="#111111">Router</text>
+  <text x="420" y="268" font-family="Noto Sans JP, Arial, sans-serif" font-size="14" text-anchor="middle" fill="#111111">(Central Management Server)</text>
+
+  <!-- Router internal steps -->
+  <rect x="165" y="265" width="510" height="95" rx="12" ry="12" fill="#ffffff" stroke="#999999" stroke-width="2" stroke-dasharray="6 6" />
+  <text x="190" y="300" font-family="Noto Sans JP, Arial, sans-serif" font-size="14" text-anchor="start" fill="#111111">1. Select Node (Load Balancing)</text>
+  <text x="190" y="324" font-family="Noto Sans JP, Arial, sans-serif" font-size="14" text-anchor="start" fill="#111111">2. Proxy Request to Selected Node</text>
+  <text x="190" y="348" font-family="Noto Sans JP, Arial, sans-serif" font-size="14" text-anchor="start" fill="#111111">3. Return Response to Client</text>
+
+  <!-- Nodes -->
+  <rect x="120" y="460" width="180" height="80" rx="12" ry="12" fill="#d5e8d4" stroke="#82b366" stroke-width="2" />
+  <text x="210" y="492" font-family="Noto Sans JP, Arial, sans-serif" font-size="16" font-weight="600" text-anchor="middle" fill="#111111">Node 1</text>
+  <text x="210" y="518" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="middle" fill="#111111">/v1/* API</text>
+
+  <rect x="330" y="460" width="180" height="80" rx="12" ry="12" fill="#d5e8d4" stroke="#82b366" stroke-width="2" />
+  <text x="420" y="492" font-family="Noto Sans JP, Arial, sans-serif" font-size="16" font-weight="600" text-anchor="middle" fill="#111111">Node 2</text>
+  <text x="420" y="518" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="middle" fill="#111111">/v1/* API</text>
+
+  <rect x="540" y="460" width="180" height="80" rx="12" ry="12" fill="#d5e8d4" stroke="#82b366" stroke-width="2" />
+  <text x="630" y="492" font-family="Noto Sans JP, Arial, sans-serif" font-size="16" font-weight="600" text-anchor="middle" fill="#111111">Node 3</text>
+  <text x="630" y="518" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="middle" fill="#111111">/v1/* API</text>
+
+  <text x="210" y="572" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">Machine 1</text>
+  <text x="420" y="572" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">Machine 2</text>
+  <text x="630" y="572" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">Machine 3</text>
+
+  <!-- Client -> Router -->
+  <path d="M420 160 L420 210" fill="none" stroke="#333333" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="450" y="178" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="start" fill="#111111">POST /v1/chat/completions</text>
+  <text x="450" y="194" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="start" fill="#111111">POST /v1/completions</text>
+  <text x="450" y="210" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="start" fill="#111111">POST /v1/embeddings</text>
+
+  <!-- Router -> Node 1 -->
+  <path d="M420 390 L420 425 L210 425 L210 460" fill="none" stroke="#333333" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="210" y="448" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#111111">OpenAI Proxy</text>
+
+  <!-- Router -> Node 2 -->
+  <path d="M420 390 L420 460" fill="none" stroke="#333333" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="420" y="448" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#111111">OpenAI Proxy</text>
+
+  <!-- Router -> Node 3 -->
+  <path d="M420 390 L420 425 L630 425 L630 460" fill="none" stroke="#333333" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="630" y="448" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#111111">OpenAI Proxy</text>
+</svg>

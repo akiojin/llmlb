@@ -119,6 +119,8 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
                └───────────────┘
 ```
 
+![システム構成](docs/diagrams/architecture.readme.ja.svg)
+
 Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成 (README.ja.md)）
 
 ### モデル同期（push配布なし）

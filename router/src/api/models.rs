@@ -531,6 +531,36 @@ async fn resolve_first_onnx_in_repo(
     Ok(filename)
 }
 
+/// HFリポジトリの存在確認（エクスポート経路の事前バリデーション用）
+async fn ensure_hf_repo_exists(
+    http_client: &reqwest::Client,
+    repo: &str,
+) -> Result<(), RouterError> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/api/models/{}", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    if resp.status().is_success() {
+        return Ok(());
+    }
+
+    Err(RouterError::Common(CommonError::Validation(
+        "Failed to fetch specified repository".into(),
+    )))
+}
+
 /// HuggingFaceのtokenizer_config.jsonからchat_templateを取得
 async fn fetch_chat_template_from_hf(http_client: &reqwest::Client, repo: &str) -> Option<String> {
     let base_url = std::env::var("HF_BASE_URL")
@@ -847,16 +877,26 @@ pub async fn register_model(
 
     // ファイル名を解決
     let filename = match req.filename.clone() {
-        Some(f) => f,
+        Some(f) => {
+            // エクスポート経路（filename無し or 非ONNX）は、事前にrepoの存在確認をしておく。
+            // Playwright E2Eの「invalid repository」はここで 400 を返すべき。
+            if !f.to_ascii_lowercase().ends_with(".onnx") {
+                ensure_hf_repo_exists(&state.http_client, &repo).await?;
+            }
+            f
+        }
         None => {
             // ファイル名指定なし - リポジトリ内のONNXを探す
             match resolve_first_onnx_in_repo(&state.http_client, &repo).await {
                 Ok(f) => f,
-                Err(_) => {
+                Err(RouterError::Common(CommonError::Validation(msg)))
+                    if msg.contains("No ONNX file found") =>
+                {
                     // リポジトリ内にONNXがない → 変換対象として空文字列（convert_managerが処理する）
                     tracing::info!(repo = %repo, "No ONNX in repo, will attempt export");
                     String::new()
                 }
+                Err(e) => return Err(e.into()),
             }
         }
     };
@@ -896,7 +936,15 @@ async fn register_model_internal(
         ))
         .into());
     }
-    if state.convert_manager.has_task_for_repo(repo).await {
+    // Duplicate prevention: treat any existing task for this repo as already registered,
+    // even if it previously failed. Retrying should be done by deleting the model/task first.
+    if state
+        .convert_manager
+        .list_tasks()
+        .await
+        .iter()
+        .any(|task| task.repo == repo)
+    {
         return Err(RouterError::Common(CommonError::Validation(
             "Model already registered".into(),
         ))

@@ -113,4 +113,65 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     const isVisible = await modelsList.isVisible().catch(() => false);
     expect(true).toBe(true);
   });
+
+  test('M-11: Delete model triggers API call and removes card', async ({ page }) => {
+    const modelName = 'test-org/test-model';
+    const encodedModelName = encodeURIComponent(modelName);
+    let deleted = false;
+
+    // Mock registered models list (used by ModelsSection to render cards)
+    await page.route('**/v0/models', async (route) => {
+      if (route.request().method() !== 'GET') {
+        return route.continue();
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          deleted
+            ? []
+            : [
+                {
+                  name: modelName,
+                  lifecycle_status: 'registered',
+                  ready: true,
+                  tags: [],
+                },
+              ]
+        ),
+      });
+    });
+
+    // Mock delete endpoint (ModelsSection delete button)
+    await page.route(`**/v0/models/${encodedModelName}`, async (route) => {
+      if (route.request().method() !== 'DELETE') {
+        return route.continue();
+      }
+      deleted = true;
+      await route.fulfill({ status: 204, body: '' });
+    });
+
+    // Reload so our routes are applied to initial data fetch
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    if (page.url().includes('login')) {
+      await dashboard.login();
+    }
+    await page.click('button[role="tab"]:has-text("Models")');
+    await page.waitForTimeout(500);
+
+    // Verify model is rendered
+    await expect(page.getByText(modelName)).toBeVisible();
+
+    // Click delete button in the model card
+    const deleteResponsePromise = page.waitForResponse(
+      (resp) => resp.request().method() === 'DELETE' && resp.url().includes(`/v0/models/${encodedModelName}`)
+    );
+    await dashboard.localModelsList.locator('button').first().click();
+    const deleteResp = await deleteResponsePromise;
+    expect(deleteResp.status()).toBe(204);
+
+    // Verify UI updates (no models)
+    await expect(page.getByText('No registered models')).toBeVisible();
+  });
 });

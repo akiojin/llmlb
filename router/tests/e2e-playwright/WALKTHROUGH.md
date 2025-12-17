@@ -87,15 +87,16 @@ LLM Router Web Application
 | Step | Action | Verification |
 |------|--------|--------------|
 | 5.1 | Click Models tab | Tab becomes active |
-| 5.2 | View Registered sub-tab | Registered models displayed |
-| 5.3 | Verify model information | Name, status, path visible |
-| 5.4 | Click Available sub-tab | Available HF models listed |
-| 5.5 | Click Register button | Register Model dialog opens |
-| 5.6 | Fill Repo field | Input accepts HF repo path |
-| 5.7 | Fill Filename field (optional) | Input accepts GGUF filename |
-| 5.8 | Click Register in dialog | Toast shows "Model registration queued" |
-| 5.9 | Click Convert Tasks sub-tab | Task progress displayed |
-| 5.10 | Wait for task completion | Status changes to "Completed" |
+| 5.2 | View registered models list | Shows "No registered models" or model cards |
+| 5.3 | Use search input (optional) | Model cards are filtered |
+| 5.4 | Click Register button | Register Model dialog opens |
+| 5.5 | Fill Repo field | Input accepts HF repo ID |
+| 5.6 | Fill Filename field (optional) | Input accepts `.onnx` filename |
+| 5.7 | Click Register in dialog | Toast shows "Model registration queued" |
+| 5.8 | Verify model appears in list | Status badge shows Pending/Caching/Registered/Error |
+| 5.9 | Verify download progress UI (if shown) | Progress bar updates or error is displayed |
+| 5.10 | Delete a model from UI | Click trash icon on a model card |
+| 5.11 | Verify deletion | Toast shows "Model deleted" and model disappears |
 
 ### 6. Dashboard - History Tab
 
@@ -183,7 +184,7 @@ For a complete walkthrough, execute in this order:
 2. Dashboard Header (2.1-2.7)
 3. Stats Cards (3.1-3.2)
 4. Nodes Tab (4.1-4.4)
-5. Models Tab with Registration (5.1-5.10)
+5. Models Tab with Registration and Deletion (5.1-5.11)
 6. History Tab (6.1-6.3)
 7. Logs Tab (7.1-7.3)
 8. Open Playground (8.1-8.2)

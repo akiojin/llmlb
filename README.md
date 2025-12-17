@@ -478,7 +478,7 @@ We follow the same release-branch workflow as `akiojin/unity-mcp-server`, with i
 1. While on `develop`, run the `/release` slash command or execute `./scripts/create-release-branch.sh`. The helper script calls `gh workflow run create-release.yml --ref develop`, which performs a semantic-release dry-run and creates `release/vX.Y.Z`.
 2. Pushing `release/vX.Y.Z` triggers `.github/workflows/release.yml`. That workflow runs semantic-release for real, updates CHANGELOG/Cargo manifests, creates the Git tag and GitHub Release, merges the release branch into `main`, backmerges `main` into `develop`, and deletes the release branch.
 3. The `main` push kicks off `.github/workflows/publish.yml`, which builds and attaches Linux/macOS/Windows archives to the GitHub Release.
-   - During this phase the workflow also builds platform installers: macOS gets `or-router-<platform>.pkg` via `pkgbuild`, while Windows receives `or-router-<platform>.msi` via WiX. These ship alongside the existing `.tar.gz` / `.zip` archives so current release consumers stay unaffected.
+   - During this phase the workflow also builds platform installers: macOS gets `llm-router-<platform>.pkg` and `llm-node-<platform>.pkg` via `pkgbuild`, while Windows receives `llm-router-<platform>.msi` and `llm-node-<platform>.msi` via WiX. These ship alongside the existing `.tar.gz` / `.zip` archives so current release consumers stay unaffected.
 
 Monitor the pipeline with:
 
@@ -600,7 +600,7 @@ Cloud / external services:
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router runs on 8080) | - |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
 | `LLM_ROUTER_API_KEY` | - | Router API key used for node registration | client/node use |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |

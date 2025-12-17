@@ -37,6 +37,11 @@ cmake --build build --config Release
 
 生成物: `node/build/llm-node`
 
+### リリース用インストーラー（Option B）
+
+- macOS: GitHub Release に `llm-node-macos-*.pkg` を同梱（CoreML版 onnxruntime + OpenSSL を含む）
+- Windows: GitHub Release に `llm-node-windows-*.msi` を同梱（DirectML版 onnxruntime + OpenSSL を含む）
+
 ## 4) 基本設定
 
 ### ルーター（Rust）環境変数
@@ -62,13 +67,15 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLM_ROUTER_API_KEY` | - | ノード登録用APIキー（必須） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
 | `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+| `LLM_NODE_CONFIG` | `~/.llm-router/config.json` | ノード設定JSON |
 
 **注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
 新しい環境変数名を使用してください。
@@ -79,7 +86,7 @@ cmake --build build --config Release
 cargo run -p llm-router
 
 # ノード (別シェル)
-./node/build/llm-node
+LLM_ROUTER_URL=http://127.0.0.1:8080 LLM_ROUTER_API_KEY=sk_your_api_key ./node/build/llm-node
 ```
 
 ## 6) 動作確認

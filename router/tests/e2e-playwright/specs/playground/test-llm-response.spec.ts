@@ -1,7 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { PlaygroundPage } from '../../pages/playground.page';
+import { registerModel, waitForModelReady } from '../../helpers/api-helpers';
 
-test('LLM response in Playground', async ({ page }) => {
+const TEST_REPO = 'onnxmodelzoo/mnist-8';
+const TEST_FILENAME = 'mnist-8.onnx';
+const TEST_MODEL_NAME = 'onnxmodelzoo/mnist-8';
+
+test('LLM response in Playground', async ({ page, request }) => {
+  const register = await registerModel(request, TEST_REPO, TEST_FILENAME);
+  expect([201, 400]).toContain(register.status);
+  await waitForModelReady(request, register.modelName || TEST_MODEL_NAME, { timeout: 120000 });
+
   // Log all network requests
   page.on('request', req => {
     if (req.url().includes('chat/completions')) {
@@ -46,11 +55,11 @@ test('LLM response in Playground', async ({ page }) => {
 
   expect(count).toBeGreaterThan(0);
 
-  // Find and select qwen2.5-0.5b-instruct (verified working model)
+  // Find and select the known-good test model
   let selectedModel = '';
   for (let i = 0; i < count; i++) {
     const text = await options.nth(i).textContent();
-    if (text?.includes('qwen2.5-0.5b-instruct') && !text?.includes('fp16')) {
+    if (text?.includes(TEST_MODEL_NAME)) {
       console.log(`Selecting: ${text}`);
       await options.nth(i).click();
       selectedModel = text;
@@ -58,7 +67,7 @@ test('LLM response in Playground', async ({ page }) => {
     }
   }
 
-  // Fallback to first enabled model if qwen not found
+  // Fallback to first enabled model if test model not found
   if (!selectedModel) {
     // Find first enabled option
     for (let i = 0; i < count; i++) {
@@ -115,7 +124,7 @@ test('LLM response in Playground', async ({ page }) => {
   }
 
   // Take screenshot for debugging
-  await page.screenshot({ path: 'test-results/after-send-click.png' });
+  await page.screenshot({ path: test.info().outputPath('after-send-click.png') });
 
   // Wait for user message to appear (uses CSS class)
   const userMessage = page.locator('.message--user');

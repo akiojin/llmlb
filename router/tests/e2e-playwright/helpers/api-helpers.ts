@@ -19,7 +19,15 @@ const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 /**
  * Lifecycle status of a registered model
  */
-export type LifecycleStatus = 'pending' | 'downloading' | 'cached' | 'ready' | 'error';
+export type LifecycleStatus =
+  | 'pending'
+  | 'caching'
+  | 'registered'
+  | 'error'
+  // Backward compatibility (older API versions / tests)
+  | 'downloading'
+  | 'cached'
+  | 'ready';
 
 /**
  * Download progress information
@@ -155,7 +163,12 @@ export async function registerModel(
  */
 export async function getDownloadingModels(request: APIRequestContext): Promise<RegisteredModel[]> {
   const models = await getModels(request);
-  return models.filter((m) => m.lifecycle_status === 'downloading' || m.lifecycle_status === 'pending');
+  return models.filter(
+    (m) =>
+      m.lifecycle_status === 'pending' ||
+      m.lifecycle_status === 'caching' ||
+      m.lifecycle_status === 'downloading'
+  );
 }
 
 /**
@@ -194,7 +207,11 @@ export async function waitForModelReady(
       throw new Error(`Model ${modelName} not found`);
     }
 
-    if (model.lifecycle_status === 'ready' || model.lifecycle_status === 'cached') {
+    if (
+      model.lifecycle_status === 'registered' ||
+      model.lifecycle_status === 'ready' ||
+      model.lifecycle_status === 'cached'
+    ) {
       return model;
     }
 

@@ -171,6 +171,29 @@ export interface RequestHistoryItem {
   response_body?: unknown
 }
 
+// /v0/dashboard/request-responses APIのレスポンス型
+export interface RequestResponseRecord {
+  id: string
+  timestamp: string
+  request_type: string
+  model: string
+  node_id?: string
+  node_machine_name?: string
+  node_ip?: string
+  request_body?: unknown
+  response_body?: unknown
+  duration_ms: number
+  status: { type: 'success' } | { type: 'error'; message: string }
+  completed_at?: string
+}
+
+export interface RequestResponsesPage {
+  records: RequestResponseRecord[]
+  total_count: number
+  page: number
+  per_page: number
+}
+
 export interface DashboardOverview {
   nodes: DashboardNode[]
   stats: DashboardStats
@@ -213,7 +236,7 @@ export const dashboardApi = {
     offset?: number
     model?: string
     status?: string
-  }) => fetchWithAuth<unknown[]>('/v0/dashboard/request-responses', { params }),
+  }) => fetchWithAuth<RequestResponsesPage>('/v0/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>
     fetchWithAuth<unknown>(`/v0/dashboard/request-responses/${id}`),

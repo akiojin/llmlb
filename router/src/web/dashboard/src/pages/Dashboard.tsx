@@ -1,6 +1,11 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { dashboardApi, type DashboardOverview } from '@/lib/api'
+import {
+  dashboardApi,
+  type DashboardOverview,
+  type RequestHistoryItem,
+  type RequestResponsesPage,
+} from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
@@ -31,6 +36,31 @@ export default function Dashboard() {
     queryFn: fetchWithTiming,
     refetchInterval: 5000,
   })
+
+  // リクエスト履歴（個別リクエスト詳細）を取得
+  const { data: requestResponsesData, isLoading: isLoadingHistory } =
+    useQuery<RequestResponsesPage>({
+      queryKey: ['request-responses'],
+      queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
+      refetchInterval: 5000,
+    })
+
+  // RequestResponseRecord を RequestHistoryItem にマッピング
+  const historyItems: RequestHistoryItem[] = useMemo(() => {
+    if (!requestResponsesData?.records) return []
+    return requestResponsesData.records.map((record) => ({
+      request_id: record.id,
+      timestamp: record.timestamp,
+      model: record.model,
+      node_id: record.node_id,
+      node_name: record.node_machine_name,
+      status: record.status.type,
+      duration_ms: record.duration_ms,
+      error: record.status.type === 'error' ? record.status.message : undefined,
+      request_body: record.request_body,
+      response_body: record.response_body,
+    }))
+  }, [requestResponsesData])
 
   if (error) {
     return (
@@ -107,8 +137,8 @@ export default function Dashboard() {
 
           <TabsContent value="history" className="animate-fade-in">
             <RequestHistoryTable
-              history={data?.history || []}
-              isLoading={isLoading}
+              history={historyItems}
+              isLoading={isLoadingHistory}
             />
           </TabsContent>
 

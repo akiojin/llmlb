@@ -549,15 +549,20 @@ mod tests {
 
     #[test]
     fn test_n_validation() {
+        // Helper function to validate n parameter (1-10 is valid)
+        fn is_valid_n(n: u32) -> bool {
+            (1..=10).contains(&n)
+        }
+
         // n = 0 は無効
-        assert!(0 == 0 || 0 > 10);
+        assert!(!is_valid_n(0));
 
         // n = 1-10 は有効
         for n in 1..=10 {
-            assert!(n >= 1 && n <= 10);
+            assert!(is_valid_n(n));
         }
 
         // n = 11 は無効
-        assert!(11 == 0 || 11 > 10);
+        assert!(!is_valid_n(11));
     }
 }

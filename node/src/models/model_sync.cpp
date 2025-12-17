@@ -8,6 +8,7 @@
 #include <fstream>
 #include <chrono>
 #include <algorithm>
+#include <stdexcept>
 #include <thread>
 #include "utils/config.h"
 #include "utils/file_lock.h"
@@ -115,56 +116,58 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     } else {
         res = cli.Get("/v0/models");
     }
-    if (!res || res->status < 200 || res->status >= 300) {
-        return {};
+    // IMPORTANT: If the request fails, treat it as sync failure (do not delete local models).
+    // Returning an empty list here is ambiguous with "router has zero models" and would cause
+    // the caller to delete everything.
+    if (!res) {
+        throw std::runtime_error("fetchRemoteModels failed: request error");
+    }
+    if (res->status < 200 || res->status >= 300) {
+        throw std::runtime_error("fetchRemoteModels failed: bad status " + std::to_string(res->status));
     }
 
-    try {
-        auto body = json::parse(res->body);
-        std::vector<RemoteModel> remote;
+    auto body = json::parse(res->body);
+    std::vector<RemoteModel> remote;
 
-        // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
-        // 配列の場合は直接処理、そうでなければ data フィールドを参照
-        const json* models_array = nullptr;
-        if (body.is_array()) {
-            models_array = &body;
-        } else if (body.contains("data") && body["data"].is_array()) {
-            models_array = &body["data"];
-        }
+    // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
+    // 配列の場合は直接処理、そうでなければ data フィールドを参照
+    const json* models_array = nullptr;
+    if (body.is_array()) {
+        models_array = &body;
+    } else if (body.contains("data") && body["data"].is_array()) {
+        models_array = &body["data"];
+    }
 
-        if (models_array) {
-            for (const auto& m : *models_array) {
-                // /v0/models では "name" フィールドを使用（/v1/models では "id"）
-                std::string model_id;
-                if (m.contains("name") && m["name"].is_string()) {
-                    model_id = m["name"].get<std::string>();
-                } else if (m.contains("id") && m["id"].is_string()) {
-                    model_id = m["id"].get<std::string>();
-                } else {
-                    continue;
-                }
-
-                RemoteModel rm;
-                rm.id = model_id;
-                rm.path = m.value("path", "");
-                rm.download_url = m.value("download_url", "");
-                rm.chat_template = m.value("chat_template", "");
-
-                if (m.contains("etag") && m["etag"].is_string()) {
-                    setCachedEtag(rm.id, m["etag"].get<std::string>());
-                }
-                if (m.contains("size") && m["size"].is_number_unsigned()) {
-                    setCachedSize(rm.id, m["size"].get<size_t>());
-                }
-
-                remote_models_[rm.id] = rm;
-                remote.push_back(std::move(rm));
+    if (models_array) {
+        for (const auto& m : *models_array) {
+            // /v0/models では "name" フィールドを使用（/v1/models では "id"）
+            std::string model_id;
+            if (m.contains("name") && m["name"].is_string()) {
+                model_id = m["name"].get<std::string>();
+            } else if (m.contains("id") && m["id"].is_string()) {
+                model_id = m["id"].get<std::string>();
+            } else {
+                continue;
             }
+
+            RemoteModel rm;
+            rm.id = model_id;
+            rm.path = m.value("path", "");
+            rm.download_url = m.value("download_url", "");
+            rm.chat_template = m.value("chat_template", "");
+
+            if (m.contains("etag") && m["etag"].is_string()) {
+                setCachedEtag(rm.id, m["etag"].get<std::string>());
+            }
+            if (m.contains("size") && m["size"].is_number_unsigned()) {
+                setCachedSize(rm.id, m["size"].get<size_t>());
+            }
+
+            remote_models_[rm.id] = rm;
+            remote.push_back(std::move(rm));
         }
-        return remote;
-    } catch (...) {
-        return {};
     }
+    return remote;
 }
 
 std::vector<std::string> ModelSync::listLocalModels() const {

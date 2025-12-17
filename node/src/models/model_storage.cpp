@@ -66,8 +66,8 @@ std::string ModelStorage::modelNameToDir(const std::string& model_name) {
 }
 
 std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
-    // ディレクトリ名はルーターが既にサニタイズ済みのため、そのまま返す
-    return dir_name;
+    // 一貫性のため、ディレクトリ名もサニタイズして小文字に正規化
+    return sanitizeModelId(dir_name);
 }
 
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {

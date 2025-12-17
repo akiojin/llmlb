@@ -232,6 +232,22 @@ jobs:
           light.exe $routerObj -out $routerMsi -sice:ICE03
           "router_msi=$routerMsi" >> $env:GITHUB_OUTPUT
 
+      - name: Build Windows llm-node installer (.msi)
+        if: runner.os == 'Windows'
+        id: package_windows_node_installer
+        shell: pwsh
+        run: |
+          $version = "${env:RELEASE_VERSION}"
+          if ([string]::IsNullOrEmpty($version)) {
+            Write-Error "Release version is not available."
+            exit 1
+          }
+          $nodeMsi = "llm-node-${{ matrix.artifact }}.msi"
+          $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
+          $env:PATH = "$wixPath;$env:PATH"
+          .\scripts\build-node-installer-windows.ps1 -Version $version -OutputMsi $nodeMsi
+          "node_msi=$nodeMsi" >> $env:GITHUB_OUTPUT
+
       - name: Upload release artifact (Unix)
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
@@ -270,6 +286,14 @@ jobs:
         with:
           name: ${{ matrix.artifact }}-router-msi
           path: ${{ steps.package_windows_installers.outputs.router_msi }}
+          if-no-files-found: error
+
+      - name: Upload Windows llm-node installer
+        if: runner.os == 'Windows' && steps.package_windows_node_installer.outputs.node_msi != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-node-msi
+          path: ${{ steps.package_windows_node_installer.outputs.node_msi }}
           if-no-files-found: error
 
   publish-binaries:

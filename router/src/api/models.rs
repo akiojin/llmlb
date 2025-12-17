@@ -71,10 +71,10 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LifecycleStatus {
-    /// 登録リクエスト受付、ダウンロード待ち
+    /// 登録リクエスト受付、キャッシュ待ち
     Pending,
-    /// ダウンロード中
-    Downloading,
+    /// ダウンロード・変換中（キャッシュ処理中）
+    Caching,
     /// ルーターにキャッシュ完了（ノードがアクセス可能）
     Registered,
     /// エラー発生
@@ -103,7 +103,7 @@ pub struct RegisteredModelView {
     pub description: Option<String>,
     /// 登録ステータス（registered/cached/failedなど）- 後方互換用
     pub status: Option<String>,
-    /// ライフサイクル状態（pending/downloading/registered/error）
+    /// ライフサイクル状態（pending/caching/registered/error）
     pub lifecycle_status: LifecycleStatus,
     /// ダウンロード進行状況（downloading時のみ）
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -219,7 +219,7 @@ pub async fn get_registered_models(
                     });
                 }
                 ConvertStatus::InProgress => {
-                    view.lifecycle_status = LifecycleStatus::Downloading;
+                    view.lifecycle_status = LifecycleStatus::Caching;
                     view.download_progress = Some(DownloadProgress {
                         percent: task.progress as f64,
                         bytes_downloaded: None,
@@ -244,7 +244,7 @@ pub async fn get_registered_models(
             // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
             let lifecycle_status = match task.status {
                 ConvertStatus::Queued => LifecycleStatus::Pending,
-                ConvertStatus::InProgress => LifecycleStatus::Downloading,
+                ConvertStatus::InProgress => LifecycleStatus::Caching,
                 ConvertStatus::Failed => LifecycleStatus::Error,
                 ConvertStatus::Completed => LifecycleStatus::Registered,
             };

@@ -27,8 +27,8 @@ function lifecycleStatusBadge(status: LifecycleStatus) {
   switch (status) {
     case 'registered':
       return <Badge variant="online">Registered</Badge>
-    case 'downloading':
-      return <Badge variant="secondary"><Download className="mr-1 h-3 w-3 animate-pulse" />Downloading</Badge>
+    case 'caching':
+      return <Badge variant="secondary"><Download className="mr-1 h-3 w-3 animate-pulse" />Caching</Badge>
     case 'pending':
       return <Badge variant="outline">Pending</Badge>
     case 'error':

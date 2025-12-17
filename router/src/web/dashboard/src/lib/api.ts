@@ -171,6 +171,29 @@ export interface RequestHistoryItem {
   response_body?: unknown
 }
 
+// /v0/dashboard/request-responses APIのレスポンス型
+export interface RequestResponseRecord {
+  id: string
+  timestamp: string
+  request_type: string
+  model: string
+  node_id?: string
+  node_machine_name?: string
+  node_ip?: string
+  request_body?: unknown
+  response_body?: unknown
+  duration_ms: number
+  status: { type: 'success' } | { type: 'error'; message: string }
+  completed_at?: string
+}
+
+export interface RequestResponsesPage {
+  records: RequestResponseRecord[]
+  total_count: number
+  page: number
+  per_page: number
+}
+
 export interface DashboardOverview {
   nodes: DashboardNode[]
   stats: DashboardStats
@@ -213,7 +236,7 @@ export const dashboardApi = {
     offset?: number
     model?: string
     status?: string
-  }) => fetchWithAuth<unknown[]>('/v0/dashboard/request-responses', { params }),
+  }) => fetchWithAuth<RequestResponsesPage>('/v0/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>
     fetchWithAuth<unknown>(`/v0/dashboard/request-responses/${id}`),
@@ -265,11 +288,22 @@ export const nodesApi = {
 }
 
 // Models API
+export type LifecycleStatus = 'pending' | 'caching' | 'registered' | 'error'
+
+export interface DownloadProgress {
+  percent: number
+  bytes_downloaded?: number
+  bytes_total?: number
+  error?: string
+}
+
 export interface RegisteredModelView {
   name: string
   source?: string
   description?: string
   status?: string
+  lifecycle_status: LifecycleStatus
+  download_progress?: DownloadProgress
   ready: boolean
   path?: string
   download_url?: string
@@ -280,52 +314,28 @@ export interface RegisteredModelView {
   tags: string[]
 }
 
-export interface AvailableModelView {
-  name: string
-  display_name?: string
-  description?: string
-  tags?: string[]
-  size_gb?: number
-  required_memory_gb?: number
-  repo?: string
-  filename?: string
-  download_url?: string
-  quantization?: string
-}
-
-export interface AvailableModelsResponse {
-  models: AvailableModelView[]
-  source: string
-  cached?: boolean
-  pagination?: {
-    limit: number
-    offset: number
-    total: number
-  }
-}
-
-export interface ConvertTask {
-  id: string
-  repo: string
-  filename: string
-  revision?: string | null
-  quantization?: string | null
-  chat_template?: string | null
-  status: 'queued' | 'in_progress' | 'completed' | 'failed'
-  progress: number
-  error?: string | null
-  path?: string | null
-  created_at: string
-  updated_at: string
-}
+// NOTE: AvailableModelView, AvailableModelsResponse, ConvertTask は廃止
+// HFカタログは直接 https://huggingface.co を参照
+// ダウンロード状態は /v0/models の lifecycle_status で確認
 
 export const modelsApi = {
-  getRegistered: () => fetchWithAuth<RegisteredModelView[]>('/v0/models/registered'),
+  getRegistered: async (): Promise<RegisteredModelView[]> => {
+    // /v0/models - 登録モデル一覧（lifecycle_status含む）
+    // APIキー認証が必要なため、ローカルストレージのAPIキーを使用
+    const apiKey = localStorage.getItem('playground_api_key') || 'sk_debug'
+    const response = await fetch('/v0/models', {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    if (!response.ok) {
+      return []
+    }
+    // 直接 RegisteredModelView[] を返す
+    return (await response.json()) as RegisteredModelView[]
+  },
 
-  getAvailable: () =>
-    fetchWithAuth<AvailableModelsResponse>('/v0/models/available', {
-      params: { source: 'hf' },
-    }),
+  // NOTE: getAvailable は廃止 - HFカタログは直接 https://huggingface.co を参照
 
   register: (repo: string, filename?: string) =>
     fetchWithAuth<unknown>('/v0/models/register', {
@@ -338,31 +348,16 @@ export const modelsApi = {
       method: 'DELETE',
     }),
 
-  convert: (params: {
-    repo: string
-    filename: string
-    revision?: string
-    chat_template?: string
-  }) =>
-    fetchWithAuth<{ task_id: string; status: string }>('/v0/models/convert', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }),
-
-  getConvertTasks: () => fetchWithAuth<ConvertTask[]>('/v0/models/convert'),
-
-  getConvertTask: (taskId: string) =>
-    fetchWithAuth<ConvertTask>(`/v0/models/convert/${taskId}`),
-
-  deleteConvertTask: (taskId: string) =>
-    fetchWithAuth<void>(`/v0/models/convert/${taskId}`, { method: 'DELETE' }),
+  // NOTE: convert, getConvertTasks, getConvertTask, deleteConvertTask は廃止
+  // ダウンロード状態は getRegistered の lifecycle_status で確認 (Phase 2で実装)
 }
 
 // API Keys API
 export interface ApiKey {
   id: string
   name: string
-  key_prefix: string
+  key_prefix?: string
+  created_by?: string
   created_at: string
   expires_at?: string
   last_used_at?: string
@@ -378,7 +373,10 @@ export interface CreateApiKeyResponse {
 }
 
 export const apiKeysApi = {
-  list: () => fetchWithAuth<ApiKey[]>('/v0/api-keys'),
+  list: () =>
+    fetchWithAuth<{ api_keys: ApiKey[] }>('/v0/api-keys').then(
+      (res) => res.api_keys
+    ),
 
   create: (data: { name: string; expires_at?: string }) =>
     fetchWithAuth<CreateApiKeyResponse>('/v0/api-keys', {
@@ -405,7 +403,10 @@ export interface User {
 }
 
 export const usersApi = {
-  list: () => fetchWithAuth<User[]>('/v0/users'),
+  list: async (): Promise<User[]> => {
+    const res = await fetchWithAuth<{ users: User[] }>('/v0/users')
+    return res.users
+  },
 
   create: (data: { username: string; password: string; role: string }) =>
     fetchWithAuth<User>('/v0/users', {

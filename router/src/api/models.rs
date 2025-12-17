@@ -2,32 +2,32 @@
 //!
 //! モデル一覧取得、登録、変換、ファイル配信のエンドポイント
 
+use crate::{
+    registry::models::{extract_repo_id, generate_model_id, router_model_path, ModelInfo},
+    registry::NodeRegistry,
+    AppState,
+};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
+use llm_router_common::error::{CommonError, RouterError};
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
-
-use crate::{
-    convert::ConvertTask,
-    registry::models::{generate_ollama_style_id, router_model_path, ModelInfo, ModelSource},
-    registry::NodeRegistry,
-    AppState,
-};
-use llm_router_common::error::{CommonError, RouterError};
 
 /// モデル名の妥当性を検証
 ///
 /// 有効なモデル名の形式:
 /// - `gpt-oss-20b`, `mistral-7b-instruct-v0.2` のようなファイル名ベース形式
+/// - `openai/gpt-oss-20b` のような階層形式（HuggingFace互換）
+///
+/// SPEC-dcaeaec4 FR-2: 階層形式を許可
 fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
     if model_name.is_empty() {
         return Err(RouterError::InvalidModelName(
@@ -35,11 +35,26 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
         ));
     }
 
-    // ファイル名ベース形式（`:` や `/` は禁止）
-    if !model_name
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.')
-    {
+    // 危険なパターンを禁止（パストラバーサル対策）
+    if model_name.contains("..") || model_name.contains('\0') {
+        return Err(RouterError::InvalidModelName(format!(
+            "Invalid model name (contains dangerous pattern): {}",
+            model_name
+        )));
+    }
+
+    // 先頭・末尾のスラッシュは禁止
+    if model_name.starts_with('/') || model_name.ends_with('/') {
+        return Err(RouterError::InvalidModelName(format!(
+            "Invalid model name (leading/trailing slash): {}",
+            model_name
+        )));
+    }
+
+    // 許可する文字: 小文字英数字、'-', '_', '.', '/'（ディレクトリセパレータ）
+    if !model_name.chars().all(|c| {
+        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.' || c == '/'
+    }) {
         return Err(RouterError::InvalidModelName(format!(
             "Invalid model name: {}",
             model_name
@@ -49,91 +64,34 @@ fn validate_model_name(model_name: &str) -> Result<(), RouterError> {
     Ok(())
 }
 
-/// 利用可能なモデル一覧のレスポンスDTO
-#[derive(Debug, Serialize)]
-pub struct AvailableModelView {
-    /// モデルID（例: gpt-oss-20b）
-    pub name: String,
-    /// UI表示名
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    /// 説明文
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// タグの一覧
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tags: Option<Vec<String>>,
-    /// GB単位のサイズ
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub size_gb: Option<f64>,
-    /// 推奨GPUメモリ(GB)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required_memory_gb: Option<f64>,
-    /// Hugging Face repo (hfソースの場合)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>,
-    /// Hugging Face filename (hfソースの場合)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-    /// ダウンロードURL (hfソースの場合)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub download_url: Option<String>,
-    /// 量子化情報 (推定)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quantization: Option<String>,
+// NOTE: AvailableModelView, AvailableModelsResponse, Pagination, model_info_to_view() は
+// /v0/models/available 廃止に伴い削除されました。
+
+/// モデルのライフサイクル状態
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LifecycleStatus {
+    /// 登録リクエスト受付、キャッシュ待ち
+    Pending,
+    /// ダウンロード・変換中（キャッシュ処理中）
+    Caching,
+    /// ルーターにキャッシュ完了（ノードがアクセス可能）
+    Registered,
+    /// エラー発生
+    Error,
 }
 
-/// 利用可能なモデル一覧レスポンス
-#[derive(Debug, Serialize)]
-pub struct AvailableModelsResponse {
-    /// モデル一覧（UI表示用に整形済み）
-    pub models: Vec<AvailableModelView>,
-    /// ソース（"builtin" / "hf" など）
-    pub source: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    /// キャッシュヒットかどうか
-    pub cached: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    /// ページネーション情報
-    pub pagination: Option<Pagination>,
-}
-
-#[derive(Debug, Serialize)]
-/// ページネーション情報
-pub struct Pagination {
-    /// 取得件数
-    pub limit: u32,
-    /// オフセット
-    pub offset: u32,
-    /// 総件数（未取得時は0）
-    pub total: u32,
-}
-
-fn model_info_to_view(model: ModelInfo) -> AvailableModelView {
-    let size_gb = if model.size > 0 {
-        Some((model.size as f64) / (1024.0 * 1024.0 * 1024.0))
-    } else {
-        None
-    };
-    let required_memory_gb = if model.required_memory > 0 {
-        Some((model.required_memory as f64) / (1024.0 * 1024.0 * 1024.0))
-    } else {
-        None
-    };
-    let display_name = Some(model.name.clone());
-
-    AvailableModelView {
-        name: model.name,
-        display_name,
-        description: Some(model.description),
-        tags: Some(model.tags),
-        size_gb,
-        required_memory_gb,
-        repo: model.repo,
-        filename: model.filename.clone(),
-        download_url: model.download_url.clone(),
-        quantization: model.filename.as_deref().and_then(extract_quantization),
-    }
+/// ダウンロード進行状況
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadProgress {
+    /// 進行率（0.0〜1.0）
+    pub percent: f64,
+    /// ダウンロード済みバイト数
+    pub bytes_downloaded: Option<u64>,
+    /// 総バイト数
+    pub bytes_total: Option<u64>,
+    /// エラーメッセージ（status=errorの場合）
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,8 +101,13 @@ pub struct RegisteredModelView {
     pub name: String,
     /// 表示用説明
     pub description: Option<String>,
-    /// 登録ステータス（registered/cached/failedなど）
+    /// 登録ステータス（registered/cached/failedなど）- 後方互換用
     pub status: Option<String>,
+    /// ライフサイクル状態（pending/caching/registered/error）
+    pub lifecycle_status: LifecycleStatus,
+    /// ダウンロード進行状況（downloading時のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_progress: Option<DownloadProgress>,
     /// ルーターにモデルファイルが存在するか
     pub ready: bool,
     /// ルーター上のパス
@@ -184,10 +147,21 @@ fn model_info_to_registered_view(model: ModelInfo) -> RegisteredModelView {
         None
     };
 
+    // ライフサイクル状態を決定
+    // NOTE: ノードロード状態は別途 get_registered_models_with_state で取得
+    let lifecycle_status = if ready {
+        LifecycleStatus::Registered
+    } else {
+        // ファイルがない場合はpending（ConvertTaskチェックは後で追加）
+        LifecycleStatus::Pending
+    };
+
     RegisteredModelView {
         name: model.name,
         description: Some(model.description),
         status: model.status,
+        lifecycle_status,
+        download_progress: None,
         ready,
         path: path.map(|p| p.to_string_lossy().to_string()),
         download_url: model.download_url,
@@ -211,13 +185,100 @@ pub async fn load_registered_models_from_storage() {
     }
 }
 
-/// 登録モデルの状態を返す（ダウンロード完了判定含む）
-pub async fn get_registered_models() -> Result<Json<Vec<RegisteredModelView>>, AppError> {
-    let list: Vec<RegisteredModelView> = list_registered_models()
+/// 登録モデルの状態を返す（ダウンロード進行状況含む）
+pub async fn get_registered_models(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<RegisteredModelView>>, AppError> {
+    use crate::convert::ConvertStatus;
+
+    // 登録済みモデルを取得
+    let mut views: Vec<RegisteredModelView> = list_registered_models()
         .into_iter()
         .map(model_info_to_registered_view)
         .collect();
-    Ok(Json(list))
+
+    // ConvertTaskからダウンロード中/待機中のモデル情報を取得
+    let tasks = state.convert_manager.list_tasks().await;
+    let registered_names: std::collections::HashSet<_> =
+        views.iter().map(|v| v.name.clone()).collect();
+
+    for task in tasks {
+        // モデル名を生成（階層形式、SPEC-dcaeaec4 FR-2）
+        let model_name = generate_model_id(&task.repo);
+
+        // 既に登録済みのモデルはlifecycle_statusを更新
+        if let Some(view) = views.iter_mut().find(|v| v.name == model_name) {
+            match task.status {
+                ConvertStatus::Queued => {
+                    view.lifecycle_status = LifecycleStatus::Pending;
+                    view.download_progress = Some(DownloadProgress {
+                        percent: 0.0,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    });
+                }
+                ConvertStatus::InProgress => {
+                    view.lifecycle_status = LifecycleStatus::Caching;
+                    view.download_progress = Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    });
+                }
+                ConvertStatus::Failed => {
+                    view.lifecycle_status = LifecycleStatus::Error;
+                    view.download_progress = Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: task.error.clone(),
+                    });
+                }
+                ConvertStatus::Completed => {
+                    // 完了済みなら既存のlifecycle_status（Cached）を維持
+                }
+            }
+        } else if !registered_names.contains(&model_name) {
+            // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
+            let lifecycle_status = match task.status {
+                ConvertStatus::Queued => LifecycleStatus::Pending,
+                ConvertStatus::InProgress => LifecycleStatus::Caching,
+                ConvertStatus::Failed => LifecycleStatus::Error,
+                ConvertStatus::Completed => LifecycleStatus::Registered,
+            };
+            let download_progress = if task.status != ConvertStatus::Completed {
+                Some(DownloadProgress {
+                    percent: task.progress as f64,
+                    bytes_downloaded: None,
+                    bytes_total: None,
+                    error: task.error.clone(),
+                })
+            } else {
+                None
+            };
+
+            views.push(RegisteredModelView {
+                name: model_name,
+                description: Some(format!("{}/{}", task.repo, task.filename)),
+                status: Some(format!("{:?}", task.status).to_lowercase()),
+                lifecycle_status,
+                download_progress,
+                ready: false,
+                path: task.path.clone(),
+                download_url: None,
+                source: Some("hf".to_string()),
+                repo: Some(task.repo.clone()),
+                filename: Some(task.filename.clone()),
+                size_gb: None,
+                required_memory_gb: None,
+                tags: vec![],
+            });
+        }
+    }
+
+    Ok(Json(views))
 }
 
 /// 登録済みモデル一覧を取得
@@ -270,16 +331,123 @@ pub async fn persist_registered_models() {
     }
 }
 
-// ===== HF available cache =====
-#[derive(Clone)]
-struct HfCache {
-    fetched_at: Instant,
-    models: Vec<ModelInfo>,
+/// 登録モデルの整合性チェックを実行
+///
+/// チェック内容:
+/// 1. DBとメモリの整合性確認
+/// 2. ファイル存在確認（存在しないモデルをログ出力）
+/// 3. 不整合があれば警告ログを出力
+///
+/// NOTE: 自動削除は行わない（手動介入を想定）
+pub async fn sync_registered_models(registry: &NodeRegistry) {
+    tracing::debug!("Starting model consistency check");
+
+    // 1. DBからモデルをロード
+    let db_models = match crate::db::models::load_models().await {
+        Ok(models) => models,
+        Err(e) => {
+            tracing::error!("Failed to load models from DB: {}", e);
+            return;
+        }
+    };
+
+    // 2. メモリ上のモデルを取得
+    let memory_models = list_registered_models();
+
+    // 3. DB vs メモリの整合性チェック
+    let db_names: std::collections::HashSet<_> = db_models.iter().map(|m| m.name.clone()).collect();
+    let memory_names: std::collections::HashSet<_> =
+        memory_models.iter().map(|m| m.name.clone()).collect();
+
+    // DBにあってメモリにないモデル
+    let in_db_only: Vec<_> = db_names.difference(&memory_names).collect();
+    if !in_db_only.is_empty() {
+        tracing::warn!(
+            models=?in_db_only,
+            "Models in DB but not in memory - reloading from DB"
+        );
+        // DBからメモリに復元
+        let mut store = REGISTERED_MODELS.write().unwrap();
+        for model in &db_models {
+            if in_db_only.contains(&&model.name) {
+                store.push(model.clone());
+            }
+        }
+    }
+
+    // メモリにあってDBにないモデル
+    let in_memory_only: Vec<_> = memory_names.difference(&db_names).collect();
+    if !in_memory_only.is_empty() {
+        tracing::warn!(
+            models=?in_memory_only,
+            "Models in memory but not in DB - persisting to DB"
+        );
+        // メモリからDBに永続化
+        persist_registered_models().await;
+    }
+
+    // 4. ファイル存在チェック
+    let mut missing_files = Vec::new();
+    for model in list_registered_models() {
+        if router_model_path(&model.name).is_none() {
+            missing_files.push(model.name.clone());
+        }
+    }
+
+    if !missing_files.is_empty() {
+        tracing::warn!(
+            models=?missing_files,
+            "Registered models with missing files"
+        );
+    }
+
+    // 5. ノードロード状態の確認
+    let nodes = registry.list().await;
+    let mut loaded_on_nodes: std::collections::HashMap<String, Vec<String>> = HashMap::new();
+    for node in &nodes {
+        for model_name in &node.loaded_models {
+            loaded_on_nodes
+                .entry(model_name.clone())
+                .or_default()
+                .push(node.id.to_string());
+        }
+    }
+
+    // 登録済みモデルのノードロード状態をログ
+    let registered_names: std::collections::HashSet<_> = list_registered_models()
+        .iter()
+        .map(|m| m.name.clone())
+        .collect();
+    let loaded_names: std::collections::HashSet<_> = loaded_on_nodes.keys().cloned().collect();
+
+    // ノードにロード済みだが未登録のモデル
+    let loaded_but_unregistered: Vec<_> = loaded_names.difference(&registered_names).collect();
+    if !loaded_but_unregistered.is_empty() {
+        tracing::info!(
+            models=?loaded_but_unregistered,
+            "Models loaded on nodes but not registered"
+        );
+    }
+
+    tracing::debug!(
+        db_count = db_models.len(),
+        memory_count = memory_models.len(),
+        missing_files = missing_files.len(),
+        nodes_count = nodes.len(),
+        "Model consistency check completed"
+    );
 }
 
-static HF_CACHE: Lazy<RwLock<Option<HfCache>>> = Lazy::new(|| RwLock::new(None));
-
-const HF_CACHE_TTL: Duration = Duration::from_secs(300);
+/// 定期的な整合性チェックを開始（5分間隔）
+pub fn start_periodic_sync(registry: NodeRegistry) {
+    tokio::spawn(async move {
+        let interval = Duration::from_secs(300); // 5分
+        loop {
+            tokio::time::sleep(interval).await;
+            sync_registered_models(&registry).await;
+        }
+    });
+}
 
 // ===== GGUF Discovery Cache =====
 
@@ -552,228 +720,39 @@ fn extract_quantization(filename: &str) -> Option<String> {
     None
 }
 
-/// テストやリカバリ用途でHFカタログキャッシュを強制クリアするユーティリティ。
-pub fn clear_hf_cache() {
-    *HF_CACHE.write().unwrap() = None;
-}
-
 /// 登録モデルのインメモリキャッシュをクリア（テスト用）
 pub fn clear_registered_models() {
     *REGISTERED_MODELS.write().unwrap() = Vec::new();
 }
 
-#[derive(Deserialize)]
-/// HFカタログクエリ
-pub struct AvailableQuery {
-    /// 部分一致検索
-    pub search: Option<String>,
-    /// 取得件数
-    pub limit: Option<u32>,
-    /// オフセット
-    pub offset: Option<u32>,
-    /// ソース指定（hf/builtin）
-    pub source: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct HfModel {
-    #[serde(rename = "modelId", alias = "id")]
-    model_id: String,
-    tags: Option<Vec<String>>,
-    #[serde(default)]
-    siblings: Vec<HfSibling>,
-    #[serde(rename = "lastModified")]
-    last_modified: Option<String>,
-}
-
+/// HFリポジトリのsiblings情報
 #[derive(Deserialize)]
 struct HfSibling {
     #[serde(rename = "rfilename")]
     rfilename: String,
-    size: Option<u64>,
+    /// ファイルサイズ（オプション）
     #[serde(default)]
+    size: Option<u64>,
+    /// LFS情報（オプション）
     lfs: Option<HfLfs>,
 }
 
+/// HF LFS情報
 #[derive(Deserialize)]
 struct HfLfs {
+    /// ファイルサイズ
     size: Option<u64>,
 }
 
-async fn fetch_hf_models(
-    http_client: &reqwest::Client,
-    query: &AvailableQuery,
-) -> Result<(Vec<ModelInfo>, bool), RouterError> {
-    // cache hit
-    if query.search.is_none() {
-        if let Some(cache) = HF_CACHE.read().unwrap().as_ref() {
-            if cache.fetched_at.elapsed() < HF_CACHE_TTL {
-                return Ok((cache.models.clone(), true));
-            }
-        }
-    }
-
-    let limit = query.limit.unwrap_or(20).min(100);
-    let offset = query.offset.unwrap_or(0);
-    // HFの一覧APIはlibraryフィルタではGGUFを返さない場合があるため、
-    // デフォルト検索語に"gguf"を入れてGGUFリポジトリを優先的に取得する
-    let search = query.search.clone().unwrap_or_else(|| "gguf".to_string());
-
-    let token = std::env::var("HF_TOKEN").ok();
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let url = format!(
-        "{}/api/models?limit={limit}&offset={offset}&search={search}&fields=id,modelId,tags,lastModified,siblings&expand=siblings",
-        base_url
-    );
-
-    let mut req = http_client.get(url);
-    if let Some(t) = token {
-        req = req.bearer_auth(t);
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-
-    // HF API がレートリミット/障害を返した場合はキャッシュをフォールバックとして返す
-    if !resp.status().is_success() {
-        if let Some(cache) = HF_CACHE.read().unwrap().as_ref() {
-            tracing::warn!(
-                "HF API returned {}, serving cached available models",
-                resp.status()
-            );
-            return Ok((cache.models.clone(), true));
-        }
-        return Err(RouterError::Http(resp.status().to_string()));
-    }
-    let models_raw: Vec<HfModel> = resp
-        .json()
-        .await
-        .map_err(|e| RouterError::Http(e.to_string()))?;
-
-    #[derive(Clone)]
-    struct Candidate {
-        model: ModelInfo,
-        rank: usize,
-    }
-
-    fn quantization_rank(q: Option<&str>) -> usize {
-        // Prefer common llama.cpp defaults. Lower is better.
-        match q {
-            Some("Q4_K_M") => 0,
-            Some("Q5_K_M") => 1,
-            Some("Q4_K_S") => 2,
-            Some("Q5_K_S") => 3,
-            Some("Q4_0") => 4,
-            Some("Q5_0") => 5,
-            Some("Q6_K") => 6,
-            Some("Q8_0") => 7,
-            Some("F16") => 8,
-            Some("BF16") => 9,
-            Some("F32") => 10,
-            _ => 100,
-        }
-    }
-
-    let mut best_by_id: HashMap<String, Candidate> = HashMap::new();
-    for m in models_raw {
-        // pick gguf siblings
-        for sib in m.siblings {
-            if !sib.rfilename.ends_with(".gguf") {
-                continue;
-            }
-
-            let model_id = generate_ollama_style_id(&sib.rfilename, &m.model_id);
-            let size = sib
-                .size
-                .or_else(|| sib.lfs.as_ref().and_then(|l| l.size))
-                .unwrap_or(0);
-            let download_url =
-                format!("{}/{}/resolve/main/{}", base_url, m.model_id, sib.rfilename);
-            let tags = m.tags.clone().unwrap_or_default();
-            let last_modified = m
-                .last_modified
-                .as_ref()
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&chrono::Utc));
-
-            let quantization = extract_quantization(&sib.rfilename);
-            let rank = quantization_rank(quantization.as_deref());
-
-            let candidate = Candidate {
-                model: ModelInfo {
-                    name: model_id.clone(),
-                    size,
-                    description: m.model_id.clone(),
-                    required_memory: size,
-                    tags,
-                    source: ModelSource::HfGguf,
-                    download_url: Some(download_url),
-                    path: None,
-                    chat_template: None,
-                    repo: Some(m.model_id.clone()),
-                    filename: Some(sib.rfilename.clone()),
-                    last_modified,
-                    status: Some("available".into()),
-                },
-                rank,
-            };
-
-            best_by_id
-                .entry(model_id)
-                .and_modify(|existing| {
-                    let replace = candidate.rank < existing.rank
-                        || (candidate.rank == existing.rank
-                            && candidate.model.size < existing.model.size);
-                    if replace {
-                        *existing = candidate.clone();
-                    }
-                })
-                .or_insert(candidate);
-        }
-    }
-
-    let mut out: Vec<ModelInfo> = best_by_id.into_values().map(|c| c.model).collect();
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-
-    if query.search.is_none() {
-        *HF_CACHE.write().unwrap() = Some(HfCache {
-            fetched_at: Instant::now(),
-            models: out.clone(),
-        });
-    }
-
-    Ok((out, false))
-}
-
-/// モデル変換リクエスト
-#[derive(Debug, Deserialize)]
-pub struct ConvertModelRequest {
-    /// HFリポジトリ (e.g., TheBloke/Llama-2-7B-GGUF)
-    pub repo: String,
-    /// ファイル名 (e.g., llama-2-7b.Q4_K_M.gguf)
-    pub filename: String,
-    /// リビジョン（任意, default main）
+/// HFモデル情報（discover_gguf_versions用）
+#[derive(Deserialize)]
+struct HfModel {
+    /// モデルID (例: "bartowski/Qwen2.5-7B-Instruct-GGUF")
+    #[serde(rename = "modelId")]
+    model_id: String,
+    /// ファイル一覧
     #[serde(default)]
-    pub revision: Option<String>,
-    /// 量子化指定（現状未使用。将来拡張用）
-    #[serde(default)]
-    pub quantization: Option<String>,
-    /// オプションのchat_template
-    #[serde(default)]
-    pub chat_template: Option<String>,
-}
-
-/// モデル変換レスポンス
-#[derive(Debug, Serialize)]
-pub struct ConvertModelResponse {
-    /// ジョブID
-    pub task_id: Uuid,
-    /// ステータス文字列
-    pub status: String,
+    siblings: Vec<HfSibling>,
 }
 
 /// Axum用のエラーレスポンス型
@@ -812,35 +791,8 @@ impl IntoResponse for AppError {
     }
 }
 
-/// T027: GET /v0/models/available - 利用可能なモデル一覧を取得
-pub async fn get_available_models(
-    State(state): State<AppState>,
-    Query(query): Query<AvailableQuery>,
-) -> Result<Json<AvailableModelsResponse>, AppError> {
-    // Hugging Face catalog is the only supported source.
-    // Default to `hf` to keep the API ergonomic.
-    let source = query.source.clone().unwrap_or_else(|| "hf".into());
-    if source != "hf" {
-        return Err(RouterError::Common(CommonError::Validation(
-            "Only source=hf is supported".into(),
-        ))
-        .into());
-    }
-
-    tracing::debug!("Fetching available models from Hugging Face");
-    let (models, cached) = fetch_hf_models(&state.http_client, &query).await?;
-    let models_view = models.into_iter().map(model_info_to_view).collect();
-    Ok(Json(AvailableModelsResponse {
-        models: models_view,
-        source: "hf".to_string(),
-        cached: Some(cached),
-        pagination: Some(Pagination {
-            limit: query.limit.unwrap_or(20),
-            offset: query.offset.unwrap_or(0),
-            total: 0,
-        }),
-    }))
-}
+// NOTE: GET /v0/models/available は廃止されました。
+// HFカタログは直接 https://huggingface.co を参照してください。
 
 #[derive(Deserialize)]
 /// HFモデル登録リクエスト
@@ -900,7 +852,8 @@ pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let repo = req.repo.clone();
+    // URLからrepo_idを抽出（フルURLが渡された場合はrepo_id形式に正規化）
+    let repo = extract_repo_id(&req.repo);
 
     // ファイル名を解決
     let filename = match req.filename.clone() {
@@ -941,8 +894,8 @@ async fn register_model_internal(
     _display_name: Option<String>,
     chat_template: Option<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    // モデルIDはファイル名ベース形式に正規化する (SPEC-dcaeaec4 / SPEC-8ae67d67)
-    let name = generate_ollama_style_id(filename, repo);
+    // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
+    let name = generate_model_id(repo);
 
     // 重複チェック：登録済みモデルまたは処理中タスクに同じリポジトリがあればエラー
     if find_model_by_name(&name).is_some() {
@@ -1062,9 +1015,32 @@ async fn register_model_internal(
 }
 
 /// DELETE /v0/models/:model_name - 登録モデル削除
-pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, AppError> {
+///
+/// 以下のいずれかの処理を行う:
+/// 1. ダウンロード中/待機中の場合: ConvertTaskをキャンセル
+/// 2. 完了済みの場合: ファイルを削除し、登録を解除
+pub async fn delete_model(
+    State(state): State<AppState>,
+    Path(model_name): Path<String>,
+) -> Result<StatusCode, AppError> {
+    // 1. ConvertTaskがあれば削除
+    let tasks = state.convert_manager.list_tasks().await;
+    let mut task_deleted = false;
+    for task in tasks {
+        let task_model_name = generate_model_id(&task.repo);
+        if task_model_name == model_name {
+            // 任意の状態のタスクを削除（ダウンロード中、待機中、失敗、完了を含む）
+            if state.convert_manager.delete(task.id).await {
+                task_deleted = true;
+                tracing::info!(model_name=%model_name, task_id=?task.id, status=?task.status, "ConvertTask deleted");
+            }
+        }
+    }
+
+    // 2. 登録モデルを削除
     let removed = remove_registered_model(&model_name);
 
+    // 3. ファイルを削除
     if let Some(path) = router_model_path(&model_name) {
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
@@ -1082,8 +1058,10 @@ pub async fn delete_model(Path(model_name): Path<String>) -> Result<StatusCode, 
         }
     }
 
-    if removed {
-        persist_registered_models().await;
+    if removed || task_deleted {
+        if removed {
+            persist_registered_models().await;
+        }
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(RouterError::Common(CommonError::Validation("model not found".into())).into())
@@ -1122,66 +1100,8 @@ pub async fn discover_gguf_endpoint(
     }))
 }
 
-/// POST /v0/models/convert - HFモデルをダウンロード＆（必要なら）変換するジョブを作成
-pub async fn convert_model(
-    State(state): State<AppState>,
-    Json(req): Json<ConvertModelRequest>,
-) -> Result<(StatusCode, Json<ConvertModelResponse>), AppError> {
-    let name = generate_ollama_style_id(&req.filename, &req.repo);
-    validate_model_name(&name)?;
-
-    let task = state
-        .convert_manager
-        .enqueue(
-            req.repo.clone(),
-            req.filename.clone(),
-            req.revision.clone(),
-            req.quantization.clone(),
-            req.chat_template.clone(),
-        )
-        .await;
-
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(ConvertModelResponse {
-            task_id: task.id,
-            status: format!("{:?}", task.status).to_lowercase(),
-        }),
-    ))
-}
-
-/// GET /v0/models/convert - 変換ジョブ一覧
-pub async fn list_convert_tasks(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<ConvertTask>>, AppError> {
-    let tasks = state.convert_manager.list().await;
-    Ok(Json(tasks))
-}
-
-/// GET /v0/models/convert/{task_id} - 単一ジョブ取得
-pub async fn get_convert_task(
-    State(state): State<AppState>,
-    Path(task_id): Path<Uuid>,
-) -> Result<Json<ConvertTask>, AppError> {
-    let task = state
-        .convert_manager
-        .get(task_id)
-        .await
-        .ok_or_else(|| RouterError::Internal("Task not found".into()))?;
-    Ok(Json(task))
-}
-
-/// DELETE /v0/models/convert/{task_id} - ジョブ削除（×ボタン用）
-pub async fn delete_convert_task(
-    State(state): State<AppState>,
-    Path(task_id): Path<Uuid>,
-) -> Result<StatusCode, AppError> {
-    if state.convert_manager.delete(task_id).await {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(RouterError::Internal("Task not found".into()).into())
-    }
-}
+// NOTE: /v0/models/convert エンドポイントは廃止されました。
+// ダウンロード状態は /v0/models の lifecycle_status で確認できます。
 
 /// GET /v0/models/blob/{model_name} - モデルファイル（GGUF）をストリーミング配信
 ///
@@ -1278,6 +1198,14 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_model_name_hierarchical_valid() {
+        // SPEC-dcaeaec4 FR-2: 階層形式を許可
+        assert!(validate_model_name("openai/gpt-oss-20b").is_ok());
+        assert!(validate_model_name("meta/llama-3-8b").is_ok());
+        assert!(validate_model_name("org/sub/model").is_ok());
+    }
+
+    #[test]
     fn test_validate_model_name_empty() {
         assert!(validate_model_name("").is_err());
     }
@@ -1294,76 +1222,16 @@ mod tests {
     }
 
     #[test]
-    fn test_available_model_view_serialize() {
-        let view = AvailableModelView {
-            name: "gpt-oss-7b".to_string(),
-            display_name: Some("GPT-OSS 7B".to_string()),
-            description: Some("Test model".to_string()),
-            tags: Some(vec!["7b".to_string()]),
-            size_gb: Some(4.0),
-            required_memory_gb: Some(6.0),
-            repo: None,
-            filename: None,
-            download_url: None,
-            quantization: None,
-        };
-        let json = serde_json::to_string(&view).unwrap();
-        assert!(json.contains("gpt-oss-7b"));
-        assert!(json.contains("GPT-OSS 7B"));
+    fn test_validate_model_name_dangerous_patterns_rejected() {
+        // パストラバーサル対策
+        assert!(validate_model_name("../etc/passwd").is_err());
+        assert!(validate_model_name("model/../other").is_err());
+        assert!(validate_model_name("/absolute/path").is_err());
+        assert!(validate_model_name("trailing/").is_err());
     }
 
-    #[test]
-    fn test_available_model_view_optional_fields_skipped() {
-        let view = AvailableModelView {
-            name: "test".to_string(),
-            display_name: None,
-            description: None,
-            tags: None,
-            size_gb: None,
-            required_memory_gb: None,
-            repo: None,
-            filename: None,
-            download_url: None,
-            quantization: None,
-        };
-        let json = serde_json::to_string(&view).unwrap();
-        assert!(!json.contains("display_name"));
-        assert!(!json.contains("description"));
-    }
-
-    #[test]
-    fn test_available_models_response_serialize() {
-        let response = AvailableModelsResponse {
-            models: vec![],
-            source: "builtin".to_string(),
-            cached: None,
-            pagination: None,
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("builtin"));
-    }
-
-    #[test]
-    fn test_model_info_to_view_conversion() {
-        let mut model = crate::registry::models::ModelInfo::new(
-            "gpt-oss-7b".to_string(),
-            4 * 1024 * 1024 * 1024,
-            "Test model".to_string(),
-            6 * 1024 * 1024 * 1024,
-            vec!["7b".to_string()],
-        );
-        model.download_url = None;
-        model.repo = None;
-        model.filename = None;
-        model.last_modified = None;
-        model.status = None;
-        let view = model_info_to_view(model);
-        assert_eq!(view.name, "gpt-oss-7b");
-        // 新形式（コロンなし）の場合、display_name はモデル名そのまま
-        assert_eq!(view.display_name, Some("gpt-oss-7b".to_string()));
-        assert!((view.size_gb.unwrap() - 4.0).abs() < 0.001);
-        assert!((view.required_memory_gb.unwrap() - 6.0).abs() < 0.001);
-    }
+    // NOTE: AvailableModelView, AvailableModelsResponse, model_info_to_view は廃止
+    // HFカタログは直接 https://huggingface.co を参照 (Phase 1で削除)
 
     #[tokio::test]
     async fn test_compute_gpu_warnings_detects_insufficient_memory() {

@@ -3,8 +3,27 @@
 #include <nlohmann/json.hpp>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
+#include "runtime/state.h"
 
 namespace llm_node {
+
+namespace {
+// SPEC-dcaeaec4: Helper to check if node is ready and return 503 if not
+bool checkReady(httplib::Response& res) {
+    if (!is_ready()) {
+        res.status = 503;
+        nlohmann::json err = {
+            {"error", {
+                {"type", "service_unavailable"},
+                {"message", "Node is syncing models with router. Please wait."}
+            }}
+        };
+        res.set_content(err.dump(), "application/json");
+        return false;
+    }
+    return true;
+}
+}  // namespace
 
 using json = nlohmann::json;
 
@@ -23,6 +42,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
@@ -41,7 +61,16 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 res.set_chunked_content_provider("text/event-stream",
                     [output](size_t offset, httplib::DataSink& sink) {
                         if (offset == 0) {
-                            json event_data = {{"content", output}};
+                            // OpenAI compatible streaming format
+                            json event_data = {
+                                {"id", "chatcmpl-1"},
+                                {"object", "chat.completion.chunk"},
+                                {"choices", json::array({{
+                                    {"index", 0},
+                                    {"delta", {{"content", output}}},
+                                    {"finish_reason", nullptr}
+                                }})}
+                            };
                             std::string chunk = "data: " + event_data.dump() + "\n\n";
                             sink.write(chunk.data(), chunk.size());
                             std::string done = "data: [DONE]\n\n";
@@ -71,6 +100,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
@@ -89,6 +119,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
         try {
             auto body = json::parse(req.body);
             // モデルパラメータは必須（OpenAI API仕様準拠）

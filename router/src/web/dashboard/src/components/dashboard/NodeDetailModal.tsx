@@ -120,12 +120,18 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
 
   if (!node) return null
 
-  const metricsData = (metrics as Array<{
+  // Sanitize metrics data to handle null values (Recharts Tooltip calls toFixed on values)
+  const metricsData = ((metrics as Array<{
     timestamp: string
-    cpu_usage: number
-    memory_usage: number
-    gpu_usage?: number
-  }>) || []
+    cpu_usage: number | null
+    memory_usage: number | null
+    gpu_usage?: number | null
+  }>) || []).map(m => ({
+    ...m,
+    cpu_usage: m.cpu_usage ?? undefined,
+    memory_usage: m.memory_usage ?? undefined,
+    gpu_usage: m.gpu_usage ?? undefined,
+  }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

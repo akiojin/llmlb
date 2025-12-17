@@ -130,6 +130,9 @@ mod tests {
             average_response_time_ms: Some(110.0),
             loaded_models: vec!["gpt-oss-20b".into()],
             loaded_embedding_models: vec![],
+            loaded_asr_models: vec![],
+            loaded_tts_models: vec![],
+            supported_runtimes: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
         };
@@ -163,6 +166,9 @@ mod tests {
             average_response_time_ms: None,
             loaded_models: Vec::new(),
             loaded_embedding_models: Vec::new(),
+            loaded_asr_models: Vec::new(),
+            loaded_tts_models: Vec::new(),
+            supported_runtimes: Vec::new(),
             initializing: false,
             ready_models: None,
         };

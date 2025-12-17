@@ -11,6 +11,10 @@ use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
 use tower::ServiceExt;
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
 async fn build_app() -> Router {
     // テスト用に一時ディレクトリを設定
@@ -51,14 +55,28 @@ async fn build_app() -> Router {
 #[tokio::test]
 #[serial]
 async fn register_gpu_node_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // モックサーバーを起動してヘルスチェックに応答
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": []
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // モックサーバーのポートを取得（ルーターは runtime_port + 1 をAPIポートとして使用）
+    let mock_port = mock_server.address().port();
+    let runtime_port = mock_port - 1;
+
     let app = build_app().await;
 
     let payload = json!({
         "machine_name": "gpu-node",
-        "ip_address": "10.0.0.10",
+        "ip_address": "127.0.0.1",
         "runtime_version": "0.1.42",
-        "runtime_port": 11434,
+        "runtime_port": runtime_port,
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 2}
@@ -116,7 +134,7 @@ async fn register_gpu_node_success() {
 #[tokio::test]
 #[serial]
 async fn register_gpu_node_missing_devices_is_rejected() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
+    // GPUデバイスが空の場合、ヘルスチェック前にバリデーションで拒否される
     let app = build_app().await;
 
     let payload = json!({

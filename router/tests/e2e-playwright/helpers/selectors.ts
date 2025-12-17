@@ -15,40 +15,31 @@ export const DashboardSelectors = {
     refreshMetrics: '#refresh-metrics',
   },
 
-  // Stats Grid
+  // Stats Grid - These match the actual data-stat attributes in StatsCards.tsx
+  // Note: Online/Offline counts are shown in subtitle of totalNodes card, not as separate cards
+  // Note: Success/Failed counts are shown in subtitle of totalRequests and successRate cards
   stats: {
     totalNodes: '[data-stat="total-nodes"]',
-    onlineNodes: '[data-stat="online-nodes"]',
-    offlineNodes: '[data-stat="offline-nodes"]',
     totalRequests: '[data-stat="total-requests"]',
-    successfulRequests: '[data-stat="successful-requests"]',
-    failedRequests: '[data-stat="failed-requests"]',
+    successRate: '[data-stat="success-rate"]',
     averageResponseTime: '[data-stat="average-response-time-ms"]',
     averageGpuUsage: '[data-stat="average-gpu-usage"]',
     averageGpuMemory: '[data-stat="average-gpu-memory-usage"]',
-    activeRequests: '[data-stat="total-active-requests"]',
   },
 
   // Models Tab
   models: {
-    hfRegisterUrl: '#hf-register-url',
-    hfRegisterSubmit: '#hf-register-url-submit',
-    // Unified local models view (registered + downloading)
-    localModelsList: '#local-models-list',
-    // Legacy selectors (hidden but kept for backward compatibility)
-    registeredModelsList: '#local-models-list',
-    registeringTasksList: '#local-models-list',
-    downloadTasksList: '#local-models-list',
-    convertTasksList: '#local-models-list',
-    // Local model card selectors
-    localModelCard: '.local-model-card',
-    localModelCardDownloading: '.local-model-card--downloading',
-    localModelCardRegistered: '.local-model-card--registered',
+    // Register button opens the convert modal (excludes tabs)
+    registerButton: 'button:not([role="tab"]):has-text("Register")',
+    // Register/Convert modal fields
     convertModal: '#convert-modal',
     convertModalClose: '#convert-modal-close',
     convertRepo: '#convert-repo',
     convertFilename: '#convert-filename',
     convertSubmit: '#convert-submit',
+    // Model lists
+    localModelsList: '#local-models-list',
+    registeringTasksList: '#registering-tasks',
   },
 
   // Nodes Tab

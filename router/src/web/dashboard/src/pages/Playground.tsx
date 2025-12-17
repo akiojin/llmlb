@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { chatApi, modelsApi, type ChatSession, type ChatMessage, type ModelInfo } from '@/lib/api'
+import { chatApi, modelsApi, type ChatSession, type ChatMessage, type RegisteredModelView } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -50,6 +50,10 @@ import {
   ExternalLink,
   Code,
   Check,
+  PanelLeftClose,
+  PanelLeft,
+  CircleDot,
+  RotateCcw,
 } from 'lucide-react'
 
 interface Message {
@@ -68,6 +72,8 @@ export default function Playground() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [curlOpen, setCurlOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [providerFilter, setProviderFilter] = useState<'all' | 'local' | 'cloud'>('all')
 
   // Settings state
   const [selectedModel, setSelectedModel] = useState('')
@@ -75,9 +81,20 @@ export default function Playground() {
   const [streamEnabled, setStreamEnabled] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(2048)
+  const [apiKey, setApiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('llm-router-api-key')
+      if (stored) return stored
+      // ローカル環境ではsk_debugをデフォルトに（開発モード用）
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      if (isLocal) return 'sk_debug'
+    }
+    return ''
+  })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Fetch models
   const { data: models } = useQuery({
@@ -97,12 +114,13 @@ export default function Playground() {
     }
   }, [fetchedSessions])
 
-  // Set default model
+  // Set default model (registered モデルのみから選択)
   useEffect(() => {
     if (models && !selectedModel) {
-      const readyModels = (models as ModelInfo[]).filter((m) => m.state === 'ready')
-      if (readyModels.length > 0) {
-        setSelectedModel(readyModels[0].name)
+      const allModels = models as RegisteredModelView[]
+      const registeredModels = allModels.filter(m => m.lifecycle_status === 'registered')
+      if (registeredModels.length > 0) {
+        setSelectedModel(registeredModels[0].name)
       }
     }
   }, [models, selectedModel])
@@ -117,6 +135,12 @@ export default function Playground() {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(newTheme)
     document.documentElement.classList.toggle('dark', newTheme === 'dark')
+  }
+
+  // Save API key to localStorage
+  const handleApiKeyChange = (value: string) => {
+    setApiKey(value)
+    localStorage.setItem('llm-router-api-key', value)
   }
 
   // Create new session
@@ -151,6 +175,26 @@ export default function Playground() {
       setMessages([])
     }
     toast({ title: 'Session deleted' })
+  }
+
+  // Reset/clear current chat
+  const resetChat = () => {
+    setMessages([])
+    if (currentSessionId) {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === currentSessionId
+            ? { ...s, messages: [], updated_at: new Date().toISOString() }
+            : s
+        )
+      )
+    }
+    toast({ title: 'Chat cleared' })
+  }
+
+  // Toggle sidebar
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => !prev)
   }
 
   // Send message
@@ -188,9 +232,16 @@ export default function Playground() {
 
       if (streamEnabled) {
         // Streaming response
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        if (apiKey) {
+          headers['Authorization'] = `Bearer ${apiKey}`
+        }
+
         const response = await fetch('/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             model: selectedModel,
             messages: requestMessages,
@@ -260,9 +311,16 @@ export default function Playground() {
         }
       } else {
         // Non-streaming response
+        const nonStreamHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        if (apiKey) {
+          nonStreamHeaders['Authorization'] = `Bearer ${apiKey}`
+        }
+
         const response = await fetch('/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: nonStreamHeaders,
           body: JSON.stringify({
             model: selectedModel,
             messages: requestMessages,
@@ -313,6 +371,8 @@ export default function Playground() {
     } finally {
       setIsStreaming(false)
       abortControllerRef.current = null
+      // 送信完了後に入力欄にフォーカスを戻す
+      inputRef.current?.focus()
     }
   }
 
@@ -328,8 +388,10 @@ export default function Playground() {
       ? [{ role: 'system', content: systemPrompt }, ...messages]
       : messages
 
+    const authHeader = apiKey ? `\n  -H 'Authorization: Bearer ${apiKey}' \\` : ''
+
     return `curl -X POST 'http://localhost:8080/v1/chat/completions' \\
-  -H 'Content-Type: application/json' \\
+  -H 'Content-Type: application/json' \\${authHeader}
   -d '${JSON.stringify(
     {
       model: selectedModel,
@@ -355,12 +417,20 @@ export default function Playground() {
     }
   }
 
-  const readyModels = (models as ModelInfo[] | undefined)?.filter((m) => m.state === 'ready') || []
+  // ルーターにキャッシュ完了（registered）のモデルのみを選択可能にする
+  const allModels = (models as RegisteredModelView[] | undefined) || []
+  const availableModels = allModels.filter(m => m.lifecycle_status === 'registered')
 
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
-      <div className="w-64 border-r flex flex-col">
+      <div
+        id="sidebar"
+        className={cn(
+          'border-r flex flex-col transition-all duration-300',
+          sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-64'
+        )}
+      >
         {/* Header */}
         <div className="p-4 border-b">
           <div className="flex items-center gap-2">
@@ -376,7 +446,7 @@ export default function Playground() {
 
         {/* New Chat Button */}
         <div className="p-3">
-          <Button className="w-full" onClick={createSession}>
+          <Button id="new-chat" className="w-full" onClick={createSession}>
             <Plus className="mr-2 h-4 w-4" />
             New Chat
           </Button>
@@ -384,7 +454,7 @@ export default function Playground() {
 
         {/* Sessions List */}
         <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+          <div id="session-list" className="p-2 space-y-1">
             {sessions.map((session) => (
               <div
                 key={session.id}
@@ -444,6 +514,7 @@ export default function Playground() {
               )}
             </Button>
             <Button
+              id="settings-toggle"
               variant="ghost"
               size="icon"
               onClick={() => setSettingsOpen(true)}
@@ -459,31 +530,60 @@ export default function Playground() {
         {/* Chat Header */}
         <div className="h-14 border-b flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
+            {/* Sidebar Toggle */}
+            <Button
+              id="sidebar-toggle"
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeft className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
+
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger id="model-select" className="w-64">
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
               <SelectContent>
-                {readyModels.length === 0 ? (
-                  <SelectItem value="" disabled>
+                {availableModels.length === 0 ? (
+                  <SelectItem value="__no_models__" disabled>
                     No models available
                   </SelectItem>
                 ) : (
-                  readyModels.map((model) => (
-                    <SelectItem key={model.name} value={model.name}>
-                      {model.name}
-                    </SelectItem>
-                  ))
+                  availableModels
+                    .filter((model) => model.name && model.name.length > 0)
+                    .map((model) => (
+                      <SelectItem key={model.name} value={model.name}>
+                        {model.name}
+                      </SelectItem>
+                    ))
                 )}
               </SelectContent>
             </Select>
+
+            {/* Router Status */}
+            <span id="router-status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CircleDot className="h-3 w-3 text-green-500" />
+              Router: Online
+            </span>
+
             {streamEnabled && (
               <Badge variant="secondary" className="text-xs">
                 Streaming
               </Badge>
             )}
+            {!apiKey && (
+              <Badge variant="destructive" className="text-xs cursor-pointer" onClick={() => setSettingsOpen(true)}>
+                API Key Required
+              </Badge>
+            )}
           </div>
-          <Button variant="outline" size="sm" onClick={() => setCurlOpen(true)}>
+          <Button id="copy-curl" variant="outline" size="sm" onClick={() => setCurlOpen(true)}>
             <Code className="mr-2 h-4 w-4" />
             cURL
           </Button>
@@ -491,9 +591,9 @@ export default function Playground() {
 
         {/* Messages */}
         <ScrollArea className="flex-1 p-4">
-          <div className="max-w-3xl mx-auto space-y-4">
+          <div id="chat-log" className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center">
+              <div className="chat-welcome flex flex-col items-center justify-center h-64 text-center">
                 <MessageSquare className="h-12 w-12 text-muted-foreground/50 mb-4" />
                 <h2 className="text-lg font-medium">Start a conversation</h2>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -506,7 +606,7 @@ export default function Playground() {
                   key={index}
                   className={cn(
                     'flex gap-3',
-                    message.role === 'user' && 'justify-end'
+                    message.role === 'user' ? 'message--user justify-end' : 'message--assistant'
                   )}
                 >
                   {message.role === 'assistant' && (
@@ -522,7 +622,7 @@ export default function Playground() {
                         : 'bg-muted'
                     )}
                   >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <p className="message-text text-sm whitespace-pre-wrap">{message.content}</p>
                   </div>
                   {message.role === 'user' && (
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -538,13 +638,16 @@ export default function Playground() {
 
         {/* Input */}
         <div className="border-t p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
+          <div id="chat-form" className="max-w-3xl mx-auto flex gap-2">
             <Input
+              ref={inputRef}
+              id="chat-input"
               placeholder="Type a message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                // IME変換中のEnterは送信しない（日本語入力対応）
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   sendMessage()
                 }
@@ -553,12 +656,12 @@ export default function Playground() {
               className="flex-1"
             />
             {isStreaming ? (
-              <Button variant="destructive" onClick={stopGeneration}>
+              <Button id="stop-button" variant="destructive" onClick={stopGeneration}>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 Stop
               </Button>
             ) : (
-              <Button onClick={sendMessage} disabled={!input.trim() || !selectedModel}>
+              <Button id="send-button" onClick={sendMessage} disabled={!input.trim() || !selectedModel}>
                 <Send className="mr-2 h-4 w-4" />
                 Send
               </Button>
@@ -569,7 +672,7 @@ export default function Playground() {
 
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent>
+        <DialogContent id="settings-modal">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
             <DialogDescription>
@@ -578,8 +681,62 @@ export default function Playground() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label>API Key</Label>
+              <Input
+                id="api-key-input"
+                type="password"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Required for OpenAI compatible API authentication
+              </p>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <Label>Model Provider Filter</Label>
+              <div className="flex gap-2">
+                <button
+                  className={cn(
+                    'provider-btn flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors',
+                    providerFilter === 'local' ? 'provider-btn--active bg-primary text-primary-foreground' : 'bg-muted'
+                  )}
+                  data-provider="local"
+                  onClick={() => setProviderFilter('local')}
+                >
+                  Local
+                </button>
+                <button
+                  className={cn(
+                    'provider-btn flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors',
+                    providerFilter === 'cloud' ? 'provider-btn--active bg-primary text-primary-foreground' : 'bg-muted'
+                  )}
+                  data-provider="cloud"
+                  onClick={() => setProviderFilter('cloud')}
+                >
+                  Cloud
+                </button>
+                <button
+                  className={cn(
+                    'provider-btn flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors',
+                    providerFilter === 'all' ? 'provider-btn--active bg-primary text-primary-foreground' : 'bg-muted'
+                  )}
+                  data-provider="all"
+                  onClick={() => setProviderFilter('all')}
+                >
+                  All
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Filter models by provider type
+              </p>
+            </div>
+            <Separator />
+            <div className="space-y-2">
               <Label>System Prompt</Label>
               <Textarea
+                id="system-prompt"
                 placeholder="You are a helpful assistant..."
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
@@ -594,7 +751,7 @@ export default function Playground() {
                   Stream responses as they're generated
                 </p>
               </div>
-              <Switch checked={streamEnabled} onCheckedChange={setStreamEnabled} />
+              <Switch id="stream-toggle" checked={streamEnabled} onCheckedChange={setStreamEnabled} />
             </div>
             <Separator />
             <div className="space-y-2">
@@ -618,6 +775,24 @@ export default function Playground() {
                 min={1}
                 max={32000}
               />
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Clear Chat</Label>
+                <p className="text-xs text-muted-foreground">
+                  Clear all messages in current session
+                </p>
+              </div>
+              <Button
+                id="reset-chat"
+                variant="outline"
+                size="sm"
+                onClick={resetChat}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset
+              </Button>
             </div>
           </div>
           <DialogFooter>

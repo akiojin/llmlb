@@ -14,7 +14,7 @@ use llm_router_common::{
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{net::IpAddr, time::Instant};
+use std::{collections::HashSet, net::IpAddr, time::Instant};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -103,13 +103,75 @@ pub async fn embeddings(
     .await
 }
 
-/// GET /v1/models - モデル一覧取得
-pub async fn list_models(State(_state): State<AppState>) -> Result<Response, AppError> {
+/// GET /v1/models - モデル一覧取得（OpenAI互換 - 標準形式のみ）
+/// ノードが実際にロードしているモデルのみを返す。
+pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    // ノードがロードしているモデルを取得（パスからモデル名を抽出）
+    let nodes = state.registry.list().await;
+    let loaded_models: HashSet<String> = nodes
+        .iter()
+        .flat_map(|n| n.loaded_models.clone())
+        .filter_map(|path| {
+            // パスからモデル名を抽出: /.../.llm-router/models/{model_name}/model.gguf
+            std::path::Path::new(&path)
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+
     // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
     let models = list_registered_models();
 
-    // OpenAI互換レスポンス形式に合わせる
+    // OpenAI互換レスポンス形式に合わせる（標準フィールドのみ）
     // https://platform.openai.com/docs/api-reference/models/list
+    let mut data: Vec<Value> = Vec::new();
+    for m in models {
+        let path = m
+            .path
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+            .or_else(|| router_model_path(&m.name));
+
+        // ダウンロードが完了していないモデルは一覧に出さない
+        if path.is_none() {
+            continue;
+        }
+
+        // ノードがロードしていないモデルは一覧に出さない
+        if !loaded_models.is_empty() && !loaded_models.contains(&m.name) {
+            continue;
+        }
+
+        // OpenAI標準フォーマット（拡張フィールドなし）
+        let obj = json!({
+            "id": m.name,
+            "object": "model",
+            "created": 0,
+            "owned_by": "router",
+        });
+        data.push(obj);
+    }
+
+    let body = json!({
+        "object": "list",
+        "data": data,
+    });
+
+    Ok((StatusCode::OK, Json(body)).into_response())
+}
+
+/// GET /v0/models - モデル一覧取得（拡張情報付き - ノード同期用）
+///
+/// OpenAI互換APIと異なり、`path`, `download_url`, `chat_template`などの
+/// 拡張情報を含む。ノードがルーターからモデル情報を同期するために使用。
+/// SPEC-dcaeaec4: ルーターがサポートする（ファイルが存在する）モデルをすべて返す。
+pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Response, AppError> {
+    // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
+    let models = list_registered_models();
+
     let mut data: Vec<Value> = Vec::new();
     for m in models {
         let path = m
@@ -132,6 +194,7 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
             "owned_by": "router",
         });
 
+        // 拡張フィールド（ノード同期用）
         if let Some(p) = path.clone() {
             obj["path"] = json!(p);
         }

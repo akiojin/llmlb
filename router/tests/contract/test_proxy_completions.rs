@@ -78,7 +78,6 @@ async fn node_models_handler(State(state): State<Arc<NodeStubState>>) -> impl In
 #[tokio::test]
 #[serial]
 async fn proxy_completions_end_to_end_success() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_node_stub(NodeStubState {
         expected_model: Some("gpt-oss-20b".to_string()),
         response: NodeGenerateStubResponse::Success(serde_json::json!({
@@ -118,7 +117,6 @@ async fn proxy_completions_end_to_end_success() {
 #[tokio::test]
 #[serial]
 async fn proxy_completions_propagates_upstream_error() {
-    std::env::set_var("LLM_ROUTER_SKIP_HEALTH_CHECK", "1");
     let node_stub = spawn_node_stub(NodeStubState {
         expected_model: Some("missing-model".to_string()),
         response: NodeGenerateStubResponse::Error(

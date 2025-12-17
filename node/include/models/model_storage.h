@@ -39,6 +39,9 @@ public:
     // Validate model (check if model.gguf exists)
     bool validateModel(const std::string& model_name) const;
 
+    // Delete model directory and all files
+    bool deleteModel(const std::string& model_name);
+
 private:
     std::string models_dir_;
 };

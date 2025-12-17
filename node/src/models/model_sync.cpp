@@ -101,6 +101,8 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
+    // SPEC-dcaeaec4 FR-8: /v0/models を使用（拡張情報を含む）
+    // /v1/models はOpenAI互換（標準形式のみ）
     std::optional<std::string> node_token;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
@@ -110,9 +112,9 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Result res;
     if (node_token.has_value() && !node_token->empty()) {
         httplib::Headers headers = {{"X-Node-Token", *node_token}};
-        res = cli.Get("/v1/models", headers);
+        res = cli.Get("/v0/models", headers);
     } else {
-        res = cli.Get("/v1/models");
+        res = cli.Get("/v0/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
         return {};
@@ -121,12 +123,30 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     try {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
-        if (body.contains("data") && body["data"].is_array()) {
-            for (const auto& m : body["data"]) {
-                if (!m.contains("id")) continue;
+
+        // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
+        // 配列の場合は直接処理、そうでなければ data フィールドを参照
+        const json* models_array = nullptr;
+        if (body.is_array()) {
+            models_array = &body;
+        } else if (body.contains("data") && body["data"].is_array()) {
+            models_array = &body["data"];
+        }
+
+        if (models_array) {
+            for (const auto& m : *models_array) {
+                // /v0/models では "name" フィールドを使用（/v1/models では "id"）
+                std::string model_id;
+                if (m.contains("name") && m["name"].is_string()) {
+                    model_id = m["name"].get<std::string>();
+                } else if (m.contains("id") && m["id"].is_string()) {
+                    model_id = m["id"].get<std::string>();
+                } else {
+                    continue;
+                }
 
                 RemoteModel rm;
-                rm.id = m["id"].get<std::string>();
+                rm.id = model_id;
                 rm.path = m.value("path", "");
                 rm.download_url = m.value("download_url", "");
                 rm.chat_template = m.value("chat_template", "");
@@ -153,11 +173,25 @@ std::vector<std::string> ModelSync::listLocalModels() const {
     std::error_code ec;
     if (!fs::exists(models_dir_, ec) || ec) return models;
 
-    for (const auto& entry : fs::directory_iterator(models_dir_, ec)) {
+    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
+    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
         if (ec) break;
-        if (entry.is_directory()) {
-            models.push_back(entry.path().filename().string());
-        }
+        if (entry.is_directory()) continue;
+
+        // model.gguf ファイルを検索
+        if (entry.path().filename() != "model.gguf") continue;
+
+        // 親ディレクトリからモデル名を計算
+        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
+        const auto parent_dir = entry.path().parent_path();
+        ec.clear();
+        const auto relative = fs::relative(parent_dir, models_dir_, ec);
+        if (ec || relative.empty()) continue;
+
+        // SPEC-dcaeaec4: ルーターとの比較のため小文字に正規化
+        // ルーターは model_name_to_dir() で正規化済みの名前を返すため、
+        // ローカルモデル名も同じ正規化を適用する
+        models.push_back(ModelStorage::modelNameToDir(relative.string()));
     }
     return models;
 }

@@ -227,8 +227,11 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
+    // SPEC-dcaeaec4 FR-7: プッシュ通知用コンテキストを初期化
+    llm_router::convert::set_notification_context(registry.clone(), http_client.clone());
+
     let state = AppState {
-        registry,
+        registry: registry.clone(),
         load_manager,
         request_history,
         convert_manager,
@@ -236,6 +239,9 @@ async fn run_server(config: ServerConfig) {
         jwt_secret,
         http_client,
     };
+
+    // 定期的なモデル整合性チェックを開始（5分間隔）
+    llm_router::api::models::start_periodic_sync(registry);
 
     let router = api::create_router(state);
 

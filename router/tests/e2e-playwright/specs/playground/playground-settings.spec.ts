@@ -15,17 +15,18 @@ test.describe('Playground Settings @playground', () => {
     await expect(playground.settingsModal).toBeVisible();
   });
 
-  test('PST-02: Settings modal can be closed', async () => {
+  test('PST-02: Settings modal can be closed', async ({ page }) => {
     await playground.openSettings();
-    await playground.closeSettings();
+    // Close the modal using Escape key (Radix Dialog closes on Escape)
+    await page.keyboard.press('Escape');
     await expect(playground.settingsModal).toBeHidden();
   });
 
   test('PST-03: Provider Local button is clickable', async () => {
+    // Provider filter buttons not implemented in current Playground
     await playground.openSettings();
     await playground.setProvider('local');
 
-    // Check button has active state
     const isActive = await playground.providerLocal.evaluate(
       (el) => el.classList.contains('provider-btn--active')
     );
@@ -33,6 +34,7 @@ test.describe('Playground Settings @playground', () => {
   });
 
   test('PST-04: Provider Cloud button is clickable', async () => {
+    // Provider filter buttons not implemented in current Playground
     await playground.openSettings();
     await playground.setProvider('cloud');
 
@@ -43,6 +45,7 @@ test.describe('Playground Settings @playground', () => {
   });
 
   test('PST-05: Provider All button is clickable', async () => {
+    // Provider filter buttons not implemented in current Playground
     await playground.openSettings();
     await playground.setProvider('all');
 
@@ -69,12 +72,16 @@ test.describe('Playground Settings @playground', () => {
     await expect(playground.streamToggle).toBeVisible();
   });
 
-  test('PST-09: Stream toggle is clickable', async () => {
+  test('PST-09: Stream toggle is clickable', async ({ page }) => {
     await playground.openSettings();
-    const initialState = await playground.streamToggle.isChecked();
-    await playground.streamToggle.click();
-    const newState = await playground.streamToggle.isChecked();
-    expect(newState).toBe(!initialState);
+    // Stream toggle is a shadcn Switch component, check if it can be toggled
+    const toggle = playground.streamToggle;
+    const initialState = await toggle.getAttribute('data-state');
+    await toggle.click();
+    await page.waitForTimeout(100);
+    const newState = await toggle.getAttribute('data-state');
+    // Should have changed state
+    expect(newState).not.toBe(initialState);
   });
 
   test('PST-10: System prompt field exists', async () => {
@@ -90,23 +97,25 @@ test.describe('Playground Settings @playground', () => {
   });
 
   test('PST-12: Clear Playground button exists', async () => {
+    // Reset chat button not implemented in current Playground
     await playground.openSettings();
     await expect(playground.resetChat).toBeVisible();
   });
 
   test('PST-13: Copy cURL button exists', async () => {
-    await playground.openSettings();
+    // cURL button is in the header, not in settings
     await expect(playground.copyCurl).toBeVisible();
   });
 
   test('PST-14: Copy cURL button is clickable', async ({ page }) => {
-    await playground.openSettings();
-
-    // Click copy button
+    // cURL button is in the header, clicks to open dialog
     await playground.copyCurl.click();
 
-    // Should not throw error - clipboard access may be restricted
+    // Wait for cURL dialog to open
     await page.waitForTimeout(300);
-    expect(true).toBe(true);
+
+    // Should show cURL command dialog
+    const curlDialog = page.locator('[role="dialog"]:has-text("cURL")');
+    await expect(curlDialog).toBeVisible();
   });
 });

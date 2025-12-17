@@ -3,9 +3,11 @@
 //! ノード登録、ヘルスチェック、プロキシAPI
 
 pub mod api_keys;
+pub mod audio;
 pub mod auth;
 pub mod dashboard;
 pub mod health;
+pub mod images;
 pub mod logs;
 pub mod models;
 pub mod nodes;
@@ -67,7 +69,14 @@ pub fn create_router(state: AppState) -> Router {
     let api_key_routes = Router::new()
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
-        .route("/v1/embeddings", post(openai::embeddings));
+        .route("/v1/embeddings", post(openai::embeddings))
+        // 音声API（OpenAI Audio API互換）
+        .route("/v1/audio/transcriptions", post(audio::transcriptions))
+        .route("/v1/audio/speech", post(audio::speech))
+        // 画像API（OpenAI Images API互換）
+        .route("/v1/images/generations", post(images::generations))
+        .route("/v1/images/edits", post(images::edits))
+        .route("/v1/images/variations", post(images::variations));
 
     let api_key_protected_routes = api_key_routes.layer(middleware::from_fn_with_state(
         state.db_pool.clone(),
@@ -83,6 +92,15 @@ pub fn create_router(state: AppState) -> Router {
         state.db_pool.clone(),
         crate::auth::middleware::api_key_or_node_token_auth_middleware,
     ));
+
+    // /v0/models - ノード同期用（APIキーまたはノードトークンで認証）
+    // /v0 ネスト内に配置する必要がある（Axumのルーティング順序のため）
+    let v0_models_route = Router::new()
+        .route("/models", get(models::get_registered_models))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_or_node_token_auth_middleware,
+        ));
 
     Router::new()
         // `/v0/*`: llm-router独自API（互換不要・versioned）
@@ -130,19 +148,14 @@ pub fn create_router(state: AppState) -> Router {
                 // ノードログ取得（router→node proxy）
                 .route("/nodes/:node_id/logs", get(logs::get_node_logs))
                 // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
-                .route("/models/available", get(models::get_available_models))
+                // NOTE: /models/available, /models/convert は廃止 - /v0/models に統合
+                // /models - 登録モデル一覧（ノード同期用、APIキーまたはノードトークンで認証）
+                .merge(v0_models_route)
                 .route("/models/register", post(models::register_model))
-                .route("/models/registered", get(models::get_registered_models))
                 .route("/models/*model_name", delete(models::delete_model))
                 .route(
                     "/models/discover-gguf",
                     post(models::discover_gguf_endpoint),
-                )
-                .route("/models/convert", post(models::convert_model))
-                .route("/models/convert", get(models::list_convert_tasks))
-                .route(
-                    "/models/convert/:task_id",
-                    get(models::get_convert_task).delete(models::delete_convert_task),
                 )
                 // モデルファイル配信API (SPEC-48678000)
                 .route("/models/blob/:model_name", get(models::get_model_blob))

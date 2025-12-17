@@ -34,9 +34,11 @@ public:
 class RouterAndRegistryServer {
 public:
     void start(int router_port, int registry_port) {
-        router_.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+        // SPEC-dcaeaec4: ModelSync uses /v0/models (extended format)
+        router_.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            res.set_content(R"({"data":[{"id":"gpt-oss-7b","etag":"\"etag-1\"","size":3}]})", "application/json");
+            // /v0/models returns array directly with "name" field
+            res.set_content(R"([{"name":"gpt-oss-7b","etag":"\"etag-1\"","size":3}])", "application/json");
         });
 
         registry_.Get(R"(/gpt-oss-7b/manifest.json)", [](const httplib::Request&, httplib::Response& res) {

@@ -1,0 +1,4 @@
+torch>=2.3,<2.5
+transformers>=4.44,<5.0
+accelerate>=0.31
+soundfile

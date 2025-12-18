@@ -174,7 +174,7 @@ async fn run_server(config: ServerConfig) {
     llm_router::db::request_history::start_cleanup_task(request_history.clone());
 
     let convert_concurrency: usize =
-        get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 1);
+        get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 2);
     let convert_manager = llm_router::convert::ConvertTaskManager::new(convert_concurrency);
     // 起動時に変換用スクリプトと依存をチェック（不足ならエラー終了）
     llm_router::convert::verify_convert_ready()

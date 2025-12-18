@@ -785,10 +785,6 @@ where
         export_non_onnx(repo, revision, &target, progress_callback.clone()).await?;
     }
 
-    if let Err(e) = ensure_manifest(&dir, &model_name).await {
-        tracing::warn!(error=%e, model=%model_name, "failed_to_write_manifest");
-    }
-
     finalize_model_registration(
         &model_name,
         repo,
@@ -802,6 +798,10 @@ where
         chat_template,
     )
     .await;
+
+    if let Err(e) = ensure_manifest(&dir, &model_name).await {
+        tracing::warn!(error=%e, model=%model_name, "failed_to_write_manifest");
+    }
 
     Ok(target.to_string_lossy().to_string())
 }
@@ -1403,6 +1403,13 @@ async fn finalize_model_registration(
         .find(|m| m.name == model_name)
         .unwrap_or_else(|| ModelInfo::new(model_name.to_string(), 0, repo.to_string(), 0, vec![]));
 
+    // Persisted metadata.json should reflect the final chat_template (if any).
+    let template_for_metadata = chat_template
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| model.chat_template.clone().filter(|s| !s.is_empty()));
+
     model.size = size;
     model.required_memory = required_memory;
     model.tags = vec!["onnx".into()];
@@ -1423,6 +1430,26 @@ async fn finalize_model_registration(
 
     upsert_registered_model(model);
     persist_registered_models().await;
+
+    // Persist chat_template next to model for node-side prompt building (SPEC-fba3c39d FR-002).
+    if let Some(tmpl) = template_for_metadata {
+        if let Some(parent) = target.parent() {
+            let meta_path = parent.join("metadata.json");
+            let meta = serde_json::json!({
+                "chat_template": tmpl,
+            });
+            if let Ok(bytes) = serde_json::to_vec_pretty(&meta) {
+                if let Err(e) = tokio::fs::write(&meta_path, bytes).await {
+                    tracing::warn!(
+                        model = %model_name,
+                        path = %meta_path.to_string_lossy(),
+                        error = %e,
+                        "failed_to_write_metadata_json"
+                    );
+                }
+            }
+        }
+    }
 
     // SPEC-dcaeaec4 FR-7: オンラインノードにプッシュ通知を送信
     notify_nodes_of_new_model(model_name).await;

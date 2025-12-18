@@ -76,6 +76,33 @@ endif()
 find_package(onnxruntime REQUIRED)
 add_definitions(-DUSE_ONNX_RUNTIME)
 message(STATUS "ONNX Runtime found")
+
+# Rust tokenizer FFI (tokenizer.json support)
+set(LLM_TOKENIZER_FFI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llm_tokenizer_ffi)
+if(EXISTS "${LLM_TOKENIZER_FFI_DIR}/Cargo.toml")
+    if(WIN32)
+        set(LLM_TOKENIZER_FFI_LIB ${LLM_TOKENIZER_FFI_DIR}/target/release/llm_tokenizer_ffi.lib)
+    else()
+        set(LLM_TOKENIZER_FFI_LIB ${LLM_TOKENIZER_FFI_DIR}/target/release/libllm_tokenizer_ffi.a)
+    endif()
+
+    add_custom_command(
+        OUTPUT ${LLM_TOKENIZER_FFI_LIB}
+        COMMAND cargo build --manifest-path ${LLM_TOKENIZER_FFI_DIR}/Cargo.toml --release
+        WORKING_DIRECTORY ${LLM_TOKENIZER_FFI_DIR}
+        DEPENDS
+            ${LLM_TOKENIZER_FFI_DIR}/Cargo.toml
+            ${LLM_TOKENIZER_FFI_DIR}/src/lib.rs
+        COMMENT "Building llm_tokenizer_ffi (Rust)"
+        VERBATIM
+    )
+    add_custom_target(llm_tokenizer_ffi_lib DEPENDS ${LLM_TOKENIZER_FFI_LIB})
+
+    add_library(llm_tokenizer_ffi STATIC IMPORTED GLOBAL)
+    set_target_properties(llm_tokenizer_ffi PROPERTIES IMPORTED_LOCATION ${LLM_TOKENIZER_FFI_LIB})
+    add_dependencies(llm_tokenizer_ffi llm_tokenizer_ffi_lib)
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
     spdlog
@@ -181,6 +208,11 @@ endif()
 # Create executable
 add_executable(llm-node ${SOURCES})
 
+# Ensure Rust tokenizer is built before llm-node links
+if(TARGET llm_tokenizer_ffi_lib)
+    add_dependencies(llm-node llm_tokenizer_ffi_lib)
+endif()
+
 # Link libraries
 target_link_libraries(llm-node
     utils_lib
@@ -189,6 +221,10 @@ target_link_libraries(llm-node
     OpenSSL::Crypto
     onnxruntime::onnxruntime
 )
+
+if(TARGET llm_tokenizer_ffi_lib)
+    target_link_libraries(llm-node llm_tokenizer_ffi)
+endif()
 
 # whisper.cpp support
 if(BUILD_WITH_WHISPER)

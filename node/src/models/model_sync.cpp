@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <thread>
+#include <spdlog/spdlog.h>
 #include "utils/config.h"
 #include "utils/file_lock.h"
 #include "models/model_storage.h"
@@ -293,6 +294,11 @@ ModelSyncResult ModelSync::sync() {
 
         ModelSyncResult result;
         ModelDownloader downloader(base_url_, models_dir_, timeout_);
+        // Router registry base (manifest + multi-file download)
+        std::string registry_base = base_url_;
+        if (!registry_base.empty() && registry_base.back() == '/') registry_base.pop_back();
+        registry_base += "/api/models/registry";
+        ModelDownloader registry_downloader(registry_base, models_dir_, timeout_);
 
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;
@@ -311,6 +317,14 @@ ModelSyncResult ModelSync::sync() {
                         // Path is accessible - InferenceEngine will use it directly
                         ok = true;
                     }
+                }
+
+                // If router path is not accessible and model has no direct download_url,
+                // fall back to router registry (manifest-based bundle download).
+                if (!ok && info.download_url.empty()) {
+                    spdlog::info("Downloading model bundle from router registry: {}", id);
+                    ok = downloadModel(registry_downloader, id, nullptr);
+                    downloaded = ok;
                 }
 
                 // Only download if path is not accessible and download_url exists

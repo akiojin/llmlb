@@ -1,33 +1,25 @@
 import { test, expect } from '@playwright/test';
 import { PlaygroundPage } from '../../pages/playground.page';
-import { registerModel, waitForModelReady } from '../../helpers/api-helpers';
+import { getNodes, registerModel, waitForModelReady } from '../../helpers/api-helpers';
 
-const TEST_REPO = 'onnxmodelzoo/mnist-8';
-const TEST_FILENAME = 'mnist-8.onnx';
-const TEST_MODEL_NAME = 'onnxmodelzoo/mnist-8';
+// Tiny text-generation model (converted to ONNX by router) for real chat inference.
+const TEST_REPO = 'sshleifer/tiny-gpt2';
+const TEST_FILENAME: string | undefined = undefined;
+const TEST_MODEL_NAME = 'sshleifer/tiny-gpt2';
 
 test('LLM response in Playground', async ({ page, request }) => {
   const register = await registerModel(request, TEST_REPO, TEST_FILENAME);
   expect([201, 400]).toContain(register.status);
   await waitForModelReady(request, register.modelName || TEST_MODEL_NAME, { timeout: 120000 });
 
-  // Log all network requests
-  page.on('request', req => {
-    if (req.url().includes('chat/completions')) {
-      console.log('REQUEST:', req.method(), req.url());
-      console.log('REQUEST BODY:', req.postData());
-    }
-  });
-  page.on('response', async resp => {
-    if (resp.url().includes('chat/completions')) {
-      console.log('RESPONSE:', resp.status(), resp.url());
-      try {
-        const body = await resp.text();
-        console.log('RESPONSE BODY:', body.substring(0, 500));
-      } catch (e) {
-        console.log('RESPONSE ERROR:', e);
-      }
-    }
+  // Requires at least one online node for inference.
+  const nodes = await getNodes(request);
+  expect(nodes.some((n) => n.status === 'online')).toBe(true);
+
+  // Ensure UI uses the debug API key for both model list and chat requests.
+  await page.addInitScript(() => {
+    localStorage.setItem('llm-router-api-key', 'sk_debug');
+    localStorage.setItem('playground_api_key', 'sk_debug');
   });
 
   const playground = new PlaygroundPage(page);
@@ -44,14 +36,6 @@ test('LLM response in Playground', async ({ page, request }) => {
   const options = page.locator('[role="option"]');
   const count = await options.count();
   console.log(`Found ${count} model options`);
-
-  // Skip test if no models are available (requires registered node with models)
-  const firstOptionText = count > 0 ? await options.first().textContent() : '';
-  if (count === 0 || firstOptionText?.includes('No models available')) {
-    console.log('Skipping test: No models available (requires registered node)');
-    test.skip();
-    return;
-  }
 
   expect(count).toBeGreaterThan(0);
 
@@ -84,9 +68,7 @@ test('LLM response in Playground', async ({ page, request }) => {
 
   // If still no model selected, skip the test
   if (!selectedModel) {
-    console.log('Skipping test: No enabled models found');
-    test.skip();
-    return;
+    throw new Error('No enabled models found in model selector');
   }
 
   await page.waitForTimeout(500);

@@ -19,6 +19,7 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_storage.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/llm_tokenizer.cpp
     ../../src/core/onnx_llm_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/image_manager.cpp
@@ -45,6 +46,10 @@ target_link_libraries(llm-node-integration-tests
         OpenSSL::Crypto
         onnxruntime::onnxruntime
 )
+
+if(TARGET llm_tokenizer_ffi)
+    target_link_libraries(llm-node-integration-tests PRIVATE llm_tokenizer_ffi)
+endif()
 
 # Link Metal frameworks on macOS
 if(APPLE)

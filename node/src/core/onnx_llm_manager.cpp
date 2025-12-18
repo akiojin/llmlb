@@ -160,10 +160,8 @@ std::unique_ptr<Ort::Session> OnnxLlmManager::createSession(const std::string& c
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(4);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-    // CPUフォールバック禁止: EPがサポートできないノードがある場合はセッション生成を失敗させる。
-    session_options.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
 
-    // CPUフォールバックは禁止: 非CPUのExecution Providerが必須。
+    // 非CPUのExecution Providerが必須（CPU-onlyビルドでの誤起動を防ぐ）。
     const auto providers = Ort::GetAvailableProviders();
     if (!hasNonCpuProvider(providers)) {
         throw std::runtime_error(
@@ -177,10 +175,23 @@ std::unique_ptr<Ort::Session> OnnxLlmManager::createSession(const std::string& c
     }
     if (*preferred == "CoreMLExecutionProvider") {
 #if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+        // CoreML EP has known limitations for transformer-style LLM graphs (e.g., large vocab projections)
+        // and may be unstable depending on the exported graph. If the model directory looks like an LLM
+        // bundle (tokenizer.json present), prefer CPU EP for stability.
+        const fs::path model_dir = fs::path(canonical_path).parent_path();
+        const bool looks_like_llm = fs::exists(model_dir / "tokenizer.json");
+        if (looks_like_llm) {
+            spdlog::warn(
+                "ONNX Runtime: CoreMLExecutionProvider disabled for LLM bundle (tokenizer.json detected), "
+                "using CPUExecutionProvider for stability: {}",
+                canonical_path);
+            // CPU EP is enabled by default when no provider is appended.
+        } else {
         // For small graphs, CoreML EP may not take any nodes unless subgraph partitioning is enabled.
         const uint32_t coreml_flags = COREML_FLAG_ENABLE_ON_SUBGRAPH;
         Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags));
         spdlog::info("ONNX Runtime: CoreMLExecutionProvider enabled");
+        }
 #else
         throw std::runtime_error(
             "CoreMLExecutionProvider is required but coreml_provider_factory.h is not available.");
@@ -388,7 +399,7 @@ std::optional<std::string> OnnxLlmManager::getLeastRecentlyUsedModel() const {
     return min_it->first;
 }
 
-const Ort::Session* OnnxLlmManager::getSession(const std::string& model_path) const {
+Ort::Session* OnnxLlmManager::getSession(const std::string& model_path) const {
     std::lock_guard<std::mutex> lock(mutex_);
 #ifdef USE_ONNX_RUNTIME
     const std::string canonical_path = canonicalizePath(model_path);

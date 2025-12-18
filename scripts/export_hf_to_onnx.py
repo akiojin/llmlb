@@ -75,6 +75,48 @@ def snapshot_if_needed(repo: str, revision: Optional[str]) -> str:
     return local_dir
 
 
+def ensure_tokenizer_json(model_id_or_path: str, out_dir: str) -> None:
+    """
+    Ensure Hugging Face `tokenizer.json` exists in out_dir.
+
+    Node-side tokenizer uses the Rust `tokenizers` crate which expects tokenizer.json.
+    Some repos do not ship tokenizer.json (or we might have skipped aux download),
+    so we generate it via Transformers as a best-effort fallback.
+    """
+    tok_path = os.path.join(out_dir, "tokenizer.json")
+    if os.path.exists(tok_path):
+        return
+
+    try:
+        from transformers import AutoTokenizer
+    except Exception as e:
+        eprint(f"aux: transformers not available, cannot generate tokenizer.json ({e})")
+        return
+
+    try:
+        tok = AutoTokenizer.from_pretrained(model_id_or_path, use_fast=True)
+    except Exception as e:
+        eprint(f"aux: failed to load fast tokenizer, cannot generate tokenizer.json ({e})")
+        return
+
+    # Try standard save_pretrained first.
+    try:
+        tok.save_pretrained(out_dir)
+    except Exception:
+        pass
+
+    if os.path.exists(tok_path):
+        return
+
+    # Fallback: backend_tokenizer.save (fast tokenizers)
+    try:
+        backend = getattr(tok, "backend_tokenizer", None)
+        if backend is not None:
+            backend.save(tok_path)
+    except Exception:
+        return
+
+
 def export_with_optimum_cli(model_id_or_path: str, out_dir: str) -> None:
     # Use Optimum exporter (recommended by Transformers). It is more robust than
     # the deprecated transformers.onnx exporter for modern Torch/Transformers.
@@ -85,7 +127,7 @@ def export_with_optimum_cli(model_id_or_path: str, out_dir: str) -> None:
         "--model",
         model_id_or_path,
         "--task",
-        "text-generation",
+        "text-generation-with-past",
         "--library",
         "transformers",
         out_dir,
@@ -115,6 +157,7 @@ def main() -> int:
         model_id_or_path = snapshot_if_needed(repo, revision)
         eprint("50%")
         export_with_optimum_cli(model_id_or_path, out_dir)
+        ensure_tokenizer_json(model_id_or_path, out_dir)
         eprint("90%")
     except Exception as e:
         eprint(f"export failed: {e}")

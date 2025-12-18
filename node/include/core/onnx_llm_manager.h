@@ -70,7 +70,7 @@ public:
 
     /// Get loaded session (nullptr if not loaded or runtime unavailable).
     /// Lifetime is owned by this manager.
-    const Ort::Session* getSession(const std::string& model_path) const;
+    Ort::Session* getSession(const std::string& model_path) const;
 
     /// Check if ONNX Runtime is available in this build.
     static bool isRuntimeAvailable();
@@ -101,4 +101,3 @@ private:
 };
 
 }  // namespace llm_node
-

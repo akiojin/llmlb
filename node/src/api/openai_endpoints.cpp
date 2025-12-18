@@ -54,33 +54,79 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 }
             }
             bool stream = body.value("stream", false);
-            std::string output = engine_.generateChat(messages, model);
+
+            InferenceParams params;
+            if (body.contains("max_tokens")) params.max_tokens = body.value("max_tokens", params.max_tokens);
+            if (body.contains("temperature")) params.temperature = body.value("temperature", params.temperature);
+            if (body.contains("top_p")) params.top_p = body.value("top_p", params.top_p);
+            if (body.contains("top_k")) params.top_k = body.value("top_k", params.top_k);
 
             if (stream) {
                 res.set_header("Content-Type", "text/event-stream");
-                res.set_chunked_content_provider("text/event-stream",
-                    [output](size_t offset, httplib::DataSink& sink) {
-                        if (offset == 0) {
-                            // OpenAI compatible streaming format
-                            json event_data = {
+                res.set_header("Cache-Control", "no-cache");
+                res.set_header("Connection", "keep-alive");
+
+                const auto captured_messages = messages;
+                const auto captured_model = model;
+                const auto captured_params = params;
+
+                res.set_chunked_content_provider(
+                    "text/event-stream",
+                    [this, captured_messages, captured_model, captured_params](size_t offset, httplib::DataSink& sink) {
+                        if (offset != 0) return true;
+
+                        auto write_data = [&](const std::string& data) {
+                            std::string line = "data: " + data + "\n\n";
+                            sink.write(line.data(), line.size());
+                        };
+
+                        try {
+                            engine_.generateChatStream(
+                                captured_messages,
+                                captured_model,
+                                captured_params,
+                                [&](const std::string& delta) {
+                                    json event_data = {
+                                        {"id", "chatcmpl-1"},
+                                        {"object", "chat.completion.chunk"},
+                                        {"choices", json::array({{
+                                            {"index", 0},
+                                            {"delta", {{"content", delta}}},
+                                            {"finish_reason", nullptr}
+                                        }})}
+                                    };
+                                    write_data(event_data.dump());
+                                });
+
+                            // Final chunk (optional but closer to OpenAI behavior)
+                            json final_event = {
                                 {"id", "chatcmpl-1"},
                                 {"object", "chat.completion.chunk"},
                                 {"choices", json::array({{
                                     {"index", 0},
-                                    {"delta", {{"content", output}}},
-                                    {"finish_reason", nullptr}
+                                    {"delta", json::object()},
+                                    {"finish_reason", "stop"}
                                 }})}
                             };
-                            std::string chunk = "data: " + event_data.dump() + "\n\n";
-                            sink.write(chunk.data(), chunk.size());
-                            std::string done = "data: [DONE]\n\n";
-                            sink.write(done.data(), done.size());
-                            sink.done();
+                            write_data(final_event.dump());
+                        } catch (const std::exception& e) {
+                            json err_event = {
+                                {"error", {
+                                    {"type", "internal_error"},
+                                    {"message", e.what()}
+                                }}
+                            };
+                            write_data(err_event.dump());
                         }
+
+                        write_data("[DONE]");
+                        sink.done();
                         return true;
                     });
                 return;
             }
+
+            std::string output = engine_.generateChat(messages, model, params);
 
             json resp = {
                 {"id", "chatcmpl-1"},

@@ -22,6 +22,7 @@ set(UNIT_TEST_SOURCES
     ../../src/models/hf_client.cpp
     ../../src/core/onnx_llm_manager.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/llm_tokenizer.cpp
     ../../src/core/image_manager.cpp
 )
 
@@ -45,6 +46,10 @@ target_link_libraries(llm-node-unit-tests
         OpenSSL::Crypto
         onnxruntime::onnxruntime
 )
+
+if(TARGET llm_tokenizer_ffi)
+    target_link_libraries(llm-node-unit-tests PRIVATE llm_tokenizer_ffi)
+endif()
 
 # Link Metal frameworks on macOS
 if(APPLE)

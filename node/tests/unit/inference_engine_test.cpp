@@ -4,6 +4,17 @@
 
 using namespace llm_node;
 
+extern "C" {
+void llm_tokenizer_free_string(char* s);
+bool llm_chat_template_render(
+    const char* template_str,
+    const char* messages_json,
+    const char* special_tokens_json,
+    bool add_generation_prompt,
+    char** out_text,
+    char** out_error);
+}  // extern "C"
+
 // テスト専用ヘルパー（inference_engine.cppで定義）
 namespace llm_node {
 std::string extractGptOssFinalMessageForTest(const std::string& output);
@@ -67,4 +78,23 @@ TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {
 
     auto extracted = extractGptOssFinalMessageForTest(raw);
     EXPECT_EQ(extracted, "the answer");
+}
+
+TEST(InferenceEngineTest, RendersChatTemplateWithMessages) {
+    const char* tmpl = "{{ messages[0]['role'] }}: {{ messages[0]['content'] }}{% if add_generation_prompt %}<<GEN>>{% endif %}";
+    const char* msgs = R"([{"role":"user","content":"hello"}])";
+    const char* specials = R"({"bos_token":"","eos_token":""})";
+
+    char* out = nullptr;
+    char* err = nullptr;
+    const bool ok = llm_chat_template_render(tmpl, msgs, specials, true, &out, &err);
+    ASSERT_TRUE(ok) << (err ? err : "");
+    ASSERT_NE(out, nullptr);
+
+    const std::string rendered(out);
+    llm_tokenizer_free_string(out);
+    if (err) llm_tokenizer_free_string(err);
+
+    EXPECT_NE(rendered.find("user: hello"), std::string::npos);
+    EXPECT_NE(rendered.find("<<GEN>>"), std::string::npos);
 }

@@ -32,6 +32,7 @@ struct InferenceParams {
 struct ModelLoadResult {
     bool success{false};
     std::string error_message;
+    std::string model_path;  // resolved local/shared path (when success)
 };
 
 class InferenceEngine {
@@ -54,7 +55,6 @@ public:
 
     /// ストリーミングチャット生成
     /// on_token コールバックは各トークン生成時に呼ばれる
-    /// 完了時は "[DONE]" を送信
     std::vector<std::string> generateChatStream(
         const std::vector<ChatMessage>& messages,
         const std::string& model,

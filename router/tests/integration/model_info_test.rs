@@ -104,6 +104,7 @@ async fn test_list_installed_models_on_node() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("NVIDIA RTX 4090".to_string()),
+        supported_runtimes: Vec::new(),
     };
 
     let register_response = app
@@ -238,6 +239,7 @@ async fn test_model_matrix_view_multiple_nodes() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("NVIDIA RTX 3090".to_string()),
+            supported_runtimes: Vec::new(),
         };
 
         let response = app

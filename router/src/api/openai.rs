@@ -50,6 +50,64 @@ fn get_required_key(provider: &str, env_key: &str, err_msg: &str) -> Result<Stri
     }
 }
 
+fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
+    fn redact_data_url(value: &Value) -> Value {
+        match value {
+            Value::String(s) => {
+                if s.starts_with("data:") && s.contains(";base64,") {
+                    Value::String(format!("[redacted data-url len={}]", s.len()))
+                } else {
+                    Value::String(s.clone())
+                }
+            }
+            Value::Array(items) => Value::Array(items.iter().map(redact_data_url).collect()),
+            Value::Object(map) => {
+                let mut out = serde_json::Map::with_capacity(map.len());
+                for (k, v) in map {
+                    if k == "input_audio" {
+                        if let Some(obj) = v.as_object() {
+                            let mut cloned = obj.clone();
+                            if let Some(data) = obj.get("data").and_then(|d| d.as_str()) {
+                                cloned.insert(
+                                    "data".to_string(),
+                                    Value::String(format!("[redacted base64 len={}]", data.len())),
+                                );
+                            }
+                            out.insert(k.clone(), Value::Object(cloned));
+                            continue;
+                        }
+                    }
+
+                    if k == "image_url" {
+                        if let Some(obj) = v.as_object() {
+                            let mut cloned = obj.clone();
+                            if let Some(url) = obj.get("url").and_then(|d| d.as_str()) {
+                                if url.starts_with("data:") && url.contains(";base64,") {
+                                    cloned.insert(
+                                        "url".to_string(),
+                                        Value::String(format!(
+                                            "[redacted data-url len={}]",
+                                            url.len()
+                                        )),
+                                    );
+                                }
+                            }
+                            out.insert(k.clone(), Value::Object(cloned));
+                            continue;
+                        }
+                    }
+
+                    out.insert(k.clone(), redact_data_url(v));
+                }
+                Value::Object(out)
+            }
+            _ => value.clone(),
+        }
+    }
+
+    redact_data_url(payload)
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
@@ -754,7 +812,7 @@ async fn proxy_openai_cloud_post(
     let (node_id, node_machine_name, node_ip) = cloud_virtual_node(&provider);
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
-    let request_body = payload.clone();
+    let request_body = sanitize_openai_payload_for_history(&payload);
     let started = Instant::now();
 
     let outcome = match match provider.as_str() {
@@ -851,7 +909,7 @@ async fn proxy_openai_post(
 
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
-    let request_body = payload.clone();
+    let request_body = sanitize_openai_payload_for_history(&payload);
 
     let node = select_available_node(state).await?;
     let node_id = node.id;

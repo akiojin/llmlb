@@ -63,19 +63,44 @@ pub async fn register_node(
     router_addr: SocketAddr,
     node_addr: SocketAddr,
 ) -> reqwest::Result<Response> {
+    let response = register_node_with_runtimes(router_addr, node_addr, vec![]).await?;
+    Ok(response)
+}
+
+/// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
+pub async fn register_node_with_runtimes(
+    router_addr: SocketAddr,
+    node_addr: SocketAddr,
+    _supported_runtimes: Vec<&str>,
+) -> reqwest::Result<Response> {
+    let payload = json!({
+        "machine_name": "stub-node",
+        "ip_address": node_addr.ip().to_string(),
+        "runtime_version": "0.0.0-test",
+        // テストスタブはHTTPポートで直接実行される。
+        // ルーターのヘルスチェックは runtime_port + 1 でアクセスするため、
+        // テストスタブのポートに対して -1 を計算して渡す。
+        // (例：スタブが port 12345 で実行 → runtime_port: 12344 を登録
+        //      → ルーターが 12344 + 1 = 12345 でヘルスチェック)
+        "runtime_port": node_addr.port().saturating_sub(1),
+        "gpu_available": true,
+        "gpu_devices": [
+            {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
+        ]
+    });
+
+    // supported_runtimesが指定されている場合はペイロードに追加
+    let payload = if !_supported_runtimes.is_empty() {
+        let mut p = payload;
+        p["supported_runtimes"] = json!(_supported_runtimes);
+        p
+    } else {
+        payload
+    };
+
     Client::new()
         .post(format!("http://{router_addr}/v0/nodes"))
-        .json(&json!({
-            "machine_name": "stub-node",
-            "ip_address": node_addr.ip().to_string(),
-            "runtime_version": "0.0.0-test",
-            // ノードAPIポートは runtime_port+1 という前提のため、APIポートから1引いた値を報告する
-            "runtime_port": node_addr.port().saturating_sub(1),
-            "gpu_available": true,
-            "gpu_devices": [
-                {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
-            ]
-        }))
+        .json(&payload)
         .send()
         .await
 }

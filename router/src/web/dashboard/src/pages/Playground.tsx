@@ -54,11 +54,23 @@ import {
   PanelLeft,
   CircleDot,
   RotateCcw,
+  Image as ImageIcon,
+  Mic,
+  X,
+  Volume2,
 } from 'lucide-react'
+
+interface MessageAttachment {
+  type: 'image' | 'audio'
+  name: string
+  data: string // base64 or data URL
+  mimeType: string
+}
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
+  attachments?: MessageAttachment[]
 }
 
 export default function Playground() {
@@ -95,6 +107,11 @@ export default function Playground() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
+
+  // Multimodal attachment state
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([])
 
   // Fetch models
   const { data: models } = useQuery({
@@ -118,7 +135,11 @@ export default function Playground() {
   useEffect(() => {
     if (models && !selectedModel) {
       const allModels = models as RegisteredModelView[]
-      const registeredModels = allModels.filter(m => m.lifecycle_status === 'registered')
+      // Filter for registered models, but accept models with state or lifecycle_status
+      const registeredModels = allModels.filter(m => {
+        const isRegistered = m.lifecycle_status === 'registered' || (m as any).state === 'ready'
+        return isRegistered
+      })
       if (registeredModels.length > 0) {
         setSelectedModel(registeredModels[0].name)
       }
@@ -180,6 +201,7 @@ export default function Playground() {
   // Reset/clear current chat
   const resetChat = () => {
     setMessages([])
+    setAttachments([])
     if (currentSessionId) {
       setSessions((prev) =>
         prev.map((s) =>
@@ -192,6 +214,50 @@ export default function Playground() {
     toast({ title: 'Chat cleared' })
   }
 
+  // Handle file attachments
+  const handleFileAttachment = async (file: File, type: 'image' | 'audio') => {
+    if (!file) return
+
+    // Size limit: 4MB
+    if (file.size > 4 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Maximum size is 4MB', variant: 'destructive' })
+      return
+    }
+
+    try {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const data = e.target?.result as string
+        const newAttachment: MessageAttachment = {
+          type,
+          name: file.name,
+          data,
+          mimeType: file.type,
+        }
+        setAttachments((prev) => [...prev, newAttachment])
+        toast({ title: `${type === 'image' ? 'Image' : 'Audio'} attached` })
+      }
+      reader.readAsDataURL(file)
+    } catch {
+      toast({ title: 'Failed to read file', variant: 'destructive' })
+    }
+  }
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  // Extract and render media from assistant message content
+  const extractMediaFromContent = (content: string) => {
+    const imageUrlRegex = /(data:image\/[^;]+;base64,[^\s"'<>]+|https?:\/\/[^\s"'<>]+\.(png|jpg|jpeg|gif|webp))/gi
+    const audioUrlRegex = /(data:audio\/[^;]+;base64,[^\s"'<>]+|https?:\/\/[^\s"'<>]+\.(mp3|wav|ogg|m4a))/gi
+
+    const imageMatches = content.match(imageUrlRegex) || []
+    const audioMatches = content.match(audioUrlRegex) || []
+
+    return { imageMatches, audioMatches }
+  }
+
   // Toggle sidebar
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => !prev)
@@ -199,12 +265,17 @@ export default function Playground() {
 
   // Send message
   const sendMessage = async () => {
-    if (!input.trim() || !selectedModel || isStreaming) return
+    if ((!input.trim() && attachments.length === 0) || !selectedModel || isStreaming) return
 
-    const userMessage: Message = { role: 'user', content: input.trim() }
+    const userMessage: Message = {
+      role: 'user',
+      content: input.trim(),
+      attachments: attachments.length > 0 ? attachments : undefined
+    }
     const newMessages = [...messages, userMessage]
     setMessages(newMessages)
     setInput('')
+    setAttachments([])
 
     // Update session
     if (currentSessionId) {
@@ -226,9 +297,31 @@ export default function Playground() {
     abortControllerRef.current = new AbortController()
 
     try {
+      // Transform messages to multimodal format if attachments exist
+      const transformMessage = (msg: Message) => {
+        if (!msg.attachments || msg.attachments.length === 0) {
+          return { role: msg.role, content: msg.content }
+        }
+        // Build multimodal content array
+        const content: Array<any> = []
+        if (msg.content.trim()) {
+          content.push({ type: 'text', text: msg.content })
+        }
+        msg.attachments.forEach((att) => {
+          if (att.type === 'image') {
+            content.push({ type: 'image_url', image_url: { url: att.data } })
+          } else if (att.type === 'audio') {
+            // Extract base64 data from data URL if needed
+            const audioData = att.data.startsWith('data:') ? att.data.split(',')[1] : att.data
+            content.push({ type: 'input_audio', input_audio: { data: audioData, format: 'wav' } })
+          }
+        })
+        return { role: msg.role, content }
+      }
+
       const requestMessages = systemPrompt
-        ? [{ role: 'system' as const, content: systemPrompt }, ...newMessages]
-        : newMessages
+        ? [{ role: 'system' as const, content: systemPrompt }, ...newMessages.map(transformMessage)]
+        : newMessages.map(transformMessage)
 
       if (streamEnabled) {
         // Streaming response
@@ -616,13 +709,80 @@ export default function Playground() {
                   )}
                   <div
                     className={cn(
-                      'rounded-lg px-4 py-2 max-w-[80%]',
+                      'rounded-lg px-4 py-3 max-w-[80%] space-y-2',
                       message.role === 'user'
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted'
                     )}
                   >
-                    <p className="message-text text-sm whitespace-pre-wrap">{message.content}</p>
+                    {message.content && (
+                      <p className="message-text text-sm whitespace-pre-wrap">{message.content}</p>
+                    )}
+
+                    {/* User attachments (input) */}
+                    {message.attachments && message.attachments.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {message.attachments.map((attachment, aIdx) => (
+                          <div key={aIdx} className="rounded-md overflow-hidden bg-black/20 p-1">
+                            {attachment.type === 'image' && (
+                              <img
+                                src={attachment.data}
+                                alt={attachment.name}
+                                className="w-full h-32 object-cover rounded-sm"
+                              />
+                            )}
+                            {attachment.type === 'audio' && (
+                              <div className="flex flex-col items-center justify-center h-32 gap-2">
+                                <Volume2 className="h-6 w-6" />
+                                <audio
+                                  src={attachment.data}
+                                  controls
+                                  className="w-full max-w-[120px]"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Assistant media output (detected from content) */}
+                    {message.role === 'assistant' && (() => {
+                      const { imageMatches, audioMatches } = extractMediaFromContent(message.content)
+                      return (
+                        <>
+                          {imageMatches.length > 0 && (
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                              {imageMatches.map((url, idx) => (
+                                <div key={idx} className="rounded-md overflow-hidden bg-black/20 p-1">
+                                  <img
+                                    src={url}
+                                    alt={`assistant-image-${idx}`}
+                                    data-testid="playground-assistant-image"
+                                    className="w-full h-32 object-cover rounded-sm"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {audioMatches.length > 0 && (
+                            <div className="space-y-2 mt-2">
+                              {audioMatches.map((url, idx) => (
+                                <div key={idx} className="rounded-md overflow-hidden bg-black/20 p-2 flex flex-col items-center justify-center gap-2">
+                                  <Volume2 className="h-4 w-4" />
+                                  <audio
+                                    src={url}
+                                    controls
+                                    data-testid="playground-assistant-audio"
+                                    className="w-full max-w-[200px]"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   {message.role === 'user' && (
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -637,35 +797,142 @@ export default function Playground() {
         </ScrollArea>
 
         {/* Input */}
-        <div className="border-t p-4">
-          <div id="chat-form" className="max-w-3xl mx-auto flex gap-2">
-            <Input
-              ref={inputRef}
-              id="chat-input"
-              placeholder="Type a message..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                // IME変換中のEnterは送信しない（日本語入力対応）
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault()
-                  sendMessage()
-                }
-              }}
-              disabled={isStreaming}
-              className="flex-1"
-            />
-            {isStreaming ? (
-              <Button id="stop-button" variant="destructive" onClick={stopGeneration}>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                Stop
-              </Button>
-            ) : (
-              <Button id="send-button" onClick={sendMessage} disabled={!input.trim() || !selectedModel}>
-                <Send className="mr-2 h-4 w-4" />
-                Send
-              </Button>
+        <div className="border-t p-4 bg-gradient-to-b from-background via-background to-muted/5">
+          <div id="chat-form" className="max-w-3xl mx-auto space-y-3">
+            {/* Attachment Preview */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 p-3 rounded-lg bg-muted/40 border border-muted-foreground/10" data-testid="playground-attachment-preview">
+                {attachments.map((attachment, idx) => (
+                  <div
+                    key={idx}
+                    className="relative group inline-block rounded-md overflow-hidden bg-background border border-border"
+                    data-testid={attachment.type === 'image' ? 'playground-attachment-image' : 'playground-attachment-audio'}
+                  >
+                    {attachment.type === 'image' && (
+                      <>
+                        <img
+                          src={attachment.data}
+                          alt={attachment.name}
+                          className="h-16 w-16 object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <button
+                            onClick={() => removeAttachment(idx)}
+                            className="text-white bg-destructive rounded-full p-1 hover:bg-destructive/80"
+                            data-testid="playground-attachment-remove"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    {attachment.type === 'audio' && (
+                      <div className="h-16 w-16 flex flex-col items-center justify-center bg-muted gap-1">
+                        <Mic className="h-5 w-5 text-muted-foreground" />
+                        <button
+                          onClick={() => removeAttachment(idx)}
+                          className="absolute -top-2 -right-2 text-white bg-destructive rounded-full p-0.5 hover:bg-destructive/80"
+                          data-testid="playground-attachment-remove"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
+
+            {/* Input with attachment buttons */}
+            <div className="flex gap-2">
+              {/* Hidden file inputs */}
+              <input
+                ref={imageInputRef}
+                id="playground-image-input"
+                data-testid="playground-image-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleFileAttachment(e.target.files[0], 'image')}
+              />
+              <input
+                ref={audioInputRef}
+                id="playground-audio-input"
+                data-testid="playground-audio-input"
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleFileAttachment(e.target.files[0], 'audio')}
+              />
+
+              {/* Attachment buttons */}
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => imageInputRef.current?.click()}
+                title="Attach image"
+                className="shrink-0"
+              >
+                <ImageIcon className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => audioInputRef.current?.click()}
+                title="Attach audio"
+                className="shrink-0"
+              >
+                <Mic className="h-4 w-4" />
+              </Button>
+
+              {/* Text input */}
+              <Input
+                ref={inputRef}
+                id="chat-input"
+                data-testid="playground-chat-input"
+                placeholder="Type a message or attach files..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
+                onPaste={(e) => {
+                  const files = e.clipboardData?.files
+                  if (files) {
+                    for (const file of Array.from(files)) {
+                      const type = file.type.startsWith('audio/') ? 'audio' : file.type.startsWith('image/') ? 'image' : null
+                      if (type) {
+                        handleFileAttachment(file, type)
+                      }
+                    }
+                  }
+                }}
+                disabled={isStreaming}
+                className="flex-1"
+              />
+
+              {/* Send/Stop button */}
+              {isStreaming ? (
+                <Button id="stop-button" variant="destructive" onClick={stopGeneration} className="shrink-0">
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  id="send-button"
+                  data-testid="playground-send"
+                  onClick={sendMessage}
+                  disabled={(!input.trim() && attachments.length === 0) || !selectedModel}
+                  className="shrink-0"
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Send
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

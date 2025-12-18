@@ -73,6 +73,7 @@ async fn dashboard_nodes_include_gpu_devices() {
         }],
         gpu_count: Some(1),
         gpu_model: Some("Apple M3 Max".to_string()),
+        supported_runtimes: Vec::new(),
     };
 
     let register_response = router

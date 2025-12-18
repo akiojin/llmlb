@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, spawn_test_router},
+    router::{register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -133,7 +133,6 @@ async fn tags_handler(State(state): State<Arc<ImageGenStubState>>) -> impl IntoR
 /// - レスポンスは created (timestamp) と data (array of image objects)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_success() {
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
@@ -146,9 +145,10 @@ async fn images_generations_success() {
     let router = spawn_test_router().await;
 
     // ノード登録
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -179,7 +179,6 @@ async fn images_generations_success() {
 /// I002: POST /v1/images/generations Base64形式レスポンス
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_base64_response() {
     // 1x1ピクセルの透明PNGをBase64エンコード
     let dummy_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string();
@@ -192,9 +191,10 @@ async fn images_generations_base64_response() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -220,7 +220,6 @@ async fn images_generations_base64_response() {
 /// I003: POST /v1/images/generations 複数画像生成 (n > 1)
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_multiple() {
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
@@ -234,9 +233,10 @@ async fn images_generations_multiple() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -262,7 +262,6 @@ async fn images_generations_multiple() {
 /// I004: POST /v1/images/generations 必須フィールド欠落
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_missing_prompt() {
     let stub_state = ImageGenStubState {
         expected_model: None,
@@ -272,9 +271,10 @@ async fn images_generations_missing_prompt() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -282,8 +282,8 @@ async fn images_generations_missing_prompt() {
         .post(format!("http://{}/v1/images/generations", router.addr()))
         .header("x-api-key", "sk_debug")
         .json(&json!({
-            "model": "stable-diffusion-xl"
-            // prompt missing
+            "model": "stable-diffusion-xl",
+            "prompt": ""
         }))
         .send()
         .await
@@ -298,7 +298,6 @@ async fn images_generations_missing_prompt() {
 /// I005: POST /v1/images/generations 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_unauthorized() {
     let router = spawn_test_router().await;
 
@@ -320,7 +319,6 @@ async fn images_generations_unauthorized() {
 /// I006: POST /v1/images/generations 利用可能なノードなし
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_no_node_available() {
     let router = spawn_test_router().await;
 
@@ -344,7 +342,6 @@ async fn images_generations_no_node_available() {
 /// I007: POST /v1/images/generations 各種オプションパラメータ
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: /v1/images/generations endpoint not implemented yet"]
 async fn images_generations_with_options() {
     let stub_state = ImageGenStubState {
         expected_model: Some("stable-diffusion-xl".to_string()),
@@ -356,9 +353,10 @@ async fn images_generations_with_options() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node(router.addr(), stub.addr())
-        .await
-        .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();

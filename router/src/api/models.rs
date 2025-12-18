@@ -1065,6 +1065,7 @@ async fn register_model_internal(
     tracing::info!(
         repo = %repo,
         filename = %filename,
+        trust_remote_code,
         size_bytes = content_length,
         required_memory_bytes = required_memory,
         warnings = warnings.len(),

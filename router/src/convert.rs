@@ -601,7 +601,13 @@ impl ConvertTaskManager {
             trust_remote_code,
         );
         let id = task.id;
-        tracing::info!(task_id=?id, repo=%repo, filename=%filename, "convert_task_enqueued");
+        tracing::info!(
+            task_id=?id,
+            repo=%repo,
+            filename=%filename,
+            trust_remote_code,
+            "convert_task_enqueued"
+        );
         {
             let mut guard = self.tasks.lock().await;
             guard.insert(id, task);
@@ -662,7 +668,13 @@ impl ConvertTaskManager {
                 .ok_or_else(|| RouterError::Internal("Task not found".into()))?;
             task.status = ConvertStatus::InProgress;
             task.updated_at = Utc::now();
-            tracing::info!(task_id=?task_id, repo=%task.repo, "convert_task_in_progress");
+            tracing::info!(
+                task_id=?task_id,
+                repo=%task.repo,
+                filename=%task.filename,
+                trust_remote_code=task.trust_remote_code,
+                "convert_task_in_progress"
+            );
             (
                 task.repo.clone(),
                 task.filename.clone(),
@@ -1074,6 +1086,15 @@ where
                 "Retrying conversion"
             );
         }
+
+        tracing::info!(
+            repo = %repo,
+            revision = ?revision,
+            attempt = attempt,
+            max_attempts = MAX_ATTEMPTS,
+            trust_remote_code,
+            "Starting HF export to ONNX"
+        );
 
         // Use spawn() with piped stderr to capture progress output
         let result = task::spawn_blocking(move || {

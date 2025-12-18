@@ -1,0 +1,151 @@
+//! Contract Test: OpenAI API Logging
+//!
+//! SPEC-1970e39f: 構造化ロギング強化
+//! - FR-001: リクエスト受信ログ
+//! - FR-003: プロキシエラーログ
+//! - FR-004: ノード選択失敗時の履歴保存
+
+use crate::support::router::spawn_test_router;
+use llm_router_common::protocol::RecordStatus;
+use reqwest::Client;
+use serial_test::serial;
+use std::path::PathBuf;
+
+/// テスト用の一時ディレクトリパスを取得
+fn get_test_data_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("or-test-{}", std::process::id()))
+}
+
+/// request_history.jsonからレコードを読み込む
+async fn load_request_history() -> Vec<llm_router_common::protocol::RequestResponseRecord> {
+    let history_path = get_test_data_dir().join("request_history.json");
+    if !history_path.exists() {
+        return Vec::new();
+    }
+    let content = tokio::fs::read_to_string(&history_path)
+        .await
+        .unwrap_or_default();
+    if content.trim().is_empty() {
+        return Vec::new();
+    }
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+/// T002: chat_completionsリクエスト時にレスポンスが返ることを検証
+/// (ログ出力自体はtracing subscriberで検証が複雑なため、
+///  リクエストが正常に処理されることを確認)
+#[tokio::test]
+#[serial]
+async fn test_chat_completions_request_processed() {
+    let router = spawn_test_router().await;
+    let client = Client::new();
+
+    // ノードなしでリクエスト送信 → 503が返るはず
+    let response = client
+        .post(format!("http://{}/v1/chat/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&serde_json::json!({
+            "model": "gpt-oss-20b",
+            "messages": [{"role": "user", "content": "Hello"}]
+        }))
+        .send()
+        .await
+        .expect("request should be sent");
+
+    // ノードがないので503（Service Unavailable）が返る
+    assert_eq!(
+        response.status().as_u16(),
+        503,
+        "Should return 503 when no nodes available"
+    );
+}
+
+/// T003: ノード選択失敗時に適切なエラーレスポンスが返ることを検証
+#[tokio::test]
+#[serial]
+async fn test_node_selection_failure_returns_error() {
+    let router = spawn_test_router().await;
+    let client = Client::new();
+
+    // ノードなしでリクエスト送信
+    let response = client
+        .post(format!("http://{}/v1/chat/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&serde_json::json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "Test"}]
+        }))
+        .send()
+        .await
+        .expect("request should be sent");
+
+    assert_eq!(response.status().as_u16(), 503);
+
+    let body = response.text().await.expect("body should be readable");
+    // エラーメッセージにノード関連の情報が含まれることを確認
+    assert!(
+        body.contains("No nodes available") || body.contains("nodes"),
+        "Error message should mention nodes: {}",
+        body
+    );
+}
+
+/// T004: ノード選択失敗時にリクエスト履歴が保存されることを検証
+///
+/// 現在の実装では、select_available_node()が失敗すると?演算子で
+/// 早期リターンし、save_request_record()が呼ばれない。
+/// このテストは実装後にGREENになる。
+#[tokio::test]
+#[serial]
+async fn test_node_selection_failure_saves_request_history() {
+    // テスト用データディレクトリをクリア
+    let data_dir = get_test_data_dir();
+    let history_path = data_dir.join("request_history.json");
+    if history_path.exists() {
+        let _ = std::fs::remove_file(&history_path);
+    }
+
+    let router = spawn_test_router().await;
+    let client = Client::new();
+
+    // ノードなしでリクエスト送信
+    let _response = client
+        .post(format!("http://{}/v1/chat/completions", router.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&serde_json::json!({
+            "model": "test-model-for-history",
+            "messages": [{"role": "user", "content": "Test history save"}]
+        }))
+        .send()
+        .await
+        .expect("request should be sent");
+
+    // 少し待ってから履歴を確認（非同期保存のため）
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let records = load_request_history().await;
+
+    // FR-004: ノード選択失敗時もリクエスト履歴に記録する必要がある
+    assert!(
+        !records.is_empty(),
+        "Request history should be saved even when node selection fails"
+    );
+
+    // 最新のレコードを確認
+    let latest = records.last().expect("Should have at least one record");
+    assert_eq!(latest.model, "test-model-for-history");
+
+    // ステータスがエラーであることを確認
+    match &latest.status {
+        RecordStatus::Error { message } => {
+            assert!(
+                message.contains("Node selection failed") || message.contains("No nodes"),
+                "Error message should indicate node selection failure: {}",
+                message
+            );
+        }
+        RecordStatus::Success => {
+            panic!("Status should be Error, not Success");
+        }
+    }
+}

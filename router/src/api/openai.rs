@@ -15,7 +15,7 @@ use llm_router_common::{
 use reqwest;
 use serde_json::{json, Value};
 use std::{collections::HashSet, net::IpAddr, time::Instant};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::registry::models::router_model_path;
@@ -911,7 +911,39 @@ async fn proxy_openai_post(
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
 
-    let node = select_available_node(state).await?;
+    // FR-004: ノード選択失敗時もリクエスト履歴に記録する
+    let node = match select_available_node(state).await {
+        Ok(n) => n,
+        Err(e) => {
+            error!(
+                endpoint = %target_path,
+                model = %model,
+                error = %e,
+                "Failed to select available node"
+            );
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: Uuid::nil(),
+                    node_machine_name: "N/A".to_string(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: 0,
+                    status: RecordStatus::Error {
+                        message: format!("Node selection failed: {}", e),
+                    },
+                    completed_at: Utc::now(),
+                },
+            );
+            return Err(e.into());
+        }
+    };
     let node_id = node.id;
     let node_machine_name = node.machine_name.clone();
     let node_ip = node.ip_address;

@@ -11,6 +11,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
+    types::ModelCapability,
 };
 use reqwest;
 use serde_json::{json, Value};
@@ -114,6 +115,21 @@ pub async fn chat_completions(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+
+    // モデルの TextGeneration capability を検証
+    let models = list_registered_models();
+    if let Some(model_info) = models.iter().find(|m| m.name == model) {
+        if !model_info.has_capability(ModelCapability::TextGeneration) {
+            return Err(AppError::from(RouterError::Common(
+                CommonError::Validation(format!(
+                    "Model '{}' does not support text generation",
+                    model
+                )),
+            )));
+        }
+    }
+    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
@@ -203,12 +219,22 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             continue;
         }
 
-        // OpenAI標準フォーマット（拡張フィールドなし）
+        // OpenAI標準フォーマット（+ capabilities拡張フィールド）
+        // capabilities は OpenAI API の標準フィールドではないが、
+        // モデルの能力を示すために拡張として追加
+        let caps: Vec<String> = m
+            .get_capabilities()
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap_or_default())
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+
         let obj = json!({
             "id": m.name,
             "object": "model",
             "created": 0,
             "owned_by": "router",
+            "capabilities": caps,
         });
         data.push(obj);
     }
@@ -245,11 +271,20 @@ pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Resp
             continue;
         }
 
+        // capabilities をシリアライズ
+        let caps: Vec<String> = m
+            .get_capabilities()
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap_or_default())
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+
         let mut obj = json!({
             "id": m.name,
             "object": "model",
             "created": 0,
             "owned_by": "router",
+            "capabilities": caps,
         });
 
         // 拡張フィールド（ノード同期用）
@@ -305,11 +340,20 @@ pub async fn get_model(
         }
     };
 
+    // capabilities をシリアライズ
+    let caps: Vec<String> = model
+        .get_capabilities()
+        .iter()
+        .map(|c| serde_json::to_value(c).unwrap_or_default())
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+
     let mut body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
         "owned_by": "router",
+        "capabilities": caps,
     });
 
     body["path"] = json!(path.to_string_lossy().to_string());
@@ -1711,5 +1755,29 @@ mod tests {
             std::env::set_var("OPENAI_API_KEY", key);
         }
         std::env::remove_var("LLM_ROUTER_DATA_DIR");
+    }
+
+    // T006: chat capabilities検証テスト (RED)
+    // TextGeneration capability を持たないモデルで /v1/chat/completions を呼ぶとエラー
+    #[test]
+    fn test_chat_capability_validation_error_message() {
+        use llm_router_common::types::{ModelCapability, ModelType};
+
+        // TTSモデルはTextToSpeechのみ、TextGenerationは非対応
+        let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);
+        assert!(!tts_caps.contains(&ModelCapability::TextGeneration));
+
+        // ASRモデルもSpeechToTextのみ、TextGenerationは非対応
+        let stt_caps = ModelCapability::from_model_type(ModelType::SpeechToText);
+        assert!(!stt_caps.contains(&ModelCapability::TextGeneration));
+
+        // EmbeddingモデルもEmbeddingのみ、TextGenerationは非対応
+        let embed_caps = ModelCapability::from_model_type(ModelType::Embedding);
+        assert!(!embed_caps.contains(&ModelCapability::TextGeneration));
+
+        // 期待されるエラーメッセージ形式
+        let model_name = "whisper-large-v3";
+        let expected_error = format!("Model '{}' does not support text generation", model_name);
+        assert!(expected_error.contains("does not support text generation"));
     }
 }

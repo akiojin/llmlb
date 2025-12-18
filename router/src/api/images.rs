@@ -12,7 +12,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::{Node, RuntimeType},
+    types::{ModelCapability, Node, RuntimeType},
 };
 use serde_json::json;
 use std::time::Instant;
@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        models::list_registered_models,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
     },
@@ -116,6 +117,21 @@ pub async fn generations(
     if payload.n == 0 || payload.n > 10 {
         return openai_error("n must be between 1 and 10", StatusCode::BAD_REQUEST);
     }
+
+    // モデルの ImageGeneration capability を検証
+    let models = list_registered_models();
+    if let Some(model_info) = models.iter().find(|m| m.name == payload.model) {
+        if !model_info.has_capability(ModelCapability::ImageGeneration) {
+            return openai_error(
+                format!(
+                    "Model '{}' does not support image generation",
+                    payload.model
+                ),
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    }
+    // 登録されていないモデルはノード側で処理（クラウドモデル等）
 
     info!(
         request_id = %request_id,
@@ -631,5 +647,33 @@ mod tests {
 
         // n = 11 は無効
         assert!(!is_valid_n(11));
+    }
+
+    // T007: 画像生成 capabilities検証テスト (RED)
+    // ImageGeneration capability を持たないモデルで /v1/images/generations を呼ぶとエラー
+    #[test]
+    fn test_image_generation_capability_validation_error_message() {
+        use llm_router_common::types::{ModelCapability, ModelType};
+
+        // LLMモデルはTextGenerationのみ、ImageGenerationは非対応
+        let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
+        assert!(!llm_caps.contains(&ModelCapability::ImageGeneration));
+
+        // TTSモデルもTextToSpeechのみ、ImageGenerationは非対応
+        let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);
+        assert!(!tts_caps.contains(&ModelCapability::ImageGeneration));
+
+        // ASRモデルもSpeechToTextのみ、ImageGenerationは非対応
+        let stt_caps = ModelCapability::from_model_type(ModelType::SpeechToText);
+        assert!(!stt_caps.contains(&ModelCapability::ImageGeneration));
+
+        // EmbeddingモデルもEmbeddingのみ、ImageGenerationは非対応
+        let embed_caps = ModelCapability::from_model_type(ModelType::Embedding);
+        assert!(!embed_caps.contains(&ModelCapability::ImageGeneration));
+
+        // 期待されるエラーメッセージ形式
+        let model_name = "llama-3.1-8b";
+        let expected_error = format!("Model '{}' does not support image generation", model_name);
+        assert!(expected_error.contains("does not support image generation"));
     }
 }

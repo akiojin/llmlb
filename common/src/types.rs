@@ -152,6 +152,40 @@ pub enum RuntimeType {
     StableDiffusion,
 }
 
+/// モデルの能力（対応するAPI）
+///
+/// モデルが対応する API エンドポイントを表す。
+/// 1つのモデルが複数の能力を持つ場合がある（例: GPT-4o は TextGeneration + Vision + TextToSpeech）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCapability {
+    /// テキスト生成 (/v1/chat/completions, /v1/completions)
+    TextGeneration,
+    /// 音声合成 (/v1/audio/speech)
+    TextToSpeech,
+    /// 音声認識 (/v1/audio/transcriptions)
+    SpeechToText,
+    /// 画像生成 (/v1/images/generations)
+    ImageGeneration,
+    /// 画像理解 (/v1/chat/completions with images)
+    Vision,
+    /// 埋め込み生成 (/v1/embeddings)
+    Embedding,
+}
+
+impl ModelCapability {
+    /// ModelType から推定されるデフォルトの capabilities を返す
+    pub fn from_model_type(model_type: ModelType) -> Vec<Self> {
+        match model_type {
+            ModelType::Llm => vec![Self::TextGeneration],
+            ModelType::Embedding => vec![Self::Embedding],
+            ModelType::SpeechToText => vec![Self::SpeechToText],
+            ModelType::TextToSpeech => vec![Self::TextToSpeech],
+            ModelType::ImageGeneration => vec![Self::ImageGeneration],
+        }
+    }
+}
+
 /// 音声フォーマット
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -735,5 +769,79 @@ mod tests {
     fn test_image_response_format_default() {
         let default_format: ImageResponseFormat = Default::default();
         assert_eq!(default_format, ImageResponseFormat::Url);
+    }
+
+    // T002: ModelCapability serialization/deserialization tests
+    #[test]
+    fn test_model_capability_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ModelCapability::TextGeneration).unwrap(),
+            "\"text_generation\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelCapability::TextToSpeech).unwrap(),
+            "\"text_to_speech\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelCapability::SpeechToText).unwrap(),
+            "\"speech_to_text\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelCapability::ImageGeneration).unwrap(),
+            "\"image_generation\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelCapability::Vision).unwrap(),
+            "\"vision\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelCapability::Embedding).unwrap(),
+            "\"embedding\""
+        );
+    }
+
+    #[test]
+    fn test_model_capability_deserialization() {
+        let text_gen: ModelCapability = serde_json::from_str("\"text_generation\"").unwrap();
+        assert_eq!(text_gen, ModelCapability::TextGeneration);
+
+        let tts: ModelCapability = serde_json::from_str("\"text_to_speech\"").unwrap();
+        assert_eq!(tts, ModelCapability::TextToSpeech);
+
+        let stt: ModelCapability = serde_json::from_str("\"speech_to_text\"").unwrap();
+        assert_eq!(stt, ModelCapability::SpeechToText);
+
+        let image_gen: ModelCapability = serde_json::from_str("\"image_generation\"").unwrap();
+        assert_eq!(image_gen, ModelCapability::ImageGeneration);
+
+        let vision: ModelCapability = serde_json::from_str("\"vision\"").unwrap();
+        assert_eq!(vision, ModelCapability::Vision);
+
+        let embedding: ModelCapability = serde_json::from_str("\"embedding\"").unwrap();
+        assert_eq!(embedding, ModelCapability::Embedding);
+    }
+
+    // T003: ModelCapability::from_model_type test
+    #[test]
+    fn test_model_capability_from_model_type() {
+        // LLM → TextGeneration
+        let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
+        assert_eq!(llm_caps, vec![ModelCapability::TextGeneration]);
+
+        // Embedding → Embedding
+        let embed_caps = ModelCapability::from_model_type(ModelType::Embedding);
+        assert_eq!(embed_caps, vec![ModelCapability::Embedding]);
+
+        // SpeechToText → SpeechToText
+        let stt_caps = ModelCapability::from_model_type(ModelType::SpeechToText);
+        assert_eq!(stt_caps, vec![ModelCapability::SpeechToText]);
+
+        // TextToSpeech → TextToSpeech
+        let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);
+        assert_eq!(tts_caps, vec![ModelCapability::TextToSpeech]);
+
+        // ImageGeneration → ImageGeneration
+        let img_caps = ModelCapability::from_model_type(ModelType::ImageGeneration);
+        assert_eq!(img_caps, vec![ModelCapability::ImageGeneration]);
     }
 }

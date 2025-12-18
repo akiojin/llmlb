@@ -171,7 +171,7 @@ ios/ または android/
    - クイックスタートテスト = ストーリー検証ステップ
 
 5. **ノードファイルを漸進的に更新** (O(1)操作):
-   - AIアシスタント用に `/scripts/update-agent-context.sh [claude|gemini|copilot]` を実行
+   - AIアシスタント用に `/scripts/update-assistant-context.sh [claude|gemini|copilot]` を実行
    - 存在する場合: 現在の計画から新しい技術のみ追加
    - マーカー間の手動追加を保持
    - 最近の変更を更新 (最後の3つを保持)

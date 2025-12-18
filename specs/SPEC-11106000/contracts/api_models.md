@@ -6,6 +6,7 @@
   - `.gguf` はサポート外（400）。
   - `filename` 省略時は、リポジトリ内の `.onnx` を探索し、無ければ Transformers→ONNX export を試行する。
   - `filename` が `.onnx` 以外の場合も export 経路になる（`filename` は無視される）。
+  - `trust_remote_code` は省略可能（デフォルト false）。インストール時に同意済みで `LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT=1` の場合、export 経路では自動で有効化される。
 - **Body**:
 ```json
 {

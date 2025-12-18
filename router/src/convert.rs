@@ -1318,12 +1318,13 @@ fn should_use_fake_convert() -> bool {
 
 /// ルーター再起動時に pending_conversion の登録済みモデルを再キューする
 pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<ModelInfo>) {
+    let trust_remote_code = crate::config::trust_remote_code_default_enabled();
     for model in models {
         if model.status.as_deref() == Some("pending_conversion") {
             if let (Some(repo), Some(filename)) = (model.repo.clone(), model.filename.clone()) {
                 let chat_template = model.chat_template.clone();
                 manager
-                    .enqueue(repo, filename, None, None, chat_template, false)
+                    .enqueue(repo, filename, None, None, chat_template, trust_remote_code)
                     .await;
             }
         }

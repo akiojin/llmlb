@@ -27,6 +27,7 @@
 - 選択したファイルが実際には存在しない場合、登録は失敗として詳細メッセージを返す。
 - 巨大モデル（>50GB）を登録した場合、ノードの推奨メモリ超過を警告する。
 - Transformers が `trust_remote_code` を要求するモデルは、明示的な許可（opt-in）がない限り変換に失敗し、理由がUIに表示される。
+- macOSなどの環境で変換できないモデル（例: CUDA/nvcc が必要、特定依存がビルド不可）は、失敗理由がUIで確認できる（`download_progress.error`）。
 
 ### 要明確化
 - HF APIへのアクセスは匿名で十分か、HF_TOKEN必須か。
@@ -45,7 +46,10 @@
 - **FR-007**: 成功/失敗バナーは自動消去しない（×で閉じる）か、少なくとも4秒以上表示する。
 - **FR-008**: 登録済みモデルをUI/APIから削除できる。削除後は /v1/models とダッシュボード一覧から即時消え、ローカルキャッシュも削除する。
 - **FR-009**: ルーター再起動後も pending_conversion の登録があれば自動的に変換キューへ再投入される。失敗したタスクは UI の Restore で再実行できる。
-- **FR-010**: Transformers/Optimum の変換で `trust_remote_code` が必要な場合、UI/APIで `trust_remote_code=true` を明示指定したときのみ許可する（デフォルトは false）。UIには「任意コード実行の危険」がある旨の警告を表示する。
+- **FR-010**: Transformers/Optimum の変換で `trust_remote_code` が必要な場合、以下のいずれかのときのみ許可する（デフォルトは false）。
+  - インストーラ等で危険性に同意済みで、`LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT=1` が有効な場合
+  - UI/APIで `trust_remote_code=true` を明示指定した場合（Advanced options）
+  - UIには「任意コード実行の危険」がある旨の警告を表示し、インストーラでも同等の同意を取る
 
 ### 主要エンティティ
 - **Hugging Face モデル**: リポジトリとそのファイル（ONNX/非ONNX）。属性: repo, filename, size, updated_at, direct URL。

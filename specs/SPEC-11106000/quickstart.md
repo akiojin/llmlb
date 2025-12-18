@@ -10,7 +10,7 @@
 ### Dashboard
 - Dashboard → Models → Registered Models → Register
 - `repo`（例: `sshleifer/tiny-gpt2`）を入力して登録
-- 変換でカスタムコードが必要なモデルは `trust_remote_code` をON（危険: 任意コード実行）
+- 変換でカスタムコードが必要なモデルは、インストール時に `LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT=1` を有効化するか、Registerの Advanced options で `trust_remote_code` をON（危険: 任意コード実行）
 
 ### API（curl）
 ```bash
@@ -54,4 +54,5 @@ curl -sS http://localhost:8080/v1/chat/completions \
 
 ## トラブルシュート
 - 登録が `error` になる: `download_progress.error` と Routerログを確認し、必要なら `trust_remote_code` をONにして再登録/Restoreします。
+- macOSで変換できない: `download_progress.error` に理由が出ます。CUDA/nvcc が必要なモデル等は Linux+CUDA 環境で事前にONNX化してください。
 - 変換が重い: まず小さいモデルで確認します（例: `sshleifer/tiny-gpt2`）。

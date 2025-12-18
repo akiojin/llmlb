@@ -17,5 +17,6 @@ use clap::Parser;
     LLM_ROUTER_JWT_SECRET        JWT signing key (auto-generated if not set)
     LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
     LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
+    LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT  Allow HF trust_remote_code by default during ONNX export (default: false)
 "#)]
 pub struct Cli;

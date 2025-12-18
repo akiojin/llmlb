@@ -82,6 +82,20 @@ pub fn get_default_embedding_model() -> String {
         .unwrap_or_else(|_| "nomic-embed-text-v1.5".to_string())
 }
 
+/// ONNXエクスポート時に `trust_remote_code` をデフォルトで許可するかどうか
+///
+/// 環境変数 `LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT` が truthy のとき true。
+/// - truthy: `1`, `true`, `yes`, `on`（大文字小文字は区別しない）
+pub fn trust_remote_code_default_enabled() -> bool {
+    std::env::var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT")
+        .ok()
+        .map(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +185,29 @@ mod tests {
         let result = get_default_embedding_model();
         assert_eq!(result, "bge-m3");
         std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
+    }
+
+    #[test]
+    #[serial]
+    fn test_trust_remote_code_default_enabled() {
+        std::env::remove_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT");
+        assert!(!trust_remote_code_default_enabled());
+
+        std::env::set_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT", "1");
+        assert!(trust_remote_code_default_enabled());
+
+        std::env::set_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT", "true");
+        assert!(trust_remote_code_default_enabled());
+
+        std::env::set_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT", "yes");
+        assert!(trust_remote_code_default_enabled());
+
+        std::env::set_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT", "on");
+        assert!(trust_remote_code_default_enabled());
+
+        std::env::set_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT", "0");
+        assert!(!trust_remote_code_default_enabled());
+
+        std::env::remove_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT");
     }
 }

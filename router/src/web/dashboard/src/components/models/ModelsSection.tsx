@@ -162,8 +162,11 @@ export function ModelsSection() {
                       {lifecycleStatusBadge(model.lifecycle_status)}
                     </div>
 
-                    {/* ダウンロード進行状況 */}
-                    {model.download_progress && (model.lifecycle_status === 'caching' || model.lifecycle_status === 'pending') && (
+                    {/* ダウンロード進行状況 / エラー詳細 */}
+                    {model.download_progress &&
+                      (model.lifecycle_status === 'caching' ||
+                        model.lifecycle_status === 'pending' ||
+                        model.lifecycle_status === 'error') && (
                       <div className="mt-3">
                         <div className="h-1.5 w-full rounded-full bg-muted">
                           <div
@@ -176,10 +179,17 @@ export function ModelsSection() {
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {Math.round(model.download_progress.percent * 100)}%
-                          {model.download_progress.error && (
-                            <span className="text-destructive"> • {model.download_progress.error}</span>
-                          )}
                         </p>
+                        {model.download_progress.error && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-xs text-destructive">
+                              <span className="line-clamp-2">{model.download_progress.error}</span>
+                            </summary>
+                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+                              {model.download_progress.error}
+                            </pre>
+                          </details>
+                        )}
                       </div>
                     )}
 
@@ -252,20 +262,29 @@ export function ModelsSection() {
                 onChange={(e) => setRegisterFilename(e.target.value)}
               />
             </div>
-            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
-              <div className="space-y-1">
-                <Label htmlFor="convert-trust-remote-code">Allow remote code (trust_remote_code)</Label>
-                <p className="text-xs text-muted-foreground">
-                  Allows executing custom Python code from the model repository during ONNX export.
-                  Enable only for repositories you trust.
-                </p>
+            <details className="rounded-md border">
+              <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+                Advanced options
+              </summary>
+              <div className="border-t p-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="convert-trust-remote-code">
+                      Allow remote code (trust_remote_code)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Allows executing custom Python code from the model repository during ONNX export.
+                      Enable only for repositories you trust.
+                    </p>
+                  </div>
+                  <Switch
+                    id="convert-trust-remote-code"
+                    checked={registerTrustRemoteCode}
+                    onCheckedChange={setRegisterTrustRemoteCode}
+                  />
+                </div>
               </div>
-              <Switch
-                id="convert-trust-remote-code"
-                checked={registerTrustRemoteCode}
-                onCheckedChange={setRegisterTrustRemoteCode}
-              />
-            </div>
+            </details>
           </div>
 
           <DialogFooter>

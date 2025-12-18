@@ -917,13 +917,29 @@ pub async fn register_model(
         String::new()
     };
 
+    // `trust_remote_code` は危険なためデフォルトは false。
+    // ただしインストーラ等で明示的に同意した環境では、環境変数でデフォルト許可できる。
+    let global_trust_remote_code = crate::config::trust_remote_code_default_enabled();
+    let trust_remote_code =
+        req.trust_remote_code || (global_trust_remote_code && filename.is_empty());
+    if trust_remote_code
+        && !req.trust_remote_code
+        && filename.is_empty()
+        && global_trust_remote_code
+    {
+        tracing::warn!(
+            repo = %repo,
+            "trust_remote_code enabled via LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT"
+        );
+    }
+
     register_model_internal(
         &state,
         &repo,
         &filename,
         req.display_name.clone(),
         req.chat_template.clone(),
-        req.trust_remote_code,
+        trust_remote_code,
     )
     .await
 }

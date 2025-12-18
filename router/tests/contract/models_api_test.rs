@@ -603,3 +603,102 @@ async fn test_download_failure_shows_error_status() {
         delete_body_str
     );
 }
+
+/// `LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT=1` が有効な場合、
+/// export 経路（リポジトリに .onnx が無い）でも `trust_remote_code` を自動で有効化できる。
+#[tokio::test]
+#[serial]
+async fn test_trust_remote_code_default_env_applies_to_export_path() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    // `.onnx` がない → export 経路に入る
+    Mock::given(method("GET"))
+        .and(path("/api/models/trust-global-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let app = build_app().await;
+
+    // trust_remote_code が true でないと失敗するスクリプトに差し替え
+    let data_dir = std::env::var("LLM_ROUTER_DATA_DIR").expect("LLM_ROUTER_DATA_DIR must be set");
+    let script_path = std::path::PathBuf::from(data_dir).join("assert_trust_remote_code.py");
+    std::fs::write(
+        &script_path,
+        r#"import os, sys, pathlib
+if os.environ.get("LLM_CONVERT_TRUST_REMOTE_CODE") != "1":
+    print("LLM_CONVERT_TRUST_REMOTE_CODE not set", file=sys.stderr)
+    sys.exit(2)
+outfile = sys.argv[sys.argv.index("--outfile")+1]
+pathlib.Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+with open(outfile, "wb") as f:
+    f.write(b"onnx test")
+"#,
+    )
+    .unwrap();
+    std::env::set_var("LLM_CONVERT_SCRIPT", &script_path);
+
+    std::env::set_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT", "1");
+
+    // APIリクエストでは trust_remote_code を指定しない（= UIが意識しない前提）
+    let reg = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "repo": "trust-global-repo",
+                        "chat_template": "dummy"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg.status(), StatusCode::CREATED);
+
+    // 変換完了後に /v1/models に出ること
+    let mut converted = false;
+    for _ in 0..30 {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        if val["data"]
+            .as_array()
+            .map(|arr| arr.iter().any(|m| m["id"] == "trust-global-repo"))
+            .unwrap_or(false)
+        {
+            converted = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        converted,
+        "converted model should appear in /v1/models when global trust_remote_code is enabled"
+    );
+
+    std::env::remove_var("LLM_ROUTER_TRUST_REMOTE_CODE_DEFAULT");
+}

@@ -10,7 +10,15 @@
 
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
+#include <chrono>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <queue>
+#include <random>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -427,6 +435,229 @@ int64_t argmaxFromLogits(const Ort::Value& logits, ONNXTensorElementDataType typ
     throw std::runtime_error("Unsupported logits dtype (expected float/float16)");
 }
 
+struct SampleCandidate {
+    int64_t id{0};
+    float logit{0.0f};
+    float prob{0.0f};
+};
+
+uint64_t makeSeed(const InferenceParams& params) {
+    if (params.seed != 0) return static_cast<uint64_t>(params.seed);
+    const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return static_cast<uint64_t>(now);
+}
+
+void fillLastTokenLogitsF32(const Ort::Value& logits, ONNXTensorElementDataType type, std::vector<float>& out) {
+    const auto info = logits.GetTensorTypeAndShapeInfo();
+    const auto shape = info.GetShape();
+    if (shape.size() < 3) {
+        throw std::runtime_error("Invalid logits shape");
+    }
+
+    const int64_t seq_len = shape[1];
+    const int64_t vocab = shape[2];
+    if (seq_len <= 0 || vocab <= 0) {
+        throw std::runtime_error("Invalid logits dims");
+    }
+
+    const size_t vocab_sz = static_cast<size_t>(vocab);
+    const size_t last_offset = static_cast<size_t>(seq_len - 1) * vocab_sz;
+    out.resize(vocab_sz);
+
+    if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        const float* data = logits.GetTensorData<float>();
+        std::memcpy(out.data(), data + last_offset, vocab_sz * sizeof(float));
+        return;
+    }
+
+    if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+        const uint16_t* data = reinterpret_cast<const uint16_t*>(logits.GetTensorRawData());
+        for (size_t i = 0; i < vocab_sz; ++i) {
+            out[i] = f16ToF32(data[last_offset + i]);
+        }
+        return;
+    }
+
+    throw std::runtime_error("Unsupported logits dtype (expected float/float16)");
+}
+
+int64_t sampleTokenFromLogits(
+    const Ort::Value& logits,
+    ONNXTensorElementDataType type,
+    const InferenceParams& params,
+    const std::vector<int64_t>& generated_ids,
+    const std::unordered_set<int64_t>& stop_ids,
+    std::mt19937_64& rng,
+    std::vector<float>& scratch_logits) {
+    fillLastTokenLogitsF32(logits, type, scratch_logits);
+    const size_t vocab_sz = scratch_logits.size();
+    if (vocab_sz == 0) throw std::runtime_error("Empty logits");
+
+    float temperature = params.temperature;
+    if (!std::isfinite(temperature)) temperature = 0.0f;
+    if (temperature <= 0.0f) {
+        return argmaxFromLogits(logits, type);
+    }
+    if (temperature < 1e-4f) temperature = 1e-4f;
+
+    float top_p = params.top_p;
+    if (!std::isfinite(top_p)) top_p = 1.0f;
+    if (top_p < 0.0f) top_p = 0.0f;
+    if (top_p > 1.0f) top_p = 1.0f;
+
+    int top_k = params.top_k;
+    if (top_k < 0) top_k = 0;
+    if (top_k > static_cast<int>(vocab_sz)) top_k = static_cast<int>(vocab_sz);
+
+    float repeat_penalty = params.repeat_penalty;
+    if (!std::isfinite(repeat_penalty) || repeat_penalty < 1.0f) repeat_penalty = 1.0f;
+
+    // Repetition penalty (best-effort): apply once per previously generated token id.
+    if (repeat_penalty > 1.0f && !generated_ids.empty()) {
+        for (const auto id : generated_ids) {
+            if (id < 0) continue;
+            const size_t idx = static_cast<size_t>(id);
+            if (idx >= vocab_sz) continue;
+            float& v = scratch_logits[idx];
+            if (!std::isfinite(v)) continue;
+            v = (v < 0.0f) ? (v * repeat_penalty) : (v / repeat_penalty);
+        }
+    }
+
+    // Temperature scaling.
+    for (auto& v : scratch_logits) {
+        if (!std::isfinite(v)) {
+            v = -std::numeric_limits<float>::infinity();
+            continue;
+        }
+        v /= temperature;
+    }
+
+    // Avoid returning an empty completion due to an immediate stop token.
+    if (generated_ids.empty() && !stop_ids.empty()) {
+        for (const auto id : stop_ids) {
+            if (id < 0) continue;
+            const size_t idx = static_cast<size_t>(id);
+            if (idx >= vocab_sz) continue;
+            scratch_logits[idx] = -std::numeric_limits<float>::infinity();
+        }
+    }
+
+    // Fast path: if top_k == 1 or top_p == 0, choose argmax.
+    if (top_k == 1 || top_p <= 0.0f) {
+        int64_t best_id = 0;
+        float best_val = -std::numeric_limits<float>::infinity();
+        for (size_t i = 0; i < vocab_sz; ++i) {
+            const float v = scratch_logits[i];
+            if (v > best_val) {
+                best_val = v;
+                best_id = static_cast<int64_t>(i);
+            }
+        }
+        return best_id;
+    }
+
+    std::vector<SampleCandidate> candidates;
+
+    if (top_k > 0) {
+        // Maintain a min-heap of size top_k.
+        struct HeapItem {
+            float logit;
+            int64_t id;
+        };
+        auto cmp = [](const HeapItem& a, const HeapItem& b) { return a.logit > b.logit; };
+        std::priority_queue<HeapItem, std::vector<HeapItem>, decltype(cmp)> heap(cmp);
+
+        for (size_t i = 0; i < vocab_sz; ++i) {
+            const float v = scratch_logits[i];
+            if (heap.size() < static_cast<size_t>(top_k)) {
+                heap.push({v, static_cast<int64_t>(i)});
+                continue;
+            }
+            if (v > heap.top().logit) {
+                heap.pop();
+                heap.push({v, static_cast<int64_t>(i)});
+            }
+        }
+
+        candidates.reserve(heap.size());
+        while (!heap.empty()) {
+            const auto it = heap.top();
+            heap.pop();
+            candidates.push_back({it.id, it.logit, 0.0f});
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.logit > b.logit; });
+    } else {
+        candidates.reserve(vocab_sz);
+        for (size_t i = 0; i < vocab_sz; ++i) {
+            candidates.push_back({static_cast<int64_t>(i), scratch_logits[i], 0.0f});
+        }
+    }
+
+    // Compute softmax over candidates.
+    float max_logit = -std::numeric_limits<float>::infinity();
+    for (const auto& c : candidates) {
+        if (c.logit > max_logit) max_logit = c.logit;
+    }
+    if (!std::isfinite(max_logit)) {
+        return argmaxFromLogits(logits, type);
+    }
+
+    double sum = 0.0;
+    for (auto& c : candidates) {
+        const double e = std::exp(static_cast<double>(c.logit - max_logit));
+        c.prob = static_cast<float>(e);
+        sum += e;
+    }
+    if (!(sum > 0.0) || !std::isfinite(sum)) {
+        return argmaxFromLogits(logits, type);
+    }
+    for (auto& c : candidates) {
+        c.prob = static_cast<float>(static_cast<double>(c.prob) / sum);
+    }
+
+    // Nucleus (top_p) filtering.
+    if (top_p < 1.0f) {
+        std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.prob > b.prob; });
+        double cum = 0.0;
+        size_t keep = 0;
+        for (; keep < candidates.size(); ++keep) {
+            cum += candidates[keep].prob;
+            if (cum >= static_cast<double>(top_p)) {
+                ++keep;  // include this token
+                break;
+            }
+        }
+        if (keep == 0) keep = 1;
+        if (keep < candidates.size()) candidates.resize(keep);
+
+        // Renormalize after filtering.
+        double sum2 = 0.0;
+        for (const auto& c : candidates) sum2 += c.prob;
+        if (!(sum2 > 0.0) || !std::isfinite(sum2)) {
+            return candidates.empty() ? argmaxFromLogits(logits, type) : candidates.front().id;
+        }
+        for (auto& c : candidates) {
+            c.prob = static_cast<float>(static_cast<double>(c.prob) / sum2);
+        }
+    }
+
+    // Sample.
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    const double r = dist(rng);
+    double acc = 0.0;
+    for (const auto& c : candidates) {
+        acc += c.prob;
+        if (r <= acc) {
+            // Honor stop tokens as terminators (caller will break).
+            return c.id;
+        }
+    }
+
+    // Fallback due to numeric drift.
+    return candidates.empty() ? argmaxFromLogits(logits, type) : candidates.back().id;
+}
+
 Ort::Value findOutputByName(std::vector<Ort::Value>& outputs, const std::vector<std::string>& names, const std::string& target) {
     for (size_t i = 0; i < names.size() && i < outputs.size(); ++i) {
         if (names[i] == target) {
@@ -642,9 +873,12 @@ std::string InferenceEngine::generateChat(
     // Prefill: feed the full prompt.
     auto outputs = run_step(prompt_ids);
     Ort::Value logits = std::move(outputs[0]);
+    std::mt19937_64 rng(makeSeed(params));
+    std::vector<float> logits_scratch;
 
     for (size_t step = 0; step < params.max_tokens; ++step) {
-        const int64_t next_id = argmaxFromLogits(logits, io.logits_type);
+        const int64_t next_id = sampleTokenFromLogits(
+            logits, io.logits_type, params, generated_ids, stop_ids, rng, logits_scratch);
         if (!stop_ids.empty() && stop_ids.count(next_id)) {
             break;
         }
@@ -748,6 +982,9 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         add_stop(s);
     }
 
+    std::vector<int64_t> generated_ids;
+    generated_ids.reserve(params.max_tokens);
+
     std::vector<std::string> streamed;
 
     std::vector<Ort::Value> past_in;
@@ -844,15 +1081,19 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     // Prefill.
     auto outputs = run_step(prompt_ids);
     Ort::Value logits = std::move(outputs[0]);
+    std::mt19937_64 rng(makeSeed(params));
+    std::vector<float> logits_scratch;
 
     std::string raw_accum;
     std::string last_final;
 
     for (size_t step = 0; step < params.max_tokens; ++step) {
-        const int64_t next_id = argmaxFromLogits(logits, io.logits_type);
+        const int64_t next_id = sampleTokenFromLogits(
+            logits, io.logits_type, params, generated_ids, stop_ids, rng, logits_scratch);
         if (!stop_ids.empty() && stop_ids.count(next_id)) {
             break;
         }
+        generated_ids.push_back(next_id);
 
         // Decode this token.
         const std::string piece = tokenizer->decode(std::vector<int64_t>{next_id}, false);

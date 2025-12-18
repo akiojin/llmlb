@@ -60,6 +60,8 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             if (body.contains("temperature")) params.temperature = body.value("temperature", params.temperature);
             if (body.contains("top_p")) params.top_p = body.value("top_p", params.top_p);
             if (body.contains("top_k")) params.top_k = body.value("top_k", params.top_k);
+            if (body.contains("repeat_penalty")) params.repeat_penalty = body.value("repeat_penalty", params.repeat_penalty);
+            if (body.contains("seed")) params.seed = body.value("seed", params.seed);
 
             if (stream) {
                 res.set_header("Content-Type", "text/event-stream");

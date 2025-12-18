@@ -20,7 +20,9 @@ struct ChatMessage {
 
 /// 推論パラメータ
 struct InferenceParams {
-    size_t max_tokens{2048};  // デフォルト値を増加（256→2048）
+    // OpenAI互換APIで max_tokens が省略された場合のデフォルト。
+    // 小さすぎると空になりやすく、大きすぎると無限ループ時の被害が大きい。
+    size_t max_tokens{256};
     float temperature{0.8f};
     float top_p{0.9f};
     int top_k{40};

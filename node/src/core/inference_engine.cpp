@@ -117,6 +117,68 @@ std::optional<nlohmann::json> readJsonFile(const std::filesystem::path& path) {
     }
 }
 
+std::optional<size_t> readPositiveSize(const nlohmann::json& obj, const std::string& key) {
+    if (!obj.contains(key)) return std::nullopt;
+    const auto& v = obj.at(key);
+    if (v.is_number_integer()) {
+        const auto n = v.get<int64_t>();
+        if (n > 0) return static_cast<size_t>(n);
+    }
+    if (v.is_number_float()) {
+        const auto n = v.get<double>();
+        if (n > 0.0 && std::isfinite(n)) return static_cast<size_t>(n);
+    }
+    return std::nullopt;
+}
+
+std::vector<size_t> collectContextCandidates(const nlohmann::json& obj) {
+    std::vector<size_t> out;
+    for (const auto& k : std::vector<std::string>{
+             "max_position_embeddings",
+             "n_positions",
+             "n_ctx",
+             "max_seq_len",
+             "max_seq_length",
+             "max_sequence_length",
+             "seq_length",
+             "context_length",
+         }) {
+        if (auto v = readPositiveSize(obj, k)) out.push_back(*v);
+    }
+    return out;
+}
+
+size_t inferModelMaxContextFromModelDir(const std::filesystem::path& model_dir) {
+    // Conservative fallback for models without config files.
+    constexpr size_t kFallback = 4096;
+
+    // Prefer model config (architecture-defined positional embedding length).
+    if (auto cfg = readJsonFile(model_dir / "config.json")) {
+        auto candidates = collectContextCandidates(*cfg);
+        // Some multimodal configs store text config under nested objects.
+        for (const auto& nested : std::vector<std::string>{"text_config", "language_config", "llm_config"}) {
+            if (cfg->contains(nested) && (*cfg)[nested].is_object()) {
+                auto more = collectContextCandidates((*cfg)[nested]);
+                candidates.insert(candidates.end(), more.begin(), more.end());
+            }
+        }
+        if (!candidates.empty()) {
+            // If multiple keys disagree, choose the smallest to avoid out-of-range position ids.
+            return *std::min_element(candidates.begin(), candidates.end());
+        }
+    }
+
+    // Fallback to tokenizer_config.json (best-effort; may be unset or huge sentinel).
+    if (auto tc = readJsonFile(model_dir / "tokenizer_config.json")) {
+        if (auto v = readPositiveSize(*tc, "model_max_length")) {
+            // Transformers uses a huge sentinel when max length is "unset".
+            if (*v > 0 && *v < 1'000'000) return *v;
+        }
+    }
+
+    return kFallback;
+}
+
 void mergeTokenString(nlohmann::json& out, const nlohmann::json& src, const std::string& key) {
     if (out.contains(key)) return;
     if (!src.contains(key)) return;
@@ -744,6 +806,16 @@ std::string InferenceEngine::generateChat(
     const auto prompt_ids = tokenizer->encode(prompt, false);
     if (prompt_ids.empty()) return "";
 
+    const size_t model_max_ctx = inferModelMaxContextFromModelDir(model_dir);
+    const size_t prompt_len = prompt_ids.size();
+    if (prompt_len >= model_max_ctx) {
+        throw std::runtime_error(
+            "Prompt is too long for this model context (prompt_tokens=" + std::to_string(prompt_len) +
+            ", model_max_context=" + std::to_string(model_max_ctx) + ")");
+    }
+    const size_t max_new_tokens = model_max_ctx - prompt_len;
+    const size_t max_steps = std::min(params.max_tokens, max_new_tokens);
+
     const auto io = inspectTextGenWithPast(*session);
     if (io.input_ids.empty() || io.attention_mask.empty() || io.position_ids.empty() || io.logits.empty() || io.kv.empty()) {
         throw std::runtime_error(
@@ -773,7 +845,7 @@ std::string InferenceEngine::generateChat(
     }
 
     std::vector<int64_t> generated_ids;
-    generated_ids.reserve(params.max_tokens);
+    generated_ids.reserve(max_steps);
 
     // Cached KV tensors (use ORT outputs as next inputs to avoid copies).
     std::vector<Ort::Value> past_in;        // 2*layers
@@ -876,7 +948,7 @@ std::string InferenceEngine::generateChat(
     std::mt19937_64 rng(makeSeed(params));
     std::vector<float> logits_scratch;
 
-    for (size_t step = 0; step < params.max_tokens; ++step) {
+    for (size_t step = 0; step < max_steps; ++step) {
         const int64_t next_id = sampleTokenFromLogits(
             logits, io.logits_type, params, generated_ids, stop_ids, rng, logits_scratch);
         if (!stop_ids.empty() && stop_ids.count(next_id)) {
@@ -955,6 +1027,16 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     const auto prompt_ids = tokenizer->encode(prompt, false);
     if (prompt_ids.empty()) return {};
 
+    const size_t model_max_ctx = inferModelMaxContextFromModelDir(model_dir);
+    const size_t prompt_len = prompt_ids.size();
+    if (prompt_len >= model_max_ctx) {
+        throw std::runtime_error(
+            "Prompt is too long for this model context (prompt_tokens=" + std::to_string(prompt_len) +
+            ", model_max_context=" + std::to_string(model_max_ctx) + ")");
+    }
+    const size_t max_new_tokens = model_max_ctx - prompt_len;
+    const size_t max_steps = std::min(params.max_tokens, max_new_tokens);
+
     const auto io = inspectTextGenWithPast(*session);
     if (io.input_ids.empty() || io.attention_mask.empty() || io.position_ids.empty() || io.logits.empty() || io.kv.empty()) {
         throw std::runtime_error(
@@ -983,7 +1065,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     }
 
     std::vector<int64_t> generated_ids;
-    generated_ids.reserve(params.max_tokens);
+    generated_ids.reserve(max_steps);
 
     std::vector<std::string> streamed;
 
@@ -1087,7 +1169,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     std::string raw_accum;
     std::string last_final;
 
-    for (size_t step = 0; step < params.max_tokens; ++step) {
+    for (size_t step = 0; step < max_steps; ++step) {
         const int64_t next_id = sampleTokenFromLogits(
             logits, io.logits_type, params, generated_ids, stop_ids, rng, logits_scratch);
         if (!stop_ids.empty() && stop_ids.count(next_id)) {

@@ -17,9 +17,6 @@ LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を�
   必要なモデルを取得（ルーターからの push 配布なし）
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
-クイックリファレンス: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
-[TROUBLESHOOTING](./TROUBLESHOOTING.md)
-
 ## ダッシュボード
 
 ルーターが `/dashboard` で提供します。
@@ -60,63 +57,142 @@ npx @llm-router/mcp-server
 
 詳細は [mcp-server/README.md](./mcp-server/README.md) を参照してください。
 
-## クイックスタート
+## インストールと起動
 
-### ルーター (llm-router)
+### 前提条件
+- Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
+- Rust toolchain (nightly不要) と cargo
+- Docker (任意、コンテナ利用時)
+- CUDAドライバ (GPU使用時。NVIDIAのみ)
+
+### 1) Rustソースからビルド（推奨）
+```bash
+git clone https://github.com/akiojin/llm-router.git
+cd llm-router
+make quality-checks   # fmt/clippy/test/markdownlint 一式
+cargo build -p llm-router --release
+```
+生成物: `target/release/llm-router`
+
+### 2) Docker で起動
+```bash
+docker build -t llm-router:latest .
+docker run --rm -p 8080:8080 --gpus all \
+  -e OPENAI_API_KEY=... \
+  llm-router:latest
+```
+GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
+
+### 3) C++ Node ビルド
 
 ```bash
-cargo build --release -p llm-router
-./target/release/llm-router
-# デフォルト: http://0.0.0.0:8080
+npm run build:node
+
+# 手動でビルドする場合:
+cd node
+cmake -B build -S .
+cmake --build build --config Release
 ```
 
-### ノード (llm-node)
+生成物: `node/build/llm-node`
 
-```bash
-cmake -S node -B node/build
-cmake --build node/build -j
+### 4) 基本設定
 
-LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
-```
+#### ルーター（Rust）環境変数
 
-### ノード環境変数（主要）
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
+| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
+| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
+| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
+| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
+| `LLM_ROUTER_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
+| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
 
-| 変数 | デフォルト | 説明 |
-|-----|-----------|------|
-| `LLM_ROUTER_URL` | `http://localhost:8080` | ルーターURL |
-| `LLM_NODE_PORT` | `11435` | ノードのリッスンポート |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデル保存ディレクトリ |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
+クラウドAPI:
+
+- `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
+
+#### ノード（C++）環境変数
+
+| 環境変数 | デフォルト | 説明 |
+|---------|-----------|------|
+| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
+| `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
+| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
+| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+
+**注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
+新しい環境変数名を使用してください。
+
+### 5) 起動例
+```bash
+# ルーター
+cargo run -p llm-router
+
+# ノード (別シェル)
+./node/build/llm-node
+```
+
+### 6) 動作確認
+- ダッシュボード: `http://localhost:8080/dashboard`
+- 健康チェック: `curl http://localhost:8080/v0/health`
+- OpenAI互換: `curl http://localhost:8080/v1/models`
+
+## 利用方法（OpenAI互換エンドポイント）
+
+### 基本
+- `POST /v1/chat/completions`
+- `POST /v1/completions`
+- `POST /v1/embeddings`
+
+### クラウドモデルプレフィックス
+- 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
+- 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`
+- 転送時にプレフィックスは除去され、クラウドAPIへそのまま送られます。
+- プレフィックスなしのモデルは従来どおりローカルLLMにルーティングされます。
+
+### ストリーミング
+- `stream: true` でクラウドSSE/チャンクをそのままパススルー。
+
+### メトリクス
+- `GET /v0/metrics/cloud` （Prometheus text）
+  - `cloud_requests_total{provider,status}`
+  - `cloud_request_latency_seconds{provider}`
 
 ## アーキテクチャ
 
+LLM Router は、ローカルの llama.cpp ノードを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
+
+### コンポーネント
+- **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
+- **Local Nodes (C++ / llama.cpp)**: GGUF モデルを提供します。ルーターに登録し、ハートビートを送信します。
+- **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ルーターは対応するクラウド API に転送します。
+- **Storage**: ルーターのメタデータ用の SQLite。モデルファイルは各ノードに存在します。
+- **Observability**: Prometheus メトリクス、構造化ログ、ダッシュボード統計。
+
 ### システム構成
 
+![システム構成](docs/diagrams/architecture.readme.ja.svg)
+
+Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成 (README.ja.md)）
+
+### リクエストフロー
 ```
-┌───────────────────────────────────────┐
-│               Client                  │
-│     (apps / users / integrations)     │
-└───────────────────┬───────────────────┘
-                    │ OpenAI-compatible (/v1/*)
-                    ▼
-┌───────────────────────────────────────┐
-│                Router                 │
-│  - /v1/* proxy + load balancing       │
-│  - /v0/* (nodes, models, dashboard)   │
-│  - /dashboard (Web UI)                │
-└──────────────┬───────────────┬────────┘
-               │               │
-               │ OpenAI-compatible (/v1/*)
-               ▼               ▼
-        ┌────────────┐   ┌────────────┐
-        │    Node    │   │    Node    │
-        │ llama.cpp  │   │ llama.cpp  │
-        └────────────┘   └────────────┘
-               ▲               ▲
-               │ /v0/nodes, /v0/health (registration/heartbeat)
-               └───────────────┘
+Client
+  │ POST /v1/chat/completions
+  ▼
+Router (OpenAI-compatible)
+  ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
+  └─ No prefix → Scheduler → Local Node
+                       └─ llama.cpp inference → Response
 ```
 
 ### モデル同期（push配布なし）
@@ -126,6 +202,44 @@ LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
   - `path` が共有ストレージ等で参照可能なら、そのパスを直接使用します。
   - 参照できない場合は `/v0/models/blob/:model_name` からダウンロードしてローカルに保存します。
 - ルーターからノードへの push 配布は行いません。
+
+### スケジューリングとヘルスチェック
+- ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。
+- ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
+- ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
+
+## トラブルシューティング
+
+### 起動時に GPU が見つからない
+- 確認: `nvidia-smi` または `CUDA_VISIBLE_DEVICES`
+- 環境変数で無効化: ノード側 `LLM_ALLOW_NO_GPU=true`（デフォルトは禁止）
+- それでも失敗する場合は NVML ライブラリの有無を確認
+
+### クラウドモデルが 401/400 を返す
+- ルーター側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
+- ダッシュボード `/v0/dashboard/stats` の `*_key_present` が false なら未設定
+- プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
+
+### ポート競合で起動しない
+- ルーター: `LLM_ROUTER_PORT` を変更（例: `LLM_ROUTER_PORT=18080`）
+- ノード: `LLM_NODE_PORT` または `--port` で変更
+
+### SQLite ファイル作成に失敗
+- `LLM_ROUTER_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認
+- Windows の場合はパスにスペースが含まれていないか確認
+
+### ダッシュボードが表示されない
+- ブラウザキャッシュをクリア
+- バンドル済み静的ファイルが壊れていないか `cargo clean` → `cargo run` を試す
+- リバースプロキシ経由の場合は `/dashboard/*` の静的配信設定を確認
+
+### OpenAI互換APIで 503 / モデル未登録
+- 全ノードが `initializing` の場合 503 を返すことがあります。ノードのモデルロードを待つか、`/v0/dashboard/nodes` で状態を確認
+- モデル指定がローカルに存在しない場合、ノードが自動プルするまで待機
+
+### ログが多すぎる / 少なすぎる
+- 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
+- ノードのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
 ## モデル管理（Hugging Face, GGUF-first）
 

@@ -26,9 +26,6 @@ LLM Router is a powerful centralized system that provides unified management and
   model name to proxy to the corresponding cloud provider while keeping the
   same OpenAI-compatible endpoint.
 
-Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
-[TROUBLESHOOTING](./TROUBLESHOOTING.md)
-
 ## MCP Server for LLM Assistants
 
 LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
@@ -230,36 +227,30 @@ Nodes report health + metrics to the Router for node status and load balancing d
 
 ## Architecture
 
+LLM Router coordinates local llama.cpp nodes and optionally proxies to cloud LLM providers via model prefixes.
+
+### Components
+- **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
+- **Local Nodes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the router.
+- **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the router forwards to the corresponding cloud API.
+- **Storage**: SQLite for router metadata; model files live on each node.
+- **Observability**: Prometheus metrics, structured logs, dashboard stats.
+
 ### System Overview
 
+![System Overview](docs/diagrams/architecture.readme.en.svg)
+
+Draw.io source: `docs/diagrams/architecture.drawio` (Page: System Overview (README.md))
+
+### Request Flow
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                          Client                              │
-│                (Users, Applications, etc.)                   │
-└────────────────────┬────────────────────────────────────────┘
-                     │ POST /v1/chat/completions
-                     │ POST /v1/completions
-                     │ POST /v1/embeddings
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                         Router                               │
-│                  (Central Management Server)                 │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 1. Select Node (Load Balancing)                      │   │
-│  │ 2. Proxy Request to Selected Node                     │   │
-│  │ 3. Return Response to Client                           │   │
-│  └─────────────────────────────────────────────────────┘   │
-└────┬──────────────────┬──────────────────┬─────────────────┘
-     │                  │                  │
-     │ OpenAI Proxy     │ OpenAI Proxy     │ OpenAI Proxy
-     ▼                  ▼                  ▼
-┌─────────┐        ┌─────────┐        ┌─────────┐
-│ Node 1  │        │ Node 2  │        │ Node 3  │
-│         │        │         │        │         │
-│  /v1/* API │     │  /v1/* API │     │  /v1/* API │
-└─────────┘        └─────────┘        └─────────┘
-Machine 1          Machine 2          Machine 3
+Client
+  │ POST /v1/chat/completions
+  ▼
+Router (OpenAI-compatible)
+  ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
+  └─ No prefix → Scheduler → Local Node
+                       └─ llama.cpp inference → Response
 ```
 
 ### Communication Flow (Proxy Pattern)
@@ -337,6 +328,11 @@ curl http://router:8080/v1/chat/completions -d '...'
   - use the router-provided `path` directly (shared storage), or
   - download the model from `GET /v0/models/blob/:model_name` and cache it locally.
 
+### Scheduling & Health
+- Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
+- Heartbeats carry CPU/GPU/memory metrics used for load balancing.
+- Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
+
 ### Benefits of Proxy Pattern
 
 1. **Unified Endpoint**
@@ -397,7 +393,33 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - Nodes never receive push-based distribution; they pull models based on `/v1/models` and download via `/v0/models/blob/:model_name` when needed.
 
 ## Installation
-See [INSTALL.md](./INSTALL.md) for platform-specific installation steps.
+
+### Prerequisites
+- Linux/macOS/Windows x64 (GPU recommended)
+- Rust toolchain (stable) and cargo
+- Docker (optional)
+- CUDA driver (for NVIDIA GPU)
+
+### 1) Build from Rust source (Recommended)
+```bash
+git clone https://github.com/akiojin/llm-router.git
+cd llm-router
+make quality-checks   # fmt/clippy/test/markdownlint
+cargo build -p llm-router --release
+```
+Artifact: `target/release/llm-router`
+
+### 2) Run with Docker
+```bash
+docker build -t llm-router:latest .
+docker run --rm -p 8080:8080 --gpus all \
+  -e OPENAI_API_KEY=... \
+  llm-router:latest
+```
+If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
+
+### 3) C++ Node Build
+See [Node (C++)](#node-c) section in Quick Start.
 
 ### Requirements
 
@@ -499,6 +521,39 @@ Cloud / external services:
 | `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
+
+## Troubleshooting
+
+### GPU not found at startup
+- Check: `nvidia-smi` or `CUDA_VISIBLE_DEVICES`
+- Disable via env var: Node side `LLM_ALLOW_NO_GPU=true` (disabled by default)
+- If it still fails, check for NVML library presence
+
+### Cloud models return 401/400
+- Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the router side
+- If `*_key_present` is false in Dashboard `/v0/dashboard/stats`, it's not set
+- Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
+
+### Port conflict
+- Router: Change `LLM_ROUTER_PORT` (e.g., `LLM_ROUTER_PORT=18080`)
+- Node: Change `LLM_NODE_PORT` or use `--port`
+
+### SQLite file creation failed
+- Check write permissions for the directory in `LLM_ROUTER_DATABASE_URL` path
+- On Windows, check if the path contains spaces
+
+### Dashboard does not appear
+- Clear browser cache
+- Try `cargo clean` -> `cargo run` to check if bundled static files are broken
+- Check static delivery settings for `/dashboard/*` if using a reverse proxy
+
+### OpenAI compatible API returns 503 / Model not registered
+- Returns 503 if all nodes are `initializing`. Wait for node model load or check status at `/v0/dashboard/nodes`
+- If specified model does not exist locally, wait for node to auto-pull
+
+### Too many / too few logs
+- Control via `LLM_ROUTER_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLM_ROUTER_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
+- Node logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
 
 ## Development
 

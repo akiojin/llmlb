@@ -1,15 +1,22 @@
 import { test, expect, type Page } from '@playwright/test';
 
 function mockRegisteredModels(page: Page) {
-  return page.route('**/api/models/registered', async (route) => {
+  return page.route('**/v0/models', async (route) => {
+    // Mock the /v0/models endpoint with RegisteredModelView format
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([
         {
           name: 'openai:gpt-4o',
-          state: 'ready',
+          description: 'GPT-4O with vision',
+          size: 0,
+          quantization: '',
+          family: 'gpt-4o',
           capabilities: { input_image: 'supported', input_audio: 'supported' },
+          lifecycle_status: 'registered',
+          provider: 'openai',
+          created_at: new Date().toISOString(),
         },
       ]),
     });
@@ -41,12 +48,25 @@ function wavBase64(): string {
 }
 
 test.describe('Playground Multimodal Output @playground', () => {
-  test('MMO-01: アシスタント本文内の画像URL/データURLをプレビュー表示できる', async ({ page }) => {
+  async function setupPlayground(page: Page, assistantResponse: string) {
+    // Set up route mocks BEFORE navigation
     await mockRegisteredModels(page);
-    const dataUrl = `data:image/png;base64,${transparentPngBase64}`;
-    await mockChatCompletionsStream(page, `image: ${dataUrl}`);
+    await mockChatCompletionsStream(page, assistantResponse);
 
-    await page.goto('/playground');
+    // Navigate to playground
+    await page.goto('/playground', { waitUntil: 'networkidle' });
+
+    // Wait for chat input to be visible and ready
+    const chatInput = page.getByTestId('playground-chat-input');
+    await chatInput.waitFor({ state: 'visible', timeout: 10000 });
+
+    // Wait a bit more for React to fully render
+    await page.waitForTimeout(1000);
+  }
+
+  test('MMO-01: アシスタント本文内の画像URL/データURLをプレビュー表示できる', async ({ page }) => {
+    const dataUrl = `data:image/png;base64,${transparentPngBase64}`;
+    await setupPlayground(page, `image: ${dataUrl}`);
 
     await page.getByTestId('playground-chat-input').fill('show image');
     await page.getByTestId('playground-send').click();
@@ -57,11 +77,8 @@ test.describe('Playground Multimodal Output @playground', () => {
   });
 
   test('MMO-02: アシスタント本文内の音声URL/データURLを再生UI表示できる', async ({ page }) => {
-    await mockRegisteredModels(page);
     const dataUrl = `data:audio/wav;base64,${wavBase64()}`;
-    await mockChatCompletionsStream(page, `audio: ${dataUrl}`);
-
-    await page.goto('/playground');
+    await setupPlayground(page, `audio: ${dataUrl}`);
 
     await page.getByTestId('playground-chat-input').fill('show audio');
     await page.getByTestId('playground-send').click();

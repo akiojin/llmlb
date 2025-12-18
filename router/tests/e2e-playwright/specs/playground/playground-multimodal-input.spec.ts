@@ -1,15 +1,22 @@
 import { test, expect, type Page, type FilePayload } from '@playwright/test';
 
 function mockRegisteredModels(page: Page) {
-  return page.route('**/api/models/registered', async (route) => {
+  return page.route('**/v0/models', async (route) => {
+    // Mock the /v0/models endpoint with RegisteredModelView format
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([
         {
           name: 'openai:gpt-4o',
-          state: 'ready',
+          description: 'GPT-4O with vision',
+          size: 0,
+          quantization: '',
+          family: 'gpt-4o',
           capabilities: { input_image: 'supported', input_audio: 'supported' },
+          lifecycle_status: 'registered',
+          provider: 'openai',
+          created_at: new Date().toISOString(),
         },
       ]),
     });
@@ -60,9 +67,20 @@ function wavFile(name = 'test.wav'): FilePayload {
 
 test.describe('Playground Multimodal Input @playground', () => {
   test.beforeEach(async ({ page }) => {
+    // Set up route mocks BEFORE navigation
     await mockRegisteredModels(page);
     await mockChatCompletionsStream(page, 'OK');
-    await page.goto('/playground');
+
+    // Navigate to playground
+    await page.goto('/playground', { waitUntil: 'networkidle' });
+
+    // Wait for model to be selected by checking the combobox has proper aria-expanded or value
+    // Give React time to fetch and process models
+    await page.waitForTimeout(1000);
+
+    // Additional safety check: verify models were loaded
+    const modelSelector = page.locator('[role="combobox"]');
+    await modelSelector.waitFor({ state: 'visible', timeout: 5000 });
   });
 
   test('MMI-01: 画像を添付して送信できる（テキスト空でも可）', async ({ page }) => {

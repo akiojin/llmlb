@@ -247,6 +247,17 @@ export default function Playground() {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Extract and render media from assistant message content
+  const extractMediaFromContent = (content: string) => {
+    const imageUrlRegex = /(data:image\/[^;]+;base64,[^\s"'<>]+|https?:\/\/[^\s"'<>]+\.(png|jpg|jpeg|gif|webp))/gi
+    const audioUrlRegex = /(data:audio\/[^;]+;base64,[^\s"'<>]+|https?:\/\/[^\s"'<>]+\.(mp3|wav|ogg|m4a))/gi
+
+    const imageMatches = content.match(imageUrlRegex) || []
+    const audioMatches = content.match(audioUrlRegex) || []
+
+    return { imageMatches, audioMatches }
+  }
+
   // Toggle sidebar
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => !prev)
@@ -292,7 +303,7 @@ export default function Playground() {
           return { role: msg.role, content: msg.content }
         }
         // Build multimodal content array
-        const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
+        const content: Array<any> = []
         if (msg.content.trim()) {
           content.push({ type: 'text', text: msg.content })
         }
@@ -300,7 +311,9 @@ export default function Playground() {
           if (att.type === 'image') {
             content.push({ type: 'image_url', image_url: { url: att.data } })
           } else if (att.type === 'audio') {
-            content.push({ type: 'image_url', image_url: { url: att.data } })
+            // Extract base64 data from data URL if needed
+            const audioData = att.data.startsWith('data:') ? att.data.split(',')[1] : att.data
+            content.push({ type: 'input_audio', input_audio: { data: audioData, format: 'wav' } })
           }
         })
         return { role: msg.role, content }
@@ -705,6 +718,8 @@ export default function Playground() {
                     {message.content && (
                       <p className="message-text text-sm whitespace-pre-wrap">{message.content}</p>
                     )}
+
+                    {/* User attachments (input) */}
                     {message.attachments && message.attachments.length > 0 && (
                       <div className="grid grid-cols-2 gap-2 mt-2">
                         {message.attachments.map((attachment, aIdx) => (
@@ -730,6 +745,44 @@ export default function Playground() {
                         ))}
                       </div>
                     )}
+
+                    {/* Assistant media output (detected from content) */}
+                    {message.role === 'assistant' && (() => {
+                      const { imageMatches, audioMatches } = extractMediaFromContent(message.content)
+                      return (
+                        <>
+                          {imageMatches.length > 0 && (
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                              {imageMatches.map((url, idx) => (
+                                <div key={idx} className="rounded-md overflow-hidden bg-black/20 p-1">
+                                  <img
+                                    src={url}
+                                    alt={`assistant-image-${idx}`}
+                                    data-testid="playground-assistant-image"
+                                    className="w-full h-32 object-cover rounded-sm"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {audioMatches.length > 0 && (
+                            <div className="space-y-2 mt-2">
+                              {audioMatches.map((url, idx) => (
+                                <div key={idx} className="rounded-md overflow-hidden bg-black/20 p-2 flex flex-col items-center justify-center gap-2">
+                                  <Volume2 className="h-4 w-4" />
+                                  <audio
+                                    src={url}
+                                    controls
+                                    data-testid="playground-assistant-audio"
+                                    className="w-full max-w-[200px]"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   {message.role === 'user' && (
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -844,6 +897,17 @@ export default function Playground() {
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     sendMessage()
+                  }
+                }}
+                onPaste={(e) => {
+                  const files = e.clipboardData?.files
+                  if (files) {
+                    for (const file of Array.from(files)) {
+                      const type = file.type.startsWith('audio/') ? 'audio' : file.type.startsWith('image/') ? 'image' : null
+                      if (type) {
+                        handleFileAttachment(file, type)
+                      }
+                    }
                   }
                 }}
                 disabled={isStreaming}

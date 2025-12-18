@@ -162,7 +162,9 @@ async fn notify_nodes_of_new_model(model_name: &str) {
         let model_name = model_name.to_string();
         let http_client = http_client.clone();
         let node_id = node.id;
-        let node_addr = format!("http://{}:{}", node.ip_address, node.runtime_port);
+        // ノードAPIは runtime_port + 1 で提供される
+        let node_api_port = node.runtime_port + 1;
+        let node_addr = format!("http://{}:{}", node.ip_address, node_api_port);
 
         tokio::spawn(async move {
             notify_single_node_with_retry(&http_client, &node_addr, &model_name, node_id).await;

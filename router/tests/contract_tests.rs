@@ -33,5 +33,11 @@ mod images_edits_test;
 #[path = "contract/images_variations_test.rs"]
 mod images_variations_test;
 
+#[path = "contract/openai_logging_test.rs"]
+mod openai_logging_test;
+
+#[path = "contract/models_source_test.rs"]
+mod models_source_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

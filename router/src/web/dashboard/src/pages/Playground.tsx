@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { chatApi, modelsApi, type ChatSession, type ChatMessage, type RegisteredModelView } from '@/lib/api'
+import { chatApi, modelsApi, ApiError, type ChatSession, type ChatMessage, type RegisteredModelView } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -73,6 +73,24 @@ interface Message {
   attachments?: MessageAttachment[]
 }
 
+// HTTPステータスコードに基づいたエラーメッセージを生成
+function getErrorMessage(status: number): string {
+  switch (status) {
+    case 401:
+      return 'APIキーが無効です。設定を確認してください。'
+    case 403:
+      return 'このリソースへのアクセス権がありません。'
+    case 404:
+      return 'APIエンドポイントが見つかりません。'
+    case 503:
+      return '利用可能なノードがありません。ノードを起動してください。'
+    case 504:
+      return 'リクエストがタイムアウトしました。'
+    default:
+      return `サーバーエラーが発生しました (HTTP ${status})`
+  }
+}
+
 export default function Playground() {
   const queryClient = useQueryClient()
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -114,10 +132,38 @@ export default function Playground() {
   const [attachments, setAttachments] = useState<MessageAttachment[]>([])
 
   // Fetch models
-  const { data: models } = useQuery({
+  const { data: models, error: modelsError } = useQuery({
     queryKey: ['registered-models'],
     queryFn: modelsApi.getRegistered,
+    retry: false, // エラー時は即座にユーザーに通知
   })
+
+  // モデル取得エラー時のユーザー通知
+  useEffect(() => {
+    if (modelsError) {
+      let description = 'モデル一覧の取得に失敗しました'
+      if (modelsError instanceof ApiError) {
+        switch (modelsError.status) {
+          case 401:
+            description = 'APIキーが無効です。設定を確認してください。'
+            break
+          case 503:
+            description = '利用可能なノードがありません。ノードを起動してください。'
+            break
+          case 404:
+            description = 'APIエンドポイントが見つかりません。'
+            break
+          default:
+            description = modelsError.message
+        }
+      }
+      toast({
+        title: 'エラー',
+        description,
+        variant: 'destructive',
+      })
+    }
+  }, [modelsError])
 
   // Fetch sessions
   const { data: fetchedSessions } = useQuery({
@@ -346,11 +392,11 @@ export default function Playground() {
         })
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
+          throw new Error(getErrorMessage(response.status))
         }
 
         const reader = response.body?.getReader()
-        if (!reader) throw new Error('No response body')
+        if (!reader) throw new Error('レスポンスボディがありません')
 
         const decoder = new TextDecoder()
         let assistantContent = ''
@@ -425,7 +471,7 @@ export default function Playground() {
         })
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
+          throw new Error(getErrorMessage(response.status))
         }
 
         const data = await response.json()
@@ -454,8 +500,8 @@ export default function Playground() {
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
         toast({
-          title: 'Failed to send message',
-          description: error instanceof Error ? error.message : 'Unknown error',
+          title: 'メッセージの送信に失敗しました',
+          description: error instanceof Error ? error.message : '不明なエラー',
           variant: 'destructive',
         })
         // Remove user message on error

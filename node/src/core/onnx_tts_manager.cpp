@@ -3,9 +3,85 @@
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <cstdlib>
+#include <fstream>
+#include <stdexcept>
+
+#if defined(__APPLE__)
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char** environ;
+#endif
 
 namespace llm_node {
+
+namespace {
+
+#if defined(__APPLE__)
+int run_command(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return -1;
+    }
+
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& a : args) {
+        argv.push_back(const_cast<char*>(a.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    pid_t pid;
+    int spawn_result = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ);
+    if (spawn_result != 0) {
+        return spawn_result;
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) == -1) {
+        return -1;
+    }
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
+}
+
+std::vector<uint8_t> read_file_bytes(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("Failed to open file: " + path.string());
+    }
+
+    in.seekg(0, std::ios::end);
+    std::streamsize size = in.tellg();
+    if (size < 0) {
+        throw std::runtime_error("Failed to stat file size: " + path.string());
+    }
+    in.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!in.read(reinterpret_cast<char*>(data.data()), size)) {
+        throw std::runtime_error("Failed to read file: " + path.string());
+    }
+    return data;
+}
+#endif
+
+bool isVibeVoice(const std::string& model_path) {
+    // Check for various forms of VibeVoice model specification
+    return model_path == "vibevoice" ||
+           model_path == "microsoft/VibeVoice-Realtime-0.5B" ||
+           model_path.find("vibevoice") != std::string::npos ||
+           model_path.find("VibeVoice") != std::string::npos;
+}
+
+}  // namespace
 
 OnnxTtsManager::OnnxTtsManager(std::string models_dir)
     : models_dir_(std::move(models_dir))
@@ -63,6 +139,12 @@ bool OnnxTtsManager::canLoadMore() const {
 }
 
 bool OnnxTtsManager::loadModel(const std::string& model_path) {
+    // VibeVoice is handled by external Python runner, no ONNX loading needed
+    if (isVibeVoice(model_path)) {
+        spdlog::info("VibeVoice model registered (uses external Python runner): {}", model_path);
+        return true;
+    }
+
 #ifdef USE_ONNX_RUNTIME
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -105,6 +187,11 @@ bool OnnxTtsManager::loadModel(const std::string& model_path) {
 }
 
 bool OnnxTtsManager::isLoaded(const std::string& model_path) const {
+    // VibeVoice is always "loaded" since it uses external Python runner
+    if (isVibeVoice(model_path)) {
+        return true;
+    }
+
 #ifdef USE_ONNX_RUNTIME
     std::lock_guard<std::mutex> lock(mutex_);
     std::string canonical_path = canonicalizePath(model_path);
@@ -131,12 +218,96 @@ SpeechResult OnnxTtsManager::synthesize(
 
     SpeechResult result;
 
-#ifdef USE_ONNX_RUNTIME
     if (text.empty()) {
         result.error = "Empty text input";
         return result;
     }
 
+    // Handle VibeVoice via external Python runner
+    if (isVibeVoice(model_path)) {
+#if defined(__APPLE__)
+        // Get configuration from environment variables
+        const char* runner_env = std::getenv("LLM_NODE_VIBEVOICE_RUNNER");
+        if (!runner_env || std::strlen(runner_env) == 0) {
+            result.error = "LLM_NODE_VIBEVOICE_RUNNER environment variable not set";
+            return result;
+        }
+        std::string runner_path = runner_env;
+
+        const char* python_env = std::getenv("LLM_NODE_VIBEVOICE_PYTHON");
+        std::string python_bin = python_env ? python_env : "python3";
+
+        const char* device_env = std::getenv("LLM_NODE_VIBEVOICE_DEVICE");
+        std::string device = device_env ? device_env : "mps";
+
+        const char* model_env = std::getenv("LLM_NODE_VIBEVOICE_MODEL");
+        std::string model_id = model_env ? model_env : "microsoft/VibeVoice-Realtime-0.5B";
+
+        const char* ddpm_env = std::getenv("LLM_NODE_VIBEVOICE_DDPM_STEPS");
+        std::string ddpm_steps = ddpm_env ? ddpm_env : "5";
+
+        const char* cfg_env = std::getenv("LLM_NODE_VIBEVOICE_CFG_SCALE");
+        std::string cfg_scale = cfg_env ? cfg_env : "1.5";
+
+        const char* voice_env = std::getenv("LLM_NODE_VIBEVOICE_DEFAULT_VOICE");
+        std::string default_voice = voice_env ? voice_env : "Carter";
+
+        // Use voice from params if specified, otherwise use default
+        std::string voice = (params.voice.empty() || params.voice == "default")
+                            ? default_voice : params.voice;
+
+        // Create temporary directory for output
+        auto temp_dir = std::filesystem::temp_directory_path() /
+                        ("vibevoice_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(temp_dir);
+        auto output_path = temp_dir / "output.wav";
+
+        spdlog::info("Running VibeVoice synthesis: voice={}, device={}, text_len={}",
+                     voice, device, text.size());
+
+        // Build command arguments
+        std::vector<std::string> args = {
+            python_bin,
+            runner_path,
+            "--model", model_id,
+            "--device", device,
+            "--ddpm-steps", ddpm_steps,
+            "--cfg-scale", cfg_scale,
+            "--voice", voice,
+            "--text", text,
+            "--out", output_path.string()
+        };
+
+        // Execute the Python runner
+        int exit_code = run_command(args);
+        if (exit_code != 0) {
+            std::filesystem::remove_all(temp_dir);
+            result.error = "VibeVoice runner failed with exit code: " + std::to_string(exit_code);
+            return result;
+        }
+
+        // Read the output WAV file
+        try {
+            result.audio_data = read_file_bytes(output_path);
+            result.format = "wav";
+            result.sample_rate = 22050;  // VibeVoice default
+            result.channels = 1;
+            result.bits_per_sample = 16;
+            result.success = true;
+        } catch (const std::exception& e) {
+            result.error = std::string("Failed to read VibeVoice output: ") + e.what();
+        }
+
+        // Cleanup
+        std::filesystem::remove_all(temp_dir);
+        return result;
+#else
+        result.error = "VibeVoice is only supported on macOS";
+        return result;
+#endif
+    }
+
+#ifdef USE_ONNX_RUNTIME
     std::string canonical_path = canonicalizePath(model_path);
 
     Ort::Session* session = nullptr;

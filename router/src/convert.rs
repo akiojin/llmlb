@@ -488,6 +488,9 @@ pub struct ConvertTask {
     pub quantization: Option<String>,
     /// chat_template
     pub chat_template: Option<String>,
+    /// Hugging Face の `trust_remote_code` を許可する（危険：任意コード実行）
+    #[serde(default)]
+    pub trust_remote_code: bool,
     /// ステータス
     pub status: ConvertStatus,
     /// 進捗 (0-1)
@@ -509,6 +512,7 @@ impl ConvertTask {
         revision: Option<String>,
         quantization: Option<String>,
         chat_template: Option<String>,
+        trust_remote_code: bool,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -518,6 +522,7 @@ impl ConvertTask {
             revision,
             quantization,
             chat_template,
+            trust_remote_code,
             status: ConvertStatus::Queued,
             progress: 0.0,
             error: None,
@@ -585,6 +590,7 @@ impl ConvertTaskManager {
         revision: Option<String>,
         quantization: Option<String>,
         chat_template: Option<String>,
+        trust_remote_code: bool,
     ) -> ConvertTask {
         let task = ConvertTask::new(
             repo.clone(),
@@ -592,6 +598,7 @@ impl ConvertTaskManager {
             revision,
             quantization,
             chat_template,
+            trust_remote_code,
         );
         let id = task.id;
         tracing::info!(task_id=?id, repo=%repo, filename=%filename, "convert_task_enqueued");
@@ -648,7 +655,7 @@ impl ConvertTaskManager {
         task_id: Uuid,
     ) -> Result<(), RouterError> {
         tracing::info!(task_id=?task_id, "convert_task_started");
-        let (repo, filename, revision, quantization, chat_template) = {
+        let (repo, filename, revision, quantization, chat_template, trust_remote_code) = {
             let mut guard = tasks.lock().await;
             let task = guard
                 .get_mut(&task_id)
@@ -662,6 +669,7 @@ impl ConvertTaskManager {
                 task.revision.clone(),
                 task.quantization.clone(),
                 task.chat_template.clone(),
+                task.trust_remote_code,
             )
         };
 
@@ -689,6 +697,7 @@ impl ConvertTaskManager {
             revision.as_deref(),
             quantization.as_deref(),
             chat_template.clone(),
+            trust_remote_code,
             progress_callback,
         )
         .await;
@@ -722,6 +731,7 @@ async fn download_and_maybe_convert<F>(
     revision: Option<&str>,
     _quantization: Option<&str>,
     chat_template: Option<String>,
+    trust_remote_code: bool,
     progress_callback: F,
 ) -> Result<String, RouterError>
 where
@@ -782,7 +792,14 @@ where
         download_file(&url, &target).await?;
         progress_callback(1.0);
     } else {
-        export_non_onnx(repo, revision, &target, progress_callback.clone()).await?;
+        export_non_onnx(
+            repo,
+            revision,
+            &target,
+            trust_remote_code,
+            progress_callback.clone(),
+        )
+        .await?;
     }
 
     finalize_model_registration(
@@ -962,6 +979,7 @@ async fn export_non_onnx<F>(
     repo: &str,
     revision: Option<&str>,
     target: &Path,
+    trust_remote_code: bool,
     progress_callback: F,
 ) -> Result<(), RouterError>
 where
@@ -1046,6 +1064,7 @@ where
         let python_bin_clone = python_bin.clone();
         let hf_token_clone = hf_token.clone();
         let progress_callback_clone = progress_callback.clone();
+        let trust_remote_code_clone = trust_remote_code;
 
         if attempt > 1 {
             tracing::info!(
@@ -1071,6 +1090,11 @@ where
 
             if let Some(token) = hf_token_clone {
                 cmd.env("HF_TOKEN", token);
+            }
+            if trust_remote_code_clone {
+                // Default script will translate this env var into Optimum's `--trust-remote-code`.
+                // Custom scripts may ignore it.
+                cmd.env("LLM_CONVERT_TRUST_REMOTE_CODE", "1");
             }
 
             let mut child = match cmd.spawn() {
@@ -1215,7 +1239,7 @@ async fn ensure_python_deps() -> Result<(), RouterError> {
         .filter(|p| p.exists())
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "python3".into());
-    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub','onnxscript','optimum','onnxruntime'] if importlib.util.find_spec(m) is None];\n\
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub','onnxscript','optimum','onnxruntime','accelerate'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
 
     let python_bin_for_cmd = python_bin.clone();
@@ -1236,7 +1260,8 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
-        "transformers, torch, onnx, huggingface_hub, onnxscript, optimum, onnxruntime".to_string()
+        "transformers, torch, onnx, huggingface_hub, onnxscript, optimum, onnxruntime, accelerate"
+            .to_string()
     } else {
         missing
     };
@@ -1253,7 +1278,7 @@ fn ensure_python_deps_sync() -> Result<(), RouterError> {
         .filter(|p| p.exists())
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "python3".into());
-    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub','onnxscript','optimum','onnxruntime'] if importlib.util.find_spec(m) is None];\n\
+    let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','onnx','huggingface_hub','onnxscript','optimum','onnxruntime','accelerate'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let output = std::process::Command::new(&python_bin)
         .arg("-c")
@@ -1268,7 +1293,8 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let missing = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let deps = if missing.is_empty() {
-        "transformers, torch, onnx, huggingface_hub, onnxscript, optimum, onnxruntime".to_string()
+        "transformers, torch, onnx, huggingface_hub, onnxscript, optimum, onnxruntime, accelerate"
+            .to_string()
     } else {
         missing
     };
@@ -1297,7 +1323,7 @@ pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<M
             if let (Some(repo), Some(filename)) = (model.repo.clone(), model.filename.clone()) {
                 let chat_template = model.chat_template.clone();
                 manager
-                    .enqueue(repo, filename, None, None, chat_template)
+                    .enqueue(repo, filename, None, None, chat_template, false)
                     .await;
             }
         }
@@ -1762,6 +1788,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .await;
         let _task2 = manager
@@ -1771,6 +1798,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .await;
 

@@ -1,4 +1,6 @@
-# タスク: SPEC-11106000 Hugging Face GGUFモデル対応登録
+# タスク: SPEC-11106000 Hugging Face URL 登録（ONNX優先・自動エクスポート）
+
+> NOTE: 本SPECは当初GGUFを想定していましたが、現行実装は「ONNX優先・Transformers→ONNX export」に切り替えています。最新の仕様は `specs/SPEC-11106000/spec.md` を参照してください。
 
 ## 方針
 - TDD順で進める。契約→Integration→E2E→Unitの順。

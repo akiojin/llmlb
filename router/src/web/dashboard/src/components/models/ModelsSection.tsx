@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export function ModelsSection() {
   const [registerOpen, setRegisterOpen] = useState(false)
   const [registerRepo, setRegisterRepo] = useState('')
   const [registerFilename, setRegisterFilename] = useState('')
+  const [registerTrustRemoteCode, setRegisterTrustRemoteCode] = useState(false)
 
   const { data: registeredModels, isLoading: isLoadingRegistered } = useQuery({
     queryKey: ['registered-models'],
@@ -52,14 +54,15 @@ export function ModelsSection() {
   })
 
   const registerMutation = useMutation({
-    mutationFn: (params: { repo: string; filename?: string }) =>
-      modelsApi.register(params.repo, params.filename),
+    mutationFn: (params: { repo: string; filename?: string; trustRemoteCode?: boolean }) =>
+      modelsApi.register(params.repo, params.filename, params.trustRemoteCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
       toast({ title: 'Model registration queued' })
       setRegisterOpen(false)
       setRegisterRepo('')
       setRegisterFilename('')
+      setRegisterTrustRemoteCode(false)
     },
     onError: (error) => {
       toast({
@@ -249,6 +252,20 @@ export function ModelsSection() {
                 onChange={(e) => setRegisterFilename(e.target.value)}
               />
             </div>
+            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+              <div className="space-y-1">
+                <Label htmlFor="convert-trust-remote-code">Allow remote code (trust_remote_code)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Allows executing custom Python code from the model repository during ONNX export.
+                  Enable only for repositories you trust.
+                </p>
+              </div>
+              <Switch
+                id="convert-trust-remote-code"
+                checked={registerTrustRemoteCode}
+                onCheckedChange={setRegisterTrustRemoteCode}
+              />
+            </div>
           </div>
 
           <DialogFooter>
@@ -261,6 +278,7 @@ export function ModelsSection() {
                 registerMutation.mutate({
                   repo: registerRepo.trim(),
                   filename: registerFilename.trim() ? registerFilename.trim() : undefined,
+                  trustRemoteCode: registerTrustRemoteCode,
                 })
               }
               disabled={!registerRepo.trim() || registerMutation.isPending}

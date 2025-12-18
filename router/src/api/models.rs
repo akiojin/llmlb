@@ -818,6 +818,9 @@ pub struct RegisterModelRequest {
     /// オプションのchat_template（GGUFに含まれない場合の補助）
     #[serde(default)]
     pub chat_template: Option<String>,
+    /// Transformers/Optimum の trust_remote_code を許可する（危険：任意コード実行）
+    #[serde(default)]
+    pub trust_remote_code: bool,
 }
 
 async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> Vec<String> {
@@ -920,6 +923,7 @@ pub async fn register_model(
         &filename,
         req.display_name.clone(),
         req.chat_template.clone(),
+        req.trust_remote_code,
     )
     .await
 }
@@ -931,6 +935,7 @@ async fn register_model_internal(
     filename: &str,
     _display_name: Option<String>,
     chat_template: Option<String>,
+    trust_remote_code: bool,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
     let name = generate_model_id(repo);
@@ -1037,6 +1042,7 @@ async fn register_model_internal(
             None,
             None,
             chat_template.clone(),
+            trust_remote_code,
         )
         .await;
 

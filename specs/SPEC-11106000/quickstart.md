@@ -1,33 +1,57 @@
-# クイックスタート: HF GGUFモデル登録・ダウンロード
+# クイックスタート: HFモデル登録（ONNX優先・自動エクスポート）
 
 ## 前提
-- Router が起動済み
-- HF へのネットワーク到達性あり（必要なら `HF_TOKEN` を設定、社内ミラー利用時は `HF_BASE_URL` を上書き）
-- ノードは manifest に従い自己ダウンロード可能
+- Router が起動済み（例: `http://localhost:8080`）
+- Node が登録済み（GPUデバイス情報が取得できること）
+- HF へのネットワーク到達性あり（必要なら `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL`）
 
-## 1. カタログを確認
-- Web: 「モデル管理」→「対応可能モデル（HF）」タブを開く。検索でキーワード入力。
-- CLI: `llm-router model list --search llama --limit 10`
+## 1. モデルを登録（ダウンロード/変換キュー）
 
-## 2. 対応モデルに登録
-- Web: 対応可能リストから対象GGUFを選び「登録」。
-- CLI: `llm-router model add TheBloke/Llama-2-7B-GGUF --file llama-2-7b.Q4_K_M.gguf`
-- 成功すると /v1/models にIDが追加される。
-- レスポンス `warnings` にGPUメモリ不足の可能性が出た場合は、より小さいバリアントを選択する。
+### Dashboard
+- Dashboard → Models → Registered Models → Register
+- `repo`（例: `sshleifer/tiny-gpt2`）を入力して登録
+- 変換でカスタムコードが必要なモデルは `trust_remote_code` をON（危険: 任意コード実行）
 
-## 3. ダウンロードを指示
-- Web: 対応モデルタブでモデルを選択し「今すぐダウンロード」→「全ノード」または「指定ノード」を選ぶ。
-- CLI 全ノード: `llm-router model download hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf --all`
-- CLI 指定ノード: `llm-router model download <name> --node <uuid>`
-- タスクIDが返る。
+### API（curl）
+```bash
+curl -sS http://localhost:8080/v0/models/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo": "sshleifer/tiny-gpt2",
+    "trust_remote_code": false
+  }' | jq .
+```
 
-## 4. 進捗確認
-- Web: ダウンロードタスクリストに進捗が表示される（5秒間隔）。
-- CLI: `llm-router task show <task_id>` または再度 download コマンドで進捗取得。
+- `filename` を省略すると、リポジトリ内の `.onnx` を探索し、無ければ Transformers → ONNX エクスポートを試みます。
+- `.onnx` を直接指定したい場合は `filename` に `.onnx` を指定します。
 
-## 5. 推論で利用
-- OpenAI互換エンドポイントで `model` に登録IDを指定して実行。モデルが未ロードならオンデマンドロードされる。
+## 2. 進捗/結果を確認（/v0/models）
+`lifecycle_status` で状態を確認します。
+
+```bash
+curl -sS http://localhost:8080/v0/models \
+  -H "Authorization: Bearer sk_debug" | jq .
+```
+
+- `pending`: キュー待ち
+- `caching`: ダウンロード/変換中
+- `registered`: ルーター上に実体ONNXがあり、ノードが同期可能
+- `error`: 失敗（`download_progress.error` に理由）
+
+## 3. 推論で利用（/v1/chat/completions）
+OpenAI互換エンドポイントで `model` に登録ID（通常は `repo`）を指定します。
+
+```bash
+curl -sS http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer sk_debug" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sshleifer/tiny-gpt2",
+    "messages": [{"role":"user","content":"こんにちは"}],
+    "max_tokens": 64
+  }' | jq .
+```
 
 ## トラブルシュート
-- HF 429/ダウン: CLI `--format json` で `cached:true` が返る。トークン設定または時間をおく。
-- ダウンロード失敗: タスクの `error` を確認。容量不足/URL不可の場合は別モデルを選定。
+- 登録が `error` になる: `download_progress.error` と Routerログを確認し、必要なら `trust_remote_code` をONにして再登録/Restoreします。
+- 変換が重い: まず小さいモデルで確認します（例: `sshleifer/tiny-gpt2`）。

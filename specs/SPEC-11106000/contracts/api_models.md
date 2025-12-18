@@ -1,61 +1,47 @@
-# 契約: Models API 拡張 (SPEC-11106000)
-
-## GET /v0/models/available
-- **Purpose**: HF GGUF カタログを返す。
-- **Query**: `search`, `limit`, `offset`, `source=hf` (デフォルト hf)。
-- **Response** 200:
-```json
-{
-  "models": [
-    {
-      "name": "hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf",
-      "display_name": "Llama-2-7B Q4_K_M (TheBloke)",
-      "source": "hf_gguf",
-      "size_bytes": 5242880000,
-      "download_url": "https://huggingface.co/.../llama-2-7b.Q4_K_M.gguf",
-      "repo": "TheBloke/Llama-2-7B-GGUF",
-      "filename": "llama-2-7b.Q4_K_M.gguf",
-      "last_modified": "2025-11-30T12:00:00Z",
-      "tags": ["gguf","q4_k_m"],
-      "status": "available"
-    }
-  ],
-  "source": "hf",
-  "cached": false,
-  "pagination": { "limit": 20, "offset": 0, "total": 123 }
-}
-```
+# 契約: Models API（HF登録 / ONNX優先）(SPEC-11106000)
 
 ## POST /v0/models/register
-- **Purpose**: HF GGUF を対応モデルとして登録。
+- **Purpose**: Hugging Face のモデル（リポジトリ/ファイル）を登録し、必要に応じてONNX変換（export）をキューする。
+- **Notes**:
+  - `.gguf` はサポート外（400）。
+  - `filename` 省略時は、リポジトリ内の `.onnx` を探索し、無ければ Transformers→ONNX export を試行する。
+  - `filename` が `.onnx` 以外の場合も export 経路になる（`filename` は無視される）。
 - **Body**:
 ```json
 {
-  "repo": "TheBloke/Llama-2-7B-GGUF",
-  "filename": "llama-2-7b.Q4_K_M.gguf",
-  "display_name": "Llama-2-7B Q4_K_M (TheBloke)"
+  "repo": "sshleifer/tiny-gpt2",
+  "filename": "model.onnx",
+  "display_name": "Tiny GPT-2 (optional)",
+  "chat_template": "optional",
+  "trust_remote_code": false
 }
 ```
 - **Response** 201:
 ```json
-{ "name": "hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf", "status": "registered" }
+{
+  "name": "sshleifer/tiny-gpt2",
+  "status": "registered",
+  "size_bytes": 123456,
+  "required_memory_bytes": 185184,
+  "warnings": []
+}
 ```
-- **Errors**: 400 無効名/URL欠損, 409 重複, 424 HFから取得不可。
+- **Errors**:
+  - 400: 入力不正（GGUF/不正なrepo/不正なfilenameなど）
+  - 409: 重複登録
+  - 502/504: HFアクセス/タイムアウト
+
+## GET /v0/models
+- **Purpose**: 登録モデル一覧（進捗/失敗理由を含む）を返す。
+- **Auth**: APIキーまたはノードトークン（開発環境では `Bearer sk_debug`）。
+- **Response** 200: `RegisteredModelView[]`
+  - `lifecycle_status`: `pending` / `caching` / `registered` / `error`
+  - `download_progress.error`: 失敗理由（`error` のとき）
+
+## DELETE /v0/models/:model_name
+- **Purpose**: 登録モデルを削除する（キュー/変換中ならキャンセルも含む）。
+- **Response**: 204
 
 ## GET /v1/models
-
-- 対応モデルに HF 登録分も含めて返す（idのみ。displayやsourceは拡張フィールドとしてオプション）。
-- ノードはこの一覧を参照し、`path` が参照できない場合は `GET /v0/models/blob/:model_name` でモデルを取得する（ルーターからのpush配布は行わない）。
-
----
-
-## CLI コマンド（廃止）
-
-**廃止日**: 2025-12-10
-
-CLIコマンドは廃止されました。以下のAPIを直接使用してください：
-
-- モデル一覧: `GET /v0/models/available`
-- モデル登録: `POST /v0/models/register`
-- ノード同期（一覧）: `GET /v1/models`
-- ノード同期（ファイル）: `GET /v0/models/blob/:model_name`
+- **Purpose**: OpenAI互換のモデル一覧を返す。
+- **Notes**: 実体が存在するモデルのみ含む（ダウンロード/変換が未完了のものは含めない）。

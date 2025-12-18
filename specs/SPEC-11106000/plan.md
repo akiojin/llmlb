@@ -1,12 +1,14 @@
-# 実装計画: Hugging Face GGUFモデル対応登録
+# 実装計画: Hugging Face URL 登録（ONNX優先・自動エクスポート）
 
 **機能ID**: `SPEC-11106000` | **日付**: 2025-12-01 | **仕様**: specs/SPEC-11106000/spec.md  
 **入力**: `/specs/SPEC-11106000/spec.md` の機能仕様
 
+> NOTE: 本SPECは当初GGUFを想定していましたが、現行実装は「ONNX優先・Transformers→ONNX export」に切り替えています。最新の手順/契約は `spec.md` / `quickstart.md` / `contracts/api_models.md` を参照してください。
+
 ## 概要
 - HFカタログUIは廃止し、単一テキストエリアにHFリポジトリ/ファイルURLを貼るだけで登録。
-- GGUFがあれば即登録・ダウンロード、なければ自動で非GGUF→GGUF変換タスクをキュー。
-- /v1/models には実体GGUFが存在するものだけ返す。重複はエラー。
+- ONNXがあれば即登録・ダウンロード、なければ自動で Transformers→ONNX export タスクをキュー。
+- /v1/models には実体ONNXが存在するものだけ返す。重複はエラー。
 - 失敗した変換/ダウンロードはUIの「Restore」で再キューできる。
 
 ## 技術コンテキスト

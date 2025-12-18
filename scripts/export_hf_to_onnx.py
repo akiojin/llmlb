@@ -133,6 +133,11 @@ def export_with_optimum_cli(model_id_or_path: str, out_dir: str) -> None:
         out_dir,
     ]
 
+    trust_remote_code = os.environ.get("LLM_CONVERT_TRUST_REMOTE_CODE", "").strip().lower()
+    if trust_remote_code in ("1", "true", "yes", "on"):
+        # WARNING: This executes arbitrary code from the model repository.
+        cmd.insert(-1, "--trust-remote-code")
+
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     subprocess.check_call(cmd, env=env)

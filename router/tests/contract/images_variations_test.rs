@@ -163,13 +163,10 @@ async fn images_variations_success() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -218,13 +215,10 @@ async fn images_variations_multiple() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -266,13 +260,10 @@ async fn images_variations_missing_image() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -287,8 +278,8 @@ async fn images_variations_missing_image() {
         .await
         .unwrap();
 
-    // Router returns 502 when forwarding multipart validation errors from stub
-    assert_eq!(res.status(), ReqStatusCode::BAD_GATEWAY);
+    // Router側で入力を検証し 400 を返す
+    assert_eq!(res.status(), ReqStatusCode::BAD_REQUEST);
 }
 
 /// IV004: POST /v1/images/variations 認証なし
@@ -361,13 +352,10 @@ async fn images_variations_with_size() {
     let stub = spawn_image_var_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();

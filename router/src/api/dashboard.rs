@@ -538,7 +538,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         let node_id = state.registry.register(register_req).await.unwrap().node_id;
 
@@ -604,7 +604,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -621,7 +621,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -708,7 +708,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -750,7 +750,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -784,7 +784,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap();

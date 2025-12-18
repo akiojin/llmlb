@@ -182,6 +182,7 @@ impl NodeRegistry {
             node.gpu_devices = req.gpu_devices.clone();
             node.gpu_count = req.gpu_count;
             node.gpu_model = req.gpu_model.clone();
+            node.supported_runtimes = req.supported_runtimes.clone();
             // 再登録時は Registering に戻す（モデル同期完了後に Online に遷移）
             node.status = NodeStatus::Registering;
             node.last_seen = now;
@@ -213,7 +214,7 @@ impl NodeRegistry {
                 loaded_embedding_models: Vec::new(),
                 loaded_asr_models: Vec::new(),
                 loaded_tts_models: Vec::new(),
-                supported_runtimes: Vec::new(),
+                supported_runtimes: req.supported_runtimes,
                 gpu_devices: req.gpu_devices,
                 gpu_available: req.gpu_available,
                 gpu_count: req.gpu_count,
@@ -467,6 +468,19 @@ impl NodeRegistry {
             Ok(())
         }
     }
+
+    /// テスト用: ノードをOnline状態にマークする
+    #[cfg(test)]
+    pub async fn mark_online(&self, node_id: Uuid) -> RouterResult<()> {
+        let mut nodes = self.nodes.write().await;
+        let node = nodes
+            .get_mut(&node_id)
+            .ok_or(RouterError::NodeNotFound(node_id))?;
+        node.status = llm_router_common::types::NodeStatus::Online;
+        node.initializing = false;
+        node.online_since = Some(Utc::now());
+        Ok(())
+    }
 }
 
 impl Default for NodeRegistry {
@@ -530,7 +544,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
 
         let response = registry.register(req).await.unwrap();
@@ -555,7 +569,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
 
         let first_response = registry.register(req.clone()).await.unwrap();
@@ -582,7 +596,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         registry.register(req1).await.unwrap();
 
@@ -595,7 +609,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         registry.register(req2).await.unwrap();
 
@@ -615,7 +629,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
 
         let response = registry.register(req).await.unwrap();
@@ -638,7 +652,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
 
         let node_id = registry.register(req).await.unwrap().node_id;
@@ -674,7 +688,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -697,7 +711,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: vec![],
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()

@@ -1,0 +1,204 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "LLM Router - Playground Multimodal (OpenAI Compatible)",
+    "version": "0.1.0",
+    "description": "Playground Chat のマルチモーダル入力（テキスト/画像/音声）に関する最小限の契約"
+  },
+  "paths": {
+    "/v1/chat/completions": {
+      "post": {
+        "summary": "Chat completions（OpenAI互換）",
+        "description": "contentはテキストのみ（string）またはマルチモーダル（parts配列）。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功（非ストリーミング）",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatCompletionResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "summary": "Models list（OpenAI互換）",
+        "description": "モデル一覧。マルチモーダル可否を示す追加情報を含められる。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelListResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/registered": {
+      "get": {
+        "summary": "Registered models list（Playground UI用）",
+        "description": "Playgroundのモデル選択UIで利用するモデル一覧。各モデルの画像/音声入力対応状況（対応/非対応/不明）を含む。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/PlaygroundRegisteredModel" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["model", "messages"],
+        "properties": {
+          "model": { "type": "string" },
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ChatMessage" }
+          },
+          "stream": { "type": "boolean" },
+          "temperature": { "type": "number" },
+          "max_tokens": { "type": "integer" }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "user", "assistant"] },
+          "content": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/ContentPart" }
+              }
+            ]
+          }
+        }
+      },
+      "ContentPart": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text", "image_url", "input_audio"]
+          },
+          "text": { "type": "string" },
+          "image_url": {
+            "type": "object",
+            "properties": {
+              "url": { "type": "string", "description": "data URL または https URL" }
+            }
+          },
+          "input_audio": {
+            "type": "object",
+            "properties": {
+              "data": { "type": "string", "description": "base64" },
+              "format": { "type": "string", "description": "wav/mp3 等" }
+            }
+          }
+        }
+      },
+      "ChatCompletionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "type": "string" },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "message": {
+                  "type": "object",
+                  "properties": {
+                    "role": { "type": "string" },
+                    "content": { "type": "string" }
+                  }
+                },
+                "finish_reason": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "ModelListResponse": {
+        "type": "object",
+        "properties": {
+          "object": { "type": "string" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ModelInfo" }
+          }
+        }
+      },
+      "ModelInfo": {
+        "type": "object",
+        "required": ["id", "object"],
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "type": "string" },
+          "capabilities": {
+            "type": "object",
+            "description": "画像/音声対応状況（不明な場合は省略可）",
+            "properties": {
+              "vision": { "type": "boolean" },
+              "audio": { "type": "boolean" }
+            }
+          }
+        }
+      },
+      "PlaygroundModelCapabilities": {
+        "type": "object",
+        "description": "Playgroundの入力可否判定に使う3状態（対応/非対応/不明）",
+        "required": ["input_image", "input_audio"],
+        "properties": {
+          "input_image": {
+            "type": "string",
+            "enum": ["supported", "unsupported", "unknown"]
+          },
+          "input_audio": {
+            "type": "string",
+            "enum": ["supported", "unsupported", "unknown"]
+          }
+        }
+      },
+      "PlaygroundRegisteredModel": {
+        "type": "object",
+        "required": ["name", "state", "capabilities"],
+        "properties": {
+          "name": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["ready", "downloading", "converting", "pending", "error"]
+          },
+          "capabilities": { "$ref": "#/components/schemas/PlaygroundModelCapabilities" }
+        }
+      }
+    }
+  }
+}

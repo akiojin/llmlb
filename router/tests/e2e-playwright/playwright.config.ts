@@ -28,8 +28,8 @@ export default defineConfig({
         // Use debug build by default so development auth key `sk_debug` works.
         // Set ROUTER_RELEASE=1 to run the release binary instead.
         command: process.env.ROUTER_RELEASE
-          ? 'cargo run --release -p llm-router'
-          : 'cargo run -p llm-router',
+          ? 'LLM_CONVERT_SCRIPT=router/tests/e2e-playwright/mock_convert.py cargo run --release -p llm-router'
+          : 'LLM_CONVERT_SCRIPT=router/tests/e2e-playwright/mock_convert.py cargo run -p llm-router',
         url: 'http://localhost:8080/dashboard',
         reuseExistingServer: !process.env.CI,
         timeout: 120000,

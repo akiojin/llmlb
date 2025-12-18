@@ -99,13 +99,10 @@ async fn transcriptions_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        coordinator.addr(),
-        asr_stub.addr(),
-        vec!["whisper_cpp".to_string()],
-    )
-    .await
-    .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), asr_stub.addr(), vec!["whisper_cpp"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     // WAV形式のダミー音声データ（最小限のヘッダ）
@@ -172,13 +169,10 @@ async fn transcriptions_unsupported_format_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        coordinator.addr(),
-        asr_stub.addr(),
-        vec!["whisper_cpp".to_string()],
-    )
-    .await
-    .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), asr_stub.addr(), vec!["whisper_cpp"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     // 不正なファイルデータ

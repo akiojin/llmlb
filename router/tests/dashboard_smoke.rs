@@ -145,7 +145,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -239,7 +239,7 @@ async fn dashboard_request_history_tracks_activity() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -297,7 +297,7 @@ async fn dashboard_overview_returns_combined_payload() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -347,7 +347,7 @@ async fn dashboard_node_metrics_endpoint_returns_history() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()

@@ -35,7 +35,7 @@ async fn test_round_robin_load_balancing() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         let response = registry.register(req).await.unwrap();
         node_ids.push(response.node_id);
@@ -120,7 +120,7 @@ async fn test_load_based_balancing_favors_low_cpu_nodes() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -140,7 +140,7 @@ async fn test_load_based_balancing_favors_low_cpu_nodes() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -226,7 +226,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -246,7 +246,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -317,7 +317,7 @@ async fn test_load_balancer_excludes_registering_nodes() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -338,7 +338,7 @@ async fn test_load_balancer_excludes_registering_nodes() {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()

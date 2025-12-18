@@ -104,13 +104,10 @@ async fn speech_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        coordinator.addr(),
-        tts_stub.addr(),
-        vec!["onnx_runtime".to_string()],
-    )
-    .await
-    .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -160,13 +157,10 @@ async fn speech_with_optional_params() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        coordinator.addr(),
-        tts_stub.addr(),
-        vec!["onnx_runtime".to_string()],
-    )
-    .await
-    .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -206,13 +200,10 @@ async fn speech_empty_input_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        coordinator.addr(),
-        tts_stub.addr(),
-        vec!["onnx_runtime".to_string()],
-    )
-    .await
-    .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -227,8 +218,8 @@ async fn speech_empty_input_returns_400() {
         .await
         .expect("request should complete");
 
-    // Router側でバリデーション後、RouterError::HttpがBAD_GATEWAYにマップされる
-    assert_eq!(response.status(), ReqStatusCode::BAD_GATEWAY);
+    // Router側でバリデーションして 400 を返す
+    assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
 }
 
 /// T007: POST /v1/audio/speech 認証エラー
@@ -299,13 +290,10 @@ async fn speech_input_too_long_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        coordinator.addr(),
-        tts_stub.addr(),
-        vec!["onnx_runtime".to_string()],
-    )
-    .await
-    .expect("register agent must succeed");
+    let register_response =
+        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
+            .await
+            .expect("register agent must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     // 4097文字のテキスト
@@ -323,6 +311,6 @@ async fn speech_input_too_long_returns_400() {
         .await
         .expect("request should complete");
 
-    // Router側でバリデーション後、RouterError::HttpがBAD_GATEWAYにマップされる
-    assert_eq!(response.status(), ReqStatusCode::BAD_GATEWAY);
+    // Router側でバリデーションして 400 を返す
+    assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
 }

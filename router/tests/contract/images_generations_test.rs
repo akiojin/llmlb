@@ -144,14 +144,11 @@ async fn images_generations_success() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    // ノード登録（stable_diffusion ランタイムを含める）
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    // ノード登録
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -194,13 +191,10 @@ async fn images_generations_base64_response() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -239,13 +233,10 @@ async fn images_generations_multiple() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -280,13 +271,10 @@ async fn images_generations_missing_prompt() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();
@@ -294,15 +282,15 @@ async fn images_generations_missing_prompt() {
         .post(format!("http://{}/v1/images/generations", router.addr()))
         .header("x-api-key", "sk_debug")
         .json(&json!({
-            "model": "stable-diffusion-xl"
-            // prompt missing
+            "model": "stable-diffusion-xl",
+            "prompt": ""
         }))
         .send()
         .await
         .unwrap();
 
-    // Router returns 422 (Unprocessable Entity) for validation errors
-    assert_eq!(res.status(), ReqStatusCode::UNPROCESSABLE_ENTITY);
+    // Router側で入力を検証し 400 を返す
+    assert_eq!(res.status(), ReqStatusCode::BAD_REQUEST);
 }
 
 /// I005: POST /v1/images/generations 認証なし
@@ -363,13 +351,10 @@ async fn images_generations_with_options() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response = register_node_with_runtimes(
-        router.addr(),
-        stub.addr(),
-        vec!["stable_diffusion".to_string()],
-    )
-    .await
-    .expect("register node must succeed");
+    let register_response =
+        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
+            .await
+            .expect("register node must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
     let client = Client::new();

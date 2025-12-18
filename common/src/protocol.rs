@@ -40,6 +40,22 @@ pub struct RegisterRequest {
     pub supported_runtimes: Vec<crate::types::RuntimeType>,
 }
 
+impl Default for RegisterRequest {
+    fn default() -> Self {
+        Self {
+            machine_name: "localhost".to_string(),
+            ip_address: "127.0.0.1".parse().unwrap(),
+            runtime_version: "0.0.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: false,
+            gpu_devices: Vec::new(),
+            gpu_count: None,
+            gpu_model: None,
+            supported_runtimes: Vec::new(),
+        }
+    }
+}
+
 /// ノード登録レスポンス
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RegisterResponse {

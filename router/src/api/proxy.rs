@@ -223,7 +223,7 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         state.registry.register(register_req).await.unwrap();
 
@@ -256,7 +256,7 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         let response1 = state.registry.register(register_req1).await.unwrap();
 
@@ -281,7 +281,7 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: vec![],
+            supported_runtimes: Vec::new(),
         };
         let response2 = state.registry.register(register_req2).await.unwrap();
 

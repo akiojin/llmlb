@@ -120,10 +120,15 @@ async fn test_node_selection_failure_saves_request_history() {
         .await
         .expect("request should be sent");
 
-    // 少し待ってから履歴を確認（非同期保存のため）
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-    let records = load_request_history().await;
+    // 非同期保存の完了を待つ（カバレッジビルドでは遅延があるためリトライ）
+    let mut records = Vec::new();
+    for _ in 0..10 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        records = load_request_history().await;
+        if !records.is_empty() {
+            break;
+        }
+    }
 
     // FR-004: ノード選択失敗時もリクエスト履歴に記録する必要がある
     assert!(

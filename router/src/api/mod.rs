@@ -99,14 +99,8 @@ pub fn create_router(state: AppState) -> Router {
         crate::auth::middleware::api_key_or_node_token_auth_middleware,
     ));
 
-    // /v0/models - ノード同期用（APIキーまたはノードトークンで認証）
-    // /v0 ネスト内に配置する必要がある（Axumのルーティング順序のため）
-    let v0_models_route = Router::new()
-        .route("/models", get(models::get_registered_models))
-        .layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_or_node_token_auth_middleware,
-        ));
+    // NOTE: /v0/models (GET) は廃止されました。
+    // モデル一覧は /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
 
     Router::new()
         // `/v0/*`: llm-router独自API（互換不要・versioned）
@@ -154,9 +148,8 @@ pub fn create_router(state: AppState) -> Router {
                 // ノードログ取得（router→node proxy）
                 .route("/nodes/:node_id/logs", get(logs::get_node_logs))
                 // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
-                // NOTE: /models/available, /models/convert は廃止 - /v0/models に統合
-                // /models - 登録モデル一覧（ノード同期用、APIキーまたはノードトークンで認証）
-                .merge(v0_models_route)
+                // NOTE: /models/available, /models/convert, /v0/models (GET) は廃止
+                // モデル一覧は /v1/models を使用（Azure OpenAI 形式の capabilities 付き）
                 .route("/models/register", post(models::register_model))
                 .route("/models/*model_name", delete(models::delete_model))
                 .route(

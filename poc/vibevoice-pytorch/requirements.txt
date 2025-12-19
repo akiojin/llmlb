@@ -1,4 +1,5 @@
-torch>=2.3,<2.5
-transformers>=4.44,<5.0
+torch>=2.0.0
+transformers>=4.40.0
 accelerate>=0.31
-soundfile
+soundfile>=0.12.0
+vibevoice>=0.1.0

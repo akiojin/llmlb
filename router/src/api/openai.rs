@@ -11,7 +11,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::ModelCapability,
+    types::{ModelCapabilities, ModelCapability},
 };
 use reqwest;
 use serde_json::{json, Value};
@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::registry::models::router_model_path;
 use crate::{
     api::{
-        models::list_registered_models,
+        models::{list_registered_models, DownloadProgress, LifecycleStatus},
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record, select_available_node},
     },
@@ -177,31 +177,25 @@ pub async fn embeddings(
     .await
 }
 
-/// GET /v1/models - モデル一覧取得（OpenAI互換 - 標準形式のみ）
-/// ノードが実際にロードしているモデルのみを返す。
+/// GET /v1/models - モデル一覧取得（OpenAI互換 + Azure capabilities + ダッシュボード拡張）
+///
+/// OpenAI API 互換形式に Azure OpenAI 形式の capabilities と
+/// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
+/// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    // ノードがロードしているモデルを取得（パスからモデル名を抽出）
-    let nodes = state.registry.list().await;
-    let loaded_models: HashSet<String> = nodes
-        .iter()
-        .flat_map(|n| n.loaded_models.clone())
-        .filter_map(|path| {
-            // パスからモデル名を抽出: /.../.llm-router/models/{model_name}/model.gguf
-            std::path::Path::new(&path)
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
+    use crate::convert::ConvertStatus;
+    use crate::registry::models::generate_model_id;
 
-    // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
+    // ルーターがサポートするモデルを取得
     let models = list_registered_models();
 
-    // OpenAI互換レスポンス形式に合わせる（標準フィールドのみ）
-    // https://platform.openai.com/docs/api-reference/models/list
+    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
     let mut data: Vec<Value> = Vec::new();
+    let mut registered_names: HashSet<String> = HashSet::new();
+
     for m in models {
+        registered_names.insert(m.name.clone());
+
         let path = m
             .path
             .as_ref()
@@ -209,34 +203,122 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             .filter(|p| p.exists())
             .or_else(|| router_model_path(&m.name));
 
-        // ダウンロードが完了していないモデルは一覧に出さない
-        if path.is_none() {
-            continue;
-        }
+        let ready = path.is_some();
 
-        // ノードがロードしていないモデルは一覧に出さない
-        if !loaded_models.is_empty() && !loaded_models.contains(&m.name) {
-            continue;
-        }
+        // ライフサイクル状態を決定
+        let lifecycle_status = if ready {
+            LifecycleStatus::Registered
+        } else {
+            LifecycleStatus::Pending
+        };
 
-        // OpenAI標準フォーマット（+ capabilities拡張フィールド）
-        // capabilities は OpenAI API の標準フィールドではないが、
-        // モデルの能力を示すために拡張として追加
-        let caps: Vec<String> = m
-            .get_capabilities()
-            .iter()
-            .map(|c| serde_json::to_value(c).unwrap_or_default())
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
+        // Azure OpenAI 形式の capabilities (boolean object)
+        let caps: ModelCapabilities = m.get_capabilities().into();
 
         let obj = json!({
             "id": m.name,
             "object": "model",
             "created": 0,
             "owned_by": "router",
+            // Azure OpenAI 形式の capabilities
             "capabilities": caps,
+            // ダッシュボード用拡張フィールド
+            "lifecycle_status": lifecycle_status,
+            "download_progress": null,
+            "ready": ready,
         });
         data.push(obj);
+    }
+
+    // ConvertTaskからダウンロード中/待機中のモデル情報を追加
+    let tasks = state.convert_manager.list_tasks().await;
+
+    for task in tasks {
+        let model_name = generate_model_id(&task.repo);
+
+        // 既に登録済みのモデルはlifecycle_statusを更新
+        if let Some(obj) = data.iter_mut().find(|v| v["id"] == model_name) {
+            let (lifecycle_status, download_progress) = match task.status {
+                ConvertStatus::Queued => (
+                    LifecycleStatus::Pending,
+                    Some(DownloadProgress {
+                        percent: 0.0,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::InProgress => (
+                    LifecycleStatus::Caching,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::Failed => (
+                    LifecycleStatus::Error,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: task.error.clone(),
+                    }),
+                ),
+                ConvertStatus::Completed => continue, // 完了済みは既存のlifecycle_statusを維持
+            };
+            obj["lifecycle_status"] = serde_json::to_value(&lifecycle_status).unwrap();
+            obj["download_progress"] = serde_json::to_value(&download_progress).unwrap();
+        } else if !registered_names.contains(&model_name) {
+            // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
+            let (lifecycle_status, download_progress) = match task.status {
+                ConvertStatus::Queued => (
+                    LifecycleStatus::Pending,
+                    Some(DownloadProgress {
+                        percent: 0.0,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::InProgress => (
+                    LifecycleStatus::Caching,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::Failed => (
+                    LifecycleStatus::Error,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: task.error.clone(),
+                    }),
+                ),
+                ConvertStatus::Completed => (LifecycleStatus::Registered, None),
+            };
+
+            // ダウンロード中のモデルは capabilities が不明なため、デフォルト（LLM）を使用
+            let caps = ModelCapabilities::default();
+
+            let obj = json!({
+                "id": model_name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router",
+                "capabilities": caps,
+                "lifecycle_status": lifecycle_status,
+                "download_progress": download_progress,
+                "ready": false,
+            });
+            data.push(obj);
+            registered_names.insert(model_name);
+        }
     }
 
     let body = json!({
@@ -247,68 +329,10 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     Ok((StatusCode::OK, Json(body)).into_response())
 }
 
-/// GET /v0/models - モデル一覧取得（拡張情報付き - ノード同期用）
-///
-/// OpenAI互換APIと異なり、`path`, `download_url`, `chat_template`などの
-/// 拡張情報を含む。ノードがルーターからモデル情報を同期するために使用。
-/// SPEC-dcaeaec4: ルーターがサポートする（ファイルが存在する）モデルをすべて返す。
-pub async fn list_models_extended(State(_state): State<AppState>) -> Result<Response, AppError> {
-    // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
-    let models = list_registered_models();
+// NOTE: list_models_extended() は廃止されました。
+// /v1/models に Azure OpenAI 形式の capabilities とダッシュボード拡張が統合されています。
 
-    let mut data: Vec<Value> = Vec::new();
-    for m in models {
-        let path = m
-            .path
-            .as_ref()
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.exists())
-            .or_else(|| router_model_path(&m.name))
-            .map(|p| p.to_string_lossy().to_string());
-
-        // ダウンロードが完了していないモデルは一覧に出さない
-        if path.is_none() {
-            continue;
-        }
-
-        // capabilities をシリアライズ
-        let caps: Vec<String> = m
-            .get_capabilities()
-            .iter()
-            .map(|c| serde_json::to_value(c).unwrap_or_default())
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-
-        let mut obj = json!({
-            "id": m.name,
-            "object": "model",
-            "created": 0,
-            "owned_by": "router",
-            "capabilities": caps,
-        });
-
-        // 拡張フィールド（ノード同期用）
-        if let Some(p) = path.clone() {
-            obj["path"] = json!(p);
-        }
-        if let Some(url) = m.download_url.clone() {
-            obj["download_url"] = json!(url);
-        }
-        if let Some(tpl) = m.chat_template.clone() {
-            obj["chat_template"] = json!(tpl);
-        }
-        data.push(obj);
-    }
-
-    let body = json!({
-        "object": "list",
-        "data": data,
-    });
-
-    Ok((StatusCode::OK, Json(body)).into_response())
-}
-
-/// GET /v1/models/:id - モデル詳細取得
+/// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 pub async fn get_model(
     State(_state): State<AppState>,
     Path(model_id): Path<String>,
@@ -340,13 +364,8 @@ pub async fn get_model(
         }
     };
 
-    // capabilities をシリアライズ
-    let caps: Vec<String> = model
-        .get_capabilities()
-        .iter()
-        .map(|c| serde_json::to_value(c).unwrap_or_default())
-        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-        .collect();
+    // Azure OpenAI 形式の capabilities (boolean object)
+    let caps: ModelCapabilities = model.get_capabilities().into();
 
     let mut body = json!({
         "id": model_id,
@@ -354,6 +373,9 @@ pub async fn get_model(
         "created": 0,
         "owned_by": "router",
         "capabilities": caps,
+        // ダッシュボード用拡張フィールド
+        "lifecycle_status": LifecycleStatus::Registered,
+        "ready": true,
     });
 
     body["path"] = json!(path.to_string_lossy().to_string());

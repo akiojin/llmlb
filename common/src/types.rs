@@ -186,6 +186,51 @@ impl ModelCapability {
     }
 }
 
+/// モデルの能力（Azure OpenAI 形式）
+///
+/// Azure OpenAI API 互換の boolean object 形式で capabilities を表現。
+/// `/v1/models` レスポンスで使用。
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ModelCapabilities {
+    /// チャット補完対応 (/v1/chat/completions)
+    pub chat_completion: bool,
+    /// テキスト補完対応 (/v1/completions)
+    pub completion: bool,
+    /// 埋め込み生成対応 (/v1/embeddings)
+    pub embeddings: bool,
+    /// ファインチューニング対応（未実装）
+    pub fine_tune: bool,
+    /// 推論対応（常に true）
+    pub inference: bool,
+    /// 音声合成対応 (/v1/audio/speech)
+    pub text_to_speech: bool,
+    /// 音声認識対応 (/v1/audio/transcriptions)
+    pub speech_to_text: bool,
+    /// 画像生成対応 (/v1/images/generations)
+    pub image_generation: bool,
+}
+
+impl From<&[ModelCapability]> for ModelCapabilities {
+    fn from(caps: &[ModelCapability]) -> Self {
+        ModelCapabilities {
+            chat_completion: caps.contains(&ModelCapability::TextGeneration),
+            completion: caps.contains(&ModelCapability::TextGeneration),
+            embeddings: caps.contains(&ModelCapability::Embedding),
+            inference: true, // 全モデル対応
+            text_to_speech: caps.contains(&ModelCapability::TextToSpeech),
+            speech_to_text: caps.contains(&ModelCapability::SpeechToText),
+            image_generation: caps.contains(&ModelCapability::ImageGeneration),
+            fine_tune: false, // 未対応
+        }
+    }
+}
+
+impl From<Vec<ModelCapability>> for ModelCapabilities {
+    fn from(caps: Vec<ModelCapability>) -> Self {
+        ModelCapabilities::from(caps.as_slice())
+    }
+}
+
 /// 音声フォーマット
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -843,5 +888,73 @@ mod tests {
         // ImageGeneration → ImageGeneration
         let img_caps = ModelCapability::from_model_type(ModelType::ImageGeneration);
         assert_eq!(img_caps, vec![ModelCapability::ImageGeneration]);
+    }
+
+    // ModelCapabilities (Azure形式) テスト
+    #[test]
+    fn test_model_capabilities_from_vec() {
+        // LLM capabilities
+        let llm_caps = vec![ModelCapability::TextGeneration];
+        let caps: ModelCapabilities = llm_caps.into();
+        assert!(caps.chat_completion);
+        assert!(caps.completion);
+        assert!(caps.inference);
+        assert!(!caps.embeddings);
+        assert!(!caps.text_to_speech);
+        assert!(!caps.speech_to_text);
+        assert!(!caps.image_generation);
+        assert!(!caps.fine_tune);
+
+        // Embedding capabilities
+        let embed_caps = vec![ModelCapability::Embedding];
+        let caps: ModelCapabilities = embed_caps.into();
+        assert!(!caps.chat_completion);
+        assert!(!caps.completion);
+        assert!(caps.embeddings);
+        assert!(caps.inference);
+
+        // TTS capabilities
+        let tts_caps = vec![ModelCapability::TextToSpeech];
+        let caps: ModelCapabilities = tts_caps.into();
+        assert!(caps.text_to_speech);
+        assert!(!caps.speech_to_text);
+        assert!(caps.inference);
+
+        // ASR capabilities
+        let stt_caps = vec![ModelCapability::SpeechToText];
+        let caps: ModelCapabilities = stt_caps.into();
+        assert!(caps.speech_to_text);
+        assert!(!caps.text_to_speech);
+        assert!(caps.inference);
+
+        // Image generation capabilities
+        let img_caps = vec![ModelCapability::ImageGeneration];
+        let caps: ModelCapabilities = img_caps.into();
+        assert!(caps.image_generation);
+        assert!(caps.inference);
+    }
+
+    #[test]
+    fn test_model_capabilities_serialization() {
+        let caps = ModelCapabilities {
+            chat_completion: true,
+            completion: true,
+            embeddings: false,
+            fine_tune: false,
+            inference: true,
+            text_to_speech: false,
+            speech_to_text: false,
+            image_generation: false,
+        };
+
+        let json = serde_json::to_string(&caps).unwrap();
+        assert!(json.contains("\"chat_completion\":true"));
+        assert!(json.contains("\"completion\":true"));
+        assert!(json.contains("\"embeddings\":false"));
+        assert!(json.contains("\"inference\":true"));
+
+        // Deserialization
+        let deserialized: ModelCapabilities = serde_json::from_str(&json).unwrap();
+        assert_eq!(caps, deserialized);
     }
 }

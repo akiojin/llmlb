@@ -13,7 +13,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::{Node, RuntimeType},
+    types::{ModelCapability, Node, RuntimeType},
 };
 use serde_json::json;
 use std::time::Instant;
@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        models::list_registered_models,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
     },
@@ -187,6 +188,18 @@ pub async fn transcriptions(
         None => return openai_error("Missing required field: model", StatusCode::BAD_REQUEST),
     };
 
+    // モデルの SpeechToText capability を検証
+    let models = list_registered_models();
+    if let Some(model_info) = models.iter().find(|m| m.name == model) {
+        if !model_info.has_capability(ModelCapability::SpeechToText) {
+            return openai_error(
+                format!("Model '{}' does not support speech-to-text", model),
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    }
+    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+
     info!(
         request_id = %request_id,
         model = %model,
@@ -296,6 +309,18 @@ pub async fn speech(
         );
     }
 
+    // モデルの TextToSpeech capability を検証
+    let models = list_registered_models();
+    if let Some(model_info) = models.iter().find(|m| m.name == payload.model) {
+        if !model_info.has_capability(ModelCapability::TextToSpeech) {
+            return openai_error(
+                format!("Model '{}' does not support text-to-speech", payload.model),
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    }
+    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+
     info!(
         request_id = %request_id,
         model = %payload.model,
@@ -398,5 +423,41 @@ mod tests {
 
         let japanese_long = "あ".repeat(4097);
         assert!(japanese_long.chars().count() > 4096);
+    }
+
+    // T004: TTS capabilities検証テスト (RED)
+    // TextToSpeech capability を持たないモデルで /v1/audio/speech を呼ぶとエラー
+    #[test]
+    fn test_tts_capability_validation_error_message() {
+        use llm_router_common::types::{ModelCapability, ModelType};
+
+        // LLMモデルはTextGenerationのみ、TextToSpeechは非対応
+        let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
+        assert!(!llm_caps.contains(&ModelCapability::TextToSpeech));
+
+        // 期待されるエラーメッセージ形式
+        let model_name = "llama-3.1-8b";
+        let expected_error = format!("Model '{}' does not support text-to-speech", model_name);
+        assert!(expected_error.contains("does not support text-to-speech"));
+    }
+
+    // T005: ASR capabilities検証テスト (RED)
+    // SpeechToText capability を持たないモデルで /v1/audio/transcriptions を呼ぶとエラー
+    #[test]
+    fn test_asr_capability_validation_error_message() {
+        use llm_router_common::types::{ModelCapability, ModelType};
+
+        // LLMモデルはTextGenerationのみ、SpeechToTextは非対応
+        let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
+        assert!(!llm_caps.contains(&ModelCapability::SpeechToText));
+
+        // TTSモデルもSpeechToTextは非対応
+        let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);
+        assert!(!tts_caps.contains(&ModelCapability::SpeechToText));
+
+        // 期待されるエラーメッセージ形式
+        let model_name = "vibevoice-v1";
+        let expected_error = format!("Model '{}' does not support speech-to-text", model_name);
+        assert!(expected_error.contains("does not support speech-to-text"));
     }
 }

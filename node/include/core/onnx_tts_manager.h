@@ -79,6 +79,10 @@ public:
     static bool isRuntimeAvailable();
 
 private:
+    static constexpr const char* kMacosSayModelName = "macos_say";
+    static constexpr const char* kVibeVoiceModelId = "microsoft/VibeVoice-Realtime-0.5B";
+    static constexpr const char* kVibeVoiceAlias = "vibevoice";
+
     std::string models_dir_;
     mutable std::mutex mutex_;
 

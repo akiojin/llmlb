@@ -519,7 +519,7 @@ async fn test_download_failure_shows_error_status() {
         .unwrap();
     assert_eq!(reg.status(), StatusCode::CREATED);
 
-    // wait for error status via /v0/models lifecycle_status
+    // wait for error status via /v1/models lifecycle_status (OpenAI互換エンドポイント)
     let mut error_seen = false;
     let mut last_models = serde_json::Value::Null;
     for _ in 0..60 {
@@ -528,8 +528,8 @@ async fn test_download_failure_shows_error_status() {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v0/models")
-                    .header("x-api-key", "sk_debug")
+                    .uri("/v1/models")
+                    .header("authorization", "Bearer sk_debug")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -539,11 +539,12 @@ async fn test_download_failure_shows_error_status() {
         let body = to_bytes(models_resp.into_body(), usize::MAX).await.unwrap();
         let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
         last_models = models.clone();
-        if models
+        // /v1/models レスポンス形式: { "object": "list", "data": [...] }
+        if models["data"]
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .any(|m| m["name"] == "error-test-repo" && m["lifecycle_status"] == "error")
+                    .any(|m| m["id"] == "error-test-repo" && m["lifecycle_status"] == "error")
             })
             .unwrap_or(false)
         {
@@ -559,9 +560,9 @@ async fn test_download_failure_shows_error_status() {
     );
 
     // エラーモデルは download_progress.error にエラーメッセージが含まれる
-    let model = last_models
+    let model = last_models["data"]
         .as_array()
-        .and_then(|arr| arr.iter().find(|m| m["name"] == "error-test-repo"))
+        .and_then(|arr| arr.iter().find(|m| m["id"] == "error-test-repo"))
         .unwrap();
     assert!(
         model["download_progress"]["error"].is_string(),

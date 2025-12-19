@@ -3,6 +3,7 @@
 //! LLM runtimeモデルのメタデータ管理
 
 use chrono::{DateTime, Utc};
+use llm_router_common::types::ModelCapability;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
@@ -37,6 +38,10 @@ pub struct ModelInfo {
     pub required_memory: u64,
     /// タグ（例: ["vision", "tools", "thinking"]）
     pub tags: Vec<String>,
+    /// モデルの能力（対応するAPI）
+    /// 未設定の場合はModelType::Llm（テキスト生成）として扱う
+    #[serde(default)]
+    pub capabilities: Vec<ModelCapability>,
     /// ソース種別
     #[serde(default)]
     pub source: ModelSource,
@@ -65,6 +70,8 @@ pub struct ModelInfo {
 
 impl ModelInfo {
     /// 新しいModelInfoを作成
+    ///
+    /// capabilities が空の場合は、デフォルトで TextGeneration を設定
     pub fn new(
         name: String,
         size: u64,
@@ -78,6 +85,35 @@ impl ModelInfo {
             description,
             required_memory,
             tags,
+            // デフォルトは TextGeneration（LLMモデル）
+            capabilities: vec![ModelCapability::TextGeneration],
+            source: ModelSource::Predefined,
+            download_url: None,
+            path: None,
+            chat_template: None,
+            repo: None,
+            filename: None,
+            last_modified: None,
+            status: None,
+        }
+    }
+
+    /// 指定した capabilities で新しい ModelInfo を作成
+    pub fn with_capabilities(
+        name: String,
+        size: u64,
+        description: String,
+        required_memory: u64,
+        tags: Vec<String>,
+        capabilities: Vec<ModelCapability>,
+    ) -> Self {
+        Self {
+            name,
+            size,
+            description,
+            required_memory,
+            tags,
+            capabilities,
             source: ModelSource::Predefined,
             download_url: None,
             path: None,
@@ -97,6 +133,29 @@ impl ModelInfo {
     /// 必要メモリをGB単位で取得
     pub fn required_memory_gb(&self) -> f64 {
         self.required_memory as f64 / (1024.0 * 1024.0 * 1024.0)
+    }
+
+    /// モデルが指定した capability をサポートしているか確認
+    ///
+    /// capabilities が空の場合は TextGeneration をサポートしているとみなす（後方互換性）
+    pub fn has_capability(&self, capability: ModelCapability) -> bool {
+        if self.capabilities.is_empty() {
+            // 後方互換性: capabilities 未設定のモデルは TextGeneration のみサポート
+            capability == ModelCapability::TextGeneration
+        } else {
+            self.capabilities.contains(&capability)
+        }
+    }
+
+    /// モデルの capabilities を取得
+    ///
+    /// capabilities が空の場合は TextGeneration のみを返す（後方互換性）
+    pub fn get_capabilities(&self) -> Vec<ModelCapability> {
+        if self.capabilities.is_empty() {
+            vec![ModelCapability::TextGeneration]
+        } else {
+            self.capabilities.clone()
+        }
     }
 }
 
@@ -484,6 +543,99 @@ mod tests {
         assert_eq!(model.name, "gpt-oss-20b");
         assert_eq!(model.size, 10_000_000_000);
         assert_eq!(model.required_memory_gb(), 14.901161193847656);
+        // デフォルトは TextGeneration
+        assert_eq!(model.capabilities, vec![ModelCapability::TextGeneration]);
+    }
+
+    // ===== ModelInfo capabilities テスト =====
+
+    #[test]
+    fn test_model_info_with_capabilities() {
+        let caps = vec![ModelCapability::TextGeneration, ModelCapability::Vision];
+        let model = ModelInfo::with_capabilities(
+            "gpt-4o".to_string(),
+            0,
+            "GPT-4o".to_string(),
+            0,
+            vec![],
+            caps.clone(),
+        );
+
+        assert_eq!(model.capabilities, caps);
+        assert!(model.has_capability(ModelCapability::TextGeneration));
+        assert!(model.has_capability(ModelCapability::Vision));
+        assert!(!model.has_capability(ModelCapability::TextToSpeech));
+    }
+
+    #[test]
+    fn test_model_info_has_capability() {
+        let model = ModelInfo::with_capabilities(
+            "tts-model".to_string(),
+            0,
+            "TTS Model".to_string(),
+            0,
+            vec![],
+            vec![ModelCapability::TextToSpeech],
+        );
+
+        assert!(model.has_capability(ModelCapability::TextToSpeech));
+        assert!(!model.has_capability(ModelCapability::TextGeneration));
+        assert!(!model.has_capability(ModelCapability::SpeechToText));
+    }
+
+    #[test]
+    fn test_model_info_has_capability_backward_compat() {
+        // capabilities が空の場合は TextGeneration をサポート（後方互換性）
+        let mut model = ModelInfo::new(
+            "legacy-model".to_string(),
+            0,
+            "Legacy".to_string(),
+            0,
+            vec![],
+        );
+        // 明示的に空にする
+        model.capabilities = vec![];
+
+        assert!(model.has_capability(ModelCapability::TextGeneration));
+        assert!(!model.has_capability(ModelCapability::TextToSpeech));
+    }
+
+    #[test]
+    fn test_model_info_get_capabilities() {
+        let model = ModelInfo::with_capabilities(
+            "multi-model".to_string(),
+            0,
+            "Multi".to_string(),
+            0,
+            vec![],
+            vec![
+                ModelCapability::TextGeneration,
+                ModelCapability::Vision,
+                ModelCapability::TextToSpeech,
+            ],
+        );
+
+        let caps = model.get_capabilities();
+        assert_eq!(caps.len(), 3);
+        assert!(caps.contains(&ModelCapability::TextGeneration));
+        assert!(caps.contains(&ModelCapability::Vision));
+        assert!(caps.contains(&ModelCapability::TextToSpeech));
+    }
+
+    #[test]
+    fn test_model_info_get_capabilities_backward_compat() {
+        // capabilities が空の場合は TextGeneration のみを返す（後方互換性）
+        let mut model = ModelInfo::new(
+            "legacy-model".to_string(),
+            0,
+            "Legacy".to_string(),
+            0,
+            vec![],
+        );
+        model.capabilities = vec![];
+
+        let caps = model.get_capabilities();
+        assert_eq!(caps, vec![ModelCapability::TextGeneration]);
     }
 
     // ===== extract_repo_id テスト =====

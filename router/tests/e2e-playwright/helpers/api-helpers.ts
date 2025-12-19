@@ -18,8 +18,9 @@ const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 /**
  * Lifecycle status of a registered model
+ * Values from /v1/models: pending, caching, registered, error
  */
-export type LifecycleStatus = 'pending' | 'downloading' | 'cached' | 'ready' | 'error';
+export type LifecycleStatus = 'pending' | 'caching' | 'registered' | 'error';
 
 /**
  * Download progress information
@@ -47,15 +48,25 @@ export type ModelInfo = RegisteredModel;
 
 /**
  * Get list of registered models
- * NOTE: /v0/models now returns an array directly (not wrapped in { data: [] })
+ * Uses /v1/models (OpenAI-compatible endpoint with lifecycle extensions)
  */
 export async function getModels(request: APIRequestContext): Promise<RegisteredModel[]> {
-  const response = await request.get(`${API_BASE}/v0/models`, {
+  const response = await request.get(`${API_BASE}/v1/models`, {
     headers: AUTH_HEADER,
   });
+  if (!response.ok()) {
+    return [];
+  }
   const data = await response.json();
-  // Handle both array and { data: [] } response formats for backward compatibility
-  return Array.isArray(data) ? data : (data.data || []);
+  // /v1/models returns { object: "list", data: [...] } format
+  // Map 'id' to 'name' for backward compatibility with E2E tests
+  const models = data.data || [];
+  return models.map((m: { id: string; lifecycle_status?: string; download_progress?: DownloadProgress; path?: string }) => ({
+    name: m.id,
+    lifecycle_status: m.lifecycle_status || 'registered',
+    download_progress: m.download_progress,
+    path: m.path,
+  }));
 }
 
 /**

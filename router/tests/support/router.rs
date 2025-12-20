@@ -42,7 +42,7 @@ pub async fn spawn_test_router() -> TestServer {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {
@@ -165,7 +165,7 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {

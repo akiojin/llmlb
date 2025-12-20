@@ -53,7 +53,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
         .await
         .expect("Failed to run migrations");
     let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,

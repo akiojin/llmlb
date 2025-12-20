@@ -35,7 +35,7 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry: registry.clone(),

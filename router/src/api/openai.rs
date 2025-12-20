@@ -1343,7 +1343,7 @@ mod tests {
             .await
             .expect("migrations");
         let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
-        let convert_manager = crate::convert::ConvertTaskManager::new(1);
+        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         AppState {
             registry,
             load_manager,

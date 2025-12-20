@@ -20,7 +20,7 @@
 - [x] Registry: pending から approve で `registering` / `online` に遷移（ready_models で判定）
 - [x] Router: pending 中のハートビートは受理しつつ状態遷移は抑止
 - [x] Dashboard: pending 表示と承認アクション追加
-- [x] Tests: 承認フローの TDD 追加（unit/integration）
+- [x] Tests: 承認フローの TDD 追加（contract/integration/E2E）
 - [x] Docs: `spec.md`, `quickstart.md`, `contracts` 更新
 
 ## 参照実装

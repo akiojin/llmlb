@@ -5,11 +5,16 @@
 use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
-    Router,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use tower::ServiceExt;
+
+#[path = "../support/http.rs"]
+mod http;
 
 async fn build_app() -> Router {
     let registry = NodeRegistry::new();
@@ -38,26 +43,92 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
+async fn spawn_image_stub() -> http::TestServer {
+    let router = Router::new()
+        .route("/v1/images/generations", post(image_gen_handler))
+        .route("/v1/models", get(models_handler));
+    http::spawn_router(router).await
+}
+
+async fn image_gen_handler(Json(_payload): Json<serde_json::Value>) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(json!({
+            "created": 0,
+            "data": [{"url": "http://example.com/generated.png"}]
+        })),
+    )
+        .into_response()
+}
+
+async fn models_handler() -> impl IntoResponse {
+    (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
+}
+
+async fn login_admin(app: &Router) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v0/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "test"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    payload["token"]
+        .as_str()
+        .expect("token should exist")
+        .to_string()
+}
+
+async fn approve_node(app: &Router, node_id: &str) {
+    let token = login_admin(app).await;
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v0/nodes/{}/approve", node_id))
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 /// IMG001: 画像生成ノード選択テスト
 ///
 /// RuntimeType::StableDiffusionを持つノードが/v1/images/generationsにルーティングされる
 #[tokio::test]
-#[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
     let app = build_app().await;
+    let stub = spawn_image_stub().await;
 
     // StableDiffusion対応ノードを登録
     let register_payload = json!({
         "machine_name": "sd-node",
-        "ip_address": "192.168.1.200",
+        "ip_address": stub.addr().ip().to_string(),
         "runtime_version": "0.1.0",
-        "runtime_port": 8080,
+        "runtime_port": stub.addr().port().saturating_sub(1),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1, "memory": 24576}
         ],
-        "supported_runtimes": ["stable_diffusion"],
-        "loaded_image_models": ["stable-diffusion-xl"]
+        "supported_runtimes": ["stable_diffusion"]
     });
 
     let register_response = app
@@ -65,7 +136,7 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -74,14 +145,92 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
         .unwrap();
 
     assert_eq!(register_response.status(), StatusCode::CREATED);
+    let body = to_bytes(register_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let node_id = node["node_id"].as_str().expect("node_id should exist");
+    approve_node(&app, node_id).await;
 
-    // ノード一覧を確認してStableDiffusion対応ノードが登録されていることを確認
+    let image_request = json!({
+        "model": "stable-diffusion-xl",
+        "prompt": "A white cat",
+        "n": 1,
+        "size": "1024x1024"
+    });
+
+    let image_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/images/generations")
+                .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
+                .body(Body::from(serde_json::to_vec(&image_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(image_response.status(), StatusCode::OK);
+    let body = to_bytes(image_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(payload.get("data").is_some());
+
+    stub.stop().await;
+}
+
+/// IMG002: 複合ランタイムノードテスト
+///
+/// LLM + StableDiffusionを持つノードが適切に処理される
+#[tokio::test]
+async fn test_multi_runtime_node_handles_llm_and_image() {
+    let app = build_app().await;
+    let stub = spawn_image_stub().await;
+
+    // 複合ランタイム対応ノードを登録（LLM + StableDiffusion）
+    let register_payload = json!({
+        "machine_name": "multi-runtime-node",
+        "ip_address": stub.addr().ip().to_string(),
+        "runtime_version": "0.1.0",
+        "runtime_port": stub.addr().port().saturating_sub(1),
+        "gpu_available": true,
+        "gpu_devices": [
+            {"model": "NVIDIA RTX 4090", "count": 2, "memory": 24576}
+        ],
+        "supported_runtimes": ["llama_cpp", "stable_diffusion"]
+    });
+
+    let register_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v0/nodes")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(register_response.status(), StatusCode::CREATED);
+    let body = to_bytes(register_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let node_id = node["node_id"].as_str().expect("node_id should exist");
+    approve_node(&app, node_id).await;
+
     let nodes_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -93,111 +242,42 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
         .await
         .unwrap();
     let nodes: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // ノードにsupported_runtimesフィールドがあることを確認
     let node_list = nodes.as_array().expect("nodes should be an array");
-    assert!(
-        !node_list.is_empty(),
-        "at least one node should be registered"
-    );
+    let node = node_list
+        .iter()
+        .find(|n| n.get("machine_name").and_then(|v| v.as_str()) == Some("multi-runtime-node"))
+        .expect("multi-runtime node should exist");
+    let runtimes = node
+        .get("supported_runtimes")
+        .and_then(|r| r.as_array())
+        .expect("supported_runtimes should be array");
+    assert!(runtimes.iter().any(|v| v.as_str() == Some("llama_cpp")));
+    assert!(runtimes
+        .iter()
+        .any(|v| v.as_str() == Some("stable_diffusion")));
 
-    let sd_node = node_list.iter().find(|n| {
-        n.get("supported_runtimes")
-            .and_then(|r| r.as_array())
-            .map(|arr| arr.iter().any(|v| v.as_str() == Some("stable_diffusion")))
-            .unwrap_or(false)
-    });
-
-    assert!(
-        sd_node.is_some(),
-        "A node with stable_diffusion runtime should be registered"
-    );
-}
-
-/// IMG002: 複合ランタイムノードテスト
-///
-/// LLM + StableDiffusionを持つノードが適切に処理される
-#[tokio::test]
-#[ignore = "TDD RED: Image API routing not implemented yet"]
-async fn test_multi_runtime_node_handles_llm_and_image() {
-    let app = build_app().await;
-
-    // 複合ランタイム対応ノードを登録（LLM + StableDiffusion）
-    let register_payload = json!({
-        "machine_name": "multi-runtime-node",
-        "ip_address": "192.168.1.201",
-        "runtime_version": "0.1.0",
-        "runtime_port": 8080,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "NVIDIA RTX 4090", "count": 2, "memory": 24576}
-        ],
-        "supported_runtimes": ["llama_cpp", "stable_diffusion"],
-        "loaded_models": ["llama-3.1-8b-instruct"],
-        "loaded_image_models": ["stable-diffusion-xl"]
-    });
-
-    let register_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/nodes")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = node["node_id"].as_str().expect("node_id should exist");
-
-    // ノード詳細を取得して複数のランタイムが登録されていることを確認
-    let detail_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!("/api/nodes/{}", node_id))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert!(
-        detail_response.status() == StatusCode::OK
-            || detail_response.status() == StatusCode::NOT_FOUND,
-        "Node detail endpoint should be accessible"
-    );
+    stub.stop().await;
 }
 
 /// IMG003: 画像生成対応ノードなしテスト
 ///
 /// StableDiffusion対応ノードがない場合、503を返す
 #[tokio::test]
-#[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_no_image_capable_node_returns_503() {
     let app = build_app().await;
+    let stub = spawn_image_stub().await;
 
     // LLMノードのみを登録（StableDiffusionなし）
     let register_payload = json!({
         "machine_name": "llm-only-node",
-        "ip_address": "192.168.1.202",
+        "ip_address": stub.addr().ip().to_string(),
         "runtime_version": "0.1.0",
-        "runtime_port": 8080,
+        "runtime_port": stub.addr().port().saturating_sub(1),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}
         ],
-        "supported_runtimes": ["llama_cpp"],
-        "loaded_models": ["llama-3.1-8b-instruct"]
+        "supported_runtimes": ["llama_cpp"]
     });
 
     let register_response = app
@@ -205,7 +285,7 @@ async fn test_no_image_capable_node_returns_503() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/nodes")
+                .uri("/v0/nodes")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -214,26 +294,6 @@ async fn test_no_image_capable_node_returns_503() {
         .unwrap();
 
     assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    // テスト用DBとAPIキーを作成
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
-    let test_user = llm_router::db::users::create(
-        &db_pool,
-        "test-admin",
-        "testpassword",
-        llm_router_common::auth::UserRole::Admin,
-    )
-    .await
-    .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
 
     // 画像生成リクエストを試行（JSON形式）
     let image_request = json!({
@@ -250,7 +310,7 @@ async fn test_no_image_capable_node_returns_503() {
                 .method("POST")
                 .uri("/v1/images/generations")
                 .header("content-type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key.key))
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(serde_json::to_vec(&image_request).unwrap()))
                 .unwrap(),
         )
@@ -263,35 +323,16 @@ async fn test_no_image_capable_node_returns_503() {
         StatusCode::SERVICE_UNAVAILABLE,
         "Should return 503 when no StableDiffusion-capable node is available"
     );
+
+    stub.stop().await;
 }
 
 /// IMG004: 画像生成APIルート存在テスト
 ///
 /// /v1/images/generations, /v1/images/edits, /v1/images/variationsルートが存在する
 #[tokio::test]
-#[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_image_api_routes_exist() {
     let app = build_app().await;
-
-    // テスト用DBとAPIキーを作成
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
-    let test_user = llm_router::db::users::create(
-        &db_pool,
-        "test-admin",
-        "testpassword",
-        llm_router_common::auth::UserRole::Admin,
-    )
-    .await
-    .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
 
     // /v1/images/generations (POST)
     let gen_response = app
@@ -301,7 +342,7 @@ async fn test_image_api_routes_exist() {
                 .method("POST")
                 .uri("/v1/images/generations")
                 .header("content-type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key.key))
+                .header("x-api-key", "sk_debug")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "model": "stable-diffusion-xl",
@@ -328,7 +369,7 @@ async fn test_image_api_routes_exist() {
             Request::builder()
                 .method("POST")
                 .uri("/v1/images/edits")
-                .header("Authorization", format!("Bearer {}", api_key.key))
+                .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -348,7 +389,7 @@ async fn test_image_api_routes_exist() {
             Request::builder()
                 .method("POST")
                 .uri("/v1/images/variations")
-                .header("Authorization", format!("Bearer {}", api_key.key))
+                .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -366,7 +407,6 @@ async fn test_image_api_routes_exist() {
 ///
 /// 認証ヘッダーなしで401を返す
 #[tokio::test]
-#[ignore = "TDD RED: Image API routing not implemented yet"]
 async fn test_image_generation_without_auth_returns_401() {
     let app = build_app().await;
 

@@ -45,6 +45,7 @@ TEST_F(RouterContractFixture, RegisterNodeReturnsId) {
     info.runtime_port = 11434;
     info.gpu_available = true;
     info.gpu_devices = {{.model = "Test GPU", .count = 1, .memory = 4ull * 1024 * 1024 * 1024}};
+    info.supported_runtimes = {"llama_cpp"};
 
     auto result = client.registerNode(info);
     EXPECT_TRUE(result.success);

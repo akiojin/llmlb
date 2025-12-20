@@ -1580,6 +1580,7 @@ fn parse_tqdm_progress(line: &str) -> Option<f32> {
 mod tests {
     use super::*;
     use crate::registry::models::{ModelInfo, ModelSource};
+    use serial_test::serial;
     use sqlx::SqlitePool;
     use std::{env, time::Duration};
 
@@ -1679,6 +1680,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn verify_convert_ready_allows_custom_script_without_deps() {
         let tmp = tempfile::tempdir().unwrap();
         let script_path = tmp.path().join("mock_script.py");
@@ -1690,6 +1692,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn verify_convert_ready_errors_when_missing_script() {
         env::remove_var("LLM_CONVERT_SCRIPT");
         let res = verify_convert_ready();

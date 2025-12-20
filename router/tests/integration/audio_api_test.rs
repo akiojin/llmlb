@@ -309,9 +309,15 @@ async fn test_no_capable_node_returns_503() {
     )
     .await
     .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
+    let api_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "test-key",
+        test_user.id,
+        None,
+        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+    )
+    .await
+    .expect("Failed to create test API key");
 
     // ASRリクエスト（対応ノードなし）- 503を期待
     // 注: 実際のmultipartリクエストは契約テストでカバー

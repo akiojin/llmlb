@@ -1,9 +1,10 @@
 // T053-T054: APIキーCRUD操作とキー生成
 
 use chrono::{DateTime, Utc};
-use llm_router_common::auth::{ApiKey, ApiKeyWithPlaintext};
+use llm_router_common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext};
 use llm_router_common::error::RouterError;
 use rand::Rng;
+use serde_json;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use uuid::Uuid;
@@ -24,15 +25,18 @@ pub async fn create(
     name: &str,
     created_by: Uuid,
     expires_at: Option<DateTime<Utc>>,
+    scopes: Vec<ApiKeyScope>,
 ) -> Result<ApiKeyWithPlaintext, RouterError> {
     let id = Uuid::new_v4();
     let key = generate_api_key();
     let key_hash = hash_with_sha256(&key);
     let created_at = Utc::now();
 
+    let scopes_json = serialize_scopes(&scopes)?;
+
     sqlx::query(
-        "INSERT INTO api_keys (id, key_hash, name, created_by, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO api_keys (id, key_hash, name, created_by, created_at, expires_at, scopes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(&key_hash)
@@ -40,6 +44,7 @@ pub async fn create(
     .bind(created_by.to_string())
     .bind(created_at.to_rfc3339())
     .bind(expires_at.map(|dt| dt.to_rfc3339()))
+    .bind(scopes_json)
     .execute(pool)
     .await
     .map_err(|e| RouterError::Database(format!("Failed to create API key: {}", e)))?;
@@ -50,6 +55,7 @@ pub async fn create(
         name: name.to_string(),
         created_at,
         expires_at,
+        scopes,
     })
 }
 
@@ -68,7 +74,7 @@ pub async fn find_by_hash(
     key_hash: &str,
 ) -> Result<Option<ApiKey>, RouterError> {
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, name, created_by, created_at, expires_at FROM api_keys WHERE key_hash = ?"
+        "SELECT id, key_hash, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE key_hash = ?"
     )
     .bind(key_hash)
     .fetch_optional(pool)
@@ -88,7 +94,7 @@ pub async fn find_by_hash(
 /// * `Err(RouterError)` - 取得失敗
 pub async fn list(pool: &SqlitePool) -> Result<Vec<ApiKey>, RouterError> {
     let rows = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, name, created_by, created_at, expires_at FROM api_keys ORDER BY created_at DESC"
+        "SELECT id, key_hash, name, created_by, created_at, expires_at, scopes FROM api_keys ORDER BY created_at DESC"
     )
     .fetch_all(pool)
     .await
@@ -129,7 +135,7 @@ pub async fn update(
 
     // 更新後のAPIキーを取得
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, name, created_by, created_at, expires_at FROM api_keys WHERE id = ?",
+        "SELECT id, key_hash, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE id = ?",
     )
     .bind(id.to_string())
     .fetch_optional(pool)
@@ -199,6 +205,7 @@ struct ApiKeyRow {
     created_by: String,
     created_at: String,
     expires_at: Option<String>,
+    scopes: Option<String>,
 }
 
 impl ApiKeyRow {
@@ -214,6 +221,8 @@ impl ApiKeyRow {
                 .map(|dt| dt.with_timezone(&Utc))
         });
 
+        let scopes = parse_scopes(self.scopes);
+
         ApiKey {
             id,
             key_hash: self.key_hash,
@@ -221,8 +230,23 @@ impl ApiKeyRow {
             created_by,
             created_at,
             expires_at,
+            scopes,
         }
     }
+}
+
+fn parse_scopes(scopes: Option<String>) -> Vec<ApiKeyScope> {
+    match scopes {
+        Some(raw) if !raw.trim().is_empty() => {
+            serde_json::from_str::<Vec<ApiKeyScope>>(&raw).unwrap_or_else(|_| ApiKeyScope::all())
+        }
+        _ => ApiKeyScope::all(),
+    }
+}
+
+fn serialize_scopes(scopes: &[ApiKeyScope]) -> Result<String, RouterError> {
+    serde_json::to_string(scopes)
+        .map_err(|e| RouterError::Database(format!("Failed to serialize scopes: {}", e)))
 }
 
 #[cfg(test)]
@@ -255,9 +279,15 @@ mod tests {
             .unwrap();
 
         // APIキーを作成
-        let api_key_with_plaintext = create(&pool, "Test API Key", user.id, None)
-            .await
-            .expect("Failed to create API key");
+        let api_key_with_plaintext = create(
+            &pool,
+            "Test API Key",
+            user.id,
+            None,
+            vec![ApiKeyScope::ApiInference],
+        )
+        .await
+        .expect("Failed to create API key");
 
         assert!(api_key_with_plaintext.key.starts_with("sk_"));
         assert_eq!(api_key_with_plaintext.name, "Test API Key");
@@ -272,6 +302,7 @@ mod tests {
         let found_key = found.unwrap();
         assert_eq!(found_key.name, "Test API Key");
         assert_eq!(found_key.created_by, user.id);
+        assert_eq!(found_key.scopes, vec![ApiKeyScope::ApiInference]);
     }
 
     #[tokio::test]
@@ -282,8 +313,24 @@ mod tests {
             .await
             .unwrap();
 
-        create(&pool, "Key 1", user.id, None).await.unwrap();
-        create(&pool, "Key 2", user.id, None).await.unwrap();
+        create(
+            &pool,
+            "Key 1",
+            user.id,
+            None,
+            vec![ApiKeyScope::ApiInference],
+        )
+        .await
+        .unwrap();
+        create(
+            &pool,
+            "Key 2",
+            user.id,
+            None,
+            vec![ApiKeyScope::ApiInference],
+        )
+        .await
+        .unwrap();
 
         let keys = list(&pool).await.unwrap();
         assert_eq!(keys.len(), 2);
@@ -297,7 +344,15 @@ mod tests {
             .await
             .unwrap();
 
-        let api_key = create(&pool, "Test Key", user.id, None).await.unwrap();
+        let api_key = create(
+            &pool,
+            "Test Key",
+            user.id,
+            None,
+            vec![ApiKeyScope::ApiInference],
+        )
+        .await
+        .unwrap();
 
         delete(&pool, api_key.id).await.unwrap();
 

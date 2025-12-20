@@ -108,9 +108,15 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     .expect("Failed to create test user");
 
     // テスト用のAPIキーを作成
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
+    let api_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "test-key",
+        test_user.id,
+        None,
+        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+    )
+    .await
+    .expect("Failed to create test API key");
 
     (state, api_key.key)
 }

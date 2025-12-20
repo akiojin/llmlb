@@ -100,6 +100,7 @@ pub async fn register_node_with_runtimes(
 
     Client::new()
         .post(format!("http://{router_addr}/v0/nodes"))
+        .header("authorization", "Bearer sk_debug")
         .json(&payload)
         .send()
         .await
@@ -136,7 +137,8 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
-            "expires_at": null
+            "expires_at": null,
+            "scopes": ["api:inference"]
         }))
         .send()
         .await

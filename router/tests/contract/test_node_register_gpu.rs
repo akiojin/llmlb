@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router_common::auth::{ApiKeyScope, UserRole};
 use serde_json::json;
 use serial_test::serial;
 use tower::ServiceExt;
@@ -16,7 +17,7 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
-async fn build_app() -> Router {
+async fn build_app() -> (Router, String) {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!(
         "or-test-{}-{}",
@@ -49,7 +50,23 @@ async fn build_app() -> Router {
         http_client: reqwest::Client::new(),
     };
 
-    api::create_router(state)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &state.db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
+
+    (api::create_router(state), admin_key)
 }
 
 #[tokio::test]
@@ -70,7 +87,7 @@ async fn register_gpu_node_success() {
     let mock_port = mock_server.address().port();
     let runtime_port = mock_port - 1;
 
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let payload = json!({
         "machine_name": "gpu-node",
@@ -89,6 +106,7 @@ async fn register_gpu_node_success() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -103,6 +121,7 @@ async fn register_gpu_node_success() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -135,7 +154,7 @@ async fn register_gpu_node_success() {
 #[serial]
 async fn register_gpu_node_missing_devices_is_rejected() {
     // GPUデバイスが空の場合、ヘルスチェック前にバリデーションで拒否される
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let payload = json!({
         "machine_name": "cpu-only",
@@ -151,6 +170,7 @@ async fn register_gpu_node_missing_devices_is_rejected() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),

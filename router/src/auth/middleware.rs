@@ -6,21 +6,118 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use llm_router_common::auth::{Claims, UserRole};
+use llm_router_common::auth::{ApiKeyScope, Claims, UserRole};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 #[cfg(debug_assertions)]
-const DEBUG_API_KEY: &str = "sk_debug";
+const DEBUG_API_KEY_ALL: &str = "sk_debug";
+#[cfg(debug_assertions)]
+const DEBUG_API_KEY_NODE: &str = "sk_debug_node";
+#[cfg(debug_assertions)]
+const DEBUG_API_KEY_API: &str = "sk_debug_api";
+#[cfg(debug_assertions)]
+const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
 
 #[cfg(debug_assertions)]
-fn debug_api_key_is_valid(request_key: &str) -> bool {
-    request_key == DEBUG_API_KEY
+fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
+    match request_key {
+        DEBUG_API_KEY_ALL => Some(ApiKeyScope::all()),
+        DEBUG_API_KEY_NODE => Some(vec![ApiKeyScope::NodeRegister]),
+        DEBUG_API_KEY_API => Some(vec![ApiKeyScope::ApiInference]),
+        DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::AdminAll]),
+        _ => None,
+    }
 }
 
 #[cfg(not(debug_assertions))]
-fn debug_api_key_is_valid(_request_key: &str) -> bool {
-    false
+fn debug_api_key_scopes(_request_key: &str) -> Option<Vec<ApiKeyScope>> {
+    None
+}
+
+/// APIキー認証済みのコンテキスト
+#[derive(Debug, Clone)]
+pub struct ApiKeyAuthContext {
+    /// APIキーID
+    pub id: Uuid,
+    /// APIキー発行者のユーザーID
+    pub created_by: Uuid,
+    /// APIキーのスコープ一覧
+    pub scopes: Vec<ApiKeyScope>,
+}
+
+fn has_scope(scopes: &[ApiKeyScope], required: ApiKeyScope) -> bool {
+    if scopes.contains(&ApiKeyScope::AdminAll) {
+        return true;
+    }
+    scopes.contains(&required)
+}
+
+async fn authenticate_api_key(
+    pool: &sqlx::SqlitePool,
+    api_key: &str,
+) -> Result<ApiKeyAuthContext, Response> {
+    if let Some(scopes) = debug_api_key_scopes(api_key) {
+        tracing::warn!("Authenticated via debug API key (debug build only)");
+        return Ok(ApiKeyAuthContext {
+            id: Uuid::nil(),
+            created_by: Uuid::nil(),
+            scopes,
+        });
+    }
+
+    let key_hash = hash_with_sha256(api_key);
+    let api_key_record = crate::db::api_keys::find_by_hash(pool, &key_hash)
+        .await
+        .map_err(|e| {
+            tracing::warn!("API key verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response()
+        })?
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response())?;
+
+    if let Some(expires_at) = api_key_record.expires_at {
+        if expires_at < chrono::Utc::now() {
+            return Err((StatusCode::UNAUTHORIZED, "API key expired".to_string()).into_response());
+        }
+    }
+
+    Ok(ApiKeyAuthContext {
+        id: api_key_record.id,
+        created_by: api_key_record.created_by,
+        scopes: api_key_record.scopes,
+    })
+}
+
+#[allow(clippy::result_large_err)]
+fn extract_api_key(request: &Request) -> Result<String, Response> {
+    if let Some(api_key) = request
+        .headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+    {
+        return Ok(api_key.to_string());
+    }
+
+    if let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            return Ok(token.to_string());
+        }
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Invalid Authorization header format. Expected 'Bearer <token>'".to_string(),
+        )
+            .into_response());
+    }
+
+    Err((
+        StatusCode::UNAUTHORIZED,
+        "Missing X-API-Key header or Authorization header".to_string(),
+    )
+        .into_response())
 }
 
 /// JWT認証ミドルウェア
@@ -92,65 +189,81 @@ pub async fn api_key_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    // X-API-Keyヘッダーまたは Authorization: Bearer トークンを取得
-    let api_key = if let Some(api_key) = request
-        .headers()
-        .get("X-API-Key")
-        .and_then(|h| h.to_str().ok())
-    {
-        // X-API-Keyヘッダーから取得
-        api_key.to_string()
-    } else if let Some(auth_header) = request
+    let api_key = extract_api_key(&request)?;
+    let auth_context = authenticate_api_key(&pool, &api_key).await?;
+    request.extensions_mut().insert(auth_context);
+
+    Ok(next.run(request).await)
+}
+
+/// APIキーのスコープを要求するミドルウェア
+pub async fn require_api_key_scope_middleware(
+    State(required_scope): State<ApiKeyScope>,
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let auth_context = request
+        .extensions()
+        .get::<ApiKeyAuthContext>()
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                "Missing API key authentication".to_string(),
+            )
+                .into_response()
+        })?;
+
+    if !has_scope(&auth_context.scopes, required_scope) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Insufficient API key scope".to_string(),
+        )
+            .into_response());
+    }
+
+    Ok(next.run(request).await)
+}
+
+/// 管理者権限（JWTまたはadmin:*スコープAPIキー）ミドルウェア
+pub async fn admin_or_api_key_middleware(
+    State(app_state): State<crate::AppState>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // JWTがあれば優先
+    if let Some(auth_header) = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
     {
-        // Authorization: Bearer トークンから取得
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            token.to_string()
-        } else {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                "Invalid Authorization header format. Expected 'Bearer <token>'".to_string(),
-            )
-                .into_response());
+            if let Ok(claims) = crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret) {
+                if claims.role == UserRole::Admin {
+                    request.extensions_mut().insert(claims);
+                    return Ok(next.run(request).await);
+                }
+                return Err(
+                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
+                );
+            }
         }
-    } else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Missing X-API-Key header or Authorization header".to_string(),
-        )
-            .into_response());
+    }
+
+    // JWTがない/無効ならAPIキーで認証
+    let api_key = extract_api_key(&request)?;
+    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
+
+    if !has_scope(&auth_context.scopes, ApiKeyScope::AdminAll) {
+        return Err((StatusCode::FORBIDDEN, "Admin scope required".to_string()).into_response());
+    }
+
+    // APIキーの発行者を管理者として扱う
+    let claims = Claims {
+        sub: auth_context.created_by.to_string(),
+        role: UserRole::Admin,
+        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
     };
-
-    // デバッグビルド時のみ: 固定のデバッグ用APIキーを許可
-    if debug_api_key_is_valid(&api_key) {
-        tracing::warn!("Authenticated via debug API key (debug build only)");
-        request.extensions_mut().insert(Uuid::nil());
-        return Ok(next.run(request).await);
-    }
-
-    // SHA-256ハッシュ化
-    let key_hash = hash_with_sha256(&api_key);
-
-    // データベースでAPIキーを検証
-    let api_key_record = crate::db::api_keys::find_by_hash(&pool, &key_hash)
-        .await
-        .map_err(|e| {
-            tracing::warn!("API key verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response()
-        })?
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response())?;
-
-    // 有効期限チェック
-    if let Some(expires_at) = api_key_record.expires_at {
-        if expires_at < chrono::Utc::now() {
-            return Err((StatusCode::UNAUTHORIZED, "API key expired".to_string()).into_response());
-        }
-    }
-
-    // APIキーIDをrequestの拡張データに格納
-    request.extensions_mut().insert(api_key_record.id);
+    request.extensions_mut().insert(claims);
 
     Ok(next.run(request).await)
 }
@@ -190,57 +303,24 @@ pub async fn api_key_or_node_token_auth_middleware(
     }
 
     // 次に APIキーで認証
-    let api_key = if let Some(api_key) = request
-        .headers()
-        .get("X-API-Key")
-        .and_then(|h| h.to_str().ok())
-    {
-        api_key.to_string()
-    } else if let Some(auth_header) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            token.to_string()
-        } else {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                "Invalid Authorization header format. Expected 'Bearer <token>'".to_string(),
-            )
-                .into_response());
-        }
-    } else {
-        return Err((
+    let api_key = extract_api_key(&request).map_err(|_| {
+        (
             StatusCode::UNAUTHORIZED,
             "Missing X-Node-Token header or API key".to_string(),
         )
+            .into_response()
+    })?;
+    let auth_context = authenticate_api_key(&pool, &api_key).await?;
+
+    if !has_scope(&auth_context.scopes, ApiKeyScope::ApiInference) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Insufficient API key scope".to_string(),
+        )
             .into_response());
-    };
-
-    // デバッグビルド時のみ: 固定のデバッグ用APIキーを許可
-    if debug_api_key_is_valid(&api_key) {
-        tracing::warn!("Authenticated via debug API key (debug build only)");
-        request.extensions_mut().insert(Uuid::nil());
-        return Ok(next.run(request).await);
     }
 
-    let key_hash = hash_with_sha256(&api_key);
-    let api_key_record = crate::db::api_keys::find_by_hash(&pool, &key_hash)
-        .await
-        .map_err(|e| {
-            tracing::warn!("API key verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response()
-        })?
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response())?;
-
-    if let Some(expires_at) = api_key_record.expires_at {
-        if expires_at < chrono::Utc::now() {
-            return Err((StatusCode::UNAUTHORIZED, "API key expired".to_string()).into_response());
-        }
-    }
-
-    request.extensions_mut().insert(api_key_record.id);
+    request.extensions_mut().insert(auth_context);
     Ok(next.run(request).await)
 }
 
@@ -367,9 +447,9 @@ mod tests {
             .route(
                 "/t",
                 axum::routing::get(
-                    |axum::extract::Extension(api_key_id): axum::extract::Extension<Uuid>| async move {
-                        api_key_id.to_string()
-                    },
+                    |axum::extract::Extension(auth): axum::extract::Extension<
+                        ApiKeyAuthContext,
+                    >| async move { format!("{}:{}", auth.id, auth.scopes.len()) },
                 ),
             )
             .layer(axum::middleware::from_fn_with_state(
@@ -381,7 +461,7 @@ mod tests {
             .oneshot(
                 axum::http::Request::builder()
                     .uri("/t")
-                    .header("x-api-key", DEBUG_API_KEY)
+                    .header("x-api-key", DEBUG_API_KEY_ALL)
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -392,7 +472,9 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), usize::MAX)
             .await
             .unwrap();
-        assert_eq!(&body[..], Uuid::nil().to_string().as_bytes());
+        let body_str = std::str::from_utf8(&body).unwrap();
+        assert!(body_str.starts_with(&Uuid::nil().to_string()));
+        assert!(body_str.contains(&ApiKeyScope::all().len().to_string()));
     }
 
     #[cfg(not(debug_assertions))]

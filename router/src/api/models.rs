@@ -117,6 +117,25 @@ pub fn list_registered_models() -> Vec<ModelInfo> {
     REGISTERED_MODELS.read().unwrap().clone()
 }
 
+/// GET /v0/models - 登録済みモデル一覧（拡張メタデータ付き）
+///
+/// ノード同期用途向け。配列を直接返す。
+pub async fn list_models() -> Json<Vec<ModelInfo>> {
+    let mut models = list_registered_models();
+
+    for model in models.iter_mut() {
+        if model.path.is_none() {
+            if let Some(path) = router_model_path(&model.name) {
+                if path.exists() {
+                    model.path = Some(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    Json(models)
+}
+
 fn find_model_by_name(name: &str) -> Option<ModelInfo> {
     list_registered_models()
         .into_iter()

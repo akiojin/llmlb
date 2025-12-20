@@ -16,7 +16,9 @@ test.describe('API Error Handling', () => {
   test('returns 503 when no nodes are available', async ({ request }) => {
     // This test verifies that the router returns 503 when there are no nodes
     // Skip if nodes are available (normal operation)
-    const nodesResponse = await request.get(`${API_BASE}/v0/nodes`);
+    const nodesResponse = await request.get(`${API_BASE}/v0/nodes`, {
+      headers: { 'Authorization': 'Bearer sk_debug' }
+    });
     const nodesData = await nodesResponse.json();
 
     if (nodesData.nodes && nodesData.nodes.length > 0) {

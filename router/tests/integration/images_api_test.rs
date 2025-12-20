@@ -231,9 +231,15 @@ async fn test_no_image_capable_node_returns_503() {
     )
     .await
     .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
+    let api_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "test-key",
+        test_user.id,
+        None,
+        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+    )
+    .await
+    .expect("Failed to create test API key");
 
     // 画像生成リクエストを試行（JSON形式）
     let image_request = json!({
@@ -289,9 +295,15 @@ async fn test_image_api_routes_exist() {
     )
     .await
     .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
+    let api_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "test-key",
+        test_user.id,
+        None,
+        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+    )
+    .await
+    .expect("Failed to create test API key");
 
     // /v1/images/generations (POST)
     let gen_response = app

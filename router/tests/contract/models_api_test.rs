@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router_common::auth::{ApiKeyScope, UserRole};
 use serde_json::json;
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -16,7 +17,7 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-async fn build_app() -> Router {
+async fn build_app() -> (Router, String) {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!(
         "or-test-{}-{}",
@@ -75,14 +76,34 @@ with open(outfile, "wb") as f:
         http_client: reqwest::Client::new(),
     };
 
-    api::create_router(state)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &state.db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
+
+    (api::create_router(state), admin_key)
+}
+
+fn admin_request(admin_key: &str) -> axum::http::request::Builder {
+    Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
 /// モデル配布APIは廃止（ノードが /v1/models と /v0/models/blob から自律取得）
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let request_body = json!({
         "model_name": "gpt-oss-20b",
@@ -92,7 +113,7 @@ async fn test_distribute_models_endpoint_is_removed() {
 
     let response = app
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/distribute")
                 .header("content-type", "application/json")
@@ -116,11 +137,11 @@ async fn test_distribute_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let response = app
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("GET")
                 .uri("/v0/models/available?source=hf")
                 .body(Body::empty())
@@ -144,11 +165,11 @@ async fn test_get_available_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_node_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let response = app
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("GET")
                 .uri(format!("/v0/nodes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
@@ -168,7 +189,7 @@ async fn test_get_node_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_pull_model_to_node_endpoint_is_removed() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let request_body = json!({
         "model_name": "gpt-oss-3b"
@@ -176,7 +197,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
 
     let response = app
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri(format!("/v0/nodes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
@@ -197,11 +218,11 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_tasks_endpoint_is_removed() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let response = app
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("GET")
                 .uri("/v0/tasks")
                 .body(Body::empty())
@@ -232,7 +253,7 @@ async fn test_register_model_contract() {
 
     std::env::set_var("HF_BASE_URL", mock.uri());
 
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     // 正常登録
     let payload = json!({
@@ -244,7 +265,7 @@ async fn test_register_model_contract() {
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -260,7 +281,7 @@ async fn test_register_model_contract() {
     let models_res = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("GET")
                 .uri("/v1/models")
                 .header("x-api-key", "sk_debug")
@@ -285,7 +306,7 @@ async fn test_register_model_contract() {
     let dup = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -311,7 +332,7 @@ async fn test_register_model_contract() {
     let missing = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -337,7 +358,7 @@ async fn test_register_model_contract() {
     let repo_only = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -367,7 +388,7 @@ async fn test_register_model_contract() {
     let repo_only_fallback = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -386,7 +407,7 @@ async fn test_register_model_contract() {
     let delete_res = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("DELETE")
                 .uri("/v0/models/test/repo")
                 .body(Body::empty())
@@ -398,7 +419,7 @@ async fn test_register_model_contract() {
     assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
 
     // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
-    let app_for_convert = build_app().await;
+    let (app_for_convert, admin_key) = build_app().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
     Mock::given(method("GET"))
         .and(path("/api/models/convertible-repo"))
@@ -425,7 +446,7 @@ async fn test_register_model_contract() {
     let reg_convert = app_for_convert
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -443,7 +464,7 @@ async fn test_register_model_contract() {
         let resp = app_for_convert
             .clone()
             .oneshot(
-                Request::builder()
+                admin_request(&admin_key)
                     .method("GET")
                     .uri("/v1/models")
                     .header("x-api-key", "sk_debug")
@@ -500,13 +521,13 @@ async fn test_download_failure_shows_error_status() {
         .mount(&mock)
         .await;
 
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     // register -> download fails
     let reg = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("POST")
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
@@ -573,7 +594,7 @@ async fn test_download_failure_shows_error_status() {
     let delete_resp = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request(&admin_key)
                 .method("DELETE")
                 .uri("/v0/models/error-test-repo")
                 .header("x-api-key", "sk_debug")

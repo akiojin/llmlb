@@ -252,9 +252,9 @@ namespace llm_node {
 
 ModelDownloader::ModelDownloader(std::string registry_base, std::string models_dir,
                                  std::chrono::milliseconds timeout, int max_retries,
-                                 std::chrono::milliseconds backoff)
+                                 std::chrono::milliseconds backoff, std::string api_key)
     : registry_base_(std::move(registry_base)), models_dir_(std::move(models_dir)), timeout_(timeout),
-      max_retries_(max_retries), backoff_(backoff) {
+      max_retries_(max_retries), backoff_(backoff), api_key_(std::move(api_key)) {
 
     // override by config
     auto cfg_pair = loadDownloadConfigWithLog();
@@ -284,7 +284,12 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     // ロック取得できなくてもベストエフォートで進める
     httplib::Result res;
     for (int attempt = 0; attempt <= max_retries_; ++attempt) {
-        res = client->Get(path.c_str());
+        if (!api_key_.empty()) {
+            httplib::Headers headers = {{"Authorization", "Bearer " + api_key_}};
+            res = client->Get(path.c_str(), headers);
+        } else {
+            res = client->Get(path.c_str());
+        }
         if (res && res->status >= 200 && res->status < 300) break;
         if (attempt < max_retries_) std::this_thread::sleep_for(backoff_);
     }
@@ -315,6 +320,7 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
 std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std::string& filename, ProgressCallback cb,
                                           const std::string& expected_sha256, const std::string& if_none_match) {
     ParsedUrl url = parseUrl(blob_url);
+    const bool is_relative = url.scheme.empty();
 
     // blob_url が相対パスの場合は registry_base_ を基準に解決する
     if (url.scheme.empty()) {
@@ -357,6 +363,9 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
     // If-None-Match handling: use simple GET and short-circuit 304 without streaming
     if (!if_none_match.empty()) {
         httplib::Headers hdrs{{"If-None-Match", if_none_match}};
+        if (is_relative && !api_key_.empty()) {
+            hdrs.emplace("Authorization", "Bearer " + api_key_);
+        }
         for (int attempt = 0; attempt <= max_retries_; ++attempt) {
             auto res = client->Get(url.path, hdrs);
             if (res) {
@@ -406,6 +415,9 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
             auto start_time = std::chrono::steady_clock::now();
 
             httplib::Headers headers;
+            if (is_relative && !api_key_.empty()) {
+                headers.emplace("Authorization", "Bearer " + api_key_);
+            }
             if (use_range && offset > 0) {
                 headers.emplace("Range", "bytes=" + std::to_string(offset) + "-");
             }

@@ -8,7 +8,11 @@ use axum::{
     Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
-use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+use llm_router_common::{
+    auth::{ApiKeyScope, UserRole},
+    protocol::RegisterRequest,
+    types::GpuDeviceInfo,
+};
 use serde_json::json;
 use std::net::IpAddr;
 use tower::ServiceExt;
@@ -17,7 +21,7 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
-async fn build_app() -> Router {
+async fn build_app() -> (Router, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
@@ -41,20 +45,37 @@ async fn build_app() -> Router {
         http_client: reqwest::Client::new(),
     };
 
-    api::create_router(state)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &state.db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
+
+    (api::create_router(state), admin_key)
 }
 
 /// T018: /v0/models/available は廃止され、/v0/models に統合
 /// NOTE: HuggingFaceカタログ参照は廃止。登録済みモデル一覧は /v0/models で取得
 #[tokio::test]
 async fn test_available_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/v0/models/available")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -88,7 +109,7 @@ async fn test_list_installed_models_on_node() {
     let mock_port = mock_server.address().port();
     let runtime_port = mock_port - 1;
 
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     // テスト用ノードを登録
     let register_request = RegisterRequest {
@@ -113,6 +134,7 @@ async fn test_list_installed_models_on_node() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -152,6 +174,7 @@ async fn test_list_installed_models_on_node() {
                 .method("POST")
                 .uri("/v0/health")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("X-Node-Token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                 .unwrap(),
@@ -171,6 +194,7 @@ async fn test_list_installed_models_on_node() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -203,7 +227,7 @@ async fn test_list_installed_models_on_node() {
 #[tokio::test]
 #[ignore = "TODO: Requires multiple mock servers for proper health check testing"]
 async fn test_model_matrix_view_multiple_nodes() {
-    let app = build_app().await;
+    let (app, admin_key) = build_app().await;
 
     // 複数のモックサーバーを起動
     let mut mock_servers = Vec::new();
@@ -248,6 +272,7 @@ async fn test_model_matrix_view_multiple_nodes() {
                 Request::builder()
                     .method("POST")
                     .uri("/v0/nodes")
+                    .header("authorization", format!("Bearer {}", admin_key))
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                     .unwrap(),
@@ -291,6 +316,7 @@ async fn test_model_matrix_view_multiple_nodes() {
                     .method("POST")
                     .uri("/v0/health")
                     .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {}", admin_key))
                     .header("X-Node-Token", node_token)
                     .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                     .unwrap(),
@@ -307,6 +333,7 @@ async fn test_model_matrix_view_multiple_nodes() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -383,9 +410,15 @@ async fn test_v1_models_returns_fixed_list() {
     )
     .await
     .expect("Failed to create test user");
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
+    let api_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "test-key",
+        test_user.id,
+        None,
+        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+    )
+    .await
+    .expect("Failed to create test API key");
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());

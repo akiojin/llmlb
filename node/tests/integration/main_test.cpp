@@ -29,14 +29,25 @@ public:
 TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
     const int router_port = 18130;
     const int node_port = 18131;
+    const std::string expected_auth = "Bearer sk_test_node";
 
     // Stub router that accepts register/heartbeat and lists one model
     httplib::Server router;
-    router.Post("/v0/nodes", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/v0/nodes", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.get_header_value("Authorization") != expected_auth) {
+            res.status = 401;
+            res.set_content("missing auth", "text/plain");
+            return;
+        }
         res.status = 200;
         res.set_content(R"({"node_id":"test-node","node_token":"test-token"})", "application/json");
     });
-    router.Post("/v0/health", [](const httplib::Request&, httplib::Response& res) {
+    router.Post("/v0/health", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.get_header_value("Authorization") != expected_auth) {
+            res.status = 401;
+            res.set_content("missing auth", "text/plain");
+            return;
+        }
         res.status = 200;
         res.set_content("ok", "text/plain");
     });
@@ -53,6 +64,7 @@ TEST(MainTest, RunsWithStubRouterAndShutsDownOnFlag) {
     setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
+    setenv("LLM_NODE_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
     std::thread node_thread([&]() { exit_code = llm_node_run_for_test(); });
@@ -94,6 +106,7 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
     setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
+    setenv("LLM_NODE_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
     std::thread node_thread([&]() { exit_code = llm_node_run_for_test(); });

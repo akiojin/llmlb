@@ -27,6 +27,7 @@ use axum::{
     Router,
 };
 use include_dir::{include_dir, Dir, File};
+use llm_router_common::auth::ApiKeyScope;
 use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
@@ -42,9 +43,17 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
     // `/v0/*`: llm-router独自API（管理/運用向け）
-    // JWT認証が必要な保護されたルート
-    let protected_routes = Router::new()
+    // JWTが必要な認証ルート（ログイン以外）
+    let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
+        .route("/auth/logout", post(auth::logout))
+        .layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
+
+    // 管理者API（JWTまたはadmin:*スコープAPIキー）
+    let admin_routes = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
         .route(
             "/users/:id",
@@ -58,17 +67,83 @@ pub fn create_router(state: AppState) -> Router {
             "/api-keys/:id",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
+        // ノード管理（一覧・削除・設定更新・メトリクス）
+        .route("/nodes", get(nodes::list_nodes))
+        .route("/nodes/:node_id", delete(nodes::delete_node))
+        .route("/nodes/:node_id/disconnect", post(nodes::disconnect_node))
+        .route("/nodes/:node_id/settings", put(nodes::update_node_settings))
+        .route("/nodes/metrics", get(nodes::list_node_metrics))
+        .route("/metrics/summary", get(nodes::metrics_summary))
+        // ダッシュボードAPI
+        .route("/dashboard/nodes", get(dashboard::get_nodes))
+        .route("/dashboard/stats", get(dashboard::get_stats))
+        .route(
+            "/dashboard/request-history",
+            get(dashboard::get_request_history),
+        )
+        .route("/dashboard/overview", get(dashboard::get_overview))
+        .route(
+            "/dashboard/metrics/:node_id",
+            get(dashboard::get_node_metrics),
+        )
+        .route(
+            "/dashboard/request-responses",
+            get(dashboard::list_request_responses),
+        )
+        .route(
+            "/dashboard/request-responses/:id",
+            get(dashboard::get_request_response_detail),
+        )
+        .route(
+            "/dashboard/request-responses/export",
+            get(dashboard::export_request_responses),
+        )
+        .route("/dashboard/logs/router", get(logs::get_router_logs))
+        // ノードログ取得（router→node proxy）
+        .route("/nodes/:node_id/logs", get(logs::get_node_logs))
+        // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
+        .route("/models/register", post(models::register_model))
+        .route("/models/*model_name", delete(models::delete_model))
+        .route(
+            "/models/discover-gguf",
+            post(models::discover_gguf_endpoint),
+        )
+        // Prometheus metrics（cloud prefix含む独自メトリクス）
+        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
         .layer(middleware::from_fn_with_state(
-            state.jwt_secret.clone(),
-            crate::auth::middleware::jwt_auth_middleware,
+            state.clone(),
+            crate::auth::middleware::admin_or_api_key_middleware,
         ));
 
-    // ノードトークン認証が必要なルート
+    // ノード登録（node:registerスコープが必要）
+    let node_register_routes = Router::new()
+        .route("/nodes", post(nodes::register_node))
+        .route("/models", get(models::list_models))
+        // モデルファイル配信API (SPEC-48678000)
+        .route("/models/blob/:model_name", get(models::get_model_blob))
+        .layer(middleware::from_fn_with_state(
+            ApiKeyScope::NodeRegister,
+            crate::auth::middleware::require_api_key_scope_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
+        ));
+
+    // ノードトークン + APIキー認証が必要なルート
     let node_protected_routes = Router::new()
         .route("/health", post(health::health_check))
         .layer(middleware::from_fn_with_state(
             state.db_pool.clone(),
             crate::auth::middleware::node_token_auth_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            ApiKeyScope::NodeRegister,
+            crate::auth::middleware::require_api_key_scope_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
         ));
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
@@ -84,10 +159,15 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/images/edits", post(images::edits))
         .route("/v1/images/variations", post(images::variations));
 
-    let api_key_protected_routes = api_key_routes.layer(middleware::from_fn_with_state(
-        state.db_pool.clone(),
-        crate::auth::middleware::api_key_auth_middleware,
-    ));
+    let api_key_protected_routes = api_key_routes
+        .layer(middleware::from_fn_with_state(
+            ApiKeyScope::ApiInference,
+            crate::auth::middleware::require_api_key_scope_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
+        ));
 
     // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
     let models_routes = Router::new()
@@ -107,59 +187,12 @@ pub fn create_router(state: AppState) -> Router {
         .nest(
             "/v0",
             Router::new()
-                // 認証エンドポイント（認証不要）
+                // 認証エンドポイント（ログインは認証不要）
                 .route("/auth/login", post(auth::login))
-                .route("/auth/logout", post(auth::logout))
-                // 保護されたルート
-                .merge(protected_routes)
-                .merge(node_protected_routes)
-                // ノード管理
-                .route("/nodes", post(nodes::register_node).get(nodes::list_nodes))
-                .route("/nodes/:node_id", delete(nodes::delete_node))
-                .route("/nodes/:node_id/disconnect", post(nodes::disconnect_node))
-                .route("/nodes/:node_id/settings", put(nodes::update_node_settings))
-                .route("/nodes/metrics", get(nodes::list_node_metrics))
-                .route("/metrics/summary", get(nodes::metrics_summary))
-                // ダッシュボードAPI
-                .route("/dashboard/nodes", get(dashboard::get_nodes))
-                .route("/dashboard/stats", get(dashboard::get_stats))
-                .route(
-                    "/dashboard/request-history",
-                    get(dashboard::get_request_history),
-                )
-                .route("/dashboard/overview", get(dashboard::get_overview))
-                .route(
-                    "/dashboard/metrics/:node_id",
-                    get(dashboard::get_node_metrics),
-                )
-                .route(
-                    "/dashboard/request-responses",
-                    get(dashboard::list_request_responses),
-                )
-                .route(
-                    "/dashboard/request-responses/:id",
-                    get(dashboard::get_request_response_detail),
-                )
-                .route(
-                    "/dashboard/request-responses/export",
-                    get(dashboard::export_request_responses),
-                )
-                .route("/dashboard/logs/router", get(logs::get_router_logs))
-                // ノードログ取得（router→node proxy）
-                .route("/nodes/:node_id/logs", get(logs::get_node_logs))
-                // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
-                // NOTE: /models/available, /models/convert, /v0/models (GET) は廃止
-                // モデル一覧は /v1/models を使用（Azure OpenAI 形式の capabilities 付き）
-                .route("/models/register", post(models::register_model))
-                .route("/models/*model_name", delete(models::delete_model))
-                .route(
-                    "/models/discover-gguf",
-                    post(models::discover_gguf_endpoint),
-                )
-                // モデルファイル配信API (SPEC-48678000)
-                .route("/models/blob/:model_name", get(models::get_model_blob))
-                // Prometheus metrics（cloud prefix含む独自メトリクス）
-                .route("/metrics/cloud", get(cloud_metrics::export_metrics)),
+                .merge(auth_routes)
+                .merge(admin_routes)
+                .merge(node_register_routes)
+                .merge(node_protected_routes),
         )
         // OpenAI互換API
         .merge(api_key_protected_routes)
@@ -363,6 +396,7 @@ mod tests {
             .call(
                 Request::builder()
                     .uri("/v0/dashboard/nodes")
+                    .header("authorization", "Bearer sk_debug_admin")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -399,6 +433,7 @@ mod tests {
             .call(
                 Request::builder()
                     .uri("/v0/dashboard/overview")
+                    .header("authorization", "Bearer sk_debug_admin")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -461,6 +496,7 @@ mod tests {
             .call(
                 Request::builder()
                     .uri(format!("/v0/dashboard/metrics/{node_id}"))
+                    .header("authorization", "Bearer sk_debug_admin")
                     .body(Body::empty())
                     .unwrap(),
             )

@@ -50,6 +50,11 @@ async fn spawn_image_stub() -> http::TestServer {
     http::spawn_router(router).await
 }
 
+fn runtime_port_for_stub(stub: &http::TestServer) -> u16 {
+    // Router derives the node API port as runtime_port + 1.
+    stub.addr().port().saturating_sub(1)
+}
+
 async fn image_gen_handler(Json(_payload): Json<serde_json::Value>) -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -123,7 +128,7 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
         "machine_name": "sd-node",
         "ip_address": stub.addr().ip().to_string(),
         "runtime_version": "0.1.0",
-        "runtime_port": stub.addr().port().saturating_sub(1),
+        "runtime_port": runtime_port_for_stub(&stub),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1, "memory": 24576}
@@ -196,7 +201,7 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
         "machine_name": "multi-runtime-node",
         "ip_address": stub.addr().ip().to_string(),
         "runtime_version": "0.1.0",
-        "runtime_port": stub.addr().port().saturating_sub(1),
+        "runtime_port": runtime_port_for_stub(&stub),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 2, "memory": 24576}
@@ -272,7 +277,7 @@ async fn test_no_image_capable_node_returns_503() {
         "machine_name": "llm-only-node",
         "ip_address": stub.addr().ip().to_string(),
         "runtime_version": "0.1.0",
-        "runtime_port": stub.addr().port().saturating_sub(1),
+        "runtime_port": runtime_port_for_stub(&stub),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "NVIDIA RTX 4090", "count": 1}

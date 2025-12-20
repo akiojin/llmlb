@@ -353,6 +353,51 @@
 
 ---
 
+## Phase 3.8: SQLite移行 (2025-12-20)
+
+### 背景
+
+- spec.mdの技術制約がJSONからSQLiteに変更された
+- 認証システム（users, api_keys, node_tokens）と同じDBに統合する
+- インデックスによる高速クエリを実現
+
+### タスク
+
+- [ ] T044 [P] `router/migrations/002_request_history.sql` マイグレーション作成
+  - request_historyテーブル定義
+  - timestamp, model, node_idインデックス
+  - 依存: なし
+
+- [ ] T045 `router/src/db/request_history.rs` SQLite対応テスト作成 (RED)
+  - SQLite版のsave_record()テスト
+  - SQLite版のload_records()テスト
+  - SQLite版のfilter_and_paginate()テスト
+  - 依存: T044
+
+- [ ] T046 `router/src/db/request_history.rs` SQLite実装 (GREEN)
+  - RequestHistoryStorageをSQLite使用に書き換え
+  - 既存のインターフェースを維持
+  - 依存: T045
+
+- [ ] T047 JSON→SQLite移行ロジック実装
+  - 起動時に既存request_history.jsonを検出
+  - SQLiteにデータをインポート
+  - JSONファイルを.migratedにリネーム
+  - 依存: T046
+
+- [ ] T048 `router/src/db/migrations.rs` マイグレーション登録
+  - 002_request_history.sqlを実行するロジック追加
+  - 依存: T044, T046
+
+- [ ] T049 品質チェック＆コミット
+  - `cargo fmt --check` 合格
+  - `cargo clippy -- -D warnings` 合格
+  - `cargo test` 全テスト合格
+  - markdownlint 合格
+  - 依存: T048
+
+---
+
 ## 依存関係グラフ
 
 ```

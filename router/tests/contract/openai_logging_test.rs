@@ -5,30 +5,20 @@
 //! - FR-003: プロキシエラーログ
 //! - FR-004: ノード選択失敗時の履歴保存
 
-use crate::support::router::spawn_test_router;
+use crate::support::router::{spawn_test_router, spawn_test_router_with_db};
+use llm_router::db::request_history::RequestHistoryStorage;
 use llm_router_common::protocol::RecordStatus;
 use reqwest::Client;
 use serial_test::serial;
-use std::path::PathBuf;
+use sqlx::SqlitePool;
+use std::sync::Arc;
 
-/// テスト用の一時ディレクトリパスを取得
-fn get_test_data_dir() -> PathBuf {
-    std::env::temp_dir().join(format!("or-test-{}", std::process::id()))
-}
-
-/// request_history.jsonからレコードを読み込む
-async fn load_request_history() -> Vec<llm_router_common::protocol::RequestResponseRecord> {
-    let history_path = get_test_data_dir().join("request_history.json");
-    if !history_path.exists() {
-        return Vec::new();
-    }
-    let content = tokio::fs::read_to_string(&history_path)
-        .await
-        .unwrap_or_default();
-    if content.trim().is_empty() {
-        return Vec::new();
-    }
-    serde_json::from_str(&content).unwrap_or_default()
+/// SQLiteからリクエスト履歴を読み込む
+async fn load_request_history_from_db(
+    db_pool: &SqlitePool,
+) -> Vec<llm_router_common::protocol::RequestResponseRecord> {
+    let storage = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
+    storage.load_records().await.unwrap_or_default()
 }
 
 /// T002: chat_completionsリクエスト時にレスポンスが返ることを検証
@@ -98,14 +88,8 @@ async fn test_node_selection_failure_returns_error() {
 #[tokio::test]
 #[serial]
 async fn test_node_selection_failure_saves_request_history() {
-    // テスト用データディレクトリをクリア
-    let data_dir = get_test_data_dir();
-    let history_path = data_dir.join("request_history.json");
-    if history_path.exists() {
-        let _ = std::fs::remove_file(&history_path);
-    }
-
-    let router = spawn_test_router().await;
+    // spawn_test_router_with_db()でルーターとDBプールを取得
+    let (router, db_pool) = spawn_test_router_with_db().await;
     let client = Client::new();
 
     // ノードなしでリクエスト送信
@@ -124,7 +108,7 @@ async fn test_node_selection_failure_saves_request_history() {
     let mut records = Vec::new();
     for _ in 0..10 {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        records = load_request_history().await;
+        records = load_request_history_from_db(&db_pool).await;
         if !records.is_empty() {
             break;
         }

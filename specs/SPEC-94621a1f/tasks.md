@@ -28,3 +28,53 @@
 - Router: `router/src/api/nodes.rs`, `router/src/api/health.rs`
 - Node: `node/src/api/router_client.cpp`
 - Protocol: `common/src/protocol.rs`
+
+---
+
+## Phase 2: SQLite移行 (2025-12-20)
+
+### 背景
+
+- spec.mdのFR-004で「ストレージ: SQLite」と明記されている
+- 現在の実装はJSONファイル（`nodes.json`）を使用しており、Specと不整合
+- 認証システム（users, api_keys, node_tokens）と同じDBに統合する
+
+### タスク
+
+- [ ] T050 [P] `router/migrations/003_nodes.sql` マイグレーション作成
+  - nodesテーブル定義（30+フィールド）
+  - node_gpu_devicesテーブル定義
+  - node_loaded_modelsテーブル定義
+  - node_supported_runtimesテーブル定義
+  - 依存: なし
+
+- [ ] T051 `router/src/db/mod.rs` SQLite対応テスト作成 (RED)
+  - SQLite版のsave_node()テスト
+  - SQLite版のload_nodes()テスト
+  - SQLite版のdelete_node()テスト
+  - 関連テーブル（gpu_devices, loaded_models）のテスト
+  - 依存: T050
+
+- [ ] T052 `router/src/db/mod.rs` SQLite実装 (GREEN)
+  - ノードCRUDをSQLite使用に書き換え
+  - 関連テーブルへのINSERT/DELETE処理
+  - 既存のインターフェースを維持
+  - 依存: T051
+
+- [ ] T053 JSON→SQLite移行ロジック実装
+  - 起動時に既存nodes.jsonを検出
+  - SQLiteにデータをインポート
+  - JSONファイルを.migratedにリネーム
+  - 依存: T052
+
+- [ ] T054 `router/src/registry.rs` DB使用に変更
+  - NodeRegistryがSQLiteを直接使用するよう変更
+  - インメモリキャッシュとDBの同期
+  - 依存: T052
+
+- [ ] T055 品質チェック＆コミット
+  - `cargo fmt --check` 合格
+  - `cargo clippy -- -D warnings` 合格
+  - `cargo test` 全テスト合格
+  - markdownlint 合格
+  - 依存: T054

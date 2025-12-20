@@ -7,7 +7,7 @@ metadata:
 
 # Skill Installer
 
-Helps install skills. By default these are from https://github.com/openai/skills/tree/main/skills/.curated, but users can also provide other locations.
+Helps install skills. By default these are from <https://github.com/openai/skills/tree/main/skills/.curated>, but users can also provide other locations.
 
 Use the helper scripts based on the task:
 - List curated skills when the user asks what is available, or if the user uses this skill without specifying what to do.
@@ -49,8 +49,8 @@ All of these scripts use network, so when running in the sandbox, request escala
 
 ## Notes
 
-- Curated listing is fetched from `https://github.com/openai/skills/tree/main/skills/.curated` via the GitHub API. If it is unavailable, explain the error and exit.
+- Curated listing is fetched from <https://github.com/openai/skills/tree/main/skills/.curated> via the GitHub API. If it is unavailable, explain the error and exit.
 - Private GitHub repos can be accessed via existing git credentials or optional `GITHUB_TOKEN`/`GH_TOKEN` for download.
 - Git fallback tries HTTPS first, then SSH.
-- The skills at https://github.com/openai/skills/tree/main/skills/.system are preinstalled, so no need to help users install those. If they ask, just explain this. If they insist, you can download and overwrite.
+- The skills at <https://github.com/openai/skills/tree/main/skills/.system> are preinstalled, so no need to help users install those. If they ask, just explain this. If they insist, you can download and overwrite.
 - Installed annotations come from `$CODEX_HOME/skills`.

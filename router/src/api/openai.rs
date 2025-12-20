@@ -1335,9 +1335,6 @@ mod tests {
     async fn create_local_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history =
-            Arc::new(RequestHistoryStorage::new().expect("request history storage"));
-        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("sqlite memory connect");
@@ -1345,6 +1342,8 @@ mod tests {
             .run(&db_pool)
             .await
             .expect("migrations");
+        let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
+        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         AppState {
             registry,
             load_manager,

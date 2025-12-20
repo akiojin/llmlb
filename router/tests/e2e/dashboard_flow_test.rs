@@ -30,10 +30,11 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = support::router::create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = support::router::test_jwt_secret();
 
     let state = AppState {

@@ -13,8 +13,7 @@ use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use tower::ServiceExt;
 
-#[path = "../support/http.rs"]
-mod http;
+use crate::support::http;
 
 async fn build_app() -> Router {
     let registry = NodeRegistry::new();

@@ -177,11 +177,12 @@
 
 ## 技術制約 *(該当する場合)*
 
-- 保存方式はJSONファイルベースとし、SQLiteやPostgreSQL等のRDBMSは使用しない
-  （既存のノード情報保存方式と統一）
-- 保存場所は `~/.llm-router/request_history.json` とし、環境変数
-  `LLM_ROUTER_DATA_DIR` で変更可能とする
-- ファイルの読み書きは排他制御（Mutex等）により、並行アクセスの安全性を保証する
+- 保存方式はSQLiteとし、既存の認証システム（`router.db`）と統合する
+  - 認証機能（users, api_keys, node_tokens）と同じDBを使用
+  - インデックスによる高速クエリを実現
+- 保存場所は `~/.llm-router/router.db` の `request_history` テーブル
+- SQLiteのWALモードにより、並行アクセスの安全性を保証する
+- 既存のJSONファイル（`request_history.json`）からの自動移行をサポート
 
 ---
 

@@ -1,15 +1,17 @@
 //! ノード登録管理
 //!
-//! ノードの状態をメモリ内で管理し、データベースと同期
+//! ノードの状態をメモリ内で管理し、SQLiteと同期
 
 pub mod models;
 
+use crate::db::nodes::NodeStorage;
 use chrono::Utc;
 use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
     types::{GpuDeviceInfo, Node, NodeStatus},
 };
+use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -20,26 +22,25 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct NodeRegistry {
     nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
-    storage_enabled: bool,
+    storage: Option<NodeStorage>,
 }
 
 impl NodeRegistry {
-    /// 新しいレジストリを作成
+    /// 新しいレジストリを作成（ストレージなし、テスト用）
     pub fn new() -> Self {
         Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            storage_enabled: false,
+            storage: None,
         }
     }
 
-    /// ストレージ初期化付きでレジストリを作成
-    pub async fn with_storage() -> RouterResult<Self> {
-        // ストレージ初期化
-        crate::db::init_storage().await?;
+    /// SQLiteストレージ付きでレジストリを作成
+    pub async fn with_storage(pool: SqlitePool) -> RouterResult<Self> {
+        let storage = NodeStorage::new(pool);
 
         let registry = Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            storage_enabled: true,
+            storage: Some(storage),
         };
 
         // 起動時にストレージからノード情報を読み込み
@@ -50,11 +51,12 @@ impl NodeRegistry {
 
     /// ストレージからノード情報を読み込み
     async fn load_from_storage(&self) -> RouterResult<()> {
-        if !self.storage_enabled {
-            return Ok(());
-        }
+        let storage = match &self.storage {
+            Some(s) => s,
+            None => return Ok(()),
+        };
 
-        let loaded_nodes = crate::db::load_nodes().await?;
+        let loaded_nodes = storage.load_nodes().await?;
         let mut nodes = self.nodes.write().await;
 
         let mut removed_count = 0;
@@ -128,7 +130,7 @@ impl NodeRegistry {
 
         // 削除対象ノードをデータベースから削除
         for id in removed_ids {
-            if let Err(err) = crate::db::delete_node(id).await {
+            if let Err(err) = storage.delete_node(id).await {
                 error!(
                     node_id = %id,
                     error = %err,
@@ -154,11 +156,10 @@ impl NodeRegistry {
 
     /// ノードをストレージに保存
     async fn save_to_storage(&self, node: &Node) -> RouterResult<()> {
-        if !self.storage_enabled {
-            return Ok(());
+        match &self.storage {
+            Some(storage) => storage.save_node(node).await,
+            None => Ok(()),
         }
-
-        crate::db::save_node(node).await
     }
 
     /// ノードを登録
@@ -492,10 +493,9 @@ impl NodeRegistry {
             return Err(RouterError::NodeNotFound(node_id));
         }
 
-        if self.storage_enabled {
-            crate::db::delete_node(node_id).await
-        } else {
-            Ok(())
+        match &self.storage {
+            Some(storage) => storage.delete_node(node_id).await,
+            None => Ok(()),
         }
     }
 

@@ -375,9 +375,6 @@ mod tests {
     async fn create_test_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history =
-            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -385,6 +382,10 @@ mod tests {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        let request_history = std::sync::Arc::new(
+            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        );
+        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,

@@ -243,9 +243,15 @@ pub async fn ensure_router_model_cached(model: &ModelInfo) -> Option<PathBuf> {
     }
 
     if let Some(existing_any) = router_model_path_any(&model.name) {
-        if tokio::fs::metadata(&existing_any).await.is_ok() {
-            if let Err(err) = tokio::fs::remove_file(&existing_any).await {
-                tracing::warn!(path=?existing_any, err=?err, "cache_model:remove_invalid_failed");
+        if let Ok(meta) = tokio::fs::metadata(&existing_any).await {
+            if meta.is_file() {
+                if let Err(err) = tokio::fs::remove_file(&existing_any).await {
+                    tracing::warn!(path=?existing_any, err=?err, "cache_model:remove_invalid_failed");
+                }
+            } else if meta.is_dir() {
+                if let Err(err) = tokio::fs::remove_dir_all(&existing_any).await {
+                    tracing::warn!(path=?existing_any, err=?err, "cache_model:remove_invalid_dir_failed");
+                }
             }
         }
     }

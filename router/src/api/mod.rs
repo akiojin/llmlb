@@ -50,6 +50,7 @@ pub fn create_router(state: AppState) -> Router {
             "/users/:id",
             put(users::update_user).delete(users::delete_user),
         )
+        .route("/nodes/:node_id/approve", post(nodes::approve_node))
         .route(
             "/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),

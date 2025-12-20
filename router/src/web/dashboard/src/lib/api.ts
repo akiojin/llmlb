@@ -122,6 +122,8 @@ export const authApi = {
 export interface DashboardStats {
   total_nodes: number
   online_nodes: number
+  pending_nodes: number
+  registering_nodes: number
   offline_nodes: number
   total_requests: number
   successful_requests: number
@@ -137,7 +139,7 @@ export interface DashboardNode {
   custom_name?: string
   ip_address: string
   port: number
-  status: 'online' | 'offline'
+  status: 'online' | 'pending' | 'registering' | 'offline'
   runtime_version: string
   gpu_model?: string
   gpu_count?: number
@@ -267,6 +269,9 @@ export const dashboardApi = {
 // Nodes API
 export const nodesApi = {
   list: () => fetchWithAuth<DashboardNode[]>('/v0/nodes'),
+
+  approve: (nodeId: string) =>
+    fetchWithAuth<DashboardNode>(`/v0/nodes/${nodeId}/approve`, { method: 'POST' }),
 
   delete: (nodeId: string) =>
     fetchWithAuth<void>(`/v0/nodes/${nodeId}`, { method: 'DELETE' }),

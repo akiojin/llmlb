@@ -75,7 +75,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
       title: 'Total Nodes',
       value: stats ? formatNumber(stats.total_nodes) : '—',
       subtitle: stats
-        ? `${stats.online_nodes} online, ${stats.offline_nodes} offline`
+        ? `${stats.online_nodes} online, ${stats.pending_nodes} pending, ${stats.registering_nodes} registering, ${stats.offline_nodes} offline`
         : undefined,
       icon: <Server className="h-5 w-5 text-primary" />,
       accentColor: 'primary',

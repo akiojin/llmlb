@@ -98,6 +98,18 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
     },
   })
 
+  // Approve mutation (pending only)
+  const approveMutation = useMutation({
+    mutationFn: () => nodesApi.approve(node!.node_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+      toast({ title: 'Node approved' })
+    },
+    onError: () => {
+      toast({ title: 'Failed to approve', variant: 'destructive' })
+    },
+  })
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: () => nodesApi.delete(node!.node_id),
@@ -159,7 +171,15 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Status</p>
-                <Badge variant={node.status === 'online' ? 'online' : 'offline'}>
+                <Badge
+                  variant={
+                    node.status === 'online'
+                      ? 'online'
+                      : node.status === 'offline'
+                      ? 'offline'
+                      : 'pending'
+                  }
+                >
                   {node.status}
                 </Badge>
               </div>
@@ -371,6 +391,15 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
 
         <DialogFooter className="flex-col sm:flex-row gap-2 mt-4">
           <div className="flex gap-2">
+            {node.status === 'pending' && (
+              <Button
+                variant="outline"
+                onClick={() => approveMutation.mutate()}
+                disabled={approveMutation.isPending}
+              >
+                Approve
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => disconnectMutation.mutate()}

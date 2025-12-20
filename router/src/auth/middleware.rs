@@ -471,12 +471,13 @@ mod tests {
     async fn admin_middleware_allows_bearer_api_key() {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history =
-            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let convert_manager = ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("create sqlite pool");
+        let request_history = std::sync::Arc::new(
+            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        );
+        let convert_manager = ConvertTaskManager::new(1, db_pool.clone());
         let state = crate::AppState {
             registry,
             load_manager,
@@ -510,12 +511,13 @@ mod tests {
     async fn admin_middleware_rejects_invalid_jwt_even_with_api_key() {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history =
-            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let convert_manager = ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("create sqlite pool");
+        let request_history = std::sync::Arc::new(
+            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        );
+        let convert_manager = ConvertTaskManager::new(1, db_pool.clone());
         let state = crate::AppState {
             registry,
             load_manager,

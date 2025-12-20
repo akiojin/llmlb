@@ -148,7 +148,11 @@ export function LogViewer({ nodes }: LogViewerProps) {
                       <span
                         className={cn(
                           'h-2 w-2 rounded-full',
-                          node.status === 'online' ? 'bg-success' : 'bg-destructive'
+                          node.status === 'online'
+                            ? 'bg-success'
+                            : node.status === 'offline'
+                            ? 'bg-destructive'
+                            : 'bg-warning'
                         )}
                       />
                       {node.custom_name || node.machine_name}

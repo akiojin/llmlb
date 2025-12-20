@@ -5,8 +5,9 @@ use crate::{
     registry::NodeSettingsUpdate,
     AppState,
 };
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
 use llm_router_common::{
+    auth::{Claims, UserRole},
     error::RouterError,
     protocol::{RegisterRequest, RegisterResponse},
     types::Node,
@@ -245,6 +246,17 @@ pub async fn update_node_settings(
     Ok(Json(node))
 }
 
+/// POST /v0/nodes/:id/approve - ノードを承認する
+pub async fn approve_node(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<Node>, AppError> {
+    ensure_admin(&claims)?;
+    let node = state.registry.approve(node_id).await?;
+    Ok(Json(node))
+}
+
 /// ノード設定更新リクエスト
 #[derive(Debug, Deserialize)]
 pub struct UpdateNodeSettingsPayload {
@@ -337,6 +349,15 @@ impl IntoResponse for AppError {
 
         (status, Json(payload)).into_response()
     }
+}
+
+fn ensure_admin(claims: &Claims) -> Result<(), AppError> {
+    if claims.role != UserRole::Admin {
+        return Err(AppError(RouterError::Authorization(
+            "Admin access required".to_string(),
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -614,6 +635,8 @@ mod tests {
         let summary = metrics_summary(State(state)).await;
         assert_eq!(summary.total_nodes, 0);
         assert_eq!(summary.online_nodes, 0);
+        assert_eq!(summary.pending_nodes, 0);
+        assert_eq!(summary.registering_nodes, 0);
         assert_eq!(summary.total_requests, 0);
         assert_eq!(summary.total_active_requests, 0);
         assert!(summary.average_response_time_ms.is_none());
@@ -641,6 +664,7 @@ mod tests {
             .unwrap()
             .1
              .0;
+        state.registry.approve(response.node_id).await.unwrap();
 
         // ハートビートでメトリクス更新
         state
@@ -699,6 +723,8 @@ mod tests {
         let summary = metrics_summary(State(state)).await;
         assert_eq!(summary.total_nodes, 1);
         assert_eq!(summary.online_nodes, 1);
+        assert_eq!(summary.pending_nodes, 0);
+        assert_eq!(summary.registering_nodes, 0);
         assert_eq!(summary.total_requests, 2);
         assert_eq!(summary.successful_requests, 1);
         assert_eq!(summary.failed_requests, 1);
@@ -706,6 +732,90 @@ mod tests {
         let avg = summary.average_response_time_ms.unwrap();
         assert!((avg - 160.0).abs() < 0.1);
         assert!(summary.last_metrics_updated_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_approve_node_endpoint_admin() {
+        use axum::Extension;
+        use llm_router_common::auth::{Claims, UserRole};
+
+        let state = create_test_state().await;
+        let req = RegisterRequest {
+            machine_name: "approve-node".to_string(),
+            ip_address: "192.168.1.120".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = register_node(State(state.clone()), Json(req))
+            .await
+            .unwrap()
+            .1
+             .0;
+
+        let claims = Claims {
+            sub: "admin".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+        };
+
+        let result = approve_node(
+            Extension(claims),
+            State(state.clone()),
+            axum::extract::Path(response.node_id),
+        )
+        .await;
+        assert!(result.is_ok());
+
+        let node = state.registry.get(response.node_id).await.unwrap();
+        assert_eq!(node.status, llm_router_common::types::NodeStatus::Online);
+    }
+
+    #[tokio::test]
+    async fn test_approve_node_endpoint_requires_admin() {
+        use axum::Extension;
+        use llm_router_common::auth::{Claims, UserRole};
+
+        let state = create_test_state().await;
+        let req = RegisterRequest {
+            machine_name: "approve-node-viewer".to_string(),
+            ip_address: "192.168.1.121".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = register_node(State(state.clone()), Json(req))
+            .await
+            .unwrap()
+            .1
+             .0;
+
+        let claims = Claims {
+            sub: "viewer".to_string(),
+            role: UserRole::Viewer,
+            exp: 0,
+        };
+
+        let result = approve_node(
+            Extension(claims),
+            State(state),
+            axum::extract::Path(response.node_id),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let response = result.err().unwrap().into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

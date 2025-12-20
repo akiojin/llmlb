@@ -14,7 +14,7 @@ paths:
   /v0/nodes:
     post:
       summary: ノード登録
-      description: 新しいノードを登録し、`node_token` を発行する
+      description: 新しいノードを登録し、`node_token` を発行する（登録直後は pending）
       operationId: registerNode
       tags:
         - Nodes
@@ -89,6 +89,46 @@ paths:
           description: 受信成功
         '401':
           description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/nodes/{node_id}/approve:
+    post:
+      summary: ノード承認（管理者専用）
+      description: pending のノードを承認し、registering/online に遷移させる
+      operationId: approveNode
+      tags:
+        - Nodes
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            description: "Bearer <JWT>"
+      responses:
+        '200':
+          description: 承認成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '403':
+          description: 権限エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: ノード未検出
           content:
             application/json:
               schema:
@@ -247,6 +287,8 @@ components:
           format: int32
         status:
           type: string
+          enum: [pending, registering, online, offline]
+          description: ノード状態
         registered_at:
           type: string
           format: date-time

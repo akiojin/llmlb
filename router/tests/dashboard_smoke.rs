@@ -150,6 +150,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
         .await
         .unwrap()
         .node_id;
+    registry.approve(node_id).await.unwrap();
 
     load_manager
         .record_metrics(MetricsUpdate {
@@ -167,7 +168,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
             active_requests: 2,
             average_response_time_ms: Some(110.0),
             initializing: false,
-            ready_models: Some((0, 0)), // Registeringから Onlineへ状態遷移
+            ready_models: Some((0, 0)), // 承認済みのため Online へ状態遷移
         })
         .await
         .unwrap();
@@ -244,6 +245,7 @@ async fn dashboard_request_history_tracks_activity() {
         .await
         .unwrap()
         .node_id;
+    registry.approve(node_id).await.unwrap();
 
     load_manager.begin_request(node_id).await.unwrap();
     load_manager

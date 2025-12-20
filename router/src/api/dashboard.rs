@@ -105,6 +105,10 @@ pub struct DashboardStats {
     pub total_nodes: usize,
     /// オンラインノード数
     pub online_nodes: usize,
+    /// 承認待ちノード数
+    pub pending_nodes: usize,
+    /// 登録中ノード数
+    pub registering_nodes: usize,
     /// オフラインノード数
     pub offline_nodes: usize,
     /// 累積リクエスト数
@@ -318,6 +322,8 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     DashboardStats {
         total_nodes: summary.total_nodes,
         online_nodes: summary.online_nodes,
+        pending_nodes: summary.pending_nodes,
+        registering_nodes: summary.registering_nodes,
         offline_nodes: summary.offline_nodes,
         total_requests: summary.total_requests,
         successful_requests: summary.successful_requests,
@@ -542,6 +548,7 @@ mod tests {
             supported_runtimes: Vec::new(),
         };
         let node_id = state.registry.register(register_req).await.unwrap().node_id;
+        state.registry.approve(node_id).await.unwrap();
 
         // メトリクスを記録（ready_models を渡すと Registering → Online に遷移）
         state
@@ -610,6 +617,7 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        state.registry.approve(first_node).await.unwrap();
 
         let second_node = state
             .registry
@@ -627,6 +635,7 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        state.registry.approve(second_node).await.unwrap();
 
         // 両ノードをOnline状態にするため、ready_modelsでメトリクスを記録
         state
@@ -685,6 +694,8 @@ mod tests {
         let stats = get_stats(State(state)).await.0;
         assert_eq!(stats.total_nodes, 2);
         assert_eq!(stats.online_nodes, 2);
+        assert_eq!(stats.pending_nodes, 0);
+        assert_eq!(stats.registering_nodes, 0);
         assert_eq!(stats.total_requests, 1);
         assert_eq!(stats.failed_requests, 1);
         assert_eq!(stats.successful_requests, 0);
@@ -714,6 +725,7 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        state.registry.approve(node_id).await.unwrap();
 
         state.load_manager.begin_request(node_id).await.unwrap();
         state
@@ -756,6 +768,7 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        state.registry.approve(node_id).await.unwrap();
 
         state.load_manager.begin_request(node_id).await.unwrap();
         state
@@ -791,6 +804,7 @@ mod tests {
             .unwrap();
 
         let node_id = response.node_id;
+        state.registry.approve(node_id).await.unwrap();
 
         state
             .load_manager

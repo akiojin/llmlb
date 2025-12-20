@@ -204,6 +204,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(slow_node).await.unwrap();
+        registry.approve(fast_node).await.unwrap();
 
         // ready_models を渡すと Registering → Online に遷移
         manager
@@ -343,6 +345,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(low_load_node).await.unwrap();
+        registry.approve(high_load_node).await.unwrap();
 
         // 低負荷ノード: CPU 20%, メモリ 30%, アクティブ 1
         // スコア = 20 + 30 + (1 * 10) = 60
@@ -431,6 +435,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(low_cpu_node).await.unwrap();
+        registry.approve(high_cpu_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
@@ -514,6 +520,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(lower_cpu_node).await.unwrap();
+        registry.approve(higher_cpu_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
@@ -597,6 +605,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(fallback_node).await.unwrap();
 
         // 両ノードをOnlineにする（ready_modelsで状態遷移）
         // 使用率を同じにして、gpu_capability_scoreでスペック優先度をテスト
@@ -688,6 +698,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(mid_spec_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
@@ -763,7 +775,7 @@ mod tests {
             .node_id;
 
         // ノード2: メトリクスなし
-        let _without_metrics = registry
+        let without_metrics = registry
             .register(RegisterRequest {
                 machine_name: "without-metrics".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 21)),
@@ -778,6 +790,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(with_metrics).await.unwrap();
+        registry.approve(without_metrics).await.unwrap();
 
         // ノード1にのみメトリクスを記録
         manager
@@ -844,6 +858,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(low_gpu_node).await.unwrap();
+        registry.approve(high_gpu_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
@@ -927,6 +943,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(fallback_node).await.unwrap();
 
         // 両ノードをOnlineにする（使用率を同じにして、スペックで差をつける）
         manager
@@ -1035,6 +1053,8 @@ mod tests {
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(low_spec_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
@@ -1666,6 +1686,8 @@ pub struct SystemSummary {
     pub total_nodes: usize,
     /// オンラインノード数
     pub online_nodes: usize,
+    /// 承認待ちノード数
+    pub pending_nodes: usize,
     /// 登録中ノード数（モデル同期中）
     pub registering_nodes: usize,
     /// オフラインノード数
@@ -2171,6 +2193,10 @@ impl LoadManager {
             online_nodes: nodes
                 .iter()
                 .filter(|node| node.status == NodeStatus::Online)
+                .count(),
+            pending_nodes: nodes
+                .iter()
+                .filter(|node| node.status == NodeStatus::Pending)
                 .count(),
             registering_nodes: nodes
                 .iter()

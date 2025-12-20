@@ -9,7 +9,7 @@ use axum::{
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::net::IpAddr;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -37,6 +37,106 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     };
 
     (api::create_router(state), db_pool)
+}
+
+async fn login_admin(app: &Router) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v0/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "test"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Admin login should succeed"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    data["token"].as_str().unwrap().to_string()
+}
+
+async fn approve_node(app: &Router, node_id: Uuid) -> Value {
+    let token = login_admin(app).await;
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v0/nodes/{}/approve", node_id))
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Approve should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+
+async fn fetch_node_status(app: &Router, node_id: Uuid) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v0/nodes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /v0/nodes should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let nodes: Value = serde_json::from_slice(&body).unwrap();
+    let node_id = node_id.to_string();
+    let status = nodes
+        .as_array()
+        .and_then(|items| {
+            items.iter().find(|node| {
+                node.get("id")
+                    .and_then(|id| id.as_str())
+                    .map(|id| id == node_id)
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|node| node.get("status").and_then(|status| status.as_str()))
+        .unwrap();
+
+    status.to_string()
 }
 
 #[tokio::test]
@@ -105,7 +205,9 @@ async fn test_complete_node_flow() {
         "gpu_memory_used_mb": 4096,
         "gpu_temperature": 65.0,
         "active_requests": 0,
-        "loaded_models": []
+        "loaded_models": [],
+        "initializing": false,
+        "ready_models": [1, 1]
     });
 
     let heartbeat_response = app
@@ -126,6 +228,19 @@ async fn test_complete_node_flow() {
         heartbeat_response.status(),
         StatusCode::OK,
         "Heartbeat with valid token should succeed"
+    );
+
+    let pending_status = fetch_node_status(&app, node_id).await;
+    assert_eq!(
+        pending_status, "pending",
+        "Pending node should stay pending even after heartbeat"
+    );
+
+    let approved_node = approve_node(&app, node_id).await;
+    assert_eq!(
+        approved_node["status"].as_str(),
+        Some("online"),
+        "Approved node should become online when ready"
     );
 
     // Step 3: トークンなしでヘルスチェックを送信 → 失敗
@@ -220,6 +335,14 @@ async fn test_node_token_persistence() {
         "First registration should return token"
     );
 
+    let node_id = Uuid::parse_str(node_id).unwrap();
+    let approved_node = approve_node(&app, node_id).await;
+    assert_eq!(
+        approved_node["status"].as_str(),
+        Some("online"),
+        "Approved node should become online"
+    );
+
     // 同じノードを再度登録（更新）
     let second_register_response = app
         .clone()
@@ -250,7 +373,8 @@ async fn test_node_token_persistence() {
 
     // 同じノードIDが返される
     assert_eq!(
-        node_id, second_agent_id,
+        node_id.to_string(),
+        second_agent_id,
         "Re-registration should return same node ID"
     );
 
@@ -258,6 +382,12 @@ async fn test_node_token_persistence() {
     assert!(
         second_data["node_token"].is_string(),
         "Re-registration should return a new token"
+    );
+
+    let status = fetch_node_status(&app, node_id).await;
+    assert_eq!(
+        status, "pending",
+        "Re-registration should reset status to pending"
     );
 }
 

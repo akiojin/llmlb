@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node_with_runtimes, spawn_test_router},
+    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::{Multipart, State},
@@ -167,7 +167,10 @@ async fn images_variations_success() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let form = Form::new()
@@ -219,7 +222,10 @@ async fn images_variations_multiple() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let form = Form::new()
@@ -264,7 +270,10 @@ async fn images_variations_missing_image() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let form = Form::new().text("model", "stable-diffusion-xl");
@@ -358,7 +367,10 @@ async fn images_variations_with_size() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let form = Form::new()

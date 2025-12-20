@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node_with_runtimes, spawn_test_router},
+    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -104,10 +104,12 @@ async fn transcriptions_end_to_end_success() {
             .await
             .expect("register agent must succeed");
 
+    let (status, body) = approve_node_from_register_response(coordinator.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+
     // Debug: エラーの場合は詳細を確認
-    let status = register_response.status();
     if status != ReqStatusCode::CREATED {
-        let body: serde_json::Value = register_response.json().await.ok().unwrap_or_default();
         eprintln!("Registration failed with status {}: {:#?}", status, body);
     }
     assert_eq!(status, ReqStatusCode::CREATED);
@@ -180,7 +182,11 @@ async fn transcriptions_unsupported_format_returns_400() {
         register_node_with_runtimes(coordinator.addr(), asr_stub.addr(), vec!["whisper_cpp"])
             .await
             .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) =
+        approve_node_from_register_response(coordinator.addr(), register_response)
+            .await
+            .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     // 不正なファイルデータ
     let invalid_data = vec![0x00, 0x01, 0x02, 0x03];

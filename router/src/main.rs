@@ -167,12 +167,6 @@ async fn run_server(config: ServerConfig) {
     );
     info!("Load balancer mode: {}", load_balancer_mode);
 
-    let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new()
-            .expect("Failed to initialize request history storage"),
-    );
-    llm_router::db::request_history::start_cleanup_task(request_history.clone());
-
     let convert_concurrency: usize =
         get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 2);
     let convert_manager = llm_router::convert::ConvertTaskManager::new(convert_concurrency);
@@ -207,6 +201,12 @@ async fn run_server(config: ServerConfig) {
         .run(&db_pool)
         .await
         .expect("Failed to run database migrations");
+
+    // リクエスト履歴ストレージを初期化（SQLite使用）
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    llm_router::db::request_history::start_cleanup_task(request_history.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)

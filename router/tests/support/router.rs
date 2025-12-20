@@ -38,10 +38,11 @@ pub async fn spawn_test_router() -> TestServer {
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {
@@ -160,10 +161,11 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {

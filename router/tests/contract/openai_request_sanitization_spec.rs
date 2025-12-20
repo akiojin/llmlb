@@ -9,7 +9,7 @@ use axum::{
 };
 use llm_router::{
     api, balancer::LoadManager, db::request_history::RequestHistoryStorage, registry::NodeRegistry,
-    tasks::DownloadTaskManager, AppState,
+    AppState,
 };
 use serde_json::json;
 use serial_test::serial;
@@ -45,9 +45,6 @@ async fn build_app(openai_base_url: String) -> TestApp {
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history = Arc::new(RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -55,12 +52,13 @@ async fn build_app(openai_base_url: String) -> TestApp {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history: request_history.clone(),
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,

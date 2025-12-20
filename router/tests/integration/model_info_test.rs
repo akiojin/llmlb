@@ -403,10 +403,11 @@ async fn test_v1_models_returns_fixed_list() {
         .expect("Failed to run migrations");
 
     // テストユーザーとAPIキーを作成
+    let password_hash = llm_router::auth::password::hash_password("testpassword").unwrap();
     let test_user = llm_router::db::users::create(
         &db_pool,
         "test-admin",
-        "testpassword",
+        &password_hash,
         llm_router_common::auth::UserRole::Admin,
     )
     .await

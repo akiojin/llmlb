@@ -1,24 +1,36 @@
 import { test, expect, type Page, type FilePayload } from '@playwright/test';
 
-function mockRegisteredModels(page: Page) {
-  return page.route('**/v0/models', async (route) => {
-    // Mock the /v0/models endpoint with RegisteredModelView format
+function mockOpenAIModels(page: Page) {
+  const created = Math.floor(Date.now() / 1000);
+  return page.route('**/v1/models', async (route) => {
+    // Mock the /v1/models endpoint with OpenAI-compatible format
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          name: 'openai:gpt-4o',
-          description: 'GPT-4O with vision',
-          size: 0,
-          quantization: '',
-          family: 'gpt-4o',
-          capabilities: { input_image: 'supported', input_audio: 'supported' },
-          lifecycle_status: 'registered',
-          provider: 'openai',
-          created_at: new Date().toISOString(),
-        },
-      ]),
+      body: JSON.stringify({
+        object: 'list',
+        data: [
+          {
+            id: 'openai:gpt-4o',
+            object: 'model',
+            created,
+            owned_by: 'openai',
+            capabilities: {
+              chat_completion: true,
+              completion: false,
+              embeddings: false,
+              fine_tune: false,
+              inference: true,
+              text_to_speech: false,
+              speech_to_text: true,
+              image_generation: true,
+            },
+            lifecycle_status: 'registered',
+            download_progress: null,
+            ready: true,
+          },
+        ],
+      }),
     });
   });
 }
@@ -68,7 +80,7 @@ function wavFile(name = 'test.wav'): FilePayload {
 test.describe('Playground Multimodal Input @playground', () => {
   test.beforeEach(async ({ page }) => {
     // Set up route mocks BEFORE navigation
-    await mockRegisteredModels(page);
+    await mockOpenAIModels(page);
     await mockChatCompletionsStream(page, 'OK');
 
     // Navigate to playground

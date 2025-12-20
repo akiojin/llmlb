@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use llm_router_common::types::ModelCapability;
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -209,15 +209,28 @@ pub fn router_models_dir() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".llm-router").join("models"))
 }
 
+fn is_valid_model_file(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(meta) => meta.is_file() && meta.len() > 0,
+        Err(_) => false,
+    }
+}
+
 /// モデルのggufパスを返す（存在しない場合はNone）
 pub fn router_model_path(name: &str) -> Option<PathBuf> {
     let base = router_models_dir()?;
     let path = base.join(model_name_to_dir(name)).join("model.gguf");
-    if path.exists() {
+    if is_valid_model_file(&path) {
         Some(path)
     } else {
         None
     }
+}
+
+/// モデルパスを返す（ファイルの有無/健全性は問わない）
+pub fn router_model_path_any(name: &str) -> Option<PathBuf> {
+    let base = router_models_dir()?;
+    Some(base.join(model_name_to_dir(name)).join("model.gguf"))
 }
 
 /// ルーター側にモデルをキャッシュする（ベストエフォート）。
@@ -227,6 +240,14 @@ pub fn router_model_path(name: &str) -> Option<PathBuf> {
 pub async fn ensure_router_model_cached(model: &ModelInfo) -> Option<PathBuf> {
     if let Some(existing) = router_model_path(&model.name) {
         return Some(existing);
+    }
+
+    if let Some(existing_any) = router_model_path_any(&model.name) {
+        if existing_any.exists() {
+            if let Err(err) = std::fs::remove_file(&existing_any) {
+                tracing::warn!(path=?existing_any, err=?err, "cache_model:remove_invalid_failed");
+            }
+        }
     }
 
     let url = match &model.download_url {

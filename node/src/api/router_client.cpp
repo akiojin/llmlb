@@ -55,6 +55,9 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     if (info.gpu_model.has_value()) {
         payload["gpu_model"] = info.gpu_model.value();
     }
+    if (!info.supported_runtimes.empty()) {
+        payload["supported_runtimes"] = info.supported_runtimes;
+    }
 
     auto res = cli->Post("/v0/nodes", payload.dump(), "application/json");
 
@@ -98,6 +101,9 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
                                  const std::optional<HeartbeatMetrics>& metrics,
                                  const std::vector<std::string>& loaded_models,
                                  const std::vector<std::string>& loaded_embedding_models,
+                                 const std::vector<std::string>& loaded_asr_models,
+                                 const std::vector<std::string>& loaded_tts_models,
+                                 const std::vector<std::string>& supported_runtimes,
                                  int max_retries) {
     auto cli = make_client(base_url_, timeout_);
 
@@ -112,6 +118,9 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
         {"active_requests", 0},
         {"loaded_models", loaded_models},
         {"loaded_embedding_models", loaded_embedding_models},
+        {"loaded_asr_models", loaded_asr_models},
+        {"loaded_tts_models", loaded_tts_models},
+        {"supported_runtimes", supported_runtimes},
         {"initializing", false},
     };
 

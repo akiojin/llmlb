@@ -24,6 +24,7 @@ struct NodeInfo {
     std::vector<GpuDeviceInfoForRouter> gpu_devices;  // GPU device list
     std::optional<uint32_t> gpu_count;   // Total GPU count (optional)
     std::optional<std::string> gpu_model; // Primary GPU model (optional)
+    std::vector<std::string> supported_runtimes; // Supported runtime types
 };
 
 struct HeartbeatMetrics {
@@ -52,6 +53,9 @@ public:
                        const std::optional<HeartbeatMetrics>& metrics = std::nullopt,
                        const std::vector<std::string>& loaded_models = {},
                        const std::vector<std::string>& loaded_embedding_models = {},
+                       const std::vector<std::string>& loaded_asr_models = {},
+                       const std::vector<std::string>& loaded_tts_models = {},
+                       const std::vector<std::string>& supported_runtimes = {},
                        int max_retries = 2);
 
 private:

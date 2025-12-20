@@ -450,12 +450,14 @@ See [Node (C++)](#node-c) section in Quick Start.
    ```bash
    # Machine 1
    LLM_ROUTER_URL=http://router:8080 \
-   LLM_NODE_API_KEY=sk_node_register_key \
+   # Replace with your actual API key (scope: node:register)
+   LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
 
    # Machine 2
    LLM_ROUTER_URL=http://router:8080 \
-   LLM_NODE_API_KEY=sk_node_register_key \
+   # Replace with your actual API key (scope: node:register)
+   LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
    ```
 
@@ -474,7 +476,8 @@ See [Node (C++)](#node-c) section in Quick Start.
 4. **List Registered Nodes**
    ```bash
    curl http://router:8080/v0/nodes \
-     -H "Authorization: Bearer sk_admin_key"
+     # Replace with your actual API key (scope: admin:*)
+     -H "Authorization: Bearer sk_your_admin_key"
    ```
 
 ### Environment Variables

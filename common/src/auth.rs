@@ -51,7 +51,7 @@ pub struct ApiKey {
 }
 
 /// APIキースコープ
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ApiKeyScope {
     /// ノード登録
     #[serde(rename = "node:register")]

@@ -6,6 +6,8 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
+use jsonwebtoken::decode_header;
 use llm_router_common::auth::{ApiKeyScope, Claims, UserRole};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -44,6 +46,8 @@ pub struct ApiKeyAuthContext {
     pub created_by: Uuid,
     /// APIキーのスコープ一覧
     pub scopes: Vec<ApiKeyScope>,
+    /// APIキーの有効期限
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 fn has_scope(scopes: &[ApiKeyScope], required: ApiKeyScope) -> bool {
@@ -55,11 +59,15 @@ fn has_scope(scopes: &[ApiKeyScope], required: ApiKeyScope) -> bool {
 
 fn token_looks_like_jwt(token: &str) -> bool {
     let mut parts = token.split('.');
-    matches!(
-        (parts.next(), parts.next(), parts.next(), parts.next()),
-        (Some(first), Some(second), Some(third), None)
-            if !first.is_empty() && !second.is_empty() && !third.is_empty()
-    )
+    let (first, second, third, extra) = (parts.next(), parts.next(), parts.next(), parts.next());
+    if extra.is_some() {
+        return false;
+    }
+    if matches!((first, second, third), (Some(a), Some(b), Some(c)) if !a.is_empty() && !b.is_empty() && !c.is_empty())
+    {
+        return decode_header(token).is_ok();
+    }
+    false
 }
 
 async fn authenticate_api_key(
@@ -72,6 +80,7 @@ async fn authenticate_api_key(
             id: Uuid::nil(),
             created_by: Uuid::nil(),
             scopes,
+            expires_at: None,
         });
     }
 
@@ -94,6 +103,7 @@ async fn authenticate_api_key(
         id: api_key_record.id,
         created_by: api_key_record.created_by,
         scopes: api_key_record.scopes,
+        expires_at: api_key_record.expires_at,
     })
 }
 
@@ -272,10 +282,14 @@ pub async fn admin_or_api_key_middleware(
     }
 
     // APIキーの発行者を管理者として扱う
+    let exp = auth_context
+        .expires_at
+        .map(|dt| dt.timestamp() as usize)
+        .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
     let claims = Claims {
         sub: auth_context.created_by.to_string(),
         role: UserRole::Admin,
-        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
+        exp,
     };
     request.extensions_mut().insert(claims);
 
@@ -520,7 +534,10 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/admin")
-                    .header("authorization", "Bearer invalid.jwt.token")
+                    .header(
+                        "authorization",
+                        "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImV4cCI6MjAwMDAwMDAwMH0.invalidsig",
+                    )
                     .header("x-api-key", DEBUG_API_KEY_ADMIN)
                     .body(Body::empty())
                     .unwrap(),

@@ -7,6 +7,7 @@ use rand::Rng;
 use serde_json;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
+use tracing::warn;
 use uuid::Uuid;
 
 /// APIキーを生成
@@ -237,10 +238,24 @@ impl ApiKeyRow {
 
 fn parse_scopes(scopes: Option<String>) -> Vec<ApiKeyScope> {
     match scopes {
-        Some(raw) if !raw.trim().is_empty() => {
-            serde_json::from_str::<Vec<ApiKeyScope>>(&raw).unwrap_or_else(|_| ApiKeyScope::all())
+        None => {
+            // Backward compatibility: NULL scopes mean full access.
+            ApiKeyScope::all()
         }
-        _ => ApiKeyScope::all(),
+        Some(raw) if raw.trim().is_empty() => {
+            warn!("API key scopes are empty; treating as no scopes");
+            Vec::new()
+        }
+        Some(raw) => match serde_json::from_str::<Vec<ApiKeyScope>>(&raw) {
+            Ok(scopes) => scopes,
+            Err(err) => {
+                warn!(
+                    "Failed to parse API key scopes JSON; treating as no scopes: {}",
+                    err
+                );
+                Vec::new()
+            }
+        },
     }
 }
 
@@ -260,6 +275,19 @@ mod tests {
         initialize_database("sqlite::memory:")
             .await
             .expect("Failed to initialize test database")
+    }
+
+    #[test]
+    fn parse_scopes_handles_null_and_invalid_values() {
+        assert_eq!(parse_scopes(None), ApiKeyScope::all());
+        assert!(parse_scopes(Some("".to_string())).is_empty());
+        assert!(parse_scopes(Some("not-json".to_string())).is_empty());
+    }
+
+    #[test]
+    fn parse_scopes_parses_valid_json() {
+        let raw = serde_json::to_string(&vec![ApiKeyScope::ApiInference]).unwrap();
+        assert_eq!(parse_scopes(Some(raw)), vec![ApiKeyScope::ApiInference]);
     }
 
     #[tokio::test]

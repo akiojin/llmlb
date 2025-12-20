@@ -69,7 +69,7 @@ async fn login_admin(app: &Router) -> String {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "username": "admin",
-                        "password": "test"
+                        "password": "password123"
                     }))
                     .unwrap(),
                 ))

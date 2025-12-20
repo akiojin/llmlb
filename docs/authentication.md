@@ -18,7 +18,7 @@ Clients send the token via `Authorization: Bearer <jwt>`.
 
 ## API keys (OpenAI-compatible `/v1/*`)
 
-Protected endpoints (API key + scope required):
+Protected endpoints (API key with `api:inference` scope required):
 
 - `POST /v1/chat/completions`
 - `POST /v1/completions`

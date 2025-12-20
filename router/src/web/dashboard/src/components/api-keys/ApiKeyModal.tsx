@@ -372,25 +372,26 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             <div className="space-y-2">
               <Label>Scopes</Label>
               <div className="grid gap-2">
-                {scopeLabels.map((scope) => (
-                  <label
-                    key={scope.value}
-                    className="flex items-start gap-2 text-sm"
-                  >
-                    <Checkbox
-                      checked={newKeyScopes.includes(scope.value)}
-                      onCheckedChange={(checked) =>
-                        toggleScope(scope.value, Boolean(checked))
-                      }
-                    />
-                    <span className="flex flex-col gap-1">
-                      <span className="font-mono text-xs">{scope.label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {scope.description}
-                      </span>
-                    </span>
-                  </label>
-                ))}
+                {scopeLabels.map((scope) => {
+                  const checkboxId = `scope-${scope.value.replace(/[^a-z0-9]/gi, "-")}`;
+                  return (
+                    <div key={scope.value} className="flex items-start gap-2 text-sm">
+                      <Checkbox
+                        id={checkboxId}
+                        checked={newKeyScopes.includes(scope.value)}
+                        onCheckedChange={(checked) =>
+                          toggleScope(scope.value, Boolean(checked))
+                        }
+                      />
+                      <label htmlFor={checkboxId} className="flex flex-col gap-1 cursor-pointer">
+                        <span className="font-mono text-xs">{scope.label}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {scope.description}
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

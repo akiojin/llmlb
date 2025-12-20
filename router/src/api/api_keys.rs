@@ -258,9 +258,12 @@ pub async fn update_api_key(
 }
 
 fn normalize_scopes(scopes: &[ApiKeyScope]) -> Vec<ApiKeyScope> {
-    let mut unique: Vec<ApiKeyScope> = Vec::new();
+    use std::collections::HashSet;
+
+    let mut seen = HashSet::new();
+    let mut unique = Vec::new();
     for scope in scopes {
-        if !unique.contains(scope) {
+        if seen.insert(*scope) {
             unique.push(*scope);
         }
     }

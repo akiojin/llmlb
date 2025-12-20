@@ -65,12 +65,7 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
         headers.emplace("Authorization", "Bearer " + api_key_);
     }
 
-    httplib::Result res;
-    if (headers.empty()) {
-        res = cli->Post("/v0/nodes", payload.dump(), "application/json");
-    } else {
-        res = cli->Post("/v0/nodes", headers, payload.dump(), "application/json");
-    }
+    auto res = cli->Post("/v0/nodes", headers, payload.dump(), "application/json");
 
     NodeRegistrationResult result;
     if (!res) {

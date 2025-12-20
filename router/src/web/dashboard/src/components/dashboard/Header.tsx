@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ApiKeyModal } from '@/components/api-keys/ApiKeyModal'
 import { UserModal } from '@/components/users/UserModal'
+import { InvitationModal } from '@/components/invitations/InvitationModal'
 import {
   Cpu,
   Key,
@@ -21,6 +22,7 @@ import {
   Users,
   MessageSquare,
   RefreshCw,
+  Ticket,
 } from 'lucide-react'
 
 interface HeaderProps {
@@ -35,6 +37,7 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
+  const [invitationModalOpen, setInvitationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const toggleTheme = () => {
@@ -190,6 +193,10 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
                       <Users className="mr-2 h-4 w-4" />
                       Manage Users
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setInvitationModalOpen(true)}>
+                      <Ticket className="mr-2 h-4 w-4" />
+                      Invitation Codes
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>
                 )}
@@ -207,6 +214,7 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
       {/* Modals */}
       <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />
       <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />
+      <InvitationModal open={invitationModalOpen} onOpenChange={setInvitationModalOpen} />
     </>
   )
 }

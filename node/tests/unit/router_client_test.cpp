@@ -18,6 +18,7 @@ public:
         stop_flag_ = false;
         server_.Post("/v0/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register_body = req.body;
+            last_register_auth = req.get_header_value("Authorization");
             res.status = register_status;
             res.set_content(register_response_body, "application/json");
         });
@@ -25,6 +26,7 @@ public:
         server_.Post("/v0/health", [this](const httplib::Request& req, httplib::Response& res) {
             last_heartbeat_body = req.body;
             last_heartbeat_token = req.get_header_value("X-Node-Token");
+            last_heartbeat_auth = req.get_header_value("Authorization");
             res.status = heartbeat_status;
             res.set_content("ok", "text/plain");
         });
@@ -52,10 +54,12 @@ public:
     int register_status{200};
     std::string register_response_body{R"({"node_id":"node-1","node_token":"test-token-123"})"};
     std::string last_register_body;
+    std::string last_register_auth;
 
     int heartbeat_status{200};
     std::string last_heartbeat_body;
     std::string last_heartbeat_token;
+    std::string last_heartbeat_auth;
 };
 
 TEST(RouterClientTest, RegisterNodeSuccess) {
@@ -63,6 +67,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     server.start(18081);
 
     RouterClient client("http://127.0.0.1:18081");
+    client.setApiKey("sk_test_node");
     NodeInfo info;
     info.machine_name = "test-host";
     info.ip_address = "127.0.0.1";
@@ -81,6 +86,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     EXPECT_EQ(result.node_id, "node-1");
     EXPECT_EQ(result.node_token, "test-token-123");
     EXPECT_FALSE(server.last_register_body.empty());
+    EXPECT_EQ(server.last_register_auth, "Bearer sk_test_node");
 
     // Verify JSON structure matches router protocol
     auto body = nlohmann::json::parse(server.last_register_body);
@@ -120,6 +126,7 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     server.start(18083);
 
     RouterClient client("http://127.0.0.1:18083");
+    client.setApiKey("sk_test_node");
     bool ok = client.sendHeartbeat("node-xyz", "test-node-token", "initializing");
 
     server.stop();
@@ -127,6 +134,7 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     EXPECT_TRUE(ok);
     EXPECT_FALSE(server.last_heartbeat_body.empty());
     EXPECT_EQ(server.last_heartbeat_token, "test-node-token");
+    EXPECT_EQ(server.last_heartbeat_auth, "Bearer sk_test_node");
 
     // Verify new HealthCheckRequest format
     auto body = nlohmann::json::parse(server.last_heartbeat_body);
@@ -146,6 +154,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
         hit_count++;
         server.last_heartbeat_body = req.body;
         server.last_heartbeat_token = req.get_header_value("X-Node-Token");
+        server.last_heartbeat_auth = req.get_header_value("Authorization");
         if (hit_count >= 2) {
             res.status = 200;
             res.set_content("ok", "text/plain");
@@ -157,6 +166,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     server.start(18084);
 
     RouterClient client("http://127.0.0.1:18084");
+    client.setApiKey("sk_test_node");
     HeartbeatMetrics m{12.5, 34.5, 1024, 2048};
     bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, 2);
 
@@ -165,6 +175,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     EXPECT_TRUE(ok);
     EXPECT_GE(hit_count, 2);
     EXPECT_EQ(server.last_heartbeat_token, "retry-token");
+    EXPECT_EQ(server.last_heartbeat_auth, "Bearer sk_test_node");
     auto body = nlohmann::json::parse(server.last_heartbeat_body);
     // New format uses cpu_usage/memory_usage instead of metrics object
     EXPECT_DOUBLE_EQ(body["cpu_usage"].get<double>(), 12.5);

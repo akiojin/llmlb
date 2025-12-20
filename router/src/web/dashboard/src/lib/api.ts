@@ -440,6 +440,8 @@ export const modelsApi = {
 }
 
 // API Keys API
+export type ApiKeyScope = 'node:register' | 'api:inference' | 'admin:*'
+
 export interface ApiKey {
   id: string
   name: string
@@ -448,6 +450,7 @@ export interface ApiKey {
   created_at: string
   expires_at?: string
   last_used_at?: string
+  scopes: ApiKeyScope[]
 }
 
 export interface CreateApiKeyResponse {
@@ -457,6 +460,7 @@ export interface CreateApiKeyResponse {
   key_prefix: string
   created_at: string
   expires_at?: string
+  scopes: ApiKeyScope[]
 }
 
 export const apiKeysApi = {
@@ -465,7 +469,7 @@ export const apiKeysApi = {
       (res) => res.api_keys
     ),
 
-  create: (data: { name: string; expires_at?: string }) =>
+  create: (data: { name: string; expires_at?: string; scopes: ApiKeyScope[] }) =>
     fetchWithAuth<CreateApiKeyResponse>('/v0/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),

@@ -46,6 +46,33 @@ pub struct ApiKey {
     pub created_at: DateTime<Utc>,
     /// 有効期限
     pub expires_at: Option<DateTime<Utc>>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
+}
+
+/// APIキースコープ
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApiKeyScope {
+    /// ノード登録
+    #[serde(rename = "node:register")]
+    NodeRegister,
+    /// 推論API利用
+    #[serde(rename = "api:inference")]
+    ApiInference,
+    /// 管理者（全権限）
+    #[serde(rename = "admin:*")]
+    AdminAll,
+}
+
+impl ApiKeyScope {
+    /// すべてのスコープ
+    pub fn all() -> Vec<ApiKeyScope> {
+        vec![
+            ApiKeyScope::NodeRegister,
+            ApiKeyScope::ApiInference,
+            ApiKeyScope::AdminAll,
+        ]
+    }
 }
 
 /// APIキー（平文付き、発行時のレスポンス用）
@@ -61,6 +88,8 @@ pub struct ApiKeyWithPlaintext {
     pub created_at: DateTime<Utc>,
     /// 有効期限
     pub expires_at: Option<DateTime<Utc>>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 /// ノードトークン

@@ -44,6 +44,8 @@ class RouterClient {
 public:
     explicit RouterClient(std::string base_url, std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
+    void setApiKey(std::string api_key);
+
     NodeRegistrationResult registerNode(const NodeInfo& info);
 
     bool sendHeartbeat(const std::string& node_id,
@@ -57,6 +59,7 @@ public:
 private:
     std::string base_url_;
     std::chrono::milliseconds timeout_;
+    std::string api_key_;
 };
 
 }  // namespace llm_node

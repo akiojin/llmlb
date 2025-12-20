@@ -8,13 +8,17 @@ use axum::{
     Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
-use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+use llm_router_common::{
+    auth::{ApiKeyScope, UserRole},
+    protocol::RegisterRequest,
+    types::GpuDeviceInfo,
+};
 use std::net::IpAddr;
 use tower::ServiceExt;
 
 use crate::support;
 
-async fn build_app() -> (Router, sqlx::SqlitePool) {
+async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!(
         "or-test-{}-{}",
@@ -43,12 +47,28 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         http_client: reqwest::Client::new(),
     };
 
-    (api::create_router(state), db_pool)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
+
+    (api::create_router(state), db_pool, admin_key)
 }
 
 #[tokio::test]
 async fn test_dashboard_nodes_endpoint() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/dashboard/nodes
     let response = app
@@ -56,6 +76,7 @@ async fn test_dashboard_nodes_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/dashboard/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -81,7 +102,7 @@ async fn test_dashboard_nodes_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/dashboard/stats
     let response = app
@@ -89,6 +110,7 @@ async fn test_dashboard_stats_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/dashboard/stats")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -111,7 +133,7 @@ async fn test_dashboard_stats_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_overview_endpoint() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/dashboard/overview
     let response = app
@@ -119,6 +141,7 @@ async fn test_dashboard_overview_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/dashboard/overview")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -144,7 +167,7 @@ async fn test_dashboard_overview_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_request_history_endpoint() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/dashboard/request-history
     let response = app
@@ -152,6 +175,7 @@ async fn test_dashboard_request_history_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/dashboard/request-history")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -179,7 +203,7 @@ async fn test_dashboard_request_history_endpoint() {
 async fn test_dashboard_nodes_with_registered_node() {
     // モックノードサーバーを起動
     let mock_node = support::node::MockNodeServer::start().await;
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // ノードを登録（モックサーバーのポートを使用）
     let register_request = RegisterRequest {
@@ -204,6 +228,7 @@ async fn test_dashboard_nodes_with_registered_node() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -217,6 +242,7 @@ async fn test_dashboard_nodes_with_registered_node() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/dashboard/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -239,7 +265,7 @@ async fn test_dashboard_nodes_with_registered_node() {
 
 #[tokio::test]
 async fn test_cloud_metrics_endpoint() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/metrics/cloud
     let response = app
@@ -247,6 +273,7 @@ async fn test_cloud_metrics_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/metrics/cloud")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -274,7 +301,7 @@ async fn test_cloud_metrics_endpoint() {
 
 #[tokio::test]
 async fn test_models_loaded_endpoint_is_removed() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/models/loaded
     let response = app
@@ -282,6 +309,7 @@ async fn test_models_loaded_endpoint_is_removed() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/models/loaded")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )

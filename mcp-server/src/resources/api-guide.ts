@@ -24,7 +24,7 @@ const GUIDE_CATEGORIES = [
   {
     id: "model-management",
     name: "llm-router-model-api",
-    description: "Model management endpoints: /v0/models/* (register, convert, list)",
+    description: "Model management endpoints: /v0/models/* (register, discover, delete, blob)",
   },
   {
     id: "dashboard",
@@ -79,23 +79,26 @@ ${routerUrl}
 
 ## Authentication Methods
 
-### 1. API Key Authentication (Inference APIs)
+### 1. API Key Authentication (Scoped)
 
 **Header**: \`X-API-Key: sk_xxx\` or \`Authorization: Bearer sk_xxx\`
 
 **Used for**:
-- /v1/chat/completions
-- /v1/completions
-- /v1/embeddings
-- /v1/models
+- /v1/* (scope: \`api:inference\`)
+- /v0/nodes (scope: \`node:register\`)
+- /v0/health (scope: \`node:register\`)
+- /v0/models/blob/* (scope: \`node:register\`)
+- /v0/* admin endpoints (scope: \`admin:*\`)
 
 ### 2. JWT Authentication (Management APIs)
 
 **Header**: \`Authorization: Bearer <jwt_token>\`
 
 **Used for**:
-- /v0/users (user management)
-- /v0/api-keys (API key management)
+- /v0/auth/* (me/logout)
+- /v0/users (admin only)
+- /v0/api-keys (admin only)
+- /v0/dashboard/*, /v0/metrics/* (admin only)
 
 **Obtain JWT via**:
 \`\`\`bash
@@ -109,8 +112,10 @@ curl -X POST ${routerUrl}/v0/auth/login \\
 **Header**: \`X-Node-Token: nt_xxx\`
 
 **Used for**:
-- /v0/health (internal node health reporting)
+- /v0/health (internal node health reporting, requires API key too)
 - /v1/models (node model sync)
+
+For \`/v0/health\`, include **both** \`X-Node-Token\` and \`Authorization: Bearer <api_key>\`.
 
 ## API Categories
 
@@ -118,7 +123,7 @@ curl -X POST ${routerUrl}/v0/auth/login \\
 |----------|-----------|-------------|
 | OpenAI-Compatible | /v1/* | Chat, completions, embeddings, models |
 | Node Management | /v0/nodes | Register/manage inference nodes |
-| Model Management | /v0/models/* | Convert, register models |
+| Model Management | /v0/models/* | Register/delete/discover models, blob download |
 | Dashboard | /v0/dashboard/* | Stats, metrics, overview |
 | Authentication | /v0/auth/* | Login, logout, user info |
 
@@ -200,7 +205,8 @@ function getNodeManagementGuide(routerUrl: string): string {
 **Endpoint**: GET ${routerUrl}/v0/nodes
 
 \`\`\`bash
-curl ${routerUrl}/v0/nodes
+curl ${routerUrl}/v0/nodes \\
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Register Node
@@ -210,6 +216,7 @@ curl ${routerUrl}/v0/nodes
 \`\`\`bash
 curl -X POST ${routerUrl}/v0/nodes \\
   -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer NODE_API_KEY" \\
   -d '{
     "machine_name": "gpu-server-1",
     "ip_address": "192.168.1.100",
@@ -227,7 +234,8 @@ curl -X POST ${routerUrl}/v0/nodes \\
 **Endpoint**: DELETE ${routerUrl}/v0/nodes/:node_id
 
 \`\`\`bash
-curl -X DELETE ${routerUrl}/v0/nodes/NODE_ID
+curl -X DELETE ${routerUrl}/v0/nodes/NODE_ID \\
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Disconnect Node
@@ -235,7 +243,8 @@ curl -X DELETE ${routerUrl}/v0/nodes/NODE_ID
 **Endpoint**: POST ${routerUrl}/v0/nodes/:node_id/disconnect
 
 \`\`\`bash
-curl -X POST ${routerUrl}/v0/nodes/NODE_ID/disconnect
+curl -X POST ${routerUrl}/v0/nodes/NODE_ID/disconnect \\
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Update Node Settings
@@ -245,6 +254,7 @@ curl -X POST ${routerUrl}/v0/nodes/NODE_ID/disconnect
 \`\`\`bash
 curl -X PUT ${routerUrl}/v0/nodes/NODE_ID/settings \\
   -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ADMIN_API_KEY" \\
   -d '{
     "custom_name": "Primary",
     "tags": ["gpu", "primary"],
@@ -259,7 +269,8 @@ To clear a nullable field, send \`null\` (for example, \`{"custom_name": null}\`
 **Endpoint**: GET ${routerUrl}/v0/nodes/:node_id/logs
 
 \`\`\`bash
-curl ${routerUrl}/v0/nodes/NODE_ID/logs
+curl ${routerUrl}/v0/nodes/NODE_ID/logs \\
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 `;
 }
@@ -267,20 +278,13 @@ curl ${routerUrl}/v0/nodes/NODE_ID/logs
 function getModelManagementGuide(routerUrl: string): string {
   return `# Model Management API
 
-## List Available Models (HuggingFace)
+## List Registered Models (Node Sync)
 
-**Endpoint**: GET ${routerUrl}/v0/models/available?source=hf
-
-\`\`\`bash
-curl "${routerUrl}/v0/models/available?source=hf"
-\`\`\`
-
-## List Registered Models
-
-**Endpoint**: GET ${routerUrl}/v0/models/registered
+**Endpoint**: GET ${routerUrl}/v0/models
 
 \`\`\`bash
-curl ${routerUrl}/v0/models/registered
+curl ${routerUrl}/v0/models \
+  -H "Authorization: Bearer NODE_API_KEY"
 \`\`\`
 
 ## Register Model
@@ -288,8 +292,9 @@ curl ${routerUrl}/v0/models/registered
 **Endpoint**: POST ${routerUrl}/v0/models/register
 
 \`\`\`bash
-curl -X POST ${routerUrl}/v0/models/register \\
-  -H "Content-Type: application/json" \\
+curl -X POST ${routerUrl}/v0/models/register \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ADMIN_API_KEY" \
   -d '{
     "repo": "TheBloke/Llama-2-7B-GGUF",
     "filename": "llama-2-7b.Q4_K_M.gguf"
@@ -297,14 +302,15 @@ curl -X POST ${routerUrl}/v0/models/register \\
 \`\`\`
 
 If \`filename\` is omitted, the router tries to find a GGUF file in the repo. If none exists, it will queue a conversion task.
-Track progress via **Convert Tasks** (\`GET ${routerUrl}/v0/models/convert\`). When completed, the model becomes available in \`GET ${routerUrl}/v1/models\`.
+Track progress via \`GET ${routerUrl}/v1/models\` (lifecycle_status fields).
 
 ## Delete Model
 
 **Endpoint**: DELETE ${routerUrl}/v0/models/:model_name
 
 \`\`\`bash
-curl -X DELETE ${routerUrl}/v0/models/llama-2-7b
+curl -X DELETE ${routerUrl}/v0/models/llama-2-7b \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Discover GGUF Files
@@ -312,37 +318,20 @@ curl -X DELETE ${routerUrl}/v0/models/llama-2-7b
 **Endpoint**: POST ${routerUrl}/v0/models/discover-gguf
 
 \`\`\`bash
-curl -X POST ${routerUrl}/v0/models/discover-gguf \\
-  -H "Content-Type: application/json" \\
+curl -X POST ${routerUrl}/v0/models/discover-gguf \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ADMIN_API_KEY" \
   -d '{"model": "openai/gpt-oss-20b"}'
 \`\`\`
-
-## Convert Model
-
-**Endpoint**: POST ${routerUrl}/v0/models/convert
-
-\`\`\`bash
-curl -X POST ${routerUrl}/v0/models/convert \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "repo": "openai/gpt-oss-20b",
-    "filename": "model.bin",
-    "revision": "main"
-  }'
-\`\`\`
-
-## Convert Tasks
-
-- List tasks: GET ${routerUrl}/v0/models/convert
-- Get task: GET ${routerUrl}/v0/models/convert/:task_id
-- Delete task: DELETE ${routerUrl}/v0/models/convert/:task_id
 
 ## Model Blob Download
 
 **Endpoint**: GET ${routerUrl}/v0/models/blob/:model_name
 
 \`\`\`bash
-curl -L ${routerUrl}/v0/models/blob/gpt-oss-20b -o model.gguf
+curl -L ${routerUrl}/v0/models/blob/gpt-oss-20b \
+  -H "Authorization: Bearer NODE_API_KEY" \
+  -o model.gguf
 \`\`\`
 
 ## Model ID Format
@@ -359,7 +348,8 @@ function getDashboardGuide(routerUrl: string): string {
 **Endpoint**: GET ${routerUrl}/v0/dashboard/overview
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/overview
+curl ${routerUrl}/v0/dashboard/overview \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Dashboard Statistics
@@ -367,7 +357,8 @@ curl ${routerUrl}/v0/dashboard/overview
 **Endpoint**: GET ${routerUrl}/v0/dashboard/stats
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/stats
+curl ${routerUrl}/v0/dashboard/stats \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Node Information
@@ -375,7 +366,8 @@ curl ${routerUrl}/v0/dashboard/stats
 **Endpoint**: GET ${routerUrl}/v0/dashboard/nodes
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/nodes
+curl ${routerUrl}/v0/dashboard/nodes \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Node Metrics History
@@ -383,7 +375,8 @@ curl ${routerUrl}/v0/dashboard/nodes
 **Endpoint**: GET ${routerUrl}/v0/dashboard/metrics/:node_id
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/metrics/NODE_ID
+curl ${routerUrl}/v0/dashboard/metrics/NODE_ID \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Request/Response Logs
@@ -391,7 +384,8 @@ curl ${routerUrl}/v0/dashboard/metrics/NODE_ID
 **Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/request-responses
+curl ${routerUrl}/v0/dashboard/request-responses \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Export Request/Response Logs
@@ -399,7 +393,9 @@ curl ${routerUrl}/v0/dashboard/request-responses
 **Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses/export
 
 \`\`\`bash
-curl -L ${routerUrl}/v0/dashboard/request-responses/export -o request-responses.json
+curl -L ${routerUrl}/v0/dashboard/request-responses/export \
+  -H "Authorization: Bearer ADMIN_API_KEY" \
+  -o request-responses.json
 \`\`\`
 
 ## Request Detail
@@ -407,7 +403,8 @@ curl -L ${routerUrl}/v0/dashboard/request-responses/export -o request-responses.
 **Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses/:id
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/request-responses/REQUEST_ID
+curl ${routerUrl}/v0/dashboard/request-responses/REQUEST_ID \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
 ## Router Logs
@@ -415,7 +412,8 @@ curl ${routerUrl}/v0/dashboard/request-responses/REQUEST_ID
 **Endpoint**: GET ${routerUrl}/v0/dashboard/logs/router
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/logs/router
+curl ${routerUrl}/v0/dashboard/logs/router \
+  -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 `;
 }

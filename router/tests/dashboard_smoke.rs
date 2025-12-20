@@ -14,7 +14,11 @@ use llm_router::{
     registry::NodeRegistry,
     AppState,
 };
-use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+use llm_router_common::{
+    auth::{ApiKeyScope, UserRole},
+    protocol::RegisterRequest,
+    types::GpuDeviceInfo,
+};
 use serde_json::Value;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -22,7 +26,7 @@ use std::{
 };
 use tower::ServiceExt;
 
-async fn build_router() -> (Router, NodeRegistry, LoadManager) {
+async fn build_router() -> (Router, NodeRegistry, LoadManager, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -46,8 +50,23 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager) {
         jwt_secret,
         http_client: reqwest::Client::new(),
     };
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &state.db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
     let router = api::create_router(state);
-    (router, registry, load_manager)
+    (router, registry, load_manager, admin_key)
 }
 
 fn sample_gpu_devices(model: &str) -> Vec<GpuDeviceInfo> {
@@ -60,7 +79,7 @@ fn sample_gpu_devices(model: &str) -> Vec<GpuDeviceInfo> {
 
 #[tokio::test]
 async fn dashboard_serves_static_index() {
-    let (router, _, _) = build_router().await;
+    let (router, _, _, _admin_key) = build_router().await;
 
     let response = router
         .clone()
@@ -96,7 +115,7 @@ async fn dashboard_serves_static_index() {
 #[tokio::test]
 async fn dashboard_static_index_is_react_app() {
     // Dashboard is now a React SPA - verify app shell is served correctly
-    let (router, _, _) = build_router().await;
+    let (router, _, _, _admin_key) = build_router().await;
 
     let response = router
         .clone()
@@ -134,7 +153,7 @@ async fn dashboard_static_index_is_react_app() {
 
 #[tokio::test]
 async fn dashboard_nodes_and_stats_reflect_registry() {
-    let (router, registry, load_manager) = build_router().await;
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
@@ -184,6 +203,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
         .oneshot(
             Request::builder()
                 .uri("/v0/dashboard/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -209,6 +229,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
         .oneshot(
             Request::builder()
                 .uri("/v0/dashboard/stats")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -229,7 +250,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
 
 #[tokio::test]
 async fn dashboard_request_history_tracks_activity() {
-    let (router, registry, load_manager) = build_router().await;
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
@@ -264,6 +285,7 @@ async fn dashboard_request_history_tracks_activity() {
         .oneshot(
             Request::builder()
                 .uri("/v0/dashboard/request-history")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -288,7 +310,7 @@ async fn dashboard_request_history_tracks_activity() {
 
 #[tokio::test]
 async fn dashboard_overview_returns_combined_payload() {
-    let (router, registry, load_manager) = build_router().await;
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
@@ -317,6 +339,7 @@ async fn dashboard_overview_returns_combined_payload() {
         .oneshot(
             Request::builder()
                 .uri("/v0/dashboard/overview")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -338,7 +361,7 @@ async fn dashboard_overview_returns_combined_payload() {
 
 #[tokio::test]
 async fn dashboard_node_metrics_endpoint_returns_history() {
-    let (router, registry, load_manager) = build_router().await;
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
@@ -382,6 +405,7 @@ async fn dashboard_node_metrics_endpoint_returns_history() {
         .oneshot(
             Request::builder()
                 .uri(format!("/v0/dashboard/metrics/{node_id}"))
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )

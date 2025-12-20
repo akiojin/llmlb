@@ -88,7 +88,8 @@ async fn test_complete_api_key_flow() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "Test API Key",
-                        "expires_at": null
+                        "expires_at": null,
+                        "scopes": ["api:inference"]
                     }))
                     .unwrap(),
                 ))
@@ -264,7 +265,8 @@ async fn test_api_key_with_expiration() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "Expiring API Key",
-                        "expires_at": expires_at.to_rfc3339()
+                        "expires_at": expires_at.to_rfc3339(),
+                        "scopes": ["api:inference"]
                     }))
                     .unwrap(),
                 ))

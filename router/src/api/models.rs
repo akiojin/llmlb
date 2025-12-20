@@ -3,6 +3,7 @@
 //! モデル一覧取得、登録、変換、ファイル配信のエンドポイント
 
 use crate::{
+    db::models::ModelStorage,
     registry::models::{
         extract_repo_id, generate_model_id, router_model_path, router_model_path_any, ModelInfo,
     },
@@ -19,6 +20,7 @@ use llm_router_common::error::{CommonError, RouterError};
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -103,8 +105,9 @@ pub struct DownloadProgress {
 static REGISTERED_MODELS: Lazy<RwLock<Vec<ModelInfo>>> = Lazy::new(|| RwLock::new(Vec::new()));
 
 /// 登録済みモデルをストレージからロード
-pub async fn load_registered_models_from_storage() {
-    if let Ok(models) = crate::db::models::load_models().await {
+pub async fn load_registered_models_from_storage(pool: SqlitePool) {
+    let storage = ModelStorage::new(pool);
+    if let Ok(models) = storage.load_models().await {
         let mut store = REGISTERED_MODELS.write().unwrap();
         *store = models;
     }
@@ -156,9 +159,10 @@ pub fn remove_registered_model(name: &str) -> bool {
 }
 
 /// 登録モデルを永続化（失敗はログのみ）
-pub async fn persist_registered_models() {
+pub async fn persist_registered_models(pool: &SqlitePool) {
     if let Ok(store) = std::panic::catch_unwind(|| REGISTERED_MODELS.read().unwrap().clone()) {
-        if let Err(e) = crate::db::models::save_models(&store).await {
+        let storage = ModelStorage::new(pool.clone());
+        if let Err(e) = storage.save_models(&store).await {
             tracing::error!("Failed to persist registered models: {}", e);
         }
     }
@@ -172,11 +176,13 @@ pub async fn persist_registered_models() {
 /// 3. 不整合があれば警告ログを出力
 ///
 /// NOTE: 自動削除は行わない（手動介入を想定）
-pub async fn sync_registered_models(registry: &NodeRegistry) {
+pub async fn sync_registered_models(registry: &NodeRegistry, pool: &SqlitePool) {
     tracing::debug!("Starting model consistency check");
 
+    let storage = ModelStorage::new(pool.clone());
+
     // 1. DBからモデルをロード
-    let db_models = match crate::db::models::load_models().await {
+    let db_models = match storage.load_models().await {
         Ok(models) => models,
         Err(e) => {
             tracing::error!("Failed to load models from DB: {}", e);
@@ -216,7 +222,7 @@ pub async fn sync_registered_models(registry: &NodeRegistry) {
             "Models in memory but not in DB - persisting to DB"
         );
         // メモリからDBに永続化
-        persist_registered_models().await;
+        persist_registered_models(pool).await;
     }
 
     // 4. ファイル存在チェック
@@ -272,12 +278,12 @@ pub async fn sync_registered_models(registry: &NodeRegistry) {
 }
 
 /// 定期的な整合性チェックを開始（5分間隔）
-pub fn start_periodic_sync(registry: NodeRegistry) {
+pub fn start_periodic_sync(registry: NodeRegistry, pool: SqlitePool) {
     tokio::spawn(async move {
         let interval = Duration::from_secs(300); // 5分
         loop {
             tokio::time::sleep(interval).await;
-            sync_registered_models(&registry).await;
+            sync_registered_models(&registry, &pool).await;
         }
     });
 }
@@ -893,7 +899,7 @@ pub async fn delete_model(
 
     if removed || task_deleted {
         if removed {
-            persist_registered_models().await;
+            persist_registered_models(&state.db_pool).await;
         }
         Ok(StatusCode::NO_CONTENT)
     } else {

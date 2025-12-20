@@ -17,7 +17,12 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-async fn build_app() -> Router {
+struct TestApp {
+    app: Router,
+    db_pool: sqlx::SqlitePool,
+}
+
+async fn build_app() -> TestApp {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!(
         "or-test-{}-{}",
@@ -55,9 +60,6 @@ with open(outfile, "wb") as f:
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -65,6 +67,10 @@ with open(outfile, "wb") as f:
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
@@ -76,14 +82,17 @@ with open(outfile, "wb") as f:
         http_client: reqwest::Client::new(),
     };
 
-    api::create_router(state)
+    let db_pool = state.db_pool.clone();
+    let app = api::create_router(state);
+    TestApp { app, db_pool }
 }
 
 /// モデル配布APIは廃止（ノードが /v1/models と /v0/models/blob から自律取得）
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app.clone();
 
     let request_body = json!({
         "model_name": "gpt-oss-20b",
@@ -117,7 +126,8 @@ async fn test_distribute_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app.clone();
 
     let response = app
         .oneshot(
@@ -145,7 +155,8 @@ async fn test_get_available_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_node_models_endpoint_is_removed() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let response = app
         .oneshot(
@@ -169,7 +180,8 @@ async fn test_get_node_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_pull_model_to_node_endpoint_is_removed() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let request_body = json!({
         "model_name": "gpt-oss-3b"
@@ -198,7 +210,8 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_tasks_endpoint_is_removed() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let response = app
         .oneshot(
@@ -233,7 +246,8 @@ async fn test_register_model_contract() {
 
     std::env::set_var("HF_BASE_URL", mock.uri());
 
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     // 正常登録
     let payload = json!({
@@ -399,7 +413,8 @@ async fn test_register_model_contract() {
     assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
 
     // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
-    let app_for_convert = build_app().await;
+    let test_app_for_convert = build_app().await;
+    let app_for_convert = test_app_for_convert.app;
     std::env::set_var("HF_BASE_URL", mock.uri());
     Mock::given(method("GET"))
         .and(path("/api/models/convertible-repo"))
@@ -473,7 +488,8 @@ async fn test_register_model_contract() {
 #[tokio::test]
 #[serial]
 async fn test_zero_byte_cache_is_not_ready() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let model_name = "zero-byte-model";
     let base = router_models_dir().expect("router models dir should exist");
@@ -485,7 +501,7 @@ async fn test_zero_byte_cache_is_not_ready() {
     let mut model = ModelInfo::new(model_name.to_string(), 0, "test".to_string(), 0, vec![]);
     model.path = Some(model_path.to_string_lossy().to_string());
     llm_router::api::models::upsert_registered_model(model);
-    llm_router::api::models::persist_registered_models().await;
+    llm_router::api::models::persist_registered_models(&test_app.db_pool).await;
 
     let models_res = app
         .clone()
@@ -529,7 +545,8 @@ async fn test_zero_byte_cache_triggers_redownload() {
         .mount(&mock)
         .await;
 
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let base = router_models_dir().expect("router models dir should exist");
     let model_dir = base.join(model_name_to_dir("zero/repo"));
@@ -612,7 +629,8 @@ async fn test_register_model_uses_existing_cache() {
         .mount(&mock)
         .await;
 
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let base = router_models_dir().expect("router models dir should exist");
     let model_dir = base.join(model_name_to_dir("cached/repo"));
@@ -685,7 +703,8 @@ async fn test_register_model_uses_existing_cache() {
 #[tokio::test]
 #[serial]
 async fn test_delete_model_removes_from_list() {
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     let model_name = "delete-me";
     let base = router_models_dir().expect("router models dir should exist");
@@ -697,7 +716,7 @@ async fn test_delete_model_removes_from_list() {
     let mut model = ModelInfo::new(model_name.to_string(), 0, "test".to_string(), 0, vec![]);
     model.path = Some(model_path.to_string_lossy().to_string());
     llm_router::api::models::upsert_registered_model(model);
-    llm_router::api::models::persist_registered_models().await;
+    llm_router::api::models::persist_registered_models(&test_app.db_pool).await;
 
     let models_res = app
         .clone()
@@ -792,7 +811,8 @@ async fn test_download_failure_shows_error_status() {
         .mount(&mock)
         .await;
 
-    let app = build_app().await;
+    let test_app = build_app().await;
+    let app = test_app.app;
 
     // register -> download fails
     let reg = app

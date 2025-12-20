@@ -633,11 +633,13 @@ pub struct ConvertTaskManager {
 impl ConvertTaskManager {
     /// 新しいマネージャーを生成し、ワーカーを起動
     /// concurrency: 同時に実行可能な変換タスクの最大数
-    pub fn new(concurrency: usize) -> Self {
+    /// db_pool: SQLiteプール（モデル登録の永続化に使用）
+    pub fn new(concurrency: usize, db_pool: sqlx::SqlitePool) -> Self {
         let concurrency = concurrency.max(1); // 最低1つは確保
         let (tx, mut rx) = mpsc::channel::<Uuid>(128);
         let tasks = Arc::new(Mutex::new(HashMap::new()));
         let tasks_clone = tasks.clone();
+        let pool_clone = db_pool.clone();
 
         // Semaphoreで同時実行数を制限
         let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
@@ -646,6 +648,7 @@ impl ConvertTaskManager {
             while let Some(task_id) = rx.recv().await {
                 let tasks = tasks_clone.clone();
                 let sem = semaphore.clone();
+                let pool = pool_clone.clone();
 
                 // Semaphoreのpermitを取得してから並列実行
                 tokio::spawn(async move {
@@ -658,7 +661,7 @@ impl ConvertTaskManager {
                         }
                     };
 
-                    if let Err(e) = Self::process_task(tasks, task_id).await {
+                    if let Err(e) = Self::process_task(tasks, task_id, &pool).await {
                         tracing::error!(task_id=?task_id, error=?e, "convert_task_failed");
                     }
                     // _permit is dropped here, releasing the semaphore
@@ -741,6 +744,7 @@ impl ConvertTaskManager {
     async fn process_task(
         tasks: Arc<Mutex<HashMap<Uuid, ConvertTask>>>,
         task_id: Uuid,
+        db_pool: &sqlx::SqlitePool,
     ) -> Result<(), RouterError> {
         tracing::info!(task_id=?task_id, "convert_task_started");
         let (repo, filename, revision, quantization, chat_template) = {
@@ -785,6 +789,7 @@ impl ConvertTaskManager {
             quantization.as_deref(),
             chat_template.clone(),
             progress_callback,
+            db_pool,
         )
         .await;
 
@@ -818,6 +823,7 @@ async fn download_and_maybe_convert<F>(
     _quantization: Option<&str>,
     chat_template: Option<String>,
     progress_callback: F,
+    db_pool: &sqlx::SqlitePool,
 ) -> Result<String, RouterError>
 where
     F: Fn(f32) + Send + Sync + Clone + 'static,
@@ -859,6 +865,7 @@ where
                 &url,
                 &target,
                 chat_template.clone(),
+                db_pool,
             )
             .await;
             return Ok(target.to_string_lossy().to_string());
@@ -887,7 +894,16 @@ where
         }
     }
 
-    finalize_model_registration(&model_name, repo, filename, &url, &target, chat_template).await;
+    finalize_model_registration(
+        &model_name,
+        repo,
+        filename,
+        &url,
+        &target,
+        chat_template,
+        db_pool,
+    )
+    .await;
 
     Ok(target.to_string_lossy().to_string())
 }
@@ -1371,6 +1387,7 @@ async fn finalize_model_registration(
     download_url: &str,
     target: &Path,
     chat_template: Option<String>,
+    db_pool: &sqlx::SqlitePool,
 ) {
     use crate::api::models::{
         list_registered_models, persist_registered_models, upsert_registered_model,
@@ -1405,7 +1422,7 @@ async fn finalize_model_registration(
     }
 
     upsert_registered_model(model);
-    persist_registered_models().await;
+    persist_registered_models(db_pool).await;
 
     // SPEC-dcaeaec4 FR-7: オンラインノードにプッシュ通知を送信
     notify_nodes_of_new_model(model_name).await;
@@ -1417,6 +1434,7 @@ async fn convert_to_gguf(
     repo: &str,
     revision: Option<&str>,
     _quantization: Option<&str>,
+    db_pool: &sqlx::SqlitePool,
 ) -> Result<String, RouterError> {
     // venvが準備完了か確認
     if !is_venv_ready() {
@@ -1520,7 +1538,7 @@ async fn convert_to_gguf(
     model.path = Some(target.to_string_lossy().to_string());
     model.source = ModelSource::HfGguf;
     let _ = crate::api::models::add_registered_model(model.clone());
-    crate::api::models::persist_registered_models().await;
+    crate::api::models::persist_registered_models(db_pool).await;
 
     Ok(target.to_string_lossy().to_string())
 }
@@ -1569,7 +1587,23 @@ fn parse_tqdm_progress(line: &str) -> Option<f32> {
 mod tests {
     use super::*;
     use crate::registry::models::{ModelInfo, ModelSource};
+    use serial_test::serial;
+    use sqlx::SqlitePool;
     use std::{env, time::Duration};
+
+    /// テスト用のインメモリSQLiteプールを作成
+    async fn create_test_pool() -> SqlitePool {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test pool");
+
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        pool
+    }
 
     // ===== Progress Parser Tests =====
 
@@ -1623,7 +1657,8 @@ mod tests {
         std::env::set_var("HOME", tmp.path());
         std::env::set_var("LLM_CONVERT_FAKE", "1");
 
-        let manager = ConvertTaskManager::new(1);
+        let pool = create_test_pool().await;
+        let manager = ConvertTaskManager::new(1, pool);
 
         let mut pending = ModelInfo::new("gpt-oss-20b".into(), 0, "desc".into(), 0, vec![]);
         pending.repo = Some("openai/gpt-oss-20b".into());
@@ -1652,6 +1687,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn verify_convert_ready_allows_custom_script_without_deps() {
         let tmp = tempfile::tempdir().unwrap();
         let script_path = tmp.path().join("mock_script.py");
@@ -1663,6 +1699,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn verify_convert_ready_errors_when_missing_script() {
         env::remove_var("LLM_CONVERT_SCRIPT");
         let res = verify_convert_ready();
@@ -1820,7 +1857,8 @@ mod tests {
         std::env::set_var("LLM_CONVERT_FAKE_DELAY_MS", "100"); // 100ms per task
 
         // Create manager with concurrency=2
-        let manager = ConvertTaskManager::new(2);
+        let pool = create_test_pool().await;
+        let manager = ConvertTaskManager::new(2, pool);
 
         // Enqueue 2 tasks
         let start = std::time::Instant::now();

@@ -20,9 +20,6 @@ use wiremock::{
 async fn build_app() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -30,6 +27,10 @@ async fn build_app() -> Router {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
@@ -389,9 +390,10 @@ async fn test_v1_models_returns_fixed_list() {
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,

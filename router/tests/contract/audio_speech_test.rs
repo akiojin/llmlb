@@ -7,7 +7,10 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node, register_node_with_runtimes, spawn_test_router},
+    router::{
+        approve_node_from_register_response, register_node, register_node_with_runtimes,
+        spawn_test_router,
+    },
 };
 use axum::{
     body::Body,
@@ -109,7 +112,11 @@ async fn speech_end_to_end_success() {
         register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
             .await
             .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) =
+        approve_node_from_register_response(coordinator.addr(), register_response)
+            .await
+            .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
@@ -162,7 +169,11 @@ async fn speech_with_optional_params() {
         register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
             .await
             .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) =
+        approve_node_from_register_response(coordinator.addr(), register_response)
+            .await
+            .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
@@ -204,7 +215,11 @@ async fn speech_empty_input_returns_400() {
     let register_response = register_node(coordinator.addr(), tts_stub.addr())
         .await
         .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) =
+        approve_node_from_register_response(coordinator.addr(), register_response)
+            .await
+            .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
@@ -294,7 +309,11 @@ async fn speech_input_too_long_returns_400() {
     let register_response = register_node(coordinator.addr(), tts_stub.addr())
         .await
         .expect("register agent must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) =
+        approve_node_from_register_response(coordinator.addr(), register_response)
+            .await
+            .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     // 4097文字のテキスト
     let long_input = "あ".repeat(4097);

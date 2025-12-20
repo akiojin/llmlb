@@ -105,6 +105,48 @@ pub async fn register_node_with_runtimes(
         .await
 }
 
+/// 指定したノードを管理者として承認する
+#[allow(dead_code)]
+pub async fn approve_node(router_addr: SocketAddr, node_id: &str) -> reqwest::Result<Response> {
+    let client = Client::new();
+    let login_response = client
+        .post(format!("http://{}/v0/auth/login", router_addr))
+        .json(&json!({
+            "username": "admin",
+            "password": "test"
+        }))
+        .send()
+        .await?;
+
+    let login_data: Value = login_response.json().await.unwrap_or_default();
+    let token = login_data["token"].as_str().unwrap_or_default();
+
+    client
+        .post(format!(
+            "http://{}/v0/nodes/{}/approve",
+            router_addr, node_id
+        ))
+        .header("authorization", format!("Bearer {}", token))
+        .send()
+        .await
+}
+
+/// 登録レスポンスからノードを承認し、HTTPステータスとボディを返す
+#[allow(dead_code)]
+pub async fn approve_node_from_register_response(
+    router_addr: SocketAddr,
+    register_response: Response,
+) -> reqwest::Result<(reqwest::StatusCode, Value)> {
+    let status = register_response.status();
+    let body: Value = register_response.json().await.unwrap_or_default();
+
+    if let Some(node_id) = body.get("node_id").and_then(|v| v.as_str()) {
+        let _ = approve_node(router_addr, node_id).await?;
+    }
+
+    Ok((status, body))
+}
+
 /// テスト用の管理者ユーザーを作成してAPIキーを取得する
 #[allow(dead_code)]
 pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) -> String {

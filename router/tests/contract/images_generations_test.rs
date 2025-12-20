@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{register_node_with_runtimes, spawn_test_router},
+    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -149,7 +149,10 @@ async fn images_generations_success() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let res = client
@@ -195,7 +198,10 @@ async fn images_generations_base64_response() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let res = client
@@ -237,7 +243,10 @@ async fn images_generations_multiple() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let res = client
@@ -275,7 +284,10 @@ async fn images_generations_missing_prompt() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let res = client
@@ -357,7 +369,10 @@ async fn images_generations_with_options() {
         register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
             .await
             .expect("register node must succeed");
-    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+        .await
+        .expect("approve node must succeed");
+    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let res = client

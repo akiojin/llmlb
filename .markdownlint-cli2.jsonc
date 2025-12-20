@@ -9,12 +9,12 @@
   "ignores": [
     "**/node_modules/**",
     "**/dist/**",
-    "node_modules",
-    ".git",
-    ".github",
-    ".worktrees",
-    "vendor",
-    "node/third_party",
-    "node/build"
+    ".git/**",
+    ".github/**",
+    ".worktrees/**",
+    "vendor/**",
+    "**/vendor/**",
+    "node/third_party/**",
+    "node/build/**"
   ]
 }

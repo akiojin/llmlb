@@ -31,7 +31,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     };
 
     // 登録済みノードを追加
-    state
+    let register_response = state
         .registry
         .register(llm_router_common::protocol::RegisterRequest {
             machine_name: "mock-node".into(),
@@ -53,7 +53,8 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .unwrap();
 
     // ノードをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
-    let node_id = state.registry.list().await[0].id;
+    let node_id = register_response.node_id;
+    state.registry.approve(node_id).await.unwrap();
 
     // レジストリにロード済みモデル・初期化解除を反映
     state

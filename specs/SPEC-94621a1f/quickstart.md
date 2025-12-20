@@ -36,7 +36,33 @@ REGISTER_RES=$(curl -sS http://localhost:8080/v0/nodes \
 echo "$REGISTER_RES" | jq .
 ```
 
-### 3. ノード一覧確認
+> NOTE: 登録直後のノードは `pending` として保存されます。運用対象にするには承認が必要です。
+
+### 3. 管理者ログイン（JWT取得）
+
+```bash
+LOGIN_RES=$(curl -sS http://localhost:8080/v0/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "test"
+  }')
+
+echo "$LOGIN_RES" | jq .
+JWT_TOKEN=$(echo "$LOGIN_RES" | jq -r .token)
+```
+
+### 4. ノード承認
+
+```bash
+NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
+
+curl -sS http://localhost:8080/v0/nodes/${NODE_ID}/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${JWT_TOKEN}" | jq .
+```
+
+### 5. ノード一覧確認
 
 ```bash
 curl -sS http://localhost:8080/v0/nodes | jq .

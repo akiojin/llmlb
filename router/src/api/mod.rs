@@ -8,6 +8,7 @@ pub mod auth;
 pub mod dashboard;
 pub mod health;
 pub mod images;
+pub mod invitations;
 pub mod logs;
 pub mod models;
 pub mod nodes;
@@ -59,6 +60,7 @@ pub fn create_router(state: AppState) -> Router {
             "/users/:id",
             put(users::update_user).delete(users::delete_user),
         )
+        .route("/nodes/:node_id/approve", post(nodes::approve_node))
         .route(
             "/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
@@ -67,6 +69,11 @@ pub fn create_router(state: AppState) -> Router {
             "/api-keys/:id",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
+        .route(
+            "/invitations",
+            get(invitations::list_invitations).post(invitations::create_invitation),
+        )
+        .route("/invitations/:id", delete(invitations::revoke_invitation))
         // ノード管理（一覧・削除・設定更新・メトリクス）
         .route("/nodes", get(nodes::list_nodes))
         .route("/nodes/:node_id", delete(nodes::delete_node))
@@ -179,8 +186,8 @@ pub fn create_router(state: AppState) -> Router {
         crate::auth::middleware::api_key_or_node_token_auth_middleware,
     ));
 
-    // NOTE: /v0/models (GET) は廃止されました。
-    // モデル一覧は /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
+    // NOTE: /v0/models (GET) はノード同期専用です。
+    // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
 
     Router::new()
         // `/v0/*`: llm-router独自API（互換不要・versioned）
@@ -189,6 +196,7 @@ pub fn create_router(state: AppState) -> Router {
             Router::new()
                 // 認証エンドポイント（ログインは認証不要）
                 .route("/auth/login", post(auth::login))
+                .route("/auth/register", post(auth::register))
                 .merge(auth_routes)
                 .merge(admin_routes)
                 .merge(node_register_routes)

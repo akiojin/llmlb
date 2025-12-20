@@ -183,8 +183,8 @@ impl NodeRegistry {
             node.gpu_count = req.gpu_count;
             node.gpu_model = req.gpu_model.clone();
             node.supported_runtimes = req.supported_runtimes.clone();
-            // 再登録時は Registering に戻す（モデル同期完了後に Online に遷移）
-            node.status = NodeStatus::Registering;
+            // 再登録時は Pending に戻す（承認後に Registering/Online に遷移）
+            node.status = NodeStatus::Pending;
             node.last_seen = now;
             // online_since はモデル同期完了（Online遷移）時に設定
             node.online_since = None;
@@ -202,7 +202,7 @@ impl NodeRegistry {
                 ip_address: req.ip_address,
                 runtime_version: req.runtime_version,
                 runtime_port: req.runtime_port,
-                status: NodeStatus::Registering,
+                status: NodeStatus::Pending,
                 registered_at: now,
                 last_seen: now,
                 // online_since はモデル同期完了（Online遷移）時に設定
@@ -306,6 +306,9 @@ impl NodeRegistry {
             // 状態遷移ロジック
             let current_ready = ready_models.or(node.ready_models);
             match node.status {
+                NodeStatus::Pending => {
+                    // 承認待ちのため状態遷移しない
+                }
                 NodeStatus::Registering => {
                     // モデル同期完了したらOnlineに遷移
                     if let Some((ready, total)) = current_ready {
@@ -376,6 +379,45 @@ impl NodeRegistry {
         // ロック解放後にストレージ保存
         self.save_to_storage(&node_to_save).await?;
         Ok(())
+    }
+
+    /// ノードを承認
+    pub async fn approve(&self, node_id: Uuid) -> RouterResult<Node> {
+        let node_to_save = {
+            let mut nodes = self.nodes.write().await;
+            let node = nodes
+                .get_mut(&node_id)
+                .ok_or(RouterError::NodeNotFound(node_id))?;
+
+            if node.status != NodeStatus::Pending {
+                return Err(RouterError::Common(
+                    llm_router_common::error::CommonError::Validation(
+                        "Node is not pending".to_string(),
+                    ),
+                ));
+            }
+
+            let now = Utc::now();
+            let ready = node
+                .ready_models
+                .map(|(ready, total)| ready >= total)
+                .unwrap_or(false);
+
+            if ready {
+                node.status = NodeStatus::Online;
+                node.initializing = false;
+                node.online_since = Some(now);
+            } else {
+                node.status = NodeStatus::Registering;
+                node.initializing = true;
+                node.online_since = None;
+            }
+
+            node.clone()
+        };
+
+        self.save_to_storage(&node_to_save).await?;
+        Ok(node_to_save)
     }
 }
 
@@ -530,8 +572,8 @@ mod tests {
 
         let node = registry.get(response.node_id).await.unwrap();
         assert_eq!(node.machine_name, "test-machine");
-        // 新規登録時は Registering 状態（モデル同期完了で Online に遷移）
-        assert_eq!(node.status, NodeStatus::Registering);
+        // 新規登録時は Pending 状態（承認後に Registering/Online に遷移）
+        assert_eq!(node.status, NodeStatus::Pending);
         assert!(node.loaded_models.is_empty());
     }
 
@@ -559,6 +601,80 @@ mod tests {
 
         let node = registry.get(first_response.node_id).await.unwrap();
         assert!(node.loaded_models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_approve_pending_to_online_when_ready() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "approve-ready".to_string(),
+            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = registry.register(req).await.unwrap();
+        // pending 中でもメトリクス更新は行われるが、状態は遷移しない
+        registry
+            .update_last_seen(
+                response.node_id,
+                Some(vec!["gpt-oss-20b".to_string()]),
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)),
+            )
+            .await
+            .unwrap();
+
+        let pending_node = registry.get(response.node_id).await.unwrap();
+        assert_eq!(pending_node.status, NodeStatus::Pending);
+
+        let approved = registry.approve(response.node_id).await.unwrap();
+        assert_eq!(approved.status, NodeStatus::Online);
+        assert!(approved.online_since.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_approve_pending_to_registering_when_not_ready() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "approve-not-ready".to_string(),
+            ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = registry.register(req).await.unwrap();
+        registry
+            .update_last_seen(
+                response.node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                Some((0, 1)),
+            )
+            .await
+            .unwrap();
+
+        let approved = registry.approve(response.node_id).await.unwrap();
+        assert_eq!(approved.status, NodeStatus::Registering);
+        assert!(approved.online_since.is_none());
     }
 
     #[tokio::test]

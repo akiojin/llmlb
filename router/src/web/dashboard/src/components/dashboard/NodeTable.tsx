@@ -47,7 +47,9 @@ const PAGE_SIZE = 10
 
 export function NodeTable({ nodes, isLoading }: NodeTableProps) {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline'>('all')
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'online' | 'pending' | 'registering' | 'offline'
+  >('all')
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [currentPage, setCurrentPage] = useState(1)
@@ -233,7 +235,9 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
               <Select
                 value={statusFilter}
                 onValueChange={(value) => {
-                  setStatusFilter(value as 'all' | 'online' | 'offline')
+                  setStatusFilter(
+                    value as 'all' | 'online' | 'pending' | 'registering' | 'offline'
+                  )
                   setCurrentPage(1)
                 }}
               >
@@ -243,6 +247,8 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="registering">Registering</SelectItem>
                   <SelectItem value="offline">Offline</SelectItem>
                 </SelectContent>
               </Select>
@@ -378,7 +384,13 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={node.status === 'online' ? 'online' : 'offline'}
+                          variant={
+                            node.status === 'online'
+                              ? 'online'
+                              : node.status === 'offline'
+                              ? 'offline'
+                              : 'pending'
+                          }
                           className="gap-1"
                         >
                           <span
@@ -386,7 +398,9 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                               'h-1.5 w-1.5 rounded-full',
                               node.status === 'online'
                                 ? 'bg-success animate-pulse'
-                                : 'bg-destructive'
+                                : node.status === 'offline'
+                                ? 'bg-destructive'
+                                : 'bg-warning'
                             )}
                           />
                           {node.status}

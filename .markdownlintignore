@@ -8,5 +8,6 @@ dist/
 .git/
 bun.lock
 vendor/
+**/vendor/
 node/third_party/
 node/build/

@@ -21,7 +21,10 @@ mod support;
 
 use support::{
     http::{spawn_router, TestServer},
-    router::{create_test_api_key, register_node, spawn_test_router, spawn_test_router_with_db},
+    router::{
+        approve_node, create_test_api_key, register_node, spawn_test_router,
+        spawn_test_router_with_db,
+    },
 };
 
 #[derive(Clone)]
@@ -46,6 +49,28 @@ async fn spawn_node_stub(state: NodeStubState) -> TestServer {
         .with_state(shared_state);
 
     spawn_router(router).await
+}
+
+async fn register_and_approve(router: &TestServer, node_stub: &TestServer) -> Value {
+    let register_response = register_node(router.addr(), node_stub.addr())
+        .await
+        .expect("node registration should succeed");
+    assert!(
+        register_response.status().is_success(),
+        "registration should return success"
+    );
+    let body: Value = register_response
+        .json()
+        .await
+        .expect("register response should be json");
+    let node_id = body["node_id"].as_str().expect("node_id should exist");
+
+    let approve_response = approve_node(router.addr(), node_id)
+        .await
+        .expect("approve request should succeed");
+    assert_eq!(approve_response.status(), reqwest::StatusCode::OK);
+
+    body
 }
 
 async fn node_chat_handler(
@@ -122,9 +147,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
 
     let router = spawn_test_router().await;
 
-    register_node(router.addr(), node_stub.addr())
-        .await
-        .expect("node registration should succeed");
+    register_and_approve(&router, &node_stub).await;
 
     let client = Client::new();
 
@@ -277,9 +300,7 @@ async fn openai_v1_models_list_with_registered_node() {
 
     let (router, db_pool) = spawn_test_router_with_db().await;
 
-    register_node(router.addr(), node_stub.addr())
-        .await
-        .expect("node registration should succeed");
+    register_and_approve(&router, &node_stub).await;
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;
@@ -331,9 +352,7 @@ async fn openai_v1_models_get_specific() {
 
     let (router, db_pool) = spawn_test_router_with_db().await;
 
-    register_node(router.addr(), node_stub.addr())
-        .await
-        .expect("node registration should succeed");
+    register_and_approve(&router, &node_stub).await;
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;
@@ -369,9 +388,7 @@ async fn openai_v1_models_not_found() {
 
     let (router, db_pool) = spawn_test_router_with_db().await;
 
-    register_node(router.addr(), node_stub.addr())
-        .await
-        .expect("node registration should succeed");
+    register_and_approve(&router, &node_stub).await;
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;

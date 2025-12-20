@@ -114,7 +114,7 @@ mod tests {
         };
         let register_response = state.registry.register(register_req).await.unwrap();
 
-        // ヘルスチェックを送信（全モデル準備完了 → Online に遷移）
+        // Pending 状態でもヘルスチェックを受理する
         let health_req = HealthCheckRequest {
             node_id: register_response.node_id,
             cpu_usage: 45.5,
@@ -141,9 +141,9 @@ mod tests {
         let result = health_check(State(state.clone()), Json(health_req)).await;
         assert!(result.is_ok());
 
-        // ノードが更新されたことを確認
+        // Pending 状態でもヘルスチェックが受理されることを確認
         let node = state.registry.get(register_response.node_id).await.unwrap();
-        assert_eq!(node.status, llm_router_common::types::NodeStatus::Online);
+        assert_eq!(node.status, llm_router_common::types::NodeStatus::Pending);
         assert_eq!(node.loaded_models, vec!["gpt-oss-20b"]);
     }
 

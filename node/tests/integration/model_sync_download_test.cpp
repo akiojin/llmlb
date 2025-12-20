@@ -34,11 +34,11 @@ public:
 class RouterAndRegistryServer {
 public:
     void start(int router_port, int registry_port) {
-        // SPEC-dcaeaec4: ModelSync uses /v0/models (extended format)
-        router_.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
+        // ModelSync now uses /v1/models (OpenAI-compatible format)
+        router_.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            // /v0/models returns array directly with "name" field
-            res.set_content(R"([{"name":"gpt-oss-7b","etag":"\"etag-1\"","size":3}])", "application/json");
+            // /v1/models returns {"object":"list","data":[...]} with "id" field
+            res.set_content(R"({"object":"list","data":[{"id":"gpt-oss-7b","etag":"\"etag-1\"","size":3}]})", "application/json");
         });
 
         registry_.Get(R"(/gpt-oss-7b/manifest.json)", [](const httplib::Request&, httplib::Response& res) {

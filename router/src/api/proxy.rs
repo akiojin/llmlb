@@ -183,11 +183,11 @@ mod tests {
             gpu_model: Some("Test GPU".to_string()),
             supported_runtimes: Vec::new(),
         };
-        state.registry.register(register_req).await.unwrap();
+        let response = state.registry.register(register_req).await.unwrap();
+        state.registry.approve(response.node_id).await.unwrap();
 
         // mark as ready so load balancer can pick
-        let nodes = state.registry.list().await;
-        mark_ready(&state, nodes[0].id).await;
+        mark_ready(&state, response.node_id).await;
 
         let result = select_available_node(&state).await;
         assert!(result.is_ok());
@@ -217,6 +217,7 @@ mod tests {
             supported_runtimes: Vec::new(),
         };
         let response1 = state.registry.register(register_req1).await.unwrap();
+        state.registry.approve(response1.node_id).await.unwrap();
 
         // ノード1をオフラインにする
         state
@@ -242,6 +243,7 @@ mod tests {
             supported_runtimes: Vec::new(),
         };
         let response2 = state.registry.register(register_req2).await.unwrap();
+        state.registry.approve(response2.node_id).await.unwrap();
 
         // mark second node ready
         mark_ready(&state, response2.node_id).await;

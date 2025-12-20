@@ -4,7 +4,7 @@
 
 ## 概要
 
-管理ダッシュボード機能で使用するデータモデル定義。既存の`Node`型を再利用し、新規に`SystemStats`型を追加する。
+管理ダッシュボード機能で使用するデータモデル定義。既存の`Node`型を再利用し、新規に`DashboardStats`型を追加する。
 
 ## エンティティ
 
@@ -29,6 +29,8 @@ pub struct Node {
 }
 
 pub enum NodeStatus {
+    Pending,
+    Registering,
     Online,
     Offline,
 }
@@ -48,37 +50,55 @@ pub struct SystemInfo {
 
 **ダッシュボードでの使用**:
 - ノード一覧表示
-- オンライン/オフラインステータス表示
+- pending/registering/online/offline ステータス表示
 - 稼働時間計算（直近でオンラインになった時刻=`online_since` と現在時刻の差分、未設定時は0秒）
 
-### 2. SystemStats (新規)
+### 2. DashboardStats (新規)
 
 **説明**: システム全体の統計情報
 
 **フィールド**:
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SystemStats {
+pub struct DashboardStats {
     pub total_nodes: usize,
     pub online_nodes: usize,
+    pub pending_nodes: usize,
+    pub registering_nodes: usize,
     pub offline_nodes: usize,
-    pub total_requests: u64,      // 将来拡張
-    pub avg_response_time_ms: u32, // 将来拡張
-    pub errors_count: u64,         // 将来拡張
+    pub total_requests: u64,
+    pub successful_requests: u64,
+    pub failed_requests: u64,
+    pub total_active_requests: u32,
+    pub average_response_time_ms: Option<f32>,
+    pub average_gpu_usage: Option<f32>,
+    pub average_gpu_memory_usage: Option<f32>,
+    pub last_metrics_updated_at: Option<DateTime<Utc>>,
+    pub last_registered_at: Option<DateTime<Utc>>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub openai_key_present: bool,
+    pub google_key_present: bool,
+    pub anthropic_key_present: bool,
 }
 ```
 
 **検証ルール**:
 - `total_nodes >= 0`
-- `online_nodes + offline_nodes == total_nodes`
+- `online_nodes + pending_nodes + registering_nodes + offline_nodes == total_nodes`
 - `total_requests >= 0`
-- `avg_response_time_ms >= 0`
+- `successful_requests >= 0`
+- `failed_requests >= 0`
+- `total_active_requests >= 0`
+- `average_response_time_ms`, `average_gpu_usage`, `average_gpu_memory_usage` は `Some` の場合 `>= 0`
 
 **計算方法**:
 - `total_nodes`: NodeRegistryの全ノード数
 - `online_nodes`: `status == NodeStatus::Online`の数
+- `pending_nodes`: `status == NodeStatus::Pending`の数
+- `registering_nodes`: `status == NodeStatus::Registering`の数
 - `offline_nodes`: `status == NodeStatus::Offline`の数
-- `total_requests`, `avg_response_time_ms`, `errors_count`: 将来拡張（初期実装では0）
+- `total_requests`, `successful_requests`, `failed_requests`, `total_active_requests`: RequestHistory集計
+- `average_*`: 最新メトリクスの平均（利用可能な場合のみ）
 
 ### 3. NodeWithUptime (新規レスポンス型)
 
@@ -175,7 +195,7 @@ pub struct NodeMetrics {
 └──────────────────┘
 
 ┌──────────────────┐
-│   SystemStats    │ (新規)
+│  DashboardStats  │ (新規)
 │──────────────────│
 │ + total_nodes    │
 │ + online_nodes   │
@@ -250,7 +270,7 @@ Client ─GET /v0/dashboard/stats→ Router
                                        │
                                        │ count(), filter()
                                        ▼
-                                   SystemStats
+                                   DashboardStats
                                        │
                                        │ JSON
                                        ▼
@@ -262,7 +282,7 @@ Client ◄───────────────────────�
 ```
 common/src/
 ├── types.rs              # Node, NodeStatus, SystemInfo (既存)
-└── dashboard.rs          # NodeWithUptime, SystemStats (新規)
+└── dashboard.rs          # NodeWithUptime, DashboardStats (新規)
 
 router/src/
 ├── api/
@@ -292,17 +312,27 @@ router/src/
 }
 ```
 
-### サンプルSystemStats
+### サンプルDashboardStats
 ```json
 {
   "total_nodes": 10,
-  "online_nodes": 8,
-  "offline_nodes": 2,
-  "total_requests": 0,
-  "successful_requests": 0,
-  "failed_requests": 0,
-  "total_active_requests": 0,
-  "average_response_time_ms": null
+  "online_nodes": 6,
+  "pending_nodes": 2,
+  "registering_nodes": 1,
+  "offline_nodes": 1,
+  "total_requests": 1200,
+  "successful_requests": 1180,
+  "failed_requests": 20,
+  "total_active_requests": 4,
+  "average_response_time_ms": 132.5,
+  "average_gpu_usage": 42.1,
+  "average_gpu_memory_usage": 38.7,
+  "last_metrics_updated_at": "2025-10-31T12:30:00Z",
+  "last_registered_at": "2025-10-31T12:25:00Z",
+  "last_seen_at": "2025-10-31T12:30:00Z",
+  "openai_key_present": true,
+  "google_key_present": false,
+  "anthropic_key_present": false
 }
 ```
 

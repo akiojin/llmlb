@@ -41,6 +41,10 @@ async fn test_round_robin_load_balancing() {
         node_ids.push(response.node_id);
     }
 
+    for node_id in &node_ids {
+        registry.approve(*node_id).await.unwrap();
+    }
+
     // 登録後に全ノードにメトリクスを記録してOnlineに遷移
     // 全ノードに同じaverage_response_time_msを設定してラウンドロビン均等化
     for node_id in &node_ids {
@@ -145,6 +149,8 @@ async fn test_load_based_balancing_favors_low_cpu_nodes() {
         .await
         .unwrap()
         .node_id;
+    registry.approve(high_cpu_node).await.unwrap();
+    registry.approve(low_cpu_node).await.unwrap();
 
     // 高負荷ノードはCPU 95%、低負荷ノードはCPU 10%
     load_manager
@@ -251,6 +257,8 @@ async fn test_load_based_balancing_prefers_lower_latency() {
         .await
         .unwrap()
         .node_id;
+    registry.approve(slow_node).await.unwrap();
+    registry.approve(fast_node).await.unwrap();
 
     load_manager
         .record_metrics(MetricsUpdate {
@@ -298,14 +306,14 @@ async fn test_load_based_balancing_prefers_lower_latency() {
 }
 
 #[tokio::test]
-async fn test_load_balancer_excludes_registering_nodes() {
+async fn test_load_balancer_excludes_non_online_nodes() {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
 
-    // Registering 状態のノード（メトリクスを記録しないので Registering のまま）
-    let registering_node = registry
+    // Pending 状態のノード（承認されるまで Online にならない）
+    let pending_node = registry
         .register(RegisterRequest {
-            machine_name: "registering-node".to_string(),
+            machine_name: "pending-node".to_string(),
             ip_address: "192.168.4.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 11434,
@@ -323,7 +331,7 @@ async fn test_load_balancer_excludes_registering_nodes() {
         .unwrap()
         .node_id;
 
-    // Online 状態のノード（メトリクスを記録して Online に遷移）
+    // Online 状態のノード（承認後にメトリクスを記録して Online に遷移）
     let online_node = registry
         .register(RegisterRequest {
             machine_name: "online-node".to_string(),
@@ -343,6 +351,7 @@ async fn test_load_balancer_excludes_registering_nodes() {
         .await
         .unwrap()
         .node_id;
+    registry.approve(online_node).await.unwrap();
 
     // online_agent のみメトリクスを記録して Online に遷移
     load_manager
@@ -371,11 +380,11 @@ async fn test_load_balancer_excludes_registering_nodes() {
         let selected = load_manager.select_node().await.unwrap();
         assert_eq!(
             selected.id, online_node,
-            "Load balancer should exclude Registering nodes and only select Online nodes"
+            "Load balancer should exclude non-online nodes and only select Online nodes"
         );
         assert_ne!(
-            selected.id, registering_node,
-            "Registering node should not be selected"
+            selected.id, pending_node,
+            "Pending node should not be selected"
         );
 
         load_manager.begin_request(selected.id).await.unwrap();

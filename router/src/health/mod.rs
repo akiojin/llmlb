@@ -56,7 +56,7 @@ impl HealthMonitor {
         let now = Utc::now();
 
         for node in nodes {
-            // Offlineのみスキップ（Registering も Online と同様にタイムアウト検知対象）
+            // Offlineのみスキップ（Pending/Registering/Online はタイムアウト検知対象）
             if node.status == NodeStatus::Offline {
                 continue;
             }
@@ -135,8 +135,8 @@ mod tests {
         let result = monitor.check_node_health().await;
         assert!(result.is_ok());
 
-        // 新規登録ノードは Registering 状態（ハートビートで Online に遷移）
+        // 新規登録ノードは Pending 状態（承認後に Registering/Online に遷移）
         let nodes = registry.list().await;
-        assert_eq!(nodes[0].status, NodeStatus::Registering);
+        assert_eq!(nodes[0].status, NodeStatus::Pending);
     }
 }

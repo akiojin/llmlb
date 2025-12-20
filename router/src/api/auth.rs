@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use llm_router_common::auth::Claims;
+use llm_router_common::auth::{Claims, UserRole};
 use serde::{Deserialize, Serialize};
 
 /// ログインリクエスト
@@ -208,6 +208,121 @@ pub async fn me(
         username: user.username,
         role: format!("{:?}", user.role).to_lowercase(),
     }))
+}
+
+/// ユーザー登録リクエスト
+#[derive(Debug, Deserialize)]
+pub struct RegisterRequest {
+    /// 招待コード
+    pub invitation_code: String,
+    /// ユーザー名
+    pub username: String,
+    /// パスワード
+    pub password: String,
+}
+
+/// ユーザー登録レスポンス
+#[derive(Debug, Serialize)]
+pub struct RegisterResponse {
+    /// ユーザーID
+    pub id: String,
+    /// ユーザー名
+    pub username: String,
+    /// ロール
+    pub role: String,
+    /// 作成日時
+    pub created_at: String,
+}
+
+/// POST /v0/auth/register - 招待コードでユーザー登録
+///
+/// 有効な招待コードを使ってユーザー登録する（認証不要）
+///
+/// # Arguments
+/// * `State(app_state)` - アプリケーション状態
+/// * `Json(request)` - 登録リクエスト（招待コード、ユーザー名、パスワード）
+///
+/// # Returns
+/// * `201 Created` - 登録成功
+/// * `400 Bad Request` - 招待コードが無効/期限切れ/使用済み
+/// * `409 Conflict` - ユーザー名が既に存在
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn register(
+    State(app_state): State<AppState>,
+    Json(request): Json<RegisterRequest>,
+) -> Result<(StatusCode, Json<RegisterResponse>), Response> {
+    // 招待コードを検索
+    let invitation =
+        crate::db::invitations::find_by_code(&app_state.db_pool, &request.invitation_code)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to find invitation code: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            })?
+            .ok_or_else(|| (StatusCode::BAD_REQUEST, "Invalid invitation code").into_response())?;
+
+    // 招待コードが有効かチェック
+    crate::db::invitations::validate_invitation(&invitation).map_err(|e| {
+        tracing::info!("Invalid invitation code: {}", e);
+        (StatusCode::BAD_REQUEST, e.to_string()).into_response()
+    })?;
+
+    // ユーザー名の重複チェック
+    let existing = crate::db::users::find_by_username(&app_state.db_pool, &request.username)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check username: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        })?;
+
+    if existing.is_some() {
+        return Err((StatusCode::CONFLICT, "Username already exists").into_response());
+    }
+
+    // パスワードをハッシュ化
+    let password_hash = crate::auth::password::hash_password(&request.password).map_err(|e| {
+        tracing::error!("Failed to hash password: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+    })?;
+
+    // ユーザーを作成（招待登録は常にviewer）
+    let user = crate::db::users::create(
+        &app_state.db_pool,
+        &request.username,
+        &password_hash,
+        UserRole::Viewer,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create user: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+    })?;
+
+    // 招待コードを使用済みにする
+    crate::db::invitations::mark_as_used(&app_state.db_pool, invitation.id, user.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to mark invitation as used: {}", e);
+            // ユーザーは既に作成されているため、エラーでもロールバックしない
+            // ここでのエラーはログに記録するが、ユーザー作成は成功として扱う
+        })
+        .ok();
+
+    tracing::info!(
+        "User registered via invitation: {} (id={})",
+        user.username,
+        user.id
+    );
+
+    Ok((
+        StatusCode::CREATED,
+        Json(RegisterResponse {
+            id: user.id.to_string(),
+            username: user.username,
+            role: format!("{:?}", UserRole::Viewer).to_lowercase(),
+            created_at: user.created_at.to_rfc3339(),
+        }),
+    ))
 }
 
 #[cfg(test)]

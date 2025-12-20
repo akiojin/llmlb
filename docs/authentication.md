@@ -33,6 +33,10 @@ Clients send the key via `Authorization: Bearer <api_key>`.
 
 Alternatively, clients can send `X-API-Key: <api_key>`.
 
+Note: If `Authorization: Bearer` looks like a JWT (three dot-separated segments) and JWT
+verification fails, the request is rejected and API key fallback is not attempted. Clients
+should send only one auth scheme per request.
+
 ### API key scopes
 
 - `api:inference`: OpenAI-compatible `/v1/*` inference endpoints

@@ -118,6 +118,7 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Result res;
     if (api_key.has_value() && !api_key->empty()) {
         httplib::Headers headers = {{"Authorization", "Bearer " + *api_key}};
+        // /v0/models provides node sync metadata (path/download_url); /v1/models is OpenAI-compatible.
         res = cli.Get("/v0/models", headers);
     } else if (node_token.has_value() && !node_token->empty()) {
         httplib::Headers headers = {{"X-Node-Token", *node_token}};

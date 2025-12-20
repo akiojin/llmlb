@@ -367,7 +367,7 @@ async fn test_model_matrix_view_multiple_nodes() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/models")
-                .header("x-api-key", "sk_debug")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )

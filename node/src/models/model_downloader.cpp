@@ -318,8 +318,9 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
 }
 
 std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std::string& filename, ProgressCallback cb,
-                                          const std::string& expected_sha256, const std::string& if_none_match) {
+    const std::string& expected_sha256, const std::string& if_none_match) {
     ParsedUrl url = parseUrl(blob_url);
+    // Keep whether the original URL was relative before resolving against registry_base_.
     const bool is_relative = url.scheme.empty();
 
     // blob_url が相対パスの場合は registry_base_ を基準に解決する

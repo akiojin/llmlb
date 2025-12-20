@@ -148,6 +148,12 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     EXPECT_TRUE(body.contains("loaded_asr_models"));
     EXPECT_TRUE(body.contains("loaded_tts_models"));
     EXPECT_TRUE(body.contains("supported_runtimes"));
+    EXPECT_TRUE(body["loaded_asr_models"].is_array());
+    EXPECT_TRUE(body["loaded_tts_models"].is_array());
+    EXPECT_TRUE(body["supported_runtimes"].is_array());
+    EXPECT_EQ(body["loaded_asr_models"].size(), 0);
+    EXPECT_EQ(body["loaded_tts_models"].size(), 0);
+    EXPECT_EQ(body["supported_runtimes"].size(), 0);
     EXPECT_EQ(body["initializing"], false);
 }
 

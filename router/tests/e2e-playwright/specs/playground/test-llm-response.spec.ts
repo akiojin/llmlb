@@ -1,51 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { mockChatCompletionsStream, mockOpenAIModels } from '../../helpers/mock-helpers';
 import { PlaygroundPage } from '../../pages/playground.page';
-
-function mockOpenAIModels(page: Page) {
-  const created = Math.floor(Date.now() / 1000);
-  return page.route('**/v1/models', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        object: 'list',
-        data: [
-          {
-            id: 'openai:gpt-4o',
-            object: 'model',
-            created,
-            owned_by: 'openai',
-            capabilities: {
-              chat_completion: true,
-              completion: false,
-              embeddings: false,
-              fine_tune: false,
-              inference: true,
-              text_to_speech: false,
-              speech_to_text: true,
-              image_generation: true,
-            },
-            lifecycle_status: 'registered',
-            download_progress: null,
-            ready: true,
-          },
-        ],
-      }),
-    });
-  });
-}
-
-function mockChatCompletionsStream(page: Page, assistantText: string) {
-  return page.route('**/v1/chat/completions', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-      body:
-        `data: ${JSON.stringify({ choices: [{ delta: { content: assistantText } }] })}\n\n` +
-        'data: [DONE]\n\n',
-    });
-  });
-}
 
 test('LLM response in Playground', async ({ page }) => {
   await mockOpenAIModels(page);

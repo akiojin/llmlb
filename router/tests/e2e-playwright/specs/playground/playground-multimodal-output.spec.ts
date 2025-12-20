@@ -1,50 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-
-function mockOpenAIModels(page: Page) {
-  const created = Math.floor(Date.now() / 1000);
-  return page.route('**/v1/models', async (route) => {
-    // Mock the /v1/models endpoint with OpenAI-compatible format
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        object: 'list',
-        data: [
-          {
-            id: 'openai:gpt-4o',
-            object: 'model',
-            created,
-            owned_by: 'openai',
-            capabilities: {
-              chat_completion: true,
-              completion: false,
-              embeddings: false,
-              fine_tune: false,
-              inference: true,
-              text_to_speech: false,
-              speech_to_text: true,
-              image_generation: true,
-            },
-            lifecycle_status: 'registered',
-            download_progress: null,
-            ready: true,
-          },
-        ],
-      }),
-    });
-  });
-}
-
-function mockChatCompletionsStream(page: Page, assistantText: string) {
-  return page.route('**/v1/chat/completions', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-      body: `data: ${JSON.stringify({ choices: [{ delta: { content: assistantText } }] })}\n\n` +
-        'data: [DONE]\n\n',
-    });
-  });
-}
+import { mockChatCompletionsStream, mockOpenAIModels } from '../../helpers/mock-helpers';
 
 const transparentPngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lk1kAAAAASUVORK5CYII=';

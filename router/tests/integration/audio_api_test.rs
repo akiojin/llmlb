@@ -13,7 +13,7 @@ use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use tower::ServiceExt;
 
-use crate::support::http;
+use crate::support::{admin::approve_node, http};
 
 async fn build_app() -> Router {
     let registry = NodeRegistry::new();
@@ -43,21 +43,17 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
-async fn spawn_audio_stub() -> http::TestServer {
+async fn spawn_audio_stub() -> http::TestServerGuard {
     let router = Router::new()
         .route("/v1/audio/transcriptions", post(transcriptions_handler))
         .route("/v1/audio/speech", post(speech_handler))
         .route("/v1/models", get(models_handler));
-    http::spawn_router(router).await
+    http::spawn_router_guarded(router).await
 }
 
-fn runtime_port_for_stub(stub: &http::TestServer) -> u16 {
+fn runtime_port_for_stub(stub: &http::TestServerGuard) -> u16 {
     // Router derives the node API port as runtime_port + 1.
-    stub.addr().port().saturating_sub(1)
-}
-
-fn admin_request() -> axum::http::request::Builder {
-    Request::builder().header("x-api-key", "sk_debug_admin")
+    stub.addr().port() - 1
 }
 
 fn node_register_request() -> axum::http::request::Builder {
@@ -84,21 +80,6 @@ async fn speech_handler() -> impl IntoResponse {
 
 async fn models_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
-}
-
-async fn approve_node(app: &Router, node_id: &str) {
-    let response = app
-        .clone()
-        .oneshot(
-            admin_request()
-                .method("POST")
-                .uri(format!("/v0/nodes/{}/approve", node_id))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
 }
 
 fn build_transcription_multipart(boundary: &str) -> Vec<u8> {
@@ -183,8 +164,6 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(payload.get("text").and_then(|v| v.as_str()), Some("ok"));
-
-    stub.stop().await;
 }
 
 /// T014: TTSノード選択テスト
@@ -257,8 +236,6 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
             .and_then(|v| v.to_str().ok()),
         Some("audio/mpeg")
     );
-
-    stub.stop().await;
 }
 
 /// T015: 複合ノード選択テスト
@@ -343,8 +320,6 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
         .await
         .unwrap();
     assert_eq!(tts_response.status(), StatusCode::OK);
-
-    stub.stop().await;
 }
 
 /// T016: 対応ノードなしフォールバックテスト
@@ -420,6 +395,4 @@ async fn test_no_capable_node_returns_503() {
         StatusCode::SERVICE_UNAVAILABLE,
         "Should return 503 when no TTS-capable node is available"
     );
-
-    stub.stop().await;
 }

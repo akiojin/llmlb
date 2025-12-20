@@ -13,7 +13,10 @@ use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
 use tower::ServiceExt;
 
-use crate::support::http;
+use crate::support::{
+    admin::{admin_request, approve_node},
+    http,
+};
 
 async fn build_app() -> Router {
     let registry = NodeRegistry::new();
@@ -43,20 +46,16 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
-async fn spawn_image_stub() -> http::TestServer {
+async fn spawn_image_stub() -> http::TestServerGuard {
     let router = Router::new()
         .route("/v1/images/generations", post(image_gen_handler))
         .route("/v1/models", get(models_handler));
-    http::spawn_router(router).await
+    http::spawn_router_guarded(router).await
 }
 
-fn runtime_port_for_stub(stub: &http::TestServer) -> u16 {
+fn runtime_port_for_stub(stub: &http::TestServerGuard) -> u16 {
     // Router derives the node API port as runtime_port + 1.
-    stub.addr().port().saturating_sub(1)
-}
-
-fn admin_request() -> axum::http::request::Builder {
-    Request::builder().header("x-api-key", "sk_debug_admin")
+    stub.addr().port() - 1
 }
 
 fn node_register_request() -> axum::http::request::Builder {
@@ -76,21 +75,6 @@ async fn image_gen_handler(Json(_payload): Json<serde_json::Value>) -> impl Into
 
 async fn models_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
-}
-
-async fn approve_node(app: &Router, node_id: &str) {
-    let response = app
-        .clone()
-        .oneshot(
-            admin_request()
-                .method("POST")
-                .uri(format!("/v0/nodes/{}/approve", node_id))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
 }
 
 /// IMG001: 画像生成ノード選択テスト
@@ -162,8 +146,6 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
         .unwrap();
     let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(payload.get("data").is_some());
-
-    stub.stop().await;
 }
 
 /// IMG002: 複合ランタイムノードテスト
@@ -239,7 +221,33 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
         .iter()
         .any(|v| v.as_str() == Some("stable_diffusion")));
 
-    stub.stop().await;
+    let image_request = json!({
+        "model": "stable-diffusion-xl",
+        "prompt": "A white cat",
+        "n": 1,
+        "size": "1024x1024"
+    });
+
+    let image_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/images/generations")
+                .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug")
+                .body(Body::from(serde_json::to_vec(&image_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(image_response.status(), StatusCode::OK);
+    let body = to_bytes(image_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(payload.get("data").is_some());
 }
 
 /// IMG003: 画像生成対応ノードなしテスト
@@ -277,6 +285,12 @@ async fn test_no_image_capable_node_returns_503() {
         .unwrap();
 
     assert_eq!(register_response.status(), StatusCode::CREATED);
+    let body = to_bytes(register_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let node_id = node["node_id"].as_str().expect("node_id should exist");
+    approve_node(&app, node_id).await;
     // 画像生成リクエストを試行（JSON形式）
     let image_request = json!({
         "model": "stable-diffusion-xl",
@@ -305,8 +319,6 @@ async fn test_no_image_capable_node_returns_503() {
         StatusCode::SERVICE_UNAVAILABLE,
         "Should return 503 when no StableDiffusion-capable node is available"
     );
-
-    stub.stop().await;
 }
 
 /// IMG004: 画像生成APIルート存在テスト

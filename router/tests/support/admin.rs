@@ -3,11 +3,23 @@ use axum::{
     http::{request::Builder, Request, StatusCode},
     Router,
 };
+use std::env;
 use tower::ServiceExt;
 
 #[allow(dead_code)]
 pub fn admin_request() -> Builder {
-    Request::builder().header("x-api-key", "sk_debug_admin")
+    Request::builder().header("x-api-key", admin_api_key())
+}
+
+#[cfg(debug_assertions)]
+fn admin_api_key() -> String {
+    env::var("LLM_ADMIN_TEST_KEY").unwrap_or_else(|_| "sk_debug_admin".to_string())
+}
+
+#[cfg(not(debug_assertions))]
+fn admin_api_key() -> String {
+    env::var("LLM_ADMIN_TEST_KEY")
+        .expect("LLM_ADMIN_TEST_KEY must be set when debug_assertions is disabled")
 }
 
 #[allow(dead_code)]

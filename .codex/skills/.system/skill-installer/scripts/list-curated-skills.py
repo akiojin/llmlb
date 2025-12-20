@@ -95,10 +95,11 @@ def main(argv: list[str]) -> int:
             for idx, name in enumerate(skills, start=1):
                 suffix = " (already installed)" if name in installed else ""
                 print(f"{idx}. {name}{suffix}")
-        return 0
     except ListError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    else:
+        return 0
 
 
 if __name__ == "__main__":

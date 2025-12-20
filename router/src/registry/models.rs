@@ -243,8 +243,8 @@ pub async fn ensure_router_model_cached(model: &ModelInfo) -> Option<PathBuf> {
     }
 
     if let Some(existing_any) = router_model_path_any(&model.name) {
-        if existing_any.exists() {
-            if let Err(err) = std::fs::remove_file(&existing_any) {
+        if tokio::fs::metadata(&existing_any).await.is_ok() {
+            if let Err(err) = tokio::fs::remove_file(&existing_any).await {
                 tracing::warn!(path=?existing_any, err=?err, "cache_model:remove_invalid_failed");
             }
         }

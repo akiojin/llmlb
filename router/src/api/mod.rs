@@ -8,6 +8,7 @@ pub mod auth;
 pub mod dashboard;
 pub mod health;
 pub mod images;
+pub mod invitations;
 pub mod logs;
 pub mod models;
 pub mod nodes;
@@ -59,6 +60,11 @@ pub fn create_router(state: AppState) -> Router {
             "/api-keys/:id",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
+        .route(
+            "/invitations",
+            get(invitations::list_invitations).post(invitations::create_invitation),
+        )
+        .route("/invitations/:id", delete(invitations::revoke_invitation))
         .layer(middleware::from_fn_with_state(
             state.jwt_secret.clone(),
             crate::auth::middleware::jwt_auth_middleware,
@@ -111,6 +117,7 @@ pub fn create_router(state: AppState) -> Router {
                 // 認証エンドポイント（認証不要）
                 .route("/auth/login", post(auth::login))
                 .route("/auth/logout", post(auth::logout))
+                .route("/auth/register", post(auth::register))
                 // 保護されたルート
                 .merge(protected_routes)
                 .merge(node_protected_routes)

@@ -89,6 +89,19 @@ async function fetchWithAuth<T>(
 }
 
 // Auth API
+export interface RegisterRequest {
+  invitation_code: string
+  username: string
+  password: string
+}
+
+export interface RegisterResponse {
+  id: string
+  username: string
+  role: string
+  created_at: string
+}
+
 export const authApi = {
   login: async (username: string, password: string) => {
     const response = await fetch(`${API_BASE}/v0/auth/login`, {
@@ -116,6 +129,21 @@ export const authApi = {
 
   me: () =>
     fetchWithAuth<{ id: number; username: string; role: string }>('/v0/auth/me'),
+
+  register: async (data: RegisterRequest): Promise<RegisterResponse> => {
+    const response = await fetch(`${API_BASE}/v0/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new ApiError(response.status, response.statusText, errorText)
+    }
+
+    return response.json()
+  },
 }
 
 // Dashboard API
@@ -451,6 +479,40 @@ export const apiKeysApi = {
 
   delete: (id: string) =>
     fetchWithAuth<void>(`/v0/api-keys/${id}`, { method: 'DELETE' }),
+}
+
+// Invitations API
+export interface Invitation {
+  id: string
+  created_by: string
+  created_at: string
+  expires_at: string
+  status: 'active' | 'used' | 'revoked'
+  used_by?: string
+  used_at?: string
+}
+
+export interface CreateInvitationResponse {
+  id: string
+  code: string
+  created_at: string
+  expires_at: string
+}
+
+export const invitationsApi = {
+  list: async (): Promise<Invitation[]> => {
+    const res = await fetchWithAuth<{ invitations: Invitation[] }>('/v0/invitations')
+    return res.invitations
+  },
+
+  create: (expiresInHours?: number) =>
+    fetchWithAuth<CreateInvitationResponse>('/v0/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ expires_in_hours: expiresInHours }),
+    }),
+
+  revoke: (id: string) =>
+    fetchWithAuth<void>(`/v0/invitations/${id}`, { method: 'DELETE' }),
 }
 
 // Users API

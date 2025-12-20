@@ -101,8 +101,7 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
-    // SPEC-dcaeaec4 FR-8: /v0/models を使用（拡張情報を含む）
-    // /v1/models はOpenAI互換（標準形式のみ）
+    // /v1/models を使用（OpenAI互換 + ダッシュボード拡張フィールド）
     std::optional<std::string> node_token;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
@@ -112,9 +111,9 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Result res;
     if (node_token.has_value() && !node_token->empty()) {
         httplib::Headers headers = {{"X-Node-Token", *node_token}};
-        res = cli.Get("/v0/models", headers);
+        res = cli.Get("/v1/models", headers);
     } else {
-        res = cli.Get("/v0/models");
+        res = cli.Get("/v1/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
         return {};
@@ -124,8 +123,8 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
 
-        // /v0/models は配列を直接返す（OpenAI互換の/v1/modelsとは異なる）
-        // 配列の場合は直接処理、そうでなければ data フィールドを参照
+        // /v1/models は { "object": "list", "data": [...] } 形式を返す
+        // 後方互換性のため配列形式もサポート
         const json* models_array = nullptr;
         if (body.is_array()) {
             models_array = &body;
@@ -135,12 +134,12 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
 
         if (models_array) {
             for (const auto& m : *models_array) {
-                // /v0/models では "name" フィールドを使用（/v1/models では "id"）
+                // /v1/models では "id" フィールドを使用
                 std::string model_id;
-                if (m.contains("name") && m["name"].is_string()) {
-                    model_id = m["name"].get<std::string>();
-                } else if (m.contains("id") && m["id"].is_string()) {
+                if (m.contains("id") && m["id"].is_string()) {
                     model_id = m["id"].get<std::string>();
+                } else if (m.contains("name") && m["name"].is_string()) {
+                    model_id = m["name"].get<std::string>();
                 } else {
                     continue;
                 }

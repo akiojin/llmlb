@@ -7,14 +7,14 @@
     }
   },
   "ignores": [
-    "node_modules",
+    "node_modules/**",
     "**/node_modules/**",
-    ".git",
-    ".github",
-    ".worktrees",
-    "vendor",
+    ".git/**",
+    ".github/**",
+    ".worktrees/**",
+    "vendor/**",
     "**/vendor/**",
-    "node/third_party",
-    "node/build"
+    "node/third_party/**",
+    "node/build/**"
   ]
 }

@@ -212,9 +212,9 @@ def parse_resources(raw_resources):
     invalid = sorted({item for item in resources if item not in ALLOWED_RESOURCES})
     if invalid:
         allowed = ", ".join(sorted(ALLOWED_RESOURCES))
-        print(f"[ERROR] Unknown resource type(s): {', '.join(invalid)}")
-        print(f"   Allowed: {allowed}")
-        sys.exit(1)
+        raise ValueError(
+            f"Unknown resource type(s): {', '.join(invalid)}. Allowed: {allowed}"
+        )
     deduped = []
     seen = set()
     for resource in resources:
@@ -277,7 +277,7 @@ def init_skill(skill_name, path, resources, include_examples):
     try:
         skill_dir.mkdir(parents=True, exist_ok=False)
         print(f"[OK] Created skill directory: {skill_dir}")
-    except Exception as e:
+    except OSError as e:
         print(f"[ERROR] Error creating directory: {e}")
         return None
 
@@ -289,7 +289,7 @@ def init_skill(skill_name, path, resources, include_examples):
     try:
         skill_md_path.write_text(skill_content)
         print("[OK] Created SKILL.md")
-    except Exception as e:
+    except OSError as e:
         print(f"[ERROR] Error creating SKILL.md: {e}")
         return None
 
@@ -297,7 +297,7 @@ def init_skill(skill_name, path, resources, include_examples):
     if resources:
         try:
             create_resource_dirs(skill_dir, skill_name, skill_title, resources, include_examples)
-        except Exception as e:
+        except OSError as e:
             print(f"[ERROR] Error creating resource directories: {e}")
             return None
 
@@ -349,7 +349,11 @@ def main():
     if skill_name != raw_skill_name:
         print(f"Note: Normalized skill name from '{raw_skill_name}' to '{skill_name}'.")
 
-    resources = parse_resources(args.resources)
+    try:
+        resources = parse_resources(args.resources)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}")
+        sys.exit(1)
     if args.examples and not resources:
         print("[ERROR] --examples requires --resources to be set.")
         sys.exit(1)

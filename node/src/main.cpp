@@ -106,8 +106,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
-        std::vector<std::string> supported_runtimes;
-        supported_runtimes.push_back("llama_cpp");
+        std::vector<std::string> supported_runtimes{"llama_cpp"};
 
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR

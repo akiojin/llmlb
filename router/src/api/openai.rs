@@ -19,7 +19,7 @@ use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::registry::models::router_model_path;
+use crate::registry::models::{is_valid_model_file, router_model_path};
 use crate::{
     api::{
         models::{list_registered_models, DownloadProgress, LifecycleStatus},
@@ -107,13 +107,6 @@ fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
     }
 
     redact_data_url(payload)
-}
-
-fn is_valid_model_file(path: &PathBuf) -> bool {
-    match std::fs::metadata(path) {
-        Ok(meta) => meta.is_file() && meta.len() > 0,
-        Err(_) => false,
-    }
 }
 
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
@@ -207,7 +200,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             .path
             .as_ref()
             .map(PathBuf::from)
-            .filter(is_valid_model_file)
+            .filter(|path| is_valid_model_file(path))
             .or_else(|| router_model_path(&m.name));
 
         let ready = path.is_some();
@@ -350,7 +343,7 @@ pub async fn get_model(
             .path
             .as_ref()
             .map(PathBuf::from)
-            .filter(is_valid_model_file)
+            .filter(|path| is_valid_model_file(path))
             .or_else(|| router_model_path(&m.name));
         path.map(|p| (m, p))
     });

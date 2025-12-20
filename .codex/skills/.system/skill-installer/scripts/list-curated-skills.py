@@ -61,7 +61,9 @@ def _list_curated(repo: str, path: str, ref: str) -> list[str]:
     data = json.loads(payload.decode("utf-8"))
     if not isinstance(data, list):
         raise ListError("Unexpected curated listing response.")
-    skills = [item["name"] for item in data if item.get("type") == "dir"]
+    skills = [
+        item["name"] for item in data if item.get("type") == "dir" and "name" in item
+    ]
     return sorted(skills)
 
 

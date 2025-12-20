@@ -209,7 +209,7 @@ pub fn router_models_dir() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".llm-router").join("models"))
 }
 
-fn is_valid_model_file(path: &Path) -> bool {
+pub(crate) fn is_valid_model_file(path: &Path) -> bool {
     match std::fs::metadata(path) {
         Ok(meta) => meta.is_file() && meta.len() > 0,
         Err(_) => false,

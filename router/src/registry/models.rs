@@ -21,6 +21,8 @@ pub enum ModelSource {
     HfGguf,
     /// HF非GGUFで変換待ち
     HfPendingConversion,
+    /// HFのONNXモデル（Whisper等）
+    HfOnnx,
 }
 
 /// LLM runtimeモデル情報

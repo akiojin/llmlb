@@ -6,7 +6,7 @@ interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public status: number,
     public statusText: string,
@@ -407,7 +407,10 @@ export const modelsApi = {
       },
     })
     if (!response.ok) {
-      return []
+      // エラー詳細を取得して適切なエラーをスロー
+      const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }))
+      const message = errorBody.error || undefined
+      throw new ApiError(response.status, response.statusText, message)
     }
     const json = (await response.json()) as OpenAIModelsResponse
     // OpenAI形式からRegisteredModelView形式に変換
@@ -645,4 +648,4 @@ export const chatApi = {
 }
 
 // Export utilities
-export { ApiError, getToken, setToken, removeToken, isAuthenticated }
+export { getToken, setToken, removeToken, isAuthenticated }

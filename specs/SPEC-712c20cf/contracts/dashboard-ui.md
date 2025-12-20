@@ -130,6 +130,7 @@ function updateStats(stats) {
 - 行hover: 背景色 #f9f9f9
 - ステータスバッジ:
   - Online: 緑色背景 (#4CAF50)、白文字
+  - Pending/Registering: 黄色背景 (#FFC107)、黒文字
   - Offline: グレー背景 (#9E9E9E)、白文字
 
 **JavaScript契約**:
@@ -140,7 +141,7 @@ function updateStats(stats) {
  * @param {string} nodes[].id - ノードID
  * @param {string} nodes[].machine_name - マシン名
  * @param {string} nodes[].ip_address - IPアドレス
- * @param {string} nodes[].status - ステータス ("online" | "registering" | "offline")
+ * @param {string} nodes[].status - ステータス ("online" | "pending" | "registering" | "offline")
  * @param {number} nodes[].uptime_seconds - 直近オンライン開始からの稼働時間（秒）
  */
 function updateNodeTable(nodes) {

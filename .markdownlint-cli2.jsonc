@@ -8,10 +8,12 @@
   },
   "ignores": [
     "node_modules",
+    "**/node_modules/**",
     ".git",
     ".github",
     ".worktrees",
     "vendor",
+    "**/vendor/**",
     "node/third_party",
     "node/build"
   ]

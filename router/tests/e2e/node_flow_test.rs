@@ -8,7 +8,11 @@ use axum::{
     Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
-use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+use llm_router_common::{
+    auth::{ApiKeyScope, UserRole},
+    protocol::RegisterRequest,
+    types::GpuDeviceInfo,
+};
 use serde_json::{json, Value};
 use std::net::IpAddr;
 use tower::ServiceExt;
@@ -16,7 +20,7 @@ use uuid::Uuid;
 
 use crate::support;
 
-async fn build_app() -> (Router, sqlx::SqlitePool) {
+async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let db_pool = support::router::create_test_db_pool().await;
@@ -36,7 +40,23 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         http_client: reqwest::Client::new(),
     };
 
-    (api::create_router(state), db_pool)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
+
+    (api::create_router(state), db_pool, admin_key)
 }
 
 async fn login_admin(app: &Router) -> String {
@@ -50,7 +70,7 @@ async fn login_admin(app: &Router) -> String {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "username": "admin",
-                        "password": "test"
+                        "password": "password123"
                     }))
                     .unwrap(),
                 ))
@@ -99,13 +119,14 @@ async fn approve_node(app: &Router, node_id: Uuid) -> Value {
     serde_json::from_slice(&body).unwrap()
 }
 
-async fn fetch_node_status(app: &Router, node_id: Uuid) -> String {
+async fn fetch_node_status(app: &Router, node_id: Uuid, admin_key: &str) -> String {
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -143,7 +164,7 @@ async fn fetch_node_status(app: &Router, node_id: Uuid) -> String {
 async fn test_complete_node_flow() {
     // モックノードサーバーを起動
     let mock_node = support::node::MockNodeServer::start().await;
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // Step 1: ノード登録（モックサーバーのポートを使用）
     let register_request = RegisterRequest {
@@ -168,6 +189,7 @@ async fn test_complete_node_flow() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -217,6 +239,7 @@ async fn test_complete_node_flow() {
                 .method("POST")
                 .uri("/v0/health")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
                 .unwrap(),
@@ -230,7 +253,7 @@ async fn test_complete_node_flow() {
         "Heartbeat with valid token should succeed"
     );
 
-    let pending_status = fetch_node_status(&app, node_id).await;
+    let pending_status = fetch_node_status(&app, node_id, &admin_key).await;
     assert_eq!(
         pending_status, "pending",
         "Pending node should stay pending even after heartbeat"
@@ -243,7 +266,7 @@ async fn test_complete_node_flow() {
         "Approved node should become online when ready"
     );
 
-    // Step 3: トークンなしでヘルスチェックを送信 → 失敗
+    // Step 3: APIキーなしでヘルスチェックを送信 → 失敗
     let unauthorized_heartbeat_response = app
         .clone()
         .oneshot(
@@ -251,6 +274,7 @@ async fn test_complete_node_flow() {
                 .method("POST")
                 .uri("/v0/health")
                 .header("content-type", "application/json")
+                .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
                 .unwrap(),
         )
@@ -260,16 +284,38 @@ async fn test_complete_node_flow() {
     assert_eq!(
         unauthorized_heartbeat_response.status(),
         StatusCode::UNAUTHORIZED,
+        "Heartbeat without API key should fail"
+    );
+
+    // Step 4: トークンなしでヘルスチェックを送信 → 失敗
+    let missing_token_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v0/health")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", admin_key))
+                .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        missing_token_response.status(),
+        StatusCode::UNAUTHORIZED,
         "Heartbeat without token should fail"
     );
 
-    // Step 4: 無効なトークンでヘルスチェックを送信 → 失敗
+    // Step 5: 無効なトークンでヘルスチェックを送信 → 失敗
     let invalid_token_response = app
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/v0/health")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("x-node-token", "invalid-token-12345")
                 .body(Body::from(serde_json::to_vec(&heartbeat_request).unwrap()))
                 .unwrap(),
@@ -288,7 +334,7 @@ async fn test_complete_node_flow() {
 async fn test_node_token_persistence() {
     // モックノードサーバーを起動
     let mock_node = support::node::MockNodeServer::start().await;
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // ノード登録
     let register_request = RegisterRequest {
@@ -313,6 +359,7 @@ async fn test_node_token_persistence() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -350,6 +397,7 @@ async fn test_node_token_persistence() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .header("x-node-token", first_token)
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
@@ -384,7 +432,7 @@ async fn test_node_token_persistence() {
         "Re-registration should return a new token"
     );
 
-    let status = fetch_node_status(&app, node_id).await;
+    let status = fetch_node_status(&app, node_id, &admin_key).await;
     assert_eq!(
         status, "pending",
         "Re-registration should reset status to pending"
@@ -395,7 +443,7 @@ async fn test_node_token_persistence() {
 async fn test_list_nodes() {
     // モックノードサーバーを起動
     let mock_node = support::node::MockNodeServer::start().await;
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // ノードを登録
     let register_request = RegisterRequest {
@@ -420,6 +468,7 @@ async fn test_list_nodes() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -433,6 +482,7 @@ async fn test_list_nodes() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -470,7 +520,7 @@ async fn test_list_nodes() {
 async fn test_node_metrics_update() {
     // モックノードサーバーを起動
     let mock_node = support::node::MockNodeServer::start().await;
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // ノードを登録
     let register_request = RegisterRequest {
@@ -495,6 +545,7 @@ async fn test_node_metrics_update() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -529,6 +580,7 @@ async fn test_node_metrics_update() {
                 .method("POST")
                 .uri("/v0/health")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("x-node-token", node_token)
                 .body(Body::from(serde_json::to_vec(&metrics_request).unwrap()))
                 .unwrap(),
@@ -544,7 +596,7 @@ async fn test_node_metrics_update() {
 
 #[tokio::test]
 async fn test_list_node_metrics() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/nodes/metrics でメトリクス一覧を取得
     let response = app
@@ -552,6 +604,7 @@ async fn test_list_node_metrics() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/nodes/metrics")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -578,7 +631,7 @@ async fn test_list_node_metrics() {
 
 #[tokio::test]
 async fn test_metrics_summary() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, admin_key) = build_app().await;
 
     // GET /v0/metrics/summary
     let response = app
@@ -586,6 +639,7 @@ async fn test_metrics_summary() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/metrics/summary")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )

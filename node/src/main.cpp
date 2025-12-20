@@ -57,6 +57,11 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llama_backend_initialized = true;
 
         spdlog::info("Router URL: {}", router_url);
+        if (cfg.router_api_key.empty()) {
+            spdlog::warn("Router API key not set; node registration will fail if router requires API key");
+        } else {
+            spdlog::info("Router API key configured");
+        }
         spdlog::info("Node port: {}", node_port);
 
         // GPU detection
@@ -157,6 +162,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
+        if (!cfg.router_api_key.empty()) {
+            model_sync->setApiKey(cfg.router_api_key);
+        }
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());
@@ -243,6 +251,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Register with router (retry)
         std::cout << "Registering with router..." << std::endl;
         llm_node::RouterClient router(router_url);
+        if (!cfg.router_api_key.empty()) {
+            router.setApiKey(cfg.router_api_key);
+        }
         llm_node::NodeInfo info;
         info.machine_name = hostname_buf;
         // Use configured IP, or extract host from router URL, or fallback to hostname

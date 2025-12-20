@@ -56,6 +56,14 @@ fn runtime_port_for_stub(stub: &http::TestServer) -> u16 {
     stub.addr().port().saturating_sub(1)
 }
 
+fn admin_request() -> axum::http::request::Builder {
+    Request::builder().header("x-api-key", "sk_debug_admin")
+}
+
+fn node_register_request() -> axum::http::request::Builder {
+    Request::builder().header("x-api-key", "sk_debug_node")
+}
+
 async fn transcriptions_handler() -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -78,43 +86,13 @@ async fn models_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
 }
 
-async fn login_admin(app: &Router) -> String {
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v0/auth/login")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({
-                        "username": "admin",
-                        "password": "test"
-                    }))
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    payload["token"]
-        .as_str()
-        .expect("token should exist")
-        .to_string()
-}
-
 async fn approve_node(app: &Router, node_id: &str) {
-    let token = login_admin(app).await;
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request()
                 .method("POST")
                 .uri(format!("/v0/nodes/{}/approve", node_id))
-                .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -164,7 +142,7 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")
@@ -233,7 +211,7 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")
@@ -307,7 +285,7 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")
@@ -393,7 +371,7 @@ async fn test_no_capable_node_returns_503() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")

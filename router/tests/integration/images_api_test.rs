@@ -55,6 +55,14 @@ fn runtime_port_for_stub(stub: &http::TestServer) -> u16 {
     stub.addr().port().saturating_sub(1)
 }
 
+fn admin_request() -> axum::http::request::Builder {
+    Request::builder().header("x-api-key", "sk_debug_admin")
+}
+
+fn node_register_request() -> axum::http::request::Builder {
+    Request::builder().header("x-api-key", "sk_debug_node")
+}
+
 async fn image_gen_handler(Json(_payload): Json<serde_json::Value>) -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -70,43 +78,13 @@ async fn models_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
 }
 
-async fn login_admin(app: &Router) -> String {
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v0/auth/login")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({
-                        "username": "admin",
-                        "password": "test"
-                    }))
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    payload["token"]
-        .as_str()
-        .expect("token should exist")
-        .to_string()
-}
-
 async fn approve_node(app: &Router, node_id: &str) {
-    let token = login_admin(app).await;
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request()
                 .method("POST")
                 .uri(format!("/v0/nodes/{}/approve", node_id))
-                .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -139,7 +117,7 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")
@@ -212,7 +190,7 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")
@@ -233,7 +211,7 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
     let nodes_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            admin_request()
                 .method("GET")
                 .uri("/v0/nodes")
                 .body(Body::empty())
@@ -288,7 +266,7 @@ async fn test_no_image_capable_node_returns_503() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
+            node_register_request()
                 .method("POST")
                 .uri("/v0/nodes")
                 .header("content-type", "application/json")
@@ -299,7 +277,6 @@ async fn test_no_image_capable_node_returns_503() {
         .unwrap();
 
     assert_eq!(register_response.status(), StatusCode::CREATED);
-
     // 画像生成リクエストを試行（JSON形式）
     let image_request = json!({
         "model": "stable-diffusion-xl",
@@ -338,7 +315,6 @@ async fn test_no_image_capable_node_returns_503() {
 #[tokio::test]
 async fn test_image_api_routes_exist() {
     let app = build_app().await;
-
     // /v1/images/generations (POST)
     let gen_response = app
         .clone()

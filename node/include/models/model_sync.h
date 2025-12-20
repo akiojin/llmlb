@@ -48,6 +48,7 @@ public:
               std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
     void setNodeToken(std::string node_token);
+    void setApiKey(std::string api_key);
 
     ModelSyncResult sync();
 
@@ -107,6 +108,7 @@ private:
 
     mutable std::mutex etag_mutex_;
     std::optional<std::string> node_token_;
+    std::optional<std::string> api_key_;
     std::unordered_map<std::string, std::string> etag_cache_;
     std::unordered_map<std::string, size_t> size_cache_;
     std::unordered_map<std::string, ModelOverrides> model_overrides_;

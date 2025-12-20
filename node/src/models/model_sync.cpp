@@ -96,6 +96,11 @@ void ModelSync::setNodeToken(std::string node_token) {
     node_token_ = std::move(node_token);
 }
 
+void ModelSync::setApiKey(std::string api_key) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    api_key_ = std::move(api_key);
+}
+
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Client cli(base_url_.c_str());
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
@@ -103,13 +108,19 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
 
     // /v1/models を使用（OpenAI互換 + ダッシュボード拡張フィールド）
     std::optional<std::string> node_token;
+    std::optional<std::string> api_key;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
         node_token = node_token_;
+        api_key = api_key_;
     }
 
     httplib::Result res;
-    if (node_token.has_value() && !node_token->empty()) {
+    if (api_key.has_value() && !api_key->empty()) {
+        httplib::Headers headers = {{"Authorization", "Bearer " + *api_key}};
+        // /v0/models provides node sync metadata (path/download_url); /v1/models is OpenAI-compatible.
+        res = cli.Get("/v0/models", headers);
+    } else if (node_token.has_value() && !node_token->empty()) {
         httplib::Headers headers = {{"X-Node-Token", *node_token}};
         res = cli.Get("/v1/models", headers);
     } else {
@@ -271,7 +282,15 @@ ModelSyncResult ModelSync::sync() {
         std::unordered_set<std::string> local_set(local.begin(), local.end());
 
         ModelSyncResult result;
-        ModelDownloader downloader(base_url_, models_dir_, timeout_);
+        std::string api_key_value;
+        {
+            std::lock_guard<std::mutex> lock(etag_mutex_);
+            if (api_key_.has_value()) {
+                api_key_value = *api_key_;
+            }
+        }
+
+        ModelDownloader downloader(base_url_, models_dir_, timeout_, 2, std::chrono::milliseconds(200), api_key_value);
 
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;

@@ -1742,6 +1742,7 @@ mod tests {
         // fetch dashboard history
         let history_resp = client
             .get(format!("http://{addr}/v0/dashboard/request-responses"))
+            .header("authorization", "Bearer sk_debug_admin")
             .send()
             .await
             .expect("history request");

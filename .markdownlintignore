@@ -1,7 +1,8 @@
 CHANGELOG.md
 node_modules/
-**/node_modules/
+**/node_modules/**
 dist/
+**/dist/**
 .git/
 bun.lock
 vendor/

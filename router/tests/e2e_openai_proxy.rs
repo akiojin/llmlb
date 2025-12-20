@@ -250,6 +250,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
                 "http://{}/v0/dashboard/request-history",
                 router.addr()
             ))
+            .header("authorization", "Bearer sk_debug")
             .send()
             .await
             .expect("request history endpoint should respond")

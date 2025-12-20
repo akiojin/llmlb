@@ -22,6 +22,10 @@ std::unique_ptr<httplib::Client> make_client(const std::string& base_url, std::c
 RouterClient::RouterClient(std::string base_url, std::chrono::milliseconds timeout)
     : base_url_(std::move(base_url)), timeout_(timeout) {}
 
+void RouterClient::setApiKey(std::string api_key) {
+    api_key_ = std::move(api_key);
+}
+
 NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     auto cli = make_client(base_url_, timeout_);
 
@@ -59,7 +63,12 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
         payload["supported_runtimes"] = info.supported_runtimes;
     }
 
-    auto res = cli->Post("/v0/nodes", payload.dump(), "application/json");
+    httplib::Headers headers;
+    if (!api_key_.empty()) {
+        headers.emplace("Authorization", "Bearer " + api_key_);
+    }
+
+    auto res = cli->Post("/v0/nodes", headers, payload.dump(), "application/json");
 
     NodeRegistrationResult result;
     if (!res) {
@@ -132,9 +141,10 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
     }
 
     // Set authentication header
-    httplib::Headers headers = {
-        {"X-Node-Token", node_token}
-    };
+    httplib::Headers headers = {{"X-Node-Token", node_token}};
+    if (!api_key_.empty()) {
+        headers.emplace("Authorization", "Bearer " + api_key_);
+    }
 
     for (int attempt = 0; attempt <= max_retries; ++attempt) {
         auto res = cli->Post("/v0/health", headers, payload.dump(), "application/json");

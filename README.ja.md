@@ -13,7 +13,7 @@ LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を�
 - ロードバランシング: 利用可能なノードへ自動ルーティング
 - ダッシュボード: `/dashboard` でノード、リクエスト履歴、ログ、モデルを管理
 - ノード自己登録: ノードは起動時にルーターへ登録し、ハートビートを送信
-- ノード主導モデル同期: ノードはルーターの `/v1/models` と `/v0/models/blob/:model_name` を参照して
+- ノード主導モデル同期: ノードはルーターの `/v0/models` と `/v0/models/blob/:model_name` を参照して
   必要なモデルを取得（ルーターからの push 配布なし）
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
@@ -122,6 +122,7 @@ cmake --build build --config Release
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
+| `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node:register`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
@@ -138,13 +139,13 @@ cmake --build build --config Release
 cargo run -p llm-router
 
 # ノード (別シェル)
-./node/build/llm-node
+LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
 ```
 
 ### 6) 動作確認
 - ダッシュボード: `http://localhost:8080/dashboard`
-- 健康チェック: `curl http://localhost:8080/v0/health`
-- OpenAI互換: `curl http://localhost:8080/v1/models`
+- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:8080/v0/health`
+- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:8080/v1/models`
 
 ## 利用方法（OpenAI互換エンドポイント）
 
@@ -253,6 +254,27 @@ Router (OpenAI-compatible)
 
 ## API 仕様
 
+### 認証・権限
+
+#### ユーザー（JWT）
+
+| ロール | 権限 |
+|-------|------|
+| `admin` | `/v0` 管理系 API にアクセス可能 |
+| `viewer` | `/v0/auth/*` のみ（管理 API は 403） |
+
+#### APIキー（スコープ）
+
+| スコープ | 目的 |
+|---------|------|
+| `node:register` | ノード登録 + ヘルスチェック + モデル配布（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`） |
+| `api:inference` | OpenAI 互換推論 API（`/v1/*`） |
+| `admin:*` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+
+**補足**:
+- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node:register`）+ `X-Node-Token` 必須。
+- デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
+
 ### ルーター（Router）
 
 #### OpenAI 互換（API キー認証）
@@ -265,39 +287,34 @@ Router (OpenAI-compatible)
 
 #### ノード管理
 
-- POST `/v0/nodes`（登録）
-- GET `/v0/nodes`（一覧）
-- DELETE `/v0/nodes/:node_id`
-- POST `/v0/nodes/:node_id/disconnect`
-- PUT `/v0/nodes/:node_id/settings`
-- POST `/v0/health`（ノードからのヘルス/メトリクス送信、`X-Node-Token` 必須）
-- GET `/v0/nodes/:node_id/logs`
+- POST `/v0/nodes`（登録、APIキー: `node:register`）
+- GET `/v0/nodes`（一覧、admin権限）
+- DELETE `/v0/nodes/:node_id`（admin権限）
+- POST `/v0/nodes/:node_id/disconnect`（admin権限）
+- PUT `/v0/nodes/:node_id/settings`（admin権限）
+- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node:register` + `X-Node-Token`）
+- GET `/v0/nodes/:node_id/logs`（admin権限）
 
 #### モデル管理
 
-- GET `/v0/models/available`（例: `?source=hf`）
-- POST `/v0/models/register`
-- GET `/v0/models/registered`
-- DELETE `/v0/models/*model_name`
-- POST `/v0/models/discover-gguf`
-- POST `/v0/models/convert`
-- GET `/v0/models/convert`
-- GET `/v0/models/convert/:task_id`
-- DELETE `/v0/models/convert/:task_id`
-- GET `/v0/models/blob/:model_name`
+- GET `/v0/models`（登録済みモデル一覧、APIキー: `node:register`）
+- POST `/v0/models/register`（admin権限）
+- DELETE `/v0/models/*model_name`（admin権限）
+- POST `/v0/models/discover-gguf`（admin権限）
+- GET `/v0/models/blob/:model_name`（APIキー: `node:register`）
 
 #### ダッシュボード/監視
 
-- GET `/v0/dashboard/overview`
-- GET `/v0/dashboard/stats`
-- GET `/v0/dashboard/nodes`
-- GET `/v0/dashboard/metrics/:node_id`
-- GET `/v0/dashboard/request-history`
-- GET `/v0/dashboard/request-responses`
-- GET `/v0/dashboard/request-responses/:id`
-- GET `/v0/dashboard/request-responses/export`
-- GET `/v0/dashboard/logs/router`
-- GET `/v0/metrics/cloud`
+- GET `/v0/dashboard/overview`（admin権限）
+- GET `/v0/dashboard/stats`（admin権限）
+- GET `/v0/dashboard/nodes`（admin権限）
+- GET `/v0/dashboard/metrics/:node_id`（admin権限）
+- GET `/v0/dashboard/request-history`（admin権限）
+- GET `/v0/dashboard/request-responses`（admin権限）
+- GET `/v0/dashboard/request-responses/:id`（admin権限）
+- GET `/v0/dashboard/request-responses/export`（admin権限）
+- GET `/v0/dashboard/logs/router`（admin権限）
+- GET `/v0/metrics/cloud`（admin権限）
 - GET `/dashboard/*`
 - GET `/playground/*`
 

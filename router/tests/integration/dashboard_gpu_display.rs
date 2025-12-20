@@ -8,7 +8,11 @@ use axum::{
     Router,
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
-use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+use llm_router_common::{
+    auth::{ApiKeyScope, UserRole},
+    protocol::RegisterRequest,
+    types::GpuDeviceInfo,
+};
 use std::net::IpAddr;
 use tower::ServiceExt;
 use wiremock::{
@@ -16,7 +20,7 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
-async fn build_router() -> Router {
+async fn build_router() -> (Router, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -40,7 +44,23 @@ async fn build_router() -> Router {
         jwt_secret,
         http_client: reqwest::Client::new(),
     };
-    api::create_router(state)
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &state.db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
+
+    (api::create_router(state), admin_key)
 }
 
 #[tokio::test]
@@ -59,7 +79,7 @@ async fn dashboard_nodes_include_gpu_devices() {
     let mock_port = mock_server.address().port();
     let runtime_port = mock_port - 1;
 
-    let router = build_router().await;
+    let (router, admin_key) = build_router().await;
 
     let register_request = RegisterRequest {
         machine_name: "dashboard-gpu".to_string(),
@@ -83,6 +103,7 @@ async fn dashboard_nodes_include_gpu_devices() {
             Request::builder()
                 .method("POST")
                 .uri("/v0/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
                 .unwrap(),
@@ -97,6 +118,7 @@ async fn dashboard_nodes_include_gpu_devices() {
             Request::builder()
                 .method("GET")
                 .uri("/v0/dashboard/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiKeysApi, type ApiKey } from '@/lib/api'
+import { apiKeysApi, type ApiKey, type ApiKeyScope } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +58,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyExpires, setNewKeyExpires] = useState('')
+  const [newKeyScopes, setNewKeyScopes] = useState<ApiKeyScope[]>(['api:inference'])
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -70,12 +72,17 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
   // Create API key mutation
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; expires_at?: string }) => apiKeysApi.create(data),
+    mutationFn: (data: {
+      name: string
+      expires_at?: string
+      scopes: ApiKeyScope[]
+    }) => apiKeysApi.create(data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['api-keys'] })
       setCreatedKey((data as { key: string }).key)
       setNewKeyName('')
       setNewKeyExpires('')
+      setNewKeyScopes(['api:inference'])
       toast({ title: 'API key created' })
     },
     onError: (error) => {
@@ -112,6 +119,14 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     }
   }, [open])
 
+  useEffect(() => {
+    if (!createOpen) {
+      setNewKeyName('')
+      setNewKeyExpires('')
+      setNewKeyScopes(['api:inference'])
+    }
+  }, [createOpen])
+
   const copyToClipboard = async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -127,6 +142,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     createMutation.mutate({
       name: newKeyName,
       expires_at: newKeyExpires || undefined,
+      scopes: newKeyScopes,
     })
   }
 
@@ -134,6 +150,33 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!expiresAt) return false
     return new Date(expiresAt) < new Date()
   }
+
+  const toggleScope = (scope: ApiKeyScope, enabled: boolean) => {
+    setNewKeyScopes((prev) => {
+      if (enabled) {
+        return prev.includes(scope) ? prev : [...prev, scope]
+      }
+      return prev.filter((item) => item !== scope)
+    })
+  }
+
+  const scopeLabels: { value: ApiKeyScope; label: string; description: string }[] = [
+    {
+      value: 'api:inference',
+      label: 'api:inference',
+      description: 'OpenAI互換APIの推論アクセス',
+    },
+    {
+      value: 'node:register',
+      label: 'node:register',
+      description: 'ノード登録',
+    },
+    {
+      value: 'admin:*',
+      label: 'admin:*',
+      description: '管理者（全権限）',
+    },
+  ]
 
   return (
     <>
@@ -217,6 +260,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
+                      <TableHead>Scopes</TableHead>
                       <TableHead>Key</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
@@ -227,6 +271,15 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     {(apiKeys as ApiKey[]).map((key) => (
                       <TableRow key={key.id}>
                         <TableCell className="font-medium">{key.name}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {key.scopes.map((scope) => (
+                              <Badge key={scope} variant="secondary">
+                                {scope}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           {key.key_prefix ? (
                             <div className="flex items-center gap-2">
@@ -316,6 +369,31 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 onChange={(e) => setNewKeyExpires(e.target.value)}
               />
             </div>
+            <div className="space-y-2">
+              <Label>Scopes</Label>
+              <div className="grid gap-2">
+                {scopeLabels.map((scope) => {
+                  const checkboxId = `scope-${scope.value.replace(/[^a-z0-9]/gi, "-")}`;
+                  return (
+                    <div key={scope.value} className="flex items-start gap-2 text-sm">
+                      <Checkbox
+                        id={checkboxId}
+                        checked={newKeyScopes.includes(scope.value)}
+                        onCheckedChange={(checked) =>
+                          toggleScope(scope.value, Boolean(checked))
+                        }
+                      />
+                      <label htmlFor={checkboxId} className="flex flex-col gap-1 cursor-pointer">
+                        <span className="font-mono text-xs">{scope.label}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {scope.description}
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -323,7 +401,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!newKeyName || createMutation.isPending}
+              disabled={!newKeyName || newKeyScopes.length === 0 || createMutation.isPending}
             >
               {createMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

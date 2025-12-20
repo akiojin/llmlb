@@ -17,6 +17,9 @@ pub mod models;
 /// ノードトークン管理
 pub mod node_tokens;
 
+/// 招待コード管理
+pub mod invitations;
+
 /// データベースマイグレーション
 pub mod migrations;
 

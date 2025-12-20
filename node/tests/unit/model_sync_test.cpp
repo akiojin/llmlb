@@ -14,15 +14,10 @@ namespace fs = std::filesystem;
 class ModelServer {
 public:
     void start(int port) {
-        // /v0/models - ノードが使用するエンドポイント（配列形式）
-        server_.Get("/v0/models", [this](const httplib::Request&, httplib::Response& res) {
-            res.status = 200;
-            res.set_content(response_body_v0, "application/json");
-        });
-        // /v1/models - OpenAI互換エンドポイント（後方互換性のため維持）
+        // /v1/models - ModelSync が使用するエンドポイント（OpenAI互換形式）
         server_.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            res.set_content(response_body_v1, "application/json");
+            res.set_content(response_body, "application/json");
         });
         thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
         while (!server_.is_running()) {
@@ -39,13 +34,8 @@ public:
 
     httplib::Server server_;
     std::thread thread_;
-    // /v0/models: 配列形式（現在の実装が使用）
-    std::string response_body_v0{R"([{"name":"gpt-oss-7b"},{"name":"gpt-oss-20b"}])"};
-    // /v1/models: OpenAI互換形式
-    std::string response_body_v1{R"({"data":[{"id":"gpt-oss-7b"},{"id":"gpt-oss-20b"}]})"};
-
-    // 互換性のため response_body は response_body_v0 へのエイリアス
-    std::string& response_body = response_body_v0;
+    // /v1/models: OpenAI互換形式 {"data": [...]} with "id" field
+    std::string response_body{R"({"data":[{"id":"gpt-oss-7b"},{"id":"gpt-oss-20b"}]})"};
 };
 
 class TempDirGuard {
@@ -99,7 +89,7 @@ TEST(ModelSyncTest, EmptyWhenRouterUnavailable) {
 
 TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     ModelServer server;
-    server.response_body = R"([{"name":"m1"},{"name":"m2"}])";
+    server.response_body = R"({"data":[{"id":"m1"},{"id":"m2"}]})";
     server.start(18086);
 
     TempDirGuard guard;
@@ -146,7 +136,7 @@ TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     // HTTP server returning /v1/models with path pointing to shared_file
     const int port = 18097; // Unique port to avoid conflicts
     ModelServer server;
-    server.response_body = std::string(R"([{"name":"gpt-oss-7b","path":")") + shared_file.string() + R"("}])";
+    server.response_body = std::string(R"({"data":[{"id":"gpt-oss-7b","path":")") + shared_file.string() + R"("}]})";
     server.start(port);
 
     // Give server time to fully initialize
@@ -170,17 +160,17 @@ TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     EXPECT_EQ(sync.getRemotePath("gpt-oss-7b"), shared_file.string());
 }
 
-// Test that /v0/models (array format) is correctly parsed
-TEST(ModelSyncTest, ParsesV0ModelsArrayFormat) {
+// Test that /v1/models array format (backward compatibility) is correctly parsed
+TEST(ModelSyncTest, ParsesV1ModelsArrayFormat) {
     const int port = 18120;
     httplib::Server server;
 
-    // /v0/models returns array directly (not wrapped in {"data": []})
-    server.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
+    // /v1/models can return array directly for backward compatibility
+    server.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
         res.set_content(R"([
-            {"name":"qwen/qwen2.5-0.5b-instruct-gguf","path":"/path/to/model.gguf"},
-            {"name":"openai/gpt-oss-20b","path":"/path/to/gpt.gguf"}
+            {"id":"qwen/qwen2.5-0.5b-instruct-gguf","path":"/path/to/model.gguf"},
+            {"id":"openai/gpt-oss-20b","path":"/path/to/gpt.gguf"}
         ])", "application/json");
     });
 
@@ -213,9 +203,9 @@ TEST(ModelSyncTest, CaseInsensitiveModelNameComparison) {
     httplib::Server server;
 
     // Router returns lowercase model name
-    server.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
-        res.set_content(R"([{"name":"qwen/qwen2.5-0.5b-instruct-gguf"}])", "application/json");
+        res.set_content(R"({"data":[{"id":"qwen/qwen2.5-0.5b-instruct-gguf"}]})", "application/json");
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
@@ -248,13 +238,13 @@ TEST(ModelSyncTest, SupportsNameAndIdFields) {
     const int port = 18122;
     httplib::Server server;
 
-    server.Get("/v0/models", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
-        // Mixed: first uses "name", second uses "id"
-        res.set_content(R"([
+        // Mixed: first uses "name", second uses "id" - both should be supported
+        res.set_content(R"({"data":[
             {"name":"model-with-name"},
             {"id":"model-with-id"}
-        ])", "application/json");
+        ]})", "application/json");
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });

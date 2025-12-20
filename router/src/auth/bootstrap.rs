@@ -119,6 +119,49 @@ pub async fn create_admin_interactive(pool: &sqlx::SqlitePool) -> Result<String,
     }
 }
 
+/// 開発モード用のadminユーザーを作成（nil UUIDを使用）
+///
+/// 開発モードでは `uuid::Uuid::nil()` を使ってログインするため、
+/// FOREIGN KEY制約を満たすためにDBにもnil UUIDのadminユーザーが必要
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+///
+/// # Returns
+/// * `Ok(())` - 処理成功
+/// * `Err(RouterError)` - 処理失敗
+#[cfg(debug_assertions)]
+async fn ensure_dev_admin_exists(pool: &sqlx::SqlitePool) -> Result<(), RouterError> {
+    use uuid::Uuid;
+
+    let dev_user_id = Uuid::nil();
+
+    // 既にnil UUIDのユーザーが存在するかチェック
+    if db::users::find_by_id(pool, dev_user_id).await?.is_some() {
+        tracing::debug!("Dev admin user already exists");
+        return Ok(());
+    }
+
+    // 開発用のパスワードハッシュを生成
+    let password_hash = hash_password("test")?;
+
+    // nil UUIDでadminユーザーを作成
+    match db::users::create_with_id(pool, dev_user_id, "admin", &password_hash, UserRole::Admin)
+        .await
+    {
+        Ok(_) => {
+            tracing::info!("Created dev admin user with nil UUID");
+            Ok(())
+        }
+        Err(RouterError::Database(ref e)) if e.contains("already exists") => {
+            // usernameの重複は許容（別のIDでadminが存在する場合）
+            tracing::debug!("Dev admin username conflict, skipping");
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// 初回起動時の管理者作成処理
 ///
 /// 1. データベースにユーザーが存在するかチェック
@@ -126,6 +169,7 @@ pub async fn create_admin_interactive(pool: &sqlx::SqlitePool) -> Result<String,
 ///    a. 環境変数（ADMIN_PASSWORD）が設定されていれば環境変数から作成
 ///    b. 環境変数が未設定なら対話式で作成
 /// 3. ユーザーが既に存在する場合はスキップ
+/// 4. 開発モードでは常にnil UUIDのadminユーザーを確保
 ///
 /// # Arguments
 /// * `pool` - データベース接続プール
@@ -134,6 +178,10 @@ pub async fn create_admin_interactive(pool: &sqlx::SqlitePool) -> Result<String,
 /// * `Ok(())` - 処理成功
 /// * `Err(RouterError)` - 処理失敗
 pub async fn ensure_admin_exists(pool: &sqlx::SqlitePool) -> Result<(), RouterError> {
+    // 開発モードでは常にnil UUIDのadminユーザーを確保
+    #[cfg(debug_assertions)]
+    ensure_dev_admin_exists(pool).await?;
+
     // 初回起動かチェック
     let is_first_boot = db::users::is_first_boot(pool).await?;
     if !is_first_boot {
@@ -245,11 +293,26 @@ mod tests {
         let result = ensure_admin_exists(&pool).await;
         assert!(result.is_ok());
 
-        // ユーザーが作成されたことを確認
-        let user = db::users::find_by_username(&pool, "firstadmin")
-            .await
-            .unwrap();
-        assert!(user.is_some());
+        // 開発モードではnil UUIDの"admin"が先に作成されるため、
+        // is_first_bootがfalseになり環境変数のユーザーは作成されない
+        #[cfg(debug_assertions)]
+        {
+            // 開発モード: nil UUIDのadminユーザーが作成される
+            let dev_admin = db::users::find_by_id(&pool, uuid::Uuid::nil())
+                .await
+                .unwrap();
+            assert!(dev_admin.is_some());
+            assert_eq!(dev_admin.unwrap().username, "admin");
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            // リリースモード: 環境変数で指定されたユーザーが作成される
+            let user = db::users::find_by_username(&pool, "firstadmin")
+                .await
+                .unwrap();
+            assert!(user.is_some());
+        }
 
         // クリーンアップ
         std::env::remove_var("ADMIN_USERNAME");

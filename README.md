@@ -744,22 +744,16 @@ The file is automatically managed with:
 | POST | `/v1/chat/completions` | Chat completions API | API Key |
 | POST | `/v1/completions` | Text completions API | API Key |
 | POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List available models | API Key / Node Token |
+| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Node Token |
 | GET | `/v1/models/:model_id` | Get specific model info | API Key / Node Token |
 
 #### Model Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/models/available?source=hf` | List available models (HF) | None |
-| POST | `/v0/models/register` | Queue model download/convert (HF) | None |
-| GET | `/v0/models/registered` | List registered models | None |
+| POST | `/v0/models/register` | Register model (HF download/convert) | None |
 | DELETE | `/v0/models/*model_name` | Delete model | None |
 | POST | `/v0/models/discover-gguf` | Discover GGUF models | None |
-| POST | `/v0/models/convert` | Start model conversion | None |
-| GET | `/v0/models/convert` | List conversion tasks | None |
-| GET | `/v0/models/convert/:task_id` | Get conversion task details | None |
-| DELETE | `/v0/models/convert/:task_id` | Delete conversion task | None |
 | GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | None |
 
 #### Dashboard Endpoints
@@ -847,6 +841,42 @@ Register a node.
   "node_token": "nt_xxx"
 }
 ```
+
+#### GET /v1/models
+
+List available models with Azure OpenAI-style capabilities.
+
+**Response:**
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "meta-llama/llama-3.1-8b",
+      "object": "model",
+      "created": 0,
+      "owned_by": "router",
+      "capabilities": {
+        "chat_completion": true,
+        "completion": true,
+        "embeddings": false,
+        "fine_tune": false,
+        "inference": true,
+        "text_to_speech": false,
+        "speech_to_text": false,
+        "image_generation": false
+      },
+      "lifecycle_status": "registered",
+      "download_progress": null,
+      "ready": true
+    }
+  ]
+}
+```
+
+> **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
+> `lifecycle_status`, `download_progress`, and `ready` are router extensions.
 
 #### POST /v1/chat/completions
 

@@ -129,8 +129,28 @@ async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
 async fn run_server(config: ServerConfig) {
     info!("LLM Router v{}", env!("CARGO_PKG_VERSION"));
 
+    // データベース接続プールを最初に作成（他コンポーネントが依存）
+    let database_url =
+        llm_router::config::get_env_with_fallback("LLM_ROUTER_DATABASE_URL", "DATABASE_URL")
+            .unwrap_or_else(|| {
+                let home = std::env::var("HOME")
+                    .or_else(|_| std::env::var("USERPROFILE"))
+                    .expect("Failed to get home directory");
+                format!("sqlite:{}/.llm-router/router.db", home)
+            });
+
+    let db_pool = init_db_pool(&database_url)
+        .await
+        .expect("Failed to connect to database");
+
+    // マイグレーションを実行
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to run database migrations");
+
     info!("Initializing storage at ~/.llm-router/");
-    let registry = registry::NodeRegistry::with_storage()
+    let registry = registry::NodeRegistry::with_storage(db_pool.clone())
         .await
         .expect("Failed to initialize node registry");
     // Load registered models (HF etc.)
@@ -180,27 +200,6 @@ async fn run_server(config: ServerConfig) {
         llm_router::convert::resume_pending_converts(&convert_manager_for_resume, pending_models)
             .await;
     });
-
-    // 認証システムを初期化
-    // データベース接続プールを作成
-    let database_url =
-        llm_router::config::get_env_with_fallback("LLM_ROUTER_DATABASE_URL", "DATABASE_URL")
-            .unwrap_or_else(|| {
-                let home = std::env::var("HOME")
-                    .or_else(|_| std::env::var("USERPROFILE"))
-                    .expect("Failed to get home directory");
-                format!("sqlite:{}/.llm-router/router.db", home)
-            });
-
-    let db_pool = init_db_pool(&database_url)
-        .await
-        .expect("Failed to connect to database");
-
-    // マイグレーションを実行
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run database migrations");
 
     // リクエスト履歴ストレージを初期化（SQLite使用）
     let request_history = std::sync::Arc::new(

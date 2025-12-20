@@ -53,6 +53,15 @@ fn has_scope(scopes: &[ApiKeyScope], required: ApiKeyScope) -> bool {
     scopes.contains(&required)
 }
 
+fn token_looks_like_jwt(token: &str) -> bool {
+    let mut parts = token.split('.');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(first), Some(second), Some(third), None)
+            if !first.is_empty() && !second.is_empty() && !third.is_empty()
+    )
+}
+
 async fn authenticate_api_key(
     pool: &sqlx::SqlitePool,
     api_key: &str,
@@ -237,7 +246,12 @@ pub async fn admin_or_api_key_middleware(
         .and_then(|h| h.to_str().ok())
     {
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if let Ok(claims) = crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret) {
+            if token_looks_like_jwt(token) {
+                let claims =
+                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
+                        tracing::warn!("JWT verification failed: {}", e);
+                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+                    })?;
                 if claims.role == UserRole::Admin {
                     request.extensions_mut().insert(claims);
                     return Ok(next.run(request).await);
@@ -416,6 +430,8 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{balancer::LoadManager, convert::ConvertTaskManager, registry::NodeRegistry};
+    use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
     use tower::ServiceExt;
 
     #[test]
@@ -434,6 +450,85 @@ mod tests {
         // 異なる入力は異なるハッシュを生成
         let hash3 = hash_with_sha256("different_input");
         assert_ne!(hash, hash3);
+    }
+
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn admin_middleware_allows_bearer_api_key() {
+        let registry = NodeRegistry::new();
+        let load_manager = LoadManager::new(registry.clone());
+        let request_history =
+            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
+        let convert_manager = ConvertTaskManager::new(1);
+        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite pool");
+        let state = crate::AppState {
+            registry,
+            load_manager,
+            request_history,
+            convert_manager,
+            db_pool,
+            jwt_secret: "test-secret".to_string(),
+            http_client: reqwest::Client::new(),
+        };
+
+        let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
+            axum_middleware::from_fn_with_state(state, admin_or_api_key_middleware),
+        );
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin")
+                    .header("authorization", format!("Bearer {}", DEBUG_API_KEY_ADMIN))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn admin_middleware_rejects_invalid_jwt_even_with_api_key() {
+        let registry = NodeRegistry::new();
+        let load_manager = LoadManager::new(registry.clone());
+        let request_history =
+            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
+        let convert_manager = ConvertTaskManager::new(1);
+        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite pool");
+        let state = crate::AppState {
+            registry,
+            load_manager,
+            request_history,
+            convert_manager,
+            db_pool,
+            jwt_secret: "test-secret".to_string(),
+            http_client: reqwest::Client::new(),
+        };
+
+        let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
+            axum_middleware::from_fn_with_state(state, admin_or_api_key_middleware),
+        );
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin")
+                    .header("authorization", "Bearer invalid.jwt.token")
+                    .header("x-api-key", DEBUG_API_KEY_ADMIN)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[cfg(debug_assertions)]

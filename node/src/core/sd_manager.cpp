@@ -1,10 +1,12 @@
-// Include stable-diffusion.h FIRST to ensure sd_image_t typedef is defined
-// before the forward declaration in sd_manager.h is seen
-#include <stable-diffusion.h>
-
 #include "core/sd_manager.h"
 
 #include <spdlog/spdlog.h>
+
+#ifdef USE_SD
+
+// Include stable-diffusion.h FIRST to ensure sd_image_t typedef is defined
+// before the forward declaration in sd_manager.h is seen
+#include <stable-diffusion.h>
 
 #include <algorithm>
 #include <cstring>
@@ -516,3 +518,59 @@ std::optional<std::chrono::steady_clock::time_point> SDManager::getLastAccessTim
 }
 
 }  // namespace llm_node
+
+#else
+
+namespace llm_node {
+
+SDManager::SDManager(std::string models_dir) : models_dir_(std::move(models_dir)) {
+    spdlog::warn("SDManager: stable-diffusion.cpp support is disabled (BUILD_WITH_SD=OFF)");
+}
+
+SDManager::~SDManager() = default;
+
+bool SDManager::loadModel(const std::string&) { return false; }
+bool SDManager::isLoaded(const std::string&) const { return false; }
+sd_ctx_t* SDManager::getContext(const std::string&) const { return nullptr; }
+
+std::vector<ImageGenerationResult> SDManager::generateImages(const std::string&, const ImageGenParams&) {
+    ImageGenerationResult r;
+    r.success = false;
+    r.error = "stable-diffusion.cpp support is disabled";
+    return {r};
+}
+
+std::vector<ImageGenerationResult> SDManager::editImages(const std::string&, const ImageEditParams&) {
+    ImageGenerationResult r;
+    r.success = false;
+    r.error = "stable-diffusion.cpp support is disabled";
+    return {r};
+}
+
+std::vector<ImageGenerationResult> SDManager::generateVariations(const std::string&, const ImageVariationParams&) {
+    ImageGenerationResult r;
+    r.success = false;
+    r.error = "stable-diffusion.cpp support is disabled";
+    return {r};
+}
+
+size_t SDManager::loadedCount() const { return 0; }
+bool SDManager::unloadModel(const std::string&) { return false; }
+std::vector<std::string> SDManager::getLoadedModels() const { return {}; }
+bool SDManager::loadModelIfNeeded(const std::string&) { return false; }
+
+void SDManager::setIdleTimeout(std::chrono::milliseconds timeout) { idle_timeout_ = timeout; }
+std::chrono::milliseconds SDManager::getIdleTimeout() const { return idle_timeout_; }
+size_t SDManager::unloadIdleModels() { return 0; }
+
+void SDManager::setMaxLoadedModels(size_t max_models) { max_loaded_models_ = max_models; }
+size_t SDManager::getMaxLoadedModels() const { return max_loaded_models_; }
+bool SDManager::canLoadMore() const { return false; }
+
+std::optional<std::chrono::steady_clock::time_point> SDManager::getLastAccessTime(const std::string&) const {
+    return std::nullopt;
+}
+
+}  // namespace llm_node
+
+#endif

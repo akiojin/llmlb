@@ -179,29 +179,12 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
 }
 
 std::vector<std::string> ModelSync::listLocalModels() const {
+    ModelStorage storage(models_dir_);
+    auto infos = storage.listAvailable();
     std::vector<std::string> models;
-    std::error_code ec;
-    if (!fs::exists(models_dir_, ec) || ec) return models;
-
-    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
-    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
-        if (ec) break;
-        if (entry.is_directory()) continue;
-
-        // model.gguf ファイルを検索
-        if (entry.path().filename() != "model.gguf") continue;
-
-        // 親ディレクトリからモデル名を計算
-        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
-        const auto parent_dir = entry.path().parent_path();
-        ec.clear();
-        const auto relative = fs::relative(parent_dir, models_dir_, ec);
-        if (ec || relative.empty()) continue;
-
-        // SPEC-dcaeaec4: ルーターとの比較のため小文字に正規化
-        // ルーターは model_name_to_dir() で正規化済みの名前を返すため、
-        // ローカルモデル名も同じ正規化を適用する
-        models.push_back(ModelStorage::modelNameToDir(relative.string()));
+    models.reserve(infos.size());
+    for (const auto& m : infos) {
+        models.push_back(m.name);
     }
     return models;
 }
@@ -290,61 +273,29 @@ ModelSyncResult ModelSync::sync() {
             }
         }
 
-        ModelDownloader downloader(base_url_, models_dir_, timeout_, 2, std::chrono::milliseconds(200), api_key_value);
+        // Use registry base for manifest + file downloads
+        std::string registry_base = base_url_;
+        if (!registry_base.empty() && registry_base.back() == '/') {
+            registry_base.pop_back();
+        }
+        registry_base += "/v0/models/registry";
+
+        ModelDownloader downloader(registry_base, models_dir_, timeout_, 2, std::chrono::milliseconds(200), api_key_value);
 
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;
 
-            bool ok = false;
-            bool downloaded = false;
+            bool ok = downloadModel(downloader, id, nullptr);
+
+            // As a last resort (legacy), allow direct download_url for single-file GGUF.
+            // safetensors は複数ファイルのため、このフォールバックでは扱わない。
             auto it = remote_map.find(id);
-            if (it != remote_map.end()) {
+            if (!ok && it != remote_map.end()) {
                 const auto& info = it->second;
-                // Check if router's path is directly accessible (no copy, just verify)
-                // Per SPEC-dcaeaec4 FR-3: use path directly if accessible
-                if (!info.path.empty()) {
-                    std::error_code ec;
-                    auto src = fs::path(info.path);
-                    if (fs::exists(src, ec) && !ec && fs::is_regular_file(src, ec) && !ec) {
-                        // Path is accessible - InferenceEngine will use it directly
-                        ok = true;
-                    }
-                }
-
-                // If path is not accessible, download from router's blob endpoint as fallback.
-                // The router's endpoint uses a single path segment, so model id must be URL-encoded (slashes, etc).
-                if (!ok) {
-                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    const auto blob_path = std::string("/v0/models/blob/") + urlEncodePathSegment(id);
-                    auto out = downloader.downloadBlob(blob_path, filename, nullptr);
-                    ok = !out.empty();
-                    downloaded = ok;
-                }
-
-                // As a last resort, allow direct download_url (e.g. HF) if router blob is unavailable.
-                if (!ok && !info.download_url.empty()) {
+                if (!info.download_url.empty() && info.download_url.find(".gguf") != std::string::npos) {
                     const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
                     auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
                     ok = !out.empty();
-                    downloaded = ok;
-                }
-
-                // metadata (chat_template) - persist only when we downloaded locally
-                if (ok && downloaded && !info.chat_template.empty()) {
-                    auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
-                    auto meta_path = meta_dir / "metadata.json";
-                    nlohmann::json meta = nlohmann::json::object();
-                    if (fs::exists(meta_path)) {
-                        try {
-                            std::ifstream ifs(meta_path);
-                            ifs >> meta;
-                        } catch (...) {
-                            meta = nlohmann::json::object();
-                        }
-                    }
-                    meta["chat_template"] = info.chat_template;
-                    std::ofstream ofs(meta_path, std::ios::binary | std::ios::trunc);
-                    ofs << meta.dump();
                 }
             }
 
@@ -489,7 +440,7 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             if (url.empty()) {
                 url = downloader.getRegistryBase();
                 if (!url.empty() && url.back() != '/') url.push_back('/');
-                url += name;
+                url += urlEncodePathSegment(model_id) + "/files/" + urlEncodePathSegment(name);
             }
 
             size_t file_chunk = f.value("chunk", static_cast<size_t>(0));
@@ -537,7 +488,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                     }
                 }
 
-                auto out = downloadWithHint(downloader, model_id, url, model_id + "/" + name, cb, digest);
+                const auto local_dir = ModelStorage::modelNameToDir(model_id);
+                auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, cb, digest);
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);

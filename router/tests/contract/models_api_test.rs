@@ -258,7 +258,19 @@ async fn test_tasks_endpoint_is_removed() {
 async fn test_register_model_contract() {
     let mock = MockServer::start().await;
 
-    // HEAD 200 for existence
+    // siblings: GGUF only
+    Mock::given(method("GET"))
+        .and(path("/api/models/test/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    // HEAD 200 for download
     Mock::given(method("HEAD"))
         .and(path("/test/repo/resolve/main/model.gguf"))
         .respond_with(ResponseTemplate::new(200))
@@ -291,7 +303,7 @@ async fn test_register_model_contract() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // /v1/models に含まれること
+    // /v1/models に含まれること（ただし ready=false）
     let models_res = app
         .clone()
         .oneshot(
@@ -310,10 +322,13 @@ async fn test_register_model_contract() {
     let data = body["data"]
         .as_array()
         .expect("'data' must be an array on /v1/models");
-    // model.gguf (generic) + test/repo → "repo"
-    assert!(
-        data.iter().all(|m| m["id"] != "repo"),
-        "/v1/models must not expose models before download completes"
+    let entry = data
+        .iter()
+        .find(|m| m["id"] == "test/repo")
+        .expect("/v1/models must include queued model");
+    assert_eq!(
+        entry["ready"], false,
+        "model must not be ready before download completes"
     );
 
     // 重複登録は400
@@ -331,10 +346,15 @@ async fn test_register_model_contract() {
         .unwrap();
     assert_eq!(dup.status(), StatusCode::BAD_REQUEST);
 
-    // 404ケース: HEADが404を返す
-    Mock::given(method("HEAD"))
-        .and(path("/missing/repo/resolve/main/absent.gguf"))
-        .respond_with(ResponseTemplate::new(404))
+    // 異常系: 指定したGGUFがsiblingsに存在しない
+    Mock::given(method("GET"))
+        .and(path("/api/models/missing/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "other.gguf"}
+            ]
+        })))
         .mount(&mock)
         .await;
 
@@ -357,19 +377,21 @@ async fn test_register_model_contract() {
         .unwrap();
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
 
-    // repoのみ指定でGGUFなし→変換パスに進むため201を返す（新API仕様）
+    // repoのみ指定で safetensors の場合は登録できる（config/tokenizer必須）
     Mock::given(method("GET"))
-        .and(path("/api/models/non-gguf-repo"))
+        .and(path("/api/models/safetensors-repo"))
         .and(query_param("expand", "siblings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
                 {"rfilename": "model.safetensors"}
             ]
         })))
         .mount(&mock)
         .await;
 
-    let repo_only = app
+    let safetensors_repo_only = app
         .clone()
         .oneshot(
             admin_request(&admin_key)
@@ -377,44 +399,13 @@ async fn test_register_model_contract() {
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({"repo": "non-gguf-repo"})).unwrap(),
+                    serde_json::to_vec(&json!({"repo": "safetensors-repo"})).unwrap(),
                 ))
                 .unwrap(),
         )
         .await
         .unwrap();
-    // 新APIではGGUFがない場合は変換パスに進むため201を返す
-    assert_eq!(repo_only.status(), StatusCode::CREATED);
-
-    // repoのみ、GGUFなし → 変換パスに進むため201を返す（新API仕様）
-    Mock::given(method("GET"))
-        .and(path("/api/models/unknown-repo"))
-        .and(query_param("expand", "siblings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "siblings": [
-                {"rfilename": "config.json"},
-                {"rfilename": "other.txt"}
-            ]
-        })))
-        .mount(&mock)
-        .await;
-
-    let repo_only_fallback = app
-        .clone()
-        .oneshot(
-            admin_request(&admin_key)
-                .method("POST")
-                .uri("/v0/models/register")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({"repo": "unknown-repo"})).unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    // 新APIではGGUFがない場合は変換パスに進むため201を返す
-    assert_eq!(repo_only_fallback.status(), StatusCode::CREATED);
+    assert_eq!(safetensors_repo_only.status(), StatusCode::CREATED);
 
     // DELETE: タスク完了前でもConvertTaskを削除できる（204を期待）
     // モデル名 = リポジトリ名、ワイルドカードパスなのでスラッシュをそのまま使用
@@ -469,7 +460,12 @@ async fn test_register_model_contract() {
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({"repo": "convertible-repo"})).unwrap(),
+                    serde_json::to_vec(&json!({
+                        "repo": "convertible-repo",
+                        "format": "gguf",
+                        "gguf_policy": "quality"
+                    }))
+                    .unwrap(),
                 ))
                 .unwrap(),
         )
@@ -496,7 +492,10 @@ async fn test_register_model_contract() {
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         if val["data"]
             .as_array()
-            .map(|arr| arr.iter().any(|m| m["id"] == "convertible-repo"))
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "convertible-repo" && m["ready"] == true)
+            })
             .unwrap_or(false)
         {
             converted = true;
@@ -507,68 +506,22 @@ async fn test_register_model_contract() {
     assert!(converted, "converted model should appear in /v1/models");
 }
 
-/// T010: filename未指定 + quantization指定でGGUF siblingsから一致する量子化を選択する
+/// T010: safetensors と GGUF が両方ある場合、format 未指定は400
 #[tokio::test]
 #[serial]
-async fn test_register_model_selects_quantized_gguf_from_siblings() {
+async fn test_register_model_requires_format_when_both_artifacts_exist() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 
     Mock::given(method("GET"))
-        .and(path("/api/models/quant-repo"))
+        .and(path("/api/models/both-repo"))
         .and(query_param("expand", "siblings"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "siblings": [
-                {"rfilename": "model.Q8_0.gguf"},
-                {"rfilename": "model.Q4_K_M.gguf"},
-                {"rfilename": "config.json"}
-            ]
-        })))
-        .mount(&mock)
-        .await;
-
-    Mock::given(method("HEAD"))
-        .and(path("/quant-repo/resolve/main/model.Q4_K_M.gguf"))
-        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
-        .mount(&mock)
-        .await;
-
-    let TestApp { app, admin_key, .. } = build_app().await;
-
-    let payload = json!({
-        "repo": "quant-repo",
-        "quantization": "Q4_K_M"
-    });
-
-    let response = app
-        .clone()
-        .oneshot(
-            admin_request(&admin_key)
-                .method("POST")
-                .uri("/v0/models/register")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::CREATED);
-}
-
-/// T011: quantization一致のGGUFが見つからない場合は400を返す
-#[tokio::test]
-#[serial]
-async fn test_register_model_errors_when_quantized_gguf_missing() {
-    let mock = MockServer::start().await;
-    std::env::set_var("HF_BASE_URL", mock.uri());
-
-    Mock::given(method("GET"))
-        .and(path("/api/models/no-quant-repo"))
-        .and(query_param("expand", "siblings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "siblings": [
-                {"rfilename": "model.Q8_0.gguf"}
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
+                {"rfilename": "model.safetensors"},
+                {"rfilename": "model.Q4_K_M.gguf"}
             ]
         })))
         .mount(&mock)
@@ -577,8 +530,7 @@ async fn test_register_model_errors_when_quantized_gguf_missing() {
     let TestApp { app, admin_key, .. } = build_app().await;
 
     let payload = json!({
-        "repo": "no-quant-repo",
-        "quantization": "Q4_K_M"
+        "repo": "both-repo"
     });
 
     let response = app
@@ -597,25 +549,77 @@ async fn test_register_model_errors_when_quantized_gguf_missing() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-/// T012: filename指定時のquantization不一致は400を返す
+/// T011: filename未指定 + gguf_policy 指定でGGUF siblingsから選択する
 #[tokio::test]
 #[serial]
-async fn test_register_model_errors_on_quantization_mismatch() {
+async fn test_register_model_selects_gguf_by_policy_from_siblings() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
 
-    Mock::given(method("HEAD"))
-        .and(path("/mismatch-repo/resolve/main/model.Q8_0.gguf"))
-        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+    Mock::given(method("GET"))
+        .and(path("/api/models/policy-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"},
+                {"rfilename": "model.Q8_0.gguf"},
+                {"rfilename": "model.F16.gguf"}
+            ]
+        })))
         .mount(&mock)
         .await;
 
     let TestApp { app, admin_key, .. } = build_app().await;
 
     let payload = json!({
-        "repo": "mismatch-repo",
-        "filename": "model.Q8_0.gguf",
-        "quantization": "Q4_K_M"
+        "repo": "policy-repo",
+        "format": "gguf",
+        "gguf_policy": "quality"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["format"], "gguf");
+    assert_eq!(body["filename"], "model.F16.gguf");
+}
+
+/// T012: format=gguf かつ filename未指定で gguf_policy が無い場合は400
+#[tokio::test]
+#[serial]
+async fn test_register_model_errors_when_gguf_policy_missing() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/no-policy-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "no-policy-repo",
+        "format": "gguf"
     });
 
     let response = app
@@ -683,6 +687,17 @@ async fn test_zero_byte_cache_is_not_ready() {
 async fn test_zero_byte_cache_triggers_redownload() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/zero/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
 
     Mock::given(method("HEAD"))
         .and(path("/zero/repo/resolve/main/model.gguf"))
@@ -764,6 +779,17 @@ async fn test_zero_byte_cache_triggers_redownload() {
 async fn test_register_model_uses_existing_cache() {
     let mock = MockServer::start().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/cached/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
 
     Mock::given(method("HEAD"))
         .and(path("/cached/repo/resolve/main/model.gguf"))
@@ -974,7 +1000,11 @@ async fn test_download_failure_shows_error_status() {
                 .uri("/v0/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({"repo": "error-test-repo"})).unwrap(),
+                    serde_json::to_vec(&json!({
+                        "repo": "error-test-repo",
+                        "filename": "model.Q4_K_M.gguf"
+                    }))
+                    .unwrap(),
                 ))
                 .unwrap(),
         )

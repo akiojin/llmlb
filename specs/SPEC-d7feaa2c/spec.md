@@ -7,11 +7,12 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、直接ロー�
 ## 目的
 - Node側でエンジンローダーを抽象化し、複数エンジンを共存可能にする
 - Nemotron向けの新エンジンを追加し、safetensorsを直接ロードできる状態にする
-- エンジン選択は metadata/manifest を正として判定する（後方互換のフォールバックは許容）
+- エンジン選択は「登録時に選択したアーティファクト（safetensors/GGUF）」と
+  Hugging Face の `config.json` 等のモデル由来メタデータを正として判定する
 
 ## ゴール
 - Nodeにエンジン抽象化レイヤーが導入され、llama.cpp と Nemotron エンジンを選択できる
-- metadata/manifest に基づくエンジン選択が実装される
+- `metadata.json` のような llm-router 独自メタデータファイルに依存せず、エンジン選択が実装される
 - safetensors-cpp を用いた Nemotron モデルの直接ロード（mmap + validation）が可能になる
 
 ## 非ゴール
@@ -24,8 +25,8 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、直接ロー�
 - 開発者として、Nemotronをsafetensorsから直接ロードできるようにしたい
 
 ## 受け入れ条件
-- Nodeが metadata/manifest に従ってエンジンを選択する
-- metadataが存在しない場合は既存のGGUFルールで後方互換動作する
+- Nodeが登録時の選択（safetensors/GGUF）と `config.json` に従ってエンジンを選択する
+- `metadata.json` に依存しない
 - Nemotronエンジンが safetensors を mmap で読み込み、
   data_offsets の検証と主要テンソルの存在確認を行える
 - エンジン判定結果は /v1/models の応答に影響し、未対応モデルは登録対象から除外できる

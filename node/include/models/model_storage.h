@@ -13,8 +13,9 @@
 namespace llm_node {
 
 struct ModelInfo {
-    std::string name;       // Model name (e.g., "gpt-oss-20b")
-    std::string gguf_path;  // Full path to model.gguf
+    std::string name;          // Model name (e.g., "gpt-oss-20b")
+    std::string format;        // "gguf" or "safetensors"
+    std::string primary_path;  // Full path to primary artifact (model.gguf or safetensors/index)
     bool valid{false};      // Whether the model file exists and is valid
 };
 
@@ -38,13 +39,10 @@ public:
     // List all available models with runtime/format metadata
     std::vector<ModelDescriptor> listAvailableDescriptors() const;
 
-    // FR-5: Load optional metadata from metadata.json
-    std::optional<nlohmann::json> loadMetadata(const std::string& model_name) const;
-
-    // Resolve model descriptor (metadata preferred, GGUF fallback)
+    // Resolve model descriptor (GGUF / safetensors)
     std::optional<ModelDescriptor> resolveDescriptor(const std::string& model_name) const;
 
-    // Validate model (check if model.gguf exists)
+    // Validate model (check if a supported artifact exists)
     bool validateModel(const std::string& model_name) const;
 
     // Delete model directory and all files

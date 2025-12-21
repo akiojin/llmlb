@@ -1,39 +1,43 @@
-# 機能仕様書: GGUF量子化選択と量子化キャッシュ
+# 機能仕様書: モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー
 
 **機能ID**: `SPEC-a61b24f2`  
 **作成日**: 2025-12-21  
 **ステータス**: 実装中（要件確定済み）  
-**入力**: ユーザー説明: "GGUFへの変換機能があるので量子化キャッシュ時に選択できるようにしたい。GGUFが存在する場合は兄弟ファイルから量子化を選び、ダッシュボードでも選択と説明表示が必要。READMEにも記載。"
+**入力**: ユーザー説明: "HF上に safetensors/GGUF のいずれもある場合は登録時に必ず選択する。GGUFを選ぶ場合は登録時に品質/省メモリ/速度から量子化モデルを選択できるようにし、ダッシュボードにも説明表示が必要。READMEにも記載。"
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
-### ユーザーストーリー1 - 量子化指定でGGUFを選択 (P1)
-運用管理者として、ダッシュボードまたはAPIで量子化タイプを指定し、リポジトリ内のGGUF siblingsから該当量子化ファイルを自動選択して登録したい。該当ファイルがない場合は明確なエラーを受け取りたい。
+### ユーザーストーリー1 - 形式選択（safetensors/GGUF） (P1)
+運用管理者として、Hugging Face 上に safetensors と GGUF の両方が存在する場合、登録時にどちらを使うか明示的に選択したい。選択が無い場合は明確なエラーを受け取りたい。
 
-**独立テスト**: `filename` 未指定 + `quantization=Q4_K_M` で登録 → siblings から Q4_K_M GGUF を選択 → 登録成功。該当GGUFが無い場合は 400 エラー。
+**独立テスト**: safetensors と GGUF が両方存在するリポジトリを `format` 未指定で登録 → 400 エラー（「format が必須」）。
 
-### ユーザーストーリー2 - 非GGUFは変換＋量子化 (P1)
-運用管理者として、非GGUFモデルを登録する際に量子化タイプを選び、変換後に量子化キャッシュが生成されることを期待する。ダッシュボードには変換の説明が表示される。
+### ユーザーストーリー2 - GGUF選択ポリシー（品質/省メモリ/速度） (P1)
+運用管理者として、GGUFを選択した場合に、品質/省メモリ/速度の観点で最適な量子化GGUFを登録時に選びたい。リポジトリ内に該当が無い場合は明確なエラーを受け取りたい。
 
-**独立テスト**: 非GGUFリポジトリ + `quantization=Q4_K_M` で登録 → 変換後に量子化が実行される → /v1/models に反映。
+**独立テスト**: `format=gguf` + `filename` 未指定 + `gguf_policy=quality` で登録 → siblings から最適なGGUFを選択 → 登録成功。該当GGUFが無い場合は 400 エラー。
+
+### ユーザーストーリー3 - safetensorsを正として登録 (P1)
+運用管理者として、`format=safetensors` を選択した場合は safetensors（必要に応じて index + shards）を正として登録したい。必要なメタデータ（`config.json`, `tokenizer.json`）が無い場合は明確なエラーを受け取りたい。
 
 ### エッジケース
-- `quantization` が不正な値の場合、400エラー。
-- `filename` 指定かつ量子化が不一致の場合は 400 エラー。
-- 量子化に必要な `llama-quantize` が見つからない場合は明確なエラー。
+- `format` が不正な値の場合、400エラー。
+- `format=gguf` で `gguf_policy` が不正な値の場合、400エラー。
+- `format=safetensors` で `config.json` または `tokenizer.json` が存在しない場合は 400 エラー。
 
 ## 要件 *(必須)*
 
 ### 機能要件
-- **FR-001**: `/v0/models/register` に `quantization` を追加できる。
-- **FR-002**: `filename` 未指定かつ `quantization` 指定の場合、siblings から量子化一致のGGUFを選択する。見つからない場合は 400 エラー。
-- **FR-003**: `filename` がGGUFの場合、`quantization` 指定があるときはファイル名から推測した量子化が一致しない場合に 400 エラー。
-- **FR-004**: 非GGUFの変換時、`quantization` がQ4/Q5等のk-quantの場合は変換後に `llama-quantize` を実行する。
-- **FR-005**: ダッシュボードの登録ダイアログで量子化選択ができ、変換/量子化の説明が表示される。
-- **FR-006**: README.md / README.ja.md に量子化選択と必要な外部ツールの説明を追記する。
+- **FR-001**: `/v0/models/register` に `format`（`safetensors`/`gguf`）を追加できる。
+- **FR-002**: HF上に safetensors と GGUF が両方ある場合、`format` 未指定は 400 エラー。
+- **FR-003**: `format=gguf` かつ `filename` 未指定の場合、`gguf_policy` を必須とし、siblings から最適なGGUFを選択する（見つからない場合は 400）。
+- **FR-004**: `format=safetensors` の登録では、`config.json` と `tokenizer.json` を必須とする（不足時は 400）。
+- **FR-005**: ダッシュボードの登録ダイアログで `format` と `gguf_policy` を選択でき、説明が表示される（`gguf_policy` は `format=gguf` の場合のみ表示）。
+- **FR-006**: README.md / README.ja.md に形式選択とGGUF選択ポリシー、必要な外部ツールの説明を追記する。
 
 ### 主要エンティティ
-- **量子化指定**: 登録時に指定する量子化タイプ。GGUF選択と変換後量子化に利用。
+- **形式選択（format）**: 登録時に `safetensors` または `gguf` を選ぶ。
+- **GGUF選択ポリシー（gguf_policy）**: `quality` / `memory` / `speed` のいずれか。
 - **GGUF siblings**: HFモデルリポジトリ内ファイル一覧（`expand=siblings` の rfilename）。
 
 ## スコープ外
@@ -45,7 +49,7 @@
 - Q4/Q5等のk-quantは `llama-quantize` による後段量子化で生成する。
 
 ## 成功基準 *(必須)*
-1. 量子化指定でGGUF siblings を正しく選択できる。
-2. 非GGUF変換 + 量子化が成功し、/v1/models で利用可能になる。
-3. ダッシュボード上で量子化選択と説明が表示される。
+1. safetensors/GGUFが両方ある場合に `format` が必須となり、登録時に選択できる。
+2. GGUF選択ポリシーで siblings から最適なGGUFを選択できる。
+3. ダッシュボード上で `format` と `gguf_policy` の選択と説明が表示される。
 4. README.md / README.ja.md に利用方法が記載される。

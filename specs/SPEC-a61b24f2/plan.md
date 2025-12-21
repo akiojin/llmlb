@@ -1,4 +1,4 @@
-# 実装計画: GGUF量子化選択と量子化キャッシュ
+# 実装計画: モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー
 
 **機能ID**: `SPEC-a61b24f2`  
 **作成日**: 2025-12-21  
@@ -17,9 +17,9 @@
 
 ## 目的
 
-量子化指定を登録時に受け取り、
-- GGUFが存在する場合は siblings から該当量子化ファイルを選択
-- 非GGUFの場合は変換後に llama-quantize により量子化
+登録時にモデル形式（safetensors/GGUF）を選択できるようにし、
+- safetensors と GGUF が両方ある場合は `format` を必須化
+- GGUF を選ぶ場合は品質/省メモリ/速度のポリシーで siblings から適切な量子化GGUFを選択
 を実行できるようにする。ダッシュボードで選択と説明を表示し、READMEに手順を記載する。
 
 ## 影響範囲
@@ -31,11 +31,11 @@
 
 ## 設計方針
 
-- 量子化タイプは固定リスト（UI/API双方で同じ）
-- `filename` 未指定 + `quantization` 指定の場合は siblings を優先
-- 量子化一致がない場合はエラー（変換へのフォールバックなし）
+- `format` は `safetensors` / `gguf` を受け付ける
+- HF上に両方存在する場合は `format` 未指定をエラーにする
+- GGUF は `filename` が未指定の場合、`gguf_policy` に基づいて siblings を優先して選ぶ
 - 非GGUF変換後の量子化は `llama-quantize` を利用
-- 変換/量子化の説明は登録ダイアログで明示
+- 説明は登録ダイアログで明示（`format` と `gguf_policy`）
 
 ## 依存関係
 
@@ -54,8 +54,7 @@
 
 ## Phase 2: タスク分割方針（/speckit.tasksで具現化）
 
-- API: 量子化パラメータ追加、siblings選択ロジック、バリデーション
-- Conversion: 量子化指定の解釈、llama-quantize連携、失敗時の明確なエラー
-- UI: 量子化セレクタ追加、説明表示、API連携
+- API: `format` / `gguf_policy` 追加、siblings選択ロジック、バリデーション
+- Conversion: GGUFポリシーの解釈、llama-quantize連携（必要時）、失敗時の明確なエラー
+- UI: 形式セレクタ + GGUFポリシーセレクタ、説明表示、API連携
 - Docs: README更新
-

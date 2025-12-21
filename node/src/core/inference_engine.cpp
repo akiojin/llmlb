@@ -69,7 +69,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     engines_->registerEngine(std::make_unique<NemotronEngine>());
 }
 
-InferenceEngine::InferenceEngine() = default;
+InferenceEngine::~InferenceEngine() noexcept = default;
 
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
     std::ostringstream oss;

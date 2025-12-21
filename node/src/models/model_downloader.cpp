@@ -14,6 +14,7 @@
 
 #include "utils/config.h"
 #include "utils/file_lock.h"
+#include "models/model_storage.h"
 
 namespace {
 
@@ -209,6 +210,27 @@ ParsedUrl parseUrl(const std::string& url) {
     return parsed;
 }
 
+std::string urlEncodePathSegment(const std::string& input) {
+    static const char* kHex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char c : input) {
+        const bool unreserved =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+        if (unreserved) {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[(c >> 4) & 0x0F]);
+            out.push_back(kHex[c & 0x0F]);
+        }
+    }
+    return out;
+}
+
 std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::milliseconds timeout) {
     if (url.scheme.empty() || url.host.empty()) {
         return nullptr;
@@ -276,10 +298,11 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     std::string path = base.path;
     if (path.empty()) path = "/";
     if (path.back() != '/') path.push_back('/');
-    path += model_id + "/manifest.json";
+    path += urlEncodePathSegment(model_id) + "/manifest.json";
 
-    std::string out_path = models_dir_ + "/" + model_id + "/manifest.json";
-    fs::create_directories(models_dir_ + "/" + model_id);
+    const auto local_dir = llm_node::ModelStorage::modelNameToDir(model_id);
+    std::string out_path = models_dir_ + "/" + local_dir + "/manifest.json";
+    fs::create_directories(models_dir_ + "/" + local_dir);
     FileLock lock(out_path);
     // ロック取得できなくてもベストエフォートで進める
     httplib::Result res;
@@ -295,7 +318,7 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     }
     if (!res || res->status < 200 || res->status >= 300) return "";
 
-    fs::create_directories(models_dir_ + "/" + model_id);
+    fs::create_directories(models_dir_ + "/" + local_dir);
     std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
     ofs << res->body;
     // log applied config for diagnostics (opt-in)

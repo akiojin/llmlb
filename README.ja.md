@@ -243,21 +243,25 @@ Router (OpenAI-compatible)
 - 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
 - ノードのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
-## モデル管理（Hugging Face, GGUF-first）
+## モデル管理（Hugging Face, safetensors / GGUF）
 
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
-  - Hugging Face repo（例: `TheBloke/Llama-2-7B-GGUF`）と、任意で filename を入力します。
-  - 量子化を選択した場合、filename未指定なら siblings から一致するGGUFを選択します
-    （無ければエラー）。
-  - 非GGUF入力でQ4/Q5等を選ぶと、変換後に `llama-quantize` を実行します
-    （PATH または `LLM_QUANTIZE_BIN` が必要）。
-  - `/v1/models` は、ルーターのファイルシステム上にキャッシュ済みのモデルだけを返します。
-- ノードは各モデルディレクトリの `metadata.json` を参照して runtime/format/primary を判定します
-  （未設定の場合は `model.gguf` にフォールバック）。
-
-モデル ID はファイル名ベース形式に正規化されます（例: `llama-2-7b`, `gpt-oss-20b`）。
+  - `format` を選択します: `safetensors`（推奨 / 新エンジン） または `gguf`（llama.cpp フォールバック）
+    - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
+  - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）を入力します。
+  - `format=gguf` の場合:
+    - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
+  - `format=safetensors` の場合:
+    - HFスナップショットに `config.json` と `tokenizer.json` が必要です。
+    - シャーディングされている場合は `.index.json` が必要です。
+  - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
+  - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
+- ノードはモデルをプッシュ配布されず、オンデマンドでルーターから取得します:
+  - `GET /v0/models/registry/:model_name/manifest.json`
+  - `GET /v0/models/registry/:model_name/files/:file_name`
+  - （互換）単一GGUFのみ: `GET /v0/models/blob/:model_name`
 
 ## API 仕様
 
@@ -274,7 +278,7 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node:register` | ノード登録 + ヘルスチェック + モデル配布（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`） |
+| `node:register` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`） |
 | `api:inference` | OpenAI 互換推論 API（`/v1/*`） |
 | `admin:*` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
@@ -308,7 +312,9 @@ Router (OpenAI-compatible)
 - POST `/v0/models/register`（admin権限）
 - DELETE `/v0/models/*model_name`（admin権限）
 - POST `/v0/models/discover-gguf`（admin権限）
-- GET `/v0/models/blob/:model_name`（APIキー: `node:register`）
+- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node:register`）
+- GET `/v0/models/registry/:model_name/files/:file_name`（APIキー: `node:register`）
+- GET `/v0/models/blob/:model_name`（互換: 単一GGUFのみ）
 
 #### ダッシュボード/監視
 

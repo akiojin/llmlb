@@ -25,25 +25,8 @@ import {
 import { Box, Search, Plus, Trash2, Loader2, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const quantizationOptions = [
-  'F16',
-  'BF16',
-  'F32',
-  'Q8_0',
-  'Q6_K',
-  'Q5_K_M',
-  'Q5_K_S',
-  'Q5_0',
-  'Q4_K_M',
-  'Q4_K_S',
-  'Q4_0',
-  'Q3_K_M',
-  'Q3_K_S',
-  'Q2_K',
-  'IQ4_XS',
-  'IQ3_M',
-  'IQ2_M',
-]
+type RegisterFormat = 'safetensors' | 'gguf'
+type RegisterGgufPolicy = 'quality' | 'memory' | 'speed'
 
 function formatGb(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return '—'
@@ -70,8 +53,16 @@ export function ModelsSection() {
   const [search, setSearch] = useState('')
   const [registerOpen, setRegisterOpen] = useState(false)
   const [registerRepo, setRegisterRepo] = useState('')
+  const [registerFormat, setRegisterFormat] = useState<RegisterFormat | ''>('')
   const [registerFilename, setRegisterFilename] = useState('')
-  const [registerQuantization, setRegisterQuantization] = useState('')
+  const [registerGgufPolicy, setRegisterGgufPolicy] = useState<RegisterGgufPolicy | ''>('')
+
+  function resetRegisterForm() {
+    setRegisterRepo('')
+    setRegisterFormat('')
+    setRegisterFilename('')
+    setRegisterGgufPolicy('')
+  }
 
   const { data: registeredModels, isLoading: isLoadingRegistered } = useQuery({
     queryKey: ['registered-models'],
@@ -80,15 +71,17 @@ export function ModelsSection() {
   })
 
   const registerMutation = useMutation({
-    mutationFn: (params: { repo: string; filename?: string; quantization?: string }) =>
-      modelsApi.register(params.repo, params.filename, params.quantization),
+    mutationFn: (params: {
+      repo: string
+      format: RegisterFormat
+      filename?: string
+      gguf_policy?: RegisterGgufPolicy
+    }) => modelsApi.register(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
       toast({ title: 'Model registration queued' })
       setRegisterOpen(false)
-      setRegisterRepo('')
-      setRegisterFilename('')
-      setRegisterQuantization('')
+      resetRegisterForm()
     },
     onError: (error) => {
       toast({
@@ -241,15 +234,22 @@ export function ModelsSection() {
         </CardContent>
       </Card>
 
-      <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
+      <Dialog
+        open={registerOpen}
+        onOpenChange={(open) => {
+          setRegisterOpen(open)
+          if (!open) resetRegisterForm()
+        }}
+      >
         <DialogContent id="convert-modal">
           <DialogHeader>
             <DialogTitle>Register Model</DialogTitle>
             <DialogDescription>
-              Register a model from Hugging Face. Enter the repository ID and optionally a specific GGUF filename.
+              Register a model from Hugging Face. Choose the artifact format to cache and run. If a repository
+              contains both <code>safetensors</code> and <code>.gguf</code>, you must explicitly pick one.
               Browse models at{' '}
               <a
-                href="https://huggingface.co/models?library=gguf"
+                href="https://huggingface.co/models"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
@@ -261,49 +261,83 @@ export function ModelsSection() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label htmlFor="convert-format">Format</Label>
+              <Select
+                value={registerFormat || 'none'}
+                onValueChange={(value) =>
+                  setRegisterFormat(value === 'none' ? '' : (value as RegisterFormat))
+                }
+              >
+                <SelectTrigger id="convert-format">
+                  <SelectValue placeholder="Select format" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select...</SelectItem>
+                  <SelectItem value="safetensors">safetensors (new engine)</SelectItem>
+                  <SelectItem value="gguf">GGUF (llama.cpp fallback)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="convert-repo">Repo</Label>
               <Input
                 id="convert-repo"
-                placeholder="bartowski/Qwen2.5-7B-Instruct-GGUF"
+                placeholder="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
                 value={registerRepo}
                 onChange={(e) => setRegisterRepo(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="convert-filename">Filename (optional)</Label>
-              <Input
-                id="convert-filename"
-                placeholder="Qwen2.5-7B-Instruct-Q4_K_M.gguf"
-                value={registerFilename}
-                onChange={(e) => setRegisterFilename(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="convert-quantization">Quantization (optional)</Label>
-              <Select
-                value={registerQuantization || 'none'}
-                onValueChange={(value) =>
-                  setRegisterQuantization(value === 'none' ? '' : value)
-                }
-              >
-                <SelectTrigger id="convert-quantization">
-                  <SelectValue placeholder="Select quantization" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No preference</SelectItem>
-                  {quantizationOptions.map((quant) => (
-                    <SelectItem key={quant} value={quant}>
-                      {quant}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {registerFormat === 'gguf' ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="convert-filename">GGUF filename (optional)</Label>
+                  <Input
+                    id="convert-filename"
+                    placeholder="model.Q4_K_M.gguf"
+                    value={registerFilename}
+                    onChange={(e) => setRegisterFilename(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Specify an exact <code>.gguf</code> filename if you already know which variant you want.
+                  </p>
+                </div>
+                {!registerFilename.trim() ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="convert-gguf-policy">GGUF selection policy</Label>
+                    <Select
+                      value={registerGgufPolicy || 'none'}
+                      onValueChange={(value) =>
+                        setRegisterGgufPolicy(value === 'none' ? '' : (value as RegisterGgufPolicy))
+                      }
+                    >
+                      <SelectTrigger id="convert-gguf-policy">
+                        <SelectValue placeholder="Select policy" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select...</SelectItem>
+                        <SelectItem value="quality">Quality (higher quality)</SelectItem>
+                        <SelectItem value="memory">Memory (lower VRAM/RAM)</SelectItem>
+                        <SelectItem value="speed">Speed (smaller, practical)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      When no filename is specified, the router selects from GGUF siblings:
+                      <br />
+                      <b>Quality</b>: prefers F32/BF16/F16/Q8/Q6... (best quality)
+                      <br />
+                      <b>Memory</b>: chooses the smallest GGUF file (lowest memory)
+                      <br />
+                      <b>Speed</b>: chooses a smaller, practical GGUF among common quantizations
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            ) : registerFormat === 'safetensors' ? (
               <p className="text-xs text-muted-foreground">
-                If filename is omitted and a quantization is selected, the router searches GGUF
-                siblings for a matching file. Non-GGUF inputs are converted, then quantized with
-                llama-quantize (Q4/Q5/etc). If no matching GGUF exists, registration fails.
+                <b>safetensors</b> requires <code>config.json</code> and <code>tokenizer.json</code> in the HF snapshot.
+                If weights are sharded, an <code>.index.json</code> must be present.
               </p>
-            </div>
+            ) : null}
           </div>
 
           <DialogFooter>
@@ -315,13 +349,23 @@ export function ModelsSection() {
               onClick={() =>
                 registerMutation.mutate({
                   repo: registerRepo.trim(),
-                  filename: registerFilename.trim() ? registerFilename.trim() : undefined,
-                  quantization: registerQuantization.trim()
-                    ? registerQuantization.trim()
-                    : undefined,
+                  format: registerFormat as RegisterFormat,
+                  filename:
+                    registerFormat === 'gguf' && registerFilename.trim()
+                      ? registerFilename.trim()
+                      : undefined,
+                  gguf_policy:
+                    registerFormat === 'gguf' && !registerFilename.trim() && registerGgufPolicy
+                      ? (registerGgufPolicy as RegisterGgufPolicy)
+                      : undefined,
                 })
               }
-              disabled={!registerRepo.trim() || registerMutation.isPending}
+              disabled={
+                !registerRepo.trim() ||
+                !registerFormat ||
+                (registerFormat === 'gguf' && !registerFilename.trim() && !registerGgufPolicy) ||
+                registerMutation.isPending
+              }
             >
               {registerMutation.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -1,9 +1,13 @@
 #include "core/whisper_manager.h"
 
 #include <spdlog/spdlog.h>
+
+#ifdef USE_WHISPER
+
 #include <whisper.h>
-#include <filesystem>
+
 #include <algorithm>
+#include <filesystem>
 
 namespace llm_node {
 
@@ -306,3 +310,50 @@ WhisperManager::getLastAccessTime(const std::string& model_path) const {
 }
 
 }  // namespace llm_node
+
+#else
+
+namespace llm_node {
+
+WhisperManager::WhisperManager(std::string models_dir) : models_dir_(std::move(models_dir)) {
+    spdlog::warn("WhisperManager: whisper.cpp support is disabled (BUILD_WITH_WHISPER=OFF)");
+}
+
+WhisperManager::~WhisperManager() = default;
+
+bool WhisperManager::loadModel(const std::string&) { return false; }
+bool WhisperManager::isLoaded(const std::string&) const { return false; }
+whisper_context* WhisperManager::getContext(const std::string&) const { return nullptr; }
+
+TranscriptionResult WhisperManager::transcribe(
+    const std::string&,
+    const std::vector<float>&,
+    int,
+    const TranscriptionParams&) {
+    TranscriptionResult r;
+    r.success = false;
+    r.error = "whisper.cpp support is disabled";
+    return r;
+}
+
+size_t WhisperManager::loadedCount() const { return 0; }
+bool WhisperManager::unloadModel(const std::string&) { return false; }
+std::vector<std::string> WhisperManager::getLoadedModels() const { return {}; }
+bool WhisperManager::loadModelIfNeeded(const std::string&) { return false; }
+
+void WhisperManager::setIdleTimeout(std::chrono::milliseconds timeout) { idle_timeout_ = timeout; }
+std::chrono::milliseconds WhisperManager::getIdleTimeout() const { return idle_timeout_; }
+size_t WhisperManager::unloadIdleModels() { return 0; }
+
+void WhisperManager::setMaxLoadedModels(size_t max_models) { max_loaded_models_ = max_models; }
+size_t WhisperManager::getMaxLoadedModels() const { return max_loaded_models_; }
+bool WhisperManager::canLoadMore() const { return false; }
+
+std::optional<std::chrono::steady_clock::time_point> WhisperManager::getLastAccessTime(
+    const std::string&) const {
+    return std::nullopt;
+}
+
+}  // namespace llm_node
+
+#endif

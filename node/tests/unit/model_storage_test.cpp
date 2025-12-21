@@ -32,17 +32,12 @@ static void create_model(const fs::path& models_dir, const std::string& dir_name
     std::ofstream(model_dir / "model.gguf") << "dummy gguf content";
 }
 
-static void write_metadata(const fs::path& models_dir,
-                           const std::string& dir_name,
-                           const std::string& runtime,
-                           const std::string& format,
-                           const std::string& primary) {
+static void create_safetensors_model_with_index(const fs::path& models_dir, const std::string& dir_name) {
     auto model_dir = models_dir / dir_name;
     fs::create_directories(model_dir);
-    std::ofstream(model_dir / "metadata.json")
-        << "{\"runtime\":\"" << runtime << "\","
-        << "\"format\":\"" << format << "\","
-        << "\"primary\":\"" << primary << "\"}";
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["NemotronForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
 }
 
 // FR-2: Model name format conversion (sanitized, lowercase)
@@ -78,11 +73,12 @@ TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
     create_model(tmp.base, "gpt-oss-20b");
     create_model(tmp.base, "gpt-oss-7b");
     create_model(tmp.base, "qwen3-coder-30b");
+    create_safetensors_model_with_index(tmp.base, "nvidia-nemotron");
 
     ModelStorage storage(tmp.base.string());
     auto list = storage.listAvailable();
 
-    ASSERT_EQ(list.size(), 3u);
+    ASSERT_EQ(list.size(), 4u);
 
     std::vector<std::string> names;
     for (const auto& m : list) {
@@ -92,7 +88,8 @@ TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
 
     EXPECT_EQ(names[0], "gpt-oss-20b");
     EXPECT_EQ(names[1], "gpt-oss-7b");
-    EXPECT_EQ(names[2], "qwen3-coder-30b");
+    EXPECT_EQ(names[2], "nvidia-nemotron");
+    EXPECT_EQ(names[3], "qwen3-coder-30b");
 }
 
 // FR-4: Directories without model.gguf are ignored
@@ -109,45 +106,6 @@ TEST(ModelStorageTest, IgnoresDirectoriesWithoutGguf) {
     EXPECT_EQ(list[0].name, "valid_model");
 }
 
-// FR-5: Load optional metadata
-TEST(ModelStorageTest, LoadMetadataWhenPresent) {
-    TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss-20b");
-    std::ofstream(tmp.base / "gpt-oss-20b" / "metadata.json") << R"({"size_gb": 40})";
-
-    ModelStorage storage(tmp.base.string());
-    auto meta = storage.loadMetadata("gpt-oss-20b");
-
-    ASSERT_TRUE(meta.has_value());
-    EXPECT_EQ((*meta)["size_gb"].get<int>(), 40);
-}
-
-// FR-5: Metadata is optional - returns nullopt when missing
-TEST(ModelStorageTest, LoadMetadataReturnsNulloptWhenMissing) {
-    TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss-20b");
-
-    ModelStorage storage(tmp.base.string());
-    auto meta = storage.loadMetadata("gpt-oss-20b");
-
-    EXPECT_FALSE(meta.has_value());
-}
-
-TEST(ModelStorageTest, ResolveDescriptorUsesMetadataWhenPresent) {
-    TempModelDir tmp;
-    write_metadata(tmp.base, "nemotron-30b", "nemotron_cpp", "safetensors", "model.safetensors.index.json");
-    std::ofstream(tmp.base / "nemotron-30b" / "model.safetensors.index.json") << "{}";
-
-    ModelStorage storage(tmp.base.string());
-    auto desc = storage.resolveDescriptor("nemotron-30b");
-
-    ASSERT_TRUE(desc.has_value());
-    EXPECT_EQ(desc->name, "nemotron-30b");
-    EXPECT_EQ(desc->runtime, "nemotron_cpp");
-    EXPECT_EQ(desc->format, "safetensors");
-    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
-}
-
 TEST(ModelStorageTest, ResolveDescriptorFallsBackToGguf) {
     TempModelDir tmp;
     create_model(tmp.base, "gpt-oss-7b");
@@ -161,28 +119,45 @@ TEST(ModelStorageTest, ResolveDescriptorFallsBackToGguf) {
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.gguf");
 }
 
-TEST(ModelStorageTest, ListAvailableDescriptorsPrefersMetadata) {
+TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss-20b");
-    write_metadata(tmp.base, "gpt-oss-20b", "nemotron_cpp", "safetensors", "model.safetensors.index.json");
-    std::ofstream(tmp.base / "gpt-oss-20b" / "model.safetensors.index.json") << "{}";
+    create_safetensors_model_with_index(tmp.base, "nemotron-30b");
 
     ModelStorage storage(tmp.base.string());
-    auto list = storage.listAvailableDescriptors();
+    auto desc = storage.resolveDescriptor("nemotron-30b");
 
-    ASSERT_EQ(list.size(), 1u);
-    EXPECT_EQ(list[0].runtime, "nemotron_cpp");
-    EXPECT_EQ(list[0].format, "safetensors");
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "nemotron_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
 }
 
-TEST(ModelStorageTest, ListAvailableDescriptorsSkipsMissingPrimary) {
+TEST(ModelStorageTest, ResolveDescriptorSkipsSafetensorsWhenMetadataMissing) {
     TempModelDir tmp;
-    write_metadata(tmp.base, "nemotron-30b", "nemotron_cpp", "safetensors", "missing.safetensors");
+    auto model_dir = tmp.base / "nemotron-30b";
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("nemotron-30b");
+    EXPECT_FALSE(desc.has_value());
+}
+
+TEST(ModelStorageTest, ListAvailableDescriptorsIncludesGgufAndNemotronSafetensors) {
+    TempModelDir tmp;
+    create_model(tmp.base, "gpt-oss-20b");
+    create_safetensors_model_with_index(tmp.base, "nemotron-30b");
 
     ModelStorage storage(tmp.base.string());
     auto list = storage.listAvailableDescriptors();
 
-    EXPECT_TRUE(list.empty());
+    // gguf + nemotron safetensors
+    ASSERT_EQ(list.size(), 2u);
+    std::vector<std::string> formats;
+    for (const auto& d : list) formats.push_back(d.format);
+    std::sort(formats.begin(), formats.end());
+    EXPECT_EQ(formats[0], "gguf");
+    EXPECT_EQ(formats[1], "safetensors");
 }
 
 // Edge case: Empty model name

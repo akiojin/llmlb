@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include "core/engine_types.h"
+#include "core/engine_registry.h"
 
 namespace llm_node {
 
@@ -14,9 +15,7 @@ namespace llm_node {
 class LlamaManager;
 class ModelStorage;
 class ModelSync;
-class EngineRegistry;
-class Engine;
-class ModelDescriptor;
+struct ModelDescriptor;
 
 class InferenceEngine {
 public:
@@ -25,6 +24,8 @@ public:
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
+
+    ~InferenceEngine() noexcept;
 
     /// チャット生成（llama.cpp API使用）
     std::string generateChat(const std::vector<ChatMessage>& messages,

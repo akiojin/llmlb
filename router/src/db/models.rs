@@ -41,6 +41,7 @@ impl ModelStorage {
         let source_str = match model.source {
             ModelSource::Predefined => "predefined",
             ModelSource::HfGguf => "hf_gguf",
+            ModelSource::HfSafetensors => "hf_safetensors",
             ModelSource::HfPendingConversion => "hf_pending_conversion",
             ModelSource::HfOnnx => "hf_onnx",
         };
@@ -172,6 +173,7 @@ impl ModelStorage {
 
             let source = match row.source.as_str() {
                 "hf_gguf" => ModelSource::HfGguf,
+                "hf_safetensors" => ModelSource::HfSafetensors,
                 "hf_pending_conversion" => ModelSource::HfPendingConversion,
                 "hf_onnx" => ModelSource::HfOnnx,
                 _ => ModelSource::Predefined,
@@ -219,6 +221,7 @@ impl ModelStorage {
 
                 let source = match row.source.as_str() {
                     "hf_gguf" => ModelSource::HfGguf,
+                    "hf_safetensors" => ModelSource::HfSafetensors,
                     "hf_pending_conversion" => ModelSource::HfPendingConversion,
                     "hf_onnx" => ModelSource::HfOnnx,
                     _ => ModelSource::Predefined,

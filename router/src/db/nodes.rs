@@ -504,6 +504,7 @@ fn parse_node_status(s: &str) -> NodeStatus {
 fn parse_runtime_type(s: &str) -> RuntimeType {
     match s.to_lowercase().as_str() {
         "llamacpp" | "llama_cpp" => RuntimeType::LlamaCpp,
+        "nemotroncpp" | "nemotron_cpp" => RuntimeType::NemotronCpp,
         "whispercpp" | "whisper_cpp" => RuntimeType::WhisperCpp,
         "onnxruntime" | "onnx_runtime" => RuntimeType::OnnxRuntime,
         "stablediffusion" | "stable_diffusion" => RuntimeType::StableDiffusion,

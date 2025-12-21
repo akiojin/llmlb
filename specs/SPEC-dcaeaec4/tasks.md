@@ -8,10 +8,10 @@ LLM-Router独自モデルストレージの実装タスク。
 
 - [x] FR-1: モデルディレクトリ構造 (`~/.llm-router/models/`)
 - [x] FR-2: モデル名の形式変換 (`ModelStorage::modelNameToDir()`)
-- [x] FR-3: GGUFファイル解決 (`ModelStorage::resolveGguf()`)
-- [x] FR-4: 利用可能モデル一覧 (`ModelStorage::listAvailable()`)
-- [x] FR-5: メタデータ読み込み (`ModelStorage::loadMetadata()`)
-- [x] FR-6: ノード起動時同期 (`ModelSync::sync()`)
+- [ ] FR-3: モデルアーティファクト解決（safetensors/GGUF）を実装
+- [ ] FR-4: 利用可能モデル一覧をsafetensors対応
+- [ ] FR-5: `metadata.json` 依存を削除（読み書きしない）
+- [ ] FR-6: ノード起動時同期をsafetensors対応（必要ファイルを取得/参照）
   - [x] 起動時の不要モデル削除 (`ModelStorage::deleteModel()`)
 - [x] FR-7: ルーターからのプッシュ通知 (`POST /api/models/pull`)
 - [x] FR-8: API設計 (`/v0/models` vs `/v1/models`)
@@ -22,6 +22,9 @@ LLM-Router独自モデルストレージの実装タスク。
   - ファイル: `node/tests/unit/model_storage_test.cpp`
   - `DeleteModelRemovesDirectory` - ディレクトリ削除の検証
   - `DeleteNonexistentModelReturnsTrue` - 冪等性の検証
+
+- [ ] safetensorsアーティファクト解決のユニットテスト
+  - `ModelStorage::listAvailableDescriptors()` / `resolveDescriptor()` が index を優先すること
 
 - [x] `is_ready()` チェック 統合テスト
   - ファイル: `node/tests/integration/openai_endpoints_test.cpp`

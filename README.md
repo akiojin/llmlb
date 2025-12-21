@@ -386,21 +386,26 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
    http://localhost:8080/dashboard
    ```
 
-## Hugging Face registration (GGUF-first)
+## Hugging Face registration (safetensors / GGUF)
 
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
-  - Enter a Hugging Face repo (e.g. `TheBloke/Llama-2-7B-GGUF`) and (optionally) a filename (e.g. `llama-2-7b.Q4_K_M.gguf`).
-  - Optional: select a quantization. If filename is omitted, the router selects a matching GGUF sibling;
-    if none exists, registration fails.
-  - For non-GGUF inputs with Q4/Q5/etc, the router converts then runs `llama-quantize`
-    (set `LLM_QUANTIZE_BIN` if it is not in PATH).
-  - Model IDs are normalized to a filename-based format (e.g. `llama-2-7b`).
-  - `/v1/models` lists only models that are cached on the router filesystem.
-  - Nodes never receive push-based distribution; they pull models based on `/v0/models` and download via `/v0/models/blob/:model_name` when needed.
-  - Nodes read each model directory's `metadata.json` to decide runtime/format/primary
-    (fallback: `model.gguf`).
+  - Choose `format`: `safetensors` (preferred) or `gguf` (llama.cpp fallback).
+    - If the repo contains both `safetensors` and `.gguf`, `format` is required.
+  - Enter a Hugging Face repo (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
+  - For `format=gguf`:
+    - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
+      to auto-pick from GGUF siblings.
+  - For `format=safetensors`:
+    - The HF snapshot must include `config.json` and `tokenizer.json`.
+    - Sharded weights must include an `.index.json`.
+  - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
+  - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
+  - Nodes pull models on-demand via the model registry endpoints:
+    - `GET /v0/models/registry/:model_name/manifest.json`
+    - `GET /v0/models/registry/:model_name/files/:file_name`
+    - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
 
 ## Installation
 
@@ -435,14 +440,6 @@ See [Node (C++)](#node-c) section in Quick Start.
 
 - **Router**: Rust toolchain (stable)
 - **Node**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
-- **Optional (HF non-GGUF conversion)**: `python3` + `transformers` + `torch` + `sentencepiece`
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
-  ```
-- **Optional (k-quantization for Q4/Q5/etc)**: `llama-quantize` binary available in PATH
-  or `LLM_QUANTIZE_BIN` set
 
 ## Usage
 
@@ -528,7 +525,7 @@ Cloud / external services:
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
-| `LLM_NODE_API_KEY` | - | API key for node registration / model blob download | scope: `node:register` |
+| `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node:register` |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
@@ -736,7 +733,7 @@ The file is automatically managed with:
 
 | Scope | Grants |
 |-------|--------|
-| `node:register` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`) |
+| `node:register` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`) |
 | `api:inference` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
 | `admin:*` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
@@ -796,7 +793,9 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin:*) |
 | DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin:*) |
 | POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin:*) |
-| GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | API key (node:register or admin:*) |
+| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (node:register or admin:*) |
+| GET | `/v0/models/registry/:model_name/files/:file_name` | Serve model file | API key (node:register or admin:*) |
+| GET | `/v0/models/blob/:model_name` | Legacy single-file model download (GGUF) | API key (node:register or admin:*) |
 
 #### Dashboard Endpoints
 

@@ -19,6 +19,7 @@ use tokio::task;
 use uuid::Uuid;
 
 use crate::api::models::normalize_quantization_label;
+use crate::api::models::ModelArtifactFormat;
 use crate::registry::models::{
     generate_model_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
 };
@@ -576,6 +577,8 @@ pub struct ConvertTask {
     pub id: Uuid,
     /// HFリポジトリ
     pub repo: String,
+    /// 登録時に選択したアーティファクト形式
+    pub format: ModelArtifactFormat,
     /// 対象ファイル名
     pub filename: String,
     /// リビジョン（任意）
@@ -601,6 +604,7 @@ pub struct ConvertTask {
 impl ConvertTask {
     fn new(
         repo: String,
+        format: ModelArtifactFormat,
         filename: String,
         revision: Option<String>,
         quantization: Option<String>,
@@ -610,6 +614,7 @@ impl ConvertTask {
         Self {
             id: Uuid::new_v4(),
             repo,
+            format,
             filename,
             revision,
             quantization,
@@ -680,6 +685,7 @@ impl ConvertTaskManager {
     pub async fn enqueue(
         &self,
         repo: String,
+        format: ModelArtifactFormat,
         filename: String,
         revision: Option<String>,
         quantization: Option<String>,
@@ -687,6 +693,7 @@ impl ConvertTaskManager {
     ) -> ConvertTask {
         let task = ConvertTask::new(
             repo.clone(),
+            format,
             filename.clone(),
             revision,
             quantization,
@@ -748,7 +755,7 @@ impl ConvertTaskManager {
         db_pool: &sqlx::SqlitePool,
     ) -> Result<(), RouterError> {
         tracing::info!(task_id=?task_id, "convert_task_started");
-        let (repo, filename, revision, quantization, chat_template) = {
+        let (repo, format, filename, revision, quantization, chat_template) = {
             let mut guard = tasks.lock().await;
             let task = guard
                 .get_mut(&task_id)
@@ -758,6 +765,7 @@ impl ConvertTaskManager {
             tracing::info!(task_id=?task_id, repo=%task.repo, "convert_task_in_progress");
             (
                 task.repo.clone(),
+                task.format,
                 task.filename.clone(),
                 task.revision.clone(),
                 task.quantization.clone(),
@@ -785,6 +793,7 @@ impl ConvertTaskManager {
         // execute download/convert with progress callback
         let res = download_and_maybe_convert(
             &repo,
+            format,
             &filename,
             revision.as_deref(),
             quantization.as_deref(),
@@ -817,8 +826,10 @@ impl ConvertTaskManager {
 
 /// ダウンロードして必要なら変換する。
 /// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
+#[allow(clippy::too_many_arguments)]
 async fn download_and_maybe_convert<F>(
     repo: &str,
+    format: ModelArtifactFormat,
     filename: &str,
     revision: Option<&str>,
     quantization: Option<&str>,
@@ -829,98 +840,221 @@ async fn download_and_maybe_convert<F>(
 where
     F: Fn(f32) + Send + Sync + Clone + 'static,
 {
-    let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
     // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
     let model_name = generate_model_id(repo);
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let url = format!(
-        "{}/{}/resolve/{}/{}",
-        base_url,
-        repo,
-        revision.unwrap_or("main"),
-        filename
-    );
 
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
     let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
-    let target = dir.join("model.gguf");
 
-    // skip if already present but make sure metadata is up-to-date
-    if target.exists() {
-        let valid = match tokio::fs::metadata(&target).await {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let rev = revision.unwrap_or("main");
+
+    async fn is_valid_file(path: &Path) -> bool {
+        match tokio::fs::metadata(path).await {
             Ok(meta) => meta.is_file() && meta.len() > 0,
             Err(_) => false,
-        };
-        if valid {
+        }
+    }
+
+    match format {
+        ModelArtifactFormat::Gguf => {
+            let url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, filename);
+            let target = dir.join("model.gguf");
+            let input_is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
+
+            // skip if already present but make sure registration is up-to-date
+            if target.exists() && is_valid_file(&target).await {
+                progress_callback(1.0);
+                finalize_model_registration(
+                    &model_name,
+                    repo,
+                    format,
+                    filename,
+                    &url,
+                    &target,
+                    chat_template.clone(),
+                    db_pool,
+                )
+                .await;
+                return Ok(target.to_string_lossy().to_string());
+            }
+            let _ = tokio::fs::remove_file(&target).await;
+            if input_is_gguf {
+                download_file(&url, &target).await?;
+                progress_callback(1.0);
+            } else {
+                convert_non_gguf(
+                    repo,
+                    revision,
+                    quantization,
+                    &target,
+                    progress_callback.clone(),
+                )
+                .await?;
+                progress_callback(1.0);
+            }
+
+            // chat_templateが指定されている場合、GGUFに埋め込む
+            if let Some(ref template) = chat_template {
+                if !template.is_empty() {
+                    tracing::info!(
+                        template_len = template.len(),
+                        "Embedding chat_template into GGUF"
+                    );
+                    if let Err(e) = add_chat_template_to_gguf(&target, template).await {
+                        tracing::warn!(error=%e, "Failed to embed chat_template, model may work with fallback detection");
+                    }
+                }
+            }
+
+            finalize_model_registration(
+                &model_name,
+                repo,
+                format,
+                filename,
+                &url,
+                &target,
+                chat_template,
+                db_pool,
+            )
+            .await;
+            Ok(target.to_string_lossy().to_string())
+        }
+        ModelArtifactFormat::Safetensors => {
+            if filename.is_empty() {
+                return Err(RouterError::Common(
+                    llm_router_common::error::CommonError::Validation(
+                        "safetensors filename is required".into(),
+                    ),
+                ));
+            }
+
+            // 必須メタデータ
+            let config_url = format!("{}/{}/resolve/{}/config.json", base_url, repo, rev);
+            let tokenizer_url = format!("{}/{}/resolve/{}/tokenizer.json", base_url, repo, rev);
+            let primary_url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, filename);
+
+            let config_target = dir.join("config.json");
+            let tokenizer_target = dir.join("tokenizer.json");
+            let primary_target = dir.join(filename);
+
+            if config_target.exists()
+                && tokenizer_target.exists()
+                && primary_target.exists()
+                && is_valid_file(&config_target).await
+                && is_valid_file(&tokenizer_target).await
+                && is_valid_file(&primary_target).await
+            {
+                progress_callback(1.0);
+                finalize_model_registration(
+                    &model_name,
+                    repo,
+                    format,
+                    filename,
+                    &primary_url,
+                    &primary_target,
+                    chat_template.clone(),
+                    db_pool,
+                )
+                .await;
+                return Ok(primary_target.to_string_lossy().to_string());
+            }
+
+            // 既存の不完全なファイルは削除（ベストエフォート）
+            let _ = tokio::fs::remove_file(&config_target).await;
+            let _ = tokio::fs::remove_file(&tokenizer_target).await;
+            let _ = tokio::fs::remove_file(&primary_target).await;
+
+            // progress: config + tokenizer + primary (+ shards)
+            let mut downloaded = 0_u32;
+            let mut total = 3_u32;
+
+            download_file(&config_url, &config_target).await?;
+            downloaded += 1;
+            progress_callback(downloaded as f32 / total as f32);
+
+            download_file(&tokenizer_url, &tokenizer_target).await?;
+            downloaded += 1;
+            progress_callback(downloaded as f32 / total as f32);
+
+            download_file(&primary_url, &primary_target).await?;
+            downloaded += 1;
+            progress_callback(downloaded as f32 / total as f32);
+
+            if filename
+                .to_ascii_lowercase()
+                .ends_with(".safetensors.index.json")
+            {
+                // index.json から shard を取得
+                let bytes = tokio::fs::read(&primary_target)
+                    .await
+                    .map_err(|e| RouterError::Internal(e.to_string()))?;
+                let v: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| RouterError::Internal(e.to_string()))?;
+                let weight_map =
+                    v.get("weight_map")
+                        .and_then(|m| m.as_object())
+                        .ok_or_else(|| {
+                            RouterError::Internal(
+                                "Invalid safetensors index: missing weight_map".into(),
+                            )
+                        })?;
+
+                use std::collections::BTreeSet;
+                let mut shards: BTreeSet<String> = BTreeSet::new();
+                for val in weight_map.values() {
+                    if let Some(s) = val.as_str() {
+                        if s.to_ascii_lowercase().ends_with(".safetensors") {
+                            shards.insert(s.to_string());
+                        }
+                    }
+                }
+
+                if !shards.is_empty() {
+                    total += shards.len() as u32;
+                    for shard in shards {
+                        let shard_url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, shard);
+                        let shard_target = dir.join(&shard);
+                        let _ = tokio::fs::remove_file(&shard_target).await;
+                        download_file(&shard_url, &shard_target).await?;
+                        downloaded += 1;
+                        progress_callback(downloaded as f32 / total as f32);
+                    }
+                }
+            }
+
             progress_callback(1.0);
             finalize_model_registration(
                 &model_name,
                 repo,
+                format,
                 filename,
-                &url,
-                &target,
-                chat_template.clone(),
+                &primary_url,
+                &primary_target,
+                chat_template,
                 db_pool,
             )
             .await;
-            return Ok(target.to_string_lossy().to_string());
-        }
-        let _ = tokio::fs::remove_file(&target).await;
-    }
 
-    if is_gguf {
-        download_file(&url, &target).await?;
-        progress_callback(1.0);
-    } else {
-        convert_non_gguf(
-            repo,
-            revision,
-            quantization,
-            &target,
-            progress_callback.clone(),
-        )
-        .await?;
-    }
-
-    // chat_templateが指定されている場合、GGUFに埋め込む
-    if let Some(ref template) = chat_template {
-        if !template.is_empty() {
-            tracing::info!(
-                template_len = template.len(),
-                "Embedding chat_template into GGUF"
-            );
-            if let Err(e) = add_chat_template_to_gguf(&target, template).await {
-                // 埋め込み失敗は警告のみ（モデル自体は使用可能）
-                tracing::warn!(error=%e, "Failed to embed chat_template, model may work with fallback detection");
-            }
+            Ok(primary_target.to_string_lossy().to_string())
         }
     }
-
-    finalize_model_registration(
-        &model_name,
-        repo,
-        filename,
-        &url,
-        &target,
-        chat_template,
-        db_pool,
-    )
-    .await;
-
-    Ok(target.to_string_lossy().to_string())
 }
 
 /// HTTP GET to file and stream to path
 async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
     let client = reqwest::Client::new();
-    let resp = client
-        .get(url)
+    let mut req = client.get(url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
@@ -1439,7 +1573,14 @@ pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<M
             if let (Some(repo), Some(filename)) = (model.repo.clone(), model.filename.clone()) {
                 let chat_template = model.chat_template.clone();
                 manager
-                    .enqueue(repo, filename, None, None, chat_template)
+                    .enqueue(
+                        repo,
+                        ModelArtifactFormat::Gguf,
+                        filename,
+                        None,
+                        None,
+                        chat_template,
+                    )
                     .await;
             }
         }
@@ -1516,9 +1657,11 @@ pub fn verify_convert_ready() -> Result<(), RouterError> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize_model_registration(
     model_name: &str,
     repo: &str,
+    format: ModelArtifactFormat,
     filename: &str,
     download_url: &str,
     target: &Path,
@@ -1529,12 +1672,35 @@ async fn finalize_model_registration(
         list_registered_models, persist_registered_models, upsert_registered_model,
     };
 
-    let size = tokio::fs::metadata(target)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
-    const REQUIRED_MEMORY_RATIO: f64 = 1.5;
-    let required_memory = ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+    let (size, required_memory) = match format {
+        ModelArtifactFormat::Gguf => {
+            let size = tokio::fs::metadata(target)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
+            const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+            let required_memory = ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+            (size, required_memory)
+        }
+        ModelArtifactFormat::Safetensors => {
+            // weights(shards) + metadata を含むディレクトリ全体の合計サイズを採用
+            let mut total = 0_u64;
+            if let Some(dir) = target.parent() {
+                if let Ok(mut rd) = tokio::fs::read_dir(dir).await {
+                    while let Ok(Some(entry)) = rd.next_entry().await {
+                        if let Ok(meta) = entry.metadata().await {
+                            if meta.is_file() {
+                                total = total.saturating_add(meta.len());
+                            }
+                        }
+                    }
+                }
+            }
+            const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+            let required_memory = ((total as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+            (total, required_memory)
+        }
+    };
 
     let mut model = list_registered_models()
         .into_iter()
@@ -1543,8 +1709,14 @@ async fn finalize_model_registration(
 
     model.size = size;
     model.required_memory = required_memory;
-    model.tags = vec!["gguf".into()];
-    model.source = ModelSource::HfGguf;
+    model.tags = match format {
+        ModelArtifactFormat::Gguf => vec!["gguf".into()],
+        ModelArtifactFormat::Safetensors => vec!["safetensors".into()],
+    };
+    model.source = match format {
+        ModelArtifactFormat::Gguf => ModelSource::HfGguf,
+        ModelArtifactFormat::Safetensors => ModelSource::HfSafetensors,
+    };
     model.path = Some(target.to_string_lossy().to_string());
     model.download_url = Some(download_url.to_string());
     model.repo = Some(repo.to_string());
@@ -1559,22 +1731,6 @@ async fn finalize_model_registration(
 
     upsert_registered_model(model);
     persist_registered_models(db_pool).await;
-
-    if let Some(dir) = target.parent() {
-        let primary_name = target
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("model.gguf");
-        let metadata = serde_json::json!({
-            "runtime": "llama_cpp",
-            "format": "gguf",
-            "primary": primary_name,
-        });
-        let metadata_path = dir.join("metadata.json");
-        if let Err(e) = tokio::fs::write(&metadata_path, metadata.to_string()).await {
-            tracing::warn!(error=%e, path=?metadata_path, "Failed to write metadata.json for model");
-        }
-    }
 
     // SPEC-dcaeaec4 FR-7: オンラインノードにプッシュ通知を送信
     notify_nodes_of_new_model(model_name).await;
@@ -2017,6 +2173,7 @@ mod tests {
         let _task1 = manager
             .enqueue(
                 "test/model1".into(),
+                ModelArtifactFormat::Gguf,
                 "model.safetensors".into(),
                 None,
                 None,
@@ -2026,6 +2183,7 @@ mod tests {
         let _task2 = manager
             .enqueue(
                 "test/model2".into(),
+                ModelArtifactFormat::Gguf,
                 "model.safetensors".into(),
                 None,
                 None,

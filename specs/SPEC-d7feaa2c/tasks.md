@@ -5,7 +5,7 @@
 - [x] safetensors-cpp ヘッダをNode配下へ配置
 
 ## Core
-- [x] ModelStorageにmetadata読み取りとModelDescriptorを追加
+- [ ] ModelStorageの`metadata.json`依存を削除し、safetensors/GGUFを検出できるようにする
 - [x] EngineインターフェースとEngineRegistryを追加
 - [x] LlamaEngineを既存実装から切り出し
 - [x] NemotronEngineを追加（mmap + validation）
@@ -13,15 +13,16 @@
 
 ## Integration
 - [x] /v1/models で未対応モデルを除外するロジック追加
-- [x] Router側でGGUF向けmetadata.json生成
+- [ ] Router/Nodeともに`metadata.json`を生成・参照しない
+- [ ] 登録時の選択（safetensors/GGUF）に基づき、Nodeが適切なEngineを選択できるようにする（`config.json`優先）
 
 ## Tests
-- [x] ModelStorage metadata解析テスト
+- [ ] ModelStorage: safetensors/GGUF検出テスト
 - [x] Engine選択テスト
 - [x] NemotronEngineロードテスト
 
 ## Docs
-- [x] Nodeのmetadata仕様をREADMEに追記（簡潔に）
+- [ ] Nodeのモデル登録/選択仕様をREADMEに追記（metadata.jsonなし）
 
 ## Polish
 - [x] ログとエラーメッセージを整理

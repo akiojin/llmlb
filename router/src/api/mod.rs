@@ -128,6 +128,15 @@ pub fn create_router(state: AppState) -> Router {
         .route("/models", get(models::list_models))
         // モデルファイル配信API (SPEC-48678000)
         .route("/models/blob/:model_name", get(models::get_model_blob))
+        // モデル配布レジストリ（複数ファイル: safetensors 等）
+        .route(
+            "/models/registry/:model_name/manifest.json",
+            get(models::get_model_registry_manifest),
+        )
+        .route(
+            "/models/registry/:model_name/files/:file_name",
+            get(models::get_model_registry_file),
+        )
         .layer(middleware::from_fn_with_state(
             ApiKeyScope::NodeRegister,
             crate::auth::middleware::require_api_key_scope_middleware,

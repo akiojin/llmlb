@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <random>
@@ -130,6 +131,12 @@ bool SDManager::loadModel(const std::string& model_path) {
         return false;
     }
 
+    const char* force_cpu_env = std::getenv("LLM_NODE_SD_FORCE_CPU");
+    if (force_cpu_env && std::string(force_cpu_env) != "0") {
+        setenv("SD_FORCE_CPU", "1", 1);
+        spdlog::info("SD backend forced to CPU via LLM_NODE_SD_FORCE_CPU");
+    }
+
     spdlog::info("Loading SD model: {}", canonical_path);
 
     // Initialize context parameters
@@ -239,11 +246,18 @@ std::vector<ImageGenerationResult> SDManager::generateImages(
         gen_params.seed);
 
     // Generate images
+    sd_clear_last_error();
     sd_image_t* images = generate_image(ctx, &gen_params);
 
     if (!images) {
         ImageGenerationResult error_result;
-        error_result.error = "Image generation failed";
+        const char* last_error = sd_get_last_error();
+        if (last_error && last_error[0] != '\0') {
+            error_result.error = last_error;
+        } else {
+            error_result.error = "Image generation failed";
+        }
+        sd_clear_last_error();
         results.push_back(error_result);
         return results;
     }
@@ -349,11 +363,18 @@ std::vector<ImageGenerationResult> SDManager::editImages(
         params.strength, params.steps);
 
     // Generate edited images
+    sd_clear_last_error();
     sd_image_t* images = generate_image(ctx, &gen_params);
 
     if (!images) {
         ImageGenerationResult error_result;
-        error_result.error = "Image editing failed";
+        const char* last_error = sd_get_last_error();
+        if (last_error && last_error[0] != '\0') {
+            error_result.error = last_error;
+        } else {
+            error_result.error = "Image editing failed";
+        }
+        sd_clear_last_error();
         results.push_back(error_result);
         return results;
     }

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -29,12 +30,12 @@ DEFAULT_TEMPLATE = """# Plan
 - <If applicable, describe schema or contract changes>
 
 ## Action items
-[ ] <Step 1>
-[ ] <Step 2>
-[ ] <Step 3>
-[ ] <Step 4>
-[ ] <Step 5>
-[ ] <Step 6>
+- [ ] <Step 1>
+- [ ] <Step 2>
+- [ ] <Step 3>
+- [ ] <Step 4>
+- [ ] <Step 5>
+- [ ] <Step 6>
 
 ## Testing and validation
 - <Tests, commands, or validation steps>
@@ -53,7 +54,15 @@ def read_body(args: argparse.Namespace) -> str | None:
     if args.template:
         return DEFAULT_TEMPLATE
     if args.body_file:
-        return Path(args.body_file).read_text(encoding="utf-8")
+        body_path = Path(args.body_file)
+        try:
+            return body_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(f"Body file not found: {body_path}", file=sys.stderr)
+            raise SystemExit(1) from None
+        except (PermissionError, UnicodeDecodeError) as exc:
+            print(f"Failed to read body file {body_path}: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
     if not sys.stdin.isatty():
         return sys.stdin.read()
     return None
@@ -104,7 +113,8 @@ def main() -> int:
     if plan_path.exists() and not args.overwrite:
         raise SystemExit(f"Plan already exists: {plan_path}. Use --overwrite to replace.")
 
-    content = f"---\nname: {name}\ndescription: {description}\n---\n\n{body}\n"
+    safe_description = json.dumps(description, ensure_ascii=False)
+    content = f"---\nname: {name}\ndescription: {safe_description}\n---\n\n{body}\n"
     plan_path.write_text(content, encoding="utf-8")
     print(str(plan_path))
     return 0

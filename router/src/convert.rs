@@ -852,18 +852,25 @@ where
 
     // skip if already present but make sure metadata is up-to-date
     if target.exists() {
-        progress_callback(1.0);
-        finalize_model_registration(
-            &model_name,
-            repo,
-            filename,
-            &url,
-            &target,
-            chat_template.clone(),
-            db_pool,
-        )
-        .await;
-        return Ok(target.to_string_lossy().to_string());
+        let valid = match tokio::fs::metadata(&target).await {
+            Ok(meta) => meta.is_file() && meta.len() > 0,
+            Err(_) => false,
+        };
+        if valid {
+            progress_callback(1.0);
+            finalize_model_registration(
+                &model_name,
+                repo,
+                filename,
+                &url,
+                &target,
+                chat_template.clone(),
+                db_pool,
+            )
+            .await;
+            return Ok(target.to_string_lossy().to_string());
+        }
+        let _ = tokio::fs::remove_file(&target).await;
     }
 
     if is_gguf {

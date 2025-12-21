@@ -57,23 +57,24 @@ def validate_skill(skill_path):
     if not isinstance(name, str):
         return False, f"Name must be a string, got {type(name).__name__}"
     name = name.strip()
-    if name:
-        if not re.match(r"^[a-z0-9-]+$", name):
-            return (
-                False,
-                f"Name '{name}' should be hyphen-case (lowercase letters, digits, and hyphens only)",
-            )
-        if name.startswith("-") or name.endswith("-") or "--" in name:
-            return (
-                False,
-                f"Name '{name}' cannot start/end with hyphen or contain consecutive hyphens",
-            )
-        if len(name) > MAX_SKILL_NAME_LENGTH:
-            return (
-                False,
-                f"Name is too long ({len(name)} characters). "
-                f"Maximum is {MAX_SKILL_NAME_LENGTH} characters.",
-            )
+    if not name:
+        return False, "Name cannot be empty"
+    if not re.match(r"^[a-z0-9-]+$", name):
+        return (
+            False,
+            f"Name '{name}' should be hyphen-case (lowercase letters, digits, and hyphens only)",
+        )
+    if name.startswith("-") or name.endswith("-") or "--" in name:
+        return (
+            False,
+            f"Name '{name}' cannot start/end with hyphen or contain consecutive hyphens",
+        )
+    if len(name) > MAX_SKILL_NAME_LENGTH:
+        return (
+            False,
+            f"Name is too long ({len(name)} characters). "
+            f"Maximum is {MAX_SKILL_NAME_LENGTH} characters.",
+        )
 
     description = frontmatter.get("description", "")
     if not isinstance(description, str):

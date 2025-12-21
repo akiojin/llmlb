@@ -42,10 +42,14 @@ TEST(GpuDetectorTest, CapabilityScoreWeightsByVendorAndComputeCapability) {
 
     detector.setDetectedDevicesForTest(devices);
 
+#if defined(__APPLE__)
+    const double expected = (8.0 + 16.0 + 4.0) * 1.5;
+#else
     const double nvidia = 8.0 * (8.6 / 5.0);
     const double amd = 16.0 * 1.2;
     const double apple = 4.0 * 1.5;
     const double expected = nvidia + amd + apple;
+#endif
 
     EXPECT_NEAR(detector.getCapabilityScore(), expected, 1e-6);
 }

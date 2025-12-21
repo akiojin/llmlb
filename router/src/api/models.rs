@@ -4,7 +4,9 @@
 
 use crate::{
     db::models::ModelStorage,
-    registry::models::{extract_repo_id, generate_model_id, router_model_path, ModelInfo},
+    registry::models::{
+        extract_repo_id, generate_model_id, router_model_path, router_model_path_any, ModelInfo,
+    },
     registry::NodeRegistry,
     AppState,
 };
@@ -897,7 +899,7 @@ pub async fn delete_model(
     let removed = remove_registered_model(&model_name);
 
     // 3. ファイルを削除
-    if let Some(path) = router_model_path(&model_name) {
+    if let Some(path) = router_model_path_any(&model_name) {
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
                 tracing::warn!("Failed to remove model file {}: {}", path.display(), e);

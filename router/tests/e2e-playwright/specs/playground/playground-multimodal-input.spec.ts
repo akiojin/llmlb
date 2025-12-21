@@ -1,38 +1,5 @@
-import { test, expect, type Page, type FilePayload } from '@playwright/test';
-
-function mockRegisteredModels(page: Page) {
-  return page.route('**/v0/models', async (route) => {
-    // Mock the /v0/models endpoint with RegisteredModelView format
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          name: 'openai:gpt-4o',
-          description: 'GPT-4O with vision',
-          size: 0,
-          quantization: '',
-          family: 'gpt-4o',
-          capabilities: { input_image: 'supported', input_audio: 'supported' },
-          lifecycle_status: 'registered',
-          provider: 'openai',
-          created_at: new Date().toISOString(),
-        },
-      ]),
-    });
-  });
-}
-
-function mockChatCompletionsStream(page: Page, assistantText: string) {
-  return page.route('**/v1/chat/completions', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-      body: `data: ${JSON.stringify({ choices: [{ delta: { content: assistantText } }] })}\n\n` +
-        'data: [DONE]\n\n',
-    });
-  });
-}
+import { test, expect, type FilePayload } from '@playwright/test';
+import { mockChatCompletionsStream, mockOpenAIModels } from '../../helpers/mock-helpers';
 
 const transparentPngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lk1kAAAAASUVORK5CYII=';
@@ -68,7 +35,7 @@ function wavFile(name = 'test.wav'): FilePayload {
 test.describe('Playground Multimodal Input @playground', () => {
   test.beforeEach(async ({ page }) => {
     // Set up route mocks BEFORE navigation
-    await mockRegisteredModels(page);
+    await mockOpenAIModels(page);
     await mockChatCompletionsStream(page, 'OK');
 
     // Navigate to playground

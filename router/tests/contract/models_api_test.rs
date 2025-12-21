@@ -7,6 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use llm_router::registry::models::{model_name_to_dir, router_models_dir, ModelInfo};
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::{ApiKeyScope, UserRole};
 use serde_json::json;
@@ -17,7 +18,13 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-async fn build_app() -> (Router, String) {
+struct TestApp {
+    app: Router,
+    db_pool: sqlx::SqlitePool,
+    admin_key: String,
+}
+
+async fn build_app() -> TestApp {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!(
         "or-test-{}-{}",
@@ -93,7 +100,13 @@ with open(outfile, "wb") as f:
     .expect("create admin api key")
     .key;
 
-    (api::create_router(state), admin_key)
+    let db_pool = state.db_pool.clone();
+    let app = api::create_router(state);
+    TestApp {
+        app,
+        db_pool,
+        admin_key,
+    }
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
@@ -104,7 +117,7 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     let request_body = json!({
         "model_name": "gpt-oss-20b",
@@ -138,7 +151,7 @@ async fn test_distribute_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_available_models_endpoint_is_removed() {
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     let response = app
         .oneshot(
@@ -166,7 +179,7 @@ async fn test_get_available_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_get_node_models_endpoint_is_removed() {
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     let response = app
         .oneshot(
@@ -190,7 +203,7 @@ async fn test_get_node_models_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_pull_model_to_node_endpoint_is_removed() {
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     let request_body = json!({
         "model_name": "gpt-oss-3b"
@@ -219,7 +232,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
 #[tokio::test]
 #[serial]
 async fn test_tasks_endpoint_is_removed() {
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     let response = app
         .oneshot(
@@ -254,7 +267,7 @@ async fn test_register_model_contract() {
 
     std::env::set_var("HF_BASE_URL", mock.uri());
 
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     // 正常登録
     let payload = json!({
@@ -420,7 +433,11 @@ async fn test_register_model_contract() {
     assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
 
     // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
-    let (app_for_convert, admin_key) = build_app().await;
+    let TestApp {
+        app: app_for_convert,
+        admin_key,
+        ..
+    } = build_app().await;
     std::env::set_var("HF_BASE_URL", mock.uri());
     Mock::given(method("GET"))
         .and(path("/api/models/convertible-repo"))
@@ -490,6 +507,303 @@ async fn test_register_model_contract() {
     assert!(converted, "converted model should appear in /v1/models");
 }
 
+/// T003: 0Bキャッシュはready扱いにならない
+#[tokio::test]
+#[serial]
+async fn test_zero_byte_cache_is_not_ready() {
+    let test_app = build_app().await;
+    let app = test_app.app.clone();
+
+    let model_name = "zero-byte-model";
+    let base = router_models_dir().expect("router models dir should exist");
+    let model_dir = base.join(model_name_to_dir(model_name));
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let model_path = model_dir.join("model.gguf");
+    std::fs::File::create(&model_path).unwrap();
+
+    let mut model = ModelInfo::new(model_name.to_string(), 0, "test".to_string(), 0, vec![]);
+    model.path = Some(model_path.to_string_lossy().to_string());
+    llm_router::api::models::upsert_registered_model(model);
+    llm_router::api::models::persist_registered_models(&test_app.db_pool).await;
+
+    let models_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .header("x-api-key", "sk_debug")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    let entry = body["data"]
+        .as_array()
+        .and_then(|arr| arr.iter().find(|m| m["id"] == model_name))
+        .expect("model should be listed");
+    assert_eq!(entry["ready"], false);
+    assert_eq!(entry["lifecycle_status"], "pending");
+}
+
+/// T003: 0Bキャッシュは再ダウンロードされる
+#[tokio::test]
+#[serial]
+async fn test_zero_byte_cache_triggers_redownload() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("HEAD"))
+        .and(path("/zero/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "4"))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/zero/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"GGUF"))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let base = router_models_dir().expect("router models dir should exist");
+    let model_dir = base.join(model_name_to_dir("zero/repo"));
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let model_path = model_dir.join("model.gguf");
+    std::fs::File::create(&model_path).unwrap();
+
+    let payload = json!({
+        "repo": "zero/repo",
+        "filename": "model.gguf"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let mut ready = false;
+    for _ in 0..30 {
+        let models_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(models_res.status(), StatusCode::OK);
+        let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        if models["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "zero/repo" && m["ready"] == true)
+            })
+            .unwrap_or(false)
+        {
+            ready = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    assert!(ready, "zero-byte cache should be re-downloaded");
+    let meta = std::fs::metadata(&model_path).unwrap();
+    assert!(meta.len() > 0);
+}
+
+/// T004: キャッシュ済みモデルは再ダウンロードせず即時登録される
+#[tokio::test]
+#[serial]
+async fn test_register_model_uses_existing_cache() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("HEAD"))
+        .and(path("/cached/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "4"))
+        .mount(&mock)
+        .await;
+
+    // ダウンロードが呼ばれたら失敗させる
+    Mock::given(method("GET"))
+        .and(path("/cached/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let base = router_models_dir().expect("router models dir should exist");
+    let model_dir = base.join(model_name_to_dir("cached/repo"));
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let model_path = model_dir.join("model.gguf");
+    std::fs::write(&model_path, b"GGUF").unwrap();
+
+    let payload = json!({
+        "repo": "cached/repo",
+        "filename": "model.gguf"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let mut ready = false;
+    let mut last_models = serde_json::Value::Null;
+    for _ in 0..30 {
+        let models_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(models_res.status(), StatusCode::OK);
+        let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_models = models.clone();
+        if models["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "cached/repo" && m["ready"] == true)
+            })
+            .unwrap_or(false)
+        {
+            ready = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    assert!(
+        ready,
+        "cached model should be ready without download, models={:?}",
+        last_models
+    );
+    let meta = std::fs::metadata(&model_path).unwrap();
+    assert!(meta.len() > 0);
+}
+
+/// T005: 削除後に /v1/models から消える
+#[tokio::test]
+#[serial]
+async fn test_delete_model_removes_from_list() {
+    let TestApp {
+        app,
+        admin_key,
+        db_pool,
+        ..
+    } = build_app().await;
+
+    let model_name = "delete-me";
+    let base = router_models_dir().expect("router models dir should exist");
+    let model_dir = base.join(model_name_to_dir(model_name));
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let model_path = model_dir.join("model.gguf");
+    std::fs::write(&model_path, b"GGUF").unwrap();
+
+    let mut model = ModelInfo::new(model_name.to_string(), 0, "test".to_string(), 0, vec![]);
+    model.path = Some(model_path.to_string_lossy().to_string());
+    llm_router::api::models::upsert_registered_model(model);
+    llm_router::api::models::persist_registered_models(&db_pool).await;
+
+    let models_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .header("x-api-key", "sk_debug")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        body["data"]
+            .as_array()
+            .map(|arr| arr.iter().any(|m| m["id"] == model_name))
+            .unwrap_or(false),
+        "model should exist before delete"
+    );
+
+    let delete_res = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("DELETE")
+                .uri(format!("/v0/models/{}", model_name))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
+
+    let models_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .header("x-api-key", "sk_debug")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        body["data"]
+            .as_array()
+            .map(|arr| arr.iter().all(|m| m["id"] != model_name))
+            .unwrap_or(false),
+        "model should be removed after delete"
+    );
+    assert!(!model_path.exists(), "model file should be removed");
+}
+
 /// T010: ダウンロード失敗時に lifecycle_status が error になること
 /// NOTE: /v0/models/convert は廃止され、/v0/models に統合された
 /// NOTE: 失敗後のリトライ機能は別途実装予定
@@ -522,7 +836,7 @@ async fn test_download_failure_shows_error_status() {
         .mount(&mock)
         .await;
 
-    let (app, admin_key) = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     // register -> download fails
     let reg = app

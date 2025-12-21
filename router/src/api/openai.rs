@@ -15,11 +15,11 @@ use llm_router_common::{
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::IpAddr, time::Instant};
+use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::registry::models::router_model_path;
+use crate::registry::models::{is_valid_model_file, router_model_path};
 use crate::{
     api::{
         models::{list_registered_models, DownloadProgress, LifecycleStatus},
@@ -199,8 +199,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         let path = m
             .path
             .as_ref()
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.exists())
+            .map(PathBuf::from)
+            .filter(|path| is_valid_model_file(path))
             .or_else(|| router_model_path(&m.name));
 
         let ready = path.is_some();
@@ -342,8 +342,8 @@ pub async fn get_model(
         let path = m
             .path
             .as_ref()
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.exists())
+            .map(PathBuf::from)
+            .filter(|path| is_valid_model_file(path))
             .or_else(|| router_model_path(&m.name));
         path.map(|p| (m, p))
     });

@@ -61,7 +61,9 @@ def _list_curated(repo: str, path: str, ref: str) -> list[str]:
     data = json.loads(payload.decode("utf-8"))
     if not isinstance(data, list):
         raise ListError("Unexpected curated listing response.")
-    skills = [item["name"] for item in data if item.get("type") == "dir"]
+    skills = [
+        item["name"] for item in data if item.get("type") == "dir" and "name" in item
+    ]
     return sorted(skills)
 
 
@@ -93,10 +95,11 @@ def main(argv: list[str]) -> int:
             for idx, name in enumerate(skills, start=1):
                 suffix = " (already installed)" if name in installed else ""
                 print(f"{idx}. {name}{suffix}")
-        return 0
     except ListError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+    else:
+        return 0
 
 
 if __name__ == "__main__":

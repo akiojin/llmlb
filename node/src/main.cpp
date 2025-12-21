@@ -106,22 +106,27 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
+        std::vector<std::string> supported_runtimes{"llama_cpp"};
+
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR
         llm_node::WhisperManager whisper_manager(models_dir);
         spdlog::info("WhisperManager initialized for ASR support");
+        supported_runtimes.push_back("whisper_cpp");
 #endif
 
 #ifdef USE_ONNX_RUNTIME
         // Initialize OnnxTtsManager for TTS
         llm_node::OnnxTtsManager tts_manager(models_dir);
         spdlog::info("OnnxTtsManager initialized for TTS support");
+        supported_runtimes.push_back("onnx_runtime");
 #endif
 
 #ifdef USE_SD
         // Initialize SDManager for image generation
         llm_node::SDManager sd_manager(models_dir);
         spdlog::info("SDManager initialized for image generation support");
+        supported_runtimes.push_back("stable_diffusion");
 #endif
 
         // Set GPU layers based on detection (use all layers on GPU if available)
@@ -285,6 +290,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             info.gpu_count = static_cast<uint32_t>(gpu_devices.size());
             info.gpu_model = gpu_devices[0].model;
         }
+        info.supported_runtimes = supported_runtimes;
         llm_node::NodeRegistrationResult reg;
         const int reg_max = 3;
         for (int attempt = 0; attempt < reg_max; ++attempt) {
@@ -333,14 +339,32 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Heartbeat thread
         std::cout << "Starting heartbeat thread..." << std::endl;
         std::string node_token = reg.node_token;
-        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg]() {
+        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg,
+                                        supported_runtimes
+#ifdef USE_WHISPER
+                                        , &whisper_manager
+#endif
+#ifdef USE_ONNX_RUNTIME
+                                        , &tts_manager
+#endif
+                                        ]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
                 auto loaded_models = llama_manager.getLoadedModels();
                 // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
                 std::vector<std::string> loaded_embedding_models;
+                std::vector<std::string> loaded_asr_models;
+                std::vector<std::string> loaded_tts_models;
+#ifdef USE_WHISPER
+                loaded_asr_models = whisper_manager.getLoadedModels();
+#endif
+#ifdef USE_ONNX_RUNTIME
+                loaded_tts_models = tts_manager.getLoadedModels();
+#endif
                 router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
-                                     loaded_models, loaded_embedding_models);
+                                     loaded_models, loaded_embedding_models,
+                                     loaded_asr_models, loaded_tts_models,
+                                     supported_runtimes);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }
         });

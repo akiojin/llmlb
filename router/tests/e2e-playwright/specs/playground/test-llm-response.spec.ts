@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { mockChatCompletionsStream, mockOpenAIModels } from '../../helpers/mock-helpers';
 import { PlaygroundPage } from '../../pages/playground.page';
 
 test('LLM response in Playground', async ({ page }) => {
+  await mockOpenAIModels(page);
+  await mockChatCompletionsStream(page, 'Hello from mock');
+
   // Log all network requests
   page.on('request', req => {
     if (req.url().includes('chat/completions')) {

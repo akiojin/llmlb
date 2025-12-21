@@ -112,6 +112,7 @@ cmake --build build --config Release
 | `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+| `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
 
 クラウドAPI:
 
@@ -248,6 +249,10 @@ Router (OpenAI-compatible)
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
   - Hugging Face repo（例: `TheBloke/Llama-2-7B-GGUF`）と、任意で filename を入力します。
+  - 量子化を選択した場合、filename未指定なら siblings から一致するGGUFを選択します
+    （無ければエラー）。
+  - 非GGUF入力でQ4/Q5等を選ぶと、変換後に `llama-quantize` を実行します
+    （PATH または `LLM_QUANTIZE_BIN` が必要）。
   - `/v1/models` は、ルーターのファイルシステム上にキャッシュ済みのモデルだけを返します。
 
 モデル ID はファイル名ベース形式に正規化されます（例: `llama-2-7b`, `gpt-oss-20b`）。

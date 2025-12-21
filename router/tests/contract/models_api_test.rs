@@ -507,6 +507,133 @@ async fn test_register_model_contract() {
     assert!(converted, "converted model should appear in /v1/models");
 }
 
+/// T010: filename未指定 + quantization指定でGGUF siblingsから一致する量子化を選択する
+#[tokio::test]
+#[serial]
+async fn test_register_model_selects_quantized_gguf_from_siblings() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/quant-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q8_0.gguf"},
+                {"rfilename": "model.Q4_K_M.gguf"},
+                {"rfilename": "config.json"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    Mock::given(method("HEAD"))
+        .and(path("/quant-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "quant-repo",
+        "quantization": "Q4_K_M"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
+/// T011: quantization一致のGGUFが見つからない場合は400を返す
+#[tokio::test]
+#[serial]
+async fn test_register_model_errors_when_quantized_gguf_missing() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/no-quant-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q8_0.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "no-quant-repo",
+        "quantization": "Q4_K_M"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// T012: filename指定時のquantization不一致は400を返す
+#[tokio::test]
+#[serial]
+async fn test_register_model_errors_on_quantization_mismatch() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("HEAD"))
+        .and(path("/mismatch-repo/resolve/main/model.Q8_0.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "mismatch-repo",
+        "filename": "model.Q8_0.gguf",
+        "quantization": "Q4_K_M"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 /// T003: 0Bキャッシュはready扱いにならない
 #[tokio::test]
 #[serial]

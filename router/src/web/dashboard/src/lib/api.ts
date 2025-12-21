@@ -424,10 +424,10 @@ export const modelsApi = {
 
   // NOTE: getAvailable は廃止 - HFカタログは直接 https://huggingface.co を参照
 
-  register: (repo: string, filename?: string) =>
+  register: (repo: string, filename?: string, quantization?: string) =>
     fetchWithAuth<unknown>('/v0/models/register', {
       method: 'POST',
-      body: JSON.stringify({ repo, filename }),
+      body: JSON.stringify({ repo, filename, quantization }),
     }),
 
   delete: (modelName: string) =>

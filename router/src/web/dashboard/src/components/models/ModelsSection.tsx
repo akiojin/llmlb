@@ -8,6 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -17,6 +24,26 @@ import {
 } from '@/components/ui/dialog'
 import { Box, Search, Plus, Trash2, Loader2, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const quantizationOptions = [
+  'F16',
+  'BF16',
+  'F32',
+  'Q8_0',
+  'Q6_K',
+  'Q5_K_M',
+  'Q5_K_S',
+  'Q5_0',
+  'Q4_K_M',
+  'Q4_K_S',
+  'Q4_0',
+  'Q3_K_M',
+  'Q3_K_S',
+  'Q2_K',
+  'IQ4_XS',
+  'IQ3_M',
+  'IQ2_M',
+]
 
 function formatGb(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return '—'
@@ -44,6 +71,7 @@ export function ModelsSection() {
   const [registerOpen, setRegisterOpen] = useState(false)
   const [registerRepo, setRegisterRepo] = useState('')
   const [registerFilename, setRegisterFilename] = useState('')
+  const [registerQuantization, setRegisterQuantization] = useState('')
 
   const { data: registeredModels, isLoading: isLoadingRegistered } = useQuery({
     queryKey: ['registered-models'],
@@ -52,14 +80,15 @@ export function ModelsSection() {
   })
 
   const registerMutation = useMutation({
-    mutationFn: (params: { repo: string; filename?: string }) =>
-      modelsApi.register(params.repo, params.filename),
+    mutationFn: (params: { repo: string; filename?: string; quantization?: string }) =>
+      modelsApi.register(params.repo, params.filename, params.quantization),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
       toast({ title: 'Model registration queued' })
       setRegisterOpen(false)
       setRegisterRepo('')
       setRegisterFilename('')
+      setRegisterQuantization('')
     },
     onError: (error) => {
       toast({
@@ -249,6 +278,32 @@ export function ModelsSection() {
                 onChange={(e) => setRegisterFilename(e.target.value)}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="convert-quantization">Quantization (optional)</Label>
+              <Select
+                value={registerQuantization || 'none'}
+                onValueChange={(value) =>
+                  setRegisterQuantization(value === 'none' ? '' : value)
+                }
+              >
+                <SelectTrigger id="convert-quantization">
+                  <SelectValue placeholder="Select quantization" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No preference</SelectItem>
+                  {quantizationOptions.map((quant) => (
+                    <SelectItem key={quant} value={quant}>
+                      {quant}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                If filename is omitted and a quantization is selected, the router searches GGUF
+                siblings for a matching file. Non-GGUF inputs are converted, then quantized with
+                llama-quantize (Q4/Q5/etc). If no matching GGUF exists, registration fails.
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
@@ -261,6 +316,9 @@ export function ModelsSection() {
                 registerMutation.mutate({
                   repo: registerRepo.trim(),
                   filename: registerFilename.trim() ? registerFilename.trim() : undefined,
+                  quantization: registerQuantization.trim()
+                    ? registerQuantization.trim()
+                    : undefined,
                 })
               }
               disabled={!registerRepo.trim() || registerMutation.isPending}

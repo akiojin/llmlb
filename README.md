@@ -392,6 +392,10 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
   - Enter a Hugging Face repo (e.g. `TheBloke/Llama-2-7B-GGUF`) and (optionally) a filename (e.g. `llama-2-7b.Q4_K_M.gguf`).
+  - Optional: select a quantization. If filename is omitted, the router selects a matching GGUF sibling;
+    if none exists, registration fails.
+  - For non-GGUF inputs with Q4/Q5/etc, the router converts then runs `llama-quantize`
+    (set `LLM_QUANTIZE_BIN` if it is not in PATH).
   - Model IDs are normalized to a filename-based format (e.g. `llama-2-7b`).
   - `/v1/models` lists only models that are cached on the router filesystem.
   - Nodes never receive push-based distribution; they pull models based on `/v0/models` and download via `/v0/models/blob/:model_name` when needed.
@@ -435,6 +439,8 @@ See [Node (C++)](#node-c) section in Quick Start.
   source .venv/bin/activate
   pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
   ```
+- **Optional (k-quantization for Q4/Q5/etc)**: `llama-quantize` binary available in PATH
+  or `LLM_QUANTIZE_BIN` set
 
 ## Usage
 
@@ -500,6 +506,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
 | `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
+| `LLM_QUANTIZE_BIN` | - | Path to `llama-quantize` binary | optional |
 
 Cloud / external services:
 

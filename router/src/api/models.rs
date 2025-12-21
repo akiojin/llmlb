@@ -353,11 +353,29 @@ const TRUSTED_PROVIDERS: &[&str] = &[
     "TheBloke",
 ];
 
-/// リポジトリ内のGGUFファイルを解決
-async fn resolve_first_gguf_in_repo(
+/// サポートする量子化タイプ（API/UI共通）
+const SUPPORTED_QUANTIZATION_LABELS: &[&str] = &[
+    "BF16", "F32", "F16", "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "Q4_K_M", "Q4_K_S", "Q4_0",
+    "Q3_K_M", "Q3_K_S", "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M",
+];
+
+pub(crate) fn normalize_quantization_label(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    for label in SUPPORTED_QUANTIZATION_LABELS {
+        if label.eq_ignore_ascii_case(trimmed) {
+            return Some((*label).to_string());
+        }
+    }
+    None
+}
+
+async fn fetch_repo_siblings(
     http_client: &reqwest::Client,
     repo: &str,
-) -> Result<String, RouterError> {
+) -> Result<Vec<HfSibling>, RouterError> {
     let base_url = std::env::var("HF_BASE_URL")
         .unwrap_or_else(|_| "https://huggingface.co".to_string())
         .trim_end_matches('/')
@@ -385,14 +403,49 @@ async fn resolve_first_gguf_in_repo(
         .json()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
-    let filename = detail
-        .siblings
+    Ok(detail.siblings)
+}
+
+/// リポジトリ内のGGUFファイルを解決
+async fn resolve_first_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+) -> Result<String, RouterError> {
+    let siblings = fetch_repo_siblings(http_client, repo).await?;
+    let filename = siblings
         .iter()
         .map(|s| s.rfilename.clone())
         .find(|f| f.to_ascii_lowercase().ends_with(".gguf"))
         .ok_or_else(|| {
             RouterError::Common(CommonError::Validation(
                 "No GGUF file found in repository".into(),
+            ))
+        })?;
+    Ok(filename)
+}
+
+/// リポジトリ内のGGUFファイルを量子化指定で解決
+async fn resolve_quantized_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+    quantization: &str,
+) -> Result<String, RouterError> {
+    let siblings = fetch_repo_siblings(http_client, repo).await?;
+    let filename = siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| {
+            if !f.to_ascii_lowercase().ends_with(".gguf") {
+                return false;
+            }
+            match extract_quantization(f) {
+                Some(q) => q == quantization,
+                None => false,
+            }
+        })
+        .ok_or_else(|| {
+            RouterError::Common(CommonError::Validation(
+                "No GGUF file found for specified quantization".into(),
             ))
         })?;
     Ok(filename)
@@ -565,14 +618,10 @@ pub async fn discover_gguf_versions(
 
 /// ファイル名から量子化タイプを推測
 fn extract_quantization(filename: &str) -> Option<String> {
-    let patterns = [
-        "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "Q4_K_M", "Q4_K_S", "Q4_0", "Q3_K_M", "Q3_K_S",
-        "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M", "F16", "F32", "BF16",
-    ];
     let upper = filename.to_uppercase();
-    for pat in patterns {
-        if upper.contains(pat) {
-            return Some(pat.to_string());
+    for label in SUPPORTED_QUANTIZATION_LABELS {
+        if upper.contains(label) {
+            return Some((*label).to_string());
         }
     }
     None
@@ -659,6 +708,9 @@ pub struct RegisterModelRequest {
     pub repo: String,
     /// ファイル名 (e.g., llama-2-7b.Q4_K_M.gguf)
     pub filename: Option<String>,
+    /// 量子化指定（例: Q4_K_M）
+    #[serde(default)]
+    pub quantization: Option<String>,
     /// 表示名（任意）
     #[serde(default)]
     pub display_name: Option<String>,
@@ -712,23 +764,45 @@ pub async fn register_model(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     // URLからrepo_idを抽出（フルURLが渡された場合はrepo_id形式に正規化）
     let repo = extract_repo_id(&req.repo);
+    let quantization = match req.quantization.as_deref() {
+        Some(q) => Some(normalize_quantization_label(q).ok_or_else(|| {
+            RouterError::Common(CommonError::Validation("Invalid quantization label".into()))
+        })?),
+        None => None,
+    };
 
     // ファイル名を解決
     let filename = match req.filename.clone() {
         Some(f) => {
             // ファイル名が指定されている場合はそのまま使用
             // （GGUFでない場合は後で変換される）
+            if let Some(q) = quantization.as_deref() {
+                if f.to_ascii_lowercase().ends_with(".gguf") {
+                    let detected = extract_quantization(&f);
+                    if detected.as_deref() != Some(q) {
+                        return Err(RouterError::Common(CommonError::Validation(
+                            "Quantization does not match filename".into(),
+                        ))
+                        .into());
+                    }
+                }
+            }
             f
         }
         None => {
-            // ファイル名指定なし - リポジトリ内のGGUFを探す
-            match resolve_first_gguf_in_repo(&state.http_client, &repo).await {
-                Ok(f) => f,
-                Err(_) => {
-                    // リポジトリ内にGGUFがない → 変換対象として空文字列
-                    // （convert_managerが適切に処理する）
-                    tracing::info!(repo = %repo, "No GGUF in repo, will attempt conversion");
-                    String::new()
+            if let Some(q) = quantization.as_deref() {
+                // 量子化指定あり: GGUF siblings から一致するファイルを選択
+                resolve_quantized_gguf_in_repo(&state.http_client, &repo, q).await?
+            } else {
+                // ファイル名指定なし - リポジトリ内のGGUFを探す
+                match resolve_first_gguf_in_repo(&state.http_client, &repo).await {
+                    Ok(f) => f,
+                    Err(_) => {
+                        // リポジトリ内にGGUFがない → 変換対象として空文字列
+                        // （convert_managerが適切に処理する）
+                        tracing::info!(repo = %repo, "No GGUF in repo, will attempt conversion");
+                        String::new()
+                    }
                 }
             }
         }
@@ -738,6 +812,7 @@ pub async fn register_model(
         &state,
         &repo,
         &filename,
+        quantization.clone(),
         req.display_name.clone(),
         req.chat_template.clone(),
     )
@@ -749,6 +824,7 @@ async fn register_model_internal(
     state: &AppState,
     repo: &str,
     filename: &str,
+    quantization: Option<String>,
     _display_name: Option<String>,
     chat_template: Option<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
@@ -847,7 +923,7 @@ async fn register_model_internal(
             repo.to_string(),
             filename.to_string(),
             None,
-            None,
+            quantization.clone(),
             chat_template.clone(),
         )
         .await;

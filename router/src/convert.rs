@@ -18,6 +18,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task;
 use uuid::Uuid;
 
+use crate::api::models::normalize_quantization_label;
 use crate::registry::models::{
     generate_model_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
 };
@@ -820,7 +821,7 @@ async fn download_and_maybe_convert<F>(
     repo: &str,
     filename: &str,
     revision: Option<&str>,
-    _quantization: Option<&str>,
+    quantization: Option<&str>,
     chat_template: Option<String>,
     progress_callback: F,
     db_pool: &sqlx::SqlitePool,
@@ -877,7 +878,14 @@ where
         download_file(&url, &target).await?;
         progress_callback(1.0);
     } else {
-        convert_non_gguf(repo, revision, &target, progress_callback.clone()).await?;
+        convert_non_gguf(
+            repo,
+            revision,
+            quantization,
+            &target,
+            progress_callback.clone(),
+        )
+        .await?;
     }
 
     // chat_templateが指定されている場合、GGUFに埋め込む
@@ -958,12 +966,94 @@ fn is_retryable_error(error_msg: &str) -> bool {
         .any(|pattern| error_lower.contains(&pattern.to_lowercase()))
 }
 
+fn quantization_outtype(label: &str) -> Option<&'static str> {
+    match label {
+        "F32" => Some("f32"),
+        "F16" => Some("f16"),
+        "BF16" => Some("bf16"),
+        "Q8_0" => Some("q8_0"),
+        _ => None,
+    }
+}
+
+fn resolve_llama_quantize_bin() -> Result<PathBuf, RouterError> {
+    if let Ok(path) = std::env::var("LLM_QUANTIZE_BIN") {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Ok(p);
+        }
+        return Err(RouterError::Internal(
+            "LLM_QUANTIZE_BIN is set but the binary was not found".into(),
+        ));
+    }
+
+    let candidates = [
+        PathBuf::from("node/third_party/llama.cpp/build/bin/llama-quantize"),
+        PathBuf::from("node/third_party/llama.cpp/llama-quantize"),
+        PathBuf::from("third_party/llama.cpp/build/bin/llama-quantize"),
+        PathBuf::from("third_party/llama.cpp/llama-quantize"),
+    ];
+
+    for cand in candidates {
+        if cand.exists() {
+            return Ok(cand);
+        }
+    }
+
+    Ok(PathBuf::from("llama-quantize"))
+}
+
+fn run_llama_quantize(
+    input_path: &Path,
+    output_path: &Path,
+    quantization: &str,
+) -> Result<(), RouterError> {
+    let bin = resolve_llama_quantize_bin()?;
+    let output = Command::new(&bin)
+        .arg(input_path)
+        .arg(output_path)
+        .arg(quantization)
+        .output()
+        .map_err(|e| {
+            RouterError::Internal(format!(
+                "Failed to run llama-quantize (set LLM_QUANTIZE_BIN): {}",
+                e
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Err(RouterError::Internal(format!(
+            "llama-quantize failed: {}{}{}",
+            output
+                .status
+                .code()
+                .map(|c| format!("exit code {}", c))
+                .unwrap_or_else(|| "terminated".into()),
+            if stderr.is_empty() {
+                "".into()
+            } else {
+                format!(" stderr: {}", stderr)
+            },
+            if stdout.is_empty() {
+                "".into()
+            } else {
+                format!(" stdout: {}", stdout)
+            }
+        )));
+    }
+
+    Ok(())
+}
+
 /// 非GGUFをGGUFへコンバート（sync heavy → blocking thread）
 /// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
 /// リトライ機能付き: 一時的なエラーの場合は最大3回リトライ（指数バックオフ）
 async fn convert_non_gguf<F>(
     repo: &str,
     revision: Option<&str>,
+    quantization: Option<&str>,
     target: &Path,
     progress_callback: F,
 ) -> Result<(), RouterError>
@@ -972,6 +1062,25 @@ where
 {
     const MAX_ATTEMPTS: u32 = 3;
     const INITIAL_BACKOFF_SECS: u64 = 5;
+
+    let normalized_quantization = quantization.and_then(normalize_quantization_label);
+    if quantization.is_some() && normalized_quantization.is_none() {
+        return Err(RouterError::Internal("Invalid quantization label".into()));
+    }
+
+    let (convert_outtype, needs_post_quantize) = match normalized_quantization.as_deref() {
+        Some(label) => match quantization_outtype(label) {
+            Some(outtype) => (Some(outtype), false),
+            None => (Some("f16"), true),
+        },
+        None => (None, false),
+    };
+
+    let convert_target = if needs_post_quantize {
+        target.with_extension("gguf.tmp")
+    } else {
+        target.to_path_buf()
+    };
 
     if should_use_fake_convert() {
         progress_callback(0.5);
@@ -1000,7 +1109,7 @@ where
     let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
     let hf_token = std::env::var("HF_TOKEN").ok();
 
-    if let Some(parent) = target.parent() {
+    if let Some(parent) = convert_target.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|e| RouterError::Internal(e.to_string()))?;
@@ -1020,16 +1129,21 @@ where
         attempt += 1;
 
         // 既存のターゲットファイルを削除（リトライ時にも必要）
-        if target.exists() {
+        if convert_target.exists() {
+            let _ = tokio::fs::remove_file(&convert_target).await;
+        }
+        if needs_post_quantize && target.exists() {
             let _ = tokio::fs::remove_file(target).await;
         }
 
         let script_clone = script.clone();
-        let target_path = target.to_path_buf();
+        let target_path = convert_target.to_path_buf();
         let cmd_repo = repo_with_rev.clone();
         let python_bin_clone = python_bin.clone();
         let hf_token_clone = hf_token.clone();
         let progress_callback_clone = progress_callback.clone();
+        let progress_scale: f32 = if needs_post_quantize { 0.9 } else { 1.0 };
+        let outtype = convert_outtype;
 
         if attempt > 1 {
             tracing::info!(
@@ -1052,6 +1166,9 @@ where
                 .stderr(Stdio::piped())
                 // Force unbuffered output from Python so tqdm progress lines are flushed immediately
                 .env("PYTHONUNBUFFERED", "1");
+            if let Some(outtype) = outtype {
+                cmd.arg("--outtype").arg(outtype);
+            }
 
             if let Some(token) = hf_token_clone {
                 cmd.env("HF_TOKEN", token);
@@ -1083,7 +1200,7 @@ where
                             // Try to parse progress from tqdm output
                             if let Some(progress) = parse_tqdm_progress(&line_buffer) {
                                 tracing::debug!(progress, "convert_progress_parsed");
-                                progress_callback_clone(progress);
+                                progress_callback_clone(progress * progress_scale);
                             }
                             stderr_output.push_str(&line_buffer);
                             stderr_output.push('\n');
@@ -1096,7 +1213,7 @@ where
                 // Handle any remaining content
                 if !line_buffer.is_empty() {
                     if let Some(progress) = parse_tqdm_progress(&line_buffer) {
-                        progress_callback_clone(progress);
+                        progress_callback_clone(progress * progress_scale);
                     }
                     stderr_output.push_str(&line_buffer);
                 }
@@ -1147,7 +1264,7 @@ where
         match result {
             Ok(()) => {
                 // Phase 1: GGUF検証 - 変換後のファイルを検証
-                let validation = validate_gguf_file(target)?;
+                let validation = validate_gguf_file(&convert_target)?;
 
                 // テンソル数が0の場合はエラー（空のGGUFファイル）
                 if validation.tensor_count == 0 {
@@ -1182,13 +1299,32 @@ where
                 }
 
                 tracing::info!(
-                    path = %target.display(),
+                    path = %convert_target.display(),
                     version = validation.version,
                     tensor_count = validation.tensor_count,
                     kv_count = validation.kv_count,
                     file_size_mb = file_size_mb,
                     "GGUF validation passed"
                 );
+
+                if needs_post_quantize {
+                    let quantization_label =
+                        normalized_quantization.as_deref().ok_or_else(|| {
+                            RouterError::Internal("Missing quantization label".into())
+                        })?;
+                    if let Err(e) = run_llama_quantize(&convert_target, target, quantization_label)
+                    {
+                        let _ = tokio::fs::remove_file(&convert_target).await;
+                        let _ = tokio::fs::remove_file(target).await;
+                        return Err(e);
+                    }
+                    let _ = tokio::fs::remove_file(&convert_target).await;
+                    let validation = validate_gguf_file(target)?;
+                    if validation.tensor_count == 0 {
+                        return Err(RouterError::Internal("Quantized GGUF file is empty".into()));
+                    }
+                    progress_callback(1.0);
+                }
 
                 return Ok(());
             }

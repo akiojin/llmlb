@@ -63,6 +63,8 @@ bool WhisperManager::loadModel(const std::string& model_path) {
 
     whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = true;  // GPUが利用可能なら使用
+    // Flash Attentionは一部環境でクラッシュするため無効化（安定性優先）
+    cparams.flash_attn = shouldUseFlashAttention();
 
     whisper_context* ctx = whisper_init_from_file_with_params(
         canonical_path.c_str(), cparams);

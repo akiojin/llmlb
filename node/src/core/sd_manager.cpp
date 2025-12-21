@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <random>
@@ -137,8 +138,23 @@ bool SDManager::loadModel(const std::string& model_path) {
     sd_ctx_params_init(&ctx_params);
 
     ctx_params.model_path = canonical_path.c_str();
-    ctx_params.vae_decode_only = true;  // We only need decoding for generation
-    ctx_params.n_threads = -1;          // Auto-detect thread count
+    // Edits/variations require VAE encode, so keep full VAE enabled.
+    ctx_params.vae_decode_only = false;
+    // This server keeps SD contexts across requests; do not free params after use.
+    ctx_params.free_params_immediately = false;
+    const char* threads_env = std::getenv("LLM_SD_THREADS");
+    if (threads_env && threads_env[0] != '\0') {
+        char* end = nullptr;
+        long value = std::strtol(threads_env, &end, 10);
+        if (end != threads_env && *end == '\0' && value > 0) {
+            ctx_params.n_threads = static_cast<int>(value);
+            spdlog::info("SDManager using LLM_SD_THREADS={}", ctx_params.n_threads);
+        } else {
+            spdlog::warn("Invalid LLM_SD_THREADS='{}', using default {}",
+                         threads_env,
+                         ctx_params.n_threads);
+        }
+    }
 
     // Create context
     sd_ctx_t* ctx = new_sd_ctx(&ctx_params);
@@ -360,18 +376,40 @@ std::vector<ImageGenerationResult> SDManager::editImages(
     gen_params.init_image.channel = 3;
     gen_params.init_image.data = image_rgb.data();
 
-    // Set mask if provided
-    std::vector<uint8_t> mask_rgb;
-    int mask_width = 0;
-    int mask_height = 0;
+    // Set mask (required by stable-diffusion.cpp img2img path)
+    std::vector<uint8_t> mask_gray;
     if (!params.mask_data.empty()) {
-        if (decodePngToImage(params.mask_data, mask_rgb, mask_width, mask_height)) {
-            gen_params.mask_image.width = static_cast<uint32_t>(mask_width);
-            gen_params.mask_image.height = static_cast<uint32_t>(mask_height);
-            gen_params.mask_image.channel = 3;
-            gen_params.mask_image.data = mask_rgb.data();
+        std::vector<uint8_t> mask_rgb;
+        int mask_width = 0;
+        int mask_height = 0;
+        if (!decodePngToImage(params.mask_data, mask_rgb, mask_width, mask_height)) {
+            ImageGenerationResult error_result;
+            error_result.error = "Failed to decode mask image";
+            results.push_back(error_result);
+            return results;
         }
+        if (mask_width != img_width || mask_height != img_height) {
+            ImageGenerationResult error_result;
+            error_result.error = "Mask size must match input image size";
+            results.push_back(error_result);
+            return results;
+        }
+        mask_gray = toMaskChannel(mask_rgb, mask_width, mask_height);
+        if (mask_gray.empty()) {
+            ImageGenerationResult error_result;
+            error_result.error = "Invalid mask image data";
+            results.push_back(error_result);
+            return results;
+        }
+    } else {
+        // Default mask: all zeros (no masked area)
+        mask_gray = makeSolidMask(img_width, img_height, 0);
     }
+
+    gen_params.mask_image.width = static_cast<uint32_t>(img_width);
+    gen_params.mask_image.height = static_cast<uint32_t>(img_height);
+    gen_params.mask_image.channel = 1;
+    gen_params.mask_image.data = mask_gray.data();
 
     spdlog::info(
         "Editing image: {}x{} -> {}x{}, strength={}, steps={}",

@@ -114,6 +114,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/ggml/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors-cpp
 )
 
 # whisper.cpp include directories

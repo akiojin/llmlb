@@ -1560,6 +1560,22 @@ async fn finalize_model_registration(
     upsert_registered_model(model);
     persist_registered_models(db_pool).await;
 
+    if let Some(dir) = target.parent() {
+        let primary_name = target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("model.gguf");
+        let metadata = serde_json::json!({
+            "runtime": "llama_cpp",
+            "format": "gguf",
+            "primary": primary_name,
+        });
+        let metadata_path = dir.join("metadata.json");
+        if let Err(e) = tokio::fs::write(&metadata_path, metadata.to_string()).await {
+            tracing::warn!(error=%e, path=?metadata_path, "Failed to write metadata.json for model");
+        }
+    }
+
     // SPEC-dcaeaec4 FR-7: オンラインノードにプッシュ通知を送信
     notify_nodes_of_new_model(model_name).await;
 }

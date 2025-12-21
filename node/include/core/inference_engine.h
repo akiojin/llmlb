@@ -6,33 +6,17 @@
 #include <memory>
 #include <stdexcept>
 
+#include "core/engine_types.h"
+
 namespace llm_node {
 
 // 前方宣言
 class LlamaManager;
 class ModelStorage;
 class ModelSync;
-
-struct ChatMessage {
-    std::string role;
-    std::string content;
-};
-
-/// 推論パラメータ
-struct InferenceParams {
-    size_t max_tokens{2048};  // デフォルト値を増加（256→2048）
-    float temperature{0.8f};
-    float top_p{0.9f};
-    int top_k{40};
-    float repeat_penalty{1.1f};
-    uint32_t seed{0};  // 0 = ランダム
-};
-
-/// モデルロード結果
-struct ModelLoadResult {
-    bool success{false};
-    std::string error_message;
-};
+class EngineRegistry;
+class Engine;
+class ModelDescriptor;
 
 class InferenceEngine {
 public:
@@ -97,10 +81,14 @@ public:
     /// モデルの最大コンテキストサイズを取得
     size_t getModelMaxContext() const { return model_max_ctx_; }
 
+    /// モデルが利用可能かを判定（エンジン/メタデータに基づく）
+    bool isModelSupported(const ModelDescriptor& descriptor) const;
+
 private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
+    std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
 
     /// チャットメッセージからプロンプト文字列を構築

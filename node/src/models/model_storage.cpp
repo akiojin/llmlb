@@ -6,6 +6,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
 #include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
@@ -14,6 +15,41 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+std::optional<ModelDescriptor> descriptorFromMetadata(const fs::path& model_dir,
+                                                      const std::string& model_name,
+                                                      const nlohmann::json& meta) {
+    if (!meta.is_object()) {
+        return std::nullopt;
+    }
+
+    const std::string runtime = meta.value("runtime", "");
+    const std::string format = meta.value("format", "");
+    const std::string primary = meta.value("primary", "");
+    if (runtime.empty() || format.empty() || primary.empty()) {
+        return std::nullopt;
+    }
+
+    fs::path primary_path(primary);
+    if (!primary_path.is_absolute()) {
+        primary_path = model_dir / primary_path;
+    }
+
+    std::error_code ec;
+    const bool exists = fs::exists(primary_path, ec) && !ec;
+    if (!exists) {
+        return std::nullopt;
+    }
+
+    ModelDescriptor desc;
+    desc.name = model_name;
+    desc.runtime = runtime;
+    desc.format = format;
+    desc.primary_path = primary_path.string();
+    desc.model_dir = model_dir.string();
+    desc.metadata = meta;
+    return desc;
+}
+
 /// モデルIDをサニタイズ
 /// SPEC-dcaeaec4 FR-2: 階層形式を許可
 /// - `gpt-oss-20b` → `gpt-oss-20b`
@@ -130,6 +166,77 @@ std::vector<ModelInfo> ModelStorage::listAvailable() const {
     return out;
 }
 
+std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
+    std::vector<ModelDescriptor> out;
+
+    if (!fs::exists(models_dir_)) {
+        spdlog::debug("ModelStorage::listAvailableDescriptors: models_dir does not exist: {}", models_dir_);
+        return out;
+    }
+
+    std::unordered_map<std::string, ModelDescriptor> seen;
+    std::error_code ec;
+
+    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
+        if (ec) break;
+        if (entry.is_directory()) continue;
+
+        const auto filename = entry.path().filename();
+        const bool is_metadata = filename == "metadata.json";
+        const bool is_gguf = filename == "model.gguf";
+        if (!is_metadata && !is_gguf) continue;
+
+        const auto parent_dir = entry.path().parent_path();
+        const auto relative = fs::relative(parent_dir, models_dir_, ec);
+        if (ec || relative.empty()) {
+            spdlog::debug("ModelStorage::listAvailableDescriptors: skipping {} (failed to compute relative path)",
+                          entry.path().string());
+            ec.clear();
+            continue;
+        }
+
+        const std::string model_name = dirNameToModel(relative.string());
+        if (is_metadata) {
+            auto meta = loadMetadata(model_name);
+            if (meta) {
+                const bool has_descriptor_keys =
+                    meta->contains("runtime") || meta->contains("format") || meta->contains("primary");
+                auto desc = descriptorFromMetadata(parent_dir, model_name, *meta);
+                if (desc) {
+                    seen[model_name] = *desc;
+                } else if (has_descriptor_keys) {
+                    spdlog::warn("ModelStorage::listAvailableDescriptors: invalid metadata for {}", model_name);
+                }
+            }
+            continue;
+        }
+
+        if (seen.find(model_name) != seen.end()) {
+            continue;
+        }
+
+        std::error_code st_ec;
+        auto st = fs::symlink_status(entry.path(), st_ec);
+        if (st_ec || (st.type() != fs::file_type::regular && st.type() != fs::file_type::symlink)) {
+            continue;
+        }
+
+        ModelDescriptor desc;
+        desc.name = model_name;
+        desc.runtime = "llama_cpp";
+        desc.format = "gguf";
+        desc.primary_path = entry.path().string();
+        desc.model_dir = parent_dir.string();
+        seen[model_name] = std::move(desc);
+    }
+
+    out.reserve(seen.size());
+    for (auto& kv : seen) {
+        out.push_back(std::move(kv.second));
+    }
+    return out;
+}
+
 std::optional<nlohmann::json> ModelStorage::loadMetadata(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
     const auto metadata_path = fs::path(models_dir_) / dir_name / "metadata.json";
@@ -146,6 +253,43 @@ std::optional<nlohmann::json> ModelStorage::loadMetadata(const std::string& mode
         spdlog::warn("ModelStorage::loadMetadata: failed to parse {}: {}", metadata_path.string(), e.what());
         return std::nullopt;
     }
+}
+
+std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string& model_name) const {
+    const std::string dir_name = modelNameToDir(model_name);
+    const auto model_dir = fs::path(models_dir_) / dir_name;
+    const auto metadata_path = model_dir / "metadata.json";
+
+    if (fs::exists(metadata_path)) {
+        auto meta = loadMetadata(model_name);
+        if (meta) {
+            const bool has_descriptor_keys =
+                meta->contains("runtime") || meta->contains("format") || meta->contains("primary");
+            auto desc = descriptorFromMetadata(model_dir, model_name, *meta);
+            if (desc) {
+                return desc;
+            }
+            if (has_descriptor_keys) {
+                spdlog::warn("ModelStorage::resolveDescriptor: invalid metadata for {}", model_name);
+            }
+        }
+    }
+
+    const auto gguf_path = model_dir / "model.gguf";
+    std::error_code ec;
+    auto st = fs::symlink_status(gguf_path, ec);
+    const bool ok = st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
+    if (!ok) {
+        return std::nullopt;
+    }
+
+    ModelDescriptor desc;
+    desc.name = model_name;
+    desc.runtime = "llama_cpp";
+    desc.format = "gguf";
+    desc.primary_path = gguf_path.string();
+    desc.model_dir = model_dir.string();
+    return desc;
 }
 
 bool ModelStorage::validateModel(const std::string& model_name) const {

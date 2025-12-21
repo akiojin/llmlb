@@ -8,6 +8,8 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 
+#include "models/model_descriptor.h"
+
 namespace llm_node {
 
 struct ModelInfo {
@@ -33,8 +35,14 @@ public:
     // FR-4: List all available models
     std::vector<ModelInfo> listAvailable() const;
 
+    // List all available models with runtime/format metadata
+    std::vector<ModelDescriptor> listAvailableDescriptors() const;
+
     // FR-5: Load optional metadata from metadata.json
     std::optional<nlohmann::json> loadMetadata(const std::string& model_name) const;
+
+    // Resolve model descriptor (metadata preferred, GGUF fallback)
+    std::optional<ModelDescriptor> resolveDescriptor(const std::string& model_name) const;
 
     // Validate model (check if model.gguf exists)
     bool validateModel(const std::string& model_name) const;

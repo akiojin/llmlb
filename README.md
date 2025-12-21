@@ -399,6 +399,8 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - Model IDs are normalized to a filename-based format (e.g. `llama-2-7b`).
   - `/v1/models` lists only models that are cached on the router filesystem.
   - Nodes never receive push-based distribution; they pull models based on `/v0/models` and download via `/v0/models/blob/:model_name` when needed.
+  - Nodes read each model directory's `metadata.json` to decide runtime/format/primary
+    (fallback: `model.gguf`).
 
 ## Installation
 

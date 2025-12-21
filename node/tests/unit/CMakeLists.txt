@@ -5,6 +5,8 @@ set(UNIT_TEST_SOURCES
     model_downloader_test.cpp
     model_storage_test.cpp
     inference_engine_test.cpp
+    engine_registry_test.cpp
+    nemotron_engine_test.cpp
     model_converter_test.cpp
     hf_client_test.cpp
     llama_manager_test.cpp
@@ -22,6 +24,9 @@ set(UNIT_TEST_SOURCES
     ../../src/models/hf_client.cpp
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
+    ../../src/core/engine_registry.cpp
+    ../../src/core/llama_engine.cpp
+    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
 )
 

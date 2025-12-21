@@ -333,7 +333,15 @@ ModelSyncResult ModelSync::sync() {
                 if (ok && downloaded && !info.chat_template.empty()) {
                     auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
                     auto meta_path = meta_dir / "metadata.json";
-                    nlohmann::json meta;
+                    nlohmann::json meta = nlohmann::json::object();
+                    if (fs::exists(meta_path)) {
+                        try {
+                            std::ifstream ifs(meta_path);
+                            ifs >> meta;
+                        } catch (...) {
+                            meta = nlohmann::json::object();
+                        }
+                    }
                     meta["chat_template"] = info.chat_template;
                     std::ofstream ofs(meta_path, std::ios::binary | std::ios::trunc);
                     ofs << meta.dump();

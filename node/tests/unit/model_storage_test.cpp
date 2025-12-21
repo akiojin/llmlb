@@ -32,6 +32,19 @@ static void create_model(const fs::path& models_dir, const std::string& dir_name
     std::ofstream(model_dir / "model.gguf") << "dummy gguf content";
 }
 
+static void write_metadata(const fs::path& models_dir,
+                           const std::string& dir_name,
+                           const std::string& runtime,
+                           const std::string& format,
+                           const std::string& primary) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "metadata.json")
+        << "{\"runtime\":\"" << runtime << "\","
+        << "\"format\":\"" << format << "\","
+        << "\"primary\":\"" << primary << "\"}";
+}
+
 // FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
@@ -118,6 +131,58 @@ TEST(ModelStorageTest, LoadMetadataReturnsNulloptWhenMissing) {
     auto meta = storage.loadMetadata("gpt-oss-20b");
 
     EXPECT_FALSE(meta.has_value());
+}
+
+TEST(ModelStorageTest, ResolveDescriptorUsesMetadataWhenPresent) {
+    TempModelDir tmp;
+    write_metadata(tmp.base, "nemotron-30b", "nemotron_cpp", "safetensors", "model.safetensors.index.json");
+    std::ofstream(tmp.base / "nemotron-30b" / "model.safetensors.index.json") << "{}";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("nemotron-30b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->name, "nemotron-30b");
+    EXPECT_EQ(desc->runtime, "nemotron_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorFallsBackToGguf) {
+    TempModelDir tmp;
+    create_model(tmp.base, "gpt-oss-7b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("gpt-oss-7b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "llama_cpp");
+    EXPECT_EQ(desc->format, "gguf");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.gguf");
+}
+
+TEST(ModelStorageTest, ListAvailableDescriptorsPrefersMetadata) {
+    TempModelDir tmp;
+    create_model(tmp.base, "gpt-oss-20b");
+    write_metadata(tmp.base, "gpt-oss-20b", "nemotron_cpp", "safetensors", "model.safetensors.index.json");
+    std::ofstream(tmp.base / "gpt-oss-20b" / "model.safetensors.index.json") << "{}";
+
+    ModelStorage storage(tmp.base.string());
+    auto list = storage.listAvailableDescriptors();
+
+    ASSERT_EQ(list.size(), 1u);
+    EXPECT_EQ(list[0].runtime, "nemotron_cpp");
+    EXPECT_EQ(list[0].format, "safetensors");
+}
+
+TEST(ModelStorageTest, ListAvailableDescriptorsSkipsMissingPrimary) {
+    TempModelDir tmp;
+    write_metadata(tmp.base, "nemotron-30b", "nemotron_cpp", "safetensors", "missing.safetensors");
+
+    ModelStorage storage(tmp.base.string());
+    auto list = storage.listAvailableDescriptors();
+
+    EXPECT_TRUE(list.empty());
 }
 
 // Edge case: Empty model name

@@ -254,6 +254,8 @@ Router (OpenAI-compatible)
   - 非GGUF入力でQ4/Q5等を選ぶと、変換後に `llama-quantize` を実行します
     （PATH または `LLM_QUANTIZE_BIN` が必要）。
   - `/v1/models` は、ルーターのファイルシステム上にキャッシュ済みのモデルだけを返します。
+- ノードは各モデルディレクトリの `metadata.json` を参照して runtime/format/primary を判定します
+  （未設定の場合は `model.gguf` にフォールバック）。
 
 モデル ID はファイル名ベース形式に正規化されます（例: `llama-2-7b`, `gpt-oss-20b`）。
 

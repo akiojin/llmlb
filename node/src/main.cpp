@@ -195,7 +195,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #endif
 
         // SPEC-dcaeaec4 FR-7: POST /api/models/pull - receive sync notification from router
-        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry](const httplib::Request&, httplib::Response& res) {
+        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry, &engine](const httplib::Request&, httplib::Response& res) {
             try {
                 spdlog::info("Received model pull notification from router");
 
@@ -209,11 +209,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 }
 
                 // Update registry with current local models
-                auto local_model_infos = model_storage.listAvailable();
+                auto local_descriptors = model_storage.listAvailableDescriptors();
                 std::vector<std::string> local_model_names;
-                local_model_names.reserve(local_model_infos.size());
-                for (const auto& info : local_model_infos) {
-                    local_model_names.push_back(info.name);
+                local_model_names.reserve(local_descriptors.size());
+                for (const auto& desc : local_descriptors) {
+                    if (!engine.isModelSupported(desc)) {
+                        continue;
+                    }
+                    local_model_names.push_back(desc.name);
                 }
                 registry.setModels(local_model_names);
                 spdlog::info("Model sync completed, {} models available", local_model_names.size());
@@ -325,11 +328,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         }
 
         // Update registry with local models (models actually available on this node)
-        auto local_model_infos = model_storage.listAvailable();
+        auto local_descriptors = model_storage.listAvailableDescriptors();
         std::vector<std::string> local_model_names;
-        local_model_names.reserve(local_model_infos.size());
-        for (const auto& info : local_model_infos) {
-            local_model_names.push_back(info.name);
+        local_model_names.reserve(local_descriptors.size());
+        for (const auto& desc : local_descriptors) {
+            if (!engine.isModelSupported(desc)) {
+                continue;
+            }
+            local_model_names.push_back(desc.name);
         }
         registry.setModels(local_model_names);
         spdlog::info("Registered {} local models", local_model_names.size());

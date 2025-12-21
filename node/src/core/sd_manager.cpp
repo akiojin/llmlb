@@ -193,6 +193,36 @@ bool SDManager::decodePngToImage(const std::vector<uint8_t>& png_data,
     return true;
 }
 
+std::vector<uint8_t> SDManager::toMaskChannel(const std::vector<uint8_t>& rgb,
+                                              int width,
+                                              int height) {
+    if (width <= 0 || height <= 0) {
+        return {};
+    }
+    const size_t expected = static_cast<size_t>(width) * height * 3;
+    if (rgb.size() < expected) {
+        return {};
+    }
+
+    std::vector<uint8_t> mask;
+    mask.resize(static_cast<size_t>(width) * height);
+    for (size_t i = 0; i < mask.size(); ++i) {
+        const size_t idx = i * 3;
+        const uint16_t r = rgb[idx];
+        const uint16_t g = rgb[idx + 1];
+        const uint16_t b = rgb[idx + 2];
+        mask[i] = static_cast<uint8_t>((r + g + b) / 3);
+    }
+    return mask;
+}
+
+std::vector<uint8_t> SDManager::makeSolidMask(int width, int height, uint8_t value) {
+    if (width <= 0 || height <= 0) {
+        return {};
+    }
+    return std::vector<uint8_t>(static_cast<size_t>(width) * height, value);
+}
+
 std::vector<ImageGenerationResult> SDManager::generateImages(
     const std::string& model_path,
     const ImageGenParams& params) {

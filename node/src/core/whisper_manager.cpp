@@ -95,6 +95,10 @@ whisper_context* WhisperManager::getContext(const std::string& model_path) const
     return nullptr;
 }
 
+bool WhisperManager::shouldUseFlashAttention() {
+    return false;
+}
+
 whisper_full_params WhisperManager::createParams(const TranscriptionParams& params) const {
     whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
 

@@ -27,6 +27,15 @@
         "--project",
         "$(pwd)"
       ]
+    },
+    "llm-router": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp-server/dist/index.js"],
+      "env": {
+        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_OPENAPI_PATH": "./docs/openapi.yaml"
+      }
     }
   }
 }

@@ -46,6 +46,33 @@ pub struct ApiKey {
     pub created_at: DateTime<Utc>,
     /// 有効期限
     pub expires_at: Option<DateTime<Utc>>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
+}
+
+/// APIキースコープ
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApiKeyScope {
+    /// ノード登録
+    #[serde(rename = "node:register")]
+    NodeRegister,
+    /// 推論API利用
+    #[serde(rename = "api:inference")]
+    ApiInference,
+    /// 管理者（全権限）
+    #[serde(rename = "admin:*")]
+    AdminAll,
+}
+
+impl ApiKeyScope {
+    /// すべてのスコープ
+    pub fn all() -> Vec<ApiKeyScope> {
+        vec![
+            ApiKeyScope::NodeRegister,
+            ApiKeyScope::ApiInference,
+            ApiKeyScope::AdminAll,
+        ]
+    }
 }
 
 /// APIキー（平文付き、発行時のレスポンス用）
@@ -61,24 +88,26 @@ pub struct ApiKeyWithPlaintext {
     pub created_at: DateTime<Utc>,
     /// 有効期限
     pub expires_at: Option<DateTime<Utc>>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
 }
 
-/// エージェントトークン
+/// ノードトークン
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentToken {
-    /// エージェントID
-    pub agent_id: Uuid,
+pub struct NodeToken {
+    /// ノードID
+    pub node_id: Uuid,
     /// トークンのSHA-256ハッシュ
     pub token_hash: String,
     /// 作成日時
     pub created_at: DateTime<Utc>,
 }
 
-/// エージェントトークン（平文付き、発行時のレスポンス用）
+/// ノードトークン（平文付き、発行時のレスポンス用）
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentTokenWithPlaintext {
-    /// エージェントID
-    pub agent_id: Uuid,
+pub struct NodeTokenWithPlaintext {
+    /// ノードID
+    pub node_id: Uuid,
     /// 平文のトークン（発行時のみ表示）
     pub token: String,
     /// 作成日時

@@ -77,9 +77,8 @@ fn compare_average_ms(a: Option<f32>, b: Option<f32>) -> Ordering {
     compare_option_f32(a, b)
 }
 
-fn agent_spec_score(agent: &Node, load_state: Option<&AgentLoadState>) -> u32 {
-    agent
-        .gpu_capability_score
+fn node_spec_score(node: &Node, load_state: Option<&NodeLoadState>) -> u32 {
+    node.gpu_capability_score
         .or_else(|| {
             load_state.and_then(|state| {
                 state
@@ -92,23 +91,23 @@ fn agent_spec_score(agent: &Node, load_state: Option<&AgentLoadState>) -> u32 {
 }
 
 fn compare_spec_levels(
-    a_agent: &Node,
-    a_load: &AgentLoadState,
-    b_agent: &Node,
-    b_load: &AgentLoadState,
+    a_node: &Node,
+    a_load: &NodeLoadState,
+    b_node: &Node,
+    b_load: &NodeLoadState,
 ) -> Ordering {
-    let a_score = agent_spec_score(a_agent, Some(a_load));
-    let b_score = agent_spec_score(b_agent, Some(b_load));
+    let a_score = node_spec_score(a_node, Some(a_load));
+    let b_score = node_spec_score(b_node, Some(b_load));
     b_score.cmp(&a_score)
 }
 
 fn compare_spec_by_state(
-    a_agent: &Node,
-    b_agent: &Node,
-    state: &HashMap<Uuid, AgentLoadState>,
+    a_node: &Node,
+    b_node: &Node,
+    state: &HashMap<Uuid, NodeLoadState>,
 ) -> Ordering {
-    let a_score = agent_spec_score(a_agent, state.get(&a_agent.id));
-    let b_score = agent_spec_score(b_agent, state.get(&b_agent.id));
+    let a_score = node_spec_score(a_node, state.get(&a_node.id));
+    let b_score = node_spec_score(b_node, state.get(&b_node.id));
     b_score.cmp(&a_score)
 }
 
@@ -143,7 +142,7 @@ mod tests {
     #[test]
     fn effective_average_ms_prefers_metrics_value() {
         let timestamp = Utc::now();
-        let state = AgentLoadState {
+        let state = NodeLoadState {
             success_count: 5,
             total_latency_ms: 500,
             last_metrics: Some(HealthMetrics {
@@ -174,7 +173,7 @@ mod tests {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let slow_agent = registry
+        let slow_node = registry
             .register(RegisterRequest {
                 machine_name: "slow".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
@@ -184,12 +183,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let fast_agent = registry
+        let fast_node = registry
             .register(RegisterRequest {
                 machine_name: "fast".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
@@ -199,14 +199,18 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(slow_node).await.unwrap();
+        registry.approve(fast_node).await.unwrap();
 
+        // ready_models を渡すと Registering → Online に遷移
         manager
             .record_metrics(MetricsUpdate {
-                node_id: slow_agent,
+                node_id: slow_node,
                 cpu_usage: 20.0,
                 memory_usage: 30.0,
                 gpu_usage: None,
@@ -220,13 +224,13 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(240.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
         manager
             .record_metrics(MetricsUpdate {
-                node_id: fast_agent,
+                node_id: fast_node,
                 cpu_usage: 20.0,
                 memory_usage: 30.0,
                 gpu_usage: None,
@@ -240,13 +244,13 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(120.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let selected = manager.select_agent().await.unwrap();
-        assert_eq!(selected.id, fast_agent);
+        let selected = manager.select_node().await.unwrap();
+        assert_eq!(selected.id, fast_node);
     }
 
     #[tokio::test]
@@ -264,6 +268,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -286,7 +291,7 @@ mod tests {
                     active_requests: 1,
                     average_response_time_ms: Some(100.0),
                     initializing: false,
-                    ready_models: None,
+                    ready_models: Some((0, 0)),
                 })
                 .await
                 .unwrap();
@@ -303,12 +308,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn select_agent_by_metrics_prefers_lower_load() {
+    async fn select_node_by_metrics_prefers_lower_load() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
         // ノード1: 低負荷
-        let low_load_agent = registry
+        let low_load_node = registry
             .register(RegisterRequest {
                 machine_name: "low-load".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 10)),
@@ -318,13 +323,14 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
         // ノード2: 高負荷
-        let high_load_agent = registry
+        let high_load_node = registry
             .register(RegisterRequest {
                 machine_name: "high-load".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
@@ -334,16 +340,19 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(low_load_node).await.unwrap();
+        registry.approve(high_load_node).await.unwrap();
 
         // 低負荷ノード: CPU 20%, メモリ 30%, アクティブ 1
         // スコア = 20 + 30 + (1 * 10) = 60
         manager
             .record_metrics(MetricsUpdate {
-                node_id: low_load_agent,
+                node_id: low_load_node,
                 cpu_usage: 20.0,
                 memory_usage: 30.0,
                 gpu_usage: None,
@@ -357,7 +366,7 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(100.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
@@ -366,7 +375,7 @@ mod tests {
         // スコア = 70 + 50 + (5 * 10) = 170
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_load_agent,
+                node_id: high_load_node,
                 cpu_usage: 70.0,
                 memory_usage: 50.0,
                 gpu_usage: None,
@@ -380,22 +389,22 @@ mod tests {
                 active_requests: 5,
                 average_response_time_ms: Some(200.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         // 低負荷ノードが選ばれることを期待
-        let selected = manager.select_agent_by_metrics().await.unwrap();
-        assert_eq!(selected.id, low_load_agent);
+        let selected = manager.select_node_by_metrics().await.unwrap();
+        assert_eq!(selected.id, low_load_node);
     }
 
     #[tokio::test]
-    async fn select_agent_prefers_lower_usage_even_with_same_activity() {
+    async fn select_node_prefers_lower_usage_even_with_same_activity() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let low_cpu_agent = registry
+        let low_cpu_node = registry
             .register(RegisterRequest {
                 machine_name: "low-cpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1)),
@@ -405,12 +414,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let high_cpu_agent = registry
+        let high_cpu_node = registry
             .register(RegisterRequest {
                 machine_name: "high-cpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 2)),
@@ -420,14 +430,17 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(low_cpu_node).await.unwrap();
+        registry.approve(high_cpu_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: low_cpu_agent,
+                node_id: low_cpu_node,
                 cpu_usage: 35.0,
                 memory_usage: 40.0,
                 gpu_usage: Some(20.0),
@@ -441,14 +454,14 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(120.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_cpu_agent,
+                node_id: high_cpu_node,
                 cpu_usage: 70.0,
                 memory_usage: 40.0,
                 gpu_usage: Some(60.0),
@@ -462,21 +475,21 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(120.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let selected = manager.select_agent().await.unwrap();
-        assert_eq!(selected.id, low_cpu_agent);
+        let selected = manager.select_node().await.unwrap();
+        assert_eq!(selected.id, low_cpu_node);
     }
 
     #[tokio::test]
-    async fn select_agent_prefers_lower_usage_when_all_high_cpu() {
+    async fn select_node_prefers_lower_usage_when_all_high_cpu() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let lower_cpu_agent = registry
+        let lower_cpu_node = registry
             .register(RegisterRequest {
                 machine_name: "high-load-lower".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 10)),
@@ -486,12 +499,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let higher_cpu_agent = registry
+        let higher_cpu_node = registry
             .register(RegisterRequest {
                 machine_name: "high-load-higher".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 11)),
@@ -501,14 +515,17 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(lower_cpu_node).await.unwrap();
+        registry.approve(higher_cpu_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: lower_cpu_agent,
+                node_id: lower_cpu_node,
                 cpu_usage: 92.0,
                 memory_usage: 60.0,
                 gpu_usage: Some(40.0),
@@ -522,14 +539,14 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(180.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: higher_cpu_agent,
+                node_id: higher_cpu_node,
                 cpu_usage: 97.0,
                 memory_usage: 65.0,
                 gpu_usage: Some(70.0),
@@ -543,21 +560,21 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(200.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let selected = manager.select_agent().await.unwrap();
-        assert_eq!(selected.id, lower_cpu_agent);
+        let selected = manager.select_node().await.unwrap();
+        assert_eq!(selected.id, lower_cpu_node);
     }
 
     #[tokio::test]
-    async fn select_agent_handles_partial_metrics_with_spec_priority() {
+    async fn select_node_handles_partial_metrics_with_spec_priority() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let high_spec_agent = registry
+        let high_spec_node = registry
             .register(RegisterRequest {
                 machine_name: "metrics-only".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 50)),
@@ -567,12 +584,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let fallback_agent = registry
+        let fallback_node = registry
             .register(RegisterRequest {
                 machine_name: "no-metrics".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 51)),
@@ -582,14 +600,19 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(fallback_node).await.unwrap();
 
+        // 両ノードをOnlineにする（ready_modelsで状態遷移）
+        // 使用率を同じにして、gpu_capability_scoreでスペック優先度をテスト
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_spec_agent,
+                node_id: fallback_node,
                 cpu_usage: 30.0,
                 memory_usage: 30.0,
                 gpu_usage: Some(10.0),
@@ -599,31 +622,52 @@ mod tests {
                 gpu_temperature: None,
                 gpu_model_name: None,
                 gpu_compute_capability: None,
-                gpu_capability_score: None,
+                gpu_capability_score: Some(500), // 低スペック
                 active_requests: 0,
                 average_response_time_ms: Some(110.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
+            })
+            .await
+            .unwrap();
+
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id: high_spec_node,
+                cpu_usage: 30.0,
+                memory_usage: 30.0,
+                gpu_usage: Some(10.0),
+                gpu_memory_usage: Some(15.0),
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: Some(1000), // 高スペック
+                active_requests: 0,
+                average_response_time_ms: Some(110.0),
+                initializing: false,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         // メトリクスあり＋ハイスペックが最優先
-        let first = manager.select_agent().await.unwrap();
-        assert_eq!(first.id, high_spec_agent);
+        let first = manager.select_node().await.unwrap();
+        assert_eq!(first.id, high_spec_node);
 
         // ハイスペックがビジーになったらフォールバック先のスペックへ切り替え
-        manager.begin_request(high_spec_agent).await.unwrap();
-        let second = manager.select_agent().await.unwrap();
-        assert_eq!(second.id, fallback_agent);
+        manager.begin_request(high_spec_node).await.unwrap();
+        let second = manager.select_node().await.unwrap();
+        assert_eq!(second.id, fallback_node);
     }
 
     #[tokio::test]
-    async fn select_agent_prefers_higher_spec_until_it_becomes_busy() {
+    async fn select_node_prefers_higher_spec_until_it_becomes_busy() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let high_spec_agent = registry
+        let high_spec_node = registry
             .register(RegisterRequest {
                 machine_name: "gpu-strong".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 2, 0, 1)),
@@ -633,12 +677,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX4090".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let mid_spec_agent = registry
+        let mid_spec_node = registry
             .register(RegisterRequest {
                 machine_name: "gpu-mid".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 2, 0, 2)),
@@ -648,14 +693,17 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX3080".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(mid_spec_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_spec_agent,
+                node_id: high_spec_node,
                 cpu_usage: 18.0,
                 memory_usage: 30.0,
                 gpu_usage: Some(15.0),
@@ -669,14 +717,14 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(90.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: mid_spec_agent,
+                node_id: mid_spec_node,
                 cpu_usage: 18.0,
                 memory_usage: 30.0,
                 gpu_usage: Some(15.0),
@@ -690,22 +738,22 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(90.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let first = manager.select_agent().await.unwrap();
-        assert_eq!(first.id, high_spec_agent);
+        let first = manager.select_node().await.unwrap();
+        assert_eq!(first.id, high_spec_node);
 
-        manager.begin_request(high_spec_agent).await.unwrap();
+        manager.begin_request(high_spec_node).await.unwrap();
 
-        let second = manager.select_agent().await.unwrap();
-        assert_eq!(second.id, mid_spec_agent);
+        let second = manager.select_node().await.unwrap();
+        assert_eq!(second.id, mid_spec_node);
     }
 
     #[tokio::test]
-    async fn select_agent_by_metrics_deprioritizes_agents_without_metrics() {
+    async fn select_node_by_metrics_deprioritizes_nodes_without_metrics() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
@@ -720,13 +768,14 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
         // ノード2: メトリクスなし
-        let _without_metrics = registry
+        let without_metrics = registry
             .register(RegisterRequest {
                 machine_name: "without-metrics".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 21)),
@@ -736,10 +785,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(with_metrics).await.unwrap();
+        registry.approve(without_metrics).await.unwrap();
 
         // ノード1にのみメトリクスを記録
         manager
@@ -758,24 +810,24 @@ mod tests {
                 active_requests: 2,
                 average_response_time_ms: Some(150.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         // メトリクスのあるノードが選ばれることを期待
         // （メトリクスなしノードはcandidatesに含まれず、ラウンドロビンにフォールバック）
-        let selected = manager.select_agent_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics().await.unwrap();
         // メトリクスがある方が優先されるはず
         assert_eq!(selected.id, with_metrics);
     }
 
     #[tokio::test]
-    async fn select_agent_by_metrics_considers_gpu_usage() {
+    async fn select_node_by_metrics_considers_gpu_usage() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let low_gpu_agent = registry
+        let low_gpu_node = registry
             .register(RegisterRequest {
                 machine_name: "low-gpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 10)),
@@ -785,12 +837,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let high_gpu_agent = registry
+        let high_gpu_node = registry
             .register(RegisterRequest {
                 machine_name: "high-gpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 11)),
@@ -800,14 +853,17 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(low_gpu_node).await.unwrap();
+        registry.approve(high_gpu_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: low_gpu_agent,
+                node_id: low_gpu_node,
                 cpu_usage: 50.0,
                 memory_usage: 50.0,
                 gpu_usage: Some(15.0),
@@ -821,14 +877,14 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(140.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_gpu_agent,
+                node_id: high_gpu_node,
                 cpu_usage: 50.0,
                 memory_usage: 50.0,
                 gpu_usage: Some(80.0),
@@ -842,21 +898,21 @@ mod tests {
                 active_requests: 1,
                 average_response_time_ms: Some(140.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let selected = manager.select_agent_by_metrics().await.unwrap();
-        assert_eq!(selected.id, low_gpu_agent);
+        let selected = manager.select_node_by_metrics().await.unwrap();
+        assert_eq!(selected.id, low_gpu_node);
     }
 
     #[tokio::test]
-    async fn select_agent_by_metrics_handles_partial_metrics_with_spec_priority() {
+    async fn select_node_by_metrics_handles_partial_metrics_with_spec_priority() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let high_spec_agent = registry
+        let high_spec_node = registry
             .register(RegisterRequest {
                 machine_name: "metrics-mode".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 60)),
@@ -866,12 +922,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let fallback_agent = registry
+        let fallback_node = registry
             .register(RegisterRequest {
                 machine_name: "metrics-missing".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 61)),
@@ -881,14 +938,18 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(fallback_node).await.unwrap();
 
+        // 両ノードをOnlineにする（使用率を同じにして、スペックで差をつける）
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_spec_agent,
+                node_id: fallback_node,
                 cpu_usage: 25.0,
                 memory_usage: 30.0,
                 gpu_usage: Some(20.0),
@@ -898,21 +959,42 @@ mod tests {
                 gpu_temperature: None,
                 gpu_model_name: None,
                 gpu_compute_capability: None,
-                gpu_capability_score: None,
+                gpu_capability_score: Some(500), // 低スペック
                 active_requests: 0,
                 average_response_time_ms: Some(90.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let first = manager.select_agent_by_metrics().await.unwrap();
-        assert_eq!(first.id, high_spec_agent);
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id: high_spec_node,
+                cpu_usage: 25.0,
+                memory_usage: 30.0,
+                gpu_usage: Some(20.0),
+                gpu_memory_usage: Some(25.0),
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: Some(1000), // 高スペック
+                active_requests: 0,
+                average_response_time_ms: Some(90.0),
+                initializing: false,
+                ready_models: Some((0, 0)),
+            })
+            .await
+            .unwrap();
+
+        let first = manager.select_node_by_metrics().await.unwrap();
+        assert_eq!(first.id, high_spec_node);
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_spec_agent,
+                node_id: high_spec_node,
                 cpu_usage: 88.0,
                 memory_usage: 70.0,
                 gpu_usage: Some(80.0),
@@ -926,21 +1008,21 @@ mod tests {
                 active_requests: 4,
                 average_response_time_ms: Some(170.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let second = manager.select_agent_by_metrics().await.unwrap();
-        assert_eq!(second.id, fallback_agent);
+        let second = manager.select_node_by_metrics().await.unwrap();
+        assert_eq!(second.id, fallback_node);
     }
 
     #[tokio::test]
-    async fn select_agent_by_metrics_prefers_higher_spec_until_busy() {
+    async fn select_node_by_metrics_prefers_higher_spec_until_busy() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
-        let high_spec_agent = registry
+        let high_spec_node = registry
             .register(RegisterRequest {
                 machine_name: "metrics-strong".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 3, 0, 1)),
@@ -950,12 +1032,13 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX4090".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
 
-        let low_spec_agent = registry
+        let low_spec_node = registry
             .register(RegisterRequest {
                 machine_name: "metrics-basic".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 3, 0, 2)),
@@ -965,14 +1048,17 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("RTX2060".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
             .node_id;
+        registry.approve(high_spec_node).await.unwrap();
+        registry.approve(low_spec_node).await.unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_spec_agent,
+                node_id: high_spec_node,
                 cpu_usage: 25.0,
                 memory_usage: 35.0,
                 gpu_usage: Some(20.0),
@@ -986,14 +1072,14 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(80.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: low_spec_agent,
+                node_id: low_spec_node,
                 cpu_usage: 25.0,
                 memory_usage: 35.0,
                 gpu_usage: Some(20.0),
@@ -1007,17 +1093,17 @@ mod tests {
                 active_requests: 0,
                 average_response_time_ms: Some(80.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let first = manager.select_agent_by_metrics().await.unwrap();
-        assert_eq!(first.id, high_spec_agent);
+        let first = manager.select_node_by_metrics().await.unwrap();
+        assert_eq!(first.id, high_spec_node);
 
         manager
             .record_metrics(MetricsUpdate {
-                node_id: high_spec_agent,
+                node_id: high_spec_node,
                 cpu_usage: 75.0,
                 memory_usage: 70.0,
                 gpu_usage: Some(80.0),
@@ -1031,23 +1117,23 @@ mod tests {
                 active_requests: 3,
                 average_response_time_ms: Some(150.0),
                 initializing: false,
-                ready_models: None,
+                ready_models: Some((0, 0)),
             })
             .await
             .unwrap();
 
-        let second = manager.select_agent_by_metrics().await.unwrap();
-        assert_eq!(second.id, low_spec_agent);
+        let second = manager.select_node_by_metrics().await.unwrap();
+        assert_eq!(second.id, low_spec_node);
     }
 
     #[tokio::test]
-    async fn wait_for_ready_unblocks_when_agent_becomes_ready() {
+    async fn wait_for_ready_unblocks_when_node_becomes_ready() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
         let node_id = registry
             .register(RegisterRequest {
-                machine_name: "init-agent".to_string(),
+                machine_name: "init-node".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 4, 0, 1)),
                 runtime_version: "0.1.0".to_string(),
                 runtime_port: 11434,
@@ -1055,6 +1141,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1134,6 +1221,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1245,7 +1333,7 @@ mod tests {
 
     // T005: wait_for_ready_with_timeout - タイムアウトテスト
     #[tokio::test]
-    async fn wait_for_ready_with_timeout_returns_timeout_when_no_ready_agents() {
+    async fn wait_for_ready_with_timeout_returns_timeout_when_no_ready_nodes() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
@@ -1260,6 +1348,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1289,6 +1378,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1318,7 +1408,7 @@ mod tests {
 
     // T007: wait_for_ready_with_timeout - Ready成功テスト
     #[tokio::test]
-    async fn wait_for_ready_with_timeout_returns_ready_when_agent_becomes_available() {
+    async fn wait_for_ready_with_timeout_returns_ready_when_node_becomes_available() {
         let registry = NodeRegistry::new();
         let manager = LoadManager::new(registry.clone());
 
@@ -1332,6 +1422,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -1480,7 +1571,7 @@ mod tests {
 
 /// ノードの最新ロード状態
 #[derive(Debug, Clone, Default)]
-struct AgentLoadState {
+struct NodeLoadState {
     last_metrics: Option<HealthMetrics>,
     assigned_active: u32,
     total_assigned: u64,
@@ -1492,7 +1583,7 @@ struct AgentLoadState {
     ready_models: Option<(u8, u8)>,
 }
 
-impl AgentLoadState {
+impl NodeLoadState {
     fn combined_active(&self) -> u32 {
         let heartbeat_active = self
             .last_metrics
@@ -1539,7 +1630,7 @@ impl AgentLoadState {
 
 /// ノードのロードスナップショット
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentLoadSnapshot {
+pub struct NodeLoadSnapshot {
     /// ノードID
     pub node_id: Uuid,
     /// マシン名
@@ -1572,7 +1663,7 @@ pub struct AgentLoadSnapshot {
     /// GPU能力スコア
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_capability_score: Option<u32>,
-    /// 処理中リクエスト数（Coordinator観点+ノード自己申告）
+    /// 処理中リクエスト数（Router観点+ノード自己申告）
     pub active_requests: u32,
     /// 累積リクエスト数
     pub total_requests: u64,
@@ -1592,11 +1683,15 @@ pub struct AgentLoadSnapshot {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SystemSummary {
     /// 登録ノード総数
-    pub total_agents: usize,
+    pub total_nodes: usize,
     /// オンラインノード数
-    pub online_agents: usize,
+    pub online_nodes: usize,
+    /// 承認待ちノード数
+    pub pending_nodes: usize,
+    /// 登録中ノード数（モデル同期中）
+    pub registering_nodes: usize,
     /// オフラインノード数
-    pub offline_agents: usize,
+    pub offline_nodes: usize,
     /// 累積リクエスト数
     pub total_requests: u64,
     /// 成功リクエスト数
@@ -1619,7 +1714,7 @@ pub struct SystemSummary {
 #[derive(Clone)]
 pub struct LoadManager {
     registry: NodeRegistry,
-    state: Arc<RwLock<HashMap<Uuid, AgentLoadState>>>,
+    state: Arc<RwLock<HashMap<Uuid, NodeLoadState>>>,
     round_robin: Arc<AtomicUsize>,
     history: Arc<RwLock<VecDeque<RequestHistoryPoint>>>,
     /// 待機中リクエスト数（簡易カウンタ）
@@ -1703,20 +1798,28 @@ impl LoadManager {
         // ノードが存在することを確認
         self.registry.get(node_id).await?;
 
-        // レジストリの初期化フラグ/ready_models を最新の値で前倒し更新し、select_agent が stale な状態を返さないようにする
+        // レジストリの初期化フラグ/ready_models を最新の値で前倒し更新し、select_node が stale な状態を返さないようにする
         if initializing || ready_models.is_some() {
-            let _ = self
+            if let Err(e) = self
                 .registry
                 .update_last_seen(
                     node_id,
                     None,
+                    None, // loaded_embedding_models
                     None,
                     None,
                     None,
                     Some(initializing),
                     ready_models,
                 )
-                .await;
+                .await
+            {
+                tracing::warn!(
+                    "Failed to update initializing state for node {}: {}",
+                    node_id,
+                    e
+                );
+            }
         }
 
         let mut state = self.state.write().await;
@@ -1770,7 +1873,7 @@ impl LoadManager {
     }
 
     /// 初期化完了しているノードが存在するか
-    pub async fn has_ready_agents(&self) -> bool {
+    pub async fn has_ready_nodes(&self) -> bool {
         let state = self.state.read().await;
         state.values().any(|s| !s.initializing)
     }
@@ -1788,7 +1891,7 @@ impl LoadManager {
             self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
             return false;
         }
-        if self.has_ready_agents().await {
+        if self.has_ready_nodes().await {
             self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
             return true;
         }
@@ -1816,7 +1919,7 @@ impl LoadManager {
         }
 
         // 既にreadyなノードがあれば即座に返す
-        if self.has_ready_agents().await {
+        if self.has_ready_nodes().await {
             self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
             return WaitResult::Ready;
         }
@@ -1922,44 +2025,44 @@ impl LoadManager {
     }
 
     /// 適切なノードを選択
-    pub async fn select_agent(&self) -> RouterResult<Node> {
+    pub async fn select_node(&self) -> RouterResult<Node> {
         let nodes = self.registry.list().await;
 
-        let online_agents: Vec<_> = nodes
+        let online_nodes: Vec<_> = nodes
             .into_iter()
-            .filter(|agent| agent.status == NodeStatus::Online)
+            .filter(|node| node.status == NodeStatus::Online)
             .collect();
 
-        if online_agents.is_empty() {
-            return Err(RouterError::NoAgentsAvailable);
+        if online_nodes.is_empty() {
+            return Err(RouterError::NoNodesAvailable);
         }
 
         let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
-        let round_robin_start = round_robin_cursor % online_agents.len();
-        let round_robin_priority = compute_round_robin_priority(&online_agents, round_robin_start);
+        let round_robin_start = round_robin_cursor % online_nodes.len();
+        let round_robin_priority = compute_round_robin_priority(&online_nodes, round_robin_start);
 
         let state = self.state.read().await;
         let now = Utc::now();
 
-        let mut fresh_states: Vec<(Node, AgentLoadState)> = Vec::new();
-        for agent in &online_agents {
-            match state.get(&agent.id) {
+        let mut fresh_states: Vec<(Node, NodeLoadState)> = Vec::new();
+        for node in &online_nodes {
+            match state.get(&node.id) {
                 Some(load_state) if !load_state.is_stale(now) => {
-                    fresh_states.push((agent.clone(), load_state.clone()));
+                    fresh_states.push((node.clone(), load_state.clone()));
                 }
                 _ => {}
             }
         }
 
-        let have_full_fresh_metrics = fresh_states.len() == online_agents.len();
+        let have_full_fresh_metrics = fresh_states.len() == online_nodes.len();
 
         if have_full_fresh_metrics && !fresh_states.is_empty() {
-            let mut load_based_candidates: Vec<(Node, AgentLoadState)> = fresh_states
+            let mut load_based_candidates: Vec<(Node, NodeLoadState)> = fresh_states
                 .iter()
-                .filter_map(|(agent, load_state)| {
+                .filter_map(|(node, load_state)| {
                     if let Some(metrics) = &load_state.last_metrics {
                         if metrics.cpu_usage <= 80.0 {
-                            return Some((agent.clone(), load_state.clone()));
+                            return Some((node.clone(), load_state.clone()));
                         }
                     }
                     None
@@ -2015,7 +2118,7 @@ impl LoadManager {
         }
 
         // メトリクスが不足している場合は「ビジー度 → GPUスペック → ラウンドロビン」で決定
-        let mut spec_sorted = online_agents.clone();
+        let mut spec_sorted = online_nodes.clone();
         spec_sorted.sort_by(|a, b| {
             let a_active = state
                 .get(&a.id)
@@ -2045,16 +2148,16 @@ impl LoadManager {
     }
 
     /// 指定されたノードのロードスナップショットを取得
-    pub async fn snapshot(&self, node_id: Uuid) -> RouterResult<AgentLoadSnapshot> {
-        let agent = self.registry.get(node_id).await?;
+    pub async fn snapshot(&self, node_id: Uuid) -> RouterResult<NodeLoadSnapshot> {
+        let node = self.registry.get(node_id).await?;
         let state = self.state.read().await;
         let load_state = state.get(&node_id).cloned().unwrap_or_default();
 
-        Ok(self.build_snapshot(agent, load_state, Utc::now()))
+        Ok(self.build_snapshot(node, load_state, Utc::now()))
     }
 
     /// すべてのノードのロードスナップショットを取得
-    pub async fn snapshots(&self) -> Vec<AgentLoadSnapshot> {
+    pub async fn snapshots(&self) -> Vec<NodeLoadSnapshot> {
         let nodes = self.registry.list().await;
         let state = self.state.read().await;
 
@@ -2062,9 +2165,9 @@ impl LoadManager {
 
         nodes
             .into_iter()
-            .map(|agent| {
-                let load_state = state.get(&agent.id).cloned().unwrap_or_default();
-                self.build_snapshot(agent, load_state, now)
+            .map(|node| {
+                let load_state = state.get(&node.id).cloned().unwrap_or_default();
+                self.build_snapshot(node, load_state, now)
             })
             .collect()
     }
@@ -2086,14 +2189,22 @@ impl LoadManager {
         let state = self.state.read().await;
 
         let mut summary = SystemSummary {
-            total_agents: nodes.len(),
-            online_agents: nodes
+            total_nodes: nodes.len(),
+            online_nodes: nodes
                 .iter()
-                .filter(|agent| agent.status == NodeStatus::Online)
+                .filter(|node| node.status == NodeStatus::Online)
                 .count(),
-            offline_agents: nodes
+            pending_nodes: nodes
                 .iter()
-                .filter(|agent| agent.status == NodeStatus::Offline)
+                .filter(|node| node.status == NodeStatus::Pending)
+                .count(),
+            registering_nodes: nodes
+                .iter()
+                .filter(|node| node.status == NodeStatus::Registering)
+                .count(),
+            offline_nodes: nodes
+                .iter()
+                .filter(|node| node.status == NodeStatus::Offline)
                 .count(),
             ..Default::default()
         };
@@ -2109,8 +2220,8 @@ impl LoadManager {
         let mut gpu_memory_samples = 0u64;
         let now = Utc::now();
 
-        for agent in &nodes {
-            if let Some(load_state) = state.get(&agent.id) {
+        for node in &nodes {
+            if let Some(load_state) = state.get(&node.id) {
                 let is_fresh = !load_state.is_stale(now);
                 if is_fresh {
                     summary.total_active_requests = summary
@@ -2210,10 +2321,10 @@ impl LoadManager {
 
     fn build_snapshot(
         &self,
-        agent: Node,
-        load_state: AgentLoadState,
+        node: Node,
+        load_state: NodeLoadState,
         now: DateTime<Utc>,
-    ) -> AgentLoadSnapshot {
+    ) -> NodeLoadSnapshot {
         let cpu_usage = load_state
             .last_metrics
             .as_ref()
@@ -2256,10 +2367,10 @@ impl LoadManager {
             .and_then(|metrics| metrics.gpu_capability_score);
         let active_requests = load_state.combined_active();
 
-        AgentLoadSnapshot {
-            node_id: agent.id,
-            machine_name: agent.machine_name,
-            status: agent.status,
+        NodeLoadSnapshot {
+            node_id: node.id,
+            machine_name: node.machine_name,
+            status: node.status,
             cpu_usage,
             memory_usage,
             gpu_usage,
@@ -2310,30 +2421,30 @@ impl LoadManager {
     /// # 戻り値
     ///
     /// - `Ok(Node)`: 選択されたノード
-    /// - `Err(RouterError::NoAgentsAvailable)`: オンラインノードが存在しない
+    /// - `Err(RouterError::NoNodesAvailable)`: オンラインノードが存在しない
     ///
     /// # 例
     ///
     /// ```ignore
     /// let manager = LoadManager::new(registry);
-    /// let agent = manager.select_agent_by_metrics().await?;
-    /// println!("Selected agent: {}", agent.machine_name);
+    /// let node = manager.select_node_by_metrics().await?;
+    /// println!("Selected node: {}", node.machine_name);
     /// ```
-    pub async fn select_agent_by_metrics(&self) -> RouterResult<Node> {
+    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
         let nodes = self.registry.list().await;
 
-        let online_agents: Vec<_> = nodes
+        let online_nodes: Vec<_> = nodes
             .into_iter()
-            .filter(|agent| agent.status == NodeStatus::Online)
+            .filter(|node| node.status == NodeStatus::Online)
             .collect();
 
-        if online_agents.is_empty() {
-            return Err(RouterError::NoAgentsAvailable);
+        if online_nodes.is_empty() {
+            return Err(RouterError::NoNodesAvailable);
         }
 
         let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
-        let round_robin_start = round_robin_cursor % online_agents.len();
-        let round_robin_priority = compute_round_robin_priority(&online_agents, round_robin_start);
+        let round_robin_start = round_robin_cursor % online_nodes.len();
+        let round_robin_priority = compute_round_robin_priority(&online_nodes, round_robin_start);
 
         let state = self.state.read().await;
         let now = Utc::now();
@@ -2341,8 +2452,8 @@ impl LoadManager {
         // メトリクスを持つノードの負荷スコアを計算
         let mut candidates: Vec<(Node, f64)> = Vec::new();
 
-        for agent in &online_agents {
-            if let Some(load_state) = state.get(&agent.id) {
+        for node in &online_nodes {
+            if let Some(load_state) = state.get(&node.id) {
                 if let Some(metrics) = &load_state.last_metrics {
                     if !load_state.is_stale(now) {
                         // 負荷スコア = cpu_usage + memory_usage + gpu_usage + gpu_memory_usage + (active_requests * 10)
@@ -2353,7 +2464,7 @@ impl LoadManager {
                             + gpu_usage
                             + gpu_memory_usage
                             + (load_state.combined_active() as f64 * 10.0);
-                        candidates.push((agent.clone(), score));
+                        candidates.push((node.clone(), score));
                     }
                 }
             }
@@ -2361,8 +2472,8 @@ impl LoadManager {
 
         // すべてのノードがCPU > 80%かチェック
         let all_high_load = !candidates.is_empty()
-            && candidates.iter().all(|(agent, _)| {
-                if let Some(load_state) = state.get(&agent.id) {
+            && candidates.iter().all(|(node, _)| {
+                if let Some(load_state) = state.get(&node.id) {
                     if let Some(metrics) = &load_state.last_metrics {
                         return metrics.cpu_usage > 80.0;
                     }
@@ -2372,7 +2483,7 @@ impl LoadManager {
 
         if all_high_load || candidates.is_empty() {
             // フォールバック: ラウンドロビン
-            return Ok(online_agents[round_robin_start].clone());
+            return Ok(online_nodes[round_robin_start].clone());
         }
 
         // 最小スコアに属するノードを抽出し、ラウンドロビン順序で決定する
@@ -2380,22 +2491,22 @@ impl LoadManager {
             .iter()
             .fold(f64::INFINITY, |acc, (_, score)| acc.min(*score));
 
-        let mut best_agents: Vec<Node> = candidates
+        let mut best_nodes: Vec<Node> = candidates
             .iter()
             .filter(|(_, score)| (*score - min_score).abs() <= LOAD_SCORE_EPSILON)
-            .map(|(agent, _)| agent.clone())
+            .map(|(node, _)| node.clone())
             .collect();
 
-        if best_agents.is_empty() {
+        if best_nodes.is_empty() {
             // 理論上起こらないが、安全のためフォールバック
-            return Ok(online_agents[round_robin_start].clone());
+            return Ok(online_nodes[round_robin_start].clone());
         }
 
-        if best_agents.len() == 1 {
-            return Ok(best_agents.pop().unwrap());
+        if best_nodes.len() == 1 {
+            return Ok(best_nodes.pop().unwrap());
         }
 
-        best_agents.sort_by(|a, b| {
+        best_nodes.sort_by(|a, b| {
             compare_spec_by_state(a, b, &state).then_with(|| {
                 let a_rank = round_robin_priority
                     .get(&a.id)
@@ -2409,7 +2520,7 @@ impl LoadManager {
             })
         });
 
-        Ok(best_agents[0].clone())
+        Ok(best_nodes[0].clone())
     }
 }
 
@@ -2462,7 +2573,7 @@ fn compute_round_robin_priority(nodes: &[Node], start_index: usize) -> HashMap<U
 }
 
 fn usage_snapshot(
-    load_state: &AgentLoadState,
+    load_state: &NodeLoadState,
 ) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
     load_state
         .last_metrics
@@ -2478,7 +2589,7 @@ fn usage_snapshot(
         .unwrap_or((None, None, None, None))
 }
 
-fn compare_usage_levels(a: &AgentLoadState, b: &AgentLoadState) -> Ordering {
+fn compare_usage_levels(a: &NodeLoadState, b: &NodeLoadState) -> Ordering {
     let (a_cpu, a_mem, a_gpu, a_gpu_mem) = usage_snapshot(a);
     let (b_cpu, b_mem, b_gpu, b_gpu_mem) = usage_snapshot(b);
 

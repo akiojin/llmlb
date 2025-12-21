@@ -5,15 +5,15 @@
 
 #[tokio::test]
 async fn test_health_monitor_detects_timeout() {
-    // Arrange: Coordinatorサーバー起動（ヘルスモニター有効）、ノード登録
-    // let coordinator = start_test_coordinator_with_health_monitor().await;
-    // let node_id = register_test_agent(&coordinator).await;
+    // Arrange: Routerサーバー起動（ヘルスモニター有効）、ノード登録
+    // let router = start_test_router_with_health_monitor().await;
+    // let node_id = register_test_node(&router).await;
 
     // Act: 60秒以上ヘルスチェックを送信しない
     // tokio::time::sleep(Duration::from_secs(61)).await;
 
     // Assert: ノードが自動的にオフラインになった
-    // let nodes = coordinator.list_agents().await;
+    // let nodes = router.list_nodes().await;
     // assert_eq!(nodes[0].status, "offline");
 
     // TODO: T033-T049で実装後にアンコメント
@@ -21,12 +21,12 @@ async fn test_health_monitor_detects_timeout() {
 }
 
 #[tokio::test]
-async fn test_offline_agent_excluded_from_balancing() {
-    // Arrange: Coordinatorサーバー起動、2台のノード登録（1台はオフライン）
-    // let coordinator = start_test_coordinator().await;
-    // let agent1 = register_test_agent(&coordinator).await; // オンライン
-    // let agent2 = register_test_agent(&coordinator).await; // オフライン
-    // simulate_agent_offline(&coordinator, agent2).await;
+async fn test_offline_node_excluded_from_balancing() {
+    // Arrange: Routerサーバー起動、2台のノード登録（1台はオフライン）
+    // let router = start_test_router().await;
+    // let node1 = register_test_node(&router).await; // オンライン
+    // let node2 = register_test_node(&router).await; // オフライン
+    // simulate_node_offline(&router, node2).await;
 
     // Act: 5個のリクエストを送信
     // for _ in 0..5 {
@@ -34,13 +34,13 @@ async fn test_offline_agent_excluded_from_balancing() {
     //         "model": "llama2",
     //         "messages": [{"role": "user", "content": "Hello"}]
     //     });
-    //     coordinator.post("/api/chat", request).await;
+    //     router.post("/v1/chat/completions", request).await;
     // }
 
-    // Assert: オンラインのagent1のみが処理した
-    // let metrics = coordinator.get_agent_metrics().await;
-    // assert_eq!(metrics[&agent1].total_requests, 5);
-    // assert_eq!(metrics[&agent2].total_requests, 0);
+    // Assert: オンラインのnode1のみが処理した
+    // let metrics = router.get_node_metrics().await;
+    // assert_eq!(metrics[&node1].total_requests, 5);
+    // assert_eq!(metrics[&node2].total_requests, 0);
 
     // TODO: T033-T049で実装後にアンコメント
     panic!("RED: オフラインノード除外が未実装");

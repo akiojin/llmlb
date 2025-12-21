@@ -1,8 +1,6 @@
 use std::net::SocketAddr;
 
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -36,21 +34,21 @@ pub async fn spawn_test_router() -> TestServer {
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -66,21 +64,89 @@ pub async fn register_node(
     router_addr: SocketAddr,
     node_addr: SocketAddr,
 ) -> reqwest::Result<Response> {
+    let response = register_node_with_runtimes(router_addr, node_addr, vec![]).await?;
+    Ok(response)
+}
+
+/// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
+pub async fn register_node_with_runtimes(
+    router_addr: SocketAddr,
+    node_addr: SocketAddr,
+    _supported_runtimes: Vec<&str>,
+) -> reqwest::Result<Response> {
+    let payload = json!({
+        "machine_name": "stub-node",
+        "ip_address": node_addr.ip().to_string(),
+        "runtime_version": "0.0.0-test",
+        // テストスタブはHTTPポートで直接実行される。
+        // ルーターのヘルスチェックは runtime_port + 1 でアクセスするため、
+        // テストスタブのポートに対して -1 を計算して渡す。
+        // (例：スタブが port 12345 で実行 → runtime_port: 12344 を登録
+        //      → ルーターが 12344 + 1 = 12345 でヘルスチェック)
+        "runtime_port": node_addr.port().saturating_sub(1),
+        "gpu_available": true,
+        "gpu_devices": [
+            {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
+        ]
+    });
+
+    // supported_runtimesが指定されている場合はペイロードに追加
+    let payload = if !_supported_runtimes.is_empty() {
+        let mut p = payload;
+        p["supported_runtimes"] = json!(_supported_runtimes);
+        p
+    } else {
+        payload
+    };
+
     Client::new()
-        .post(format!("http://{router_addr}/api/nodes"))
-        .json(&json!({
-            "machine_name": "stub-node",
-            "ip_address": node_addr.ip().to_string(),
-            "runtime_version": "0.0.0-test",
-            // ノードAPIポートは runtime_port+1 という前提のため、APIポートから1引いた値を報告する
-            "runtime_port": node_addr.port().saturating_sub(1),
-            "gpu_available": true,
-            "gpu_devices": [
-                {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
-            ]
-        }))
+        .post(format!("http://{router_addr}/v0/nodes"))
+        .header("authorization", "Bearer sk_debug")
+        .json(&payload)
         .send()
         .await
+}
+
+/// 指定したノードを管理者として承認する
+#[allow(dead_code)]
+pub async fn approve_node(router_addr: SocketAddr, node_id: &str) -> reqwest::Result<Response> {
+    let client = Client::new();
+    let login_response = client
+        .post(format!("http://{}/v0/auth/login", router_addr))
+        .json(&json!({
+            "username": "admin",
+            "password": "test"
+        }))
+        .send()
+        .await?;
+
+    let login_data: Value = login_response.json().await.unwrap_or_default();
+    let token = login_data["token"].as_str().unwrap_or_default();
+
+    client
+        .post(format!(
+            "http://{}/v0/nodes/{}/approve",
+            router_addr, node_id
+        ))
+        .header("authorization", format!("Bearer {}", token))
+        .send()
+        .await
+}
+
+/// 登録レスポンスからノードを承認し、HTTPステータスとボディを返す
+#[allow(dead_code)]
+pub async fn approve_node_from_register_response(
+    router_addr: SocketAddr,
+    register_response: Response,
+) -> reqwest::Result<(reqwest::StatusCode, Value)> {
+    let status = register_response.status();
+    let body: Value = register_response.json().await.unwrap_or_default();
+
+    if let Some(node_id) = body.get("node_id").and_then(|v| v.as_str()) {
+        let _ = approve_node(router_addr, node_id).await?;
+    }
+
+    Ok((status, body))
 }
 
 /// テスト用の管理者ユーザーを作成してAPIキーを取得する
@@ -96,7 +162,7 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
 
     // ログイン
     let login_response = client
-        .post(format!("http://{}/api/auth/login", router_addr))
+        .post(format!("http://{}/v0/auth/login", router_addr))
         .json(&json!({
             "username": "admin",
             "password": "password123"
@@ -110,11 +176,12 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
 
     // APIキーを発行
     let create_key_response = client
-        .post(format!("http://{}/api/api-keys", router_addr))
+        .post(format!("http://{}/v0/api-keys", router_addr))
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
-            "expires_at": null
+            "expires_at": null,
+            "scopes": ["api:inference"]
         }))
         .send()
         .await
@@ -138,18 +205,17 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,

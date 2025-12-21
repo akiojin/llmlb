@@ -1,15 +1,17 @@
 //! ノード登録管理
 //!
-//! ノードの状態をメモリ内で管理し、データベースと同期
+//! ノードの状態をメモリ内で管理し、SQLiteと同期
 
 pub mod models;
 
+use crate::db::nodes::NodeStorage;
 use chrono::Utc;
 use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
-    types::{AgentMetrics, GpuDeviceInfo, Node, NodeStatus},
+    types::{GpuDeviceInfo, Node, NodeStatus},
 };
+use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -20,29 +22,25 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct NodeRegistry {
     nodes: Arc<RwLock<HashMap<Uuid, Node>>>,
-    metrics: Arc<RwLock<HashMap<Uuid, AgentMetrics>>>,
-    storage_enabled: bool,
+    storage: Option<NodeStorage>,
 }
 
 impl NodeRegistry {
-    /// 新しいレジストリを作成
+    /// 新しいレジストリを作成（ストレージなし、テスト用）
     pub fn new() -> Self {
         Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(HashMap::new())),
-            storage_enabled: false,
+            storage: None,
         }
     }
 
-    /// ストレージ初期化付きでレジストリを作成
-    pub async fn with_storage() -> RouterResult<Self> {
-        // ストレージ初期化
-        crate::db::init_storage().await?;
+    /// SQLiteストレージ付きでレジストリを作成
+    pub async fn with_storage(pool: SqlitePool) -> RouterResult<Self> {
+        let storage = NodeStorage::new(pool);
 
         let registry = Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(HashMap::new())),
-            storage_enabled: true,
+            storage: Some(storage),
         };
 
         // 起動時にストレージからノード情報を読み込み
@@ -53,11 +51,12 @@ impl NodeRegistry {
 
     /// ストレージからノード情報を読み込み
     async fn load_from_storage(&self) -> RouterResult<()> {
-        if !self.storage_enabled {
-            return Ok(());
-        }
+        let storage = match &self.storage {
+            Some(s) => s,
+            None => return Ok(()),
+        };
 
-        let loaded_nodes = crate::db::load_nodes().await?;
+        let loaded_nodes = storage.load_nodes().await?;
         let mut nodes = self.nodes.write().await;
 
         let mut removed_count = 0;
@@ -131,7 +130,7 @@ impl NodeRegistry {
 
         // 削除対象ノードをデータベースから削除
         for id in removed_ids {
-            if let Err(err) = crate::db::delete_node(id).await {
+            if let Err(err) = storage.delete_node(id).await {
                 error!(
                     node_id = %id,
                     error = %err,
@@ -157,11 +156,10 @@ impl NodeRegistry {
 
     /// ノードをストレージに保存
     async fn save_to_storage(&self, node: &Node) -> RouterResult<()> {
-        if !self.storage_enabled {
-            return Ok(());
+        match &self.storage {
+            Some(storage) => storage.save_node(node).await,
+            None => Ok(()),
         }
-
-        crate::db::save_node(node).await
     }
 
     /// ノードを登録
@@ -178,7 +176,6 @@ impl NodeRegistry {
             // 既存ノードを更新
             let node = nodes.get_mut(&id).unwrap();
             let now = Utc::now();
-            let was_online = node.status == NodeStatus::Online;
             node.ip_address = req.ip_address;
             node.runtime_version = req.runtime_version.clone();
             node.runtime_port = req.runtime_port;
@@ -186,12 +183,13 @@ impl NodeRegistry {
             node.gpu_devices = req.gpu_devices.clone();
             node.gpu_count = req.gpu_count;
             node.gpu_model = req.gpu_model.clone();
-            node.status = NodeStatus::Online;
+            node.supported_runtimes = req.supported_runtimes.clone();
+            // 再登録時は Pending に戻す（承認後に Registering/Online に遷移）
+            node.status = NodeStatus::Pending;
             node.last_seen = now;
-            if !was_online || node.online_since.is_none() {
-                node.online_since = Some(now);
-            }
-            node.agent_api_port = Some(req.runtime_port + 1);
+            // online_since はモデル同期完了（Online遷移）時に設定
+            node.online_since = None;
+            node.node_api_port = Some(req.runtime_port + 1);
             node.initializing = true;
             node.ready_models = Some((0, 0));
             (id, RegisterStatus::Updated, node.clone())
@@ -205,14 +203,19 @@ impl NodeRegistry {
                 ip_address: req.ip_address,
                 runtime_version: req.runtime_version,
                 runtime_port: req.runtime_port,
-                status: NodeStatus::Online,
+                status: NodeStatus::Pending,
                 registered_at: now,
                 last_seen: now,
-                online_since: Some(now),
+                // online_since はモデル同期完了（Online遷移）時に設定
+                online_since: None,
                 custom_name: None,
                 tags: Vec::new(),
                 notes: None,
                 loaded_models: Vec::new(),
+                loaded_embedding_models: Vec::new(),
+                loaded_asr_models: Vec::new(),
+                loaded_tts_models: Vec::new(),
+                supported_runtimes: req.supported_runtimes,
                 gpu_devices: req.gpu_devices,
                 gpu_available: req.gpu_available,
                 gpu_count: req.gpu_count,
@@ -220,7 +223,7 @@ impl NodeRegistry {
                 gpu_model_name: None,
                 gpu_compute_capability: None,
                 gpu_capability_score: None,
-                agent_api_port: Some(req.runtime_port + 1),
+                node_api_port: Some(req.runtime_port + 1),
                 initializing: true,
                 ready_models: Some((0, 0)),
             };
@@ -235,10 +238,8 @@ impl NodeRegistry {
         Ok(RegisterResponse {
             node_id,
             status,
-            agent_api_port: Some(node.runtime_port + 1),
-            auto_distributed_model: None,
-            download_task_id: None,
-            agent_token: None,
+            node_api_port: Some(node.runtime_port + 1),
+            node_token: None,
         })
     }
 
@@ -248,7 +249,7 @@ impl NodeRegistry {
         nodes
             .get(&node_id)
             .cloned()
-            .ok_or(RouterError::AgentNotFound(node_id))
+            .ok_or(RouterError::NodeNotFound(node_id))
     }
 
     /// 全ノードを取得
@@ -265,6 +266,7 @@ impl NodeRegistry {
         &self,
         node_id: Uuid,
         loaded_models: Option<Vec<String>>,
+        loaded_embedding_models: Option<Vec<String>>,
         gpu_model_name: Option<String>,
         gpu_compute_capability: Option<String>,
         gpu_capability_score: Option<u32>,
@@ -275,13 +277,15 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             let now = Utc::now();
-            let was_online = node.status == NodeStatus::Online;
             node.last_seen = now;
-            node.status = NodeStatus::Online;
+
             if let Some(models) = loaded_models {
                 node.loaded_models = normalize_models(models);
+            }
+            if let Some(embedding_models) = loaded_embedding_models {
+                node.loaded_embedding_models = normalize_models(embedding_models);
             }
             // GPU能力情報を更新
             if gpu_model_name.is_some() {
@@ -293,14 +297,36 @@ impl NodeRegistry {
             if gpu_capability_score.is_some() {
                 node.gpu_capability_score = gpu_capability_score;
             }
-            if !was_online || node.online_since.is_none() {
-                node.online_since = Some(now);
-            }
             if let Some(init) = initializing {
                 node.initializing = init;
             }
             if ready_models.is_some() {
                 node.ready_models = ready_models;
+            }
+
+            // 状態遷移ロジック
+            let current_ready = ready_models.or(node.ready_models);
+            match node.status {
+                NodeStatus::Pending => {
+                    // 承認待ちのため状態遷移しない
+                }
+                NodeStatus::Registering => {
+                    // モデル同期完了したらOnlineに遷移
+                    if let Some((ready, total)) = current_ready {
+                        if ready >= total {
+                            node.status = NodeStatus::Online;
+                            node.initializing = false;
+                            node.online_since = Some(now);
+                        }
+                    }
+                }
+                NodeStatus::Online => {
+                    // 既にOnlineならそのまま維持
+                }
+                NodeStatus::Offline => {
+                    // Offlineからの復帰はRegisteringへ
+                    node.status = NodeStatus::Registering;
+                }
             }
             node.clone()
         };
@@ -319,7 +345,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             if !node.loaded_models.contains(&model) {
                 node.loaded_models.push(model);
                 node.loaded_models.sort();
@@ -345,7 +371,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
             node.status = NodeStatus::Offline;
             node.online_since = None;
             node.clone()
@@ -354,6 +380,45 @@ impl NodeRegistry {
         // ロック解放後にストレージ保存
         self.save_to_storage(&node_to_save).await?;
         Ok(())
+    }
+
+    /// ノードを承認
+    pub async fn approve(&self, node_id: Uuid) -> RouterResult<Node> {
+        let node_to_save = {
+            let mut nodes = self.nodes.write().await;
+            let node = nodes
+                .get_mut(&node_id)
+                .ok_or(RouterError::NodeNotFound(node_id))?;
+
+            if node.status != NodeStatus::Pending {
+                return Err(RouterError::Common(
+                    llm_router_common::error::CommonError::Validation(
+                        "Node is not pending".to_string(),
+                    ),
+                ));
+            }
+
+            let now = Utc::now();
+            let ready = node
+                .ready_models
+                .map(|(ready, total)| ready >= total)
+                .unwrap_or(false);
+
+            if ready {
+                node.status = NodeStatus::Online;
+                node.initializing = false;
+                node.online_since = Some(now);
+            } else {
+                node.status = NodeStatus::Registering;
+                node.initializing = true;
+                node.online_since = None;
+            }
+
+            node.clone()
+        };
+
+        self.save_to_storage(&node_to_save).await?;
+        Ok(node_to_save)
     }
 }
 
@@ -378,7 +443,7 @@ impl NodeRegistry {
             let mut nodes = self.nodes.write().await;
             let node = nodes
                 .get_mut(&node_id)
-                .ok_or(RouterError::AgentNotFound(node_id))?;
+                .ok_or(RouterError::NodeNotFound(node_id))?;
 
             if let Some(custom_name) = settings.custom_name {
                 node.custom_name = custom_name.and_then(|name| {
@@ -425,33 +490,25 @@ impl NodeRegistry {
         };
 
         if existed.is_none() {
-            return Err(RouterError::AgentNotFound(node_id));
+            return Err(RouterError::NodeNotFound(node_id));
         }
 
-        if self.storage_enabled {
-            crate::db::delete_node(node_id).await
-        } else {
-            Ok(())
+        match &self.storage {
+            Some(storage) => storage.delete_node(node_id).await,
+            None => Ok(()),
         }
     }
 
-    /// ノードメトリクスを更新
-    ///
-    /// ノードから送信されたメトリクス情報（CPU使用率、メモリ使用率、アクティブリクエスト数等）を
-    /// メモリ内のHashMapに保存する。ノードが存在しない場合はエラーを返す。
-    pub async fn update_metrics(&self, metrics: AgentMetrics) -> RouterResult<()> {
-        // ノードが存在するか確認
-        {
-            let nodes = self.nodes.read().await;
-            if !nodes.contains_key(&metrics.node_id) {
-                return Err(RouterError::AgentNotFound(metrics.node_id));
-            }
-        }
-
-        // メトリクスを保存
-        let mut metrics_map = self.metrics.write().await;
-        metrics_map.insert(metrics.node_id, metrics);
-
+    /// テスト用: ノードをOnline状態にマークする
+    #[cfg(test)]
+    pub async fn mark_online(&self, node_id: Uuid) -> RouterResult<()> {
+        let mut nodes = self.nodes.write().await;
+        let node = nodes
+            .get_mut(&node_id)
+            .ok_or(RouterError::NodeNotFound(node_id))?;
+        node.status = llm_router_common::types::NodeStatus::Online;
+        node.initializing = false;
+        node.online_since = Some(Utc::now());
         Ok(())
     }
 }
@@ -507,6 +564,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
 
         let response = registry.register(req).await.unwrap();
@@ -514,7 +572,8 @@ mod tests {
 
         let node = registry.get(response.node_id).await.unwrap();
         assert_eq!(node.machine_name, "test-machine");
-        assert_eq!(node.status, NodeStatus::Online);
+        // 新規登録時は Pending 状態（承認後に Registering/Online に遷移）
+        assert_eq!(node.status, NodeStatus::Pending);
         assert!(node.loaded_models.is_empty());
     }
 
@@ -530,6 +589,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
 
         let first_response = registry.register(req.clone()).await.unwrap();
@@ -541,6 +601,80 @@ mod tests {
 
         let node = registry.get(first_response.node_id).await.unwrap();
         assert!(node.loaded_models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_approve_pending_to_online_when_ready() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "approve-ready".to_string(),
+            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = registry.register(req).await.unwrap();
+        // pending 中でもメトリクス更新は行われるが、状態は遷移しない
+        registry
+            .update_last_seen(
+                response.node_id,
+                Some(vec!["gpt-oss-20b".to_string()]),
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)),
+            )
+            .await
+            .unwrap();
+
+        let pending_node = registry.get(response.node_id).await.unwrap();
+        assert_eq!(pending_node.status, NodeStatus::Pending);
+
+        let approved = registry.approve(response.node_id).await.unwrap();
+        assert_eq!(approved.status, NodeStatus::Online);
+        assert!(approved.online_since.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_approve_pending_to_registering_when_not_ready() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "approve-not-ready".to_string(),
+            ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = registry.register(req).await.unwrap();
+        registry
+            .update_last_seen(
+                response.node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                Some((0, 1)),
+            )
+            .await
+            .unwrap();
+
+        let approved = registry.approve(response.node_id).await.unwrap();
+        assert_eq!(approved.status, NodeStatus::Registering);
+        assert!(approved.online_since.is_none());
     }
 
     #[tokio::test]
@@ -556,6 +690,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         registry.register(req1).await.unwrap();
 
@@ -568,6 +703,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         registry.register(req2).await.unwrap();
 
@@ -587,6 +723,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
 
         let response = registry.register(req).await.unwrap();
@@ -609,6 +746,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
 
         let node_id = registry.register(req).await.unwrap().node_id;
@@ -644,6 +782,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -666,6 +805,7 @@ mod tests {
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
                 gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
             })
             .await
             .unwrap()
@@ -675,11 +815,12 @@ mod tests {
             .update_last_seen(
                 node_id,
                 Some(vec![
-                    " gpt-oss:20b ".into(),
-                    "gpt-oss:20b".into(),
+                    " gpt-oss-20b ".into(),
+                    "gpt-oss-20b".into(),
                     "".into(),
                     "phi-3".into(),
                 ]),
+                None, // loaded_embedding_models
                 None,
                 None,
                 None,
@@ -690,7 +831,7 @@ mod tests {
             .unwrap();
 
         let node = registry.get(node_id).await.unwrap();
-        assert_eq!(node.loaded_models, vec!["gpt-oss:20b", "phi-3"]);
+        assert_eq!(node.loaded_models, vec!["gpt-oss-20b", "phi-3"]);
     }
 
     #[test]

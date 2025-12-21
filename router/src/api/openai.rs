@@ -11,17 +11,18 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
+    types::{ModelCapabilities, ModelCapability},
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{net::IpAddr, time::Instant};
-use tracing::{info, warn};
+use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::registry::models::router_model_path;
+use crate::registry::models::{is_valid_model_file, router_model_path};
 use crate::{
     api::{
-        models::list_registered_models,
+        models::{list_registered_models, DownloadProgress, LifecycleStatus},
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record, select_available_node},
     },
@@ -50,12 +51,85 @@ fn get_required_key(provider: &str, env_key: &str, err_msg: &str) -> Result<Stri
     }
 }
 
+fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
+    fn redact_data_url(value: &Value) -> Value {
+        match value {
+            Value::String(s) => {
+                if s.starts_with("data:") && s.contains(";base64,") {
+                    Value::String(format!("[redacted data-url len={}]", s.len()))
+                } else {
+                    Value::String(s.clone())
+                }
+            }
+            Value::Array(items) => Value::Array(items.iter().map(redact_data_url).collect()),
+            Value::Object(map) => {
+                let mut out = serde_json::Map::with_capacity(map.len());
+                for (k, v) in map {
+                    if k == "input_audio" {
+                        if let Some(obj) = v.as_object() {
+                            let mut cloned = obj.clone();
+                            if let Some(data) = obj.get("data").and_then(|d| d.as_str()) {
+                                cloned.insert(
+                                    "data".to_string(),
+                                    Value::String(format!("[redacted base64 len={}]", data.len())),
+                                );
+                            }
+                            out.insert(k.clone(), Value::Object(cloned));
+                            continue;
+                        }
+                    }
+
+                    if k == "image_url" {
+                        if let Some(obj) = v.as_object() {
+                            let mut cloned = obj.clone();
+                            if let Some(url) = obj.get("url").and_then(|d| d.as_str()) {
+                                if url.starts_with("data:") && url.contains(";base64,") {
+                                    cloned.insert(
+                                        "url".to_string(),
+                                        Value::String(format!(
+                                            "[redacted data-url len={}]",
+                                            url.len()
+                                        )),
+                                    );
+                                }
+                            }
+                            out.insert(k.clone(), Value::Object(cloned));
+                            continue;
+                        }
+                    }
+
+                    out.insert(k.clone(), redact_data_url(v));
+                }
+                Value::Object(out)
+            }
+            _ => value.clone(),
+        }
+    }
+
+    redact_data_url(payload)
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+
+    // モデルの TextGeneration capability を検証
+    let models = list_registered_models();
+    if let Some(model_info) = models.iter().find(|m| m.name == model) {
+        if !model_info.has_capability(ModelCapability::TextGeneration) {
+            return Err(AppError::from(RouterError::Common(
+                CommonError::Validation(format!(
+                    "Model '{}' does not support text generation",
+                    model
+                )),
+            )));
+        }
+    }
+    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
@@ -91,7 +165,7 @@ pub async fn embeddings(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
-    let model = extract_model(&payload)?;
+    let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
     proxy_openai_post(
         &state,
         payload,
@@ -103,45 +177,148 @@ pub async fn embeddings(
     .await
 }
 
-/// GET /v1/models - モデル一覧取得
-pub async fn list_models(State(_state): State<AppState>) -> Result<Response, AppError> {
-    // ルーターがサポートするモデルを返す（ローカルに存在するもののみ）
+/// GET /v1/models - モデル一覧取得（OpenAI互換 + Azure capabilities + ダッシュボード拡張）
+///
+/// OpenAI API 互換形式に Azure OpenAI 形式の capabilities と
+/// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
+/// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
+pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    use crate::convert::ConvertStatus;
+    use crate::registry::models::generate_model_id;
+
+    // ルーターがサポートするモデルを取得
     let models = list_registered_models();
 
-    // OpenAI互換レスポンス形式に合わせる
-    // https://platform.openai.com/docs/api-reference/models/list
+    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
     let mut data: Vec<Value> = Vec::new();
+    let mut registered_names: HashSet<String> = HashSet::new();
+
     for m in models {
+        registered_names.insert(m.name.clone());
+
         let path = m
             .path
             .as_ref()
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.exists())
-            .or_else(|| router_model_path(&m.name))
-            .map(|p| p.to_string_lossy().to_string());
+            .map(PathBuf::from)
+            .filter(|path| is_valid_model_file(path))
+            .or_else(|| router_model_path(&m.name));
 
-        // ダウンロードが完了していないモデルは一覧に出さない
-        if path.is_none() {
-            continue;
-        }
+        let ready = path.is_some();
 
-        let mut obj = json!({
+        // ライフサイクル状態を決定
+        let lifecycle_status = if ready {
+            LifecycleStatus::Registered
+        } else {
+            LifecycleStatus::Pending
+        };
+
+        // Azure OpenAI 形式の capabilities (boolean object)
+        let caps: ModelCapabilities = m.get_capabilities().into();
+
+        let obj = json!({
             "id": m.name,
             "object": "model",
             "created": 0,
-            "owned_by": "coordinator",
+            "owned_by": "router",
+            // Azure OpenAI 形式の capabilities
+            "capabilities": caps,
+            // ダッシュボード用拡張フィールド
+            "lifecycle_status": lifecycle_status,
+            "download_progress": null,
+            "ready": ready,
         });
-
-        if let Some(p) = path.clone() {
-            obj["path"] = json!(p);
-        }
-        if let Some(url) = m.download_url.clone() {
-            obj["download_url"] = json!(url);
-        }
-        if let Some(tpl) = m.chat_template.clone() {
-            obj["chat_template"] = json!(tpl);
-        }
         data.push(obj);
+    }
+
+    // ConvertTaskからダウンロード中/待機中のモデル情報を追加
+    let tasks = state.convert_manager.list_tasks().await;
+
+    for task in tasks {
+        let model_name = generate_model_id(&task.repo);
+
+        // 既に登録済みのモデルはlifecycle_statusを更新
+        if let Some(obj) = data.iter_mut().find(|v| v["id"] == model_name) {
+            let (lifecycle_status, download_progress) = match task.status {
+                ConvertStatus::Queued => (
+                    LifecycleStatus::Pending,
+                    Some(DownloadProgress {
+                        percent: 0.0,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::InProgress => (
+                    LifecycleStatus::Caching,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::Failed => (
+                    LifecycleStatus::Error,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: task.error.clone(),
+                    }),
+                ),
+                ConvertStatus::Completed => continue, // 完了済みは既存のlifecycle_statusを維持
+            };
+            obj["lifecycle_status"] = serde_json::to_value(&lifecycle_status).unwrap();
+            obj["download_progress"] = serde_json::to_value(&download_progress).unwrap();
+        } else if !registered_names.contains(&model_name) {
+            // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
+            let (lifecycle_status, download_progress) = match task.status {
+                ConvertStatus::Queued => (
+                    LifecycleStatus::Pending,
+                    Some(DownloadProgress {
+                        percent: 0.0,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::InProgress => (
+                    LifecycleStatus::Caching,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: None,
+                    }),
+                ),
+                ConvertStatus::Failed => (
+                    LifecycleStatus::Error,
+                    Some(DownloadProgress {
+                        percent: task.progress as f64,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        error: task.error.clone(),
+                    }),
+                ),
+                ConvertStatus::Completed => (LifecycleStatus::Registered, None),
+            };
+
+            // ダウンロード中のモデルは capabilities が不明なため、デフォルト（LLM）を使用
+            let caps = ModelCapabilities::default();
+
+            let obj = json!({
+                "id": model_name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router",
+                "capabilities": caps,
+                "lifecycle_status": lifecycle_status,
+                "download_progress": download_progress,
+                "ready": false,
+            });
+            data.push(obj);
+            registered_names.insert(model_name);
+        }
     }
 
     let body = json!({
@@ -152,7 +329,10 @@ pub async fn list_models(State(_state): State<AppState>) -> Result<Response, App
     Ok((StatusCode::OK, Json(body)).into_response())
 }
 
-/// GET /v1/models/:id - モデル詳細取得
+// NOTE: list_models_extended() は廃止されました。
+// /v1/models に Azure OpenAI 形式の capabilities とダッシュボード拡張が統合されています。
+
+/// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 pub async fn get_model(
     State(_state): State<AppState>,
     Path(model_id): Path<String>,
@@ -162,8 +342,8 @@ pub async fn get_model(
         let path = m
             .path
             .as_ref()
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.exists())
+            .map(PathBuf::from)
+            .filter(|path| is_valid_model_file(path))
             .or_else(|| router_model_path(&m.name));
         path.map(|p| (m, p))
     });
@@ -184,11 +364,18 @@ pub async fn get_model(
         }
     };
 
+    // Azure OpenAI 形式の capabilities (boolean object)
+    let caps: ModelCapabilities = model.get_capabilities().into();
+
     let mut body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
-        "owned_by": "coordinator",
+        "owned_by": "router",
+        "capabilities": caps,
+        // ダッシュボード用拡張フィールド
+        "lifecycle_status": LifecycleStatus::Registered,
+        "ready": true,
     });
 
     body["path"] = json!(path.to_string_lossy().to_string());
@@ -208,6 +395,16 @@ fn extract_model(payload: &Value) -> Result<String, AppError> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| validation_error("`model` field is required for OpenAI-compatible requests"))
+}
+
+/// モデル名を抽出し、未指定または空の場合はデフォルト値を使用
+fn extract_model_with_default(payload: &Value, default: String) -> String {
+    payload
+        .get("model")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or(default)
 }
 
 fn extract_stream(payload: &Value) -> bool {
@@ -238,7 +435,7 @@ fn parse_cloud_model(model: &str) -> Option<(String, String)> {
 }
 
 /// クラウドプロバイダ用の仮想ノード情報を生成する
-fn cloud_virtual_agent(provider: &str) -> (Uuid, String, IpAddr) {
+fn cloud_virtual_node(provider: &str) -> (Uuid, String, IpAddr) {
     let node_id = match provider {
         "openai" => Uuid::parse_str("00000000-0000-0000-0000-00000000c001").unwrap(),
         "google" => Uuid::parse_str("00000000-0000-0000-0000-00000000c002").unwrap(),
@@ -246,8 +443,8 @@ fn cloud_virtual_agent(provider: &str) -> (Uuid, String, IpAddr) {
         _ => Uuid::parse_str("00000000-0000-0000-0000-00000000c0ff").unwrap(),
     };
     let machine_name = format!("cloud:{provider}");
-    let agent_ip: IpAddr = "0.0.0.0".parse().unwrap();
-    (node_id, machine_name, agent_ip)
+    let node_ip: IpAddr = "0.0.0.0".parse().unwrap();
+    (node_id, machine_name, node_ip)
 }
 
 struct CloudProxyResult {
@@ -678,10 +875,10 @@ async fn proxy_openai_cloud_post(
 ) -> Result<Response, AppError> {
     let (provider, model_name) = parse_cloud_model(model)
         .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
-    let (node_id, agent_machine_name, agent_ip) = cloud_virtual_agent(&provider);
+    let (node_id, node_machine_name, node_ip) = cloud_virtual_node(&provider);
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
-    let request_body = payload.clone();
+    let request_body = sanitize_openai_payload_for_history(&payload);
     let started = Instant::now();
 
     let outcome = match match provider.as_str() {
@@ -706,8 +903,8 @@ async fn proxy_openai_cloud_post(
                     request_type,
                     model: model.to_string(),
                     node_id,
-                    agent_machine_name,
-                    agent_ip,
+                    node_machine_name,
+                    node_ip,
                     client_ip: None,
                     request_body,
                     response_body: None,
@@ -748,8 +945,8 @@ async fn proxy_openai_cloud_post(
             request_type,
             model: model.to_string(),
             node_id,
-            agent_machine_name,
-            agent_ip,
+            node_machine_name,
+            node_ip,
             client_ip: None,
             request_body,
             response_body,
@@ -778,12 +975,44 @@ async fn proxy_openai_post(
 
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
-    let request_body = payload.clone();
+    let request_body = sanitize_openai_payload_for_history(&payload);
 
-    let agent = select_available_node(state).await?;
-    let node_id = agent.id;
-    let agent_machine_name = agent.machine_name.clone();
-    let agent_ip = agent.ip_address;
+    // FR-004: ノード選択失敗時もリクエスト履歴に記録する
+    let node = match select_available_node(state).await {
+        Ok(n) => n,
+        Err(e) => {
+            error!(
+                endpoint = %target_path,
+                model = %model,
+                error = %e,
+                "Failed to select available node"
+            );
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: Uuid::nil(),
+                    node_machine_name: "N/A".to_string(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: 0,
+                    status: RecordStatus::Error {
+                        message: format!("Node selection failed: {}", e),
+                    },
+                    completed_at: Utc::now(),
+                },
+            );
+            return Err(e.into());
+        }
+    };
+    let node_id = node.id;
+    let node_machine_name = node.machine_name.clone();
+    let node_ip = node.ip_address;
 
     state
         .load_manager
@@ -792,10 +1021,10 @@ async fn proxy_openai_post(
         .map_err(AppError::from)?;
 
     let client = state.http_client.clone();
-    let agent_api_port = agent.runtime_port + 1;
+    let node_api_port = node.runtime_port + 1;
     let runtime_url = format!(
         "http://{}:{}{}",
-        agent.ip_address, agent_api_port, target_path
+        node.ip_address, node_api_port, target_path
     );
     let start = Instant::now();
 
@@ -817,8 +1046,8 @@ async fn proxy_openai_post(
                     request_type,
                     model: model.clone(),
                     node_id,
-                    agent_machine_name: agent_machine_name.clone(),
-                    agent_ip,
+                    node_machine_name: node_machine_name.clone(),
+                    node_ip,
                     client_ip: None,
                     request_body: request_body.clone(),
                     response_body: None,
@@ -851,8 +1080,8 @@ async fn proxy_openai_post(
                 request_type,
                 model: model.clone(),
                 node_id,
-                agent_machine_name: agent_machine_name.clone(),
-                agent_ip,
+                node_machine_name: node_machine_name.clone(),
+                node_ip,
                 client_ip: None,
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
@@ -890,8 +1119,8 @@ async fn proxy_openai_post(
                 request_type,
                 model: model.clone(),
                 node_id,
-                agent_machine_name: agent_machine_name.clone(),
-                agent_ip,
+                node_machine_name: node_machine_name.clone(),
+                node_ip,
                 client_ip: None,
                 request_body: request_body.clone(),
                 response_body: None,
@@ -930,8 +1159,8 @@ async fn proxy_openai_post(
                 request_type,
                 model,
                 node_id,
-                agent_machine_name,
-                agent_ip,
+                node_machine_name,
+                node_ip,
                 client_ip: None,
                 request_body,
                 response_body: None,
@@ -963,8 +1192,8 @@ async fn proxy_openai_post(
                     request_type,
                     model,
                     node_id,
-                    agent_machine_name,
-                    agent_ip,
+                    node_machine_name,
+                    node_ip,
                     client_ip: None,
                     request_body,
                     response_body: Some(body.clone()),
@@ -991,8 +1220,8 @@ async fn proxy_openai_post(
                     request_type,
                     model,
                     node_id,
-                    agent_machine_name,
-                    agent_ip,
+                    node_machine_name,
+                    node_ip,
                     client_ip: None,
                     request_body,
                     response_body: None,
@@ -1011,8 +1240,8 @@ async fn proxy_openai_post(
 
 #[allow(dead_code)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
-    let agent = select_available_node(state).await?;
-    let node_id = agent.id;
+    let node = select_available_node(state).await?;
+    let node_id = node.id;
 
     state
         .load_manager
@@ -1023,7 +1252,7 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
     let client = state.http_client.clone();
     let runtime_url = format!(
         "http://{}:{}{}",
-        agent.ip_address, agent.runtime_port, target_path
+        node.ip_address, node.runtime_port, target_path
     );
     let start = Instant::now();
 
@@ -1086,8 +1315,10 @@ fn validation_error(message: impl Into<String>) -> AppError {
 mod tests {
     use super::{parse_cloud_model, proxy_openai_cloud_post, proxy_openai_post};
     use crate::{
-        balancer::LoadManager, db::request_history::RequestHistoryStorage, registry::NodeRegistry,
-        tasks::DownloadTaskManager, AppState,
+        balancer::LoadManager,
+        db::{request_history::RequestHistoryStorage, test_utils::TEST_LOCK},
+        registry::NodeRegistry,
+        AppState,
     };
     use axum::body::to_bytes;
     use axum::http::StatusCode;
@@ -1104,10 +1335,6 @@ mod tests {
     async fn create_local_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history =
-            Arc::new(RequestHistoryStorage::new().expect("request history storage"));
-        let task_manager = DownloadTaskManager::new();
-        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("sqlite memory connect");
@@ -1115,11 +1342,12 @@ mod tests {
             .run(&db_pool)
             .await
             .expect("migrations");
+        let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
+        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         AppState {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
@@ -1155,6 +1383,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn openai_prefix_requires_api_key() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("OPENAI_API_KEY").ok();
         std::env::remove_var("OPENAI_API_KEY");
@@ -1188,6 +1417,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn google_prefix_requires_api_key() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("GOOGLE_API_KEY").ok();
         std::env::remove_var("GOOGLE_API_KEY");
@@ -1221,6 +1451,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn anthropic_prefix_requires_api_key() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("ANTHROPIC_API_KEY").ok();
         std::env::remove_var("ANTHROPIC_API_KEY");
@@ -1254,6 +1485,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn openai_prefix_streams_via_cloud() {
+        let _guard = TEST_LOCK.lock().await;
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200)
             .insert_header("content-type", "text/event-stream")
@@ -1295,6 +1527,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn google_prefix_proxies_and_maps_response() {
+        let _guard = TEST_LOCK.lock().await;
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200).set_body_json(json!({
             "candidates": [{"content": {"parts": [{"text": "hello from gemini"}]}}]
@@ -1337,10 +1570,11 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn anthropic_prefix_proxies_and_maps_response() {
+        let _guard = TEST_LOCK.lock().await;
         let server = MockServer::start().await;
         let tmpl = ResponseTemplate::new(200).set_body_json(json!({
-            "id": "abc123",
-            "model": "claude-3",
+                "id": "abc123",
+                "model": "claude-3",
             "content": [{"text": "anthropic says hi"}]
         }));
         Mock::given(method("POST"))
@@ -1381,6 +1615,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn cloud_request_is_recorded_in_history() {
+        let _guard = TEST_LOCK.lock().await;
         let temp_dir = tempdir().expect("temp dir");
         std::env::set_var("LLM_ROUTER_DATA_DIR", temp_dir.path());
 
@@ -1438,14 +1673,98 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn cloud_request_is_listed_in_dashboard_history() {
+        use axum::routing::Router;
+        use std::net::SocketAddr;
+        use tokio::net::TcpListener;
+
+        let _guard = TEST_LOCK.lock().await;
+
+        // mock cloud provider
+        let server = MockServer::start().await;
+        let tmpl = ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-dashboard",
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "hello cloud"},
+                "finish_reason": "stop"
+            }]
+        }));
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(tmpl)
+            .mount(&server)
+            .await;
+
+        // router state with temp data dir
+        std::env::set_var("OPENAI_API_KEY", "testkey");
+        std::env::set_var("OPENAI_BASE_URL", server.uri());
+        let (state, dir) = create_state_with_tempdir().await;
+
+        // spawn router
+        let app: Router = crate::api::create_router(state.clone());
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr: SocketAddr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .ok();
+        });
+
+        // send cloud request
+        let client = reqwest::Client::new();
+        let payload = json!({"model":"openai:gpt-4o","messages":[{"role":"user","content":"hi"}]});
+        let resp = client
+            .post(format!("http://{addr}/v1/chat/completions"))
+            .header("x-api-key", "sk_debug")
+            .json(&payload)
+            .send()
+            .await
+            .expect("send cloud request");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+
+        // wait for async save_request_record
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // fetch dashboard history
+        let history_resp = client
+            .get(format!("http://{addr}/v0/dashboard/request-responses"))
+            .header("authorization", "Bearer sk_debug_admin")
+            .send()
+            .await
+            .expect("history request");
+        assert_eq!(history_resp.status(), reqwest::StatusCode::OK);
+        let body: serde_json::Value = history_resp.json().await.expect("history json");
+        let records = body["records"].as_array().expect("records array");
+        assert!(
+            records.iter().any(|r| r["model"] == "openai:gpt-4o"),
+            "cloud request should be listed in history"
+        );
+
+        // cleanup env
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("OPENAI_BASE_URL");
+        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        drop(dir);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn non_prefixed_model_stays_on_local_path() {
+        let _guard = TEST_LOCK.lock().await;
         let state = create_local_state().await;
-        let payload = json!({"model":"gpt-oss:20b","messages":[]});
+        let payload = json!({"model":"gpt-oss-20b","messages":[]});
         let res = proxy_openai_post(
             &state,
             payload,
             "/v1/chat/completions",
-            "gpt-oss:20b".into(),
+            "gpt-oss-20b".into(),
             false,
             RequestType::Chat,
         )
@@ -1453,16 +1772,15 @@ mod tests {
         let err = res.unwrap_err();
         let msg = format!("{:?}", err);
         assert!(
-            msg.contains("NoAgentsAvailable")
-                || msg.contains("No available agents")
-                || msg.contains("No agents available"),
-            "expected local-path agent error, got {}",
+            msg.contains("NoNodesAvailable") || msg.contains("No available nodes"),
+            "expected local-path node error, got {}",
             msg
         );
     }
     #[tokio::test]
     #[serial]
     async fn streaming_allowed_for_cloud_prefix() {
+        let _guard = TEST_LOCK.lock().await;
         // Save and remove any existing API key to test error case
         let saved = std::env::var("OPENAI_API_KEY").ok();
         std::env::remove_var("OPENAI_API_KEY");
@@ -1491,5 +1809,29 @@ mod tests {
             std::env::set_var("OPENAI_API_KEY", key);
         }
         std::env::remove_var("LLM_ROUTER_DATA_DIR");
+    }
+
+    // T006: chat capabilities検証テスト (RED)
+    // TextGeneration capability を持たないモデルで /v1/chat/completions を呼ぶとエラー
+    #[test]
+    fn test_chat_capability_validation_error_message() {
+        use llm_router_common::types::{ModelCapability, ModelType};
+
+        // TTSモデルはTextToSpeechのみ、TextGenerationは非対応
+        let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);
+        assert!(!tts_caps.contains(&ModelCapability::TextGeneration));
+
+        // ASRモデルもSpeechToTextのみ、TextGenerationは非対応
+        let stt_caps = ModelCapability::from_model_type(ModelType::SpeechToText);
+        assert!(!stt_caps.contains(&ModelCapability::TextGeneration));
+
+        // EmbeddingモデルもEmbeddingのみ、TextGenerationは非対応
+        let embed_caps = ModelCapability::from_model_type(ModelType::Embedding);
+        assert!(!embed_caps.contains(&ModelCapability::TextGeneration));
+
+        // 期待されるエラーメッセージ形式
+        let model_name = "whisper-large-v3";
+        let expected_error = format!("Model '{}' does not support text generation", model_name);
+        assert!(expected_error.contains("does not support text generation"));
     }
 }

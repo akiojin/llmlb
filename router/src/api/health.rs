@@ -4,7 +4,7 @@ use crate::{api::nodes::AppError, balancer::MetricsUpdate, AppState};
 use axum::{extract::State, Json};
 use llm_router_common::protocol::HealthCheckRequest;
 
-/// POST /api/health - ヘルスチェック受信
+/// POST /v0/health - ヘルスチェック受信
 pub async fn health_check(
     State(state): State<AppState>,
     Json(req): Json<HealthCheckRequest>,
@@ -15,11 +15,17 @@ pub async fn health_check(
     } else {
         Some(req.loaded_models.clone())
     };
+    let embedding_models = if req.loaded_embedding_models.is_empty() {
+        None
+    } else {
+        Some(req.loaded_embedding_models.clone())
+    };
     state
         .registry
         .update_last_seen(
             req.node_id,
             models,
+            embedding_models,
             req.gpu_model_name.clone(),
             req.gpu_compute_capability.clone(),
             req.gpu_capability_score,
@@ -56,7 +62,7 @@ pub async fn health_check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager};
+    use crate::{balancer::LoadManager, registry::NodeRegistry};
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
     use uuid::Uuid;
@@ -64,10 +70,6 @@ mod tests {
     async fn create_test_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history =
-            std::sync::Arc::new(crate::db::request_history::RequestHistoryStorage::new().unwrap());
-        let task_manager = DownloadTaskManager::new();
-        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -75,12 +77,15 @@ mod tests {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        let request_history = std::sync::Arc::new(
+            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        );
+        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,
@@ -106,10 +111,11 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         let register_response = state.registry.register(register_req).await.unwrap();
 
-        // ヘルスチェックを送信
+        // Pending 状態でもヘルスチェックを受理する
         let health_req = HealthCheckRequest {
             node_id: register_response.node_id,
             cpu_usage: 45.5,
@@ -124,22 +130,26 @@ mod tests {
             gpu_capability_score: None,
             active_requests: 3,
             average_response_time_ms: Some(110.0),
-            loaded_models: vec!["gpt-oss:20b".into()],
+            loaded_models: vec!["gpt-oss-20b".into()],
+            loaded_embedding_models: vec![],
+            loaded_asr_models: vec![],
+            loaded_tts_models: vec![],
+            supported_runtimes: vec![],
             initializing: false,
-            ready_models: Some((1, 5)),
+            ready_models: Some((1, 1)),
         };
 
         let result = health_check(State(state.clone()), Json(health_req)).await;
         assert!(result.is_ok());
 
-        // ノードが更新されたことを確認
-        let agent = state.registry.get(register_response.node_id).await.unwrap();
-        assert_eq!(agent.status, llm_router_common::types::NodeStatus::Online);
-        assert_eq!(agent.loaded_models, vec!["gpt-oss:20b"]);
+        // Pending 状態でもヘルスチェックが受理されることを確認
+        let node = state.registry.get(register_response.node_id).await.unwrap();
+        assert_eq!(node.status, llm_router_common::types::NodeStatus::Pending);
+        assert_eq!(node.loaded_models, vec!["gpt-oss-20b"]);
     }
 
     #[tokio::test]
-    async fn test_health_check_unknown_agent() {
+    async fn test_health_check_unknown_node() {
         let state = create_test_state().await;
 
         let health_req = HealthCheckRequest {
@@ -157,6 +167,10 @@ mod tests {
             active_requests: 3,
             average_response_time_ms: None,
             loaded_models: Vec::new(),
+            loaded_embedding_models: Vec::new(),
+            loaded_asr_models: Vec::new(),
+            loaded_tts_models: Vec::new(),
+            supported_runtimes: Vec::new(),
             initializing: false,
             ready_models: None,
         };

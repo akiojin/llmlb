@@ -22,6 +22,10 @@ std::unique_ptr<httplib::Client> make_client(const std::string& base_url, std::c
 RouterClient::RouterClient(std::string base_url, std::chrono::milliseconds timeout)
     : base_url_(std::move(base_url)), timeout_(timeout) {}
 
+void RouterClient::setApiKey(std::string api_key) {
+    api_key_ = std::move(api_key);
+}
+
 NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     auto cli = make_client(base_url_, timeout_);
 
@@ -55,8 +59,16 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     if (info.gpu_model.has_value()) {
         payload["gpu_model"] = info.gpu_model.value();
     }
+    if (!info.supported_runtimes.empty()) {
+        payload["supported_runtimes"] = info.supported_runtimes;
+    }
 
-    auto res = cli->Post("/api/nodes", payload.dump(), "application/json");
+    httplib::Headers headers;
+    if (!api_key_.empty()) {
+        headers.emplace("Authorization", "Bearer " + api_key_);
+    }
+
+    auto res = cli->Post("/v0/nodes", headers, payload.dump(), "application/json");
 
     NodeRegistrationResult result;
     if (!res) {
@@ -71,16 +83,16 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
             if (body.contains("node_id")) {
                 result.node_id = body["node_id"].get<std::string>();
             }
-            // Extract agent_token for heartbeat authentication
-            if (body.contains("agent_token")) {
-                result.agent_token = body["agent_token"].get<std::string>();
+            // Extract node_token for heartbeat authentication
+            if (body.contains("node_token")) {
+                result.node_token = body["node_token"].get<std::string>();
             }
-            result.success = !result.node_id.empty() && !result.agent_token.empty();
+            result.success = !result.node_id.empty() && !result.node_token.empty();
             if (!result.success) {
                 if (result.node_id.empty()) {
                     result.error = "missing node_id";
                 } else {
-                    result.error = "missing agent_token";
+                    result.error = "missing node_token";
                 }
             }
         } catch (const std::exception& e) {
@@ -93,9 +105,15 @@ NodeRegistrationResult RouterClient::registerNode(const NodeInfo& info) {
     return result;
 }
 
-bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& agent_token,
+bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& node_token,
                                  const std::optional<std::string>& /*status_opt*/,
-                                 const std::optional<HeartbeatMetrics>& metrics, int max_retries) {
+                                 const std::optional<HeartbeatMetrics>& metrics,
+                                 const std::vector<std::string>& loaded_models,
+                                 const std::vector<std::string>& loaded_embedding_models,
+                                 const std::vector<std::string>& loaded_asr_models,
+                                 const std::vector<std::string>& loaded_tts_models,
+                                 const std::vector<std::string>& supported_runtimes,
+                                 int max_retries) {
     auto cli = make_client(base_url_, timeout_);
 
     // Build HealthCheckRequest payload matching router protocol
@@ -107,7 +125,11 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
                 static_cast<float>(metrics->mem_used_bytes) / static_cast<float>(metrics->mem_total_bytes) * 100.0f : 0.0f)
             : 0.0f},
         {"active_requests", 0},
-        {"loaded_models", json::array()},
+        {"loaded_models", loaded_models},
+        {"loaded_embedding_models", loaded_embedding_models},
+        {"loaded_asr_models", loaded_asr_models},
+        {"loaded_tts_models", loaded_tts_models},
+        {"supported_runtimes", supported_runtimes},
         {"initializing", false},
     };
 
@@ -119,35 +141,13 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
     }
 
     // Set authentication header
-    httplib::Headers headers = {
-        {"X-Agent-Token", agent_token}
-    };
-
-    for (int attempt = 0; attempt <= max_retries; ++attempt) {
-        auto res = cli->Post("/api/health", headers, payload.dump(), "application/json");
-        if (res && res->status >= 200 && res->status < 300) return true;
-        if (attempt == max_retries) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100 * (attempt + 1)));
-    }
-    return false;
-}
-
-bool RouterClient::reportProgress(const std::string& task_id, double progress,
-                                   std::optional<double> speed, int max_retries) {
-    auto cli = make_client(base_url_, timeout_);
-
-    json payload = {
-        {"progress", progress}
-    };
-
-    if (speed.has_value()) {
-        payload["speed"] = speed.value();
+    httplib::Headers headers = {{"X-Node-Token", node_token}};
+    if (!api_key_.empty()) {
+        headers.emplace("Authorization", "Bearer " + api_key_);
     }
 
-    std::string path = "/api/tasks/" + task_id + "/progress";
-
     for (int attempt = 0; attempt <= max_retries; ++attempt) {
-        auto res = cli->Post(path.c_str(), payload.dump(), "application/json");
+        auto res = cli->Post("/v0/health", headers, payload.dump(), "application/json");
         if (res && res->status >= 200 && res->status < 300) return true;
         if (attempt == max_retries) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(100 * (attempt + 1)));

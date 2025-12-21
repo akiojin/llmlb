@@ -119,57 +119,57 @@ pub struct ApiKeyWithPlaintext {
 
 ---
 
-### 3. AgentToken (エージェントトークン)
+### 3. NodeToken (ノードトークン)
 
-**説明**: エージェントがコーディネーターと安全に通信するための認証情報
+**説明**: ノードがルーターと安全に通信するための認証情報
 
 **フィールド**:
 | フィールド | 型 | 制約 | 説明 |
 |-----------|-----|------|------|
-| agent_id | UUID | PRIMARY KEY, FOREIGN KEY → Agent.id | エージェントID |
+| node_id | UUID | PRIMARY KEY | ノードID |
 | token_hash | String | UNIQUE, NOT NULL | SHA-256ハッシュ化されたトークン本体 |
 | created_at | DateTime<Utc> | NOT NULL | 発行日時 |
 
 **Rust型定義**:
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct AgentToken {
-    pub agent_id: Uuid,
+pub struct NodeToken {
+    pub node_id: Uuid,
     pub token_hash: String,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentTokenWithPlaintext {
-    pub agent_id: Uuid,
+pub struct NodeTokenWithPlaintext {
+    pub node_id: Uuid,
     pub token: String,  // 平文トークン（発行時のみ）
     pub created_at: DateTime<Utc>,
 }
 ```
 
 **検証ルール**:
-- token（発行時）: `agt_` + UUID v4 simple形式（32文字の16進数）
+- token（発行時）: `nt_` + UUID v4 形式（36文字、ハイフンあり）
 - token_hash: SHA-256ハッシュ（64文字の16進数）
 
 **状態遷移**:
 ```
-[エージェント登録] --トークン発行--> [アクティブ]
-[アクティブ] --エージェント削除--> [削除済み]
+[ノード登録] --トークン発行--> [アクティブ]
+[アクティブ] --ノード削除--> [削除済み]
 ```
 
 **ビジネスルール**:
-- 1エージェントにつき1トークン（1:1関係）
-- エージェント削除時、トークンも自動削除（CASCADE）
-- トークン再発行は不可（エージェント再登録が必要）
+- 1ノードにつき1トークン（1:1関係）
+- ノード削除時、トークンも自動削除（CASCADE）
+- トークン再発行は不可（ノード再登録が必要）
 
 ---
 
-### 4. Agent (既存エンティティ、変更)
+### 4. Node (既存エンティティ、変更)
 
-**説明**: 登録されたエージェント（既存のエンティティに認証トークンのリレーションを追加）
+**説明**: 登録されたノード（既存のエンティティに認証トークンのリレーションを追加）
 
 **追加されるリレーションシップ**:
-- `Agent.id` ← `AgentToken.agent_id` (1:1)
+- `Node.id` ← `NodeToken.node_id` (1:1)
 
 **変更なし**: 既存のフィールド（machine_name, ip_address, gpu_devices等）は維持
 
@@ -181,15 +181,15 @@ pub struct AgentTokenWithPlaintext {
 User (1) --< (N) ApiKey
   - 1人のユーザーは複数のAPIキーを発行可能
 
-Agent (1) --- (1) AgentToken
-  - 1エージェントにつき1トークン
+Node (1) --- (1) NodeToken
+  - 1ノードにつき1トークン
 ```
 
 ---
 
 ## SQLiteスキーマ
 
-**マイグレーションファイル**: `coordinator/migrations/001_auth_init.sql`
+**マイグレーションファイル**: `router/migrations/001_auth_init.sql`
 
 ```sql
 -- ユーザーテーブル
@@ -218,18 +218,17 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX idx_api_keys_created_by ON api_keys(created_by);
 
--- エージェントトークンテーブル
-CREATE TABLE IF NOT EXISTS agent_tokens (
-    agent_id TEXT PRIMARY KEY,
+-- ノードトークンテーブル
+CREATE TABLE IF NOT EXISTS node_tokens (
+    node_id TEXT PRIMARY KEY,
     token_hash TEXT UNIQUE NOT NULL,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_agent_tokens_hash ON agent_tokens(token_hash);
+CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 
--- エージェントテーブル（既存）
--- 既存のagentsテーブルはそのまま維持
+-- ノードテーブル（既存）
+-- 既存のnodesテーブルはそのまま維持
 -- マイグレーションで外部キー制約のみ追加
 ```
 
@@ -244,18 +243,18 @@ CREATE INDEX idx_agent_tokens_hash ON agent_tokens(token_hash);
 
 1. **外部キー制約**:
    - `api_keys.created_by` → `users.id` (CASCADE DELETE)
-   - `agent_tokens.agent_id` → `agents.id` (CASCADE DELETE)
+   - `node_tokens.node_id` → `nodes.id` (conceptual 1:1)
 
 2. **ユニーク制約**:
    - `users.username`
    - `api_keys.key_hash`
-   - `agent_tokens.token_hash`
+   - `node_tokens.token_hash`
 
 3. **NOT NULL制約**:
    - すべてのPRIMARY KEY
    - `users.password_hash`, `users.role`
    - `api_keys.key_hash`, `api_keys.name`, `api_keys.created_by`
-   - `agent_tokens.token_hash`
+   - `node_tokens.token_hash`
 
 4. **CHECK制約**:
    - `users.role` は `admin` または `viewer`
@@ -266,7 +265,7 @@ CREATE INDEX idx_agent_tokens_hash ON agent_tokens(token_hash);
 
 1. **パスワード**: bcrypt（cost=12）で不可逆ハッシュ化
 2. **APIキー**: SHA-256で不可逆ハッシュ化
-3. **エージェントトークン**: SHA-256で不可逆ハッシュ化
+3. **ノードトークン**: SHA-256で不可逆ハッシュ化
 4. **平文の保存禁止**: すべての認証情報はハッシュ化してDB保存
 5. **インデックス**: ハッシュ値にインデックスを作成（検索高速化）
 
@@ -275,7 +274,7 @@ CREATE INDEX idx_agent_tokens_hash ON agent_tokens(token_hash);
 ## JSONからSQLiteへのマイグレーション
 
 **既存データ**:
-- `~/.llm-router/agents.json` → `agents` テーブル
+- `~/.llm-router/nodes.json` → `nodes` テーブル
 - `~/.llm-router/request_history.json` → `request_history` テーブル（新規作成）
 
 **マイグレーション手順**:

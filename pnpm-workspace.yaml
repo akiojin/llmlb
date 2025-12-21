@@ -1,0 +1,3 @@
+packages:
+  - mcp-server
+  - router/src/web/dashboard

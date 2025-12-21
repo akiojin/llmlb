@@ -82,11 +82,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Install C++ dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev
+      - name: Setup C++ build environment
+        uses: ./.github/actions/setup-cpp
 
       - name: Configure C++ project
         run: cmake -S node -B node/build -DBUILD_TESTS=ON

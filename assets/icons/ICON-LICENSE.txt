@@ -1,10 +1,10 @@
 Lucide Icons (https://lucide.dev) — ISC License
 
 The tray assets derive from Lucide Icons. The following files were recolored
-(#0A84FF for agent, #FF8F00 for coordinator) and rasterized to 128×128 PNGs:
+(#0A84FF for node, #FF8F00 for router) and rasterized to 128×128 PNGs:
 
-- assets/icons/agent.png ← assets/icons/sources/lucide-bot.svg
-- assets/icons/coordinator.png ← assets/icons/sources/lucide-network.svg
+- assets/icons/node.png ← assets/icons/sources/lucide-bot.svg
+- assets/icons/router.png ← assets/icons/sources/lucide-network.svg
 
 Below is the unmodified ISC license distributed with Lucide Icons:
 

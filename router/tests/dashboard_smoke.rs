@@ -12,10 +12,13 @@ use llm_router::{
     api,
     balancer::{LoadManager, MetricsUpdate, RequestOutcome},
     registry::NodeRegistry,
-    tasks::DownloadTaskManager,
     AppState,
 };
-use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+use llm_router_common::{
+    auth::{ApiKeyScope, UserRole},
+    protocol::RegisterRequest,
+    types::GpuDeviceInfo,
+};
 use serde_json::Value;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -23,13 +26,9 @@ use std::{
 };
 use tower::ServiceExt;
 
-async fn build_router() -> (Router, NodeRegistry, LoadManager) {
+async fn build_router() -> (Router, NodeRegistry, LoadManager, String) {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -37,19 +36,37 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry: registry.clone(),
         load_manager: load_manager.clone(),
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
     };
+    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let admin_user =
+        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+            .await
+            .expect("create admin user");
+    let admin_key = llm_router::db::api_keys::create(
+        &state.db_pool,
+        "admin-key",
+        admin_user.id,
+        None,
+        vec![ApiKeyScope::AdminAll],
+    )
+    .await
+    .expect("create admin api key")
+    .key;
     let router = api::create_router(state);
-    (router, registry, load_manager)
+    (router, registry, load_manager, admin_key)
 }
 
 fn sample_gpu_devices(model: &str) -> Vec<GpuDeviceInfo> {
@@ -62,7 +79,7 @@ fn sample_gpu_devices(model: &str) -> Vec<GpuDeviceInfo> {
 
 #[tokio::test]
 async fn dashboard_serves_static_index() {
-    let (router, _, _) = build_router().await;
+    let (router, _, _, _admin_key) = build_router().await;
 
     let response = router
         .clone()
@@ -96,8 +113,9 @@ async fn dashboard_serves_static_index() {
 }
 
 #[tokio::test]
-async fn dashboard_static_index_contains_gpu_labels() {
-    let (router, _, _) = build_router().await;
+async fn dashboard_static_index_is_react_app() {
+    // Dashboard is now a React SPA - verify app shell is served correctly
+    let (router, _, _, _admin_key) = build_router().await;
 
     let response = router
         .clone()
@@ -114,23 +132,32 @@ async fn dashboard_static_index_contains_gpu_labels() {
     let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
     let html = String::from_utf8(bytes.to_vec()).expect("dashboard html should be valid utf-8");
 
+    // React app mount point
     assert!(
-        html.contains("<th>CPU / GPU</th>"),
-        "dashboard table should include GPU column: {html}"
+        html.contains("id=\"root\""),
+        "dashboard should have React mount point: {html}"
     );
+
+    // Should reference bundled JavaScript
     assert!(
-        html.contains("GPU Model"),
-        "dashboard modal should mention GPU model: {html}"
+        html.contains("<script") && html.contains("</script>"),
+        "dashboard should reference bundled scripts: {html}"
+    );
+
+    // Should have appropriate title
+    assert!(
+        html.contains("Dashboard"),
+        "dashboard should have Dashboard in title: {html}"
     );
 }
 
 #[tokio::test]
-async fn dashboard_agents_and_stats_reflect_registry() {
-    let (router, registry, load_manager) = build_router().await;
+async fn dashboard_nodes_and_stats_reflect_registry() {
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
-            machine_name: "agent-smoke".into(),
+            machine_name: "node-smoke".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 42)),
             runtime_version: "0.1.0".into(),
             runtime_port: 11434,
@@ -138,10 +165,12 @@ async fn dashboard_agents_and_stats_reflect_registry() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
         .node_id;
+    registry.approve(node_id).await.unwrap();
 
     load_manager
         .record_metrics(MetricsUpdate {
@@ -159,7 +188,7 @@ async fn dashboard_agents_and_stats_reflect_registry() {
             active_requests: 2,
             average_response_time_ms: Some(110.0),
             initializing: false,
-            ready_models: None,
+            ready_models: Some((0, 0)), // 承認済みのため Online へ状態遷移
         })
         .await
         .unwrap();
@@ -169,36 +198,38 @@ async fn dashboard_agents_and_stats_reflect_registry() {
         .await
         .unwrap();
 
-    let agents_response = router
+    let nodes_response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/nodes")
+                .uri("/v0/dashboard/nodes")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    assert_eq!(agents_response.status(), StatusCode::OK);
-    let body = to_bytes(agents_response.into_body(), 1024 * 1024)
+    assert_eq!(nodes_response.status(), StatusCode::OK);
+    let body = to_bytes(nodes_response.into_body(), 1024 * 1024)
         .await
         .unwrap();
     let nodes: Value = serde_json::from_slice(&body).unwrap();
 
     assert!(nodes.is_array(), "expected array payload, got {nodes:?}");
-    let agent = &nodes.as_array().unwrap()[0];
-    assert_eq!(agent["machine_name"], "agent-smoke");
-    assert_eq!(agent["status"], "online");
-    assert_eq!(agent["total_requests"], 1);
-    assert_eq!(agent["successful_requests"], 1);
-    assert!(agent["loaded_models"].is_array());
+    let node = &nodes.as_array().unwrap()[0];
+    assert_eq!(node["machine_name"], "node-smoke");
+    assert_eq!(node["status"], "online");
+    assert_eq!(node["total_requests"], 1);
+    assert_eq!(node["successful_requests"], 1);
+    assert!(node["loaded_models"].is_array());
 
     let stats_response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/stats")
+                .uri("/v0/dashboard/stats")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -219,11 +250,11 @@ async fn dashboard_agents_and_stats_reflect_registry() {
 
 #[tokio::test]
 async fn dashboard_request_history_tracks_activity() {
-    let (router, registry, load_manager) = build_router().await;
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
-            machine_name: "history-agent".into(),
+            machine_name: "history-node".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7)),
             runtime_version: "0.1.0".into(),
             runtime_port: 11434,
@@ -231,10 +262,12 @@ async fn dashboard_request_history_tracks_activity() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
         .node_id;
+    registry.approve(node_id).await.unwrap();
 
     load_manager.begin_request(node_id).await.unwrap();
     load_manager
@@ -251,7 +284,8 @@ async fn dashboard_request_history_tracks_activity() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/request-history")
+                .uri("/v0/dashboard/request-history")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -276,7 +310,7 @@ async fn dashboard_request_history_tracks_activity() {
 
 #[tokio::test]
 async fn dashboard_overview_returns_combined_payload() {
-    let (router, registry, load_manager) = build_router().await;
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
@@ -288,6 +322,7 @@ async fn dashboard_overview_returns_combined_payload() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -303,7 +338,8 @@ async fn dashboard_overview_returns_combined_payload() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/dashboard/overview")
+                .uri("/v0/dashboard/overview")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -315,8 +351,8 @@ async fn dashboard_overview_returns_combined_payload() {
     let overview: Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(overview["nodes"].as_array().unwrap().len(), 1);
-    let agent = overview["nodes"].as_array().unwrap().first().unwrap();
-    assert!(agent["loaded_models"].is_array());
+    let node = overview["nodes"].as_array().unwrap().first().unwrap();
+    assert!(node["loaded_models"].is_array());
     assert_eq!(overview["stats"]["total_nodes"], 1);
     assert_eq!(overview["history"].as_array().unwrap().len(), 60);
     assert!(overview["generated_at"].is_string());
@@ -324,8 +360,8 @@ async fn dashboard_overview_returns_combined_payload() {
 }
 
 #[tokio::test]
-async fn dashboard_agent_metrics_endpoint_returns_history() {
-    let (router, registry, load_manager) = build_router().await;
+async fn dashboard_node_metrics_endpoint_returns_history() {
+    let (router, registry, load_manager, admin_key) = build_router().await;
 
     let node_id = registry
         .register(RegisterRequest {
@@ -337,6 +373,7 @@ async fn dashboard_agent_metrics_endpoint_returns_history() {
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap()
@@ -358,7 +395,7 @@ async fn dashboard_agent_metrics_endpoint_returns_history() {
             active_requests: 2,
             average_response_time_ms: Some(105.0),
             initializing: false,
-            ready_models: None,
+            ready_models: Some((0, 0)),
         })
         .await
         .unwrap();
@@ -367,7 +404,8 @@ async fn dashboard_agent_metrics_endpoint_returns_history() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/api/dashboard/metrics/{node_id}"))
+                .uri(format!("/v0/dashboard/metrics/{node_id}"))
+                .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
         )

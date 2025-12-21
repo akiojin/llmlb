@@ -1,46 +1,126 @@
 //! Integration Test: GPUなしノードの起動時クリーンアップ
 //!
-//! ストレージに保存されたGPU無しノードが、Coordinator起動時に自動削除されることを確認する。
+//! ストレージに保存されたGPU無しノードが、Router起動時に自動削除されることを確認する。
 
+use chrono::Utc;
+use llm_router::db::nodes::NodeStorage;
 use llm_router::registry::NodeRegistry;
-use once_cell::sync::Lazy;
-use serde_json::Value;
-use std::fs;
-use std::path::PathBuf;
-use tempfile::tempdir;
-use tokio::sync::Mutex;
+use llm_router_common::types::{GpuDeviceInfo, Node, NodeStatus};
+use sqlx::sqlite::SqlitePoolOptions;
+use std::net::IpAddr;
+use uuid::Uuid;
 
-static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+/// テスト用のインメモリSQLiteプールを作成
+async fn create_test_pool() -> sqlx::SqlitePool {
+    let pool = SqlitePoolOptions::new()
+        .connect("sqlite::memory:")
+        .await
+        .expect("Failed to create in-memory pool");
 
-fn load_fixture(name: &str) -> Vec<Value> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("support")
-        .join("fixtures")
-        .join("agents")
-        .join(name);
-    let content = fs::read_to_string(path).expect("fixture must exist");
-    serde_json::from_str(&content).expect("fixture must be valid JSON array")
+    // マイグレーションを実行
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
+
+    pool
+}
+
+/// GPU有効なノードを作成
+fn create_gpu_node(machine_name: &str) -> Node {
+    let now = Utc::now();
+    Node {
+        id: Uuid::new_v4(),
+        machine_name: machine_name.to_string(),
+        ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+        runtime_version: "0.1.0".to_string(),
+        runtime_port: 11434,
+        status: NodeStatus::Online,
+        registered_at: now,
+        last_seen: now,
+        online_since: Some(now),
+        custom_name: None,
+        tags: Vec::new(),
+        notes: None,
+        loaded_models: Vec::new(),
+        loaded_embedding_models: Vec::new(),
+        loaded_asr_models: Vec::new(),
+        loaded_tts_models: Vec::new(),
+        supported_runtimes: Vec::new(),
+        gpu_devices: vec![GpuDeviceInfo {
+            model: "NVIDIA RTX 4090".to_string(),
+            count: 1,
+            memory: Some(24_000_000_000),
+        }],
+        gpu_available: true,
+        gpu_count: Some(1),
+        gpu_model: Some("NVIDIA RTX 4090".to_string()),
+        gpu_model_name: Some("GeForce RTX 4090".to_string()),
+        gpu_compute_capability: Some("8.9".to_string()),
+        gpu_capability_score: Some(89),
+        node_api_port: Some(11435),
+        initializing: false,
+        ready_models: None,
+    }
+}
+
+/// GPU無効なノードを作成
+fn create_no_gpu_node(machine_name: &str) -> Node {
+    let now = Utc::now();
+    Node {
+        id: Uuid::new_v4(),
+        machine_name: machine_name.to_string(),
+        ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
+        runtime_version: "0.1.0".to_string(),
+        runtime_port: 11434,
+        status: NodeStatus::Online,
+        registered_at: now,
+        last_seen: now,
+        online_since: Some(now),
+        custom_name: None,
+        tags: Vec::new(),
+        notes: None,
+        loaded_models: Vec::new(),
+        loaded_embedding_models: Vec::new(),
+        loaded_asr_models: Vec::new(),
+        loaded_tts_models: Vec::new(),
+        supported_runtimes: Vec::new(),
+        gpu_devices: Vec::new(),
+        gpu_available: false,
+        gpu_count: None,
+        gpu_model: None,
+        gpu_model_name: None,
+        gpu_compute_capability: None,
+        gpu_capability_score: None,
+        node_api_port: Some(11435),
+        initializing: false,
+        ready_models: None,
+    }
 }
 
 #[tokio::test]
-async fn gpu_less_agents_are_removed_on_startup() {
-    let _guard = ENV_LOCK.lock().await;
-    let temp = tempdir().expect("create temp dir");
+async fn gpu_less_nodes_are_removed_on_startup() {
+    let pool = create_test_pool().await;
 
-    // 準備: GPU無し・GPU有りのノードを混在させたnodes.jsonを作成
-    let mut nodes: Vec<Value> = load_fixture("gpu_missing.json");
-    nodes.extend(load_fixture("gpu_valid.json"));
+    // 準備: GPU有り・GPU無しのノードをデータベースに直接挿入
+    let storage = NodeStorage::new(pool.clone());
 
-    let data_dir = temp.path();
-    let data_file = data_dir.join("nodes.json");
-    fs::create_dir_all(data_dir).unwrap();
-    fs::write(&data_file, serde_json::to_string_pretty(&nodes).unwrap()).unwrap();
+    let gpu_node1 = create_gpu_node("gpu-node-1");
+    let gpu_node2 = create_gpu_node("gpu-node-2");
+    let no_gpu_node1 = create_no_gpu_node("no-gpu-node-1");
+    let no_gpu_node2 = create_no_gpu_node("no-gpu-node-2");
 
-    std::env::set_var("LLM_ROUTER_DATA_DIR", data_dir);
+    storage.save_node(&gpu_node1).await.unwrap();
+    storage.save_node(&gpu_node2).await.unwrap();
+    storage.save_node(&no_gpu_node1).await.unwrap();
+    storage.save_node(&no_gpu_node2).await.unwrap();
 
-    // Act: ストレージ付きレジストリを初期化
-    let registry = NodeRegistry::with_storage()
+    // 4ノードが保存されていることを確認
+    let all_nodes = storage.load_nodes().await.unwrap();
+    assert_eq!(all_nodes.len(), 4);
+
+    // Act: ストレージ付きレジストリを初期化（クリーンアップが実行される）
+    let registry = NodeRegistry::with_storage(pool.clone())
         .await
         .expect("registry should initialize");
 
@@ -51,19 +131,11 @@ async fn gpu_less_agents_are_removed_on_startup() {
         2,
         "only GPU-capable nodes should remain after cleanup"
     );
-    assert!(remaining.iter().all(|agent| agent.gpu_available));
+    assert!(remaining.iter().all(|node| node.gpu_available));
 
-    // nodes.jsonが上書きされ、GPU無しノードが削除されていることを確認
-    let persisted: Vec<Value> =
-        serde_json::from_str(&fs::read_to_string(&data_file).unwrap()).unwrap();
+    // データベースからもGPU無しノードが削除されていることを確認
+    let persisted = storage.load_nodes().await.unwrap();
     assert_eq!(persisted.len(), 2);
-    assert!(persisted
-        .iter()
-        .all(|agent| agent["gpu_available"] == Value::Bool(true)));
-    assert!(persisted.iter().all(|agent| agent["gpu_devices"]
-        .as_array()
-        .map(|list| !list.is_empty())
-        .unwrap_or(false)));
-
-    std::env::remove_var("LLM_ROUTER_DATA_DIR");
+    assert!(persisted.iter().all(|node| node.gpu_available));
+    assert!(persisted.iter().all(|node| !node.gpu_devices.is_empty()));
 }

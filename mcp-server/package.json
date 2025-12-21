@@ -1,0 +1,59 @@
+{
+  "name": "@llm-router/mcp-server",
+  "version": "0.0.0-development",
+  "description": "MCP server for LLM Router API operations via curl execution",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "llm-router-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "llm-router",
+    "model-context-protocol",
+    "claude",
+    "llm",
+    "ai"
+  ],
+  "author": "akiojin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akiojin/llm-router.git",
+    "directory": "mcp-server"
+  },
+  "homepage": "https://github.com/akiojin/llm-router/tree/main/mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/akiojin/llm-router/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "yaml": "^2.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

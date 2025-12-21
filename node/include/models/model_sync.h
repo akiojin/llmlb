@@ -47,6 +47,9 @@ public:
     ModelSync(std::string base_url, std::string models_dir,
               std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
+    void setNodeToken(std::string node_token);
+    void setApiKey(std::string api_key);
+
     ModelSyncResult sync();
 
     std::vector<RemoteModel> fetchRemoteModels();
@@ -95,12 +98,17 @@ public:
     const std::string& getModelsDir() const { return models_dir_; }
     const std::string& getBaseUrl() const { return base_url_; }
 
+    // Get remote model path from router (empty string if not found or not accessible)
+    std::string getRemotePath(const std::string& model_id) const;
+
 private:
     std::string base_url_;
     std::string models_dir_;
     std::chrono::milliseconds timeout_;
 
     mutable std::mutex etag_mutex_;
+    std::optional<std::string> node_token_;
+    std::optional<std::string> api_key_;
     std::unordered_map<std::string, std::string> etag_cache_;
     std::unordered_map<std::string, size_t> size_cache_;
     std::unordered_map<std::string, ModelOverrides> model_overrides_;

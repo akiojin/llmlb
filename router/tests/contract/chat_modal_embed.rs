@@ -1,18 +1,15 @@
-//! Contract test: dashboard embeds chat console as fullscreen modal (no new tab)
+//! Contract test: dashboard (React SPA) serves correctly
+//!
+//! The dashboard is now a React single-page application.
+//! This test verifies the React app shell is served correctly.
 
 use axum::{body::to_bytes, http::Request, Router};
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use tower::ServiceExt;
 
 async fn build_router() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -20,12 +17,15 @@ async fn build_router() -> Router {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool,
         jwt_secret,
@@ -35,7 +35,7 @@ async fn build_router() -> Router {
 }
 
 #[tokio::test]
-async fn dashboard_contains_chat_modal() {
+async fn dashboard_serves_react_app() {
     let router = build_router().await;
 
     let response = router
@@ -52,17 +52,44 @@ async fn dashboard_contains_chat_modal() {
     let bytes = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
     let html = String::from_utf8(bytes.to_vec()).expect("dashboard html should be utf-8");
 
+    // React app mount point
     assert!(
-        html.contains("id=\"chat-open\""),
-        "chat open button not found"
+        html.contains("id=\"root\""),
+        "React mount point (id=root) not found"
     );
+
+    // Should have script tags for the React bundle
     assert!(
-        html.contains("id=\"chat-modal\""),
-        "chat modal container not found"
+        html.contains("<script") && html.contains("</script>"),
+        "Script tags not found"
     );
-    assert!(html.contains("id=\"chat-iframe\""), "chat iframe not found");
+
+    // Should have the dashboard title
     assert!(
-        html.contains("src=\"/playground\""),
-        "chat iframe src should point to /playground"
+        html.contains("<title>") && html.contains("Dashboard"),
+        "Dashboard title not found"
+    );
+}
+
+#[tokio::test]
+async fn dashboard_links_to_playground() {
+    // This test verifies the navigation exists in the built assets
+    // The actual link is rendered by React, so we verify the playground route works
+    let router = build_router().await;
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/playground")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::OK,
+        "Playground route should be accessible"
     );
 }

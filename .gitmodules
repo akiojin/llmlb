@@ -1,0 +1,6 @@
+[submodule "node/third_party/whisper.cpp"]
+	path = node/third_party/whisper.cpp
+	url = https://github.com/ggerganov/whisper.cpp.git
+[submodule "node/third_party/stable-diffusion.cpp"]
+	path = node/third_party/stable-diffusion.cpp
+	url = https://github.com/leejet/stable-diffusion.cpp

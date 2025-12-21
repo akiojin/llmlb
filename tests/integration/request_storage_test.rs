@@ -79,14 +79,14 @@ async fn test_filter_by_model() {
     assert!(false, "T010: Model filtering not implemented yet");
 }
 
-/// T010: エージェントIDでフィルタ
+/// T010: ノードIDでフィルタ
 #[tokio::test]
-async fn test_filter_by_agent_id() {
-    // TODO: 異なるエージェントのレコードを複数作成
-    // TODO: エージェントIDでフィルタ
+async fn test_filter_by_node_id() {
+    // TODO: 異なるノードのレコードを複数作成
+    // TODO: ノードIDでフィルタ
     // TODO: 正しいレコードのみが返されることを確認
 
-    assert!(false, "T010: Agent ID filtering not implemented yet");
+    assert!(false, "T010: Node ID filtering not implemented yet");
 }
 
 /// T010: ステータスでフィルタ
@@ -123,7 +123,7 @@ async fn test_pagination() {
 /// ヘルパー: テスト用のレコードを作成
 fn create_test_record(
     model: &str,
-    agent_id: Uuid,
+    node_id: Uuid,
     timestamp: chrono::DateTime<Utc>,
     status: RecordStatus,
 ) -> RequestResponseRecord {
@@ -132,9 +132,9 @@ fn create_test_record(
         timestamp,
         request_type: RequestType::Chat,
         model: model.to_string(),
-        agent_id,
-        agent_machine_name: "test-agent".to_string(),
-        agent_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
+        node_id,
+        node_machine_name: "test-node".to_string(),
+        node_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
         client_ip: Some("10.0.0.10".parse::<IpAddr>().unwrap()),
         request_body: serde_json::json!({
             "model": model,

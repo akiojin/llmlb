@@ -36,10 +36,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup C++ build environment
+        uses: ./.github/actions/setup-cpp
+        with:
+          with-cross-compile: 'true'
+
       - name: Build C++ binary (Linux amd64)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev
           cmake -S node -B node/build -DBUILD_TESTS=OFF
           cmake --build node/build --config Release
           mkdir -p dist
@@ -48,8 +51,6 @@ jobs:
       - name: Build C++ binary (macOS arm64) [cross]
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm lld cmake libssl-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
           cmake -S node -B node/build-macos \
             -DCMAKE_SYSTEM_NAME=Darwin \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -74,8 +75,6 @@ jobs:
       - name: Build C++ binary (Windows x64) [cross]
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64 cmake libssl-dev
           cmake -S node -B node/build-win \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_SYSTEM_VERSION=10.0 \
@@ -89,8 +88,6 @@ jobs:
 
       - name: Build C++ binary (Linux CUDA)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev
           cmake -S node -B node/build-cuda \
             -DBUILD_TESTS=OFF \
             -DBUILD_WITH_CUDA=ON
@@ -99,7 +96,73 @@ jobs:
           tar -czf dist/llm-node-linux-cuda.tar.gz -C node/build-cuda llm-node
 
       - name: Semantic Release
+        id: semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm dlx semantic-release
+
+  publish-mcp-server:
+    name: Publish MCP Server to npm
+    needs: semantic-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Get release version
+        id: version
+        run: |
+          git fetch --tags
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if version already published
+        id: check
+        working-directory: mcp-server
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "@llm-router/mcp-server@${RELEASE_VERSION}" version 2>/dev/null; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Version ${RELEASE_VERSION} already published, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        run: pnpm build
+
+      - name: Update version
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        working-directory: mcp-server
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

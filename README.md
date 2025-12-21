@@ -11,14 +11,13 @@ LLM Router is a powerful centralized system that provides unified management and
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
-- **Automatic Load Balancing**: Intelligently distribute requests across available agents
-- **Automatic Failure Detection**: Detect offline agents and exclude them from distribution
-- **Real-time Monitoring**: Comprehensive visualization of agent states and performance metrics via web dashboard
+- **Automatic Load Balancing**: Intelligently distribute requests across available nodes
+- **Automatic Failure Detection**: Detect offline nodes and exclude them from routing
+- **Real-time Monitoring**: Comprehensive visualization of node states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
-- **Self-registering Agents**: Agents automatically register with the Coordinator
-- **Model Auto-Distribution**: Automatically distribute AI models to agents based
-  on GPU memory capacity
-- **WebUI Management**: Manage agent settings, monitoring, and control through
+- **Self-registering Nodes**: Nodes automatically register with the Router
+- **Node-driven Model Sync**: Nodes pull models via router `/v0/models` and `/v0/models/blob/:model_name` (no push-based distribution)
+- **WebUI Management**: Manage node settings, monitoring, and control through
   browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities
@@ -27,8 +26,51 @@ LLM Router is a powerful centralized system that provides unified management and
   model name to proxy to the corresponding cloud provider while keeping the
   same OpenAI-compatible endpoint.
 
-Quick references: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
-[TROUBLESHOOTING](./TROUBLESHOOTING.md)
+## MCP Server for LLM Assistants
+
+LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
+MCP server. This is the recommended approach over using Bash with curl commands
+directly.
+
+### Why MCP Server over Bash + curl?
+
+| Feature | MCP Server | Bash + curl |
+|---------|------------|-------------|
+| Authentication | Auto-injected | Manual header management |
+| Security | Host whitelist, injection prevention | No built-in protection |
+| Shell injection | Protected (shell: false) | Vulnerable |
+| API documentation | Built-in as MCP resources | External reference needed |
+| Credential handling | Automatic masking in logs | Exposed in command history |
+| Timeout management | Configurable per-request | Manual implementation |
+| Error handling | Structured JSON responses | Raw text parsing |
+
+### Installation
+
+```bash
+npm install -g @llm-router/mcp-server
+# or
+npx @llm-router/mcp-server
+```
+
+### Configuration (.mcp.json)
+
+```json
+{
+  "mcpServers": {
+    "llm-router": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@llm-router/mcp-server"],
+      "env": {
+        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+      }
+    }
+  }
+}
+```
+
+For detailed documentation, see [mcp-server/README.md](./mcp-server/README.md).
 
 ## Quick Start
 
@@ -64,6 +106,11 @@ cargo build --release -p llm-router
 On Windows 10+ and macOS 12+, the router displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
+### CLI Reference
+
+The router CLI currently exposes only basic flags (`--help`, `--version`).
+Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
+
 ### Node (C++)
 
 **Prerequisites:**
@@ -97,7 +144,7 @@ npm run start:node
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router listens on 8080) |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
 | `LLM_NODE_PORT` | `11435` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
@@ -120,18 +167,18 @@ docker run --rm -p 11435:11435 \
 
 ## Load Balancing
 
-LLM Router supports multiple load balancing strategies to optimize request distribution across agents.
+LLM Router supports multiple load balancing strategies to optimize request distribution across nodes.
 
 ### Strategies
 
 #### 1. Metrics-Based Load Balancing (Recommended)
 
-Selects agents based on real-time metrics (CPU usage, memory usage, active requests). This intelligent mode provides optimal performance by dynamically routing requests to the least loaded agent, ensuring efficient resource utilization.
+Selects nodes based on real-time metrics (CPU usage, memory usage, active requests). This intelligent mode provides optimal performance by dynamically routing requests to the least loaded node, ensuring efficient resource utilization.
 
 **Configuration:**
 ```bash
 # Enable metrics-based load balancing
-LOAD_BALANCER_MODE=metrics cargo run -p llm-router
+LLM_ROUTER_LOAD_BALANCER_MODE=metrics cargo run -p llm-router
 ```
 
 **Load Score Calculation:**
@@ -139,123 +186,124 @@ LOAD_BALANCER_MODE=metrics cargo run -p llm-router
 score = cpu_usage + memory_usage + (active_requests × 10)
 ```
 
-The agent with the **lowest score** is selected. If all agents have CPU usage > 80%, the system automatically falls back to round-robin.
+The node with the **lowest score** is selected. If all nodes have CPU usage > 80%, the system automatically falls back to round-robin.
 
 **Example:**
-- Agent A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
-- Agent B: CPU 70%, Memory 50%, Active 5 → Score = 170
+- Node A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
+- Node B: CPU 70%, Memory 50%, Active 5 → Score = 170
 
 #### 2. Advanced Load Balancing (Default)
 
-Combines multiple factors including response time, active requests, and CPU usage to provide sophisticated agent selection with adaptive performance optimization.
+Combines multiple factors including response time, active requests, and CPU usage to provide sophisticated node selection with adaptive performance optimization.
 
 **Configuration:**
 ```bash
 # Use default advanced load balancing (or omit LOAD_BALANCER_MODE)
-LOAD_BALANCER_MODE=auto cargo run -p llm-router
+LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 ```
 
-### Metrics API
+### Health / Metrics API
 
-Agents can report their metrics to the Coordinator for load balancing decisions.
+Nodes report health + metrics to the Router for node status and load balancing decisions.
 
-**Endpoint:** `POST /api/agents/:id/metrics`
+**Endpoint:** `POST /v0/health` (requires `X-Node-Token` + API key with `node:register`)
+
+**Headers:**
+- `Authorization: Bearer <api_key>`
+- `X-Node-Token: <node_token>`
 
 **Request:**
 ```json
 {
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "node_id": "550e8400-e29b-41d4-a716-446655440000",
   "cpu_usage": 45.5,
   "memory_usage": 60.2,
   "active_requests": 3,
-  "avg_response_time_ms": 250.5,
-  "timestamp": "2025-11-02T10:00:00Z"
+  "average_response_time_ms": 250.5,
+  "loaded_models": ["gpt-oss-20b"],
+  "loaded_embedding_models": [],
+  "initializing": false,
+  "ready_models": [1, 1]
 }
 ```
 
-**Response:** `204 No Content`
+**Response:** `200 OK`
 
 ## Architecture
 
+LLM Router coordinates local llama.cpp nodes and optionally proxies to cloud LLM providers via model prefixes.
+
+### Components
+- **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
+- **Local Nodes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the router.
+- **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the router forwards to the corresponding cloud API.
+- **Storage**: SQLite for router metadata; model files live on each node.
+- **Observability**: Prometheus metrics, structured logs, dashboard stats.
+
 ### System Overview
 
+![System Overview](docs/diagrams/architecture.readme.en.svg)
+
+Draw.io source: `docs/diagrams/architecture.drawio` (Page: System Overview (README.md))
+
+### Request Flow
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                          Client                              │
-│                (Users, Applications, etc.)                   │
-└────────────────────┬────────────────────────────────────────┘
-                     │ POST /api/chat
-                     │ POST /api/generate
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Coordinator                             │
-│                  (Central Management Server)                 │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 1. Select Agent (Load Balancing)                    │   │
-│  │ 2. Proxy Request to Selected Agent                   │   │
-│  │ 3. Return Response to Client                         │   │
-│  └─────────────────────────────────────────────────────┘   │
-└────┬──────────────────┬──────────────────┬─────────────────┘
-     │                  │                  │
-     │ Internal Proxy   │ Internal Proxy   │ Internal Proxy
-     ▼                  ▼                  ▼
-┌─────────┐        ┌─────────┐        ┌─────────┐
-│ Agent 1 │        │ Agent 2 │        │ Agent 3 │
-│         │        │         │        │         │
-│  LLM runtime │        │  LLM runtime │        │  LLM runtime │
-│  (Auto) │        │  (Auto) │        │  (Auto) │
-└─────────┘        └─────────┘        └─────────┘
-Machine 1          Machine 2          Machine 3
+Client
+  │ POST /v1/chat/completions
+  ▼
+Router (OpenAI-compatible)
+  ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
+  └─ No prefix → Scheduler → Local Node
+                       └─ llama.cpp inference → Response
 ```
 
 ### Communication Flow (Proxy Pattern)
 
 LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
 
-#### Traditional Method (Without Coordinator)
+#### Traditional Method (Without Router)
 ```bash
-# Direct access to each LLM runtime - manual distribution by users
-curl http://machine1:11434/api/chat -d '...'
-curl http://machine2:11434/api/chat -d '...'
-curl http://machine3:11434/api/chat -d '...'
+# Direct access to each node API (default: node_port=11435)
+curl http://machine1:11435/v1/chat/completions -d '...'
+curl http://machine2:11435/v1/chat/completions -d '...'
+curl http://machine3:11435/v1/chat/completions -d '...'
 ```
 
-#### With Coordinator (Proxy)
+#### With Router (Proxy)
 ```bash
-# Unified access to Coordinator - automatic distribution to optimal LLM runtime
-curl http://coordinator:8080/api/chat -d '...'
-curl http://coordinator:8080/api/chat -d '...'
-curl http://coordinator:8080/api/chat -d '...'
+# Unified access to Router - automatic routing to the optimal node
+curl http://router:8080/v1/chat/completions -d '...'
+curl http://router:8080/v1/chat/completions -d '...'
+curl http://router:8080/v1/chat/completions -d '...'
 ```
 
 **Detailed Request Flow:**
 
-1. **Client → Coordinator**
+1. **Client → Router**
    ```
-   POST http://coordinator:8080/api/chat
+   POST http://router:8080/v1/chat/completions
    Content-Type: application/json
 
    {"model": "llama2", "messages": [...]}
    ```
 
-2. **Coordinator Internal Processing**
-   - Select optimal Agent/LLM runtime (Load Balancing)
-   - Forward request to selected Agent's LLM runtime via HTTP client
+2. **Router Internal Processing**
+   - Select optimal node (Load Balancing)
+   - Forward request to selected node via HTTP client
 
-3. **Coordinator → Agent (Internal Communication)**
+3. **Router → Node (Internal Communication)**
    ```
-   POST http://agent1:11434/api/chat
+   POST http://node1:11435/v1/chat/completions
    Content-Type: application/json
 
    {"model": "llama2", "messages": [...]}
    ```
 
-4. **Agent → LLM runtime → Agent (Local Processing)**
-   - Agent forwards request to local LLM runtime instance
-   - LLM runtime processes LLM and generates response
+4. **Node Local Processing**
+   - Node loads model on-demand (from local cache or router-provided source)
+   - Node runs llama.cpp inference and returns an OpenAI-compatible response
 
-5. **Coordinator → Client (Return Response)**
+5. **Router → Client (Return Response)**
    ```json
    {
      "id": "chatcmpl-xxx",
@@ -272,259 +320,164 @@ curl http://coordinator:8080/api/chat -d '...'
 > All responses follow the OpenAI Chat Completions API specification.
 
 **From Client's Perspective**:
-- Coordinator appears as the only LLM runtime API server
-- No need to be aware of multiple internal LLM runtime instances
+- Router appears as the only OpenAI-compatible API server
+- No need to be aware of multiple internal nodes
 - Complete with a single HTTP request
+
+### Model Sync (No Push Distribution)
+
+- The router never pushes models to nodes.
+- Nodes pull the router's model list via `GET /v1/models`.
+- For each model, nodes either:
+  - use the router-provided `path` directly (shared storage), or
+  - fetch metadata from `GET /v0/models` and download the model from `GET /v0/models/blob/:model_name`.
+
+### Scheduling & Health
+- Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
+- Heartbeats carry CPU/GPU/memory metrics used for load balancing.
+- Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
 ### Benefits of Proxy Pattern
 
 1. **Unified Endpoint**
-   - Clients only need to know the Coordinator URL
-   - No need to know each Agent/LLM runtime location
+   - Clients only need to know the Router URL
+   - No need to know each node location
 
 2. **Transparent Load Balancing**
-   - Coordinator automatically selects optimal agent
+   - Router automatically selects the optimal node
    - Clients benefit from load distribution without awareness
 
 3. **Automatic Retry on Failure**
-   - If Agent1 fails → Coordinator automatically tries Agent2
+   - If Node1 fails → Router automatically tries Node2
    - No re-request needed from client
 
 4. **Security**
-   - Agent IP addresses not exposed to clients
-   - Only Coordinator needs to be publicly accessible
+   - Node IP addresses not exposed to clients
+   - Only Router needs to be publicly accessible
 
 5. **Scalability**
-   - Adding Agents automatically increases processing capacity
+   - Adding nodes automatically increases processing capacity
    - No changes needed on client side
 
 ## Project Structure
 
 ```
 llm-router/
-├── common/              # Common library (types, protocols, errors)
-│   ├── src/
-│   │   ├── types.rs     # Agent, HealthMetrics, Request types
-│   │   ├── protocol.rs  # Communication protocol definitions
-│   │   ├── config.rs    # Configuration structures
-│   │   └── error.rs     # Unified error types
-│   └── Cargo.toml
-├── coordinator/         # Coordinator server
-│   ├── src/
-│   │   ├── api/         # REST API handlers
-│   │   │   ├── agent.rs    # Agent registration & list
-│   │   │   ├── health.rs   # Health check receiver
-│   │   │   └── proxy.rs    # LLM runtime proxy
-│   │   ├── registry/    # Agent state management
-│   │   ├── db/          # Database access
-│   │   └── main.rs
-│   ├── migrations/      # Database migrations
-│   └── Cargo.toml
-├── node/                # C++ Node (llama.cpp integrated)
-│   ├── src/
-│   │   ├── main.cpp     # Entry point
-│   │   ├── api/         # OpenAI-compatible API
-│   │   ├── core/        # llama.cpp inference engine
-│   │   └── models/      # Model management
-│   ├── tests/           # TDD tests
-│   └── CMakeLists.txt
+├── common/              # Shared library (types, protocol, errors)
+├── router/              # Rust router (HTTP APIs, dashboard, proxy)
+├── node/                # C++ node (llama.cpp, OpenAI-compatible /v1/*)
+├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
-    └── SPEC-32e2b31a/
-        ├── spec.md      # Feature specification
-        ├── plan.md      # Implementation plan
-        └── tasks.md     # Task breakdown
 ```
 
 ## Dashboard
 
-The dashboard ships with the coordinator process. Once the server is running you can supervise all registered agents, review recent request history, and manage metadata from your browser.
+The dashboard is served by the router at `/dashboard`.
+Use it to monitor nodes, view request history, inspect logs, and manage models.
 
 ### Quick usage
 
-1. Start the coordinator (inside Docker or on the host):
+1. Start the router:
    ```bash
    cargo run -p llm-router
    ```
-2. Open the dashboard in your browser:
+2. Open:
    ```
    http://localhost:8080/dashboard
    ```
-3. Filter, search, sort, and page through the agent list. Click “詳細” to edit display name, tags, or notes, or to force-disconnect / delete an agent. Use the export buttons above the table to download the current view as JSON or CSV.
 
-For a deeper walkthrough, including API references and customisation tips, see [docs/dashboard.md](./docs/dashboard.md).
-
-## Hugging Face catalog (GGUF)
+## Hugging Face registration (GGUF-first)
 
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
-- CLI:
-  - `llm-router model list --search llama --limit 10` to browse the HF GGUF catalog
-  - `llm-router model add <repo> --file <gguf>` to register (ID becomes `hf/<repo>/<file>`)
-  - `llm-router model download <id> --all|--node <uuid>` to start downloads
-- Web: Dashboard → モデル管理 → 「対応可能モデル（HF）」で登録し、「今すぐダウンロード」で配布
-- Registered HF entries appear in `/v1/models` with `download_url` for nodes to fetch
+- Web (recommended):
+  - Dashboard → **Models** → **Register**
+  - Enter a Hugging Face repo (e.g. `TheBloke/Llama-2-7B-GGUF`) and (optionally) a filename (e.g. `llama-2-7b.Q4_K_M.gguf`).
+  - Model IDs are normalized to a filename-based format (e.g. `llama-2-7b`).
+  - `/v1/models` lists only models that are cached on the router filesystem.
+  - Nodes never receive push-based distribution; they pull models based on `/v0/models` and download via `/v0/models/blob/:model_name` when needed.
 
 ## Installation
 
+### Prerequisites
+- Linux/macOS/Windows x64 (GPU recommended)
+- Rust toolchain (stable) and cargo
+- Docker (optional)
+- CUDA driver (for NVIDIA GPU)
+
+### 1) Build from Rust source (Recommended)
+```bash
+git clone https://github.com/akiojin/llm-router.git
+cd llm-router
+make quality-checks   # fmt/clippy/test/markdownlint
+cargo build -p llm-router --release
+```
+Artifact: `target/release/llm-router`
+
+### 2) Run with Docker
+```bash
+docker build -t llm-router:latest .
+docker run --rm -p 8080:8080 --gpus all \
+  -e OPENAI_API_KEY=... \
+  llm-router:latest
+```
+If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
+
+### 3) C++ Node Build
+See [Node (C++)](#node-c) section in Quick Start.
+
 ### Requirements
 
-- **Coordinator**: Linux / Windows 10+ / macOS 12+, Rust 1.70+
-- **Agent**: Windows 10+ / macOS 12+ (CLI-based application), Rust 1.70+
-- **GPU**: NVIDIA / AMD / Apple Silicon GPU required for agent registration
-  - Automatically detected on startup
-  - Docker for Mac: Apple Silicon detection supported
-- **Docker memory**: When running via `docker-compose`, allocate at least 16 GiB RAM to the container (`mem_limit: 16g`, `mem_reservation: 13g`, `memswap_limit: 18g`). On Docker Desktop, open **Settings → Resources** and raise the memory slider to ≥16 GiB before running `docker compose up`. Without this, large models such as `gpt-oss:20b` will fail to start with "requires more system memory" errors.
-- **LLM runtime**: Automatically downloaded and installed when not present
-  - Progress display during download
-  - Automatic retry on network errors
-  - SHA256 checksum verification
-  - Proxy support (HTTP_PROXY, HTTPS_PROXY environment variables)
-- **LLM Models**: Automatically downloaded on first startup
-  - Memory-based model selection (appropriate model size for available RAM)
-  - Real-time progress display with streaming status updates
-  - Automatic retry on network errors
-  - Models pulled via LLM runtime API
-- **Management**: Browser-based WebUI dashboard for agent settings and monitoring
-
-### Coordinator Setup
-
-```bash
-# Clone repository
-git clone https://github.com/your-org/llm-router.git
-cd llm-router
-
-# Build Coordinator
-cd coordinator
-cargo build --release
-
-# Start Coordinator
-./target/release/llm-router
-# Default: http://0.0.0.0:8080
-```
-
-### Agent Setup
-
-```bash
-# Build Agent
-cd agent
-cargo build --release
-
-# Start Agent (環境変数で上書き)
-ROUTER_URL=http://coordinator-host:8080 ./target/release/llm-node
-
-# 環境変数を指定しない場合はローカル設定パネルで保存した値、なければ http://localhost:8080
-./target/release/llm-node
-```
-
-**Note**: LLM runtime is automatically downloaded and installed on first startup if not already present. The agent will:
-- Detect the platform (Linux, macOS, Windows)
-- Download the appropriate LLM runtime binary
-- Verify integrity with SHA256 checksum
-- Install to `~/.runtime-agent/bin/`
-- **Automatically download LLM models**:
-  - Memory-based model selection (chooses appropriate model size)
-  - Real-time progress display during model download
-  - Automatic retry on network errors (configurable via environment variables)
-  - Streaming response processing for live status updates
-- Start LLM runtime and register with the coordinator
-
-Manual installation is also supported. Download LLM runtime from [runtime.ai](https://runtime.ai).
-
-#### System tray (Windows / macOS)
-
-- On Windows 10+ and macOS 12+, both the **agent** *and* the **coordinator** expose tray / menu bar icons when launched as binaries.
-- The agent tray icon behaves as before: double-click or **Open Settings** to launch the local settings panel, edit coordinator URL / LLM runtime port / heartbeat interval, and jump to `ROUTER_URL/dashboard`. **Quit Agent** stops the background process. Linux builds continue to run as a headless CLI daemon (settings URL is printed to stdout).
-- The coordinator tray icon lets you open the local dashboard (`http://127.0.0.1:<port>/dashboard` by default) or exit the server directly from the system tray. Double-clicking the icon also launches the dashboard in your default browser.
-- Tray icons are derived from [Open Iconic](https://github.com/iconic/open-iconic) (MIT License); a copy of the license is included at `assets/icons/ICON-LICENSE.txt`.
-
-### Release Automation
-
-We follow the same release-branch workflow as `akiojin/unity-mcp-server`, with integrated binary building and publishing in `publish.yml`.
-
-1. While on `develop`, run the `/release` slash command or execute `./scripts/create-release-branch.sh`. The helper script calls `gh workflow run create-release.yml --ref develop`, which performs a semantic-release dry-run and creates `release/vX.Y.Z`.
-2. Pushing `release/vX.Y.Z` triggers `.github/workflows/release.yml`. That workflow runs semantic-release for real, updates CHANGELOG/Cargo manifests, creates the Git tag and GitHub Release, merges the release branch into `main`, backmerges `main` into `develop`, and deletes the release branch.
-3. The `main` push kicks off `.github/workflows/publish.yml`, which builds and attaches Linux/macOS/Windows archives to the GitHub Release.
-   - During this phase the workflow also builds platform installers: macOS gets `or-router-<platform>.pkg` via `pkgbuild`, while Windows receives `or-router-<platform>.msi` via WiX. These ship alongside the existing `.tar.gz` / `.zip` archives so current release consumers stay unaffected.
-
-Monitor the pipeline with:
-
-```bash
-gh run watch $(gh run list --workflow=create-release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run watch $(gh run list --workflow=publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-```
-
-Only the `/release` invocation is manual; versioning, CHANGELOG generation, tagging, release creation, and binary distribution are fully automated.
-
-#### GPU Detection
-
-Agents automatically detect GPU on startup. **GPU is required** for agent registration.
-
-**Supported GPUs:**
-- **NVIDIA**: Detected via NVML library or device files (`/dev/nvidia0`)
-- **AMD**: Detected via sysfs KFD Topology (`/sys/class/kfd/kfd/topology/nodes`)
-- **Apple Silicon**: Detected via `lscpu`, `/proc/cpuinfo`, or Metal API (M1/M2/M3/M4)
-
-**Docker for Mac Support:**
-- Apple Silicon is automatically detected in Docker containers
-- No additional configuration required
-
-**Manual Configuration (Fallback):**
-
-If automatic detection fails, set environment variables:
-
-```bash
-LLM_GPU_AVAILABLE=true \
-LLM_GPU_MODEL="Your GPU Model" \
-LLM_GPU_COUNT=1 \
-./target/release/llm-node
-```
+- **Router**: Rust toolchain (stable)
+- **Node**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
+- **Optional (HF non-GGUF conversion)**: `python3` + `transformers` + `torch` + `sentencepiece`
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+  ```
 
 ## Usage
 
 ### Basic Usage
 
-1. **Start Coordinator**
+1. **Start Router**
    ```bash
-   cd coordinator
-   cargo run --release
+   ./target/release/llm-router
+   # Default: http://0.0.0.0:8080
    ```
 
-2. **Start Agents on Multiple Machines**
+2. **Start Nodes on Multiple Machines**
    ```bash
    # Machine 1
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-node
+   LLM_ROUTER_URL=http://router:8080 \
+   # Replace with your actual API key (scope: node:register)
+   LLM_NODE_API_KEY=sk_your_node_register_key \
+   ./node/build/llm-node
 
    # Machine 2
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-node
-
-   # Machine 3
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-node
+   LLM_ROUTER_URL=http://router:8080 \
+   # Replace with your actual API key (scope: node:register)
+   LLM_NODE_API_KEY=sk_your_node_register_key \
+   ./node/build/llm-node
    ```
 
-3. **Use LLM runtime API Through Coordinator**
+3. **Send Inference Requests to Router (OpenAI-compatible)**
    ```bash
-   # Chat API
-   curl http://coordinator:8080/api/chat \
+   curl http://router:8080/v1/chat/completions \
      -H "Content-Type: application/json" \
+     -H "Authorization: Bearer sk_your_api_key" \
      -d '{
-       "model": "llama2",
+       "model": "gpt-oss-20b",
        "messages": [{"role": "user", "content": "Hello!"}],
        "stream": false
      }'
-
-   # Generate API
-   curl http://coordinator:8080/api/generate \
-     -H "Content-Type: application/json" \
-     -d '{
-       "model": "llama2",
-       "prompt": "Tell me a joke",
-       "stream": false
-     }'
    ```
 
-4. **List Registered Agents**
+4. **List Registered Nodes**
    ```bash
-   curl http://coordinator:8080/api/agents
+   curl http://router:8080/v0/nodes \
+     # Replace with your actual API key (scope: admin:*)
+     -H "Authorization: Bearer sk_your_admin_key"
    ```
 
 ### Environment Variables
@@ -546,7 +499,6 @@ LLM_GPU_COUNT=1 \
 | `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Node health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
-| `LLM_ROUTER_SKIP_HEALTH_CHECK` | unset | Skip health checks (tests) | test-only |
 | `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 
 Cloud / external services:
@@ -566,7 +518,8 @@ Cloud / external services:
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | Router URL to register with (override if router runs on 8080) | - |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
+| `LLM_NODE_API_KEY` | - | API key for node registration / model blob download | scope: `node:register` |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
@@ -581,6 +534,39 @@ Cloud / external services:
 | `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
+
+## Troubleshooting
+
+### GPU not found at startup
+- Check: `nvidia-smi` or `CUDA_VISIBLE_DEVICES`
+- Disable via env var: Node side `LLM_ALLOW_NO_GPU=true` (disabled by default)
+- If it still fails, check for NVML library presence
+
+### Cloud models return 401/400
+- Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the router side
+- If `*_key_present` is false in Dashboard `/v0/dashboard/stats`, it's not set
+- Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
+
+### Port conflict
+- Router: Change `LLM_ROUTER_PORT` (e.g., `LLM_ROUTER_PORT=18080`)
+- Node: Change `LLM_NODE_PORT` or use `--port`
+
+### SQLite file creation failed
+- Check write permissions for the directory in `LLM_ROUTER_DATABASE_URL` path
+- On Windows, check if the path contains spaces
+
+### Dashboard does not appear
+- Clear browser cache
+- Try `cargo clean` -> `cargo run` to check if bundled static files are broken
+- Check static delivery settings for `/dashboard/*` if using a reverse proxy
+
+### OpenAI compatible API returns 503 / Model not registered
+- Returns 503 if all nodes are `initializing`. Wait for node model load or check status at `/v0/dashboard/nodes`
+- If specified model does not exist locally, wait for node to auto-pull
+
+### Too many / too few logs
+- Control via `LLM_ROUTER_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLM_ROUTER_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
+- Node logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
 
 ## Development
 
@@ -599,21 +585,6 @@ pnpm install
 ### Running Tests
 
 ```bash
-# Run all tests
-cargo test --workspace
-
-# Coordinator tests
-cd coordinator
-cargo test
-
-# Agent tests
-cd agent
-cargo test
-
-# Integration tests (including ignored, requires Coordinator server)
-cd agent
-TEST_ROUTER_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
-
 # Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint, OpenAI proxy)
 make quality-checks
 
@@ -691,14 +662,14 @@ response bodies, and metadata
 - **Automatic Retention**: Keeps history for 7 days with automatic cleanup
 - **Web Dashboard**: View, filter, and search request history through the
 web interface
-- **Export Capabilities**: Export history in JSON or CSV format
-- **Filtering Options**: Filter by model, agent, status, and time range
+- **Export Capabilities**: Export history as CSV
+- **Filtering Options**: Filter by model, node, status, and time range
 
 ### Accessing Request History
 
 #### Via Web Dashboard
 
-1. Open the coordinator dashboard: `http://localhost:8080/dashboard`
+1. Open the router dashboard: `http://localhost:8080/dashboard`
 2. Navigate to the "Request History" section
 3. Use filters to narrow down specific requests
 4. Click on any request to view full details including request/response bodies
@@ -707,20 +678,17 @@ web interface
 
 **List Request History:**
 ```bash
-GET /api/dashboard/request-responses?page=1&per_page=50
+GET /v0/dashboard/request-responses?page=1&per_page=50
 ```
 
 **Get Request Details:**
 ```bash
-GET /api/dashboard/request-responses/{id}
+GET /v0/dashboard/request-responses/{id}
 ```
 
 **Export History:**
 ```bash
-# JSON format
-GET /api/dashboard/request-responses/export
-
-# CSV format (via dashboard UI)
+GET /v0/dashboard/request-responses/export
 ```
 
 ### Storage
@@ -736,12 +704,155 @@ The file is automatically managed with:
 
 ## API Specification
 
-### Coordinator API
+### Router API
 
-#### POST /api/agents
-Register an agent.
+#### Authentication Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v0/auth/login` | User authentication, JWT token issuance | None |
+| POST | `/v0/auth/logout` | Logout | JWT |
+| GET | `/v0/auth/me` | Get authenticated user info | JWT |
+
+#### Roles & API Key Scopes
+
+**User roles (JWT):**
+
+| Role | Capabilities |
+|------|--------------|
+| `admin` | Full access to `/v0` management APIs |
+| `viewer` | Can authenticate and access `/v0/auth/*` only |
+
+**API key scopes:**
+
+| Scope | Grants |
+|-------|--------|
+| `node:register` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`) |
+| `api:inference` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
+| `admin:*` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
+
+Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
+
+#### User Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/v0/users` | List users | JWT+Admin or API key (admin:*) |
+| POST | `/v0/users` | Create user | JWT+Admin or API key (admin:*) |
+| PUT | `/v0/users/:id` | Update user | JWT+Admin or API key (admin:*) |
+| DELETE | `/v0/users/:id` | Delete user | JWT+Admin or API key (admin:*) |
+
+#### API Key Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/v0/api-keys` | List API keys | JWT+Admin or API key (admin:*) |
+| POST | `/v0/api-keys` | Create API key | JWT+Admin or API key (admin:*) |
+| PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin or API key (admin:*) |
+| DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin or API key (admin:*) |
+
+#### Node Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v0/nodes` | Register node (GPU required) | API key (node:register) |
+| GET | `/v0/nodes` | List nodes | JWT+Admin or API key (admin:*) |
+| DELETE | `/v0/nodes/:node_id` | Delete node | JWT+Admin or API key (admin:*) |
+| POST | `/v0/nodes/:node_id/disconnect` | Force node offline | JWT+Admin or API key (admin:*) |
+| PUT | `/v0/nodes/:node_id/settings` | Update node settings | JWT+Admin or API key (admin:*) |
+| GET | `/v0/nodes/metrics` | List node metrics | JWT+Admin or API key (admin:*) |
+| GET | `/v0/metrics/summary` | System statistics summary | JWT+Admin or API key (admin:*) |
+
+#### Health Check Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v0/health` | Receive health check from node | Node Token + API key (node:register) |
+
+#### OpenAI-Compatible Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v1/chat/completions` | Chat completions API | API Key |
+| POST | `/v1/completions` | Text completions API | API Key |
+| POST | `/v1/embeddings` | Embeddings API | API Key |
+| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Node Token |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key / Node Token |
+
+#### Model Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/v0/models` | List registered models (node sync) | API key (node:register or admin:*) |
+| POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin:*) |
+| DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin:*) |
+| POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin:*) |
+| GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | API key (node:register or admin:*) |
+
+#### Dashboard Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/v0/dashboard/nodes` | Node info list | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/stats` | System statistics | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/request-history` | Request history | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/metrics/:node_id` | Node metrics history | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin:*) |
+
+#### Log Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/v0/dashboard/logs/router` | Router logs | JWT+Admin or API key (admin:*) |
+| GET | `/v0/nodes/:node_id/logs` | Node logs | JWT+Admin or API key (admin:*) |
+
+#### Static Files & Metrics
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/dashboard` | Dashboard UI | None |
+| GET | `/dashboard/*path` | Dashboard static files | None |
+| GET | `/playground` | Chat Playground UI | None |
+| GET | `/playground/*path` | Playground static files | None |
+| GET | `/v0/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin:*) |
+
+### Node API (C++)
+
+#### OpenAI-Compatible Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/models` | List available models |
+| POST | `/v1/chat/completions` | Chat completions (streaming supported) |
+| POST | `/v1/completions` | Text completions |
+| POST | `/v1/embeddings` | Embeddings generation |
+
+#### Node Management Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/startup` | Startup status check |
+| GET | `/metrics` | Metrics (JSON format) |
+| GET | `/metrics/prom` | Prometheus metrics |
+| GET | `/v0/logs?tail=200` | Tail node logs (JSON) |
+| GET | `/log/level` | Get current log level |
+| POST | `/log/level` | Change log level |
+| GET | `/internal-error` | Intentional error (debug) |
+
+### Request/Response Examples
+
+#### POST /v0/nodes
+
+Register a node.
 
 **Request:**
+
+**Headers:** `Authorization: Bearer <node_api_key>`
+
 ```json
 {
   "machine_name": "my-machine",
@@ -756,195 +867,67 @@ Register an agent.
 ```
 
 **Response:**
+
 ```json
 {
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "registered"
+  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "registered",
+  "node_api_port": 11435,
+  "node_token": "nt_xxx"
 }
 ```
 
-#### GET /api/agents
-Get list of registered agents.
+#### GET /v1/models
 
-**Response:**
-```json
-[
-  {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "machine_name": "my-machine",
-    "ip_address": "192.168.1.100",
-    "runtime_version": "0.1.0",
-    "runtime_port": 11434,
-    "status": "online",
-    "registered_at": "2025-10-30T12:00:00Z",
-    "last_seen": "2025-10-30T12:05:00Z",
-    "gpu_available": true,
-    "gpu_devices": [
-      { "model": "NVIDIA RTX 4090", "count": 2 }
-    ],
-    "gpu_count": 2,
-    "gpu_model": "NVIDIA RTX 4090"
-  }
-]
-```
-
-#### POST /api/health
-Receive health check information (Agent→Coordinator).
-
-**Request:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3
-}
-```
-
-#### POST /api/agents/:id/metrics
-Update agent metrics for load balancing (Agent→Coordinator).
-
-**Request:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3,
-  "avg_response_time_ms": 250.5,
-  "timestamp": "2025-11-02T10:00:00Z"
-}
-```
-
-**Response:** `204 No Content`
-
-#### GET /api/models/available
-
-Get list of available models for distribution.
+List available models with Azure OpenAI-style capabilities.
 
 **Response:**
 
 ```json
 {
-  "models": [
+  "object": "list",
+  "data": [
     {
-      "name": "gpt-oss:20b",
-      "display_name": "GPT OSS (20B)",
-      "size_gb": 12.5,
-      "description": "Large language model, 20 billion parameters"
+      "id": "meta-llama/llama-3.1-8b",
+      "object": "model",
+      "created": 0,
+      "owned_by": "router",
+      "capabilities": {
+        "chat_completion": true,
+        "completion": true,
+        "embeddings": false,
+        "fine_tune": false,
+        "inference": true,
+        "text_to_speech": false,
+        "speech_to_text": false,
+        "image_generation": false
+      },
+      "lifecycle_status": "registered",
+      "download_progress": null,
+      "ready": true
     }
-  ],
-  "source": "runtime_library"
-}
-```
-
-#### POST /api/models/distribute
-
-Distribute a model to one or more agents.
-
-**Request:**
-
-```json
-{
-  "model_name": "gpt-oss:7b",
-  "target": "all"
-}
-```
-
-Or for specific agents:
-
-```json
-{
-  "model_name": "gpt-oss:7b",
-  "target": "specific",
-  "agent_ids": [
-    "550e8400-e29b-41d4-a716-446655440000",
-    "660f9511-f39c-52e5-c827-557766551111"
   ]
 }
 ```
 
-**Response:**
+> **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
+> `lifecycle_status`, `download_progress`, and `ready` are router extensions.
 
-```json
-{
-  "task_ids": [
-    "770ea622-g49d-63f6-d938-668877662222",
-    "880fb733-h59e-74g7-e049-779988773333"
-  ]
-}
-```
+#### POST /v1/chat/completions
 
-#### POST /api/agents/:id/models/pull
-
-Instruct a specific agent to pull a model.
+Chat completions API (OpenAI-compatible).
 
 **Request:**
 
 ```json
 {
-  "model_name": "llama3.2:3b"
-}
-```
-
-**Response:**
-
-```json
-{
-  "task_id": "990gc844-i69f-85h8-f150-880099884444"
-}
-```
-
-#### GET /api/agents/:id/models
-
-Get list of installed models on a specific agent.
-
-**Response:**
-
-```json
-[
-  {
-    "name": "gpt-oss:20b",
-    "size_gb": 12.5,
-    "installed_at": "2025-11-14T10:00:00Z"
-  }
-]
-```
-
-#### GET /api/tasks/:id
-
-Get progress of a model download task.
-
-**Response:**
-
-```json
-{
-  "id": "770ea622-g49d-63f6-d938-668877662222",
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "model_name": "gpt-oss:7b",
-  "status": "downloading",
-  "progress": 0.45,
-  "download_speed_bps": 10485760,
-  "created_at": "2025-11-14T10:00:00Z",
-  "updated_at": "2025-11-14T10:05:30Z"
-}
-```
-
-#### POST /api/chat
-
-Proxy endpoint for Chat API (OpenAI-compatible format).
-
-**Request:**
-
-```json
-{
-  "model": "gpt-oss:20b",
+  "model": "gpt-oss-20b",
   "messages": [{"role": "user", "content": "Hello!"}],
   "stream": false
 }
 ```
 
-**Response (OpenAI-compatible):**
+**Response:**
 
 ```json
 {
@@ -959,35 +942,6 @@ Proxy endpoint for Chat API (OpenAI-compatible format).
 ```
 
 > **Important**: LLM Router only supports OpenAI-compatible response format.
-> Ollama-native format (`message`/`done` fields) is NOT supported.
-
-#### POST /api/generate
-
-Proxy endpoint for Generate API (OpenAI-compatible format).
-
-**Request:**
-
-```json
-{
-  "model": "gpt-oss:20b",
-  "prompt": "Tell me a joke",
-  "stream": false
-}
-```
-
-**Response (OpenAI-compatible):**
-
-```json
-{
-  "id": "cmpl-xxx",
-  "object": "text_completion",
-  "choices": [{
-    "text": "Why did the programmer quit? Because he didn't get arrays!",
-    "index": 0,
-    "finish_reason": "stop"
-  }]
-}
-```
 
 ## License
 
@@ -1007,4 +961,4 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
   - `GOOGLE_API_KEY` (required), `GOOGLE_API_BASE_URL` (optional, default `https://generativelanguage.googleapis.com/v1beta`)
   - `ANTHROPIC_API_KEY` (required), `ANTHROPIC_API_BASE_URL` (optional, default `https://api.anthropic.com`)
 - Behavior: prefix is stripped before forwarding; responses remain OpenAI-compatible. Streaming is passthrough as SSE.
-- Metrics: `/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).
+- Metrics: `/v0/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).

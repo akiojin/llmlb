@@ -31,6 +31,9 @@ public:
 
     int port() const { return port_; }
 
+    // Allow additional endpoint registration before start()
+    httplib::Server& getServer() { return server_; }
+
 private:
     void applyCors(httplib::Response& res);
 

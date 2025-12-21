@@ -11,6 +11,7 @@ namespace llm_node {
 // 前方宣言
 class LlamaManager;
 class ModelStorage;
+class ModelSync;
 
 struct ChatMessage {
     std::string role;
@@ -19,7 +20,7 @@ struct ChatMessage {
 
 /// 推論パラメータ
 struct InferenceParams {
-    size_t max_tokens{256};
+    size_t max_tokens{2048};  // デフォルト値を増加（256→2048）
     float temperature{0.8f};
     float top_p{0.9f};
     int top_k{40};
@@ -35,8 +36,8 @@ struct ModelLoadResult {
 
 class InferenceEngine {
 public:
-    /// コンストラクタ: LlamaManager と ModelStorage への参照を注入
-    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage);
+    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync への参照を注入
+    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
@@ -78,6 +79,14 @@ public:
     /// サンプリング（互換性維持）
     std::string sampleNextToken(const std::vector<std::string>& tokens) const;
 
+    /// Embedding生成
+    /// @param input テキスト入力（単一または複数）
+    /// @param model モデル名
+    /// @return 各入力に対するembeddingベクトル
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>& inputs,
+        const std::string& model) const;
+
     /// 依存関係が注入されているか確認
     bool isInitialized() const { return manager_ != nullptr && model_storage_ != nullptr; }
 
@@ -85,9 +94,14 @@ public:
     /// @return ロード結果（成功/失敗）
     ModelLoadResult loadModel(const std::string& model_name);
 
+    /// モデルの最大コンテキストサイズを取得
+    size_t getModelMaxContext() const { return model_max_ctx_; }
+
 private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
+    ModelSync* model_sync_{nullptr};
+    size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;

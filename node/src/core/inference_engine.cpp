@@ -1,12 +1,14 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
 #include "models/model_storage.h"
+#include "models/model_sync.h"
 #include "include/llama.h"
 
 #include <spdlog/spdlog.h>
 #include <random>
 #include <sstream>
 #include <chrono>
+#include <cmath>
 
 namespace llm_node {
 
@@ -16,9 +18,10 @@ static std::string extractGptOssFinalMessage(const std::string& output);
 std::string extractGptOssFinalMessageForTest(const std::string& output);
 
 // コンストラクタ
-InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage)
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync)
     : manager_(&manager)
-    , model_storage_(&model_storage) {}
+    , model_storage_(&model_storage)
+    , model_sync_(model_sync) {}
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -233,7 +236,7 @@ static bool isGptOssModel(llama_model* model) {
     if (arch_len > 0) {
         std::string arch(arch_buf);
         spdlog::info("isGptOssModel: checking architecture '{}'", arch);
-        if (arch == "gptoss") {
+        if (arch == "gpt-oss") {
             spdlog::info("Detected gpt-oss model by architecture: {}", arch);
             return true;
         }
@@ -345,7 +348,7 @@ std::string InferenceEngine::generateChat(
         throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
     }
 
-    // 2. モデルロード（オンデマンドロードのみ。Ollama blob 等へのフォールバックはしない）
+    // 2. モデルロード（オンデマンドロードのみ。blob download 等への暗黙フォールバックはしない）
     if (!manager_->loadModelIfNeeded(gguf_path)) {
         throw std::runtime_error("Failed to load model: " + gguf_path);
     }
@@ -453,7 +456,24 @@ std::string InferenceEngine::generateChat(
     std::string output;
     // int32_t n_cur = n_tokens; // unused
 
-    for (size_t i = 0; i < params.max_tokens; i++) {
+    // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
+    size_t effective_max_tokens = params.max_tokens;
+    int32_t model_n_ctx = llama_model_n_ctx_train(model);
+    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        // デフォルト値(2048)の場合は利用可能な全容量を使用、
+        // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
+        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            effective_max_tokens = available;
+        } else {
+            effective_max_tokens = std::min(params.max_tokens, available);
+        }
+        spdlog::info("Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
+            model_n_ctx, n_tokens, available, effective_max_tokens);
+    }
+
+    for (size_t i = 0; i < effective_max_tokens; i++) {
         // トークンサンプリング
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
@@ -660,7 +680,24 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     std::string accumulated_output;  // ストップシーケンス検出用の累積出力
     bool should_stop = false;
 
-    for (size_t i = 0; i < params.max_tokens && !should_stop; i++) {
+    // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
+    size_t effective_max_tokens = params.max_tokens;
+    int32_t model_n_ctx = llama_model_n_ctx_train(model);
+    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        // デフォルト値(2048)の場合は利用可能な全容量を使用、
+        // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
+        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            effective_max_tokens = available;
+        } else {
+            effective_max_tokens = std::min(params.max_tokens, available);
+        }
+        spdlog::info("Streaming: Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
+            model_n_ctx, n_tokens, available, effective_max_tokens);
+    }
+
+    for (size_t i = 0; i < effective_max_tokens && !should_stop; i++) {
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
         if (llama_vocab_is_eog(vocab, new_token)) {
@@ -791,6 +828,10 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
 }
 
 // モデルをロード（ローカルまたは共有パスから解決）
+// SPEC-dcaeaec4 FR-3: パス解決の優先順位
+//   1. ローカル ~/.llm-router/models/<name>/model.gguf
+//   2. ルーターから取得したpath（直接参照、コピーなし）
+//   3. download_url からダウンロード（sync()で処理済み）
 ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
     ModelLoadResult result;
 
@@ -799,27 +840,195 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    // 1. モデルパス解決（ローカル or 共有パス）
+    // 1. まずローカルストレージからパス解決を試行
     std::string gguf_path = model_storage_->resolveGguf(model_name);
+
+    // 2. ローカルになければ、ルーターのリモートパスを確認
+    if (gguf_path.empty() && model_sync_ != nullptr) {
+        gguf_path = model_sync_->getRemotePath(model_name);
+        if (!gguf_path.empty()) {
+            spdlog::info("Using remote path for model {}: {}", model_name, gguf_path);
+        }
+    }
+
     if (gguf_path.empty()) {
         result.error_message = "Model not found: " + model_name;
         return result;
     }
 
-    // 2. 既にロード済みならそのまま成功
+    // 3. 既にロード済みならそのまま成功
     if (manager_->isLoaded(gguf_path)) {
         result.success = true;
         return result;
     }
 
-    // 3. モデルをロード
+    // 4. モデルをロード
     if (!manager_->loadModelIfNeeded(gguf_path)) {
         result.error_message = "Failed to load model: " + gguf_path;
         return result;
     }
 
+    // 5. モデルの最大コンテキストサイズを取得
+    llama_model* model = manager_->getModel(gguf_path);
+    if (model) {
+        int32_t n_ctx_train = llama_model_n_ctx_train(model);
+        if (n_ctx_train > 0) {
+            model_max_ctx_ = static_cast<size_t>(n_ctx_train);
+            spdlog::info("Model max context size: {}", model_max_ctx_);
+        }
+    }
+
     result.success = true;
     return result;
+}
+
+// Embedding生成
+std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
+    const std::vector<std::string>& inputs,
+    const std::string& model_name) const {
+
+    std::vector<std::vector<float>> results;
+
+    // 依存関係が注入されていない場合はスタブモード（ダミーembedding）
+    if (!isInitialized()) {
+        spdlog::warn("InferenceEngine not initialized, returning dummy embeddings");
+        for (size_t i = 0; i < inputs.size(); ++i) {
+            results.push_back({1.0f, 0.0f, -1.0f});  // 固定のダミー値
+        }
+        return results;
+    }
+
+    // 1. モデルパス解決
+    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    if (gguf_path.empty()) {
+        throw std::runtime_error("Model not found: " + model_name);
+    }
+
+    // 2. モデルロード
+    if (!manager_->loadModelIfNeeded(gguf_path)) {
+        throw std::runtime_error("Failed to load model: " + gguf_path);
+    }
+
+    // 3. コンテキストとモデル取得
+    llama_context* ctx = manager_->getContext(gguf_path);
+    llama_model* model = manager_->getModel(gguf_path);
+
+    if (!ctx || !model) {
+        throw std::runtime_error("Failed to get context/model for: " + gguf_path);
+    }
+
+    // 4. embeddingモードを有効化
+    llama_set_embeddings(ctx, true);
+
+    // 5. vocab取得
+    const llama_vocab* vocab = llama_model_get_vocab(model);
+    if (!vocab) {
+        throw std::runtime_error("Failed to get vocab from model");
+    }
+
+    // 6. embedding次元を取得
+    const int32_t n_embd = llama_model_n_embd(model);
+
+    // 7. 各入力に対してembeddingを生成
+    for (const auto& input : inputs) {
+        // トークン化
+        std::vector<llama_token> tokens(input.size() + 128);
+        int32_t n_tokens = llama_tokenize(
+            vocab,
+            input.c_str(),
+            static_cast<int32_t>(input.size()),
+            tokens.data(),
+            static_cast<int32_t>(tokens.size()),
+            true,   // add_special (BOS)
+            false   // parse_special
+        );
+
+        if (n_tokens < 0) {
+            tokens.resize(static_cast<size_t>(-n_tokens));
+            n_tokens = llama_tokenize(
+                vocab,
+                input.c_str(),
+                static_cast<int32_t>(input.size()),
+                tokens.data(),
+                static_cast<int32_t>(tokens.size()),
+                true,
+                false
+            );
+        }
+
+        if (n_tokens <= 0) {
+            throw std::runtime_error("Failed to tokenize input for embedding");
+        }
+
+        tokens.resize(static_cast<size_t>(n_tokens));
+
+        // メモリをクリア（新しい入力をエンコードする前に）
+        llama_memory_t mem = llama_get_memory(ctx);
+        if (mem) {
+            llama_memory_clear(mem, false);
+        }
+
+        // バッチを作成（全トークンのembeddingを出力）
+        llama_batch batch = llama_batch_init(static_cast<int32_t>(tokens.size()), 0, 1);
+        for (int32_t i = 0; i < n_tokens; ++i) {
+            batch.token[i] = tokens[static_cast<size_t>(i)];
+            batch.pos[i] = i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = (i == n_tokens - 1) ? 1 : 0;  // 最後のトークンのみ出力
+        }
+        batch.n_tokens = n_tokens;
+
+        // エンコード（embedding生成）
+        int32_t encode_result = llama_encode(ctx, batch);
+        if (encode_result != 0) {
+            llama_batch_free(batch);
+            // llama_encodeが失敗した場合、llama_decodeを試す（一部モデル用）
+            spdlog::debug("llama_encode failed, trying llama_decode for embeddings");
+            llama_batch batch2 = llama_batch_get_one(tokens.data(), n_tokens);
+            if (llama_decode(ctx, batch2) != 0) {
+                throw std::runtime_error("Failed to encode/decode for embeddings");
+            }
+        } else {
+            llama_batch_free(batch);
+        }
+
+        // embeddingを取得（最後のトークンのembedding）
+        const float* embd = llama_get_embeddings_ith(ctx, -1);
+        if (embd == nullptr) {
+            // pooling_typeがnone以外の場合はseqから取得
+            embd = llama_get_embeddings_seq(ctx, 0);
+        }
+
+        if (embd == nullptr) {
+            spdlog::error("Failed to get embeddings for input");
+            // ダミーembeddingを返す
+            results.push_back(std::vector<float>(static_cast<size_t>(n_embd), 0.0f));
+            continue;
+        }
+
+        // embeddingをコピーして正規化
+        std::vector<float> embedding(embd, embd + n_embd);
+
+        // L2正規化
+        float norm = 0.0f;
+        for (float v : embedding) {
+            norm += v * v;
+        }
+        norm = std::sqrt(norm);
+        if (norm > 0.0f) {
+            for (float& v : embedding) {
+                v /= norm;
+            }
+        }
+
+        results.push_back(std::move(embedding));
+    }
+
+    // embeddingモードを無効化（通常のテキスト生成に戻す）
+    llama_set_embeddings(ctx, false);
+
+    return results;
 }
 
 }  // namespace llm_node

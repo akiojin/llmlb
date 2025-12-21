@@ -1,435 +1,104 @@
 # LLM Router
 
-複数マシンでLLM runtimeインスタンスを管理する中央集権型システム
-
 [English](./README.md) | 日本語
 
 ## 概要
 
-LLM Routerは、複数のマシン上で動作するLLM runtimeインスタンスを一元管理し、統一されたAPIエンドポイントを提供するシステムです。インテリジェントなロードバランシング、自動障害検知、リアルタイム監視機能を備えています。
+LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を統合し、単一の OpenAI 互換 API
+（`/v1/*`）を提供する Rust ルーターです。
 
 ## 主な特徴
 
-- **統一APIエンドポイント**: 複数のLLM runtimeインスタンスを単一のURLで利用可能
-- **自動ロードバランシング**: リクエストを利用可能なノードに自動分散
-- **自動障害検知**: オフラインノードを自動検知して振り分けから除外
-- **リアルタイム監視**: Webダッシュボードで全ノードの状態を可視化
-- **リクエスト履歴記録**: 完全なリクエスト/レスポンスログを7日間保持
-- **ノード自己登録**: ノードが自動的にCoordinatorに登録
-- **WebUI管理**: ブラウザベースのダッシュボードでノード設定、監視、制御が可能
-- **クロスプラットフォーム対応**: Windows 10+、macOS 12+、Linuxで動作
-- **GPU対応ルーティング**: GPU能力と可用性に基づくインテリジェントなリクエストルーティング
-- **クラウドプレフィックス**: `openai:` `google:` `anthropic:` をモデル名に付けるだけで
-  同一エンドポイントから各クラウドAPIへプロキシ可能
+- OpenAI 互換 API: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
+- ロードバランシング: 利用可能なノードへ自動ルーティング
+- ダッシュボード: `/dashboard` でノード、リクエスト履歴、ログ、モデルを管理
+- ノード自己登録: ノードは起動時にルーターへ登録し、ハートビートを送信
+- ノード主導モデル同期: ノードはルーターの `/v0/models` と `/v0/models/blob/:model_name` を参照して
+  必要なモデルを取得（ルーターからの push 配布なし）
+- クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
-クイックリファレンス: [INSTALL](./INSTALL.md) / [USAGE](./USAGE.md) /
-[TROUBLESHOOTING](./TROUBLESHOOTING.md)
+## ダッシュボード
 
-## クイックスタート
+ルーターが `/dashboard` で提供します。
 
-### ルーター (llm-router)
-
-```bash
-# ビルド
-cargo build --release -p llm-router
-
-# 起動
-./target/release/llm-router
-# デフォルト: http://0.0.0.0:8080
-
-# ダッシュボードにアクセス
-# ブラウザで http://localhost:8080/dashboard を開く
+```
+http://localhost:8080/dashboard
 ```
 
-**環境変数:**
+## LLM アシスタント向け MCP サーバー
 
-| 変数 | デフォルト | 説明 |
-|-----|-----------|------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
-| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_ROUTER_JWT_SECRET` | (自動生成) | JWT署名キー |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (必須) | 初期管理者パスワード |
+LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Router と連携できます。
 
-**後方互換性:** 旧環境変数名（`ROUTER_PORT`等）も使用可能ですが非推奨です。
-
-**システムトレイ（Windows/macOSのみ）:**
-
-Windows 10以降およびmacOS 12以降では、システムトレイにアイコンが表示されます。
-ダブルクリックでダッシュボードを開きます。Docker/LinuxではCLIプロセスとして動作します。
-
-### ノード (C++)
-
-**前提条件:**
+### インストール
 
 ```bash
-# macOS
-brew install cmake
-
-# Ubuntu/Debian
-sudo apt install cmake build-essential
-
-# Windows
-# https://cmake.org/download/ からダウンロード
+npm install -g @llm-router/mcp-server
+# または
+npx @llm-router/mcp-server
 ```
 
-**ビルドと起動:**
+### 設定例 (.mcp.json)
+
+```json
+{
+  "mcpServers": {
+    "llm-router": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@llm-router/mcp-server"],
+      "env": {
+        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+      }
+    }
+  }
+}
+```
+
+詳細は [mcp-server/README.md](./mcp-server/README.md) を参照してください。
+
+## インストールと起動
+
+### 前提条件
+- Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
+- Rust toolchain (nightly不要) と cargo
+- Docker (任意、コンテナ利用時)
+- CUDAドライバ (GPU使用時。NVIDIAのみ)
+
+### 1) Rustソースからビルド（推奨）
+```bash
+git clone https://github.com/akiojin/llm-router.git
+cd llm-router
+make quality-checks   # fmt/clippy/test/markdownlint 一式
+cargo build -p llm-router --release
+```
+生成物: `target/release/llm-router`
+
+### 2) Docker で起動
+```bash
+docker build -t llm-router:latest .
+docker run --rm -p 8080:8080 --gpus all \
+  -e OPENAI_API_KEY=... \
+  llm-router:latest
+```
+GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
+
+### 3) C++ Node ビルド
 
 ```bash
-# ビルド（macOSではMetalがデフォルト有効）
 npm run build:node
 
-# 起動
-npm run start:node
-
 # 手動でビルドする場合:
-# cd node && cmake -B build -S . && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
+cd node
+cmake -B build -S .
+cmake --build build --config Release
 ```
 
-**環境変数:**
+生成物: `node/build/llm-node`
 
-| 変数 | デフォルト | 説明 |
-|-----|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | 登録先ルーターのURL |
-| `LLM_NODE_PORT` | `11435` | ノードのリッスンポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデル保存ディレクトリ |
-| `LLM_NODE_ALLOW_NO_GPU` | _削除_ | GPU必須 |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
+### 4) 基本設定
 
-**後方互換性:** 旧環境変数名（`LLM_MODELS_DIR`等）も使用可能ですが非推奨です。
-
-**Docker:**
-
-```bash
-# ビルド
-docker build --build-arg CUDA=cpu -t llm-node-cpp:latest node/
-
-# 起動
-docker run --rm -p 11435:11435 \
-  -e LLM_ROUTER_URL=http://host.docker.internal:8080 \
-  llm-node-cpp:latest
-```
-
-## アーキテクチャ（最新仕様）
-
-### システム構成
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         クライアント                          │
-│              （ユーザー、アプリケーション等）                   │
-└────────────────────┬────────────────────────────────────────┘
-                     │ POST /api/chat
-                     │ POST /api/generate
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Coordinator                             │
-│                   （中央管理サーバー）                         │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 1. ノード選択（ロードバランシング）              │   │
-│  │ 2. リクエストを選択されたノードへプロキシ転送   │   │
-│  │ 3. レスポンスをクライアントへ返却                     │   │
-│  └─────────────────────────────────────────────────────┘   │
-└────┬──────────────────┬──────────────────┬─────────────────┘
-     │                  │                  │
-     │ 内部プロキシ      │ 内部プロキシ      │ 内部プロキシ
-     ▼                  ▼                  ▼
-┌─────────┐        ┌─────────┐        ┌─────────┐
-│ Agent 1 │        │ Agent 2 │        │ Agent 3 │
-│         │        │         │        │         │
-│  LLM runtime │        │  LLM runtime │        │  LLM runtime │
-│ (自動管理)│       │ (自動管理)│       │ (自動管理)│
-└─────────┘        └─────────┘        └─────────┘
-Machine 1          Machine 2          Machine 3
-```
-
-### 通信フロー（プロキシパターン・ノード経由のみ）
-
-**要点（2025-11 更新）**
-- ルーターはノードの OpenAI互換API（標準 `runtime_port+1`）のみを叩き、ノード内部の LLM runtime を直接呼ばない。
-- ノードは対応モデル4件（gpt-oss:20b/120b、gpt-oss-safeguard:20b、qwen3-coder:30b）を起動し、モデルごとに独立した `runtime serve` をポート割り当てして常駐。
-- 全ノードが `initializing=true` の間、リクエストは待機キュー（上限1024、超過で503）。`ready_models=(n/5)` が進み、全完了で `initializing=false`。
-- 手動配布UI/APIは廃止。 `/v1/models` と UI は常に上記5モデルのみを表示。
-
-LLM Routerは**プロキシパターン**を採用しており、クライアントはCoordinator URLだけを知っていればOKです。
-
-#### 従来の方法（Coordinator なし）
-```bash
-# 各LLM runtimeに直接アクセス - ユーザーが手動で振り分け
-curl http://machine1:11434/api/chat -d '...'
-curl http://machine2:11434/api/chat -d '...'
-curl http://machine3:11434/api/chat -d '...'
-```
-
-#### Coordinatorを使う方法（プロキシ）
-```bash
-# Coordinatorに統一アクセス - 自動的に最適なLLM runtimeへ振り分け
-curl http://coordinator:8080/api/chat -d '...'
-curl http://coordinator:8080/api/chat -d '...'
-curl http://coordinator:8080/api/chat -d '...'
-```
-
-**リクエストフロー詳細:**
-
-1. **クライアント → Coordinator**
-   ```
-   POST http://coordinator:8080/api/chat
-   Content-Type: application/json
-
-   {"model": "llama2", "messages": [...]}
-   ```
-
-2. **Coordinator内部処理**
-   - 最適なAgent/LLM runtimeを選択（ロードバランシング）
-   - HTTPクライアントで選択されたAgentのLLM runtimeにリクエスト転送
-
-3. **Coordinator → Agent（内部通信）**
-   ```
-   POST http://agent1:11434/api/chat
-   Content-Type: application/json
-
-   {"model": "llama2", "messages": [...]}
-   ```
-
-4. **Agent → LLM runtime → Agent（ローカル処理）**
-   - AgentがローカルLLM runtimeインスタンスへリクエスト転送
-   - LLM runtimeが LLM処理してレスポンス生成
-
-5. **Coordinator → クライアント（レスポンス返却）**
-   ```json
-   {
-     "id": "chatcmpl-xxx",
-     "object": "chat.completion",
-     "choices": [{
-       "index": 0,
-       "message": {"role": "assistant", "content": "..."},
-       "finish_reason": "stop"
-     }]
-   }
-   ```
-
-> **注意**: LLM Routerは**OpenAI互換APIフォーマットのみ**をサポートしています。
-> すべてのレスポンスはOpenAI Chat Completions API仕様に準拠します。
-
-**クライアントから見ると**:
-- Coordinatorが唯一のLLM runtime APIサーバーとして見える
-- 内部の複数LLM runtimeインスタンスを意識する必要がない
-- 1回のHTTPリクエストで完結
-
-### プロキシ方式のメリット
-
-1. **統一エンドポイント**
-   - クライアントはCoordinator URLだけ知っていればOK
-   - 各Agent/LLM runtimeの場所を知る必要なし
-
-2. **透過的なロードバランシング**
-   - Coordinatorが自動的に最適なノードを選択
-   - クライアントは何も意識せずに負荷分散の恩恵を受ける
-
-3. **障害時の自動リトライ**
-   - Agent1が失敗 → Coordinatorが自動的にAgent2を試す
-   - クライアントは再リクエスト不要
-
-4. **セキュリティ**
-   - AgentのIPアドレスをクライアントに公開しない
-   - Coordinatorだけ外部公開すればOK
-
-5. **スケーラビリティ**
-   - Agentを追加すれば自動的に処理能力が向上
-   - クライアント側の変更不要
-
-## プロジェクト構成
-
-```
-llm-router/
-├── common/              # 共通ライブラリ（型定義、プロトコル、エラー）
-│   ├── src/
-│   │   ├── types.rs     # Agent, HealthMetrics, Request型定義
-│   │   ├── protocol.rs  # 通信プロトコル定義
-│   │   ├── config.rs    # 設定構造体
-│   │   └── error.rs     # 統一エラー型
-│   └── Cargo.toml
-├── coordinator/         # Coordinatorサーバー
-│   ├── src/
-│   │   ├── api/         # REST APIハンドラー
-│   │   │   ├── agent.rs    # ノード登録・一覧
-│   │   │   ├── health.rs   # ヘルスチェック受信
-│   │   │   └── proxy.rs    # LLM runtimeプロキシ
-│   │   ├── registry/    # ノード状態管理
-│   │   ├── db/          # データベースアクセス
-│   │   └── main.rs
-│   ├── migrations/      # データベースマイグレーション
-│   └── Cargo.toml
-├── node/                # C++ Node (llama.cpp統合)
-│   ├── src/
-│   │   ├── main.cpp     # エントリーポイント
-│   │   ├── api/         # OpenAI互換API
-│   │   ├── core/        # llama.cpp推論エンジン
-│   │   └── models/      # モデル管理
-│   ├── tests/           # TDDテスト
-│   └── CMakeLists.txt
-└── specs/               # 仕様書（Spec-Driven Development）
-    └── SPEC-32e2b31a/
-        ├── spec.md      # 機能仕様書
-        ├── plan.md      # 実装計画
-        └── tasks.md     # タスク分解
-```
-
-## インストール
-
-### 必要要件
-
-- **Coordinator**: Linux / Windows 10以降 / macOS 12以降、Rust 1.70以降
-- **Agent**: Windows 10以降 / macOS 12以降（CLIベースアプリケーション）、Rust 1.70以降
-- **LLM runtime**: 未インストールの場合は初回起動時に自動ダウンロード・インストール（進捗表示・再試行・SHA256検証付き）
-- **管理**: ブラウザベースのWebUIダッシュボードでノード設定と監視
-
-### Coordinatorのセットアップ
-
-```bash
-# リポジトリをクローン
-git clone https://github.com/your-org/llm-router.git
-cd llm-router
-
-# Coordinatorをビルド
-cd coordinator
-cargo build --release
-
-# Coordinatorを起動
-./target/release/llm-router-coordinator
-# デフォルト: http://0.0.0.0:8080
-```
-
-### Agentのセットアップ
-
-```bash
-# Agentをビルド
-cd agent
-cargo build --release
-
-# Agentを起動（環境変数で上書き）
-ROUTER_URL=http://coordinator-host:8080 ./target/release/llm-router-agent
-
-# 環境変数を指定しない場合は設定パネルで保存した値、なければ http://localhost:8080
-./target/release/llm-router-agent
-```
-
-**注意**: Agentは起動時にLLM runtimeの存在を確認し、未インストールなら自動的にバイナリをダウンロード・検証・展開してから起動します。手動インストールが必要な場合は[runtime.ai](https://runtime.ai)から取得できます。
-
-#### システムトレイ（Windows / macOS）
-
-- Windows 10 以降 / macOS 12 以降では、**ノード** と **ルーター** の両方がトレイ（メニューバー）に常駐します。
-- ノード側は従来どおり、ダブルクリックまたは **設定パネルを開く** からローカル設定画面を表示し、ルーターURL / LLM runtimeポート / ハートビート間隔を編集可能です。**Dashboardを開く** は `ROUTER_URL/dashboard` を開き、**Agentを終了** で常駐プロセスを停止します。Linux 版は CLI 常駐で、設定パネルURLを標準出力に表示します。
-- ルーター側はトレイアイコンからローカルダッシュボード（例: `http://127.0.0.1:8080/dashboard`）を開いたり、**Coordinatorを終了** を選んでサーバーを終了できます。ダブルクリックでもブラウザが起動します。
-- トレイアイコンは [Open Iconic](https://github.com/iconic/open-iconic)（MIT License）をベースにしており、`assets/icons/ICON-LICENSE.txt` にライセンスを同梱しています。
-
-### リリースバイナリの作成と公開
-
-GitHubリリースには各プラットフォーム向けのバイナリを同梱します。基本手順は以下のとおりです。
-
-1. リリース用のタグを作成する前に `cargo fmt --check`、`cargo clippy -- -D warnings`、`cargo test` を通し、品質チェックを完了させる。
-2. ターゲットごとにリリースビルドを実行する。
-   ```bash
-   # Linux (x86_64)
-   cargo build --release --target x86_64-unknown-linux-gnu
-
-   # Windows
-   cargo build --release --target x86_64-pc-windows-msvc
-
-   # macOS (Apple Silicon)
-   cargo build --release --target aarch64-apple-darwin
-
-   # macOS (Intel)
-   cargo build --release --target x86_64-apple-darwin
-   ```
-3. 生成されたバイナリ（`target/<target>/release/` 配下の `llm-router-coordinator` と `llm-router-agent`）を `.tar.gz` もしくは `.zip` にまとめ、README・CHANGELOGなど必要ファイルを同梱する。
-4. GitHubリポジトリでリリースを作成し、各プラットフォーム向けアーカイブをアップロードする。リリースノートには対応プラットフォーム・ハッシュ値（任意）・既知の制限事項を記載する。
-5. 必要に応じて自動化（GitHub Actions 等）で上記手順を再現し、リリースタグ作成と同時にアーティファクトをアップロードする。
-   本リポジトリでは `.github/workflows/release.yml` が Conventional Commits からバージョンを決定して `Cargo.toml` 群と `CHANGELOG.md` を更新し、その後 `.github/workflows/publish.yml` を呼び出して各プラットフォーム向けアーカイブを生成・検証した上で GitHub Release に添付します。
-   - `main` ブランチが保護されている場合、GitHub Actions の既定トークンではリリースコミットやタグ作成がブロックされます。対象リポジトリに限定した **Fine-grained Personal Access Token** を作成し、リポジトリシークレット `PERSONAL_ACCESS_TOKEN` に登録してください。最低限必要な権限は次のとおりです: Contents (Read & write)、Metadata (Read)、Actions (Read)、Workflows (Read & write)、Issues (Read & write)、Pull requests (Read & write)、Releases (Read & write)。有効期限を短めに設定し、定期的にローテーションすることを推奨します。詳細手順は `CLAUDE.md` の「semantic-release トークン設定」を参照してください。
-
-### リリース自動化
-
-ブランチ戦略は `feature/*` → `develop` → `main` です。
-
-- `feature/*`: 個別機能。短期間で `develop` に統合します。
-- `develop`: リリース候補を常に保持する統合ブランチ。
-- `main`: 本番/リリース履歴。ここへのマージがそのまま出荷されます。
-
-このリポジトリでは、`akiojin/unity-mcp-server` と同じ release ブランチ方式（方法B）で正式リリースを自動化しています。
-
-1. 開発者は `develop` ブランチ上で `/release` コマンド、もしくは `./scripts/create-release-branch.sh` を実行します。内部では `scripts/create-release-branch.sh` が `gh workflow run create-release.yml --ref develop` を呼び出し、semantic-release のドライランで次バージョンを計算しつつ `release/vX.Y.Z` ブランチを作成・push します。
-2. release ブランチの push を契機に `.github/workflows/release.yml` が起動し、semantic-release 本番実行 → CHANGELOG / Cargo.toml / バージョンタグ更新 → main への自動マージ → develop へのバックマージ → release ブランチ削除までを一括で行います。
-3. main へのマージにより `.github/workflows/publish.yml` が動作し、Linux / macOS (x86_64, ARM64) / Windows 向けバイナリをビルド・検証し、GitHub Release に添付します。
-   - この publish フェーズでは従来の `.tar.gz` / `.zip` アーカイブに加えて、`pkgbuild` で作成した macOS 向け `llm-router-<platform>.pkg` と、WiX Toolset で作成した Windows 向け `llm-router-<platform>.msi` を個別に生成・添付します。既存のリリース資産は削除せず、そのまま維持します。
-
-人手が必要なのは `/release` の実行と、必要に応じた進捗モニタリング（`gh run watch …`）だけです。バージョン決定からリリースノート生成、develop への同期まで CI が自動で完了させます。
-
-## 使い方
-
-### 基本的な使い方
-
-1. **Coordinatorを起動**
-   ```bash
-   cd coordinator
-   cargo run --release
-   ```
-
-2. **複数のマシンでAgentを起動**
-   ```bash
-   # Machine 1
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-router-agent
-
-   # Machine 2
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-router-agent
-
-   # Machine 3
-   ROUTER_URL=http://coordinator:8080 cargo run --release --bin llm-router-agent
-   ```
-
-3. **Coordinatorを通じてLLM runtime APIを利用**
-   ```bash
-   # Chat API
-   curl http://coordinator:8080/api/chat \
-     -H "Content-Type: application/json" \
-     -d '{
-       "model": "llama2",
-       "messages": [{"role": "user", "content": "Hello!"}],
-       "stream": false
-     }'
-
-   # Generate API
-   curl http://coordinator:8080/api/generate \
-     -H "Content-Type: application/json" \
-     -d '{
-       "model": "llama2",
-       "prompt": "Tell me a joke",
-       "stream": false
-     }'
-   ```
-
-4. **ノード一覧を確認**
-   ```bash
-   curl http://coordinator:8080/api/agents
-   ```
-
-### Hugging Faceカタログ (GGUF)
-
-- オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定。
-- CLI
-  - `llm-router model list --search llama --limit 10` でHF GGUFカタログを取得
-  - `llm-router model add <repo> --file <gguf>` で対応モデル登録（IDは `hf/<repo>/<file>`）
-  - `llm-router model download <id> --all|--node <uuid>` で全ノード/指定ノードへダウンロード開始
-- Web: ダッシュボード → モデル管理 → 「対応可能モデル（HF）」から登録し、「今すぐダウンロード」で配布
-- 登録したモデルは `/v1/models` に `download_url` 付きで反映され、ノードが直接取得可能
-
-### 環境変数
-
-#### ルーター（Rust）
+#### ルーター（Rust）環境変数
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
@@ -448,307 +117,237 @@ GitHubリリースには各プラットフォーム向けのバイナリを同�
 
 - `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
-#### ノード（C++）
+#### ノード（C++）環境変数
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
+| `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node:register`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_ALLOW_NO_GPU` | _削除_ | GPU必須 |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
 | `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
 
 **注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
 新しい環境変数名を使用してください。
 
+### 5) 起動例
+```bash
+# ルーター
+cargo run -p llm-router
+
+# ノード (別シェル)
+LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
+```
+
+### 6) 動作確認
+- ダッシュボード: `http://localhost:8080/dashboard`
+- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:8080/v0/health`
+- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:8080/v1/models`
+
+## 利用方法（OpenAI互換エンドポイント）
+
+### 基本
+- `POST /v1/chat/completions`
+- `POST /v1/completions`
+- `POST /v1/embeddings`
+
+### クラウドモデルプレフィックス
+- 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
+- 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`
+- 転送時にプレフィックスは除去され、クラウドAPIへそのまま送られます。
+- プレフィックスなしのモデルは従来どおりローカルLLMにルーティングされます。
+
+### ストリーミング
+- `stream: true` でクラウドSSE/チャンクをそのままパススルー。
+
+### メトリクス
+- `GET /v0/metrics/cloud` （Prometheus text）
+  - `cloud_requests_total{provider,status}`
+  - `cloud_request_latency_seconds{provider}`
+
+## アーキテクチャ
+
+LLM Router は、ローカルの llama.cpp ノードを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
+
+### コンポーネント
+- **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
+- **Local Nodes (C++ / llama.cpp)**: GGUF モデルを提供します。ルーターに登録し、ハートビートを送信します。
+- **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ルーターは対応するクラウド API に転送します。
+- **Storage**: ルーターのメタデータ用の SQLite。モデルファイルは各ノードに存在します。
+- **Observability**: Prometheus メトリクス、構造化ログ、ダッシュボード統計。
+
+### システム構成
+
+![システム構成](docs/diagrams/architecture.readme.ja.svg)
+
+Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成 (README.ja.md)）
+
+### リクエストフロー
+```
+Client
+  │ POST /v1/chat/completions
+  ▼
+Router (OpenAI-compatible)
+  ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
+  └─ No prefix → Scheduler → Local Node
+                       └─ llama.cpp inference → Response
+```
+
+### モデル同期（push配布なし）
+
+- ルーターは、登録・変換・キャッシュされたモデルだけを `/v1/models` に掲載します。
+- ノードは `/v1/models` を参照してモデル一覧を取得します。
+  - `path` が共有ストレージ等で参照可能なら、そのパスを直接使用します。
+  - 参照できない場合は `/v0/models/blob/:model_name` からダウンロードしてローカルに保存します。
+- ルーターからノードへの push 配布は行いません。
+
+### スケジューリングとヘルスチェック
+- ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。
+- ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
+- ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
+
+## トラブルシューティング
+
+### 起動時に GPU が見つからない
+- 確認: `nvidia-smi` または `CUDA_VISIBLE_DEVICES`
+- 環境変数で無効化: ノード側 `LLM_ALLOW_NO_GPU=true`（デフォルトは禁止）
+- それでも失敗する場合は NVML ライブラリの有無を確認
+
+### クラウドモデルが 401/400 を返す
+- ルーター側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
+- ダッシュボード `/v0/dashboard/stats` の `*_key_present` が false なら未設定
+- プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
+
+### ポート競合で起動しない
+- ルーター: `LLM_ROUTER_PORT` を変更（例: `LLM_ROUTER_PORT=18080`）
+- ノード: `LLM_NODE_PORT` または `--port` で変更
+
+### SQLite ファイル作成に失敗
+- `LLM_ROUTER_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認
+- Windows の場合はパスにスペースが含まれていないか確認
+
+### ダッシュボードが表示されない
+- ブラウザキャッシュをクリア
+- バンドル済み静的ファイルが壊れていないか `cargo clean` → `cargo run` を試す
+- リバースプロキシ経由の場合は `/dashboard/*` の静的配信設定を確認
+
+### OpenAI互換APIで 503 / モデル未登録
+- 全ノードが `initializing` の場合 503 を返すことがあります。ノードのモデルロードを待つか、`/v0/dashboard/nodes` で状態を確認
+- モデル指定がローカルに存在しない場合、ノードが自動プルするまで待機
+
+### ログが多すぎる / 少なすぎる
+- 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
+- ノードのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
+
+## モデル管理（Hugging Face, GGUF-first）
+
+- オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
+- Web（推奨）:
+  - ダッシュボード → **Models** → **Register**
+  - Hugging Face repo（例: `TheBloke/Llama-2-7B-GGUF`）と、任意で filename を入力します。
+  - `/v1/models` は、ルーターのファイルシステム上にキャッシュ済みのモデルだけを返します。
+
+モデル ID はファイル名ベース形式に正規化されます（例: `llama-2-7b`, `gpt-oss-20b`）。
+
+## API 仕様
+
+### 認証・権限
+
+#### ユーザー（JWT）
+
+| ロール | 権限 |
+|-------|------|
+| `admin` | `/v0` 管理系 API にアクセス可能 |
+| `viewer` | `/v0/auth/*` のみ（管理 API は 403） |
+
+#### APIキー（スコープ）
+
+| スコープ | 目的 |
+|---------|------|
+| `node:register` | ノード登録 + ヘルスチェック + モデル配布（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`） |
+| `api:inference` | OpenAI 互換推論 API（`/v1/*`） |
+| `admin:*` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+
+**補足**:
+- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node:register`）+ `X-Node-Token` 必須。
+- デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
+
+### ルーター（Router）
+
+#### OpenAI 互換（API キー認証）
+
+- POST `/v1/chat/completions`
+- POST `/v1/completions`
+- POST `/v1/embeddings`
+- GET `/v1/models`（API キーまたは `X-Node-Token`）
+- GET `/v1/models/:model_id`（API キーまたは `X-Node-Token`）
+
+#### ノード管理
+
+- POST `/v0/nodes`（登録、APIキー: `node:register`）
+- GET `/v0/nodes`（一覧、admin権限）
+- DELETE `/v0/nodes/:node_id`（admin権限）
+- POST `/v0/nodes/:node_id/disconnect`（admin権限）
+- PUT `/v0/nodes/:node_id/settings`（admin権限）
+- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node:register` + `X-Node-Token`）
+- GET `/v0/nodes/:node_id/logs`（admin権限）
+
+#### モデル管理
+
+- GET `/v0/models`（登録済みモデル一覧、APIキー: `node:register`）
+- POST `/v0/models/register`（admin権限）
+- DELETE `/v0/models/*model_name`（admin権限）
+- POST `/v0/models/discover-gguf`（admin権限）
+- GET `/v0/models/blob/:model_name`（APIキー: `node:register`）
+
+#### ダッシュボード/監視
+
+- GET `/v0/dashboard/overview`（admin権限）
+- GET `/v0/dashboard/stats`（admin権限）
+- GET `/v0/dashboard/nodes`（admin権限）
+- GET `/v0/dashboard/metrics/:node_id`（admin権限）
+- GET `/v0/dashboard/request-history`（admin権限）
+- GET `/v0/dashboard/request-responses`（admin権限）
+- GET `/v0/dashboard/request-responses/:id`（admin権限）
+- GET `/v0/dashboard/request-responses/export`（admin権限）
+- GET `/v0/dashboard/logs/router`（admin権限）
+- GET `/v0/metrics/cloud`（admin権限）
+- GET `/dashboard/*`
+- GET `/playground/*`
+
+### ノード（Node）
+
+#### OpenAI 互換
+
+- GET `/v1/models`
+- POST `/v1/chat/completions`
+- POST `/v1/completions`
+- POST `/v1/embeddings`
+
+#### 運用
+
+- GET `/health`
+- GET `/startup`
+- GET `/metrics`
+- GET `/metrics/prom`
+- GET `/v0/logs?tail=200`
+- GET `/log/level`
+- POST `/log/level`
+
 ## 開発
 
-### コミットフック
+```bash
+make quality-checks
+```
 
-HuskyによるGitフックを有効化するため、クローンごとに一度JavaScriptツールチェーンをセットアップしてください。
+Dashboard を更新する場合:
 
 ```bash
 pnpm install
-```
-
-- `prepare`スクリプト経由でHuskyのフックディレクトリを設定します。
-- `commit-msg`フックで `commitlint --edit "$1"` が実行され、CIの前にローカルで規約違反を検出できます。
-- コミット範囲を手動でチェックしたい場合は `pnpm run lint:commits`（デフォルト: `origin/main..HEAD`）を利用してください。
-
-### テストの実行
-
-```bash
-# 全テスト実行
-cargo test --workspace
-
-# Coordinatorのテスト
-cd coordinator
-cargo test
-
-# Agentのテスト
-cd agent
-cargo test
-
-# 統合テスト（ignored含む、Coordinatorサーバーが必要）
-cd agent
-TEST_ROUTER_URL=http://localhost:8080 cargo test --test integration_tests -- --ignored
-
-# 品質ゲート一式（fmt / clippy / workspaceテスト / specifyチェック / markdownlint / OpenAIテスト）
-make quality-checks
-
-# OpenAI互換APIのみ個別に実行する場合
-make openai-tests
-```
-
-### macOSビルド（クロスコンパイル）
-
-Linux環境（Docker）からmacOS向けバイナリをビルドできます。
-
-#### 前提条件
-
-1. macOS SDKの取得（Mac上で実施）
-
-   詳細は [docs/macos-sdk-setup.md](./docs/macos-sdk-setup.md) を参照してください。
-
-   ```bash
-   # macOS上で実行（概要）
-   cd /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/
-   tar -cJf ~/MacOSX14.2.sdk.tar.xz MacOSX14.2.sdk
-
-   # プロジェクトに配置
-   mkdir -p /path/to/llm-router/.sdk
-   cp ~/MacOSX14.2.sdk.tar.xz /path/to/llm-router/.sdk/
-   ```
-
-2. Dockerイメージのビルド
-
-   ```bash
-   # SDKバージョンを指定してビルド（デフォルト: 14.2）
-   docker-compose build
-
-   # または環境変数で指定
-   SDK_VERSION=14.5 docker-compose build
-   ```
-
-#### ビルド手順
-
-```bash
-# Docker環境に入る
-docker-compose run --rm llm-router bash
-
-# Intel Mac向けビルド
-make build-macos-x86_64
-
-# Apple Silicon向けビルド
-make build-macos-aarch64
-
-# 両方のアーキテクチャをビルド
-make build-macos-all
-```
-
-成果物は以下に出力されます：
-
-- `target/x86_64-apple-darwin/release/llm-router-coordinator`
-- `target/x86_64-apple-darwin/release/llm-router-agent`
-- `target/aarch64-apple-darwin/release/llm-router-coordinator`
-- `target/aarch64-apple-darwin/release/llm-router-agent`
-
-**注意**: macOSバイナリのコード署名とnotarizationは、macOS環境で実施する必要があります。
-
-### Spec-Driven Development
-
-本プロジェクトはSpec-Driven Developmentに従っています：
-
-1. `/speckit.specify` - 機能仕様書作成
-2. `/speckit.plan` - 実装計画作成
-3. `/speckit.tasks` - タスク分解
-4. タスク実行（TDDサイクル厳守）
-
-詳細は[CLAUDE.md](./CLAUDE.md)を参照してください。
-
-## リクエスト履歴
-
-LLM Routerは、デバッグ、監査、分析のために、すべてのリクエストと
-レスポンスを自動的にログ記録します。
-
-### 機能
-
-- **完全なリクエスト/レスポンスログ**: リクエスト本文、レスポンス本文、
-メタデータを完全に記録
-- **リクエスト元IP記録**: すべての履歴にクライアントIPアドレスを保存し、監査トレーサビリティを確保
-- **自動保持**: 7日間履歴を保持し、自動的にクリーンアップ
-- **Webダッシュボード**: Web画面でリクエスト履歴の閲覧、フィルタ、検索が可能
-- **エクスポート機能**: JSON形式またはCSV形式で履歴をエクスポート
-- **フィルタオプション**: モデル、ノード、ステータス、時間範囲でフィルタ
-
-### リクエスト履歴へのアクセス
-
-#### Webダッシュボード経由
-
-1. ルーターダッシュボードを開く: `http://localhost:8080/dashboard`
-2. 「リクエスト履歴」セクションに移動
-3. フィルタを使用して特定のリクエストを絞り込み
-4. 任意のリクエストをクリックして、リクエスト/レスポンス本文を含む
-完全な詳細を表示
-
-#### API経由
-
-**リクエスト履歴一覧取得:**
-```bash
-GET /api/dashboard/request-responses?page=1&per_page=50
-```
-
-**リクエスト詳細取得:**
-```bash
-GET /api/dashboard/request-responses/{id}
-```
-
-**履歴エクスポート:**
-```bash
-# JSON形式
-GET /api/dashboard/request-responses/export
-
-# CSV形式（ダッシュボードUI経由）
-```
-
-### ストレージ
-
-リクエスト履歴はJSON形式で以下の場所に保存されます：
-- Linux/macOS: `~/.llm-router/request_history.json`
-- Windows: `%USERPROFILE%\.llm-router\request_history.json`
-
-ファイルは以下の機能により自動管理されます：
-- アトミック書き込み（一時ファイル + rename）による破損防止
-- ファイルロックによる並行アクセス制御
-- 7日より古いレコードの自動クリーンアップ
-
-## API仕様
-
-### Coordinator API
-
-#### POST /api/agents
-ノードを登録します。
-
-**リクエスト:**
-```json
-{
-  "machine_name": "my-machine",
-  "ip_address": "192.168.1.100",
-  "runtime_version": "0.1.0",
-  "runtime_port": 11434,
-  "gpu_available": true,
-  "gpu_devices": [
-    { "model": "NVIDIA RTX 4090", "count": 2 }
-  ]
-}
-```
-
-**レスポンス:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "registered"
-}
-```
-
-#### GET /api/agents
-登録されているノード一覧を取得します。
-
-**レスポンス:**
-```json
-[
-  {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "machine_name": "my-machine",
-    "ip_address": "192.168.1.100",
-    "runtime_version": "0.1.0",
-    "runtime_port": 11434,
-    "status": "online",
-    "registered_at": "2025-10-30T12:00:00Z",
-    "last_seen": "2025-10-30T12:05:00Z",
-    "gpu_available": true,
-    "gpu_devices": [
-      { "model": "NVIDIA RTX 4090", "count": 2 }
-    ],
-    "gpu_count": 2,
-    "gpu_model": "NVIDIA RTX 4090"
-  }
-]
-```
-
-#### POST /api/health
-ヘルスチェック情報を受信します（Agent→Coordinator）。
-
-**リクエスト:**
-```json
-{
-  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3
-}
-```
-
-#### POST /api/chat
-
-Chat APIへのプロキシエンドポイント（OpenAI互換形式）。
-
-**リクエスト:**
-
-```json
-{
-  "model": "gpt-oss:20b",
-  "messages": [{"role": "user", "content": "Hello!"}],
-  "stream": false
-}
-```
-
-**レスポンス（OpenAI互換形式）:**
-
-```json
-{
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion",
-  "choices": [{
-    "index": 0,
-    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
-    "finish_reason": "stop"
-  }]
-}
-```
-
-> **重要**: LLM RouterはOpenAI互換レスポンス形式のみをサポートしています。
-> Ollamaネイティブ形式（`message`/`done`フィールド）は**サポートされていません**。
-
-#### POST /api/generate
-
-Generate APIへのプロキシエンドポイント（OpenAI互換形式）。
-
-**リクエスト:**
-
-```json
-{
-  "model": "gpt-oss:20b",
-  "prompt": "Tell me a joke",
-  "stream": false
-}
-```
-
-**レスポンス（OpenAI互換形式）:**
-
-```json
-{
-  "id": "cmpl-xxx",
-  "object": "text_completion",
-  "choices": [{
-    "text": "Why did the programmer quit? Because he didn't get arrays!",
-    "index": 0,
-    "finish_reason": "stop"
-  }]
-}
+pnpm --filter @llm-router/dashboard build
 ```
 
 ## ライセンス
@@ -757,16 +356,6 @@ MIT License
 
 ## 貢献
 
-Issue、Pull Requestをお待ちしています。
+Issue、Pull Request をお待ちしています。
 
-詳細な開発ガイドラインは[CLAUDE.md](./CLAUDE.md)を参照してください。
-### クラウドモデルプレフィックス（OpenAI互換API）
-
-- 対応プレフィックス: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` タイポ互換）
-- 使い方: `model` を `openai:gpt-4o` / `google:gemini-1.5-pro` / `anthropic:claude-3-opus` のように指定
-- 環境変数:
-  - `OPENAI_API_KEY`（必須）、`OPENAI_BASE_URL`（任意、既定 `https://api.openai.com`）
-  - `GOOGLE_API_KEY`（必須）、`GOOGLE_API_BASE_URL`（任意、既定 `https://generativelanguage.googleapis.com/v1beta`）
-  - `ANTHROPIC_API_KEY`（必須）、`ANTHROPIC_API_BASE_URL`（任意、既定 `https://api.anthropic.com`）
-- 動作: プレフィックスは転送前に除去し、レスポンスはOpenAI互換のまま返却。`stream: true` はクラウド側のSSEをそのままパススルー。
-- メトリクス: `/metrics/cloud` で Prometheus 形式のメトリクスを公開（`cloud_requests_total{provider,status}` / `cloud_request_latency_seconds{provider}`）。
+詳細な開発ガイドラインは [CLAUDE.md](./CLAUDE.md) を参照してください。

@@ -4,11 +4,11 @@
 
 ## 概要
 
-管理ダッシュボード機能で使用するデータモデル定義。既存の`Agent`型を再利用し、新規に`SystemStats`型を追加する。
+管理ダッシュボード機能で使用するデータモデル定義。既存の`Node`型を再利用し、新規に`DashboardStats`型を追加する。
 
 ## エンティティ
 
-### 1. Agent (既存)
+### 1. Node (既存)
 
 **説明**: ノード情報を表す構造体（既存の`common/src/types.rs`で定義済み）
 
@@ -16,19 +16,21 @@
 
 **フィールド**:
 ```rust
-pub struct Agent {
+pub struct Node {
     pub id: Uuid,
     pub machine_name: String,
     pub ip_address: String,
     pub runtime_version: String,
-    pub status: AgentStatus,
+    pub status: NodeStatus,
     pub registered_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub online_since: Option<DateTime<Utc>>,
     pub system_info: SystemInfo,
 }
 
-pub enum AgentStatus {
+pub enum NodeStatus {
+    Pending,
+    Registering,
     Online,
     Offline,
 }
@@ -48,50 +50,68 @@ pub struct SystemInfo {
 
 **ダッシュボードでの使用**:
 - ノード一覧表示
-- オンライン/オフラインステータス表示
+- pending/registering/online/offline ステータス表示
 - 稼働時間計算（直近でオンラインになった時刻=`online_since` と現在時刻の差分、未設定時は0秒）
 
-### 2. SystemStats (新規)
+### 2. DashboardStats (新規)
 
 **説明**: システム全体の統計情報
 
 **フィールド**:
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SystemStats {
-    pub total_agents: usize,
-    pub online_agents: usize,
-    pub offline_agents: usize,
-    pub total_requests: u64,      // 将来拡張
-    pub avg_response_time_ms: u32, // 将来拡張
-    pub errors_count: u64,         // 将来拡張
+pub struct DashboardStats {
+    pub total_nodes: usize,
+    pub online_nodes: usize,
+    pub pending_nodes: usize,
+    pub registering_nodes: usize,
+    pub offline_nodes: usize,
+    pub total_requests: u64,
+    pub successful_requests: u64,
+    pub failed_requests: u64,
+    pub total_active_requests: u32,
+    pub average_response_time_ms: Option<f32>,
+    pub average_gpu_usage: Option<f32>,
+    pub average_gpu_memory_usage: Option<f32>,
+    pub last_metrics_updated_at: Option<DateTime<Utc>>,
+    pub last_registered_at: Option<DateTime<Utc>>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub openai_key_present: bool,
+    pub google_key_present: bool,
+    pub anthropic_key_present: bool,
 }
 ```
 
 **検証ルール**:
-- `total_agents >= 0`
-- `online_agents + offline_agents == total_agents`
+- `total_nodes >= 0`
+- `online_nodes + pending_nodes + registering_nodes + offline_nodes == total_nodes`
 - `total_requests >= 0`
-- `avg_response_time_ms >= 0`
+- `successful_requests >= 0`
+- `failed_requests >= 0`
+- `total_active_requests >= 0`
+- `average_response_time_ms`, `average_gpu_usage`, `average_gpu_memory_usage` は `Some` の場合 `>= 0`
 
 **計算方法**:
-- `total_agents`: AgentRegistryの全ノード数
-- `online_agents`: `status == AgentStatus::Online`の数
-- `offline_agents`: `status == AgentStatus::Offline`の数
-- `total_requests`, `avg_response_time_ms`, `errors_count`: 将来拡張（初期実装では0）
+- `total_nodes`: NodeRegistryの全ノード数
+- `online_nodes`: `status == NodeStatus::Online`の数
+- `pending_nodes`: `status == NodeStatus::Pending`の数
+- `registering_nodes`: `status == NodeStatus::Registering`の数
+- `offline_nodes`: `status == NodeStatus::Offline`の数
+- `total_requests`, `successful_requests`, `failed_requests`, `total_active_requests`: RequestHistory集計
+- `average_*`: 最新メトリクスの平均（利用可能な場合のみ）
 
-### 3. AgentWithUptime (新規レスポンス型)
+### 3. NodeWithUptime (新規レスポンス型)
 
 **説明**: ダッシュボードAPI用のノード情報（稼働時間を含む）
 
 **フィールド**:
 ```rust
 #[derive(Debug, Serialize)]
-pub struct AgentWithUptime {
+pub struct NodeWithUptime {
     pub id: Uuid,
     pub machine_name: String,
     pub ip_address: String,
-    pub status: AgentStatus,
+    pub status: NodeStatus,
     pub runtime_version: String,
     pub registered_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
@@ -104,42 +124,42 @@ pub struct AgentWithUptime {
 
 **API変換**:
 ```rust
-impl From<Agent> for AgentWithUptime {
-    fn from(agent: Agent) -> Self {
+impl From<Node> for NodeWithUptime {
+    fn from(node: Node) -> Self {
         let now = Utc::now();
-        let uptime_seconds = if let Some(online_since) = agent.online_since {
-            let end = if matches!(agent.status, AgentStatus::Online) {
+        let uptime_seconds = if let Some(online_since) = node.online_since {
+            let end = if matches!(node.status, NodeStatus::Online) {
                 now
             } else {
-                agent.last_seen
+                node.last_seen
             };
             (end - online_since).num_seconds().max(0)
         } else {
             0
         };
         Self {
-            id: agent.id,
-            machine_name: agent.machine_name,
-            ip_address: agent.ip_address,
-            status: agent.status,
-            runtime_version: agent.runtime_version,
-            registered_at: agent.registered_at,
-            last_seen: agent.last_seen,
+            id: node.id,
+            machine_name: node.machine_name,
+            ip_address: node.ip_address,
+            status: node.status,
+            runtime_version: node.runtime_version,
+            registered_at: node.registered_at,
+            last_seen: node.last_seen,
             uptime_seconds,
         }
     }
 }
 ```
 
-### 4. AgentMetrics (将来拡張、SPEC-589f2df1依存)
+### 4. NodeMetrics (将来拡張、SPEC-589f2df1依存)
 
 **説明**: ノードのパフォーマンスメトリクス（将来拡張用）
 
 **フィールド**:
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AgentMetrics {
-    pub agent_id: Uuid,
+pub struct NodeMetrics {
+    pub node_id: Uuid,
     pub cpu_usage: f64,           // %
     pub memory_usage: f64,        // %
     pub active_requests: u32,     // 件
@@ -154,7 +174,7 @@ pub struct AgentMetrics {
 
 ```
 ┌─────────────────┐
-│     Agent       │ (既存)
+│     Node       │ (既存)
 │─────────────────│
 │ + id            │
 │ + machine_name  │
@@ -166,7 +186,7 @@ pub struct AgentMetrics {
          │ 1:1 変換
          ▼
 ┌──────────────────┐
-│ AgentWithUptime  │ (新規レスポンス型)
+│ NodeWithUptime  │ (新規レスポンス型)
 │──────────────────│
 │ + id             │
 │ + machine_name   │
@@ -175,17 +195,17 @@ pub struct AgentMetrics {
 └──────────────────┘
 
 ┌──────────────────┐
-│   SystemStats    │ (新規)
+│  DashboardStats  │ (新規)
 │──────────────────│
-│ + total_agents   │
-│ + online_agents  │
+│ + total_nodes    │
+│ + online_nodes   │
 │ + ...            │
 └──────────────────┘
 
 ┌──────────────────┐
-│  AgentMetrics    │ (将来拡張)
+│  NodeMetrics    │ (将来拡張)
 │──────────────────│
-│ + agent_id       │
+│ + node_id        │
 │ + cpu_usage      │
 │ + ...            │
 └──────────────────┘
@@ -194,13 +214,13 @@ pub struct AgentMetrics {
          │
          ▼
 ┌─────────────────┐
-│     Agent       │
+│     Node        │
 └─────────────────┘
 ```
 
 ## 状態遷移
 
-### AgentStatus
+### NodeStatus
 
 ```
     register
@@ -208,12 +228,12 @@ pub struct AgentMetrics {
 │   (未登録)    │
 └──────────────┘
        │
-       │ POST /api/agents/register
+       │ POST /v0/nodes
        ▼
 ┌──────────────┐
 │    Online    │ ◄──────┐
 └──────────────┘        │
-       │                │ POST /api/agents/:id/heartbeat
+       │                │ POST /v0/health (X-Node-Token)
        │ timeout        │
        ▼                │
 ┌──────────────┐        │
@@ -225,15 +245,15 @@ pub struct AgentMetrics {
 
 ### ノード一覧取得
 ```
-Client ─GET /api/dashboard/agents→ Coordinator
+Client ─GET /v0/dashboard/nodes→ Router
                                         │
-                                        │ AgentRegistry.list_all()
+                                        │ NodeRegistry.list_all()
                                         ▼
-                                    Vec<Agent>
+                                    Vec<Node>
                                         │
-                                        │ map(Agent → AgentWithUptime)
+                                        │ map(Node → DashboardNode)
                                         ▼
-                                  Vec<AgentWithUptime>
+                                  Vec<DashboardNode>
                                         │
                                         │ JSON
                                         ▼
@@ -242,15 +262,15 @@ Client ◄───────────────────────�
 
 ### システム統計取得
 ```
-Client ─GET /api/dashboard/stats→ Coordinator
+Client ─GET /v0/dashboard/stats→ Router
                                        │
-                                       │ AgentRegistry.list_all()
+                                       │ NodeRegistry.list_all()
                                        ▼
-                                   Vec<Agent>
+                                   Vec<Node>
                                        │
                                        │ count(), filter()
                                        ▼
-                                   SystemStats
+                                   DashboardStats
                                        │
                                        │ JSON
                                        ▼
@@ -261,19 +281,19 @@ Client ◄───────────────────────�
 
 ```
 common/src/
-├── types.rs              # Agent, AgentStatus, SystemInfo (既存)
-└── dashboard.rs          # AgentWithUptime, SystemStats (新規)
+├── types.rs              # Node, NodeStatus, SystemInfo (既存)
+└── dashboard.rs          # NodeWithUptime, DashboardStats (新規)
 
-coordinator/src/
+router/src/
 ├── api/
 │   └── dashboard.rs      # ダッシュボードAPI実装
 └── registry/
-    └── mod.rs            # AgentRegistry (既存)
+    └── mod.rs            # NodeRegistry (既存)
 ```
 
 ## テストデータ
 
-### サンプルAgent
+### サンプルNode
 ```json
 {
   "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -292,24 +312,36 @@ coordinator/src/
 }
 ```
 
-### サンプルSystemStats
+### サンプルDashboardStats
 ```json
 {
-  "total_agents": 10,
-  "online_agents": 8,
-  "offline_agents": 2,
-  "total_requests": 0,
-  "avg_response_time_ms": 0,
-  "errors_count": 0
+  "total_nodes": 10,
+  "online_nodes": 6,
+  "pending_nodes": 2,
+  "registering_nodes": 1,
+  "offline_nodes": 1,
+  "total_requests": 1200,
+  "successful_requests": 1180,
+  "failed_requests": 20,
+  "total_active_requests": 4,
+  "average_response_time_ms": 132.5,
+  "average_gpu_usage": 42.1,
+  "average_gpu_memory_usage": 38.7,
+  "last_metrics_updated_at": "2025-10-31T12:30:00Z",
+  "last_registered_at": "2025-10-31T12:25:00Z",
+  "last_seen_at": "2025-10-31T12:30:00Z",
+  "openai_key_present": true,
+  "google_key_present": false,
+  "anthropic_key_present": false
 }
 ```
 
 ## 将来拡張
 
 ### メトリクス可視化（SPEC-589f2df1実装後）
-- `AgentMetrics`の実装
-- メトリクス収集API (`POST /api/agents/:id/metrics`)
-- メトリクス取得API (`GET /api/dashboard/metrics/:agent_id`)
+- `NodeMetrics`の実装
+- メトリクス収集API (`POST /v0/health` / `X-Node-Token`)
+- メトリクス取得API (`GET /v0/dashboard/metrics/:node_id`)
 - リクエスト履歴グラフ用のデータ構造
 
 ### リクエスト履歴

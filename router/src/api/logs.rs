@@ -1,6 +1,6 @@
 //! ログ閲覧API
 //!
-//! `/api/dashboard/logs/*` エンドポイントを提供する。
+//! `/v0/dashboard/logs/*` エンドポイントを提供する。
 
 use super::nodes::AppError;
 use crate::{logging, AppState};
@@ -32,7 +32,7 @@ pub struct LogQuery {
 /// ログレスポンス
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct LogResponse {
-    /// ログソース（coordinator / node:NAME）
+    /// ログソース（router / node:NAME）
     pub source: String,
     /// ログエントリ一覧
     pub entries: Vec<LogEntry>,
@@ -49,37 +49,36 @@ fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
-/// GET /api/dashboard/logs/coordinator
-pub async fn get_coordinator_logs(
-    Query(query): Query<LogQuery>,
-) -> Result<Json<LogResponse>, AppError> {
+/// GET /v0/dashboard/logs/router
+pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogResponse>, AppError> {
     let log_path = logging::log_file_path().map_err(|err| {
-        RouterError::Internal(format!("Failed to resolve coordinator log path: {err}"))
+        RouterError::Internal(format!("Failed to resolve router log path: {err}"))
     })?;
     let entries = read_logs(log_path.clone(), clamp_limit(query.limit)).await?;
 
     Ok(Json(LogResponse {
-        source: "coordinator".to_string(),
+        source: "router".to_string(),
         entries,
         path: Some(log_path.display().to_string()),
     }))
 }
 
-/// GET /api/dashboard/logs/nodes/:node_id
+/// GET /v0/nodes/:node_id/logs
 pub async fn get_node_logs(
     Path(node_id): Path<Uuid>,
     Query(query): Query<LogQuery>,
     State(state): State<AppState>,
 ) -> Result<Json<LogResponse>, AppError> {
     let node = state.registry.get(node_id).await?;
-    if node.status != NodeStatus::Online {
-        return Err(RouterError::AgentOffline(node_id).into());
+    // Pending/Registering 状態でもログ取得は許可（Offline のみ拒否）
+    if node.status == NodeStatus::Offline {
+        return Err(RouterError::NodeOffline(node_id).into());
     }
 
     let limit = clamp_limit(query.limit);
     let node_api_port = node.runtime_port.saturating_add(1); // APIポートはLLM runtimeポート+1
     let url = format!(
-        "http://{}:{}/api/logs?tail={}",
+        "http://{}:{}/v0/logs?tail={}",
         node.ip_address, node_api_port, limit
     );
 
@@ -143,10 +142,7 @@ impl From<NodeLogPayload> for LogResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry,
-        tasks::DownloadTaskManager,
-    };
+    use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry};
     use axum::extract::State as AxumState;
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::{net::IpAddr, sync::Arc};
@@ -162,14 +158,9 @@ mod tests {
         }]
     }
 
-    async fn coordinator_state() -> AppState {
+    async fn router_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
-        let request_history = Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new().expect("history init"),
-        );
-        let task_manager = DownloadTaskManager::new();
-        let convert_manager = crate::convert::ConvertTaskManager::new(1);
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -177,12 +168,15 @@ mod tests {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
+            db_pool.clone(),
+        ));
+        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
             load_manager,
             request_history,
-            task_manager,
             convert_manager,
             db_pool,
             jwt_secret,
@@ -191,7 +185,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn coordinator_logs_endpoint_returns_entries() {
+    async fn router_logs_endpoint_returns_entries() {
         let _guard = TEST_LOCK.lock().await;
         let temp = tempdir().unwrap();
         std::env::set_var("LLM_ROUTER_DATA_DIR", temp.path());
@@ -208,12 +202,12 @@ mod tests {
         .unwrap();
 
         // limitを十分大きく設定し、バックグラウンドプロセスによるログ追加を考慮
-        let response = get_coordinator_logs(Query(LogQuery { limit: 100 }))
+        let response = get_router_logs(Query(LogQuery { limit: 100 }))
             .await
             .unwrap()
             .0;
 
-        assert_eq!(response.source, "coordinator");
+        assert_eq!(response.source, "router");
         // インデックスベースの検証ではなく、特定のメッセージが存在するかどうかを確認
         // （バックグラウンドプロセスがログに追加すると、インデックスがずれる可能性があるため）
         let has_hello = response
@@ -238,7 +232,7 @@ mod tests {
         let node_ip: IpAddr = mock.address().ip();
 
         Mock::given(method("GET"))
-            .and(path("/api/logs"))
+            .and(path("/v0/logs"))
             .respond_with(ResponseTemplate::new(200).set_body_raw(
                 r#"{"entries":[{"timestamp":"2025-11-14T00:00:00Z","level":"INFO","target":"node","message":"remote","fields":{}}],"path":"/var/log/node.log"}"#,
                 "application/json",
@@ -246,7 +240,7 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let state = coordinator_state().await;
+        let state = router_state().await;
         let register_req = RegisterRequest {
             machine_name: "node-1".to_string(),
             ip_address: node_ip,
@@ -256,6 +250,7 @@ mod tests {
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         let register_res = state.registry.register(register_req).await.unwrap();
         let node_id = register_res.node_id;

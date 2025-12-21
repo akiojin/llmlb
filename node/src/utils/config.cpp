@@ -174,6 +174,9 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
 
     auto apply_json = [&](const nlohmann::json& j) {
         if (j.contains("router_url") && j["router_url"].is_string()) cfg.router_url = j["router_url"].get<std::string>();
+        if (j.contains("router_api_key") && j["router_api_key"].is_string()) {
+            cfg.router_api_key = j["router_api_key"].get<std::string>();
+        }
         if (j.contains("models_dir") && j["models_dir"].is_string()) cfg.models_dir = j["models_dir"].get<std::string>();
         if (j.contains("node_port") && j["node_port"].is_number()) cfg.node_port = j["node_port"].get<int>();
         if (j.contains("heartbeat_interval_sec") && j["heartbeat_interval_sec"].is_number()) {
@@ -209,6 +212,11 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         log << "env:ROUTER_URL=" << *v << " ";
         used_env = true;
     }
+    if (const char* v = std::getenv("LLM_NODE_API_KEY")) {
+        cfg.router_api_key = v;
+        log << "env:NODE_API_KEY=*** ";
+        used_env = true;
+    }
     if (auto v = getEnvWithFallback("LLM_NODE_MODELS_DIR", "LLM_MODELS_DIR")) {
         cfg.models_dir = *v;
         log << "env:MODELS_DIR=" << *v << " ";
@@ -239,6 +247,12 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         // LLM_NODE_IP is already the correct name
         cfg.ip_address = *v;
         log << "env:NODE_IP=" << *v << " ";
+        used_env = true;
+    }
+
+    if (const char* v = std::getenv("LLM_DEFAULT_EMBEDDING_MODEL")) {
+        cfg.default_embedding_model = v;
+        log << "env:DEFAULT_EMBEDDING_MODEL=" << v << " ";
         used_env = true;
     }
 

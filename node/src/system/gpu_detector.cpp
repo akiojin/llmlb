@@ -217,6 +217,8 @@ std::vector<GpuDevice> GpuDetector::detectRocm() {
             ret = rsmi_dev_memory_total_get(i, RSMI_MEM_TYPE_VRAM, &total_mem);
             if (ret == RSMI_STATUS_SUCCESS) {
                 dev.memory_bytes = total_mem;
+            } else {
+                dev.memory_bytes = 0;
             }
 
             // ROCm doesn't have a direct compute capability equivalent

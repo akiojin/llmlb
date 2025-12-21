@@ -16,15 +16,17 @@ public:
 
     void start(int port) {
         stop_flag_ = false;
-        server_.Post("/api/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+        server_.Post("/v0/nodes", [this](const httplib::Request& req, httplib::Response& res) {
             last_register_body = req.body;
+            last_register_auth = req.get_header_value("Authorization");
             res.status = register_status;
             res.set_content(register_response_body, "application/json");
         });
 
-        server_.Post("/api/health", [this](const httplib::Request& req, httplib::Response& res) {
+        server_.Post("/v0/health", [this](const httplib::Request& req, httplib::Response& res) {
             last_heartbeat_body = req.body;
-            last_heartbeat_token = req.get_header_value("X-Agent-Token");
+            last_heartbeat_token = req.get_header_value("X-Node-Token");
+            last_heartbeat_auth = req.get_header_value("Authorization");
             res.status = heartbeat_status;
             res.set_content("ok", "text/plain");
         });
@@ -50,12 +52,14 @@ public:
     std::atomic<bool> stop_flag_{true};
 
     int register_status{200};
-    std::string register_response_body{R"({"node_id":"node-1","agent_token":"test-token-123"})"};
+    std::string register_response_body{R"({"node_id":"node-1","node_token":"test-token-123"})"};
     std::string last_register_body;
+    std::string last_register_auth;
 
     int heartbeat_status{200};
     std::string last_heartbeat_body;
     std::string last_heartbeat_token;
+    std::string last_heartbeat_auth;
 };
 
 TEST(RouterClientTest, RegisterNodeSuccess) {
@@ -63,6 +67,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     server.start(18081);
 
     RouterClient client("http://127.0.0.1:18081");
+    client.setApiKey("sk_test_node");
     NodeInfo info;
     info.machine_name = "test-host";
     info.ip_address = "127.0.0.1";
@@ -72,6 +77,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     info.gpu_devices = {{.model = "Test GPU", .count = 1, .memory = 8ull * 1024 * 1024 * 1024}};
     info.gpu_count = 1;
     info.gpu_model = "Test GPU";
+    info.supported_runtimes = {"llama_cpp", "whisper_cpp"};
 
     auto result = client.registerNode(info);
 
@@ -79,8 +85,9 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
 
     EXPECT_TRUE(result.success);
     EXPECT_EQ(result.node_id, "node-1");
-    EXPECT_EQ(result.agent_token, "test-token-123");
+    EXPECT_EQ(result.node_token, "test-token-123");
     EXPECT_FALSE(server.last_register_body.empty());
+    EXPECT_EQ(server.last_register_auth, "Bearer sk_test_node");
 
     // Verify JSON structure matches router protocol
     auto body = nlohmann::json::parse(server.last_register_body);
@@ -91,6 +98,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     EXPECT_EQ(body["gpu_available"], true);
     EXPECT_EQ(body["gpu_devices"].size(), 1);
     EXPECT_EQ(body["gpu_devices"][0]["model"], "Test GPU");
+    EXPECT_EQ(body["supported_runtimes"].size(), 2);
 }
 
 TEST(RouterClientTest, RegisterNodeFailureWhenServerReturnsError) {
@@ -120,13 +128,15 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     server.start(18083);
 
     RouterClient client("http://127.0.0.1:18083");
-    bool ok = client.sendHeartbeat("node-xyz", "test-agent-token", "initializing");
+    client.setApiKey("sk_test_node");
+    bool ok = client.sendHeartbeat("node-xyz", "test-node-token", "initializing");
 
     server.stop();
 
     EXPECT_TRUE(ok);
     EXPECT_FALSE(server.last_heartbeat_body.empty());
-    EXPECT_EQ(server.last_heartbeat_token, "test-agent-token");
+    EXPECT_EQ(server.last_heartbeat_token, "test-node-token");
+    EXPECT_EQ(server.last_heartbeat_auth, "Bearer sk_test_node");
 
     // Verify new HealthCheckRequest format
     auto body = nlohmann::json::parse(server.last_heartbeat_body);
@@ -135,6 +145,15 @@ TEST(RouterClientTest, HeartbeatSucceeds) {
     EXPECT_TRUE(body.contains("memory_usage"));
     EXPECT_TRUE(body.contains("active_requests"));
     EXPECT_TRUE(body.contains("loaded_models"));
+    EXPECT_TRUE(body.contains("loaded_asr_models"));
+    EXPECT_TRUE(body.contains("loaded_tts_models"));
+    EXPECT_TRUE(body.contains("supported_runtimes"));
+    EXPECT_TRUE(body["loaded_asr_models"].is_array());
+    EXPECT_TRUE(body["loaded_tts_models"].is_array());
+    EXPECT_TRUE(body["supported_runtimes"].is_array());
+    EXPECT_EQ(body["loaded_asr_models"].size(), 0);
+    EXPECT_EQ(body["loaded_tts_models"].size(), 0);
+    EXPECT_EQ(body["supported_runtimes"].size(), 0);
     EXPECT_EQ(body["initializing"], false);
 }
 
@@ -142,10 +161,11 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     RouterServer server;
     server.heartbeat_status = 500;
     int hit_count = 0;
-    server.server_.Post("/api/health", [&](const httplib::Request& req, httplib::Response& res) {
+    server.server_.Post("/v0/health", [&](const httplib::Request& req, httplib::Response& res) {
         hit_count++;
         server.last_heartbeat_body = req.body;
-        server.last_heartbeat_token = req.get_header_value("X-Agent-Token");
+        server.last_heartbeat_token = req.get_header_value("X-Node-Token");
+        server.last_heartbeat_auth = req.get_header_value("Authorization");
         if (hit_count >= 2) {
             res.status = 200;
             res.set_content("ok", "text/plain");
@@ -157,14 +177,16 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     server.start(18084);
 
     RouterClient client("http://127.0.0.1:18084");
+    client.setApiKey("sk_test_node");
     HeartbeatMetrics m{12.5, 34.5, 1024, 2048};
-    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, 2);
+    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, {}, {}, {}, 2);
 
     server.stop();
 
     EXPECT_TRUE(ok);
     EXPECT_GE(hit_count, 2);
     EXPECT_EQ(server.last_heartbeat_token, "retry-token");
+    EXPECT_EQ(server.last_heartbeat_auth, "Bearer sk_test_node");
     auto body = nlohmann::json::parse(server.last_heartbeat_body);
     // New format uses cpu_usage/memory_usage instead of metrics object
     EXPECT_DOUBLE_EQ(body["cpu_usage"].get<double>(), 12.5);

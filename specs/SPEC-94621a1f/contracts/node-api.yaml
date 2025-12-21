@@ -1,0 +1,344 @@
+openapi: 3.0.3
+info:
+  title: LLM Router Node Registration API
+  description: ノード自己登録システムAPI
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発環境
+  - url: http://router:8080
+    description: 本番環境
+
+paths:
+  /v0/nodes:
+    post:
+      summary: ノード登録
+      description: 新しいノードを登録し、`node_token` を発行する（登録直後は pending）
+      operationId: registerNode
+      tags:
+        - Nodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: 新規登録成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '200':
+          description: 既存ノード更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: バリデーションエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: ノード一覧取得
+      description: 登録されたすべてのノード情報を取得する
+      operationId: listNodes
+      tags:
+        - Nodes
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Node'
+
+  /v0/health:
+    post:
+      summary: ヘルスチェック送信（ノード→ルーター）
+      description: `X-Node-Token` で認証し、ノード状態/メトリクスを送信する
+      operationId: reportHealth
+      tags:
+        - Nodes
+      parameters:
+        - name: X-Node-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthCheckRequest'
+      responses:
+        '200':
+          description: 受信成功
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/nodes/{node_id}/approve:
+    post:
+      summary: ノード承認（管理者専用）
+      description: pending のノードを承認し、registering/online に遷移させる
+      operationId: approveNode
+      tags:
+        - Nodes
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            description: "Bearer <JWT>"
+      responses:
+        '200':
+          description: 承認成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '403':
+          description: 権限エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: ノード未検出
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - machine_name
+        - ip_address
+        - runtime_version
+        - runtime_port
+        - gpu_available
+        - gpu_devices
+      properties:
+        machine_name:
+          type: string
+          description: マシン名
+          example: server-01
+          minLength: 1
+        ip_address:
+          type: string
+          description: IPアドレス（IPv4またはIPv6）
+          example: 192.168.1.10
+        runtime_version:
+          type: string
+          description: ランタイムバージョン（llama.cpp）
+          example: 0.1.0
+          minLength: 1
+        runtime_port:
+          type: integer
+          format: int32
+          description: ランタイム推論ポート番号
+          example: 11434
+          minimum: 1
+          maximum: 65535
+        gpu_available:
+          type: boolean
+          description: GPU利用可能フラグ（必ず true）
+          example: true
+        gpu_devices:
+          type: array
+          description: GPUデバイス情報（空配列は不可）
+          items:
+            $ref: '#/components/schemas/GpuDeviceInfo'
+        gpu_count:
+          type: integer
+          format: int32
+          description: GPU個数（任意）
+          minimum: 1
+        gpu_model:
+          type: string
+          description: GPUモデル名（任意）
+
+    RegisterResponse:
+      type: object
+      required:
+        - node_id
+        - status
+      properties:
+        node_id:
+          type: string
+          format: uuid
+          description: 割り当てられたノードID
+        status:
+          type: string
+          enum: [registered, updated]
+          description: 登録ステータス
+        node_api_port:
+          type: integer
+          format: int32
+          description: ノードの OpenAI互換API ポート（`runtime_port+1`）
+        node_token:
+          type: string
+          description: ノード→ルーター通信用トークン（`X-Node-Token`）
+
+    HealthCheckRequest:
+      type: object
+      required:
+        - node_id
+        - cpu_usage
+        - memory_usage
+        - active_requests
+        - loaded_models
+        - loaded_embedding_models
+        - initializing
+      properties:
+        node_id:
+          type: string
+          format: uuid
+        cpu_usage:
+          type: number
+          format: float
+          description: CPU使用率 (0.0-100.0)
+        memory_usage:
+          type: number
+          format: float
+          description: メモリ使用率 (0.0-100.0)
+        gpu_usage:
+          type: number
+          format: float
+          nullable: true
+          description: GPU使用率 (0.0-100.0)
+        active_requests:
+          type: integer
+          format: int32
+          description: 処理中リクエスト数
+        average_response_time_ms:
+          type: number
+          format: float
+          nullable: true
+          description: 過去N件の平均レスポンスタイム (ms)
+        loaded_models:
+          type: array
+          items:
+            type: string
+        loaded_embedding_models:
+          type: array
+          items:
+            type: string
+        initializing:
+          type: boolean
+        ready_models:
+          type: array
+          description: 起動済みモデル数/総数
+          items:
+            type: integer
+
+    Node:
+      type: object
+      required:
+        - id
+        - machine_name
+        - ip_address
+        - runtime_version
+        - runtime_port
+        - status
+        - registered_at
+        - last_seen
+        - gpu_available
+        - gpu_devices
+      properties:
+        id:
+          type: string
+          format: uuid
+        machine_name:
+          type: string
+        ip_address:
+          type: string
+        runtime_version:
+          type: string
+        runtime_port:
+          type: integer
+          format: int32
+        status:
+          type: string
+          enum: [pending, registering, online, offline]
+          description: ノード状態
+        registered_at:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        online_since:
+          type: string
+          format: date-time
+          nullable: true
+        gpu_available:
+          type: boolean
+        gpu_devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/GpuDeviceInfo'
+        gpu_count:
+          type: integer
+          format: int32
+          nullable: true
+        gpu_model:
+          type: string
+          nullable: true
+
+    GpuDeviceInfo:
+      type: object
+      required:
+        - model
+        - count
+      properties:
+        model:
+          type: string
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+        memory:
+          type: integer
+          format: int64
+          nullable: true
+          description: メモリ量（任意、単位は実装依存）
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+tags:
+  - name: Nodes
+    description: ノード登録・ヘルスチェックAPI

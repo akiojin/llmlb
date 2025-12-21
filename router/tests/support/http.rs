@@ -27,6 +27,46 @@ impl TestServer {
     }
 }
 
+/// Drop時に自動で停止するテストサーバーガード
+#[allow(dead_code)]
+pub struct TestServerGuard {
+    server: Option<TestServer>,
+}
+
+#[allow(dead_code)]
+impl TestServerGuard {
+    pub fn new(server: TestServer) -> Self {
+        Self {
+            server: Some(server),
+        }
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.server
+            .as_ref()
+            .expect("TestServerGuard already stopped")
+            .addr()
+    }
+
+    pub async fn stop(mut self) {
+        if let Some(server) = self.server.take() {
+            server.stop().await;
+        }
+    }
+}
+
+impl Drop for TestServerGuard {
+    fn drop(&mut self) {
+        if let Some(server) = self.server.take() {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    server.stop().await;
+                });
+            }
+        }
+    }
+}
+
 /// 任意のRouterを実ポートにバインドして起動する
 pub async fn spawn_router(router: Router) -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -48,4 +88,10 @@ pub async fn spawn_router(router: Router) -> TestServer {
         shutdown: Some(tx),
         handle,
     }
+}
+
+/// 任意のRouterをガード付きで起動する
+#[allow(dead_code)]
+pub async fn spawn_router_guarded(router: Router) -> TestServerGuard {
+    TestServerGuard::new(spawn_router(router).await)
 }

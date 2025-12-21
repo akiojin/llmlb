@@ -1,6 +1,6 @@
 # 契約: Models API 拡張 (SPEC-11106000)
 
-## GET /api/models/available
+## GET /v0/models/available
 - **Purpose**: HF GGUF カタログを返す。
 - **Query**: `search`, `limit`, `offset`, `source=hf` (デフォルト hf)。
 - **Response** 200:
@@ -26,7 +26,7 @@
 }
 ```
 
-## POST /api/models/register
+## POST /v0/models/register
 - **Purpose**: HF GGUF を対応モデルとして登録。
 - **Body**:
 ```json
@@ -42,29 +42,20 @@
 ```
 - **Errors**: 400 無効名/URL欠損, 409 重複, 424 HFから取得不可。
 
-## POST /api/models/download
-- **Purpose**: 登録済みモデルをノードにダウンロードさせる。
-- **Body**:
-```json
-{
-  "model_name": "hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf",
-  "target": "all",         // or "specific"
-  "node_ids": ["..."]      // target=specific のとき必須
-}
-```
-- **Response** 202:
-```json
-{ "task_ids": ["<uuid>", "..."] }
-```
-
-## GET /api/tasks/{task_id}
-- 既存を流用。`status/progress/speed` を含む DownloadTask を返す。
-
 ## GET /v1/models
+
 - 対応モデルに HF 登録分も含めて返す（idのみ。displayやsourceは拡張フィールドとしてオプション）。
+- ノードはこの一覧を参照し、`path` が参照できない場合は `GET /v0/models/blob/:model_name` でモデルを取得する（ルーターからのpush配布は行わない）。
 
 ---
-## CLI コマンド（仕様反映用）
-- `llm-router model list [--search <q>] [--limit N] [--offset M] [--format json|table]`
-- `llm-router model add <repo> --file <gguf>` → POST /api/models/register
-- `llm-router model download <name> (--all | --node <uuid>)`
+
+## CLI コマンド（廃止）
+
+**廃止日**: 2025-12-10
+
+CLIコマンドは廃止されました。以下のAPIを直接使用してください：
+
+- モデル一覧: `GET /v0/models/available`
+- モデル登録: `POST /v0/models/register`
+- ノード同期（一覧）: `GET /v1/models`
+- ノード同期（ファイル）: `GET /v0/models/blob/:model_name`

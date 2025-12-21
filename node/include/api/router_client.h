@@ -24,6 +24,7 @@ struct NodeInfo {
     std::vector<GpuDeviceInfoForRouter> gpu_devices;  // GPU device list
     std::optional<uint32_t> gpu_count;   // Total GPU count (optional)
     std::optional<std::string> gpu_model; // Primary GPU model (optional)
+    std::vector<std::string> supported_runtimes; // Supported runtime types
 };
 
 struct HeartbeatMetrics {
@@ -36,7 +37,7 @@ struct HeartbeatMetrics {
 struct NodeRegistrationResult {
     bool success{false};
     std::string node_id;
-    std::string agent_token;
+    std::string node_token;
     std::string error;
 };
 
@@ -44,23 +45,25 @@ class RouterClient {
 public:
     explicit RouterClient(std::string base_url, std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
+    void setApiKey(std::string api_key);
+
     NodeRegistrationResult registerNode(const NodeInfo& info);
 
     bool sendHeartbeat(const std::string& node_id,
-                       const std::string& agent_token,
+                       const std::string& node_token,
                        const std::optional<std::string>& status = std::nullopt,
                        const std::optional<HeartbeatMetrics>& metrics = std::nullopt,
+                       const std::vector<std::string>& loaded_models = {},
+                       const std::vector<std::string>& loaded_embedding_models = {},
+                       const std::vector<std::string>& loaded_asr_models = {},
+                       const std::vector<std::string>& loaded_tts_models = {},
+                       const std::vector<std::string>& supported_runtimes = {},
                        int max_retries = 2);
-
-    /// T034: Report download progress to router
-    bool reportProgress(const std::string& task_id,
-                        double progress,
-                        std::optional<double> speed = std::nullopt,
-                        int max_retries = 2);
 
 private:
     std::string base_url_;
     std::chrono::milliseconds timeout_;
+    std::string api_key_;
 };
 
 }  // namespace llm_node

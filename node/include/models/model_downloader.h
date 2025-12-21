@@ -14,9 +14,10 @@ public:
                     std::string models_dir,
                     std::chrono::milliseconds timeout = std::chrono::milliseconds(10000),
                     int max_retries = 2,
-                    std::chrono::milliseconds backoff = std::chrono::milliseconds(200));
+                    std::chrono::milliseconds backoff = std::chrono::milliseconds(200),
+                    std::string api_key = {});
 
-    // Fetch manifest JSON for a model id (e.g., gpt-oss:7b). Returns local manifest path.
+    // Fetch manifest JSON for a model id (e.g., gpt-oss-7b). Returns local manifest path.
     std::string fetchManifest(const std::string& model_id);
 
     // Download a blob by URL to the model directory. Reports progress if provided.
@@ -37,6 +38,7 @@ private:
     std::chrono::milliseconds timeout_;
     int max_retries_;
     std::chrono::milliseconds backoff_;
+    std::string api_key_;
     size_t max_bytes_per_sec_{0};
     size_t chunk_size_{4096};
     std::string log_source_;

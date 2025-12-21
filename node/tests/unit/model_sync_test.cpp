@@ -14,6 +14,7 @@ namespace fs = std::filesystem;
 class ModelServer {
 public:
     void start(int port) {
+        // /v1/models - ModelSync が使用するエンドポイント（OpenAI互換形式）
         server_.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
             res.set_content(response_body, "application/json");
@@ -33,7 +34,8 @@ public:
 
     httplib::Server server_;
     std::thread thread_;
-    std::string response_body{"{\"data\":[{\"id\":\"gpt-oss:7b\"},{\"id\":\"gpt-oss:20b\"}]}"};
+    // /v1/models: OpenAI互換形式 {"data": [...]} with "id" field
+    std::string response_body{R"({"data":[{"id":"gpt-oss-7b"},{"id":"gpt-oss-20b"}]})"};
 };
 
 class TempDirGuard {
@@ -60,8 +62,11 @@ TEST(ModelSyncTest, DetectsMissingAndStaleModels) {
 
     TempDirGuard guard;
     // local has stale model and one existing
-    fs::create_directory(guard.path / "gpt-oss:7b");
+    // listLocalModels() は model.gguf を探すため、ファイルも作成する
+    fs::create_directory(guard.path / "gpt-oss-7b");
+    { std::ofstream ofs(guard.path / "gpt-oss-7b" / "model.gguf"); ofs << "test"; }
     fs::create_directory(guard.path / "old-model");
+    { std::ofstream ofs(guard.path / "old-model" / "model.gguf"); ofs << "test"; }
 
     ModelSync sync("http://127.0.0.1:18084", guard.path.string());
     auto result = sync.sync();
@@ -69,7 +74,7 @@ TEST(ModelSyncTest, DetectsMissingAndStaleModels) {
     server.stop();
 
     ASSERT_EQ(result.to_download.size(), 1);
-    EXPECT_EQ(result.to_download[0], "gpt-oss:20b");
+    EXPECT_EQ(result.to_download[0], "gpt-oss-20b");
     ASSERT_EQ(result.to_delete.size(), 1);
     EXPECT_EQ(result.to_delete[0], "old-model");
 }
@@ -88,7 +93,9 @@ TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     server.start(18086);
 
     TempDirGuard guard;
-    fs::create_directory(guard.path / "m1");  // already present
+    // listLocalModels() は model.gguf を探すため、ファイルも作成する
+    fs::create_directory(guard.path / "m1");
+    { std::ofstream ofs(guard.path / "m1" / "model.gguf"); ofs << "test"; }
 
     ModelSync sync("http://127.0.0.1:18086", guard.path.string());
 
@@ -110,7 +117,9 @@ TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     server.stop();
 }
 
-TEST(ModelSyncTest, CopiesSharedPathWhenAvailable) {
+// Per SPEC-dcaeaec4 FR-3: When path is directly accessible, no download needed
+// (and no copy - InferenceEngine uses the path directly)
+TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     // Prepare shared model file
     TempDirGuard shared_guard;
     fs::create_directories(shared_guard.path);
@@ -127,7 +136,7 @@ TEST(ModelSyncTest, CopiesSharedPathWhenAvailable) {
     // HTTP server returning /v1/models with path pointing to shared_file
     const int port = 18097; // Unique port to avoid conflicts
     ModelServer server;
-    server.response_body = std::string(R"({"data":[{"id":"gpt-oss:7b","path":")") + shared_file.string() + R"("}]})";
+    server.response_body = std::string(R"({"data":[{"id":"gpt-oss-7b","path":")") + shared_file.string() + R"("}]})";
     server.start(port);
 
     // Give server time to fully initialize
@@ -140,15 +149,122 @@ TEST(ModelSyncTest, CopiesSharedPathWhenAvailable) {
 
     server.stop();
 
-    // Should not queue download because shared path was copied
+    // Should not queue download because shared path is accessible
     EXPECT_TRUE(result.to_download.empty()) << "to_download should be empty but has " << result.to_download.size() << " items";
 
-    auto target = local_guard.path / "gpt-oss_7b" / "model.gguf";
-    EXPECT_TRUE(fs::exists(target)) << "Target file not found: " << target;
-    std::ifstream ifs(target);
-    std::string content;
-    ifs >> content;
-    EXPECT_EQ(content, "abc");
+    // Per FR-3: No copy to local - InferenceEngine will use getRemotePath() directly
+    auto target = local_guard.path / "gpt-oss-7b" / "model.gguf";
+    EXPECT_FALSE(fs::exists(target)) << "Target file should NOT exist (no copy per spec)";
+
+    // Verify getRemotePath returns the accessible path
+    EXPECT_EQ(sync.getRemotePath("gpt-oss-7b"), shared_file.string());
+}
+
+// Test that /v1/models array format (backward compatibility) is correctly parsed
+TEST(ModelSyncTest, ParsesV1ModelsArrayFormat) {
+    const int port = 18120;
+    httplib::Server server;
+
+    // /v1/models can return array directly for backward compatibility
+    server.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 200;
+        res.set_content(R"([
+            {"id":"qwen/qwen2.5-0.5b-instruct-gguf","path":"/path/to/model.gguf"},
+            {"id":"openai/gpt-oss-20b","path":"/path/to/gpt.gguf"}
+        ])", "application/json");
+    });
+
+    std::thread th([&]() { server.listen("127.0.0.1", port); });
+    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    TempDirGuard guard;
+    ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
+
+    auto result = sync.sync();
+
+    server.stop();
+    if (th.joinable()) th.join();
+
+    // Should detect 2 models to download (none exist locally)
+    ASSERT_EQ(result.to_download.size(), 2);
+    // Since path is not accessible, they should be queued for download
+    bool has_qwen = std::find(result.to_download.begin(), result.to_download.end(),
+                              "qwen/qwen2.5-0.5b-instruct-gguf") != result.to_download.end();
+    bool has_gpt = std::find(result.to_download.begin(), result.to_download.end(),
+                             "openai/gpt-oss-20b") != result.to_download.end();
+    EXPECT_TRUE(has_qwen) << "qwen model should be in to_download";
+    EXPECT_TRUE(has_gpt) << "gpt model should be in to_download";
+}
+
+// Test that local model names are normalized to lowercase for comparison
+// This prevents deletion of models due to case mismatch
+TEST(ModelSyncTest, CaseInsensitiveModelNameComparison) {
+    const int port = 18121;
+    httplib::Server server;
+
+    // Router returns lowercase model name
+    server.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 200;
+        res.set_content(R"({"data":[{"id":"qwen/qwen2.5-0.5b-instruct-gguf"}]})", "application/json");
+    });
+
+    std::thread th([&]() { server.listen("127.0.0.1", port); });
+    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    TempDirGuard guard;
+    // Create local directory with UPPERCASE name (simulating HuggingFace original name)
+    fs::create_directories(guard.path / "Qwen" / "Qwen2.5-0.5B-Instruct-GGUF");
+    {
+        std::ofstream ofs(guard.path / "Qwen" / "Qwen2.5-0.5B-Instruct-GGUF" / "model.gguf");
+        ofs << "test";
+    }
+
+    ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
+    auto result = sync.sync();
+
+    server.stop();
+    if (th.joinable()) th.join();
+
+    // listLocalModels() should normalize to lowercase: "qwen/qwen2.5-0.5b-instruct-gguf"
+    // This should match the router's model name, so no deletion
+    EXPECT_TRUE(result.to_delete.empty())
+        << "Model should NOT be marked for deletion (case mismatch should be normalized)";
+    EXPECT_TRUE(result.to_download.empty())
+        << "Model already exists locally, no download needed";
+}
+
+// Test that both "name" and "id" fields are supported in model response
+TEST(ModelSyncTest, SupportsNameAndIdFields) {
+    const int port = 18122;
+    httplib::Server server;
+
+    server.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 200;
+        // Mixed: first uses "name", second uses "id" - both should be supported
+        res.set_content(R"({"data":[
+            {"name":"model-with-name"},
+            {"id":"model-with-id"}
+        ]})", "application/json");
+    });
+
+    std::thread th([&]() { server.listen("127.0.0.1", port); });
+    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    TempDirGuard guard;
+    ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
+
+    auto result = sync.sync();
+
+    server.stop();
+    if (th.joinable()) th.join();
+
+    ASSERT_EQ(result.to_download.size(), 2);
+    bool has_name = std::find(result.to_download.begin(), result.to_download.end(),
+                              "model-with-name") != result.to_download.end();
+    bool has_id = std::find(result.to_download.begin(), result.to_download.end(),
+                            "model-with-id") != result.to_download.end();
+    EXPECT_TRUE(has_name);
+    EXPECT_TRUE(has_id);
 }
 
 TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
@@ -171,7 +287,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
         };
     };
 
-    server.Get("/gpt-oss:prio/manifest.json", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/gpt-oss-prio/manifest.json", [](const httplib::Request&, httplib::Response& res) {
         res.status = 200;
         res.set_content(R"({
             "files":[
@@ -195,7 +311,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     ModelDownloader dl("http://127.0.0.1:18110", dir.path.string());
     ModelSync sync("http://127.0.0.1:18110", dir.path.string());
 
-    bool ok = sync.downloadModel(dl, "gpt-oss:prio", nullptr);
+    bool ok = sync.downloadModel(dl, "gpt-oss-prio", nullptr);
 
     server.stop();
     if (th.joinable()) th.join();

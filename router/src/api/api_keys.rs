@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use llm_router_common::auth::{ApiKey, ApiKeyWithPlaintext, Claims, UserRole};
+use llm_router_common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext, Claims, UserRole};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,6 +20,8 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     /// 有効期限（RFC3339形式、オプション）
     pub expires_at: Option<String>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 /// APIキーレスポンス（key_hash除外）
@@ -35,6 +37,8 @@ pub struct ApiKeyResponse {
     pub created_at: String,
     /// 有効期限
     pub expires_at: Option<String>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 impl From<ApiKey> for ApiKeyResponse {
@@ -45,6 +49,7 @@ impl From<ApiKey> for ApiKeyResponse {
             created_by: api_key.created_by.to_string(),
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
+            scopes: api_key.scopes,
         }
     }
 }
@@ -62,6 +67,8 @@ pub struct CreateApiKeyResponse {
     pub created_at: String,
     /// 有効期限
     pub expires_at: Option<String>,
+    /// スコープ（権限）
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
@@ -72,6 +79,7 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
             name: api_key.name,
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
+            scopes: api_key.scopes,
         }
     }
 }
@@ -92,7 +100,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
     Ok(())
 }
 
-/// GET /api/api-keys - APIキー一覧取得
+/// GET /v0/api-keys - APIキー一覧取得
 ///
 /// Admin専用。全APIキーの一覧を返す（key_hashは除外）
 ///
@@ -122,7 +130,7 @@ pub async fn list_api_keys(
     }))
 }
 
-/// POST /api/api-keys - APIキー発行
+/// POST /v0/api-keys - APIキー発行
 ///
 /// Admin専用。新しいAPIキーを発行する。平文キーは発行時のみ返却
 ///
@@ -142,6 +150,10 @@ pub async fn create_api_key(
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<(StatusCode, Json<CreateApiKeyResponse>), Response> {
     check_admin(&claims)?;
+
+    if request.scopes.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Scopes are required").into_response());
+    }
 
     // ユーザーIDをパース
     let user_id = claims.sub.parse::<Uuid>().map_err(|e| {
@@ -164,13 +176,18 @@ pub async fn create_api_key(
     };
 
     // APIキーを作成
-    let api_key =
-        crate::db::api_keys::create(&app_state.db_pool, &request.name, user_id, expires_at)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to create API key: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
-            })?;
+    let api_key = crate::db::api_keys::create(
+        &app_state.db_pool,
+        &request.name,
+        user_id,
+        expires_at,
+        normalize_scopes(&request.scopes),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create API key: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+    })?;
 
     Ok((
         StatusCode::CREATED,
@@ -187,7 +204,7 @@ pub struct UpdateApiKeyRequest {
     pub expires_at: Option<String>,
 }
 
-/// PUT /api/api-keys/:id - APIキー更新
+/// PUT /v0/api-keys/:id - APIキー更新
 ///
 /// Admin専用。APIキーの名前と有効期限を更新する
 ///
@@ -240,7 +257,20 @@ pub async fn update_api_key(
     }
 }
 
-/// DELETE /api/api-keys/:id - APIキー削除
+fn normalize_scopes(scopes: &[ApiKeyScope]) -> Vec<ApiKeyScope> {
+    use std::collections::HashSet;
+
+    let mut seen = HashSet::new();
+    let mut unique = Vec::new();
+    for scope in scopes {
+        if seen.insert(*scope) {
+            unique.push(*scope);
+        }
+    }
+    unique
+}
+
+/// DELETE /v0/api-keys/:id - APIキー削除
 ///
 /// Admin専用。APIキーを削除する
 ///

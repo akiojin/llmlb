@@ -33,27 +33,32 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-1: モデルディレクトリ構造（ノードローカルキャッシュ）
 
-- デフォルトのモデル保存先は `~/.llm-router/models/`（固定。環境変数による上書きは廃止）
+- デフォルトのモデル保存先は `~/.llm-router/models/`
+- 環境変数で上書き可能（推奨: `LLM_NODE_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
 - 各モデルは `<models_dir>/<model-name>/model.gguf` に配置
 
 #### FR-2: モデル名の形式
 
-- モデル名は `<base>:<tag>` 形式（例: `gpt-oss:20b`）
-- ディレクトリ名への変換: コロンをアンダースコアに置換
-  - `gpt-oss:20b` → `gpt-oss_20b/model.gguf`
-- tagがない場合は `latest` として扱う
-  - `gpt-oss` → `gpt-oss_latest/model.gguf`
+- モデル名（モデルID）はファイル名ベース形式または階層形式を許可
+  - ファイル名ベース形式: `gpt-oss-20b`
+  - 階層形式: `openai/gpt-oss-20b`（HuggingFace互換）
+- ディレクトリ名はモデルIDをそのまま使用（小文字に正規化）
+  - `gpt-oss-20b` → `gpt-oss-20b/model.gguf`
+  - `openai/gpt-oss-20b` → `openai/gpt-oss-20b/model.gguf`（ネストディレクトリ）
+- 危険な文字（`..`, `\0`等）は禁止、`/`はディレクトリセパレータとして許可
 
 #### FR-3: GGUFファイル解決（多段フロー）
 
-1. ルーター `/v1/models` 応答の対象モデルを取得し、`path` と `download_url` を参照できること。
+1. ルーター `/v0/models` 応答の対象モデルを取得し、`path` と `download_url` を参照できること。
+   - **注意**: `/v1/models` はOpenAI互換APIのため拡張情報を含まない。ノード同期用は `/v0/models` を使用
 2. ルーターは `download_url` をもつモデルについて **事前に自分の `~/.llm-router/models/` へキャッシュ** を試みる。成功すれば `path` を応答に含める。
 3. ノードはまずローカル `~/.llm-router/models/<name>/model.gguf` を探す。あれば採用。
-4. ルーターから受け取った `path` が存在し読み取り可能なら、それを直接使用（コピー可）。
-5. `path` が不可でも `download_url` があればそれをダウンロードし、`~/.llm-router/models` に保存。
-6. いずれも不可ならエラーを返す。Ollama blob 等への暗黙フォールバックは禁止。
+4. ルーターから受け取った `path` が存在し読み取り可能なら、それを直接使用（共有ストレージ: NFS, S3等）。
+5. `path` が不可なら、ルーターの `/v0/models/blob/:model_name` からダウンロードし、`~/.llm-router/models` に保存。
+6. いずれも不可なら、`download_url` を最後の手段としてダウンロードし、`~/.llm-router/models` に保存。
+7. いずれも不可ならエラーを返す。LLM runtime固有形式への暗黙フォールバックは禁止。
 
-※3の「直接使用」は共有ストレージ/NFSを想定。不可の場合でも4にフォールバックする。
+※4の「直接使用」は共有ストレージ/NFS/S3を想定。不可の場合は5にフォールバックする。
 
 #### FR-4: 利用可能モデル一覧
 
@@ -64,6 +69,25 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 - `metadata.json` が存在する場合、モデル情報を読み込む
 - 必須フィールドなし（存在しなくても動作する）
+
+#### FR-6: ノード起動時同期
+
+- ノードは起動時にルーターの `/v0/models` エンドポイントからモデル一覧を取得
+- 各モデルについてFR-3のモデル解決フローに従って取得/参照
+- ローカル → 共有パス → API経由ダウンロードの順で解決
+
+#### FR-7: ルーターからのプッシュ通知
+
+- ルーターは新しいモデル登録時に、オンライン状態の全ノードにプルリクエストを送信
+- プルリクエストはノードの `/api/models/pull` エンドポイントをPOST
+- ノードはリクエスト受信後、FR-3のモデル解決フローに従って取得
+- リトライポリシー: 無限リトライ、指数バックオフ（1s, 2s, 4s, ... 最大60s）
+
+#### FR-8: API設計
+
+- `/v0/models` - 独自拡張API（`path`, `download_url`等を含む）- ノード同期用
+- `/v1/models` - OpenAI互換API（標準形式のみ）
+- `/api/models/registered` - **廃止**（`/v0/models`に統合）
 
 ### 非機能要件
 
@@ -83,12 +107,12 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ├── config.json          # 設定ファイル
 ├── router.db            # ルーターDB（SQLite）
 └── models/
-    ├── gpt-oss_20b/
+    ├── gpt-oss-20b/
     │   ├── model.gguf   # モデルファイル
     │   └── metadata.json # (optional)
-    ├── gpt-oss_7b/
+    ├── gpt-oss-7b/
     │   └── model.gguf
-    └── qwen3-coder_30b/
+    └── qwen3-coder-30b/
         └── model.gguf
 ```
 
@@ -110,7 +134,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ## 受け入れ基準
 
 1. `~/.llm-router/models/<model_name>/model.gguf` からモデルを読み込める
-2. モデルディレクトリは固定（環境変数による上書きは禁止）
-3. モデル名の `:` が `_` に変換される
+2. モデルディレクトリを環境変数で上書きできる
+3. モデルIDがディレクトリ名として安全に扱われる
 4. 既存の単体テスト・統合テストがパスする
 5. E2Eテストでモデル推論が成功する

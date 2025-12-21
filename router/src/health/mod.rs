@@ -44,35 +44,36 @@ impl HealthMonitor {
         loop {
             timer.tick().await;
 
-            if let Err(e) = self.check_agent_health().await {
+            if let Err(e) = self.check_node_health().await {
                 error!("Health check error: {}", e);
             }
         }
     }
 
     /// 全ノードのヘルスチェック
-    async fn check_agent_health(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn check_node_health(&self) -> Result<(), Box<dyn std::error::Error>> {
         let nodes = self.registry.list().await;
         let now = Utc::now();
 
-        for agent in nodes {
-            if agent.status != NodeStatus::Online {
+        for node in nodes {
+            // Offlineのみスキップ（Pending/Registering/Online はタイムアウト検知対象）
+            if node.status == NodeStatus::Offline {
                 continue;
             }
 
             // 最終確認時刻からの経過時間を計算
-            let elapsed = now.signed_duration_since(agent.last_seen);
+            let elapsed = now.signed_duration_since(node.last_seen);
             let elapsed_secs = elapsed.num_seconds() as u64;
 
             if elapsed_secs > self.timeout_secs {
                 warn!(
                     "Node timeout detected: {} ({}) - last seen {} seconds ago",
-                    agent.machine_name, agent.id, elapsed_secs
+                    node.machine_name, node.id, elapsed_secs
                 );
 
                 // オフライン判定
-                if let Err(e) = self.registry.mark_offline(agent.id).await {
-                    error!("Failed to mark agent {} offline: {}", agent.id, e);
+                if let Err(e) = self.registry.mark_offline(node.id).await {
+                    error!("Failed to mark node {} offline: {}", node.id, e);
                 }
             }
         }
@@ -97,17 +98,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_agent_health_no_agents() {
+    async fn test_check_node_health_no_nodes() {
         let registry = NodeRegistry::new();
         let monitor = HealthMonitor::new(registry, 10, 60);
 
         // ノードがいない場合、エラーにならないことを確認
-        let result = monitor.check_agent_health().await;
+        let result = monitor.check_node_health().await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn test_check_agent_health_online_agent() {
+    async fn test_check_node_health_online_node() {
         let registry = NodeRegistry::new();
 
         // ノードを登録
@@ -124,17 +125,18 @@ mod tests {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         };
         registry.register(req).await.unwrap();
 
         let monitor = HealthMonitor::new(registry.clone(), 10, 60);
 
         // 最近登録したノードはタイムアウトしない
-        let result = monitor.check_agent_health().await;
+        let result = monitor.check_node_health().await;
         assert!(result.is_ok());
 
-        // ノードはまだオンライン
+        // 新規登録ノードは Pending 状態（承認後に Registering/Online に遷移）
         let nodes = registry.list().await;
-        assert_eq!(nodes[0].status, NodeStatus::Online);
+        assert_eq!(nodes[0].status, NodeStatus::Pending);
     }
 }

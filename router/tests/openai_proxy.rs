@@ -1,26 +1,14 @@
-use axum::{
-    extract::connect_info::ConnectInfo,
-    http::{header::CONTENT_TYPE, StatusCode},
-};
-use llm_router::{
-    api, balancer::LoadManager, registry::NodeRegistry, tasks::DownloadTaskManager, AppState,
-};
-use llm_router_common::{
-    protocol::{ChatRequest, GenerateRequest},
-    types::GpuDeviceInfo,
-};
-use std::net::SocketAddr;
+use axum::http::{header::CONTENT_TYPE, StatusCode};
+use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router_common::types::GpuDeviceInfo;
 use tower::ServiceExt;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -28,23 +16,26 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        task_manager,
         convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
     };
 
-    // 登録済みエージェントを追加
-    state
+    // 登録済みノードを追加
+    let register_response = state
         .registry
         .register(llm_router_common::protocol::RegisterRequest {
-            machine_name: "mock-agent".into(),
+            machine_name: "mock-node".into(),
             ip_address: mock.address().ip(),
             runtime_version: "0.0.0".into(),
             // APIポート=runtime_port+1 となる仕様のため、実際のモックポートに合わせて -1 する
@@ -57,12 +48,14 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
             }],
             gpu_count: Some(1),
             gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
         })
         .await
         .unwrap();
 
-    // エージェントをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
-    let node_id = state.registry.list().await[0].id;
+    // ノードをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
+    let node_id = register_response.node_id;
+    state.registry.approve(node_id).await.unwrap();
 
     // レジストリにロード済みモデル・初期化解除を反映
     state
@@ -70,10 +63,11 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .update_last_seen(
             node_id,
             Some(vec![
-                "gpt-oss:20b".to_string(),
-                "gpt-oss:120b".to_string(),
+                "gpt-oss-20b".to_string(),
+                "gpt-oss-120b".to_string(),
                 "test-model".to_string(),
             ]),
+            None, // loaded_embedding_models
             None,
             None,
             None,
@@ -116,364 +110,17 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     .expect("Failed to create test user");
 
     // テスト用のAPIキーを作成
-    let api_key = llm_router::db::api_keys::create(&db_pool, "test-key", test_user.id, None)
-        .await
-        .expect("Failed to create test API key");
+    let api_key = llm_router::db::api_keys::create(
+        &db_pool,
+        "test-key",
+        test_user.id,
+        None,
+        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+    )
+    .await
+    .expect("Failed to create test API key");
 
     (state, api_key.key)
-}
-
-fn attach_test_client_ip<B>(mut request: axum::http::Request<B>) -> axum::http::Request<B> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 54000));
-    request.extensions_mut().insert(ConnectInfo(addr));
-    request
-}
-
-#[tokio::test]
-async fn test_proxy_chat_success() {
-    let mock_server = MockServer::start().await;
-
-    // OpenAI互換形式のレスポンス
-    let chat_response = serde_json::json!({
-        "id": "chatcmpl-test",
-        "object": "chat.completion",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "hello"
-            },
-            "finish_reason": "stop"
-        }]
-    });
-
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(&chat_response))
-        .mount(&mock_server)
-        .await;
-
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
-    let router = api::create_router(state);
-
-    let payload = ChatRequest {
-        model: "test-model".into(),
-        messages: vec![llm_router_common::protocol::ChatMessage {
-            role: "user".into(),
-            content: "hi".into(),
-        }],
-        stream: false,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/chat")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed["choices"][0]["message"]["content"], "hello");
-}
-
-#[tokio::test]
-async fn test_proxy_chat_streaming_passthrough() {
-    let mock_server = MockServer::start().await;
-    let sse_payload = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
-
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Content-Type", "text/event-stream")
-                .set_body_bytes(sse_payload.as_bytes().to_vec()),
-        )
-        .mount(&mock_server)
-        .await;
-
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
-    let router = api::create_router(state);
-
-    let payload = ChatRequest {
-        model: "test-model".into(),
-        messages: vec![llm_router_common::protocol::ChatMessage {
-            role: "user".into(),
-            content: "stream?".into(),
-        }],
-        stream: true,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/chat")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(CONTENT_TYPE).unwrap(),
-        "text/event-stream"
-    );
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    assert_eq!(std::str::from_utf8(&body).unwrap(), sse_payload);
-}
-
-#[tokio::test]
-async fn test_proxy_chat_missing_model_returns_openai_error() {
-    let mock_server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(404).set_body_string("model not found"))
-        .mount(&mock_server)
-        .await;
-
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
-    let router = api::create_router(state);
-
-    let payload = ChatRequest {
-        model: "missing".into(),
-        messages: vec![llm_router_common::protocol::ChatMessage {
-            role: "user".into(),
-            content: "hi".into(),
-        }],
-        stream: false,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/chat")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["error"]["type"], "runtime_upstream_error");
-    assert_eq!(json["error"]["code"], 404);
-    assert!(json["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("model not found"));
-}
-
-#[tokio::test]
-async fn test_proxy_chat_no_agents() {
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
-    let jwt_secret = "test-secret".to_string();
-    let router = api::create_router(AppState {
-        registry,
-        load_manager,
-        request_history,
-        task_manager,
-        convert_manager: llm_router::convert::ConvertTaskManager::new(1),
-        db_pool,
-        jwt_secret,
-        http_client: reqwest::Client::new(),
-    });
-
-    let payload = ChatRequest {
-        model: "test-model".into(),
-        messages: vec![llm_router_common::protocol::ChatMessage {
-            role: "user".into(),
-            content: "hi".into(),
-        }],
-        stream: false,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/chat")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-}
-
-#[tokio::test]
-async fn test_proxy_generate_success() {
-    let mock_server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path("/v1/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "response": "ok"
-        })))
-        .mount(&mock_server)
-        .await;
-
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
-    let router = api::create_router(state);
-
-    let payload = GenerateRequest {
-        model: "test-model".into(),
-        prompt: "hello".into(),
-        stream: false,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/generate")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn test_proxy_generate_streaming_passthrough() {
-    let mock_server = MockServer::start().await;
-    let ndjson_payload = "{\"response\":\"chunk-1\"}\n{\"response\":\"chunk-2\"}\n";
-
-    Mock::given(method("POST"))
-        .and(path("/v1/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("Content-Type", "application/x-ndjson")
-                .set_body_bytes(ndjson_payload.as_bytes().to_vec()),
-        )
-        .mount(&mock_server)
-        .await;
-
-    let (state, _api_key) = build_state_with_mock(&mock_server).await;
-    let router = api::create_router(state);
-
-    let payload = GenerateRequest {
-        model: "test-model".into(),
-        prompt: "stream please".into(),
-        stream: true,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/generate")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(CONTENT_TYPE).unwrap(),
-        "application/json"
-    );
-    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    assert_eq!(std::str::from_utf8(&body).unwrap(), ndjson_payload);
-}
-
-#[tokio::test]
-async fn test_proxy_generate_no_agents() {
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
-    let request_history =
-        std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let task_manager = DownloadTaskManager::new();
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
-    let jwt_secret = "test-secret".to_string();
-    let router = api::create_router(AppState {
-        registry,
-        load_manager,
-        request_history,
-        task_manager,
-        convert_manager: llm_router::convert::ConvertTaskManager::new(1),
-        db_pool,
-        jwt_secret,
-        http_client: reqwest::Client::new(),
-    });
-
-    let payload = GenerateRequest {
-        model: "test-model".into(),
-        prompt: "hello".into(),
-        stream: false,
-    };
-
-    let response = router
-        .oneshot(attach_test_client_ip(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/generate")
-                .header("Content-Type", "application/json")
-                .body(axum::body::Body::from(
-                    serde_json::to_vec(&payload).unwrap(),
-                ))
-                .unwrap(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]
@@ -793,7 +440,7 @@ async fn test_openai_models_list_success() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "object": "list",
             "data": [{
-                "id": "gpt-oss:20b",
+                "id": "gpt-oss-20b",
                 "object": "model",
                 "owned_by": "runtime"
             }]
@@ -837,9 +484,9 @@ async fn test_openai_model_detail_success() {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/v1/models/gpt-oss:20b"))
+        .and(path("/v1/models/gpt-oss-20b"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "gpt-oss:20b",
+            "id": "gpt-oss-20b",
             "object": "model",
             "owned_by": "runtime"
         })))
@@ -853,7 +500,7 @@ async fn test_openai_model_detail_success() {
         .oneshot(
             axum::http::Request::builder()
                 .method("GET")
-                .uri("/v1/models/gpt-oss:20b")
+                .uri("/v1/models/gpt-oss-20b")
                 .header("Authorization", format!("Bearer {}", api_key))
                 .body(axum::body::Body::empty())
                 .unwrap(),

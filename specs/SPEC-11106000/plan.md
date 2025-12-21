@@ -4,10 +4,10 @@
 **入力**: `/specs/SPEC-11106000/spec.md` の機能仕様
 
 ## 概要
-- HF の GGUF カタログを取得し、対応モデルと対応可能モデルを分離表示する。
-- 選択した GGUF を対応モデルとして登録し、/v1/models・ダッシュボード・CLI で反映。
-- 登録済みモデルに対し、全ノード／指定ノードへ「今すぐダウンロード」指示と進捗表示を提供。
-- 将来の非GGUFはルーター側一括変換を想定（要方針決定）。
+- HFカタログUIは廃止し、単一テキストエリアにHFリポジトリ/ファイルURLを貼るだけで登録。
+- GGUFがあれば即登録・ダウンロード、なければ自動で非GGUF→GGUF変換タスクをキュー。
+- /v1/models には実体GGUFが存在するものだけ返す。重複はエラー。
+- 失敗した変換/ダウンロードはUIの「Restore」で再キューできる。
 
 ## 技術コンテキスト
 - **言語/バージョン**: Rust 1.75+（router/cli）、TypeScript/JSなしのプレーン JS (web static)、C++ノードは変更最小。
@@ -35,38 +35,37 @@
 - cli: 既存 `llm-router` に `model list/add/download` サブコマンド追加。
 
 ## Phase 0: アウトライン＆リサーチ
-- HF API: GGUFタグ検索エンドポイント・レートリミット・認証要否。
-- モデルID命名規則: repo+file から一意にする形式の決定。
-- 非GGUF変換: どこで変換し、どこにホストするかの方針案をまとめる。
+- HF API: repoメタ（siblings）取得と認証要否のみ確認。カタログ一覧は扱わない。
+- モデルID命名: `hf/{repo}/{filename}` 固定。
+- 非GGUF変換: ルーター側で一度だけ `convert_hf_to_gguf.py` を使う。ダミー変換フラグは使わず、実変換を前提にする。
 
 ## Phase 1: 設計＆契約
-- data-model.md: ModelInfo 拡張（source, download_url, status, size、hf_metaなど）。
-- contracts/: OpenAPI 追記  
-  - `GET /api/models/available` 拡張: source=hf/…、ページング・検索。  
-  - `POST /api/models/register` (新) HF GGUFを対応モデルに追加。  
-  - `POST /api/models/download` (新) target=all/specific node_ids。  
-  - `GET /api/tasks/{id}` 既存進捗にモデルDL用途の例を追加。  
-- quickstart.md: Web/CLI 両方の操作手順と進捗確認。
+- data-model.md: ModelInfo 拡張（source, download_url, status, size, repo/filename）。
+- contracts:  
+  - `POST /v0/models/register` repo-only/filename指定、GGUF/非GGUF、自動変換。  
+  - `POST /v0/models/convert` 失敗時の再キュー。  
+  - `GET /v0/models/convert` タスク一覧。  
+  - `/v1/models` は実体があるもののみ。  
+- quickstart.md: URL貼付→登録→（変換）→/v1/models までの手順、Restore手順を記載。
 
 ## Phase 2: タスク計画アプローチ
-- tasks.md生成時に:  
-  - Contract tests → 新APIの契約テスト (router)  
-  - Integration → HFカタログ取得のモックテスト、ダウンロード指示→タスク生成→状態更新  
-  - Frontend → UIレンダリング/状態遷移のE2E (軽量)  
-  - CLI → コマンド挙動の統合テスト  
-  - 実装 → registry保存、manifest生成/提供、進捗ポーリング
+- Contract tests: register（repo/file, non-GGUF→convert, duplicate, not-found）、/v1/models 実体のみ、convert RESTORE再キュー。
+- Integration: HF siblingsモック→ファイル選択→convertキュー→完了後 /v1/models 出現。
+- Frontend: URL登録フォーム、バナー、登録済みリスト、失敗タスクのRestoreボタンのE2E。
+- CLI: scope外（今回はWeb/API中心）※必要なら後追い。
+- 実装: registry永続化、convert manager、/v1/models フィルタ、RestoreボタンのAPI連携。
 
 ## 複雑さトラッキング
-| 違反 | 必要な理由 | より単純な代替案が却下された理由 |
-|------|-----------|----------------------------------|
-| なし | - | - |
+| 違反 | 必要な理由 | 代替案を却下した理由 |
+|------|-----------|----------------------|
+| 非GGUF→GGUF変換をルーター側で実行 | /v1/models を実体ありに限定するため | ノード側変換は台数分の負荷・再現性低下になるため |
 
 ## 進捗トラッキング
-- [x] Phase 0: Research完了 (/speckit.plan)
-- [x] Phase 1: Design完了 (/speckit.plan)
-- [ ] Phase 2: Task planning完了 (/speckit.plan - アプローチのみ)
-- [ ] Phase 3: Tasks生成済み (/speckit.tasks)
-- [ ] Phase 4: 実装完了
+- [x] Phase 0: Research完了
+- [x] Phase 1: Design完了
+- [x] Phase 2: Task planning更新（本チケットで反映）
+- [x] Phase 3: Tasks更新反映
+- [x] Phase 4: 実装完了
 - [ ] Phase 5: 検証合格
 
 **ゲート**

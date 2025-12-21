@@ -38,11 +38,11 @@ pub enum RouterError {
 
     /// Node not found
     #[error("Node not found: {0}")]
-    AgentNotFound(Uuid),
+    NodeNotFound(Uuid),
 
     /// No available nodes
     #[error("No available nodes")]
-    NoAgentsAvailable,
+    NoNodesAvailable,
 
     /// Database error
     #[error("Database error: {0}")]
@@ -66,7 +66,7 @@ pub enum RouterError {
 
     /// Node is offline
     #[error("Node {0} is offline")]
-    AgentOffline(Uuid),
+    NodeOffline(Uuid),
 
     /// Invalid model name
     #[error("Invalid model name: {0}")]
@@ -93,6 +93,36 @@ pub enum RouterError {
     Authorization(String),
 }
 
+impl RouterError {
+    /// Returns a safe error message for external clients.
+    ///
+    /// This method returns a generic error message that does not expose
+    /// internal implementation details such as IP addresses, port numbers,
+    /// or internal service names. Use this for HTTP responses to external clients.
+    ///
+    /// For debugging purposes, use the `Display` implementation (`to_string()`)
+    /// which includes full error details - but only in server logs.
+    pub fn external_message(&self) -> &'static str {
+        match self {
+            Self::Common(_) => "Request error",
+            Self::NodeNotFound(_) => "Node not found",
+            Self::NoNodesAvailable => "No available nodes",
+            Self::Database(_) => "Database error",
+            Self::Http(_) => "Backend service unavailable",
+            Self::Timeout(_) => "Request timeout",
+            Self::ServiceUnavailable(_) => "Service temporarily unavailable",
+            Self::Internal(_) => "Internal server error",
+            Self::NodeOffline(_) => "Node offline",
+            Self::InvalidModelName(_) => "Invalid model name",
+            Self::InsufficientStorage(_) => "Insufficient storage",
+            Self::PasswordHash(_) => "Authentication error",
+            Self::Jwt(_) => "Authentication error",
+            Self::Authentication(_) => "Authentication failed",
+            Self::Authorization(_) => "Access denied",
+        }
+    }
+}
+
 /// Node error type
 #[derive(Debug, Error)]
 pub enum NodeError {
@@ -100,9 +130,9 @@ pub enum NodeError {
     #[error(transparent)]
     Common(#[from] CommonError),
 
-    /// Coordinator connection error
-    #[error("Failed to connect to Coordinator: {0}")]
-    CoordinatorConnection(String),
+    /// Router connection error
+    #[error("Failed to connect to Router: {0}")]
+    RouterConnection(String),
 
     /// LLM runtime connection error
     #[error("Failed to connect to LLM runtime: {0}")]
@@ -149,25 +179,22 @@ mod tests {
     }
 
     #[test]
-    fn test_coordinator_error_agent_not_found() {
+    fn test_router_error_node_not_found() {
         let node_id = Uuid::new_v4();
-        let error = RouterError::AgentNotFound(node_id);
+        let error = RouterError::NodeNotFound(node_id);
         assert!(error.to_string().contains(&node_id.to_string()));
     }
 
     #[test]
-    fn test_coordinator_error_no_agents() {
-        let error = RouterError::NoAgentsAvailable;
+    fn test_router_error_no_nodes() {
+        let error = RouterError::NoNodesAvailable;
         assert_eq!(error.to_string(), "No available nodes");
     }
 
     #[test]
-    fn test_agent_error_coordinator_connection() {
-        let error = NodeError::CoordinatorConnection("timeout".to_string());
-        assert_eq!(
-            error.to_string(),
-            "Failed to connect to Coordinator: timeout"
-        );
+    fn test_node_error_router_connection() {
+        let error = NodeError::RouterConnection("timeout".to_string());
+        assert_eq!(error.to_string(), "Failed to connect to Router: timeout");
     }
 
     #[test]

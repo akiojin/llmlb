@@ -3,13 +3,32 @@
 #include <nlohmann/json.hpp>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
+#include "runtime/state.h"
 
 namespace llm_node {
 
+namespace {
+// SPEC-dcaeaec4: Helper to check if node is ready and return 503 if not
+bool checkReady(httplib::Response& res) {
+    if (!is_ready()) {
+        res.status = 503;
+        nlohmann::json err = {
+            {"error", {
+                {"type", "service_unavailable"},
+                {"message", "Node is syncing models with router. Please wait."}
+            }}
+        };
+        res.set_content(err.dump(), "application/json");
+        return false;
+    }
+    return true;
+}
+}  // namespace
+
 using json = nlohmann::json;
 
-OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine)
-    : registry_(registry), engine_(engine) {}
+OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
+    : registry_(registry), engine_(engine), config_(config) {}
 
 void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     server.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
@@ -23,6 +42,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
@@ -41,7 +61,16 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 res.set_chunked_content_provider("text/event-stream",
                     [output](size_t offset, httplib::DataSink& sink) {
                         if (offset == 0) {
-                            json event_data = {{"content", output}};
+                            // OpenAI compatible streaming format
+                            json event_data = {
+                                {"id", "chatcmpl-1"},
+                                {"object", "chat.completion.chunk"},
+                                {"choices", json::array({{
+                                    {"index", 0},
+                                    {"delta", {{"content", output}}},
+                                    {"finish_reason", nullptr}
+                                }})}
+                            };
                             std::string chunk = "data: " + event_data.dump() + "\n\n";
                             sink.write(chunk.data(), chunk.size());
                             std::string done = "data: [DONE]\n\n";
@@ -71,6 +100,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
@@ -89,18 +119,61 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
         try {
             auto body = json::parse(req.body);
-            std::string model = body.value("model", "");
+            // モデルパラメータは必須（OpenAI API仕様準拠）
+            if (!body.contains("model") || !body["model"].is_string() || body["model"].get<std::string>().empty()) {
+                respondError(res, 400, "invalid_request", "model is required");
+                return;
+            }
+            std::string model = body["model"].get<std::string>();
             if (!validateModel(model, res)) return;
-            std::string input = body.contains("input") ? body["input"].dump() : "";
-            // ダミー埋め込み（固定長3）
+
+            // inputを解析（文字列または文字列の配列）
+            std::vector<std::string> inputs;
+            if (body.contains("input")) {
+                if (body["input"].is_string()) {
+                    inputs.push_back(body["input"].get<std::string>());
+                } else if (body["input"].is_array()) {
+                    for (const auto& item : body["input"]) {
+                        if (item.is_string()) {
+                            inputs.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+            }
+
+            if (inputs.empty()) {
+                respondError(res, 400, "invalid_request", "input is required");
+                return;
+            }
+
+            // embeddingを生成
+            auto embeddings = engine_.generateEmbeddings(inputs, model);
+
+            // OpenAI互換レスポンスを構築
+            json data = json::array();
+            int total_tokens = 0;
+            for (size_t i = 0; i < embeddings.size(); ++i) {
+                data.push_back({
+                    {"object", "embedding"},
+                    {"embedding", embeddings[i]},
+                    {"index", static_cast<int>(i)}
+                });
+                // トークン数の概算（文字数 / 4）
+                total_tokens += static_cast<int>(inputs[i].size() / 4 + 1);
+            }
+
             json resp = {
-                {"data", json::array({{{"object", "embedding"}, {"embedding", {1.0, 0.0, -1.0}}, {"index", 0}}})},
-                {"model", body.value("model", "")},
-                {"usage", {{"prompt_tokens", static_cast<int>(input.size())}, {"total_tokens", static_cast<int>(input.size())}}}
+                {"object", "list"},
+                {"data", data},
+                {"model", model},
+                {"usage", {{"prompt_tokens", total_tokens}, {"total_tokens", total_tokens}}}
             };
             setJson(res, resp);
+        } catch (const std::exception& e) {
+            respondError(res, 500, "internal_error", std::string("embedding error: ") + e.what());
         } catch (...) {
             respondError(res, 400, "bad_request", "invalid JSON body");
         }
@@ -121,8 +194,16 @@ bool OpenAIEndpoints::validateModel(const std::string& model, httplib::Response&
         respondError(res, 400, "model_required", "model is required");
         return false;
     }
-    if (!registry_.hasModel(model)) {
-        respondError(res, 404, "model_not_found", "model not found");
+    // Check local registry first
+    if (registry_.hasModel(model)) {
+        return true;
+    }
+    // Try to load from remote path (SPEC-dcaeaec4 FR-3)
+    // loadModel() will check local storage first, then remote path
+    auto load_result = engine_.loadModel(model);
+    if (!load_result.success) {
+        respondError(res, 404, "model_not_found",
+            load_result.error_message.empty() ? "model not found" : load_result.error_message);
         return false;
     }
     return true;

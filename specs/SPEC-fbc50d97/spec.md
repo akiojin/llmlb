@@ -67,7 +67,7 @@
 **この優先度の理由**: 大量データの中から効率的に情報を見つけるための利便性機能。
 基本的な履歴表示と詳細確認（P1-P2）があれば最低限の運用は可能。
 
-**独立テスト**: フィルタ条件（例：ノード名="agent-001"、ステータス="エラー"）を
+**独立テスト**: フィルタ条件（例：ノード名="node-001"、ステータス="エラー"）を
 設定し、検索ボタンを押すと、条件に一致するレコードのみが表示されることを確認する。
 
 **受け入れシナリオ**:
@@ -177,11 +177,12 @@
 
 ## 技術制約 *(該当する場合)*
 
-- 保存方式はJSONファイルベースとし、SQLiteやPostgreSQL等のRDBMSは使用しない
-  （既存のノード情報保存方式と統一）
-- 保存場所は `~/.llm-router/request_history.json` とし、環境変数
-  `OLLAMA_ROUTER_DATA_DIR` で変更可能とする
-- ファイルの読み書きは排他制御（Mutex等）により、並行アクセスの安全性を保証する
+- 保存方式はSQLiteとし、既存の認証システム（`router.db`）と統合する
+  - 認証機能（users, api_keys, node_tokens）と同じDBを使用
+  - インデックスによる高速クエリを実現
+- 保存場所は `~/.llm-router/router.db` の `request_history` テーブル
+- SQLiteのWALモードにより、並行アクセスの安全性を保証する
+- 既存のJSONファイル（`request_history.json`）からの自動移行をサポート
 
 ---
 
@@ -199,10 +200,10 @@
 
 この機能は以下に依存します:
 
-- ルーターのプロキシAPI機能（`/api/chat`, `/api/generate`）
-- ダッシュボードのバックエンドAPI機能（`coordinator/src/api/dashboard.rs`）
-- ダッシュボードのフロントエンド（`coordinator/src/web/static/`）
-- 既存のストレージ層実装（`coordinator/src/db/mod.rs`のパターンを踏襲）
+- ルーターのプロキシAPI機能（`/v1/chat/completions`, `/v1/completions`）
+- ダッシュボードのバックエンドAPI機能（`router/src/api/dashboard.rs`）
+- ダッシュボードのフロントエンド（`router/src/web/static/`）
+- 既存のストレージ層実装（`router/src/db/mod.rs`のパターンを踏襲）
 
 ---
 

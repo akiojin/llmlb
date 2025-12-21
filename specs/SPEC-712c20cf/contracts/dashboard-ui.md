@@ -19,7 +19,7 @@
 │ └─────────────┘ └─────────────┘ └─────────────┘ └──────────┘ │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
-│ Agent List                                                      │
+│ Node List                                                      │
 │ ┌───────────┬─────────────┬─────────┬─────────┬────────────┐  │
 │ │ Name      │ IP Address  │ Status  │ Uptime  │ Action     │  │
 │ ├───────────┼─────────────┼─────────┼─────────┼────────────┤  │
@@ -50,12 +50,12 @@
 ```html
 <div class="stats-container">
   <div class="stat-card">
-    <h3>Total Agents</h3>
-    <p id="total-agents" class="stat-value">0</p>
+    <h3>Total Nodes</h3>
+    <p id="total-nodes" class="stat-value">0</p>
   </div>
   <div class="stat-card">
-    <h3>Online Agents</h3>
-    <p id="online-agents" class="stat-value">0</p>
+    <h3>Online Nodes</h3>
+    <p id="online-nodes" class="stat-value">0</p>
   </div>
   <div class="stat-card">
     <h3>Total Requests</h3>
@@ -80,30 +80,33 @@
 /**
  * システム統計を更新
  * @param {Object} stats - システム統計オブジェクト
- * @param {number} stats.total_agents - 総ノード数
- * @param {number} stats.online_agents - オンラインノード数
+ * @param {number} stats.total_nodes - 総ノード数
+ * @param {number} stats.online_nodes - オンラインノード数
+ * @param {number} stats.offline_nodes - オフラインノード数
  * @param {number} stats.total_requests - 総リクエスト数
- * @param {number} stats.avg_response_time_ms - 平均レスポンスタイム
+ * @param {number|null} stats.average_response_time_ms - 平均レスポンスタイム
  */
 function updateStats(stats) {
-  document.getElementById('total-agents').textContent = stats.total_agents;
-  document.getElementById('online-agents').textContent = stats.online_agents;
+  document.getElementById('total-nodes').textContent = stats.total_nodes;
+  document.getElementById('online-nodes').textContent = stats.online_nodes;
+  document.getElementById('offline-nodes').textContent = stats.offline_nodes;
   document.getElementById('total-requests').textContent = stats.total_requests;
-  document.getElementById('avg-response-time').textContent = `${stats.avg_response_time_ms}ms`;
+  document.getElementById('avg-response-time').textContent =
+    stats.average_response_time_ms == null ? '-' : `${stats.average_response_time_ms}ms`;
 }
 ```
 
 ---
 
-### 2. AgentTable
+### 2. NodeTable
 
 **説明**: ノード一覧を表示するテーブルコンポーネント
 
 **HTML構造**:
 ```html
-<div class="agent-table-container">
-  <h2>Agent List</h2>
-  <table class="agent-table">
+<div class="node-table-container">
+  <h2>Node List</h2>
+  <table class="node-table">
     <thead>
       <tr>
         <th>Name</th>
@@ -113,7 +116,7 @@ function updateStats(stats) {
         <th>Action</th>
       </tr>
     </thead>
-    <tbody id="agent-table-body">
+    <tbody id="node-table-body">
       <!-- ノード行が動的に追加される -->
     </tbody>
   </table>
@@ -127,28 +130,29 @@ function updateStats(stats) {
 - 行hover: 背景色 #f9f9f9
 - ステータスバッジ:
   - Online: 緑色背景 (#4CAF50)、白文字
+  - Pending/Registering: 黄色背景 (#FFC107)、黒文字
   - Offline: グレー背景 (#9E9E9E)、白文字
 
 **JavaScript契約**:
 ```javascript
 /**
  * ノード一覧を更新
- * @param {Array<Object>} agents - ノード配列
- * @param {string} agents[].id - ノードID
- * @param {string} agents[].machine_name - マシン名
- * @param {string} agents[].ip_address - IPアドレス
- * @param {string} agents[].status - ステータス ("Online" | "Offline")
- * @param {number} agents[].uptime_seconds - 直近オンライン開始からの稼働時間（秒）
+ * @param {Array<Object>} nodes - ノード配列
+ * @param {string} nodes[].id - ノードID
+ * @param {string} nodes[].machine_name - マシン名
+ * @param {string} nodes[].ip_address - IPアドレス
+ * @param {string} nodes[].status - ステータス ("online" | "pending" | "registering" | "offline")
+ * @param {number} nodes[].uptime_seconds - 直近オンライン開始からの稼働時間（秒）
  */
-function updateAgentTable(agents) {
-  const tbody = document.getElementById('agent-table-body');
-  tbody.innerHTML = agents.map(agent => `
-    <tr class="agent-row ${agent.status.toLowerCase()}">
-      <td>${escapeHtml(agent.machine_name)}</td>
-      <td>${escapeHtml(agent.ip_address)}</td>
-      <td><span class="status-badge ${agent.status.toLowerCase()}">${agent.status}</span></td>
-      <td>${formatUptime(agent.uptime_seconds)}</td>
-      <td><button onclick="showDetails('${agent.id}')">Details</button></td>
+function updateNodeTable(nodes) {
+  const tbody = document.getElementById('node-table-body');
+  tbody.innerHTML = nodes.map(node => `
+    <tr class="node-row ${node.status.toLowerCase()}">
+      <td>${escapeHtml(node.machine_name)}</td>
+      <td>${escapeHtml(node.ip_address)}</td>
+      <td><span class="status-badge ${node.status.toLowerCase()}">${node.status}</span></td>
+      <td>${formatUptime(node.uptime_seconds)}</td>
+      <td><button onclick="showDetails('${node.id}')">Details</button></td>
     </tr>
   `).join('');
 }
@@ -256,15 +260,15 @@ const POLL_INTERVAL = 5000; // 5秒
 async function refreshDashboard() {
   try {
     // ノード一覧を取得
-    const agentsResponse = await fetch('/api/dashboard/agents');
-    if (!agentsResponse.ok) {
-      throw new Error(`HTTP error! status: ${agentsResponse.status}`);
+    const nodesResponse = await fetch('/v0/dashboard/nodes');
+    if (!nodesResponse.ok) {
+      throw new Error(`HTTP error! status: ${nodesResponse.status}`);
     }
-    const agents = await agentsResponse.json();
-    updateAgentTable(agents);
+    const nodes = await nodesResponse.json();
+    updateNodeTable(nodes);
 
     // システム統計を取得
-    const statsResponse = await fetch('/api/dashboard/stats');
+    const statsResponse = await fetch('/v0/dashboard/stats');
     if (!statsResponse.ok) {
       throw new Error(`HTTP error! status: ${statsResponse.status}`);
     }
@@ -358,11 +362,11 @@ function showError(message) {
     flex-direction: column;
   }
 
-  .agent-table-container {
+  .node-table-container {
     overflow-x: auto;
   }
 
-  .agent-table {
+  .node-table {
     min-width: 600px;
   }
 }

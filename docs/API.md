@@ -30,7 +30,7 @@
 
 ## メトリクス
 
-- エンドポイント: `/metrics/cloud`（Prometheus text）
+- エンドポイント: `/v0/metrics/cloud`（Prometheus text）
 - 指標:
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`

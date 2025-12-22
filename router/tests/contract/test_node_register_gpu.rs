@@ -182,8 +182,6 @@ async fn register_gpu_node_missing_devices_is_rejected() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = to_bytes(response.into_body(), 1024).await.unwrap();
     let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(
-        error["error"],
-        "Validation error: GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
-    );
+    // Security: external_message() returns generic error to prevent information disclosure
+    assert_eq!(error["error"], "Request error");
 }

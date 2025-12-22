@@ -288,6 +288,10 @@ export async function registerModelViaUI(
   // Wait for modal
   await page.waitForSelector('#convert-modal', { state: 'visible' });
 
+  // Select format (required by current UI)
+  await page.click('#convert-format');
+  await page.click('[data-value="gguf"]');
+
   // Fill form
   await page.fill('#convert-repo', repo);
   if (filename) {

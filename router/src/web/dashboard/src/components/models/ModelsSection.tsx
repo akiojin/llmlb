@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { modelsApi, type RegisteredModelView, type LifecycleStatus } from '@/lib/api'
+import {
+  modelsApi,
+  type RegisteredModelView,
+  type LifecycleStatus,
+  type GgufDiscoveryResult,
+} from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -33,6 +38,11 @@ function formatGb(value?: number | null): string {
   return `${value.toFixed(1)} GB`
 }
 
+function formatSizeGb(valueBytes?: number | null): string {
+  if (valueBytes == null || Number.isNaN(valueBytes)) return '—'
+  return `${(valueBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
 function lifecycleStatusBadge(status: LifecycleStatus) {
   switch (status) {
     case 'registered':
@@ -56,12 +66,18 @@ export function ModelsSection() {
   const [registerFormat, setRegisterFormat] = useState<RegisterFormat | ''>('')
   const [registerFilename, setRegisterFilename] = useState('')
   const [registerGgufPolicy, setRegisterGgufPolicy] = useState<RegisterGgufPolicy | ''>('')
+  const [discoverOpen, setDiscoverOpen] = useState(false)
+  const [discoverBaseModel, setDiscoverBaseModel] = useState('')
+  const [discoverResults, setDiscoverResults] = useState<GgufDiscoveryResult[]>([])
 
   function resetRegisterForm() {
     setRegisterRepo('')
     setRegisterFormat('')
     setRegisterFilename('')
     setRegisterGgufPolicy('')
+    setDiscoverOpen(false)
+    setDiscoverBaseModel('')
+    setDiscoverResults([])
   }
 
   const { data: registeredModels, isLoading: isLoadingRegistered } = useQuery({
@@ -86,6 +102,22 @@ export function ModelsSection() {
     onError: (error) => {
       toast({
         title: 'Failed to register model',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const discoverMutation = useMutation({
+    mutationFn: (model: string) => modelsApi.discoverGguf(model),
+    onSuccess: (data) => {
+      setDiscoverBaseModel(data.base_model)
+      setDiscoverResults(data.gguf_alternatives)
+      setDiscoverOpen(true)
+    },
+    onError: (error) => {
+      toast({
+        title: 'Failed to discover GGUF alternatives',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
@@ -288,6 +320,25 @@ export function ModelsSection() {
               />
             </div>
             {registerFormat === 'gguf' ? (
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  If the repo you entered is a base model repo (safetensors), you can discover GGUF alternatives.
+                </p>
+                <Button
+                  id="discover-gguf"
+                  variant="outline"
+                  size="sm"
+                  disabled={!registerRepo.trim() || discoverMutation.isPending}
+                  onClick={() => discoverMutation.mutate(registerRepo.trim())}
+                >
+                  {discoverMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Discover
+                </Button>
+              </div>
+            ) : null}
+            {registerFormat === 'gguf' ? (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="convert-filename">GGUF filename (optional)</Label>
@@ -375,6 +426,83 @@ export function ModelsSection() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Register
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={discoverOpen} onOpenChange={setDiscoverOpen}>
+        <DialogContent
+          id="discover-gguf-modal"
+          className="max-w-3xl max-h-[80vh] overflow-hidden"
+        >
+          <DialogHeader>
+            <DialogTitle>GGUF alternatives</DialogTitle>
+            <DialogDescription>
+              Discover GGUF repos for <code>{discoverBaseModel || registerRepo || 'model'}</code> and pick an exact file.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+            {discoverResults.length === 0 ? (
+              <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+                No GGUF alternatives found. Try a different search term or check Hugging Face manually.
+              </div>
+            ) : (
+              discoverResults.map((alt) => (
+                <Card key={alt.repo} className="border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">
+                      {alt.repo}{' '}
+                      {alt.trusted ? (
+                        <Badge variant="secondary" className="ml-2">
+                          trusted
+                        </Badge>
+                      ) : null}
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">Provider: {alt.provider}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {alt.files.map((file) => (
+                      <div
+                        key={`${alt.repo}/${file.filename}`}
+                        className="flex flex-col gap-2 rounded-md border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">{file.filename}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            {file.quantization ? <span>{file.quantization} • </span> : null}
+                            {formatSizeGb(file.size_bytes)}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setRegisterRepo(alt.repo)
+                            setRegisterFilename(file.filename)
+                            setRegisterGgufPolicy('')
+                            setRegisterFormat('gguf')
+                            setDiscoverOpen(false)
+                            toast({
+                              title: 'Selected GGUF file',
+                              description: `${alt.repo} • ${file.filename}`,
+                            })
+                          }}
+                        >
+                          Use
+                        </Button>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscoverOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

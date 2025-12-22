@@ -7,8 +7,12 @@ using namespace llm_node;
 // テスト専用ヘルパー（inference_engine.cppで定義）
 namespace llm_node {
 std::string extractGptOssFinalMessageForTest(const std::string& output);
+std::string cleanGptOssOutputForTest(const std::string& output);
+std::string postProcessGeneratedTextForTest(const std::string& output, bool is_gptoss);
 }
 using llm_node::extractGptOssFinalMessageForTest;
+using llm_node::cleanGptOssOutputForTest;
+using llm_node::postProcessGeneratedTextForTest;
 
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
     InferenceEngine engine;
@@ -67,4 +71,21 @@ TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {
 
     auto extracted = extractGptOssFinalMessageForTest(raw);
     EXPECT_EQ(extracted, "the answer");
+}
+
+TEST(InferenceEngineTest, CleansGptOssOutputByExtractingFinalChannel) {
+    const std::string raw =
+        "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
+        "<|start|>assistant<|channel|>final<|message|>the answer<|end|>";
+
+    auto cleaned = cleanGptOssOutputForTest(raw);
+    EXPECT_EQ(cleaned, "the answer");
+}
+
+TEST(InferenceEngineTest, PostProcessGptOssDoesNotTruncateStartTokenOnlyOutput) {
+    // When gpt-oss emits a header but no <|end|>, we should not truncate to empty.
+    const std::string raw = "<|start|>assistant<|channel|>final<|message|>Hello world";
+
+    auto processed = postProcessGeneratedTextForTest(raw, /*is_gptoss=*/true);
+    EXPECT_EQ(processed, "Hello world");
 }

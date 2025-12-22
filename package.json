@@ -31,5 +31,9 @@
     "bats": "^1.13.0",
     "husky": "^9.1.0",
     "markdownlint-cli2": "^0.19.0"
-  }
+  },
+  "workspaces": [
+    "mcp-server",
+    "router/src/web/dashboard"
+  ]
 }

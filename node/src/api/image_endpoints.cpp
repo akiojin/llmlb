@@ -16,6 +16,16 @@ namespace {
 const char kBase64Chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+std::string extractFirstError(const std::vector<ImageGenerationResult>& results,
+                              const std::string& default_message) {
+    for (const auto& result : results) {
+        if (!result.error.empty()) {
+            return result.error;
+        }
+    }
+    return default_message;
+}
+
 }  // namespace
 
 ImageEndpoints::ImageEndpoints(SDManager& sd_manager, const NodeConfig& config)
@@ -216,14 +226,10 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
     }
 
     if (data_array.empty()) {
-        std::string error_message = "All image generations failed";
-        for (const auto& result : results) {
-            if (!result.error.empty()) {
-                error_message = result.error;
-                break;
-            }
-        }
-        respondError(res, 500, "all_generations_failed", error_message);
+        respondError(res,
+                     500,
+                     "all_generations_failed",
+                     extractFirstError(results, "All image generations failed"));
         return;
     }
 
@@ -354,14 +360,10 @@ void ImageEndpoints::handleEdits(const httplib::Request& req,
     }
 
     if (data_array.empty()) {
-        std::string error_message = "All image edits failed";
-        for (const auto& result : results) {
-            if (!result.error.empty()) {
-                error_message = result.error;
-                break;
-            }
-        }
-        respondError(res, 500, "all_edits_failed", error_message);
+        respondError(res,
+                     500,
+                     "all_edits_failed",
+                     extractFirstError(results, "All image edits failed"));
         return;
     }
 
@@ -474,14 +476,10 @@ void ImageEndpoints::handleVariations(const httplib::Request& req,
     }
 
     if (data_array.empty()) {
-        std::string error_message = "All image variations failed";
-        for (const auto& result : results) {
-            if (!result.error.empty()) {
-                error_message = result.error;
-                break;
-            }
-        }
-        respondError(res, 500, "all_variations_failed", error_message);
+        respondError(res,
+                     500,
+                     "all_variations_failed",
+                     extractFirstError(results, "All image variations failed"));
         return;
     }
 

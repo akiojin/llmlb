@@ -13,6 +13,7 @@ namespace llm_node {
 // 前方宣言
 static std::string stripControlTokens(std::string text);
 static std::string extractGptOssFinalMessage(const std::string& output);
+static std::string cleanGptOssOutput(const std::string& output);
 std::string extractGptOssFinalMessageForTest(const std::string& output);
 
 // コンストラクタ
@@ -100,6 +101,43 @@ std::string extractGptOssFinalMessageForTest(const std::string& output) {
     return extractGptOssFinalMessage(output);
 }
 
+std::string cleanGptOssOutputForTest(const std::string& output) {
+    return cleanGptOssOutput(output);
+}
+
+std::string postProcessGeneratedTextForTest(const std::string& output, bool is_gptoss) {
+    std::string processed = output;
+
+    // Keep in sync with LlamaEngine::generateChat() post-processing.
+    static const std::vector<std::string> stop_sequences = {
+        "<|im_end|>",       // ChatML (Qwen3, etc.)
+        "<|end|>",          // gpt-oss, Some models
+        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
+        "<|eot_id|>",       // Llama 3
+        "</s>",             // Llama 2, Mistral
+        "<|endoftext|>",    // GPT-style
+    };
+
+    for (const auto& stop : stop_sequences) {
+        size_t pos = processed.find(stop);
+        if (pos != std::string::npos) {
+            if (is_gptoss && stop == "<|start|>" && pos == 0) {
+                // gpt-ossの出力が <|start|> から始まる場合、それ自体は停止条件にしない
+                // （<|end|> が出ないケースで空文字になってしまうのを防ぐ）
+                continue;
+            }
+            processed = processed.substr(0, pos);
+            break;
+        }
+    }
+
+    if (is_gptoss) {
+        processed = cleanGptOssOutput(processed);
+    }
+
+    return processed;
+}
+
 // gpt-oss形式でプロンプトを構築する関数
 // gpt-oss固有トークン: <|start|>, <|message|>, <|end|>, <|channel|>
 // 応答形式: <|start|>assistant<|channel|>final<|message|>content<|end|>
@@ -137,6 +175,14 @@ static std::string buildGptOssPrompt(const std::vector<ChatMessage>& messages) {
 
 // gpt-ossモデルの出力から特殊トークンを除去する後処理関数
 static std::string cleanGptOssOutput(const std::string& output) {
+    // gpt-ossがanalysis/finalチャンネルを含む場合は、finalのみを抽出して返す。
+    // 文字列置換ベースの除去だけだと "assistantfinal..." のようなゴミが残り得るため、
+    // まずはチャンネルマーカーでパースする。
+    const std::string marker = "<|channel|>final<|message|>";
+    if (output.find(marker) != std::string::npos) {
+        return extractGptOssFinalMessage(output);
+    }
+
     std::string result = output;
 
     // gpt-ossおよびChatMLの特殊トークンリスト
@@ -514,6 +560,11 @@ std::string LlamaEngine::generateChat(
     for (const auto& stop : stop_sequences) {
         size_t pos = output.find(stop);
         if (pos != std::string::npos) {
+            if (is_gptoss && stop == "<|start|>" && pos == 0) {
+                // gpt-ossの出力が <|start|> から始まる場合、それ自体は停止条件にしない
+                // （<|end|> が出ないケースで空文字になってしまうのを防ぐ）
+                continue;
+            }
             spdlog::debug("Truncating output at stop sequence '{}' at position {}", stop, pos);
             output = output.substr(0, pos);
             break;
@@ -521,7 +572,7 @@ std::string LlamaEngine::generateChat(
     }
 
     // 12. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
-    if (isGptOssModel(model)) {
+    if (is_gptoss) {
         spdlog::info("Applying gpt-oss output cleanup, before: {} chars", output.size());
         output = cleanGptOssOutput(output);
         spdlog::info("After cleanup: {} chars", output.size());

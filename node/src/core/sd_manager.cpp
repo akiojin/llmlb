@@ -54,6 +54,15 @@ float getCfgScaleForStyle(const std::string& style, float default_cfg) {
     return default_cfg;  // "vivid" uses default or higher
 }
 
+std::string getAndClearSdError(const std::string& fallback_message) {
+    const char* last_error = sd_get_last_error();
+    std::string error_msg = (last_error && last_error[0] != '\0')
+        ? last_error
+        : fallback_message;
+    sd_clear_last_error();
+    return error_msg;
+}
+
 // Convert sd_image_t to PNG
 std::vector<uint8_t> encodeImageToPng(const sd_image_t* image) {
     std::vector<uint8_t> png_data;
@@ -133,7 +142,11 @@ bool SDManager::loadModel(const std::string& model_path) {
 
     const char* force_cpu_env = std::getenv("LLM_NODE_SD_FORCE_CPU");
     if (force_cpu_env && std::string(force_cpu_env) != "0") {
+#ifdef _WIN32
+        _putenv_s("SD_FORCE_CPU", "1");
+#else
         setenv("SD_FORCE_CPU", "1", 1);
+#endif
         spdlog::info("SD backend forced to CPU via LLM_NODE_SD_FORCE_CPU");
     }
 
@@ -251,13 +264,7 @@ std::vector<ImageGenerationResult> SDManager::generateImages(
 
     if (!images) {
         ImageGenerationResult error_result;
-        const char* last_error = sd_get_last_error();
-        if (last_error && last_error[0] != '\0') {
-            error_result.error = last_error;
-        } else {
-            error_result.error = "Image generation failed";
-        }
-        sd_clear_last_error();
+        error_result.error = getAndClearSdError("Image generation failed");
         results.push_back(error_result);
         return results;
     }
@@ -368,13 +375,7 @@ std::vector<ImageGenerationResult> SDManager::editImages(
 
     if (!images) {
         ImageGenerationResult error_result;
-        const char* last_error = sd_get_last_error();
-        if (last_error && last_error[0] != '\0') {
-            error_result.error = last_error;
-        } else {
-            error_result.error = "Image editing failed";
-        }
-        sd_clear_last_error();
+        error_result.error = getAndClearSdError("Image editing failed");
         results.push_back(error_result);
         return results;
     }

@@ -990,22 +990,27 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
 
         // embeddingを取得（全トークン分のembeddingsから平均を取る）
         const float* embd_all = llama_get_embeddings(ctx);
-        if (embd_all == nullptr) {
-            spdlog::error("Failed to get embeddings buffer for input");
-            results.push_back(std::vector<float>(static_cast<size_t>(n_embd), 0.0f));
-            continue;
-        }
-
         std::vector<float> embedding(static_cast<size_t>(n_embd), 0.0f);
-        for (int32_t i = 0; i < n_tokens; ++i) {
-            const float* token_embd = embd_all + (static_cast<size_t>(i) * static_cast<size_t>(n_embd));
-            for (int32_t j = 0; j < n_embd; ++j) {
-                embedding[static_cast<size_t>(j)] += token_embd[static_cast<size_t>(j)];
+        if (embd_all != nullptr) {
+            for (int32_t i = 0; i < n_tokens; ++i) {
+                const float* token_embd = embd_all + (static_cast<size_t>(i) * static_cast<size_t>(n_embd));
+                for (int32_t j = 0; j < n_embd; ++j) {
+                    embedding[static_cast<size_t>(j)] += token_embd[static_cast<size_t>(j)];
+                }
             }
-        }
-        const float inv_tokens = 1.0f / static_cast<float>(n_tokens);
-        for (float& v : embedding) {
-            v *= inv_tokens;
+            const float inv_tokens = 1.0f / static_cast<float>(n_tokens);
+            for (float& v : embedding) {
+                v *= inv_tokens;
+            }
+        } else {
+            // pooling_type が NONE 以外の場合は seq から取得
+            const float* embd_seq = llama_get_embeddings_seq(ctx, 0);
+            if (embd_seq == nullptr) {
+                spdlog::error("Failed to get embeddings buffer for input");
+                results.push_back(std::vector<float>(static_cast<size_t>(n_embd), 0.0f));
+                continue;
+            }
+            std::copy(embd_seq, embd_seq + n_embd, embedding.begin());
         }
 
         // L2正規化

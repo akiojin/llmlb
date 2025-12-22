@@ -248,8 +248,9 @@ Router (OpenAI-compatible)
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
-  - `format` を選択します: `safetensors`（推奨 / 新エンジン） または `gguf`（llama.cpp フォールバック）
+  - `format` を選択します: `safetensors`（新エンジン: TBD） または `gguf`（llama.cpp フォールバック）
     - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
+    - 補足: `safetensors` でのテキスト生成は TBD（推論エンジン実装は後で決める）です。現時点で実行したい場合は `gguf` を選択してください。
   - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）を入力します。
   - `format=gguf` の場合:
     - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。

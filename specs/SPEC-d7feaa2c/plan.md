@@ -1,51 +1,30 @@
 # SPEC-d7feaa2c: Plan
 
 ## 方針
-- Node側にエンジン抽象化レイヤーを導入
-- 既存 llama.cpp を LlamaEngine としてラップ
-- NemotronEngine を追加し、safetensors-cpp で直接ロード
-- metadata.json をエンジン選択の一次情報源にする（後方互換は fallback）
+- Node側にエンジン抽象化レイヤーを導入し、実行エンジンを差し替え可能にする
+- 既存 llama.cpp を Engine としてラップする
+- エンジン選択は「登録時に選択したアーティファクト（safetensors/GGUF）」と
+  Hugging Face の `config.json` 等のモデル由来メタデータを正として判定する
+- `metadata.json` のような llm-router 独自メタデータファイルは使用しない
+- Nemotron向けの新エンジン（推論エンジン）の仕様/実装は別SPECで後日決定（TBD）
 
 ## 実装概要
 
-### 1) メタデータ仕様
-- `models/<model_id>/metadata.json` を参照
-- 例:
-  ```json
-  {
-    "runtime": "llama_cpp",
-    "format": "gguf",
-    "primary": "model.gguf"
-  }
-  ```
-  ```json
-  {
-    "runtime": "nemotron_cpp",
-    "format": "safetensors",
-    "primary": "model.safetensors.index.json"
-  }
-  ```
-
-### 2) Node側抽象化
+### 1) Node側抽象化
 - `Engine` インターフェース
 - `EngineRegistry` で runtime ID → engine 実装を解決
 - `InferenceEngine` は内部で engine を選択して処理を委譲
 
-### 3) NemotronEngine
-- safetensors-cpp を Node に組み込み
-- mmapで読み込み → validate → テンソル検査
-- 主要テンソル存在の検証（experts関連）
+### 2) ModelStorage拡張
+- 登録時に選択されたアーティファクト（`format` / `filename` / `gguf_policy` 等）と
+  `config.json` 等のメタデータを読み取り、`ModelDescriptor` として返す
+- `listAvailable()` は「選択されたアーティファクトがローカルに存在するか」と
+  「対応エンジンがあるか」で有効モデルを列挙する
 
-### 4) ModelStorage拡張
-- metadataを解析して `ModelDescriptor` を返す
-- `listAvailable()` は metadata優先で有効モデルを列挙
-
-### 5) Router側最小対応
-- GGUFモデルに metadata.json を生成（runtime/format/primary）
-- 既存挙動は維持
+### 3) Router側最小対応
+- Nodeが必要とする「登録時の選択情報」を永続化し、Nodeへ渡せるようにする
+- `metadata.json` を生成・参照しない
 
 ## テスト
-- ModelStorage metadata 解析ユニットテスト
-- Engine selection のユニットテスト
-- NemotronEngine のロード検証テスト（小さなサンプルsafetensors）
-
+- ModelStorage: `format` / 必須メタデータの検証テスト
+- Engine selection: 登録時選択と `config.json` に基づく判定テスト

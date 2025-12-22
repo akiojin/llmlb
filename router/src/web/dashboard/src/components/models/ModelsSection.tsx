@@ -273,7 +273,7 @@ export function ModelsSection() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Select...</SelectItem>
-                  <SelectItem value="safetensors">safetensors (new engine)</SelectItem>
+                  <SelectItem value="safetensors">safetensors (native engine: TBD)</SelectItem>
                   <SelectItem value="gguf">GGUF (llama.cpp fallback)</SelectItem>
                 </SelectContent>
               </Select>
@@ -334,6 +334,10 @@ export function ModelsSection() {
               </>
             ) : registerFormat === 'safetensors' ? (
               <p className="text-xs text-muted-foreground">
+                <b>Note</b>: text generation via safetensors is <b>TBD</b> (engine implementation will be decided later).
+                For now, use <b>GGUF (llama.cpp)</b> if you need to run the model.
+                <br />
+                <br />
                 <b>safetensors</b> requires <code>config.json</code> and <code>tokenizer.json</code> in the HF snapshot.
                 If weights are sharded, an <code>.index.json</code> must be present.
               </p>

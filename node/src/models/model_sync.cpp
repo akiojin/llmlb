@@ -285,6 +285,18 @@ ModelSyncResult ModelSync::sync() {
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;
 
+            // SPEC-dcaeaec4 FR-3: If router provides a directly accessible shared path,
+            // do not download/copy. InferenceEngine can load directly from that path.
+            if (auto it = remote_map.find(id); it != remote_map.end()) {
+                const auto& info = it->second;
+                if (!info.path.empty()) {
+                    std::error_code ec;
+                    if (fs::exists(info.path, ec) && !ec && fs::is_regular_file(info.path, ec) && !ec) {
+                        continue;
+                    }
+                }
+            }
+
             bool ok = downloadModel(downloader, id, nullptr);
 
             // As a last resort (legacy), allow direct download_url for single-file GGUF.

@@ -93,6 +93,36 @@ pub enum RouterError {
     Authorization(String),
 }
 
+impl RouterError {
+    /// Returns a safe error message for external clients.
+    ///
+    /// This method returns a generic error message that does not expose
+    /// internal implementation details such as IP addresses, port numbers,
+    /// or internal service names. Use this for HTTP responses to external clients.
+    ///
+    /// For debugging purposes, use the `Display` implementation (`to_string()`)
+    /// which includes full error details - but only in server logs.
+    pub fn external_message(&self) -> &'static str {
+        match self {
+            Self::Common(_) => "Request error",
+            Self::NodeNotFound(_) => "Node not found",
+            Self::NoNodesAvailable => "No available nodes",
+            Self::Database(_) => "Database error",
+            Self::Http(_) => "Backend service unavailable",
+            Self::Timeout(_) => "Request timeout",
+            Self::ServiceUnavailable(_) => "Service temporarily unavailable",
+            Self::Internal(_) => "Internal server error",
+            Self::NodeOffline(_) => "Node offline",
+            Self::InvalidModelName(_) => "Invalid model name",
+            Self::InsufficientStorage(_) => "Insufficient storage",
+            Self::PasswordHash(_) => "Authentication error",
+            Self::Jwt(_) => "Authentication error",
+            Self::Authentication(_) => "Authentication failed",
+            Self::Authorization(_) => "Access denied",
+        }
+    }
+}
+
 /// Node error type
 #[derive(Debug, Error)]
 pub enum NodeError {

@@ -39,3 +39,11 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 - Set `RUST_LOG=debug` for verbose router output.
 - Dashboard stats endpoint `/v0/dashboard/stats` shows cloud key presence.
 - For cloud routing, confirm the key is logged as present at startup.
+
+## Submodules
+- `node/third_party/stable-diffusion.cpp` is pinned to the public fork
+  `https://github.com/akiojin/stable-diffusion.cpp.git` to carry project-specific
+  crash/compatibility fixes.
+- Upstream (leejet/stable-diffusion.cpp) updates are synced manually on demand
+  (cherry-pick/merge into the fork) to keep control of breaking changes.
+- We do not plan to open upstream PRs for these changes unless explicitly requested.

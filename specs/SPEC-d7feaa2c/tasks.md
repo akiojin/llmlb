@@ -33,5 +33,7 @@
 - [x] NemotronEngineロードテスト
 
 ## Deferred（TBD）
-- [ ] Nemotron向けの新エンジン（推論エンジン）の仕様策定（別SPEC）
-- [ ] Nemotron向けの新エンジン（推論エンジン）の実装（Metal/CUDA）
+- Nemotron向けの新エンジン（推論エンジン）の仕様策定（別SPEC）
+- Nemotron向けの新エンジン（推論エンジン）の実装（Metal/CUDA）
+- Router側: HF chat_template(Jinja) を完全互換でレンダリングし、Nodeへ最終プロンプトを渡す方針の具体化（別SPEC想定）
+- Nemotron GPU PoC: safetensors直読→GPU演算→E2E生成までの段階的検証（別SPEC想定）

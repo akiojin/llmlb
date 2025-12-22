@@ -89,14 +89,15 @@ pub async fn register_node(
     } else {
         let health_res = state.http_client.get(&health_url).send().await;
         if let Err(e) = health_res {
+            // Log full details for debugging (internal URL is logged, not returned to client)
             error!(
                 "Node registration rejected: node API health check failed at {} ({})",
                 health_url, e
             );
-            return Err(AppError(RouterError::Internal(format!(
-                "Node API not reachable at {}: {}",
-                health_url, e
-            ))));
+            // Return generic error without internal URL (security: prevent information disclosure)
+            return Err(AppError(RouterError::Internal(
+                "Node health check failed".to_string(),
+            )));
         }
         let resp = health_res.unwrap();
         if !resp.status().is_success() {
@@ -313,32 +314,48 @@ impl From<RouterError> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
+        // Use external_message() to avoid exposing internal details (IP addresses, ports, etc.)
+        // Full error details are logged separately for debugging
         let (status, message) = match &self.0 {
-            RouterError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            RouterError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
-            RouterError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
-            RouterError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
-            RouterError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),
-            RouterError::InsufficientStorage(_) => {
-                (StatusCode::INSUFFICIENT_STORAGE, self.0.to_string())
+            RouterError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
+            RouterError::NoNodesAvailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
-            RouterError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            RouterError::Http(_) => (StatusCode::BAD_GATEWAY, self.0.to_string()),
-            RouterError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.0.to_string()),
-            RouterError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            RouterError::PasswordHash(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            RouterError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            RouterError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.to_string()),
-            RouterError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.to_string()),
+            RouterError::ServiceUnavailable(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
+            }
+            RouterError::NodeOffline(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
+            }
+            RouterError::InvalidModelName(_) => {
+                (StatusCode::BAD_REQUEST, self.0.external_message())
+            }
+            RouterError::InsufficientStorage(_) => {
+                (StatusCode::INSUFFICIENT_STORAGE, self.0.external_message())
+            }
+            RouterError::Database(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message())
+            }
+            RouterError::Http(_) => (StatusCode::BAD_GATEWAY, self.0.external_message()),
+            RouterError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.0.external_message()),
+            RouterError::Internal(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message())
+            }
+            RouterError::PasswordHash(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message())
+            }
+            RouterError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message()),
+            RouterError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.external_message()),
+            RouterError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.external_message()),
             RouterError::Common(err) => {
                 // GPU必須エラーの場合は403 Forbiddenを返す
-                let message = err.to_string();
-                if message.contains("GPU is required")
-                    || message.contains("GPU hardware is required")
+                let internal_message = err.to_string();
+                if internal_message.contains("GPU is required")
+                    || internal_message.contains("GPU hardware is required")
                 {
-                    (StatusCode::FORBIDDEN, self.0.to_string())
+                    (StatusCode::FORBIDDEN, self.0.external_message())
                 } else {
-                    (StatusCode::BAD_REQUEST, self.0.to_string())
+                    (StatusCode::BAD_REQUEST, self.0.external_message())
                 }
             }
         };
@@ -496,7 +513,8 @@ mod tests {
 
         let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let expected = "Validation error: GPU hardware is required for node registration. gpu_available must be true.";
+        // Security: external_message() returns generic error to prevent information disclosure
+        let expected = "Request error";
         assert_eq!(body["error"], expected);
     }
 
@@ -523,10 +541,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(
-            body["error"],
-            "Validation error: GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
-        );
+        // Security: external_message() returns generic error to prevent information disclosure
+        assert_eq!(body["error"], "Request error");
     }
 
     #[tokio::test]

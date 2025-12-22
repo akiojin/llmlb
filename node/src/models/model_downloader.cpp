@@ -14,6 +14,7 @@
 
 #include "utils/config.h"
 #include "utils/file_lock.h"
+#include "utils/url_encode.h"
 #include "models/model_storage.h"
 
 namespace {
@@ -210,27 +211,6 @@ ParsedUrl parseUrl(const std::string& url) {
     return parsed;
 }
 
-std::string urlEncodePathSegment(const std::string& input) {
-    static const char* kHex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(input.size());
-    for (unsigned char c : input) {
-        const bool unreserved =
-            (c >= 'A' && c <= 'Z') ||
-            (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~';
-        if (unreserved) {
-            out.push_back(static_cast<char>(c));
-        } else {
-            out.push_back('%');
-            out.push_back(kHex[(c >> 4) & 0x0F]);
-            out.push_back(kHex[c & 0x0F]);
-        }
-    }
-    return out;
-}
-
 std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::milliseconds timeout) {
     if (url.scheme.empty() || url.host.empty()) {
         return nullptr;
@@ -317,8 +297,6 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
         if (attempt < max_retries_) std::this_thread::sleep_for(backoff_);
     }
     if (!res || res->status < 200 || res->status >= 300) return "";
-
-    fs::create_directories(models_dir_ + "/" + local_dir);
     std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
     ofs << res->body;
     // log applied config for diagnostics (opt-in)

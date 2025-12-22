@@ -29,8 +29,8 @@ public:
     // Reverse conversion: directory name to model name (best-effort)
     static std::string dirNameToModel(const std::string& dir_name);
 
-    // FR-3: Resolve GGUF file path for a model
-    // Returns empty string if model not found
+    // Legacy helper: resolve GGUF file path for a model.
+    // Prefer resolveDescriptor() for new code (supports safetensors too).
     std::string resolveGguf(const std::string& model_name) const;
 
     // FR-4: List all available models

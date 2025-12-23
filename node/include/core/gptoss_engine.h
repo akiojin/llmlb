@@ -53,6 +53,11 @@ private:
     std::shared_ptr<LoadedModel> ensureLoaded(const ModelDescriptor& descriptor,
                                               ModelLoadResult& result) const;
 
+    std::string generateCompletion(const std::string& prompt,
+                                   const ModelDescriptor& descriptor,
+                                   const InferenceParams& params,
+                                   const std::vector<ChatMessage>* chat_messages) const;
+
     mutable std::mutex mutex_;
     mutable std::unordered_map<std::string, std::shared_ptr<LoadedModel>> loaded_;
 };

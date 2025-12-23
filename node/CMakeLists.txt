@@ -307,6 +307,7 @@ add_library(utils_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/config.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/logger.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/json_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/utf8.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/system_info.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/request_id.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/cli.cpp

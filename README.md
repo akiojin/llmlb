@@ -132,11 +132,16 @@ sudo apt install cmake build-essential
 # Build (Metal is enabled by default on macOS)
 npm run build:node
 
+# Build (Linux / CUDA)
+npm run build:node:cuda
+
 # Run
 npm run start:node
 
 # Or manually:
 # cd node && cmake -B build -S . && cmake --build build --config Release
+# # Linux / CUDA:
+# # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
 # LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 ```
 

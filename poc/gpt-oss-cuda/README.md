@@ -16,6 +16,9 @@
 cmake -S node -B node/build -DBUILD_WITH_CUDA=ON
 cmake --build node/build -j
 
+# または:
+# npm run build:node:cuda
+
 cargo build -p llm-router
 ```
 
@@ -61,4 +64,3 @@ STREAM=1 ./poc/gpt-oss-cuda/run.sh
 
 - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
 - `KEEP_RUNNING=1` を指定すると、PoC終了後も router/node を停止しません（デバッグ用）
-

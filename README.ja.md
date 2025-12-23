@@ -88,6 +88,9 @@ GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""
 ```bash
 npm run build:node
 
+# Linux / CUDA の場合
+npm run build:node:cuda
+
 # 手動でビルドする場合:
 cd node
 cmake -B build -S .
@@ -122,10 +125,10 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
 | `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node:register`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |

@@ -116,3 +116,30 @@ JSONL形式で以下のフィールドを含む:
 - ログ収集サーバーへの送信
 - ログ圧縮
 - リモートログ設定
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
+
+**確認済み事項**:
+
+- ログディレクトリ: ~/.llm-router/logs/（FR-1で明記）
+- ログ形式: JSONL（FR-2で明記）
+- 必須フィールド: ts, level, category, msg（FR-2で明記）
+- ログレベル: trace/debug/info/warn/error（FR-2で明記）
+- カテゴリ: system/api/model/inference/sync/repair/health（FR-5で明記）
+- ローテーション: 日付単位、7日保持（FR-3で明記）
+
+**環境変数の確認**:
+
+- LLM_LOG_DIR: ログディレクトリ
+- LLM_LOG_LEVEL: ログレベル
+- LLM_LOG_RETENTION_DAYS: 保持日数
+
+**依存関係の確認**:
+
+- SPEC-1970e39f（構造化ロギング強化）と連携

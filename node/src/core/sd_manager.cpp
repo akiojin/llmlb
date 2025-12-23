@@ -54,13 +54,8 @@ float getCfgScaleForStyle(const std::string& style, float default_cfg) {
     return default_cfg;  // "vivid" uses default or higher
 }
 
-std::string getAndClearSdError(const std::string& fallback_message) {
-    const char* last_error = sd_get_last_error();
-    std::string error_msg = (last_error && last_error[0] != '\0')
-        ? last_error
-        : fallback_message;
-    sd_clear_last_error();
-    return error_msg;
+std::string getSdErrorMessage(const std::string& fallback_message) {
+    return fallback_message;
 }
 
 // Convert sd_image_t to PNG
@@ -304,12 +299,11 @@ std::vector<ImageGenerationResult> SDManager::generateImages(
         gen_params.seed);
 
     // Generate images
-    sd_clear_last_error();
     sd_image_t* images = generate_image(ctx, &gen_params);
 
     if (!images) {
         ImageGenerationResult error_result;
-        error_result.error = getAndClearSdError("Image generation failed");
+        error_result.error = getSdErrorMessage("Image generation failed");
         results.push_back(error_result);
         return results;
     }
@@ -437,12 +431,11 @@ std::vector<ImageGenerationResult> SDManager::editImages(
         params.strength, params.steps);
 
     // Generate edited images
-    sd_clear_last_error();
     sd_image_t* images = generate_image(ctx, &gen_params);
 
     if (!images) {
         ImageGenerationResult error_result;
-        error_result.error = getAndClearSdError("Image editing failed");
+        error_result.error = getSdErrorMessage("Image editing failed");
         results.push_back(error_result);
         return results;
     }

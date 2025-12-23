@@ -62,6 +62,7 @@
 | `SPEC-026b2cde` | リクエスト履歴一覧のページネーション機能 | ✅ |
 | `SPEC-712c20cf` | 管理ダッシュボード | ✅ |
 | `SPEC-a7e6d40a` | CLI インターフェース整備 | ✅ |
+| `SPEC-ea015fbb` | Web UI 画面一覧 | 📋 |
 
 ## 📊 ログ・履歴
 
@@ -79,4 +80,63 @@
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | ✅ |
 | `SPEC-dc648675` | Worktree環境での作業境界強制システム | ✅ |
 | `SPEC-ee2aa3ef` | 完全自動化リリースシステム | ✅ |
+
+---
+
+## 🔗 SPEC依存関係マトリクス
+
+### 依存関係図
+
+```text
+                    SPEC-94621a1f (ノード自己登録)
+                           │
+                           ▼
+                    SPEC-63acef08 (統一APIプロキシ)
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+SPEC-443acc8c      SPEC-589f2df1      SPEC-4b6e9f2a
+(ヘルスチェック)   (ロードバランシング) (クラウドルーティング)
+        │
+        └──────────────────┐
+                           ▼
+                    SPEC-d4eb8796 (認証・アクセス制御)
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+SPEC-7c0a37e0      SPEC-712c20cf      SPEC-fbc50d97
+(APIキースコープ)  (ダッシュボード)    (履歴保存)
+                           │                  │
+        ┌──────────────────┤                  │
+        │                  │                  ▼
+        ▼                  ▼          SPEC-026b2cde
+SPEC-5fc9fe92      SPEC-ea015fbb      (ページネーション)
+(マルチモーダルPG)  (画面一覧)
+```
+
+### 依存関係一覧
+
+| SPEC ID | 機能名 | 依存先SPEC |
+|---------|--------|-----------|
+| `SPEC-63acef08` | 統一APIプロキシ | SPEC-94621a1f |
+| `SPEC-443acc8c` | ヘルスチェック | SPEC-94621a1f |
+| `SPEC-589f2df1` | ロードバランシング | SPEC-63acef08 |
+| `SPEC-4b6e9f2a` | クラウドルーティング | SPEC-63acef08 |
+| `SPEC-d4eb8796` | 認証・アクセス制御 | SPEC-443acc8c |
+| `SPEC-7c0a37e0` | APIキースコープ | SPEC-d4eb8796 |
+| `SPEC-712c20cf` | ダッシュボード | SPEC-94621a1f, SPEC-63acef08, SPEC-443acc8c, SPEC-d4eb8796 |
+| `SPEC-fbc50d97` | 履歴保存 | SPEC-63acef08 |
+| `SPEC-026b2cde` | ページネーション | SPEC-fbc50d97 |
+| `SPEC-5fc9fe92` | Playgroundマルチモーダル | SPEC-712c20cf |
+| `SPEC-ea015fbb` | 画面一覧 | SPEC-712c20cf, SPEC-d4eb8796 |
+| `SPEC-ee2aa3ef` | リリースシステム | SPEC-47c6f44c |
+
+### 廃止・置換関係
+
+| 廃止SPEC | 置換先SPEC |
+|----------|-----------|
+| `SPEC-3df1b977` | SPEC-48678000 |
+| `SPEC-8ae67d67` | SPEC-dcaeaec4 |
 

@@ -4,7 +4,7 @@
 **作成日**: 2025-10-30
 **ステータス**: ✅ 実装完了 (2025-11-01)
 **元のSPEC**: SPEC-32e2b31a から分割
-**依存SPEC**: SPEC-94621a1f, SPEC-63acef08, SPEC-443acc8c
+**依存SPEC**: SPEC-94621a1f, SPEC-63acef08, SPEC-443acc8c, SPEC-d4eb8796
 
 ## 概要
 

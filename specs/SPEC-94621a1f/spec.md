@@ -117,3 +117,29 @@
 🔄 **更新中**
 
 - ノード承認フローの追加
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
+
+**確認済み事項**:
+
+- 登録API: POST /v0/nodes（FR-001で明記）
+- 一覧API: GET /v0/nodes（FR-002で明記）
+- ハートビート: POST /v0/health、30秒間隔、X-Node-Token必須（FR-003で明記）
+- 永続化: SQLite（FR-004で明記）
+- 初期状態: 常にpending（再登録含む）（FR-001, FR-007で明記）
+- 承認フロー: pending → registering/online（FR-007で明記）
+
+**プラットフォーム対応**:
+
+- Windows/macOS: システムトレイ統合（FR-005で明記）
+- Linux: CLI常駐プロセス
+
+**環境変数の確認**:
+
+- LLM_ROUTER_URL, LLM_NODE_PORT, LLM_NODE_HEARTBEAT_SECS

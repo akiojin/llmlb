@@ -26,6 +26,7 @@ JSON_MODE=false
 REQUIRE_TASKS=false
 INCLUDE_TASKS=false
 PATHS_ONLY=false
+SPEC_ID=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -43,7 +44,7 @@ for arg in "$@"; do
             ;;
         --help|-h)
             cat << 'EOF'
-Usage: check-prerequisites.sh [OPTIONS]
+Usage: check-prerequisites.sh [OPTIONS] [SPEC-ID]
 
 Consolidated prerequisite checking for Spec-Driven Development workflow.
 
@@ -53,19 +54,27 @@ OPTIONS:
   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
   --paths-only        Only output path variables (no prerequisite validation)
   --help, -h          Show this help message
+  SPEC-ID             Optional SPEC ID (e.g., SPEC-ea015fbb)
+                      If not provided, derives from current branch
 
 EXAMPLES:
   # Check task prerequisites (plan.md required)
   ./check-prerequisites.sh --json
-  
+
+  # Check prerequisites for specific SPEC
+  ./check-prerequisites.sh --json SPEC-ea015fbb
+
   # Check implementation prerequisites (plan.md + tasks.md required)
   ./check-prerequisites.sh --json --require-tasks --include-tasks
-  
+
   # Get feature paths only (no validation)
   ./check-prerequisites.sh --paths-only
-  
+
 EOF
             exit 0
+            ;;
+        SPEC-*)
+            SPEC_ID="$arg"
             ;;
         *)
             echo "ERROR: Unknown option '$arg'. Use --help for usage information." >&2
@@ -79,7 +88,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # Get feature paths and validate branch
-eval $(get_feature_paths)
+# If SPEC_ID is provided, use it to override the feature lookup
+if [[ -n "$SPEC_ID" ]]; then
+    eval $(get_feature_paths "$SPEC_ID")
+else
+    eval $(get_feature_paths)
+fi
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
 # If paths-only mode, output paths and exit (support JSON + paths-only combined)

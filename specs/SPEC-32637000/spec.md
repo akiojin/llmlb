@@ -58,6 +58,14 @@
 - capabilities が未設定のモデル（レガシー登録）の場合、モデルタイプから自動推定される
 - クラウドモデル（openai:gpt-4o など）の capabilities は事前定義された値が使用される
 
+## Clarifications
+
+### Session 2025-12-23
+
+- Q: モデルが要求されたAPIに非対応の場合、どのHTTPステータスコードを返すべきか？ → A: 400 Bad Request
+
+---
+
 ## 要件 *(必須)*
 
 ### 機能要件
@@ -67,7 +75,8 @@
 - **FR-003**: システムは、モデルが要求されたAPIに対応していない場合、明確なエラーメッセージを返す必要がある
 - **FR-004**: システムは、モデルタイプから capabilities を自動推定する必要がある（後方互換性）
 - **FR-005**: システムは、`/v1/models` レスポンスに各モデルの capabilities を含める必要がある
-- **FR-006**: システムは、以下の capabilities を識別する必要がある:
+- **FR-006**: システムは、モデル非対応エラー時に400 Bad Requestステータスコードを返す必要がある
+- **FR-007**: システムは、以下の capabilities を識別する必要がある:
   - テキスト生成（chat/completions）
   - 音声合成（audio/speech）
   - 音声認識（audio/transcriptions）

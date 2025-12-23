@@ -4,21 +4,27 @@ set -e
 
 # Parse command line arguments
 JSON_MODE=false
+SPEC_ID=""
 ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --json) 
-            JSON_MODE=true 
+        --json)
+            JSON_MODE=true
             ;;
-        --help|-h) 
-            echo "Usage: $0 [--json]"
+        --help|-h)
+            echo "Usage: $0 [--json] [SPEC-ID]"
             echo "  --json    Output results in JSON format"
+            echo "  SPEC-ID   Optional SPEC ID (e.g., SPEC-ea015fbb)"
+            echo "            If not provided, derives from current branch"
             echo "  --help    Show this help message"
-            exit 0 
+            exit 0
             ;;
-        *) 
-            ARGS+=("$arg") 
+        SPEC-*)
+            SPEC_ID="$arg"
+            ;;
+        *)
+            ARGS+=("$arg")
             ;;
     esac
 done
@@ -28,7 +34,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # Get all paths and variables from common functions
-eval $(get_feature_paths)
+# If SPEC_ID is provided, override the feature lookup
+if [[ -n "$SPEC_ID" ]]; then
+    eval $(get_feature_paths "$SPEC_ID")
+else
+    eval $(get_feature_paths)
+fi
 
 # Check if we're on a proper feature branch (only for git repos)
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1

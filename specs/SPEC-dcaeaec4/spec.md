@@ -131,6 +131,27 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - LLM runtimeのmanifest/blob解析ロジック
 - `registry.runtime.ai` パス構造のサポート
 
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
+
+**確認済み事項**:
+
+- デフォルトパス: ~/.llm-router/models/（FR-1で明記）
+- 環境変数: LLM_NODE_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
+- モデル名形式: ファイル名ベースまたは階層形式（FR-2で明記）
+- 解決フロー: ローカル → 共有パス → API経由 → download_url（FR-3で明記）
+- API設計: /v0/models（ノード同期用）、/v1/models（OpenAI互換）（FR-8で明記）
+
+**削除される機能**:
+
+- LLM runtimeのmanifest/blob形式サポート
+- registry.runtime.aiパス構造
+
+---
+
 ## 受け入れ基準
 
 1. `~/.llm-router/models/<model_name>/model.gguf` からモデルを読み込める

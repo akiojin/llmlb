@@ -252,3 +252,24 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 - 引数なしでサーバー起動
 - 全プラットフォーム対応（Linux CLI、Windows/macOS GUI トレイ）
 - 廃止コマンド（user/model）の完全削除
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。実装も完了しています。
+
+**確認済み事項**:
+
+- CLIオプション: -h/--help, -V/--version のみ（FR-002, FR-003で明記）
+- 設定方式: 環境変数のみ、CLIオプションで設定値は受け付けない（FR-004で明記）
+- 環境変数プレフィックス: Router=LLM_ROUTER_*, Node=LLM_NODE_*
+- JWT_SECRET: 自動生成・永続化（~/.llm-router/jwt_secret）（FR-013~FR-016で明記）
+
+**廃止された機能**:
+
+- userサブコマンド → API /v0/users/*
+- modelサブコマンド → API /v0/models/*
+- --preload-modelオプション → Dashboard経由

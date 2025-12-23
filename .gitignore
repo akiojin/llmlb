@@ -45,6 +45,9 @@ cmake_install.cmake
 compile_commands.json
 Makefile
 *.cmake
+node/build-debug/
+node/build-debug-onnx/
+node/build-debug-onnx-cpu/
 
 # Environment variables
 .env

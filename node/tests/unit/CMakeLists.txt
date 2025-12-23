@@ -61,6 +61,14 @@ if(APPLE)
         target_link_libraries(llm-node-unit-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
         target_compile_definitions(llm-node-unit-tests PRIVATE USE_METAL=1)
     endif()
+
+    if(BUILD_WITH_GPTOSS)
+        target_link_libraries(llm-node-unit-tests PRIVATE gptoss_metal)
+        add_dependencies(llm-node-unit-tests gptoss_build_metallib)
+        target_link_options(llm-node-unit-tests PRIVATE
+            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
+        )
+    endif()
 endif()
 
 target_include_directories(llm-node-unit-tests

@@ -32,6 +32,7 @@ Generation params:
 Process control:
   KEEP_RUNNING          (default: 0)  # 1 to keep router/node running after completion
   LLM_NODE_LOG_LEVEL    (default: info)
+  SHOW_MANIFEST         (default: 0)  # 1 to print model manifest.json for diagnostics
 
 Examples:
   ./poc/gpt-oss-cuda/run.sh
@@ -274,6 +275,19 @@ if [[ "$manifest_code" =~ ^2 ]]; then
   files_count="$(jq -r '.files | length' "$manifest_tmp")"
   echo "[INFO] manifest files=$files_count runtimes=${manifest_runtimes:-"(none)"}"
   echo "[INFO] node supported_runtimes=$node_runtimes"
+  if [[ -n "${manifest_runtimes:-}" ]]; then
+    supported=0
+    IFS=',' read -r -a required_runtimes <<<"$manifest_runtimes"
+    for rt in "${required_runtimes[@]}"; do
+      if [[ ",$node_runtimes," == *",$rt,"* ]]; then
+        supported=1
+        break
+      fi
+    done
+    if [[ "$supported" -ne 1 ]]; then
+      echo "[WARN] node does not advertise required runtimes: $manifest_runtimes" >&2
+    fi
+  fi
   if [[ "${SHOW_MANIFEST:-0}" == "1" ]]; then
     cat "$manifest_tmp" | jq .
   fi

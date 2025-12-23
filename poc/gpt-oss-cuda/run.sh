@@ -260,6 +260,28 @@ if [[ "$node_has_model" -ne 1 ]]; then
   exit 1
 fi
 
+echo "[INFO] Fetching model manifest for diagnostics..."
+manifest_tmp="$POC_ROOT/manifest.json"
+encoded_model_id="$(jq -rn --arg s "$MODEL_ID" '$s|@uri')"
+manifest_code="$(
+  curl -sS -o "$manifest_tmp" -w "%{http_code}" \
+    -H "Authorization: Bearer sk_debug_node" \
+    "http://127.0.0.1:$ROUTER_PORT/v0/models/registry/$encoded_model_id/manifest.json"
+)"
+if [[ "$manifest_code" =~ ^2 ]]; then
+  manifest_runtimes="$(jq -r '[.files[]?.runtimes[]?] | unique | join(",")' "$manifest_tmp")"
+  node_runtimes="$(echo "$node_json" | jq -r '.supported_runtimes | join(",")')"
+  files_count="$(jq -r '.files | length' "$manifest_tmp")"
+  echo "[INFO] manifest files=$files_count runtimes=${manifest_runtimes:-"(none)"}"
+  echo "[INFO] node supported_runtimes=$node_runtimes"
+  if [[ "${SHOW_MANIFEST:-0}" == "1" ]]; then
+    cat "$manifest_tmp" | jq .
+  fi
+else
+  echo "[WARN] failed to fetch manifest (HTTP $manifest_code)" >&2
+  cat "$manifest_tmp" | jq . >&2 || cat "$manifest_tmp" >&2
+fi
+
 echo "[INFO] Building request body..."
 request_tmp="$POC_ROOT/request.json"
 if [[ -n "${REQUEST_FILE:-}" ]]; then
@@ -337,4 +359,3 @@ else
 fi
 
 echo "[INFO] Done"
-

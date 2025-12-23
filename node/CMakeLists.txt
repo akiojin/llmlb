@@ -112,7 +112,6 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/ggml/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
 )
 

@@ -14,6 +14,47 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、safetensors�
 - Nodeにエンジン抽象化レイヤーが導入され、llama.cpp 等の複数エンジンを選択できる
 - `metadata.json` のような llm-router 独自メタデータファイルに依存せず、エンジン選択が実装される
 
+## アーキテクチャ（Nodeエンジン層）
+
+### 目的
+- **モデル形式や実行方式が増えても**、Node側のモデル検出・ロード・推論の責務が破綻しない構造にする。
+- **“正（登録で確定したアーティファクト）” と “実行（Engine）”** を分離し、拡張を容易にする。
+
+### コンポーネント分解（概念）
+
+```
+Router（登録・配布）                Node（取得・検証・実行）
+───────────────────               ─────────────────────────
+register(format=...)  ───────▶    ModelStorage
+  ├─ 形式確定                           ├─ ローカル配置検出
+  ├─ 必須ファイル検証                    ├─ HF由来メタデータ検証
+  └─ マニフェスト確定                    └─ ModelDescriptor生成
+                                           │
+                                           ▼
+                                    EngineRegistry
+                                      └─ runtime → Engine を解決
+                                           │
+                                           ▼
+                                    InferenceEngine
+                                      └─ Engineへ推論を委譲
+                                           │
+                                           ▼
+                                        Engine（複数）
+                                      ├─ llama.cpp（GGUF）
+                                      └─ safetensors系（将来拡張）
+```
+
+### Key concepts
+- **ModelDescriptor**: Nodeが推論を開始するために必要な最小情報（例: `format`, `runtime`, `model_dir`, `primary` など）。
+- **runtime**: “どのEngineで実行すべきか” を表す識別子（例: `llama_cpp` など）。
+- **Engine**: 推論の実体（GPU実行・サンプリング・ストリーミングなど）を担う差し替え可能ユニット。
+
+### エンジン選択の入力（Single source of truth）
+- **登録時に確定したアーティファクト（format/必要ファイル）**
+- **Hugging Face 由来のメタデータ（`config.json` 等）**
+
+※ Nodeローカルに複数形式が同居していることを理由に自動フォールバックは行わない（登録で確定させる）。
+
 ## 非ゴール
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定・実装（後回し / TBDとして別途扱う）
 - Nemotron 推論の高速化・最適化

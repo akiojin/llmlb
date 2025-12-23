@@ -40,6 +40,14 @@ static void create_safetensors_model_with_index(const fs::path& models_dir, cons
     std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
 }
 
+static void create_gptoss_safetensors_model_with_index(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
+}
+
 // FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
@@ -128,6 +136,19 @@ TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
 
     ASSERT_TRUE(desc.has_value());
     EXPECT_EQ(desc->runtime, "nemotron_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorFindsGptOssSafetensorsIndex) {
+    TempModelDir tmp;
+    create_gptoss_safetensors_model_with_index(tmp.base, "openai-gpt-oss-20b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("openai-gpt-oss-20b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "gptoss_cpp");
     EXPECT_EQ(desc->format, "safetensors");
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
 }

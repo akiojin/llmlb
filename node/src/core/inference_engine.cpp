@@ -1,6 +1,7 @@
 #include "core/inference_engine.h"
 
 #include "core/engine_registry.h"
+#include "core/gptoss_engine.h"
 #include "core/llama_engine.h"
 #include "core/nemotron_engine.h"
 #include "models/model_descriptor.h"
@@ -66,6 +67,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     , model_sync_(model_sync) {
     engines_ = std::make_unique<EngineRegistry>();
     engines_->registerEngine(std::make_unique<LlamaEngine>(manager));
+    engines_->registerEngine(std::make_unique<GptOssEngine>());
     engines_->registerEngine(std::make_unique<NemotronEngine>());
 }
 

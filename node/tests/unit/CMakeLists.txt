@@ -14,6 +14,7 @@ set(UNIT_TEST_SOURCES
     model_loader_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
+    utils_utf8_test.cpp
     cli_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp

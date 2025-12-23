@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <random>
 #include <sstream>
@@ -22,14 +24,27 @@ namespace fs = std::filesystem;
 namespace llm_node {
 
 namespace {
-#ifdef USE_GPTOSS
 std::string trim_copy(std::string s) {
     auto l = s.find_first_not_of(" \t\n\r");
     if (l == std::string::npos) return "";
     auto r = s.find_last_not_of(" \t\n\r");
     return s.substr(l, r - l + 1);
 }
-#endif  // USE_GPTOSS
+
+std::string current_utc_date_yyyy_mm_dd() {
+    std::time_t now = std::time(nullptr);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &now);
+#else
+    tm = *std::gmtime(&now);
+#endif
+    char buf[16];
+    if (std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm) == 0) {
+        return "1970-01-01";
+    }
+    return std::string(buf);
+}
 
 std::vector<std::string> split_whitespace_tokens(const std::string& text, size_t max_tokens) {
     std::vector<std::string> tokens;
@@ -79,26 +94,20 @@ fs::path resolve_gptoss_metal_model_bin(const fs::path& model_dir) {
     return {};
 }
 
-std::string strip_control_tokens(std::string text) {
-    const std::vector<std::string> tokens = {
-        "<|start|>", "<|end|>", "<|message|>", "<|channel|>",
-        "<|startoftext|>", "<|endoftext|>", "<|return|>", "<|call|>",
-        "<|constrain|>", "<|endofprompt|>",
-        "<|im_start|>", "<|im_end|>", "<s>", "</s>", "<|eot_id|>"
-    };
-    for (const auto& t : tokens) {
-        size_t pos = 0;
-        while ((pos = text.find(t, pos)) != std::string::npos) {
-            text.erase(pos, t.size());
-        }
-    }
-    return trim_copy(std::move(text));
-}
 #endif  // USE_GPTOSS
 
-// gpt-oss chat template (minimal, keeps user content unchanged)
-std::string build_gptoss_chat_prompt(const std::vector<ChatMessage>& messages) {
+// gpt-oss requires the Harmony response format (https://github.com/openai/harmony).
+// The official Metal reference implementation composes the prompt by appending special tokens
+// (start/message/end/channel/return) and text segments to the context (not by concatenating a big string).
+std::string build_gptoss_system_prompt_text(const std::vector<ChatMessage>& messages) {
     std::ostringstream oss;
+
+    oss << "You are ChatGPT, a large language model trained by OpenAI.\n";
+    oss << "Knowledge cutoff: 2024-06\n";
+    oss << "Current date: " << current_utc_date_yyyy_mm_dd() << "\n\n";
+    // Metal reference uses "reasoning effort <level>" (lowercase).
+    oss << "reasoning effort high\n\n";
+    oss << "# Valid channels: analysis, final. Channel must be included for every message.";
 
     bool has_system = false;
     for (const auto& msg : messages) {
@@ -107,23 +116,14 @@ std::string build_gptoss_chat_prompt(const std::vector<ChatMessage>& messages) {
             break;
         }
     }
-
-    if (!has_system) {
-        oss << "<|start|>system<|message|>You are a helpful assistant.\n\nReasoning: none<|end|>";
-    }
-
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-            oss << "<|start|>system<|message|>" << msg.content << "\n\nReasoning: none<|end|>";
-        } else if (msg.role == "user" || msg.role == "assistant") {
-            oss << "<|start|>" << msg.role << "<|message|>" << msg.content << "<|end|>";
-        } else {
-            // Unknown role → treat as user
-            oss << "<|start|>user<|message|>" << msg.content << "<|end|>";
+    if (has_system) {
+        oss << "\n\n";
+        for (const auto& msg : messages) {
+            if (msg.role != "system") continue;
+            oss << msg.content << "\n";
         }
     }
 
-    oss << "<|start|>assistant<|channel|>final<|message|>";
     return oss.str();
 }
 
@@ -135,6 +135,11 @@ struct GptOssEngine::LoadedModel {
     gptoss_model_t model{nullptr};
     gptoss_tokenizer_t tokenizer{nullptr};
     size_t max_context{0};
+    uint32_t num_text_tokens{0};
+    uint32_t start_token_id{0};
+    uint32_t message_token_id{0};
+    uint32_t channel_token_id{0};
+    uint32_t return_token_id{0};
     uint32_t end_token_id{0};
     bool has_end_token{false};
 
@@ -214,12 +219,57 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     lm->tokenizer = tokenizer;
     lm->max_context = max_ctx;
 
+    uint32_t num_text = 0;
+    status = gptoss_tokenizer_get_num_text_tokens(tokenizer, &num_text);
+    if (status == gptoss_status_success) {
+        lm->num_text_tokens = num_text;
+    }
+
+    auto load_special = [&](enum gptoss_special_token ty, uint32_t& out) {
+        uint32_t id = 0;
+        enum gptoss_status st = gptoss_tokenizer_get_special_token_id(tokenizer, ty, &id);
+        if (st == gptoss_status_success) out = id;
+    };
+
+    load_special(gptoss_special_token_start, lm->start_token_id);
+    load_special(gptoss_special_token_message, lm->message_token_id);
+    load_special(gptoss_special_token_channel, lm->channel_token_id);
+    load_special(gptoss_special_token_return, lm->return_token_id);
+
     uint32_t end_id = 0;
     status = gptoss_tokenizer_get_special_token_id(tokenizer, gptoss_special_token_end, &end_id);
     if (status == gptoss_status_success) {
         lm->end_token_id = end_id;
         lm->has_end_token = true;
     }
+
+    auto validate_special = [&](const char* name, uint32_t id) {
+        if (id == 0) {
+            throw std::runtime_error(std::string("gpt-oss tokenizer missing special token id: ") + name);
+        }
+        if (lm->num_text_tokens > 0 && id < lm->num_text_tokens) {
+            throw std::runtime_error(std::string("gpt-oss special token id is in text token range: ") + name);
+        }
+    };
+
+    validate_special("start", lm->start_token_id);
+    validate_special("message", lm->message_token_id);
+    validate_special("channel", lm->channel_token_id);
+    validate_special("return", lm->return_token_id);
+    if (lm->has_end_token) {
+        validate_special("end", lm->end_token_id);
+    } else {
+        throw std::runtime_error("gpt-oss tokenizer missing special token: end");
+    }
+
+    spdlog::info(
+        "GptOssEngine tokenizer loaded: num_text_tokens={} start={} message={} channel={} return={} end={}",
+        lm->num_text_tokens,
+        lm->start_token_id,
+        lm->message_token_id,
+        lm->channel_token_id,
+        lm->return_token_id,
+        lm->end_token_id);
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -241,23 +291,21 @@ std::string GptOssEngine::generateChat(
     const std::vector<ChatMessage>& messages,
     const ModelDescriptor& descriptor,
     const InferenceParams& params) const {
-
-    ModelLoadResult load_result;
-    auto model = ensureLoaded(descriptor, load_result);
-    if (!load_result.success || !model) {
-        throw std::runtime_error(load_result.error_message.empty()
-                                     ? "Failed to load gpt-oss model"
-                                     : load_result.error_message);
-    }
-
-    const std::string prompt = build_gptoss_chat_prompt(messages);
-    return generateCompletion(prompt, descriptor, params);
+    return generateCompletion("", descriptor, params, &messages);
 }
 
 std::string GptOssEngine::generateCompletion(
     const std::string& prompt,
     const ModelDescriptor& descriptor,
     const InferenceParams& params) const {
+    return generateCompletion(prompt, descriptor, params, nullptr);
+}
+
+std::string GptOssEngine::generateCompletion(
+    const std::string& prompt,
+    const ModelDescriptor& descriptor,
+    const InferenceParams& params,
+    const std::vector<ChatMessage>* chat_messages) const {
 
     ModelLoadResult load_result;
     auto lm = ensureLoaded(descriptor, load_result);
@@ -290,44 +338,136 @@ std::string GptOssEngine::generateCompletion(
         }
     } guard{ctx};
 
-    size_t appended = 0;
-    status = gptoss_context_append_chars(ctx, prompt.c_str(), prompt.size(), &appended);
-    if (status != gptoss_status_success) {
-        throw std::runtime_error("gptoss_context_append_chars failed: status=" + std::to_string(status));
-    }
+    // Build Harmony prompt by appending special tokens + strings (matches upstream Metal example).
+    const std::string system_prompt = build_gptoss_system_prompt_text(chat_messages ? *chat_messages : std::vector<ChatMessage>{});
 
-    const uint64_t seed = resolve_seed(params.seed);
-    const size_t max_tokens = params.max_tokens == 0 ? 1 : params.max_tokens;
-    std::vector<uint32_t> out_tokens(max_tokens);
-    size_t out_len = 0;
-    status = gptoss_context_sample(
-        ctx,
-        params.temperature,
-        seed,
-        max_tokens,
-        out_tokens.data(),
-        &out_len);
-    if (status != gptoss_status_success) {
-        throw std::runtime_error("gptoss_context_sample failed: status=" + std::to_string(status));
-    }
-    out_tokens.resize(out_len);
-
-    std::string text;
-    text.reserve(out_tokens.size() * 4);
-    for (uint32_t tok : out_tokens) {
-        if (lm->has_end_token && tok == lm->end_token_id) {
-            break;
+    auto append_token = [&](uint32_t tok) {
+        status = gptoss_context_append_tokens(ctx, 1, &tok);
+        if (status != gptoss_status_success) {
+            throw std::runtime_error("gptoss_context_append_tokens failed: status=" + std::to_string(status));
         }
-        const void* ptr = nullptr;
-        size_t sz = 0;
-        status = gptoss_tokenizer_decode(lm->tokenizer, tok, &ptr, &sz);
-        if (status != gptoss_status_success || ptr == nullptr || sz == 0) {
+    };
+
+    auto append_text = [&](const std::string& s) {
+        status = gptoss_context_append_chars(ctx, s.c_str(), s.size(), nullptr);
+        if (status != gptoss_status_success) {
+            throw std::runtime_error("gptoss_context_append_chars failed: status=" + std::to_string(status));
+        }
+    };
+
+    // Start-of-text token: gpt-oss tokenizer places it at the first special token slot.
+    // This matches HF's tokenizer.json for openai/gpt-oss-* (id == num_text_tokens).
+    if (lm->num_text_tokens > 0) {
+        append_token(lm->num_text_tokens);
+    }
+
+    // system
+    append_token(lm->start_token_id);
+    append_text("system");
+    append_token(lm->message_token_id);
+    append_text(system_prompt);
+    append_token(lm->end_token_id);
+
+    // messages
+    std::vector<ChatMessage> fallback_messages;
+    if (!chat_messages) {
+        fallback_messages.push_back({"user", prompt});
+        chat_messages = &fallback_messages;
+    }
+
+    for (const auto& msg : *chat_messages) {
+        if (msg.role == "system") {
+            continue;  // already integrated into system_prompt
+        }
+        if (msg.role == "assistant") {
+            // Assistant history is encoded as a final channel message.
+            append_token(lm->start_token_id);
+            append_text("assistant");
+            append_token(lm->channel_token_id);
+            append_text("final");
+            append_token(lm->message_token_id);
+            append_text(msg.content);
+            append_token(lm->end_token_id);
             continue;
         }
-        text.append(reinterpret_cast<const char*>(ptr), sz);
+
+        // user (and unknown)
+        append_token(lm->start_token_id);
+        append_text("user");
+        append_token(lm->message_token_id);
+        append_text(msg.content);
+        append_token(lm->end_token_id);
     }
 
-    return strip_control_tokens(std::move(text));
+    // Generation prefix: <|start|>assistant<|channel|>final<|message|>
+    append_token(lm->start_token_id);
+    append_text("assistant");
+    append_token(lm->channel_token_id);
+    append_text("final");
+    append_token(lm->message_token_id);
+
+    const size_t max_tokens = params.max_tokens == 0 ? 1 : params.max_tokens;
+    const uint64_t seed = resolve_seed(params.seed);
+    // gpt-oss Metal reference uses `exp((logit - max) * temperature)` i.e. this parameter is 1/T.
+    // Convert OpenAI-style temperature (T) into inverse temperature for the kernel.
+    const float user_temperature = std::clamp(params.temperature, 0.0f, 2.0f);
+    const float temperature = user_temperature == 0.0f ? 0.0f : std::clamp(1.0f / user_temperature, 0.0f, 8.0f);
+
+    std::string final_bytes;
+    final_bytes.reserve(max_tokens * 4);
+
+    const bool trace = std::getenv("LLM_NODE_GPTOSS_TRACE") != nullptr;
+    size_t trace_tokens_logged = 0;
+    bool saw_return_token = false;
+
+    for (size_t i = 0; i < max_tokens; ++i) {
+        uint32_t tok = 0;
+        size_t out_len = 0;
+        status = gptoss_context_sample(
+            ctx,
+            temperature,
+            seed,
+            /*max_tokens=*/1,
+            &tok,
+            &out_len);
+        if (status != gptoss_status_success) {
+            throw std::runtime_error("gptoss_context_sample failed: status=" + std::to_string(status));
+        }
+        if (out_len == 0) break;
+
+        if (tok == lm->return_token_id) {
+            saw_return_token = true;
+            break;
+        }
+        if (tok == lm->end_token_id) break;
+        if (tok == lm->start_token_id) break;
+
+        // text tokens
+        if (lm->num_text_tokens > 0 && tok < lm->num_text_tokens) {
+            const void* ptr = nullptr;
+            size_t sz = 0;
+            status = gptoss_tokenizer_decode(lm->tokenizer, tok, &ptr, &sz);
+            if (status != gptoss_status_success || ptr == nullptr || sz == 0) {
+                continue;
+            }
+            final_bytes.append(reinterpret_cast<const char*>(ptr), sz);
+        }
+
+        if (trace && trace_tokens_logged < 64) {
+            spdlog::info("GptOssEngine trace: tok={}", tok);
+            trace_tokens_logged++;
+        }
+    }
+
+    if (trace) {
+        spdlog::info(
+            "GptOssEngine trace summary: max_tokens={} saw_return_token={} final_bytes={}",
+            max_tokens,
+            saw_return_token,
+            final_bytes.size());
+    }
+
+    return trim_copy(std::move(final_bytes));
 #endif
 }
 

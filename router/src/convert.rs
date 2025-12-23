@@ -1585,7 +1585,14 @@ where
 
 /// python依存が無いときは事前にエラーにする
 async fn ensure_python_deps() -> Result<(), RouterError> {
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    // Prefer the auto-managed venv when available to avoid requiring global Python deps.
+    // If the venv is not present, fall back to the configured python or system python3.
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| {
+            std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into())
+        });
     let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
 
@@ -1620,7 +1627,14 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
 }
 
 fn ensure_python_deps_sync() -> Result<(), RouterError> {
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    // Prefer the auto-managed venv when available to avoid requiring global Python deps.
+    // If the venv is not present, fall back to the configured python or system python3.
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| {
+            std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into())
+        });
     let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let output = std::process::Command::new(&python_bin)

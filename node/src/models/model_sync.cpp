@@ -79,6 +79,11 @@ void ModelSync::setApiKey(std::string api_key) {
     api_key_ = std::move(api_key);
 }
 
+void ModelSync::setSupportedRuntimes(std::vector<std::string> supported_runtimes) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    supported_runtimes_ = std::move(supported_runtimes);
+}
+
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Client cli(base_url_.c_str());
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
@@ -406,6 +411,12 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         if (it != model_overrides_.end()) model_cfg = it->second;
     }
 
+    std::vector<std::string> supported_runtimes;
+    {
+        std::lock_guard<std::mutex> lock(etag_mutex_);
+        supported_runtimes = supported_runtimes_;
+    }
+
     auto manifest_path = downloader.fetchManifest(model_id);
     if (manifest_path.empty()) return false;
 
@@ -425,6 +436,24 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         for (const auto& f : j["files"]) {
             std::string name = f.value("name", "");
             if (name.empty()) return false;
+
+            // If the manifest entry specifies allowed runtimes, skip files that this node cannot use.
+            // Backward-compatible: older routers won't include `runtimes`.
+            if (f.contains("runtimes") && f["runtimes"].is_array() && !supported_runtimes.empty()) {
+                bool matched = false;
+                for (const auto& r : f["runtimes"]) {
+                    if (!r.is_string()) continue;
+                    const auto rt = r.get<std::string>();
+                    if (std::find(supported_runtimes.begin(), supported_runtimes.end(), rt) != supported_runtimes.end()) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    continue;
+                }
+            }
+
             std::string digest = f.value("digest", "");
             std::string url = f.value("url", "");
             if (url.empty()) {
@@ -491,6 +520,11 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             } else {
                 lo_tasks.push_back({priority, task_fn});
             }
+        }
+
+        // If all files were filtered out (unsupported runtime), treat as a successful no-op.
+        if (hi_tasks.empty() && lo_tasks.empty()) {
+            return true;
         }
 
         auto run_tasks = [](std::vector<DlTask>& list, size_t conc) {

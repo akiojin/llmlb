@@ -45,6 +45,9 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir)
             for (const auto& a : j["architectures"]) {
                 if (!a.is_string()) continue;
                 const auto s = a.get<std::string>();
+                if (s.find("GptOss") != std::string::npos || s.find("GPTOSS") != std::string::npos) {
+                    return std::string("gptoss_cpp");
+                }
                 if (s.find("Nemotron") != std::string::npos) {
                     return std::string("nemotron_cpp");
                 }
@@ -54,6 +57,9 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir)
         if (j.contains("model_type") && j["model_type"].is_string()) {
             auto mt = j["model_type"].get<std::string>();
             std::transform(mt.begin(), mt.end(), mt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (mt.find("gpt_oss") != std::string::npos || mt.find("gptoss") != std::string::npos) {
+                return std::string("gptoss_cpp");
+            }
             if (mt.find("nemotron") != std::string::npos) {
                 return std::string("nemotron_cpp");
             }

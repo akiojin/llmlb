@@ -1407,11 +1407,61 @@ pub async fn get_model_registry_manifest(
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         priority: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        runtimes: Option<Vec<String>>,
     }
     #[derive(Serialize)]
     struct Manifest {
         files: Vec<ManifestFile>,
     }
+
+    // Optional: runtime hint for nodes so they can skip downloading unsupported models.
+    // This keeps the manifest backward-compatible: nodes that don't understand `runtimes` will ignore it.
+    let runtime_hint: Option<Vec<String>> = if dir.join("model.gguf").exists() {
+        Some(vec!["llama_cpp".to_string()])
+    } else {
+        let cfg_path = dir.join("config.json");
+        if cfg_path.exists() {
+            match tokio::fs::read(&cfg_path).await {
+                Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    Ok(v) => {
+                        let mut rt: Option<String> = None;
+
+                        if let Some(arr) = v.get("architectures").and_then(|x| x.as_array()) {
+                            for a in arr {
+                                let Some(s) = a.as_str() else { continue };
+                                if s.contains("GptOss") || s.contains("GPTOSS") {
+                                    rt = Some("gptoss_cpp".to_string());
+                                    break;
+                                }
+                                if s.contains("Nemotron") {
+                                    rt = Some("nemotron_cpp".to_string());
+                                    break;
+                                }
+                            }
+                        }
+
+                        if rt.is_none() {
+                            if let Some(mt) = v.get("model_type").and_then(|x| x.as_str()) {
+                                let mt = mt.to_ascii_lowercase();
+                                if mt.contains("gpt_oss") || mt.contains("gptoss") {
+                                    rt = Some("gptoss_cpp".to_string());
+                                } else if mt.contains("nemotron") {
+                                    rt = Some("nemotron_cpp".to_string());
+                                }
+                            }
+                        }
+
+                        rt.map(|s| vec![s])
+                    }
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    };
 
     let mut files: Vec<ManifestFile> = Vec::new();
     if let Ok(mut rd) = tokio::fs::read_dir(&dir).await {
@@ -1432,7 +1482,11 @@ pub async fn get_model_registry_manifest(
                 _ => None,
             };
 
-            files.push(ManifestFile { name, priority });
+            files.push(ManifestFile {
+                name,
+                priority,
+                runtimes: runtime_hint.clone(),
+            });
         }
     }
 

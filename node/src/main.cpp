@@ -108,6 +108,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         std::vector<std::string> supported_runtimes{"llama_cpp", "nemotron_cpp"};
 
+#ifdef USE_GPTOSS
+        supported_runtimes.push_back("gptoss_cpp");
+#endif
+
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR
         llm_node::WhisperManager whisper_manager(models_dir);
@@ -164,6 +168,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         if (!cfg.router_api_key.empty()) {
             model_sync->setApiKey(cfg.router_api_key);
         }
+        model_sync->setSupportedRuntimes(supported_runtimes);
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());

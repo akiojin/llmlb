@@ -862,6 +862,28 @@ where
         }
     }
 
+    fn is_repo_allowed_for_optimized_artifacts(repo: &str) -> bool {
+        let allowlist = std::env::var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST")
+            .unwrap_or_else(|_| "openai/*,nvidia/*".to_string());
+        for pat in allowlist
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            if let Some(prefix) = pat.strip_suffix("/*") {
+                let prefix = prefix.trim_end_matches('/');
+                if repo.starts_with(&format!("{}/", prefix)) {
+                    return true;
+                }
+                continue;
+            }
+            if pat.eq_ignore_ascii_case(repo) {
+                return true;
+            }
+        }
+        false
+    }
+
     match format {
         ModelArtifactFormat::Gguf => {
             let url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, filename);
@@ -1029,6 +1051,29 @@ where
                 }
             }
 
+            // Optional: official GPU-optimized artifacts (e.g., Apple Silicon / Metal).
+            // Non-fatal: if not found or download fails, we still proceed with safetensors.
+            if is_repo_allowed_for_optimized_artifacts(repo) {
+                let metal_url = format!("{}/{}/resolve/{}/metal/model.bin", base_url, repo, rev);
+                let metal_target = dir.join("model.metal.bin");
+
+                if !(metal_target.exists() && is_valid_file(&metal_target).await) {
+                    let _ = tokio::fs::remove_file(&metal_target).await;
+                    match try_download_file(&metal_url, &metal_target).await {
+                        Ok(true) => {
+                            tracing::info!(repo = %repo, "Downloaded official Metal artifact (model.metal.bin)");
+                        }
+                        Ok(false) => {
+                            // 404: not provided
+                        }
+                        Err(e) => {
+                            tracing::warn!(repo = %repo, error = %e, "Failed to download official Metal artifact (non-fatal)");
+                            let _ = tokio::fs::remove_file(&metal_target).await;
+                        }
+                    }
+                }
+            }
+
             progress_callback(1.0);
             finalize_model_registration(
                 &model_name,
@@ -1049,6 +1094,11 @@ where
 
 /// HTTP GET to file and stream to path
 async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
     let client = reqwest::Client::new();
     let mut req = client.get(url);
     if let Ok(token) = std::env::var("HF_TOKEN") {
@@ -1073,6 +1123,48 @@ async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
             .map_err(|e| RouterError::Internal(e.to_string()))?;
     }
     Ok(())
+}
+
+/// HTTP GET to file (optional) and stream to path
+///
+/// - 404 は「存在しない」として Ok(false) を返す
+/// - その他の非2xxは Err
+async fn try_download_file(url: &str, target: &Path) -> Result<bool, RouterError> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+
+    let client = reqwest::Client::new();
+    let mut req = client.get(url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    if !resp.status().is_success() {
+        return Err(RouterError::Http(resp.status().to_string()));
+    }
+
+    let mut file = tokio::fs::File::create(target)
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| RouterError::Http(e.to_string()))?;
+        file.write_all(&bytes)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+    Ok(true)
 }
 
 /// リトライ可能なエラーかどうかを判定

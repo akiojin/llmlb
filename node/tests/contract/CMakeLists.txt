@@ -11,6 +11,7 @@ set(CONTRACT_TEST_SOURCES
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/engine_registry.cpp
     ../../src/core/llama_engine.cpp
+    ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/llama_manager.cpp

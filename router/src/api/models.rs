@@ -362,7 +362,7 @@ const TRUSTED_PROVIDERS: &[&str] = &[
 /// サポートする量子化タイプ（API/UI共通）
 const SUPPORTED_QUANTIZATION_LABELS: &[&str] = &[
     "BF16", "F32", "F16", "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "Q4_K_M", "Q4_K_S", "Q4_0",
-    "Q3_K_M", "Q3_K_S", "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M",
+    "MXFP4", "Q3_K_M", "Q3_K_S", "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M",
 ];
 
 pub(crate) fn normalize_quantization_label(input: &str) -> Option<String> {
@@ -514,12 +514,13 @@ fn gguf_quality_rank(label: &str) -> u32 {
         "Q4_K_M" => 8,
         "Q4_K_S" => 9,
         "Q4_0" => 10,
-        "Q3_K_M" => 11,
-        "Q3_K_S" => 12,
-        "Q2_K" => 13,
-        "IQ4_XS" => 14,
-        "IQ3_M" => 15,
-        "IQ2_M" => 16,
+        "MXFP4" => 11,
+        "Q3_K_M" => 12,
+        "Q3_K_S" => 13,
+        "Q2_K" => 14,
+        "IQ4_XS" => 15,
+        "IQ3_M" => 16,
+        "IQ2_M" => 17,
         _ => 999,
     }
 }
@@ -538,6 +539,7 @@ fn gguf_speed_acceptable(label: &str) -> bool {
             | "Q4_K_M"
             | "Q4_K_S"
             | "Q4_0"
+            | "MXFP4"
     )
 }
 
@@ -840,7 +842,7 @@ struct HfLfs {
 #[derive(Deserialize)]
 struct HfModel {
     /// モデルID (例: "bartowski/Qwen2.5-7B-Instruct-GGUF")
-    #[serde(rename = "modelId")]
+    #[serde(rename = "id", alias = "modelId")]
     model_id: String,
     /// ファイル一覧
     #[serde(default)]
@@ -1678,5 +1680,32 @@ mod tests {
             result.is_none(),
             "router_model_path should return None for nonexistent model"
         );
+    }
+
+    #[test]
+    fn test_extract_quantization_detects_mxfp4() {
+        assert_eq!(
+            extract_quantization("gpt-oss-20b-mxfp4.gguf"),
+            Some("MXFP4".to_string())
+        );
+        assert_eq!(
+            normalize_quantization_label("mxfp4"),
+            Some("MXFP4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_hf_model_deserialize_accepts_id_field() {
+        let input = r#"{"id":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
+        let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
+        assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
+    }
+
+    #[test]
+    fn test_hf_model_deserialize_accepts_model_id_field_alias() {
+        let input =
+            r#"{"modelId":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
+        let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
+        assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
     }
 }

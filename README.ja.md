@@ -357,6 +357,12 @@ Router (OpenAI-compatible)
 make quality-checks
 ```
 
+### PoC
+
+- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
+- gpt-oss (Linux / CUDA, GGUF): `make poc-gptoss-cuda`
+  - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
+
 Dashboard を更新する場合:
 
 ```bash

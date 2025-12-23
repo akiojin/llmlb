@@ -6555,7 +6555,12 @@ static void ggml_call_mul_mat(ggml_type type, const ggml_compute_params * params
 }
 
 static inline int64_t ggml_wrap_around(int64_t coord, int64_t size) {
-    return (coord + size) % size;
+    GGML_ASSERT(size > 0);
+    int64_t m = coord % size;
+    if (m < 0) {
+        m += size;
+    }
+    return m;
 }
 
 // ggml_compute_forward_conv_2d

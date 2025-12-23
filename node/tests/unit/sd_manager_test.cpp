@@ -18,6 +18,20 @@ TEST(SDManagerTest, ToMaskChannelConvertsRgbToGray) {
     EXPECT_EQ(mask[1], 255u);
 }
 
+TEST(SDManagerTest, ToMaskChannelReturnsEmptyForInvalidDimensions) {
+    const std::vector<uint8_t> rgb = {0, 0, 0};
+
+    EXPECT_TRUE(SDManager::toMaskChannel(rgb, 0, 1).empty());
+    EXPECT_TRUE(SDManager::toMaskChannel(rgb, 1, 0).empty());
+    EXPECT_TRUE(SDManager::toMaskChannel(rgb, -1, 1).empty());
+}
+
+TEST(SDManagerTest, ToMaskChannelReturnsEmptyForInsufficientData) {
+    const std::vector<uint8_t> rgb = {0, 0};
+
+    EXPECT_TRUE(SDManager::toMaskChannel(rgb, 1, 1).empty());
+}
+
 TEST(SDManagerTest, MakeSolidMaskFillsValue) {
     const int width = 3;
     const int height = 2;
@@ -29,6 +43,12 @@ TEST(SDManagerTest, MakeSolidMaskFillsValue) {
     for (auto entry : mask) {
         EXPECT_EQ(entry, value);
     }
+}
+
+TEST(SDManagerTest, MakeSolidMaskReturnsEmptyForInvalidDimensions) {
+    EXPECT_TRUE(SDManager::makeSolidMask(0, 1, 42).empty());
+    EXPECT_TRUE(SDManager::makeSolidMask(1, 0, 42).empty());
+    EXPECT_TRUE(SDManager::makeSolidMask(-1, 1, 42).empty());
 }
 
 }  // namespace llm_node

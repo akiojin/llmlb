@@ -361,6 +361,9 @@ pub struct ImageGenerationRequest {
     /// シード値（再現性用）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<i64>,
+    /// 生成ステップ数（SD拡張、デフォルト: 20）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<u32>,
 }
 
 fn default_image_n() -> u8 {
@@ -721,6 +724,7 @@ mod tests {
             response_format: ImageResponseFormat::Url,
             negative_prompt: Some("blurry".to_string()),
             seed: Some(12345),
+            steps: Some(2),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -729,6 +733,7 @@ mod tests {
         assert!(json.contains("\"n\":2"));
         assert!(json.contains("\"size\":\"1024x1024\""));
         assert!(json.contains("\"negative_prompt\":\"blurry\""));
+        assert!(json.contains("\"steps\":2"));
 
         let deserialized: ImageGenerationRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.model, "stable-diffusion-xl");
@@ -749,6 +754,7 @@ mod tests {
         assert_eq!(request.response_format, ImageResponseFormat::Url); // default
         assert_eq!(request.negative_prompt, None);
         assert_eq!(request.seed, None);
+        assert_eq!(request.steps, None);
     }
 
     #[test]

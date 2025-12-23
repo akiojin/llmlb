@@ -46,6 +46,24 @@ endif()
 option(BUILD_WITH_ROCM "Build with ROCm support" OFF)
 option(STATIC_BUILD "Build statically linked executable" OFF)
 
+# CUDA support (must be decided before llama.cpp is configured)
+if(BUILD_WITH_CUDA)
+    if(APPLE)
+        message(WARNING "CUDA is not available on macOS; disabling BUILD_WITH_CUDA")
+        set(BUILD_WITH_CUDA OFF CACHE BOOL "" FORCE)
+    else()
+        find_package(CUDAToolkit QUIET)
+        if(CUDAToolkit_FOUND)
+            # Build llama.cpp / ggml with CUDA backend.
+            # (This is separate from our own USE_CUDA which is applied to llm-node target later.)
+            set(GGML_CUDA ON CACHE BOOL "" FORCE)
+        else()
+            message(WARNING "CUDA toolkit not found, disabling CUDA support")
+            set(BUILD_WITH_CUDA OFF CACHE BOOL "" FORCE)
+        endif()
+    endif()
+endif()
+
 # ggml/llama.cpp の ARM ネイティブ最適化は、実行環境の命令対応を誤検出すると
 # ビルドエラーになるため、ポータブル設定に固定する。
 set(GGML_NATIVE OFF CACHE BOOL "Disable native cpu flags for portability" FORCE)
@@ -160,19 +178,6 @@ endif()
 # Find required packages
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
-
-# CUDA support
-if(BUILD_WITH_CUDA)
-    find_package(CUDAToolkit)
-    if(CUDAToolkit_FOUND)
-        add_definitions(-DUSE_CUDA)
-        include_directories(${CUDAToolkit_INCLUDE_DIRS})
-        link_libraries(${CUDAToolkit_LIBRARIES})
-    else()
-        message(WARNING "CUDA toolkit not found, disabling CUDA support")
-        set(BUILD_WITH_CUDA OFF)
-    endif()
-endif()
 
 # Metal support (macOS)
 if(APPLE AND BUILD_WITH_METAL)
@@ -340,6 +345,20 @@ target_link_libraries(llm-node
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+
+# CUDA support (llm-node)
+if(BUILD_WITH_CUDA AND CUDAToolkit_FOUND)
+    target_compile_definitions(llm-node PRIVATE USE_CUDA)
+    target_link_libraries(llm-node PRIVATE CUDA::cudart)
+    if(TARGET CUDA::nvml)
+        target_link_libraries(llm-node PRIVATE CUDA::nvml)
+    else()
+        find_library(NVML_LIBRARY nvidia-ml)
+        if(NVML_LIBRARY)
+            target_link_libraries(llm-node PRIVATE ${NVML_LIBRARY})
+        endif()
+    endif()
+endif()
 
 # gpt-oss Metal backend (macOS)
 if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)

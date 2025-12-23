@@ -4,6 +4,7 @@ SHELL := /bin/sh
 .PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
+.PHONY: poc-gptoss-metal poc-gptoss-cuda
 
 TASKS ?= $(shell find specs -name tasks.md)
 
@@ -91,3 +92,10 @@ build-macos-aarch64:
 
 build-macos-all: build-macos-x86_64 build-macos-aarch64
 	@echo "All macOS builds completed successfully!"
+
+# PoCs
+poc-gptoss-metal:
+	./poc/gpt-oss-metal/run.sh
+
+poc-gptoss-cuda:
+	./poc/gpt-oss-cuda/run.sh

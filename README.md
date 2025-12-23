@@ -601,6 +601,7 @@ make openai-tests
 
 ### PoCs
 
+- gpt-oss (auto): `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
 - gpt-oss (Linux / CUDA via GGUF): `make poc-gptoss-cuda`
   - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)

@@ -359,6 +359,7 @@ make quality-checks
 
 ### PoC
 
+- gpt-oss（自動）: `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
 - gpt-oss (Linux / CUDA, GGUF): `make poc-gptoss-cuda`
   - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します

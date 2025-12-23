@@ -40,6 +40,9 @@ public:
     // モデルロード
     bool loadModel(const std::string& model_path);
 
+    // WhisperのFlash Attentionを使うか（安定性優先で無効化）
+    static bool shouldUseFlashAttention();
+
     // モデルがロード済みか確認
     bool isLoaded(const std::string& model_path) const;
 

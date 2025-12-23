@@ -92,6 +92,12 @@ public:
         const std::string& model_path,
         const ImageVariationParams& params);
 
+    // Mask helpers (img2img/inpainting)
+    static std::vector<uint8_t> toMaskChannel(const std::vector<uint8_t>& rgb,
+                                              int width,
+                                              int height);
+    static std::vector<uint8_t> makeSolidMask(int width, int height, uint8_t value);
+
     // Loaded model count
     size_t loadedCount() const;
 

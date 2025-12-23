@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <random>
 
 // stb_image for PNG encoding/decoding
@@ -52,10 +53,6 @@ float getCfgScaleForStyle(const std::string& style, float default_cfg) {
         return std::min(default_cfg, 5.0f);  // Lower CFG for more natural results
     }
     return default_cfg;  // "vivid" uses default or higher
-}
-
-std::string getSdErrorMessage(const std::string& fallback_message) {
-    return fallback_message;
 }
 
 // Convert sd_image_t to PNG
@@ -160,7 +157,8 @@ bool SDManager::loadModel(const std::string& model_path) {
     if (threads_env && threads_env[0] != '\0') {
         char* end = nullptr;
         long value = std::strtol(threads_env, &end, 10);
-        if (end != threads_env && *end == '\0' && value > 0) {
+        if (end != threads_env && *end == '\0' && value > 0 &&
+            value <= static_cast<long>(std::numeric_limits<int>::max())) {
             ctx_params.n_threads = static_cast<int>(value);
             spdlog::info("SDManager using LLM_SD_THREADS={}", ctx_params.n_threads);
         } else {
@@ -303,7 +301,7 @@ std::vector<ImageGenerationResult> SDManager::generateImages(
 
     if (!images) {
         ImageGenerationResult error_result;
-        error_result.error = getSdErrorMessage("Image generation failed");
+        error_result.error = "Image generation failed";
         results.push_back(error_result);
         return results;
     }
@@ -435,7 +433,7 @@ std::vector<ImageGenerationResult> SDManager::editImages(
 
     if (!images) {
         ImageGenerationResult error_result;
-        error_result.error = getSdErrorMessage("Image editing failed");
+        error_result.error = "Image editing failed";
         results.push_back(error_result);
         return results;
     }

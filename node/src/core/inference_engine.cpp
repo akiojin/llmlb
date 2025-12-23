@@ -920,6 +920,8 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     // 4. embeddingモードを有効化
     llama_set_embeddings(ctx, true);
 
+    const bool has_encoder = llama_model_has_encoder(model);
+
     // 5. vocab取得
     const llama_vocab* vocab = llama_model_get_vocab(model);
     if (!vocab) {
@@ -975,40 +977,41 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
             batch.pos[i] = i;
             batch.n_seq_id[i] = 1;
             batch.seq_id[i][0] = 0;
-            batch.logits[i] = (i == n_tokens - 1) ? 1 : 0;  // 最後のトークンのみ出力
+            batch.logits[i] = 1;  // 全トークンのembeddingを出力
         }
         batch.n_tokens = n_tokens;
 
-        // エンコード（embedding生成）
-        int32_t encode_result = llama_encode(ctx, batch);
-        if (encode_result != 0) {
-            llama_batch_free(batch);
-            // llama_encodeが失敗した場合、llama_decodeを試す（一部モデル用）
-            spdlog::debug("llama_encode failed, trying llama_decode for embeddings");
-            llama_batch batch2 = llama_batch_get_one(tokens.data(), n_tokens);
-            if (llama_decode(ctx, batch2) != 0) {
-                throw std::runtime_error("Failed to encode/decode for embeddings");
+        // エンコード/デコード（embedding生成）
+        int32_t embed_result = has_encoder ? llama_encode(ctx, batch) : llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (embed_result != 0) {
+            throw std::runtime_error("Failed to encode/decode for embeddings");
+        }
+
+        // embeddingを取得（全トークン分のembeddingsから平均を取る）
+        const float* embd_all = llama_get_embeddings(ctx);
+        std::vector<float> embedding(static_cast<size_t>(n_embd), 0.0f);
+        if (embd_all != nullptr) {
+            for (int32_t i = 0; i < n_tokens; ++i) {
+                const float* token_embd = embd_all + (static_cast<size_t>(i) * static_cast<size_t>(n_embd));
+                for (int32_t j = 0; j < n_embd; ++j) {
+                    embedding[static_cast<size_t>(j)] += token_embd[static_cast<size_t>(j)];
+                }
+            }
+            const float inv_tokens = 1.0f / static_cast<float>(n_tokens);
+            for (float& v : embedding) {
+                v *= inv_tokens;
             }
         } else {
-            llama_batch_free(batch);
+            // pooling_type が NONE 以外の場合は seq から取得
+            const float* embd_seq = llama_get_embeddings_seq(ctx, 0);
+            if (embd_seq == nullptr) {
+                spdlog::error("Failed to get embeddings buffer for input");
+                results.push_back(std::vector<float>(static_cast<size_t>(n_embd), 0.0f));
+                continue;
+            }
+            std::copy(embd_seq, embd_seq + n_embd, embedding.begin());
         }
-
-        // embeddingを取得（最後のトークンのembedding）
-        const float* embd = llama_get_embeddings_ith(ctx, -1);
-        if (embd == nullptr) {
-            // pooling_typeがnone以外の場合はseqから取得
-            embd = llama_get_embeddings_seq(ctx, 0);
-        }
-
-        if (embd == nullptr) {
-            spdlog::error("Failed to get embeddings for input");
-            // ダミーembeddingを返す
-            results.push_back(std::vector<float>(static_cast<size_t>(n_embd), 0.0f));
-            continue;
-        }
-
-        // embeddingをコピーして正規化
-        std::vector<float> embedding(embd, embd + n_embd);
 
         // L2正規化
         float norm = 0.0f;

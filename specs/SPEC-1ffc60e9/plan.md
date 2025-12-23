@@ -1,7 +1,7 @@
-# 実装計画: [機能名]
+# 実装計画: Playground Multi-Modal
 
-**機能ID**: `SPEC-[UUID8桁]` (例: `SPEC-a1b2c3d4`) | **日付**: [日付] | **仕様**: [リンク]
-**入力**: `/specs/SPEC-[UUID8桁]/spec.md`の機能仕様
+**機能ID**: `SPEC-1ffc60e9` (例: `SPEC-a1b2c3d4`) | **日付**: 2025-12-23 | **仕様**: [リンク]
+**入力**: `/specs/SPEC-1ffc60e9/spec.md`の機能仕様
 
 ## 実行フロー (/speckit.plan コマンドのスコープ)
 ```

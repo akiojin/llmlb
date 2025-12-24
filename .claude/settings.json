@@ -18,6 +18,7 @@
     ]
   },
   "enabledPlugins": {
-    "gh-fix-ci@akiojin-skills": true
+    "gh-fix-ci@akiojin-skills": true,
+    "requirements-spec-kit@akiojin-skills": true
   }
 }

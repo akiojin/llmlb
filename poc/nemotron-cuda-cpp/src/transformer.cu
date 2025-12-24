@@ -8,7 +8,8 @@ namespace nemotron {
 
 TransformerLayer::TransformerLayer(const ModelConfig& config, cublasHandle_t cublas)
     : config_(config), cublas_(cublas) {
-    allocateBuffers(config.max_position_embeddings);
+    // Use limited seq len to avoid OOM with large max_position_embeddings
+    allocateBuffers(config.getMaxSeqLen());
 }
 
 void TransformerLayer::allocateBuffers(size_t max_seq_len) {
@@ -246,8 +247,9 @@ TransformerModel::TransformerModel(const ModelConfig& config, CudaModelManager& 
             config, cuda_manager.getCublasHandle()));
     }
 
-    allocateBuffers(config.max_position_embeddings);
+    allocateBuffers(config.getMaxSeqLen());
     LOG_INFO("TransformerModel initialized with " << config.num_hidden_layers << " layers");
+    LOG_INFO("  Max inference seq len: " << config.getMaxSeqLen());
 }
 
 void TransformerModel::allocateBuffers(size_t max_seq_len) {

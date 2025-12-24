@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include "config.h"
 
 namespace nemotron {
@@ -17,6 +18,12 @@ struct ModelConfig {
     size_t num_key_value_heads = 8;  // GQA
     size_t vocab_size = 256000;
     size_t max_position_embeddings = 4096;
+
+    // Inference limit (to avoid OOM with large max_position_embeddings)
+    static constexpr size_t MAX_INFERENCE_SEQ_LEN = 4096;
+    size_t getMaxSeqLen() const {
+        return std::min(max_position_embeddings, MAX_INFERENCE_SEQ_LEN);
+    }
 
     // Normalization
     float rms_norm_eps = 1e-5f;

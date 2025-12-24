@@ -2,10 +2,11 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
-#include <vector>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace nemotron {
 

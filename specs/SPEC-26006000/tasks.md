@@ -13,15 +13,17 @@
 Contract → Integration → E2E → Unit → Core の順で実施する。
 
 ## Contract Tests (RED)
+- [x] /v0/models/register: `format=safetensors` の必須メタデータ不足で 400 になること（共通契約テスト）。
 - [ ] /v1/audio/transcriptions: `format=safetensors` の必須メタデータ不足で 400 になること。
 - [ ] /v1/audio/speech: `format=safetensors` の必須メタデータ不足で 400 になること。
 - [ ] /v1/models: 実体（safetensors/GGUF）が存在しない音声モデルは表示されないこと。
 
 ## Integration Tests (RED)
 - [ ] ASR/TTS それぞれの runtime/capabilities に基づき、対応ノードへルーティングされること。
-- [ ] safetensors shard 欠損時に Node が未対応として扱うこと。
+- [x] safetensors shard 欠損時に Node が未対応として扱うこと（モデル登録統合テストで400）。
 
 ## E2E (RED)
+- [x] `openai/whisper-*` を safetensors として登録した際、メタデータ不足で 400 になること（共通E2E）。
 - [ ] `openai/whisper-*` を safetensors として登録し、`/v1/audio/transcriptions` が非空テキストを返すこと。
 - [ ] TTSモデルを safetensors として登録し、`/v1/audio/speech` が音声バイナリを返すこと。
 

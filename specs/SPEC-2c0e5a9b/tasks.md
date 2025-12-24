@@ -8,12 +8,12 @@
 - Contract → Integration → E2E → Unit → Core/Refactor の順で実施する。
 
 ## Contract Tests (RED)
-- [ ] Router: gpt-oss 登録時に `format=safetensors` 必須メタデータ欠落が 400 になること。
-- [ ] Router: `model.safetensors.index.json` が無い状態で複数 shard を検出した場合に 400 になること。
+- [x] Router: gpt-oss 登録時に `format=safetensors` 必須メタデータ欠落が 400 になること。
+- [x] Router: `model.safetensors.index.json` が無い状態で複数 shard を検出した場合に 400 になること。
 - [ ] Node: gpt-oss runtime 判定が `config.json` から確定すること（既存テストの拡張）。
 
 ## Integration Tests (RED)
-- [ ] Node: sharded safetensors の欠損 shard を検出してロード失敗すること。
+- [x] Node: sharded safetensors の欠損 shard を検出してロード失敗すること（REDテスト追加済み、実装待ち）。
 - [ ] Node: 必須メタデータ（config/tokenizer）不足時に未対応として扱うこと。
 
 ## E2E (RED)

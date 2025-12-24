@@ -40,6 +40,19 @@ static void create_safetensors_model_with_index(const fs::path& models_dir, cons
     std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
 }
 
+static void create_safetensors_index_with_missing_shard(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["NemotronForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({
+        "weight_map": {
+            "model.layers.0.weight": "model-00001.safetensors"
+        }
+    })";
+    // NOTE: shard file is intentionally missing to exercise validation logic.
+}
+
 static void create_gptoss_safetensors_model_with_index(const fs::path& models_dir, const std::string& dir_name) {
     auto model_dir = models_dir / dir_name;
     fs::create_directories(model_dir);
@@ -158,6 +171,16 @@ TEST(ModelStorageTest, ResolveDescriptorSkipsSafetensorsWhenMetadataMissing) {
     auto model_dir = tmp.base / "nemotron-30b";
     fs::create_directories(model_dir);
     std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("nemotron-30b");
+    EXPECT_FALSE(desc.has_value());
+}
+
+// RED: index が存在しても shard が欠損している場合は無効とみなす
+TEST(ModelStorageTest, ResolveDescriptorRejectsMissingShards) {
+    TempModelDir tmp;
+    create_safetensors_index_with_missing_shard(tmp.base, "nemotron-30b");
 
     ModelStorage storage(tmp.base.string());
     auto desc = storage.resolveDescriptor("nemotron-30b");

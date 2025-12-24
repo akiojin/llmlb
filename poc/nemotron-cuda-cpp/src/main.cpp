@@ -1,14 +1,21 @@
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <cstdlib>
 #include "config.h"
 #include "inference.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
 
 struct Args {
     std::string model_path;
     std::string prompt;
+    std::string prompt_file;
     size_t max_tokens = 100;
     int device_id = 0;
     bool verbose = false;
@@ -20,7 +27,8 @@ void printUsage(const char* program) {
     std::cerr << "Usage: " << program << " --model PATH --prompt TEXT [options]\n\n";
     std::cerr << "Required:\n";
     std::cerr << "  --model PATH       Path to model directory (with config.json, tokenizer.json, *.safetensors)\n";
-    std::cerr << "  --prompt TEXT      Input prompt for generation\n\n";
+    std::cerr << "  --prompt TEXT      Input prompt for generation\n";
+    std::cerr << "  --prompt-file FILE Read prompt from UTF-8 file (for non-ASCII input)\n\n";
     std::cerr << "Options:\n";
     std::cerr << "  --max-tokens N     Maximum tokens to generate (default: 100)\n";
     std::cerr << "  --device N         CUDA device ID (default: 0)\n";
@@ -28,6 +36,7 @@ void printUsage(const char* program) {
     std::cerr << "  --help             Show this help message\n\n";
     std::cerr << "Example:\n";
     std::cerr << "  " << program << " --model /path/to/nemotron-mini --prompt \"Hello, world!\"\n";
+    std::cerr << "  " << program << " --model /path/to/model --prompt-file prompt.txt\n";
 }
 
 Args parseArgs(int argc, char* argv[]) {
@@ -50,6 +59,12 @@ Args parseArgs(int argc, char* argv[]) {
                 std::exit(1);
             }
             args.prompt = argv[++i];
+        } else if (arg == "--prompt-file") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --prompt-file requires a file path\n";
+                std::exit(1);
+            }
+            args.prompt_file = argv[++i];
         } else if (arg == "--max-tokens") {
             if (i + 1 >= argc) {
                 std::cerr << "Error: --max-tokens requires a number\n";
@@ -77,6 +92,11 @@ Args parseArgs(int argc, char* argv[]) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+    // Set console to UTF-8
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+
     Args args = parseArgs(argc, argv);
 
     if (args.help) {
@@ -91,8 +111,28 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Load prompt from file if specified
+    if (!args.prompt_file.empty()) {
+        std::ifstream file(args.prompt_file);
+        if (!file) {
+            std::cerr << "Error: Cannot open prompt file: " << args.prompt_file << "\n";
+            return 1;
+        }
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        args.prompt = buffer.str();
+        // Trim trailing newline/carriage return
+        while (!args.prompt.empty() && (args.prompt.back() == '\n' || args.prompt.back() == '\r')) {
+            args.prompt.pop_back();
+        }
+        if (args.prompt.empty()) {
+            std::cerr << "Error: Prompt file is empty: " << args.prompt_file << "\n";
+            return 1;
+        }
+    }
+
     if (args.prompt.empty()) {
-        std::cerr << "Error: --prompt is required\n\n";
+        std::cerr << "Error: --prompt or --prompt-file is required\n\n";
         printUsage(argv[0]);
         return 1;
     }

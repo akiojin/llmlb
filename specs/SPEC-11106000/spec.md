@@ -62,8 +62,8 @@
 - 管理者はHF公開モデルへ到達できること。
 
 ## 依存関係
-- 既存モデル自動配布（SPEC-8ae67d67）とモデル一覧API。
-- ノードが /v1/models に基づいて manifest/ファイルを取得できる仕組み。
+- SPEC-dcaeaec4（LLM-Router独自モデルストレージ）- モデル配布とストレージの仕組み
+- ノードが `/v1/models` と `/v1/models/blob/:model_name` に基づいてモデルを取得できる仕組み
 
 ## Clarifications
 

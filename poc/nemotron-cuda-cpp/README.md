@@ -31,7 +31,10 @@ mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 
-# Windows (Visual Studio)
+# Windows (PowerShell) - 推奨
+.\build_ps.ps1
+
+# Windows (手動)
 mkdir build && cd build
 cmake .. -G "Visual Studio 17 2022" -A x64
 cmake --build . --config Release

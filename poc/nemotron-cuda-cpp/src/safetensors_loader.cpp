@@ -1,28 +1,13 @@
+#define SAFETENSORS_CPP_IMPLEMENTATION
 #include "safetensors_loader.h"
 
-#define SAFETENSORS_CPP_IMPLEMENTATION
-#include "safetensors.hh"
-
-#include <fstream>
 #include <filesystem>
+#include <fstream>
+#include <set>
 
 namespace nemotron {
 
 namespace fs = std::filesystem;
-
-struct SafetensorsLoader::MmapHandle {
-    safetensors::safetensors_t st;
-    std::string path;
-
-    ~MmapHandle() {
-        // safetensors.hh handles unmapping internally
-    }
-};
-
-SafetensorsLoader::~SafetensorsLoader() = default;
-
-SafetensorsLoader::SafetensorsLoader(SafetensorsLoader&&) noexcept = default;
-SafetensorsLoader& SafetensorsLoader::operator=(SafetensorsLoader&&) noexcept = default;
 
 void SafetensorsLoader::loadFile(const std::string& path) {
     LOG_INFO("Loading safetensors file: " << path);
@@ -54,8 +39,11 @@ void SafetensorsLoader::loadFile(const std::string& path) {
 
         TensorInfo info;
         info.name = name;
-        info.data = tensor.data;
-        info.data_size = tensor.data_bytes;
+        // Access data via databuffer_addr and data_offsets
+        size_t start_offset = tensor.data_offsets[0];
+        size_t end_offset = tensor.data_offsets[1];
+        info.data = handle->st.databuffer_addr + start_offset;
+        info.data_size = end_offset - start_offset;
 
         // Convert dtype
         switch (tensor.dtype) {
@@ -71,7 +59,7 @@ void SafetensorsLoader::loadFile(const std::string& path) {
         info.shape.assign(tensor.shape.begin(), tensor.shape.end());
 
         tensors_[name] = std::move(info);
-        total_size_ += tensor.data_bytes;
+        total_size_ += info.data_size;
     }
 
     mmap_handles_.push_back(std::move(handle));
@@ -127,12 +115,12 @@ void SafetensorsLoader::loadSharded(const std::string& model_dir) {
     LOG_INFO("  Found " << shard_files.size() << " shards");
 
     // Load each shard
-    for (const auto& shard : shard_files) {
-        std::string shard_path = model_dir + "/" + shard;
+    for (const std::string& shard : shard_files) {
+        fs::path shard_path = fs::path(model_dir) / shard;
         if (fs::exists(shard_path)) {
-            loadFile(shard_path);
+            loadFile(shard_path.string());
         } else {
-            LOG_WARN("Shard file not found: " << shard_path);
+            LOG_WARN("Shard file not found: " << shard_path.string());
         }
     }
 }

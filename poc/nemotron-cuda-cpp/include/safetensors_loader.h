@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include "config.h"
+#include "safetensors.hh"
 
 namespace nemotron {
 
@@ -31,13 +32,20 @@ struct TensorInfo {
 // Safetensors file loader
 class SafetensorsLoader {
 public:
+    // MmapHandle - holds mmap'd safetensors file
+    struct MmapHandle {
+        safetensors::safetensors_t st;
+        std::string path;
+        ~MmapHandle() = default;  // safetensors.hh handles unmapping
+    };
+
     SafetensorsLoader() = default;
-    ~SafetensorsLoader();
+    ~SafetensorsLoader() = default;
 
     SafetensorsLoader(const SafetensorsLoader&) = delete;
     SafetensorsLoader& operator=(const SafetensorsLoader&) = delete;
-    SafetensorsLoader(SafetensorsLoader&&) noexcept;
-    SafetensorsLoader& operator=(SafetensorsLoader&&) noexcept;
+    SafetensorsLoader(SafetensorsLoader&&) noexcept = default;
+    SafetensorsLoader& operator=(SafetensorsLoader&&) noexcept = default;
 
     // Load single safetensors file
     void loadFile(const std::string& path);
@@ -61,7 +69,6 @@ public:
     size_t getTotalSize() const { return total_size_; }
 
 private:
-    struct MmapHandle;
     std::vector<std::unique_ptr<MmapHandle>> mmap_handles_;
     std::unordered_map<std::string, TensorInfo> tensors_;
     size_t total_size_ = 0;

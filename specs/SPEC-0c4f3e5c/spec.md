@@ -1,5 +1,7 @@
 # LLM runtimeモデルストレージ形式サポート
 
+**ステータス**: 廃止（置換: SPEC-dcaeaec4）
+
 ## 概要
 
 C++ NodeのLlamaManagerがLLM runtimeのネイティブモデルストレージ形式（blobファイル）を

@@ -51,6 +51,13 @@ bool write_safetensors_file(const fs::path& path, const std::string& tensor_name
     bool ok = safetensors::save_to_file(st, path.string(), &warn, &err);
     return ok;
 }
+
+void write_required_metadata(const fs::path& dir) {
+    nlohmann::json config = {{"model_type", "nemotron"}};
+    std::ofstream(dir / "config.json") << config.dump();
+    nlohmann::json tokenizer = nlohmann::json::object();
+    std::ofstream(dir / "tokenizer.json") << tokenizer.dump();
+}
 }  // namespace
 
 TEST(NemotronEngineTest, LoadsIndexAndValidatesShard) {
@@ -65,6 +72,8 @@ TEST(NemotronEngineTest, LoadsIndexAndValidatesShard) {
     const fs::path index_path = tmp.base / "model.safetensors.index.json";
     std::ofstream(index_path) << index.dump();
 
+    write_required_metadata(tmp.base);
+
     llm_node::ModelDescriptor desc;
     desc.name = "nemotron-test";
     desc.runtime = "nemotron_cpp";
@@ -76,4 +85,23 @@ TEST(NemotronEngineTest, LoadsIndexAndValidatesShard) {
     auto result = engine.loadModel(desc);
 
     EXPECT_TRUE(result.success) << result.error_message;
+}
+
+TEST(NemotronEngineTest, FailsWithoutRequiredMetadata) {
+    TempDir tmp;
+    const fs::path shard_path = tmp.base / "model-00001-of-00001.safetensors";
+    ASSERT_TRUE(write_safetensors_file(shard_path, kKnownTensorName));
+
+    llm_node::ModelDescriptor desc;
+    desc.name = "nemotron-test";
+    desc.runtime = "nemotron_cpp";
+    desc.format = "safetensors";
+    desc.primary_path = shard_path.string();
+    desc.model_dir = tmp.base.string();
+
+    llm_node::NemotronEngine engine;
+    auto result = engine.loadModel(desc);
+
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.find("config.json"), std::string::npos);
 }

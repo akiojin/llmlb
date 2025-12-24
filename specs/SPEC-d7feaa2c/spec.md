@@ -6,6 +6,8 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、safetensors�
 ただし、Nemotron向けの新エンジン（推論エンジン）の仕様と実装は後回しにし、後で決める（TBD）。
 
 ## 目的
+本仕様は統合仕様 `SPEC-3fc2c1e4`（実行エンジン）の**詳細仕様**として扱う。
+
 - Node側でエンジンローダーを抽象化し、複数エンジンを共存可能にする
 - エンジン選択は「登録時に選択したアーティファクト（safetensors/GGUF）」と
   Hugging Face の `config.json` 等のモデル由来メタデータを正として判定する

@@ -24,7 +24,7 @@
 - [x] T032 APIクライアントに `format` / `gguf_policy` パラメータを追加
 
 ### Polish
-- [x] T040 README.md / README.ja.md に形式選択とGGUFポリシー、外部ツール要件を追記
+- [x] T040 README.md / README.ja.md に形式選択とGGUFポリシーの説明を追記
 
 ## 次のステップ
 - `/speckit.implement` または手動でタスクを実行

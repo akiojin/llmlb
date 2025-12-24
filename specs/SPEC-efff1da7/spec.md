@@ -4,6 +4,8 @@
 Nemotron 3 Nano 30B A3B(BF16) は llama.cpp の `convert_hf_to_gguf.py` ではテンソル名のマッピング不足で変換に失敗する。safetensors-cpp を使って safetensors を直接読み込み、テンソル構造と命名の実態を把握できる PoC が必要。
 
 ## 目的
+本PoCは統合仕様 `SPEC-3fc2c1e4`（実行エンジン）の**調査枠**として位置付ける。
+
 - safetensors-cpp を利用して Nemotron の safetensors を読み込めることを確認する
 - テンソル名と型の概要を可視化し、MoE/experts 系テンソルの存在を確認する
 - 変換可否の判断材料を得る

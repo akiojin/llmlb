@@ -39,20 +39,22 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ├── router.db            # ルーターDB（SQLite）
 └── models/
     ├── gpt-oss-20b/
-    │   ├── model.gguf   # モデルファイル
-    │   └── metadata.json # (optional)
+    │   ├── model.safetensors.index.json
+    │   ├── model-00001-of-000xx.safetensors
+    │   └── tokenizer.json
     └── qwen3-coder-30b/
         └── model.gguf
 ```
 
-## GGUFファイル解決フロー
+## アーティファクト解決フロー
 
 ```text
-1. ローカル ~/.llm-router/models/<name>/model.gguf を探す → あれば採用
-2. ルーター /v0/models の path が存在し読み取り可能 → 直接使用（共有ストレージ）
-3. path 不可 → ルーター /v0/models/blob/:model_name からダウンロード
-4. いずれも不可 → download_url からダウンロード
-5. いずれも不可 → エラー
+1. 登録時に確定した形式（safetensors/GGUF）を正とする
+2. ローカル ~/.llm-router/models/<name>/ に該当ファイルが揃っていれば採用
+3. ルーター /v0/models の path が存在し読み取り可能 → 直接使用（共有ストレージ）
+4. path 不可 → ルーター /v0/models/blob/:model_name からダウンロード
+5. いずれも不可 → download_url からダウンロード
+6. いずれも不可 → エラー
 ```
 
 ## Phase 2: タスク計画アプローチ

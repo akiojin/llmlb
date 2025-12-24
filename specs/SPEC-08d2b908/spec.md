@@ -31,6 +31,14 @@
 - `metadata.json` のような独自メタデータには依存しない
 - `config.json` と `tokenizer.json` などのHF由来メタデータを正とする
 
+## 決定事項（共有用サマリ）
+- **形式選択の必須条件**: safetensors/GGUF が両方存在する場合、`format` は必須。未指定は 400 エラー。
+- **形式選択の省略条件**: どちらか一方のみ存在する場合、`format` 省略を許可し、その形式で登録する。
+- **GGUF量子化の選択**: `format=gguf` かつ `filename` 未指定の場合に限り、`gguf_policy`（`quality`/`memory`/`speed`）を必須とする。
+- **safetensorsの必須メタデータ**: `config.json` と `tokenizer.json` は必須。不足時は登録エラー。
+- **シャーディングの扱い**: `.safetensors` が複数存在する場合は `.safetensors.index.json` を必須とし、欠落時は曖昧としてエラー。
+- **実行エンジンの責務分離**: 公式最適化アーティファクト等の実行優先度はエンジン領域で扱い、モデル管理は登録時の形式確定のみを担う。
+
 ## 詳細仕様（参照）
 - **モデルストレージと解決**: `SPEC-dcaeaec4`, `SPEC-48678000`
 - **HF URL登録**: `SPEC-11106000`

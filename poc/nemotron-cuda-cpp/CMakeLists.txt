@@ -45,10 +45,17 @@ target_link_libraries(nemotron-cuda-poc PRIVATE
 )
 
 # Compiler flags
-target_compile_options(nemotron-cuda-poc PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
-    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
-)
+if(MSVC)
+    target_compile_options(nemotron-cuda-poc PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/W4 /utf-8>
+        $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -Xcompiler=/EHsc -Xcompiler=/utf-8>
+    )
+else()
+    target_compile_options(nemotron-cuda-poc PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>
+        $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+    )
+endif()
 
 # Windows-specific settings
 if(WIN32)
@@ -59,7 +66,13 @@ if(WIN32)
 endif()
 
 # Debug/Release configurations
-set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
-set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0")
-set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
+if(MSVC)
+    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od")
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+    set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
+else()
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+    set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0")
+    set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()

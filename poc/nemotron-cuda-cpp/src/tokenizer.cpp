@@ -1,32 +1,85 @@
 #include "tokenizer.h"
-#include <fstream>
-#include <sstream>
 #include <algorithm>
+#include <fstream>
 #include <regex>
+#include <sstream>
+#include <unordered_map>
 
 namespace nemotron {
 
 namespace {
 
-// GPT-style byte-to-unicode mapping
-const std::string BYTE_ENCODER[256] = {
-    "Ā", "ā", "Ă", "ă", "Ą", "ą", "Ć", "ć", "Ĉ", "ĉ", "Ċ", "ċ", "Č", "č", "Ď", "ď",
-    "Đ", "đ", "Ē", "ē", "Ĕ", "ĕ", "Ė", "ė", "Ę", "ę", "Ě", "ě", "Ĝ", "ĝ", "Ğ", "ğ",
-    "Ġ", "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/",
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":", ";", "<", "=", ">", "?",
-    "@", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O",
-    "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "[", "\\", "]", "^", "_",
-    "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o",
-    "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "{", "|", "}", "~", "ġ",
-    "Ģ", "ģ", "Ĥ", "ĥ", "Ħ", "ħ", "Ĩ", "ĩ", "Ī", "ī", "Ĭ", "ĭ", "Į", "į", "İ", "ı",
-    "Ĳ", "ĳ", "Ĵ", "ĵ", "Ķ", "ķ", "ĸ", "Ĺ", "ĺ", "Ļ", "ļ", "Ľ", "ľ", "Ŀ", "ŀ", "Ł",
-    "ł", "Ń", "ń", "Ņ", "ņ", "Ň", "ň", "ŉ", "Ŋ", "ŋ", "Ō", "ō", "Ŏ", "ŏ", "Ő", "ő",
-    "Œ", "œ", "Ŕ", "ŕ", "Ŗ", "ŗ", "Ř", "ř", "Ś", "ś", "Ŝ", "ŝ", "Ş", "ş", "Š", "š",
-    "Ţ", "ţ", "Ť", "ť", "Ŧ", "ŧ", "Ũ", "ũ", "Ū", "ū", "Ŭ", "ŭ", "Ů", "ů", "Ű", "ű",
-    "Ų", "ų", "Ŵ", "ŵ", "Ŷ", "ŷ", "Ÿ", "Ź", "ź", "Ż", "ż", "Ž", "ž", "ſ", "ƀ", "Ɓ",
-    "Ƃ", "ƃ", "Ƅ", "ƅ", "Ɔ", "Ƈ", "ƈ", "Ɖ", "Ɗ", "Ƌ", "ƌ", "ƍ", "Ǝ", "Ə", "Ɛ", "Ƒ",
-    "ƒ", "Ɠ", "Ɣ", "ƕ", "Ɩ", "Ɨ", "Ƙ", "ƙ", "ƚ", "ƛ", "Ɯ", "Ɲ", "ƞ", "Ɵ", "Ơ", "ơ"
+// GPT-style byte-to-unicode mapping - built at runtime to avoid UTF-8 encoding issues
+// Maps bytes 0-255 to printable Unicode characters
+// For printable ASCII (32-126 except special chars), maps to itself
+// For non-printable bytes, maps to Unicode starting at U+0100
+class ByteEncoder {
+public:
+    ByteEncoder() {
+        int n = 0;
+        for (int b = 0; b < 256; ++b) {
+            if ((b >= 33 && b <= 126 && b != 92) ||  // Printable ASCII except backslash
+                (b >= 161 && b <= 172) ||
+                (b >= 174 && b <= 255)) {
+                // Use the byte itself as a character
+                encoder_[b] = std::string(1, static_cast<char>(b));
+            } else {
+                // Map to Unicode character starting at U+0100
+                // UTF-8 encode the codepoint (U+0100 + n)
+                int codepoint = 0x100 + n;
+                encoder_[b] = encodeUtf8(codepoint);
+                n++;
+            }
+        }
+        // Build reverse mapping
+        for (int b = 0; b < 256; ++b) {
+            decoder_[encoder_[b]] = static_cast<uint8_t>(b);
+        }
+    }
+
+    const std::string& encode(uint8_t byte) const { return encoder_[byte]; }
+
+    bool decode(const std::string& s, size_t pos, uint8_t& out, size_t& len) const {
+        // Try to match encoded strings (longest first)
+        for (size_t l = 3; l >= 1; --l) {
+            if (pos + l <= s.size()) {
+                std::string sub = s.substr(pos, l);
+                auto it = decoder_.find(sub);
+                if (it != decoder_.end()) {
+                    out = it->second;
+                    len = l;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+private:
+    static std::string encodeUtf8(int codepoint) {
+        std::string result;
+        if (codepoint < 0x80) {
+            result += static_cast<char>(codepoint);
+        } else if (codepoint < 0x800) {
+            result += static_cast<char>(0xC0 | (codepoint >> 6));
+            result += static_cast<char>(0x80 | (codepoint & 0x3F));
+        } else if (codepoint < 0x10000) {
+            result += static_cast<char>(0xE0 | (codepoint >> 12));
+            result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        return result;
+    }
+
+    std::string encoder_[256];
+    std::unordered_map<std::string, uint8_t> decoder_;
 };
+
+// Global byte encoder instance
+const ByteEncoder& getByteEncoder() {
+    static ByteEncoder instance;
+    return instance;
+}
 
 // Simple JSON string extraction
 std::string extractJsonString(const std::string& json, const std::string& key) {
@@ -71,7 +124,7 @@ int64_t extractJsonInt(const std::string& json, const std::string& key) {
 }  // namespace
 
 std::string Tokenizer::byteToChar(uint8_t byte) {
-    return BYTE_ENCODER[byte];
+    return getByteEncoder().encode(byte);
 }
 
 void Tokenizer::load(const std::string& tokenizer_path) {
@@ -283,22 +336,17 @@ std::string Tokenizer::decodeToken(int32_t token_id) const {
 
     const std::string& token = it->second;
     std::string result;
+    const ByteEncoder& encoder = getByteEncoder();
 
     // Decode byte-level encoding
     size_t i = 0;
     while (i < token.size()) {
-        // Find matching byte encoder entry
-        bool found = false;
-        for (int b = 0; b < 256; ++b) {
-            const std::string& encoded = BYTE_ENCODER[b];
-            if (token.compare(i, encoded.size(), encoded) == 0) {
-                result += static_cast<char>(b);
-                i += encoded.size();
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
+        uint8_t byte;
+        size_t len;
+        if (encoder.decode(token, i, byte, len)) {
+            result += static_cast<char>(byte);
+            i += len;
+        } else {
             // Direct character
             result += token[i];
             i++;

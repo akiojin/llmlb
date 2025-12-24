@@ -26,6 +26,7 @@
 - HF APIがダウン/429時はキャッシュから返し、「最新でない」旨を示す。
 - 選択したファイルが実際には存在しない場合、登録は失敗として詳細メッセージを返す。
 - 巨大モデル（>50GB）を登録した場合、ノードの推奨メモリ超過を警告する。
+- `format=safetensors` で `.safetensors` が複数あるのに `.safetensors.index.json` が無い場合、曖昧として 400 エラー。
 
 ### 要明確化
 - HF APIへのアクセスは匿名で十分か、HF_TOKEN必須か。
@@ -43,6 +44,7 @@
 - **FR-007**: HFカタログ検索/一覧UI/APIは本仕様の範囲外とし、画面からも削除または非表示にする。
 - **FR-008**: 成功/失敗バナーは自動消去しない（×で閉じる）か、少なくとも4秒以上表示する。
 - **FR-009**: 登録済みモデルをUI/APIから削除できる。削除後は /v1/models とダッシュボード一覧から即時消え、ローカルキャッシュも削除する。
+- **FR-010**: `format=safetensors` で `.safetensors` が複数あるのに `.safetensors.index.json` が無い場合、曖昧として 400 エラーにする。
 
 ### 主要エンティティ
 - **Hugging Face モデル**: リポジトリとそのファイル（safetensors/GGUF）。属性: repo, filename, size, quant, updated_at, direct URL。
@@ -94,3 +96,4 @@
 3. `format=safetensors` で必須メタデータ不足時は 400 になり、不足ファイル名が返る。
 4. ダウンロード未完了のモデルが /v1/models に含まれない。
 5. 重複登録時に意味のあるエラーバナーが表示される。
+6. `format=safetensors` で index が無い複数 shard は 400 になる。

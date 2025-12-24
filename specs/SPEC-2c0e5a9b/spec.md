@@ -13,7 +13,7 @@
 - `openai/gpt-oss-20b` を safetensors 系アーティファクトとして登録し、GPU 上でテキスト生成（OpenAI互換 `POST /v1/chat/completions`）が成立する。
 - エンジン選択は Node 側抽象化（`SPEC-d7feaa2c`）を前提に、登録時の `format` と HF 由来メタデータ（`config.json` など）に従って決定する（`metadata.json` に依存しない）。
 - `chat_template` が無いモデルはデフォルトテンプレートを用い、レスポンスは OpenAI 互換形式で返る。
-- safetensors を正本（監査・説明責任の基準）としつつ、公式の GPU 最適化アーティファクトがある場合はそれを優先実行できる。
+- safetensors を正本（監査・説明責任の基準）としつつ、公式の GPU 最適化アーティファクトがある場合は**実行キャッシュとして**優先利用できる。
 
 ## スコープ
 
@@ -29,6 +29,13 @@
 - 画像生成・画像認識・音声生成・音声認識（別仕様）
 - CPU のみでの推論フォールバック
 - 品質/速度の最適化競争（成立後に段階的に扱う）
+
+## 決定事項（共有用サマリ）
+- **登録形式はsafetensors**: gpt-oss-20b は `format=safetensors` を正とする。
+- **実行最適化は別レイヤ**: 公式GPU最適化アーティファクトは「実行キャッシュ」として扱い、登録形式の決定を置き換えない。
+- **Python依存なし**: Node は Python 依存を導入しない。
+- **GPU前提**: GPU非搭載ノードは対象外。
+- **chat_template**: 無い場合はデフォルトテンプレートを利用する。
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -67,7 +74,7 @@ Node
   ├─ ModelStorage: ローカル配置 + config.json から ModelDescriptor を生成
   ├─ EngineRegistry: runtime を解決
   └─ Engine(gpt-oss): GPUで推論（通常/ストリーミング）
-       ├─ 優先1: 公式GPU最適化アーティファクト（allowlist対象）
+       ├─ 優先1: 公式GPU最適化アーティファクト（allowlist対象、実行キャッシュ）
        └─ 優先2: safetensors（index + shards）
 ```
 
@@ -86,11 +93,13 @@ Node
 - **FR-007**: `chat_template` が無い場合はデフォルトテンプレートを利用し、レスポンスは OpenAI 互換形式で返す。
 - **FR-008**: 公式のGPU最適化アーティファクトが利用可能な場合はそれを優先し、利用できない場合は safetensors を用いて実行する。
 - **FR-009**: 公式のGPU最適化アーティファクトは「同一 publisher org（例: `openai`, `nvidia`）配下の別リポジトリ」から取得できる。取得可否は許可リストで管理する（初期値: `openai/*`, `nvidia/*`）。
+- **FR-010**: 公式GPU最適化アーティファクトは登録形式を置き換えない（登録は常に `format=safetensors` のまま）。
 
 ### 非機能要件
 - **NFR-001**: GPU 非搭載ノードを登録対象にしない（既存方針と整合）。
 - **NFR-002**: Node は Python 依存なしで動作する（必須）。
 - **NFR-003**: 失敗時のエラーメッセージは運用者が対処できる粒度（不足ファイル、未対応環境、等）である。
+- **NFR-004**: CUDA の最小バージョン/Compute Capability は固定しない（実行時検出で可否を判断）。
 
 ## 依存関係
 - `SPEC-3fc2c1e4`（実行エンジン統合）

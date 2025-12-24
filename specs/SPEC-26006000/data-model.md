@@ -43,12 +43,12 @@ pub enum RuntimeType {
     #[default]
     #[serde(rename = "llama_cpp")]
     LlamaCpp,
-    /// whisper.cpp (音声認識)
-    #[serde(rename = "whisper_cpp")]
-    WhisperCpp,
-    /// ONNX Runtime (TTS、汎用推論)
-    #[serde(rename = "onnx_runtime")]
-    OnnxRuntime,
+    /// Audio ASR engine (safetensors)
+    #[serde(rename = "audio_asr")]
+    AudioAsr,
+    /// Audio TTS engine (safetensors)
+    #[serde(rename = "audio_tts")]
+    AudioTts,
 }
 ```
 
@@ -58,8 +58,8 @@ pub enum RuntimeType {
 |-----------|-------------|
 | Llm | LlamaCpp |
 | Embedding | LlamaCpp |
-| SpeechToText | WhisperCpp |
-| TextToSpeech | OnnxRuntime |
+| SpeechToText | AudioAsr |
+| TextToSpeech | AudioTts |
 
 ### 3. RequestType (拡張)
 

@@ -11,6 +11,7 @@
 - [x] /v0/models/register: 正常系（repo-only, file指定, format必須/省略, gguf_policy）、重複/404。
 - [x] `format=gguf` でGGUFが存在しない場合は 400 になること。
 - [x] `format=safetensors` で `config.json`/`tokenizer.json` 不足時は 400 になること。
+- [ ] `format=safetensors` で `.safetensors` が複数かつ index 不在の場合は 400 になること。
 - [x] /v1/models: 実体（safetensors/GGUF）があるものだけ返す（未ダウンロード・削除後は含まれない）。
 
 ## Integration (router)

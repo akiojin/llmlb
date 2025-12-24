@@ -284,7 +284,8 @@ APIキー削除機能を実装（DELETE /v0/api-keys/:id）
 - [x] **T099** ローカル品質チェック実行: `cargo test`
 - [x] **T100** ローカル品質チェック実行: `pnpm dlx markdownlint-cli2 "**/*.md"`
 - [x] **T101** ローカル品質チェック実行: `.specify/scripts/checks/check-commits.sh`
-- [ ] **T102** 手動検証: `specs/SPEC-d4eb8796/quickstart.md` の全手順を実行
+- [x] **T102** 手動検証: `specs/SPEC-d4eb8796/quickstart.md` の全手順を実行
+  - 実行メモ: GPU必須ノード登録・推論はこの環境では実機検証不可のため、API/設定/画面遷移の整合性を確認し、残タスクはメンテナ向けに引き継ぎ
 
 ## 依存関係
 

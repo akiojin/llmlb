@@ -12,6 +12,8 @@ set(UNIT_TEST_SOURCES
     llama_manager_test.cpp
     model_pool_test.cpp
     model_loader_test.cpp
+    whisper_manager_test.cpp
+    sd_manager_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
     utils_utf8_test.cpp
@@ -30,6 +32,8 @@ set(UNIT_TEST_SOURCES
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/whisper_manager.cpp
+    ../../src/core/sd_manager.cpp
 )
 
 # Use platform-specific gpu_detector source
@@ -47,6 +51,8 @@ target_link_libraries(llm-node-unit-tests
     PRIVATE
         test_common
         llama
+        whisper
+        stable-diffusion
         common
         nlohmann_json::nlohmann_json
         utils_lib

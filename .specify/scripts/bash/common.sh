@@ -109,6 +109,7 @@ find_feature_dir_by_prefix() {
 }
 
 get_feature_paths() {
+    local spec_id_override="${1:-}"  # Optional SPEC-ID argument
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
     local has_git_repo="false"
@@ -117,8 +118,14 @@ get_feature_paths() {
         has_git_repo="true"
     fi
 
-    # Use prefix-based lookup to support multiple branches per spec
-    local feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch")
+    local feature_dir
+    if [[ -n "$spec_id_override" ]]; then
+        # Use provided SPEC-ID directly
+        feature_dir="$repo_root/specs/$spec_id_override"
+    else
+        # Use prefix-based lookup to support multiple branches per spec
+        feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch")
+    fi
 
     cat <<EOF
 REPO_ROOT='$repo_root'

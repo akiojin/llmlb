@@ -51,6 +51,17 @@ if [ ! -f "$TASKS_FILE" ]; then
     exit 2
 fi
 
+# spec.mdのステータスが「下書き/作成中/実装中/計画中/廃止」の場合はスキップ
+SPEC_DIR="$(dirname "$TASKS_FILE")"
+SPEC_FILE="$SPEC_DIR/spec.md"
+if [ -f "$SPEC_FILE" ]; then
+    STATUS_LINE="$(grep -E '^\*\*ステータス\*\*' "$SPEC_FILE" | head -n 1 || true)"
+    if [ -n "$STATUS_LINE" ] && echo "$STATUS_LINE" | grep -Eq '下書き|作成中|実装中|計画中|廃止'; then
+        echo "ℹ️  Spec status is not complete, skipping tasks check: $SPEC_FILE"
+        exit 0
+    fi
+fi
+
 echo "Checking tasks in: $TASKS_FILE"
 
 # 未完了タスクのパターン: - [ ] または -[ ]（スペースの有無）

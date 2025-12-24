@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -12,9 +13,16 @@ namespace llm_node {
 class NemotronEngine : public Engine {
 public:
     NemotronEngine() = default;
+    ~NemotronEngine() override;
 
     std::string runtime() const override { return "nemotron_cpp"; }
-    bool supportsTextGeneration() const override { return false; }
+    bool supportsTextGeneration() const override {
+#ifdef USE_CUDA
+        return true;
+#else
+        return false;
+#endif
+    }
     bool supportsEmbeddings() const override { return false; }
 
     ModelLoadResult loadModel(const ModelDescriptor& descriptor) override;
@@ -42,6 +50,13 @@ public:
 private:
     mutable std::mutex mutex_;
     std::unordered_set<std::string> loaded_;
+#ifdef USE_CUDA
+    struct CudaBuffer {
+        void* device_ptr{nullptr};
+        size_t bytes{0};
+    };
+    std::unordered_map<std::string, CudaBuffer> cuda_buffers_;
+#endif
 };
 
 }  // namespace llm_node

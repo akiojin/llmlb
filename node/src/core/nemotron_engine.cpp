@@ -1,6 +1,7 @@
 #include "core/nemotron_engine.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -8,6 +9,10 @@
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+
+#ifdef USE_CUDA
+#include <cuda_runtime.h>
+#endif
 
 #define SAFETENSORS_CPP_IMPLEMENTATION
 #include "safetensors.hh"
@@ -18,6 +23,7 @@ namespace llm_node {
 
 namespace {
 constexpr const char* kKnownTensorName = "backbone.layers.1.mixer.experts.0.down_proj.weight";
+constexpr size_t kDefaultUploadMaxBytes = 64 * 1024 * 1024;
 
 bool is_regular_nonempty_file(const fs::path& path) {
     std::error_code ec;
@@ -27,6 +33,69 @@ bool is_regular_nonempty_file(const fs::path& path) {
     auto size = fs::file_size(path, ec);
     return !ec && size > 0;
 }
+
+#ifdef USE_CUDA
+struct UploadedTensor {
+    void* device_ptr{nullptr};
+    size_t bytes{0};
+};
+
+std::optional<size_t> parse_env_size_bytes(const char* value) {
+    if (!value) return std::nullopt;
+    try {
+        size_t parsed = static_cast<size_t>(std::stoull(value));
+        return parsed;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::optional<UploadedTensor> upload_tensor_to_gpu(const fs::path& path,
+                                                   const std::string& tensor_name,
+                                                   size_t max_bytes,
+                                                   std::string& err) {
+    safetensors::safetensors_t st;
+    std::string warn;
+    if (!safetensors::mmap_from_file(path.string(), &st, &warn, &err)) {
+        err = err.empty() ? "Failed to mmap safetensors file" : err;
+        return std::nullopt;
+    }
+    if (!warn.empty()) {
+        spdlog::warn("NemotronEngine: safetensors warning: {}", warn);
+    }
+    safetensors::tensor_t tensor;
+    if (!st.tensors.at(tensor_name, &tensor)) {
+        err = "Tensor not found in safetensors: " + tensor_name;
+        return std::nullopt;
+    }
+    if (tensor.data_offsets[1] <= tensor.data_offsets[0]) {
+        err = "Invalid tensor data offsets for: " + tensor_name;
+        return std::nullopt;
+    }
+    const size_t bytes = tensor.data_offsets[1] - tensor.data_offsets[0];
+    if (bytes > max_bytes) {
+        err = "Tensor size exceeds upload limit: " + std::to_string(bytes);
+        return std::nullopt;
+    }
+    const uint8_t* src = st.databuffer_addr + tensor.data_offsets[0];
+    void* device_ptr = nullptr;
+    const cudaError_t alloc_status = cudaMalloc(&device_ptr, bytes);
+    if (alloc_status != cudaSuccess || device_ptr == nullptr) {
+        err = "cudaMalloc failed: " + std::string(cudaGetErrorString(alloc_status));
+        return std::nullopt;
+    }
+    const cudaError_t copy_status = cudaMemcpy(device_ptr, src, bytes, cudaMemcpyHostToDevice);
+    if (copy_status != cudaSuccess) {
+        cudaFree(device_ptr);
+        err = "cudaMemcpy failed: " + std::string(cudaGetErrorString(copy_status));
+        return std::nullopt;
+    }
+    UploadedTensor uploaded;
+    uploaded.device_ptr = device_ptr;
+    uploaded.bytes = bytes;
+    return uploaded;
+}
+#endif
 
 std::optional<fs::path> resolve_model_dir(const ModelDescriptor& descriptor) {
     if (!descriptor.model_dir.empty()) return fs::path(descriptor.model_dir);
@@ -155,6 +224,19 @@ ModelLoadResult validate_safetensors_file(const fs::path& path, const std::strin
 }
 }  // namespace
 
+NemotronEngine::~NemotronEngine() {
+#ifdef USE_CUDA
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& entry : cuda_buffers_) {
+        if (entry.second.device_ptr) {
+            cudaFree(entry.second.device_ptr);
+            entry.second.device_ptr = nullptr;
+        }
+    }
+    cuda_buffers_.clear();
+#endif
+}
+
 ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
     ModelLoadResult result;
     if (!descriptor.format.empty() && descriptor.format != "safetensors") {
@@ -218,8 +300,42 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
             shard_path = primary.parent_path() / shard_path;
         }
         result = validate_safetensors_file(shard_path, kKnownTensorName);
+#ifdef USE_CUDA
+        if (result.success) {
+            const bool upload_enabled = std::getenv("LLM_NODE_NEMOTRON_UPLOAD") != nullptr;
+            if (upload_enabled) {
+                const size_t max_bytes = parse_env_size_bytes(std::getenv("LLM_NODE_NEMOTRON_UPLOAD_MAX_BYTES"))
+                                             .value_or(kDefaultUploadMaxBytes);
+                std::string upload_err;
+                auto uploaded = upload_tensor_to_gpu(shard_path, kKnownTensorName, max_bytes, upload_err);
+                if (!uploaded) {
+                    result.error_message = upload_err;
+                    return result;
+                }
+                std::lock_guard<std::mutex> lock(mutex_);
+                cuda_buffers_[descriptor.primary_path] = {uploaded->device_ptr, uploaded->bytes};
+            }
+        }
+#endif
     } else {
         result = validate_safetensors_file(primary, kKnownTensorName);
+#ifdef USE_CUDA
+        if (result.success) {
+            const bool upload_enabled = std::getenv("LLM_NODE_NEMOTRON_UPLOAD") != nullptr;
+            if (upload_enabled) {
+                const size_t max_bytes = parse_env_size_bytes(std::getenv("LLM_NODE_NEMOTRON_UPLOAD_MAX_BYTES"))
+                                             .value_or(kDefaultUploadMaxBytes);
+                std::string upload_err;
+                auto uploaded = upload_tensor_to_gpu(primary, kKnownTensorName, max_bytes, upload_err);
+                if (!uploaded) {
+                    result.error_message = upload_err;
+                    return result;
+                }
+                std::lock_guard<std::mutex> lock(mutex_);
+                cuda_buffers_[descriptor.primary_path] = {uploaded->device_ptr, uploaded->bytes};
+            }
+        }
+#endif
     }
 
     if (result.success) {

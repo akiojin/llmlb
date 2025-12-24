@@ -87,6 +87,15 @@ TEST(NemotronEngineTest, LoadsIndexAndValidatesShard) {
     EXPECT_TRUE(result.success) << result.error_message;
 }
 
+TEST(NemotronEngineTest, SupportsTextGenerationDependsOnCuda) {
+    llm_node::NemotronEngine engine;
+#ifdef USE_CUDA
+    EXPECT_TRUE(engine.supportsTextGeneration());
+#else
+    EXPECT_FALSE(engine.supportsTextGeneration());
+#endif
+}
+
 TEST(NemotronEngineTest, FailsWithoutRequiredMetadata) {
     TempDir tmp;
     const fs::path shard_path = tmp.base / "model-00001-of-00001.safetensors";

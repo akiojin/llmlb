@@ -116,14 +116,15 @@ __global__ void computeAttentionScoresKernel(
     size_t seq_len,
     size_t kv_seq_len,
     size_t head_dim,
-    float scale
+    float scale,
+    size_t position_offset
 ) {
     // scores[h, i, j] = sum_d(q[h, i, d] * k[kv_h, j, d]) * scale
     // where kv_h = h / (num_heads / num_kv_heads)
 
     size_t h = blockIdx.x;  // head index
-    size_t i = blockIdx.y;  // query position
-    size_t j = threadIdx.x; // key position
+    size_t i = blockIdx.y;  // query position (relative to current input)
+    size_t j = threadIdx.x; // key position (absolute in KV cache)
 
     if (j >= kv_seq_len) return;
 
@@ -136,8 +137,10 @@ __global__ void computeAttentionScoresKernel(
         sum += q_val * k_val;
     }
 
-    // Apply causal mask
-    if (j > i) {
+    // Apply causal mask: query at absolute position (position_offset + i)
+    // can only attend to keys at positions <= (position_offset + i)
+    size_t query_abs_pos = position_offset + i;
+    if (j > query_abs_pos) {
         sum = -FLT_MAX;
     }
 
@@ -215,6 +218,7 @@ void scaledDotProductAttention(
     size_t kv_seq_len,
     size_t head_dim,
     float scale,
+    size_t position_offset,
     cudaStream_t stream
 ) {
     (void)batch_size;  // Assume batch_size=1 for PoC
@@ -229,7 +233,7 @@ void scaledDotProductAttention(
         dim3 grid(num_heads, seq_len);
         dim3 block(std::min(kv_seq_len, size_t(1024)));
         computeAttentionScoresKernel<<<grid, block, 0, stream>>>(
-            d_scores, q, k, num_heads, num_kv_heads, seq_len, kv_seq_len, head_dim, scale
+            d_scores, q, k, num_heads, num_kv_heads, seq_len, kv_seq_len, head_dim, scale, position_offset
         );
         CUDA_KERNEL_CHECK();
     }

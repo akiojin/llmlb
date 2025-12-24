@@ -138,7 +138,7 @@ void TransformerLayer::selfAttention(
         value_cache,
         1, num_heads, num_kv_heads,
         seq_len, kv_seq_len,
-        head_dim, scale, stream
+        head_dim, scale, position_offset, stream
     );
 
     // Output projection: [seq_len, hidden] @ [hidden, hidden] -> [seq_len, hidden]

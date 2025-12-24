@@ -138,6 +138,23 @@ Task: "poc/nemotron-cuda-cpp/src/kernels/embedding.cu にEmbedding Lookupカー�
 
 - `--prompt-file` オプション追加: UTF-8ファイルからプロンプトを読み込み（日本語入力対応）
 
+## 既知の問題（未解決）
+
+### 日本語非対応
+
+Minitronモデルは日本語トレーニングが不十分なため、日本語プロンプトに対して
+トークンID 0を繰り返し出力するなど、まともに動作しない。
+
+### 英語出力の文字化け
+
+Baseモデル・Instructモデルともに英語出力でも文字化け（中国語混在、不正な
+文字シーケンス）が発生する。まともに動作しない状態。
+
+### アーキテクチャ互換性
+
+Qwen2.5等のMistral/Llama系以外のモデルはロードできても正常な推論結果を
+得られない（文字化け出力）。このPoCはMistral/Llama系専用。
+
 ## 修正済み問題
 
 ### Causal Mask バグ (修正済み)
@@ -147,3 +164,8 @@ Task: "poc/nemotron-cuda-cpp/src/kernels/embedding.cu にEmbedding Lookupカー�
 ### CUDA ドライバー/ランタイム互換性 (解決済み)
 
 CUDA 13.1 Toolkitには Driver >= 580 が必要。Driver 591.59 にアップデートして解決。
+
+### OOM問題 (修正済み)
+
+Qwen2.5のmax_position_embeddings=131072によるバッファ確保でOOMが発生。
+MAX_INFERENCE_SEQ_LEN=4096を導入してバッファサイズを制限。

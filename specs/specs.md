@@ -10,6 +10,7 @@
 
 | SPEC ID | 機能名 | Status |
 |---------|--------|--------|
+| `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 📋 |
 | `SPEC-32e2b31a` | LLM Router System（統合版・アーカイブ） | ✅ |
 | `SPEC-35375000` | ルーター負荷最適化 | ✅ |
 | `SPEC-443acc8c` | ヘルスチェックシステム | ✅ |
@@ -95,7 +96,6 @@
 | `SPEC-026b2cde` | リクエスト履歴一覧のページネーション機能 | ✅ |
 | `SPEC-712c20cf` | 管理ダッシュボード | ✅ |
 | `SPEC-a7e6d40a` | CLI インターフェース整備 | ✅ |
-| `SPEC-ea015fbb` | Web UI 画面一覧 | ✅ |
 
 ## 📊 ログ・履歴
 
@@ -122,7 +122,11 @@
 
 ---
 
-## 🔗 SPEC依存関係マトリクス
+## 📁 その他
+
+| SPEC ID | 機能名 | Status |
+|---------|--------|--------|
+| `SPEC-ea015fbb` | Web UI 画面一覧 | ✅ |
 
 ### 依存関係図
 
@@ -167,7 +171,7 @@ SPEC-5fc9fe92      SPEC-ea015fbb      (ページネーション)
 | `SPEC-7c0a37e0` | APIキースコープ | SPEC-d4eb8796 |
 | `SPEC-712c20cf` | ダッシュボード | SPEC-94621a1f, SPEC-63acef08, SPEC-443acc8c, SPEC-d4eb8796 |
 | `SPEC-fbc50d97` | 履歴保存 | SPEC-63acef08 |
-| `SPEC-026b2cde` | ページネーション | SPEC-fbc50d97 |
+| `SPEC-026b2cde` | ページネーション | SPEC-fbc50f97 |
 | `SPEC-5fc9fe92` | Playgroundマルチモーダル | SPEC-712c20cf |
 | `SPEC-ea015fbb` | 画面一覧 | SPEC-712c20cf, SPEC-d4eb8796 |
 | `SPEC-08d2b908` | モデル管理（統合仕様） | SPEC-dcaeaec4, SPEC-11106000, SPEC-a61b24f2, SPEC-48678000, SPEC-6c2d9f1e |

@@ -506,6 +506,97 @@ async fn test_register_model_contract() {
     assert!(converted, "converted model should appear in /v1/models");
 }
 
+/// T0xx: safetensors登録では config.json + tokenizer.json を必須とする
+#[tokio::test]
+#[serial]
+async fn test_register_safetensors_requires_metadata_files() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/safetensors-missing-meta"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "safetensors-missing-meta",
+        "format": "safetensors"
+    });
+
+    let response = app
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "safetensors register should require config/tokenizer metadata"
+    );
+}
+
+/// T0yy: 複数の safetensors ファイルがある場合は index.json を要求する
+#[tokio::test]
+#[serial]
+async fn test_register_safetensors_sharded_requires_index_file() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/sharded-safetensors"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
+                {"rfilename": "model-00001.safetensors"},
+                {"rfilename": "model-00002.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "sharded-safetensors",
+        "format": "safetensors"
+    });
+
+    let response = app
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "sharded safetensors repo should require .safetensors.index.json"
+    );
+}
+
 /// T010: safetensors と GGUF が両方ある場合、format 未指定は400
 #[tokio::test]
 #[serial]

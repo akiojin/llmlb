@@ -127,9 +127,44 @@ private:
 };
 
 // Device info query
-inline bool checkCudaAvailable() {
+inline bool checkCudaAvailable(bool verbose = false) {
     int deviceCount = 0;
     cudaError_t err = cudaGetDeviceCount(&deviceCount);
+
+    if (verbose || err != cudaSuccess) {
+        int driverVersion = 0, runtimeVersion = 0;
+        cudaDriverGetVersion(&driverVersion);
+        cudaRuntimeGetVersion(&runtimeVersion);
+
+        std::cerr << "[CUDA Diagnostic]\n";
+        std::cerr << "  Driver API Version:  " << driverVersion / 1000 << "."
+                  << (driverVersion % 1000) / 10 << "\n";
+        std::cerr << "  Runtime API Version: " << runtimeVersion / 1000 << "."
+                  << (runtimeVersion % 1000) / 10 << "\n";
+        std::cerr << "  Device Count: " << deviceCount << "\n";
+
+        if (err != cudaSuccess) {
+            std::cerr << "  Error: " << cudaGetErrorString(err) << " ("
+                      << static_cast<int>(err) << ")\n";
+
+            // Check for version mismatch
+            if (runtimeVersion > driverVersion) {
+                std::cerr << "\n[Version Mismatch Detected]\n";
+                std::cerr << "  CUDA Runtime " << runtimeVersion / 1000 << "."
+                          << (runtimeVersion % 1000) / 10
+                          << " requires a newer driver.\n";
+                std::cerr << "  Your driver supports up to CUDA "
+                          << driverVersion / 1000 << "."
+                          << (driverVersion % 1000) / 10 << "\n";
+                std::cerr << "  Solutions:\n";
+                std::cerr << "    1. Update NVIDIA driver to support CUDA "
+                          << runtimeVersion / 1000 << ".x\n";
+                std::cerr << "    2. Rebuild with CUDA " << driverVersion / 1000
+                          << ".x Toolkit\n";
+            }
+        }
+    }
+
     return (err == cudaSuccess && deviceCount > 0);
 }
 

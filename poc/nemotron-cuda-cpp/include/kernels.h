@@ -85,6 +85,7 @@ void scaledDotProductAttention(
     size_t kv_seq_len,
     size_t head_dim,
     float scale,
+    size_t position_offset,
     cudaStream_t stream = nullptr
 );
 

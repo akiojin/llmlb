@@ -39,7 +39,7 @@
 運用管理者として、モデルを削除すると /v1/models から即時消え、ルーター/ノードのローカルキャッシュも削除されることを期待する。
 
 **独立テスト**:
-- /v0/models/:name を削除後に /v1/models から消える
+- DELETE /v1/models/:name でモデルを削除後に /v1/models から消える
 - ノード側のモデルも同期で削除される
 
 ## 要件 *(必須)*
@@ -52,7 +52,7 @@
 - **FR-005**: /v1/images/* は StableDiffusion 対応ノードにのみルーティングする。
 - **FR-006**: /v1/audio/transcriptions は Whisper 対応ノード、/v1/audio/speech は ONNX Runtime 対応ノードにのみルーティングする。
 - **FR-007**: ノードは supported_runtimes と音声/画像のロード状況を登録・ハートビートで送信する。
-- **FR-008**: /v0/models/:name の削除で、ルーター登録情報・ファイル・ノードキャッシュが削除される。
+- **FR-008**: DELETE /v1/models/:name でルーター登録情報・ファイル・ノードキャッシュが削除される。
 
 ### 非機能要件
 - **NFR-001**: 登録・削除・ルーティングはいずれも OpenAI互換 API のエラー形式を維持する。

@@ -16,5 +16,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "gh-fix-ci@akiojin-skills": true
   }
 }

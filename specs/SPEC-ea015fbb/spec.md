@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-ea015fbb`
 **作成日**: 2025-12-24
-**ステータス**: 下書き
+**ステータス**: ✅ ドキュメント完了
 **入力**: ユーザー説明: "Web UIの全画面一覧と画面遷移を定義する"
 
 ## 概要
@@ -32,10 +32,11 @@ LLM Router Web UIを構成する全画面の一覧、各画面の目的、画面
 |--------------|--------|--------------|------|----------|
 | SEC-001 | SCR-010 | Header | ナビゲーション、テーマ切替、ログアウト | SPEC-712c20cf |
 | SEC-002 | SCR-010 | StatsCards | システム統計（ノード数、リクエスト数等） | SPEC-712c20cf |
-| SEC-003 | SCR-010 | NodeTable | ノード一覧・状態表示・管理操作 | SPEC-712c20cf |
+| SEC-003 | SCR-010 | NodeTable | ノード一覧・状態表示・GPU情報・管理操作 | SPEC-712c20cf (FR-018, FR-029) |
 | SEC-004 | SCR-010 | RequestHistoryTable | リクエスト履歴一覧（ページネーション付き） | SPEC-fbc50d97, SPEC-026b2cde |
 | SEC-005 | SCR-010 | LogViewer | ルーターログ表示 | SPEC-1f2a9c3d |
-| SEC-006 | SCR-010 | ModelsSection | モデル一覧・登録 | SPEC-11106000, SPEC-47649000 |
+| SEC-006 | SCR-010 | ModelsSection | モデル一覧・割り当て状況・登録 | SPEC-11106000, SPEC-47649000, SPEC-712c20cf (FR-031) |
+| SEC-007 | SCR-010 | CloudProvidersSection | クラウドプロバイダー状況・認証管理 | SPEC-4b6e9f2a, SPEC-712c20cf (FR-030) |
 
 ### モーダル・ダイアログ
 
@@ -150,6 +151,12 @@ Playgroundから戻った後も保持されていることを期待する。
 **確認済み事項**:
 
 - 画面数: 4画面（ログイン、登録、ダッシュボード、Playground）
-- セクション数: 6セクション（ダッシュボード内）
+- セクション数: 7セクション（ダッシュボード内）
 - モーダル数: 4モーダル
 - 全画面は既存SPECで詳細定義済み
+
+**追加セクション（2025-12-24更新）**:
+
+- SEC-007: CloudProvidersSection（クラウドプロバイダー状況）を追加
+- SEC-003: NodeTableにGPU情報表示を追加（FR-029）
+- SEC-006: ModelsSectionにモデル割り当て状況を追加（FR-031）

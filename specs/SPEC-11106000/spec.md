@@ -64,10 +64,10 @@
 - 管理者はHF公開モデルへ到達できること。
 
 ## 依存関係
-- SPEC-08d2b908（モデル管理統合）
-- SPEC-a61b24f2（登録時の形式選択とGGUFポリシー）
-- SPEC-dcaeaec4（モデルストレージ）
-- Node が /v0/models の情報を利用できること（モデル配布フロー）
+- `SPEC-08d2b908`（モデル管理統合）
+- `SPEC-a61b24f2`（登録時の形式選択とGGUFポリシー）
+- `SPEC-dcaeaec4`（LLM-Router独自モデルストレージ：モデル配布/取得フロー）
+- Node が `/v1/models` および `/v1/models/blob/:model_name` の情報を利用できる仕組み
 
 ## Clarifications
 

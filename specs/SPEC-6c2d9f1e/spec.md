@@ -47,7 +47,7 @@
 ### 機能要件
 - **FR-001**: 登録時にキャッシュが存在し、サイズが 0 ではない場合は再ダウンロードを行わず即時登録する。
 - **FR-002**: 0Bまたは不完全なキャッシュは無効として扱い、再ダウンロード/再変換を行う。
-- **FR-003**: /v1/models の `ready=true` は「実体 GGUF が存在し、サイズ > 0」である場合のみ返す。
+- **FR-003**: /v1/models の `ready=true` は「実体（safetensors/GGUF）が存在し、サイズ > 0」である場合のみ返す。
 - **FR-004**: /v1/chat/completions は指定モデルを必ず使用し、ノード側で当該モデルがロードされること。
 - **FR-005**: /v1/images/* は StableDiffusion 対応ノードにのみルーティングする。
 - **FR-006**: /v1/audio/transcriptions は Whisper 対応ノード、/v1/audio/speech は ONNX Runtime 対応ノードにのみルーティングする。
@@ -76,7 +76,7 @@
 **確認済み事項**:
 
 - キャッシュ判定: サイズ > 0 で有効（FR-001, FR-002で明記）
-- ready状態: 実体GGUFが存在しサイズ > 0（FR-003で明記）
+- ready状態: 実体（safetensors/GGUF）が存在しサイズ > 0（FR-003で明記）
 - ルーティング: StableDiffusion→画像、Whisper→音声認識、ONNX→音声合成（FR-005, FR-006で明記）
 - 削除範囲: 登録情報、ファイル、ノードキャッシュ全て（FR-008で明記）
 - エラー形式: OpenAI互換（NFR-001で明記）

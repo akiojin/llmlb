@@ -1,5 +1,6 @@
 #include "core/nemotron_engine.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -17,6 +18,35 @@ namespace llm_node {
 
 namespace {
 constexpr const char* kKnownTensorName = "backbone.layers.1.mixer.experts.0.down_proj.weight";
+
+bool is_regular_nonempty_file(const fs::path& path) {
+    std::error_code ec;
+    auto st = fs::symlink_status(path, ec);
+    if (ec) return false;
+    if (st.type() != fs::file_type::regular && st.type() != fs::file_type::symlink) return false;
+    auto size = fs::file_size(path, ec);
+    return !ec && size > 0;
+}
+
+std::optional<fs::path> resolve_model_dir(const ModelDescriptor& descriptor) {
+    if (!descriptor.model_dir.empty()) return fs::path(descriptor.model_dir);
+    if (!descriptor.primary_path.empty()) {
+        return fs::path(descriptor.primary_path).parent_path();
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validate_required_metadata(const fs::path& model_dir) {
+    const fs::path config_path = model_dir / "config.json";
+    if (!is_regular_nonempty_file(config_path)) {
+        return std::string("Missing required config.json: ") + config_path.string();
+    }
+    const fs::path tokenizer_path = model_dir / "tokenizer.json";
+    if (!is_regular_nonempty_file(tokenizer_path)) {
+        return std::string("Missing required tokenizer.json: ") + tokenizer_path.string();
+    }
+    return std::nullopt;
+}
 
 bool is_index_file(const fs::path& path) {
     const std::string filename = path.filename().string();
@@ -56,6 +86,38 @@ std::optional<std::string> find_shard_for_tensor(const nlohmann::json& index,
         return std::nullopt;
     }
     return weight_map[tensor_name].get<std::string>();
+}
+
+std::optional<std::vector<fs::path>> collect_shards(const nlohmann::json& index,
+                                                    const fs::path& model_dir,
+                                                    std::string& err) {
+    if (!index.is_object()) {
+        err = "Index JSON is not an object";
+        return std::nullopt;
+    }
+    if (!index.contains("weight_map") || !index["weight_map"].is_object()) {
+        err = "Index JSON missing weight_map";
+        return std::nullopt;
+    }
+    std::vector<fs::path> shards;
+    for (const auto& item : index["weight_map"].items()) {
+        if (!item.value().is_string()) {
+            err = "Index JSON has non-string shard entry";
+            return std::nullopt;
+        }
+        fs::path shard_path(item.value().get<std::string>());
+        if (!shard_path.is_absolute()) {
+            shard_path = model_dir / shard_path;
+        }
+        shards.push_back(shard_path);
+    }
+    if (shards.empty()) {
+        err = "Index JSON contains no shard entries";
+        return std::nullopt;
+    }
+    std::sort(shards.begin(), shards.end());
+    shards.erase(std::unique(shards.begin(), shards.end()), shards.end());
+    return shards;
 }
 
 ModelLoadResult validate_safetensors_file(const fs::path& path, const std::string& expected_tensor) {
@@ -104,6 +166,16 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
         return result;
     }
 
+    const auto model_dir = resolve_model_dir(descriptor);
+    if (!model_dir) {
+        result.error_message = "Nemotron model_dir is empty";
+        return result;
+    }
+    if (auto missing = validate_required_metadata(*model_dir)) {
+        result.error_message = *missing;
+        return result;
+    }
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (loaded_.count(descriptor.primary_path) != 0) {
@@ -124,6 +196,17 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
         if (!index) {
             result.error_message = err;
             return result;
+        }
+        auto shards = collect_shards(*index, *model_dir, err);
+        if (!shards) {
+            result.error_message = err;
+            return result;
+        }
+        for (const auto& shard : *shards) {
+            if (!is_regular_nonempty_file(shard)) {
+                result.error_message = "Shard file missing or empty: " + shard.string();
+                return result;
+            }
         }
         auto shard = find_shard_for_tensor(*index, kKnownTensorName, err);
         if (!shard) {

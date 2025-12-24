@@ -1,4 +1,4 @@
-# タスク: SPEC-11106000 Hugging Face GGUFモデル対応登録
+# タスク: SPEC-11106000 Hugging Face URL 登録（形式選択）
 
 ## 方針
 - TDD順で進める。契約→Integration→E2E→Unitの順。
@@ -8,22 +8,20 @@
 - [x] 環境変数で HF_TOKEN を設定できるようドキュメントを確認。
 
 ## Contract Tests (router)
-- [x] /v0/models/register: 正常系（repo-only, file指定, GGUF/非GGUF）、重複/404。
-- [x] 非GGUF→convertタスクが作成されること。
-- [x] convert失敗→再キュー（Restore相当のAPI呼び出し）でタスクが新規作成され成功すること。
-- [x] /v1/models: 実体があるものだけ返す（未ダウンロード・削除後は含まれない）。
+- [x] /v0/models/register: 正常系（repo-only, file指定, format必須/省略, gguf_policy）、重複/404。
+- [x] `format=gguf` でGGUFが存在しない場合は 400 になること。
+- [x] `format=safetensors` で `config.json`/`tokenizer.json` 不足時は 400 になること。
+- [x] /v1/models: 実体（safetensors/GGUF）があるものだけ返す（未ダウンロード・削除後は含まれない）。
 
 ## Integration (router)
-- [x] HF siblingsモック→自動ファイル選択→convertキュー→（FAKEモードで）/v1/models に反映。
-- [x] convert失敗時のエラー保持と再キュー成功の挙動を確認（APIベース）。
+- [x] HF siblingsモック→format選択→登録→/v1/models に反映。
+- [x] gguf_policy が期待のGGUFを選択すること。
 - [x] サイズ・GPU要件警告の付与（required_memory超過時）。
 
 ## Backend Implementation
-- [x] ModelInfo/registry 拡張と永続化（repo/filename/source/status/path）。
-- [x] /v0/models/register 実装（repo-only対応、GGUF優先、自動変換キュー、重複・404バリデーション）。
-- [x] /v0/models/convert 実装（再キュー用エンドポイントを維持）。
-- [x] convertマネージャ: 非GGUF→GGUF 変換（実行 or FAKE）、完了後にモデル登録を更新。
-- [x] /v1/models は実体GGUFがあるものだけ返す。
+- [x] ModelInfo/registry 拡張と永続化（format/gguf_policy/repo/filename/source/status/path）。
+- [x] /v0/models/register 実装（format必須/省略判定、gguf_policy siblings選択、重複・404バリデーション）。
+- [x] /v1/models は実体（safetensors/GGUF）があるものだけ返す。
 - [x] 構造化ログ・エラー整備。
 
 ## CLI
@@ -34,20 +32,21 @@
 
 ## Frontend (web/static)
 - [x] HFカタログUIを削除/非表示にし、URL登録フォームのみ残す。
+- [x] `format`/`gguf_policy` 選択UIと説明表示を追加。
 - [x] 登録済みモデル一覧（実体のみ）、削除ボタン。
-- [x] Convertタスク一覧表示、失敗時に Restore ボタンで再キュー。
 - [x] 登録・失敗バナーを × で閉じられ、4秒以上表示。
-- [x] Restore ボタンのE2E/Playwrightテストを追加。
+- [x] 形式選択/エラーのE2E/Playwrightテストを追加。
 
 ## Node (最小)
 - [x] manifest に HF 直URL が来ても downloadModel が扱えることを確認。
 
 ## E2E/Scenario
-- [x] URL登録（repo-only）→非GGUF→convert→/v1/models 反映→Restoreで再試行 の一連シナリオ（Playwrightでモック検証）。
+- [x] URL登録（repo-only）→形式選択→/v1/models 反映の一連シナリオ（Playwrightでモック検証）。
+- [x] GGUF無し/メタデータ不足時に明確なエラーが返ること。
 - [x] 429/障害時にキャッシュ結果が返るシナリオ。
 
 ## Docs
-- [x] quickstart.md をURL登録・Restore手順に更新。
+- [x] quickstart.md をURL登録・形式選択の手順に更新。
 - [x] tasks/plan/spec との整合確認（本タスクで更新）。
 
 ## 検証

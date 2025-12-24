@@ -1,8 +1,8 @@
 # 機能仕様一覧
 
-> 自動生成: 2025-12-24 01:35:15
+> 整理更新: 2025-12-24 02:35:00
 >
-> 総SPEC数: **35** | 廃止: 1 | plan.md欠損: 0
+> 総SPEC数: **41** | 廃止: 3 | plan.md欠損: 0
 
 **凡例:** ✅ plan.md有り | 📋 plan.md無し | 🗑️ 廃止
 
@@ -27,18 +27,50 @@
 
 ## 📦 モデル管理
 
+> **読み方**: 「統合仕様」は経緯を知らない人のための入口です。  
+> まず統合仕様で**責務境界・原則・禁止事項**を把握し、詳細は各SPECへ進みます。
+
+### 統合仕様
+
 | SPEC ID | 機能名 | Status |
 |---------|--------|--------|
-| `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | ✅ |
-| `SPEC-11106000` | Hugging Face URL 登録（GGUF優先・自動変換つき） | ✅ |
-| `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | ✅ |
-| `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ |
+| `SPEC-08d2b908` | モデル管理（統合仕様） | ✅ |
+
+### 登録・配布・ストレージ
+
+| SPEC ID | 機能名 | Status |
+|---------|--------|--------|
+| `SPEC-dcaeaec4` | LLM-Router独自モデルストレージ | ✅ |
 | `SPEC-48678000` | モデル自動解決機能 | ✅ |
+| `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ |
-| `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ |
+| `SPEC-11106000` | Hugging Face URL 登録（形式選択・明示登録） | ✅ |
+
+### 形式選択・アーティファクト
+
+| SPEC ID | 機能名 | Status |
+|---------|--------|--------|
+| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | ✅ |
+
+### 廃止・置換済み
+
+| SPEC ID | 機能名 | Status |
+|---------|--------|--------|
+| `SPEC-0c4f3e5c` | 廃止: LLM runtimeモデルストレージ形式サポート（置換: SPEC-dcaeaec4） | 🗑️ |
+| `SPEC-3df1b977` | 廃止: モデルファイル破損時の自動修復機能（置換: SPEC-48678000） | 🗑️ |
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ |
-| `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ |
+
+## 🧠 実行エンジン・推論
+
+> **読み方**: 「統合仕様」は実行エンジンの責務境界を示す入口です。  
+> 詳細実装は個別SPEC（エンジン抽象化や特定モデル実行）を参照します。
+
+| SPEC ID | 機能名 | Status |
+|---------|--------|--------|
+| `SPEC-3fc2c1e4` | 実行エンジン（統合仕様） | ✅ |
+| `SPEC-d7feaa2c` | Nodeエンジンローダー抽象化とNemotron直接ロード | ✅ |
+| `SPEC-2c0e5a9b` | gpt-oss-20b safetensors 実行（GPU: Metal/CUDA） | ✅ |
+| `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ |
 
 ## 🛤️ ルーティング
 
@@ -54,6 +86,7 @@
 | `SPEC-26006000` | 音声モデル対応（TTS + ASR） | ✅ |
 | `SPEC-5fc9fe92` | Playground Chat マルチモーダル対応 | ✅ |
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | ✅ |
+| `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ |
 
 ## 🖥️ UI・ダッシュボード
 
@@ -80,6 +113,12 @@
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | ✅ |
 | `SPEC-dc648675` | Worktree環境での作業境界強制システム | ✅ |
 | `SPEC-ee2aa3ef` | 完全自動化リリースシステム | ✅ |
+
+## 🔬 PoC・調査
+
+| SPEC ID | 機能名 | Status |
+|---------|--------|--------|
+| `SPEC-efff1da7` | Nemotron safetensors-cpp PoC | ✅ |
 
 ---
 
@@ -131,11 +170,17 @@ SPEC-5fc9fe92      SPEC-ea015fbb      (ページネーション)
 | `SPEC-026b2cde` | ページネーション | SPEC-fbc50d97 |
 | `SPEC-5fc9fe92` | Playgroundマルチモーダル | SPEC-712c20cf |
 | `SPEC-ea015fbb` | 画面一覧 | SPEC-712c20cf, SPEC-d4eb8796 |
+| `SPEC-08d2b908` | モデル管理（統合仕様） | SPEC-dcaeaec4, SPEC-11106000, SPEC-a61b24f2, SPEC-48678000, SPEC-6c2d9f1e |
+| `SPEC-11106000` | Hugging Face URL 登録 | SPEC-a61b24f2, SPEC-dcaeaec4 |
+| `SPEC-d7feaa2c` | Nodeエンジンローダー抽象化 | SPEC-08d2b908 |
+| `SPEC-2c0e5a9b` | gpt-oss-20b safetensors 実行 | SPEC-d7feaa2c, SPEC-08d2b908 |
+| `SPEC-3fc2c1e4` | 実行エンジン（統合仕様） | SPEC-08d2b908, SPEC-5cd7b614 |
 | `SPEC-ee2aa3ef` | リリースシステム | SPEC-47c6f44c |
 
 ### 廃止・置換関係
 
 | 廃止SPEC | 置換先SPEC |
 |----------|-----------|
+| `SPEC-0c4f3e5c` | SPEC-dcaeaec4 |
 | `SPEC-3df1b977` | SPEC-48678000 |
 | `SPEC-8ae67d67` | SPEC-dcaeaec4 |

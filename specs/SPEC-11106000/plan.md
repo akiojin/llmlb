@@ -1,13 +1,12 @@
-# 実装計画: Hugging Face GGUFモデル対応登録
+# 実装計画: Hugging Face URL 登録（形式選択）
 
 **機能ID**: `SPEC-11106000` | **日付**: 2025-12-01 | **仕様**: specs/SPEC-11106000/spec.md  
 **入力**: `/specs/SPEC-11106000/spec.md` の機能仕様
 
 ## 概要
 - HFカタログUIは廃止し、単一テキストエリアにHFリポジトリ/ファイルURLを貼るだけで登録。
-- GGUFがあれば即登録・ダウンロード、なければ自動で非GGUF→GGUF変換タスクをキュー。
-- /v1/models には実体GGUFが存在するものだけ返す。重複はエラー。
-- 失敗した変換/ダウンロードはUIの「Restore」で再キューできる。
+- safetensors/GGUFが両方ある場合は `format` を必須にし、選択した形式で登録する。
+- /v1/models には実体（safetensors/GGUF）が存在するものだけ返す。重複はエラー。
 
 ## 技術コンテキスト
 - **言語/バージョン**: Rust 1.75+（router/cli）、TypeScript/JSなしのプレーン JS (web static)、C++ノードは変更最小。
@@ -37,28 +36,26 @@
 ## Phase 0: アウトライン＆リサーチ
 - HF API: repoメタ（siblings）取得と認証要否のみ確認。カタログ一覧は扱わない。
 - モデルID命名: `hf/{repo}/{filename}` 固定。
-- 非GGUF変換: ルーター側で一度だけ `convert_hf_to_gguf.py` を使う。ダミー変換フラグは使わず、実変換を前提にする。
+- 形式選択: 両方存在時は必須、片方のみは省略可。
 
 ## Phase 1: 設計＆契約
-- data-model.md: ModelInfo 拡張（source, download_url, status, size, repo/filename）。
+- data-model.md: ModelInfo 拡張（format, gguf_policy, source, download_url, status, size, repo/filename）。
 - contracts:  
-  - `POST /v0/models/register` repo-only/filename指定、GGUF/非GGUF、自動変換。  
-  - `POST /v0/models/convert` 失敗時の再キュー。  
-  - `GET /v0/models/convert` タスク一覧。  
+  - `POST /v0/models/register` repo-only/filename指定、`format`/`gguf_policy` 指定。  
   - `/v1/models` は実体があるもののみ。  
-- quickstart.md: URL貼付→登録→（変換）→/v1/models までの手順、Restore手順を記載。
+- quickstart.md: URL貼付→形式選択→登録→/v1/models までの手順を記載。
 
 ## Phase 2: タスク計画アプローチ
-- Contract tests: register（repo/file, non-GGUF→convert, duplicate, not-found）、/v1/models 実体のみ、convert RESTORE再キュー。
-- Integration: HF siblingsモック→ファイル選択→convertキュー→完了後 /v1/models 出現。
-- Frontend: URL登録フォーム、バナー、登録済みリスト、失敗タスクのRestoreボタンのE2E。
+- Contract tests: register（repo/file, format必須/省略、gguf_policy, duplicate, not-found）、/v1/models 実体のみ。
+- Integration: HF siblingsモック→形式選択→登録→/v1/models 出現。
+- Frontend: URL登録フォーム、`format`/`gguf_policy` 選択UI、バナー、登録済みリストのE2E。
 - CLI: scope外（今回はWeb/API中心）※必要なら後追い。
-- 実装: registry永続化、convert manager、/v1/models フィルタ、RestoreボタンのAPI連携。
+- 実装: registry永続化、/v1/models フィルタ、UIの選択/説明表示。
 
 ## 複雑さトラッキング
 | 違反 | 必要な理由 | 代替案を却下した理由 |
 |------|-----------|----------------------|
-| 非GGUF→GGUF変換をルーター側で実行 | /v1/models を実体ありに限定するため | ノード側変換は台数分の負荷・再現性低下になるため |
+| 該当なし | - | - |
 
 ## 進捗トラッキング
 - [x] Phase 0: Research完了

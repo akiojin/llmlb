@@ -43,10 +43,14 @@
 ## スコープ外
 - 量子化の自動品質評価（PPL/KLD 等）。
 - 量子化タイプの自動最適化。
+- 非GGUF入力からの自動変換、および量子化GGUFの自動生成。
+- HF URL 入力/登録フローの詳細（SPEC-11106000）。
 
 ## 技術制約
-- 非GGUF入力時は llama.cpp の `convert_hf_to_gguf.py` を使用する。
-- Q4/Q5等のk-quantは `llama-quantize` による後段量子化で生成する。
+- GGUFの選択はHFの既存siblingsから行う（該当が無い場合はエラー）。
+
+## 依存関係
+- SPEC-08d2b908（モデル管理統合）
 
 ## 成功基準 *(必須)*
 1. safetensors/GGUFが両方ある場合に `format` が必須となり、登録時に選択できる。

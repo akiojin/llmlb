@@ -67,6 +67,27 @@ LLM runtimeが生成するGGUFファイルは以下の形式を使用する:
 `LLM_ARCH_NAMES`のマッピングを`"gptoss"`に変更し、
 `llm_arch_from_string`で`"gpt-oss"`のエイリアスも認識するようにした。
 
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
+
+**確認済み事項**:
+
+- エイリアス対応: `gptoss`（ハイフンなし）と`gpt-oss`（ハイフン付き）両方サポート（FR-1で明記）
+- 出力アーキテクチャ: LLM_ARCH_OPENAI_MOE（FR-1で明記）
+- 後方互換性: 既存の`gpt-oss`は維持（NFR-1で明記）
+
+**技術的背景の確認**:
+
+- LLM runtimeのGGUF形式: `general.architecture = "gptoss"`
+- llama.cppとの同期: テンソル定義、グラフビルダー追加済み
+
+---
+
 ### llama.cpp本家との同期
 
 テンソル定義やグラフビルダーをllama.cpp本家と同期:

@@ -5,8 +5,8 @@
 #ifdef USE_WHISPER
 
 #include <whisper.h>
-
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 
 namespace llm_node {
@@ -67,6 +67,13 @@ bool WhisperManager::loadModel(const std::string& model_path) {
 
     whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = true;  // GPUが利用可能なら使用
+    const bool enable_flash_attn = shouldUseFlashAttention();
+    cparams.flash_attn = enable_flash_attn;
+    if (enable_flash_attn) {
+        spdlog::info("Whisper flash-attn enabled via LLM_NODE_WHISPER_FLASH_ATTN");
+    } else {
+        spdlog::debug("Whisper flash-attn disabled for Metal compatibility");
+    }
 
     whisper_context* ctx = whisper_init_from_file_with_params(
         canonical_path.c_str(), cparams);
@@ -97,6 +104,11 @@ whisper_context* WhisperManager::getContext(const std::string& model_path) const
         return it->second;
     }
     return nullptr;
+}
+
+bool WhisperManager::shouldUseFlashAttention() {
+    const char* flash_attn_env = std::getenv("LLM_NODE_WHISPER_FLASH_ATTN");
+    return flash_attn_env && std::string(flash_attn_env) == "1";
 }
 
 whisper_full_params WhisperManager::createParams(const TranscriptionParams& params) const {

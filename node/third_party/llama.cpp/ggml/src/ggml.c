@@ -4969,11 +4969,31 @@ struct ggml_tensor * ggml_pad_ext(
     ggml_set_op_params_i32(result, 5, rp2);
     ggml_set_op_params_i32(result, 6, lp3);
     ggml_set_op_params_i32(result, 7, rp3);
+    ggml_set_op_params_i32(result, 8, 0); // not circular by default
 
 
     result->op     = GGML_OP_PAD;
     result->src[0] = a;
 
+    return result;
+}
+
+// ggml_pad_ext_circular
+
+struct ggml_tensor * ggml_pad_ext_circular(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        int                  lp0,
+        int                  rp0,
+        int                  lp1,
+        int                  rp1,
+        int                  lp2,
+        int                  rp2,
+        int                  lp3,
+        int                  rp3
+        ) {
+    struct ggml_tensor * result = ggml_pad_ext(ctx, a, lp0, rp0, lp1, rp1, lp2, rp2, lp3, rp3);
+    ggml_set_op_params_i32(result, 8, 1); // circular
     return result;
 }
 

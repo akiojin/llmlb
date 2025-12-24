@@ -8,6 +8,35 @@ English | [日本語](./README.ja.md)
 
 LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference nodes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
 
+### Vision
+
+LLM Router is designed to serve three primary use cases:
+
+1. **Private LLM Server** - For individuals and small teams who want to run their own LLM infrastructure with full control over their data and models
+2. **Enterprise Gateway** - For organizations requiring centralized management, access control, and monitoring of LLM resources across departments
+3. **Cloud Provider Integration** - Seamlessly route requests to OpenAI, Google, or Anthropic APIs through the same unified endpoint
+
+### Multi-Engine Architecture
+
+LLM Router supports a pluggable multi-engine architecture:
+
+| Engine | Status | Models | Hardware |
+|--------|--------|--------|----------|
+| **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
+| **GPT-OSS** | Production | Metal-optimized inference | Apple Silicon |
+| **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
+| **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
+| **Nemotron** | Validation | Safetensors format | CUDA |
+
+### Multimodal Support
+
+Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
+
+- **Text-to-Speech (TTS)**: `/v1/audio/speech` - Generate natural speech from text
+- **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
+- **Image Generation**: `/v1/images/generations` - Generate images from text prompts
+- **Image Understanding**: Coming soon - Analyze and understand images (Vision models)
+
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
@@ -712,14 +741,12 @@ GET /v0/dashboard/request-responses/export
 
 ### Storage
 
-Request history is stored in JSON format at:
-- Linux/macOS: `~/.llm-router/request_history.json`
-- Windows: `%USERPROFILE%\.llm-router\request_history.json`
+Request history is stored in SQLite at:
+- Linux/macOS: `~/.llm-router/router.db`
+- Windows: `%USERPROFILE%\.llm-router\router.db`
 
-The file is automatically managed with:
-- Atomic writes (temp file + rename) to prevent corruption
-- File locking to handle concurrent access
-- Automatic cleanup of records older than 7 days
+Legacy `request_history.json` files (if present) are automatically imported on startup and renamed
+to `.migrated`.
 
 ## API Specification
 

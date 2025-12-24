@@ -206,6 +206,9 @@ async fn run_server(config: ServerConfig) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
+    if let Err(err) = request_history.import_legacy_json_if_present().await {
+        tracing::warn!("Failed to import legacy request history: {}", err);
+    }
     llm_router::db::request_history::start_cleanup_task(request_history.clone());
 
     // 管理者が存在しない場合は作成

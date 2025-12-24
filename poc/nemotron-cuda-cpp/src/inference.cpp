@@ -55,15 +55,22 @@ void InferenceEngine::loadModel(const std::string& model_dir, int device_id) {
     LOG_INFO("Model loaded in " << stats_.load_time_ms << " ms");
 }
 
-int32_t InferenceEngine::sampleToken(const float* logits, const GenerationConfig& config) {
-    if (config.greedy) {
-        return kernels::argmax(logits, config_.vocab_size);
-    } else {
-        return kernels::topKSample(
-            logits, config_.vocab_size,
-            config.top_k, config.temperature
-        );
+int32_t InferenceEngine::sampleToken(const float* logits_host, const GenerationConfig& config) {
+    // CPU argmax (logits are already on host)
+    size_t vocab_size = config_.vocab_size;
+    float max_val = logits_host[0];
+    int32_t max_idx = 0;
+
+    for (size_t i = 1; i < vocab_size; ++i) {
+        if (logits_host[i] > max_val) {
+            max_val = logits_host[i];
+            max_idx = static_cast<int32_t>(i);
+        }
     }
+
+    // TODO: Implement top-k sampling for non-greedy
+    (void)config;
+    return max_idx;
 }
 
 std::string InferenceEngine::generate(

@@ -60,10 +60,28 @@ cmake --build . --config Release
 | オプション | 説明 | デフォルト |
 |-----------|------|-----------|
 | `--model PATH` | モデルディレクトリ（必須） | - |
-| `--prompt TEXT` | 入力プロンプト（必須） | - |
+| `--prompt TEXT` | 入力プロンプト | - |
+| `--prompt-file FILE` | UTF-8プロンプトファイル | - |
 | `--max-tokens N` | 最大生成トークン数 | 100 |
 | `--device N` | CUDAデバイスID | 0 |
 | `--verbose` | 詳細ログ出力 | off |
+
+**注**: `--prompt` または `--prompt-file` のいずれかが必須。
+
+### 日本語/マルチリンガル入力
+
+Windows環境でのUTF-8入力の問題を回避するため、`--prompt-file` を使用:
+
+```powershell
+# UTF-8ファイルにプロンプトを保存
+[System.IO.File]::WriteAllText("prompt.txt", "日本の首都は", [System.Text.Encoding]::UTF8)
+
+# ファイルからプロンプトを読み込んで実行
+.\nemotron-cuda-poc.exe --model C:\models\minitron --prompt-file prompt.txt --max-tokens 20
+```
+
+**注意**: Baseモデルは多言語出力が混在する場合があります。日本語応答を期待する場合は
+Instructモデルの使用を推奨。
 
 ### モデルディレクトリ構成
 
@@ -101,9 +119,33 @@ Speed:           40.5 tokens/sec
 | エラー | 原因 | 対処 |
 |--------|------|------|
 | `CUDA is not available` | CUDA未対応環境 | CUDAドライバをインストール |
+| `Version Mismatch Detected` | ドライバー/ランタイム不一致 | 下記トラブルシューティング参照 |
 | `Model directory does not exist` | パス不正 | モデルパスを確認 |
 | `config.json not found` | 必須ファイル欠損 | HuggingFaceからダウンロード |
-| `CUDA out of memory` | VRAMi不足 | より小さいモデルを使用 |
+| `CUDA out of memory` | VRAM不足 | より小さいモデルを使用 |
+
+### トラブルシューティング: CUDA バージョン不一致
+
+診断出力で `Driver API Version: 0.0` や `Version Mismatch Detected` が表示される場合:
+
+```text
+[CUDA Diagnostic]
+  Driver API Version:  12.4
+  Runtime API Version: 13.1
+  ...
+[Version Mismatch Detected]
+  CUDA Runtime 13.1 requires a newer driver.
+```
+
+**解決策**:
+
+1. **ドライバー更新** (推奨)
+   - CUDA 13.x には Driver >= 580 が必要
+   - [NVIDIA Driver Downloads](https://www.nvidia.com/Download/index.aspx)
+
+2. **CUDA Toolkitを変更してリビルド**
+   - ドライバーが対応するCUDA Toolkitをインストール
+   - 例: Driver 553.x → CUDA 12.4 Toolkit
 
 ## アーキテクチャ
 

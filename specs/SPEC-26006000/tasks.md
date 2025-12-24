@@ -80,9 +80,9 @@
 
 ## Phase 3.7: 統合
 
-- [ ] T045 `node/src/api/health_endpoint.cpp` に supported_runtimes 報告を追加
-- [ ] T046 `node/src/api/health_endpoint.cpp` に loaded_asr_models, loaded_tts_models 報告を追加
-- [ ] T047 `router/src/registry/nodes.rs` に RuntimeType 別ノードフィルタリングを追加
+- [x] T045 supported_runtimes 報告を追加 (実装: `node/src/api/router_client.cpp:62-64,115,132`)
+- [x] T046 loaded_asr_models, loaded_tts_models 報告を追加 (実装: `node/src/api/router_client.cpp:113-114,130-131`)
+- [x] T047 RuntimeType 別ノードフィルタリングを追加 (実装: `router/src/api/audio.rs:59-100 select_node_by_runtime()`)
 - [x] T048 `router/src/api/audio.rs` にエラーハンドリング (OpenAI API形式) を追加
 - [x] T049 `router/src/api/audio.rs` にリクエストログ出力を追加
 

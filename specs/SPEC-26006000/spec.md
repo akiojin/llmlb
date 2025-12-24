@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-26006000`
 **作成日**: 2024-12-14
-**ステータス**: 下書き
+**ステータス**: 🔨 実装中（57/63タスク完了）
 **入力**: ユーザー説明: "音声モデル対応（TTS + ASR）- llm-routerに音声モデル（TTS: Text-to-Speech、ASR: Speech-to-Text）対応を追加する。TTS用にONNX Runtime、ASR用にwhisper.cppを使用し、OpenAI API互換のエンドポイント（/v1/audio/speech, /v1/audio/transcriptions）を実装する。"
 
 ## ユーザーシナリオ＆テスト *(必須)*

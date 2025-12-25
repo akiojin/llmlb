@@ -148,11 +148,16 @@ JSONファイル全体を読み込む現在の方式では非効率。
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- 既存の認証データベース（`router/src/db/migrations.rs`）
-- 既存のモデル管理API（`router/src/api/models.rs`）
-- 既存のモデルストレージ実装（`router/src/db/models.rs`）
+- なし（独立機能）
+- 既存の認証データベース（`router/src/db/migrations.rs`）✅ 実装済み
+- 既存のモデル管理API（`router/src/api/models.rs`）✅ 実装済み
+- 既存のモデルストレージ実装（`router/src/db/models.rs`）✅ 実装済み
+
+### 依存元（このSPECに依存するもの）
+
+- **SPEC-e03a404c**: 画像認識モデル対応
 
 ---
 

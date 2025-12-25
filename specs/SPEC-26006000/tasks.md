@@ -88,12 +88,21 @@
 
 ## Phase 3.8: 仕上げ
 
-- [ ] T050 [P] `node/tests/whisper_manager_test.cpp` に WhisperManager の unit tests
-- [ ] T051 [P] `node/tests/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
-- [ ] T052 `router/tests/audio_error_handling_test.rs` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
+- [x] T050 [P] `node/tests/unit/whisper_manager_test.cpp` に WhisperManager の unit tests
+  - ✅ 実装済み: FlashAttentionIsDisabledByDefault テスト作成
+  - パスは `node/tests/unit/` に配置（tasks.mdの記載と異なる）
+- [ ] T051 [P] `node/tests/unit/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
+  - 🔴 未実装: テストファイル不在
+- [x] T052 `router/tests/contract/` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
+  - ✅ 既存の契約テストでカバー済み:
+    - `audio_transcriptions_test.rs`: unsupported_format_returns_400, without_auth_returns_401, no_available_node_returns_503
+    - `audio_speech_test.rs`: empty_input_returns_400, without_auth_returns_401, no_available_node_returns_503, input_too_long_returns_400
 - [ ] T053 `specs/SPEC-26006000/quickstart.md` のコマンドを実行して動作確認
-- [ ] T054 `router/src/api/audio.rs` のコードを clippy でチェック・修正
+  - 🟡 手動検証タスク
+- [x] T054 `router/src/api/audio.rs` のコードを clippy でチェック・修正
+  - ✅ `cargo clippy -p llm-router -- -D warnings` 合格
 - [ ] T055 `node/` のコードを clang-tidy でチェック・修正
+  - 🔴 ブロック: clang-tidy未インストール
 
 ## 依存関係グラフ
 

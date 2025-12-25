@@ -321,6 +321,22 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         }
     }
 
+    // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
+    let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
+    for cm in cloud_models {
+        let obj = json!({
+            "id": cm.id,
+            "object": cm.object,
+            "created": cm.created,
+            "owned_by": cm.owned_by,
+            // クラウドモデルはリモートで常に利用可能
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": true,
+        });
+        data.push(obj);
+    }
+
     let body = json!({
         "object": "list",
         "data": data,

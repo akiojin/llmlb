@@ -5,6 +5,7 @@
 pub mod api_keys;
 pub mod audio;
 pub mod auth;
+pub mod cloud_models;
 pub mod dashboard;
 pub mod health;
 pub mod images;

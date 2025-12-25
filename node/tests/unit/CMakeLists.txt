@@ -11,6 +11,7 @@ set(UNIT_TEST_SOURCES
     model_pool_test.cpp
     model_loader_test.cpp
     whisper_manager_test.cpp
+    onnx_tts_manager_test.cpp
     sd_manager_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
@@ -26,6 +27,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/model_pool.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/whisper_manager.cpp
+    ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp
 )
 

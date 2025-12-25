@@ -6,7 +6,6 @@ set(UNIT_TEST_SOURCES
     model_storage_test.cpp
     inference_engine_test.cpp
     model_converter_test.cpp
-    hf_client_test.cpp
     llama_manager_test.cpp
     model_pool_test.cpp
     model_loader_test.cpp
@@ -22,7 +21,6 @@ set(UNIT_TEST_SOURCES
     ../../src/models/model_downloader.cpp
     ../../src/models/model_storage.cpp
     ../../src/models/model_converter.cpp
-    ../../src/models/hf_client.cpp
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
     ../../src/core/inference_engine.cpp

@@ -9,8 +9,9 @@ namespace llm_node {
 // Result of model resolution
 struct ModelResolveResult {
     bool success = false;
-    std::string path;          // Path to the model file (empty if not found)
-    std::string error_message; // Error message if resolution failed
+    std::string path;           // Path to the model file (empty if not found)
+    std::string error_message;  // Error message if resolution failed
+    bool router_attempted = false;  // True if router API download was attempted
 };
 
 // Model resolver with fallback strategy:
@@ -29,6 +30,11 @@ public:
     // @param model_name: Model identifier
     // @return ModelResolveResult with path or error
     ModelResolveResult resolve(const std::string& model_name);
+
+    // Check if a download lock exists for the given model (for duplicate prevention)
+    // @param model_name: Model identifier
+    // @return true if download is in progress
+    bool hasDownloadLock(const std::string& model_name) const;
 
 private:
     std::string local_path_;

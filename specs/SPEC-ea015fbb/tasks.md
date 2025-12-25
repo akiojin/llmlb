@@ -10,14 +10,19 @@
 
 ## Phase 3.1: 検証
 
-- [ ] T001 spec.mdの画面一覧が実装ファイルと一致することを確認
-- [ ] T002 [P] 各画面IDと関連SPECのリンクが正しいことを確認
-- [ ] T003 [P] 画面遷移図が実装のルーティングと一致することを確認
+- [x] T001 spec.mdの画面一覧が実装ファイルと一致することを確認
+  - ✅ login.html, register.html, index.html, playground.html 存在確認済み
+- [x] T002 [P] 各画面IDと関連SPECのリンクが正しいことを確認
+  - ✅ 全関連SPEC（d4eb8796, 712c20cf, fbc50d97, 5fc9fe92, 11106000, 1f2a9c3d, 026b2cde, 4b6e9f2a）存在確認済み
+- [x] T003 [P] 画面遷移図が実装のルーティングと一致することを確認
+  - ✅ /dashboard, /playground ルーティング (api/mod.rs:209-215) 確認済み
 
 ## Phase 3.2: 整合性チェック
 
-- [ ] T004 specs.mdにSPEC-ea015fbbが登録されていることを確認
-- [ ] T005 依存関係マトリクスにSPEC-ea015fbbが含まれていることを確認
+- [x] T004 specs.mdにSPEC-ea015fbbが登録されていることを確認
+  - ✅ specs.md:106 に登録済み
+- [x] T005 依存関係マトリクスにSPEC-ea015fbbが含まれていることを確認
+  - ✅ specs.md:26 に追加済み
 
 ## 依存関係
 
@@ -55,4 +60,4 @@ grep "SPEC-ea015fbb" specs/specs.md | grep -A1 "依存関係"
 - [x] plan.mdが作成されている
 - [x] specs.mdに登録されている
 - [x] 依存関係マトリクスに含まれている
-- [ ] 実装との整合性が確認されている
+- [x] 実装との整合性が確認されている

@@ -34,6 +34,7 @@ ModelResolveResult ModelResolver::resolve(const std::string& model_name) {
 
     // 3. Try router API download
     if (!router_url_.empty()) {
+        result.router_attempted = true;
         std::string downloaded = downloadFromRouter(model_name);
         if (!downloaded.empty()) {
             result.success = true;
@@ -78,6 +79,13 @@ std::string ModelResolver::downloadFromRouter(const std::string& model_name) {
     // For now, return empty (not implemented)
     (void)model_name;
     return "";
+}
+
+bool ModelResolver::hasDownloadLock(const std::string& model_name) const {
+    // TODO: Implement download lock mechanism (T013)
+    // For now, return false (not implemented)
+    (void)model_name;
+    return false;
 }
 
 }  // namespace llm_node

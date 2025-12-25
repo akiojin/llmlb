@@ -1,7 +1,7 @@
 # タスク: モデル自動解決機能
 
 **機能ID**: `SPEC-48678000`
-**ステータス**: 計画中
+**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3開始待ち
 **入力**: `/specs/SPEC-48678000/` の設計ドキュメント
 
 ## 技術スタック
@@ -22,21 +22,30 @@
 - [x] T003.1 未使用のhf_client（ダミー実装）を削除
   - FR-006（HuggingFace直接ダウンロード禁止）対応
 
-## Phase 3.2: テストファースト (TDD)
+## Phase 3.2: テストファースト (TDD RED)
 
 - [x] T004 [P] `node/tests/unit/model_resolver_test.cpp` に共有パス参照の contract test
-  - ✅ ResolveFromSharedPathWhenNotLocal
-  - ✅ SharedPathDoesNotCopyToLocal
-  - ✅ LocalPathTakesPriority
+  - ✅ ResolveFromSharedPathWhenNotLocal (FR-002)
+  - ✅ SharedPathDoesNotCopyToLocal (FR-002)
+  - ✅ LocalPathTakesPriority (FR-001)
 - [x] T005 [P] `node/tests/unit/model_resolver_test.cpp` にルーターAPI経由ダウンロードの contract test
-  - ⏸️ DownloadFromRouterAPIWhenSharedInaccessible (GTEST_SKIP - mock server required)
-  - ⏸️ DownloadedModelSavedToLocal (GTEST_SKIP - mock server required)
+  - 🔴 DownloadFromRouterAPIWhenSharedInaccessible (FR-003) - RED: router_attempted未実装
+  - 🔴 DownloadedModelSavedToLocal (FR-004) - RED: downloadFromRouter未実装
+  - 🔴 SharedPathInaccessibleTriggersRouterFallback (FR-003) - RED
 - [x] T006 [P] `node/tests/unit/model_resolver_test.cpp` にモデル不在時のエラーハンドリング contract test
-  - ✅ ReturnErrorWhenModelNotFound
-  - ✅ ErrorResponseWithinOneSecond
+  - ✅ ReturnErrorWhenModelNotFound (FR-005)
+  - ✅ ErrorResponseWithinOneSecond (成功基準3)
+  - ✅ ClearErrorMessageWhenModelNotFoundAnywhere (US3)
 - [x] T007 `node/tests/unit/model_resolver_test.cpp` に統合テスト: 解決フロー全体
   - ✅ FullFallbackFlow (local -> shared -> error)
   - ✅ HuggingFaceDirectDownloadProhibited (FR-006)
+  - ✅ NoAutoRepairFunctionality (FR-007/成功基準4)
+- [x] T007.1 エッジケーステスト追加
+  - 🔴 NetworkDisconnectionToSharedPathTriggersRouterFallback - RED
+  - 🔴 IncompleteDownloadIsRetried - RED
+  - 🔴 PreventDuplicateDownloads - RED: hasDownloadLock未実装
+- [x] T007.2 ユーザーストーリー受け入れシナリオテスト
+  - ✅ UpdatedSharedPathModelIsUsed (US1-シナリオ2)
 
 ## Phase 3.3: コア実装
 
@@ -96,9 +105,9 @@ Task T006: node/tests/ モデル不在時エラー contract test
 
 ## 検証チェックリスト
 
-- [ ] auto_repair 関連コードが完全に削除されている
-- [ ] 共有パスからの直接参照でコピーが発生しない
-- [ ] ルーターAPI経由ダウンロードが正常に動作する
-- [ ] モデル不在時に1秒以内にエラーが返る
-- [ ] Hugging Face への直接ダウンロードが禁止されている
-- [ ] すべてのテストが実装より先にある (TDD)
+- [x] auto_repair 関連コードが完全に削除されている (T001-T003)
+- [x] 共有パスからの直接参照でコピーが発生しない (テスト: SharedPathDoesNotCopyToLocal)
+- [ ] ルーターAPI経由ダウンロードが正常に動作する (Phase 3.3で実装予定)
+- [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
+- [x] Hugging Face への直接ダウンロードが禁止されている (テスト: HuggingFaceDirectDownloadProhibited)
+- [x] すべてのテストが実装より先にある (TDD RED完了)

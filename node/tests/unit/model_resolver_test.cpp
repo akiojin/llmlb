@@ -358,3 +358,82 @@ TEST(ModelResolverTest, NoAutoRepairFunctionality) {
         << "Should return path without attempting repair (auto_repair removed)";
     EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
 }
+
+// ===========================================================================
+// Technical Constraints Tests (from spec.md 技術制約 section)
+// ===========================================================================
+
+// Technical Constraint: Only GGUF format is supported for router API download
+// TDD RED: Requires GGUF validation in downloadFromRouter
+TEST(ModelResolverTest, OnlyGGUFFormatSupported) {
+    TempModelDirs tmp;
+
+    // Create a non-GGUF file in local (e.g., .bin format)
+    auto model_dir = tmp.local / "non-gguf-model";
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.bin") << "not gguf format";
+
+    ModelResolver resolver(tmp.local.string(), tmp.shared.string(), "");
+    auto result = resolver.resolve("non-gguf-model");
+
+    // TDD RED: Current implementation doesn't validate GGUF format
+    // Should fail because model.gguf doesn't exist (only model.bin)
+    EXPECT_FALSE(result.success)
+        << "Should not accept non-GGUF format files";
+}
+
+// Technical Constraint: Router download validates GGUF before saving
+// TDD RED: Requires GGUF header validation in downloadFromRouter
+TEST(ModelResolverTest, RouterDownloadValidatesGGUFFormat) {
+    TempModelDirs tmp;
+
+    ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
+    // Request a model - if router returns non-GGUF, should fail
+    auto result = resolver.resolve("might-be-invalid-format");
+
+    // TDD RED: downloadFromRouter not implemented
+    // When implemented: should validate GGUF magic bytes before saving
+    if (result.success) {
+        // If successful, the file must be valid GGUF
+        std::ifstream file(result.path, std::ios::binary);
+        char magic[4];
+        file.read(magic, 4);
+        // GGUF magic: 0x47475546 ("GGUF")
+        EXPECT_EQ(magic[0], 'G');
+        EXPECT_EQ(magic[1], 'G');
+        EXPECT_EQ(magic[2], 'U');
+        EXPECT_EQ(magic[3], 'F');
+    }
+}
+
+// ===========================================================================
+// Clarifications Tests (from spec.md Clarifications section)
+// ===========================================================================
+
+// Clarification: Router API download timeout (recommended: 5 minutes)
+// TDD RED: Requires timeout configuration in downloadFromRouter
+TEST(ModelResolverTest, RouterDownloadHasTimeout) {
+    TempModelDirs tmp;
+
+    ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
+
+    // TDD RED: downloadFromRouter not implemented with timeout
+    // When implemented: should have configurable timeout (default 5 min)
+    EXPECT_TRUE(resolver.getDownloadTimeoutMs() > 0)
+        << "Should have a download timeout configured";
+    EXPECT_LE(resolver.getDownloadTimeoutMs(), 5 * 60 * 1000)
+        << "Default timeout should be at most 5 minutes";
+}
+
+// Clarification: Concurrent download limit (recommended: 1 per node)
+// TDD RED: Requires concurrent download tracking
+TEST(ModelResolverTest, ConcurrentDownloadLimit) {
+    TempModelDirs tmp;
+
+    ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
+
+    // TDD RED: Not implemented
+    // When implemented: should limit concurrent downloads to 1
+    EXPECT_EQ(resolver.getMaxConcurrentDownloads(), 1)
+        << "Should limit to 1 concurrent download per node";
+}

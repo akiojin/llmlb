@@ -88,4 +88,16 @@ bool ModelResolver::hasDownloadLock(const std::string& model_name) const {
     return false;
 }
 
+int ModelResolver::getDownloadTimeoutMs() const {
+    // TODO: Implement configurable timeout (T010)
+    // For now, return 0 (not implemented) - tests will fail
+    return 0;
+}
+
+int ModelResolver::getMaxConcurrentDownloads() const {
+    // TODO: Implement concurrent download limit (T013)
+    // For now, return 0 (not implemented) - tests will fail
+    return 0;
+}
+
 }  // namespace llm_node

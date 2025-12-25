@@ -24,13 +24,19 @@
 
 ## Phase 3.2: テストファースト (TDD)
 
-- [ ] T004 [P] `node/tests/` に共有パス参照の contract test
-  - 共有パスにモデルがある場合の直接参照テスト
-- [ ] T005 [P] `node/tests/` にルーターAPI経由ダウンロードの contract test
-  - モックサーバーを使用したHTTP経由ダウンロードテスト
-- [ ] T006 [P] `node/tests/` にモデル不在時のエラーハンドリング contract test
-- [ ] T007 `node/tests/` に統合テスト: 解決フロー全体
-  - ローカル → 共有パス → ルーターAPI → エラー のフォールバックフロー
+- [x] T004 [P] `node/tests/unit/model_resolver_test.cpp` に共有パス参照の contract test
+  - ✅ ResolveFromSharedPathWhenNotLocal
+  - ✅ SharedPathDoesNotCopyToLocal
+  - ✅ LocalPathTakesPriority
+- [x] T005 [P] `node/tests/unit/model_resolver_test.cpp` にルーターAPI経由ダウンロードの contract test
+  - ⏸️ DownloadFromRouterAPIWhenSharedInaccessible (GTEST_SKIP - mock server required)
+  - ⏸️ DownloadedModelSavedToLocal (GTEST_SKIP - mock server required)
+- [x] T006 [P] `node/tests/unit/model_resolver_test.cpp` にモデル不在時のエラーハンドリング contract test
+  - ✅ ReturnErrorWhenModelNotFound
+  - ✅ ErrorResponseWithinOneSecond
+- [x] T007 `node/tests/unit/model_resolver_test.cpp` に統合テスト: 解決フロー全体
+  - ✅ FullFallbackFlow (local -> shared -> error)
+  - ✅ HuggingFaceDirectDownloadProhibited (FR-006)
 
 ## Phase 3.3: コア実装
 

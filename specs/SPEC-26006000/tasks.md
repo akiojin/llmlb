@@ -91,8 +91,9 @@
 - [x] T050 [P] `node/tests/unit/whisper_manager_test.cpp` に WhisperManager の unit tests
   - ✅ 実装済み: FlashAttentionIsDisabledByDefault テスト作成
   - パスは `node/tests/unit/` に配置（tasks.mdの記載と異なる）
-- [ ] T051 [P] `node/tests/unit/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
-  - 🔴 未実装: テストファイル不在
+- [x] T051 [P] `node/tests/unit/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
+  - ✅ 実装済み: 8テスト作成（RuntimeAvailability, IdleTimeout, MaxModels等）
+  - CMakeLists.txt にビルド設定追加済み
 - [x] T052 `router/tests/contract/` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
   - ✅ 既存の契約テストでカバー済み:
     - `audio_transcriptions_test.rs`: unsupported_format_returns_400, without_auth_returns_401, no_available_node_returns_503

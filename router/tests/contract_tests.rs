@@ -39,5 +39,14 @@ mod openai_logging_test;
 #[path = "contract/models_source_test.rs"]
 mod models_source_test;
 
+#[path = "contract/vision_chat_test.rs"]
+mod vision_chat_test;
+
+#[path = "contract/vision_error_test.rs"]
+mod vision_error_test;
+
+#[path = "contract/vision_capabilities_test.rs"]
+mod vision_capabilities_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

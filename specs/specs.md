@@ -23,6 +23,7 @@
 | `SPEC-ae3f974e` | SPEC-dcaeaec4 |
 | `SPEC-26006000` | SPEC-dcaeaec4 |
 | `SPEC-05098000` | SPEC-589f2df1, SPEC-35375000 |
+| `SPEC-ea015fbb` | SPEC-712c20cf, SPEC-d4eb8796, SPEC-fbc50d97 |
 
 ## 🔧 コアシステム
 

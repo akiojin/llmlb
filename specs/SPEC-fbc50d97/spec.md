@@ -199,12 +199,17 @@
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- ルーターのプロキシAPI機能（`/v1/chat/completions`, `/v1/completions`）
-- ダッシュボードのバックエンドAPI機能（`router/src/api/dashboard.rs`）
-- ダッシュボードのフロントエンド（`router/src/web/static/`）
-- 既存のストレージ層実装（`router/src/db/mod.rs`のパターンを踏襲）
+- **SPEC-63acef08**: 統一APIプロキシ ✅ 実装済み
+- ルーターのプロキシAPI機能（`/v1/chat/completions`, `/v1/completions`）✅ 実装済み
+- ダッシュボードのバックエンドAPI機能（`router/src/api/dashboard.rs`）✅ 実装済み
+- ダッシュボードのフロントエンド（`router/src/web/static/`）✅ 実装済み
+- 既存のストレージ層実装（`router/src/db/mod.rs`のパターンを踏襲）✅ 実装済み
+
+### 依存元（このSPECに依存するもの）
+
+- **SPEC-1970e39f**: 構造化ロギング強化
 
 ---
 

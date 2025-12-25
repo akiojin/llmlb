@@ -36,6 +36,12 @@ public:
     // @return true if download is in progress
     bool hasDownloadLock(const std::string& model_name) const;
 
+    // Get download timeout in milliseconds (default: 5 minutes)
+    int getDownloadTimeoutMs() const;
+
+    // Get maximum concurrent downloads (default: 1 per node)
+    int getMaxConcurrentDownloads() const;
+
 private:
     std::string local_path_;
     std::string shared_path_;

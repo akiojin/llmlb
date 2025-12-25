@@ -105,10 +105,15 @@
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- SPEC-dcaeaec4（LLM-Router独自モデルストレージ）- モデル解決フローとAPI設計
+- **SPEC-dcaeaec4**: LLM-Router独自モデルストレージ ✅ 実装済み
+- **SPEC-11106000**: Hugging Face URL登録 ✅ 実装済み
 - `/v1/models/blob/:model_name` エンドポイント経由でのモデルファイル配信
+
+### 依存元（このSPECに依存するもの）
+
+- なし
 
 ---
 

@@ -15,7 +15,8 @@ TEST(OnnxTtsManagerTest, RuntimeAvailabilityReflectsCompileConfig) {
 TEST(OnnxTtsManagerTest, DefaultIdleTimeoutIs30Minutes) {
     llm_node::OnnxTtsManager manager("/tmp/models");
     auto timeout = manager.getIdleTimeout();
-    EXPECT_EQ(timeout.count(), std::chrono::minutes(30).count());
+    // Compare durations directly (both are implicitly convertible)
+    EXPECT_EQ(timeout, std::chrono::minutes(30));
 }
 
 TEST(OnnxTtsManagerTest, MaxLoadedModelsDefaultsToUnlimited) {
@@ -41,7 +42,8 @@ TEST(OnnxTtsManagerTest, IsLoadedReturnsFalseForUnloadedModel) {
 TEST(OnnxTtsManagerTest, SetIdleTimeoutUpdatesValue) {
     llm_node::OnnxTtsManager manager("/tmp/models");
     manager.setIdleTimeout(std::chrono::minutes(60));
-    EXPECT_EQ(manager.getIdleTimeout().count(), std::chrono::minutes(60).count());
+    // Compare durations directly (both are implicitly convertible)
+    EXPECT_EQ(manager.getIdleTimeout(), std::chrono::minutes(60));
 }
 
 TEST(OnnxTtsManagerTest, SetMaxLoadedModelsUpdatesValue) {

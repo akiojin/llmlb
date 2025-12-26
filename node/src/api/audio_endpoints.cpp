@@ -1,6 +1,7 @@
 #include "api/audio_endpoints.h"
 #include "core/whisper_manager.h"
 #include "core/onnx_tts_manager.h"
+#include "runtime/state.h"
 
 #include <spdlog/spdlog.h>
 #include <cstring>
@@ -56,6 +57,12 @@ void AudioEndpoints::registerRoutes(httplib::Server& server) {
 
 void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::Response& res) {
     spdlog::debug("Handling transcription request");
+
+    auto guard = RequestGuard::try_acquire();
+    if (!guard) {
+        respondError(res, 429, "too_many_requests", "Node is busy");
+        return;
+    }
 
     // multipart/form-dataの検証
     if (!req.form.has_file("file")) {
@@ -196,6 +203,12 @@ void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::
 
 void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response& res) {
     spdlog::debug("Handling speech request");
+
+    auto guard = RequestGuard::try_acquire();
+    if (!guard) {
+        respondError(res, 429, "too_many_requests", "Node is busy");
+        return;
+    }
 
     // TTS manager が未設定の場合
     if (!tts_manager_) {

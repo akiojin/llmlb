@@ -3,6 +3,8 @@
 //! Provides helper functions for reading environment variables with fallback
 //! to deprecated variable names with warning logs.
 
+use std::time::Duration;
+
 /// Get an environment variable with fallback to a deprecated name
 ///
 /// If the new variable name is set, returns its value.
@@ -71,6 +73,33 @@ pub fn get_env_with_fallback_parse<T: std::str::FromStr>(
     get_env_with_fallback(new_name, old_name)
         .and_then(|s| s.parse().ok())
         .unwrap_or(default)
+}
+
+/// Queueing configuration (request wait queue)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueConfig {
+    /// Maximum number of requests allowed to wait in the queue.
+    pub max_waiters: usize,
+    /// Maximum time a request may wait in the queue before timing out.
+    pub timeout: Duration,
+}
+
+impl QueueConfig {
+    /// Load queue configuration from environment variables.
+    pub fn from_env() -> Self {
+        let max_waiters =
+            get_env_with_fallback_parse("LLM_ROUTER_QUEUE_MAX", "QUEUE_MAX", 100usize);
+        let timeout_secs = get_env_with_fallback_parse(
+            "LLM_ROUTER_QUEUE_TIMEOUT_SECS",
+            "QUEUE_TIMEOUT_SECS",
+            60u64,
+        );
+
+        Self {
+            max_waiters,
+            timeout: Duration::from_secs(timeout_secs),
+        }
+    }
 }
 
 /// デフォルトembeddingモデルを取得

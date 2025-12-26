@@ -119,6 +119,8 @@ pub struct DashboardStats {
     pub failed_requests: u64,
     /// 処理中リクエスト数
     pub total_active_requests: u32,
+    /// 待機中リクエスト数
+    pub queued_requests: usize,
     /// 平均レスポンスタイム
     pub average_response_time_ms: Option<f32>,
     /// 平均GPU使用率
@@ -329,6 +331,7 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         successful_requests: summary.successful_requests,
         failed_requests: summary.failed_requests,
         total_active_requests: summary.total_active_requests,
+        queued_requests: summary.queued_requests,
         average_response_time_ms: summary.average_response_time_ms,
         average_gpu_usage: summary.average_gpu_usage,
         average_gpu_memory_usage: summary.average_gpu_memory_usage,
@@ -520,6 +523,7 @@ mod tests {
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         }
     }
 

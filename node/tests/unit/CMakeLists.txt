@@ -15,6 +15,7 @@ set(UNIT_TEST_SOURCES
     sd_manager_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
+    request_guard_test.cpp
     cli_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp
@@ -29,6 +30,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/whisper_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp
+    ../../src/runtime/state.cpp
 )
 
 # Use platform-specific gpu_detector source

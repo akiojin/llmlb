@@ -1,7 +1,7 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: 計画中
+**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3開始待ち
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
 ## 技術スタック
@@ -14,24 +14,36 @@
 
 ## Phase 3.1: セットアップ
 
-- [ ] T001 依存SPECの実装状況確認
-  - SPEC-63acef08 (統一APIプロキシ)
-  - SPEC-32637000 (capabilities検証)
-  - SPEC-47649000 (モデルメタデータ)
+- [x] T001 依存SPECの実装状況確認
+  - SPEC-63acef08 (統一APIプロキシ) ✅ 実装済み
+  - SPEC-32637000 (capabilities検証) ✅ 実装済み
+  - SPEC-47649000 (モデルメタデータ) ✅ 実装済み
 
-## Phase 3.2: テストファースト (TDD)
+## Phase 3.2: テストファースト (TDD RED)
 
-- [ ] T002 [P] `router/tests/contract/vision_chat_test.rs` に画像付きchat completions契約テスト
-  - 画像URL形式
-  - Base64形式
-  - 複数画像
-- [ ] T003 [P] `router/tests/contract/vision_error_test.rs` にエラーハンドリング契約テスト
-  - Vision非対応モデルへのリクエスト拒否
-  - 画像取得失敗
-  - サイズ制限超過
-- [ ] T004 [P] `router/tests/contract/vision_capabilities_test.rs` にcapabilities契約テスト
-  - `/v1/models` での `image_understanding` 表示
-- [ ] T005 `router/tests/integration/vision_api_test.rs` に統合テスト
+- [x] T002 [P] `router/tests/contract/vision_chat_test.rs` に画像付きchat completions契約テスト
+  - 🔴 test_chat_completions_with_image_url (FR-001)
+  - 🔴 test_chat_completions_with_base64_image (FR-002)
+  - 🔴 test_chat_completions_with_multiple_images (FR-003)
+  - 🔴 test_supported_image_formats (FR-007: JPEG/PNG/GIF/WebP)
+  - 🔴 test_vision_streaming_response (FR-005)
+- [x] T003 [P] `router/tests/contract/vision_error_test.rs` にエラーハンドリング契約テスト
+  - 🔴 test_image_request_to_non_vision_model_returns_400 (FR-004)
+  - 🔴 test_image_size_limit_exceeded (FR-008: 10MB制限)
+  - 🔴 test_image_count_limit_exceeded (FR-009: 10枚制限)
+  - 🔴 test_invalid_base64_encoding (エッジケース)
+  - 🔴 test_unsupported_image_format (エッジケース: TIFF等)
+- [x] T004 [P] `router/tests/contract/vision_capabilities_test.rs` にcapabilities契約テスト
+  - 🔴 test_vision_model_has_image_understanding_capability (FR-006)
+  - 🔴 test_text_model_has_no_image_understanding_capability
+  - 🔴 test_mixed_models_capabilities
+  - 🔴 test_models_response_includes_capabilities_field
+- [x] T005 `router/tests/integration/vision_api_test.rs` に統合テスト
+  - 🔴 test_vision_chat_with_image_url_integration [ignore]
+  - 🔴 test_vision_chat_with_base64_image_integration [ignore]
+  - 🔴 test_vision_request_to_text_only_model_integration [ignore]
+  - 🔴 test_models_endpoint_shows_vision_capability_integration [ignore]
+  - 🔴 test_vision_processing_performance [ignore]
 
 ## Phase 3.3: コア実装 - 型定義
 
@@ -113,11 +125,11 @@ Task T004: router/tests/contract/vision_capabilities_test.rs
 
 ## 検証チェックリスト
 
-- [ ] 画像URL付きchat completionsが正常動作
-- [ ] Base64画像付きリクエストが正常動作
-- [ ] 複数画像（最大10枚）が処理可能
-- [ ] Vision非対応モデルへのリクエストが400エラー
-- [ ] `/v1/models` に `image_understanding` capability表示
-- [ ] ストリーミングレスポンス対応
-- [ ] 1024x1024画像の処理が5秒以内
-- [ ] すべてのテストが実装より先にある (TDD)
+- [ ] 画像URL付きchat completionsが正常動作 (Phase 3.3で実装予定)
+- [ ] Base64画像付きリクエストが正常動作 (Phase 3.3で実装予定)
+- [ ] 複数画像（最大10枚）が処理可能 (Phase 3.3で実装予定)
+- [ ] Vision非対応モデルへのリクエストが400エラー (Phase 3.4で実装予定)
+- [ ] `/v1/models` に `image_understanding` capability表示 (Phase 3.4で実装予定)
+- [ ] ストリーミングレスポンス対応 (Phase 3.6で実装予定)
+- [ ] 1024x1024画像の処理が5秒以内 (Phase 3.7で検証予定)
+- [x] すべてのテストが実装より先にある (TDD RED完了)

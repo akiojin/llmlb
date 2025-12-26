@@ -55,7 +55,9 @@ std::string ModelResolver::findLocal(const std::string& model_name) {
     fs::path model_dir = fs::path(local_path_) / model_name;
     fs::path model_file = model_dir / "model.gguf";
 
-    if (fs::exists(model_file)) {
+    // Use std::error_code overload to avoid exceptions on permission errors
+    std::error_code ec;
+    if (fs::exists(model_file, ec) && !ec) {
         return model_file.string();
     }
     return "";
@@ -67,7 +69,9 @@ std::string ModelResolver::findShared(const std::string& model_name) {
     fs::path model_dir = fs::path(shared_path_) / model_name;
     fs::path model_file = model_dir / "model.gguf";
 
-    if (fs::exists(model_file)) {
+    // Use std::error_code overload to avoid exceptions on NFS disconnection or permission errors
+    std::error_code ec;
+    if (fs::exists(model_file, ec) && !ec) {
         // Direct reference - no copy to local
         return model_file.string();
     }

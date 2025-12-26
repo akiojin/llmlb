@@ -29,6 +29,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
     };
 
     // 登録済みノードを追加
@@ -470,12 +471,25 @@ async fn test_openai_models_list_success() {
             .unwrap(),
     )
     .unwrap();
+
+    // ローカルモデルのみをフィルタ（クラウドプロバイダープレフィックスを除外）
+    // SPEC-82491000でクラウドモデルが追加されたため、ローカルモデルのみを検証
+    let cloud_prefixes = ["openai:", "google:", "anthropic:"];
+    let local_models: Vec<&serde_json::Value> = value["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter(|m| {
+                    let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    !cloud_prefixes.iter().any(|prefix| id.starts_with(prefix))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     assert!(
-        value["data"]
-            .as_array()
-            .map(|arr| arr.is_empty())
-            .unwrap_or(true),
-        "/v1/models should be empty when no downloaded models exist"
+        local_models.is_empty(),
+        "/v1/models should have no local models when no downloaded models exist"
     );
 }
 

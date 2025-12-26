@@ -1,6 +1,7 @@
 #include "api/openai_endpoints.h"
 
 #include <nlohmann/json.hpp>
+#include <memory>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
@@ -43,6 +44,11 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
+        auto guard = RequestGuard::try_acquire();
+        if (!guard) {
+            respondError(res, 429, "too_many_requests", "Node is busy");
+            return;
+        }
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
@@ -57,9 +63,10 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             std::string output = engine_.generateChat(messages, model);
 
             if (stream) {
+                auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
                 res.set_header("Content-Type", "text/event-stream");
                 res.set_chunked_content_provider("text/event-stream",
-                    [output](size_t offset, httplib::DataSink& sink) {
+                    [output, guard_ptr](size_t offset, httplib::DataSink& sink) {
                         if (offset == 0) {
                             // OpenAI compatible streaming format
                             json event_data = {
@@ -101,6 +108,11 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
+        auto guard = RequestGuard::try_acquire();
+        if (!guard) {
+            respondError(res, 429, "too_many_requests", "Node is busy");
+            return;
+        }
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
@@ -120,6 +132,11 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
+        auto guard = RequestGuard::try_acquire();
+        if (!guard) {
+            respondError(res, 429, "too_many_requests", "Node is busy");
+            return;
+        }
         try {
             auto body = json::parse(req.body);
             // モデルパラメータは必須（OpenAI API仕様準拠）

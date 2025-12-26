@@ -486,6 +486,7 @@ mod tests {
             db_pool,
             jwt_secret: "test-secret".to_string(),
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         };
 
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
@@ -526,6 +527,7 @@ mod tests {
             db_pool,
             jwt_secret: "test-secret".to_string(),
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         };
 
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(

@@ -59,6 +59,7 @@ mod common {
             db_pool: db_pool.clone(),
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: llm_router::config::QueueConfig::from_env(),
         };
 
         let password_hash = llm_router::auth::password::hash_password("password123").unwrap();

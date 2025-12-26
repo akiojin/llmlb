@@ -29,6 +29,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
     };
 
     // 登録済みノードを追加

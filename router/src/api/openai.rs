@@ -3,7 +3,7 @@
 use axum::body::Body;
 use axum::{
     extract::{Path, State},
-    http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
+    http::{header::CONTENT_TYPE, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -24,7 +24,10 @@ use crate::{
     api::{
         models::{list_registered_models, DownloadProgress, LifecycleStatus},
         nodes::AppError,
-        proxy::{forward_streaming_response, save_request_record, select_available_node},
+        proxy::{
+            forward_streaming_response, save_request_record, select_available_node,
+            select_available_node_with_queue, QueueSelection,
+        },
     },
     balancer::RequestOutcome,
     cloud_metrics, AppState,
@@ -107,6 +110,47 @@ fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
     }
 
     redact_data_url(payload)
+}
+
+fn add_queue_headers(response: &mut Response, wait_ms: u128) {
+    let headers = response.headers_mut();
+    headers.insert(
+        HeaderName::from_static("x-queue-status"),
+        HeaderValue::from_static("queued"),
+    );
+    let wait_value = wait_ms.to_string();
+    if let Ok(value) = HeaderValue::from_str(&wait_value) {
+        headers.insert(HeaderName::from_static("x-queue-wait-ms"), value);
+    }
+}
+
+fn queue_error_response(
+    status: StatusCode,
+    message: &str,
+    error_type: &str,
+    retry_after: Option<u64>,
+) -> Response {
+    let mut response = (
+        status,
+        Json(json!({
+            "error": {
+                "message": message,
+                "type": error_type,
+                "code": status.as_u16(),
+            }
+        })),
+    )
+        .into_response();
+
+    if let Some(value) = retry_after {
+        if let Ok(header_value) = HeaderValue::from_str(&value.to_string()) {
+            response
+                .headers_mut()
+                .insert(HeaderName::from_static("retry-after"), header_value);
+        }
+    }
+
+    response
 }
 
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
@@ -992,10 +1036,77 @@ async fn proxy_openai_post(
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
+    let queue_config = state.queue_config;
+    let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: ノード選択失敗時もリクエスト履歴に記録する
-    let node = match select_available_node(state).await {
-        Ok(n) => n,
+    let node = match select_available_node_with_queue(state, queue_config).await {
+        Ok(QueueSelection::Ready {
+            node,
+            queued_wait_ms: wait_ms,
+        }) => {
+            queued_wait_ms = wait_ms;
+            *node
+        }
+        Ok(QueueSelection::CapacityExceeded) => {
+            let message = "Request queue is full".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: Uuid::nil(),
+                    node_machine_name: "N/A".to_string(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: 0,
+                    status: RecordStatus::Error {
+                        message: message.clone(),
+                    },
+                    completed_at: Utc::now(),
+                },
+            );
+            let retry_after = queue_config.timeout.as_secs().max(1);
+            return Ok(queue_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                &message,
+                "rate_limit_exceeded",
+                Some(retry_after),
+            ));
+        }
+        Ok(QueueSelection::Timeout { waited_ms }) => {
+            let message = "Queue wait timeout".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: Uuid::nil(),
+                    node_machine_name: "N/A".to_string(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: waited_ms as u64,
+                    status: RecordStatus::Error {
+                        message: message.clone(),
+                    },
+                    completed_at: Utc::now(),
+                },
+            );
+            return Ok(queue_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                &message,
+                "timeout",
+                None,
+            ));
+        }
         Err(e) => {
             error!(
                 endpoint = %target_path,
@@ -1016,7 +1127,7 @@ async fn proxy_openai_post(
                     client_ip: None,
                     request_body,
                     response_body: None,
-                    duration_ms: 0,
+                    duration_ms: queued_wait_ms.unwrap_or(0) as u64,
                     status: RecordStatus::Error {
                         message: format!("Node selection failed: {}", e),
                     },
@@ -1107,7 +1218,11 @@ async fn proxy_openai_post(
             },
         );
 
-        return forward_streaming_response(response).map_err(AppError::from);
+        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
+        if let Some(wait_ms) = queued_wait_ms {
+            add_queue_headers(&mut axum_response, wait_ms);
+        }
+        return Ok(axum_response);
     }
 
     if !response.status().is_success() {
@@ -1156,7 +1271,11 @@ async fn proxy_openai_post(
             }
         });
 
-        return Ok((status_code, Json(payload)).into_response());
+        let mut response = (status_code, Json(payload)).into_response();
+        if let Some(wait_ms) = queued_wait_ms {
+            add_queue_headers(&mut response, wait_ms);
+        }
+        return Ok(response);
     }
 
     if stream {
@@ -1186,7 +1305,11 @@ async fn proxy_openai_post(
             },
         );
 
-        return forward_streaming_response(response).map_err(AppError::from);
+        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
+        if let Some(wait_ms) = queued_wait_ms {
+            add_queue_headers(&mut axum_response, wait_ms);
+        }
+        return Ok(axum_response);
     }
 
     let parsed = response.json::<Value>().await;
@@ -1219,7 +1342,11 @@ async fn proxy_openai_post(
                 },
             );
 
-            Ok((StatusCode::OK, Json(body)).into_response())
+            let mut response = (StatusCode::OK, Json(body)).into_response();
+            if let Some(wait_ms) = queued_wait_ms {
+                add_queue_headers(&mut response, wait_ms);
+            }
+            Ok(response)
         }
         Err(e) => {
             state
@@ -1368,6 +1495,7 @@ mod tests {
             db_pool,
             jwt_secret: "test-secret".into(),
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         }
     }
 

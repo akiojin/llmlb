@@ -73,4 +73,4 @@
 - [x] `cargo clippy -- -D warnings` 合格
 - [x] `cargo test` 合格
 - [x] markdownlint 合格
-- [ ] E2Eテスト確認
+- [x] E2Eテスト確認

@@ -88,10 +88,64 @@ npx @llm-router/mcp-server
 ## インストールと起動
 
 ### 前提条件
+
 - Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
 - Rust toolchain (nightly不要) と cargo
 - Docker (任意、コンテナ利用時)
-- CUDAドライバ (GPU使用時。NVIDIAのみ)
+- CUDAドライバ (GPU使用時) - [CUDAセットアップ](#cudaセットアップnvidia-gpu)参照
+
+### CUDAセットアップ（NVIDIA GPU）
+
+NVIDIA GPU を使用する場合に必要なコンポーネント：
+
+| コンポーネント | ビルド環境 | 実行環境 |
+|--------------|-----------|---------|
+| **CUDAドライバ** | 必須 | 必須 |
+| **CUDA Toolkit** | 必須（`nvcc`用） | 不要 |
+
+#### CUDAドライバのインストール
+
+CUDAドライバは通常、NVIDIAグラフィックスドライバに含まれています。
+
+```bash
+# ドライバのインストール確認
+nvidia-smi
+```
+
+`nvidia-smi` でGPU情報が表示されれば、ドライバはインストール済みです。
+
+#### CUDA Toolkitのインストール（ビルド環境のみ）
+
+CUDA対応ノードのビルド（`BUILD_WITH_CUDA=ON`）にのみ必要です。
+
+**Windows:**
+
+1. [CUDA Toolkit Downloads](https://developer.nvidia.com/cuda-downloads) からダウンロード
+2. Windows → x86_64 → 11 → exe (local) を選択
+3. インストーラーを実行（Express インストール推奨）
+4. 新しいターミナルで確認: `nvcc --version`
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+# NVIDIAパッケージリポジトリを追加
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# CUDA Toolkitをインストール
+sudo apt install cuda-toolkit-12-4
+
+# PATHに追加（~/.bashrc に追記）
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# 確認
+nvcc --version
+```
+
+**注意:** ビルド済みバイナリを実行するだけの環境（実行環境）では、CUDAドライバのみで
+CUDA Toolkitは不要です。
 
 ### 1) Rustソースからビルド（推奨）
 ```bash

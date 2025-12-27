@@ -13,9 +13,9 @@
 
 namespace llm_node {
 
-// 簡易ファイルロック（ベストエフォート）。
-// Unix: flock、Windows: LockFileEx、その他: lockディレクトリ作成。
-// 非ブロッキングで獲得できない場合は locked() が false になる。
+// Simple file lock (best-effort).
+// Unix: flock, Windows: LockFileEx, fallback: lock directory creation.
+// If non-blocking acquisition fails, locked() returns false.
 class FileLock {
 public:
     explicit FileLock(const std::filesystem::path& target)

@@ -28,6 +28,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     else()
         add_compile_options(-O3 -march=native)
     endif()
+elseif(MSVC)
+    # Enable UTF-8 source and execution charset for Japanese comments
+    # Use generator expression to apply only to C/C++ (not CUDA)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>)
 endif()
 
 # Options
@@ -336,7 +340,7 @@ endif()
 add_executable(llm-node ${SOURCES})
 
 # Link libraries
-target_link_libraries(llm-node
+target_link_libraries(llm-node PRIVATE
     llama
     common
     utils_lib
@@ -361,7 +365,7 @@ endif()
 
 # gpt-oss Metal backend (macOS)
 if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
-    target_link_libraries(llm-node gptoss_metal)
+    target_link_libraries(llm-node PRIVATE gptoss_metal)
     add_dependencies(llm-node gptoss_build_metallib)
     target_link_options(llm-node PRIVATE
         LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
@@ -370,19 +374,19 @@ endif()
 
 # whisper.cpp support
 if(BUILD_WITH_WHISPER)
-    target_link_libraries(llm-node whisper)
+    target_link_libraries(llm-node PRIVATE whisper)
     target_compile_definitions(llm-node PRIVATE USE_WHISPER)
 endif()
 
 # stable-diffusion.cpp support
 if(BUILD_WITH_SD)
-    target_link_libraries(llm-node stable-diffusion)
+    target_link_libraries(llm-node PRIVATE stable-diffusion)
     target_compile_definitions(llm-node PRIVATE USE_SD)
 endif()
 
 # ONNX Runtime support
 if(BUILD_WITH_ONNX)
-    target_link_libraries(llm-node onnxruntime::onnxruntime)
+    target_link_libraries(llm-node PRIVATE onnxruntime::onnxruntime)
 endif()
 
 # Static linking if requested

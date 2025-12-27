@@ -35,6 +35,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
     };
 
     (api::create_router(state), db_pool)

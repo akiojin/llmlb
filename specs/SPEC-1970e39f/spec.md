@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-1970e39f`
 **作成日**: 2025-12-18
-**ステータス**: 作成中
+**ステータス**: ✅ 実装完了
 **入力**: ユーザー説明: "ルーターとノードのHTTPリクエスト/レスポンスを構造化ログとして
 出力し、デバッグと監視を容易にする。既存のtracing(Rust)/spdlog(C++)を活用する"
 
@@ -151,12 +151,16 @@
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- ルーターのOpenAI互換API機能（`router/src/api/openai.rs`）
-- ノードの推論エンジン（`node/src/core/inference_engine.cpp`）
-- 既存のロギングインフラ（`router/src/logging.rs`, `node/src/utils/logger.cpp`）
-- リクエスト履歴機能（SPEC-fbc50d97）
+- ルーターのOpenAI互換API機能（`router/src/api/openai.rs`）✅ 実装済み
+- ノードの推論エンジン（`node/src/core/inference_engine.cpp`）✅ 実装済み
+- 既存のロギングインフラ（`router/src/logging.rs`, `node/src/utils/logger.cpp`）✅ 実装済み
+- **SPEC-fbc50d97**: リクエスト履歴保存 🔴 未完了（6タスク残）
+
+### 依存元（このSPECに依存するもの）
+
+- なし
 
 ---
 

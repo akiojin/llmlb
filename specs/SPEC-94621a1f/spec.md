@@ -143,3 +143,17 @@
 **環境変数の確認**:
 
 - LLM_ROUTER_URL, LLM_NODE_PORT, LLM_NODE_HEARTBEAT_SECS
+
+---
+
+## 依存関係 *(該当する場合)*
+
+### 前提条件（このSPECが依存するもの）
+
+- なし（基盤機能）
+
+### 依存元（このSPECに依存するもの）
+
+- **SPEC-63acef08**: 統一APIプロキシ
+- **SPEC-443acc8c**: ヘルスチェック機構
+- **SPEC-712c20cf**: 管理ダッシュボード

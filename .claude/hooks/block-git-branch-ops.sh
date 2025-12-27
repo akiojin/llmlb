@@ -25,13 +25,12 @@ is_read_only_git_branch() {
     fi
 
     local -a branch_tokens=()
-    if command -v python3 >/dev/null 2>&1; then
-        local tokens_json
-        tokens_json=$(
-            BRANCH_ARGS="$branch_args" python3 - <<'PY' 2>/dev/null
+    if command -v python >/dev/null 2>&1; then
+        local tokens_output
+        tokens_output=$(
+            BRANCH_ARGS="$branch_args" python - <<'PY' 2>/dev/null
 import os
 import shlex
-import json
 
 args = os.environ.get("BRANCH_ARGS", "")
 try:
@@ -39,21 +38,17 @@ try:
 except ValueError:
     tokens = []
 
-print(json.dumps(tokens))
+print("\n".join(tokens))
 PY
         )
-        if [ -z "$tokens_json" ]; then
-            tokens_json='[]'
-        fi
         branch_tokens=()
         while IFS= read -r token; do
-            # Skip empty tokens to avoid introducing blanks from jq output
             [ -n "$token" ] && branch_tokens+=("$token")
         done <<EOF
-$(printf '%s\n' "$tokens_json" | jq -r '.[]')
+$tokens_output
 EOF
     else
-        # Pythonが利用できない環境向けフォールバック
+        # Pythonが利用できなぁE��墁E��けフォールバック
         read -r -a branch_tokens <<< "$branch_args"
     fi
 
@@ -127,7 +122,40 @@ EOF
 json_input=$(cat)
 
 # ツール名を確認
-tool_name=$(echo "$json_input" | jq -r '.tool_name // empty')
+get_json_value() {
+    local query="$1"
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$json_input" | jq -r "$query" 2>/dev/null
+        return
+    fi
+    if command -v python >/dev/null 2>&1; then
+        JSON_INPUT="$json_input" QUERY="$query" python - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "")
+query = os.environ.get("QUERY", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+if query.startswith(".tool_name"):
+    value = obj.get("tool_name", "")
+elif query.startswith(".tool_input.command"):
+    value = (obj.get("tool_input") or {}).get("command", "")
+else:
+    value = ""
+
+print("" if value is None else value)
+PY
+        return
+    fi
+    printf '%s' ""
+}
+
+tool_name=$(get_json_value '.tool_name // empty')
 
 # Bashツール以外は許可
 if [ "$tool_name" != "Bash" ]; then
@@ -135,7 +163,7 @@ if [ "$tool_name" != "Bash" ]; then
 fi
 
 # コマンドを取得
-command=$(echo "$json_input" | jq -r '.tool_input.command // empty')
+command=$(get_json_value '.tool_input.command // empty')
 
 # 演算子で連結された各コマンドを個別にチェックするために分割
 # &&, ||, ;, |, |&, &, 改行などで区切って先頭トークンを判定する

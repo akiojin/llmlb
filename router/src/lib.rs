@@ -67,6 +67,8 @@ pub struct AppState {
     pub jwt_secret: String,
     /// 共有HTTPクライアント（接続プーリング有効）
     pub http_client: reqwest::Client,
+    /// リクエスト待機キュー設定
+    pub queue_config: config::QueueConfig,
 }
 
 #[cfg(test)]

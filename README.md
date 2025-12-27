@@ -445,10 +445,64 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
 ## Installation
 
 ### Prerequisites
+
 - Linux/macOS/Windows x64 (GPU recommended)
 - Rust toolchain (stable) and cargo
 - Docker (optional)
-- CUDA driver (for NVIDIA GPU)
+- CUDA Driver (for NVIDIA GPU) - see [CUDA Setup](#cuda-setup-nvidia-gpu)
+
+### CUDA Setup (NVIDIA GPU)
+
+For NVIDIA GPU acceleration, you need:
+
+| Component | Build Environment | Runtime Environment |
+|-----------|-------------------|---------------------|
+| **CUDA Driver** | Required | Required |
+| **CUDA Toolkit** | Required (for `nvcc`) | Not required |
+
+#### Installing CUDA Driver
+
+The CUDA Driver is typically installed with NVIDIA graphics drivers.
+
+```bash
+# Verify driver installation
+nvidia-smi
+```
+
+If `nvidia-smi` shows your GPU, the driver is installed.
+
+#### Installing CUDA Toolkit (Build Environment Only)
+
+Required only for building the node with CUDA support (`BUILD_WITH_CUDA=ON`).
+
+**Windows:**
+
+1. Download from [CUDA Toolkit Downloads](https://developer.nvidia.com/cuda-downloads)
+2. Select: Windows → x86_64 → 11 → exe (local)
+3. Run the installer (Express installation recommended)
+4. Verify: Open new terminal and run `nvcc --version`
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+# Add NVIDIA package repository
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# Install CUDA Toolkit
+sudo apt install cuda-toolkit-12-4
+
+# Add to PATH (add to ~/.bashrc)
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# Verify
+nvcc --version
+```
+
+**Note:** Runtime environments (nodes running pre-built binaries) only need the CUDA
+Driver, not the full Toolkit.
 
 ### 1) Build from Rust source (Recommended)
 ```bash

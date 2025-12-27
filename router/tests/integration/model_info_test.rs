@@ -44,6 +44,7 @@ async fn build_app() -> (Router, String) {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
     };
 
     let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
@@ -437,6 +438,7 @@ async fn test_v1_models_returns_fixed_list() {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
     };
 
     let app = api::create_router(state);
@@ -460,16 +462,21 @@ async fn test_v1_models_returns_fixed_list() {
     let data = json["data"]
         .as_array()
         .expect("data must be an array of models");
-    let ids: Vec<String> = data
+
+    // ローカルモデルのみをフィルタ（クラウドプロバイダープレフィックスを除外）
+    // SPEC-82491000でクラウドモデルが追加されたため、ローカルモデルのみを検証
+    let cloud_prefixes = ["openai:", "google:", "anthropic:"];
+    let local_ids: Vec<String> = data
         .iter()
         .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .filter(|id| !cloud_prefixes.iter().any(|prefix| id.starts_with(prefix)))
         .collect();
 
     let expected: Vec<String> = vec![];
 
     assert_eq!(
-        ids.len(),
+        local_ids.len(),
         expected.len(),
-        "should return only downloaded models"
+        "should return only downloaded local models (cloud models are filtered out)"
     );
 }

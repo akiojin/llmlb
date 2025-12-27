@@ -156,6 +156,8 @@ export interface DashboardStats {
   total_requests: number
   successful_requests: number
   failed_requests: number
+  total_active_requests: number
+  queued_requests: number
   average_response_time_ms: number
   average_gpu_usage: number
   average_gpu_memory_usage: number

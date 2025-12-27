@@ -53,6 +53,23 @@ pub enum WaitResult {
     CapacityExceeded,
 }
 
+#[derive(Debug)]
+struct QueueWaiterGuard {
+    waiters: Arc<AtomicUsize>,
+}
+
+impl QueueWaiterGuard {
+    fn new(waiters: Arc<AtomicUsize>) -> Self {
+        Self { waiters }
+    }
+}
+
+impl Drop for QueueWaiterGuard {
+    fn drop(&mut self) {
+        self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+    }
+}
+
 /// アドミッション制御の判断結果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdmissionDecision {
@@ -1590,7 +1607,8 @@ impl NodeLoadState {
             .as_ref()
             .map(|m| m.active_requests)
             .unwrap_or(0);
-        heartbeat_active.saturating_add(self.assigned_active)
+        // Avoid double counting when node heartbeat mirrors router-assigned requests.
+        heartbeat_active.max(self.assigned_active)
     }
 
     fn average_latency_ms(&self) -> Option<f32> {
@@ -1706,6 +1724,8 @@ pub struct SystemSummary {
     pub average_gpu_memory_usage: Option<f32>,
     /// 処理中リクエスト総数
     pub total_active_requests: u32,
+    /// 待機中リクエスト総数
+    pub queued_requests: usize,
     /// 最新メトリクス更新時刻
     pub last_metrics_updated_at: Option<DateTime<Utc>>,
 }
@@ -1724,6 +1744,10 @@ pub struct LoadManager {
     ready_notify: Arc<Notify>,
     /// 待機中リクエスト数（上限判定用）
     waiters: Arc<AtomicUsize>,
+    /// リクエストキュー待機中の通知
+    queue_notify: Arc<Notify>,
+    /// リクエストキュー待機数
+    queue_waiters: Arc<AtomicUsize>,
 }
 
 /// ハートビートから記録するメトリクス値
@@ -1772,6 +1796,8 @@ impl LoadManager {
             pending: Arc::new(AtomicUsize::new(0)),
             ready_notify: Arc::new(Notify::new()),
             waiters: Arc::new(AtomicUsize::new(0)),
+            queue_notify: Arc::new(Notify::new()),
+            queue_waiters: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -1824,6 +1850,8 @@ impl LoadManager {
 
         let mut state = self.state.write().await;
         let entry = state.entry(node_id).or_default();
+        let was_active = entry.combined_active() > 0;
+        let was_initializing = entry.initializing;
 
         let derived_average = average_response_time_ms.or_else(|| entry.average_latency_ms());
         let timestamp = Utc::now();
@@ -1852,6 +1880,11 @@ impl LoadManager {
         if !entry.initializing {
             self.ready_notify.notify_waiters();
         }
+        if (was_active && entry.combined_active() == 0)
+            || (was_initializing && !entry.initializing && entry.combined_active() == 0)
+        {
+            self.queue_notify.notify_waiters();
+        }
 
         Ok(())
     }
@@ -1869,6 +1902,9 @@ impl LoadManager {
         entry.ready_models = ready_models;
         if !initializing {
             self.ready_notify.notify_waiters();
+            if entry.combined_active() == 0 {
+                self.queue_notify.notify_waiters();
+            }
         }
     }
 
@@ -1928,6 +1964,106 @@ impl LoadManager {
         let result = tokio::time::timeout(timeout_duration, self.ready_notify.notified()).await;
 
         self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+
+        match result {
+            Ok(_) => WaitResult::Ready,
+            Err(_) => WaitResult::Timeout,
+        }
+    }
+
+    /// リクエストキュー待機数を取得
+    pub fn queue_waiters(&self) -> usize {
+        self.queue_waiters.load(AtomicOrdering::Relaxed)
+    }
+
+    /// アイドルノードが存在するか
+    async fn has_idle_nodes(&self) -> bool {
+        let nodes = self.registry.list().await;
+        let online_nodes: Vec<_> = nodes
+            .into_iter()
+            .filter(|node| node.status == NodeStatus::Online && !node.initializing)
+            .collect();
+
+        if online_nodes.is_empty() {
+            return false;
+        }
+
+        let state = self.state.read().await;
+        online_nodes.iter().any(|node| {
+            state
+                .get(&node.id)
+                .map(|load| load.combined_active() == 0)
+                .unwrap_or(true)
+        })
+    }
+
+    /// アイドルノードを選択（なければ None）
+    pub async fn select_idle_node(&self) -> RouterResult<Option<Node>> {
+        let nodes = self.registry.list().await;
+        let online_nodes: Vec<_> = nodes
+            .into_iter()
+            .filter(|node| node.status == NodeStatus::Online && !node.initializing)
+            .collect();
+
+        if online_nodes.is_empty() {
+            return Err(RouterError::NoNodesAvailable);
+        }
+
+        let state = self.state.read().await;
+        let idle_nodes: Vec<_> = online_nodes
+            .iter()
+            .filter(|node| {
+                state
+                    .get(&node.id)
+                    .map(|load| load.combined_active() == 0)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        if idle_nodes.is_empty() {
+            return Ok(None);
+        }
+
+        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let round_robin_start = round_robin_cursor % online_nodes.len();
+        let round_robin_priority = compute_round_robin_priority(&online_nodes, round_robin_start);
+
+        let mut ordered = idle_nodes;
+        ordered.sort_by(|a, b| {
+            let a_rank = round_robin_priority
+                .get(&a.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            let b_rank = round_robin_priority
+                .get(&b.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            a_rank.cmp(&b_rank)
+        });
+
+        Ok(ordered.first().cloned())
+    }
+
+    /// タイムアウト付きでアイドルノード待機
+    pub async fn wait_for_idle_node_with_timeout(
+        &self,
+        max_waiters: usize,
+        timeout_duration: StdDuration,
+    ) -> WaitResult {
+        let current = self.queue_waiters.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+        if current > max_waiters {
+            self.queue_waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+            return WaitResult::CapacityExceeded;
+        }
+
+        let _guard = QueueWaiterGuard::new(self.queue_waiters.clone());
+
+        if self.has_idle_nodes().await {
+            return WaitResult::Ready;
+        }
+
+        let result = tokio::time::timeout(timeout_duration, self.queue_notify.notified()).await;
 
         match result {
             Ok(_) => WaitResult::Ready,
@@ -2018,7 +2154,12 @@ impl LoadManager {
             }
         }
 
+        let should_notify_idle = entry.combined_active() == 0;
+
         drop(state);
+        if should_notify_idle {
+            self.queue_notify.notify_waiters();
+        }
         self.record_request_history(outcome, Utc::now()).await;
 
         Ok(())
@@ -2206,6 +2347,7 @@ impl LoadManager {
                 .iter()
                 .filter(|node| node.status == NodeStatus::Offline)
                 .count(),
+            queued_requests: self.queue_waiters.load(AtomicOrdering::Relaxed),
             ..Default::default()
         };
 

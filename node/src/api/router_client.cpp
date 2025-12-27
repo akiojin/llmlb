@@ -3,6 +3,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <thread>
+#include "runtime/state.h"
 
 namespace llm_node {
 
@@ -124,7 +125,7 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
             (metrics->mem_total_bytes > 0 ?
                 static_cast<float>(metrics->mem_used_bytes) / static_cast<float>(metrics->mem_total_bytes) * 100.0f : 0.0f)
             : 0.0f},
-        {"active_requests", 0},
+        {"active_requests", static_cast<int>(active_request_count())},
         {"loaded_models", loaded_models},
         {"loaded_embedding_models", loaded_embedding_models},
         {"loaded_asr_models", loaded_asr_models},

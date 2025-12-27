@@ -1,19 +1,11 @@
 {
   "mcpServers": {
-    "context7": {
-      "type": "sse",
-      "url": "https://mcp.context7.com/sse"
-    },
     "markitdown": {
       "type": "stdio",
       "command": "uvx",
       "args": [
         "markitdown-mcp"
       ]
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@executeautomation/playwright-mcp-server"]
     },
     "llm-router": {
       "type": "stdio",

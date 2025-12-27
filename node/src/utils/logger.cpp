@@ -14,6 +14,18 @@ namespace fs = std::filesystem;
 namespace llm_node::logger {
 
 namespace {
+    // Cross-platform localtime helper
+    inline std::tm* safe_localtime(const std::time_t* time, std::tm* result) {
+#ifdef _WIN32
+        if (localtime_s(result, time) == 0) {
+            return result;
+        }
+        return nullptr;
+#else
+        return localtime_r(time, result);
+#endif
+    }
+
     constexpr const char* LOG_FILE_BASE = "llm-node.jsonl";
     constexpr const char* DEFAULT_DATA_DIR = ".llm-router";
     constexpr const char* LOG_SUBDIR = "logs";
@@ -34,7 +46,7 @@ namespace {
         auto now = std::chrono::system_clock::now();
         auto time_t_now = std::chrono::system_clock::to_time_t(now);
         std::tm tm_now{};
-        localtime_r(&time_t_now, &tm_now);
+        safe_localtime(&time_t_now, &tm_now);
         std::ostringstream oss;
         oss << std::put_time(&tm_now, "%Y-%m-%d");
         return oss.str();
@@ -117,7 +129,7 @@ void cleanup_old_logs(const std::string& log_dir, int retention_days) {
     auto cutoff = now - std::chrono::hours(24 * retention_days);
     auto cutoff_time_t = std::chrono::system_clock::to_time_t(cutoff);
     std::tm cutoff_tm{};
-    localtime_r(&cutoff_time_t, &cutoff_tm);
+    safe_localtime(&cutoff_time_t, &cutoff_tm);
     std::ostringstream oss;
     oss << std::put_time(&cutoff_tm, "%Y-%m-%d");
     std::string cutoff_str = oss.str();

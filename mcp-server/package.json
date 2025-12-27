@@ -17,6 +17,7 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "type-check": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },

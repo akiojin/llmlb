@@ -50,6 +50,9 @@ pub mod cli;
 /// モデル変換タスク
 pub mod convert;
 
+/// 対応モデル定義
+pub mod supported_models;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {

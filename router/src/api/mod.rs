@@ -109,13 +109,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）
         .route("/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
-        .route("/models/register", post(models::register_model))
+        // モデル管理API (SPEC-6cd7f960)
+        .route("/models/hub", get(models::list_models_with_status))
+        .route("/models/pull", post(models::pull_model))
         .route("/models/*model_name", delete(models::delete_model))
-        .route(
-            "/models/discover-gguf",
-            post(models::discover_gguf_endpoint),
-        )
         // Prometheus metrics（cloud prefix含む独自メトリクス）
         .route("/metrics/cloud", get(cloud_metrics::export_metrics))
         .layer(middleware::from_fn_with_state(

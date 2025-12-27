@@ -412,6 +412,7 @@ mod tests {
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         }
     }
 
@@ -656,6 +657,7 @@ mod tests {
         assert_eq!(summary.registering_nodes, 0);
         assert_eq!(summary.total_requests, 0);
         assert_eq!(summary.total_active_requests, 0);
+        assert_eq!(summary.queued_requests, 0);
         assert!(summary.average_response_time_ms.is_none());
         assert!(summary.last_metrics_updated_at.is_none());
     }
@@ -746,6 +748,7 @@ mod tests {
         assert_eq!(summary.successful_requests, 1);
         assert_eq!(summary.failed_requests, 1);
         assert_eq!(summary.total_active_requests, 2);
+        assert_eq!(summary.queued_requests, 0);
         let avg = summary.average_response_time_ms.unwrap();
         assert!((avg - 160.0).abs() < 0.1);
         assert!(summary.last_metrics_updated_at.is_some());

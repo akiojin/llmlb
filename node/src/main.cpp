@@ -11,6 +11,7 @@
 #include "system/gpu_detector.h"
 #include "api/router_client.h"
 #include "models/model_sync.h"
+#include "models/model_resolver.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
 #include "core/llama_manager.h"
@@ -165,8 +166,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             model_sync->setApiKey(cfg.router_api_key);
         }
 
-        // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
-        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());
+        auto model_resolver = std::make_shared<llm_node::ModelResolver>(
+            cfg.models_dir,
+            cfg.shared_models_dir,
+            router_url,
+            cfg.router_api_key);
+
+        // Initialize inference engine with dependencies (ModelResolver handles local/shared/router resolution)
+        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
@@ -178,10 +185,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
 #ifdef USE_ONNX_RUNTIME
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager, cfg);
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager);
         spdlog::info("Audio endpoints registered for ASR + TTS");
 #else
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, cfg);
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager);
         spdlog::info("Audio endpoints registered for ASR");
 #endif
         audio_endpoints.registerRoutes(server.getServer());
@@ -189,7 +196,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
 #ifdef USE_SD
         // Register image endpoints for image generation
-        llm_node::ImageEndpoints image_endpoints(sd_manager, cfg);
+        llm_node::ImageEndpoints image_endpoints(sd_manager);
         image_endpoints.registerRoutes(server.getServer());
         spdlog::info("Image endpoints registered for image generation");
 #endif

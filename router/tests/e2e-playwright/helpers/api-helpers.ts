@@ -18,9 +18,16 @@ const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 /**
  * Lifecycle status of a registered model
- * Values from /v1/models: pending, caching, registered, error
+ * Values from /v1/models: pending, caching, registered, error, downloading, ready, cached
  */
-export type LifecycleStatus = 'pending' | 'caching' | 'registered' | 'error';
+export type LifecycleStatus =
+  | 'pending'
+  | 'caching'
+  | 'registered'
+  | 'error'
+  | 'downloading'
+  | 'ready'
+  | 'cached';
 
 /**
  * Download progress information
@@ -100,13 +107,90 @@ export async function clearAllModels(request: APIRequestContext): Promise<void> 
   }
 }
 
+// ============================================================================
+// Model Hub API Helpers
+// ============================================================================
+
 /**
- * Register a model via API
+ * Supported model from Model Hub
+ */
+export interface HubModel {
+  id: string;
+  name: string;
+  description: string;
+  repo: string;
+  recommended_filename: string;
+  size_bytes: number;
+  required_memory_bytes: number;
+  tags: string[];
+  capabilities: string[];
+  quantization?: string;
+  parameter_count?: string;
+  hf_info?: {
+    downloads?: number;
+    likes?: number;
+  };
+  status: 'available' | 'downloading' | 'downloaded';
+  lifecycle_status?: LifecycleStatus;
+}
+
+/**
+ * Get list of supported models from Model Hub
+ */
+export async function getHubModels(request: APIRequestContext): Promise<HubModel[]> {
+  const response = await request.get(`${API_BASE}/v0/models/hub`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  return response.json();
+}
+
+/**
+ * Pull a model from Model Hub
  *
  * Response codes:
- * - 201: Model registered directly (cached/already downloaded)
- * - 202: ConvertTask created for download/conversion
- * - 400: Validation error (model already registered, file not found, etc.)
+ * - 200: Pull initiated successfully
+ * - 400: Validation error (invalid model_id)
+ * - 404: Model not found in supported models
+ */
+export async function pullModel(
+  request: APIRequestContext,
+  modelId: string
+): Promise<{
+  modelId?: string;
+  status: number;
+  error?: string;
+}> {
+  const response = await request.post(`${API_BASE}/v0/models/pull`, {
+    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+    data: { model_id: modelId },
+  });
+
+  const status = response.status();
+
+  try {
+    const body = await response.json();
+
+    if (status === 200) {
+      return {
+        modelId: body.model_id,
+        status,
+      };
+    }
+
+    return {
+      error: body.error || body.message,
+      status,
+    };
+  } catch {
+    return { error: await response.text(), status };
+  }
+}
+
+/**
+ * @deprecated Use pullModel() instead - /v0/models/register has been removed
  */
 export async function registerModel(
   request: APIRequestContext,
@@ -119,42 +203,8 @@ export async function registerModel(
   status: number;
   registered?: boolean;
 }> {
-  const response = await request.post(`${API_BASE}/v0/models/register`, {
-    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
-    data: { repo, filename },
-  });
-
-  const status = response.status();
-
-  try {
-    const body = await response.json();
-
-    // 201: Direct registration (model was cached)
-    if (status === 201) {
-      return {
-        modelName: body.name,
-        status,
-        registered: true,
-      };
-    }
-
-    // 202: ConvertTask created
-    if (status === 202) {
-      return {
-        taskId: body.task_id,
-        status,
-        registered: false,
-      };
-    }
-
-    // Error response
-    return {
-      error: body.error || body.message,
-      status,
-    };
-  } catch {
-    return { error: await response.text(), status };
-  }
+  // Return 404 since endpoint is removed
+  return { error: 'Endpoint removed - use pullModel() instead', status: 404 };
 }
 
 // ============================================================================
@@ -275,32 +325,34 @@ export async function getOnlineNodeCount(request: APIRequestContext): Promise<nu
 // ============================================================================
 
 /**
- * Register a model via the Dashboard UI
+ * Pull a model via the Dashboard UI (Model Hub tab)
+ */
+export async function pullModelViaUI(
+  page: Page,
+  modelId: string
+): Promise<void> {
+  // Navigate to Model Hub tab
+  await page.click('button[role="tab"]:has-text("Model Hub")');
+  await page.waitForTimeout(500);
+
+  // Find the model card and click Pull button
+  const modelCard = page.locator(`[data-model-id="${modelId}"]`);
+  const pullButton = modelCard.locator('button:has-text("Pull")');
+  await pullButton.click();
+
+  // Wait for the action to complete
+  await page.waitForTimeout(500);
+}
+
+/**
+ * @deprecated Use pullModelViaUI() instead - Register modal has been removed
  */
 export async function registerModelViaUI(
   page: Page,
   repo: string,
   filename?: string
 ): Promise<void> {
-  // Click Register button
-  await page.click('button:not([role="tab"]):has-text("Register")');
-
-  // Wait for modal
-  await page.waitForSelector('#convert-modal', { state: 'visible' });
-
-  // Fill form
-  await page.fill('#convert-repo', repo);
-  if (filename) {
-    await page.fill('#convert-filename', filename);
-  }
-
-  // Submit
-  await page.click('#convert-submit');
-
-  // Wait for modal to close or response
-  await page.waitForSelector('#convert-modal', { state: 'hidden', timeout: 10000 }).catch(() => {
-    // Modal may stay open with error, that's ok
-  });
+  throw new Error('Register modal has been removed - use pullModelViaUI() instead');
 }
 
 /**

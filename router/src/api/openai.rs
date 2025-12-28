@@ -11,7 +11,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapabilities, ModelCapability},
+    types::{ModelCapabilities, ModelCapability, VisionCapability},
 };
 use reqwest;
 use serde_json::{json, Value};
@@ -19,6 +19,7 @@ use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use crate::models::image;
 use crate::registry::models::{is_valid_model_file, router_model_path};
 use crate::{
     api::{
@@ -153,6 +154,18 @@ fn queue_error_response(
     response
 }
 
+fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Response {
+    let payload = json!({
+        "error": {
+            "message": message.into(),
+            "type": "invalid_request_error",
+            "code": status.as_u16(),
+        }
+    });
+
+    (status, Json(payload)).into_response()
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
@@ -173,6 +186,10 @@ pub async fn chat_completions(
         }
     }
     // 登録されていないモデルはノード側で処理（クラウドモデル等）
+
+    if let Err(response) = validate_vision_request(&state, &payload, &model).await {
+        return Ok(response);
+    }
 
     let stream = extract_stream(&payload);
     proxy_openai_post(
@@ -472,6 +489,80 @@ fn extract_stream(payload: &Value) -> bool {
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
+}
+
+fn collect_image_urls(payload: &Value) -> Result<Vec<String>, String> {
+    let mut urls = Vec::new();
+    let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) else {
+        return Ok(urls);
+    };
+
+    for message in messages {
+        let Some(content) = message.get("content") else {
+            continue;
+        };
+        let Some(parts) = content.as_array() else {
+            continue;
+        };
+
+        for part in parts {
+            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                continue;
+            }
+            let url = part
+                .get("image_url")
+                .and_then(|v| v.get("url"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "image_url.url is required".to_string())?;
+            urls.push(url.to_string());
+        }
+    }
+
+    Ok(urls)
+}
+
+async fn validate_vision_request(
+    state: &AppState,
+    payload: &Value,
+    model: &str,
+) -> Result<(), Response> {
+    let image_urls = collect_image_urls(payload)
+        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
+    if image_urls.is_empty() {
+        return Ok(());
+    }
+
+    let models = list_registered_models();
+    let Some(model_info) = models.iter().find(|m| m.name == model) else {
+        // 未登録モデル（クラウド等）はルーター側の検証をスキップ
+        return Ok(());
+    };
+    if !model_info.has_capability(ModelCapability::Vision) {
+        return Err(openai_error_response(
+            format!("Model '{}' does not support image understanding", model),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let vision_limits = VisionCapability::default();
+    if image_urls.len() > vision_limits.max_image_count as usize {
+        return Err(openai_error_response(
+            format!("Too many images (max {})", vision_limits.max_image_count),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    for url in image_urls {
+        if let Err(err) = image::validate_image_url(&state.http_client, &url, &vision_limits).await
+        {
+            return Err(openai_error_response(
+                err.to_string(),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_cloud_model(model: &str) -> Option<(String, String)> {

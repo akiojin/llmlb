@@ -25,9 +25,9 @@ const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
 fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
     match request_key {
         DEBUG_API_KEY_ALL => Some(ApiKeyScope::all()),
-        DEBUG_API_KEY_NODE => Some(vec![ApiKeyScope::NodeRegister]),
-        DEBUG_API_KEY_API => Some(vec![ApiKeyScope::ApiInference]),
-        DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::AdminAll]),
+        DEBUG_API_KEY_NODE => Some(vec![ApiKeyScope::Node]),
+        DEBUG_API_KEY_API => Some(vec![ApiKeyScope::Api]),
+        DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::Admin]),
         _ => None,
     }
 }
@@ -51,7 +51,7 @@ pub struct ApiKeyAuthContext {
 }
 
 fn has_scope(scopes: &[ApiKeyScope], required: ApiKeyScope) -> bool {
-    if scopes.contains(&ApiKeyScope::AdminAll) {
+    if scopes.contains(&ApiKeyScope::Admin) {
         return true;
     }
     scopes.contains(&required)
@@ -243,7 +243,7 @@ pub async fn require_api_key_scope_middleware(
     Ok(next.run(request).await)
 }
 
-/// 管理者権限（JWTまたはadmin:*スコープAPIキー）ミドルウェア
+/// 管理者権限（JWTまたはadminスコープAPIキー）ミドルウェア
 pub async fn admin_or_api_key_middleware(
     State(app_state): State<crate::AppState>,
     mut request: Request,
@@ -277,7 +277,7 @@ pub async fn admin_or_api_key_middleware(
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
 
-    if !has_scope(&auth_context.scopes, ApiKeyScope::AdminAll) {
+    if !has_scope(&auth_context.scopes, ApiKeyScope::Admin) {
         return Err((StatusCode::FORBIDDEN, "Admin scope required".to_string()).into_response());
     }
 
@@ -292,6 +292,82 @@ pub async fn admin_or_api_key_middleware(
         exp,
     };
     request.extensions_mut().insert(claims);
+
+    Ok(next.run(request).await)
+}
+
+/// 管理者またはノード権限ミドルウェア
+///
+/// `/v0/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ノード(Node APIキー)」の両方から
+/// アクセスされるエンドポイント向け。
+///
+/// 許可される認証:
+/// - JWT (admin role)
+/// - APIキー (Admin scope)
+/// - APIキー (Node scope)
+///
+/// 拒否される認証:
+/// - APIキー (Api scope) → 403 Forbidden
+pub async fn admin_or_node_middleware(
+    State(app_state): State<crate::AppState>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // JWTがあれば優先
+    if let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if token_looks_like_jwt(token) {
+                let claims =
+                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
+                        tracing::warn!("JWT verification failed: {}", e);
+                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+                    })?;
+                if claims.role == UserRole::Admin {
+                    request.extensions_mut().insert(claims);
+                    return Ok(next.run(request).await);
+                }
+                return Err(
+                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
+                );
+            }
+        }
+    }
+
+    // JWTがない/無効ならAPIキーで認証
+    let api_key = extract_api_key(&request)?;
+    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
+
+    // Admin または Node スコープを許可
+    let has_admin = auth_context.scopes.contains(&ApiKeyScope::Admin);
+    let has_node = auth_context.scopes.contains(&ApiKeyScope::Node);
+    if !has_admin && !has_node {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Admin or Node scope required".to_string(),
+        )
+            .into_response());
+    }
+
+    // APIキーの発行者を管理者として扱う（Claimsを注入）
+    let exp = auth_context
+        .expires_at
+        .map(|dt| dt.timestamp() as usize)
+        .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
+    let claims = Claims {
+        sub: auth_context.created_by.to_string(),
+        role: if has_admin {
+            UserRole::Admin
+        } else {
+            UserRole::Viewer
+        },
+        exp,
+    };
+    request.extensions_mut().insert(claims);
+    request.extensions_mut().insert(auth_context);
 
     Ok(next.run(request).await)
 }
@@ -340,7 +416,7 @@ pub async fn api_key_or_node_token_auth_middleware(
     })?;
     let auth_context = authenticate_api_key(&pool, &api_key).await?;
 
-    if !has_scope(&auth_context.scopes, ApiKeyScope::ApiInference) {
+    if !has_scope(&auth_context.scopes, ApiKeyScope::Api) {
         return Err((
             StatusCode::FORBIDDEN,
             "Insufficient API key scope".to_string(),

@@ -321,13 +321,7 @@ ModelSyncResult ModelSync::sync() {
                     downloaded = ok;
                 }
 
-                // As a last resort, allow direct download_url (e.g. HF) if router blob is unavailable.
-                if (!ok && !info.download_url.empty()) {
-                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
-                    ok = !out.empty();
-                    downloaded = ok;
-                }
+                // Direct download_url (e.g. HF) is prohibited (SPEC-48678000 FR-006).
 
                 // metadata (chat_template) - persist only when we downloaded locally
                 if (ok && downloaded && !info.chat_template.empty()) {

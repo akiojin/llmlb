@@ -1,7 +1,7 @@
 # タスク: モデル自動解決機能
 
 **機能ID**: `SPEC-48678000`
-**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3開始待ち
+**ステータス**: Phase 3.5完了（実装・統合・ドキュメント更新）
 **入力**: `/specs/SPEC-48678000/` の設計ドキュメント
 
 ## 技術スタック
@@ -55,40 +55,40 @@
 
 ## Phase 3.3: コア実装
 
-- [ ] T008 `node/src/model_resolver.cpp` にモデル解決クラスを実装
+- [x] T008 `node/src/model_resolver.cpp` にモデル解決クラスを実装
   - ローカルキャッシュ確認
   - 共有パス直接参照（コピーなし）
   - ルーターAPI経由ダウンロード
   - エラーハンドリング
 
-- [ ] T009 `node/src/model_resolver.cpp` に共有パス参照ロジック
+- [x] T009 `node/src/model_resolver.cpp` に共有パス参照ロジック
   - NFSパスアクセス確認
   - ファイル存在チェック
   - 直接パス返却（コピーしない）
 
-- [ ] T010 `node/src/model_resolver.cpp` にルーターAPI経由ダウンロード
+- [x] T010 `node/src/model_resolver.cpp` にルーターAPI経由ダウンロード
   - `GET /v0/models/blob/:model_name` エンドポイント呼び出し
   - ローカルへの保存処理
   - 進捗表示（オプション）
 
-- [ ] T011 `node/src/model_resolver.cpp` にエラーハンドリング
+- [x] T011 `node/src/model_resolver.cpp` にエラーハンドリング
   - モデル未発見エラー
   - ネットワークエラー
   - ディスク容量不足エラー
 
 ## Phase 3.4: 統合
 
-- [ ] T012 既存の推論フローに ModelResolver を統合
-- [ ] T013 重複ダウンロード防止（ミューテックス）
-- [ ] T014 設定ファイルから共有パス・ルーターURL読み込み
+- [x] T012 既存の推論フローに ModelResolver を統合
+- [x] T013 重複ダウンロード防止（ミューテックス）
+- [x] T014 設定ファイルから共有パス・ルーターURL読み込み
 
 ## Phase 3.5: 仕上げ
 
-- [ ] T015 [P] `node/tests/` にユニットテスト追加
-  - パス検証ロジック
-  - エラーメッセージ生成
-- [ ] T016 パフォーマンステスト: エラー応答 < 1秒
-- [ ] T017 ドキュメント更新: モデル解決フローの説明
+- [x] T015 [P] `node/tests/` にユニットテスト追加
+  - パス検証ロジック（既存テストでカバー）
+  - エラーメッセージ生成（既存テストでカバー）
+- [x] T016 パフォーマンステスト: エラー応答 < 1秒
+- [x] T017 ドキュメント更新: モデル解決フローの説明
 
 ## 依存関係
 
@@ -113,7 +113,7 @@ Task T006: node/tests/ モデル不在時エラー contract test
 
 - [x] auto_repair 関連コードが完全に削除されている (T001-T003)
 - [x] 共有パスからの直接参照でコピーが発生しない (テスト: SharedPathDoesNotCopyToLocal)
-- [ ] ルーターAPI経由ダウンロードが正常に動作する (Phase 3.3で実装予定)
+- [x] ルーターAPI経由ダウンロードが正常に動作する (Phase 3.3で実装済み)
 - [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
 - [x] Hugging Face への直接ダウンロードが禁止されている (テスト: HuggingFaceDirectDownloadProhibited)
 - [x] すべてのテストが実装より先にある (TDD RED完了)

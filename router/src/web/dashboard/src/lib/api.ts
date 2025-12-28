@@ -403,6 +403,48 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
 // HFカタログは直接 https://huggingface.co を参照
 // ダウンロード状態は /v1/models の lifecycle_status で確認
 
+// SPEC-6cd7f960: 対応モデル定義
+export interface SupportedModel {
+  id: string
+  name: string
+  description: string
+  repo: string
+  recommended_filename: string
+  size_bytes: number
+  required_memory_bytes: number
+  tags: string[]
+  capabilities: string[]
+  quantization?: string
+  parameter_count?: string
+}
+
+// SPEC-6cd7f960: HuggingFace動的情報
+export interface HfInfo {
+  downloads?: number
+  likes?: number
+}
+
+// SPEC-6cd7f960: モデル状態
+export type ModelStatus = 'available' | 'downloading' | 'downloaded'
+
+// SPEC-6cd7f960: 対応モデル + 状態
+export interface ModelWithStatus extends SupportedModel {
+  status: ModelStatus
+  lifecycle_status?: LifecycleStatus
+  download_progress?: DownloadProgress | null
+  hf_info?: HfInfo
+}
+
+// SPEC-6cd7f960: Pull リクエスト/レスポンス
+export interface PullModelRequest {
+  model_id: string
+}
+
+export interface PullModelResponse {
+  model_id: string
+  status: string
+}
+
 export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
     // /v1/models - OpenAI互換モデル一覧（lifecycle_status含む）
@@ -424,12 +466,12 @@ export const modelsApi = {
     return json.data.map(toRegisteredModelView)
   },
 
-  // NOTE: getAvailable は廃止 - HFカタログは直接 https://huggingface.co を参照
+  getHub: () => fetchWithAuth<ModelWithStatus[]>('/v0/models/hub'),
 
-  register: (repo: string, filename?: string) =>
-    fetchWithAuth<unknown>('/v0/models/register', {
+  pull: (modelId: string) =>
+    fetchWithAuth<PullModelResponse>('/v0/models/pull', {
       method: 'POST',
-      body: JSON.stringify({ repo, filename }),
+      body: JSON.stringify({ model_id: modelId }),
     }),
 
   delete: (modelName: string) =>
@@ -442,7 +484,7 @@ export const modelsApi = {
 }
 
 // API Keys API
-export type ApiKeyScope = 'node:register' | 'api:inference' | 'admin:*'
+export type ApiKeyScope = 'node' | 'api' | 'admin'
 
 export interface ApiKey {
   id: string

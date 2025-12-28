@@ -1,7 +1,7 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3開始待ち
+**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3進行中
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
 ## 技術スタック
@@ -47,42 +47,42 @@
 
 ## Phase 3.3: コア実装 - 型定義
 
-- [ ] T006 `common/src/types.rs` に画像関連型を追加
+- [x] T006 `common/src/types.rs` に画像関連型を追加
   - ImageContent (URL/Base64)
   - ImageContentType (MIME type)
   - VisionCapability
 
-- [ ] T007 `common/src/protocol.rs` にVision用メッセージ型を追加
+- [x] T007 `common/src/protocol.rs` にVision用メッセージ型を追加
   - ContentPart (text/image_url)
   - ImageUrl
   - Vision対応ChatCompletionRequest拡張
 
-- [ ] T008 `common/src/types/capabilities.rs` に `image_understanding` capability追加
+- [x] T008 `common/src/types.rs` の ModelCapabilities に `image_understanding` を追加
 
 ## Phase 3.4: コア実装 - Router側
 
-- [ ] T009 `router/src/models/image.rs` に画像データ構造を実装
+- [x] T009 `router/src/models/image.rs` に画像データ構造を実装
   - Base64デコード
   - URL画像取得
   - MIME type検証
   - サイズ制限チェック (最大10MB)
 
-- [ ] T010 `router/src/api/chat.rs` にVision対応拡張
+- [x] T010 `router/src/api/openai.rs` にVision対応拡張
   - マルチパートコンテンツのパース
   - 画像データの抽出・変換
   - Vision非対応モデル検出・エラー
 
-- [ ] T011 `router/src/api/models.rs` にcapabilities情報追加
+- [x] T011 `router/src/api/openai.rs` にcapabilities情報追加
   - `/v1/models` レスポンスに `image_understanding` を含める
 
 ## Phase 3.5: コア実装 - Node側
 
-- [ ] T012 `node/src/core/vision_processor.cpp` に画像プリプロセス実装
+- [x] T012 `node/src/core/vision_processor.cpp` に画像プリプロセス実装
   - 画像デコード
   - リサイズ/正規化
   - CLIP embeddings生成
 
-- [ ] T013 `node/src/api/chat_endpoints.cpp` にVision対応拡張
+- [x] T013 `node/src/api/openai_endpoints.cpp` にVision対応拡張
   - 画像データ受信
   - llama.cpp multimodal連携
 

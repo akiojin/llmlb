@@ -286,8 +286,8 @@ mod tests {
 
     #[test]
     fn parse_scopes_parses_valid_json() {
-        let raw = serde_json::to_string(&vec![ApiKeyScope::ApiInference]).unwrap();
-        assert_eq!(parse_scopes(Some(raw)), vec![ApiKeyScope::ApiInference]);
+        let raw = serde_json::to_string(&vec![ApiKeyScope::Api]).unwrap();
+        assert_eq!(parse_scopes(Some(raw)), vec![ApiKeyScope::Api]);
     }
 
     #[tokio::test]
@@ -307,15 +307,10 @@ mod tests {
             .unwrap();
 
         // APIキーを作成
-        let api_key_with_plaintext = create(
-            &pool,
-            "Test API Key",
-            user.id,
-            None,
-            vec![ApiKeyScope::ApiInference],
-        )
-        .await
-        .expect("Failed to create API key");
+        let api_key_with_plaintext =
+            create(&pool, "Test API Key", user.id, None, vec![ApiKeyScope::Api])
+                .await
+                .expect("Failed to create API key");
 
         assert!(api_key_with_plaintext.key.starts_with("sk_"));
         assert_eq!(api_key_with_plaintext.name, "Test API Key");
@@ -330,7 +325,7 @@ mod tests {
         let found_key = found.unwrap();
         assert_eq!(found_key.name, "Test API Key");
         assert_eq!(found_key.created_by, user.id);
-        assert_eq!(found_key.scopes, vec![ApiKeyScope::ApiInference]);
+        assert_eq!(found_key.scopes, vec![ApiKeyScope::Api]);
     }
 
     #[tokio::test]
@@ -341,24 +336,12 @@ mod tests {
             .await
             .unwrap();
 
-        create(
-            &pool,
-            "Key 1",
-            user.id,
-            None,
-            vec![ApiKeyScope::ApiInference],
-        )
-        .await
-        .unwrap();
-        create(
-            &pool,
-            "Key 2",
-            user.id,
-            None,
-            vec![ApiKeyScope::ApiInference],
-        )
-        .await
-        .unwrap();
+        create(&pool, "Key 1", user.id, None, vec![ApiKeyScope::Api])
+            .await
+            .unwrap();
+        create(&pool, "Key 2", user.id, None, vec![ApiKeyScope::Api])
+            .await
+            .unwrap();
 
         let keys = list(&pool).await.unwrap();
         assert_eq!(keys.len(), 2);
@@ -372,15 +355,9 @@ mod tests {
             .await
             .unwrap();
 
-        let api_key = create(
-            &pool,
-            "Test Key",
-            user.id,
-            None,
-            vec![ApiKeyScope::ApiInference],
-        )
-        .await
-        .unwrap();
+        let api_key = create(&pool, "Test Key", user.id, None, vec![ApiKeyScope::Api])
+            .await
+            .unwrap();
 
         delete(&pool, api_key.id).await.unwrap();
 

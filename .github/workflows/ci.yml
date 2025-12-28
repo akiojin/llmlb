@@ -98,7 +98,10 @@ jobs:
         with:
           node-version: '20'
       - name: Build
-        run: npm run build:node
+        run: |
+          cd node && rm -rf build
+          cmake -B build -S . -DPORTABLE_BUILD=ON
+          cmake --build build --config Release --parallel
       - name: Show ccache stats
         run: ccache -s
       - name: Test
@@ -202,7 +205,10 @@ jobs:
         with:
           node-version: '20'
       - name: Build with coverage
-        run: npm run build:node:coverage
+        run: |
+          cd node && rm -rf build
+          cmake -B build -S . -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON -DCMAKE_CXX_FLAGS='--coverage' -DCMAKE_EXE_LINKER_FLAGS='--coverage'
+          cmake --build build --config Release --parallel
       - name: Show ccache stats
         run: ccache -s
       - name: Test

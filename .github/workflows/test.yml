@@ -117,7 +117,7 @@ jobs:
             ${{ runner.os }}-ccache-test-
 
       - name: Configure C++ project
-        run: cmake -S node -B node/build -DBUILD_TESTS=ON
+        run: cmake -S node -B node/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
 
       - name: Build C++ project
         run: cmake --build node/build --config Release

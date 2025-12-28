@@ -20,13 +20,23 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Options
+option(PORTABLE_BUILD "Build with portable CPU flags for CI/cross-platform compatibility" OFF)
+
 # Compiler flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         add_compile_options(-g -O0)
     else()
-        add_compile_options(-O3 -march=native)
+        add_compile_options(-O3)
+        if(PORTABLE_BUILD)
+            # Use baseline x86-64 for maximum compatibility
+            add_compile_options(-march=x86-64 -mtune=generic)
+        else()
+            # Optimize for the build machine's CPU
+            add_compile_options(-march=native)
+        endif()
     endif()
 endif()
 

@@ -41,6 +41,68 @@
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、登録時の形式選択を置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
 
+## 内蔵エンジンのアーキテクチャ（概念）
+
+> 目的: **内蔵エンジン群の責務境界と選択フロー**を一枚で把握できるようにする。
+
+### 構成図（概念）
+
+```
+┌──────────────┐            ┌───────────────────────────┐
+│  Router      │            │           Node            │
+│  - 登録/形式 │──manifest──▶  ModelStorage / Registry   │
+│  - HF検証    │            │  - config/tokenizer検証   │
+└──────────────┘            │  - safetensors/gguf解決    │
+                             │             │
+                             │             ▼
+                             │     EngineRegistry
+                             │  (RuntimeTypeで選択)
+                             │             │
+                             │             ▼
+                             │      Inference Engine
+                             └───────────────────────────┘
+```
+
+### 主要コンポーネント
+
+- **Router**
+  - 登録時に **形式（safetensors/gguf）を確定**し、HF metadata を検証する。
+  - 形式選択の結果を **manifest** として Node に配布する。
+- **Node / ModelStorage**
+  - 形式・ファイルの整合性（`config.json` / `tokenizer.json` / shard / index）を検証。
+  - `ModelDescriptor` を生成（format / primary_path / runtime / capabilities）。
+- **EngineRegistry**
+  - `RuntimeType` に基づき **実行エンジンを確定**する。
+  - Node は登録時の形式と metadata を正とし、**実行時の自動判別や形式切替は行わない**。
+- **Inference Engine**
+  - GPU 前提（Metal/CUDA）。
+  - 公式最適化アーティファクトは **実行キャッシュ**として利用可能だが、
+    登録時の形式選択は上書きしない。
+
+### RuntimeType とエンジンの対応（現状）
+
+| RuntimeType | 主用途 | 主要アーティファクト | 備考 |
+|---|---|---|---|
+| `LlamaCpp` | LLM / Embedding | GGUF | safetensors 不在時のみ選択対象 |
+| `GptOssCpp` | gpt-oss | safetensors + 公式最適化 | Metal/CUDA の最適化アーティファクトは補助 |
+| `NemotronCpp` | Nemotron | safetensors | **CUDAのみが前提**、Metalは後回し |
+| `WhisperCpp` | ASR | safetensors（正本） | 旧 whisper.cpp 前提は置換方針 |
+| `StableDiffusion` | 画像生成 | safetensors（正本） | 旧 stable-diffusion.cpp 前提は置換方針 |
+| `OnnxRuntime` | TTS | safetensors（正本） | Python依存なしで運用する |
+
+### 形式選択とエンジン選択の原則
+
+1. **Router が登録時に形式を確定**（`format=safetensors` / `format=gguf`）。
+2. **Node は形式を尊重**し、runtime を metadata から決定する。
+3. **safetensors が正本**。GGUF は safetensors が存在しないモデルのみ許容。
+4. **最適化アーティファクトは “実行キャッシュ”** であり、形式選択は上書きしない。
+
+### Nemotron の位置づけ
+
+- 内蔵エンジンの **一部として Nemotron 対応を含む**。
+- **CUDAのみが前提**（Metal は将来対応）。
+- Nemotron 専用の詳細設計は **TBD** として後段 SPEC に委譲。
+
 ## 詳細仕様（参照）
 - **エンジン抽象化**: `SPEC-d7feaa2c`
 - **gpt-oss-20b safetensors 実行**: `SPEC-2c0e5a9b`

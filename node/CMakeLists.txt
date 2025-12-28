@@ -344,6 +344,31 @@ target_link_libraries(llm_engine_llama_cpp
 )
 set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
 
+# Engine plugin: gpt-oss
+if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_gptoss SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
+    )
+    target_include_directories(llm_engine_gptoss
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
+    )
+    target_link_libraries(llm_engine_gptoss
+        PRIVATE
+            gptoss_metal
+            spdlog::spdlog_header_only
+    )
+    add_dependencies(llm_engine_gptoss gptoss_build_metallib)
+    target_link_options(llm_engine_gptoss PRIVATE
+        LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
+    )
+    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
+endif()
+
 # Collect source files
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp

@@ -21,7 +21,7 @@
 
 ## Core
 - [ ] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
-- [ ] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
+- [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
 - [ ] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [ ] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。

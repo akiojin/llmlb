@@ -59,6 +59,10 @@ target_link_libraries(llm-node-unit-tests
         OpenSSL::Crypto
 )
 
+if(BUILD_WITH_ONNX)
+    target_link_libraries(llm-node-unit-tests PRIVATE onnxruntime::onnxruntime)
+endif()
+
 # Link Metal frameworks on macOS
 if(APPLE)
     find_library(METAL_FRAMEWORK Metal)

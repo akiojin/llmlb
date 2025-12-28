@@ -109,7 +109,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
     });
 
-    server.Get("/startup", [this](const httplib::Request&, httplib::Response& res) {
+    server.Get("/startup", [](const httplib::Request&, httplib::Response& res) {
         if (llm_node::is_ready()) {
             res.set_content(R"({"status":"ready"})", "application/json");
         } else {

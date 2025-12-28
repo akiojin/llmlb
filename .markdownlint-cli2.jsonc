@@ -15,6 +15,7 @@
     "vendor/**",
     "**/vendor/**",
     "node/third_party/**",
-    "node/build/**"
+    "node/build/**",
+    "node/build-*/**"
   ]
 }

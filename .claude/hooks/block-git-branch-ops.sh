@@ -191,7 +191,7 @@ while IFS= read -r segment; do
 {
   "decision": "block",
   "reason": "🚫 Branch switching, creation, and worktree commands are not allowed",
-  "stopReason": "Worktree is designed to complete work on the launched branch. Branch operations such as git checkout, git switch, git branch, and git worktree cannot be executed.\n\nBlocked command: $command"
+  "stopReason": "Worktree is designed to complete work on the launched branch. Branch operations such as git checkout, git switch, git branch, and git worktree cannot be executed. Blocked command: $command"
 }
 EOF
 

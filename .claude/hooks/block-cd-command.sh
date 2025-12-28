@@ -130,7 +130,7 @@ while IFS= read -r segment; do
 {
   "decision": "block",
   "reason": "🚫 cd command outside worktree is not allowed",
-  "stopReason": "Worktree is designed to complete work within the launched directory. Directory navigation outside the worktree using cd command cannot be executed.\n\nWorktree root: $WORKTREE_ROOT\nTarget path: $target_path\nBlocked command: $command\n\nInstead, use absolute paths to execute commands, e.g., 'git -C /path/to/repo status' or '/path/to/script.sh'"
+  "stopReason": "Worktree is designed to complete work within the launched directory. Directory navigation outside the worktree using cd command cannot be executed. Worktree root: $WORKTREE_ROOT; Target path: $target_path; Blocked command: $command. Instead, use absolute paths to execute commands, e.g., 'git -C /path/to/repo status' or '/path/to/script.sh'"
 }
 EOF
 

@@ -1,10 +1,13 @@
 # Plans
 
+このファイルは進行中・予定の作業を追跡するためのものです。
+
 ## 2025-12-28
 
 ### 今後の対応（作業開始前に必ず更新）
 
 - 作業開始前に本日の対応方針を更新し、完了した項目は随時反映する
+- ✅ origin/develop をマージして最新の変更を取り込む
 - ✅ CLAUDE.md に PLANS.md 更新の徹底手順を追記する
 - ✅ SS.png の有無を確認し、見つからないため削除不要であることを報告する
 - ✅ bun.lock が .gitignore 済みであることを確認する
@@ -38,3 +41,33 @@
 - SPEC単位でTDD順守（RED→GREEN→REFACTOR）し、完了ごとにtasks.mdを更新する
 - 変更が広範囲に及ぶ場合はREADME/ドキュメント/Specの整合性を都度確認する
 - すべてのローカル検証を通してからコミット/プッシュする
+
+## 完了済み
+
+### サブモジュール統一（2025-12-28）
+
+全サードパーティ依存をサブモジュールに統一:
+
+| ライブラリ | リポジトリ (upstream) | バージョン/コミット |
+|-----------|----------------------|-------------------|
+| llama.cpp | ggerganov/llama.cpp | 特定コミット |
+| whisper.cpp | ggerganov/whisper.cpp | 特定コミット |
+| stable-diffusion.cpp | leejet/stable-diffusion.cpp | 特定コミット |
+| cpp-httplib | yhirose/cpp-httplib | v0.27.0 |
+| nlohmann-json | nlohmann/json | v3.12.0 |
+
+### Dependabot設定（2025-12-28）
+
+`.github/dependabot.yml` でサブモジュールの自動更新PRを有効化
+
+- ターゲットブランチ: `develop`
+- 更新頻度: weekly
+- ラベル: `dependencies`, `submodule`
+
+## 進行中
+
+- 2025-12-28 の「今後の対応」を参照
+
+## 予定
+
+- 2025-12-28 の「今後の対応」を参照

@@ -12,6 +12,7 @@ Environment variables:
 import argparse
 import hashlib
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -102,12 +103,39 @@ def download_voice_prompt(voice: str, force: bool = False) -> Path:
         raise RuntimeError(f"Failed to download voice prompt: {e}") from e
 
 
+def requires_voice_prompt(model_id: str) -> bool:
+    """Return True if the model requires an explicit voice prompt."""
+    return "realtime" not in model_id.lower()
+
+
 def load_model(model_id: str, device: str, dtype: torch.dtype):
     """Load the VibeVoice model."""
     try:
+        from vibevoice.modular.modeling_vibevoice_inference import (
+            VibeVoiceForConditionalGenerationInference,
+        )
+        from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
+
+        print(f"Loading VibeVoice model (modular): {model_id}", file=sys.stderr)
+        print(f"Device: {device}, dtype: {dtype}", file=sys.stderr)
+
+        processor = VibeVoiceProcessor.from_pretrained(model_id)
+        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+            model_id, torch_dtype=dtype
+        )
+        model = model.to(device=device)
+        # Set to inference mode (same as model.eval())
+        model.train(False)
+
+        return {"mode": "modular", "model": model, "processor": processor}
+
+    except Exception as e:
+        print(f"Modular VibeVoice load failed: {e}", file=sys.stderr)
+
+    try:
         from vibevoice import VibeVoice
 
-        print(f"Loading VibeVoice model: {model_id}", file=sys.stderr)
+        print(f"Loading VibeVoice model (legacy): {model_id}", file=sys.stderr)
         print(f"Device: {device}, dtype: {dtype}", file=sys.stderr)
 
         model = VibeVoice.from_pretrained(model_id)
@@ -149,11 +177,21 @@ def load_model_transformers(model_id: str, device: str, dtype: torch.dtype):
 def synthesize_vibevoice(
     model,
     text: str,
-    voice_prompt_path: Path,
+    voice_prompt_path: Optional[Path],
     ddpm_steps: int = DEFAULT_DDPM_STEPS,
     cfg_scale: float = DEFAULT_CFG_SCALE,
 ) -> tuple:
     """Synthesize speech using the VibeVoice model."""
+    if isinstance(model, dict) and model.get("mode") == "modular":
+        return synthesize_vibevoice_modular(
+            model["model"],
+            model["processor"],
+            text,
+            voice_prompt_path,
+            ddpm_steps,
+            cfg_scale,
+        )
+
     try:
         from vibevoice import VibeVoice
 
@@ -188,11 +226,14 @@ def synthesize_transformers(
     model,
     processor,
     text: str,
-    voice_prompt_path: Path,
+    voice_prompt_path: Optional[Path],
     ddpm_steps: int,
     cfg_scale: float,
 ) -> tuple:
     """Synthesize speech using transformers fallback."""
+    if voice_prompt_path is None:
+        raise RuntimeError("voice_prompt is required for this model")
+
     # Load voice prompt audio
     prompt_audio, prompt_sr = sf.read(voice_prompt_path)
     if len(prompt_audio.shape) > 1:
@@ -227,6 +268,63 @@ def synthesize_transformers(
         audio = audio.squeeze()
 
     return audio, DEFAULT_SAMPLE_RATE
+
+
+def synthesize_vibevoice_modular(
+    model,
+    processor,
+    text: str,
+    voice_prompt_path: Optional[Path],
+    ddpm_steps: int,
+    cfg_scale: float,
+) -> tuple:
+    """Synthesize speech using VibeVoice modular inference."""
+    script_text = text
+    if not re.search(r"^\s*Speaker\s+\d+\s*:", text, re.MULTILINE):
+        script_text = f"Speaker 1: {text}"
+
+    voice_samples = None
+    if voice_prompt_path is not None:
+        voice_samples = [str(voice_prompt_path)]
+
+    inputs = processor(
+        text=[script_text],
+        voice_samples=voice_samples,
+        return_tensors="pt",
+    )
+
+    model_inputs = {}
+    for key in ["input_ids", "attention_mask", "speech_tensors",
+                "speech_masks", "speech_input_mask"]:
+        if key not in inputs:
+            continue
+        value = inputs[key]
+        if hasattr(value, "to"):
+            value = value.to(model.device)
+        model_inputs[key] = value
+
+    if hasattr(model, "set_ddpm_inference_steps"):
+        model.set_ddpm_inference_steps(ddpm_steps)
+
+    with torch.no_grad():
+        outputs = model.generate(
+            **model_inputs,
+            cfg_scale=cfg_scale,
+            return_speech=True,
+            tokenizer=getattr(processor, "tokenizer", None),
+        )
+
+    speech_outputs = getattr(outputs, "speech_outputs", None)
+    if not speech_outputs:
+        raise RuntimeError("VibeVoice modular output missing speech data")
+
+    audio = speech_outputs[0].detach().cpu().numpy()
+    if audio.ndim > 1:
+        audio = audio.squeeze()
+    audio = audio.astype("float32")
+    audio_processor = getattr(processor, "audio_processor", None)
+    sr = getattr(audio_processor, "sampling_rate", DEFAULT_SAMPLE_RATE)
+    return audio, sr
 
 
 def get_device_dtype(device: str) -> tuple:
@@ -348,17 +446,19 @@ Environment variables:
         device, dtype = get_device_dtype(args.device)
         print(f"Using device: {device}, dtype: {dtype}", file=sys.stderr)
 
-        # Get voice prompt path
+        # Get voice prompt path if required by model
+        voice_prompt_path: Optional[Path] = None
         if args.voice_prompt:
             voice_prompt_path = Path(args.voice_prompt)
             if not voice_prompt_path.exists():
                 raise FileNotFoundError(f"Voice prompt not found: {voice_prompt_path}")
-        else:
+        elif requires_voice_prompt(args.model):
             voice_prompt_path = download_voice_prompt(
                 args.voice, force=args.force_download
             )
 
-        print(f"Voice prompt: {voice_prompt_path}", file=sys.stderr)
+        if voice_prompt_path is not None:
+            print(f"Voice prompt: {voice_prompt_path}", file=sys.stderr)
 
         # Load model
         model = load_model(args.model, device, dtype)
@@ -376,7 +476,7 @@ Environment variables:
         # Write output
         output_path = Path(args.out)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(str(output_path), audio, sr)
+        sf.write(str(output_path), audio, sr, format="WAV", subtype="PCM_16")
 
         print(f"Output written: {output_path} ({sr} Hz)", file=sys.stderr)
         return 0

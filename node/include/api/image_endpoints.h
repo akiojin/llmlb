@@ -6,7 +6,6 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
-#include "utils/config.h"
 
 namespace llm_node {
 
@@ -18,14 +17,12 @@ class SDManager;
 /// - POST /v1/images/variations (image variations)
 class ImageEndpoints {
 public:
-    ImageEndpoints(SDManager& sd_manager, const NodeConfig& config);
+    ImageEndpoints(SDManager& sd_manager);
 
     void registerRoutes(httplib::Server& server);
 
 private:
     SDManager& sd_manager_;
-    const NodeConfig& config_;
-
     // Helper methods
     static void setJson(httplib::Response& res, const nlohmann::json& body);
     void respondError(httplib::Response& res,

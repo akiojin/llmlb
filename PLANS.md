@@ -4,18 +4,17 @@
 
 ### 今後の対応（作業開始前に必ず更新）
 
-- SPEC-26006000 は前提不足（quickstart実行環境/clang-tidy未導入）のため後回し
-  - quickstart.md 実行に必要な前提（起動済みrouter/node、TOKEN、音声ファイル）を整えてから再開
-  - clang-tidy の導入/実行手順を確定してからT053/T055に着手
-- P2の SPEC-48678000（モデル自動解決機能）を優先して着手
-  - ModelResolver 実装（ローカル→共有パス→ルーターAPI）を完成させる
-  - 共有パスのアクセス不可判定・部分ファイル（.partial）再試行を実装する
-  - ルーターAPIダウンロード時のURLエンコード・GGUF検証・タイムアウトを追加する
-  - 重複ダウンロード防止（ロック/同時実行数制限）を実装する
-  - InferenceEngine に統合し、共有パス/ルーター経由の推論を成立させる
-  - 共有パス/ルーターURLの設定読み込みを追加する
-  - ドキュメント更新（モデル解決フロー、設定項目）を行う
-- 変更後はローカル検証（`make quality-checks` など）を実行し、成功後にcommitlint準拠でコミット＆プッシュする
+- SPEC-05098000 は tasks.md が全完了のため、`specs/specs.md` 側の完了反映と整合チェックのみ行う
+- P1の SPEC-26006000 に集中（残タスク: T053 quickstart 手動実行）
+  - ✅ T055: `node/` clang-tidy 実行と修正完了（fmt consteval回避フラグ付き）
+  - T053: quickstart.md を手動実行（router/node起動、TOKEN、音声ファイル準備）
+  - T053: GPU/実行環境が不足する場合は阻害要因を明記し、代替案を整理する
+  - T053: ASR入力のMP3/FLAC/OGGデコード対応を確認/必要なら実装
+  - T053: VibeVoiceの出力フォーマット整合（response_formatと実出力の一致）を確認/調整
+  - T053: quickstart.mdの手順と実装の齟齬があれば更新し、再検証
+- 現在の変更内容を棚卸しし、`specs/SPEC-26006000/tasks.md` と `specs/specs.md` に完了反映する
+- `SS.png` の削除と `bun.lock` の `.gitignore` 追加を確認する
+- 既存変更をコミット前提でローカル検証を全て実行し、コミット＆プッシュする
 
 ### 未実装完了の進め方（目的共有）
 

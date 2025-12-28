@@ -185,10 +185,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
 #ifdef USE_ONNX_RUNTIME
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager, cfg);
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager);
         spdlog::info("Audio endpoints registered for ASR + TTS");
 #else
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, cfg);
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager);
         spdlog::info("Audio endpoints registered for ASR");
 #endif
         audio_endpoints.registerRoutes(server.getServer());
@@ -196,7 +196,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
 #ifdef USE_SD
         // Register image endpoints for image generation
-        llm_node::ImageEndpoints image_endpoints(sd_manager, cfg);
+        llm_node::ImageEndpoints image_endpoints(sd_manager);
         image_endpoints.registerRoutes(server.getServer());
         spdlog::info("Image endpoints registered for image generation");
 #endif

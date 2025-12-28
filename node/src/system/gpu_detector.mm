@@ -130,6 +130,10 @@ std::vector<GpuDevice> GpuDetector::detectMetal() {
 
             devices.push_back(dev);
         }
+
+#if !__has_feature(objc_arc)
+        [metal_devices release];
+#endif
     }
 #endif
 

@@ -17,6 +17,7 @@
 - 既存変更をコミット前提でローカル検証を全て実行し、コミット＆プッシュする
 - SPEC-799b8e2b の手動検証（Router/Node同時起動ログ）を実施する
 - SPEC-e03a404c の Phase 3.3 着手として image_understanding capability を追加する
+- `specs/specs.md` を未完了SPECの実装状況に合わせて更新する
 
 ### 未実装完了の進め方（目的共有）
 

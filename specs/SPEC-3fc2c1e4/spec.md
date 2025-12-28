@@ -59,7 +59,13 @@
                              │  (RuntimeTypeで選択)
                              │             │
                              │             ▼
-                             │      Inference Engine
+                             │  Inference Engine (外側)
+                             │    ├─ GGUF → llama.cpp
+                             │    ├─ TTS  → ONNX Runtime
+                             │    └─ safetensors → 独自エンジン群
+                             │          ├─ gpt-oss
+                             │          ├─ nemotron
+                             │          └─ その他（Whisper/SD など）
                              └───────────────────────────┘
 ```
 
@@ -72,10 +78,11 @@
   - 形式・ファイルの整合性（`config.json` / `tokenizer.json` / shard / index）を検証。
   - `ModelDescriptor` を生成（format / primary_path / runtime / capabilities）。
 - **EngineRegistry**
-  - `RuntimeType` に基づき **実行エンジンを確定**する。
+  - `RuntimeType` に基づき **外側の推論エンジンを確定**する。
   - Node は登録時の形式と metadata を正とし、**実行時の自動判別や形式切替は行わない**。
-- **Inference Engine**
-  - GPU 前提（Metal/CUDA）。
+- **Inference Engine（外側）**
+  - 共通の推論インターフェース。内部で runtime に応じて実装を振り分ける。
+  - GGUF → `llama.cpp`、TTS → `ONNX Runtime`、safetensors → 独自エンジン群。
   - 公式最適化アーティファクトは **実行キャッシュ**として利用可能だが、
     登録時の形式選択は上書きしない。
 

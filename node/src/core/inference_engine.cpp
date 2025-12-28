@@ -9,6 +9,7 @@
 #include "models/model_sync.h"
 
 #include <spdlog/spdlog.h>
+#include <filesystem>
 #include <sstream>
 #include <cctype>
 
@@ -265,7 +266,33 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
     Engine* engine = engines_ ? engines_->resolve(descriptor.runtime) : nullptr;
     if (!engine) return false;
-    return engine->supportsTextGeneration();
+    if (!engine->supportsTextGeneration()) return false;
+
+    if (descriptor.runtime == "gptoss_cpp") {
+#ifndef USE_GPTOSS
+        return false;
+#else
+        namespace fs = std::filesystem;
+        fs::path model_dir = descriptor.model_dir.empty()
+                                 ? fs::path(descriptor.primary_path).parent_path()
+                                 : fs::path(descriptor.model_dir);
+        if (model_dir.empty()) return false;
+        if (fs::exists(model_dir / "model.metal.bin")) return true;
+        if (fs::exists(model_dir / "metal" / "model.bin")) return true;
+        if (fs::exists(model_dir / "model.bin")) return true;
+        return false;
+#endif
+    }
+
+    if (descriptor.runtime == "nemotron_cpp") {
+#ifndef USE_CUDA
+        return false;
+#else
+        return true;
+#endif
+    }
+
+    return true;
 }
 
 }  // namespace llm_node

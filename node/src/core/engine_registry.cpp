@@ -4,6 +4,12 @@ namespace llm_node {
 
 void EngineRegistry::registerEngine(std::unique_ptr<Engine> engine) {
     if (!engine) return;
+    EngineHandle handle(engine.release(), EngineDeleter{});
+    registerEngine(std::move(handle));
+}
+
+void EngineRegistry::registerEngine(EngineHandle engine) {
+    if (!engine) return;
     engines_[engine->runtime()] = std::move(engine);
 }
 

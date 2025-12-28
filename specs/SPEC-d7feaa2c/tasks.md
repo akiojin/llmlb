@@ -14,10 +14,10 @@
 - [x] InferenceEngineからエンジン選択に委譲
 
 ## Plugin Migration（追加）
-- [ ] EngineHost（プラグインローダー）を導入する
+- [x] EngineHost（プラグインローダー）を導入する
 - [x] Engine ABI/manifest の必須項目・ABI一致を検証する
-- [ ] Engine ABI/manifest をJSONとして定義し、互換性検証を実装する
-- [ ] llama.cpp を plugin 化してロードできるようにする
+- [x] Engine ABI/manifest をJSONとして定義し、互換性検証を実装する
+- [x] llama.cpp を plugin 化してロードできるようにする
 
 ## Integration
 - [x] /v1/models で未対応モデルを除外するロジック追加

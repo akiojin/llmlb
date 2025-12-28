@@ -6,6 +6,7 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include <unistd.h>
 
 #include "system/gpu_detector.h"
@@ -172,6 +173,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());
+        if (!cfg.engine_plugins_dir.empty() && std::filesystem::exists(cfg.engine_plugins_dir)) {
+            std::string plugin_error;
+            if (!engine.loadEnginePlugins(cfg.engine_plugins_dir, plugin_error)) {
+                spdlog::warn("Engine plugins load failed: {}", plugin_error);
+            } else {
+                spdlog::info("Engine plugins loaded from {}", cfg.engine_plugins_dir);
+            }
+        }
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)

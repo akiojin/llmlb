@@ -5,8 +5,10 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <filesystem>
 
 #include "core/engine_types.h"
+#include "core/engine_host.h"
 #include "core/engine_registry.h"
 
 namespace llm_node {
@@ -85,10 +87,14 @@ public:
     /// モデルが利用可能かを判定（エンジン/メタデータに基づく）
     bool isModelSupported(const ModelDescriptor& descriptor) const;
 
+    /// エンジンプラグインをロードする
+    bool loadEnginePlugins(const std::filesystem::path& directory, std::string& error);
+
 private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
+    EngineHost engine_host_;
     std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
 

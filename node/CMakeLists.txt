@@ -323,6 +323,27 @@ add_library(utils_lib STATIC
 target_include_directories(utils_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 
+# Engine plugin: llama.cpp
+add_library(llm_engine_llama_cpp SHARED
+    ${CMAKE_CURRENT_SOURCE_DIR}/engines/llama_cpp/llama_engine_plugin.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_engine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_manager.cpp
+)
+target_include_directories(llm_engine_llama_cpp
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
+)
+target_link_libraries(llm_engine_llama_cpp
+    PRIVATE
+        llama
+        spdlog::spdlog_header_only
+)
+set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
+
 # Collect source files
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp

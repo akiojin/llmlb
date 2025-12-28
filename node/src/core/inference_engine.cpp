@@ -73,6 +73,20 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
 
 InferenceEngine::~InferenceEngine() noexcept = default;
 
+bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
+    if (!engines_) {
+        error = "EngineRegistry not initialized";
+        return false;
+    }
+
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
+}
+
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
     std::ostringstream oss;
     for (const auto& msg : messages) {

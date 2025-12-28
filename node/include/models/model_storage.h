@@ -48,6 +48,8 @@ public:
     // Delete model directory and all files
     bool deleteModel(const std::string& model_name);
 
+    const std::string& modelsDir() const { return models_dir_; }
+
 private:
     std::string models_dir_;
 };

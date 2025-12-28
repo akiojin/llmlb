@@ -52,7 +52,7 @@ std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     if (use_https) {
-        client = std::make_unique<httplib::SSLClient>(url.host, url.port);
+        client.reset(new httplib::SSLClient(url.host, url.port));
     }
 #else
     if (use_https) {

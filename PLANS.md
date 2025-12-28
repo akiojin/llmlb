@@ -8,13 +8,13 @@
 
 全サードパーティ依存をサブモジュールに統一:
 
-| ライブラリ | バージョン | リポジトリ |
-|-----------|-----------|-----------|
-| llama.cpp | upstream | ggerganov/llama.cpp |
-| whisper.cpp | upstream | ggerganov/whisper.cpp |
-| stable-diffusion.cpp | upstream | leejet/stable-diffusion.cpp |
-| cpp-httplib | v0.27.0 | yhirose/cpp-httplib |
-| nlohmann-json | v3.12.0 | nlohmann/json |
+| ライブラリ | リポジトリ (upstream) | バージョン/コミット |
+|-----------|----------------------|-------------------|
+| llama.cpp | ggerganov/llama.cpp | 特定コミット |
+| whisper.cpp | ggerganov/whisper.cpp | 特定コミット |
+| stable-diffusion.cpp | leejet/stable-diffusion.cpp | 特定コミット |
+| cpp-httplib | yhirose/cpp-httplib | v0.27.0 |
+| nlohmann-json | nlohmann/json | v3.12.0 |
 
 ### Dependabot設定（2025-12-28）
 

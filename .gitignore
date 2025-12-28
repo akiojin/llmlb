@@ -29,6 +29,7 @@ pnpm-debug.log*
 .husky/_/
 package-lock.json
 bun.lock
+PLANS.md
 
 # Build output
 dist/

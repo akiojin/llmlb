@@ -1,4 +1,11 @@
 #!/usr/bin/env sh
+set -e
 
 # validate commit message before completing the commit
-commitlint --edit "$1"
+if command -v pnpm >/dev/null 2>&1; then
+  pnpm exec commitlint --edit "$1"
+elif command -v npx >/dev/null 2>&1; then
+  npx --no-install commitlint --edit "$1"
+else
+  commitlint --edit "$1"
+fi

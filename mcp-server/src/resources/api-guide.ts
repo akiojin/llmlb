@@ -84,11 +84,11 @@ ${routerUrl}
 **Header**: \`X-API-Key: sk_xxx\` or \`Authorization: Bearer sk_xxx\`
 
 **Used for**:
-- /v1/* (scope: \`api:inference\`)
-- /v0/nodes (scope: \`node:register\`)
-- /v0/health (scope: \`node:register\`)
-- /v0/models/blob/* (scope: \`node:register\`)
-- /v0/* admin endpoints (scope: \`admin:*\`)
+- /v1/* (scope: \`api\`)
+- /v0/nodes (scope: \`node\`)
+- /v0/health (scope: \`node\`)
+- /v0/models/blob/* (scope: \`node\`)
+- /v0/* admin endpoints (scope: \`admin\`)
 
 ### 2. JWT Authentication (Management APIs)
 

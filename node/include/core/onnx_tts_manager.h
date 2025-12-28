@@ -9,7 +9,13 @@
 #include <optional>
 
 #ifdef USE_ONNX_RUNTIME
+#if __has_include(<onnxruntime/core/session/onnxruntime_cxx_api.h>)
 #include <onnxruntime/core/session/onnxruntime_cxx_api.h>
+#elif __has_include(<onnxruntime/onnxruntime_cxx_api.h>)
+#include <onnxruntime/onnxruntime_cxx_api.h>
+#else
+#error "onnxruntime_cxx_api.h not found"
+#endif
 #endif
 
 namespace llm_node {

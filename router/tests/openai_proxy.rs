@@ -116,7 +116,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         "test-key",
         test_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+        vec![llm_router_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("Failed to create test API key");

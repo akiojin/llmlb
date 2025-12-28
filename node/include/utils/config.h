@@ -21,9 +21,10 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog();
 
 struct NodeConfig {
     std::string router_url{"http://127.0.0.1:8080"};
-    std::string router_api_key;  // API key for router operations (node:register scope)
+    std::string router_api_key;  // API key for router operations (node scope)
     std::string models_dir;
     std::string engine_plugins_dir;
+    std::string shared_models_dir;  // Shared router cache mount (optional)
     int node_port{11435};
     int heartbeat_interval_sec{10};
     bool require_gpu{true};

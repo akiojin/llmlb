@@ -17,22 +17,54 @@ namespace llm_node {
 class LlamaManager;
 class ModelStorage;
 class ModelSync;
+class ModelResolver;
+class VisionProcessor;
 struct ModelDescriptor;
+
+struct ChatMessage {
+    std::string role;
+    std::string content;
+};
+
+/// 推論パラメータ
+struct InferenceParams {
+    size_t max_tokens{2048};  // デフォルト値を増加（256→2048）
+    float temperature{0.8f};
+    float top_p{0.9f};
+    int top_k{40};
+    float repeat_penalty{1.1f};
+    uint32_t seed{0};  // 0 = ランダム
+};
+
+/// モデルロード結果
+struct ModelLoadResult {
+    bool success{false};
+    std::string error_message;
+};
 
 class InferenceEngine {
 public:
-    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync への参照を注入
-    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr);
+    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync/ModelResolver への参照を注入
+    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr,
+                    ModelResolver* model_resolver = nullptr);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
-    InferenceEngine() = default;
+    /// VisionProcessor完全型のために.cppで定義
+    InferenceEngine();
 
-    ~InferenceEngine() noexcept;
+    /// デストラクタ（VisionProcessor完全型のために.cppで定義）
+    ~InferenceEngine();
 
     /// チャット生成（llama.cpp API使用）
     std::string generateChat(const std::vector<ChatMessage>& messages,
                             const std::string& model,
                             const InferenceParams& params = {}) const;
+
+    /// 画像付きチャット生成（mtmd使用）
+    std::string generateChatWithImages(const std::vector<ChatMessage>& messages,
+                                       const std::vector<std::string>& image_urls,
+                                       const std::string& model,
+                                       const InferenceParams& params = {}) const;
 
     /// テキスト補完
     std::string generateCompletion(const std::string& prompt,
@@ -94,12 +126,17 @@ private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
+    ModelResolver* model_resolver_{nullptr};
     EngineHost engine_host_;
     std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
+    mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;
+
+    /// モデルパス解決（ModelResolver優先）
+    std::string resolveModelPath(const std::string& model_name, std::string* error_message = nullptr) const;
 };
 
 }  // namespace llm_node

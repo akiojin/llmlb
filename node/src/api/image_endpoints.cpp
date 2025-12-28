@@ -28,8 +28,8 @@ std::string extractFirstError(const std::vector<ImageGenerationResult>& results,
 
 }  // namespace
 
-ImageEndpoints::ImageEndpoints(SDManager& sd_manager, const NodeConfig& config)
-    : sd_manager_(sd_manager), config_(config) {}
+ImageEndpoints::ImageEndpoints(SDManager& sd_manager)
+    : sd_manager_(sd_manager) {}
 
 void ImageEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
     res.set_content(body.dump(), "application/json");

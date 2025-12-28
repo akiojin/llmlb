@@ -10,8 +10,8 @@ import { toast } from '@/hooks/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -27,8 +27,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Box, Search, Plus, Trash2, Loader2, Download } from 'lucide-react'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Box, Search, Plus, Trash2, Loader2, Download, Store } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ModelHubTab } from './ModelHubTab'
 
 type RegisterFormat = 'safetensors' | 'gguf'
 type RegisterGgufPolicy = 'quality' | 'memory' | 'speed'
@@ -123,11 +125,11 @@ export function ModelsSection() {
       })
     },
   })
-
   const deleteMutation = useMutation({
     mutationFn: (modelName: string) => modelsApi.delete(modelName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
+      queryClient.invalidateQueries({ queryKey: ['models-hub'] })
       toast({ title: 'Model deleted' })
     },
     onError: (error) => {
@@ -147,122 +149,138 @@ export function ModelsSection() {
     <>
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Box className="h-5 w-5" />
-              Registered Models
-              {registeredModels && (
-                <Badge variant="secondary" className="ml-1">
-                  {(registeredModels as RegisteredModelView[]).length}
-                </Badge>
-              )}
-            </CardTitle>
-            <div className="flex gap-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search models..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 w-64"
-                />
-              </div>
-              <Button onClick={() => setRegisterOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Register
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Box className="h-5 w-5" />
+            Models
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoadingRegistered ? (
-            <div className="space-y-4">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-24 shimmer rounded" />
-              ))}
-            </div>
-          ) : !filteredRegistered || filteredRegistered.length === 0 ? (
-            <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
-              <Box className="h-8 w-8" />
-              <p>No registered models</p>
-              <p className="text-sm">
-                Register a model from{' '}
-                <a
-                  href="https://huggingface.co/models?library=gguf"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline"
+          <Tabs defaultValue="local" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="local" className="gap-2">
+                <Box className="h-4 w-4" />
+                Local
+                {registeredModels && (
+                  <Badge variant="secondary" className="ml-1">
+                    {(registeredModels as RegisteredModelView[]).length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="hub" className="gap-2">
+                <Store className="h-4 w-4" />
+                Model Hub
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Local Models Tab */}
+            <TabsContent value="local" className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search local models..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Button
+                  id="register-model"
+                  variant="outline"
+                  onClick={() => setRegisterOpen(true)}
                 >
-                  Hugging Face
-                </a>
-              </p>
-            </div>
-          ) : (
-            <div id="local-models-list" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredRegistered.map((model) => (
-                <Card key={model.name} className="overflow-hidden">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-1">
-                        <h4 className="truncate font-medium">{model.name}</h4>
-                        <p className="text-xs text-muted-foreground">
-                          {model.source || 'local'}
-                          {model.repo ? ` • ${model.repo}` : ''}
-                        </p>
-                      </div>
-                      {lifecycleStatusBadge(model.lifecycle_status)}
-                    </div>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Register
+                </Button>
+              </div>
 
-                    {/* ダウンロード進行状況 */}
-                    {model.download_progress && (model.lifecycle_status === 'caching' || model.lifecycle_status === 'pending') && (
-                      <div className="mt-3">
-                        <div className="h-1.5 w-full rounded-full bg-muted">
-                          <div
-                            className={cn(
-                              'h-full rounded-full transition-all',
-                              model.lifecycle_status === 'error' ? 'bg-destructive' : 'bg-primary'
-                            )}
-                            style={{ width: `${Math.round(model.download_progress.percent * 100)}%` }}
-                          />
+              {isLoadingRegistered ? (
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-24 shimmer rounded" />
+                  ))}
+                </div>
+              ) : !filteredRegistered || filteredRegistered.length === 0 ? (
+                <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <Box className="h-8 w-8" />
+                  <p>No local models</p>
+                  <p className="text-sm">
+                    Pull from the Model Hub or register a Hugging Face repo
+                  </p>
+                </div>
+              ) : (
+                <div id="local-models-list" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {filteredRegistered.map((model) => (
+                    <Card key={model.name} className="overflow-hidden">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <h4 className="truncate font-medium">{model.name}</h4>
+                            <p className="text-xs text-muted-foreground">
+                              {model.source || 'local'}
+                              {model.repo ? ` • ${model.repo}` : ''}
+                            </p>
+                          </div>
+                          {lifecycleStatusBadge(model.lifecycle_status)}
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {Math.round(model.download_progress.percent * 100)}%
-                          {model.download_progress.error && (
-                            <span className="text-destructive"> • {model.download_progress.error}</span>
+
+                        {/* Download Progress */}
+                        {model.download_progress && (model.lifecycle_status === 'caching' || model.lifecycle_status === 'pending') && (
+                          <div className="mt-3">
+                            <div className="h-1.5 w-full rounded-full bg-muted">
+                              <div
+                                className={cn(
+                                  'h-full rounded-full transition-all',
+                                  model.lifecycle_status === 'error' ? 'bg-destructive' : 'bg-primary'
+                                )}
+                                style={{ width: `${Math.round(model.download_progress.percent * 100)}%` }}
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {Math.round(model.download_progress.percent * 100)}%
+                              {model.download_progress.error && (
+                                <span className="text-destructive"> • {model.download_progress.error}</span>
+                              )}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="mt-3 space-y-1 text-sm">
+                          <p className="text-muted-foreground">
+                            Size: {formatGb(model.size_gb)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Required VRAM: {formatGb(model.required_memory_gb)}
+                          </p>
+                          {model.path && (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {model.path}
+                            </p>
                           )}
-                        </p>
-                      </div>
-                    )}
+                        </div>
 
-                    <div className="mt-3 space-y-1 text-sm">
-                      <p className="text-muted-foreground">
-                        Size: {formatGb(model.size_gb)}
-                      </p>
-                      <p className="text-muted-foreground">
-                        Required VRAM: {formatGb(model.required_memory_gb)}
-                      </p>
-                      {model.path && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {model.path}
-                        </p>
-                      )}
-                    </div>
+                        <div className="mt-4 flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteMutation.mutate(model.name)}
+                            disabled={deleteMutation.isPending || model.lifecycle_status === 'caching'}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-                    <div className="mt-4 flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteMutation.mutate(model.name)}
-                        disabled={deleteMutation.isPending || model.lifecycle_status === 'caching'}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+            {/* Model Hub Tab */}
+            <TabsContent value="hub">
+              <ModelHubTab />
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 

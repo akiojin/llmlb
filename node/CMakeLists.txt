@@ -87,6 +87,11 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/llama.cpp)
+
+# mtmd requires LLAMA_INSTALL_VERSION which is scoped to llama.cpp subdirectory
+# Define it here so mtmd can build correctly when added separately
+set(LLAMA_INSTALL_VERSION "0.0.0" CACHE STRING "llama.cpp install version for mtmd" FORCE)
+add_subdirectory(third_party/llama.cpp/tools/mtmd EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/nlohmann-json)
 
 # whisper.cpp for ASR (Speech-to-Text)
@@ -389,11 +394,14 @@ add_executable(llm-node ${SOURCES})
 target_link_libraries(llm-node PRIVATE
     llama
     common
+    mtmd
     utils_lib
     ${CMAKE_THREAD_LIBS_INIT}
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+
+target_compile_definitions(llm-node PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # CUDA support (llm-node)
 if(BUILD_WITH_CUDA AND CUDAToolkit_FOUND)

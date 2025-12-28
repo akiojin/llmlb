@@ -282,15 +282,18 @@ ModelSyncResult ModelSync::sync() {
 
             bool ok = downloadModel(downloader, id, nullptr);
 
-            // As a last resort (legacy), allow direct download_url for single-file GGUF.
-            // safetensors は複数ファイルのため、このフォールバックでは扱わない。
-            auto it = remote_map.find(id);
-            if (!ok && it != remote_map.end()) {
-                const auto& info = it->second;
-                if (!info.download_url.empty() && info.download_url.find(".gguf") != std::string::npos) {
-                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
-                    ok = !out.empty();
+            // Direct download_url (e.g. HF) is prohibited (SPEC-48678000 FR-006).
+
+            // metadata (chat_template) - persist only when we downloaded locally
+            if (ok) {
+                auto it = remote_map.find(id);
+                if (it != remote_map.end() && !it->second.chat_template.empty()) {
+                    auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
+                    auto meta_path = meta_dir / "metadata.json";
+                    nlohmann::json meta;
+                    meta["chat_template"] = it->second.chat_template;
+                    std::ofstream ofs(meta_path, std::ios::binary | std::ios::trunc);
+                    ofs << meta.dump();
                 }
             }
 

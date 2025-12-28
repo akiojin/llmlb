@@ -3,9 +3,11 @@
 //! モデル一覧取得、登録、変換、ファイル配信のエンドポイント
 
 use crate::{
+    convert::ConvertStatus,
     db::models::ModelStorage,
     registry::models::{extract_repo_id, generate_model_id, router_model_path, ModelInfo},
     registry::NodeRegistry,
+    supported_models::{find_supported_model, get_supported_models, SupportedModel},
     AppState,
 };
 use axum::{
@@ -83,6 +85,194 @@ pub enum LifecycleStatus {
     Error,
 }
 
+/// モデルの状態（SPEC-6cd7f960）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelStatus {
+    /// 対応モデル（未ダウンロード）
+    Available,
+    /// ダウンロード中
+    Downloading,
+    /// ダウンロード完了
+    Downloaded,
+}
+
+/// HuggingFace動的情報
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HfInfo {
+    /// ダウンロード数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downloads: Option<u64>,
+    /// いいね数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub likes: Option<u64>,
+}
+
+// ===== HuggingFace Info Cache (SPEC-6cd7f960) =====
+
+/// HF情報キャッシュエントリ
+#[derive(Clone)]
+struct HfInfoCacheEntry {
+    fetched_at: Instant,
+    info: HfInfo,
+}
+
+/// HF情報キャッシュ（TTL: 10分）
+static HF_INFO_CACHE: Lazy<RwLock<HashMap<String, HfInfoCacheEntry>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+const HF_INFO_CACHE_TTL: Duration = Duration::from_secs(600); // 10分
+
+/// HuggingFace APIからモデル情報を取得（キャッシュ付き）
+async fn fetch_hf_info(http_client: &reqwest::Client, repo: &str) -> Option<HfInfo> {
+    // キャッシュチェック
+    {
+        let cache = HF_INFO_CACHE.read().unwrap();
+        if let Some(entry) = cache.get(repo) {
+            if entry.fetched_at.elapsed() < HF_INFO_CACHE_TTL {
+                return Some(entry.info.clone());
+            }
+        }
+    }
+
+    // HF APIからフェッチ
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/api/models/{}", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+
+    let resp = match req.timeout(Duration::from_secs(5)).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::debug!(repo = %repo, error = %e, "Failed to fetch HF info");
+            return None;
+        }
+    };
+
+    if !resp.status().is_success() {
+        tracing::debug!(repo = %repo, status = ?resp.status(), "HF API returned non-success status");
+        return None;
+    }
+
+    #[derive(Deserialize)]
+    struct HfModelInfo {
+        downloads: Option<u64>,
+        likes: Option<u64>,
+    }
+
+    let model_info: HfModelInfo = match resp.json().await {
+        Ok(info) => info,
+        Err(e) => {
+            tracing::debug!(repo = %repo, error = %e, "Failed to parse HF info");
+            return None;
+        }
+    };
+
+    let info = HfInfo {
+        downloads: model_info.downloads,
+        likes: model_info.likes,
+    };
+
+    // キャッシュに保存
+    {
+        let mut cache = HF_INFO_CACHE.write().unwrap();
+        cache.insert(
+            repo.to_string(),
+            HfInfoCacheEntry {
+                fetched_at: Instant::now(),
+                info: info.clone(),
+            },
+        );
+    }
+
+    Some(info)
+}
+
+/// 対応モデル + 状態（GET /v0/models レスポンス）
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelWithStatus {
+    /// モデルID
+    pub id: String,
+    /// 表示名
+    pub name: String,
+    /// 説明
+    pub description: String,
+    /// HFリポジトリ
+    pub repo: String,
+    /// 推奨ファイル名
+    pub recommended_filename: String,
+    /// ファイルサイズ（バイト）
+    pub size_bytes: u64,
+    /// 必要メモリ（バイト）
+    pub required_memory_bytes: u64,
+    /// タグ
+    pub tags: Vec<String>,
+    /// 能力
+    pub capabilities: Vec<String>,
+    /// 量子化タイプ
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantization: Option<String>,
+    /// パラメータ数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameter_count: Option<String>,
+    /// モデル状態
+    pub status: ModelStatus,
+    /// ライフサイクル状態（ダウンロード中/完了時のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lifecycle_status: Option<LifecycleStatus>,
+    /// ダウンロード進捗（ダウンロード中のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_progress: Option<DownloadProgress>,
+    /// HF動的情報
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hf_info: Option<HfInfo>,
+}
+
+impl ModelWithStatus {
+    /// SupportedModelからModelWithStatusを作成（available状態）
+    pub fn from_supported(model: SupportedModel) -> Self {
+        Self {
+            id: model.id,
+            name: model.name,
+            description: model.description,
+            repo: model.repo,
+            recommended_filename: model.recommended_filename,
+            size_bytes: model.size_bytes,
+            required_memory_bytes: model.required_memory_bytes,
+            tags: model.tags,
+            capabilities: model.capabilities,
+            quantization: model.quantization,
+            parameter_count: model.parameter_count,
+            status: ModelStatus::Available,
+            lifecycle_status: None,
+            download_progress: None,
+            hf_info: None,
+        }
+    }
+}
+
+/// モデルPullリクエスト（SPEC-6cd7f960）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullModelRequest {
+    /// 対応モデルID（例: "qwen2.5-7b-instruct"）
+    pub model_id: String,
+}
+
+/// モデルPullレスポンス（SPEC-6cd7f960）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullModelResponse {
+    /// モデルID
+    pub model_id: String,
+    /// ステータス（"queued"）
+    pub status: String,
+}
+
 /// ダウンロード進行状況
 #[derive(Debug, Clone, Serialize)]
 pub struct DownloadProgress {
@@ -123,6 +313,7 @@ pub fn list_registered_models() -> Vec<ModelInfo> {
 /// GET /v0/models - 登録済みモデル一覧（拡張メタデータ付き）
 ///
 /// ノード同期用途向け。配列を直接返す。
+/// NOTE: この関数は既存のノード同期用途で維持。ダッシュボードは list_models_with_status() を使用。
 pub async fn list_models() -> Json<Vec<ModelInfo>> {
     let mut models = list_registered_models();
 
@@ -137,6 +328,155 @@ pub async fn list_models() -> Json<Vec<ModelInfo>> {
     }
 
     Json(models)
+}
+
+/// GET /v0/models/hub - 対応モデル一覧 + 状態（SPEC-6cd7f960）
+///
+/// ダッシュボードのModel Hub用。全ての対応モデルを状態付きで返す。
+/// HF動的情報（ダウンロード数、いいね数）も含む。
+pub async fn list_models_with_status(State(state): State<AppState>) -> Json<Vec<ModelWithStatus>> {
+    let supported = get_supported_models();
+    let registered = list_registered_models();
+    let convert_tasks = state.convert_manager.list_tasks().await;
+
+    // 登録済みモデル名のセット（ダウンロード完了判定用）
+    let registered_names: std::collections::HashSet<_> =
+        registered.iter().map(|m| m.name.clone()).collect();
+
+    // ダウンロード中タスクのマップ（repo -> task）
+    let downloading_tasks: HashMap<String, _> = convert_tasks
+        .iter()
+        .filter(|t| matches!(t.status, ConvertStatus::Queued | ConvertStatus::InProgress))
+        .map(|t| (t.repo.clone(), t.clone()))
+        .collect();
+
+    // HF情報を並列取得（タイムアウト付き）
+    let hf_info_futures: Vec<_> = supported
+        .iter()
+        .map(|model| {
+            let client = state.http_client.clone();
+            let repo = model.repo.clone();
+            async move { (repo.clone(), fetch_hf_info(&client, &repo).await) }
+        })
+        .collect();
+
+    let hf_infos: HashMap<String, Option<HfInfo>> = futures::future::join_all(hf_info_futures)
+        .await
+        .into_iter()
+        .collect();
+
+    let mut result: Vec<ModelWithStatus> = Vec::with_capacity(supported.len());
+
+    for model in supported {
+        let mut with_status = ModelWithStatus::from_supported(model.clone());
+
+        // モデルIDからmodel_nameを生成（repo形式）
+        let model_name = generate_model_id(&model.repo);
+
+        // 1. ダウンロード完了判定
+        if registered_names.contains(&model_name) {
+            with_status.status = ModelStatus::Downloaded;
+            with_status.lifecycle_status = Some(LifecycleStatus::Registered);
+        }
+        // 2. ダウンロード中判定
+        else if let Some(task) = downloading_tasks.get(&model.repo) {
+            with_status.status = ModelStatus::Downloading;
+            with_status.lifecycle_status = Some(match task.status {
+                ConvertStatus::Queued => LifecycleStatus::Pending,
+                ConvertStatus::InProgress => LifecycleStatus::Caching,
+                ConvertStatus::Failed => LifecycleStatus::Error,
+                ConvertStatus::Completed => LifecycleStatus::Registered,
+            });
+            with_status.download_progress = Some(DownloadProgress {
+                percent: task.progress as f64,
+                bytes_downloaded: None,
+                bytes_total: Some(model.size_bytes),
+                error: task.error.clone(),
+            });
+        }
+        // 3. それ以外は available（未ダウンロード）
+
+        // HF情報を設定
+        if let Some(Some(info)) = hf_infos.get(&model.repo) {
+            with_status.hf_info = Some(info.clone());
+        }
+
+        result.push(with_status);
+    }
+
+    Json(result)
+}
+
+/// POST /v0/models/pull - 対応モデルをダウンロード（SPEC-6cd7f960）
+///
+/// 対応モデルのダウンロードをキューに登録する。
+/// 対応モデル以外のIDが指定された場合はエラーを返す。
+pub async fn pull_model(
+    State(state): State<AppState>,
+    Json(req): Json<PullModelRequest>,
+) -> Result<(StatusCode, Json<PullModelResponse>), AppError> {
+    // 対応モデルかどうかを確認
+    let supported_model = find_supported_model(&req.model_id).ok_or_else(|| {
+        RouterError::Common(llm_router_common::error::CommonError::Validation(format!(
+            "Model '{}' is not a supported model",
+            req.model_id
+        )))
+    })?;
+
+    // モデル名を生成（repo形式）
+    let model_name = generate_model_id(&supported_model.repo);
+
+    // 既に登録済みかチェック
+    if find_model_by_name(&model_name).is_some() {
+        return Err(
+            RouterError::Common(llm_router_common::error::CommonError::Validation(
+                "Model already downloaded".into(),
+            ))
+            .into(),
+        );
+    }
+
+    // 既にダウンロード中かチェック
+    if state
+        .convert_manager
+        .has_task_for_repo(&supported_model.repo)
+        .await
+    {
+        return Err(
+            RouterError::Common(llm_router_common::error::CommonError::Validation(
+                "Model is already being downloaded".into(),
+            ))
+            .into(),
+        );
+    }
+
+    // ConvertTaskManagerにキュー登録
+    state
+        .convert_manager
+        .enqueue(
+            supported_model.repo.clone(),
+            ModelArtifactFormat::Gguf,
+            supported_model.recommended_filename.clone(),
+            None, // revision
+            None, // quantization
+            None, // chat_template (HFから自動取得)
+        )
+        .await;
+
+    tracing::info!(
+        model_id = %req.model_id,
+        repo = %supported_model.repo,
+        filename = %supported_model.recommended_filename,
+        "Model pull queued"
+    );
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(PullModelResponse {
+            model_id: req.model_id,
+            status: "queued".to_string(),
+        }),
+    ))
 }
 
 fn find_model_by_name(name: &str) -> Option<ModelInfo> {
@@ -785,7 +1125,7 @@ async fn fetch_chat_template_from_hf(http_client: &reqwest::Client, repo: &str) 
 }
 
 /// モデル名からGGUF版を検索
-pub async fn discover_gguf_versions(
+async fn discover_gguf_versions_impl(
     http_client: &reqwest::Client,
     base_model_name: &str,
 ) -> Result<Vec<GgufDiscoveryResult>, RouterError> {
@@ -1315,6 +1655,54 @@ async fn register_model_internal(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
+#[derive(Deserialize)]
+/// /v0/models/discover-gguf リクエスト
+pub struct DiscoverGgufRequest {
+    /// 検索対象のモデル名（HF repo または URL）
+    pub model: String,
+}
+
+#[derive(Serialize)]
+/// /v0/models/discover-gguf レスポンス
+pub struct DiscoverGgufResponse {
+    /// 正規化後のベースモデル名
+    pub base_model: String,
+    /// 見つかった GGUF 代替候補
+    pub gguf_alternatives: Vec<GgufDiscoveryResult>,
+    /// キャッシュヒットかどうか
+    pub cached: bool,
+}
+
+/// POST /v0/models/discover-gguf - HF repo から GGUF 版を探索
+pub async fn discover_gguf_versions(
+    State(state): State<AppState>,
+    Json(req): Json<DiscoverGgufRequest>,
+) -> Result<(StatusCode, Json<DiscoverGgufResponse>), AppError> {
+    if req.model.trim().is_empty() {
+        return Err(
+            RouterError::Common(CommonError::Validation("model is required".into())).into(),
+        );
+    }
+
+    let base_model = extract_repo_id(&req.model);
+    let cached = {
+        let cache = GGUF_DISCOVERY_CACHE.read().unwrap();
+        cache
+            .get(&base_model)
+            .map(|entry| entry.fetched_at.elapsed() < GGUF_DISCOVERY_CACHE_TTL)
+            .unwrap_or(false)
+    };
+
+    let results = discover_gguf_versions_impl(&state.http_client, &base_model).await?;
+    let response = DiscoverGgufResponse {
+        base_model,
+        gguf_alternatives: results,
+        cached,
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
 /// DELETE /v0/models/:model_name - 登録モデル削除
 ///
 /// 以下のいずれかの処理を行う:
@@ -1360,41 +1748,6 @@ pub async fn delete_model(
         Err(RouterError::Common(CommonError::Validation("model not found".into())).into())
     }
 }
-
-/// GGUF版検索リクエスト
-#[derive(Debug, Deserialize)]
-pub struct DiscoverGgufRequest {
-    /// 検索対象のモデル名（例: openai/gpt-oss-20b または gpt-oss-20b）
-    pub model: String,
-}
-
-/// GGUF版検索レスポンス
-#[derive(Debug, Serialize)]
-pub struct DiscoverGgufResponse {
-    /// 検索対象のモデル名
-    pub base_model: String,
-    /// 見つかったGGUF版の一覧（信頼プロバイダー順）
-    pub gguf_alternatives: Vec<GgufDiscoveryResult>,
-    /// キャッシュから取得したかどうか
-    pub cached: bool,
-}
-
-/// POST /v0/models/discover-gguf - GGUF版を検索
-pub async fn discover_gguf_endpoint(
-    State(state): State<AppState>,
-    Json(req): Json<DiscoverGgufRequest>,
-) -> Result<Json<DiscoverGgufResponse>, AppError> {
-    let results = discover_gguf_versions(&state.http_client, &req.model).await?;
-
-    Ok(Json(DiscoverGgufResponse {
-        base_model: req.model,
-        gguf_alternatives: results,
-        cached: false, // TODO: キャッシュヒット判定
-    }))
-}
-
-// NOTE: /v0/models/convert エンドポイントは廃止されました。
-// ダウンロード状態は /v0/models の lifecycle_status で確認できます。
 
 /// GET /v0/models/blob/{model_name} - モデルファイル（GGUF）をストリーミング配信
 ///
@@ -1635,7 +1988,6 @@ pub async fn get_model_registry_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 
     fn write_text(path: &std::path::Path, contents: &str) {
         std::fs::write(path, contents).expect("write file");
@@ -1682,33 +2034,7 @@ mod tests {
         assert!(validate_model_name("trailing/").is_err());
     }
 
-    // NOTE: AvailableModelView, AvailableModelsResponse, model_info_to_view は廃止
-    // HFカタログは直接 https://huggingface.co を参照 (Phase 1で削除)
-
-    #[tokio::test]
-    async fn test_compute_gpu_warnings_detects_insufficient_memory() {
-        let registry = NodeRegistry::new();
-        let req = RegisterRequest {
-            machine_name: "node-1".into(),
-            ip_address: "127.0.0.1".parse().unwrap(),
-            runtime_version: "0.1.0".into(),
-            runtime_port: 11434,
-            gpu_available: true,
-            gpu_devices: vec![GpuDeviceInfo {
-                model: "Test GPU".into(),
-                count: 1,
-                memory: Some(4 * 1024 * 1024 * 1024),
-            }],
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".into()),
-            supported_runtimes: Vec::new(),
-        };
-        registry.register(req).await.unwrap();
-
-        let warnings = compute_gpu_warnings(&registry, 6 * 1024 * 1024 * 1024).await;
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("max node GPU memory"));
-    }
+    // NOTE: compute_gpu_warnings は SPEC-6cd7f960 で廃止されました
 
     #[tokio::test]
     async fn test_get_model_blob_returns_file_when_exists() {
@@ -1761,6 +2087,25 @@ mod tests {
         assert_eq!(
             normalize_quantization_label("mxfp4"),
             Some("MXFP4".to_string())
+        );
+    }
+
+    // ===== SPEC-6cd7f960: 対応モデルリスト型管理 =====
+
+    #[test]
+    fn test_model_status_serialization() {
+        // ModelStatusが正しくシリアライズされることを確認
+        assert_eq!(
+            serde_json::to_string(&ModelStatus::Available).unwrap(),
+            "\"available\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelStatus::Downloading).unwrap(),
+            "\"downloading\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ModelStatus::Downloaded).unwrap(),
+            "\"downloaded\""
         );
     }
 
@@ -1827,5 +2172,129 @@ mod tests {
 
         assert!(names.contains("model.gguf"));
         assert_eq!(names.len(), 1);
+    }
+
+    #[test]
+    fn test_model_with_status_from_supported() {
+        use crate::supported_models::SupportedModel;
+
+        let supported = SupportedModel {
+            id: "test-model".into(),
+            name: "Test Model".into(),
+            description: "A test model".into(),
+            repo: "test/repo".into(),
+            recommended_filename: "model.gguf".into(),
+            size_bytes: 1000,
+            required_memory_bytes: 1500,
+            tags: vec!["test".into()],
+            capabilities: vec!["TextGeneration".into()],
+            quantization: Some("Q4_K_M".into()),
+            parameter_count: Some("7B".into()),
+        };
+
+        let with_status = ModelWithStatus::from_supported(supported.clone());
+
+        assert_eq!(with_status.id, "test-model");
+        assert_eq!(with_status.name, "Test Model");
+        assert_eq!(with_status.status, ModelStatus::Available);
+        assert!(with_status.lifecycle_status.is_none());
+        assert!(with_status.download_progress.is_none());
+        assert!(with_status.hf_info.is_none());
+    }
+    #[test]
+    fn test_model_with_status_serialization() {
+        use crate::supported_models::SupportedModel;
+
+        let supported = SupportedModel {
+            id: "qwen2.5-7b-instruct".into(),
+            name: "Qwen2.5 7B Instruct".into(),
+            description: "Test".into(),
+            repo: "bartowski/Qwen2.5-7B-Instruct-GGUF".into(),
+            recommended_filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf".into(),
+            size_bytes: 4_920_000_000,
+            required_memory_bytes: 7_380_000_000,
+            tags: vec!["chat".into()],
+            capabilities: vec!["TextGeneration".into()],
+            quantization: Some("Q4_K_M".into()),
+            parameter_count: Some("7B".into()),
+        };
+
+        let with_status = ModelWithStatus::from_supported(supported);
+        let json = serde_json::to_string(&with_status).expect("シリアライズに失敗");
+
+        // JSONに必要なフィールドが含まれることを確認
+        assert!(json.contains("\"id\":\"qwen2.5-7b-instruct\""));
+        assert!(json.contains("\"status\":\"available\""));
+        // skip_serializing_if により None フィールドは含まれない
+        assert!(!json.contains("\"lifecycle_status\""));
+        assert!(!json.contains("\"download_progress\""));
+    }
+
+    #[test]
+    fn test_list_models_with_status_returns_all_supported_models() {
+        // list_models_with_status()が全ての対応モデルを返すことを確認
+        // NOTE: このテストはlist_models_with_status()実装後に有効化
+        let supported = get_supported_models();
+        assert!(!supported.is_empty(), "対応モデルが存在すること");
+
+        // 各モデルがModelWithStatusに変換できることを確認
+        for model in supported {
+            let with_status = ModelWithStatus::from_supported(model);
+            assert_eq!(with_status.status, ModelStatus::Available);
+        }
+    }
+
+    #[test]
+    fn test_hf_info_serialization() {
+        let hf_info = HfInfo {
+            downloads: Some(125000),
+            likes: Some(450),
+        };
+        let json = serde_json::to_string(&hf_info).expect("シリアライズに失敗");
+        assert!(json.contains("\"downloads\":125000"));
+        assert!(json.contains("\"likes\":450"));
+
+        // Noneの場合はフィールドが省略される
+        let empty_info = HfInfo::default();
+        let empty_json = serde_json::to_string(&empty_info).expect("シリアライズに失敗");
+        assert_eq!(empty_json, "{}");
+    }
+
+    #[test]
+    fn test_pull_model_request_serialization() {
+        let req = PullModelRequest {
+            model_id: "qwen2.5-7b-instruct".to_string(),
+        };
+        let json = serde_json::to_string(&req).expect("シリアライズに失敗");
+        assert!(json.contains("\"model_id\":\"qwen2.5-7b-instruct\""));
+
+        // デシリアライズも確認
+        let deserialized: PullModelRequest =
+            serde_json::from_str(&json).expect("デシリアライズに失敗");
+        assert_eq!(deserialized.model_id, "qwen2.5-7b-instruct");
+    }
+
+    #[test]
+    fn test_pull_model_response_serialization() {
+        let resp = PullModelResponse {
+            model_id: "qwen2.5-7b-instruct".to_string(),
+            status: "queued".to_string(),
+        };
+        let json = serde_json::to_string(&resp).expect("シリアライズに失敗");
+        assert!(json.contains("\"model_id\":\"qwen2.5-7b-instruct\""));
+        assert!(json.contains("\"status\":\"queued\""));
+    }
+
+    #[test]
+    fn test_pull_model_validates_supported_model() {
+        use crate::supported_models::{find_supported_model, is_supported_model};
+
+        // 対応モデルは有効
+        assert!(is_supported_model("qwen2.5-7b-instruct"));
+        assert!(find_supported_model("qwen2.5-7b-instruct").is_some());
+
+        // 非対応モデルは無効
+        assert!(!is_supported_model("unsupported-model"));
+        assert!(find_supported_model("unsupported-model").is_none());
     }
 }

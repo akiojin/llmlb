@@ -208,9 +208,11 @@ cmake --build build --config Release
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
-| `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node:register`） |
+| `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
+| `LLM_NODE_SHARED_MODELS_DIR` | (未設定) | 共有モデルディレクトリ（任意） |
+| `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
@@ -284,11 +286,11 @@ Router (OpenAI-compatible)
 
 ### モデル同期（push配布なし）
 
-- ルーターは、登録・変換・キャッシュされたモデルだけを `/v1/models` に掲載します。
-- ノードは `/v1/models` を参照してモデル一覧を取得します。
-  - `path` が共有ストレージ等で参照可能なら、そのパスを直接使用します。
-  - 参照できない場合は `/v0/models/blob/:model_name` からダウンロードしてローカルに保存します。
 - ルーターからノードへの push 配布は行いません。
+- ノードはモデルをオンデマンドで次の順に解決します。
+  - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
+  - 共有ストレージ（`LLM_NODE_SHARED_MODELS_DIR`、コピーせず直接参照）
+  - ルーターAPI経由ダウンロード（`GET /v0/models/blob/:model_name`）
 
 ### スケジューリングとヘルスチェック
 - ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。
@@ -364,12 +366,12 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node:register` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`） |
-| `api:inference` | OpenAI 互換推論 API（`/v1/*`） |
-| `admin:*` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`, `GET /v0/models/blob/*`） |
+| `api` | OpenAI 互換推論 API（`/v1/*`） |
+| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
 **補足**:
-- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node:register`）+ `X-Node-Token` 必須。
+- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node`）+ `X-Node-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
 ### ルーター（Router）
@@ -384,23 +386,23 @@ Router (OpenAI-compatible)
 
 #### ノード管理
 
-- POST `/v0/nodes`（登録、APIキー: `node:register`）
+- POST `/v0/nodes`（登録、APIキー: `node`）
 - GET `/v0/nodes`（一覧、admin権限）
 - DELETE `/v0/nodes/:node_id`（admin権限）
 - POST `/v0/nodes/:node_id/disconnect`（admin権限）
 - PUT `/v0/nodes/:node_id/settings`（admin権限）
-- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node:register` + `X-Node-Token`）
+- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node` + `X-Node-Token`）
 - GET `/v0/nodes/:node_id/logs`（admin権限）
 
 #### モデル管理
 
-- GET `/v0/models`（登録済みモデル一覧、APIキー: `node:register`）
+- GET `/v0/models`（登録済みモデル一覧、APIキー: `node` または `admin`）
 - POST `/v0/models/register`（admin権限）
 - DELETE `/v0/models/*model_name`（admin権限）
 - POST `/v0/models/discover-gguf`（admin権限）
-- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node:register`）
-- GET `/v0/models/registry/:model_name/files/:file_name`（APIキー: `node:register`）
-- GET `/v0/models/blob/:model_name`（互換: 単一GGUFのみ）
+- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node`）
+- GET `/v0/models/registry/:model_name/files/:file_name`（APIキー: `node`）
+- GET `/v0/models/blob/:model_name`（互換: 単一GGUFのみ, APIキー: `node` または `admin`）
 
 #### ダッシュボード/監視
 

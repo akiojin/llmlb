@@ -28,6 +28,8 @@ pnpm-debug.log*
 .pnpm-store/
 .husky/_/
 package-lock.json
+bun.lock
+PLANS.md
 
 # Build output
 dist/
@@ -95,6 +97,7 @@ coverage/
 **/playwright-report/
 **/reports/
 **/.playwright/
+router/tests/e2e-playwright/bun.lock
 
 # ESLint cache
 .eslintcache

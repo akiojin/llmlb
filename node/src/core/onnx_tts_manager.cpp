@@ -81,6 +81,36 @@ bool isVibeVoice(const std::string& model_path) {
            model_path.find("VibeVoice") != std::string::npos;
 }
 
+std::string mapVibeVoicePrompt(const std::string& voice, const std::string& default_voice) {
+    static const std::unordered_map<std::string, std::string> kOpenAiToVibeVoice = {
+        {"alloy", "Carter"},
+        {"echo", "Carter"},
+        {"fable", "Daphne"},
+        {"onyx", "Carter"},
+        {"nova", "Nicole"},
+        {"shimmer", "Ruby"},
+    };
+    static const std::vector<std::string> kVibeVoicePrompts = {
+        "Carter",
+        "Nicole",
+        "Aria",
+        "Daphne",
+        "Jessica",
+        "Ruby",
+    };
+
+    auto it = kOpenAiToVibeVoice.find(voice);
+    if (it != kOpenAiToVibeVoice.end()) {
+        return it->second;
+    }
+
+    if (std::find(kVibeVoicePrompts.begin(), kVibeVoicePrompts.end(), voice) != kVibeVoicePrompts.end()) {
+        return voice;
+    }
+
+    return default_voice;
+}
+
 }  // namespace
 
 OnnxTtsManager::OnnxTtsManager(std::string models_dir)
@@ -253,8 +283,15 @@ SpeechResult OnnxTtsManager::synthesize(
         std::string default_voice = voice_env ? voice_env : "Carter";
 
         // Use voice from params if specified, otherwise use default
-        std::string voice = (params.voice.empty() || params.voice == "default")
-                            ? default_voice : params.voice;
+        std::string requested_voice = (params.voice.empty() || params.voice == "default")
+                                      ? default_voice : params.voice;
+        std::string voice = mapVibeVoicePrompt(requested_voice, default_voice);
+        if (voice != requested_voice) {
+            spdlog::info("Mapped voice '{}' to VibeVoice prompt '{}'", requested_voice, voice);
+        }
+
+        const char* voice_prompt_env = std::getenv("LLM_NODE_VIBEVOICE_VOICE_PROMPT");
+        std::string voice_prompt_path = voice_prompt_env ? voice_prompt_env : "";
 
         // Create temporary directory for output
         auto temp_dir = std::filesystem::temp_directory_path() /
@@ -277,6 +314,11 @@ SpeechResult OnnxTtsManager::synthesize(
             "--text", text,
             "--out", output_path.string()
         };
+
+        if (!voice_prompt_path.empty()) {
+            args.emplace_back("--voice-prompt");
+            args.emplace_back(voice_prompt_path);
+        }
 
         // Execute the Python runner
         int exit_code = run_command(args);

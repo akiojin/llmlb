@@ -182,7 +182,7 @@ pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) 
         .json(&json!({
             "name": "Test API Key",
             "expires_at": null,
-            "scopes": ["api:inference"]
+            "scopes": ["api"]
         }))
         .send()
         .await

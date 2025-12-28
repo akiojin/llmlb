@@ -102,7 +102,7 @@ with open(outfile, "wb") as f:
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::AdminAll],
+        vec![ApiKeyScope::Admin],
     )
     .await
     .expect("create admin api key")
@@ -1055,7 +1055,6 @@ async fn test_delete_model_removes_from_list() {
     );
     assert!(!model_path.exists(), "model file should be removed");
 }
-
 /// T010: ダウンロード失敗時に lifecycle_status が error になること
 /// NOTE: /v0/models/convert は廃止され、/v0/models に統合された
 /// NOTE: 失敗後のリトライ機能は別途実装予定

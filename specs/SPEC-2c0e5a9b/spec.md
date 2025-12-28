@@ -36,6 +36,7 @@
 - **Python依存なし**: Node は Python 依存を導入しない。
 - **GPU前提**: GPU非搭載ノードは対象外。
 - **chat_template**: 無い場合はデフォルトテンプレートを利用する。
+- **プラグイン形式**: gpt-oss 実行エンジンは Node のプラグインとして提供する。
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -73,15 +74,17 @@ Router
 Node
   ├─ ModelStorage: ローカル配置 + config.json から ModelDescriptor を生成
   ├─ EngineRegistry: runtime を解決
-  └─ Engine(gpt-oss): GPUで推論（通常/ストリーミング）
-       ├─ 優先1: 公式GPU最適化アーティファクト（allowlist対象、実行キャッシュ）
-       └─ 優先2: safetensors（index + shards）
+  └─ Engine Host (Plugin Loader)
+       └─ gpt-oss plugin: GPUで推論（通常/ストリーミング）
+            ├─ 優先1: 公式GPU最適化アーティファクト（allowlist対象、実行キャッシュ）
+            └─ 優先2: safetensors（index + shards）
 ```
 
 ### 役割の分離
 - **safetensors（正本）**: 監査・説明責任の基準。常に保持し、必要なメタデータ（`config.json`, `tokenizer.json`）で一貫性を担保する。
 - **公式GPU最適化アーティファクト（実行キャッシュ）**: GPU実行のために“公式が提供する最適化済みアーティファクト”。存在し、かつ許可リスト内なら実行で優先できる。
 - **Engine**: gpt-oss の “線（推論ロジック）” を実装する実行単位。Metal/CUDA を内包し、OpenAI互換の生成結果を返す。
+- **Engine Plugin**: 共有ライブラリ + manifest.json で提供される gpt-oss 実行単位。
 
 ### 機能要件
 - **FR-001**: gpt-oss-20b を `format=safetensors` として登録できる。
@@ -94,6 +97,7 @@ Node
 - **FR-008**: 公式のGPU最適化アーティファクトが利用可能な場合はそれを優先し、利用できない場合は safetensors を用いて実行する。
 - **FR-009**: 公式のGPU最適化アーティファクトは「同一 publisher org（例: `openai`, `nvidia`）配下の別リポジトリ」から取得できる。取得可否は許可リストで管理する（初期値: `openai/*`, `nvidia/*`）。
 - **FR-010**: 公式GPU最適化アーティファクトは登録形式を置き換えない（登録は常に `format=safetensors` のまま）。
+- **FR-011**: gpt-oss 実行エンジンはプラグインとしてロードされ、ABI 互換が一致する場合のみ有効化される。
 
 ### 非機能要件
 - **NFR-001**: GPU 非搭載ノードを登録対象にしない（既存方針と整合）。

@@ -91,9 +91,11 @@
 
 ### Session 2025-12-24
 
-- ASR/TTSは**新エンジン**で実装し、Node実行時はPython依存なし
-- safetensorsを正本として利用し、GGUFは「safetensorsが存在しない場合のみ」のフォールバック
-- Whisper公式 `.pt` はPythonで safetensors 化し、それを正本とする（取得元はHugging Face）
+- ASRは**whisper.cpp**を当面利用（GGML/GGUF変換運用）。将来的に独自エンジンへ置換。
+- TTSは**ONNX Runtime**を利用（Python依存なし）。
+- safetensorsを正本として利用し、ASRはsafetensors→GGML/GGUF変換で運用。
+- Whisper公式 `.pt` はPythonで safetensors 化し、それを正本とする（取得元はHugging Face）。
+- safetensors と GGUF が共存する場合、登録時の format 指定を必須とする（自動判別禁止）。
 
 ## 要件 *(必須)*
 
@@ -137,9 +139,10 @@
 
 ## 技術制約 *(該当する場合)*
 
-- ASR/TTSは新エンジンでsafetensorsを直接読み込む
-- GGUFはsafetensorsが存在しない場合のみフォールバックとして使用する
-- Node実行時はPython依存を導入しない
+- ASRは当面 **whisper.cpp（GGML/GGUF）** を使用し、safetensors正本から変換運用する
+- TTSは **ONNX Runtime** を利用し、Python依存は導入しない
+- GGUFは登録時に `format=gguf` を選択した場合のみ使用する
+- safetensors と GGUF が共存する場合は format 指定が必須（実行時の自動フォールバックは禁止）
 - Whisper公式 `.pt` はPythonで safetensors 化し、safetensorsを正本とする
 - GPUメモリを共有する場合、テキスト生成と音声処理の同時実行に制限がある可能性がある
 

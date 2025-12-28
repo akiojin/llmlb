@@ -3,10 +3,12 @@
 **仕様**: [spec.md](./spec.md)
 
 ## 目的
-ASR/TTS を **safetensors正本**で提供し、Node実行時のPython依存を排除する。
+ASRは **safetensors正本**（whisper.cppでGGUF運用）、
+TTSは **ONNX Runtime** で提供し、Node実行時のPython依存を排除する。
 
 ## 方針
-- safetensorsを正本とし、GGUFはsafetensorsが存在しない場合のみフォールバック
+- safetensorsを正本とし、safetensors/GGUF共存時は登録時にformat指定必須
+- ASRはwhisper.cpp（GGML/GGUF運用）、TTSはONNX Runtime
 - Node実行時はPython依存なし
 - Whisper公式 `.pt` はPythonでsafetensors化し、正本として保持
 - GPU前提（macOS: Apple Silicon / Linux&Windows: CUDA）
@@ -15,11 +17,12 @@ ASR/TTS を **safetensors正本**で提供し、Node実行時のPython依存を�
 - ASR: `openai/whisper-*` を含む音声認識モデル
   - `config.json` / `tokenizer.json` 必須
   - `*.safetensors`（シャーディングの場合は `.safetensors.index.json` 必須）
-- TTS: safetensors配布の音声合成モデル（TTS）
+- TTS: ONNX配布の音声合成モデル
+  - `*.onnx` を正本として扱う
 
 ## 役割分離
 - Router: 登録/配布、必須メタデータ検証、manifest確定
-- Node: safetensors直読エンジンで推論
+- Node: whisper.cpp / ONNX Runtime で推論
 
 ## テスト方針（TDD）
 - Contract → Integration → E2E → Unit → Core の順で実施

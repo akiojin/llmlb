@@ -28,6 +28,8 @@
 ## 原則
 - `metadata.json` のような独自メタデータには依存しない
 - エンジン選択は「登録時に確定したアーティファクト」を正とする
+- safetensors と GGUF が共存する場合は **登録時に形式選択が必須**
+  （実行時の自動判別やフォールバックは禁止）
 
 ## 決定事項（共有用サマリ）
 - **責務分離**: 形式選択は登録時に確定し、実行時はその結果に従う（実行時の自動判別/フォールバック禁止）。
@@ -37,9 +39,12 @@
   - macOS: Apple Silicon のみ対象
   - Linux/Windows: CUDA (GeForce系を含む) を対象
   - WSL2: GPUが検出できる場合のみ対象
-- **safetensors優先**: 登録時に `format=safetensors` を選ぶ限り、safetensors が正本。
+- **形式選択必須**: safetensors と GGUF が両方ある場合は登録時に format を指定する。
+  safetensors は推奨だが、自動選択は行わない。
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、登録時の形式選択を置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
+- **内蔵エンジンはプラグイン形式**: Node 本体は Engine Host とし、各エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能にする。
+- **ABI固定**: プラグインは C ABI で互換性を保証し、`abi_version` を必須とする。
 
 ## 内蔵エンジンのアーキテクチャ（概念）
 
@@ -59,10 +64,10 @@
                              │  (RuntimeTypeで選択)
                              │             │
                              │             ▼
-                             │  Inference Engine (外側)
-                             │    ├─ GGUF → llama.cpp
-                             │    ├─ TTS  → ONNX Runtime
-                             │    └─ safetensors → 独自エンジン群
+                             │  Engine Host (Plugin Loader)
+                             │    ├─ GGUF → llama.cpp (plugin)
+                             │    ├─ TTS  → ONNX Runtime (plugin)
+                             │    └─ safetensors → 独自エンジン群 (plugins)
                              │          ├─ gpt-oss
                              │          ├─ nemotron
                              │          └─ その他（Whisper/SD など）
@@ -81,28 +86,40 @@
   - `RuntimeType` に基づき **外側の推論エンジンを確定**する。
   - Node は登録時の形式と metadata を正とし、**実行時の自動判別や形式切替は行わない**。
 - **Inference Engine（外側）**
-  - 共通の推論インターフェース。内部で runtime に応じて実装を振り分ける。
-  - GGUF → `llama.cpp`、TTS → `ONNX Runtime`、safetensors → 独自エンジン群。
+  - 共通の推論インターフェース。内部で runtime に応じてプラグインを振り分ける。
+  - GGUF → `llama.cpp`、TTS → `ONNX Runtime`、safetensors → 独自エンジン群（すべてプラグイン）。
   - 公式最適化アーティファクトは **実行キャッシュ**として利用可能だが、
     登録時の形式選択は上書きしない。
+
+### プラグイン設計指針（Node）
+
+- **配布単位**: 共有ライブラリ + manifest.json の 1 セット
+- **manifest内容**:
+  - engine_id / engine_version / abi_version
+  - 対応 RuntimeType / 形式（safetensors, gguf, onnx 等）
+  - 対応 capabilities（text / vision / asr / tts / image）
+  - GPU 要件（Metal / CUDA）
+- **互換性**: C ABI を固定し、ABI 互換を破る変更は abi_version を更新する
+- **解決順序**: EngineRegistry が RuntimeType と format をキーにプラグインを解決する
 
 ### RuntimeType とエンジンの対応（現状）
 
 | RuntimeType | 主用途 | 主要アーティファクト | 備考 |
 |---|---|---|---|
-| `LlamaCpp` | LLM / Embedding | GGUF | safetensors 不在時のみ選択対象 |
+| `LlamaCpp` | LLM / Embedding | GGUF | 登録時に `format=gguf` を選択した場合 |
 | `GptOssCpp` | gpt-oss | safetensors + 公式最適化 | Metal/CUDA の最適化アーティファクトは補助 |
 | `NemotronCpp` | Nemotron | safetensors | **CUDAのみが前提**、Metalは後回し |
-| `WhisperCpp` | ASR | safetensors（正本） | 旧 whisper.cpp 前提は置換方針 |
-| `StableDiffusion` | 画像生成 | safetensors（正本） | 旧 stable-diffusion.cpp 前提は置換方針 |
-| `OnnxRuntime` | TTS | safetensors（正本） | Python依存なしで運用する |
+| `WhisperCpp` | ASR | GGML/GGUF（当面） | safetensors正本 → 変換で運用、将来は独自エンジン |
+| `StableDiffusion` | 画像生成 | safetensors（直接） | stable-diffusion.cpp を当面利用 |
+| `OnnxRuntime` | TTS | ONNX | Python依存なしで運用する |
 
 ### 形式選択とエンジン選択の原則
 
 1. **Router が登録時に形式を確定**（`format=safetensors` / `format=gguf`）。
-2. **Node は形式を尊重**し、runtime を metadata から決定する。
-3. **safetensors が正本**。GGUF は safetensors が存在しないモデルのみ許容。
-4. **最適化アーティファクトは “実行キャッシュ”** であり、形式選択は上書きしない。
+2. **safetensors/GGUF が共存する場合、format は必須指定**（自動判別禁止）。
+3. **Node は登録時の形式を尊重**し、runtime を metadata から決定する。
+4. **safetensors は推奨**だが、format に従って実行する（実行時フォールバック禁止）。
+5. **最適化アーティファクトは “実行キャッシュ”** であり、形式選択は上書きしない。
 
 ### Nemotron の位置づけ
 

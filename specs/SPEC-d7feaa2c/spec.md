@@ -9,11 +9,13 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、safetensors�
 本仕様は統合仕様 `SPEC-3fc2c1e4`（実行エンジン）の**詳細仕様**として扱う。
 
 - Node側でエンジンローダーを抽象化し、複数エンジンを共存可能にする
+- 内蔵エンジンは **プラグイン形式（動的ロード）** とし、後から同一ABIで追加可能にする
 - エンジン選択は「登録時に選択したアーティファクト（safetensors/GGUF）」と
   Hugging Face の `config.json` 等のモデル由来メタデータを正として判定する
 
 ## ゴール
 - Nodeにエンジン抽象化レイヤーが導入され、llama.cpp 等の複数エンジンを選択できる
+- エンジンは **動的プラグイン** として追加・更新できる
 - `metadata.json` のような llm-router 独自メタデータファイルに依存せず、エンジン選択が実装される
 
 ## アーキテクチャ（Nodeエンジン層）
@@ -37,19 +39,21 @@ register(format=...)  ───────▶    ModelStorage
                                       └─ runtime → Engine を解決
                                            │
                                            ▼
-                                    InferenceEngine
-                                      └─ Engineへ推論を委譲
+                                   EngineHost (Plugin Loader)
+                                     └─ Pluginへ推論を委譲
                                            │
                                            ▼
-                                        Engine（複数）
-                                      ├─ llama.cpp（GGUF）
-                                      └─ safetensors系（将来拡張）
+                                       Engine Plugins（複数）
+                                     ├─ llama.cpp（GGUF）
+                                     └─ safetensors系（将来拡張）
 ```
 
 ### Key concepts
 - **ModelDescriptor**: Nodeが推論を開始するために必要な最小情報（例: `format`, `runtime`, `model_dir`, `primary` など）。
 - **runtime**: “どのEngineで実行すべきか” を表す識別子（例: `llama_cpp` など）。
 - **Engine**: 推論の実体（GPU実行・サンプリング・ストリーミングなど）を担う差し替え可能ユニット。
+- **Engine Plugin**: 共有ライブラリ + manifest.json で提供される実行ユニット。
+- **Engine Host**: プラグインの発見・ロード・ライフサイクル管理のみ担当するホスト層。
 
 ### エンジン選択の入力（Single source of truth）
 - **登録時に確定したアーティファクト（format/必要ファイル）**
@@ -62,6 +66,7 @@ register(format=...)  ───────▶    ModelStorage
 - Nemotron 推論の高速化・最適化
 - Python依存の導入
 - GGUF変換の改善
+- プラグインサンドボックス/権限分離
 
 ## ユーザーストーリー
 - 開発者として、モデル形式が増えてもNodeのエンジン選択が壊れない構造にしたい
@@ -74,3 +79,4 @@ register(format=...)  ───────▶    ModelStorage
 - `metadata.json` に依存しない
 - エンジン判定結果は /v1/models の応答に影響し、未対応モデルは登録対象から除外できる
 - Python依存は導入しない
+- Engine は動的プラグインであり、ABIバージョン一致のもののみロードされる

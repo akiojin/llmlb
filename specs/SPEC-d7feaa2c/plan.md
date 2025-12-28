@@ -2,7 +2,8 @@
 
 ## 方針
 - Node側にエンジン抽象化レイヤーを導入し、実行エンジンを差し替え可能にする
-- 既存 llama.cpp を Engine としてラップする
+- 内蔵エンジンは **プラグイン形式（動的ロード）** とし、C ABI固定で互換性を担保する
+- 既存 llama.cpp は plugin として提供する
 - エンジン選択は「登録時に選択したアーティファクト（safetensors/GGUF）」と
   Hugging Face の `config.json` 等のモデル由来メタデータを正として判定する
 - `metadata.json` のような llm-router 独自メタデータファイルは使用しない
@@ -21,6 +22,7 @@
 - Routerのマニフェストに従い、必要ファイルをローカルに取得（または共有パスを直接参照）する
 - ローカル配置されたモデルを、`config.json` 等のHF由来メタデータで検証し、実行エンジンを決定する
 - エンジンが未対応のモデルは「利用可能モデル一覧」から除外できる
+- EngineHost（Plugin Loader）が runtime/format に一致する plugin をロードする
 
 ## エンジン選択（判定ソース）
 - 判定の正は以下のみ
@@ -42,9 +44,9 @@
 ## 実装概要（Node側抽象化レイヤー）
 
 ### 1) Node側抽象化
-- `Engine` インターフェース
-- `EngineRegistry` で runtime ID → engine 実装を解決
-- `InferenceEngine` は内部で engine を選択して処理を委譲
+- `EngineHost`（Plugin Loader）でプラグインをロード
+- `EngineRegistry` で runtime ID → plugin を解決
+- `Engine` は C ABI で提供し、manifest/abi_version を検証する
 
 ### 2) ModelStorage拡張
 - Routerが配布したローカルのモデル配置（= 登録時の選択結果を反映）と
@@ -59,6 +61,7 @@
 ## テスト
 - ModelStorage: `format` / 必須メタデータの検証テスト
 - Engine selection: 登録時選択と `config.json` に基づく判定テスト
+- Plugin loader: manifest/ABIバージョン検証テスト
 
 ## 互換性・保留（TBD）
 

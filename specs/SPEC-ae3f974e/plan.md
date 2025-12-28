@@ -3,11 +3,11 @@
 **仕様**: [spec.md](./spec.md)
 
 ## 目的
-画像生成を **safetensors正本**で提供し、GGUFはsafetensors不在時のみフォールバックする。
+画像生成を **safetensors正本**で提供し、safetensors/GGUF共存時は登録時のformat指定を必須とする。
 
 ## 方針
 - Node実行時はPython依存なし
-- safetensorsを正本とし、GGUFは限定的フォールバック
+- safetensorsを正本とし、GGUFは登録時に `format=gguf` を選択した場合のみ使用
 - GPU前提（macOS: Apple Silicon / Linux&Windows: CUDA）
 
 ## 対象モデルとアーティファクト（前提）
@@ -24,4 +24,4 @@
 
 ## 要明確化
 - safetensors直読の画像生成エンジン選定
-- GGUFフォールバック時の許可条件（登録時/実行時）
+- GGUF選択時のUI/運用条件

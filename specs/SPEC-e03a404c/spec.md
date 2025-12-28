@@ -7,7 +7,7 @@
 
 ## 決定事項（共有用サマリ）
 - 画像認識は **safetensors正本** を前提に実行する
-- GGUFは **safetensorsが存在しない場合のみ** フォールバックとして許可する
+- safetensors と GGUF が共存する場合、登録時の format 指定を必須とする
 - Node実行時はPython依存を導入しない
 
 ## ユーザーシナリオ＆テスト *(必須)*
@@ -117,7 +117,8 @@
 ## 技術制約 *(該当する場合)*
 
 - Visionモデルはsafetensorsを直接読み込める新エンジンが必要
-- GGUFはsafetensorsが存在しない場合のみフォールバックとして許可する
+- GGUFは登録時に `format=gguf` を選択した場合のみ使用する
+- safetensors と GGUF が共存する場合は format 指定が必須（実行時の自動フォールバックは禁止）
 - 画像処理に追加のGPUメモリが必要（モデルにより2-8GB追加）
 - Base64デコードはルーター側で実行し、ノードには生データを送信
 
@@ -170,7 +171,7 @@
 **方針更新**:
 
 - safetensors正本を前提に再設計する
-- GGUFはsafetensorsが存在しない場合のみフォールバック
+- safetensors と GGUF が共存する場合は format 指定を必須とする
 
 ---
 

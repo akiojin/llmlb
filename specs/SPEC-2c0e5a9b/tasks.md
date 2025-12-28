@@ -21,7 +21,8 @@
 
 ## Core
 - [ ] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
-- [ ] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を実装。
+- [ ] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
+- [ ] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [ ] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [ ] Router: 公式GPU最適化アーティファクトが許可リスト内なら**実行キャッシュとして**取得できる導線を用意（自動/opt-inは plan.md の決定に従う）。
@@ -29,6 +30,7 @@
 ## Unit Tests (GREEN)
 - [ ] Node: safetensors shards 解決とメタデータ検証のユニットテスト。
 - [ ] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
+- [ ] Node: プラグイン manifest/ABI の検証ユニットテスト。
 
 ## Docs
 - [ ] README.md / README.ja.md に gpt-oss safetensors 前提と実行要件を追記。

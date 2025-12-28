@@ -13,6 +13,11 @@
 - [x] LlamaEngineを既存実装から切り出し
 - [x] InferenceEngineからエンジン選択に委譲
 
+## Plugin Migration（追加）
+- [ ] EngineHost（プラグインローダー）を導入する
+- [ ] Engine ABI/manifest を定義し、互換性検証を実装する
+- [ ] llama.cpp を plugin 化してロードできるようにする
+
 ## Integration
 - [x] /v1/models で未対応モデルを除外するロジック追加
 - [x] Router/Nodeともに`metadata.json`を生成・参照しない

@@ -61,18 +61,18 @@
 
 ## Phase 3.4: コア実装 - Router側
 
-- [ ] T009 `router/src/models/image.rs` に画像データ構造を実装
+- [x] T009 `router/src/models/image.rs` に画像データ構造を実装
   - Base64デコード
   - URL画像取得
   - MIME type検証
   - サイズ制限チェック (最大10MB)
 
-- [ ] T010 `router/src/api/chat.rs` にVision対応拡張
+- [x] T010 `router/src/api/openai.rs` にVision対応拡張
   - マルチパートコンテンツのパース
   - 画像データの抽出・変換
   - Vision非対応モデル検出・エラー
 
-- [ ] T011 `router/src/api/models.rs` にcapabilities情報追加
+- [x] T011 `router/src/api/openai.rs` にcapabilities情報追加
   - `/v1/models` レスポンスに `image_understanding` を含める
 
 ## Phase 3.5: コア実装 - Node側

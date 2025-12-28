@@ -118,6 +118,17 @@ coverage/
 tmp/
 temp/
 
+# Quickstart media artifacts
+/announcement.mp3
+/audio.wav
+/fast_speech.mp3
+/meeting.mp3
+/podcast.mp3
+/speech.mp3
+/speech.wav
+/subtitles.srt
+/video.mp3
+
 # Rust
 target/
 Cargo.lock

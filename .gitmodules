@@ -4,3 +4,6 @@
 [submodule "node/third_party/stable-diffusion.cpp"]
 	path = node/third_party/stable-diffusion.cpp
 	url = https://github.com/akiojin/stable-diffusion.cpp.git
+[submodule "node/third_party/llama.cpp"]
+	path = node/third_party/llama.cpp
+	url = https://github.com/ggerganov/llama.cpp.git

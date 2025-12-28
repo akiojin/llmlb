@@ -47,12 +47,12 @@
 
 ## Phase 3.3: コア実装 - 型定義
 
-- [ ] T006 `common/src/types.rs` に画像関連型を追加
+- [x] T006 `common/src/types.rs` に画像関連型を追加
   - ImageContent (URL/Base64)
   - ImageContentType (MIME type)
   - VisionCapability
 
-- [ ] T007 `common/src/protocol.rs` にVision用メッセージ型を追加
+- [x] T007 `common/src/protocol.rs` にVision用メッセージ型を追加
   - ContentPart (text/image_url)
   - ImageUrl
   - Vision対応ChatCompletionRequest拡張

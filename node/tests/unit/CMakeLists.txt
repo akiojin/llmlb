@@ -93,6 +93,14 @@ target_compile_definitions(llm-node-unit-tests
         LLM_NODE_TESTING=1
 )
 
+# Ensure whisper/sd manager implementations are compiled in unit tests
+if(BUILD_WITH_WHISPER)
+    target_compile_definitions(llm-node-unit-tests PRIVATE USE_WHISPER=1)
+endif()
+if(BUILD_WITH_SD)
+    target_compile_definitions(llm-node-unit-tests PRIVATE USE_SD=1)
+endif()
+
 add_test(
     NAME llm-node-unit-tests
     COMMAND llm-node-unit-tests

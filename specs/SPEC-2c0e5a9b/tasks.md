@@ -10,14 +10,14 @@
 ## Contract Tests (RED)
 - [x] Router: gpt-oss 登録時に `format=safetensors` 必須メタデータ欠落が 400 になること。
 - [x] Router: `model.safetensors.index.json` が無い状態で複数 shard を検出した場合に 400 になること。
-- [ ] Node: gpt-oss runtime 判定が `config.json` から確定すること（既存テストの拡張）。
+- [x] Node: gpt-oss runtime 判定が `config.json` から確定すること（既存テストの拡張）。
 
 ## Integration Tests (RED)
 - [x] Node: sharded safetensors の欠損 shard を検出してロード失敗すること（REDテスト追加済み、実装待ち）。
-- [ ] Node: 必須メタデータ（config/tokenizer）不足時に未対応として扱うこと。
+- [x] Node: 必須メタデータ（config/tokenizer）不足時に未対応として扱うこと。
 
 ## E2E (RED)
-- [ ] gpt-oss-20b を `format=safetensors` で登録 → 配布 → `/v1/chat/completions` が 1 token 以上生成すること。
+- [x] gpt-oss-20b を `format=safetensors` で登録 → 配布 → `/v1/chat/completions` が 1 token 以上生成すること。
 
 ## Core
 - [ ] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。

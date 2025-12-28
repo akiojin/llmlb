@@ -21,27 +21,6 @@ class ModelResolver;
 class VisionProcessor;
 struct ModelDescriptor;
 
-struct ChatMessage {
-    std::string role;
-    std::string content;
-};
-
-/// 推論パラメータ
-struct InferenceParams {
-    size_t max_tokens{2048};  // デフォルト値を増加（256→2048）
-    float temperature{0.8f};
-    float top_p{0.9f};
-    int top_k{40};
-    float repeat_penalty{1.1f};
-    uint32_t seed{0};  // 0 = ランダム
-};
-
-/// モデルロード結果
-struct ModelLoadResult {
-    bool success{false};
-    std::string error_message;
-};
-
 class InferenceEngine {
 public:
     /// コンストラクタ: LlamaManager, ModelStorage, ModelSync/ModelResolver への参照を注入

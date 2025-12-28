@@ -143,7 +143,6 @@ bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& e
 
     return true;
 }
-}  // namespace
 
 OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
     : registry_(registry), engine_(engine), config_(config) {}

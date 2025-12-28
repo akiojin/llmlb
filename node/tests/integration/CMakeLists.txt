@@ -16,8 +16,10 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
     ../../src/models/model_storage.cpp
+    ../../src/models/model_resolver.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/vision_processor.cpp
     ../../src/core/llama_manager.cpp
 )
 
@@ -36,6 +38,7 @@ target_link_libraries(llm-node-integration-tests
     PRIVATE
         test_common
         llama
+        mtmd
         common
         nlohmann_json::nlohmann_json
         utils_lib

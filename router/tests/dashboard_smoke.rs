@@ -61,7 +61,7 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager, String) {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::AdminAll],
+        vec![ApiKeyScope::Admin],
     )
     .await
     .expect("create admin api key")

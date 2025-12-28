@@ -214,34 +214,30 @@ std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::m
         return nullptr;
     }
 
-    std::unique_ptr<httplib::Client> client;
-
-    const bool use_https = url.scheme == "https";
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    if (use_https) {
-        client = std::make_unique<httplib::SSLClient>(url.host, url.port);
-    }
-#else
-    if (use_https) {
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+    if (url.scheme == "https") {
         return nullptr;  // HTTPS is not supported in this build
     }
 #endif
 
-    if (!use_https) {
-        client = std::make_unique<httplib::Client>(url.host, url.port);
+    // Build scheme://host:port format for Client's universal interface
+    std::string scheme_host_port = url.scheme + "://" + url.host;
+    if (url.port != 0) {
+        scheme_host_port += ":" + std::to_string(url.port);
     }
 
-    if (client) {
+    auto client = std::make_unique<httplib::Client>(scheme_host_port);
+    if (client && client->is_valid()) {
         const int sec = static_cast<int>(timeout.count() / 1000);
         const int usec = static_cast<int>((timeout.count() % 1000) * 1000);
         client->set_connection_timeout(sec, usec);
         client->set_read_timeout(sec, usec);
         client->set_write_timeout(sec, usec);
         client->set_follow_location(true);
+        return client;
     }
 
-    return client;
+    return nullptr;
 }
 
 }  // namespace

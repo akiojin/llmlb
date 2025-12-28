@@ -8,6 +8,8 @@
 
 namespace llm_node {
 
+using json = nlohmann::json;
+
 namespace {
 // SPEC-dcaeaec4: Helper to check if node is ready and return 503 if not
 bool checkReady(httplib::Response& res) {
@@ -24,9 +26,92 @@ bool checkReady(httplib::Response& res) {
     }
     return true;
 }
-}  // namespace
 
-using json = nlohmann::json;
+struct ParsedChatMessages {
+    std::vector<ChatMessage> messages;
+    std::vector<std::string> image_urls;
+};
+
+constexpr size_t kMaxImageCount = 10;
+const std::string kVisionMarker = "<__media__>";
+
+bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& error) {
+    out.messages.clear();
+    out.image_urls.clear();
+
+    if (!body.contains("messages")) {
+        return true;
+    }
+    if (!body["messages"].is_array()) {
+        error = "messages must be an array";
+        return false;
+    }
+
+    for (const auto& m : body["messages"]) {
+        if (!m.is_object()) {
+            error = "message must be an object";
+            return false;
+        }
+        std::string role = m.value("role", "");
+        if (role.empty()) {
+            error = "message.role is required";
+            return false;
+        }
+
+        std::string content;
+        if (!m.contains("content") || m["content"].is_null()) {
+            out.messages.push_back({role, ""});
+            continue;
+        }
+
+        const auto& c = m["content"];
+        if (c.is_string()) {
+            content = c.get<std::string>();
+        } else if (c.is_array()) {
+            for (const auto& part : c) {
+                if (!part.is_object()) {
+                    error = "content part must be an object";
+                    return false;
+                }
+                std::string type = part.value("type", "");
+                if (type == "text") {
+                    content += part.value("text", "");
+                } else if (type == "image_url") {
+                    std::string url;
+                    if (part.contains("image_url")) {
+                        const auto& image_url = part["image_url"];
+                        if (image_url.is_object()) {
+                            url = image_url.value("url", "");
+                        } else if (image_url.is_string()) {
+                            url = image_url.get<std::string>();
+                        }
+                    }
+                    if (url.empty()) {
+                        error = "image_url.url is required";
+                        return false;
+                    }
+                    out.image_urls.push_back(url);
+                    if (out.image_urls.size() > kMaxImageCount) {
+                        error = "too many images in request";
+                        return false;
+                    }
+                    content += kVisionMarker;
+                } else {
+                    error = "unsupported content type: " + type;
+                    return false;
+                }
+            }
+        } else {
+            error = "content must be a string or array";
+            return false;
+        }
+
+        out.messages.push_back({role, content});
+    }
+
+    return true;
+}
+}  // namespace
 
 OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
     : registry_(registry), engine_(engine), config_(config) {}
@@ -53,14 +138,19 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
             if (!validateModel(model, res)) return;
-            std::vector<ChatMessage> messages;
-            if (body.contains("messages")) {
-                for (const auto& m : body["messages"]) {
-                    messages.push_back({m.value("role", ""), m.value("content", "")});
-                }
+            ParsedChatMessages parsed;
+            std::string parse_error;
+            if (!parseChatMessages(body, parsed, parse_error)) {
+                respondError(res, 400, "bad_request", parse_error);
+                return;
             }
             bool stream = body.value("stream", false);
-            std::string output = engine_.generateChat(messages, model);
+            std::string output;
+            if (!parsed.image_urls.empty()) {
+                output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model);
+            } else {
+                output = engine_.generateChat(parsed.messages, model);
+            }
 
             if (stream) {
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
@@ -215,8 +305,8 @@ bool OpenAIEndpoints::validateModel(const std::string& model, httplib::Response&
     if (registry_.hasModel(model)) {
         return true;
     }
-    // Try to load from remote path (SPEC-dcaeaec4 FR-3)
-    // loadModel() will check local storage first, then remote path
+    // Try to resolve/load via ModelResolver (local -> shared -> router API)
+    // loadModel() handles the full resolution flow
     auto load_result = engine_.loadModel(model);
     if (!load_result.success) {
         respondError(res, 404, "model_not_found",

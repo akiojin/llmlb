@@ -43,6 +43,7 @@ chrono = { workspace = true }
 thiserror = { workspace = true }
 sysinfo = { workspace = true }
 csv = "1.3"
+base64 = "0.22"
 
 # 認証機能
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }

@@ -1,5 +1,12 @@
-import { test, expect, type FilePayload } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { mockChatCompletionsStream, mockOpenAIModels } from '../../helpers/mock-helpers';
+
+// FilePayload was removed from @playwright/test in newer versions
+interface FilePayload {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+}
 
 const transparentPngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lk1kAAAAASUVORK5CYII=';
@@ -111,14 +118,15 @@ test.describe('Playground Multimodal Input @playground', () => {
 
     // Paste audio
     const wav = wavFile().buffer;
-    await page.evaluate(async ({ bytes }) => {
+    const wavBytes: number[] = Array.from(wav);
+    await page.evaluate(async ({ bytes }: { bytes: number[] }) => {
       const el = document.querySelector('[data-testid="playground-chat-input"]');
       if (!el) throw new Error('chat input not found');
       const dt = new DataTransfer();
       const file = new File([new Uint8Array(bytes)], 'pasted.wav', { type: 'audio/wav' });
       dt.items.add(file);
       el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-    }, { bytes: Array.from(wav) });
+    }, { bytes: wavBytes });
 
     await expect(page.getByTestId('playground-attachment-audio')).toBeVisible();
   });

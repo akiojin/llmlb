@@ -20,14 +20,14 @@ export class DashboardPage {
   readonly successRate: Locator;
   readonly averageResponseTime: Locator;
 
-  // Models
-  readonly registerButton: Locator;
-  readonly convertModal: Locator;
-  readonly convertRepo: Locator;
-  readonly convertFilename: Locator;
-  readonly convertSubmit: Locator;
+  // Models - Tabs
+  readonly localTab: Locator;
+  readonly hubTab: Locator;
   readonly localModelsList: Locator;
-  readonly registeringTasksList: Locator;
+  readonly hubModelsList: Locator;
+  // Models - Hub
+  readonly hubSearch: Locator;
+  readonly hubModelCards: Locator;
 
   // Nodes
   readonly nodesBody: Locator;
@@ -57,14 +57,14 @@ export class DashboardPage {
     this.successRate = page.locator(DashboardSelectors.stats.successRate);
     this.averageResponseTime = page.locator(DashboardSelectors.stats.averageResponseTime);
 
-    // Models
-    this.registerButton = page.locator(DashboardSelectors.models.registerButton);
-    this.convertModal = page.locator(DashboardSelectors.models.convertModal);
-    this.convertRepo = page.locator(DashboardSelectors.models.convertRepo);
-    this.convertFilename = page.locator(DashboardSelectors.models.convertFilename);
-    this.convertSubmit = page.locator(DashboardSelectors.models.convertSubmit);
+    // Models - Tabs
+    this.localTab = page.locator(DashboardSelectors.models.localTab);
+    this.hubTab = page.locator(DashboardSelectors.models.hubTab);
     this.localModelsList = page.locator(DashboardSelectors.models.localModelsList);
-    this.registeringTasksList = page.locator(DashboardSelectors.models.registeringTasksList);
+    this.hubModelsList = page.locator(DashboardSelectors.models.hubModelsList);
+    // Models - Hub
+    this.hubSearch = page.locator(DashboardSelectors.models.hubSearch);
+    this.hubModelCards = page.locator(DashboardSelectors.models.hubModelCard);
 
     // Nodes
     this.nodesBody = page.locator(DashboardSelectors.nodes.nodesBody);
@@ -94,6 +94,20 @@ export class DashboardPage {
     // Navigate to Models tab
     await this.page.click('button[role="tab"]:has-text("Models")');
     await this.page.waitForTimeout(500);
+  }
+
+  async gotoLocalModels() {
+    await this.gotoModels();
+    // Click Local tab
+    await this.localTab.click();
+    await this.page.waitForTimeout(300);
+  }
+
+  async gotoModelHub() {
+    await this.gotoModels();
+    // Click Model Hub tab
+    await this.hubTab.click();
+    await this.page.waitForTimeout(300);
   }
 
   async login(username = 'admin', password = 'test') {
@@ -147,18 +161,21 @@ export class DashboardPage {
     await this.filterQuery.fill(query);
   }
 
-  async openRegisterModal() {
-    await this.registerButton.click();
-    await expect(this.convertModal).toBeVisible();
+  async searchHubModels(query: string) {
+    await this.hubSearch.fill(query);
+    await this.page.waitForTimeout(300);
   }
 
-  async registerModel(repo: string, filename?: string) {
-    await this.openRegisterModal();
-    await this.convertRepo.fill(repo);
-    if (filename) {
-      await this.convertFilename.fill(filename);
-    }
-    await this.convertSubmit.click();
+  async pullModel(modelId: string) {
+    // Find the model card and click Pull button
+    const modelCard = this.page.locator(`[data-model-id="${modelId}"]`);
+    const pullButton = modelCard.locator('button:has-text("Pull")');
+    await pullButton.click();
+    await this.page.waitForTimeout(500);
+  }
+
+  async getHubModelCount(): Promise<number> {
+    return this.hubModelCards.count();
   }
 
   async getConnectionStatus(): Promise<string> {

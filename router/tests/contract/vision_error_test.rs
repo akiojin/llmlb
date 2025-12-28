@@ -72,7 +72,7 @@ mod common {
             "test-key",
             user.id,
             None,
-            vec![ApiKeyScope::ApiInference],
+            vec![ApiKeyScope::Api],
         )
         .await
         .expect("create api key")

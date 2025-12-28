@@ -1,8 +1,12 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
+#include "core/vision_processor.h"
 #include "models/model_storage.h"
 #include "models/model_sync.h"
+#include "models/model_resolver.h"
 #include "include/llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 
 #include <spdlog/spdlog.h>
 #include <random>
@@ -18,10 +22,20 @@ static std::string extractGptOssFinalMessage(const std::string& output);
 std::string extractGptOssFinalMessageForTest(const std::string& output);
 
 // コンストラクタ
-InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync)
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync,
+                                 ModelResolver* model_resolver)
     : manager_(&manager)
     , model_storage_(&model_storage)
-    , model_sync_(model_sync) {}
+    , model_sync_(model_sync)
+    , model_resolver_(model_resolver) {
+    vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
+}
+
+// デフォルトコンストラクタ（VisionProcessor完全型のために.cppで定義）
+InferenceEngine::InferenceEngine() = default;
+
+// デストラクタ（VisionProcessor完全型のために.cppで定義）
+InferenceEngine::~InferenceEngine() = default;
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -42,6 +56,37 @@ std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& mes
     // アシスタント応答の開始を示す
     oss << "Assistant: ";
     return oss.str();
+}
+
+std::string InferenceEngine::resolveModelPath(const std::string& model_name, std::string* error_message) const {
+    if (!isInitialized()) {
+        if (error_message) *error_message = "InferenceEngine not initialized";
+        return "";
+    }
+
+    if (model_resolver_ != nullptr) {
+        auto resolved = model_resolver_->resolve(model_name);
+        if (resolved.success) {
+            return resolved.path;
+        }
+        if (error_message) *error_message = resolved.error_message;
+        return "";
+    }
+
+    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    if (!gguf_path.empty()) {
+        return gguf_path;
+    }
+
+    if (model_sync_ != nullptr) {
+        gguf_path = model_sync_->getRemotePath(model_name);
+        if (!gguf_path.empty()) {
+            return gguf_path;
+        }
+    }
+
+    if (error_message) *error_message = "Model not found: " + model_name;
+    return "";
 }
 
 // ChatML形式でプロンプトを構築するフォールバック関数
@@ -341,11 +386,13 @@ std::string InferenceEngine::generateChat(
         return "Response to: " + messages.back().content;
     }
 
-    // 1. モデルパス解決（固定ディレクトリのみを許容）
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        spdlog::error("Model not found in ~/.llm-router/models: {}", model_name);
-        throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        spdlog::error("{}", msg);
+        throw std::runtime_error(msg);
     }
 
     // 2. モデルロード（オンデマンドロードのみ。blob download 等への暗黙フォールバックはしない）
@@ -553,6 +600,187 @@ std::string InferenceEngine::generateChat(
     return output;
 }
 
+std::string InferenceEngine::generateChatWithImages(
+    const std::vector<ChatMessage>& messages,
+    const std::vector<std::string>& image_urls,
+    const std::string& model_name,
+    const InferenceParams& params) const {
+
+    if (image_urls.empty()) {
+        return generateChat(messages, model_name, params);
+    }
+
+    if (!isInitialized()) {
+        spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
+        if (messages.empty()) return "";
+        return "Response to: " + messages.back().content;
+    }
+
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
+    if (gguf_path.empty()) {
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        spdlog::error("{}", msg);
+        throw std::runtime_error(msg);
+    }
+
+    if (!manager_->loadModelIfNeeded(gguf_path)) {
+        throw std::runtime_error("Failed to load model: " + gguf_path);
+    }
+
+    llama_context* ctx = manager_->getContext(gguf_path);
+    llama_model* model = manager_->getModel(gguf_path);
+
+    if (!ctx || !model) {
+        throw std::runtime_error("Failed to get context/model for: " + gguf_path);
+    }
+
+    if (!vision_processor_) {
+        vision_processor_ = std::make_unique<VisionProcessor>(*model_storage_);
+    }
+
+    std::string vision_error;
+    mtmd_context* mctx = vision_processor_->getOrCreateContext(model_name, gguf_path, model, vision_error);
+    if (!mctx) {
+        throw std::runtime_error(vision_error.empty() ? "Vision model not available" : vision_error);
+    }
+
+    mtmd::bitmaps bitmaps;
+    if (!vision_processor_->prepareBitmaps(mctx, image_urls, bitmaps, vision_error)) {
+        throw std::runtime_error(vision_error.empty() ? "Failed to prepare images" : vision_error);
+    }
+
+    std::string prompt = applyModelChatTemplate(model, messages);
+    spdlog::debug("Vision prompt: {}", prompt);
+
+    bool is_gptoss = isGptOssModel(model);
+    bool add_special = !is_gptoss;
+    bool parse_special = is_gptoss;
+
+    mtmd_input_text text;
+    text.text = prompt.c_str();
+    text.add_special = add_special;
+    text.parse_special = parse_special;
+
+    mtmd::input_chunks chunks(mtmd_input_chunks_init());
+    auto bitmaps_c_ptr = bitmaps.c_ptr();
+    int32_t res = mtmd_tokenize(mctx,
+                                chunks.ptr.get(),
+                                &text,
+                                bitmaps_c_ptr.data(),
+                                bitmaps_c_ptr.size());
+    if (res != 0) {
+        throw std::runtime_error("Failed to tokenize vision prompt");
+    }
+
+    llama_pos new_n_past = 0;
+    const int32_t n_batch = llama_n_batch(ctx);
+    if (mtmd_helper_eval_chunks(mctx,
+                                ctx,
+                                chunks.ptr.get(),
+                                0,
+                                0,
+                                n_batch,
+                                true,
+                                &new_n_past) != 0) {
+        throw std::runtime_error("Failed to evaluate vision prompt");
+    }
+
+    size_t prompt_positions = new_n_past < 0 ? 0 : static_cast<size_t>(new_n_past);
+    spdlog::debug("Vision prompt positions: {}", prompt_positions);
+
+    llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+    llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
+    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+        64,
+        params.repeat_penalty,
+        0.0f,
+        0.0f
+    ));
+
+    uint32_t seed = params.seed;
+    if (seed == 0) {
+        seed = static_cast<uint32_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
+    }
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+
+    std::string output;
+
+    size_t effective_max_tokens = params.max_tokens;
+    int32_t model_n_ctx = llama_model_n_ctx_train(model);
+    if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
+        size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
+        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            effective_max_tokens = available;
+        } else {
+            effective_max_tokens = std::min(params.max_tokens, available);
+        }
+        spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
+            model_n_ctx, prompt_positions, available, effective_max_tokens);
+    }
+
+    const llama_vocab* vocab = llama_model_get_vocab(model);
+
+    for (size_t i = 0; i < effective_max_tokens; i++) {
+        llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+        if (llama_vocab_is_eog(vocab, new_token)) {
+            spdlog::debug("Vision: EOG token received at position {}", i);
+            break;
+        }
+
+        char buf[256];
+        int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
+        if (len > 0) {
+            output.append(buf, static_cast<size_t>(len));
+        }
+
+        llama_sampler_accept(sampler, new_token);
+
+        llama_batch next_batch = llama_batch_get_one(&new_token, 1);
+        int32_t gen_decode_result = llama_decode(ctx, next_batch);
+        if (gen_decode_result != 0) {
+            spdlog::warn("Vision: llama_decode failed during generation: {}", gen_decode_result);
+            break;
+        }
+    }
+
+    llama_sampler_free(sampler);
+
+    static const std::vector<std::string> stop_sequences = {
+        "<|im_end|>",
+        "<|end|>",
+        "<|start|>",
+        "<|eot_id|>",
+        "</s>",
+        "<|endoftext|>",
+    };
+
+    for (const auto& stop : stop_sequences) {
+        size_t pos = output.find(stop);
+        if (pos != std::string::npos) {
+            spdlog::debug("Vision: Truncating output at stop sequence '{}' at position {}", stop, pos);
+            output = output.substr(0, pos);
+            break;
+        }
+    }
+
+    if (isGptOssModel(model)) {
+        spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
+        output = cleanGptOssOutput(output);
+        spdlog::info("Vision: After cleanup: {} chars", output.size());
+    }
+
+    spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
+    return output;
+}
+
 // テキスト補完
 std::string InferenceEngine::generateCompletion(
     const std::string& prompt,
@@ -585,10 +813,12 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    // 1. モデルパス解決（固定ディレクトリのみ）
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        throw std::runtime_error(msg);
     }
 
     // 2. モデルロード（フォールバックなし）
@@ -827,11 +1057,11 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
     return tokens.back();
 }
 
-// モデルをロード（ローカルまたは共有パスから解決）
-// SPEC-dcaeaec4 FR-3: パス解決の優先順位
+// モデルをロード（ModelResolverで解決）
+// SPEC-48678000: パス解決の優先順位
 //   1. ローカル ~/.llm-router/models/<name>/model.gguf
-//   2. ルーターから取得したpath（直接参照、コピーなし）
-//   3. download_url からダウンロード（sync()で処理済み）
+//   2. 共有パス（直接参照、コピーなし）
+//   3. ルーターAPI経由でダウンロード
 ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
     ModelLoadResult result;
 
@@ -840,19 +1070,11 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    // 1. まずローカルストレージからパス解決を試行
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
-
-    // 2. ローカルになければ、ルーターのリモートパスを確認
-    if (gguf_path.empty() && model_sync_ != nullptr) {
-        gguf_path = model_sync_->getRemotePath(model_name);
-        if (!gguf_path.empty()) {
-            spdlog::info("Using remote path for model {}: {}", model_name, gguf_path);
-        }
-    }
-
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        result.error_message = "Model not found: " + model_name;
+        result.error_message = error.empty() ? ("Model not found: " + model_name) : error;
         return result;
     }
 
@@ -898,10 +1120,12 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
-    // 1. モデルパス解決
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        throw std::runtime_error("Model not found: " + model_name);
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        throw std::runtime_error(msg);
     }
 
     // 2. モデルロード

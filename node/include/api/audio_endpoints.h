@@ -4,7 +4,6 @@
 #include <string>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include "utils/config.h"
 
 namespace llm_node {
 
@@ -17,20 +16,17 @@ class OnnxTtsManager;
 class AudioEndpoints {
 public:
     /// Constructor for ASR-only mode (whisper.cpp)
-    AudioEndpoints(WhisperManager& whisper_manager, const NodeConfig& config);
+    AudioEndpoints(WhisperManager& whisper_manager);
 
     /// Constructor for ASR + TTS mode (whisper.cpp + ONNX)
     AudioEndpoints(WhisperManager& whisper_manager,
-                   OnnxTtsManager& tts_manager,
-                   const NodeConfig& config);
+                   OnnxTtsManager& tts_manager);
 
     void registerRoutes(httplib::Server& server);
 
 private:
     WhisperManager& whisper_manager_;
     OnnxTtsManager* tts_manager_{nullptr};  // Optional TTS support
-    const NodeConfig& config_;
-
     // ヘルパーメソッド
     static void setJson(httplib::Response& res, const nlohmann::json& body);
     void respondError(httplib::Response& res, int status,
@@ -42,16 +38,11 @@ private:
     // TTS エンドポイントハンドラ
     void handleSpeech(const httplib::Request& req, httplib::Response& res);
 
-    // 音声データのデコード（WAV, MP3等からPCM float配列へ）
+    // 音声データのデコード（WAV/MP3/FLAC/OGGなどからPCM float配列へ）
     // 返り値: サンプルレート（エラー時は0）
     int decodeAudioToFloat(const std::string& audio_data,
                            const std::string& content_type,
                            std::vector<float>& out_samples);
-
-    // WAVヘッダー解析
-    bool parseWavHeader(const std::string& data, int& sample_rate,
-                        int& channels, int& bits_per_sample,
-                        size_t& data_offset, size_t& data_size);
 };
 
 }  // namespace llm_node

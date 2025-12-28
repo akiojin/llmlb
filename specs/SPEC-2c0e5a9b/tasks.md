@@ -24,7 +24,7 @@
 - [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
 - [ ] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
-- [ ] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
+- [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [ ] Router: 公式GPU最適化アーティファクトが許可リスト内なら**実行キャッシュとして**取得できる導線を用意（自動/opt-inは plan.md の決定に従う）。
 
 ## Unit Tests (GREEN)

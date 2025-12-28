@@ -448,6 +448,112 @@ fn require_safetensors_metadata_files(siblings: &[HfSibling]) -> Result<(), Rout
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManifestFormat {
+    Gguf,
+    Safetensors,
+    Unknown,
+}
+
+#[derive(Serialize)]
+struct ManifestFile {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtimes: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct Manifest {
+    files: Vec<ManifestFile>,
+}
+
+fn resolve_manifest_format(model_name: &str, dir: &std::path::Path) -> ManifestFormat {
+    if let Some(model) = list_registered_models()
+        .into_iter()
+        .find(|m| m.name == model_name)
+    {
+        if model.tags.iter().any(|t| t == "gguf") {
+            return ManifestFormat::Gguf;
+        }
+        if model.tags.iter().any(|t| t == "safetensors") {
+            return ManifestFormat::Safetensors;
+        }
+    }
+
+    if dir.join("model.gguf").exists() {
+        return ManifestFormat::Gguf;
+    }
+
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_safetensors_filename(&name) {
+                return ManifestFormat::Safetensors;
+            }
+        }
+    }
+
+    ManifestFormat::Unknown
+}
+
+fn should_include_manifest_file(format: ManifestFormat, name: &str) -> bool {
+    match format {
+        ManifestFormat::Gguf => name == "model.gguf",
+        ManifestFormat::Safetensors => {
+            name == "config.json"
+                || name == "tokenizer.json"
+                || name == "model.metal.bin"
+                || is_safetensors_filename(name)
+        }
+        ManifestFormat::Unknown => true,
+    }
+}
+
+fn manifest_file_priority(name: &str) -> Option<i32> {
+    match name {
+        "config.json" | "tokenizer.json" => Some(10),
+        _ if is_safetensors_index_filename(name) => Some(5),
+        "model.metal.bin" => Some(5),
+        _ => None,
+    }
+}
+
+fn build_registry_manifest_files(
+    dir: &std::path::Path,
+    format: ManifestFormat,
+    runtime_hint: Option<&Vec<String>>,
+) -> Vec<ManifestFile> {
+    let mut files: Vec<ManifestFile> = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return files;
+    };
+
+    for entry in rd.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !should_include_manifest_file(format, &name) {
+            continue;
+        }
+
+        let priority = manifest_file_priority(&name);
+        files.push(ManifestFile {
+            name,
+            priority,
+            runtimes: runtime_hint.cloned(),
+        });
+    }
+
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
 fn resolve_safetensors_primary(
     siblings: &[HfSibling],
     requested: Option<String>,
@@ -1404,19 +1510,6 @@ pub async fn get_model_registry_manifest(
             .unwrap();
     }
 
-    #[derive(Serialize)]
-    struct ManifestFile {
-        name: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        priority: Option<i32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        runtimes: Option<Vec<String>>,
-    }
-    #[derive(Serialize)]
-    struct Manifest {
-        files: Vec<ManifestFile>,
-    }
-
     // Optional: runtime hint for nodes so they can skip downloading unsupported models.
     // This keeps the manifest backward-compatible: nodes that don't understand `runtimes` will ignore it.
     let runtime_hint: Option<Vec<String>> = if dir.join("model.gguf").exists() {
@@ -1465,35 +1558,8 @@ pub async fn get_model_registry_manifest(
         }
     };
 
-    let mut files: Vec<ManifestFile> = Vec::new();
-    if let Ok(mut rd) = tokio::fs::read_dir(&dir).await {
-        while let Ok(Some(entry)) = rd.next_entry().await {
-            let Ok(meta) = entry.metadata().await else {
-                continue;
-            };
-            if !meta.is_file() {
-                continue;
-            }
-            let Some(name) = entry.file_name().to_str().map(|s| s.to_string()) else {
-                continue;
-            };
-
-            // 優先: config/tokenizer は先に取得したい
-            let priority = match name.as_str() {
-                "config.json" | "tokenizer.json" => Some(10),
-                _ => None,
-            };
-
-            files.push(ManifestFile {
-                name,
-                priority,
-                runtimes: runtime_hint.clone(),
-            });
-        }
-    }
-
-    // 安定順序（テストしやすいように）
-    files.sort_by(|a, b| a.name.cmp(&b.name));
+    let format = resolve_manifest_format(&model_name, &dir);
+    let files = build_registry_manifest_files(&dir, format, runtime_hint.as_ref());
 
     let body =
         serde_json::to_string(&Manifest { files }).unwrap_or_else(|_| "{\"files\":[]}".into());
@@ -1570,6 +1636,10 @@ pub async fn get_model_registry_file(
 mod tests {
     use super::*;
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+
+    fn write_text(path: &std::path::Path, contents: &str) {
+        std::fs::write(path, contents).expect("write file");
+    }
 
     #[test]
     fn test_validate_model_name_valid() {
@@ -1707,5 +1777,55 @@ mod tests {
             r#"{"modelId":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
         let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
         assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
+    }
+
+    #[test]
+    fn test_build_registry_manifest_files_filters_safetensors() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().expect("temp dir");
+        let model_dir = temp_dir.path().join("openai").join("gpt-oss-20b");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        write_text(&model_dir.join("config.json"), "{}");
+        write_text(&model_dir.join("tokenizer.json"), "{}");
+        write_text(
+            &model_dir.join("model.safetensors.index.json"),
+            "{\"weight_map\":{}}",
+        );
+        write_text(&model_dir.join("model-00001-of-00002.safetensors"), "a");
+        write_text(&model_dir.join("model-00002-of-00002.safetensors"), "b");
+        write_text(&model_dir.join("model.metal.bin"), "cache");
+        write_text(&model_dir.join("README.md"), "ignore");
+
+        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Safetensors, None);
+        let names: std::collections::HashSet<_> = files.iter().map(|f| f.name.as_str()).collect();
+
+        assert!(names.contains("config.json"));
+        assert!(names.contains("tokenizer.json"));
+        assert!(names.contains("model.safetensors.index.json"));
+        assert!(names.contains("model-00001-of-00002.safetensors"));
+        assert!(names.contains("model-00002-of-00002.safetensors"));
+        assert!(names.contains("model.metal.bin"));
+        assert!(!names.contains("README.md"));
+    }
+
+    #[test]
+    fn test_build_registry_manifest_files_filters_gguf() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().expect("temp dir");
+        let model_dir = temp_dir.path().join("llama-3-8b");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        write_text(&model_dir.join("model.gguf"), "gguf");
+        write_text(&model_dir.join("config.json"), "{}");
+        write_text(&model_dir.join("README.md"), "ignore");
+
+        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Gguf, None);
+        let names: std::collections::HashSet<_> = files.iter().map(|f| f.name.as_str()).collect();
+
+        assert!(names.contains("model.gguf"));
+        assert_eq!(names.len(), 1);
     }
 }

@@ -12,6 +12,7 @@ namespace llm_node {
 class LlamaManager;
 class ModelStorage;
 class ModelSync;
+class ModelResolver;
 
 struct ChatMessage {
     std::string role;
@@ -36,8 +37,9 @@ struct ModelLoadResult {
 
 class InferenceEngine {
 public:
-    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync への参照を注入
-    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr);
+    /// コンストラクタ: LlamaManager, ModelStorage, ModelSync/ModelResolver への参照を注入
+    InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync = nullptr,
+                    ModelResolver* model_resolver = nullptr);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
@@ -101,10 +103,14 @@ private:
     LlamaManager* manager_{nullptr};
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
+    ModelResolver* model_resolver_{nullptr};
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;
+
+    /// モデルパス解決（ModelResolver優先）
+    std::string resolveModelPath(const std::string& model_name, std::string* error_message = nullptr) const;
 };
 
 }  // namespace llm_node

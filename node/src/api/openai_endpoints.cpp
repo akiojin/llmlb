@@ -215,8 +215,8 @@ bool OpenAIEndpoints::validateModel(const std::string& model, httplib::Response&
     if (registry_.hasModel(model)) {
         return true;
     }
-    // Try to load from remote path (SPEC-dcaeaec4 FR-3)
-    // loadModel() will check local storage first, then remote path
+    // Try to resolve/load via ModelResolver (local -> shared -> router API)
+    // loadModel() handles the full resolution flow
     auto load_result = engine_.loadModel(model);
     if (!load_result.success) {
         respondError(res, 404, "model_not_found",

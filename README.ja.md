@@ -153,6 +153,7 @@ cmake --build build --config Release
 | `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
+| `LLM_NODE_SHARED_MODELS_DIR` | (未設定) | 共有モデルディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
@@ -226,11 +227,11 @@ Router (OpenAI-compatible)
 
 ### モデル同期（push配布なし）
 
-- ルーターは、登録・変換・キャッシュされたモデルだけを `/v1/models` に掲載します。
-- ノードは `/v1/models` を参照してモデル一覧を取得します。
-  - `path` が共有ストレージ等で参照可能なら、そのパスを直接使用します。
-  - 参照できない場合は `/v0/models/blob/:model_name` からダウンロードしてローカルに保存します。
 - ルーターからノードへの push 配布は行いません。
+- ノードはモデルをオンデマンドで次の順に解決します。
+  - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
+  - 共有ストレージ（`LLM_NODE_SHARED_MODELS_DIR`、コピーせず直接参照）
+  - ルーターAPI経由ダウンロード（`GET /v0/models/blob/:model_name`）
 
 ### スケジューリングとヘルスチェック
 - ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。

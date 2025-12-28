@@ -28,6 +28,7 @@ pnpm-debug.log*
 .pnpm-store/
 .husky/_/
 package-lock.json
+bun.lock
 
 # Build output
 dist/

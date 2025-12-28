@@ -2,6 +2,7 @@
 #include "core/llama_manager.h"
 #include "models/model_storage.h"
 #include "models/model_sync.h"
+#include "models/model_resolver.h"
 #include "include/llama.h"
 
 #include <spdlog/spdlog.h>
@@ -18,10 +19,12 @@ static std::string extractGptOssFinalMessage(const std::string& output);
 std::string extractGptOssFinalMessageForTest(const std::string& output);
 
 // コンストラクタ
-InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync)
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync,
+                                 ModelResolver* model_resolver)
     : manager_(&manager)
     , model_storage_(&model_storage)
-    , model_sync_(model_sync) {}
+    , model_sync_(model_sync)
+    , model_resolver_(model_resolver) {}
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -42,6 +45,37 @@ std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& mes
     // アシスタント応答の開始を示す
     oss << "Assistant: ";
     return oss.str();
+}
+
+std::string InferenceEngine::resolveModelPath(const std::string& model_name, std::string* error_message) const {
+    if (!isInitialized()) {
+        if (error_message) *error_message = "InferenceEngine not initialized";
+        return "";
+    }
+
+    if (model_resolver_ != nullptr) {
+        auto resolved = model_resolver_->resolve(model_name);
+        if (resolved.success) {
+            return resolved.path;
+        }
+        if (error_message) *error_message = resolved.error_message;
+        return "";
+    }
+
+    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    if (!gguf_path.empty()) {
+        return gguf_path;
+    }
+
+    if (model_sync_ != nullptr) {
+        gguf_path = model_sync_->getRemotePath(model_name);
+        if (!gguf_path.empty()) {
+            return gguf_path;
+        }
+    }
+
+    if (error_message) *error_message = "Model not found: " + model_name;
+    return "";
 }
 
 // ChatML形式でプロンプトを構築するフォールバック関数
@@ -341,11 +375,13 @@ std::string InferenceEngine::generateChat(
         return "Response to: " + messages.back().content;
     }
 
-    // 1. モデルパス解決（固定ディレクトリのみを許容）
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        spdlog::error("Model not found in ~/.llm-router/models: {}", model_name);
-        throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        spdlog::error("{}", msg);
+        throw std::runtime_error(msg);
     }
 
     // 2. モデルロード（オンデマンドロードのみ。blob download 等への暗黙フォールバックはしない）
@@ -585,10 +621,12 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    // 1. モデルパス解決（固定ディレクトリのみ）
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        throw std::runtime_error(msg);
     }
 
     // 2. モデルロード（フォールバックなし）
@@ -827,11 +865,11 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
     return tokens.back();
 }
 
-// モデルをロード（ローカルまたは共有パスから解決）
-// SPEC-dcaeaec4 FR-3: パス解決の優先順位
+// モデルをロード（ModelResolverで解決）
+// SPEC-48678000: パス解決の優先順位
 //   1. ローカル ~/.llm-router/models/<name>/model.gguf
-//   2. ルーターから取得したpath（直接参照、コピーなし）
-//   3. download_url からダウンロード（sync()で処理済み）
+//   2. 共有パス（直接参照、コピーなし）
+//   3. ルーターAPI経由でダウンロード
 ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
     ModelLoadResult result;
 
@@ -840,19 +878,11 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    // 1. まずローカルストレージからパス解決を試行
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
-
-    // 2. ローカルになければ、ルーターのリモートパスを確認
-    if (gguf_path.empty() && model_sync_ != nullptr) {
-        gguf_path = model_sync_->getRemotePath(model_name);
-        if (!gguf_path.empty()) {
-            spdlog::info("Using remote path for model {}: {}", model_name, gguf_path);
-        }
-    }
-
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        result.error_message = "Model not found: " + model_name;
+        result.error_message = error.empty() ? ("Model not found: " + model_name) : error;
         return result;
     }
 
@@ -898,10 +928,12 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
-    // 1. モデルパス解決
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    // 1. モデルパス解決（ModelResolver優先）
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
     if (gguf_path.empty()) {
-        throw std::runtime_error("Model not found: " + model_name);
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        throw std::runtime_error(msg);
     }
 
     // 2. モデルロード

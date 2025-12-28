@@ -176,6 +176,7 @@ npm run start:node
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
 | `LLM_NODE_PORT` | `11435` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
+| `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
 | `LLM_NODE_LOG_LEVEL` | `info` | Log level |
@@ -356,10 +357,10 @@ curl http://router:8080/v1/chat/completions -d '...'
 ### Model Sync (No Push Distribution)
 
 - The router never pushes models to nodes.
-- Nodes pull the router's model list via `GET /v1/models`.
-- For each model, nodes either:
-  - use the router-provided `path` directly (shared storage), or
-  - fetch metadata from `GET /v0/models` and download the model from `GET /v0/models/blob/:model_name`.
+- Nodes resolve models on-demand in this order:
+  - local cache (`LLM_NODE_MODELS_DIR`)
+  - shared router cache mount (`LLM_NODE_SHARED_MODELS_DIR`, direct reference, no copy)
+  - router blob download (`GET /v0/models/blob/:model_name`)
 
 ### Scheduling & Health
 - Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
@@ -551,6 +552,7 @@ Cloud / external services:
 | `LLM_NODE_API_KEY` | - | API key for node registration / model blob download | scope: `node` |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
+| `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) | `LLM_SHARED_MODELS_DIR` |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |

@@ -70,10 +70,11 @@
 
 ## Phase 3.7: 仕上げ
 
-- [ ] T019 コンパイル検証（BUILD_WITH_SD=ON）
-- [ ] T020 E2Eテスト: 実モデルでの画像生成
-- [ ] T021 パフォーマンステスト: 1024x1024画像 < 30秒
-- [ ] T022 ドキュメント更新
+- [x] T019 コンパイル検証（BUILD_WITH_SD=ON）
+- [x] T020 E2Eテスト: 実モデルでの画像生成
+- [x] T021 パフォーマンステスト: 1024x1024画像 < 30秒
+  - 実測: stable-diffusion/sd_turbo.safetensors, steps=4, 23s
+- [x] T022 ドキュメント更新
 
 ## 依存関係
 
@@ -101,5 +102,5 @@ Task T005: router/tests/contract/images_variations_test.rs
 - [x] すべてのテストが実装より先にある (TDD)
 - [x] 並列タスクは本当に独立している
 - [x] 各タスクは正確なファイルパスを指定
-- [ ] コンパイル検証完了 (BUILD_WITH_SD=ON)
-- [ ] E2Eテスト完了
+- [x] コンパイル検証完了 (BUILD_WITH_SD=ON)
+- [x] E2Eテスト完了

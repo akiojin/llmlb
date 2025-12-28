@@ -27,6 +27,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/vision_processor.cpp
     ../../src/core/whisper_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp
@@ -48,6 +49,7 @@ target_link_libraries(llm-node-unit-tests
     PRIVATE
         test_common
         llama
+        mtmd
         whisper
         stable-diffusion
         common

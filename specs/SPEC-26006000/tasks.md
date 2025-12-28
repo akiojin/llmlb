@@ -88,10 +88,12 @@
 
 ## Phase 3.8: 仕上げ
 
-- [x] T050 [P] `node/tests/whisper_manager_test.cpp` に WhisperManager の unit tests
-- [x] T051 [P] `node/tests/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
+- [x] T050 [P] `node/tests/unit/whisper_manager_test.cpp` に WhisperManager の unit tests
+- [x] T051 [P] `node/tests/unit/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
 - [x] T052 `router/tests/audio_error_handling_test.rs` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
+  - 既存の契約テストでも補完済み (`audio_transcriptions_test.rs`, `audio_speech_test.rs`)
 - [x] T053 `specs/SPEC-26006000/quickstart.md` のコマンドを実行して動作確認
+  - 実行日: 2025-12-28
 - [x] T054 `router/src/api/audio.rs` のコードを clippy でチェック・修正
 - [x] T055 `node/` のコードを clang-tidy でチェック・修正
 

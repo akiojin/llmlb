@@ -242,6 +242,7 @@ async fn run_server(config: ServerConfig) {
         db_pool,
         jwt_secret,
         http_client,
+        queue_config: llm_router::config::QueueConfig::from_env(),
     };
 
     let router = api::create_router(state);

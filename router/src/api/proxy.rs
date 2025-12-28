@@ -1,6 +1,6 @@
 //! LLM runtimeプロキシ APIハンドラー
 
-use crate::AppState;
+use crate::{config::QueueConfig, AppState};
 use axum::{
     body::Body,
     http::{HeaderName, HeaderValue, StatusCode},
@@ -8,7 +8,9 @@ use axum::{
 };
 use futures::TryStreamExt;
 use llm_router_common::{error::RouterError, protocol::RequestResponseRecord};
-use std::{io, sync::Arc};
+use std::{io, sync::Arc, time::Instant};
+
+use crate::balancer::WaitResult;
 
 pub(crate) async fn select_available_node(
     state: &AppState,
@@ -29,6 +31,49 @@ pub(crate) async fn select_available_node(
                 ));
             }
             Ok(node)
+        }
+    }
+}
+
+pub(crate) enum QueueSelection {
+    Ready {
+        node: Box<llm_router_common::types::Node>,
+        queued_wait_ms: Option<u128>,
+    },
+    CapacityExceeded,
+    Timeout {
+        waited_ms: u128,
+    },
+}
+
+pub(crate) async fn select_available_node_with_queue(
+    state: &AppState,
+    queue_config: QueueConfig,
+) -> Result<QueueSelection, RouterError> {
+    match state.load_manager.select_idle_node().await? {
+        Some(node) => Ok(QueueSelection::Ready {
+            node: Box::new(node),
+            queued_wait_ms: None,
+        }),
+        None => {
+            let wait_start = Instant::now();
+            match state
+                .load_manager
+                .wait_for_idle_node_with_timeout(queue_config.max_waiters, queue_config.timeout)
+                .await
+            {
+                WaitResult::CapacityExceeded => Ok(QueueSelection::CapacityExceeded),
+                WaitResult::Timeout => Ok(QueueSelection::Timeout {
+                    waited_ms: wait_start.elapsed().as_millis(),
+                }),
+                WaitResult::Ready => match state.load_manager.select_idle_node().await? {
+                    Some(node) => Ok(QueueSelection::Ready {
+                        node: Box::new(node),
+                        queued_wait_ms: Some(wait_start.elapsed().as_millis()),
+                    }),
+                    None => Err(RouterError::NoNodesAvailable),
+                },
+            }
         }
     }
 }
@@ -114,6 +159,7 @@ mod tests {
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         }
     }
 

@@ -10,6 +10,7 @@ import {
   XCircle,
   Zap,
   HardDrive,
+  Hourglass,
 } from 'lucide-react'
 
 interface StatsCardsProps {
@@ -90,6 +91,20 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
       icon: <Activity className="h-5 w-5 text-chart-2" />,
       accentColor: 'chart-2',
       dataStat: 'total-requests',
+    },
+    {
+      title: 'Active Requests',
+      value: stats ? formatNumber(stats.total_active_requests) : '—',
+      icon: <Cpu className="h-5 w-5 text-chart-1" />,
+      accentColor: 'chart-1',
+      dataStat: 'active-requests',
+    },
+    {
+      title: 'Queued Requests',
+      value: stats ? formatNumber(stats.queued_requests) : '—',
+      icon: <Hourglass className="h-5 w-5 text-chart-5" />,
+      accentColor: 'chart-5',
+      dataStat: 'queued-requests',
     },
     {
       title: 'Success Rate',

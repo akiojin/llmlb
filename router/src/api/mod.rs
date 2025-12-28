@@ -5,6 +5,7 @@
 pub mod api_keys;
 pub mod audio;
 pub mod auth;
+pub mod cloud_models;
 pub mod dashboard;
 pub mod health;
 pub mod images;
@@ -351,6 +352,7 @@ mod tests {
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
         };
         (state, registry)
     }

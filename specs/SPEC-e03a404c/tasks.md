@@ -1,7 +1,7 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3開始待ち
+**ステータス**: Phase 3.2完了（TDD RED）/ Phase 3.3進行中
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
 ## 技術スタック
@@ -57,7 +57,7 @@
   - ImageUrl
   - Vision対応ChatCompletionRequest拡張
 
-- [ ] T008 `common/src/types/capabilities.rs` に `image_understanding` capability追加
+- [x] T008 `common/src/types.rs` の ModelCapabilities に `image_understanding` を追加
 
 ## Phase 3.4: コア実装 - Router側
 

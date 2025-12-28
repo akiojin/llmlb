@@ -15,6 +15,8 @@
 - 現在の変更内容を棚卸しし、`specs/SPEC-26006000/tasks.md` と `specs/specs.md` に完了反映する
 - `SS.png` の削除と `bun.lock` の `.gitignore` 追加を確認する
 - 既存変更をコミット前提でローカル検証を全て実行し、コミット＆プッシュする
+- SPEC-799b8e2b の手動検証（Router/Node同時起動ログ）を実施する
+- SPEC-e03a404c の Phase 3.3 着手として image_understanding capability を追加する
 
 ### 未実装完了の進め方（目的共有）
 

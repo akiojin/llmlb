@@ -19,6 +19,7 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_storage.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/engine_registry.cpp
+    ../../src/core/engine_host.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp

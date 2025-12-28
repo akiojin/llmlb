@@ -92,6 +92,7 @@ coverage/
 **/playwright-report/
 **/reports/
 **/.playwright/
+router/tests/e2e-playwright/bun.lock
 
 # ESLint cache
 .eslintcache

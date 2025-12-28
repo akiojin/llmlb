@@ -6,8 +6,6 @@ llm-nodeがモデルファイルを `~/.llm-router/models/` 配下から読み�
 ルーターが返す配布情報（共有パス or ダウンロードURL）を優先利用する。
 LLM runtime固有のストレージ形式への暗黙フォールバックは撤廃する。
 
-本仕様は統合仕様 `SPEC-08d2b908`（モデル管理）の**詳細仕様**として扱う。
-
 ## 背景と動機
 
 ### 現状の問題
@@ -25,14 +23,8 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ```text
 ~/.llm-router/models/
   <model-name>/
-    # 登録時に選択したアーティファクトを配置
-    #
-    # - safetensors を選択した場合:
-    #   - model.safetensors もしくは model.safetensors.index.json + shard safetensors
-    #   - 付随するメタデータ (config.json, tokenizer.json)
-    #
-    # - GGUF を選択した場合:
-    #   - model.gguf
+    model.gguf
+    metadata.json (optional)
 ```
 
 ## 要件
@@ -43,8 +35,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 - デフォルトのモデル保存先は `~/.llm-router/models/`
 - 環境変数で上書き可能（推奨: `LLM_NODE_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
-- 各モデルは `<models_dir>/<model-name>/` に「登録時に選択したアーティファクト」を配置
-  - safetensors の場合は `config.json` と `tokenizer.json` を必須とする（不足時はエラー）
+- 各モデルは `<models_dir>/<model-name>/model.gguf` に配置
 
 #### FR-2: モデル名の形式
 
@@ -56,28 +47,28 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
   - `openai/gpt-oss-20b` → `openai/gpt-oss-20b/model.gguf`（ネストディレクトリ）
 - 危険な文字（`..`, `\0`等）は禁止、`/`はディレクトリセパレータとして許可
 
-#### FR-3: モデルアーティファクト解決（多段フロー）
+#### FR-3: GGUFファイル解決（多段フロー）
 
-1. ルーターの `/v1/models` 応答から対象モデルを取得し、`path` や `lifecycle_status` を参照できるようにする。
-   - `/v1/models` は OpenAI互換API + ダッシュボード拡張フィールド（`path`, `ready`, `lifecycle_status` 等）を含む。
-2. ルーターは外部ソース（Hugging Face等）からモデルを取得し、**事前に `~/.llm-router/models/` へキャッシュ**する。成功すれば `path` を応答に含める。
-3. ノードはまずローカル `~/.llm-router/models/<name>/` 配下で登録済みアーティファクト（safetensors/GGUF）を探す。あれば採用。
+1. ルーター `/v1/models` 応答の対象モデルを取得し、`path` を参照できること。
+   - `/v1/models` はOpenAI互換API + ダッシュボード拡張フィールド（`path`, `lifecycle_status`等）を含む
+2. ルーターは外部URL（HuggingFace等）からモデルを取得し、**事前に自分の `~/.llm-router/models/` へキャッシュ**する。成功すれば `path` を応答に含める。
+3. ノードはまずローカル `~/.llm-router/models/<name>/model.gguf` を探す。あれば採用。
 4. ルーターから受け取った `path` が存在し読み取り可能なら、それを直接使用（共有ストレージ: NFS, S3等）。
 5. `path` が不可なら、ルーターの `/v1/models/blob/:model_name` からダウンロードし、`~/.llm-router/models` に保存。
 6. いずれも不可ならエラーを返す。LLM runtime固有形式への暗黙フォールバックは禁止。
-7. **重要**: ノードは外部URL（Hugging Face等）から直接ダウンロードしてはならない。すべてのモデル取得はルーター経由で行う。
+7. **重要**: ノードは外部URL（HuggingFace等）から直接ダウンロードしてはならない。すべてのモデル取得はルーター経由で行う。
 
 ※4の「直接使用」は共有ストレージ/NFS/S3を想定。不可の場合は5にフォールバックする。
 
 #### FR-4: 利用可能モデル一覧
 
 - `listAvailable()` は `models_dir` 配下の全ディレクトリを走査
-- 登録済みアーティファクト（safetensors / GGUF）が存在するものをリスト
+- 各ディレクトリ内に `model.gguf` が存在するものをリスト
 
-#### FR-5: 追加メタデータファイルは不要
+#### FR-5: メタデータ（オプション）
 
-- `metadata.json` のような llm-router 独自メタデータファイルは使用しない
-- 必要な情報は Hugging Face の `config.json` / `tokenizer.json` 等のモデル由来メタデータで管理する
+- `metadata.json` が存在する場合、モデル情報を読み込む
+- 必須フィールドなし（存在しなくても動作する）
 
 #### FR-6: ノード起動時同期
 
@@ -133,15 +124,12 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ├── router.db            # ルーターDB（SQLite）
 └── models/
     ├── gpt-oss-20b/
-    │   └── model.gguf   # GGUF（登録時に選択）
+    │   ├── model.gguf   # モデルファイル
+    │   └── metadata.json # (optional)
     ├── gpt-oss-7b/
     │   └── model.gguf
-    └── nvidia-nemotron-3-nano-30b-a3b-bf16/
-        ├── config.json
-        ├── tokenizer.json
-        ├── model.safetensors.index.json
-        ├── model-00001-of-000NN.safetensors
-        └── model-000NN-of-000NN.safetensors
+    └── qwen3-coder-30b/
+        └── model.gguf
 ```
 
 ## 影響範囲
@@ -191,7 +179,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 ## 受け入れ基準
 
-1. 登録時に選択したアーティファクト（safetensors / GGUF）を `~/.llm-router/models/<model_name>/` から読み込める
+1. `~/.llm-router/models/<model_name>/model.gguf` からモデルを読み込める
 2. モデルディレクトリを環境変数で上書きできる
 3. モデルIDがディレクトリ名として安全に扱われる
 4. 既存の単体テスト・統合テストがパスする

@@ -173,8 +173,6 @@
 - stable-diffusion.cpp は safetensors 直接読み込みの前提で運用する
 - safetensors と GGUF が共存する場合は format 指定を必須とする
 
----
-
 ## 成功基準 *(必須)*
 
 以下の成功基準を満たす必要があります:

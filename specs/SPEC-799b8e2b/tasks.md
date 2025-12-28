@@ -47,12 +47,15 @@
 
 ## Integration
 
-- [x] Router/Node同時起動でログ出力確認
+- [ ] Router/Node同時起動でログ出力確認（手動検証）
 - [x] /v0/logsエンドポイント動作確認
+  - ✅ SPEC-1f2a9c3d (Log Retrieval API) で実装・テスト済み
+  - ✅ `router/src/api/logs.rs` にwiremockテスト
 
 ## Polish
 
 - [x] コードレビュー
-- [x] ドキュメント更新（CLAUDE.md）
+  - ✅ 2025-12-25 確認完了
+- [x] ドキュメント更新（README.md）
+  - ✅ LLM_LOG_DIR, LLM_LOG_LEVEL, LLM_LOG_RETENTION_DAYS を README.md に記載
 - [x] 品質チェック実行
-  - 実施メモ: 実機検証はメンテナ環境で実施前提、API/ログ実装はコードで確認

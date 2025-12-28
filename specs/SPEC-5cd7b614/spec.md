@@ -53,8 +53,8 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 
 1. **前提** NVIDIA RTX 4090を1枚搭載したノードが登録されている、**実行** ダッシュボードを開く、**結果** ノード詳細に「GPU: NVIDIA RTX 4090 (1枚)」と表示される
 2. **前提** Apple M3 Maxチップ搭載Macでノードが登録されている、**実行** ダッシュボードを開く、**結果** ノード詳細に「GPU: Apple M3 Max」と表示される
-3. **前提** Apple M3 Maxチップ搭載Macでノードが登録されている、**実行** ダッシュボードを開く、**結果** ノード詳細に「GPU: Apple M3 Max」と表示される
-4. **前提** 複数の異なるGPUモデル（NVIDIA/Apple Silicon）を持つノードが登録されている、**実行** ダッシュボードを開く、**結果** 各ノードのGPU情報が個別に正しく表示される
+3. **前提** AMD Radeon RX 7900 XTを1枚搭載したノードが登録されている、**実行** ダッシュボードを開く、**結果** ノード詳細に「GPU: AMD Radeon RX 7900 XT (1枚)」と表示される
+4. **前提** 複数の異なるGPUモデルを持つノードが登録されている、**実行** ダッシュボードを開く、**結果** 各ノードのGPU情報が個別に正しく表示される
 
 ---
 
@@ -71,7 +71,7 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 1. **前提** NVIDIA RTX 4090搭載ノード（スコア約9850）が登録されている、**実行** ノード一覧を開く、**結果** GPU使用率の横に「スコア 9850」と表示される
 2. **前提** NVIDIA RTX 3080搭載ノード（スコア約9170）が登録されている、**実行** ノード詳細モーダルを開く、**結果** GPU能力スコア「9170」、GPUモデル「NVIDIA GeForce RTX 3080」、GPU Compute「8.6」が表示される
 3. **前提** 複数の異なるGPU性能を持つノードが登録されている、**実行** ノード一覧を開く、**結果** スコアの高い順（RTX 4090 > RTX 3080 > GTX 1660）に性能差が明確に確認できる
-4. **前提** GPU能力情報が取得できないノード（Apple Silicon）が登録されている、**実行** ノード一覧を開く、**結果** GPU能力スコア欄に「-」と表示され、エラーにならない
+4. **前提** GPU能力情報が取得できないノード（AMD/Apple Silicon）が登録されている、**実行** ノード一覧を開く、**結果** GPU能力スコア欄に「-」と表示され、エラーにならない
 
 ---
 
@@ -80,7 +80,6 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 - GPU検出が一時的に失敗した場合（ドライバーの問題など）、どう扱うか？→ GPU情報が取得できない場合は登録を拒否する
 - ノードが起動後にGPUを失った場合（ハードウェア障害など）、どう扱うか？→ 既に登録済みのノードは維持されるが、次回ヘルスチェックで検出可能
 - GPUモデル名が取得できない場合でも、GPU自体は存在する場合、どう扱うか？→ GPUの存在が確認できれば登録を許可し、モデル名は「不明」として表示
-- NVIDIA/Apple Silicon 以外のGPUが検出された場合、どう扱うか？→ 登録を拒否する
 
 ## 要件 *(必須)*
 
@@ -96,7 +95,6 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 - **FR-008**: システムはNVIDIA GPUの能力スコア（0-10000の数値）を計算して保存する必要がある
 - **FR-009**: ダッシュボードはノード一覧と詳細モーダルでGPU能力スコアを表示する必要がある
 - **FR-010**: GPU能力スコアはメモリ容量、クロック速度、Compute Capabilityに基づいて算出される必要がある
-- **FR-011**: NVIDIA/Apple Silicon 以外のGPUが検出された場合、登録を拒否する必要がある
 
 ### 主要エンティティ
 
@@ -120,12 +118,13 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 ## 技術制約 *(該当する場合)*
 
 - 以下のGPUベンダーをサポート:
-  - **NVIDIA GPU**: NVML (NVIDIA Management Library) 経由で検出、CUDA前提（Linux/Windows）
-  - **Apple Silicon**: macOS標準のMetal APIで検出 (M1/M2/M3/M4シリーズ)
+  - **NVIDIA GPU**: NVML (NVIDIA Management Library) 経由で検出、またはデバイスファイル (`/dev/nvidia0`) で検出
+  - **Apple Silicon**: Metal API、`lscpu`コマンド、または `/proc/cpuinfo` で検出 (M1/M2/M3/M4シリーズ)
+  - **AMD GPU**: sysfs KFD Topology (`/sys/class/kfd/kfd/topology/nodes`) で検出（Linuxのみ）
+  - **Intel GPU**: sysinfo経由で検出（Linuxのみ）
 - Linux、Windows、macOS環境でのGPU検出をサポート
-- WSL2はGPUが検出できる場合のみ対象
-- Dockerは対象外
-- GPUベンダー検出の優先順位: 環境変数 → NVIDIA → Apple Silicon
+- **Docker for Mac対応**: Linuxコンテナ内でもApple Siliconを自動検出（`lscpu`と`/proc/cpuinfo`を使用）
+- GPUベンダー検出の優先順位: 環境変数 → NVIDIA → AMD → Apple Silicon
 
 ---
 
@@ -133,11 +132,12 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 
 この機能は以下を前提とします:
 
-- ノードマシンにNVIDIA GPUまたはApple Siliconが搭載されている
+- ノードマシンに何らかのGPU（NVIDIA/Apple/AMD/Intel）が搭載されている
 - 該当するGPUドライバーがインストールされている
   - NVIDIA: NVIDIA GPU Driver + CUDA Toolkit
   - Apple Silicon: macOS標準（Metal API）
-  - AMD/Intelは対象外
+  - AMD: ROCm Driver（Linuxの場合）
+  - Intel: Intel GPU Driver
 - LLM runtimeがGPUを利用する設定になっている
 
 ---
@@ -149,6 +149,8 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 - 各GPUベンダーのドライバーとツールキット
   - NVIDIA: CUDA Toolkit / NVML
   - Apple: Metal Framework (macOS標準)
+  - AMD: ROCm (Linuxのみ)
+  - Intel: Intel GPU Driver
 - ノード・ルーター間の通信プロトコル
 - データベースストレージ機能
 
@@ -165,7 +167,7 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 5. 登録拒否時、運用管理者が理由を明確に理解できるエラーメッセージが表示される
 6. NVIDIA GPUノードのGPU能力スコアがダッシュボードに表示される
 7. GPU能力スコアが実際のGPU性能の大小関係を正しく反映している（例: RTX 4090 > RTX 3080 > GTX 1660）
-8. GPU能力情報が取得できないノード（Apple Silicon）でもエラーにならず、「-」と表示される
+8. GPU能力情報が取得できないノード（AMD/Apple Silicon）でもエラーにならず、「-」と表示される
 
 ---
 
@@ -192,11 +194,10 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 
 **サポートGPU**:
 
-- NVIDIA: NVML経由検出、能力スコア対応（CUDA前提）
+- NVIDIA: NVML経由検出、能力スコア対応
 - Apple Silicon: Metal API検出（M1/M2/M3/M4）
-- AMD/Intelは対象外
-- WSL2はGPU検出時のみ対象
-- Dockerは対象外
+- AMD: sysfs KFD検出（Linuxのみ）
+- Intel: sysinfo検出（Linuxのみ）
 
 **エッジケースの確認**:
 

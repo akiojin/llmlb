@@ -2,8 +2,8 @@
 
 **機能ID**: `SPEC-26006000`
 **作成日**: 2024-12-14
-**ステータス**: 下書き
-**入力**: ユーザー説明: "音声モデル対応（TTS + ASR）- llm-routerに音声モデル（TTS: Text-to-Speech、ASR: Speech-to-Text）対応を追加する。OpenAI API互換のエンドポイント（/v1/audio/speech, /v1/audio/transcriptions）を実装する。"
+**ステータス**: 🔨 実装中（61/63タスク完了）
+**入力**: ユーザー説明: "音声モデル対応（TTS + ASR）- llm-routerに音声モデル（TTS: Text-to-Speech、ASR: Speech-to-Text）対応を追加する。TTS用にONNX Runtime、ASR用にwhisper.cppを使用し、OpenAI API互換のエンドポイント（/v1/audio/speech, /v1/audio/transcriptions）を実装する。"
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -89,14 +89,6 @@
 
 ---
 
-### Session 2025-12-24
-
-- ASRは**whisper.cpp**を当面利用（GGML/GGUF変換運用）。将来的に独自エンジンへ置換。
-- TTSは**ONNX Runtime**を利用（Python依存なし）。
-- safetensorsを正本として利用し、ASRはsafetensors→GGML/GGUF変換で運用。
-- Whisper公式 `.pt` はPythonで safetensors 化し、それを正本とする（取得元はHugging Face）。
-- safetensors と GGUF が共存する場合、登録時の format 指定を必須とする（自動判別禁止）。
-
 ## 要件 *(必須)*
 
 ### 機能要件
@@ -139,11 +131,8 @@
 
 ## 技術制約 *(該当する場合)*
 
-- ASRは当面 **whisper.cpp（GGML/GGUF）** を使用し、safetensors正本から変換運用する
-- TTSは **ONNX Runtime** を利用し、Python依存は導入しない
-- GGUFは登録時に `format=gguf` を選択した場合のみ使用する
-- safetensors と GGUF が共存する場合は format 指定が必須（実行時の自動フォールバックは禁止）
-- Whisper公式 `.pt` はPythonで safetensors 化し、safetensorsを正本とする
+- 音声認識はwhisper.cppがサポートするモデル形式に限定される
+- 音声合成はONNX形式のモデルに限定される
 - GPUメモリを共有する場合、テキスト生成と音声処理の同時実行に制限がある可能性がある
 
 ---
@@ -160,11 +149,15 @@
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- 既存のモデル管理システム（登録・削除・一覧）
-- 既存のノード管理システム（登録・ヘルスチェック・ロードバランシング）
-- 既存の認証・認可システム
+- 既存モデル管理システム（登録・削除・一覧）✅ 実装済み
+- 既存ノード管理システム（登録・ヘルスチェック・ロードバランシング）✅ 実装済み
+- **SPEC-d4eb8796**: 認証・アクセス制御 ✅ 実装済み
+
+### 依存元（このSPECに依存するもの）
+
+- なし
 
 ---
 

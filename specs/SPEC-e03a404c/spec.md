@@ -5,11 +5,6 @@
 **ステータス**: 下書き
 **入力**: ユーザー説明: "画像認識モデル対応（Image Understanding）- llm-routerにVisionモデル対応を追加し、画像を含むチャットリクエストを処理できるようにする。OpenAI Vision API互換のエンドポイント（/v1/chat/completions with images）を実装する。"
 
-## 決定事項（共有用サマリ）
-- 画像認識は **safetensors正本** を前提に実行する
-- safetensors と GGUF が共存する場合、登録時の format 指定を必須とする
-- Node実行時はPython依存を導入しない
-
 ## ユーザーシナリオ＆テスト *(必須)*
 
 ### ユーザーストーリー1 - 画像を含むチャットリクエストを送信する (優先度: P1)
@@ -116,9 +111,7 @@
 
 ## 技術制約 *(該当する場合)*
 
-- Visionモデルはsafetensorsを直接読み込める新エンジンが必要
-- GGUFは登録時に `format=gguf` を選択した場合のみ使用する
-- safetensors と GGUF が共存する場合は format 指定が必須（実行時の自動フォールバックは禁止）
+- Visionモデルは対応するエンジン（llama.cpp + multimodal、GPT-OSS等）が必要
 - 画像処理に追加のGPUメモリが必要（モデルにより2-8GB追加）
 - Base64デコードはルーター側で実行し、ノードには生データを送信
 
@@ -167,11 +160,6 @@
 - 画像URL取得時のタイムアウト値（推奨: 30秒）
 - 画像URL取得時のリダイレクト追従の深さ（推奨: 最大3回）
 - Base64デコードエラー時の詳細メッセージ形式
-
-**方針更新**:
-
-- safetensors正本を前提に再設計する
-- safetensors と GGUF が共存する場合は format 指定を必須とする
 
 ---
 

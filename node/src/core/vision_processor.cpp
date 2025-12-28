@@ -47,10 +47,8 @@ std::optional<ParsedUrl> parseUrl(const std::string& url) {
 }
 
 std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url) {
-    const bool use_https = url.scheme == "https";
-
 #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
-    if (use_https) {
+    if (url.scheme == "https") {
         return nullptr;
     }
 #endif

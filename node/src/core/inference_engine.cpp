@@ -31,6 +31,9 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
 }
 
+// デストラクタ（VisionProcessor完全型のために.cppで定義）
+InferenceEngine::~InferenceEngine() = default;
+
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
     // この関数はモデルなしで呼ばれる互換性維持用のフォールバック

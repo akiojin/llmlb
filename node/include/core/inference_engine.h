@@ -45,6 +45,9 @@ public:
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
     InferenceEngine() = default;
 
+    /// デストラクタ（VisionProcessor完全型のために.cppで定義）
+    ~InferenceEngine();
+
     /// チャット生成（llama.cpp API使用）
     std::string generateChat(const std::vector<ChatMessage>& messages,
                             const std::string& model,

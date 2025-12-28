@@ -84,9 +84,9 @@ async fn v0_nodes_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::NodeRegister]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
     let api_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::ApiInference]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -153,9 +153,9 @@ async fn v1_inference_requires_api_inference_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::NodeRegister]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
     let api_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::ApiInference]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let payload = json!({
         "model": "test-model",
@@ -204,7 +204,7 @@ async fn v1_inference_requires_api_inference_scope() {
 #[tokio::test]
 async fn admin_scope_allows_dashboard_overview() {
     let (app, db_pool) = build_app().await;
-    let admin_key = create_api_key(&db_pool, vec![ApiKeyScope::AdminAll]).await;
+    let admin_key = create_api_key(&db_pool, vec![ApiKeyScope::Admin]).await;
 
     let response = app
         .oneshot(
@@ -225,8 +225,8 @@ async fn admin_scope_allows_dashboard_overview() {
 async fn v0_health_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
-    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::NodeRegister]).await;
-    let api_key = create_api_key(&db_pool, vec![ApiKeyScope::ApiInference]).await;
+    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
+    let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let payload = node_payload(11435);
     let register_response = app

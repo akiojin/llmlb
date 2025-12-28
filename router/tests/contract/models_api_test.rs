@@ -92,7 +92,7 @@ with open(outfile, "wb") as f:
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::AdminAll],
+        vec![ApiKeyScope::Admin],
     )
     .await
     .expect("create admin api key")

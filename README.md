@@ -235,7 +235,7 @@ LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 
 Nodes report health + metrics to the Router for node status and load balancing decisions.
 
-**Endpoint:** `POST /v0/health` (requires `X-Node-Token` + API key with `node:register`)
+**Endpoint:** `POST /v0/health` (requires `X-Node-Token` + API key with `node`)
 
 **Headers:**
 - `Authorization: Bearer <api_key>`
@@ -479,13 +479,13 @@ See [Node (C++)](#node-c) section in Quick Start.
    ```bash
    # Machine 1
    LLM_ROUTER_URL=http://router:8080 \
-   # Replace with your actual API key (scope: node:register)
+   # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
 
    # Machine 2
    LLM_ROUTER_URL=http://router:8080 \
-   # Replace with your actual API key (scope: node:register)
+   # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
    ```
@@ -505,7 +505,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 4. **List Registered Nodes**
    ```bash
    curl http://router:8080/v0/nodes \
-     # Replace with your actual API key (scope: admin:*)
+     # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
 
@@ -548,7 +548,7 @@ Cloud / external services:
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
-| `LLM_NODE_API_KEY` | - | API key for node registration / model blob download | scope: `node:register` |
+| `LLM_NODE_API_KEY` | - | API key for node registration / model blob download | scope: `node` |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
@@ -756,9 +756,9 @@ The file is automatically managed with:
 
 | Scope | Grants |
 |-------|--------|
-| `node:register` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`) |
-| `api:inference` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
-| `admin:*` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
+| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`) |
+| `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
+| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
 Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
@@ -766,37 +766,37 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/users` | List users | JWT+Admin or API key (admin:*) |
-| POST | `/v0/users` | Create user | JWT+Admin or API key (admin:*) |
-| PUT | `/v0/users/:id` | Update user | JWT+Admin or API key (admin:*) |
-| DELETE | `/v0/users/:id` | Delete user | JWT+Admin or API key (admin:*) |
+| GET | `/v0/users` | List users | JWT+Admin or API key (admin) |
+| POST | `/v0/users` | Create user | JWT+Admin or API key (admin) |
+| PUT | `/v0/users/:id` | Update user | JWT+Admin or API key (admin) |
+| DELETE | `/v0/users/:id` | Delete user | JWT+Admin or API key (admin) |
 
 #### API Key Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/api-keys` | List API keys | JWT+Admin or API key (admin:*) |
-| POST | `/v0/api-keys` | Create API key | JWT+Admin or API key (admin:*) |
-| PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin or API key (admin:*) |
-| DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin or API key (admin:*) |
+| GET | `/v0/api-keys` | List API keys | JWT+Admin or API key (admin) |
+| POST | `/v0/api-keys` | Create API key | JWT+Admin or API key (admin) |
+| PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin or API key (admin) |
+| DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin or API key (admin) |
 
 #### Node Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/nodes` | Register node (GPU required) | API key (node:register) |
-| GET | `/v0/nodes` | List nodes | JWT+Admin or API key (admin:*) |
-| DELETE | `/v0/nodes/:node_id` | Delete node | JWT+Admin or API key (admin:*) |
-| POST | `/v0/nodes/:node_id/disconnect` | Force node offline | JWT+Admin or API key (admin:*) |
-| PUT | `/v0/nodes/:node_id/settings` | Update node settings | JWT+Admin or API key (admin:*) |
-| GET | `/v0/nodes/metrics` | List node metrics | JWT+Admin or API key (admin:*) |
-| GET | `/v0/metrics/summary` | System statistics summary | JWT+Admin or API key (admin:*) |
+| POST | `/v0/nodes` | Register node (GPU required) | API key (node) |
+| GET | `/v0/nodes` | List nodes | JWT+Admin or API key (admin) |
+| DELETE | `/v0/nodes/:node_id` | Delete node | JWT+Admin or API key (admin) |
+| POST | `/v0/nodes/:node_id/disconnect` | Force node offline | JWT+Admin or API key (admin) |
+| PUT | `/v0/nodes/:node_id/settings` | Update node settings | JWT+Admin or API key (admin) |
+| GET | `/v0/nodes/metrics` | List node metrics | JWT+Admin or API key (admin) |
+| GET | `/v0/metrics/summary` | System statistics summary | JWT+Admin or API key (admin) |
 
 #### Health Check Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/health` | Receive health check from node | Node Token + API key (node:register) |
+| POST | `/v0/health` | Receive health check from node | Node Token + API key (node) |
 
 #### OpenAI-Compatible Endpoints
 
@@ -812,31 +812,31 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/models` | List registered models (node sync) | API key (node:register or admin:*) |
-| POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin:*) |
-| DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin:*) |
-| POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin:*) |
-| GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | API key (node:register or admin:*) |
+| GET | `/v0/models` | List registered models (node sync) | API key (node or admin) |
+| POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
+| DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
+| POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin) |
+| GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | API key (node or admin) |
 
 #### Dashboard Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/nodes` | Node info list | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/stats` | System statistics | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/request-history` | Request history | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/metrics/:node_id` | Node metrics history | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin:*) |
-| GET | `/v0/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/nodes` | Node info list | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/stats` | System statistics | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/request-history` | Request history | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/metrics/:node_id` | Node metrics history | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin) |
 
 #### Log Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/logs/router` | Router logs | JWT+Admin or API key (admin:*) |
-| GET | `/v0/nodes/:node_id/logs` | Node logs | JWT+Admin or API key (admin:*) |
+| GET | `/v0/dashboard/logs/router` | Router logs | JWT+Admin or API key (admin) |
+| GET | `/v0/nodes/:node_id/logs` | Node logs | JWT+Admin or API key (admin) |
 
 #### Static Files & Metrics
 
@@ -846,7 +846,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/dashboard/*path` | Dashboard static files | None |
 | GET | `/playground` | Chat Playground UI | None |
 | GET | `/playground/*path` | Playground static files | None |
-| GET | `/v0/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin:*) |
+| GET | `/v0/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin) |
 
 ### Node API (C++)
 

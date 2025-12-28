@@ -484,7 +484,7 @@ export const modelsApi = {
 }
 
 // API Keys API
-export type ApiKeyScope = 'node:register' | 'api:inference' | 'admin:*'
+export type ApiKeyScope = 'node' | 'api' | 'admin'
 
 export interface ApiKey {
   id: string

@@ -58,7 +58,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyExpires, setNewKeyExpires] = useState('')
-  const [newKeyScopes, setNewKeyScopes] = useState<ApiKeyScope[]>(['api:inference'])
+  const [newKeyScopes, setNewKeyScopes] = useState<ApiKeyScope[]>(['api'])
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -82,7 +82,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       setCreatedKey((data as { key: string }).key)
       setNewKeyName('')
       setNewKeyExpires('')
-      setNewKeyScopes(['api:inference'])
+      setNewKeyScopes(['api'])
       toast({ title: 'API key created' })
     },
     onError: (error) => {
@@ -123,7 +123,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!createOpen) {
       setNewKeyName('')
       setNewKeyExpires('')
-      setNewKeyScopes(['api:inference'])
+      setNewKeyScopes(['api'])
     }
   }, [createOpen])
 
@@ -162,18 +162,18 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
   const scopeLabels: { value: ApiKeyScope; label: string; description: string }[] = [
     {
-      value: 'api:inference',
-      label: 'api:inference',
+      value: 'api',
+      label: 'api',
       description: 'OpenAI互換APIの推論アクセス',
     },
     {
-      value: 'node:register',
-      label: 'node:register',
-      description: 'ノード登録',
+      value: 'node',
+      label: 'node',
+      description: 'ノード登録・同期',
     },
     {
-      value: 'admin:*',
-      label: 'admin:*',
+      value: 'admin',
+      label: 'admin',
       description: '管理者（全権限）',
     },
   ]

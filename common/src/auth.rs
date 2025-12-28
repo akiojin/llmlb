@@ -53,25 +53,21 @@ pub struct ApiKey {
 /// APIキースコープ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ApiKeyScope {
-    /// ノード登録
-    #[serde(rename = "node:register")]
-    NodeRegister,
-    /// 推論API利用
-    #[serde(rename = "api:inference")]
-    ApiInference,
+    /// ノード登録・同期
+    #[serde(rename = "node")]
+    Node,
+    /// OpenAI互換API利用
+    #[serde(rename = "api")]
+    Api,
     /// 管理者（全権限）
-    #[serde(rename = "admin:*")]
-    AdminAll,
+    #[serde(rename = "admin")]
+    Admin,
 }
 
 impl ApiKeyScope {
     /// すべてのスコープ
     pub fn all() -> Vec<ApiKeyScope> {
-        vec![
-            ApiKeyScope::NodeRegister,
-            ApiKeyScope::ApiInference,
-            ApiKeyScope::AdminAll,
-        ]
+        vec![ApiKeyScope::Node, ApiKeyScope::Api, ApiKeyScope::Admin]
     }
 }
 

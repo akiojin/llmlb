@@ -57,7 +57,7 @@ async fn build_app() -> (Router, String) {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::AdminAll],
+        vec![ApiKeyScope::Admin],
     )
     .await
     .expect("create admin api key")
@@ -418,7 +418,7 @@ async fn test_v1_models_returns_fixed_list() {
         "test-key",
         test_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::ApiInference],
+        vec![llm_router_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("Failed to create test API key");

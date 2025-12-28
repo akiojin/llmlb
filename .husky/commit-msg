@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
 set -e
 
+if [ "${HUSKY:-}" = "0" ]; then
+  echo "HUSKY=0 is not allowed in this repo." >&2
+  exit 1
+fi
+
 # validate commit message before completing the commit
 if command -v pnpm >/dev/null 2>&1; then
   pnpm exec commitlint --edit "$1"

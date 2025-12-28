@@ -27,6 +27,7 @@ jobs:
           filters: |
             cpp:
               - 'node/**'
+              - 'package.json'
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/ci.yml'
             rust:

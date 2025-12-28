@@ -25,6 +25,7 @@ jobs:
           filters: |
             cpp:
               - 'node/**'
+              - 'package.json'
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/test.yml'
 

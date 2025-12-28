@@ -43,7 +43,8 @@ public:
                     ModelResolver* model_resolver = nullptr);
 
     /// デフォルトコンストラクタ（互換性維持、スタブモード）
-    InferenceEngine() = default;
+    /// VisionProcessor完全型のために.cppで定義
+    InferenceEngine();
 
     /// デストラクタ（VisionProcessor完全型のために.cppで定義）
     ~InferenceEngine();

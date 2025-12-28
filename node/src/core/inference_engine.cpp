@@ -31,6 +31,9 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
 }
 
+// デフォルトコンストラクタ（VisionProcessor完全型のために.cppで定義）
+InferenceEngine::InferenceEngine() = default;
+
 // デストラクタ（VisionProcessor完全型のために.cppで定義）
 InferenceEngine::~InferenceEngine() = default;
 

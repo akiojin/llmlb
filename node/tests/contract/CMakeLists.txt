@@ -10,6 +10,7 @@ set(CONTRACT_TEST_SOURCES
     ../../src/models/model_storage.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/vision_processor.cpp
     ../../src/core/llama_manager.cpp
     ../../src/api/router_client.cpp
     ../../src/runtime/state.cpp
@@ -23,6 +24,7 @@ target_link_libraries(llm-node-contract-tests
     PRIVATE
         test_common
         llama
+        mtmd
         common
         nlohmann_json::nlohmann_json
         utils_lib

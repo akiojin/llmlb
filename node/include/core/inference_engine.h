@@ -13,6 +13,7 @@ class LlamaManager;
 class ModelStorage;
 class ModelSync;
 class ModelResolver;
+class VisionProcessor;
 
 struct ChatMessage {
     std::string role;
@@ -48,6 +49,12 @@ public:
     std::string generateChat(const std::vector<ChatMessage>& messages,
                             const std::string& model,
                             const InferenceParams& params = {}) const;
+
+    /// 画像付きチャット生成（mtmd使用）
+    std::string generateChatWithImages(const std::vector<ChatMessage>& messages,
+                                       const std::vector<std::string>& image_urls,
+                                       const std::string& model,
+                                       const InferenceParams& params = {}) const;
 
     /// テキスト補完
     std::string generateCompletion(const std::string& prompt,
@@ -105,6 +112,7 @@ private:
     ModelSync* model_sync_{nullptr};
     ModelResolver* model_resolver_{nullptr};
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
+    mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;

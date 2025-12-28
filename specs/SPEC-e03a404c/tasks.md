@@ -77,12 +77,12 @@
 
 ## Phase 3.5: コア実装 - Node側
 
-- [ ] T012 `node/src/core/vision_processor.cpp` に画像プリプロセス実装
+- [x] T012 `node/src/core/vision_processor.cpp` に画像プリプロセス実装
   - 画像デコード
   - リサイズ/正規化
   - CLIP embeddings生成
 
-- [ ] T013 `node/src/api/chat_endpoints.cpp` にVision対応拡張
+- [x] T013 `node/src/api/openai_endpoints.cpp` にVision対応拡張
   - 画像データ受信
   - llama.cpp multimodal連携
 

@@ -1,9 +1,12 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
+#include "core/vision_processor.h"
 #include "models/model_storage.h"
 #include "models/model_sync.h"
 #include "models/model_resolver.h"
 #include "include/llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 
 #include <spdlog/spdlog.h>
 #include <random>
@@ -24,7 +27,9 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     : manager_(&manager)
     , model_storage_(&model_storage)
     , model_sync_(model_sync)
-    , model_resolver_(model_resolver) {}
+    , model_resolver_(model_resolver) {
+    vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
+}
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -586,6 +591,187 @@ std::string InferenceEngine::generateChat(
         hex_output += hex;
     }
     spdlog::info("Generated {} bytes for model {}, first 100 bytes: [{}]", output.size(), model_name, hex_output);
+    return output;
+}
+
+std::string InferenceEngine::generateChatWithImages(
+    const std::vector<ChatMessage>& messages,
+    const std::vector<std::string>& image_urls,
+    const std::string& model_name,
+    const InferenceParams& params) const {
+
+    if (image_urls.empty()) {
+        return generateChat(messages, model_name, params);
+    }
+
+    if (!isInitialized()) {
+        spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
+        if (messages.empty()) return "";
+        return "Response to: " + messages.back().content;
+    }
+
+    std::string error;
+    std::string gguf_path = resolveModelPath(model_name, &error);
+    if (gguf_path.empty()) {
+        std::string msg = error.empty() ? "Model not found: " + model_name : error;
+        spdlog::error("{}", msg);
+        throw std::runtime_error(msg);
+    }
+
+    if (!manager_->loadModelIfNeeded(gguf_path)) {
+        throw std::runtime_error("Failed to load model: " + gguf_path);
+    }
+
+    llama_context* ctx = manager_->getContext(gguf_path);
+    llama_model* model = manager_->getModel(gguf_path);
+
+    if (!ctx || !model) {
+        throw std::runtime_error("Failed to get context/model for: " + gguf_path);
+    }
+
+    if (!vision_processor_) {
+        vision_processor_ = std::make_unique<VisionProcessor>(*model_storage_);
+    }
+
+    std::string vision_error;
+    mtmd_context* mctx = vision_processor_->getOrCreateContext(model_name, gguf_path, model, vision_error);
+    if (!mctx) {
+        throw std::runtime_error(vision_error.empty() ? "Vision model not available" : vision_error);
+    }
+
+    mtmd::bitmaps bitmaps;
+    if (!vision_processor_->prepareBitmaps(mctx, image_urls, bitmaps, vision_error)) {
+        throw std::runtime_error(vision_error.empty() ? "Failed to prepare images" : vision_error);
+    }
+
+    std::string prompt = applyModelChatTemplate(model, messages);
+    spdlog::debug("Vision prompt: {}", prompt);
+
+    bool is_gptoss = isGptOssModel(model);
+    bool add_special = !is_gptoss;
+    bool parse_special = is_gptoss;
+
+    mtmd_input_text text;
+    text.text = prompt.c_str();
+    text.add_special = add_special;
+    text.parse_special = parse_special;
+
+    mtmd::input_chunks chunks(mtmd_input_chunks_init());
+    auto bitmaps_c_ptr = bitmaps.c_ptr();
+    int32_t res = mtmd_tokenize(mctx,
+                                chunks.ptr.get(),
+                                &text,
+                                bitmaps_c_ptr.data(),
+                                bitmaps_c_ptr.size());
+    if (res != 0) {
+        throw std::runtime_error("Failed to tokenize vision prompt");
+    }
+
+    llama_pos new_n_past = 0;
+    const int32_t n_batch = llama_n_batch(ctx);
+    if (mtmd_helper_eval_chunks(mctx,
+                                ctx,
+                                chunks.ptr.get(),
+                                0,
+                                0,
+                                n_batch,
+                                true,
+                                &new_n_past) != 0) {
+        throw std::runtime_error("Failed to evaluate vision prompt");
+    }
+
+    size_t prompt_positions = new_n_past < 0 ? 0 : static_cast<size_t>(new_n_past);
+    spdlog::debug("Vision prompt positions: {}", prompt_positions);
+
+    llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+    llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
+    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+        64,
+        params.repeat_penalty,
+        0.0f,
+        0.0f
+    ));
+
+    uint32_t seed = params.seed;
+    if (seed == 0) {
+        seed = static_cast<uint32_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
+    }
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+
+    std::string output;
+
+    size_t effective_max_tokens = params.max_tokens;
+    int32_t model_n_ctx = llama_model_n_ctx_train(model);
+    if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
+        size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
+        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            effective_max_tokens = available;
+        } else {
+            effective_max_tokens = std::min(params.max_tokens, available);
+        }
+        spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
+            model_n_ctx, prompt_positions, available, effective_max_tokens);
+    }
+
+    const llama_vocab* vocab = llama_model_get_vocab(model);
+
+    for (size_t i = 0; i < effective_max_tokens; i++) {
+        llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+        if (llama_vocab_is_eog(vocab, new_token)) {
+            spdlog::debug("Vision: EOG token received at position {}", i);
+            break;
+        }
+
+        char buf[256];
+        int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
+        if (len > 0) {
+            output.append(buf, static_cast<size_t>(len));
+        }
+
+        llama_sampler_accept(sampler, new_token);
+
+        llama_batch next_batch = llama_batch_get_one(&new_token, 1);
+        int32_t gen_decode_result = llama_decode(ctx, next_batch);
+        if (gen_decode_result != 0) {
+            spdlog::warn("Vision: llama_decode failed during generation: {}", gen_decode_result);
+            break;
+        }
+    }
+
+    llama_sampler_free(sampler);
+
+    static const std::vector<std::string> stop_sequences = {
+        "<|im_end|>",
+        "<|end|>",
+        "<|start|>",
+        "<|eot_id|>",
+        "</s>",
+        "<|endoftext|>",
+    };
+
+    for (const auto& stop : stop_sequences) {
+        size_t pos = output.find(stop);
+        if (pos != std::string::npos) {
+            spdlog::debug("Vision: Truncating output at stop sequence '{}' at position {}", stop, pos);
+            output = output.substr(0, pos);
+            break;
+        }
+    }
+
+    if (isGptOssModel(model)) {
+        spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
+        output = cleanGptOssOutput(output);
+        spdlog::info("Vision: After cleanup: {} chars", output.size());
+    }
+
+    spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
     return output;
 }
 

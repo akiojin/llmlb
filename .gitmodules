@@ -3,7 +3,13 @@
 	url = https://github.com/ggerganov/whisper.cpp.git
 [submodule "node/third_party/stable-diffusion.cpp"]
 	path = node/third_party/stable-diffusion.cpp
-	url = https://github.com/akiojin/stable-diffusion.cpp.git
+	url = https://github.com/leejet/stable-diffusion.cpp.git
 [submodule "node/third_party/llama.cpp"]
 	path = node/third_party/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp.git
+[submodule "node/third_party/cpp-httplib"]
+	path = node/third_party/cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git
+[submodule "node/third_party/nlohmann-json"]
+	path = node/third_party/nlohmann-json
+	url = https://github.com/nlohmann/json.git

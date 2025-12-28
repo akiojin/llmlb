@@ -18,6 +18,8 @@ export ADMIN_PASSWORD=secure123
 cargo run --bin router
 ```
 
+**補足**: デバッグビルドでは `admin` / `test` が固定で有効です。環境変数での管理者作成はリリースビルド向けです。
+
 または、起動スクリプトに記述：
 
 ```bash
@@ -82,7 +84,7 @@ JWT_TOKEN=$(curl -X POST http://localhost:8080/v0/auth/login \
 API_KEY=$(curl -X POST http://localhost:8080/v0/api-keys \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"my-chatbot"}' \
+  -d '{"name":"my-chatbot","scopes":["api:inference","node:register"]}' \
   | jq -r '.key')
 
 echo "発行されたAPIキー: $API_KEY"
@@ -105,7 +107,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-**テスト検証**: レスポンスが正常に返ることを確認
+**テスト検証**: `200 OK`（ノード・モデルが登録済みの場合）、または `404 Not Found`（モデル未登録）/`503 Service Unavailable`（ノード未登録）のいずれかで、`401 Unauthorized` にならないことを確認
 
 ### デバッグビルド時（固定デバッグAPIキー）
 
@@ -184,6 +186,7 @@ curl -X PUT http://localhost:8080/v0/users/{user_id} \
 ```bash
 # ノード登録APIを呼び出す
 RESPONSE=$(curl -X POST http://localhost:8080/v0/nodes \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "machine_name": "test-node",

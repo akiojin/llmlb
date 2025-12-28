@@ -29,7 +29,7 @@ public:
 private:
     WhisperManager& whisper_manager_;
     OnnxTtsManager* tts_manager_{nullptr};  // Optional TTS support
-    const NodeConfig& config_;
+    [[maybe_unused]] const NodeConfig& config_;
 
     // ヘルパーメソッド
     static void setJson(httplib::Response& res, const nlohmann::json& body);

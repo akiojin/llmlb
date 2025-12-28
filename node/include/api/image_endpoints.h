@@ -24,7 +24,7 @@ public:
 
 private:
     SDManager& sd_manager_;
-    const NodeConfig& config_;
+    [[maybe_unused]] const NodeConfig& config_;
 
     // Helper methods
     static void setJson(httplib::Response& res, const nlohmann::json& body);

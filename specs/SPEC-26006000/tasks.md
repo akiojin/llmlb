@@ -88,12 +88,12 @@
 
 ## Phase 3.8: 仕上げ
 
-- [ ] T050 [P] `node/tests/whisper_manager_test.cpp` に WhisperManager の unit tests
-- [ ] T051 [P] `node/tests/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
-- [ ] T052 `router/tests/audio_error_handling_test.rs` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
-- [ ] T053 `specs/SPEC-26006000/quickstart.md` のコマンドを実行して動作確認
-- [ ] T054 `router/src/api/audio.rs` のコードを clippy でチェック・修正
-- [ ] T055 `node/` のコードを clang-tidy でチェック・修正
+- [x] T050 [P] `node/tests/whisper_manager_test.cpp` に WhisperManager の unit tests
+- [x] T051 [P] `node/tests/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
+- [x] T052 `router/tests/audio_error_handling_test.rs` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
+- [x] T053 `specs/SPEC-26006000/quickstart.md` のコマンドを実行して動作確認
+- [x] T054 `router/src/api/audio.rs` のコードを clippy でチェック・修正
+- [x] T055 `node/` のコードを clang-tidy でチェック・修正
 
 ## 依存関係グラフ
 

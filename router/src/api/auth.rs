@@ -2,7 +2,7 @@
 //!
 //! ログイン、ログアウト、認証情報確認
 
-use crate::AppState;
+use crate::{config, AppState};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -178,6 +178,14 @@ pub async fn me(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
 ) -> Result<Json<MeResponse>, Response> {
+    if config::is_auth_disabled() {
+        return Ok(Json(MeResponse {
+            user_id: claims.sub.clone(),
+            username: "admin".to_string(),
+            role: format!("{:?}", UserRole::Admin).to_lowercase(),
+        }));
+    }
+
     // ユーザーIDをパース
     let user_id = claims.sub.parse::<uuid::Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);

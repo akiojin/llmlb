@@ -182,6 +182,20 @@ LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
 - `POST /v1/completions`
 - `POST /v1/embeddings`
 
+### 画像生成例
+```bash
+curl http://localhost:8080/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_api_key" \
+  -d '{
+    "model": "stable-diffusion/v1-5-pruned-emaonly.safetensors",
+    "prompt": "A white cat sitting on a windowsill",
+    "size": "512x512",
+    "n": 1,
+    "response_format": "b64_json"
+  }'
+```
+
 ### クラウドモデルプレフィックス
 - 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
 - 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`

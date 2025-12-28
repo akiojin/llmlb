@@ -30,8 +30,6 @@ std::optional<std::string> getEnvWithFallback(const char* new_name, const char* 
 }  // namespace
 
 DownloadConfig loadDownloadConfig() {
-    DownloadConfig cfg;
-
     auto info = loadDownloadConfigWithLog();
     return info.first;
 }

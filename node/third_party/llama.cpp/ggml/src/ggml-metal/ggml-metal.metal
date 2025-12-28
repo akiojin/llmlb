@@ -4577,6 +4577,36 @@ kernel void kernel_pad_f32(
     }
 }
 
+kernel void kernel_diag_mask_f32(
+    constant ggml_metal_kargs_diag_mask & args,
+    device  const char * src0,
+    device        char * dst,
+    uint3 tgpig[[threadgroup_position_in_grid]],
+    uint3 tpitg[[thread_position_in_threadgroup]],
+    uint3   ntg[[threads_per_threadgroup]]) {
+
+    const int64_t i3 = tgpig.z;
+    const int64_t i2 = tgpig.y;
+    const int64_t i1 = tgpig.x;
+
+    if (i1 >= args.ne01 || i2 >= args.ne02 || i3 >= args.ne03) {
+        return;
+    }
+
+    device const float * src0_ptr = (device const float *) (src0 + i3*args.nb03 + i2*args.nb02 + i1*args.nb01);
+    device       float * dst_ptr  = (device       float *) (dst  + i3*args.nb3  + i2*args.nb2  + i1*args.nb1);
+
+    const int64_t mask_base = (int64_t) args.n_past + i1;
+
+    for (int64_t i0 = tpitg.x; i0 < args.ne0; i0 += ntg.x) {
+        if (i0 > mask_base) {
+            dst_ptr[i0] = args.value;
+        } else {
+            dst_ptr[i0] = src0_ptr[i0];
+        }
+    }
+}
+
 kernel void kernel_pad_reflect_1d_f32(
     constant   ggml_metal_kargs_pad_reflect_1d & args,
     device  const char * src0,

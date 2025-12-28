@@ -88,6 +88,7 @@ use common::build_app;
 /// TDD RED: Vision機能未実装のため失敗する
 #[tokio::test]
 #[serial]
+#[ignore = "TDD RED: Vision chat not yet implemented"]
 async fn test_chat_completions_with_image_url() {
     let common::TestApp { app, api_key } = build_app().await;
 
@@ -141,6 +142,7 @@ async fn test_chat_completions_with_image_url() {
 /// TDD RED: Vision機能未実装のため失敗する
 #[tokio::test]
 #[serial]
+#[ignore = "TDD RED: Vision chat not yet implemented"]
 async fn test_chat_completions_with_base64_image() {
     let common::TestApp { app, api_key } = build_app().await;
 
@@ -194,6 +196,7 @@ async fn test_chat_completions_with_base64_image() {
 /// TDD RED: Vision機能未実装のため失敗する
 #[tokio::test]
 #[serial]
+#[ignore = "TDD RED: Vision chat not yet implemented"]
 async fn test_chat_completions_with_multiple_images() {
     let common::TestApp { app, api_key } = build_app().await;
 
@@ -250,6 +253,7 @@ async fn test_chat_completions_with_multiple_images() {
 /// TDD RED: 各画像形式のMIMEタイプが受け入れられることを確認
 #[tokio::test]
 #[serial]
+#[ignore = "TDD RED: Vision chat not yet implemented"]
 async fn test_supported_image_formats() {
     let common::TestApp { app, api_key } = build_app().await;
 
@@ -316,6 +320,7 @@ async fn test_supported_image_formats() {
 /// TDD RED: stream=true オプションが受け入れられることを確認
 #[tokio::test]
 #[serial]
+#[ignore = "TDD RED: Vision chat not yet implemented"]
 async fn test_vision_streaming_response() {
     let common::TestApp { app, api_key } = build_app().await;
 

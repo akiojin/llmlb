@@ -17,6 +17,7 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、safetensors�
 - Nodeにエンジン抽象化レイヤーが導入され、llama.cpp 等の複数エンジンを選択できる
 - エンジンは **動的プラグイン** として追加・更新できる
 - `metadata.json` のような llm-router 独自メタデータファイルに依存せず、エンジン選択が実装される
+- **対応OS/GPUの前提が明確**（macOS: Metal、Windows: DirectML、Linux: 非対応/CUDAは実験）
 
 ## アーキテクチャ（Nodeエンジン層）
 
@@ -61,6 +62,11 @@ register(format=...)  ───────▶    ModelStorage
 
 ※ Nodeローカルに複数形式が同居していることを理由に自動フォールバックは行わない（登録で確定させる）。
 
+### OS/GPU前提（本仕様の前提）
+- macOS: Apple Silicon + Metal
+- Windows: DirectML（D3D12）
+- Linux: 当面は非対応（CUDAは実験扱い）
+
 ## 非ゴール
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定・実装（後回し / TBDとして別途扱う）
 - Nemotron 推論の高速化・最適化
@@ -72,7 +78,7 @@ register(format=...)  ───────▶    ModelStorage
 - 開発者として、モデル形式が増えてもNodeのエンジン選択が壊れない構造にしたい
 
 ## 保留事項（TBD）
-- Nemotron向けの新エンジン（推論エンジン）は別SPECとして後日仕様化する（後回し / TBD。Metal/CUDA対応方針、chat_template互換、dtype戦略など）。
+- Nemotron向けの新エンジン（推論エンジン）は別SPECとして後日仕様化する（後回し / TBD。Metal/DirectML対応方針、CUDA実験扱い、chat_template互換、dtype戦略など）。
 
 ## 受け入れ条件
 - Nodeが登録時の選択（safetensors/GGUF）と `config.json` に従ってエンジンを選択する

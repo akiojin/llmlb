@@ -2,7 +2,7 @@
 
 ## 更新メモ（共有用）
 - 2025-12-24: gpt-oss-20b は **safetensors 直読エンジンを主経路**とし、公式GPU最適化アーティファクトは**実行キャッシュ**として扱う。
-- 既存の `metal/model.bin` 系は**探索的実装**として記録し、本番要件は safetensors 直読に置き換える。
+- 2025-12-28: 対応OS/GPUを **macOS=Metal / Windows=DirectML** に変更。Linuxは当面非対応（CUDAは実験扱い）。
 
 ## TDD順序（必須）
 - Contract → Integration → E2E → Unit → Core/Refactor の順で実施する。
@@ -22,10 +22,11 @@
 ## Core
 - [ ] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
 - [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
-- [ ] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を plugin として実装する。
+- [ ] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
-- [ ] Router: 公式GPU最適化アーティファクトが許可リスト内なら**実行キャッシュとして**取得できる導線を用意（自動/opt-inは plan.md の決定に従う）。
+- [ ] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
+- [ ] Node: DirectML 向け gpt-oss プラグインの最小スケルトンを追加。
 
 ## Unit Tests (GREEN)
 - [x] Node: safetensors shards 解決とメタデータ検証のユニットテスト。

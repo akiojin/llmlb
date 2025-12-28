@@ -44,6 +44,8 @@
 - NodeはPython依存を導入しない。
 - エンジンは**動的プラグイン**として追加可能にする。
 - Nemotron推論エンジンの詳細設計は**後回し（TBD）**。
+- **GPU対応方針**: macOSはApple Silicon + Metal、WindowsはDirectMLを主経路とする。Linuxは当面「非対応（CUDAは実験扱い）」。
+- **モデルキャッシュ方針**: ルーターは事前キャッシュ前提を廃止し、NodeがGPU差分に応じて必要アーティファクトを選択・取得・保持する。
 
 ### フェーズ0: 仕様の整合（完了条件の明確化）
 
@@ -94,6 +96,7 @@
 **検証**
 - format=safetensors の登録モデルが EngineRegistry を通じて解決される。
 - エンジン未対応モデルは /v1/models から除外される。
+- Windows（DirectML）/macOS（Metal）向けの最小実行経路が定義されている。
 
 ### フェーズ5: 完了判定
 

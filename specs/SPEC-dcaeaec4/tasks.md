@@ -8,13 +8,19 @@ LLM-Router独自モデルストレージの実装タスク。
 
 - [x] FR-1: モデルディレクトリ構造 (`~/.llm-router/models/`)
 - [x] FR-2: モデル名の形式変換 (`ModelStorage::modelNameToDir()`)
-- [x] FR-3: モデルアーティファクト解決（safetensors/GGUF）を実装
+- [ ] FR-3: モデルアーティファクト解決（Node主導/外部ソース対応）を実装
 - [x] FR-4: 利用可能モデル一覧をsafetensors対応
 - [x] FR-5: `metadata.json` 依存を削除（読み書きしない）
-- [x] FR-6: ノード起動時同期をsafetensors対応（必要ファイルを取得/参照）
+- [ ] FR-6: ノード起動時同期（マニフェスト+外部ソース/プロキシ）を実装
   - [x] 起動時の不要モデル削除 (`ModelStorage::deleteModel()`)
 - [x] FR-7: ルーターからのプッシュ通知 (`POST /api/models/pull`)
-- [x] FR-8: API設計 (`/v0/models` vs `/v1/models`)
+- [ ] FR-8: API設計更新（`/v0/models/registry` 追加と Node 同期の整理）
+
+## 追加対応（要件更新）
+
+- [ ] Node: GPUバックエンドに応じたアーティファクト選択（Metal/DirectML）
+- [ ] Router: マニフェストに外部URL/許可リスト情報を含める
+- [ ] Node: 外部ソース/プロキシ経由ダウンロード（許可リスト検証付き）
 
 ## テスト実装
 

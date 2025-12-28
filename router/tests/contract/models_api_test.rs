@@ -24,6 +24,13 @@ struct TestApp {
     admin_key: String,
 }
 
+// TDD RED: Node主導キャッシュのため、registry manifest に外部ソースURLが含まれること
+#[tokio::test]
+#[ignore = "TDD RED: manifest origin urls not implemented yet"]
+async fn registry_manifest_includes_origin_urls() {
+    unimplemented!("TDD RED: manifest should include origin URLs for node-managed caching");
+}
+
 async fn build_app() -> TestApp {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!(

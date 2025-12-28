@@ -77,21 +77,21 @@
     - `chat_template` が無い場合はデフォルトテンプレート（例: ChatML）へフォールバック
   - 生成結果のパース: テンプレート由来の制御トークン（例: ChatMLやchannel marker）を除去し、最終メッセージを抽出する
 
-### Metal/CUDA（GPU実行）
-- NodeはGPU必須（Apple Silicon/Metal、NVIDIA/CUDAを主対象）
-- 具体的なカーネル実装・dtype戦略（Metalはfp16保持、CUDAはbf16可など）は別SPECで決める
+### Metal/DirectML（GPU実行）
+- NodeはGPU必須（Apple Silicon/Metal、Windows/DirectMLを主対象）
+- 具体的なカーネル実装・dtype戦略は別SPECで決める（CUDAは実験扱い）
 
 ## Nemotron GPU PoC（後回し / TBD）
 
 ### 目的
-- safetensors（正本）を直接読み込み、Metal/CUDAのGPUで「実推論できる」ことを実証する
+- safetensors（正本）を直接読み込み、Metal/DirectMLのGPUで「実推論できる」ことを実証する
   - ここでの「実推論」は、最低でも 1トークン以上の生成が再現できること
 
 ### 段階（PoCの定義）
 1. **重みの直読**: safetensors-cppでmmapし、index/shard構成でも破綻なく参照できる
 2. **メタデータ整合**: `config.json` と `tokenizer.json` が揃い、必要なハイパーパラメータが解釈できる
 3. **CPU参照実装（最小）**: 代表的な演算（matmul/norm/attention/MLP）をCPUで通せる（小モデルでOK）
-4. **GPU実装（最小）**: Metal/CUDAで主要演算を実装し、同一入力でCPU参照と一致（または許容誤差内）
+4. **GPU実装（最小）**: Metal/DirectMLで主要演算を実装し、同一入力でCPU参照と一致（または許容誤差内）
 5. **E2E生成**: 実際のトークナイズ→生成→デトークナイズまで一連で動作
 
 ### 現状（本ブランチでの到達点）

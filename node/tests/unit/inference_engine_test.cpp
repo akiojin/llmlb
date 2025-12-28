@@ -144,6 +144,11 @@ TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
 #endif
 }
 
+// TDD RED: DirectML should allow safetensors without Metal artifact.
+TEST(InferenceEngineTest, GptOssAllowsSafetensorsOnDirectML) {
+    GTEST_SKIP() << "TDD RED: DirectML backend selection not implemented yet";
+}
+
 TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {
     TempDir tmp;
     LlamaManager llama(tmp.path.string());

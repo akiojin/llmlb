@@ -20,7 +20,7 @@ public:
 private:
     ModelRegistry& registry_;
     InferenceEngine& engine_;
-    const NodeConfig& config_;
+    [[maybe_unused]] const NodeConfig& config_;
 
     static void setJson(httplib::Response& res, const nlohmann::json& body);
     void respondError(httplib::Response& res, int status, const std::string& code, const std::string& message);

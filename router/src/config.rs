@@ -111,6 +111,20 @@ pub fn get_default_embedding_model() -> String {
         .unwrap_or_else(|_| "nomic-embed-text-v1.5".to_string())
 }
 
+/// 認証無効化モードの有効/無効を取得
+///
+/// 環境変数 `AUTH_DISABLED` が `true/1/yes/on` のときに有効化する。
+pub fn is_auth_disabled() -> bool {
+    std::env::var("AUTH_DISABLED")
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

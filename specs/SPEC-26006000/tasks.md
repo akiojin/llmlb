@@ -89,16 +89,15 @@
 ## Phase 3.8: 仕上げ
 
 - [x] T050 [P] `node/tests/unit/whisper_manager_test.cpp` に WhisperManager の unit tests
-  - ✅ 実装済み: FlashAttentionIsDisabledByDefault テスト作成
-  - パスは `node/tests/unit/` に配置（tasks.mdの記載と異なる）
 - [x] T051 [P] `node/tests/unit/onnx_tts_manager_test.cpp` に OnnxTtsManager の unit tests
   - ✅ 実装済み: 8テスト作成（RuntimeAvailability, IdleTimeout, MaxModels等）
   - CMakeLists.txt にビルド設定追加済み
-- [x] T052 `router/tests/contract/` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
-  - ✅ 既存の契約テストでカバー済み:
+- [x] T052 `router/tests/audio_error_handling_test.rs` にエッジケーステスト (無効フォーマット, 空入力, サイズ超過)
+  - ✅ 既存の契約テストでもカバー済み:
     - `audio_transcriptions_test.rs`: unsupported_format_returns_400, without_auth_returns_401, no_available_node_returns_503
     - `audio_speech_test.rs`: empty_input_returns_400, without_auth_returns_401, no_available_node_returns_503, input_too_long_returns_400
 - [x] T053 `specs/SPEC-26006000/quickstart.md` のコマンドを実行して動作確認
+  - 実行日: 2025-12-28
   - ✅ 手動検証完了 (ASR: WAV/MP3, TTS: WAV 出力)
   - ✅ VibeVoice 実行条件: `LLM_NODE_VIBEVOICE_MODEL=microsoft/VibeVoice-1.5B`
   - ✅ VibeVoice 付帯条件: `LLM_NODE_VIBEVOICE_VOICE_PROMPT=<WAVパス>`

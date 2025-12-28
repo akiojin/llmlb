@@ -61,6 +61,7 @@ pub async fn spawn_test_router() -> TestServer {
 }
 
 /// 指定したルーターにノードを登録する
+#[allow(dead_code)]
 pub async fn register_node(
     router_addr: SocketAddr,
     node_addr: SocketAddr,

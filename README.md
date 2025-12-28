@@ -503,6 +503,20 @@ See [Node (C++)](#node-c) section in Quick Start.
      }'
    ```
 
+   **Image generation example**
+   ```bash
+   curl http://router:8080/v1/images/generations \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer sk_your_api_key" \
+     -d '{
+       "model": "stable-diffusion/v1-5-pruned-emaonly.safetensors",
+       "prompt": "A white cat sitting on a windowsill",
+       "size": "512x512",
+       "n": 1,
+       "response_format": "b64_json"
+     }'
+   ```
+
 4. **List Registered Nodes**
    ```bash
    curl http://router:8080/v0/nodes \

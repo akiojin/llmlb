@@ -8,6 +8,8 @@
 
 namespace llm_node {
 
+using json = nlohmann::json;
+
 namespace {
 // SPEC-dcaeaec4: Helper to check if node is ready and return 503 if not
 bool checkReady(httplib::Response& res) {
@@ -110,8 +112,6 @@ bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& e
     return true;
 }
 }  // namespace
-
-using json = nlohmann::json;
 
 OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
     : registry_(registry), engine_(engine), config_(config) {}

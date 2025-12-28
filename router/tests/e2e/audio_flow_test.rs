@@ -109,7 +109,7 @@ async fn e2e_audio_transcriptions_returns_text() {
     assert_eq!(response.status(), ReqStatusCode::OK);
     let payload: Value = response.json().await.expect("json response");
     assert!(
-        payload["text"].as_str().unwrap_or_default().len() > 0,
+        !payload["text"].as_str().unwrap_or_default().is_empty(),
         "expected non-empty transcription text"
     );
 

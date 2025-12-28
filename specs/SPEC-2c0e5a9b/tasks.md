@@ -28,7 +28,7 @@
 - [ ] Router: 公式GPU最適化アーティファクトが許可リスト内なら**実行キャッシュとして**取得できる導線を用意（自動/opt-inは plan.md の決定に従う）。
 
 ## Unit Tests (GREEN)
-- [ ] Node: safetensors shards 解決とメタデータ検証のユニットテスト。
+- [x] Node: safetensors shards 解決とメタデータ検証のユニットテスト。
 - [ ] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
 - [x] Node: プラグイン manifest/ABI の検証ユニットテスト。
 

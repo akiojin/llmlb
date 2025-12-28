@@ -30,40 +30,76 @@ bool is_valid_file(const fs::path& path) {
     return !ec && size > 0;
 }
 
+bool is_safetensors_index_file(const fs::path& path) {
+    const std::string filename = path.filename().string();
+    const std::string suffix = ".safetensors.index.json";
+    if (filename.size() < suffix.size()) return false;
+    std::string lower = filename;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lower.rfind(suffix) == lower.size() - suffix.size();
+}
+
 bool has_required_safetensors_metadata(const fs::path& model_dir) {
     return is_valid_file(model_dir / "config.json") && is_valid_file(model_dir / "tokenizer.json");
 }
 
-bool validate_safetensors_index_shards(const fs::path& model_dir, const fs::path& index_path) {
-    if (!is_valid_file(index_path)) return false;
+std::optional<std::vector<std::string>> load_safetensors_index_shards(const fs::path& index_path) {
+    if (!is_valid_file(index_path)) return std::nullopt;
     try {
         std::ifstream ifs(index_path);
         nlohmann::json j;
         ifs >> j;
 
         if (!j.contains("weight_map") || !j["weight_map"].is_object()) {
-            return false;
+            return std::nullopt;
         }
 
         const auto& weight_map = j["weight_map"];
-        std::unordered_set<std::string> shard_files;
+        std::unordered_set<std::string> shard_set;
         for (auto it = weight_map.begin(); it != weight_map.end(); ++it) {
             if (!it.value().is_string()) continue;
-            shard_files.insert(it.value().get<std::string>());
+            shard_set.insert(it.value().get<std::string>());
         }
-
-        // Empty weight_map is allowed (e.g., placeholder index for tests).
-        for (const auto& shard : shard_files) {
-            const auto shard_path = model_dir / shard;
-            if (!is_valid_file(shard_path)) {
-                spdlog::warn("ModelStorage: missing safetensors shard: {}", shard_path.string());
-                return false;
-            }
-        }
-        return true;
+        std::vector<std::string> shards(shard_set.begin(), shard_set.end());
+        std::sort(shards.begin(), shards.end());
+        return shards;
     } catch (...) {
-        return false;
+        return std::nullopt;
     }
+}
+
+bool validate_safetensors_index_shards(const fs::path& model_dir, const fs::path& index_path) {
+    auto shards = load_safetensors_index_shards(index_path);
+    if (!shards) return false;
+
+    // Empty weight_map is allowed (e.g., placeholder index for tests).
+    for (const auto& shard : *shards) {
+        const auto shard_path = model_dir / shard;
+        if (!is_valid_file(shard_path)) {
+            spdlog::warn("ModelStorage: missing safetensors shard: {}", shard_path.string());
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<nlohmann::json> build_safetensors_metadata(const fs::path& model_dir, const fs::path& primary) {
+    nlohmann::json st;
+    st["index"] = primary.filename().string();
+
+    if (is_safetensors_index_file(primary)) {
+        auto shards = load_safetensors_index_shards(primary);
+        if (!shards) return std::nullopt;
+        st["shards"] = *shards;
+    } else {
+        st["shards"] = nlohmann::json::array({primary.filename().string()});
+    }
+
+    nlohmann::json meta;
+    meta["safetensors"] = st;
+    return meta;
 }
 
 std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir) {
@@ -301,6 +337,9 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
             auto rt = detect_runtime_from_config(fs::path(desc.model_dir));
             if (!rt) continue;
             desc.runtime = *rt;
+            if (auto meta = build_safetensors_metadata(fs::path(desc.model_dir), fs::path(desc.primary_path))) {
+                desc.metadata = std::move(*meta);
+            }
             out.push_back(std::move(desc));
             continue;
         }
@@ -332,6 +371,9 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         desc.format = "safetensors";
         desc.primary_path = primary->string();
         desc.model_dir = model_dir.string();
+        if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
+            desc.metadata = std::move(*meta);
+        }
         return desc;
     }
 

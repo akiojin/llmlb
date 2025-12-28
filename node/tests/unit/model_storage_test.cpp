@@ -69,6 +69,21 @@ static void create_gptoss_safetensors_model_with_arch(const fs::path& models_dir
     std::ofstream(model_dir / "model.safetensors") << "dummy";
 }
 
+static void create_gptoss_safetensors_model_with_shards(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model-00001.safetensors") << "shard1";
+    std::ofstream(model_dir / "model-00002.safetensors") << "shard2";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({
+        "weight_map": {
+            "model.layers.0.weight": "model-00001.safetensors",
+            "model.layers.1.weight": "model-00002.safetensors"
+        }
+    })";
+}
+
 // FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
@@ -185,6 +200,26 @@ TEST(ModelStorageTest, ResolveDescriptorDetectsGptOssFromArchitectures) {
     EXPECT_EQ(desc->runtime, "gptoss_cpp");
     EXPECT_EQ(desc->format, "safetensors");
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorIncludesSafetensorsShardMetadata) {
+    TempModelDir tmp;
+    create_gptoss_safetensors_model_with_shards(tmp.base, "openai-gpt-oss-20b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("openai-gpt-oss-20b");
+
+    ASSERT_TRUE(desc.has_value());
+    ASSERT_TRUE(desc->metadata.has_value());
+    auto meta = desc->metadata.value();
+    ASSERT_TRUE(meta.contains("safetensors"));
+    ASSERT_TRUE(meta["safetensors"].contains("index"));
+    ASSERT_TRUE(meta["safetensors"].contains("shards"));
+    EXPECT_EQ(meta["safetensors"]["index"], "model.safetensors.index.json");
+    ASSERT_TRUE(meta["safetensors"]["shards"].is_array());
+    EXPECT_EQ(meta["safetensors"]["shards"].size(), 2);
+    EXPECT_EQ(meta["safetensors"]["shards"][0], "model-00001.safetensors");
+    EXPECT_EQ(meta["safetensors"]["shards"][1], "model-00002.safetensors");
 }
 
 TEST(ModelStorageTest, ResolveDescriptorSkipsSafetensorsWhenMetadataMissing) {

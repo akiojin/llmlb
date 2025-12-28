@@ -11,6 +11,23 @@ on:
       - develop
 
 jobs:
+  # パス変更検出（C++ジョブの条件付き実行用）
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      cpp: ${{ steps.filter.outputs.cpp }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cpp:
+              - 'node/**'
+              - '.github/actions/setup-cpp/**'
+              - '.github/workflows/test.yml'
+
   tasks-check:
     # 要件: FR-002
     # 目的: tasks.mdの全タスク完了をチェック
@@ -77,6 +94,8 @@ jobs:
   cpp-tests:
     # C++ノードのビルドとテスト
     name: C++ Tests (Ubuntu)
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -88,11 +107,22 @@ jobs:
       - name: Setup C++ build environment
         uses: ./.github/actions/setup-cpp
 
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-test-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-test-
+
       - name: Configure C++ project
         run: cmake -S node -B node/build -DBUILD_TESTS=ON
 
       - name: Build C++ project
         run: cmake --build node/build --config Release
+
+      - name: Show ccache stats
+        run: ccache -s
 
       - name: Run C++ tests
         run: ctest --output-on-failure

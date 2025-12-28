@@ -34,6 +34,8 @@ register(format=...)  ───────▶    ModelStorage
   ├─ 形式確定                           ├─ ローカル配置検出
   ├─ 必須ファイル検証                    ├─ HF由来メタデータ検証
   └─ マニフェスト確定                    └─ ModelDescriptor生成
+                                           ├─ 共有パス or 外部ソース/プロキシ取得
+                                           └─ GPUバックエンドに応じた取得選択
                                            │
                                            ▼
                                     EngineRegistry

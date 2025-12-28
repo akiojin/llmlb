@@ -73,12 +73,14 @@ Router
   │  (必要なら chat_template をレンダリング)
   ▼
 Node
-  ├─ ModelStorage: ローカル配置 + config.json から ModelDescriptor を生成
+  ├─ ModelStorage/Resolver: manifest 参照 + config.json から ModelDescriptor を生成
+  │    ├─ 共有パス or 外部ソース/プロキシから取得
+  │    └─ GPUバックエンドに応じて必要アーティファクトを選択
   ├─ EngineRegistry: runtime を解決
   └─ Engine Host (Plugin Loader)
        └─ gpt-oss plugin: GPUで推論（通常/ストリーミング）
-            ├─ 優先1: 公式GPU最適化アーティファクト（allowlist対象、実行キャッシュ）
-            └─ 優先2: safetensors（index + shards）
+            ├─ 優先1: 公式GPU最適化アーティファクト（Metal向け、allowlist対象）
+            └─ 優先2: safetensors（index + shards, DirectML/Metal共通）
 ```
 
 ### 役割の分離

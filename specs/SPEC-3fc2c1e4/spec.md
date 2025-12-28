@@ -54,34 +54,37 @@
 ### 構成図（概念）
 
 ```
-┌──────────────┐            ┌───────────────────────────┐
-│  Router      │            │           Node            │
-│  - 登録/形式 │──manifest──▶  ModelStorage / Registry   │
-│  - HF検証    │            │  - config/tokenizer検証   │
-└──────────────┘            │  - safetensors/gguf解決    │
-                             │             │
-                             │             ▼
-                             │     EngineRegistry
-                             │  (RuntimeTypeで選択)
-                             │             │
-                             │             ▼
-                             │  Engine Host (Plugin Loader)
-                             │    ├─ GGUF → llama.cpp (plugin)
-                             │    ├─ TTS  → ONNX Runtime (plugin)
-                             │    └─ safetensors → 独自エンジン群 (plugins)
-                             │          ├─ gpt-oss
-                             │          ├─ nemotron
-                             │          └─ その他（Whisper/SD など）
-                             └───────────────────────────┘
+┌──────────────┐               ┌────────────────────────────────────┐
+│  Router      │               │                Node                │
+│  - 登録/形式 │──manifest────▶│  ModelStorage / Resolver            │
+│  - HF検証    │               │  - config/tokenizer検証             │
+└──────────────┘               │  - format/runtime確定               │
+                                │  - 必要アーティファクト選択         │
+                                │  - 共有パス or 外部ソース/プロキシ   │
+                                │             │
+                                │             ▼
+                                │     EngineRegistry
+                                │  (RuntimeTypeで選択)
+                                │             │
+                                │             ▼
+                                │  Engine Host (Plugin Loader)
+                                │    ├─ GGUF → llama.cpp (plugin)
+                                │    ├─ TTS  → ONNX Runtime (plugin)
+                                │    └─ safetensors → 独自エンジン群 (plugins)
+                                │          ├─ gpt-oss (Metal/DirectML)
+                                │          ├─ nemotron (TBD)
+                                │          └─ その他（Whisper/SD など）
+                                └────────────────────────────────────┘
 ```
 
 ### 主要コンポーネント
 
 - **Router**
   - 登録時に **形式（safetensors/gguf）を確定**し、HF metadata を検証する。
-  - 形式選択の結果を **manifest** として Node に配布する。
-- **Node / ModelStorage**
+  - 形式選択の結果を **manifest** として Node に配布する（ファイル一覧/由来）。
+- **Node / ModelStorage + Resolver**
   - 形式・ファイルの整合性（`config.json` / `tokenizer.json` / shard / index）を検証。
+  - GPUバックエンドに応じて **必要アーティファクトを選択**し、共有パス or 外部ソース/プロキシから取得する。
   - `ModelDescriptor` を生成（format / primary_path / runtime / capabilities）。
 - **EngineRegistry**
   - `RuntimeType` に基づき **外側の推論エンジンを確定**する。

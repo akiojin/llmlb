@@ -26,6 +26,7 @@
 ## Tests
 - [x] ModelStorage: safetensors/GGUF検出テスト
 - [x] Engine選択テスト
+- [x] EngineHost: プラグイン manifest 検証のTDD REDテスト
 
 ## Docs
 - [x] Nodeのモデル登録/選択仕様をREADMEに追記（metadata.jsonなし）

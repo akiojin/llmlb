@@ -6,6 +6,7 @@ set(UNIT_TEST_SOURCES
     model_storage_test.cpp
     inference_engine_test.cpp
     engine_registry_test.cpp
+    engine_host_test.cpp
     nemotron_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
@@ -30,6 +31,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
     ../../src/core/engine_registry.cpp
+    ../../src/core/engine_host.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp

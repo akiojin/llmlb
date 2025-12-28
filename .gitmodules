@@ -7,3 +7,9 @@
 [submodule "node/third_party/llama.cpp"]
 	path = node/third_party/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp.git
+[submodule "node/third_party/cpp-httplib"]
+	path = node/third_party/cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git
+[submodule "node/third_party/nlohmann-json"]
+	path = node/third_party/nlohmann-json
+	url = https://github.com/nlohmann/json.git

@@ -13,7 +13,7 @@
 - [x] Node: gpt-oss runtime 判定が `config.json` から確定すること（既存テストの拡張）。
 
 ## Integration Tests (RED)
-- [x] Node: sharded safetensors の欠損 shard を検出してロード失敗すること（REDテスト追加済み、実装待ち）。
+- [x] Node: sharded safetensors の欠損 shard を検出してロード失敗すること。
 - [x] Node: 必須メタデータ（config/tokenizer）不足時に未対応として扱うこと。
 
 ## E2E (RED)

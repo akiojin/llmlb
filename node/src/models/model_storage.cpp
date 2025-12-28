@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_map>
+#include <unordered_set>
 #include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
@@ -31,6 +32,38 @@ bool is_valid_file(const fs::path& path) {
 
 bool has_required_safetensors_metadata(const fs::path& model_dir) {
     return is_valid_file(model_dir / "config.json") && is_valid_file(model_dir / "tokenizer.json");
+}
+
+bool validate_safetensors_index_shards(const fs::path& model_dir, const fs::path& index_path) {
+    if (!is_valid_file(index_path)) return false;
+    try {
+        std::ifstream ifs(index_path);
+        nlohmann::json j;
+        ifs >> j;
+
+        if (!j.contains("weight_map") || !j["weight_map"].is_object()) {
+            return false;
+        }
+
+        const auto& weight_map = j["weight_map"];
+        std::unordered_set<std::string> shard_files;
+        for (auto it = weight_map.begin(); it != weight_map.end(); ++it) {
+            if (!it.value().is_string()) continue;
+            shard_files.insert(it.value().get<std::string>());
+        }
+
+        // Empty weight_map is allowed (e.g., placeholder index for tests).
+        for (const auto& shard : shard_files) {
+            const auto shard_path = model_dir / shard;
+            if (!is_valid_file(shard_path)) {
+                spdlog::warn("ModelStorage: missing safetensors shard: {}", shard_path.string());
+                return false;
+            }
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir) {
@@ -113,6 +146,9 @@ std::optional<fs::path> resolve_safetensors_primary_in_dir(const fs::path& model
     }
 
     if (index_files.size() == 1) {
+        if (!validate_safetensors_index_shards(model_dir, index_files[0])) {
+            return std::nullopt;
+        }
         return index_files[0];
     }
     if (!index_files.empty()) {

@@ -6,8 +6,6 @@ using llm_node::EngineHost;
 using llm_node::EnginePluginManifest;
 
 TEST(EngineHostTest, RejectsMissingEngineId) {
-    GTEST_SKIP() << "TDD RED: EngineHost manifest validation not yet implemented";
-
     EngineHost host;
     EnginePluginManifest manifest;
     manifest.engine_version = "0.1.0";
@@ -21,8 +19,6 @@ TEST(EngineHostTest, RejectsMissingEngineId) {
 }
 
 TEST(EngineHostTest, RejectsAbiMismatch) {
-    GTEST_SKIP() << "TDD RED: EngineHost manifest validation not yet implemented";
-
     EngineHost host;
     EnginePluginManifest manifest;
     manifest.engine_id = "llama_cpp";
@@ -37,8 +33,6 @@ TEST(EngineHostTest, RejectsAbiMismatch) {
 }
 
 TEST(EngineHostTest, AcceptsCompatibleManifest) {
-    GTEST_SKIP() << "TDD RED: EngineHost manifest validation not yet implemented";
-
     EngineHost host;
     EnginePluginManifest manifest;
     manifest.engine_id = "llama_cpp";

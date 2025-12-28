@@ -15,7 +15,8 @@
 
 ## Plugin Migration（追加）
 - [ ] EngineHost（プラグインローダー）を導入する
-- [ ] Engine ABI/manifest を定義し、互換性検証を実装する
+- [x] Engine ABI/manifest の必須項目・ABI一致を検証する
+- [ ] Engine ABI/manifest をJSONとして定義し、互換性検証を実装する
 - [ ] llama.cpp を plugin 化してロードできるようにする
 
 ## Integration
@@ -26,7 +27,7 @@
 ## Tests
 - [x] ModelStorage: safetensors/GGUF検出テスト
 - [x] Engine選択テスト
-- [x] EngineHost: プラグイン manifest 検証のTDD REDテスト
+- [x] EngineHost: プラグイン manifest 検証テスト
 
 ## Docs
 - [x] Nodeのモデル登録/選択仕様をREADMEに追記（metadata.jsonなし）

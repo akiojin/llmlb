@@ -10,7 +10,7 @@ use axum::{
 use llm_router::registry::models::{model_name_to_dir, router_models_dir, ModelInfo};
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::{ApiKeyScope, UserRole};
-use serde_json::json;
+use serde_json::{json, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
@@ -24,11 +24,52 @@ struct TestApp {
     admin_key: String,
 }
 
-// TDD RED: Node主導キャッシュのため、registry manifest に外部ソースURLが含まれること
+// Node主導キャッシュのため、registry manifest に外部ソースURLが含まれること
 #[tokio::test]
-#[ignore = "TDD RED: manifest origin urls not implemented yet"]
+#[serial]
 async fn registry_manifest_includes_origin_urls() {
-    unimplemented!("TDD RED: manifest should include origin URLs for node-managed caching");
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let model_name = "openai/gpt-oss-7b";
+    let repo = "openai/gpt-oss-7b";
+    let filename = "model.Q4_K_M.gguf";
+    let expected_url = format!("https://huggingface.co/{}/resolve/main/{}", repo, filename);
+
+    let base = router_models_dir().unwrap();
+    let dir = base.join(model_name_to_dir(model_name));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("model.gguf"), b"gguf test").unwrap();
+
+    let mut model = ModelInfo::new(model_name.to_string(), 0, repo.to_string(), 0, vec![]);
+    model.tags = vec!["gguf".into()];
+    model.repo = Some(repo.to_string());
+    model.filename = Some(filename.to_string());
+    model.download_url = Some(expected_url.clone());
+    model.status = Some("cached".into());
+    llm_router::api::models::upsert_registered_model(model);
+
+    let encoded = model_name.replace("/", "%2F");
+    let response = app
+        .oneshot(
+            admin_request(&admin_key)
+                .method("GET")
+                .uri(format!("/v0/models/registry/{}/manifest.json", encoded))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let v: Value = serde_json::from_slice(&body).unwrap();
+    let files = v.get("files").and_then(|f| f.as_array()).unwrap();
+    let entry = files
+        .iter()
+        .find(|f| f.get("name").and_then(|n| n.as_str()) == Some("model.gguf"))
+        .expect("model.gguf not found in manifest");
+    let url = entry.get("url").and_then(|u| u.as_str()).unwrap();
+    assert_eq!(url, expected_url);
 }
 
 async fn build_app() -> TestApp {

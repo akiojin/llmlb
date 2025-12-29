@@ -6,9 +6,12 @@
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 
 #include <spdlog/spdlog.h>
 
@@ -24,6 +27,119 @@ namespace fs = std::filesystem;
 namespace llm_node {
 
 namespace {
+bool is_safetensors_index_file(const fs::path& path) {
+    const std::string filename = path.filename().string();
+    const std::string suffix = ".safetensors.index.json";
+    if (filename.size() < suffix.size()) return false;
+    std::string lower = filename;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lower.rfind(suffix) == lower.size() - suffix.size();
+}
+
+std::optional<std::vector<std::string>> load_safetensors_index_shards(const fs::path& index_path) {
+    if (!fs::exists(index_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(index_path);
+        nlohmann::json j;
+        ifs >> j;
+
+        if (!j.contains("weight_map") || !j["weight_map"].is_object()) {
+            return std::nullopt;
+        }
+
+        const auto& weight_map = j["weight_map"];
+        std::unordered_set<std::string> shard_set;
+        for (auto it = weight_map.begin(); it != weight_map.end(); ++it) {
+            if (!it.value().is_string()) continue;
+            shard_set.insert(it.value().get<std::string>());
+        }
+        std::vector<std::string> shards(shard_set.begin(), shard_set.end());
+        std::sort(shards.begin(), shards.end());
+        return shards;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+bool validate_safetensors_files(const ModelDescriptor& descriptor, std::string& error) {
+    if (descriptor.format != "safetensors") return true;
+
+    fs::path model_dir = descriptor.model_dir.empty()
+                             ? fs::path(descriptor.primary_path).parent_path()
+                             : fs::path(descriptor.model_dir);
+    if (model_dir.empty()) {
+        error = "model_dir is required for safetensors models";
+        return false;
+    }
+
+    if (!fs::exists(model_dir / "config.json")) {
+        error = "config.json is required for safetensors models";
+        return false;
+    }
+    if (!fs::exists(model_dir / "tokenizer.json")) {
+        error = "tokenizer.json is required for safetensors models";
+        return false;
+    }
+
+    std::vector<std::string> shards;
+    std::optional<std::string> index_name;
+
+    if (descriptor.metadata && descriptor.metadata->contains("safetensors")) {
+        const auto& meta = (*descriptor.metadata)["safetensors"];
+        if (meta.contains("index") && meta["index"].is_string()) {
+            index_name = meta["index"].get<std::string>();
+        }
+        if (meta.contains("shards") && meta["shards"].is_array()) {
+            for (const auto& shard : meta["shards"]) {
+                if (shard.is_string()) {
+                    shards.push_back(shard.get<std::string>());
+                }
+            }
+        }
+    }
+
+    fs::path primary = descriptor.primary_path.empty()
+                           ? fs::path()
+                           : fs::path(descriptor.primary_path);
+
+    if (shards.empty()) {
+        if (!primary.empty() && is_safetensors_index_file(primary)) {
+            auto parsed = load_safetensors_index_shards(primary);
+            if (!parsed) {
+                error = "invalid safetensors index (missing weight_map)";
+                return false;
+            }
+            shards = *parsed;
+            if (!primary.filename().empty()) {
+                index_name = primary.filename().string();
+            }
+        } else if (!primary.empty()) {
+            shards.push_back(primary.filename().string());
+        }
+    }
+
+    if (index_name) {
+        const auto index_path = model_dir / *index_name;
+        if (!fs::exists(index_path)) {
+            error = "missing safetensors index: " + *index_name;
+            return false;
+        }
+    }
+
+    for (const auto& shard : shards) {
+        if (shard.empty()) continue;
+        const auto shard_path = model_dir / shard;
+        if (!fs::exists(shard_path)) {
+            error = "missing safetensors shard: " + shard;
+            return false;
+        }
+    }
+
+    return true;
+}
+
 std::string trim_copy(std::string s) {
     auto l = s.find_first_not_of(" \t\n\r");
     if (l == std::string::npos) return "";
@@ -180,6 +296,12 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     result.error_message = "gpt-oss engine requires Metal build (USE_GPTOSS)";
     return nullptr;
 #else
+    std::string validation_error;
+    if (!validate_safetensors_files(descriptor, validation_error)) {
+        result.success = false;
+        result.error_message = validation_error;
+        return nullptr;
+    }
     const fs::path model_dir(descriptor.model_dir);
     const fs::path model_bin = resolve_gptoss_metal_model_bin(model_dir);
     if (model_bin.empty()) {

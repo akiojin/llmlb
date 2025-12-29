@@ -44,8 +44,24 @@
   safetensors は推奨だが、自動選択は行わない。
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、登録時の形式選択を置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
-- **内蔵エンジンはプラグイン形式**: Node 本体は Engine Host とし、各エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能にする。
-- **ABI固定**: プラグインは C ABI で互換性を保証し、`abi_version` を必須とする。
+- **内蔵エンジンの要件は単一化**: 詳細は「内蔵エンジン要件（単一要件）」に統合済み。
+
+## 内蔵エンジン要件（単一要件）
+
+- **REQ-IE-001**: 内蔵エンジンは **RuntimeType/format/capabilities** に基づく単一の分類規約を持ち、  
+  LLM/Embedding（`LlamaCpp`,`GptOssCpp`,`NemotronCpp`）、ASR（`WhisperCpp`）、TTS（`OnnxRuntime`）、  
+  画像生成（`StableDiffusion`）、画像認識（新エンジン）として扱う。  
+  **内蔵エンジンの具体例**は llama.cpp / gpt-oss / nemotron / whisper.cpp / stable-diffusion.cpp / ONNX Runtime とする。  
+  併せて、次の条件を **1つの要件として**満たすこと:
+  - **プラグイン形式**: Node 本体は Engine Host とし、エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能。
+  - **ABI固定**: プラグインは C ABI で互換性を保証し、`abi_version` を必須とする。
+  - **選択ソース**: 登録時に確定した `format` と HF 由来メタデータ（`config.json` 等）を正とし、  
+    `metadata.json` のような独自メタデータには依存しない。
+  - **自動フォールバック禁止**: safetensors/GGUF が共存する場合は登録時の `format` 指定が必須で、  
+    実行時の形式切替は行わない。
+  - **GPU前提**: エンジンは GPU 前提（macOS=Metal / Windows=DirectML / Linux=Cudaは実験扱い）。
+  - **可否判定**: この分類は EngineRegistry/EngineHost および `/v1/models` の可否判定に反映され、  
+    **未対応カテゴリは登録対象から除外**される。
 
 ## 内蔵エンジンのアーキテクチャ（概念）
 

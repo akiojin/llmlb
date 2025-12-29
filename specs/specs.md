@@ -71,7 +71,7 @@
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | 🔨 |
 | `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | ✅ | P1 | ✅ |
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | 🔨 |
+| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
 
 ## 🛤️ ルーティング
@@ -149,7 +149,7 @@
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | 完了 |
 | `SPEC-d4eb8796` | ルーター認証・アクセス制御 | 完了 |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 実装中 |
+| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
 
 ### P2（重要）- 19件

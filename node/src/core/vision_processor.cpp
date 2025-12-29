@@ -167,11 +167,12 @@ std::optional<std::string> VisionProcessor::resolveMmprojPath(const std::string&
                                                               const std::string& model_path) const {
     const fs::path model_dir = fs::path(model_path).parent_path();
 
-    if (auto metadata = model_storage_.loadMetadata(model_name)) {
+    if (auto descriptor = model_storage_.resolveDescriptor(model_name); descriptor && descriptor->metadata) {
+        const auto& metadata = *descriptor->metadata;
         static const char* kKeys[] = {"mmproj_path", "mmproj", "mmproj_file"};
         for (const auto* key : kKeys) {
-            auto it = metadata->find(key);
-            if (it == metadata->end() || !it->is_string()) {
+            auto it = metadata.find(key);
+            if (it == metadata.end() || !it->is_string()) {
                 continue;
             }
             fs::path candidate = it->get<std::string>();

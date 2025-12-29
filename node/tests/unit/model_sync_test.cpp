@@ -310,6 +310,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     TempDirGuard dir;
     ModelDownloader dl("http://127.0.0.1:18110", dir.path.string());
     ModelSync sync("http://127.0.0.1:18110", dir.path.string());
+    sync.setOriginAllowlist({"127.0.0.1/*"});
 
     bool ok = sync.downloadModel(dl, "gpt-oss-prio", nullptr);
 

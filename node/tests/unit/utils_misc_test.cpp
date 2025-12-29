@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 
+#include "utils/allowlist.h"
 #include "utils/json_utils.h"
 #include "utils/logger.h"
 #include "utils/system_info.h"
@@ -42,6 +43,17 @@ TEST(JsonUtilsTest, HasRequiredKeysAndFallbacks) {
 
     EXPECT_EQ(get_or<int>(j, "port", 0), 8080);
     EXPECT_EQ(get_or<std::string>(j, "host", "localhost"), "localhost");
+}
+
+TEST(AllowlistTest, HuggingFaceHostMatchIsStrict) {
+    const std::vector<std::string> allowlist = {"openai/*"};
+
+    EXPECT_TRUE(isUrlAllowedByAllowlist(
+        "https://huggingface.co/openai/gpt-oss/resolve/main/model.gguf", allowlist));
+    EXPECT_FALSE(isUrlAllowedByAllowlist(
+        "https://huggingface.co.evil.com/openai/gpt-oss/resolve/main/model.gguf", allowlist));
+    EXPECT_FALSE(isUrlAllowedByAllowlist(
+        "https://example.com/openai/gpt-oss/resolve/main/model.gguf", allowlist));
 }
 
 TEST(SystemInfoTest, CollectProvidesBasicInfo) {

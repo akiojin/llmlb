@@ -24,6 +24,11 @@ inline std::string trimAscii(const std::string& s) {
     return s.substr(start, end - start);
 }
 
+inline bool endsWith(const std::string& value, const std::string& suffix) {
+    return value.size() >= suffix.size() &&
+           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 inline std::vector<std::string> splitAllowlistCsv(const std::string& csv) {
     std::vector<std::string> out;
     std::string cur;
@@ -104,8 +109,9 @@ inline ParsedUrl parseUrlSimple(const std::string& url) {
 
 inline std::string extractHfRepo(const std::string& host, const std::string& path) {
     const auto host_lower = toLowerAscii(host);
-    if (host_lower.size() < std::string("huggingface.co").size()) return "";
-    if (host_lower.find("huggingface.co") == std::string::npos) return "";
+    static const std::string hf_host = "huggingface.co";
+    static const std::string hf_suffix = ".huggingface.co";
+    if (host_lower != hf_host && !endsWith(host_lower, hf_suffix)) return "";
 
     if (path.empty() || path[0] != '/') return "";
     std::vector<std::string> segments;

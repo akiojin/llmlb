@@ -118,13 +118,11 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 ## 技術制約 *(該当する場合)*
 
 - 以下のGPUベンダーをサポート:
-  - **NVIDIA GPU**: NVML (NVIDIA Management Library) 経由で検出、またはデバイスファイル (`/dev/nvidia0`) で検出
-  - **Apple Silicon**: Metal API、`lscpu`コマンド、または `/proc/cpuinfo` で検出 (M1/M2/M3/M4シリーズ)
-  - **AMD GPU**: sysfs KFD Topology (`/sys/class/kfd/kfd/topology/nodes`) で検出（Linuxのみ）
-  - **Intel GPU**: sysinfo経由で検出（Linuxのみ）
-- Linux、Windows、macOS環境でのGPU検出をサポート
-- **Docker for Mac対応**: Linuxコンテナ内でもApple Siliconを自動検出（`lscpu`と`/proc/cpuinfo`を使用）
-- GPUベンダー検出の優先順位: 環境変数 → NVIDIA → AMD → Apple Silicon
+  - **Windows (DirectML/D3D12)**: DXGI/DirectML で検出（AMD/Intel/NVIDIA）
+  - **Apple Silicon**: Metal API で検出 (M1/M2/M3/M4シリーズ)
+  - **NVIDIA GPU (任意)**: NVML で詳細情報取得（能力スコア用）
+- **対応OS**: Windows / macOS（Linuxは当面非対応、CUDAは実験扱い）
+- GPUベンダー検出の優先順位: 環境変数 → DirectML(DXGI) → Metal → NVML
 
 ---
 
@@ -134,10 +132,9 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 
 - ノードマシンに何らかのGPU（NVIDIA/Apple/AMD/Intel）が搭載されている
 - 該当するGPUドライバーがインストールされている
-  - NVIDIA: NVIDIA GPU Driver + CUDA Toolkit
+  - Windows: DirectML/D3D12 対応ドライバー
   - Apple Silicon: macOS標準（Metal API）
-  - AMD: ROCm Driver（Linuxの場合）
-  - Intel: Intel GPU Driver
+  - NVIDIA: NVML が利用可能（能力スコア用、任意）
 - LLM runtimeがGPUを利用する設定になっている
 
 ---
@@ -147,10 +144,9 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 この機能は以下に依存します:
 
 - 各GPUベンダーのドライバーとツールキット
-  - NVIDIA: CUDA Toolkit / NVML
+  - Windows: DirectML/D3D12
   - Apple: Metal Framework (macOS標準)
-  - AMD: ROCm (Linuxのみ)
-  - Intel: Intel GPU Driver
+  - NVIDIA: NVML（能力スコア用）
 - ノード・ルーター間の通信プロトコル
 - データベースストレージ機能
 
@@ -194,10 +190,9 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 
 **サポートGPU**:
 
-- NVIDIA: NVML経由検出、能力スコア対応
+- Windows: DirectML/DXGI（AMD/Intel/NVIDIA）
 - Apple Silicon: Metal API検出（M1/M2/M3/M4）
-- AMD: sysfs KFD検出（Linuxのみ）
-- Intel: sysinfo検出（Linuxのみ）
+- NVIDIA: NVML経由検出、能力スコア対応
 
 **エッジケースの確認**:
 

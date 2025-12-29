@@ -5,7 +5,7 @@
 use crate::{
     convert::ConvertStatus,
     db::models::ModelStorage,
-    registry::models::{generate_model_id, router_model_path, router_model_path_any, ModelInfo},
+    registry::models::{extract_repo_id, generate_model_id, router_model_path, ModelInfo},
     registry::NodeRegistry,
     supported_models::{find_supported_model, get_supported_models, SupportedModel},
     AppState,
@@ -455,6 +455,7 @@ pub async fn pull_model(
         .convert_manager
         .enqueue(
             supported_model.repo.clone(),
+            ModelArtifactFormat::Gguf,
             supported_model.recommended_filename.clone(),
             None, // revision
             None, // quantization
@@ -584,7 +585,15 @@ pub async fn sync_registered_models(registry: &NodeRegistry, pool: &SqlitePool) 
     // 4. ファイル存在チェック
     let mut missing_files = Vec::new();
     for model in list_registered_models() {
-        if router_model_path(&model.name).is_none() {
+        let exists = model
+            .path
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|path| crate::registry::models::is_valid_model_file(path))
+            .is_some()
+            || router_model_path(&model.name).is_some();
+
+        if !exists {
             missing_files.push(model.name.clone());
         }
     }
@@ -644,14 +653,647 @@ pub fn start_periodic_sync(registry: NodeRegistry, pool: SqlitePool) {
     });
 }
 
-// NOTE: GGUF Discovery Cache は SPEC-6cd7f960 で廃止されました
+// ===== GGUF Discovery Cache =====
+
+/// GGUF版検索結果
+#[derive(Debug, Clone, Serialize)]
+pub struct GgufDiscoveryResult {
+    /// リポジトリ名 (例: ggml-org/gpt-oss-20b-GGUF)
+    pub repo: String,
+    /// プロバイダー名 (例: ggml-org)
+    pub provider: String,
+    /// 信頼プロバイダーかどうか
+    pub trusted: bool,
+    /// 利用可能なGGUFファイル
+    pub files: Vec<GgufFileInfo>,
+}
+
+/// GGUFファイル情報
+#[derive(Debug, Clone, Serialize)]
+pub struct GgufFileInfo {
+    /// ファイル名
+    pub filename: String,
+    /// ファイルサイズ（バイト）
+    pub size_bytes: u64,
+    /// 量子化タイプ（推測）
+    pub quantization: Option<String>,
+}
+
+#[derive(Clone)]
+struct GgufDiscoveryCache {
+    fetched_at: Instant,
+    results: Vec<GgufDiscoveryResult>,
+}
+
+static GGUF_DISCOVERY_CACHE: Lazy<RwLock<HashMap<String, GgufDiscoveryCache>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+const GGUF_DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// 信頼できるGGUFプロバイダーの優先順位
+const TRUSTED_PROVIDERS: &[&str] = &[
+    "ggml-org",
+    "bartowski",
+    "lmstudio-community",
+    "unsloth",
+    "TheBloke",
+];
+
+/// サポートする量子化タイプ（API/UI共通）
+const SUPPORTED_QUANTIZATION_LABELS: &[&str] = &[
+    "BF16", "F32", "F16", "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "Q4_K_M", "Q4_K_S", "Q4_0",
+    "MXFP4", "Q3_K_M", "Q3_K_S", "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M",
+];
+
+pub(crate) fn normalize_quantization_label(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    for label in SUPPORTED_QUANTIZATION_LABELS {
+        if label.eq_ignore_ascii_case(trimmed) {
+            return Some((*label).to_string());
+        }
+    }
+    None
+}
+
+async fn fetch_repo_siblings(
+    http_client: &reqwest::Client,
+    repo: &str,
+) -> Result<Vec<HfSibling>, RouterError> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/api/models/{}?expand=siblings", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Failed to fetch specified repository".into(),
+        )));
+    }
+    #[derive(Deserialize)]
+    struct RepoDetail {
+        siblings: Vec<HfSibling>,
+    }
+    let detail: RepoDetail = resp
+        .json()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+    Ok(detail.siblings)
+}
+
+fn is_gguf_filename(filename: &str) -> bool {
+    filename.to_ascii_lowercase().ends_with(".gguf")
+}
+
+fn is_safetensors_index_filename(filename: &str) -> bool {
+    filename
+        .to_ascii_lowercase()
+        .ends_with(".safetensors.index.json")
+}
+
+fn is_safetensors_filename(filename: &str) -> bool {
+    let lower = filename.to_ascii_lowercase();
+    lower.ends_with(".safetensors") || lower.ends_with(".safetensors.index.json")
+}
+
+fn sibling_size_bytes(s: &HfSibling) -> u64 {
+    s.size
+        .or_else(|| s.lfs.as_ref().and_then(|l| l.size))
+        .unwrap_or(0)
+}
+
+fn has_sibling(siblings: &[HfSibling], filename: &str) -> bool {
+    siblings.iter().any(|s| s.rfilename == filename)
+}
+
+fn require_safetensors_metadata_files(siblings: &[HfSibling]) -> Result<(), RouterError> {
+    let has_config = has_sibling(siblings, "config.json");
+    let has_tokenizer = has_sibling(siblings, "tokenizer.json");
+    if !has_config || !has_tokenizer {
+        return Err(RouterError::Common(CommonError::Validation(
+            "config.json and tokenizer.json are required for safetensors models".into(),
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManifestFormat {
+    Gguf,
+    Safetensors,
+    Unknown,
+}
+
+#[derive(Serialize)]
+struct ManifestFile {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtimes: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct Manifest {
+    files: Vec<ManifestFile>,
+}
+
+fn resolve_manifest_format(model_name: &str, dir: &std::path::Path) -> ManifestFormat {
+    if let Some(model) = list_registered_models()
+        .into_iter()
+        .find(|m| m.name == model_name)
+    {
+        if model.tags.iter().any(|t| t == "gguf") {
+            return ManifestFormat::Gguf;
+        }
+        if model.tags.iter().any(|t| t == "safetensors") {
+            return ManifestFormat::Safetensors;
+        }
+    }
+
+    if dir.join("model.gguf").exists() {
+        return ManifestFormat::Gguf;
+    }
+
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_safetensors_filename(&name) {
+                return ManifestFormat::Safetensors;
+            }
+        }
+    }
+
+    ManifestFormat::Unknown
+}
+
+fn should_include_manifest_file(format: ManifestFormat, name: &str) -> bool {
+    match format {
+        ManifestFormat::Gguf => name == "model.gguf",
+        ManifestFormat::Safetensors => {
+            name == "config.json"
+                || name == "tokenizer.json"
+                || name == "model.metal.bin"
+                || is_safetensors_filename(name)
+        }
+        ManifestFormat::Unknown => true,
+    }
+}
+
+fn manifest_file_priority(name: &str) -> Option<i32> {
+    match name {
+        "config.json" | "tokenizer.json" => Some(10),
+        _ if is_safetensors_index_filename(name) => Some(5),
+        "model.metal.bin" => Some(5),
+        _ => None,
+    }
+}
+
+fn build_registry_manifest_files(
+    dir: &std::path::Path,
+    format: ManifestFormat,
+    runtime_hint: Option<&Vec<String>>,
+) -> Vec<ManifestFile> {
+    let mut files: Vec<ManifestFile> = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return files;
+    };
+
+    for entry in rd.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !should_include_manifest_file(format, &name) {
+            continue;
+        }
+
+        let priority = manifest_file_priority(&name);
+        files.push(ManifestFile {
+            name,
+            priority,
+            runtimes: runtime_hint.cloned(),
+        });
+    }
+
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+fn resolve_safetensors_primary(
+    siblings: &[HfSibling],
+    requested: Option<String>,
+) -> Result<String, RouterError> {
+    if let Some(filename) = requested {
+        if !is_safetensors_filename(&filename) {
+            return Err(RouterError::Common(CommonError::Validation(
+                "filename must be a safetensors or safetensors index file".into(),
+            )));
+        }
+        if !has_sibling(siblings, &filename) {
+            return Err(RouterError::Common(CommonError::Validation(
+                "Specified safetensors file not found in repository".into(),
+            )));
+        }
+        return Ok(filename);
+    }
+
+    let index_files: Vec<_> = siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .filter(|f| is_safetensors_index_filename(f))
+        .collect();
+    if index_files.len() == 1 {
+        return Ok(index_files[0].clone());
+    }
+    if index_files.len() > 1 {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Multiple safetensors index files found; specify filename".into(),
+        )));
+    }
+
+    let st_files: Vec<_> = siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .filter(|f| {
+            // .safetensors だが index は除外
+            f.to_ascii_lowercase().ends_with(".safetensors") && !is_safetensors_index_filename(f)
+        })
+        .collect();
+    if st_files.len() == 1 {
+        return Ok(st_files[0].clone());
+    }
+    if st_files.is_empty() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "No safetensors file found in repository".into(),
+        )));
+    }
+    Err(RouterError::Common(CommonError::Validation(
+        "Multiple safetensors files found; specify filename".into(),
+    )))
+}
+
+fn gguf_quality_rank(label: &str) -> u32 {
+    match label {
+        "F32" => 0,
+        "BF16" => 1,
+        "F16" => 2,
+        "Q8_0" => 3,
+        "Q6_K" => 4,
+        "Q5_K_M" => 5,
+        "Q5_K_S" => 6,
+        "Q5_0" => 7,
+        "Q4_K_M" => 8,
+        "Q4_K_S" => 9,
+        "Q4_0" => 10,
+        "MXFP4" => 11,
+        "Q3_K_M" => 12,
+        "Q3_K_S" => 13,
+        "Q2_K" => 14,
+        "IQ4_XS" => 15,
+        "IQ3_M" => 16,
+        "IQ2_M" => 17,
+        _ => 999,
+    }
+}
+
+fn gguf_speed_acceptable(label: &str) -> bool {
+    matches!(
+        label,
+        "F32"
+            | "BF16"
+            | "F16"
+            | "Q8_0"
+            | "Q6_K"
+            | "Q5_K_M"
+            | "Q5_K_S"
+            | "Q5_0"
+            | "Q4_K_M"
+            | "Q4_K_S"
+            | "Q4_0"
+            | "MXFP4"
+    )
+}
+
+fn resolve_gguf_by_policy(
+    siblings: &[HfSibling],
+    policy: GgufSelectionPolicy,
+) -> Result<String, RouterError> {
+    let ggufs: Vec<_> = siblings
+        .iter()
+        .filter(|s| is_gguf_filename(&s.rfilename))
+        .collect();
+    if ggufs.is_empty() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "No GGUF file found in repository".into(),
+        )));
+    }
+
+    let selected = match policy {
+        GgufSelectionPolicy::Quality => ggufs
+            .iter()
+            .min_by(|a, b| {
+                let qa = extract_quantization(&a.rfilename)
+                    .map(|q| gguf_quality_rank(&q))
+                    .unwrap_or(999);
+                let qb = extract_quantization(&b.rfilename)
+                    .map(|q| gguf_quality_rank(&q))
+                    .unwrap_or(999);
+                qa.cmp(&qb)
+                    // 同rankならサイズが大きい方を優先（高精度の可能性）
+                    .then_with(|| sibling_size_bytes(b).cmp(&sibling_size_bytes(a)))
+                    .then_with(|| a.rfilename.cmp(&b.rfilename))
+            })
+            .copied()
+            .unwrap(),
+        GgufSelectionPolicy::Memory => ggufs
+            .iter()
+            .min_by(|a, b| {
+                sibling_size_bytes(a)
+                    .cmp(&sibling_size_bytes(b))
+                    .then_with(|| a.rfilename.cmp(&b.rfilename))
+            })
+            .copied()
+            .unwrap(),
+        GgufSelectionPolicy::Speed => {
+            let mut candidates: Vec<_> = ggufs
+                .iter()
+                .filter(|s| {
+                    extract_quantization(&s.rfilename)
+                        .map(|q| gguf_speed_acceptable(&q))
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
+            if candidates.is_empty() {
+                candidates = ggufs.clone();
+            }
+            candidates
+                .iter()
+                .min_by(|a, b| {
+                    sibling_size_bytes(a)
+                        .cmp(&sibling_size_bytes(b))
+                        .then_with(|| a.rfilename.cmp(&b.rfilename))
+                })
+                .copied()
+                .unwrap()
+        }
+    };
+
+    Ok(selected.rfilename.clone())
+}
+
+/// リポジトリ内のGGUFファイルを量子化指定で解決
+async fn resolve_quantized_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+    quantization: &str,
+) -> Result<String, RouterError> {
+    let siblings = fetch_repo_siblings(http_client, repo).await?;
+    let filename = siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| {
+            if !f.to_ascii_lowercase().ends_with(".gguf") {
+                return false;
+            }
+            match extract_quantization(f) {
+                Some(q) => q == quantization,
+                None => false,
+            }
+        })
+        .ok_or_else(|| {
+            RouterError::Common(CommonError::Validation(
+                "No GGUF file found for specified quantization".into(),
+            ))
+        })?;
+    Ok(filename)
+}
+
+/// HuggingFaceのtokenizer_config.jsonからchat_templateを取得
+async fn fetch_chat_template_from_hf(http_client: &reqwest::Client, repo: &str) -> Option<String> {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/{}/resolve/main/tokenizer_config.json", base_url, repo);
+
+    let mut req = http_client.get(&url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                let template = json
+                    .get("chat_template")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                if template.is_some() {
+                    tracing::info!(repo = %repo, "chat_template fetched from tokenizer_config.json");
+                }
+                template
+            } else {
+                tracing::debug!(repo = %repo, "Failed to parse tokenizer_config.json");
+                None
+            }
+        }
+        Ok(resp) => {
+            tracing::debug!(repo = %repo, status = ?resp.status(), "tokenizer_config.json not found");
+            None
+        }
+        Err(e) => {
+            tracing::debug!(repo = %repo, error = %e, "Failed to fetch tokenizer_config.json");
+            None
+        }
+    }
+}
+
+/// モデル名からGGUF版を検索
+async fn discover_gguf_versions_impl(
+    http_client: &reqwest::Client,
+    base_model_name: &str,
+) -> Result<Vec<GgufDiscoveryResult>, RouterError> {
+    // キャッシュチェック
+    {
+        let cache = GGUF_DISCOVERY_CACHE.read().unwrap();
+        if let Some(entry) = cache.get(base_model_name) {
+            if entry.fetched_at.elapsed() < GGUF_DISCOVERY_CACHE_TTL {
+                return Ok(entry.results.clone());
+            }
+        }
+    }
+
+    // モデル名を正規化 (org/model -> model)
+    let search_name = base_model_name
+        .split('/')
+        .next_back()
+        .unwrap_or(base_model_name);
+
+    // HuggingFace APIでGGUF版を検索
+    let token = std::env::var("HF_TOKEN").ok();
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+
+    // library=gguf で検索
+    let url = format!(
+        "{}/api/models?library=gguf&search={}&limit=50&expand=siblings",
+        base_url, search_name
+    );
+
+    let mut req = http_client.get(&url);
+    if let Some(t) = &token {
+        req = req.bearer_auth(t);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    if !resp.status().is_success() {
+        // キャッシュがあればそれを返す
+        let cache = GGUF_DISCOVERY_CACHE.read().unwrap();
+        if let Some(entry) = cache.get(base_model_name) {
+            return Ok(entry.results.clone());
+        }
+        return Err(RouterError::Http(format!(
+            "HF API returned {}",
+            resp.status()
+        )));
+    }
+
+    let models: Vec<HfModel> = resp
+        .json()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    let mut results: Vec<GgufDiscoveryResult> = Vec::new();
+
+    for model in models {
+        let provider = model.model_id.split('/').next().unwrap_or("").to_string();
+        let trusted = TRUSTED_PROVIDERS.contains(&provider.as_str());
+
+        // GGUFファイルを抽出
+        let gguf_files: Vec<GgufFileInfo> = model
+            .siblings
+            .iter()
+            .filter(|s| s.rfilename.to_lowercase().ends_with(".gguf"))
+            .map(|s| {
+                let size = s
+                    .lfs
+                    .as_ref()
+                    .and_then(|l| l.size)
+                    .unwrap_or(s.size.unwrap_or(0));
+                let quantization = extract_quantization(&s.rfilename);
+                GgufFileInfo {
+                    filename: s.rfilename.clone(),
+                    size_bytes: size,
+                    quantization,
+                }
+            })
+            .collect();
+
+        if !gguf_files.is_empty() {
+            results.push(GgufDiscoveryResult {
+                repo: model.model_id.clone(),
+                provider,
+                trusted,
+                files: gguf_files,
+            });
+        }
+    }
+
+    // 信頼プロバイダー順にソート
+    results.sort_by(|a, b| {
+        let a_priority = TRUSTED_PROVIDERS
+            .iter()
+            .position(|&p| p == a.provider)
+            .unwrap_or(usize::MAX);
+        let b_priority = TRUSTED_PROVIDERS
+            .iter()
+            .position(|&p| p == b.provider)
+            .unwrap_or(usize::MAX);
+        a_priority.cmp(&b_priority)
+    });
+
+    // キャッシュに保存
+    {
+        let mut cache = GGUF_DISCOVERY_CACHE.write().unwrap();
+        cache.insert(
+            base_model_name.to_string(),
+            GgufDiscoveryCache {
+                fetched_at: Instant::now(),
+                results: results.clone(),
+            },
+        );
+    }
+
+    Ok(results)
+}
+
+/// ファイル名から量子化タイプを推測
+fn extract_quantization(filename: &str) -> Option<String> {
+    let upper = filename.to_uppercase();
+    for label in SUPPORTED_QUANTIZATION_LABELS {
+        if upper.contains(label) {
+            return Some((*label).to_string());
+        }
+    }
+    None
+}
 
 /// 登録モデルのインメモリキャッシュをクリア（テスト用）
 pub fn clear_registered_models() {
     *REGISTERED_MODELS.write().unwrap() = Vec::new();
 }
 
-// NOTE: HfSibling, HfLfs, HfModel は SPEC-6cd7f960 で廃止されました
+/// HFリポジトリのsiblings情報
+#[derive(Deserialize)]
+struct HfSibling {
+    #[serde(rename = "rfilename")]
+    rfilename: String,
+    /// ファイルサイズ（オプション）
+    #[serde(default)]
+    size: Option<u64>,
+    /// LFS情報（オプション）
+    lfs: Option<HfLfs>,
+}
+
+/// HF LFS情報
+#[derive(Deserialize)]
+struct HfLfs {
+    /// ファイルサイズ
+    size: Option<u64>,
+}
+
+/// HFモデル情報（discover_gguf_versions用）
+#[derive(Deserialize)]
+struct HfModel {
+    /// モデルID (例: "bartowski/Qwen2.5-7B-Instruct-GGUF")
+    #[serde(rename = "id", alias = "modelId")]
+    model_id: String,
+    /// ファイル一覧
+    #[serde(default)]
+    siblings: Vec<HfSibling>,
+}
 
 /// Axum用のエラーレスポンス型
 #[derive(Debug)]
@@ -689,8 +1331,377 @@ impl IntoResponse for AppError {
     }
 }
 
-// NOTE: POST /v0/models/register は SPEC-6cd7f960 で廃止されました。
-// 新しいモデル登録は /v0/models/pull を使用してください。
+// NOTE: GET /v0/models/available は廃止されました。
+// HFカタログは直接 https://huggingface.co を参照してください。
+
+#[derive(Deserialize)]
+/// HFモデル登録リクエスト
+pub struct RegisterModelRequest {
+    /// HFリポジトリ名 (e.g., TheBloke/Llama-2-7B-GGUF)
+    pub repo: String,
+    /// 登録するモデル形式（HF上に safetensors/GGUF の両方がある場合は必須）
+    #[serde(default)]
+    pub format: Option<ModelArtifactFormat>,
+    /// ファイル名 (e.g., llama-2-7b.Q4_K_M.gguf)
+    pub filename: Option<String>,
+    /// 量子化指定（例: Q4_K_M）
+    ///
+    /// NOTE: `format=gguf` で `filename` 未指定の場合は `gguf_policy` を推奨。
+    #[serde(default)]
+    pub quantization: Option<String>,
+    /// GGUFの選択ポリシー（`format=gguf` かつ `filename` 未指定の場合に使用）
+    #[serde(default)]
+    pub gguf_policy: Option<GgufSelectionPolicy>,
+    /// 表示名（任意）
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// オプションのchat_template（GGUFに含まれない場合の補助）
+    #[serde(default)]
+    pub chat_template: Option<String>,
+}
+
+/// モデルアーティファクト形式（登録時に選択）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelArtifactFormat {
+    /// Hugging Face の safetensors（config/tokenizer を含むスナップショット）
+    Safetensors,
+    /// GGUF（llama.cpp 用）
+    Gguf,
+}
+
+/// GGUF siblings からの選択ポリシー
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GgufSelectionPolicy {
+    /// 高品質を優先（F32/BF16/F16/Q8/Q6... の順）
+    Quality,
+    /// 省メモリを優先（ファイルサイズ最小）
+    Memory,
+    /// 速度優先（実用的な量子化から小さめを選択）
+    Speed,
+}
+
+async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if required_memory == 0 {
+        return warnings;
+    }
+
+    let nodes = registry.list().await;
+    let mut memories: Vec<u64> = Vec::new();
+    for node in nodes {
+        for device in node.gpu_devices {
+            if let Some(mem) = device.memory {
+                memories.push(mem);
+            }
+        }
+    }
+
+    if memories.is_empty() {
+        warnings.push("No GPU memory info available from registered nodes".into());
+        return warnings;
+    }
+
+    let max_mem = *memories.iter().max().unwrap();
+    if required_memory > max_mem {
+        warnings.push(format!(
+            "Model requires {:.1}GB but max node GPU memory is {:.1}GB",
+            required_memory as f64 / (1024.0 * 1024.0 * 1024.0),
+            max_mem as f64 / (1024.0 * 1024.0 * 1024.0),
+        ));
+    }
+
+    warnings
+}
+
+/// POST /v0/models/register - HF GGUFを対応モデルに登録
+///
+/// 方針:
+/// - HFリポジトリ内に safetensors/GGUF の両方がある場合は、登録時に `format` が必須
+/// - safetensors を選んだ場合は、`config.json` / `tokenizer.json` を必須とし、weights(safetensors)をキャッシュする
+/// - GGUF を選んだ場合は、GGUFファイルをキャッシュする（`filename` 未指定なら `gguf_policy` で選択）
+pub async fn register_model(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterModelRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    // URLからrepo_idを抽出（フルURLが渡された場合はrepo_id形式に正規化）
+    let repo = extract_repo_id(&req.repo);
+
+    if req.gguf_policy.is_some() && req.quantization.is_some() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Specify either gguf_policy or quantization, not both".into(),
+        ))
+        .into());
+    }
+
+    let quantization = match req.quantization.as_deref() {
+        Some(q) => Some(normalize_quantization_label(q).ok_or_else(|| {
+            RouterError::Common(CommonError::Validation("Invalid quantization label".into()))
+        })?),
+        None => None,
+    };
+
+    let siblings = fetch_repo_siblings(&state.http_client, &repo).await?;
+    let has_gguf = siblings.iter().any(|s| is_gguf_filename(&s.rfilename));
+    let has_safetensors = siblings
+        .iter()
+        .any(|s| is_safetensors_filename(&s.rfilename));
+
+    if !has_gguf && !has_safetensors {
+        return Err(RouterError::Common(CommonError::Validation(
+            "No supported model artifacts found (safetensors/gguf)".into(),
+        ))
+        .into());
+    }
+
+    if has_gguf && has_safetensors && req.format.is_none() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "format is required when both safetensors and gguf exist in the repository".into(),
+        ))
+        .into());
+    }
+
+    let format = req.format.unwrap_or(if has_safetensors {
+        ModelArtifactFormat::Safetensors
+    } else {
+        ModelArtifactFormat::Gguf
+    });
+
+    let filename = match format {
+        ModelArtifactFormat::Gguf => {
+            if !has_gguf {
+                return Err(RouterError::Common(CommonError::Validation(
+                    "GGUF not found in repository".into(),
+                ))
+                .into());
+            }
+
+            match req.filename.clone() {
+                Some(f) => {
+                    if !is_gguf_filename(&f) {
+                        return Err(RouterError::Common(CommonError::Validation(
+                            "filename must be a gguf file when format=gguf".into(),
+                        ))
+                        .into());
+                    }
+                    if !has_sibling(&siblings, &f) {
+                        return Err(RouterError::Common(CommonError::Validation(
+                            "Specified GGUF file not found in repository".into(),
+                        ))
+                        .into());
+                    }
+                    if let Some(q) = quantization.as_deref() {
+                        let detected = extract_quantization(&f);
+                        if detected.as_deref() != Some(q) {
+                            return Err(RouterError::Common(CommonError::Validation(
+                                "Quantization does not match filename".into(),
+                            ))
+                            .into());
+                        }
+                    }
+                    f
+                }
+                None => {
+                    if let Some(q) = quantization.as_deref() {
+                        // legacy: quantization指定あり → 一致するGGUFを選択
+                        resolve_quantized_gguf_in_repo(&state.http_client, &repo, q).await?
+                    } else {
+                        let policy = req.gguf_policy.ok_or_else(|| {
+                            RouterError::Common(CommonError::Validation(
+                                "gguf_policy is required when filename is not specified (format=gguf)".into(),
+                            ))
+                        })?;
+                        resolve_gguf_by_policy(&siblings, policy)?
+                    }
+                }
+            }
+        }
+        ModelArtifactFormat::Safetensors => {
+            if !has_safetensors {
+                return Err(RouterError::Common(CommonError::Validation(
+                    "safetensors not found in repository".into(),
+                ))
+                .into());
+            }
+            require_safetensors_metadata_files(&siblings)?;
+            resolve_safetensors_primary(&siblings, req.filename.clone())?
+        }
+    };
+
+    register_model_internal(
+        &state,
+        &repo,
+        format,
+        &filename,
+        quantization.clone(),
+        req.display_name.clone(),
+        req.chat_template.clone(),
+    )
+    .await
+}
+
+/// モデル登録の内部実装
+async fn register_model_internal(
+    state: &AppState,
+    repo: &str,
+    format: ModelArtifactFormat,
+    filename: &str,
+    quantization: Option<String>,
+    _display_name: Option<String>,
+    chat_template: Option<String>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
+    let name = generate_model_id(repo);
+
+    // 重複チェック：登録済みモデルまたは処理中タスクに同じリポジトリがあればエラー
+    if find_model_by_name(&name).is_some() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Model already registered".into(),
+        ))
+        .into());
+    }
+    if state.convert_manager.has_task_for_repo(repo).await {
+        return Err(RouterError::Common(CommonError::Validation(
+            "Model already registered".into(),
+        ))
+        .into());
+    }
+
+    // chat_template: ユーザー指定がなければHFのtokenizer_config.jsonから自動取得
+    let chat_template = if chat_template.is_some() {
+        chat_template
+    } else {
+        fetch_chat_template_from_hf(&state.http_client, repo).await
+    };
+
+    // 事前に概算サイズ（HF siblingsのsize情報がある場合）を推定して警告を出す
+    let (content_length, required_memory, warnings) = {
+        let siblings = fetch_repo_siblings(&state.http_client, repo).await?;
+
+        let (size_bytes, required_memory) = match format {
+            ModelArtifactFormat::Gguf => {
+                let size = siblings
+                    .iter()
+                    .find(|s| s.rfilename == filename)
+                    .map(sibling_size_bytes)
+                    .unwrap_or(0);
+                const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+                let required = if size > 0 {
+                    ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64
+                } else {
+                    0
+                };
+                (size, required)
+            }
+            ModelArtifactFormat::Safetensors => {
+                // index + shards を前提に、safetensorsファイル群の合計サイズを推定
+                let total = siblings
+                    .iter()
+                    .filter(|s| s.rfilename.to_ascii_lowercase().ends_with(".safetensors"))
+                    .map(sibling_size_bytes)
+                    .sum::<u64>();
+                const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+                let required = if total > 0 {
+                    ((total as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64
+                } else {
+                    0
+                };
+                (total, required)
+            }
+        };
+
+        let warnings = compute_gpu_warnings(&state.registry, required_memory).await;
+        (size_bytes, required_memory, warnings)
+    };
+
+    // NOTE: モデル登録は ConvertTask 完了時に finalize_model_registration() で行う
+    // ここでは REGISTERED_MODELS に追加しない（UI上の重複を防ぐため）
+
+    // コンバートキューへ投入（GGUFは即完了、非GGUFはconvert）
+    // 重複チェックのためenqueueはawaitして、タスクがキューに追加されてからレスポンスを返す
+    state
+        .convert_manager
+        .enqueue(
+            repo.to_string(),
+            format,
+            filename.to_string(),
+            None,
+            quantization.clone(),
+            chat_template.clone(),
+        )
+        .await;
+
+    tracing::info!(
+        repo = %repo,
+        format = ?format,
+        filename = %filename,
+        size_bytes = content_length,
+        required_memory_bytes = required_memory,
+        warnings = warnings.len(),
+        "hf_model_registered"
+    );
+
+    let response = serde_json::json!({
+        "name": name,
+        "status": "registered",
+        "format": format,
+        "filename": filename,
+        "size_bytes": content_length,
+        "required_memory_bytes": required_memory,
+        "warnings": warnings,
+    });
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[derive(Deserialize)]
+/// /v0/models/discover-gguf リクエスト
+pub struct DiscoverGgufRequest {
+    /// 検索対象のモデル名（HF repo または URL）
+    pub model: String,
+}
+
+#[derive(Serialize)]
+/// /v0/models/discover-gguf レスポンス
+pub struct DiscoverGgufResponse {
+    /// 正規化後のベースモデル名
+    pub base_model: String,
+    /// 見つかった GGUF 代替候補
+    pub gguf_alternatives: Vec<GgufDiscoveryResult>,
+    /// キャッシュヒットかどうか
+    pub cached: bool,
+}
+
+/// POST /v0/models/discover-gguf - HF repo から GGUF 版を探索
+pub async fn discover_gguf_versions(
+    State(state): State<AppState>,
+    Json(req): Json<DiscoverGgufRequest>,
+) -> Result<(StatusCode, Json<DiscoverGgufResponse>), AppError> {
+    if req.model.trim().is_empty() {
+        return Err(
+            RouterError::Common(CommonError::Validation("model is required".into())).into(),
+        );
+    }
+
+    let base_model = extract_repo_id(&req.model);
+    let cached = {
+        let cache = GGUF_DISCOVERY_CACHE.read().unwrap();
+        cache
+            .get(&base_model)
+            .map(|entry| entry.fetched_at.elapsed() < GGUF_DISCOVERY_CACHE_TTL)
+            .unwrap_or(false)
+    };
+
+    let results = discover_gguf_versions_impl(&state.http_client, &base_model).await?;
+    let response = DiscoverGgufResponse {
+        base_model,
+        gguf_alternatives: results,
+        cached,
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
 
 /// DELETE /v0/models/:model_name - 登録モデル削除
 ///
@@ -718,20 +1729,12 @@ pub async fn delete_model(
     // 2. 登録モデルを削除
     let removed = remove_registered_model(&model_name);
 
-    // 3. ファイルを削除
-    if let Some(path) = router_model_path_any(&model_name) {
-        if path.exists() {
-            if let Err(e) = std::fs::remove_file(&path) {
-                tracing::warn!("Failed to remove model file {}: {}", path.display(), e);
-            }
-            if let Some(parent) = path.parent() {
-                if let Err(e) = std::fs::remove_dir_all(parent) {
-                    tracing::warn!(
-                        "Failed to remove model directory {}: {}",
-                        parent.display(),
-                        e
-                    );
-                }
+    // 3. ルーター側キャッシュ（モデルディレクトリ）を削除
+    if let Some(base) = crate::registry::models::router_models_dir() {
+        let dir = base.join(crate::registry::models::model_name_to_dir(&model_name));
+        if dir.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&dir) {
+                tracing::warn!("Failed to remove model directory {}: {}", dir.display(), e);
             }
         }
     }
@@ -745,8 +1748,6 @@ pub async fn delete_model(
         Err(RouterError::Common(CommonError::Validation("model not found".into())).into())
     }
 }
-
-// NOTE: POST /v0/models/discover-gguf は SPEC-6cd7f960 で廃止されました。
 
 /// GET /v0/models/blob/{model_name} - モデルファイル（GGUF）をストリーミング配信
 ///
@@ -829,9 +1830,168 @@ pub async fn get_model_blob(Path(model_name): Path<String>) -> axum::response::R
         .unwrap()
 }
 
+/// GET /v0/models/registry/:model_name/manifest.json - モデル配布マニフェスト
+///
+/// Node がモデルを複数ファイル（safetensors + metadata）として取得するためのマニフェスト。
+pub async fn get_model_registry_manifest(
+    Path(model_name): Path<String>,
+) -> axum::response::Response {
+    use axum::body::Body;
+    use axum::response::Response;
+
+    if let Err(e) = validate_model_name(&model_name) {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
+            .unwrap();
+    }
+
+    let Some(base) = crate::registry::models::router_models_dir() else {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("{\"error\": \"HOME not set\"}"))
+            .unwrap();
+    };
+    let dir = base.join(crate::registry::models::model_name_to_dir(&model_name));
+    if !dir.exists() {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(format!(
+                "{{\"error\": \"Model not found: {}\"}}",
+                model_name
+            )))
+            .unwrap();
+    }
+
+    // Optional: runtime hint for nodes so they can skip downloading unsupported models.
+    // This keeps the manifest backward-compatible: nodes that don't understand `runtimes` will ignore it.
+    let runtime_hint: Option<Vec<String>> = if dir.join("model.gguf").exists() {
+        Some(vec!["llama_cpp".to_string()])
+    } else {
+        let cfg_path = dir.join("config.json");
+        if cfg_path.exists() {
+            match tokio::fs::read(&cfg_path).await {
+                Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    Ok(v) => {
+                        let mut rt: Option<String> = None;
+
+                        if let Some(arr) = v.get("architectures").and_then(|x| x.as_array()) {
+                            for a in arr {
+                                let Some(s) = a.as_str() else { continue };
+                                if s.contains("GptOss") || s.contains("GPTOSS") {
+                                    rt = Some("gptoss_cpp".to_string());
+                                    break;
+                                }
+                                if s.contains("Nemotron") {
+                                    rt = Some("nemotron_cpp".to_string());
+                                    break;
+                                }
+                            }
+                        }
+
+                        if rt.is_none() {
+                            if let Some(mt) = v.get("model_type").and_then(|x| x.as_str()) {
+                                let mt = mt.to_ascii_lowercase();
+                                if mt.contains("gpt_oss") || mt.contains("gptoss") {
+                                    rt = Some("gptoss_cpp".to_string());
+                                } else if mt.contains("nemotron") {
+                                    rt = Some("nemotron_cpp".to_string());
+                                }
+                            }
+                        }
+
+                        rt.map(|s| vec![s])
+                    }
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    };
+
+    let format = resolve_manifest_format(&model_name, &dir);
+    let files = build_registry_manifest_files(&dir, format, runtime_hint.as_ref());
+
+    let body =
+        serde_json::to_string(&Manifest { files }).unwrap_or_else(|_| "{\"files\":[]}".into());
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+/// GET /v0/models/registry/:model_name/files/:file_name - モデル配布ファイル
+pub async fn get_model_registry_file(
+    Path((model_name, file_name)): Path<(String, String)>,
+) -> axum::response::Response {
+    use axum::body::Body;
+    use axum::response::Response;
+    use tokio_util::io::ReaderStream;
+
+    if let Err(e) = validate_model_name(&model_name) {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
+            .unwrap();
+    }
+
+    // file_name は単一セグメント前提（念のためパストラバーサルを禁止）
+    if file_name.is_empty()
+        || file_name.contains("..")
+        || file_name.contains('/')
+        || file_name.contains('\\')
+        || file_name.contains('\0')
+    {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from("{\"error\": \"Invalid file name\"}"))
+            .unwrap();
+    }
+
+    let Some(base) = crate::registry::models::router_models_dir() else {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("{\"error\": \"HOME not set\"}"))
+            .unwrap();
+    };
+    let dir = base.join(crate::registry::models::model_name_to_dir(&model_name));
+    let path = dir.join(&file_name);
+    if !path.exists() {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("{\"error\": \"File not found\"}"))
+            .unwrap();
+    }
+
+    let file = match tokio::fs::File::open(&path).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to open model registry file {:?}: {}", path, e);
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("{\"error\": \"Failed to open file\"}"))
+                .unwrap();
+        }
+    };
+
+    let stream = ReaderStream::new(file);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from_stream(stream))
+        .unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_text(path: &std::path::Path, contents: &str) {
+        std::fs::write(path, contents).expect("write file");
+    }
 
     #[test]
     fn test_validate_model_name_valid() {
@@ -918,6 +2078,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_extract_quantization_detects_mxfp4() {
+        assert_eq!(
+            extract_quantization("gpt-oss-20b-mxfp4.gguf"),
+            Some("MXFP4".to_string())
+        );
+        assert_eq!(
+            normalize_quantization_label("mxfp4"),
+            Some("MXFP4".to_string())
+        );
+    }
+
     // ===== SPEC-6cd7f960: 対応モデルリスト型管理 =====
 
     #[test]
@@ -935,6 +2107,71 @@ mod tests {
             serde_json::to_string(&ModelStatus::Downloaded).unwrap(),
             "\"downloaded\""
         );
+    }
+
+    #[test]
+    fn test_hf_model_deserialize_accepts_id_field() {
+        let input = r#"{"id":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
+        let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
+        assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
+    }
+
+    #[test]
+    fn test_hf_model_deserialize_accepts_model_id_field_alias() {
+        let input =
+            r#"{"modelId":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
+        let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
+        assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
+    }
+
+    #[test]
+    fn test_build_registry_manifest_files_filters_safetensors() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().expect("temp dir");
+        let model_dir = temp_dir.path().join("openai").join("gpt-oss-20b");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        write_text(&model_dir.join("config.json"), "{}");
+        write_text(&model_dir.join("tokenizer.json"), "{}");
+        write_text(
+            &model_dir.join("model.safetensors.index.json"),
+            "{\"weight_map\":{}}",
+        );
+        write_text(&model_dir.join("model-00001-of-00002.safetensors"), "a");
+        write_text(&model_dir.join("model-00002-of-00002.safetensors"), "b");
+        write_text(&model_dir.join("model.metal.bin"), "cache");
+        write_text(&model_dir.join("README.md"), "ignore");
+
+        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Safetensors, None);
+        let names: std::collections::HashSet<_> = files.iter().map(|f| f.name.as_str()).collect();
+
+        assert!(names.contains("config.json"));
+        assert!(names.contains("tokenizer.json"));
+        assert!(names.contains("model.safetensors.index.json"));
+        assert!(names.contains("model-00001-of-00002.safetensors"));
+        assert!(names.contains("model-00002-of-00002.safetensors"));
+        assert!(names.contains("model.metal.bin"));
+        assert!(!names.contains("README.md"));
+    }
+
+    #[test]
+    fn test_build_registry_manifest_files_filters_gguf() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().expect("temp dir");
+        let model_dir = temp_dir.path().join("llama-3-8b");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        write_text(&model_dir.join("model.gguf"), "gguf");
+        write_text(&model_dir.join("config.json"), "{}");
+        write_text(&model_dir.join("README.md"), "ignore");
+
+        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Gguf, None);
+        let names: std::collections::HashSet<_> = files.iter().map(|f| f.name.as_str()).collect();
+
+        assert!(names.contains("model.gguf"));
+        assert_eq!(names.len(), 1);
     }
 
     #[test]
@@ -964,7 +2201,6 @@ mod tests {
         assert!(with_status.download_progress.is_none());
         assert!(with_status.hf_info.is_none());
     }
-
     #[test]
     fn test_model_with_status_serialization() {
         use crate::supported_models::SupportedModel;

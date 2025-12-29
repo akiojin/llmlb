@@ -190,7 +190,7 @@ export async function pullModel(
 }
 
 /**
- * @deprecated Use pullModel() instead - /v0/models/register has been removed
+ * Register a model via API (HF registration flow)
  */
 export async function registerModel(
   request: APIRequestContext,
@@ -203,8 +203,34 @@ export async function registerModel(
   status: number;
   registered?: boolean;
 }> {
-  // Return 404 since endpoint is removed
-  return { error: 'Endpoint removed - use pullModel() instead', status: 404 };
+  const payload: Record<string, unknown> = {
+    repo,
+    format: 'gguf',
+  };
+  if (filename) {
+    payload.filename = filename;
+  } else {
+    payload.gguf_policy = 'quality';
+  }
+
+  const response = await request.post(`${API_BASE}/v0/models/register`, {
+    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+    data: payload,
+  });
+  const status = response.status();
+
+  try {
+    const body = await response.json();
+    return {
+      taskId: body.task_id,
+      modelName: body.name || body.model_name,
+      registered: status === 201 || status === 200,
+      status,
+      error: body.error || body.message,
+    };
+  } catch {
+    return { error: await response.text(), status };
+  }
 }
 
 // ============================================================================
@@ -345,14 +371,36 @@ export async function pullModelViaUI(
 }
 
 /**
- * @deprecated Use pullModelViaUI() instead - Register modal has been removed
+ * Register a model via UI (Hugging Face registration flow)
  */
 export async function registerModelViaUI(
   page: Page,
   repo: string,
   filename?: string
 ): Promise<void> {
-  throw new Error('Register modal has been removed - use pullModelViaUI() instead');
+  // Click Register button
+  await page.click('#register-model');
+
+  // Wait for modal
+  await page.waitForSelector('#convert-modal', { state: 'visible' });
+
+  // Select format (required by current UI)
+  await page.click('#convert-format');
+  await page.click('[data-value="gguf"]');
+
+  // Fill form
+  await page.fill('#convert-repo', repo);
+  if (filename) {
+    await page.fill('#convert-filename', filename);
+  }
+
+  // Submit
+  await page.click('#convert-submit');
+
+  // Wait for modal to close or response
+  await page.waitForSelector('#convert-modal', { state: 'hidden', timeout: 10000 }).catch(() => {
+    // Modal may stay open with error, that's ok
+  });
 }
 
 /**

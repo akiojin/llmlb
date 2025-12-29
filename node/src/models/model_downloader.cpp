@@ -14,6 +14,8 @@
 
 #include "utils/config.h"
 #include "utils/file_lock.h"
+#include "utils/url_encode.h"
+#include "models/model_storage.h"
 
 namespace {
 
@@ -272,10 +274,11 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     std::string path = base.path;
     if (path.empty()) path = "/";
     if (path.back() != '/') path.push_back('/');
-    path += model_id + "/manifest.json";
+    path += urlEncodePathSegment(model_id) + "/manifest.json";
 
-    std::string out_path = models_dir_ + "/" + model_id + "/manifest.json";
-    fs::create_directories(models_dir_ + "/" + model_id);
+    const auto local_dir = llm_node::ModelStorage::modelNameToDir(model_id);
+    std::string out_path = models_dir_ + "/" + local_dir + "/manifest.json";
+    fs::create_directories(models_dir_ + "/" + local_dir);
     FileLock lock(out_path);
     // ロック取得できなくてもベストエフォートで進める
     httplib::Result res;
@@ -290,8 +293,6 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
         if (attempt < max_retries_) std::this_thread::sleep_for(backoff_);
     }
     if (!res || res->status < 200 || res->status >= 300) return "";
-
-    fs::create_directories(models_dir_ + "/" + model_id);
     std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
     ofs << res->body;
     // log applied config for diagnostics (opt-in)

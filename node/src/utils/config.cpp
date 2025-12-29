@@ -169,6 +169,7 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
 
     // defaults: ~/.llm-router/models/
     cfg.models_dir = defaultConfigPath().empty() ? ".llm-router/models" : (defaultConfigPath().parent_path() / "models").string();
+    cfg.engine_plugins_dir = defaultConfigPath().empty() ? ".llm-router/engines" : (defaultConfigPath().parent_path() / "engines").string();
 
     auto apply_json = [&](const nlohmann::json& j) {
         if (j.contains("router_url") && j["router_url"].is_string()) cfg.router_url = j["router_url"].get<std::string>();
@@ -182,6 +183,9 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         if (j.contains("node_port") && j["node_port"].is_number()) cfg.node_port = j["node_port"].get<int>();
         if (j.contains("heartbeat_interval_sec") && j["heartbeat_interval_sec"].is_number()) {
             cfg.heartbeat_interval_sec = j["heartbeat_interval_sec"].get<int>();
+        }
+        if (j.contains("engine_plugins_dir") && j["engine_plugins_dir"].is_string()) {
+            cfg.engine_plugins_dir = j["engine_plugins_dir"].get<std::string>();
         }
         if (j.contains("bind_address") && j["bind_address"].is_string()) cfg.bind_address = j["bind_address"].get<std::string>();
     };
@@ -226,6 +230,11 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     if (auto v = getEnvWithFallback("LLM_NODE_SHARED_MODELS_DIR", "LLM_SHARED_MODELS_DIR")) {
         cfg.shared_models_dir = *v;
         log << "env:SHARED_MODELS_DIR=" << *v << " ";
+        used_env = true;
+    }
+    if (const char* v = std::getenv("LLM_NODE_ENGINE_PLUGINS_DIR")) {
+        cfg.engine_plugins_dir = v;
+        log << "env:ENGINE_PLUGINS_DIR=" << cfg.engine_plugins_dir << " ";
         used_env = true;
     }
     if (auto v = getEnvWithFallback("LLM_NODE_PORT", "LLM_NODE_PORT")) {

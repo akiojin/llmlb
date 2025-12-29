@@ -88,10 +88,64 @@ npx @llm-router/mcp-server
 ## インストールと起動
 
 ### 前提条件
+
 - Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
 - Rust toolchain (nightly不要) と cargo
 - Docker (任意、コンテナ利用時)
-- CUDAドライバ (GPU使用時。NVIDIAのみ)
+- CUDAドライバ (GPU使用時) - [CUDAセットアップ](#cudaセットアップnvidia-gpu)参照
+
+### CUDAセットアップ（NVIDIA GPU）
+
+NVIDIA GPU を使用する場合に必要なコンポーネント：
+
+| コンポーネント | ビルド環境 | 実行環境 |
+|--------------|-----------|---------|
+| **CUDAドライバ** | 必須 | 必須 |
+| **CUDA Toolkit** | 必須（`nvcc`用） | 不要 |
+
+#### CUDAドライバのインストール
+
+CUDAドライバは通常、NVIDIAグラフィックスドライバに含まれています。
+
+```bash
+# ドライバのインストール確認
+nvidia-smi
+```
+
+`nvidia-smi` でGPU情報が表示されれば、ドライバはインストール済みです。
+
+#### CUDA Toolkitのインストール（ビルド環境のみ）
+
+CUDA対応ノードのビルド（`BUILD_WITH_CUDA=ON`）にのみ必要です。
+
+**Windows:**
+
+1. [CUDA Toolkit Downloads](https://developer.nvidia.com/cuda-downloads) からダウンロード
+2. Windows → x86_64 → 11 → exe (local) を選択
+3. インストーラーを実行（Express インストール推奨）
+4. 新しいターミナルで確認: `nvcc --version`
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+# NVIDIAパッケージリポジトリを追加
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# CUDA Toolkitをインストール
+sudo apt install cuda-toolkit-12-4
+
+# PATHに追加（~/.bashrc に追記）
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# 確認
+nvcc --version
+```
+
+**注意:** ビルド済みバイナリを実行するだけの環境（実行環境）では、CUDAドライバのみで
+CUDA Toolkitは不要です。
 
 ### 1) Rustソースからビルド（推奨）
 ```bash
@@ -115,6 +169,9 @@ GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""
 
 ```bash
 npm run build:node
+
+# Linux / CUDA の場合
+npm run build:node:cuda
 
 # 手動でビルドする場合:
 cd node
@@ -140,6 +197,7 @@ cmake --build build --config Release
 | `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+| `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
 
 クラウドAPI:
 
@@ -149,11 +207,12 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
-| `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node`） |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_NODE_SHARED_MODELS_DIR` | (未設定) | 共有モデルディレクトリ（任意） |
+| `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
@@ -305,15 +364,26 @@ Router (OpenAI-compatible)
 - 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
 - ノードのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
-## モデル管理（Hugging Face, GGUF-first）
+## モデル管理（Hugging Face, safetensors / GGUF）
 
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
-  - Hugging Face repo（例: `TheBloke/Llama-2-7B-GGUF`）と、任意で filename を入力します。
-  - `/v1/models` は、ルーターのファイルシステム上にキャッシュ済みのモデルだけを返します。
-
-モデル ID はファイル名ベース形式に正規化されます（例: `llama-2-7b`, `gpt-oss-20b`）。
+  - `format` を選択します: `safetensors`（新エンジン: TBD） または `gguf`（llama.cpp フォールバック）
+    - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
+    - 補足: `safetensors` でのテキスト生成は TBD（推論エンジン実装は後で決める）です。現時点で実行したい場合は `gguf` を選択してください。
+  - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）を入力します。
+  - `format=gguf` の場合:
+    - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
+  - `format=safetensors` の場合:
+    - HFスナップショットに `config.json` と `tokenizer.json` が必要です。
+    - シャーディングされている場合は `.index.json` が必要です。
+  - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
+  - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
+- ノードはモデルをプッシュ配布されず、オンデマンドでルーターから取得します:
+  - `GET /v0/models/registry/:model_name/manifest.json`
+  - `GET /v0/models/registry/:model_name/files/:file_name`
+  - （互換）単一GGUFのみ: `GET /v0/models/blob/:model_name`
 
 ## API 仕様
 
@@ -330,7 +400,7 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node` | ノード登録 + ヘルスチェック + モデル配布（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`） |
+| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`, `GET /v0/models/blob/*`） |
 | `api` | OpenAI 互換推論 API（`/v1/*`） |
 | `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
@@ -364,7 +434,9 @@ Router (OpenAI-compatible)
 - POST `/v0/models/register`（admin権限）
 - DELETE `/v0/models/*model_name`（admin権限）
 - POST `/v0/models/discover-gguf`（admin権限）
-- GET `/v0/models/blob/:model_name`（APIキー: `node` または `admin`）
+- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node`）
+- GET `/v0/models/registry/:model_name/files/:file_name`（APIキー: `node`）
+- GET `/v0/models/blob/:model_name`（互換: 単一GGUFのみ, APIキー: `node` または `admin`）
 
 #### ダッシュボード/監視
 
@@ -405,6 +477,13 @@ Router (OpenAI-compatible)
 ```bash
 make quality-checks
 ```
+
+### PoC
+
+- gpt-oss（自動）: `make poc-gptoss`
+- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
+- gpt-oss (Linux / CUDA, GGUF): `make poc-gptoss-cuda`
+  - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
 
 Dashboard を更新する場合:
 

@@ -9,3 +9,5 @@ vendor/
 **/vendor/
 node/third_party/
 node/build/
+tmp/
+**/tmp/**

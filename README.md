@@ -161,11 +161,16 @@ sudo apt install cmake build-essential
 # Build (Metal is enabled by default on macOS)
 npm run build:node
 
+# Build (Linux / CUDA)
+npm run build:node:cuda
+
 # Run
 npm run start:node
 
 # Or manually:
 # cd node && cmake -B build -S . && cmake --build build --config Release
+# # Linux / CUDA:
+# # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
 # LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
 ```
 
@@ -416,23 +421,89 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
    http://localhost:8080/dashboard
    ```
 
-## Hugging Face registration (GGUF-first)
+## Hugging Face registration (safetensors / GGUF)
 
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
-  - Enter a Hugging Face repo (e.g. `TheBloke/Llama-2-7B-GGUF`) and (optionally) a filename (e.g. `llama-2-7b.Q4_K_M.gguf`).
-  - Model IDs are normalized to a filename-based format (e.g. `llama-2-7b`).
-  - `/v1/models` lists only models that are cached on the router filesystem.
-  - Nodes never receive push-based distribution; they pull models based on `/v0/models` and download via `/v0/models/blob/:model_name` when needed.
+  - Choose `format`: `safetensors` (native engine: TBD) or `gguf` (llama.cpp fallback).
+    - If the repo contains both `safetensors` and `.gguf`, `format` is required.
+    - Note: text generation via `safetensors` is TBD (engine implementation will be decided later). Use `gguf` if you need to run the model now.
+  - Enter a Hugging Face repo (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
+  - For `format=gguf`:
+    - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
+      to auto-pick from GGUF siblings.
+  - For `format=safetensors`:
+    - The HF snapshot must include `config.json` and `tokenizer.json`.
+    - Sharded weights must include an `.index.json`.
+  - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
+  - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
+  - Nodes pull models on-demand via the model registry endpoints:
+    - `GET /v0/models/registry/:model_name/manifest.json`
+    - `GET /v0/models/registry/:model_name/files/:file_name`
+    - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
 
 ## Installation
 
 ### Prerequisites
+
 - Linux/macOS/Windows x64 (GPU recommended)
 - Rust toolchain (stable) and cargo
 - Docker (optional)
-- CUDA driver (for NVIDIA GPU)
+- CUDA Driver (for NVIDIA GPU) - see [CUDA Setup](#cuda-setup-nvidia-gpu)
+
+### CUDA Setup (NVIDIA GPU)
+
+For NVIDIA GPU acceleration, you need:
+
+| Component | Build Environment | Runtime Environment |
+|-----------|-------------------|---------------------|
+| **CUDA Driver** | Required | Required |
+| **CUDA Toolkit** | Required (for `nvcc`) | Not required |
+
+#### Installing CUDA Driver
+
+The CUDA Driver is typically installed with NVIDIA graphics drivers.
+
+```bash
+# Verify driver installation
+nvidia-smi
+```
+
+If `nvidia-smi` shows your GPU, the driver is installed.
+
+#### Installing CUDA Toolkit (Build Environment Only)
+
+Required only for building the node with CUDA support (`BUILD_WITH_CUDA=ON`).
+
+**Windows:**
+
+1. Download from [CUDA Toolkit Downloads](https://developer.nvidia.com/cuda-downloads)
+2. Select: Windows → x86_64 → 11 → exe (local)
+3. Run the installer (Express installation recommended)
+4. Verify: Open new terminal and run `nvcc --version`
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+# Add NVIDIA package repository
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# Install CUDA Toolkit
+sudo apt install cuda-toolkit-12-4
+
+# Add to PATH (add to ~/.bashrc)
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# Verify
+nvcc --version
+```
+
+**Note:** Runtime environments (nodes running pre-built binaries) only need the CUDA
+Driver, not the full Toolkit.
 
 ### 1) Build from Rust source (Recommended)
 ```bash
@@ -459,12 +530,6 @@ See [Node (C++)](#node-c) section in Quick Start.
 
 - **Router**: Rust toolchain (stable)
 - **Node**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
-- **Optional (HF non-GGUF conversion)**: `python3` + `transformers` + `torch` + `sentencepiece`
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -r node/third_party/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
-  ```
 
 ## Usage
 
@@ -564,6 +629,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
 | `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
+| `LLM_QUANTIZE_BIN` | - | Path to `llama-quantize` binary | optional |
 
 Cloud / external services:
 
@@ -583,10 +649,11 @@ Cloud / external services:
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
-| `LLM_NODE_API_KEY` | - | API key for node registration / model blob download | scope: `node` |
+| `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) | `LLM_SHARED_MODELS_DIR` |
+| `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
@@ -656,6 +723,13 @@ make quality-checks
 # (Optional) Run only the OpenAI-compatible proxy regression suite
 make openai-tests
 ```
+
+### PoCs
+
+- gpt-oss (auto): `make poc-gptoss`
+- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
+- gpt-oss (Linux / CUDA via GGUF): `make poc-gptoss-cuda`
+  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
 
 ### Spec-Driven Development
 
@@ -758,14 +832,12 @@ GET /v0/dashboard/request-responses/export
 
 ### Storage
 
-Request history is stored in JSON format at:
-- Linux/macOS: `~/.llm-router/request_history.json`
-- Windows: `%USERPROFILE%\.llm-router\request_history.json`
+Request history is stored in SQLite at:
+- Linux/macOS: `~/.llm-router/router.db`
+- Windows: `%USERPROFILE%\.llm-router\router.db`
 
-The file is automatically managed with:
-- Atomic writes (temp file + rename) to prevent corruption
-- File locking to handle concurrent access
-- Automatic cleanup of records older than 7 days
+Legacy `request_history.json` files (if present) are automatically imported on startup and renamed
+to `.migrated`.
 
 ## API Specification
 
@@ -792,7 +864,7 @@ The file is automatically managed with:
 
 | Scope | Grants |
 |-------|--------|
-| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`) |
+| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`, `GET /v0/models/blob/*`) |
 | `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
 | `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
@@ -852,7 +924,9 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
 | DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
 | POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin) |
-| GET | `/v0/models/blob/:model_name` | Serve model file (GGUF) | API key (node or admin) |
+| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (node or admin) |
+| GET | `/v0/models/registry/:model_name/files/:file_name` | Serve model file | API key (node or admin) |
+| GET | `/v0/models/blob/:model_name` | Legacy single-file model download (GGUF) | API key (node or admin) |
 
 #### Dashboard Endpoints
 

@@ -12,13 +12,23 @@ use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::{ApiKeyScope, UserRole};
 use serde_json::json;
 use serial_test::serial;
+use tokio::time::{sleep, Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
+use wiremock::matchers::{method, path, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
     db_pool: sqlx::SqlitePool,
     admin_key: String,
+}
+
+// TDD RED: Node主導キャッシュのため、registry manifest に外部ソースURLが含まれること
+#[tokio::test]
+#[ignore = "TDD RED: manifest origin urls not implemented yet"]
+async fn registry_manifest_includes_origin_urls() {
+    unimplemented!("TDD RED: manifest should include origin URLs for node-managed caching");
 }
 
 async fn build_app() -> TestApp {
@@ -250,6 +260,483 @@ async fn test_tasks_endpoint_is_removed() {
     );
 }
 
+/// T009: POST /v0/models/register - 正常系と重複/404異常系
+#[tokio::test]
+#[serial]
+async fn test_register_model_contract() {
+    let mock = MockServer::start().await;
+
+    // siblings: GGUF only
+    Mock::given(method("GET"))
+        .and(path("/api/models/test/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    // HEAD 200 for download
+    Mock::given(method("HEAD"))
+        .and(path("/test/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock)
+        .await;
+
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    // 正常登録
+    let payload = json!({
+        "repo": "test/repo",
+        "filename": "model.gguf",
+        "display_name": "Test Model"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // /v1/models に含まれること（ただし ready=false）
+    let models_res = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("GET")
+                .uri("/v1/models")
+                .header("x-api-key", "sk_debug")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(models_res.status(), StatusCode::OK);
+    let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let data = body["data"]
+        .as_array()
+        .expect("'data' must be an array on /v1/models");
+    let entry = data
+        .iter()
+        .find(|m| m["id"] == "test/repo")
+        .expect("/v1/models must include queued model");
+    assert_eq!(
+        entry["ready"], false,
+        "model must not be ready before download completes"
+    );
+
+    // 重複登録は400
+    let dup = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(dup.status(), StatusCode::BAD_REQUEST);
+
+    // 異常系: 指定したGGUFがsiblingsに存在しない
+    Mock::given(method("GET"))
+        .and(path("/api/models/missing/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "other.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let missing_payload = json!({
+        "repo": "missing/repo",
+        "filename": "absent.gguf"
+    });
+
+    let missing = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&missing_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+
+    // repoのみ指定で safetensors の場合は登録できる（config/tokenizer必須）
+    Mock::given(method("GET"))
+        .and(path("/api/models/safetensors-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
+                {"rfilename": "model.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let safetensors_repo_only = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"repo": "safetensors-repo"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(safetensors_repo_only.status(), StatusCode::CREATED);
+
+    // DELETE: タスク完了前でもConvertTaskを削除できる（204を期待）
+    // モデル名 = リポジトリ名、ワイルドカードパスなのでスラッシュをそのまま使用
+    let delete_res = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("DELETE")
+                .uri("/v0/models/test/repo")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // タスク完了前でもConvertTaskを削除してダウンロードをキャンセルできる
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
+
+    // GGUF登録後に /v1/models に出ること（LLM_CONVERT_FAKE=1でダミー生成）
+    let TestApp {
+        app: app_for_convert,
+        admin_key,
+        ..
+    } = build_app().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/models/convertible-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/convertible-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "123"))
+        .mount(&mock)
+        .await;
+    // GETリクエスト（ダウンロード）用のモック - ダミーのGGUFファイルを返す
+    Mock::given(method("GET"))
+        .and(path("/convertible-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"GGUF dummy content"))
+        .mount(&mock)
+        .await;
+
+    let reg_convert = app_for_convert
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "repo": "convertible-repo",
+                        "format": "gguf",
+                        "gguf_policy": "quality"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg_convert.status(), StatusCode::CREATED);
+
+    let mut converted = false;
+    for _ in 0..25 {
+        let resp = app_for_convert
+            .clone()
+            .oneshot(
+                admin_request(&admin_key)
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        if val["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "convertible-repo" && m["ready"] == true)
+            })
+            .unwrap_or(false)
+        {
+            converted = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    assert!(converted, "converted model should appear in /v1/models");
+}
+
+/// T0xx: safetensors登録では config.json + tokenizer.json を必須とする
+#[tokio::test]
+#[serial]
+async fn test_register_safetensors_requires_metadata_files() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/safetensors-missing-meta"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "safetensors-missing-meta",
+        "format": "safetensors"
+    });
+
+    let response = app
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "safetensors register should require config/tokenizer metadata"
+    );
+}
+
+/// T0yy: 複数の safetensors ファイルがある場合は index.json を要求する
+#[tokio::test]
+#[serial]
+async fn test_register_safetensors_sharded_requires_index_file() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/sharded-safetensors"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
+                {"rfilename": "model-00001.safetensors"},
+                {"rfilename": "model-00002.safetensors"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "sharded-safetensors",
+        "format": "safetensors"
+    });
+
+    let response = app
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "sharded safetensors repo should require .safetensors.index.json"
+    );
+}
+
+/// T010: safetensors と GGUF が両方ある場合、format 未指定は400
+#[tokio::test]
+#[serial]
+async fn test_register_model_requires_format_when_both_artifacts_exist() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/both-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
+                {"rfilename": "model.safetensors"},
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "both-repo"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// T011: filename未指定 + gguf_policy 指定でGGUF siblingsから選択する
+#[tokio::test]
+#[serial]
+async fn test_register_model_selects_gguf_by_policy_from_siblings() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/policy-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"},
+                {"rfilename": "model.Q8_0.gguf"},
+                {"rfilename": "model.F16.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "policy-repo",
+        "format": "gguf",
+        "gguf_policy": "quality"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["format"], "gguf");
+    assert_eq!(body["filename"], "model.F16.gguf");
+}
+
+/// T012: format=gguf かつ filename未指定で gguf_policy が無い場合は400
+#[tokio::test]
+#[serial]
+async fn test_register_model_errors_when_gguf_policy_missing() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/no-policy-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let payload = json!({
+        "repo": "no-policy-repo",
+        "format": "gguf"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 /// T003: 0Bキャッシュはready扱いにならない
 #[tokio::test]
 #[serial]
@@ -291,6 +778,198 @@ async fn test_zero_byte_cache_is_not_ready() {
         .expect("model should be listed");
     assert_eq!(entry["ready"], false);
     assert_eq!(entry["lifecycle_status"], "pending");
+}
+
+/// T003: 0Bキャッシュは再ダウンロードされる
+#[tokio::test]
+#[serial]
+async fn test_zero_byte_cache_triggers_redownload() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/zero/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    Mock::given(method("HEAD"))
+        .and(path("/zero/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "4"))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/zero/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"GGUF"))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let base = router_models_dir().expect("router models dir should exist");
+    let model_dir = base.join(model_name_to_dir("zero/repo"));
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let model_path = model_dir.join("model.gguf");
+    std::fs::File::create(&model_path).unwrap();
+
+    let payload = json!({
+        "repo": "zero/repo",
+        "filename": "model.gguf"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let mut ready = false;
+    for _ in 0..30 {
+        let models_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(models_res.status(), StatusCode::OK);
+        let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        if models["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "zero/repo" && m["ready"] == true)
+            })
+            .unwrap_or(false)
+        {
+            ready = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    assert!(ready, "zero-byte cache should be re-downloaded");
+    let meta = std::fs::metadata(&model_path).unwrap();
+    assert!(meta.len() > 0);
+}
+
+/// T004: キャッシュ済みモデルは再ダウンロードせず即時登録される
+#[tokio::test]
+#[serial]
+async fn test_register_model_uses_existing_cache() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/api/models/cached/repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    Mock::given(method("HEAD"))
+        .and(path("/cached/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "4"))
+        .mount(&mock)
+        .await;
+
+    // ダウンロードが呼ばれたら失敗させる
+    Mock::given(method("GET"))
+        .and(path("/cached/repo/resolve/main/model.gguf"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    let base = router_models_dir().expect("router models dir should exist");
+    let model_dir = base.join(model_name_to_dir("cached/repo"));
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let model_path = model_dir.join("model.gguf");
+    std::fs::write(&model_path, b"GGUF").unwrap();
+
+    let payload = json!({
+        "repo": "cached/repo",
+        "filename": "model.gguf"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let mut ready = false;
+    let mut last_models = serde_json::Value::Null;
+    for _ in 0..30 {
+        let models_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(models_res.status(), StatusCode::OK);
+        let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_models = models.clone();
+        if models["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "cached/repo" && m["ready"] == true)
+            })
+            .unwrap_or(false)
+        {
+            ready = true;
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    assert!(
+        ready,
+        "cached model should be ready without download, models={:?}",
+        last_models
+    );
+    let meta = std::fs::metadata(&model_path).unwrap();
+    assert!(meta.len() > 0);
 }
 
 /// T005: 削除後に /v1/models から消える
@@ -375,4 +1054,134 @@ async fn test_delete_model_removes_from_list() {
         "model should be removed after delete"
     );
     assert!(!model_path.exists(), "model file should be removed");
+}
+/// T010: ダウンロード失敗時に lifecycle_status が error になること
+/// NOTE: /v0/models/convert は廃止され、/v0/models に統合された
+/// NOTE: 失敗後のリトライ機能は別途実装予定
+#[tokio::test]
+#[serial]
+async fn test_download_failure_shows_error_status() {
+    let mock = MockServer::start().await;
+    std::env::set_var("HF_BASE_URL", mock.uri());
+
+    // siblings returns GGUF file for registration to succeed
+    Mock::given(method("GET"))
+        .and(path("/api/models/error-test-repo"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "model.Q4_K_M.gguf"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/error-test-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(200).append_header("content-length", "42"))
+        .mount(&mock)
+        .await;
+    // ダウンロードは常に失敗
+    Mock::given(method("GET"))
+        .and(path("/error-test-repo/resolve/main/model.Q4_K_M.gguf"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&mock)
+        .await;
+
+    let TestApp { app, admin_key, .. } = build_app().await;
+
+    // register -> download fails
+    let reg = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "repo": "error-test-repo",
+                        "filename": "model.Q4_K_M.gguf"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reg.status(), StatusCode::CREATED);
+
+    // wait for error status via /v1/models lifecycle_status (OpenAI互換エンドポイント)
+    let mut error_seen = false;
+    let mut last_models = serde_json::Value::Null;
+    for _ in 0..60 {
+        let models_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("authorization", "Bearer sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(models_resp.status(), StatusCode::OK);
+        let body = to_bytes(models_resp.into_body(), usize::MAX).await.unwrap();
+        let models: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        last_models = models.clone();
+        // /v1/models レスポンス形式: { "object": "list", "data": [...] }
+        if models["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m["id"] == "error-test-repo" && m["lifecycle_status"] == "error")
+            })
+            .unwrap_or(false)
+        {
+            error_seen = true;
+            break;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        error_seen,
+        "model should have lifecycle_status=error, models={:?}",
+        last_models
+    );
+
+    // エラーモデルは download_progress.error にエラーメッセージが含まれる
+    let model = last_models["data"]
+        .as_array()
+        .and_then(|arr| arr.iter().find(|m| m["id"] == "error-test-repo"))
+        .unwrap();
+    assert!(
+        model["download_progress"]["error"].is_string(),
+        "download_progress.error should contain error message"
+    );
+
+    // エラー状態のモデルは削除可能
+    let delete_resp = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("DELETE")
+                .uri("/v0/models/error-test-repo")
+                .header("x-api-key", "sk_debug")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let delete_status = delete_resp.status();
+    let delete_body = to_bytes(delete_resp.into_body(), usize::MAX).await.unwrap();
+    let delete_body_str = String::from_utf8_lossy(&delete_body);
+    assert!(
+        delete_status == StatusCode::NO_CONTENT
+            || delete_status == StatusCode::OK
+            || delete_status == StatusCode::NOT_FOUND, // モデルが既に存在しない場合も許容
+        "should be able to delete error model (status={}, body={})",
+        delete_status,
+        delete_body_str
+    );
 }

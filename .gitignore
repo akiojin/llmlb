@@ -84,6 +84,9 @@ pids/
 *.seed
 *.pid.lock
 
+# Local model artifacts
+poc/nemotron-cuda-cpp/models/
+
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov

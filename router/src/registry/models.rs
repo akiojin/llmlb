@@ -19,6 +19,8 @@ pub enum ModelSource {
     Predefined,
     /// HFのGGUFモデル
     HfGguf,
+    /// HFのsafetensorsモデル
+    HfSafetensors,
     /// HF非GGUFで変換待ち
     HfPendingConversion,
     /// HFのONNXモデル（Whisper等）

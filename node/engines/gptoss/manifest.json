@@ -1,0 +1,10 @@
+{
+  "engine_id": "gptoss_cpp",
+  "engine_version": "0.1.0",
+  "abi_version": 1,
+  "runtimes": ["gptoss_cpp"],
+  "formats": ["safetensors"],
+  "capabilities": ["text"],
+  "gpu_targets": ["metal"],
+  "library": "llm_engine_gptoss"
+}

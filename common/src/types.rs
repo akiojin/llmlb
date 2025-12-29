@@ -146,6 +146,11 @@ pub enum RuntimeType {
     /// llama.cpp (テキスト生成、Embedding)
     #[default]
     LlamaCpp,
+    /// safetensors-cpp ベースの Nemotron 直接ロード
+    NemotronCpp,
+    /// OpenAI gpt-oss 公式ランタイム（Metal/CUDA などの最適化アーティファクト）
+    #[serde(rename = "gptoss_cpp")]
+    GptOssCpp,
     /// whisper.cpp (音声認識)
     WhisperCpp,
     /// ONNX Runtime (TTS、汎用推論)
@@ -740,6 +745,14 @@ mod tests {
             "\"llama_cpp\""
         );
         assert_eq!(
+            serde_json::to_string(&RuntimeType::NemotronCpp).unwrap(),
+            "\"nemotron_cpp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RuntimeType::GptOssCpp).unwrap(),
+            "\"gptoss_cpp\""
+        );
+        assert_eq!(
             serde_json::to_string(&RuntimeType::WhisperCpp).unwrap(),
             "\"whisper_cpp\""
         );
@@ -759,6 +772,12 @@ mod tests {
     fn test_runtime_type_deserialization() {
         let llama: RuntimeType = serde_json::from_str("\"llama_cpp\"").unwrap();
         assert_eq!(llama, RuntimeType::LlamaCpp);
+
+        let nemotron: RuntimeType = serde_json::from_str("\"nemotron_cpp\"").unwrap();
+        assert_eq!(nemotron, RuntimeType::NemotronCpp);
+
+        let gptoss: RuntimeType = serde_json::from_str("\"gptoss_cpp\"").unwrap();
+        assert_eq!(gptoss, RuntimeType::GptOssCpp);
 
         let whisper: RuntimeType = serde_json::from_str("\"whisper_cpp\"").unwrap();
         assert_eq!(whisper, RuntimeType::WhisperCpp);

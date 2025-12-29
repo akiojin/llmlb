@@ -8,13 +8,19 @@ LLM-Router独自モデルストレージの実装タスク。
 
 - [x] FR-1: モデルディレクトリ構造 (`~/.llm-router/models/`)
 - [x] FR-2: モデル名の形式変換 (`ModelStorage::modelNameToDir()`)
-- [x] FR-3: GGUFファイル解決 (`ModelStorage::resolveGguf()`)
-- [x] FR-4: 利用可能モデル一覧 (`ModelStorage::listAvailable()`)
-- [x] FR-5: メタデータ読み込み (`ModelStorage::loadMetadata()`)
-- [x] FR-6: ノード起動時同期 (`ModelSync::sync()`)
+- [ ] FR-3: モデルアーティファクト解決（Node主導/外部ソース対応）を実装
+- [x] FR-4: 利用可能モデル一覧をsafetensors対応
+- [x] FR-5: `metadata.json` 依存を削除（読み書きしない）
+- [ ] FR-6: ノード起動時同期（マニフェスト+外部ソース/プロキシ）を実装
   - [x] 起動時の不要モデル削除 (`ModelStorage::deleteModel()`)
 - [x] FR-7: ルーターからのプッシュ通知 (`POST /api/models/pull`)
-- [x] FR-8: API設計 (`/v0/models` vs `/v1/models`)
+- [ ] FR-8: API設計更新（`/v0/models/registry` 追加と Node 同期の整理）
+
+## 追加対応（要件更新）
+
+- [ ] Node: GPUバックエンドに応じたアーティファクト選択（Metal/DirectML）
+- [ ] Router: マニフェストに外部URL/許可リスト情報を含める
+- [ ] Node: 外部ソース/プロキシ経由ダウンロード（許可リスト検証付き）
 
 ## テスト実装
 
@@ -22,6 +28,10 @@ LLM-Router独自モデルストレージの実装タスク。
   - ファイル: `node/tests/unit/model_storage_test.cpp`
   - `DeleteModelRemovesDirectory` - ディレクトリ削除の検証
   - `DeleteNonexistentModelReturnsTrue` - 冪等性の検証
+
+- [x] safetensorsアーティファクト解決のユニットテスト
+  - ファイル: `node/tests/unit/model_storage_test.cpp`
+  - `ResolveDescriptorFindsSafetensorsIndex` - index を優先すること
 
 - [x] `is_ready()` チェック 統合テスト
   - ファイル: `node/tests/integration/openai_endpoints_test.cpp`

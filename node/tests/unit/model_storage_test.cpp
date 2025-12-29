@@ -32,6 +32,58 @@ static void create_model(const fs::path& models_dir, const std::string& dir_name
     std::ofstream(model_dir / "model.gguf") << "dummy gguf content";
 }
 
+static void create_safetensors_model_with_index(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["NemotronForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
+}
+
+static void create_safetensors_index_with_missing_shard(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["NemotronForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({
+        "weight_map": {
+            "model.layers.0.weight": "model-00001.safetensors"
+        }
+    })";
+    // NOTE: shard file is intentionally missing to exercise validation logic.
+}
+
+static void create_gptoss_safetensors_model_with_index(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
+}
+
+static void create_gptoss_safetensors_model_with_arch(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+}
+
+static void create_gptoss_safetensors_model_with_shards(const fs::path& models_dir, const std::string& dir_name) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model-00001.safetensors") << "shard1";
+    std::ofstream(model_dir / "model-00002.safetensors") << "shard2";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({
+        "weight_map": {
+            "model.layers.0.weight": "model-00001.safetensors",
+            "model.layers.1.weight": "model-00002.safetensors"
+        }
+    })";
+}
+
 // FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
@@ -65,11 +117,12 @@ TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
     create_model(tmp.base, "gpt-oss-20b");
     create_model(tmp.base, "gpt-oss-7b");
     create_model(tmp.base, "qwen3-coder-30b");
+    create_safetensors_model_with_index(tmp.base, "nvidia-nemotron");
 
     ModelStorage storage(tmp.base.string());
     auto list = storage.listAvailable();
 
-    ASSERT_EQ(list.size(), 3u);
+    ASSERT_EQ(list.size(), 4u);
 
     std::vector<std::string> names;
     for (const auto& m : list) {
@@ -79,7 +132,8 @@ TEST(ModelStorageTest, ListAvailableReturnsAllModels) {
 
     EXPECT_EQ(names[0], "gpt-oss-20b");
     EXPECT_EQ(names[1], "gpt-oss-7b");
-    EXPECT_EQ(names[2], "qwen3-coder-30b");
+    EXPECT_EQ(names[2], "nvidia-nemotron");
+    EXPECT_EQ(names[3], "qwen3-coder-30b");
 }
 
 // FR-4: Directories without model.gguf are ignored
@@ -96,28 +150,114 @@ TEST(ModelStorageTest, IgnoresDirectoriesWithoutGguf) {
     EXPECT_EQ(list[0].name, "valid_model");
 }
 
-// FR-5: Load optional metadata
-TEST(ModelStorageTest, LoadMetadataWhenPresent) {
+TEST(ModelStorageTest, ResolveDescriptorFallsBackToGguf) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss-20b");
-    std::ofstream(tmp.base / "gpt-oss-20b" / "metadata.json") << R"({"size_gb": 40})";
+    create_model(tmp.base, "gpt-oss-7b");
 
     ModelStorage storage(tmp.base.string());
-    auto meta = storage.loadMetadata("gpt-oss-20b");
+    auto desc = storage.resolveDescriptor("gpt-oss-7b");
 
-    ASSERT_TRUE(meta.has_value());
-    EXPECT_EQ((*meta)["size_gb"].get<int>(), 40);
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "llama_cpp");
+    EXPECT_EQ(desc->format, "gguf");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.gguf");
 }
 
-// FR-5: Metadata is optional - returns nullopt when missing
-TEST(ModelStorageTest, LoadMetadataReturnsNulloptWhenMissing) {
+TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
     TempModelDir tmp;
-    create_model(tmp.base, "gpt-oss-20b");
+    create_safetensors_model_with_index(tmp.base, "nemotron-30b");
 
     ModelStorage storage(tmp.base.string());
-    auto meta = storage.loadMetadata("gpt-oss-20b");
+    auto desc = storage.resolveDescriptor("nemotron-30b");
 
-    EXPECT_FALSE(meta.has_value());
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "nemotron_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorFindsGptOssSafetensorsIndex) {
+    TempModelDir tmp;
+    create_gptoss_safetensors_model_with_index(tmp.base, "openai-gpt-oss-20b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("openai-gpt-oss-20b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "gptoss_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorDetectsGptOssFromArchitectures) {
+    TempModelDir tmp;
+    create_gptoss_safetensors_model_with_arch(tmp.base, "mystery-model");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("mystery-model");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "gptoss_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorIncludesSafetensorsShardMetadata) {
+    TempModelDir tmp;
+    create_gptoss_safetensors_model_with_shards(tmp.base, "openai-gpt-oss-20b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("openai-gpt-oss-20b");
+
+    ASSERT_TRUE(desc.has_value());
+    ASSERT_TRUE(desc->metadata.has_value());
+    auto meta = desc->metadata.value();
+    ASSERT_TRUE(meta.contains("safetensors"));
+    ASSERT_TRUE(meta["safetensors"].contains("index"));
+    ASSERT_TRUE(meta["safetensors"].contains("shards"));
+    EXPECT_EQ(meta["safetensors"]["index"], "model.safetensors.index.json");
+    ASSERT_TRUE(meta["safetensors"]["shards"].is_array());
+    EXPECT_EQ(meta["safetensors"]["shards"].size(), 2);
+    EXPECT_EQ(meta["safetensors"]["shards"][0], "model-00001.safetensors");
+    EXPECT_EQ(meta["safetensors"]["shards"][1], "model-00002.safetensors");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorSkipsSafetensorsWhenMetadataMissing) {
+    TempModelDir tmp;
+    auto model_dir = tmp.base / "nemotron-30b";
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("nemotron-30b");
+    EXPECT_FALSE(desc.has_value());
+}
+
+// RED: index が存在しても shard が欠損している場合は無効とみなす
+TEST(ModelStorageTest, ResolveDescriptorRejectsMissingShards) {
+    TempModelDir tmp;
+    create_safetensors_index_with_missing_shard(tmp.base, "nemotron-30b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("nemotron-30b");
+    EXPECT_FALSE(desc.has_value());
+}
+
+TEST(ModelStorageTest, ListAvailableDescriptorsIncludesGgufAndNemotronSafetensors) {
+    TempModelDir tmp;
+    create_model(tmp.base, "gpt-oss-20b");
+    create_safetensors_model_with_index(tmp.base, "nemotron-30b");
+
+    ModelStorage storage(tmp.base.string());
+    auto list = storage.listAvailableDescriptors();
+
+    // gguf + nemotron safetensors
+    ASSERT_EQ(list.size(), 2u);
+    std::vector<std::string> formats;
+    for (const auto& d : list) formats.push_back(d.format);
+    std::sort(formats.begin(), formats.end());
+    EXPECT_EQ(formats[0], "gguf");
+    EXPECT_EQ(formats[1], "safetensors");
 }
 
 // Edge case: Empty model name

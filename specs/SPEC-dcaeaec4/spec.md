@@ -2,8 +2,9 @@
 
 ## 概要
 
-llm-nodeがモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
-ルーターが返す配布情報（共有パス or ダウンロードURL）を優先利用する。
+llm-node がモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
+**モデルキャッシュはNode主導**とする。ルーターは登録情報とファイル一覧（マニフェスト）を提示し、
+Node が GPU 差分に応じて必要アーティファクトを選択・取得する。
 LLM runtime固有のストレージ形式への暗黙フォールバックは撤廃する。
 
 ## 背景と動機
@@ -18,13 +19,12 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 ### 解決策
 
-シンプルな独自ディレクトリ構造を採用しつつ、ルーター主導で配布情報を返す：
+シンプルな独自ディレクトリ構造を採用しつつ、ルーターは登録情報とマニフェストを提示する：
 
 ```text
 ~/.llm-router/models/
   <model-name>/
-    model.gguf
-    metadata.json (optional)
+    model.gguf または model.safetensors.*
 ```
 
 ## 要件
@@ -47,23 +47,23 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
   - `openai/gpt-oss-20b` → `openai/gpt-oss-20b/model.gguf`（ネストディレクトリ）
 - 危険な文字（`..`, `\0`等）は禁止、`/`はディレクトリセパレータとして許可
 
-#### FR-3: GGUFファイル解決（多段フロー）
+#### FR-3: モデルアーティファクト解決（Node主導）
 
-1. ルーター `/v1/models` 応答の対象モデルを取得し、`path` を参照できること。
-   - `/v1/models` はOpenAI互換API + ダッシュボード拡張フィールド（`path`, `lifecycle_status`等）を含む
-2. ルーターは外部URL（HuggingFace等）からモデルを取得し、**事前に自分の `~/.llm-router/models/` へキャッシュ**する。成功すれば `path` を応答に含める。
-3. ノードはまずローカル `~/.llm-router/models/<name>/model.gguf` を探す。あれば採用。
-4. ルーターから受け取った `path` が存在し読み取り可能なら、それを直接使用（共有ストレージ: NFS, S3等）。
-5. `path` が不可なら、ルーターの `/v1/models/blob/:model_name` からダウンロードし、`~/.llm-router/models` に保存。
+1. ルーターは登録済みモデルの**ファイル一覧（マニフェスト）**を提示する。
+   - 例: `/v0/models/registry/:model_name/manifest.json`
+2. Node は登録時に確定した形式と GPU バックエンド（Metal/DirectML）に応じて**必要アーティファクトを選択**する。
+3. Node はローカル `~/.llm-router/models/<name>/` を確認し、必要アーティファクトが揃っていれば採用する。
+4. 共有パスが設定済みでアクセス可能な場合、共有パスを直接参照する（コピーしない）。
+5. 共有パスが使えない場合、Node は**許可リスト内の外部ソース（HuggingFace等）**から必要アーティファクトを取得し、ローカルに保存する。
+   - ルーターは必要に応じてプロキシ（`/v0/models/registry/.../files/...` 等）として利用できるが、事前キャッシュは前提としない。
 6. いずれも不可ならエラーを返す。LLM runtime固有形式への暗黙フォールバックは禁止。
-7. **重要**: ノードは外部URL（HuggingFace等）から直接ダウンロードしてはならない。すべてのモデル取得はルーター経由で行う。
 
-※4の「直接使用」は共有ストレージ/NFS/S3を想定。不可の場合は5にフォールバックする。
+※4の「直接使用」は共有ストレージ/NFS/S3を想定する。
 
 #### FR-4: 利用可能モデル一覧
 
 - `listAvailable()` は `models_dir` 配下の全ディレクトリを走査
-- 各ディレクトリ内に `model.gguf` が存在するものをリスト
+- 各ディレクトリ内に `model.gguf` もしくは safetensors（index + shards）が存在するものをリスト
 
 #### FR-5: メタデータ（オプション）
 
@@ -72,9 +72,9 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-6: ノード起動時同期
 
-- ノードは起動時にルーターの `/v1/models` エンドポイントからモデル一覧を取得
-- 各モデルについてFR-3のモデル解決フローに従って取得/参照
-- ローカル → 共有パス → API経由ダウンロードの順で解決
+- ノードは起動時にルーターのモデル一覧（`/v1/models` または `/v0/models`）を取得
+- 各モデルについて **マニフェストを参照**し、FR-3の解決フローに従って取得/参照
+- ローカル → 共有パス → 外部ソース/プロキシの順で解決
 
 #### FR-7: ルーターからの同期通知
 
@@ -86,16 +86,17 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-8: API設計
 
-すべてのモデル関連APIは `/v1/models/...` に統一する：
+外部クライアント向けと Node 同期向けで用途を分ける：
 
-- `GET /v1/models` - モデル一覧（OpenAI互換 + ダッシュボード拡張フィールド）
+- `GET /v1/models` - 外部クライアント向け一覧（OpenAI互換 + ダッシュボード拡張フィールド）
 - `POST /v1/models/register` - モデル登録（HuggingFace URL等）
 - `DELETE /v1/models/:model_name` - モデル削除
-- `GET /v1/models/blob/:model_name` - モデルファイル配信（ノード同期用）
 - `POST /v1/models/discover-gguf` - GGUF検索
+- `GET /v0/models` - Node 同期向けメタデータ（format / repo / filename など）
+- `GET /v0/models/registry/:model_name/manifest.json` - Node 向けファイル一覧
+- `GET /v0/models/registry/:model_name/files/:file` - ルーター経由のファイル取得（プロキシとして任意利用）
 
 **廃止済みエンドポイント**:
-- `/v0/models` - **廃止**（`/v1/models`に統合）
 - `/api/models/registered` - **廃止**（`/v1/models`に統合）
 
 #### FR-9: 全ノード全モデル対応の原則
@@ -113,8 +114,8 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 #### NFR-2: シンプルさと安全性
 
 - LLM runtimeのmanifest/blob形式のサポートは削除（他アプリの資産に依存しない）
-- 参照パスは `~/.llm-router/models` とルーターが明示的に返す `path` のみ
-- ノードは外部URLから直接ダウンロードせず、必ずルーター経由（`/v1/models/blob`）で取得
+- 参照パスは `~/.llm-router/models` と共有パス（設定時）のみ
+- ノードのダウンロード先は **許可リスト内の外部ソース** または **ルーターのプロキシ** に限定する
 
 ## ディレクトリ構造の例
 
@@ -124,8 +125,11 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ├── router.db            # ルーターDB（SQLite）
 └── models/
     ├── gpt-oss-20b/
-    │   ├── model.gguf   # モデルファイル
-    │   └── metadata.json # (optional)
+    │   ├── config.json
+    │   ├── tokenizer.json
+    │   ├── model.safetensors.index.json
+    │   ├── model-00001-of-0000X.safetensors
+    │   └── model.metal.bin  # (optional, Metal最適化)
     ├── gpt-oss-7b/
     │   └── model.gguf
     └── qwen3-coder-30b/
@@ -158,20 +162,19 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - デフォルトパス: ~/.llm-router/models/（FR-1で明記）
 - 環境変数: LLM_NODE_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
 - モデル名形式: ファイル名ベースまたは階層形式（FR-2で明記）
-- 解決フロー: ローカル → 共有パス → API経由（FR-3で明記）
-- API設計: すべて `/v1/models/...` に統一（FR-8で明記）
+- 解決フロー: ローカル → 共有パス → 外部ソース/プロキシ（FR-3で明記）
+- API設計: 外部は `/v1/models`、Node同期は `/v0/models` と registry API（FR-8で明記）
 - 全ノード全モデル対応: すべてのノードがルーターの全対応モデルに対応（FR-9で明記）
 
 **削除される機能**:
 
 - LLM runtimeのmanifest/blob形式サポート
 - registry.runtime.aiパス構造
-- `/v0/models` エンドポイント（`/v1/models` に統一）
+ 
 
 **重要な設計判断（2025-12-24追加）**:
 
-- すべてのモデル関連APIは `/v1/models/...` に統一（FR-8）
-- ノードは外部URL（HuggingFace等）から直接ダウンロードしない（FR-3ステップ7）
+- Node は許可リスト内の外部ソースから直接取得できる（FR-3）
 - 同期はPull型: ルーターは通知のみ送信し、ノードが自発的に取得（FR-7）
 - モデル割り当ては行わず、全ノードが全モデルに対応（FR-9）
 

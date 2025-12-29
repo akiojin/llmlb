@@ -31,7 +31,7 @@ pub enum ModelType {
 - デフォルト値は `Llm`
 - シリアライズ時は小文字スネークケース
 
-### 2. RuntimeType (新規)
+### 2. RuntimeType (更新)
 
 **ファイル**: `common/src/types.rs`
 
@@ -41,13 +41,10 @@ pub enum ModelType {
 pub enum RuntimeType {
     /// llama.cpp (テキスト生成、Embedding)
     #[default]
-    #[serde(rename = "llama_cpp")]
     LlamaCpp,
     /// whisper.cpp (音声認識)
-    #[serde(rename = "whisper_cpp")]
     WhisperCpp,
-    /// ONNX Runtime (TTS、汎用推論)
-    #[serde(rename = "onnx_runtime")]
+    /// ONNX Runtime (音声合成)
     OnnxRuntime,
 }
 ```

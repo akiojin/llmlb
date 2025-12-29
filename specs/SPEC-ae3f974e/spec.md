@@ -2,8 +2,14 @@
 
 **機能ID**: `SPEC-ae3f974e`
 **作成日**: 2024-12-14
-**ステータス**: 実装完了（コンパイル検証待ち）
-**入力**: ユーザー説明: "画像生成モデル対応 - llm-routerに画像生成モデル対応を追加する。stable-diffusion.cppを使用し、OpenAI API互換のエンドポイント（/v1/images/generations, /v1/images/edits, /v1/images/variations）を実装する。"
+**ステータス**: 方針更新（要再設計）
+**入力**: ユーザー説明: "画像生成モデル対応 - llm-routerに画像生成モデル対応を追加する。OpenAI API互換のエンドポイント（/v1/images/generations, /v1/images/edits, /v1/images/variations）を実装する。"
+
+## 決定事項（共有用サマリ）
+- 画像生成は **safetensors正本** を前提に実行する
+- stable-diffusion.cpp を当面利用し、safetensors を直接ロードできる前提とする
+- safetensors と GGUF が共存する場合、登録時の format 指定を必須とする
+- Node実行時はPython依存を導入しない
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -116,7 +122,10 @@
 
 ## 技術制約 *(該当する場合)*
 
-- 画像生成はstable-diffusion.cppがサポートするモデル形式（GGML/GGUF）に限定される
+- 画像生成はsafetensorsを正本として直接読み込めるエンジンを使用する
+- stable-diffusion.cpp は safetensors を直接ロードできる前提で継続利用する
+- GGUFは登録時に `format=gguf` を選択した場合のみ使用する
+- safetensors と GGUF が共存する場合は format 指定が必須（実行時の自動フォールバックは禁止）
 - GPUメモリを大量に消費する（SDXL: 8GB+）
 - 1枚あたりの生成時間は数秒〜数十秒
 - 入力画像のファイルサイズは最大4MBに制限される
@@ -128,7 +137,7 @@
 この機能は以下を前提とします:
 
 - ノードが画像生成に十分なGPUメモリ（8GB+推奨）を持っている
-- Stable Diffusionモデルが入手可能である（GGUF形式）
+- Stable Diffusionモデルが入手可能である（safetensors優先）
 - ネットワーク帯域が画像ファイル転送に十分である
 
 ---
@@ -140,7 +149,7 @@
 - 既存のモデル管理システム（登録・削除・一覧）
 - 既存のノード管理システム（登録・ヘルスチェック・ロードバランシング）
 - 既存の認証・認可システム
-- stable-diffusion.cpp（外部ライブラリ）
+- stable-diffusion.cpp（外部ライブラリ、safetensors直接ロード）
 
 ---
 
@@ -148,7 +157,7 @@
 
 ### Session 2025-12-24
 
-仕様を精査した結果、重大な曖昧さは検出されませんでした。実装も完了しています。
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
 
 **確認済み事項**:
 
@@ -157,15 +166,12 @@
 - 処理速度目標: 1024x1024画像を30秒以内（成功基準2で明記）
 - 同時処理: 5件以上（成功基準5で明記）
 - API互換性: OpenAI Images API互換（成功基準3で明記）
-- 対応モデル形式: GGML/GGUF（技術制約で明記）
+- 対応モデル形式: safetensors / GGUF（登録時に選択）
 
-**実装完了状態**:
+**方針更新**:
 
-- Router側: Rust実装完了（契約テスト、統合テスト含む）
-- Node側: C++実装完了（stable-diffusion.cpp統合）
-- 残タスク: コンパイル検証（BUILD_WITH_SD=ON）のみ
-
----
+- stable-diffusion.cpp は safetensors 直接読み込みの前提で運用する
+- safetensors と GGUF が共存する場合は format 指定を必須とする
 
 ## 成功基準 *(必須)*
 

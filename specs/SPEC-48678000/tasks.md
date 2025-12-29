@@ -1,7 +1,7 @@
 # タスク: モデル自動解決機能
 
 **機能ID**: `SPEC-48678000`
-**ステータス**: Phase 3.5完了（実装・統合・ドキュメント更新）
+**ステータス**: 要件更新に伴い再RED（Phase 3.2差し替え）
 **入力**: `/specs/SPEC-48678000/` の設計ドキュメント
 
 ## 技術スタック
@@ -19,8 +19,8 @@
   - ✅ 環境変数・設定は存在しない
 - [x] T003 関連するテストコードを削除
   - ✅ テストコードは存在しない
-- [x] T003.1 未使用のhf_client（ダミー実装）を削除
-  - FR-006（HuggingFace直接ダウンロード禁止）対応
+- [ ] T003.1 外部ソース取得の許可リストとHTTPクライアント方針を整理
+  - FR-006（許可リスト内の外部ダウンロード許可）対応
 
 ## Phase 3.2: テストファースト (TDD RED)
 
@@ -28,17 +28,17 @@
   - ✅ ResolveFromSharedPathWhenNotLocal (FR-002)
   - ✅ SharedPathDoesNotCopyToLocal (FR-002)
   - ✅ LocalPathTakesPriority (FR-001)
-- [x] T005 [P] `node/tests/unit/model_resolver_test.cpp` にルーターAPI経由ダウンロードの contract test
-  - 🔴 DownloadFromRouterAPIWhenSharedInaccessible (FR-003) - RED: router_attempted未実装
-  - 🔴 DownloadedModelSavedToLocal (FR-004) - RED: downloadFromRouter未実装
-  - 🔴 SharedPathInaccessibleTriggersRouterFallback (FR-003) - RED
+- [ ] T005 [P] `node/tests/unit/model_resolver_test.cpp` に外部ソース/プロキシ経由ダウンロードの contract test
+  - 🔴 DownloadFromOriginWhenSharedInaccessible (FR-003) - RED: origin_attempted未実装
+  - 🔴 DownloadedModelSavedToLocal (FR-004) - RED: downloadFromOrigin未実装
+  - 🔴 SharedPathInaccessibleTriggersOriginFallback (FR-003) - RED
 - [x] T006 [P] `node/tests/unit/model_resolver_test.cpp` にモデル不在時のエラーハンドリング contract test
   - ✅ ReturnErrorWhenModelNotFound (FR-005)
   - ✅ ErrorResponseWithinOneSecond (成功基準3)
   - ✅ ClearErrorMessageWhenModelNotFoundAnywhere (US3)
-- [x] T007 `node/tests/unit/model_resolver_test.cpp` に統合テスト: 解決フロー全体
-  - ✅ FullFallbackFlow (local -> shared -> error)
-  - ✅ HuggingFaceDirectDownloadProhibited (FR-006)
+- [ ] T007 `node/tests/unit/model_resolver_test.cpp` に統合テスト: 解決フロー全体
+  - ✅ FullFallbackFlow (local -> shared -> origin -> error)
+  - 🔴 HuggingFaceDirectDownloadAllowedWithAllowlist (FR-006)
   - ✅ NoAutoRepairFunctionality (FR-007/成功基準4)
 - [x] T007.1 エッジケーステスト追加
   - 🔴 NetworkDisconnectionToSharedPathTriggersRouterFallback - RED
@@ -46,11 +46,11 @@
   - 🔴 PreventDuplicateDownloads - RED: hasDownloadLock未実装
 - [x] T007.2 ユーザーストーリー受け入れシナリオテスト
   - ✅ UpdatedSharedPathModelIsUsed (US1-シナリオ2)
-- [x] T007.3 技術制約テスト追加
-  - 🔴 OnlyGGUFFormatSupported - RED: GGUF検証未実装
-  - 🔴 RouterDownloadValidatesGGUFFormat - RED: GGUF magic bytes検証未実装
-- [x] T007.4 Clarificationsテスト追加
-  - 🔴 RouterDownloadHasTimeout - RED: タイムアウト設定未実装
+- [ ] T007.3 技術制約テスト追加
+  - 🔴 AllowlistBlocksUnknownOrigin - RED: allowlist未実装
+  - 🔴 DownloadValidatesArtifactFormat - RED: 形式検証未実装
+- [ ] T007.4 Clarificationsテスト追加
+  - 🔴 OriginDownloadHasTimeout - RED: タイムアウト設定未実装
   - 🔴 ConcurrentDownloadLimit - RED: 同時ダウンロード制限未実装
 
 ## Phase 3.3: コア実装
@@ -58,7 +58,7 @@
 - [x] T008 `node/src/model_resolver.cpp` にモデル解決クラスを実装
   - ローカルキャッシュ確認
   - 共有パス直接参照（コピーなし）
-  - ルーターAPI経由ダウンロード
+  - 外部ソース/プロキシ経由ダウンロード
   - エラーハンドリング
 
 - [x] T009 `node/src/model_resolver.cpp` に共有パス参照ロジック
@@ -66,8 +66,9 @@
   - ファイル存在チェック
   - 直接パス返却（コピーしない）
 
-- [x] T010 `node/src/model_resolver.cpp` にルーターAPI経由ダウンロード
-  - `GET /v0/models/blob/:model_name` エンドポイント呼び出し
+- [ ] T010 `node/src/model_resolver.cpp` に外部ソース/プロキシ経由ダウンロード
+  - マニフェストに基づく外部URL取得
+  - ルータープロキシ（`/v0/models/registry/.../files/...`）の利用
   - ローカルへの保存処理
   - 進捗表示（オプション）
 
@@ -78,9 +79,9 @@
 
 ## Phase 3.4: 統合
 
-- [x] T012 既存の推論フローに ModelResolver を統合
-- [x] T013 重複ダウンロード防止（ミューテックス）
-- [x] T014 設定ファイルから共有パス・ルーターURL読み込み
+- [ ] T012 既存の推論フローに ModelResolver を統合
+- [ ] T013 重複ダウンロード防止（ミューテックス）
+- [ ] T014 設定ファイルから共有パス・許可リスト・ルーターURL読み込み
 
 ## Phase 3.5: 仕上げ
 
@@ -105,7 +106,7 @@ T012-T014 → T015-T017 (統合 → 仕上げ)
 ```text
 # Phase 3.2 テスト (並列実行可能)
 Task T004: node/tests/ 共有パス参照 contract test
-Task T005: node/tests/ ルーターAPI経由ダウンロード contract test
+Task T005: node/tests/ 外部ソース/プロキシ経由ダウンロード contract test
 Task T006: node/tests/ モデル不在時エラー contract test
 ```
 
@@ -113,7 +114,7 @@ Task T006: node/tests/ モデル不在時エラー contract test
 
 - [x] auto_repair 関連コードが完全に削除されている (T001-T003)
 - [x] 共有パスからの直接参照でコピーが発生しない (テスト: SharedPathDoesNotCopyToLocal)
-- [x] ルーターAPI経由ダウンロードが正常に動作する (Phase 3.3で実装済み)
+- [ ] 外部ソース/プロキシ経由ダウンロードが正常に動作する (Phase 3.3で実装予定)
 - [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
-- [x] Hugging Face への直接ダウンロードが禁止されている (テスト: HuggingFaceDirectDownloadProhibited)
+- [ ] Hugging Face への直接ダウンロードが許可リストで制御されている (テスト: HuggingFaceDirectDownloadAllowedWithAllowlist)
 - [x] すべてのテストが実装より先にある (TDD RED完了)

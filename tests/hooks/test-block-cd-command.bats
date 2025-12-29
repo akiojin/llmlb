@@ -20,7 +20,48 @@ run_hook() {
 # ヘルパー関数: JSONレスポンスから"decision"フィールドを抽出
 # 出力にはstderrメッセージとJSONが混在しているため、JSON部分のみを抽出
 get_decision() {
-    echo "$output" | sed -n '/{/,/^}/p' | jq -r '.decision // empty' 2>/dev/null || echo ""
+    local json_block
+    json_block=$(echo "$output" | sed -n '/{/,/^}/p')
+    if command -v python3 >/dev/null 2>&1; then
+        JSON_INPUT="$json_block" python3 - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+value = obj.get("decision", "")
+print("" if value is None else value)
+PY
+        return
+    fi
+    if command -v python >/dev/null 2>&1; then
+        JSON_INPUT="$json_block" python - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+value = obj.get("decision", "")
+print("" if value is None else value)
+PY
+        return
+    fi
+    if command -v jq >/dev/null 2>&1; then
+        echo "$json_block" | jq -r '\.decision // empty' 2>/dev/null || echo ""
+        return
+    fi
+    # 最低限のフォールバック: JSONを直接正規表現で抜き出す
+    echo "$output" | sed -n 's/.*"decision":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
 # テストケース1: cd . → allow (Worktree内、exit 0)

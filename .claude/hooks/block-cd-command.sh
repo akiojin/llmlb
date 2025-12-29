@@ -10,6 +10,10 @@ if [ -z "$WORKTREE_ROOT" ]; then
     WORKTREE_ROOT=$(pwd)
 fi
 
+if command -v cygpath >/dev/null 2>&1; then
+    WORKTREE_ROOT=$(cygpath -u "$WORKTREE_ROOT" 2>/dev/null || echo "$WORKTREE_ROOT")
+fi
+
 # パスが Worktree 配下かどうかを判定
 is_within_worktree() {
     local target_path="$1"
@@ -39,6 +43,10 @@ is_within_worktree() {
         resolved_path=$(realpath -m "$abs_path" 2>/dev/null) && abs_path="$resolved_path"
     fi
 
+    if command -v cygpath >/dev/null 2>&1; then
+        abs_path=$(cygpath -u "$abs_path" 2>/dev/null || echo "$abs_path")
+    fi
+
     # Worktreeルートのプレフィックスチェック
     case "$abs_path" in
         "$WORKTREE_ROOT"|"$WORKTREE_ROOT"/*)
@@ -54,7 +62,40 @@ is_within_worktree() {
 json_input=$(cat)
 
 # ツール名を確認
-tool_name=$(echo "$json_input" | jq -r '.tool_name // empty')
+get_json_value() {
+    local query="$1"
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$json_input" | jq -r "$query" 2>/dev/null
+        return
+    fi
+    if command -v python >/dev/null 2>&1; then
+        JSON_INPUT="$json_input" QUERY="$query" python - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "")
+query = os.environ.get("QUERY", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+if query.startswith(".tool_name"):
+    value = obj.get("tool_name", "")
+elif query.startswith(".tool_input.command"):
+    value = (obj.get("tool_input") or {}).get("command", "")
+else:
+    value = ""
+
+print("" if value is None else value)
+PY
+        return
+    fi
+    printf '%s' ""
+}
+
+tool_name=$(get_json_value '.tool_name // empty')
 
 # Bashツール以外は許可
 if [ "$tool_name" != "Bash" ]; then
@@ -62,7 +103,7 @@ if [ "$tool_name" != "Bash" ]; then
 fi
 
 # コマンドを取得
-command=$(echo "$json_input" | jq -r '.tool_input.command // empty')
+command=$(get_json_value '.tool_input.command // empty')
 
 # 演算子で連結された各コマンドを個別にチェックするために分割
 # &&, ||, ;, |, |&, &, 改行などで区切って先頭トークンを判定する
@@ -89,7 +130,7 @@ while IFS= read -r segment; do
 {
   "decision": "block",
   "reason": "🚫 cd command outside worktree is not allowed",
-  "stopReason": "Worktree is designed to complete work within the launched directory. Directory navigation outside the worktree using cd command cannot be executed.\n\nWorktree root: $WORKTREE_ROOT\nTarget path: $target_path\nBlocked command: $command\n\nInstead, use absolute paths to execute commands, e.g., 'git -C /path/to/repo status' or '/path/to/script.sh'"
+  "stopReason": "Worktree is designed to complete work within the launched directory. Directory navigation outside the worktree using cd command cannot be executed. Worktree root: $WORKTREE_ROOT; Target path: $target_path; Blocked command: $command. Instead, use absolute paths to execute commands, e.g., 'git -C /path/to/repo status' or '/path/to/script.sh'"
 }
 EOF
 

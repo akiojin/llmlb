@@ -8,9 +8,15 @@ use llm_router_common::{
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
 };
 use sqlx::SqlitePool;
+use std::env;
 use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
+
+const LEGACY_DATA_DIR_ENV: &str = "LLM_ROUTER_DATA_DIR";
+const DEFAULT_DATA_DIR: &str = ".llm-router";
+const LEGACY_REQUEST_HISTORY_FILE: &str = "request_history.json";
 
 /// リクエスト履歴ストレージ（SQLite版）
 #[derive(Clone)]
@@ -26,6 +32,58 @@ impl RequestHistoryStorage {
 
     /// レコードを保存
     pub async fn save_record(&self, record: &RequestResponseRecord) -> RouterResult<()> {
+        self.insert_record(record, false).await?;
+        Ok(())
+    }
+
+    /// 旧JSON履歴ファイルをSQLiteへインポート（存在すれば）
+    pub async fn import_legacy_json_if_present(&self) -> RouterResult<usize> {
+        let json_path = legacy_request_history_path()?;
+        if !json_path.exists() {
+            return Ok(0);
+        }
+
+        let contents = std::fs::read_to_string(&json_path).map_err(|e| {
+            RouterError::Internal(format!("Failed to read legacy request history: {}", e))
+        })?;
+
+        let records = parse_legacy_records(&contents)?;
+        if records.is_empty() {
+            tracing::info!(
+                "Legacy request history file is empty: {}",
+                json_path.display()
+            );
+        }
+
+        let mut imported = 0usize;
+        for record in &records {
+            let inserted = self.insert_record(record, true).await?;
+            imported += inserted as usize;
+        }
+
+        let migrated_path = legacy_migrated_path(&json_path);
+        if let Err(err) = std::fs::rename(&json_path, &migrated_path) {
+            tracing::warn!(
+                "Failed to rename legacy request history to {}: {}",
+                migrated_path.display(),
+                err
+            );
+        } else {
+            tracing::info!(
+                "Legacy request history migrated: {} -> {}",
+                json_path.display(),
+                migrated_path.display()
+            );
+        }
+
+        Ok(imported)
+    }
+
+    async fn insert_record(
+        &self,
+        record: &RequestResponseRecord,
+        ignore_conflicts: bool,
+    ) -> RouterResult<u64> {
         let id = record.id.to_string();
         let timestamp = record.timestamp.to_rfc3339();
         let request_type = format!("{:?}", record.request_type);
@@ -41,34 +99,44 @@ impl RequestHistoryStorage {
         };
         let completed_at = record.completed_at.to_rfc3339();
 
-        sqlx::query(
+        let insert_sql = if ignore_conflicts {
+            r#"
+            INSERT OR IGNORE INTO request_history (
+                id, timestamp, request_type, model, node_id, node_machine_name,
+                node_ip, client_ip, request_body, response_body, duration_ms,
+                status, error_message, completed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        } else {
             r#"
             INSERT INTO request_history (
                 id, timestamp, request_type, model, node_id, node_machine_name,
                 node_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&id)
-        .bind(&timestamp)
-        .bind(&request_type)
-        .bind(&record.model)
-        .bind(&node_id)
-        .bind(&record.node_machine_name)
-        .bind(&node_ip)
-        .bind(&client_ip)
-        .bind(&request_body)
-        .bind(&response_body)
-        .bind(duration_ms)
-        .bind(&status)
-        .bind(&error_message)
-        .bind(&completed_at)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RouterError::Database(format!("Failed to save record: {}", e)))?;
+            "#
+        };
 
-        Ok(())
+        let result = sqlx::query(insert_sql)
+            .bind(&id)
+            .bind(&timestamp)
+            .bind(&request_type)
+            .bind(&record.model)
+            .bind(&node_id)
+            .bind(&record.node_machine_name)
+            .bind(&node_ip)
+            .bind(&client_ip)
+            .bind(&request_body)
+            .bind(&response_body)
+            .bind(duration_ms)
+            .bind(&status)
+            .bind(&error_message)
+            .bind(&completed_at)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RouterError::Database(format!("Failed to save record: {}", e)))?;
+
+        Ok(result.rows_affected())
     }
 
     /// すべてのレコードを読み込み（タイムスタンプ降順）
@@ -299,6 +367,56 @@ impl RequestHistoryStorage {
     }
 }
 
+fn legacy_request_history_path() -> RouterResult<PathBuf> {
+    if let Ok(dir) = env::var(LEGACY_DATA_DIR_ENV) {
+        return Ok(PathBuf::from(dir).join(LEGACY_REQUEST_HISTORY_FILE));
+    }
+
+    let home = env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .map_err(|_| RouterError::Internal("Failed to resolve home directory".to_string()))?;
+
+    Ok(PathBuf::from(home)
+        .join(DEFAULT_DATA_DIR)
+        .join(LEGACY_REQUEST_HISTORY_FILE))
+}
+
+fn legacy_migrated_path(original: &Path) -> PathBuf {
+    let file_name = original
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(LEGACY_REQUEST_HISTORY_FILE);
+    let migrated_name = format!("{}.migrated", file_name);
+    original.with_file_name(migrated_name)
+}
+
+fn parse_legacy_records(contents: &str) -> RouterResult<Vec<RequestResponseRecord>> {
+    if contents.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    match serde_json::from_str::<Vec<RequestResponseRecord>>(contents) {
+        Ok(records) => Ok(records),
+        Err(primary_err) => {
+            let mut records = Vec::new();
+            let stream =
+                serde_json::Deserializer::from_str(contents).into_iter::<RequestResponseRecord>();
+            for record in stream {
+                match record {
+                    Ok(item) => records.push(item),
+                    Err(err) => return Err(RouterError::Common(err.into())),
+                }
+            }
+
+            if records.is_empty() {
+                return Err(RouterError::Common(primary_err.into()));
+            }
+
+            Ok(records)
+        }
+    }
+}
+
 /// SQLiteから取得した行データ
 #[derive(sqlx::FromRow)]
 struct RequestHistoryRow {
@@ -501,6 +619,8 @@ mod tests {
     use super::*;
     use crate::db::migrations::initialize_database;
     use llm_router_common::protocol::RequestType;
+    use serial_test::serial;
+    use tempfile::tempdir;
 
     async fn create_test_pool() -> SqlitePool {
         initialize_database("sqlite::memory:")
@@ -611,5 +731,34 @@ mod tests {
         // 3ページ目（1件）
         let result = storage.filter_and_paginate(&filter, 3, 2).await.unwrap();
         assert_eq!(result.records.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_import_legacy_request_history_json() {
+        let temp_dir = tempdir().expect("temp dir");
+        std::env::set_var(LEGACY_DATA_DIR_ENV, temp_dir.path());
+
+        let json_path = temp_dir.path().join(LEGACY_REQUEST_HISTORY_FILE);
+        let record = create_test_record(Utc::now());
+        let records = vec![record.clone()];
+        std::fs::write(&json_path, serde_json::to_string(&records).unwrap()).unwrap();
+
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let imported = storage.import_legacy_json_if_present().await.unwrap();
+        assert_eq!(imported, 1);
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, record.id);
+
+        let migrated = temp_dir
+            .path()
+            .join(format!("{}.migrated", LEGACY_REQUEST_HISTORY_FILE));
+        assert!(migrated.exists());
+
+        std::env::remove_var(LEGACY_DATA_DIR_ENV);
     }
 }

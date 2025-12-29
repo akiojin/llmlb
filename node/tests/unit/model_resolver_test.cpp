@@ -116,6 +116,11 @@ TEST(ModelResolverTest, DownloadFromRouterAPIWhenSharedInaccessible) {
         << "Router download should be attempted when local/shared not available";
 }
 
+// FR-003: When shared path is inaccessible, download from origin (HF/proxy)
+TEST(ModelResolverTest, DownloadFromOriginWhenSharedInaccessible) {
+    GTEST_SKIP() << "TDD RED: origin download path not implemented yet";
+}
+
 // FR-004: Downloaded model should be saved to local storage
 // TDD RED: downloadFromRouter must save to local to pass
 TEST(ModelResolverTest, DownloadedModelSavedToLocal) {
@@ -152,6 +157,11 @@ TEST(ModelResolverTest, SharedPathInaccessibleTriggersRouterFallback) {
     // When implemented: should attempt router as fallback
     EXPECT_TRUE(result.router_attempted)
         << "Should attempt router when shared path is inaccessible";
+}
+
+// FR-003 additional: Shared path inaccessible triggers origin fallback
+TEST(ModelResolverTest, SharedPathInaccessibleTriggersOriginFallback) {
+    GTEST_SKIP() << "TDD RED: origin fallback not implemented yet";
 }
 
 // ===========================================================================
@@ -214,18 +224,14 @@ TEST(ModelResolverTest, FullFallbackFlow) {
     EXPECT_FALSE(result3.success);
 }
 
-// FR-006: HuggingFace direct download is prohibited
-TEST(ModelResolverTest, HuggingFaceDirectDownloadProhibited) {
-    TempModelDirs tmp;
+// FR-006: HuggingFace direct download is allowed with allowlist
+TEST(ModelResolverTest, HuggingFaceDirectDownloadAllowedWithAllowlist) {
+    GTEST_SKIP() << "TDD RED: allowlist-based direct download not implemented yet";
+}
 
-    // Resolver should never attempt to download from huggingface.co
-    ModelResolver resolver(tmp.local.string(), tmp.shared.string(), "");
-    auto result = resolver.resolve("meta-llama/Llama-3.1-8B");
-
-    // Should fail (not try HuggingFace)
-    EXPECT_FALSE(result.success);
-    // Error message should not suggest HuggingFace download
-    EXPECT_TRUE(result.error_message.find("huggingface") == std::string::npos);
+// FR-006: Allowlist should block unknown origins
+TEST(ModelResolverTest, AllowlistBlocksUnknownOrigin) {
+    GTEST_SKIP() << "TDD RED: allowlist enforcement not implemented yet";
 }
 
 // ===========================================================================

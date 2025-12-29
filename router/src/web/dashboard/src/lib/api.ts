@@ -360,6 +360,26 @@ export interface OpenAIModel {
   chat_template?: string
 }
 
+// /v0/models/discover-gguf response types
+export interface GgufFileInfo {
+  filename: string
+  size_bytes: number
+  quantization?: string | null
+}
+
+export interface GgufDiscoveryResult {
+  repo: string
+  provider: string
+  trusted: boolean
+  files: GgufFileInfo[]
+}
+
+export interface DiscoverGgufResponse {
+  base_model: string
+  gguf_alternatives: GgufDiscoveryResult[]
+  cached: boolean
+}
+
 // /v1/models レスポンス
 interface OpenAIModelsResponse {
   object: 'list'
@@ -467,6 +487,23 @@ export const modelsApi = {
   },
 
   getHub: () => fetchWithAuth<ModelWithStatus[]>('/v0/models/hub'),
+
+  register: (data: {
+    repo: string
+    format?: 'safetensors' | 'gguf'
+    filename?: string
+    gguf_policy?: 'quality' | 'memory' | 'speed'
+  }) =>
+    fetchWithAuth<unknown>('/v0/models/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  discoverGguf: (model: string) =>
+    fetchWithAuth<DiscoverGgufResponse>('/v0/models/discover-gguf', {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    }),
 
   pull: (modelId: string) =>
     fetchWithAuth<PullModelResponse>('/v0/models/pull', {

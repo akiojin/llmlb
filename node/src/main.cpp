@@ -6,6 +6,7 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include <unistd.h>
 
 #include "system/gpu_detector.h"
@@ -107,7 +108,11 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
-        std::vector<std::string> supported_runtimes{"llama_cpp"};
+        std::vector<std::string> supported_runtimes{"llama_cpp", "nemotron_cpp"};
+
+#ifdef USE_GPTOSS
+        supported_runtimes.push_back("gptoss_cpp");
+#endif
 
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR
@@ -165,6 +170,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         if (!cfg.router_api_key.empty()) {
             model_sync->setApiKey(cfg.router_api_key);
         }
+        model_sync->setSupportedRuntimes(supported_runtimes);
 
         auto model_resolver = std::make_shared<llm_node::ModelResolver>(
             cfg.models_dir,
@@ -174,6 +180,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Initialize inference engine with dependencies (ModelResolver handles local/shared/router resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
+        if (!cfg.engine_plugins_dir.empty() && std::filesystem::exists(cfg.engine_plugins_dir)) {
+            std::string plugin_error;
+            if (!engine.loadEnginePlugins(cfg.engine_plugins_dir, plugin_error)) {
+                spdlog::warn("Engine plugins load failed: {}", plugin_error);
+            } else {
+                spdlog::info("Engine plugins loaded from {}", cfg.engine_plugins_dir);
+            }
+        }
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
@@ -202,7 +216,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #endif
 
         // SPEC-dcaeaec4 FR-7: POST /api/models/pull - receive sync notification from router
-        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry](const httplib::Request&, httplib::Response& res) {
+        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry, &engine](const httplib::Request&, httplib::Response& res) {
             try {
                 spdlog::info("Received model pull notification from router");
 
@@ -216,11 +230,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 }
 
                 // Update registry with current local models
-                auto local_model_infos = model_storage.listAvailable();
+                auto local_descriptors = model_storage.listAvailableDescriptors();
                 std::vector<std::string> local_model_names;
-                local_model_names.reserve(local_model_infos.size());
-                for (const auto& info : local_model_infos) {
-                    local_model_names.push_back(info.name);
+                local_model_names.reserve(local_descriptors.size());
+                for (const auto& desc : local_descriptors) {
+                    if (!engine.isModelSupported(desc)) {
+                        continue;
+                    }
+                    local_model_names.push_back(desc.name);
                 }
                 registry.setModels(local_model_names);
                 spdlog::info("Model sync completed, {} models available", local_model_names.size());
@@ -332,11 +349,14 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         }
 
         // Update registry with local models (models actually available on this node)
-        auto local_model_infos = model_storage.listAvailable();
+        auto local_descriptors = model_storage.listAvailableDescriptors();
         std::vector<std::string> local_model_names;
-        local_model_names.reserve(local_model_infos.size());
-        for (const auto& info : local_model_infos) {
-            local_model_names.push_back(info.name);
+        local_model_names.reserve(local_descriptors.size());
+        for (const auto& desc : local_descriptors) {
+            if (!engine.isModelSupported(desc)) {
+                continue;
+            }
+            local_model_names.push_back(desc.name);
         }
         registry.setModels(local_model_names);
         spdlog::info("Registered {} local models", local_model_names.size());

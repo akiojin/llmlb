@@ -5,6 +5,9 @@ set(UNIT_TEST_SOURCES
     model_downloader_test.cpp
     model_storage_test.cpp
     inference_engine_test.cpp
+    engine_registry_test.cpp
+    engine_host_test.cpp
+    nemotron_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp
@@ -15,6 +18,7 @@ set(UNIT_TEST_SOURCES
     sd_manager_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
+    utils_utf8_test.cpp
     request_guard_test.cpp
     cli_test.cpp
     ../../src/utils/cli.cpp
@@ -26,6 +30,11 @@ set(UNIT_TEST_SOURCES
     ../../src/models/model_resolver.cpp
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
+    ../../src/core/engine_registry.cpp
+    ../../src/core/engine_host.cpp
+    ../../src/core/llama_engine.cpp
+    ../../src/core/gptoss_engine.cpp
+    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/vision_processor.cpp
     ../../src/core/whisper_manager.cpp
@@ -71,6 +80,14 @@ if(APPLE)
         target_link_libraries(llm-node-unit-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
         target_compile_definitions(llm-node-unit-tests PRIVATE USE_METAL=1)
     endif()
+
+    if(BUILD_WITH_GPTOSS)
+        target_link_libraries(llm-node-unit-tests PRIVATE gptoss_metal)
+        add_dependencies(llm-node-unit-tests gptoss_build_metallib)
+        target_link_options(llm-node-unit-tests PRIVATE
+            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
+        )
+    endif()
 endif()
 
 target_include_directories(llm-node-unit-tests
@@ -83,6 +100,14 @@ target_compile_definitions(llm-node-unit-tests
     PRIVATE
         LLM_NODE_TESTING=1
 )
+
+# Ensure whisper/sd manager implementations are compiled in unit tests
+if(BUILD_WITH_WHISPER)
+    target_compile_definitions(llm-node-unit-tests PRIVATE USE_WHISPER=1)
+endif()
+if(BUILD_WITH_SD)
+    target_compile_definitions(llm-node-unit-tests PRIVATE USE_SD=1)
+endif()
 
 add_test(
     NAME llm-node-unit-tests

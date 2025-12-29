@@ -118,7 +118,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）
         .route("/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (SPEC-6cd7f960) - pull/delete は Admin のみ
+        // モデル管理API (Admin のみ: register/pull/delete/discover)
+        .route("/models/register", post(models::register_model))
+        .route(
+            "/models/discover-gguf",
+            post(models::discover_gguf_versions),
+        )
         .route("/models/pull", post(models::pull_model))
         .route("/models/*model_name", delete(models::delete_model))
         // Prometheus metrics（cloud prefix含む独自メトリクス）
@@ -139,7 +144,16 @@ pub fn create_router(state: AppState) -> Router {
     let node_register_routes = Router::new()
         .route("/nodes", post(nodes::register_node))
         // モデルファイル配信API (SPEC-48678000)
-        .route("/models/blob/:model_name", get(models::get_model_blob));
+        .route("/models/blob/:model_name", get(models::get_model_blob))
+        // モデル配布レジストリ（複数ファイル: safetensors 等）
+        .route(
+            "/models/registry/:model_name/manifest.json",
+            get(models::get_model_registry_manifest),
+        )
+        .route(
+            "/models/registry/:model_name/files/:file_name",
+            get(models::get_model_registry_file),
+        );
 
     let node_register_routes = if auth_disabled {
         node_register_routes

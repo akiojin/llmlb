@@ -6,6 +6,8 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
+#include <unordered_set>
 #include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
@@ -14,6 +16,188 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+bool is_regular_or_symlink_file(const fs::path& path) {
+    std::error_code ec;
+    auto st = fs::symlink_status(path, ec);
+    if (ec) return false;
+    return st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
+}
+
+bool is_valid_file(const fs::path& path) {
+    std::error_code ec;
+    if (!is_regular_or_symlink_file(path)) return false;
+    auto size = fs::file_size(path, ec);
+    return !ec && size > 0;
+}
+
+bool is_safetensors_index_file(const fs::path& path) {
+    const std::string filename = path.filename().string();
+    const std::string suffix = ".safetensors.index.json";
+    if (filename.size() < suffix.size()) return false;
+    std::string lower = filename;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lower.rfind(suffix) == lower.size() - suffix.size();
+}
+
+bool has_required_safetensors_metadata(const fs::path& model_dir) {
+    return is_valid_file(model_dir / "config.json") && is_valid_file(model_dir / "tokenizer.json");
+}
+
+std::optional<std::vector<std::string>> load_safetensors_index_shards(const fs::path& index_path) {
+    if (!is_valid_file(index_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(index_path);
+        nlohmann::json j;
+        ifs >> j;
+
+        if (!j.contains("weight_map") || !j["weight_map"].is_object()) {
+            return std::nullopt;
+        }
+
+        const auto& weight_map = j["weight_map"];
+        std::unordered_set<std::string> shard_set;
+        for (auto it = weight_map.begin(); it != weight_map.end(); ++it) {
+            if (!it.value().is_string()) continue;
+            shard_set.insert(it.value().get<std::string>());
+        }
+        std::vector<std::string> shards(shard_set.begin(), shard_set.end());
+        std::sort(shards.begin(), shards.end());
+        return shards;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+bool validate_safetensors_index_shards(const fs::path& model_dir, const fs::path& index_path) {
+    auto shards = load_safetensors_index_shards(index_path);
+    if (!shards) return false;
+
+    // Empty weight_map is allowed (e.g., placeholder index for tests).
+    for (const auto& shard : *shards) {
+        const auto shard_path = model_dir / shard;
+        if (!is_valid_file(shard_path)) {
+            spdlog::warn("ModelStorage: missing safetensors shard: {}", shard_path.string());
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<nlohmann::json> build_safetensors_metadata(const fs::path& model_dir, const fs::path& primary) {
+    nlohmann::json st;
+    st["index"] = primary.filename().string();
+
+    if (is_safetensors_index_file(primary)) {
+        auto shards = load_safetensors_index_shards(primary);
+        if (!shards) return std::nullopt;
+        st["shards"] = *shards;
+    } else {
+        st["shards"] = nlohmann::json::array({primary.filename().string()});
+    }
+
+    nlohmann::json meta;
+    meta["safetensors"] = st;
+    return meta;
+}
+
+std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir) {
+    const auto cfg_path = model_dir / "config.json";
+    if (!fs::exists(cfg_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(cfg_path);
+        nlohmann::json j;
+        ifs >> j;
+
+        if (j.contains("architectures") && j["architectures"].is_array()) {
+            for (const auto& a : j["architectures"]) {
+                if (!a.is_string()) continue;
+                const auto s = a.get<std::string>();
+                if (s.find("GptOss") != std::string::npos || s.find("GPTOSS") != std::string::npos) {
+                    return std::string("gptoss_cpp");
+                }
+                if (s.find("Nemotron") != std::string::npos) {
+                    return std::string("nemotron_cpp");
+                }
+            }
+        }
+
+        if (j.contains("model_type") && j["model_type"].is_string()) {
+            auto mt = j["model_type"].get<std::string>();
+            std::transform(mt.begin(), mt.end(), mt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (mt.find("gpt_oss") != std::string::npos || mt.find("gptoss") != std::string::npos) {
+                return std::string("gptoss_cpp");
+            }
+            if (mt.find("nemotron") != std::string::npos) {
+                return std::string("nemotron_cpp");
+            }
+        }
+    } catch (...) {
+        // ignore parse errors
+    }
+    return std::nullopt;
+}
+
+std::optional<fs::path> resolve_safetensors_primary_in_dir(const fs::path& model_dir) {
+    if (!has_required_safetensors_metadata(model_dir)) return std::nullopt;
+
+    std::vector<fs::path> index_files;
+    std::vector<fs::path> safetensors_files;
+
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+
+        const auto filename = entry.path().filename().string();
+        const auto lower = [&]() {
+            std::string s = filename;
+            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return s;
+        }();
+
+        const std::string kIndexSuffix = ".safetensors.index.json";
+        const std::string kSafetensorsSuffix = ".safetensors";
+
+        const bool is_index = lower.size() >= kIndexSuffix.size() &&
+                              lower.rfind(kIndexSuffix) == lower.size() - kIndexSuffix.size();
+        const bool is_safetensors = lower.size() >= kSafetensorsSuffix.size() &&
+                                    lower.rfind(kSafetensorsSuffix) == lower.size() - kSafetensorsSuffix.size();
+
+        if (is_index) {
+            if (is_valid_file(entry.path())) {
+                index_files.push_back(entry.path());
+            }
+            continue;
+        }
+
+        if (is_safetensors) {
+            // シャードも含むが、indexがある場合は index を優先する
+            if (is_valid_file(entry.path())) {
+                safetensors_files.push_back(entry.path());
+            }
+            continue;
+        }
+    }
+
+    if (index_files.size() == 1) {
+        if (!validate_safetensors_index_shards(model_dir, index_files[0])) {
+            return std::nullopt;
+        }
+        return index_files[0];
+    }
+    if (!index_files.empty()) {
+        return std::nullopt;  // ambiguous
+    }
+
+    // index が無い場合は単一 safetensors のみ許可
+    if (safetensors_files.size() == 1) {
+        return safetensors_files[0];
+    }
+    return std::nullopt;
+}
+
 /// モデルIDをサニタイズ
 /// SPEC-dcaeaec4 FR-2: 階層形式を許可
 /// - `gpt-oss-20b` → `gpt-oss-20b`
@@ -93,68 +277,114 @@ std::vector<ModelInfo> ModelStorage::listAvailable() const {
         return out;
     }
 
-    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
-    for (const auto& entry : fs::recursive_directory_iterator(models_dir_)) {
-        if (entry.is_directory()) continue;
+    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査（ディレクトリ単位）
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
+        if (ec) break;
+        if (!entry.is_directory()) continue;
 
-        // model.gguf ファイルを検索
-        if (entry.path().filename() != "model.gguf") continue;
-
-        std::error_code ec;
-        auto st = fs::symlink_status(entry.path(), ec);
-        if (st.type() != fs::file_type::regular && st.type() != fs::file_type::symlink) {
-            continue;
-        }
-
-        // 親ディレクトリからモデル名を計算
-        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
-        const auto parent_dir = entry.path().parent_path();
-        const auto relative = fs::relative(parent_dir, models_dir_, ec);
+        const auto model_dir = entry.path();
+        const auto relative = fs::relative(model_dir, models_dir_, ec);
         if (ec || relative.empty()) {
-            spdlog::debug("ModelStorage::listAvailable: skipping {} (failed to compute relative path)", entry.path().string());
+            ec.clear();
             continue;
         }
 
-        const std::string model_name = relative.string();
-        spdlog::debug("ModelStorage::listAvailable: found model {} at {}", model_name, entry.path().string());
+        // GGUF
+        const auto gguf_path = model_dir / "model.gguf";
+        if (is_valid_file(gguf_path)) {
+            ModelInfo info;
+            info.name = dirNameToModel(relative.string());
+            info.format = "gguf";
+            info.primary_path = gguf_path.string();
+            info.valid = true;
+            out.push_back(std::move(info));
+            continue;
+        }
 
-        ModelInfo info;
-        info.name = dirNameToModel(model_name);
-        info.gguf_path = entry.path().string();
-        info.valid = true;
-
-        out.push_back(std::move(info));
+        // safetensors
+        if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+            ModelInfo info;
+            info.name = dirNameToModel(relative.string());
+            info.format = "safetensors";
+            info.primary_path = primary->string();
+            info.valid = true;
+            out.push_back(std::move(info));
+            continue;
+        }
     }
 
     spdlog::debug("ModelStorage::listAvailable: found {} models", out.size());
     return out;
 }
 
-std::optional<nlohmann::json> ModelStorage::loadMetadata(const std::string& model_name) const {
+std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
+    std::vector<ModelDescriptor> out;
+    for (const auto& info : listAvailable()) {
+        ModelDescriptor desc;
+        desc.name = info.name;
+        desc.format = info.format;
+        desc.primary_path = info.primary_path;
+        desc.model_dir = fs::path(info.primary_path).parent_path().string();
+
+        if (info.format == "gguf") {
+            desc.runtime = "llama_cpp";
+            out.push_back(std::move(desc));
+            continue;
+        }
+
+        if (info.format == "safetensors") {
+            auto rt = detect_runtime_from_config(fs::path(desc.model_dir));
+            if (!rt) continue;
+            desc.runtime = *rt;
+            if (auto meta = build_safetensors_metadata(fs::path(desc.model_dir), fs::path(desc.primary_path))) {
+                desc.metadata = std::move(*meta);
+            }
+            out.push_back(std::move(desc));
+            continue;
+        }
+    }
+    return out;
+}
+
+std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
-    const auto metadata_path = fs::path(models_dir_) / dir_name / "metadata.json";
+    const auto model_dir = fs::path(models_dir_) / dir_name;
 
-    if (!fs::exists(metadata_path)) {
-        return std::nullopt;
+    const auto gguf_path = model_dir / "model.gguf";
+    if (is_valid_file(gguf_path)) {
+        ModelDescriptor desc;
+        desc.name = model_name;
+        desc.runtime = "llama_cpp";
+        desc.format = "gguf";
+        desc.primary_path = gguf_path.string();
+        desc.model_dir = model_dir.string();
+        return desc;
     }
 
-    try {
-        std::ifstream ifs(metadata_path);
-        json j = json::parse(ifs);
-        return j;
-    } catch (const std::exception& e) {
-        spdlog::warn("ModelStorage::loadMetadata: failed to parse {}: {}", metadata_path.string(), e.what());
-        return std::nullopt;
+    if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+        auto rt = detect_runtime_from_config(model_dir);
+        if (!rt) return std::nullopt;
+        ModelDescriptor desc;
+        desc.name = model_name;
+        desc.runtime = *rt;
+        desc.format = "safetensors";
+        desc.primary_path = primary->string();
+        desc.model_dir = model_dir.string();
+        if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
+            desc.metadata = std::move(*meta);
+        }
+        return desc;
     }
+
+    return std::nullopt;
 }
 
 bool ModelStorage::validateModel(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
-    const auto gguf_path = fs::path(models_dir_) / dir_name / "model.gguf";
-
-    std::error_code ec;
-    auto st = fs::symlink_status(gguf_path, ec);
-    return st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
+    const auto model_dir = fs::path(models_dir_) / dir_name;
+    if (is_valid_file(model_dir / "model.gguf")) return true;
+    return resolve_safetensors_primary_in_dir(model_dir).has_value();
 }
 
 bool ModelStorage::deleteModel(const std::string& model_name) {

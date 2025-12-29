@@ -18,6 +18,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task;
 use uuid::Uuid;
 
+use crate::api::models::normalize_quantization_label;
+use crate::api::models::ModelArtifactFormat;
 use crate::registry::models::{
     generate_model_id, model_name_to_dir, router_models_dir, ModelInfo, ModelSource,
 };
@@ -575,6 +577,8 @@ pub struct ConvertTask {
     pub id: Uuid,
     /// HFリポジトリ
     pub repo: String,
+    /// 登録時に選択したアーティファクト形式
+    pub format: ModelArtifactFormat,
     /// 対象ファイル名
     pub filename: String,
     /// リビジョン（任意）
@@ -600,6 +604,7 @@ pub struct ConvertTask {
 impl ConvertTask {
     fn new(
         repo: String,
+        format: ModelArtifactFormat,
         filename: String,
         revision: Option<String>,
         quantization: Option<String>,
@@ -609,6 +614,7 @@ impl ConvertTask {
         Self {
             id: Uuid::new_v4(),
             repo,
+            format,
             filename,
             revision,
             quantization,
@@ -679,6 +685,7 @@ impl ConvertTaskManager {
     pub async fn enqueue(
         &self,
         repo: String,
+        format: ModelArtifactFormat,
         filename: String,
         revision: Option<String>,
         quantization: Option<String>,
@@ -686,6 +693,7 @@ impl ConvertTaskManager {
     ) -> ConvertTask {
         let task = ConvertTask::new(
             repo.clone(),
+            format,
             filename.clone(),
             revision,
             quantization,
@@ -747,7 +755,7 @@ impl ConvertTaskManager {
         db_pool: &sqlx::SqlitePool,
     ) -> Result<(), RouterError> {
         tracing::info!(task_id=?task_id, "convert_task_started");
-        let (repo, filename, revision, quantization, chat_template) = {
+        let (repo, format, filename, revision, quantization, chat_template) = {
             let mut guard = tasks.lock().await;
             let task = guard
                 .get_mut(&task_id)
@@ -757,6 +765,7 @@ impl ConvertTaskManager {
             tracing::info!(task_id=?task_id, repo=%task.repo, "convert_task_in_progress");
             (
                 task.repo.clone(),
+                task.format,
                 task.filename.clone(),
                 task.revision.clone(),
                 task.quantization.clone(),
@@ -784,6 +793,7 @@ impl ConvertTaskManager {
         // execute download/convert with progress callback
         let res = download_and_maybe_convert(
             &repo,
+            format,
             &filename,
             revision.as_deref(),
             quantization.as_deref(),
@@ -816,11 +826,13 @@ impl ConvertTaskManager {
 
 /// ダウンロードして必要なら変換する。
 /// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
+#[allow(clippy::too_many_arguments)]
 async fn download_and_maybe_convert<F>(
     repo: &str,
+    format: ModelArtifactFormat,
     filename: &str,
     revision: Option<&str>,
-    _quantization: Option<&str>,
+    quantization: Option<&str>,
     chat_template: Option<String>,
     progress_callback: F,
     db_pool: &sqlx::SqlitePool,
@@ -828,91 +840,271 @@ async fn download_and_maybe_convert<F>(
 where
     F: Fn(f32) + Send + Sync + Clone + 'static,
 {
-    let is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
     // モデルIDは階層形式（リポジトリ名）を使用 (SPEC-dcaeaec4 FR-2)
     let model_name = generate_model_id(repo);
-    let base_url = std::env::var("HF_BASE_URL")
-        .unwrap_or_else(|_| "https://huggingface.co".to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let url = format!(
-        "{}/{}/resolve/{}/{}",
-        base_url,
-        repo,
-        revision.unwrap_or("main"),
-        filename
-    );
 
     let base = router_models_dir().ok_or_else(|| RouterError::Internal("HOME not set".into()))?;
     let dir = base.join(model_name_to_dir(&model_name));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| RouterError::Internal(e.to_string()))?;
-    let target = dir.join("model.gguf");
 
-    // skip if already present but make sure metadata is up-to-date
-    if target.exists() {
-        let valid = match tokio::fs::metadata(&target).await {
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let rev = revision.unwrap_or("main");
+
+    async fn is_valid_file(path: &Path) -> bool {
+        match tokio::fs::metadata(path).await {
             Ok(meta) => meta.is_file() && meta.len() > 0,
             Err(_) => false,
-        };
-        if valid {
+        }
+    }
+
+    fn is_repo_allowed_for_optimized_artifacts(repo: &str) -> bool {
+        let allowlist = std::env::var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST")
+            .unwrap_or_else(|_| "openai/*,nvidia/*".to_string());
+        for pat in allowlist
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            if let Some(prefix) = pat.strip_suffix("/*") {
+                let prefix = prefix.trim_end_matches('/');
+                if repo.starts_with(&format!("{}/", prefix)) {
+                    return true;
+                }
+                continue;
+            }
+            if pat.eq_ignore_ascii_case(repo) {
+                return true;
+            }
+        }
+        false
+    }
+
+    match format {
+        ModelArtifactFormat::Gguf => {
+            let url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, filename);
+            let target = dir.join("model.gguf");
+            let input_is_gguf = filename.to_ascii_lowercase().ends_with(".gguf");
+
+            // skip if already present but make sure registration is up-to-date
+            if target.exists() && is_valid_file(&target).await {
+                progress_callback(1.0);
+                finalize_model_registration(
+                    &model_name,
+                    repo,
+                    format,
+                    filename,
+                    &url,
+                    &target,
+                    chat_template.clone(),
+                    db_pool,
+                )
+                .await;
+                return Ok(target.to_string_lossy().to_string());
+            }
+            let _ = tokio::fs::remove_file(&target).await;
+            if input_is_gguf {
+                download_file(&url, &target).await?;
+                progress_callback(1.0);
+            } else {
+                convert_non_gguf(
+                    repo,
+                    revision,
+                    quantization,
+                    &target,
+                    progress_callback.clone(),
+                )
+                .await?;
+                progress_callback(1.0);
+            }
+
+            // chat_templateが指定されている場合、GGUFに埋め込む
+            if let Some(ref template) = chat_template {
+                if !template.is_empty() {
+                    tracing::info!(
+                        template_len = template.len(),
+                        "Embedding chat_template into GGUF"
+                    );
+                    if let Err(e) = add_chat_template_to_gguf(&target, template).await {
+                        tracing::warn!(error=%e, "Failed to embed chat_template, model may work with fallback detection");
+                    }
+                }
+            }
+
+            finalize_model_registration(
+                &model_name,
+                repo,
+                format,
+                filename,
+                &url,
+                &target,
+                chat_template,
+                db_pool,
+            )
+            .await;
+            Ok(target.to_string_lossy().to_string())
+        }
+        ModelArtifactFormat::Safetensors => {
+            if filename.is_empty() {
+                return Err(RouterError::Common(
+                    llm_router_common::error::CommonError::Validation(
+                        "safetensors filename is required".into(),
+                    ),
+                ));
+            }
+
+            // 必須メタデータ
+            let config_url = format!("{}/{}/resolve/{}/config.json", base_url, repo, rev);
+            let tokenizer_url = format!("{}/{}/resolve/{}/tokenizer.json", base_url, repo, rev);
+            let primary_url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, filename);
+
+            let config_target = dir.join("config.json");
+            let tokenizer_target = dir.join("tokenizer.json");
+            let primary_target = dir.join(filename);
+
+            if config_target.exists()
+                && tokenizer_target.exists()
+                && primary_target.exists()
+                && is_valid_file(&config_target).await
+                && is_valid_file(&tokenizer_target).await
+                && is_valid_file(&primary_target).await
+            {
+                progress_callback(1.0);
+                finalize_model_registration(
+                    &model_name,
+                    repo,
+                    format,
+                    filename,
+                    &primary_url,
+                    &primary_target,
+                    chat_template.clone(),
+                    db_pool,
+                )
+                .await;
+                return Ok(primary_target.to_string_lossy().to_string());
+            }
+
+            // 既存の不完全なファイルは削除（ベストエフォート）
+            let _ = tokio::fs::remove_file(&config_target).await;
+            let _ = tokio::fs::remove_file(&tokenizer_target).await;
+            let _ = tokio::fs::remove_file(&primary_target).await;
+
+            // progress: config + tokenizer + primary (+ shards)
+            let mut downloaded = 0_u32;
+            let mut total = 3_u32;
+
+            download_file(&config_url, &config_target).await?;
+            downloaded += 1;
+            progress_callback(downloaded as f32 / total as f32);
+
+            download_file(&tokenizer_url, &tokenizer_target).await?;
+            downloaded += 1;
+            progress_callback(downloaded as f32 / total as f32);
+
+            download_file(&primary_url, &primary_target).await?;
+            downloaded += 1;
+            progress_callback(downloaded as f32 / total as f32);
+
+            if filename
+                .to_ascii_lowercase()
+                .ends_with(".safetensors.index.json")
+            {
+                // index.json から shard を取得
+                let bytes = tokio::fs::read(&primary_target)
+                    .await
+                    .map_err(|e| RouterError::Internal(e.to_string()))?;
+                let v: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| RouterError::Internal(e.to_string()))?;
+                let weight_map =
+                    v.get("weight_map")
+                        .and_then(|m| m.as_object())
+                        .ok_or_else(|| {
+                            RouterError::Internal(
+                                "Invalid safetensors index: missing weight_map".into(),
+                            )
+                        })?;
+
+                use std::collections::BTreeSet;
+                let mut shards: BTreeSet<String> = BTreeSet::new();
+                for val in weight_map.values() {
+                    if let Some(s) = val.as_str() {
+                        if s.to_ascii_lowercase().ends_with(".safetensors") {
+                            shards.insert(s.to_string());
+                        }
+                    }
+                }
+
+                if !shards.is_empty() {
+                    total += shards.len() as u32;
+                    for shard in shards {
+                        let shard_url = format!("{}/{}/resolve/{}/{}", base_url, repo, rev, shard);
+                        let shard_target = dir.join(&shard);
+                        let _ = tokio::fs::remove_file(&shard_target).await;
+                        download_file(&shard_url, &shard_target).await?;
+                        downloaded += 1;
+                        progress_callback(downloaded as f32 / total as f32);
+                    }
+                }
+            }
+
+            // Optional: official GPU-optimized artifacts (e.g., Apple Silicon / Metal).
+            // Non-fatal: if not found or download fails, we still proceed with safetensors.
+            if is_repo_allowed_for_optimized_artifacts(repo) {
+                let metal_url = format!("{}/{}/resolve/{}/metal/model.bin", base_url, repo, rev);
+                let metal_target = dir.join("model.metal.bin");
+
+                if !(metal_target.exists() && is_valid_file(&metal_target).await) {
+                    let _ = tokio::fs::remove_file(&metal_target).await;
+                    match try_download_file(&metal_url, &metal_target).await {
+                        Ok(true) => {
+                            tracing::info!(repo = %repo, "Downloaded official Metal artifact (model.metal.bin)");
+                        }
+                        Ok(false) => {
+                            // 404: not provided
+                        }
+                        Err(e) => {
+                            tracing::warn!(repo = %repo, error = %e, "Failed to download official Metal artifact (non-fatal)");
+                            let _ = tokio::fs::remove_file(&metal_target).await;
+                        }
+                    }
+                }
+            }
+
             progress_callback(1.0);
             finalize_model_registration(
                 &model_name,
                 repo,
+                format,
                 filename,
-                &url,
-                &target,
-                chat_template.clone(),
+                &primary_url,
+                &primary_target,
+                chat_template,
                 db_pool,
             )
             .await;
-            return Ok(target.to_string_lossy().to_string());
-        }
-        let _ = tokio::fs::remove_file(&target).await;
-    }
 
-    if is_gguf {
-        download_file(&url, &target).await?;
-        progress_callback(1.0);
-    } else {
-        convert_non_gguf(repo, revision, &target, progress_callback.clone()).await?;
-    }
-
-    // chat_templateが指定されている場合、GGUFに埋め込む
-    if let Some(ref template) = chat_template {
-        if !template.is_empty() {
-            tracing::info!(
-                template_len = template.len(),
-                "Embedding chat_template into GGUF"
-            );
-            if let Err(e) = add_chat_template_to_gguf(&target, template).await {
-                // 埋め込み失敗は警告のみ（モデル自体は使用可能）
-                tracing::warn!(error=%e, "Failed to embed chat_template, model may work with fallback detection");
-            }
+            Ok(primary_target.to_string_lossy().to_string())
         }
     }
-
-    finalize_model_registration(
-        &model_name,
-        repo,
-        filename,
-        &url,
-        &target,
-        chat_template,
-        db_pool,
-    )
-    .await;
-
-    Ok(target.to_string_lossy().to_string())
 }
 
 /// HTTP GET to file and stream to path
 async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
     let client = reqwest::Client::new();
-    let resp = client
-        .get(url)
+    let mut req = client.get(url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| RouterError::Http(e.to_string()))?;
@@ -931,6 +1123,48 @@ async fn download_file(url: &str, target: &Path) -> Result<(), RouterError> {
             .map_err(|e| RouterError::Internal(e.to_string()))?;
     }
     Ok(())
+}
+
+/// HTTP GET to file (optional) and stream to path
+///
+/// - 404 は「存在しない」として Ok(false) を返す
+/// - その他の非2xxは Err
+async fn try_download_file(url: &str, target: &Path) -> Result<bool, RouterError> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+
+    let client = reqwest::Client::new();
+    let mut req = client.get(url);
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| RouterError::Http(e.to_string()))?;
+
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    if !resp.status().is_success() {
+        return Err(RouterError::Http(resp.status().to_string()));
+    }
+
+    let mut file = tokio::fs::File::create(target)
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| RouterError::Http(e.to_string()))?;
+        file.write_all(&bytes)
+            .await
+            .map_err(|e| RouterError::Internal(e.to_string()))?;
+    }
+    Ok(true)
 }
 
 /// リトライ可能なエラーかどうかを判定
@@ -958,12 +1192,94 @@ fn is_retryable_error(error_msg: &str) -> bool {
         .any(|pattern| error_lower.contains(&pattern.to_lowercase()))
 }
 
+fn quantization_outtype(label: &str) -> Option<&'static str> {
+    match label {
+        "F32" => Some("f32"),
+        "F16" => Some("f16"),
+        "BF16" => Some("bf16"),
+        "Q8_0" => Some("q8_0"),
+        _ => None,
+    }
+}
+
+fn resolve_llama_quantize_bin() -> Result<PathBuf, RouterError> {
+    if let Ok(path) = std::env::var("LLM_QUANTIZE_BIN") {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Ok(p);
+        }
+        return Err(RouterError::Internal(
+            "LLM_QUANTIZE_BIN is set but the binary was not found".into(),
+        ));
+    }
+
+    let candidates = [
+        PathBuf::from("node/third_party/llama.cpp/build/bin/llama-quantize"),
+        PathBuf::from("node/third_party/llama.cpp/llama-quantize"),
+        PathBuf::from("third_party/llama.cpp/build/bin/llama-quantize"),
+        PathBuf::from("third_party/llama.cpp/llama-quantize"),
+    ];
+
+    for cand in candidates {
+        if cand.exists() {
+            return Ok(cand);
+        }
+    }
+
+    Ok(PathBuf::from("llama-quantize"))
+}
+
+fn run_llama_quantize(
+    input_path: &Path,
+    output_path: &Path,
+    quantization: &str,
+) -> Result<(), RouterError> {
+    let bin = resolve_llama_quantize_bin()?;
+    let output = Command::new(&bin)
+        .arg(input_path)
+        .arg(output_path)
+        .arg(quantization)
+        .output()
+        .map_err(|e| {
+            RouterError::Internal(format!(
+                "Failed to run llama-quantize (set LLM_QUANTIZE_BIN): {}",
+                e
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Err(RouterError::Internal(format!(
+            "llama-quantize failed: {}{}{}",
+            output
+                .status
+                .code()
+                .map(|c| format!("exit code {}", c))
+                .unwrap_or_else(|| "terminated".into()),
+            if stderr.is_empty() {
+                "".into()
+            } else {
+                format!(" stderr: {}", stderr)
+            },
+            if stdout.is_empty() {
+                "".into()
+            } else {
+                format!(" stdout: {}", stdout)
+            }
+        )));
+    }
+
+    Ok(())
+}
+
 /// 非GGUFをGGUFへコンバート（sync heavy → blocking thread）
 /// progress_callback: プログレス更新用のコールバック（0.0〜1.0）
 /// リトライ機能付き: 一時的なエラーの場合は最大3回リトライ（指数バックオフ）
 async fn convert_non_gguf<F>(
     repo: &str,
     revision: Option<&str>,
+    quantization: Option<&str>,
     target: &Path,
     progress_callback: F,
 ) -> Result<(), RouterError>
@@ -972,6 +1288,25 @@ where
 {
     const MAX_ATTEMPTS: u32 = 3;
     const INITIAL_BACKOFF_SECS: u64 = 5;
+
+    let normalized_quantization = quantization.and_then(normalize_quantization_label);
+    if quantization.is_some() && normalized_quantization.is_none() {
+        return Err(RouterError::Internal("Invalid quantization label".into()));
+    }
+
+    let (convert_outtype, needs_post_quantize) = match normalized_quantization.as_deref() {
+        Some(label) => match quantization_outtype(label) {
+            Some(outtype) => (Some(outtype), false),
+            None => (Some("f16"), true),
+        },
+        None => (None, false),
+    };
+
+    let convert_target = if needs_post_quantize {
+        target.with_extension("gguf.tmp")
+    } else {
+        target.to_path_buf()
+    };
 
     if should_use_fake_convert() {
         progress_callback(0.5);
@@ -1000,7 +1335,7 @@ where
     let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
     let hf_token = std::env::var("HF_TOKEN").ok();
 
-    if let Some(parent) = target.parent() {
+    if let Some(parent) = convert_target.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|e| RouterError::Internal(e.to_string()))?;
@@ -1020,16 +1355,21 @@ where
         attempt += 1;
 
         // 既存のターゲットファイルを削除（リトライ時にも必要）
-        if target.exists() {
+        if convert_target.exists() {
+            let _ = tokio::fs::remove_file(&convert_target).await;
+        }
+        if needs_post_quantize && target.exists() {
             let _ = tokio::fs::remove_file(target).await;
         }
 
         let script_clone = script.clone();
-        let target_path = target.to_path_buf();
+        let target_path = convert_target.to_path_buf();
         let cmd_repo = repo_with_rev.clone();
         let python_bin_clone = python_bin.clone();
         let hf_token_clone = hf_token.clone();
         let progress_callback_clone = progress_callback.clone();
+        let progress_scale: f32 = if needs_post_quantize { 0.9 } else { 1.0 };
+        let outtype = convert_outtype;
 
         if attempt > 1 {
             tracing::info!(
@@ -1052,6 +1392,9 @@ where
                 .stderr(Stdio::piped())
                 // Force unbuffered output from Python so tqdm progress lines are flushed immediately
                 .env("PYTHONUNBUFFERED", "1");
+            if let Some(outtype) = outtype {
+                cmd.arg("--outtype").arg(outtype);
+            }
 
             if let Some(token) = hf_token_clone {
                 cmd.env("HF_TOKEN", token);
@@ -1083,7 +1426,7 @@ where
                             // Try to parse progress from tqdm output
                             if let Some(progress) = parse_tqdm_progress(&line_buffer) {
                                 tracing::debug!(progress, "convert_progress_parsed");
-                                progress_callback_clone(progress);
+                                progress_callback_clone(progress * progress_scale);
                             }
                             stderr_output.push_str(&line_buffer);
                             stderr_output.push('\n');
@@ -1096,7 +1439,7 @@ where
                 // Handle any remaining content
                 if !line_buffer.is_empty() {
                     if let Some(progress) = parse_tqdm_progress(&line_buffer) {
-                        progress_callback_clone(progress);
+                        progress_callback_clone(progress * progress_scale);
                     }
                     stderr_output.push_str(&line_buffer);
                 }
@@ -1147,7 +1490,7 @@ where
         match result {
             Ok(()) => {
                 // Phase 1: GGUF検証 - 変換後のファイルを検証
-                let validation = validate_gguf_file(target)?;
+                let validation = validate_gguf_file(&convert_target)?;
 
                 // テンソル数が0の場合はエラー（空のGGUFファイル）
                 if validation.tensor_count == 0 {
@@ -1182,13 +1525,32 @@ where
                 }
 
                 tracing::info!(
-                    path = %target.display(),
+                    path = %convert_target.display(),
                     version = validation.version,
                     tensor_count = validation.tensor_count,
                     kv_count = validation.kv_count,
                     file_size_mb = file_size_mb,
                     "GGUF validation passed"
                 );
+
+                if needs_post_quantize {
+                    let quantization_label =
+                        normalized_quantization.as_deref().ok_or_else(|| {
+                            RouterError::Internal("Missing quantization label".into())
+                        })?;
+                    if let Err(e) = run_llama_quantize(&convert_target, target, quantization_label)
+                    {
+                        let _ = tokio::fs::remove_file(&convert_target).await;
+                        let _ = tokio::fs::remove_file(target).await;
+                        return Err(e);
+                    }
+                    let _ = tokio::fs::remove_file(&convert_target).await;
+                    let validation = validate_gguf_file(target)?;
+                    if validation.tensor_count == 0 {
+                        return Err(RouterError::Internal("Quantized GGUF file is empty".into()));
+                    }
+                    progress_callback(1.0);
+                }
 
                 return Ok(());
             }
@@ -1223,7 +1585,14 @@ where
 
 /// python依存が無いときは事前にエラーにする
 async fn ensure_python_deps() -> Result<(), RouterError> {
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    // Prefer the auto-managed venv when available to avoid requiring global Python deps.
+    // If the venv is not present, fall back to the configured python or system python3.
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| {
+            std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into())
+        });
     let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
 
@@ -1258,7 +1627,14 @@ if missing:\n print(','.join(missing)); sys.exit(1)\n";
 }
 
 fn ensure_python_deps_sync() -> Result<(), RouterError> {
-    let python_bin = std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into());
+    // Prefer the auto-managed venv when available to avoid requiring global Python deps.
+    // If the venv is not present, fall back to the configured python or system python3.
+    let python_bin = get_venv_python()
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| {
+            std::env::var("LLM_CONVERT_PYTHON").unwrap_or_else(|_| "python3".into())
+        });
     let script = "import importlib, importlib.util, sys;missing=[m for m in ['transformers','torch','sentencepiece'] if importlib.util.find_spec(m) is None];\n\
 if missing:\n print(','.join(missing)); sys.exit(1)\n";
     let output = std::process::Command::new(&python_bin)
@@ -1303,7 +1679,14 @@ pub async fn resume_pending_converts(manager: &ConvertTaskManager, models: Vec<M
             if let (Some(repo), Some(filename)) = (model.repo.clone(), model.filename.clone()) {
                 let chat_template = model.chat_template.clone();
                 manager
-                    .enqueue(repo, filename, None, None, chat_template)
+                    .enqueue(
+                        repo,
+                        ModelArtifactFormat::Gguf,
+                        filename,
+                        None,
+                        None,
+                        chat_template,
+                    )
                     .await;
             }
         }
@@ -1380,9 +1763,11 @@ pub fn verify_convert_ready() -> Result<(), RouterError> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize_model_registration(
     model_name: &str,
     repo: &str,
+    format: ModelArtifactFormat,
     filename: &str,
     download_url: &str,
     target: &Path,
@@ -1393,12 +1778,35 @@ async fn finalize_model_registration(
         list_registered_models, persist_registered_models, upsert_registered_model,
     };
 
-    let size = tokio::fs::metadata(target)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
-    const REQUIRED_MEMORY_RATIO: f64 = 1.5;
-    let required_memory = ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+    let (size, required_memory) = match format {
+        ModelArtifactFormat::Gguf => {
+            let size = tokio::fs::metadata(target)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
+            const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+            let required_memory = ((size as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+            (size, required_memory)
+        }
+        ModelArtifactFormat::Safetensors => {
+            // weights(shards) + metadata を含むディレクトリ全体の合計サイズを採用
+            let mut total = 0_u64;
+            if let Some(dir) = target.parent() {
+                if let Ok(mut rd) = tokio::fs::read_dir(dir).await {
+                    while let Ok(Some(entry)) = rd.next_entry().await {
+                        if let Ok(meta) = entry.metadata().await {
+                            if meta.is_file() {
+                                total = total.saturating_add(meta.len());
+                            }
+                        }
+                    }
+                }
+            }
+            const REQUIRED_MEMORY_RATIO: f64 = 1.5;
+            let required_memory = ((total as f64) * REQUIRED_MEMORY_RATIO).ceil() as u64;
+            (total, required_memory)
+        }
+    };
 
     let mut model = list_registered_models()
         .into_iter()
@@ -1407,8 +1815,14 @@ async fn finalize_model_registration(
 
     model.size = size;
     model.required_memory = required_memory;
-    model.tags = vec!["gguf".into()];
-    model.source = ModelSource::HfGguf;
+    model.tags = match format {
+        ModelArtifactFormat::Gguf => vec!["gguf".into()],
+        ModelArtifactFormat::Safetensors => vec!["safetensors".into()],
+    };
+    model.source = match format {
+        ModelArtifactFormat::Gguf => ModelSource::HfGguf,
+        ModelArtifactFormat::Safetensors => ModelSource::HfSafetensors,
+    };
     model.path = Some(target.to_string_lossy().to_string());
     model.download_url = Some(download_url.to_string());
     model.repo = Some(repo.to_string());
@@ -1865,6 +2279,7 @@ mod tests {
         let _task1 = manager
             .enqueue(
                 "test/model1".into(),
+                ModelArtifactFormat::Gguf,
                 "model.safetensors".into(),
                 None,
                 None,
@@ -1874,6 +2289,7 @@ mod tests {
         let _task2 = manager
             .enqueue(
                 "test/model2".into(),
+                ModelArtifactFormat::Gguf,
                 "model.safetensors".into(),
                 None,
                 None,

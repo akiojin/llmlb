@@ -1,14 +1,46 @@
 #include <gtest/gtest.h>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 
 #include "core/inference_engine.h"
+#include "core/llama_manager.h"
+#include "models/model_descriptor.h"
+#include "models/model_storage.h"
 
 using namespace llm_node;
+namespace fs = std::filesystem;
 
 // テスト専用ヘルパー（inference_engine.cppで定義）
 namespace llm_node {
 std::string extractGptOssFinalMessageForTest(const std::string& output);
+std::string cleanGptOssOutputForTest(const std::string& output);
+std::string postProcessGeneratedTextForTest(const std::string& output, bool is_gptoss);
 }
 using llm_node::extractGptOssFinalMessageForTest;
+using llm_node::cleanGptOssOutputForTest;
+using llm_node::postProcessGeneratedTextForTest;
+
+class TempDir {
+public:
+    TempDir() {
+        auto base = fs::temp_directory_path();
+        for (int i = 0; i < 10; ++i) {
+            auto candidate = base / fs::path("engine-" + std::to_string(std::rand()));
+            std::error_code ec;
+            if (fs::create_directories(candidate, ec)) {
+                path = candidate;
+                return;
+            }
+        }
+        path = base;
+    }
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+    fs::path path;
+};
 
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
     InferenceEngine engine;
@@ -67,4 +99,72 @@ TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {
 
     auto extracted = extractGptOssFinalMessageForTest(raw);
     EXPECT_EQ(extracted, "the answer");
+}
+
+TEST(InferenceEngineTest, CleansGptOssOutputByExtractingFinalChannel) {
+    const std::string raw =
+        "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
+        "<|start|>assistant<|channel|>final<|message|>the answer<|end|>";
+
+    auto cleaned = cleanGptOssOutputForTest(raw);
+    EXPECT_EQ(cleaned, "the answer");
+}
+
+TEST(InferenceEngineTest, PostProcessGptOssDoesNotTruncateStartTokenOnlyOutput) {
+    // When gpt-oss emits a header but no <|end|>, we should not truncate to empty.
+    const std::string raw = "<|start|>assistant<|channel|>final<|message|>Hello world";
+
+    auto processed = postProcessGeneratedTextForTest(raw, /*is_gptoss=*/true);
+    EXPECT_EQ(processed, "Hello world");
+}
+
+TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
+    TempDir tmp;
+    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
+    fs::create_directories(model_dir);
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    ModelDescriptor desc;
+    desc.name = "openai/gpt-oss-20b";
+    desc.runtime = "gptoss_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
+
+    EXPECT_FALSE(engine.isModelSupported(desc));
+
+    std::ofstream(model_dir / "model.metal.bin") << "cache";
+#ifdef USE_GPTOSS
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#else
+    EXPECT_FALSE(engine.isModelSupported(desc));
+#endif
+}
+
+// TDD RED: DirectML should allow safetensors without Metal artifact.
+TEST(InferenceEngineTest, GptOssAllowsSafetensorsOnDirectML) {
+    GTEST_SKIP() << "TDD RED: DirectML backend selection not implemented yet";
+}
+
+TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    ModelDescriptor desc;
+    desc.name = "nvidia/nemotron-test";
+    desc.runtime = "nemotron_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = tmp.path.string();
+    desc.primary_path = (tmp.path / "model.safetensors.index.json").string();
+
+#ifdef USE_CUDA
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#else
+    EXPECT_FALSE(engine.isModelSupported(desc));
+#endif
 }

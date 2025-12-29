@@ -11,35 +11,13 @@
 #include <thread>
 #include "utils/config.h"
 #include "utils/file_lock.h"
+#include "utils/url_encode.h"
 #include "models/model_storage.h"
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace llm_node {
-
-namespace {
-std::string urlEncodePathSegment(const std::string& input) {
-    static const char* kHex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(input.size());
-    for (unsigned char c : input) {
-        const bool unreserved =
-            (c >= 'A' && c <= 'Z') ||
-            (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~';
-        if (unreserved) {
-            out.push_back(static_cast<char>(c));
-        } else {
-            out.push_back('%');
-            out.push_back(kHex[(c >> 4) & 0x0F]);
-            out.push_back(kHex[c & 0x0F]);
-        }
-    }
-    return out;
-}
-}  // namespace
 
 size_t ModelSync::defaultConcurrency() {
     auto cfg = loadDownloadConfig();
@@ -99,6 +77,11 @@ void ModelSync::setNodeToken(std::string node_token) {
 void ModelSync::setApiKey(std::string api_key) {
     std::lock_guard<std::mutex> lock(etag_mutex_);
     api_key_ = std::move(api_key);
+}
+
+void ModelSync::setSupportedRuntimes(std::vector<std::string> supported_runtimes) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    supported_runtimes_ = std::move(supported_runtimes);
 }
 
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
@@ -179,29 +162,12 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
 }
 
 std::vector<std::string> ModelSync::listLocalModels() const {
+    ModelStorage storage(models_dir_);
+    auto infos = storage.listAvailable();
     std::vector<std::string> models;
-    std::error_code ec;
-    if (!fs::exists(models_dir_, ec) || ec) return models;
-
-    // SPEC-dcaeaec4 FR-2: 階層形式をサポートするため再帰的に走査
-    for (const auto& entry : fs::recursive_directory_iterator(models_dir_, ec)) {
-        if (ec) break;
-        if (entry.is_directory()) continue;
-
-        // model.gguf ファイルを検索
-        if (entry.path().filename() != "model.gguf") continue;
-
-        // 親ディレクトリからモデル名を計算
-        // models_dir/openai/gpt-oss-20b/model.gguf → openai/gpt-oss-20b
-        const auto parent_dir = entry.path().parent_path();
-        ec.clear();
-        const auto relative = fs::relative(parent_dir, models_dir_, ec);
-        if (ec || relative.empty()) continue;
-
-        // SPEC-dcaeaec4: ルーターとの比較のため小文字に正規化
-        // ルーターは model_name_to_dir() で正規化済みの名前を返すため、
-        // ローカルモデル名も同じ正規化を適用する
-        models.push_back(ModelStorage::modelNameToDir(relative.string()));
+    models.reserve(infos.size());
+    for (const auto& m : infos) {
+        models.push_back(m.name);
     }
     return models;
 }
@@ -290,45 +256,42 @@ ModelSyncResult ModelSync::sync() {
             }
         }
 
-        ModelDownloader downloader(base_url_, models_dir_, timeout_, 2, std::chrono::milliseconds(200), api_key_value);
+        // Use registry base for manifest + file downloads
+        std::string registry_base = base_url_;
+        if (!registry_base.empty() && registry_base.back() == '/') {
+            registry_base.pop_back();
+        }
+        registry_base += "/v0/models/registry";
+
+        ModelDownloader downloader(registry_base, models_dir_, timeout_, 2, std::chrono::milliseconds(200), api_key_value);
 
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;
 
-            bool ok = false;
-            bool downloaded = false;
-            auto it = remote_map.find(id);
-            if (it != remote_map.end()) {
+            // SPEC-dcaeaec4 FR-3: If router provides a directly accessible shared path,
+            // do not download/copy. InferenceEngine can load directly from that path.
+            if (auto it = remote_map.find(id); it != remote_map.end()) {
                 const auto& info = it->second;
-                // Check if router's path is directly accessible (no copy, just verify)
-                // Per SPEC-dcaeaec4 FR-3: use path directly if accessible
                 if (!info.path.empty()) {
                     std::error_code ec;
-                    auto src = fs::path(info.path);
-                    if (fs::exists(src, ec) && !ec && fs::is_regular_file(src, ec) && !ec) {
-                        // Path is accessible - InferenceEngine will use it directly
-                        ok = true;
+                    if (fs::exists(info.path, ec) && !ec && fs::is_regular_file(info.path, ec) && !ec) {
+                        continue;
                     }
                 }
+            }
 
-                // If path is not accessible, download from router's blob endpoint as fallback.
-                // The router's endpoint uses a single path segment, so model id must be URL-encoded (slashes, etc).
-                if (!ok) {
-                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    const auto blob_path = std::string("/v0/models/blob/") + urlEncodePathSegment(id);
-                    auto out = downloader.downloadBlob(blob_path, filename, nullptr);
-                    ok = !out.empty();
-                    downloaded = ok;
-                }
+            bool ok = downloadModel(downloader, id, nullptr);
 
-                // Direct download_url (e.g. HF) is prohibited (SPEC-48678000 FR-006).
+            // Direct download_url (e.g. HF) is prohibited (SPEC-48678000 FR-006).
 
-                // metadata (chat_template) - persist only when we downloaded locally
-                if (ok && downloaded && !info.chat_template.empty()) {
+            // metadata (chat_template) - persist only when we downloaded locally
+            if (ok) {
+                auto it = remote_map.find(id);
+                if (it != remote_map.end() && !it->second.chat_template.empty()) {
                     auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
                     auto meta_path = meta_dir / "metadata.json";
                     nlohmann::json meta;
-                    meta["chat_template"] = info.chat_template;
+                    meta["chat_template"] = it->second.chat_template;
                     std::ofstream ofs(meta_path, std::ios::binary | std::ios::trunc);
                     ofs << meta.dump();
                 }
@@ -451,6 +414,12 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         if (it != model_overrides_.end()) model_cfg = it->second;
     }
 
+    std::vector<std::string> supported_runtimes;
+    {
+        std::lock_guard<std::mutex> lock(etag_mutex_);
+        supported_runtimes = supported_runtimes_;
+    }
+
     auto manifest_path = downloader.fetchManifest(model_id);
     if (manifest_path.empty()) return false;
 
@@ -470,12 +439,30 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         for (const auto& f : j["files"]) {
             std::string name = f.value("name", "");
             if (name.empty()) return false;
+
+            // If the manifest entry specifies allowed runtimes, skip files that this node cannot use.
+            // Backward-compatible: older routers won't include `runtimes`.
+            if (f.contains("runtimes") && f["runtimes"].is_array() && !supported_runtimes.empty()) {
+                bool matched = false;
+                for (const auto& r : f["runtimes"]) {
+                    if (!r.is_string()) continue;
+                    const auto rt = r.get<std::string>();
+                    if (std::find(supported_runtimes.begin(), supported_runtimes.end(), rt) != supported_runtimes.end()) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    continue;
+                }
+            }
+
             std::string digest = f.value("digest", "");
             std::string url = f.value("url", "");
             if (url.empty()) {
                 url = downloader.getRegistryBase();
                 if (!url.empty() && url.back() != '/') url.push_back('/');
-                url += name;
+                url += urlEncodePathSegment(model_id) + "/files/" + urlEncodePathSegment(name);
             }
 
             size_t file_chunk = f.value("chunk", static_cast<size_t>(0));
@@ -523,7 +510,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                     }
                 }
 
-                auto out = downloadWithHint(downloader, model_id, url, model_id + "/" + name, cb, digest);
+                const auto local_dir = ModelStorage::modelNameToDir(model_id);
+                auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, cb, digest);
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);
@@ -535,6 +523,11 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             } else {
                 lo_tasks.push_back({priority, task_fn});
             }
+        }
+
+        // If all files were filtered out (unsupported runtime), treat as a successful no-op.
+        if (hi_tasks.empty() && lo_tasks.empty()) {
+            return true;
         }
 
         auto run_tasks = [](std::vector<DlTask>& list, size_t conc) {

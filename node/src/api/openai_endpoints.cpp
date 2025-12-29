@@ -1,10 +1,12 @@
 #include "api/openai_endpoints.h"
 
 #include <nlohmann/json.hpp>
+#include <limits>
 #include <memory>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
+#include "utils/utf8.h"
 
 namespace llm_node {
 
@@ -26,6 +28,36 @@ bool checkReady(httplib::Response& res) {
     }
     return true;
 }
+InferenceParams parseInferenceParams(const nlohmann::json& body) {
+    InferenceParams params;
+
+    // OpenAI-compatible fields
+    if (body.contains("max_tokens") && body["max_tokens"].is_number_integer()) {
+        int v = body["max_tokens"].get<int>();
+        if (v > 0) params.max_tokens = static_cast<size_t>(v);
+    }
+    if (body.contains("temperature") && body["temperature"].is_number()) {
+        params.temperature = body["temperature"].get<float>();
+    }
+    if (body.contains("top_p") && body["top_p"].is_number()) {
+        params.top_p = body["top_p"].get<float>();
+    }
+    if (body.contains("top_k") && body["top_k"].is_number_integer()) {
+        params.top_k = body["top_k"].get<int>();
+    }
+    if (body.contains("repeat_penalty") && body["repeat_penalty"].is_number()) {
+        params.repeat_penalty = body["repeat_penalty"].get<float>();
+    }
+    if (body.contains("seed") && body["seed"].is_number_integer()) {
+        int64_t v = body["seed"].get<int64_t>();
+        if (v > 0 && v <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+            params.seed = static_cast<uint32_t>(v);
+        }
+    }
+
+    return params;
+}
+}  // namespace
 
 struct ParsedChatMessages {
     std::vector<ChatMessage> messages;
@@ -111,7 +143,6 @@ bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& e
 
     return true;
 }
-}  // namespace
 
 OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
     : registry_(registry), engine_(engine), config_(config) {}
@@ -145,12 +176,14 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 return;
             }
             bool stream = body.value("stream", false);
+            const auto params = parseInferenceParams(body);
             std::string output;
             if (!parsed.image_urls.empty()) {
-                output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model);
+                output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
             } else {
-                output = engine_.generateChat(parsed.messages, model);
+                output = engine_.generateChat(parsed.messages, model, params);
             }
+            output = sanitize_utf8_lossy(output);
 
             if (stream) {
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
@@ -208,7 +241,8 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             std::string model = body.value("model", "");
             if (!validateModel(model, res)) return;
             std::string prompt = body.value("prompt", "");
-            std::string output = engine_.generateCompletion(prompt, model);
+            const auto params = parseInferenceParams(body);
+            std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
             json resp = {
                 {"id", "cmpl-1"},
                 {"object", "text_completion"},

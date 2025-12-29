@@ -168,7 +168,6 @@ pub fn create_router(state: AppState) -> Router {
                 crate::auth::middleware::api_key_auth_middleware,
             ))
     };
-
     // モデル一覧API (Admin OR Node スコープで利用可能)
     let models_list_routes = Router::new()
         .route("/models", get(models::list_models_with_status))

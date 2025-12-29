@@ -276,7 +276,6 @@ curl http://localhost:8080/v1/chat/completions \
     "max_tokens": 300
   }'
 ```
-
 ### クラウドモデルプレフィックス
 - 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
 - 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`

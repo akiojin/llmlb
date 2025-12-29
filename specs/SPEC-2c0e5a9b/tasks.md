@@ -20,7 +20,7 @@
 - [x] gpt-oss-20b を `format=safetensors` で登録 → 配布 → `/v1/chat/completions` が 1 token 以上生成すること。
 
 ## Core
-- [ ] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
+- [x] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
 - [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
 - [ ] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。

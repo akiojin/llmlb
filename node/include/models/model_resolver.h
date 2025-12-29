@@ -4,8 +4,10 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace llm_node {
 
@@ -15,6 +17,7 @@ struct ModelResolveResult {
     std::string path;           // Path to the model file (empty if not found)
     std::string error_message;  // Error message if resolution failed
     bool router_attempted = false;  // True if router API download was attempted
+    bool origin_attempted = false;  // True if origin download was attempted
 };
 
 // Model resolver with fallback strategy:
@@ -36,6 +39,9 @@ public:
     // @return ModelResolveResult with path or error
     ModelResolveResult resolve(const std::string& model_name);
 
+    // Set allowlist patterns for direct origin download (HF, etc.)
+    void setOriginAllowlist(std::vector<std::string> origin_allowlist);
+
     // Check if a download lock exists for the given model (for duplicate prevention)
     // @param model_name: Model identifier
     // @return true if download is in progress
@@ -52,6 +58,7 @@ private:
     std::string shared_path_;
     std::string router_url_;
     std::string router_api_key_;
+    std::vector<std::string> origin_allowlist_;
 
     int download_timeout_ms_{5 * 60 * 1000};
     int max_concurrent_downloads_{1};
@@ -66,7 +73,9 @@ private:
     std::string findShared(const std::string& model_name);
 
     // Download model from router API
-    std::string downloadFromRouter(const std::string& model_name);
+    std::string downloadFromRouter(const std::string& model_name, bool* origin_attempted);
+    std::string downloadFromOrigin(const std::string& model_name, const std::string& url);
+    std::optional<std::string> fetchOriginUrl(const std::string& model_name);
 };
 
 }  // namespace llm_node

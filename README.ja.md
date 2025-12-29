@@ -212,6 +212,7 @@ cmake --build build --config Release
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_NODE_SHARED_MODELS_DIR` | (未設定) | 共有モデルディレクトリ（任意） |
+| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
@@ -324,7 +325,8 @@ Router (OpenAI-compatible)
 - ノードはモデルをオンデマンドで次の順に解決します。
   - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
   - 共有ストレージ（`LLM_NODE_SHARED_MODELS_DIR`、コピーせず直接参照）
-  - ルーターAPI経由ダウンロード（`GET /v0/models/blob/:model_name`）
+  - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_NODE_ORIGIN_ALLOWLIST`）
+  - ルーター・プロキシ経由ダウンロード（`GET /v0/models/registry/:model_name/manifest.json` + files）
 
 ### スケジューリングとヘルスチェック
 - ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。

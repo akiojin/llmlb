@@ -14,6 +14,10 @@ inputs:
     description: Install cross-compilation toolchains
     required: false
     default: 'false'
+  with-ccache:
+    description: Enable ccache for faster builds
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -23,6 +27,16 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake libssl-dev libcurl4-openssl-dev
+
+    - name: Install and configure ccache
+      if: inputs.with-ccache == 'true'
+      shell: bash
+      run: |
+        sudo apt-get install -y ccache
+        echo "/usr/lib/ccache" >> $GITHUB_PATH
+        ccache --set-config=max_size=500M
+        ccache --set-config=compression=true
+        ccache -z
 
     - name: Install coverage tools
       if: inputs.with-coverage == 'true'

@@ -2190,6 +2190,9 @@ mod tests {
             capabilities: vec!["TextGeneration".into()],
             quantization: Some("Q4_K_M".into()),
             parameter_count: Some("7B".into()),
+            format: "gguf".into(),
+            engine: "llama_cpp".into(),
+            platforms: vec!["macos-metal".into()],
         };
 
         let with_status = ModelWithStatus::from_supported(supported.clone());
@@ -2217,6 +2220,13 @@ mod tests {
             capabilities: vec!["TextGeneration".into()],
             quantization: Some("Q4_K_M".into()),
             parameter_count: Some("7B".into()),
+            format: "gguf".into(),
+            engine: "llama_cpp".into(),
+            platforms: vec![
+                "macos-metal".into(),
+                "windows-directml".into(),
+                "linux-cuda".into(),
+            ],
         };
 
         let with_status = ModelWithStatus::from_supported(supported);

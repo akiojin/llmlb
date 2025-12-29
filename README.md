@@ -35,7 +35,7 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 - **Text-to-Speech (TTS)**: `/v1/audio/speech` - Generate natural speech from text
 - **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
 - **Image Generation**: `/v1/images/generations` - Generate images from text prompts
-- **Image Understanding**: Coming soon - Analyze and understand images (Vision models)
+- **Image Understanding**: `/v1/chat/completions` - Analyze images via `image_url` content parts (Vision models)
 
 ## Key Features
 
@@ -514,6 +514,26 @@ See [Node (C++)](#node-c) section in Quick Start.
        "size": "512x512",
        "n": 1,
        "response_format": "b64_json"
+     }'
+   ```
+
+   **Image understanding example**
+   ```bash
+   curl http://router:8080/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer sk_your_api_key" \
+     -d '{
+       "model": "llava-v1.5-7b",
+       "messages": [
+         {
+           "role": "user",
+           "content": [
+             {"type": "text", "text": "What is in this image?"},
+             {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+           ]
+         }
+       ],
+       "max_tokens": 300
      }'
    ```
 

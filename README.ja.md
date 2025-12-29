@@ -33,7 +33,7 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 - **音声合成（TTS）**: `/v1/audio/speech` - テキストから自然な音声を生成
 - **音声認識（ASR）**: `/v1/audio/transcriptions` - 音声をテキストに変換
 - **画像生成**: `/v1/images/generations` - テキストプロンプトから画像を生成
-- **画像認識**: 実装予定 - 画像の分析と理解（Vision モデル）
+- **画像認識**: `/v1/chat/completions` - image_url を含むVisionリクエスト
 
 ## 主な特徴
 
@@ -194,6 +194,26 @@ curl http://localhost:8080/v1/images/generations \
     "size": "512x512",
     "n": 1,
     "response_format": "b64_json"
+  }'
+```
+
+### 画像認識例
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_api_key" \
+  -d '{
+    "model": "llava-v1.5-7b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "この画像には何が写っていますか？"},
+          {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+        ]
+      }
+    ],
+    "max_tokens": 300
   }'
 ```
 

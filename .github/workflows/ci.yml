@@ -12,6 +12,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # パス変更検出（C++ジョブの条件付き実行用）
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      cpp: ${{ steps.filter.outputs.cpp }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cpp:
+              - 'node/**'
+              - 'package.json'
+              - '.github/actions/setup-cpp/**'
+              - '.github/workflows/ci.yml'
+            rust:
+              - 'router/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/ci.yml'
+
   tasks:
     name: Tasks Completion Check
     runs-on: ubuntu-latest
@@ -52,6 +76,8 @@ jobs:
 
   cpp:
     name: C++ Node (build & test)
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,11 +87,20 @@ jobs:
         uses: ./.github/actions/setup-cpp
         with:
           with-linters: 'true'
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-cpp-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-cpp-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - name: Build
-        run: npm run build:node
+        run: npm run build:node:ci
+      - name: Show ccache stats
+        run: ccache -s
       - name: Test
         run: npm run test:node
       - name: clang-tidy (sources only)
@@ -145,6 +180,8 @@ jobs:
 
   coverage-cpp:
     name: Coverage (C++)
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,11 +191,20 @@ jobs:
         uses: ./.github/actions/setup-cpp
         with:
           with-coverage: 'true'
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-coverage-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-coverage-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - name: Build with coverage
-        run: npm run build:node:coverage
+        run: npm run build:node:coverage:ci
+      - name: Show ccache stats
+        run: ccache -s
       - name: Test
         run: npm run test:node
       - name: gcovr lcov report

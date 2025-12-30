@@ -20,6 +20,30 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace llm_node {
+namespace {
+bool isMetalArtifactName(const std::string& name) {
+    const auto lower = toLowerAscii(name);
+    return lower == "model.metal.bin";
+}
+
+bool isDirectMlArtifactName(const std::string& name) {
+    const auto lower = toLowerAscii(name);
+    return lower == "model.directml.bin" || lower == "model.dml.bin";
+}
+
+bool shouldDownloadForBackend(const std::string& name) {
+#if defined(__APPLE__)
+    if (isDirectMlArtifactName(name)) return false;
+    return true;
+#elif defined(_WIN32)
+    if (isMetalArtifactName(name)) return false;
+    return true;
+#else
+    if (isMetalArtifactName(name) || isDirectMlArtifactName(name)) return false;
+    return true;
+#endif
+}
+}  // namespace
 
 size_t ModelSync::defaultConcurrency() {
     auto cfg = loadDownloadConfig();
@@ -448,6 +472,9 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         for (const auto& f : j["files"]) {
             std::string name = f.value("name", "");
             if (name.empty()) return false;
+            if (!shouldDownloadForBackend(name)) {
+                continue;
+            }
 
             // If the manifest entry specifies allowed runtimes, skip files that this node cannot use.
             // Backward-compatible: older routers won't include `runtimes`.

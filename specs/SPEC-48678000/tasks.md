@@ -55,9 +55,9 @@
 - [x] T007.3 技術制約テスト追加
   - ✅ AllowlistBlocksUnknownOrigin
   - ✅ DownloadValidatesArtifactFormat
-- [ ] T007.4 Clarificationsテスト追加
-  - 🔴 OriginDownloadHasTimeout - RED: タイムアウト設定未実装
-  - 🔴 ConcurrentDownloadLimit - RED: 同時ダウンロード制限未実装
+- [x] T007.4 Clarificationsテスト追加
+  - ✅ RouterDownloadHasTimeout（外部ソース/プロキシのタイムアウト）
+  - ✅ ConcurrentDownloadLimit（同時ダウンロード数の上限）
 
 ## Phase 3.3: コア実装
 
@@ -127,11 +127,9 @@ Task T007: エラーハンドリング contract test
 
 ## 検証チェックリスト
 
-- [ ] 共有パス関連コードが完全に削除されている (T001-T002)
-- [ ] `supported_models.json`未定義モデルでエラーが返る
-- [ ] 外部ソースからのダウンロードが正常に動作する
-- [ ] ルータープロキシ経由ダウンロードが正常に動作する
-- [ ] 重複ダウンロードが防止されている
-- [ ] ダウンロード進捗が10%単位で通知される
-- [ ] モデル未サポート時に1秒以内にエラーが返る
-- [ ] すべてのテストが実装より先にある (TDD RED完了)
+- [x] auto_repair 関連コードが完全に削除されている (T001-T003)
+- [x] 共有パスからの直接参照でコピーが発生しない (テスト: SharedPathDoesNotCopyToLocal)
+- [x] 外部ソース/プロキシ経由ダウンロードが正常に動作する (Phase 3.3で実装済み)
+- [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
+- [x] Hugging Face への直接ダウンロードが許可リストで制御されている (テスト: HuggingFaceDirectDownloadAllowedWithAllowlist)
+- [x] すべてのテストが実装より先にある (TDD RED完了)

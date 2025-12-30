@@ -36,7 +36,7 @@
 
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
-| `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | ✅ | P1 | 📝 |
+| `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | ✅ | P1 | ✅ |
 | `SPEC-32e2b31a` | LLM Router System（統合版・アーカイブ） | ✅ | P1 | ✅ |
 | `SPEC-35375000` | ルーター負荷最適化 | ✅ | P1 | ✅ |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | ✅ | P2 | 🔨 |
@@ -58,12 +58,12 @@
 
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
-| `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | ✅ | P2 | 🔨 |
+| `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | ✅ | P2 | ✅ |
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | ✅ | P1 | ✅ |
 | `SPEC-11106000` | Hugging Face URL 登録（GGUF優先・自動変換つき） | ✅ | P1 | ✅ |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | ✅ | P2 | ✅ |
 | `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ | P1 | ✅ |
-| `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | 🔨 |
+| `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | ✅ |
 | `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | 🔨 |
@@ -71,7 +71,7 @@
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | 🔨 |
 | `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | ✅ | P1 | ✅ |
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | 🔨 |
+| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
 
 ## 🛤️ ルーティング
@@ -85,7 +85,7 @@
 
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
-| `SPEC-26006000` | 音声モデル対応（TTS + ASR） | ✅ | P1 | 🔨 |
+| `SPEC-26006000` | 音声モデル対応（TTS + ASR） | ✅ | P1 | ✅ |
 | `SPEC-5fc9fe92` | Playground Chat マルチモーダル対応 | ✅ | P2 | ✅ |
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | ✅ | P1 | ✅ |
 
@@ -128,10 +128,10 @@
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
-| `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 未着手 |
+| `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 完了 |
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | 完了 |
 | `SPEC-11106000` | Hugging Face URL 登録（GGUF優先・自動変換つき） | 完了 |
-| `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 実装中 |
+| `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 完了 |
 | `SPEC-32637000` | モデル capabilities に基づくルーティング検証 | 完了 |
 | `SPEC-32e2b31a` | LLM Router System（統合版・アーカイブ） | 完了 |
 | `SPEC-35375000` | ルーター負荷最適化 | 完了 |
@@ -149,7 +149,7 @@
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | 完了 |
 | `SPEC-d4eb8796` | ルーター認証・アクセス制御 | 完了 |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 実装中 |
+| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
 
 ### P2（重要）- 19件
@@ -157,14 +157,14 @@
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
 | `SPEC-026b2cde` | リクエスト履歴一覧のページネーション機能 | 完了 |
-| `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | 実装中 |
+| `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | 完了 |
 | `SPEC-1970e39f` | 構造化ロギング強化 | 完了 |
 | `SPEC-1f2a9c3d` | SPEC-log-api: Node / Router Log Retrieval API | 完了 |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | 実装中 |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | 完了 |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | 実装中 |
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | 完了 |
-| `SPEC-48678000` | モデル自動解決機能 | 実装中 |
+| `SPEC-48678000` | モデル自動解決機能 | 完了 |
 | `SPEC-4b6e9f2a` | クラウドモデルプレフィックスルーティング | 完了 |
 | `SPEC-5fc9fe92` | Playground Chat マルチモーダル対応 | 完了 |
 | `SPEC-712c20cf` | 管理ダッシュボード | 完了 |

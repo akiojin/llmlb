@@ -516,17 +516,12 @@ TEST(ModelResolverTest, RouterDownloadValidatesGGUFFormat) {
 // Clarifications Tests (from spec.md Clarifications section)
 // ===========================================================================
 
-// Clarification: Router API download timeout (recommended: 5 minutes)
-// TDD RED: Requires timeout configuration in downloadFromRouter
+// Clarification: External source/proxy download timeout (recommended: 5 minutes)
 TEST(ModelResolverTest, RouterDownloadHasTimeout) {
-    GTEST_SKIP() << "TDD RED: getDownloadTimeoutMs() not yet implemented";
-
     TempModelDirs tmp;
 
     ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
 
-    // TDD RED: downloadFromRouter not implemented with timeout
-    // When implemented: should have configurable timeout (default 5 min)
     EXPECT_TRUE(resolver.getDownloadTimeoutMs() > 0)
         << "Should have a download timeout configured";
     EXPECT_LE(resolver.getDownloadTimeoutMs(), 5 * 60 * 1000)
@@ -534,16 +529,11 @@ TEST(ModelResolverTest, RouterDownloadHasTimeout) {
 }
 
 // Clarification: Concurrent download limit (recommended: 1 per node)
-// TDD RED: Requires concurrent download tracking
 TEST(ModelResolverTest, ConcurrentDownloadLimit) {
-    GTEST_SKIP() << "TDD RED: getMaxConcurrentDownloads() not yet implemented";
-
     TempModelDirs tmp;
 
     ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
 
-    // TDD RED: Not implemented
-    // When implemented: should limit concurrent downloads to 1
     EXPECT_EQ(resolver.getMaxConcurrentDownloads(), 1)
         << "Should limit to 1 concurrent download per node";
 }

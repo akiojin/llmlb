@@ -49,9 +49,9 @@
 - [x] T007.3 技術制約テスト追加
   - ✅ AllowlistBlocksUnknownOrigin
   - ✅ DownloadValidatesArtifactFormat
-- [ ] T007.4 Clarificationsテスト追加
-  - 🔴 OriginDownloadHasTimeout - RED: タイムアウト設定未実装
-  - 🔴 ConcurrentDownloadLimit - RED: 同時ダウンロード制限未実装
+- [x] T007.4 Clarificationsテスト追加
+  - ✅ RouterDownloadHasTimeout（外部ソース/プロキシのタイムアウト）
+  - ✅ ConcurrentDownloadLimit（同時ダウンロード数の上限）
 
 ## Phase 3.3: コア実装
 
@@ -114,7 +114,7 @@ Task T006: node/tests/ モデル不在時エラー contract test
 
 - [x] auto_repair 関連コードが完全に削除されている (T001-T003)
 - [x] 共有パスからの直接参照でコピーが発生しない (テスト: SharedPathDoesNotCopyToLocal)
-- [ ] 外部ソース/プロキシ経由ダウンロードが正常に動作する (Phase 3.3で実装予定)
+- [x] 外部ソース/プロキシ経由ダウンロードが正常に動作する (Phase 3.3で実装済み)
 - [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
-- [ ] Hugging Face への直接ダウンロードが許可リストで制御されている (テスト: HuggingFaceDirectDownloadAllowedWithAllowlist)
+- [x] Hugging Face への直接ダウンロードが許可リストで制御されている (テスト: HuggingFaceDirectDownloadAllowedWithAllowlist)
 - [x] すべてのテストが実装より先にある (TDD RED完了)

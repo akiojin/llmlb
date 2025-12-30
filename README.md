@@ -603,7 +603,6 @@ See [Node (C++)](#node-c) section in Quick Start.
        "max_tokens": 300
      }'
    ```
-
 4. **List Registered Nodes**
    ```bash
    curl http://router:8080/v0/nodes \

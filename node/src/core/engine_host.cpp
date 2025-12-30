@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <cctype>
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
@@ -145,6 +146,46 @@ std::filesystem::path resolveLibraryPath(const std::filesystem::path& manifest_d
     return lib_path;
 }
 
+std::string toLower(std::string value) {
+    for (auto& ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
+
+std::vector<std::string> supportedGpuTargets() {
+    std::vector<std::string> targets;
+#ifdef USE_METAL
+    targets.push_back("metal");
+#endif
+#ifdef _WIN32
+    targets.push_back("directml");
+#endif
+#ifdef USE_CUDA
+    targets.push_back("cuda");
+#endif
+#ifdef USE_ROCM
+    targets.push_back("rocm");
+#endif
+    return targets;
+}
+
+bool isGpuTargetCompatible(const std::vector<std::string>& gpu_targets) {
+    if (gpu_targets.empty()) return true;
+    const auto supported = supportedGpuTargets();
+    if (supported.empty()) return false;
+
+    for (const auto& target : gpu_targets) {
+        const auto needle = toLower(target);
+        for (const auto& candidate : supported) {
+            if (needle == candidate) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 EngineHost::~EngineHost() {
@@ -279,6 +320,11 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
                             std::string& error) {
     EnginePluginManifest manifest;
     if (!loadManifest(manifest_path, manifest, error)) return false;
+
+    if (!isGpuTargetCompatible(manifest.gpu_targets)) {
+        error.clear();
+        return true;
+    }
 
     auto lib_path = resolveLibraryPath(manifest_path.parent_path(), manifest.library);
     auto lib = openLibrary(lib_path, error);

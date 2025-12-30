@@ -2,10 +2,15 @@
 
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 
 #include "core/engine_host.h"
+#include "core/engine_registry.h"
+#include "core/engine_plugin_api.h"
 
 using llm_node::EngineHost;
+using llm_node::EngineHostContext;
+using llm_node::EngineRegistry;
 using llm_node::EnginePluginManifest;
 namespace fs = std::filesystem;
 
@@ -91,4 +96,36 @@ TEST(EngineHostTest, LoadsManifestFromFile) {
     EXPECT_EQ(manifest.library, "llm_engine_llama_cpp");
 
     fs::remove(manifest_path);
+}
+
+TEST(EngineHostTest, SkipsPluginWithUnsupportedGpuTarget) {
+    EngineHost host;
+    EngineRegistry registry;
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+
+    const auto temp = fs::temp_directory_path() /
+                      ("engine-host-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(temp);
+    const auto plugin_dir = temp / "dummy";
+    fs::create_directories(plugin_dir);
+
+    const auto manifest_path = plugin_dir / "manifest.json";
+    std::ofstream(manifest_path) << R"({
+        "engine_id": "dummy_engine",
+        "engine_version": "0.1.0",
+        "abi_version": 1,
+        "runtimes": ["dummy_runtime"],
+        "formats": ["gguf"],
+        "gpu_targets": ["unknown_gpu"],
+        "library": "missing_engine"
+    })";
+
+    std::string error;
+    EXPECT_TRUE(host.loadPluginsFromDir(temp, registry, context, error));
+    EXPECT_TRUE(error.empty());
+    EXPECT_EQ(registry.resolve("dummy_runtime"), nullptr);
+
+    std::error_code ec;
+    fs::remove_all(temp, ec);
 }

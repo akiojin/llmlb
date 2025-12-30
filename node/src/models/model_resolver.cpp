@@ -7,11 +7,15 @@
 #include <fstream>
 #include <memory>
 #include <thread>
+#include <regex>
 
+#include <httplib.h>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "models/model_downloader.h"
 #include "models/model_storage.h"
+#include "utils/allowlist.h"
 
 namespace fs = std::filesystem;
 
@@ -53,6 +57,65 @@ bool hasGgufMagic(const fs::path& path) {
     ifs.read(magic, sizeof(magic));
     return ifs.gcount() == 4 && magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
 }
+
+struct ParsedUrl {
+    std::string scheme;
+    std::string host;
+    int port{0};
+    std::string path;
+};
+
+ParsedUrl parseUrl(const std::string& url) {
+    static const std::regex re(R"(^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/:]+)(?::(\d+))?(.*)$)");
+    std::smatch match;
+    ParsedUrl parsed;
+    if (std::regex_match(url, match, re)) {
+        parsed.scheme = match[1].str();
+        parsed.host = match[2].str();
+        parsed.port = match[3].matched ? std::stoi(match[3].str()) : (parsed.scheme == "https" ? 443 : 80);
+        parsed.path = match[4].str().empty() ? "/" : match[4].str();
+    }
+    return parsed;
+}
+
+std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::milliseconds timeout) {
+    if (url.scheme.empty() || url.host.empty()) {
+        return nullptr;
+    }
+
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+    if (url.scheme == "https") {
+        return nullptr;  // HTTPS is not supported in this build
+    }
+#endif
+
+    std::string scheme_host_port = url.scheme + "://" + url.host;
+    if (url.port != 0) {
+        scheme_host_port += ":" + std::to_string(url.port);
+    }
+    auto client = std::make_unique<httplib::Client>(scheme_host_port);
+    if (client && client->is_valid()) {
+        const int sec = static_cast<int>(timeout.count() / 1000);
+        const int usec = static_cast<int>((timeout.count() % 1000) * 1000);
+        client->set_connection_timeout(sec, usec);
+        client->set_read_timeout(sec, usec);
+        client->set_write_timeout(sec, usec);
+        client->set_follow_location(true);
+        return client;
+    }
+    return nullptr;
+}
+
+std::string joinPath(const std::string& base, const std::string& tail) {
+    std::string out = base.empty() ? "/" : base;
+    if (out.back() != '/') out.push_back('/');
+    if (!tail.empty() && tail.front() == '/') {
+        out += tail.substr(1);
+    } else {
+        out += tail;
+    }
+    return out;
+}
 }  // namespace
 
 ModelResolver::ModelResolver(std::string local_path, std::string shared_path, std::string router_url,
@@ -84,12 +147,15 @@ ModelResolveResult ModelResolver::resolve(const std::string& model_name) {
     // 3. Try router API download
     if (!router_url_.empty()) {
         result.router_attempted = true;
-        std::string downloaded = downloadFromRouter(model_name);
+        bool origin_attempted = false;
+        std::string downloaded = downloadFromRouter(model_name, &origin_attempted);
         if (!downloaded.empty()) {
             result.success = true;
             result.path = downloaded;
+            result.origin_attempted = origin_attempted;
             return result;
         }
+        result.origin_attempted = origin_attempted;
     }
 
     // 4. Model not found
@@ -100,6 +166,10 @@ ModelResolveResult ModelResolver::resolve(const std::string& model_name) {
         result.error_message = "Model '" + model_name + "' not found in local, shared, or router";
     }
     return result;
+}
+
+void ModelResolver::setOriginAllowlist(std::vector<std::string> origin_allowlist) {
+    origin_allowlist_ = std::move(origin_allowlist);
 }
 
 std::string ModelResolver::findLocal(const std::string& model_name) {
@@ -128,8 +198,9 @@ std::string ModelResolver::findShared(const std::string& model_name) {
     return "";
 }
 
-std::string ModelResolver::downloadFromRouter(const std::string& model_name) {
+std::string ModelResolver::downloadFromRouter(const std::string& model_name, bool* origin_attempted) {
     if (router_url_.empty() || local_path_.empty()) return "";
+    if (origin_attempted) *origin_attempted = false;
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(download_timeout_ms_);
     {
@@ -177,6 +248,14 @@ std::string ModelResolver::downloadFromRouter(const std::string& model_name) {
     const auto downloaded = downloader.downloadBlob(blob_path, rel_partial, nullptr);
     if (downloaded.empty()) {
         fs::remove(partial_path, ec);
+        if (origin_attempted) *origin_attempted = false;
+        if (auto origin_url = fetchOriginUrl(model_name)) {
+            if (isUrlAllowedByAllowlist(*origin_url, origin_allowlist_)) {
+                if (origin_attempted) *origin_attempted = true;
+                return downloadFromOrigin(model_name, *origin_url);
+            }
+            spdlog::warn("Origin URL blocked by allowlist for model {}", model_name);
+        }
         return "";
     }
 
@@ -199,6 +278,112 @@ std::string ModelResolver::downloadFromRouter(const std::string& model_name) {
     }
 
     return final_path.string();
+}
+
+std::string ModelResolver::downloadFromOrigin(const std::string& model_name, const std::string& url) {
+    if (url.empty() || local_path_.empty()) return "";
+
+    const auto dir_name = ModelStorage::modelNameToDir(model_name);
+    fs::path model_dir = fs::path(local_path_) / dir_name;
+    fs::path partial_path = model_dir / "model.gguf.partial";
+    fs::path final_path = model_dir / "model.gguf";
+
+    std::error_code ec;
+    fs::remove(partial_path, ec);
+
+    ModelDownloader downloader(
+        router_url_,
+        local_path_,
+        std::chrono::milliseconds(download_timeout_ms_),
+        2,
+        std::chrono::milliseconds(200),
+        router_api_key_);
+
+    const auto rel_partial = (fs::path(dir_name) / "model.gguf.partial").string();
+    const auto downloaded = downloader.downloadBlob(url, rel_partial, nullptr);
+    if (downloaded.empty()) {
+        fs::remove(partial_path, ec);
+        return "";
+    }
+
+    if (!hasGgufMagic(downloaded)) {
+        spdlog::warn("Origin download returned non-GGUF for model {}", model_name);
+        fs::remove(downloaded, ec);
+        return "";
+    }
+
+    fs::rename(downloaded, final_path, ec);
+    if (ec) {
+        fs::remove(final_path, ec);
+        ec.clear();
+        fs::rename(downloaded, final_path, ec);
+    }
+    if (ec) {
+        spdlog::error("Failed to finalize origin download for model {}: {}", model_name, ec.message());
+        fs::remove(downloaded, ec);
+        return "";
+    }
+
+    return final_path.string();
+}
+
+std::optional<std::string> ModelResolver::fetchOriginUrl(const std::string& model_name) {
+    if (router_url_.empty()) return std::nullopt;
+
+    auto parsed = parseUrl(router_url_);
+    auto client = makeClient(parsed, std::chrono::milliseconds(2000));
+    if (!client) return std::nullopt;
+
+    const std::string path = joinPath(parsed.path, "/v0/models");
+    httplib::Headers headers;
+    if (!router_api_key_.empty()) {
+        headers.emplace("Authorization", "Bearer " + router_api_key_);
+    }
+
+    auto res = client->Get(path.c_str(), headers);
+    if (!res || res->status < 200 || res->status >= 300) {
+        return std::nullopt;
+    }
+
+    nlohmann::json body = nlohmann::json::parse(res->body, nullptr, false);
+    if (body.is_discarded()) return std::nullopt;
+
+    const nlohmann::json* arr = nullptr;
+    if (body.is_array()) {
+        arr = &body;
+    } else if (body.contains("data") && body["data"].is_array()) {
+        arr = &body["data"];
+    }
+
+    if (!arr) return std::nullopt;
+
+    for (const auto& m : *arr) {
+        if (!m.is_object()) continue;
+        std::string id;
+        if (m.contains("name") && m["name"].is_string()) {
+            id = m["name"].get<std::string>();
+        } else if (m.contains("id") && m["id"].is_string()) {
+            id = m["id"].get<std::string>();
+        }
+        if (id != model_name) continue;
+
+        if (m.contains("download_url") && m["download_url"].is_string()) {
+            auto url = m["download_url"].get<std::string>();
+            if (!url.empty()) return url;
+        }
+        if (m.contains("repo") && m["repo"].is_string() && m.contains("filename") && m["filename"].is_string()) {
+            const std::string repo = m["repo"].get<std::string>();
+            const std::string filename = m["filename"].get<std::string>();
+            if (!repo.empty() && !filename.empty()) {
+                std::string base = std::getenv("HF_BASE_URL") ? std::getenv("HF_BASE_URL") : "https://huggingface.co";
+                if (!base.empty() && base.back() == '/') base.pop_back();
+                return base + "/" + repo + "/resolve/main/" + filename;
+            }
+        }
+        break;
+    }
+
+    return std::nullopt;
 }
 
 bool ModelResolver::hasDownloadLock(const std::string& model_name) const {

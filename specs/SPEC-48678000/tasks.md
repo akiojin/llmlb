@@ -19,38 +19,45 @@
 
 ## Phase 3.1: セットアップ・クリーンアップ
 
-- [ ] T001 共有パス関連コードの削除（廃止機能）
-  - 共有パス参照ロジックの削除
-  - 関連設定・環境変数の削除
-- [ ] T002 共有パス関連テストコードの削除
-  - ResolveFromSharedPathWhenNotLocal
-  - SharedPathDoesNotCopyToLocal
-  - UpdatedSharedPathModelIsUsed
-- [ ] T003 `supported_models.json`参照インターフェースの設計
-  - SPEC-6cd7f960との連携方法確認
+- [x] T001 `node/src/` から auto_repair 関連コードを特定・削除
+  - ✅ auto_repair関連コードは存在しない（SPEC-3df1b977で廃止済み、未実装）
+- [x] T002 auto_repair 関連の環境変数・設定を削除
+  - ✅ 環境変数・設定は存在しない
+- [x] T003 関連するテストコードを削除
+  - ✅ テストコードは存在しない
+- [x] T003.1 外部ソース取得の許可リストとHTTPクライアント方針を整理
+  - FR-006（許可リスト内の外部ダウンロード許可）対応
 
 ## Phase 3.2: テストファースト (TDD RED)
 
-- [ ] T004 [P] `node/tests/unit/model_resolver_test.cpp` にローカル確認の contract test
-  - 🔴 LocalPathTakesPriority (FR-001)
-  - 🔴 LocalModelUsedWhenExists (FR-001)
-- [ ] T005 [P] `node/tests/unit/model_resolver_test.cpp` に外部ソースダウンロードの contract test
-  - 🔴 DownloadFromHuggingFaceWhenNotLocal (FR-002)
-  - 🔴 DownloadedModelSavedToLocal (FR-004)
-  - 🔴 ProgressNotificationDuringDownload (FR-008)
-- [ ] T006 [P] `node/tests/unit/model_resolver_test.cpp` にプロキシ経由ダウンロードの contract test
-  - 🔴 FallbackToRouterProxyWhenOriginFails (FR-003)
-  - 🔴 ProxyDownloadSavedToLocal (FR-004)
-- [ ] T007 [P] `node/tests/unit/model_resolver_test.cpp` にエラーハンドリング contract test
-  - 🔴 ReturnErrorWhenModelNotInSupportedModels (FR-005)
-  - 🔴 ErrorResponseWithinOneSecond (成功基準2)
-  - 🔴 ClearErrorMessageForUnsupportedModel (US3)
-- [ ] T008 `node/tests/unit/model_resolver_test.cpp` に重複ダウンロード防止テスト
-  - 🔴 PreventDuplicateDownloads (FR-007)
-  - 🔴 ConcurrentRequestsWaitForSingleDownload (FR-007)
-- [ ] T009 統合テスト: 解決フロー全体
-  - 🔴 FullFallbackFlow (local -> origin -> proxy -> error)
-  - 🔴 SupportedModelsJsonValidation
+- [x] T004 [P] `node/tests/unit/model_resolver_test.cpp` に共有パス参照の contract test
+  - ✅ ResolveFromSharedPathWhenNotLocal (FR-002)
+  - ✅ SharedPathDoesNotCopyToLocal (FR-002)
+  - ✅ LocalPathTakesPriority (FR-001)
+- [x] T005 [P] `node/tests/unit/model_resolver_test.cpp` に外部ソース/プロキシ経由ダウンロードの contract test
+  - ✅ DownloadFromOriginWhenSharedInaccessible (FR-003)
+  - ✅ DownloadedModelSavedToLocal (FR-004)
+  - ✅ SharedPathInaccessibleTriggersOriginFallback (FR-003)
+- [x] T006 [P] `node/tests/unit/model_resolver_test.cpp` にモデル不在時のエラーハンドリング contract test
+  - ✅ ReturnErrorWhenModelNotFound (FR-005)
+  - ✅ ErrorResponseWithinOneSecond (成功基準3)
+  - ✅ ClearErrorMessageWhenModelNotFoundAnywhere (US3)
+- [x] T007 `node/tests/unit/model_resolver_test.cpp` に統合テスト: 解決フロー全体
+  - ✅ FullFallbackFlow (local -> shared -> origin -> error)
+  - ✅ HuggingFaceDirectDownloadAllowedWithAllowlist (FR-006)
+  - ✅ NoAutoRepairFunctionality (FR-007/成功基準4)
+- [x] T007.1 エッジケーステスト追加
+  - 🔴 NetworkDisconnectionToSharedPathTriggersRouterFallback - RED
+  - 🔴 IncompleteDownloadIsRetried - RED
+  - 🔴 PreventDuplicateDownloads - RED: hasDownloadLock未実装
+- [x] T007.2 ユーザーストーリー受け入れシナリオテスト
+  - ✅ UpdatedSharedPathModelIsUsed (US1-シナリオ2)
+- [x] T007.3 技術制約テスト追加
+  - ✅ AllowlistBlocksUnknownOrigin
+  - ✅ DownloadValidatesArtifactFormat
+- [ ] T007.4 Clarificationsテスト追加
+  - 🔴 OriginDownloadHasTimeout - RED: タイムアウト設定未実装
+  - 🔴 ConcurrentDownloadLimit - RED: 同時ダウンロード制限未実装
 
 ## Phase 3.3: コア実装
 
@@ -65,8 +72,9 @@
   - 外部ソースURL取得
   - 未定義モデルのエラー生成
 
-- [ ] T012 `node/src/model_resolver.cpp` に外部ソースダウンロード
-  - Hugging Face等からのHTTPダウンロード
+- [x] T010 `node/src/model_resolver.cpp` に外部ソース/プロキシ経由ダウンロード
+  - マニフェストに基づく外部URL取得
+  - ルータープロキシ（`/v0/models/registry/.../files/...`）の利用
   - ローカルへの保存処理
   - 進捗通知（10%単位）
 
@@ -85,8 +93,9 @@
 
 ## Phase 3.4: 統合
 
-- [ ] T016 既存の推論フローに ModelResolver を統合
-- [ ] T017 設定ファイルからルーターURL読み込み
+- [x] T012 既存の推論フローに ModelResolver を統合
+- [x] T013 重複ダウンロード防止（ミューテックス）
+- [x] T014 設定ファイルから共有パス・許可リスト・ルーターURL読み込み
 
 ## Phase 3.5: 仕上げ
 

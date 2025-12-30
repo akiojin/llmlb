@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+inspect_pr_checks.py - Comprehensive PR inspection tool
+
+Modes:
+  - checks: CI check failures (existing functionality)
+  - conflicts: Merge conflict detection
+  - reviews: Change Requests and unresolved review threads
+  - all: Run all inspections
+"""
 from __future__ import annotations
 
 import argparse
@@ -77,8 +86,8 @@ def run_gh_command_raw(args: Sequence[str], cwd: Path) -> tuple[int, bytes, str]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect failing GitHub PR checks, fetch GitHub Actions logs, and extract a "
-            "failure snippet."
+            "Inspect GitHub PRs for CI failures, merge conflicts, change requests, "
+            "and unresolved review threads."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -86,9 +95,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pr", default=None, help="PR number or URL (defaults to current branch PR)."
     )
+    parser.add_argument(
+        "--mode",
+        choices=["checks", "conflicts", "reviews", "all"],
+        default="all",
+        help="Inspection mode: checks (CI), conflicts, reviews, or all.",
+    )
     parser.add_argument("--max-lines", type=int, default=DEFAULT_MAX_LINES)
     parser.add_argument("--context", type=int, default=DEFAULT_CONTEXT_LINES)
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text output.")
+    parser.add_argument(
+        "--resolve-threads",
+        action="store_true",
+        help="Resolve review threads after confirmation.",
+    )
+    parser.add_argument(
+        "--add-comment",
+        type=str,
+        default=None,
+        help="Add a comment to the PR with the specified message.",
+    )
     return parser.parse_args()
 
 
@@ -106,33 +132,83 @@ def main() -> int:
     if pr_value is None:
         return 1
 
-    checks = fetch_checks(pr_value, repo_root)
-    if checks is None:
-        return 1
+    # Handle --add-comment action
+    if args.add_comment:
+        success = add_pr_comment(pr_value, args.add_comment, repo_root)
+        if success:
+            print(f"Comment added to PR #{pr_value}")
+        else:
+            print(f"Failed to add comment to PR #{pr_value}", file=sys.stderr)
+        return 0 if success else 1
 
-    failing = [c for c in checks if is_failing(c)]
-    if not failing:
-        print(f"PR #{pr_value}: no failing checks detected.")
-        return 0
+    # Collect results based on mode
+    results: dict[str, Any] = {"pr": pr_value}
+    has_issues = False
 
-    results = []
-    for check in failing:
-        results.append(
-            analyze_check(
-                check,
-                repo_root=repo_root,
-                max_lines=max(1, args.max_lines),
-                context=max(1, args.context),
-            )
-        )
+    # Conflicts check
+    if args.mode in ("conflicts", "all"):
+        conflict_result = check_conflicts(pr_value, repo_root)
+        results["conflicts"] = conflict_result
+        if conflict_result.get("hasConflicts"):
+            has_issues = True
 
+    # Reviews check (Change Requests + Unresolved Threads)
+    if args.mode in ("reviews", "all"):
+        change_requests = fetch_change_requests(pr_value, repo_root)
+        results["changeRequests"] = change_requests
+        if change_requests:
+            has_issues = True
+
+        unresolved_threads = fetch_unresolved_threads(pr_value, repo_root)
+        results["unresolvedThreads"] = unresolved_threads
+        if unresolved_threads:
+            has_issues = True
+
+        # Handle --resolve-threads
+        if args.resolve_threads and unresolved_threads:
+            resolved_count = 0
+            for thread in unresolved_threads:
+                thread_id = thread.get("id")
+                if thread_id and resolve_thread(thread_id, repo_root):
+                    resolved_count += 1
+            results["resolvedThreadsCount"] = resolved_count
+
+    # CI checks
+    if args.mode in ("checks", "all"):
+        checks = fetch_checks(pr_value, repo_root)
+        if checks is not None:
+            failing = [c for c in checks if is_failing(c)]
+            if failing:
+                has_issues = True
+                ci_results = []
+                for check in failing:
+                    ci_results.append(
+                        analyze_check(
+                            check,
+                            repo_root=repo_root,
+                            max_lines=max(1, args.max_lines),
+                            context=max(1, args.context),
+                        )
+                    )
+                results["ciFailures"] = ci_results
+            else:
+                results["ciFailures"] = []
+        else:
+            results["ciFailures"] = None
+            results["ciError"] = "Failed to fetch CI checks"
+
+    # Output
     if args.json:
-        print(json.dumps({"pr": pr_value, "results": results}, indent=2))
+        print(json.dumps(results, indent=2))
     else:
-        render_results(pr_value, results)
+        render_comprehensive_results(results)
 
-    return 1
+    return 1 if has_issues else 0
 
+
+# =============================================================================
+# Git and GH utilities
+# =============================================================================
 
 def find_git_root(start: Path) -> Path | None:
     result = subprocess.run(
@@ -174,6 +250,262 @@ def resolve_pr(pr_value: str | None, repo_root: Path) -> str | None:
         return None
     return str(number)
 
+
+def fetch_repo_slug(repo_root: Path) -> str | None:
+    result = run_gh_command(["repo", "view", "--json", "nameWithOwner"], cwd=repo_root)
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    name_with_owner = data.get("nameWithOwner")
+    if not name_with_owner:
+        return None
+    return str(name_with_owner)
+
+
+def parse_repo_owner_name(repo_slug: str) -> tuple[str, str] | None:
+    """Parse 'owner/repo' into (owner, repo)."""
+    parts = repo_slug.split("/")
+    if len(parts) != 2:
+        return None
+    return parts[0], parts[1]
+
+
+# =============================================================================
+# Conflict detection
+# =============================================================================
+
+def check_conflicts(pr_value: str, repo_root: Path) -> dict[str, Any]:
+    """Check if PR has merge conflicts."""
+    result = run_gh_command(
+        ["pr", "view", pr_value, "--json", "mergeable,mergeStateStatus,baseRefName,headRefName"],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return {"error": "Failed to fetch merge state", "hasConflicts": False}
+
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return {"error": "Failed to parse merge state JSON", "hasConflicts": False}
+
+    mergeable_raw = data.get("mergeable")
+    merge_state_status = data.get("mergeStateStatus", "UNKNOWN")
+
+    # Handle different return types from gh CLI:
+    # - Older versions: boolean (true/false)
+    # - Newer versions: string ("MERGEABLE", "CONFLICTING", "UNKNOWN")
+    if isinstance(mergeable_raw, bool):
+        # Older gh CLI: boolean value
+        has_conflicts = not mergeable_raw
+        mergeable_display = "CONFLICTING" if not mergeable_raw else "MERGEABLE"
+    elif isinstance(mergeable_raw, str):
+        # Newer gh CLI: string value
+        has_conflicts = mergeable_raw == "CONFLICTING"
+        mergeable_display = mergeable_raw
+    else:
+        # None or unknown type (GitHub still calculating)
+        has_conflicts = False
+        mergeable_display = "UNKNOWN"
+
+    # Also check mergeStateStatus for DIRTY state
+    if merge_state_status == "DIRTY":
+        has_conflicts = True
+
+    return {
+        "hasConflicts": has_conflicts,
+        "mergeable": mergeable_display,
+        "mergeStateStatus": merge_state_status,
+        "baseRefName": data.get("baseRefName", ""),
+        "headRefName": data.get("headRefName", ""),
+    }
+
+
+# =============================================================================
+# Change Request handling
+# =============================================================================
+
+def fetch_change_requests(pr_value: str, repo_root: Path) -> list[dict[str, Any]]:
+    """Fetch reviews with CHANGES_REQUESTED state."""
+    repo_slug = fetch_repo_slug(repo_root)
+    if not repo_slug:
+        return []
+
+    result = run_gh_command(
+        ["api", f"repos/{repo_slug}/pulls/{pr_value}/reviews"],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return []
+
+    try:
+        reviews = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(reviews, list):
+        return []
+
+    change_requests = []
+    for review in reviews:
+        if review.get("state") == "CHANGES_REQUESTED":
+            change_requests.append({
+                "id": review.get("id"),
+                "reviewer": review.get("user", {}).get("login", "unknown"),
+                "body": review.get("body", ""),
+                "submittedAt": review.get("submitted_at", ""),
+                "htmlUrl": review.get("html_url", ""),
+            })
+
+    return change_requests
+
+
+# =============================================================================
+# Unresolved review threads
+# =============================================================================
+
+def fetch_unresolved_threads(pr_value: str, repo_root: Path) -> list[dict[str, Any]]:
+    """Fetch unresolved review threads using GraphQL."""
+    repo_slug = fetch_repo_slug(repo_root)
+    if not repo_slug:
+        return []
+
+    parsed = parse_repo_owner_name(repo_slug)
+    if not parsed:
+        return []
+
+    owner, repo = parsed
+
+    query = """
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              isOutdated
+              path
+              line
+              comments(first: 10) {
+                nodes {
+                  author { login }
+                  body
+                  createdAt
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    result = run_gh_command(
+        [
+            "api", "graphql",
+            "-f", f"query={query}",
+            "-f", f"owner={owner}",
+            "-f", f"repo={repo}",
+            "-F", f"number={pr_value}",
+        ],
+        cwd=repo_root,
+    )
+
+    if result.returncode != 0:
+        return []
+
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return []
+
+    threads = (
+        data.get("data", {})
+        .get("repository", {})
+        .get("pullRequest", {})
+        .get("reviewThreads", {})
+        .get("nodes", [])
+    )
+
+    unresolved = []
+    for thread in threads:
+        if not thread.get("isResolved"):
+            comments = thread.get("comments", {}).get("nodes", [])
+            formatted_comments = []
+            for comment in comments:
+                formatted_comments.append({
+                    "author": comment.get("author", {}).get("login", "unknown"),
+                    "body": comment.get("body", ""),
+                    "createdAt": comment.get("createdAt", ""),
+                })
+            unresolved.append({
+                "id": thread.get("id"),
+                "path": thread.get("path", ""),
+                "line": thread.get("line"),
+                "isOutdated": thread.get("isOutdated", False),
+                "comments": formatted_comments,
+            })
+
+    return unresolved
+
+
+# =============================================================================
+# Thread resolution
+# =============================================================================
+
+def resolve_thread(thread_id: str, repo_root: Path) -> bool:
+    """Resolve a review thread using GraphQL mutation."""
+    mutation = """
+    mutation($threadId: ID!) {
+      resolveReviewThread(input: {threadId: $threadId}) {
+        thread {
+          id
+          isResolved
+        }
+      }
+    }
+    """
+
+    result = run_gh_command(
+        [
+            "api", "graphql",
+            "-f", f"query={mutation}",
+            "-f", f"threadId={thread_id}",
+        ],
+        cwd=repo_root,
+    )
+
+    if result.returncode != 0:
+        return False
+
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return False
+
+    thread = data.get("data", {}).get("resolveReviewThread", {}).get("thread", {})
+    return thread.get("isResolved", False)
+
+
+# =============================================================================
+# PR comment
+# =============================================================================
+
+def add_pr_comment(pr_value: str, body: str, repo_root: Path) -> bool:
+    """Add a comment to the PR."""
+    result = run_gh_command(
+        ["pr", "comment", pr_value, "-b", body],
+        cwd=repo_root,
+    )
+    return result.returncode == 0
+
+
+# =============================================================================
+# CI checks (existing functionality)
+# =============================================================================
 
 def fetch_checks(pr_value: str, repo_root: Path) -> list[dict[str, Any]] | None:
     primary_fields = ["name", "state", "conclusion", "detailsUrl", "startedAt", "completedAt"]
@@ -373,20 +705,6 @@ def fetch_job_log(job_id: str, repo_root: Path) -> tuple[str, str]:
     return stdout_bytes.decode(errors="replace"), ""
 
 
-def fetch_repo_slug(repo_root: Path) -> str | None:
-    result = run_gh_command(["repo", "view", "--json", "nameWithOwner"], cwd=repo_root)
-    if result.returncode != 0:
-        return None
-    try:
-        data = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        return None
-    name_with_owner = data.get("nameWithOwner")
-    if not name_with_owner:
-        return None
-    return str(name_with_owner)
-
-
 def normalize_field(value: Any) -> str:
     if value is None:
         return ""
@@ -452,11 +770,98 @@ def tail_lines(text: str, max_lines: int) -> str:
     return "\n".join(lines[-max_lines:])
 
 
-def render_results(pr_number: str, results: Iterable[dict[str, Any]]) -> None:
-    results_list = list(results)
-    print(f"PR #{pr_number}: {len(results_list)} failing checks analyzed.")
-    for result in results_list:
+# =============================================================================
+# Output rendering
+# =============================================================================
+
+def render_comprehensive_results(results: dict[str, Any]) -> None:
+    """Render all inspection results in text format."""
+    pr_number = results.get("pr", "?")
+    print(f"PR #{pr_number}: Comprehensive Check Results")
+    print("=" * 60)
+
+    # Conflicts
+    conflicts = results.get("conflicts")
+    if conflicts:
+        print("\nMERGE CONFLICTS")
         print("-" * 60)
+        if conflicts.get("error"):
+            print(f"Error: {conflicts['error']}")
+        elif conflicts.get("hasConflicts"):
+            print(f"Status: {conflicts.get('mergeable', 'UNKNOWN')}")
+            print(f"Merge State: {conflicts.get('mergeStateStatus', 'UNKNOWN')}")
+            print(f"Base: {conflicts.get('baseRefName', '')} <- Head: {conflicts.get('headRefName', '')}")
+            print("Action Required: Resolve conflicts before merging")
+        else:
+            print("No merge conflicts detected.")
+            print(f"Mergeable: {conflicts.get('mergeable', 'UNKNOWN')}")
+
+    # Change Requests
+    change_requests = results.get("changeRequests")
+    if change_requests is not None:
+        print("\nCHANGE REQUESTS")
+        print("-" * 60)
+        if change_requests:
+            for cr in change_requests:
+                reviewer = cr.get("reviewer", "unknown")
+                submitted_at = cr.get("submittedAt", "")[:10] if cr.get("submittedAt") else ""
+                body = cr.get("body", "")
+                print(f"From @{reviewer} ({submitted_at}):")
+                if body:
+                    print(indent_block(f'"{body}"', prefix="  "))
+                else:
+                    print("  (no comment body)")
+                print()
+        else:
+            print("No change requests.")
+
+    # Unresolved Threads
+    unresolved_threads = results.get("unresolvedThreads")
+    if unresolved_threads is not None:
+        print("\nUNRESOLVED REVIEW THREADS")
+        print("-" * 60)
+        if unresolved_threads:
+            for i, thread in enumerate(unresolved_threads, 1):
+                path = thread.get("path", "unknown")
+                line = thread.get("line")
+                location = f"{path}:{line}" if line else path
+                outdated = " (outdated)" if thread.get("isOutdated") else ""
+                print(f"[{i}] {location}{outdated}")
+                print(f"    Thread ID: {thread.get('id', 'unknown')}")
+                for comment in thread.get("comments", []):
+                    author = comment.get("author", "unknown")
+                    body = comment.get("body", "")
+                    print(f"    @{author}: {body[:100]}{'...' if len(body) > 100 else ''}")
+                print()
+        else:
+            print("No unresolved review threads.")
+
+    # Resolved threads count
+    resolved_count = results.get("resolvedThreadsCount")
+    if resolved_count is not None:
+        print(f"\nResolved {resolved_count} thread(s).")
+
+    # CI Failures
+    ci_failures = results.get("ciFailures")
+    if ci_failures is not None:
+        print("\nCI FAILURES")
+        print("-" * 60)
+        if ci_failures:
+            render_ci_results(ci_failures)
+        else:
+            print("No CI failures detected.")
+
+    ci_error = results.get("ciError")
+    if ci_error:
+        print(f"CI Error: {ci_error}")
+
+    print("=" * 60)
+
+
+def render_ci_results(results: Iterable[dict[str, Any]]) -> None:
+    """Render CI check failure results."""
+    results_list = list(results)
+    for result in results_list:
         print(f"Check: {result.get('name', '')}")
         if result.get("detailsUrl"):
             print(f"Details: {result['detailsUrl']}")
@@ -486,6 +891,7 @@ def render_results(pr_number: str, results: Iterable[dict[str, Any]]) -> None:
 
         if result.get("error"):
             print(f"Error fetching logs: {result['error']}")
+            print()
             continue
 
         snippet = result.get("logSnippet") or ""
@@ -494,7 +900,7 @@ def render_results(pr_number: str, results: Iterable[dict[str, Any]]) -> None:
             print(indent_block(snippet, prefix="  "))
         else:
             print("No snippet available.")
-    print("-" * 60)
+        print()
 
 
 def indent_block(text: str, prefix: str = "  ") -> str:

@@ -171,12 +171,18 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             model_sync->setApiKey(cfg.router_api_key);
         }
         model_sync->setSupportedRuntimes(supported_runtimes);
+        if (!cfg.origin_allowlist.empty()) {
+            model_sync->setOriginAllowlist(cfg.origin_allowlist);
+        }
 
         auto model_resolver = std::make_shared<llm_node::ModelResolver>(
             cfg.models_dir,
             cfg.shared_models_dir,
             router_url,
             cfg.router_api_key);
+        if (!cfg.origin_allowlist.empty()) {
+            model_resolver->setOriginAllowlist(cfg.origin_allowlist);
+        }
 
         // Initialize inference engine with dependencies (ModelResolver handles local/shared/router resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());

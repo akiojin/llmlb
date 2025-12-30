@@ -10,9 +10,11 @@
 #include <algorithm>
 #include <thread>
 #include "utils/config.h"
+#include "utils/allowlist.h"
 #include "utils/file_lock.h"
 #include "utils/url_encode.h"
 #include "models/model_storage.h"
+#include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
@@ -82,6 +84,11 @@ void ModelSync::setApiKey(std::string api_key) {
 void ModelSync::setSupportedRuntimes(std::vector<std::string> supported_runtimes) {
     std::lock_guard<std::mutex> lock(etag_mutex_);
     supported_runtimes_ = std::move(supported_runtimes);
+}
+
+void ModelSync::setOriginAllowlist(std::vector<std::string> origin_allowlist) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    origin_allowlist_ = std::move(origin_allowlist);
 }
 
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
@@ -415,9 +422,11 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
     }
 
     std::vector<std::string> supported_runtimes;
+    std::vector<std::string> origin_allowlist;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
         supported_runtimes = supported_runtimes_;
+        origin_allowlist = origin_allowlist_;
     }
 
     auto manifest_path = downloader.fetchManifest(model_id);
@@ -459,6 +468,12 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
 
             std::string digest = f.value("digest", "");
             std::string url = f.value("url", "");
+            if (!url.empty() && url.find("://") != std::string::npos) {
+                if (!isUrlAllowedByAllowlist(url, origin_allowlist)) {
+                    spdlog::warn("ModelSync: origin URL blocked by allowlist for model {} file {}", model_id, name);
+                    url.clear();
+                }
+            }
             if (url.empty()) {
                 url = downloader.getRegistryBase();
                 if (!url.empty() && url.back() != '/') url.push_back('/');

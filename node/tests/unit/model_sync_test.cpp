@@ -329,3 +329,42 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     // Low priority should start after high priority tasks complete
     EXPECT_EQ(hi_current.load(), 0);
 }
+
+TEST(ModelSyncTest, OptionalManifestFilesDoNotFailDownload) {
+    const int port = 18111;
+    httplib::Server server;
+
+    server.Get("/gpt-oss-opt/manifest.json", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 200;
+        res.set_content(R"({
+            "files":[
+                {"name":"required.bin","url":"http://127.0.0.1:18111/required.bin"},
+                {"name":"optional.bin","url":"http://127.0.0.1:18111/missing.bin","optional":true}
+            ]
+        })", "application/json");
+    });
+
+    server.Get("/required.bin", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 200;
+        res.set_content("ok", "application/octet-stream");
+    });
+    server.Get("/missing.bin", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+    });
+
+    std::thread th([&]() { server.listen("127.0.0.1", port); });
+    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    TempDirGuard dir;
+    ModelDownloader dl("http://127.0.0.1:18111", dir.path.string());
+    ModelSync sync("http://127.0.0.1:18111", dir.path.string());
+
+    bool ok = sync.downloadModel(dl, "gpt-oss-opt", nullptr);
+
+    server.stop();
+    if (th.joinable()) th.join();
+
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(fs::exists(dir.path / "gpt-oss-opt" / "required.bin"));
+    EXPECT_FALSE(fs::exists(dir.path / "gpt-oss-opt" / "optional.bin"));
+}

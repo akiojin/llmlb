@@ -25,12 +25,13 @@
 - [ ] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
-- [ ] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
+- [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
 - [ ] Node: DirectML 向け gpt-oss プラグインの最小スケルトンを追加。
 
 ## Unit Tests (GREEN)
 - [x] Node: safetensors shards 解決とメタデータ検証のユニットテスト。
 - [ ] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
+- [x] Node: manifest の optional ファイルは取得失敗でも継続できるユニットテスト。
 - [x] Node: プラグイン manifest/ABI の検証ユニットテスト。
 
 ## Docs

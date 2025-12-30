@@ -802,6 +802,10 @@ struct ManifestFile {
     priority: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     runtimes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    optional: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -887,11 +891,87 @@ fn build_registry_manifest_files(
             name,
             priority,
             runtimes: runtime_hint.cloned(),
+            url: None,
+            optional: None,
         });
     }
 
     files.sort_by(|a, b| a.name.cmp(&b.name));
     files
+}
+
+fn is_repo_allowed_for_optimized_artifacts(repo: &str) -> bool {
+    let allowlist = std::env::var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST")
+        .unwrap_or_else(|_| "openai/*,nvidia/*".to_string());
+    for pat in allowlist
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        if let Some(prefix) = pat.strip_suffix("/*") {
+            let prefix = prefix.trim_end_matches('/');
+            if repo.starts_with(&format!("{}/", prefix)) {
+                return true;
+            }
+            continue;
+        }
+        if pat.eq_ignore_ascii_case(repo) {
+            return true;
+        }
+    }
+    false
+}
+
+fn parse_hf_revision(download_url: &str, repo: &str) -> Option<String> {
+    let repo = repo.trim_start_matches('/');
+    let needle = format!("/{}/resolve/", repo);
+    let idx = download_url.find(&needle)?;
+    let rest = &download_url[idx + needle.len()..];
+    let rev = rest.split('/').next()?;
+    if rev.is_empty() {
+        None
+    } else {
+        Some(rev.to_string())
+    }
+}
+
+fn append_official_gpu_artifacts(
+    files: &mut Vec<ManifestFile>,
+    model: Option<&ModelInfo>,
+    runtime_hint: Option<&Vec<String>>,
+) {
+    let Some(model) = model else { return };
+    let Some(repo) = model.repo.as_ref() else {
+        return;
+    };
+    if !is_repo_allowed_for_optimized_artifacts(repo) {
+        return;
+    }
+
+    let base_url = std::env::var("HF_BASE_URL")
+        .unwrap_or_else(|_| "https://huggingface.co".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let rev = model
+        .download_url
+        .as_deref()
+        .and_then(|u| parse_hf_revision(u, repo))
+        .unwrap_or_else(|| "main".to_string());
+
+    let name = "model.metal.bin";
+    if files.iter().any(|f| f.name == name) {
+        return;
+    }
+
+    let url = format!("{}/{}/resolve/{}/metal/model.bin", base_url, repo, rev);
+    files.push(ManifestFile {
+        name: name.to_string(),
+        priority: Some(5),
+        runtimes: runtime_hint.cloned(),
+        url: Some(url),
+        optional: Some(true),
+    });
+    files.sort_by(|a, b| a.name.cmp(&b.name));
 }
 
 fn resolve_safetensors_primary(
@@ -1911,8 +1991,15 @@ pub async fn get_model_registry_manifest(
         }
     };
 
+    let model_info = list_registered_models()
+        .into_iter()
+        .find(|m| m.name == model_name);
+
     let format = resolve_manifest_format(&model_name, &dir);
-    let files = build_registry_manifest_files(&dir, format, runtime_hint.as_ref());
+    let mut files = build_registry_manifest_files(&dir, format, runtime_hint.as_ref());
+    if format == ManifestFormat::Safetensors {
+        append_official_gpu_artifacts(&mut files, model_info.as_ref(), runtime_hint.as_ref());
+    }
 
     let body =
         serde_json::to_string(&Manifest { files }).unwrap_or_else(|_| "{\"files\":[]}".into());
@@ -2172,6 +2259,70 @@ mod tests {
 
         assert!(names.contains("model.gguf"));
         assert_eq!(names.len(), 1);
+    }
+
+    #[test]
+    fn test_manifest_appends_optional_metal_artifact_when_allowed() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().expect("temp dir");
+        let model_dir = temp_dir.path().join("openai").join("gpt-oss-20b");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        write_text(&model_dir.join("config.json"), "{}");
+        write_text(&model_dir.join("tokenizer.json"), "{}");
+        write_text(
+            &model_dir.join("model.safetensors.index.json"),
+            "{\"weight_map\":{}}",
+        );
+
+        let prev_allowlist = std::env::var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST").ok();
+        let prev_base_url = std::env::var("HF_BASE_URL").ok();
+        std::env::set_var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST", "openai/*");
+        std::env::set_var("HF_BASE_URL", "https://hf.test");
+
+        let mut model = ModelInfo::new(
+            "openai/gpt-oss-20b".into(),
+            0,
+            "test".into(),
+            0,
+            vec!["safetensors".into()],
+        );
+        model.repo = Some("openai/gpt-oss-20b".into());
+        model.download_url = Some(
+            "https://hf.test/openai/gpt-oss-20b/resolve/dev/model.safetensors.index.json".into(),
+        );
+
+        let runtime_hint = vec!["gptoss_cpp".to_string()];
+        let mut files = build_registry_manifest_files(
+            &model_dir,
+            ManifestFormat::Safetensors,
+            Some(&runtime_hint),
+        );
+        append_official_gpu_artifacts(&mut files, Some(&model), Some(&runtime_hint));
+
+        let entry = files
+            .iter()
+            .find(|f| f.name == "model.metal.bin")
+            .expect("optional metal artifact");
+
+        assert_eq!(
+            entry.url.as_deref(),
+            Some("https://hf.test/openai/gpt-oss-20b/resolve/dev/metal/model.bin")
+        );
+        assert_eq!(entry.optional, Some(true));
+        assert_eq!(entry.runtimes.as_ref().unwrap(), &runtime_hint);
+
+        if let Some(v) = prev_allowlist {
+            std::env::set_var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST", v);
+        } else {
+            std::env::remove_var("LLM_ROUTER_OPTIMIZED_ARTIFACT_ALLOWLIST");
+        }
+        if let Some(v) = prev_base_url {
+            std::env::set_var("HF_BASE_URL", v);
+        } else {
+            std::env::remove_var("HF_BASE_URL");
+        }
     }
 
     #[test]

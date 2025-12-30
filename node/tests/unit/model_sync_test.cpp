@@ -168,19 +168,19 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     std::atomic<int> gguf_hits{0};
 
     server.Get("/v0/models/registry/gpt-oss-artifacts/manifest.json",
-               [base](const httplib::Request&, httplib::Response& res) {
+               [](const httplib::Request&, httplib::Response& res) {
                    res.status = 200;
-                   res.set_content(std::string(R"({"files":[)") +
-                                       R"({"name":"model.gguf","url":")" + base + R"(/model.gguf"},)"
-                                       R"({"name":"model.metal.bin","url":")" + base + R"(/model.metal.bin"})]})",
+                   res.set_content(R"({"files":[{"name":"model.gguf"},{"name":"model.metal.bin"}]})",
                                    "application/json");
                });
-    server.Get("/model.gguf", [&gguf_hits](const httplib::Request&, httplib::Response& res) {
+    server.Get("/v0/models/registry/gpt-oss-artifacts/files/model.gguf",
+               [&gguf_hits](const httplib::Request&, httplib::Response& res) {
         gguf_hits.fetch_add(1);
         res.status = 200;
         res.set_content("data", "application/octet-stream");
     });
-    server.Get("/model.metal.bin", [&metal_hits](const httplib::Request&, httplib::Response& res) {
+    server.Get("/v0/models/registry/gpt-oss-artifacts/files/model.metal.bin",
+               [&metal_hits](const httplib::Request&, httplib::Response& res) {
         metal_hits.fetch_add(1);
         res.status = 200;
         res.set_content("data", "application/octet-stream");
@@ -190,7 +190,7 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     TempDirGuard dir;
-    ModelDownloader dl(base, dir.path.string());
+    ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
     ModelSync sync(base, dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 

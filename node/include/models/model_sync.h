@@ -50,6 +50,7 @@ public:
     void setNodeToken(std::string node_token);
     void setApiKey(std::string api_key);
     void setSupportedRuntimes(std::vector<std::string> supported_runtimes);
+    void setOriginAllowlist(std::vector<std::string> origin_allowlist);
 
     ModelSyncResult sync();
 
@@ -111,6 +112,7 @@ private:
     std::optional<std::string> node_token_;
     std::optional<std::string> api_key_;
     std::vector<std::string> supported_runtimes_;
+    std::vector<std::string> origin_allowlist_;
     std::unordered_map<std::string, std::string> etag_cache_;
     std::unordered_map<std::string, size_t> size_cache_;
     std::unordered_map<std::string, ModelOverrides> model_overrides_;

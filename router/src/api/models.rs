@@ -813,6 +813,12 @@ struct Manifest {
     files: Vec<ManifestFile>,
 }
 
+struct OriginInfo {
+    base_url: String,
+    repo: String,
+    gguf_filename: Option<String>,
+}
+
 fn resolve_manifest_format(model_name: &str, dir: &std::path::Path) -> ManifestFormat {
     if let Some(model) = list_registered_models()
         .into_iter()
@@ -864,10 +870,32 @@ fn manifest_file_priority(name: &str) -> Option<i32> {
     }
 }
 
+fn origin_url_for_file(origin: &OriginInfo, name: &str) -> Option<String> {
+    let mut remote_name = name;
+    if name == "model.gguf" {
+        if let Some(fname) = origin.gguf_filename.as_deref() {
+            remote_name = fname;
+        } else {
+            return None;
+        }
+    } else if name == "model.metal.bin" {
+        remote_name = "metal/model.bin";
+    }
+
+    if origin.base_url.is_empty() || origin.repo.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}/{}/resolve/main/{}",
+        origin.base_url, origin.repo, remote_name
+    ))
+}
+
 fn build_registry_manifest_files(
     dir: &std::path::Path,
     format: ManifestFormat,
     runtime_hint: Option<&Vec<String>>,
+    origin_info: Option<&OriginInfo>,
 ) -> Vec<ManifestFile> {
     let mut files: Vec<ManifestFile> = Vec::new();
     let Ok(rd) = std::fs::read_dir(dir) else {
@@ -887,11 +915,13 @@ fn build_registry_manifest_files(
         }
 
         let priority = manifest_file_priority(&name);
+        let url = origin_info.and_then(|origin| origin_url_for_file(origin, &name));
+
         files.push(ManifestFile {
             name,
             priority,
             runtimes: runtime_hint.cloned(),
-            url: None,
+            url,
             optional: None,
         });
     }
@@ -1995,8 +2025,22 @@ pub async fn get_model_registry_manifest(
         .into_iter()
         .find(|m| m.name == model_name);
 
+    let origin_info = model_info.as_ref().and_then(|m| {
+        let repo = m.repo.as_ref()?;
+        let base = std::env::var("HF_BASE_URL")
+            .unwrap_or_else(|_| "https://huggingface.co".to_string())
+            .trim_end_matches('/')
+            .to_string();
+        Some(OriginInfo {
+            base_url: base,
+            repo: repo.clone(),
+            gguf_filename: m.filename.clone(),
+        })
+    });
+
     let format = resolve_manifest_format(&model_name, &dir);
-    let mut files = build_registry_manifest_files(&dir, format, runtime_hint.as_ref());
+    let mut files =
+        build_registry_manifest_files(&dir, format, runtime_hint.as_ref(), origin_info.as_ref());
     if format == ManifestFormat::Safetensors {
         append_official_gpu_artifacts(&mut files, model_info.as_ref(), runtime_hint.as_ref());
     }
@@ -2230,7 +2274,8 @@ mod tests {
         write_text(&model_dir.join("model.metal.bin"), "cache");
         write_text(&model_dir.join("README.md"), "ignore");
 
-        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Safetensors, None);
+        let files =
+            build_registry_manifest_files(&model_dir, ManifestFormat::Safetensors, None, None);
         let names: std::collections::HashSet<_> = files.iter().map(|f| f.name.as_str()).collect();
 
         assert!(names.contains("config.json"));
@@ -2254,7 +2299,7 @@ mod tests {
         write_text(&model_dir.join("config.json"), "{}");
         write_text(&model_dir.join("README.md"), "ignore");
 
-        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Gguf, None);
+        let files = build_registry_manifest_files(&model_dir, ManifestFormat::Gguf, None, None);
         let names: std::collections::HashSet<_> = files.iter().map(|f| f.name.as_str()).collect();
 
         assert!(names.contains("model.gguf"));
@@ -2298,6 +2343,7 @@ mod tests {
             &model_dir,
             ManifestFormat::Safetensors,
             Some(&runtime_hint),
+            None,
         );
         append_official_gpu_artifacts(&mut files, Some(&model), Some(&runtime_hint));
 
@@ -2341,6 +2387,9 @@ mod tests {
             capabilities: vec!["TextGeneration".into()],
             quantization: Some("Q4_K_M".into()),
             parameter_count: Some("7B".into()),
+            format: "gguf".into(),
+            engine: "llama_cpp".into(),
+            platforms: vec!["macos-metal".into()],
         };
 
         let with_status = ModelWithStatus::from_supported(supported.clone());
@@ -2368,6 +2417,13 @@ mod tests {
             capabilities: vec!["TextGeneration".into()],
             quantization: Some("Q4_K_M".into()),
             parameter_count: Some("7B".into()),
+            format: "gguf".into(),
+            engine: "llama_cpp".into(),
+            platforms: vec![
+                "macos-metal".into(),
+                "windows-directml".into(),
+                "linux-cuda".into(),
+            ],
         };
 
         let with_status = ModelWithStatus::from_supported(supported);

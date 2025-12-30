@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <chrono>
+#include <httplib.h>
 
 #include "models/model_resolver.h"
 
@@ -40,6 +43,53 @@ public:
 
     fs::path local;
     fs::path shared;
+};
+
+class OriginServer {
+public:
+    void start(int port, const std::string& model_name) {
+        port_ = port;
+        model_name_ = model_name;
+        origin_path_ = "/files/" + model_name + ".gguf";
+
+        server_.Get("/v0/models", [this](const httplib::Request&, httplib::Response& res) {
+            const std::string url = "http://127.0.0.1:" + std::to_string(port_) + origin_path_;
+            res.status = 200;
+            res.set_content(std::string("[{\"name\":\"") + model_name_ +
+                                "\",\"download_url\":\"" + url + "\"}]",
+                            "application/json");
+        });
+
+        server_.Get(origin_path_, [](const httplib::Request&, httplib::Response& res) {
+            std::string body = "GGUF";
+            body.append(" test");
+            res.status = 200;
+            res.set_content(body, "application/octet-stream");
+        });
+
+        thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
+        while (!server_.is_running()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    void stop() {
+        server_.stop();
+        if (thread_.joinable()) thread_.join();
+    }
+
+    ~OriginServer() { stop(); }
+
+    std::string baseUrl() const {
+        return "http://127.0.0.1:" + std::to_string(port_);
+    }
+
+private:
+    httplib::Server server_;
+    std::thread thread_;
+    int port_{0};
+    std::string model_name_;
+    std::string origin_path_;
 };
 
 // Helper: create model directory with model.gguf
@@ -118,29 +168,42 @@ TEST(ModelResolverTest, DownloadFromRouterAPIWhenSharedInaccessible) {
 
 // FR-003: When shared path is inaccessible, download from origin (HF/proxy)
 TEST(ModelResolverTest, DownloadFromOriginWhenSharedInaccessible) {
-    GTEST_SKIP() << "TDD RED: origin download path not implemented yet";
+    TempModelDirs tmp;
+    OriginServer server;
+    server.start(20001, "origin-model");
+
+    ModelResolver resolver(tmp.local.string(), "", server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("origin-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.router_attempted);
+    EXPECT_TRUE(result.origin_attempted);
+    EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
+    EXPECT_TRUE(fs::exists(result.path));
 }
 
 // FR-004: Downloaded model should be saved to local storage
 // TDD RED: downloadFromRouter must save to local to pass
 TEST(ModelResolverTest, DownloadedModelSavedToLocal) {
     TempModelDirs tmp;
+    OriginServer server;
+    server.start(20005, "downloaded-model");
 
-    ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
+    ModelResolver resolver(tmp.local.string(), "", server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
     auto result = resolver.resolve("downloaded-model");
 
-    // TDD RED: downloadFromRouter is not implemented
-    // When implemented: model should be saved to local path
-    if (result.success) {
-        EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos)
-            << "Downloaded model should be in local directory";
-        EXPECT_TRUE(fs::exists(result.path))
-            << "Downloaded model file should exist";
-    } else {
-        // If not successful, verify it at least attempted router download
-        EXPECT_TRUE(result.router_attempted)
-            << "Router download should be attempted";
-    }
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.origin_attempted);
+    EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos)
+        << "Downloaded model should be in local directory";
+    EXPECT_TRUE(fs::exists(result.path))
+        << "Downloaded model file should exist";
 }
 
 // FR-003 additional: Shared path inaccessible triggers router fallback
@@ -161,7 +224,20 @@ TEST(ModelResolverTest, SharedPathInaccessibleTriggersRouterFallback) {
 
 // FR-003 additional: Shared path inaccessible triggers origin fallback
 TEST(ModelResolverTest, SharedPathInaccessibleTriggersOriginFallback) {
-    GTEST_SKIP() << "TDD RED: origin fallback not implemented yet";
+    TempModelDirs tmp;
+    OriginServer server;
+    server.start(20002, "origin-fallback-model");
+
+    std::string inaccessible_shared = "/nonexistent/path/that/does/not/exist";
+    ModelResolver resolver(tmp.local.string(), inaccessible_shared, server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("origin-fallback-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.router_attempted);
+    EXPECT_TRUE(result.origin_attempted);
 }
 
 // ===========================================================================
@@ -226,12 +302,36 @@ TEST(ModelResolverTest, FullFallbackFlow) {
 
 // FR-006: HuggingFace direct download is allowed with allowlist
 TEST(ModelResolverTest, HuggingFaceDirectDownloadAllowedWithAllowlist) {
-    GTEST_SKIP() << "TDD RED: allowlist-based direct download not implemented yet";
+    TempModelDirs tmp;
+    OriginServer server;
+    server.start(20003, "allowlist-model");
+
+    ModelResolver resolver(tmp.local.string(), "", server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("allowlist-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.origin_attempted);
+    EXPECT_TRUE(fs::exists(result.path));
 }
 
 // FR-006: Allowlist should block unknown origins
 TEST(ModelResolverTest, AllowlistBlocksUnknownOrigin) {
-    GTEST_SKIP() << "TDD RED: allowlist enforcement not implemented yet";
+    TempModelDirs tmp;
+    OriginServer server;
+    server.start(20004, "blocked-model");
+
+    ModelResolver resolver(tmp.local.string(), "", server.baseUrl());
+    resolver.setOriginAllowlist({"example.com/*"});
+    auto result = resolver.resolve("blocked-model");
+
+    server.stop();
+
+    EXPECT_FALSE(result.success);
+    EXPECT_FALSE(result.origin_attempted);
+    EXPECT_TRUE(result.router_attempted);
 }
 
 // ===========================================================================
@@ -416,17 +516,12 @@ TEST(ModelResolverTest, RouterDownloadValidatesGGUFFormat) {
 // Clarifications Tests (from spec.md Clarifications section)
 // ===========================================================================
 
-// Clarification: Router API download timeout (recommended: 5 minutes)
-// TDD RED: Requires timeout configuration in downloadFromRouter
+// Clarification: External source/proxy download timeout (recommended: 5 minutes)
 TEST(ModelResolverTest, RouterDownloadHasTimeout) {
-    GTEST_SKIP() << "TDD RED: getDownloadTimeoutMs() not yet implemented";
-
     TempModelDirs tmp;
 
     ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
 
-    // TDD RED: downloadFromRouter not implemented with timeout
-    // When implemented: should have configurable timeout (default 5 min)
     EXPECT_TRUE(resolver.getDownloadTimeoutMs() > 0)
         << "Should have a download timeout configured";
     EXPECT_LE(resolver.getDownloadTimeoutMs(), 5 * 60 * 1000)
@@ -434,16 +529,11 @@ TEST(ModelResolverTest, RouterDownloadHasTimeout) {
 }
 
 // Clarification: Concurrent download limit (recommended: 1 per node)
-// TDD RED: Requires concurrent download tracking
 TEST(ModelResolverTest, ConcurrentDownloadLimit) {
-    GTEST_SKIP() << "TDD RED: getMaxConcurrentDownloads() not yet implemented";
-
     TempModelDirs tmp;
 
     ModelResolver resolver(tmp.local.string(), "", "http://localhost:19999");
 
-    // TDD RED: Not implemented
-    // When implemented: should limit concurrent downloads to 1
     EXPECT_EQ(resolver.getMaxConcurrentDownloads(), 1)
         << "Should limit to 1 concurrent download per node";
 }

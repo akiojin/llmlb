@@ -160,6 +160,59 @@ TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
     EXPECT_EQ(sync.getRemotePath("gpt-oss-7b"), shared_file.string());
 }
 
+TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
+    const int port = 18130;
+    const std::string base = "http://127.0.0.1:" + std::to_string(port);
+    httplib::Server server;
+    std::atomic<int> metal_hits{0};
+    std::atomic<int> gguf_hits{0};
+
+    server.Get("/v0/models/registry/gpt-oss-artifacts/manifest.json",
+               [](const httplib::Request&, httplib::Response& res) {
+                   res.status = 200;
+                   res.set_content(R"({"files":[{"name":"model.gguf"},{"name":"model.metal.bin"}]})",
+                                   "application/json");
+               });
+    server.Get("/v0/models/registry/gpt-oss-artifacts/files/model.gguf",
+               [&gguf_hits](const httplib::Request&, httplib::Response& res) {
+        gguf_hits.fetch_add(1);
+        res.status = 200;
+        res.set_content("data", "application/octet-stream");
+    });
+    server.Get("/v0/models/registry/gpt-oss-artifacts/files/model.metal.bin",
+               [&metal_hits](const httplib::Request&, httplib::Response& res) {
+        metal_hits.fetch_add(1);
+        res.status = 200;
+        res.set_content("data", "application/octet-stream");
+    });
+
+    std::thread th([&]() { server.listen("127.0.0.1", port); });
+    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    TempDirGuard dir;
+    ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
+    ModelSync sync(base, dir.path.string());
+    sync.setOriginAllowlist({"127.0.0.1/*"});
+
+    bool ok = sync.downloadModel(dl, "gpt-oss-artifacts", nullptr);
+
+    server.stop();
+    if (th.joinable()) th.join();
+
+    EXPECT_TRUE(ok);
+    const auto gguf_path = dir.path / "gpt-oss-artifacts" / "model.gguf";
+    const auto metal_path = dir.path / "gpt-oss-artifacts" / "model.metal.bin";
+
+    EXPECT_TRUE(fs::exists(gguf_path));
+#if defined(__APPLE__)
+    EXPECT_EQ(metal_hits.load(), 1);
+    EXPECT_TRUE(fs::exists(metal_path));
+#else
+    EXPECT_EQ(metal_hits.load(), 0);
+    EXPECT_FALSE(fs::exists(metal_path));
+#endif
+}
+
 // Test that /v1/models array format (backward compatibility) is correctly parsed
 TEST(ModelSyncTest, ParsesV1ModelsArrayFormat) {
     const int port = 18120;
@@ -310,6 +363,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     TempDirGuard dir;
     ModelDownloader dl("http://127.0.0.1:18110", dir.path.string());
     ModelSync sync("http://127.0.0.1:18110", dir.path.string());
+    sync.setOriginAllowlist({"127.0.0.1/*"});
 
     bool ok = sync.downloadModel(dl, "gpt-oss-prio", nullptr);
 

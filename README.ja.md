@@ -33,7 +33,7 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 - **音声合成（TTS）**: `/v1/audio/speech` - テキストから自然な音声を生成
 - **音声認識（ASR）**: `/v1/audio/transcriptions` - 音声をテキストに変換
 - **画像生成**: `/v1/images/generations` - テキストプロンプトから画像を生成
-- **画像認識**: 実装予定 - 画像の分析と理解（Vision モデル）
+- **画像認識**: `/v1/chat/completions` - image_url を含むVisionリクエスト
 
 ## 主な特徴
 
@@ -212,6 +212,7 @@ cmake --build build --config Release
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_NODE_SHARED_MODELS_DIR` | (未設定) | 共有モデルディレクトリ（任意） |
+| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
@@ -256,6 +257,25 @@ curl http://localhost:8080/v1/images/generations \
   }'
 ```
 
+### 画像認識例
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_api_key" \
+  -d '{
+    "model": "llava-v1.5-7b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "この画像には何が写っていますか？"},
+          {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+        ]
+      }
+    ],
+    "max_tokens": 300
+  }'
+```
 ### クラウドモデルプレフィックス
 - 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
 - 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`
@@ -304,7 +324,8 @@ Router (OpenAI-compatible)
 - ノードはモデルをオンデマンドで次の順に解決します。
   - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
   - 共有ストレージ（`LLM_NODE_SHARED_MODELS_DIR`、コピーせず直接参照）
-  - ルーターAPI経由ダウンロード（`GET /v0/models/blob/:model_name`）
+  - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_NODE_ORIGIN_ALLOWLIST`）
+  - ルーター・プロキシ経由ダウンロード（`GET /v0/models/registry/:model_name/manifest.json` + files）
 
 ### スケジューリングとヘルスチェック
 - ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。

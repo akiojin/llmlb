@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 #include <filesystem>
+#include <vector>
 
 namespace llm_node {
 
@@ -25,6 +26,7 @@ struct NodeConfig {
     std::string models_dir;
     std::string engine_plugins_dir;
     std::string shared_models_dir;  // Shared router cache mount (optional)
+    std::vector<std::string> origin_allowlist;
     int node_port{11435};
     int heartbeat_interval_sec{10};
     bool require_gpu{true};

@@ -35,7 +35,7 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 - **Text-to-Speech (TTS)**: `/v1/audio/speech` - Generate natural speech from text
 - **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
 - **Image Generation**: `/v1/images/generations` - Generate images from text prompts
-- **Image Understanding**: Coming soon - Analyze and understand images (Vision models)
+- **Image Understanding**: `/v1/chat/completions` - Analyze images via `image_url` content parts (Vision models)
 
 ## Key Features
 
@@ -182,6 +182,7 @@ npm run start:node
 | `LLM_NODE_PORT` | `11435` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
 | `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) |
+| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
 | `LLM_NODE_LOG_LEVEL` | `info` | Log level |
@@ -365,7 +366,8 @@ curl http://router:8080/v1/chat/completions -d '...'
 - Nodes resolve models on-demand in this order:
   - local cache (`LLM_NODE_MODELS_DIR`)
   - shared router cache mount (`LLM_NODE_SHARED_MODELS_DIR`, direct reference, no copy)
-  - router blob download (`GET /v0/models/blob/:model_name`)
+  - allowlisted origin download (Hugging Face, etc.; configure via `LLM_NODE_ORIGIN_ALLOWLIST`)
+  - router proxy download (`GET /v0/models/registry/:model_name/manifest.json` + files)
 
 ### Scheduling & Health
 - Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
@@ -582,6 +584,25 @@ See [Node (C++)](#node-c) section in Quick Start.
      }'
    ```
 
+   **Image understanding example**
+   ```bash
+   curl http://router:8080/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer sk_your_api_key" \
+     -d '{
+       "model": "llava-v1.5-7b",
+       "messages": [
+         {
+           "role": "user",
+           "content": [
+             {"type": "text", "text": "What is in this image?"},
+             {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+           ]
+         }
+       ],
+       "max_tokens": 300
+     }'
+   ```
 4. **List Registered Nodes**
    ```bash
    curl http://router:8080/v0/nodes \
@@ -633,6 +654,7 @@ Cloud / external services:
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) | `LLM_SHARED_MODELS_DIR` |
+| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |

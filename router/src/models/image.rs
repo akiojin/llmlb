@@ -29,6 +29,12 @@ impl ImageData {
     pub fn size_bytes(&self) -> usize {
         self.bytes.len()
     }
+
+    /// Base64 data URLに変換
+    pub fn to_data_url(&self) -> String {
+        let encoded = general_purpose::STANDARD.encode(&self.bytes);
+        format!("data:{};base64,{}", self.mime_type.as_mime(), encoded)
+    }
 }
 
 /// 画像検証エラー
@@ -217,5 +223,59 @@ pub async fn validate_image_url(
         parse_data_url(url, config)
     } else {
         fetch_image_url(client, url, config).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use llm_router_common::types::ImageContentType;
+
+    #[test]
+    fn test_parse_data_url_decodes_base64() {
+        let config = VisionCapability::default();
+        let data_url = "data:image/png;base64,aGVsbG8=";
+        let image = parse_data_url(data_url, &config).expect("parse data url");
+        assert_eq!(image.bytes, b"hello");
+        assert_eq!(image.mime_type, ImageContentType::Png);
+    }
+
+    #[test]
+    fn test_parse_data_url_rejects_invalid_base64() {
+        let config = VisionCapability::default();
+        let data_url = "data:image/png;base64,!!!INVALID!!!";
+        let err = parse_data_url(data_url, &config).expect_err("should fail");
+        assert!(matches!(err, ImageValidationError::InvalidBase64));
+    }
+
+    #[test]
+    fn test_parse_data_url_rejects_unsupported_format() {
+        let config = VisionCapability::default();
+        let data_url = "data:image/tiff;base64,AAAA";
+        let err = parse_data_url(data_url, &config).expect_err("should fail");
+        assert!(matches!(err, ImageValidationError::UnsupportedFormat(_)));
+    }
+
+    #[test]
+    fn test_parse_data_url_respects_size_limit() {
+        let config = VisionCapability {
+            supported_formats: vec![ImageContentType::Png],
+            max_image_size_bytes: 1,
+            max_image_count: 10,
+        };
+        let data_url = "data:image/png;base64,AAEC";
+        let err = parse_data_url(data_url, &config).expect_err("should fail");
+        assert!(matches!(err, ImageValidationError::ImageTooLarge { .. }));
+    }
+
+    #[test]
+    fn test_to_data_url_roundtrip() {
+        let config = VisionCapability::default();
+        let data_url = "data:image/png;base64,aGVsbG8=";
+        let image = parse_data_url(data_url, &config).expect("parse data url");
+        let encoded = image.to_data_url();
+        assert!(encoded.starts_with("data:image/png;base64,"));
+        let roundtrip = parse_data_url(&encoded, &config).expect("roundtrip parse");
+        assert_eq!(roundtrip.bytes, b"hello");
     }
 }

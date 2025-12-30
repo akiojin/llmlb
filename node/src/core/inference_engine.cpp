@@ -362,9 +362,20 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     , model_sync_(model_sync)
     , model_resolver_(model_resolver) {
     engines_ = std::make_unique<EngineRegistry>();
-    engines_->registerEngine(std::make_unique<LlamaEngine>(manager));
-    engines_->registerEngine(std::make_unique<GptOssEngine>());
-    engines_->registerEngine(std::make_unique<NemotronEngine>());
+    EngineRegistration llama_reg;
+    llama_reg.engine_id = "builtin_llama_cpp";
+    llama_reg.engine_version = "builtin";
+    engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
+
+    EngineRegistration gptoss_reg;
+    gptoss_reg.engine_id = "builtin_gptoss_cpp";
+    gptoss_reg.engine_version = "builtin";
+    engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
+
+    EngineRegistration nemotron_reg;
+    nemotron_reg.engine_id = "builtin_nemotron_cpp";
+    nemotron_reg.engine_version = "builtin";
+    engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
 }
 
@@ -448,7 +459,7 @@ std::string InferenceEngine::generateChat(
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -650,7 +661,7 @@ std::string InferenceEngine::generateCompletion(
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -680,7 +691,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -736,7 +747,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
     if (!engine) {
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;
@@ -767,7 +778,7 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         throw std::runtime_error("Model not found: " + model_name);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -776,7 +787,7 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
 }
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
-    Engine* engine = engines_ ? engines_->resolve(descriptor.runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;
     if (!engine) return false;
     if (!engine->supportsTextGeneration()) return false;
 

@@ -361,7 +361,15 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
     EngineDeleter deleter;
     deleter.destroy = destroy_fn;
     EngineRegistry::EngineHandle handle(engine, deleter);
-    registry.registerEngine(std::move(handle));
+    EngineRegistration registration;
+    registration.engine_id = manifest.engine_id;
+    registration.engine_version = manifest.engine_version;
+    std::string reg_error;
+    if (!registry.registerEngine(std::move(handle), registration, &reg_error)) {
+        error = reg_error;
+        closeLibrary(lib);
+        return false;
+    }
 
     LoadedPlugin loaded;
     loaded.engine_id = manifest.engine_id;

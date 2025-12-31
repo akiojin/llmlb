@@ -156,6 +156,45 @@
 - [ ] T145 キャンセル即時応答テスト
 - [ ] T146 並行ロードテスト
 
+## パラメータ検証（Session 2025-12-31 Part 4）
+- [ ] T147 サンプリングパラメータ範囲検証の実装
+  - temperature/top_p/top_kの範囲チェック
+  - 不正値は400エラー
+- [ ] T148 空プロンプト検証の実装
+  - 空/空白のみプロンプトを拒否
+
+## stop sequences（Session 2025-12-31 Part 4）
+- [ ] T149 stop sequences検出ロジックの実装
+  - 生成ループ内でトークン列マッチング
+  - 複数stop sequenceの同時監視
+
+## logprobs（Session 2025-12-31 Part 4）
+- [ ] T150 logprobs返却の実装
+  - OpenAI互換フォーマット
+  - top_logprobsパラメータ対応
+
+## max_tokens（Session 2025-12-31 Part 4）
+- [ ] T151 max_tokensデフォルト値の実装
+  - config.jsonからmax_position_embeddings取得
+  - プロンプト長を差し引いて計算
+
+## アーキテクチャ検証（Session 2025-12-31 Part 4）
+- [ ] T152 ロード前アーキテクチャ検証の実装
+  - manifestとconfig.jsonの照合
+  - 不一致時はロード開始前エラー
+
+## フォーマット統合（Session 2025-12-31 Part 4）
+- [ ] T153 manifest.jsonへのformatsフィールド追加
+  - サポートフォーマット一覧を宣言
+- [ ] T154 マルチフォーマットローダーの実装
+  - ファイル形式に応じたローダー振り分け
+
+## Tests（Session 2025-12-31 Part 4）
+- [ ] T155 パラメータ検証テスト
+- [ ] T156 stop sequences検出テスト
+- [ ] T157 logprobs返却テスト
+- [ ] T158 アーキテクチャ検証テスト
+
 ## Deferred（TBD）
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定（別SPEC）
 - Nemotron向けの新エンジン（推論エンジン）の実装（Metal/DirectML）

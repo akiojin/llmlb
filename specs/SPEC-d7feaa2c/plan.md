@@ -284,3 +284,105 @@ struct InferenceCacheEntry {
 - プラグインIDごとに単一インスタンス
 - 1つのプラグインが複数モデルを内部管理
 - モデルごとの分離はプラグイン内部で実装
+
+---
+
+## Session 2025-12-31 追加設計 Part 4
+
+### パラメータ検証設計
+
+**Node側検証**:
+
+- サンプリングパラメータの範囲チェック
+  - temperature: 0.0 ～ 2.0
+  - top_p: 0.0 ～ 1.0
+  - top_k: 1 ～ vocab_size
+- 不正値は即座に400エラー
+
+**空プロンプト検証**:
+
+- プロンプトが空または空白のみの場合は400 Bad Request
+- Router側で早期検証（Nodeまで到達させない）
+
+### stop sequences設計
+
+**検出ロジック**:
+
+- Node/プラグイン内の生成ループで実装
+- 生成済みトークン列の末尾をチェック
+- 複数のstop sequenceを同時監視可能
+
+**実装方式**:
+
+```
+for each generated_token:
+    append to output
+    for each stop_seq in stop_sequences:
+        if output.ends_with(stop_seq):
+            truncate stop_seq from output
+            return output
+```
+
+### logprobs設計
+
+**返却フォーマット**:
+
+- OpenAI互換のlogprobs構造を返却
+- top_logprobs パラメータで上位N件を指定
+
+**データ構造**:
+
+```
+{
+  "logprobs": {
+    "tokens": ["Hello", " world"],
+    "token_logprobs": [-0.5, -0.3],
+    "top_logprobs": [
+      {"Hello": -0.5, "Hi": -1.2},
+      {" world": -0.3, " there": -0.8}
+    ]
+  }
+}
+```
+
+### max_tokensデフォルト値設計
+
+**取得方法**:
+
+1. モデルのconfig.jsonからmax_position_embeddingsを取得
+2. プロンプト長を差し引いた残りを生成可能トークン数とする
+3. 明示的なmax_tokens指定がある場合はそちらを優先
+
+### アーキテクチャ検証設計
+
+**チェックタイミング**:
+
+1. モデルロードリクエスト受信時
+2. manifestのarchitectures配列を取得
+3. config.jsonのmodel_type/architecturesと照合
+4. 不一致時はロード開始前にエラー返却
+
+**エラーメッセージ**:
+
+```
+Model architecture 'llama' is not supported by plugin 'nemotron_engine'.
+Supported: ['nemotron', 'mamba']
+```
+
+### フォーマット統合設計
+
+**プラグインの責務**:
+
+- 単一プラグインが複数フォーマット（GGUF/safetensors）をサポート可能
+- ロード時にファイル拡張子/マジックバイトで判定
+- 内部で適切なローダーに振り分け
+
+**manifest.json拡張**:
+
+```json
+{
+  "id": "llama_cpp",
+  "formats": ["gguf", "safetensors"],
+  "architectures": ["llama", "mistral", "gemma"]
+}
+```

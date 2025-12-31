@@ -384,6 +384,21 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
         LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
     )
     set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
+elseif(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_gptoss SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
+    )
+    target_include_directories(llm_engine_gptoss
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(llm_engine_gptoss
+        PRIVATE
+            spdlog::spdlog_header_only
+    )
+    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
 endif()
 
 # Collect source files

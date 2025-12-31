@@ -798,8 +798,9 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
                                  : fs::path(descriptor.model_dir);
         if (model_dir.empty()) return false;
 #if defined(_WIN32)
-        // DirectML path: safetensorsが正本なのでMetal専用artifactは不要
-        return true;
+        if (fs::exists(model_dir / "model.directml.bin")) return true;
+        if (fs::exists(model_dir / "model.dml.bin")) return true;
+        return false;
 #elif defined(__APPLE__)
         if (fs::exists(model_dir / "model.metal.bin")) return true;
         if (fs::exists(model_dir / "metal" / "model.bin")) return true;

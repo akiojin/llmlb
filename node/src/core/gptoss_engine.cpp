@@ -210,6 +210,14 @@ fs::path resolve_gptoss_metal_model_bin(const fs::path& model_dir) {
     return {};
 }
 
+fs::path resolve_gptoss_directml_model_bin(const fs::path& model_dir) {
+    const fs::path p1 = model_dir / "model.directml.bin";
+    if (fs::exists(p1)) return p1;
+    const fs::path p2 = model_dir / "model.dml.bin";
+    if (fs::exists(p2)) return p2;
+    return {};
+}
+
 #endif  // USE_GPTOSS
 
 // gpt-oss requires the Harmony response format (https://github.com/openai/harmony).
@@ -303,11 +311,20 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         return nullptr;
     }
     const fs::path model_dir(descriptor.model_dir);
-    const fs::path model_bin = resolve_gptoss_metal_model_bin(model_dir);
+    const fs::path model_bin =
+#if defined(_WIN32)
+        resolve_gptoss_directml_model_bin(model_dir);
+#else
+        resolve_gptoss_metal_model_bin(model_dir);
+#endif
     if (model_bin.empty()) {
         result.success = false;
         result.error_message =
+#if defined(_WIN32)
+            "gpt-oss DirectML model artifact not found (expected model.directml.bin or model.dml.bin)";
+#else
             "gpt-oss Metal model artifact not found (expected model.metal.bin or metal/model.bin)";
+#endif
         return nullptr;
     }
 

@@ -119,6 +119,9 @@ TEST(InferenceEngineTest, PostProcessGptOssDoesNotTruncateStartTokenOnlyOutput) 
 }
 
 TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
+#if !defined(__APPLE__)
+    GTEST_SKIP() << "Metal backend is only supported on macOS";
+#else
     TempDir tmp;
     auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
     fs::create_directories(model_dir);
@@ -142,10 +145,10 @@ TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
 #else
     EXPECT_FALSE(engine.isModelSupported(desc));
 #endif
+#endif
 }
 
-// TDD RED: DirectML should allow safetensors without Metal artifact.
-TEST(InferenceEngineTest, GptOssAllowsSafetensorsOnDirectML) {
+TEST(InferenceEngineTest, GptOssRequiresDirectmlArtifactToBeSupported) {
 #if !defined(_WIN32)
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
@@ -166,7 +169,9 @@ TEST(InferenceEngineTest, GptOssAllowsSafetensorsOnDirectML) {
     desc.model_dir = model_dir.string();
     desc.primary_path = (model_dir / "model.safetensors.index.json").string();
 
-    // DirectMLではMetal専用artifactが無くてもsafetensorsで実行可能
+    EXPECT_FALSE(engine.isModelSupported(desc));
+
+    std::ofstream(model_dir / "model.directml.bin") << "cache";
     EXPECT_TRUE(engine.isModelSupported(desc));
 #endif
 }

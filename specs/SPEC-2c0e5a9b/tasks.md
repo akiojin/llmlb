@@ -26,6 +26,7 @@
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
+- [x] Node: DirectML 最適化アーティファクト（model.directml.bin / model.dml.bin）をロード対象として扱う。
 - [ ] Node: DirectML 向け gpt-oss プラグインの最小スケルトンを追加。
 
 ## Unit Tests (GREEN)

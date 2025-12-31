@@ -5,6 +5,6 @@
   "runtimes": ["gptoss_cpp"],
   "formats": ["safetensors"],
   "capabilities": ["text"],
-  "gpu_targets": ["metal"],
+  "gpu_targets": ["metal", "directml"],
   "library": "llm_engine_gptoss"
 }

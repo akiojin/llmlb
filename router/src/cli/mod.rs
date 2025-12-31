@@ -11,7 +11,7 @@ use clap::Parser;
 #[command(version, about, long_about = None)]
 #[command(after_help = r#"ENVIRONMENT VARIABLES:
     LLM_ROUTER_HOST              Bind address (default: 0.0.0.0)
-    LLM_ROUTER_PORT              Listen port (default: 8080)
+    LLM_ROUTER_PORT              Listen port (default: 51280)
     LLM_ROUTER_LOG_LEVEL         Log level (default: info)
     LLM_ROUTER_DATABASE_URL      Database URL
     LLM_ROUTER_JWT_SECRET        JWT signing key (auto-generated if not set)

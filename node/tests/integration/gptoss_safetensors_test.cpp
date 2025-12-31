@@ -63,11 +63,20 @@ void create_safetensors_missing_metadata(const fs::path& models_dir, const std::
     // config.json / tokenizer.json are intentionally missing.
 }
 
-void create_gptoss_safetensors_model(const fs::path& models_dir, const std::string& model_id) {
+fs::path create_gptoss_safetensors_model(const fs::path& models_dir, const std::string& model_id) {
     auto dir = ensure_model_dir(models_dir, model_id);
     write_text(dir / "config.json", R"({"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]})");
     write_text(dir / "tokenizer.json", R"({"dummy":true})");
     write_text(dir / "model.safetensors.index.json", R"({"weight_map":{}})");
+    return dir;
+}
+
+void create_gptoss_metal_artifact(const fs::path& model_dir) {
+    write_text(model_dir / "model.metal.bin", "dummy metal artifact");
+}
+
+void create_gptoss_directml_artifact(const fs::path& model_dir) {
+    write_text(model_dir / "model.directml.bin", "dummy directml artifact");
 }
 }  // namespace
 
@@ -92,12 +101,15 @@ TEST(GptOssSafetensorsIntegrationTest, ExcludesMissingMetadataModels) {
     EXPECT_EQ(std::find(names.begin(), names.end(), "openai/gpt-oss-20b"), names.end());
 }
 
-// TDD RED: gpt-oss safetensors inference path is not implemented yet.
-TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromSafetensorsE2E) {
-    GTEST_SKIP() << "TDD RED: gpt-oss safetensors inference path not implemented yet";
+TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromMetalArtifactE2E) {
+#if !defined(__APPLE__)
+    GTEST_SKIP() << "Metal backend is only supported on macOS";
+#else
+    GTEST_SKIP() << "TDD RED: gpt-oss Metal inference path not implemented yet";
     llm_node::set_ready(true);
     TempModelDir tmp;
-    create_gptoss_safetensors_model(tmp.path(), "openai/gpt-oss-20b");
+    auto dir = create_gptoss_safetensors_model(tmp.path(), "openai/gpt-oss-20b");
+    create_gptoss_metal_artifact(dir);
 
     ModelStorage storage(tmp.path().string());
     LlamaManager llama(tmp.path().string());
@@ -119,4 +131,38 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromSafetensorsE2E) {
     EXPECT_NE(res->body.find("\"content\""), std::string::npos);
 
     server.stop();
+#endif
+}
+
+TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromDirectmlArtifactE2E) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#else
+    GTEST_SKIP() << "TDD RED: gpt-oss DirectML inference path not implemented yet";
+    llm_node::set_ready(true);
+    TempModelDir tmp;
+    auto dir = create_gptoss_safetensors_model(tmp.path(), "openai/gpt-oss-20b");
+    create_gptoss_directml_artifact(dir);
+
+    ModelStorage storage(tmp.path().string());
+    LlamaManager llama(tmp.path().string());
+    InferenceEngine engine(llama, storage);
+    ModelRegistry registry;
+    registry.setModels({"openai/gpt-oss-20b"});
+
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18151, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18151);
+    std::string body = R"({"model":"openai/gpt-oss-20b","messages":[{"role":"user","content":"hello"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    EXPECT_NE(res->body.find("\"content\""), std::string::npos);
+
+    server.stop();
+#endif
 }

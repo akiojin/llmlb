@@ -365,16 +365,22 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     EngineRegistration llama_reg;
     llama_reg.engine_id = "builtin_llama_cpp";
     llama_reg.engine_version = "builtin";
+    llama_reg.formats = {"gguf"};
+    llama_reg.capabilities = {"text", "embeddings"};
     engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
 
     EngineRegistration gptoss_reg;
     gptoss_reg.engine_id = "builtin_gptoss_cpp";
     gptoss_reg.engine_version = "builtin";
+    gptoss_reg.formats = {"safetensors"};
+    gptoss_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
 
     EngineRegistration nemotron_reg;
     nemotron_reg.engine_id = "builtin_nemotron_cpp";
     nemotron_reg.engine_version = "builtin";
+    nemotron_reg.formats = {"safetensors"};
+    nemotron_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
 }

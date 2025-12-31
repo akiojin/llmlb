@@ -364,6 +364,8 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
     EngineRegistration registration;
     registration.engine_id = manifest.engine_id;
     registration.engine_version = manifest.engine_version;
+    registration.formats = manifest.formats;
+    registration.capabilities = manifest.capabilities;
     std::string reg_error;
     if (!registry.registerEngine(std::move(handle), registration, &reg_error)) {
         error = reg_error;

@@ -32,7 +32,13 @@ bool EngineRegistry::registerEngine(EngineHandle engine,
     }
 
     engine_ids_.emplace(engine_id, runtime);
-    engines_[runtime].push_back(EngineEntry{engine_id, engine_version, std::move(engine)});
+    EngineEntry entry;
+    entry.engine_id = engine_id;
+    entry.engine_version = engine_version;
+    entry.formats = registration.formats;
+    entry.capabilities = registration.capabilities;
+    entry.engine = std::move(engine);
+    engines_[runtime].push_back(std::move(entry));
     return true;
 }
 
@@ -69,7 +75,20 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
     if (it == engines_.end()) return nullptr;
     const auto& entries = it->second;
     if (entries.empty()) return nullptr;
-    if (entries.size() == 1) return entries.front().engine.get();
+    std::vector<const EngineEntry*> candidates;
+    candidates.reserve(entries.size());
+    for (const auto& entry : entries) {
+        if (descriptor.format.empty() || entry.formats.empty()) {
+            candidates.push_back(&entry);
+            continue;
+        }
+        if (std::find(entry.formats.begin(), entry.formats.end(), descriptor.format) != entry.formats.end()) {
+            candidates.push_back(&entry);
+        }
+    }
+
+    if (candidates.empty()) return nullptr;
+    if (candidates.size() == 1) return candidates.front()->engine.get();
 
     std::optional<std::string> preferred;
     if (descriptor.metadata.has_value()) {
@@ -84,9 +103,12 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
                     if (!it.value().is_number()) continue;
                     const auto engine_id = it.key();
                     const auto score = it.value().get<double>();
-                    const bool exists = std::any_of(entries.begin(), entries.end(), [&](const auto& entry) {
-                        return entry.engine_id == engine_id;
-                    });
+                    const bool exists = std::any_of(
+                        candidates.begin(),
+                        candidates.end(),
+                        [&](const auto* entry) {
+                            return entry->engine_id == engine_id;
+                        });
                     if (!exists) continue;
                     if (score > best_score) {
                         best_score = score;
@@ -98,9 +120,9 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
     }
 
     if (preferred.has_value()) {
-        for (const auto& entry : entries) {
-            if (entry.engine_id == *preferred) {
-                return entry.engine.get();
+        for (const auto* entry : candidates) {
+            if (entry->engine_id == *preferred) {
+                return entry->engine.get();
             }
         }
         spdlog::warn("EngineRegistry: preferred engine_id not found for runtime {}", descriptor.runtime);
@@ -109,7 +131,7 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
                      descriptor.runtime);
     }
 
-    return entries.front().engine.get();
+    return candidates.front()->engine.get();
 }
 
 }  // namespace llm_node

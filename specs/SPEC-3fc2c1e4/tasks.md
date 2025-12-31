@@ -14,6 +14,8 @@
 - [x] Node: plugin manifest の gpu_targets に一致しないエンジンをロード対象から除外する
 - [x] Node: EngineRegistry で同一runtimeに複数エンジンを登録できるようにする
 - [x] Node: ベンチマーク結果に基づいて EngineRegistry が解決する
+- [x] Node: EngineRegistry が format に一致するエンジンのみ解決する
+- [x] Tests: EngineRegistry の format フィルタを検証する
 - [x] Tests: EngineRegistry のベンチマーク選択とフォールバックを検証する
 - [ ] DirectML推論パスの実装（演算カーネル、KVキャッシュ、サンプリング）
 - [ ] 実GPU環境の統合テスト（小型モデルでE2E）

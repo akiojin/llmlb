@@ -12,6 +12,8 @@ namespace llm_node {
 struct EngineRegistration {
     std::string engine_id;
     std::string engine_version;
+    std::vector<std::string> formats;
+    std::vector<std::string> capabilities;
 };
 
 struct EngineDeleter {
@@ -43,6 +45,8 @@ private:
     struct EngineEntry {
         std::string engine_id;
         std::string engine_version;
+        std::vector<std::string> formats;
+        std::vector<std::string> capabilities;
         EngineHandle engine;
     };
 

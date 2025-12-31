@@ -127,3 +127,47 @@ TEST(EngineRegistryTest, FallsBackToFirstEngineWhenNoBenchmarks) {
 
     EXPECT_EQ(registry.resolve(desc), engine_a_ptr);
 }
+
+TEST(EngineRegistryTest, ResolvesByFormat) {
+    EngineRegistry registry;
+
+    auto engine_a = std::make_unique<FakeEngine>("safetensors");
+    auto* engine_a_ptr = engine_a.get();
+    EngineRegistration reg_a;
+    reg_a.engine_id = "engine_safetensors";
+    reg_a.engine_version = "0.1.0";
+    reg_a.formats = {"safetensors"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine_a), reg_a, nullptr));
+
+    auto engine_b = std::make_unique<FakeEngine>("gguf");
+    auto* engine_b_ptr = engine_b.get();
+    EngineRegistration reg_b;
+    reg_b.engine_id = "engine_gguf";
+    reg_b.engine_version = "0.1.0";
+    reg_b.formats = {"gguf"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine_b), reg_b, nullptr));
+
+    ModelDescriptor desc;
+    desc.runtime = "fake";
+    desc.format = "gguf";
+
+    EXPECT_EQ(registry.resolve(desc), engine_b_ptr);
+    EXPECT_NE(registry.resolve(desc), engine_a_ptr);
+}
+
+TEST(EngineRegistryTest, ReturnsNullWhenFormatMismatch) {
+    EngineRegistry registry;
+
+    auto engine_a = std::make_unique<FakeEngine>("safetensors");
+    EngineRegistration reg_a;
+    reg_a.engine_id = "engine_safetensors";
+    reg_a.engine_version = "0.1.0";
+    reg_a.formats = {"safetensors"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine_a), reg_a, nullptr));
+
+    ModelDescriptor desc;
+    desc.runtime = "fake";
+    desc.format = "gguf";
+
+    EXPECT_EQ(registry.resolve(desc), nullptr);
+}

@@ -21,7 +21,7 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 | エンジン | ステータス | モデル | ハードウェア |
 |---------|-----------|--------|------------|
 | **llama.cpp** | 本番稼働 | GGUF形式（LLaMA、Mistral等） | CPU、CUDA、Metal |
-| **GPT-OSS** | 本番稼働 | Metal最適化推論 | Apple Silicon |
+| **GPT-OSS** | 本番稼働（Metal）/ DirectMLは進行中 | Safetensors（公式GPUアーティファクト） | Apple Silicon、Windows |
 | **Whisper** | 本番稼働 | 音声認識（ASR） | CPU、CUDA、Metal |
 | **Stable Diffusion** | 本番稼働 | 画像生成 | CUDA、Metal |
 | **Nemotron** | 検証中 | Safetensors形式 | CUDA |
@@ -370,15 +370,18 @@ Router (OpenAI-compatible)
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
-  - `format` を選択します: `safetensors`（新エンジン: TBD） または `gguf`（llama.cpp フォールバック）
+  - `format` を選択します: `safetensors`（ネイティブエンジン） または `gguf`（llama.cpp フォールバック）
     - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
-    - 補足: `safetensors` でのテキスト生成は TBD（推論エンジン実装は後で決める）です。現時点で実行したい場合は `gguf` を選択してください。
+    - safetensors のテキスト生成はネイティブエンジンがある場合のみ対応します
+      （gpt-ossはMetal対応済み、DirectMLは進行中）。GGUFのみのモデルは `gguf` を選択してください。
   - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）を入力します。
   - `format=gguf` の場合:
     - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
   - `format=safetensors` の場合:
     - HFスナップショットに `config.json` と `tokenizer.json` が必要です。
     - シャーディングされている場合は `.index.json` が必要です。
+    - gpt-oss は公式GPUアーティファクトを優先します:
+      `model.metal.bin`（Metal）/ `model.directml.bin` または `model.dml.bin`（DirectML）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
 - ノードはモデルをプッシュ配布されず、オンデマンドでルーターから取得します:

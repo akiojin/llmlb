@@ -23,7 +23,7 @@ LLM Router supports a pluggable multi-engine architecture:
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
 | **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
-| **GPT-OSS** | Production | Metal-optimized inference | Apple Silicon |
+| **GPT-OSS** | Production (Metal), WIP (DirectML) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
@@ -428,9 +428,10 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
-  - Choose `format`: `safetensors` (native engine: TBD) or `gguf` (llama.cpp fallback).
+  - Choose `format`: `safetensors` (native engines) or `gguf` (llama.cpp fallback).
     - If the repo contains both `safetensors` and `.gguf`, `format` is required.
-    - Note: text generation via `safetensors` is TBD (engine implementation will be decided later). Use `gguf` if you need to run the model now.
+    - Safetensors text generation is available only when a native engine exists
+      (gpt-oss on Metal, DirectML is in progress). Use `gguf` for GGUF-only models.
   - Enter a Hugging Face repo (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
   - For `format=gguf`:
     - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
@@ -438,6 +439,8 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - For `format=safetensors`:
     - The HF snapshot must include `config.json` and `tokenizer.json`.
     - Sharded weights must include an `.index.json`.
+    - gpt-oss prefers official GPU artifacts when present:
+      `model.metal.bin` (Metal) / `model.directml.bin` or `model.dml.bin` (DirectML).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
   - Nodes pull models on-demand via the model registry endpoints:

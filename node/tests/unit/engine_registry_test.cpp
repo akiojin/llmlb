@@ -173,7 +173,6 @@ TEST(EngineRegistryTest, ReturnsNullWhenFormatMismatch) {
 }
 
 TEST(EngineRegistryTest, ResolvesByCapability) {
-    GTEST_SKIP() << "TDD RED: capability filter not implemented yet";
     EngineRegistry registry;
 
     auto engine_text = std::make_unique<FakeEngine>("text");
@@ -200,7 +199,6 @@ TEST(EngineRegistryTest, ResolvesByCapability) {
 }
 
 TEST(EngineRegistryTest, ReturnsNullWhenCapabilityMismatch) {
-    GTEST_SKIP() << "TDD RED: capability filter not implemented yet";
     EngineRegistry registry;
 
     auto engine_text = std::make_unique<FakeEngine>("text");

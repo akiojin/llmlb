@@ -465,7 +465,7 @@ std::string InferenceEngine::generateChat(
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -667,7 +667,7 @@ std::string InferenceEngine::generateCompletion(
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -697,7 +697,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -753,7 +753,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
     if (!engine) {
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;

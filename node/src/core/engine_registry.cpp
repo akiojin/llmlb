@@ -7,6 +7,34 @@
 
 namespace llm_node {
 
+namespace {
+std::vector<const EngineRegistry::EngineEntry*> filterCandidates(
+    const std::vector<EngineRegistry::EngineEntry>& entries,
+    const ModelDescriptor& descriptor,
+    const std::string& capability) {
+    std::vector<const EngineRegistry::EngineEntry*> candidates;
+    candidates.reserve(entries.size());
+
+    for (const auto& entry : entries) {
+        if (!descriptor.format.empty() && !entry.formats.empty()) {
+            if (std::find(entry.formats.begin(), entry.formats.end(), descriptor.format) == entry.formats.end()) {
+                continue;
+            }
+        }
+
+        if (!capability.empty() && !entry.capabilities.empty()) {
+            if (std::find(entry.capabilities.begin(), entry.capabilities.end(), capability) == entry.capabilities.end()) {
+                continue;
+            }
+        }
+
+        candidates.push_back(&entry);
+    }
+
+    return candidates;
+}
+}  // namespace
+
 bool EngineRegistry::registerEngine(std::unique_ptr<Engine> engine,
                                     const EngineRegistration& registration,
                                     std::string* error) {
@@ -71,22 +99,16 @@ Engine* EngineRegistry::resolve(const std::string& runtime) const {
 }
 
 Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
+    return resolve(descriptor, "");
+}
+
+Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor, const std::string& capability) const {
     auto it = engines_.find(descriptor.runtime);
     if (it == engines_.end()) return nullptr;
     const auto& entries = it->second;
     if (entries.empty()) return nullptr;
-    std::vector<const EngineEntry*> candidates;
-    candidates.reserve(entries.size());
-    for (const auto& entry : entries) {
-        if (descriptor.format.empty() || entry.formats.empty()) {
-            candidates.push_back(&entry);
-            continue;
-        }
-        if (std::find(entry.formats.begin(), entry.formats.end(), descriptor.format) != entry.formats.end()) {
-            candidates.push_back(&entry);
-        }
-    }
 
+    auto candidates = filterCandidates(entries, descriptor, capability);
     if (candidates.empty()) return nullptr;
     if (candidates.size() == 1) return candidates.front()->engine.get();
 
@@ -132,11 +154,6 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
     }
 
     return candidates.front()->engine.get();
-}
-
-Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor, const std::string& capability) const {
-    (void)capability;
-    return resolve(descriptor);
 }
 
 }  // namespace llm_node

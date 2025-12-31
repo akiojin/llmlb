@@ -147,3 +147,63 @@
 | 9 | LOAD_FAILED | ロード失敗 |
 
 各コードに対して詳細なメッセージ文字列を付与。
+
+### マルチGPU負荷分散設計
+
+**GPU選択アルゴリズム**:
+
+1. 利用可能なGPUを列挙
+2. 各GPUのVRAM空き容量を取得
+3. リクエスト到着時に最も空きの多いGPUを選択
+4. モデルが既にロード済みのGPUがあれば優先
+
+### 継続バッチング設計
+
+**バッチスケジューラ**:
+
+- Prefillキュー: 新規リクエストのprefill処理待ち
+- Decodeバッチ: 生成中リクエストのdecode処理
+- Prefill/Decode分離により、異なるプロンプト長の混合を回避
+
+**バッチ追加タイミング**:
+
+- decodeステップ間で新リクエストをバッチに追加
+- KVキャッシュの動的確保
+
+### メトリクス収集設計
+
+**コールバックAPI**:
+
+```
+typedef void (*on_token_callback)(
+    void* ctx,
+    uint32_t token_id,
+    uint64_t timestamp_ns
+);
+```
+
+- プラグインはトークン生成ごとにコールバック
+- ホスト側でTTFT、トークン/秒を計算
+
+### プラグイン定期再起動設計
+
+**再起動ポリシー**:
+
+- 条件: N時間経過 または Nリクエスト処理後
+- 再起動時はシャドウロード方式で無停止
+- デフォルト値: TBD（運用で調整）
+
+### manifest.jsonスキーマ拡張
+
+```json
+{
+  "id": "llama_cpp",
+  "version": "1.0.0",
+  "abi_version": "1.0",
+  "gpu_backend": "metal",
+  "architectures": ["llama", "mistral", "gemma", "phi"],
+  "binary": "libllama_engine.dylib"
+}
+```
+
+- `architectures`: サポートするモデルアーキテクチャの列挙（必須）

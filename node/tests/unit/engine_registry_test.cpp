@@ -171,3 +171,47 @@ TEST(EngineRegistryTest, ReturnsNullWhenFormatMismatch) {
 
     EXPECT_EQ(registry.resolve(desc), nullptr);
 }
+
+TEST(EngineRegistryTest, ResolvesByCapability) {
+    GTEST_SKIP() << "TDD RED: capability filter not implemented yet";
+    EngineRegistry registry;
+
+    auto engine_text = std::make_unique<FakeEngine>("text");
+    auto* engine_text_ptr = engine_text.get();
+    EngineRegistration reg_text;
+    reg_text.engine_id = "engine_text";
+    reg_text.engine_version = "0.1.0";
+    reg_text.capabilities = {"text"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine_text), reg_text, nullptr));
+
+    auto engine_embed = std::make_unique<FakeEngine>("embeddings");
+    auto* engine_embed_ptr = engine_embed.get();
+    EngineRegistration reg_embed;
+    reg_embed.engine_id = "engine_embeddings";
+    reg_embed.engine_version = "0.1.0";
+    reg_embed.capabilities = {"embeddings"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine_embed), reg_embed, nullptr));
+
+    ModelDescriptor desc;
+    desc.runtime = "fake";
+
+    EXPECT_EQ(registry.resolve(desc, "embeddings"), engine_embed_ptr);
+    EXPECT_NE(registry.resolve(desc, "embeddings"), engine_text_ptr);
+}
+
+TEST(EngineRegistryTest, ReturnsNullWhenCapabilityMismatch) {
+    GTEST_SKIP() << "TDD RED: capability filter not implemented yet";
+    EngineRegistry registry;
+
+    auto engine_text = std::make_unique<FakeEngine>("text");
+    EngineRegistration reg_text;
+    reg_text.engine_id = "engine_text";
+    reg_text.engine_version = "0.1.0";
+    reg_text.capabilities = {"text"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine_text), reg_text, nullptr));
+
+    ModelDescriptor desc;
+    desc.runtime = "fake";
+
+    EXPECT_EQ(registry.resolve(desc, "embeddings"), nullptr);
+}

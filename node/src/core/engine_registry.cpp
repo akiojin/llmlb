@@ -134,4 +134,9 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
     return candidates.front()->engine.get();
 }
 
+Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor, const std::string& capability) const {
+    (void)capability;
+    return resolve(descriptor);
+}
+
 }  // namespace llm_node

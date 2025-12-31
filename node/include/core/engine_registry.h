@@ -40,6 +40,7 @@ public:
     void registerEngine(EngineHandle engine);
     Engine* resolve(const std::string& runtime) const;
     Engine* resolve(const ModelDescriptor& descriptor) const;
+    Engine* resolve(const ModelDescriptor& descriptor, const std::string& capability) const;
 
 private:
     struct EngineEntry {

@@ -128,6 +128,28 @@ TEST(EngineRegistryTest, FallsBackToFirstEngineWhenNoBenchmarks) {
     EXPECT_EQ(registry.resolve(desc), engine_a_ptr);
 }
 
+TEST(EngineRegistryTest, PrefersPluginEngineWhenNoBenchmarks) {
+    EngineRegistry registry;
+
+    auto builtin = std::make_unique<FakeEngine>("builtin");
+    EngineRegistration reg_builtin;
+    reg_builtin.engine_id = "engine_builtin";
+    reg_builtin.engine_version = "builtin";
+    ASSERT_TRUE(registry.registerEngine(std::move(builtin), reg_builtin, nullptr));
+
+    auto plugin = std::make_unique<FakeEngine>("plugin");
+    auto* plugin_ptr = plugin.get();
+    EngineRegistration reg_plugin;
+    reg_plugin.engine_id = "engine_plugin";
+    reg_plugin.engine_version = "0.2.0";
+    ASSERT_TRUE(registry.registerEngine(std::move(plugin), reg_plugin, nullptr));
+
+    ModelDescriptor desc;
+    desc.runtime = "fake";
+
+    EXPECT_EQ(registry.resolve(desc), plugin_ptr);
+}
+
 TEST(EngineRegistryTest, ResolvesByFormat) {
     EngineRegistry registry;
 

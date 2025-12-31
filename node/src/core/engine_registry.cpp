@@ -149,6 +149,15 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor, const std::st
         }
         spdlog::warn("EngineRegistry: preferred engine_id not found for runtime {}", descriptor.runtime);
     } else {
+        for (const auto* entry : candidates) {
+            if (entry->engine_version != "builtin") {
+                spdlog::warn(
+                    "EngineRegistry: no benchmark metadata for runtime {}, preferring plugin engine {}",
+                    descriptor.runtime,
+                    entry->engine_id);
+                return entry->engine.get();
+            }
+        }
         spdlog::warn("EngineRegistry: no benchmark metadata for runtime {}, using first engine",
                      descriptor.runtime);
     }

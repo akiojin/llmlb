@@ -178,7 +178,6 @@ TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
 }
 
 TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGguf) {
-    GTEST_SKIP() << "RED: ModelDescriptor capabilities not wired yet";
     TempModelDir tmp;
     create_model(tmp.base, "gpt-oss-7b");
 
@@ -206,7 +205,6 @@ TEST(ModelStorageTest, ResolveDescriptorFindsGptOssSafetensorsIndex) {
 }
 
 TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGptOss) {
-    GTEST_SKIP() << "RED: ModelDescriptor capabilities not wired yet";
     TempModelDir tmp;
     create_gptoss_safetensors_model_with_index(tmp.base, "openai-gpt-oss-20b");
 

@@ -18,6 +18,7 @@
 - [x] Tests: EngineRegistry の format フィルタを検証する
 - [x] Node: EngineRegistry が capability に一致するエンジンのみ解決する
 - [x] Tests: EngineRegistry の capability フィルタを検証する
+- [x] Node: ModelDescriptor に capabilities を付与し、runtime→capabilities を埋める
 - [x] Tests: EngineRegistry のベンチマーク選択とフォールバックを検証する
 - [ ] DirectML推論パスの実装（演算カーネル、KVキャッシュ、サンプリング）
 - [ ] 実GPU環境の統合テスト（小型モデルでE2E）

@@ -139,6 +139,25 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir)
     return std::nullopt;
 }
 
+std::vector<std::string> capabilities_for_runtime(const std::string& runtime) {
+    if (runtime == "llama_cpp") {
+        return {"text", "embeddings"};
+    }
+    if (runtime == "gptoss_cpp" || runtime == "nemotron_cpp") {
+        return {"text"};
+    }
+    if (runtime == "whisper_cpp") {
+        return {"asr"};
+    }
+    if (runtime == "onnx_runtime") {
+        return {"tts"};
+    }
+    if (runtime == "stable_diffusion") {
+        return {"image"};
+    }
+    return {};
+}
+
 std::optional<fs::path> resolve_safetensors_primary_in_dir(const fs::path& model_dir) {
     if (!has_required_safetensors_metadata(model_dir)) return std::nullopt;
 
@@ -329,6 +348,7 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
 
         if (info.format == "gguf") {
             desc.runtime = "llama_cpp";
+            desc.capabilities = capabilities_for_runtime(desc.runtime);
             out.push_back(std::move(desc));
             continue;
         }
@@ -337,6 +357,7 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
             auto rt = detect_runtime_from_config(fs::path(desc.model_dir));
             if (!rt) continue;
             desc.runtime = *rt;
+            desc.capabilities = capabilities_for_runtime(desc.runtime);
             if (auto meta = build_safetensors_metadata(fs::path(desc.model_dir), fs::path(desc.primary_path))) {
                 desc.metadata = std::move(*meta);
             }
@@ -359,6 +380,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         desc.format = "gguf";
         desc.primary_path = gguf_path.string();
         desc.model_dir = model_dir.string();
+        desc.capabilities = capabilities_for_runtime(desc.runtime);
         return desc;
     }
 
@@ -371,6 +393,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         desc.format = "safetensors";
         desc.primary_path = primary->string();
         desc.model_dir = model_dir.string();
+        desc.capabilities = capabilities_for_runtime(desc.runtime);
         if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
             desc.metadata = std::move(*meta);
         }

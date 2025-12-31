@@ -146,7 +146,29 @@ TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
 
 // TDD RED: DirectML should allow safetensors without Metal artifact.
 TEST(InferenceEngineTest, GptOssAllowsSafetensorsOnDirectML) {
-    GTEST_SKIP() << "TDD RED: DirectML backend selection not implemented yet";
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "gpt-oss DirectML engine not enabled";
+#else
+    TempDir tmp;
+    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
+    fs::create_directories(model_dir);
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    ModelDescriptor desc;
+    desc.name = "openai/gpt-oss-20b";
+    desc.runtime = "gptoss_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
+
+    // DirectMLではMetal専用artifactが無くてもsafetensorsで実行可能
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#endif
 }
 
 TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {

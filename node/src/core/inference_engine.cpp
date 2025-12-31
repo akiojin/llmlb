@@ -792,17 +792,20 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
     if (!engine->supportsTextGeneration()) return false;
 
     if (descriptor.runtime == "gptoss_cpp") {
-#ifndef USE_GPTOSS
-        return false;
-#else
         namespace fs = std::filesystem;
         fs::path model_dir = descriptor.model_dir.empty()
                                  ? fs::path(descriptor.primary_path).parent_path()
                                  : fs::path(descriptor.model_dir);
         if (model_dir.empty()) return false;
+#if defined(_WIN32)
+        // DirectML path: safetensorsが正本なのでMetal専用artifactは不要
+        return true;
+#elif defined(__APPLE__)
         if (fs::exists(model_dir / "model.metal.bin")) return true;
         if (fs::exists(model_dir / "metal" / "model.bin")) return true;
         if (fs::exists(model_dir / "model.bin")) return true;
+        return false;
+#else
         return false;
 #endif
     }

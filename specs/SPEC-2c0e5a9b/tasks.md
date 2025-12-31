@@ -31,7 +31,7 @@
 
 ## Unit Tests (GREEN)
 - [x] Node: safetensors shards 解決とメタデータ検証のユニットテスト。
-- [ ] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
+- [x] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
 - [x] Node: manifest の optional ファイルは取得失敗でも継続できるユニットテスト。
 - [x] Node: プラグイン manifest/ABI の検証ユニットテスト。
 

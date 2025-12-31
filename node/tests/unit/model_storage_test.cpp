@@ -1,5 +1,6 @@
 // SPEC-dcaeaec4: ModelStorage unit tests (TDD RED phase)
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -176,6 +177,21 @@ TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
 }
 
+TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGguf) {
+    GTEST_SKIP() << "RED: ModelDescriptor capabilities not wired yet";
+    TempModelDir tmp;
+    create_model(tmp.base, "gpt-oss-7b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("gpt-oss-7b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_NE(std::find(desc->capabilities.begin(), desc->capabilities.end(), "text"),
+              desc->capabilities.end());
+    EXPECT_NE(std::find(desc->capabilities.begin(), desc->capabilities.end(), "embeddings"),
+              desc->capabilities.end());
+}
+
 TEST(ModelStorageTest, ResolveDescriptorFindsGptOssSafetensorsIndex) {
     TempModelDir tmp;
     create_gptoss_safetensors_model_with_index(tmp.base, "openai-gpt-oss-20b");
@@ -187,6 +203,21 @@ TEST(ModelStorageTest, ResolveDescriptorFindsGptOssSafetensorsIndex) {
     EXPECT_EQ(desc->runtime, "gptoss_cpp");
     EXPECT_EQ(desc->format, "safetensors");
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGptOss) {
+    GTEST_SKIP() << "RED: ModelDescriptor capabilities not wired yet";
+    TempModelDir tmp;
+    create_gptoss_safetensors_model_with_index(tmp.base, "openai-gpt-oss-20b");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("openai-gpt-oss-20b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_NE(std::find(desc->capabilities.begin(), desc->capabilities.end(), "text"),
+              desc->capabilities.end());
+    EXPECT_EQ(std::find(desc->capabilities.begin(), desc->capabilities.end(), "embeddings"),
+              desc->capabilities.end());
 }
 
 TEST(ModelStorageTest, ResolveDescriptorDetectsGptOssFromArchitectures) {

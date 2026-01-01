@@ -20,7 +20,7 @@
 
 namespace {
 
-struct ParsedUrl {
+struct HttpUrl {
     std::string scheme;
     std::string host;
     int port{0};
@@ -199,10 +199,10 @@ private:
     Sha256Ctx ctx_;
 };
 
-ParsedUrl parseUrl(const std::string& url) {
+HttpUrl parseUrl(const std::string& url) {
     static const std::regex re(R"(^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/:]+)(?::(\d+))?(.*)$)");
     std::smatch match;
-    ParsedUrl parsed;
+    HttpUrl parsed;
     if (std::regex_match(url, match, re)) {
         parsed.scheme = match[1].str();
         parsed.host = match[2].str();
@@ -223,7 +223,7 @@ std::optional<std::string> hfTokenForHost(const std::string& host) {
 
     const char* base = std::getenv("HF_BASE_URL");
     if (base && *base) {
-        ParsedUrl parsed = parseUrl(base);
+        HttpUrl parsed = parseUrl(base);
         if (!parsed.host.empty()) {
             const auto base_lower = llm_node::toLowerAscii(parsed.host);
             if (lower == base_lower) {
@@ -235,7 +235,7 @@ std::optional<std::string> hfTokenForHost(const std::string& host) {
     return std::nullopt;
 }
 
-std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::milliseconds timeout) {
+std::unique_ptr<httplib::Client> makeClient(const HttpUrl& url, std::chrono::milliseconds timeout) {
     if (url.scheme.empty() || url.host.empty()) {
         return nullptr;
     }
@@ -289,7 +289,7 @@ ModelDownloader::ModelDownloader(std::string registry_base, std::string models_d
 }
 
 std::string ModelDownloader::fetchManifest(const std::string& model_id) {
-    ParsedUrl base = parseUrl(registry_base_);
+    HttpUrl base = parseUrl(registry_base_);
     if (base.scheme.empty() || base.host.empty()) return "";
 
     auto client = makeClient(base, timeout_);
@@ -340,7 +340,7 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
 
 std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std::string& filename, ProgressCallback cb,
     const std::string& expected_sha256, const std::string& if_none_match) {
-    ParsedUrl url = parseUrl(blob_url);
+    HttpUrl url = parseUrl(blob_url);
     // Keep whether the original URL was relative before resolving against registry_base_.
     const bool is_relative = url.scheme.empty();
 

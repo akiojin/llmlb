@@ -610,6 +610,38 @@ fn is_safetensors_filename(filename: &str) -> bool {
     lower.ends_with(".safetensors") || lower.ends_with(".safetensors.index.json")
 }
 
+fn infer_safetensors_index_from_shard(filename: &str) -> Option<String> {
+    if is_safetensors_index_filename(filename) {
+        return None;
+    }
+    if !filename.to_ascii_lowercase().ends_with(".safetensors") {
+        return None;
+    }
+
+    let (dir, file) = match filename.rsplit_once('/') {
+        Some((dir, file)) => (format!("{}/", dir), file),
+        None => ("".to_string(), filename),
+    };
+
+    let stem = file.strip_suffix(".safetensors")?;
+    let (left, total) = stem.rsplit_once("-of-")?;
+    if left.is_empty() || total.is_empty() {
+        return None;
+    }
+    if !total.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let (prefix, shard) = left.rsplit_once('-')?;
+    if prefix.is_empty() || shard.is_empty() {
+        return None;
+    }
+    if !shard.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+
+    Some(format!("{}{}.safetensors.index.json", dir, prefix))
+}
+
 fn sibling_size_bytes(s: &HfSibling) -> u64 {
     s.size
         .or_else(|| s.lfs.as_ref().and_then(|l| l.size))
@@ -649,9 +681,10 @@ fn resolve_primary_artifact(
         }
         if is_safetensors_filename(&filename) {
             require_safetensors_metadata_files(siblings)?;
+            let resolved = resolve_safetensors_primary(siblings, Some(filename))?;
             return Ok(ArtifactSelection {
                 format: ArtifactFormat::Safetensors,
-                filename,
+                filename: resolved,
             });
         }
         return Err(RouterError::Common(CommonError::Validation(
@@ -867,6 +900,26 @@ fn resolve_safetensors_primary(
             return Err(RouterError::Common(CommonError::Validation(
                 "Specified safetensors file not found in repository".into(),
             )));
+        }
+        if !is_safetensors_index_filename(&filename) {
+            if let Some(candidate) = infer_safetensors_index_from_shard(&filename) {
+                if has_sibling(siblings, &candidate) {
+                    return Ok(candidate);
+                }
+                let index_files: Vec<_> = siblings
+                    .iter()
+                    .map(|s| s.rfilename.clone())
+                    .filter(|f| is_safetensors_index_filename(f))
+                    .collect();
+                if index_files.len() == 1 {
+                    return Ok(index_files[0].clone());
+                }
+                if index_files.len() > 1 {
+                    return Err(RouterError::Common(CommonError::Validation(
+                        "Multiple safetensors index files found; specify filename".into(),
+                    )));
+                }
+            }
         }
         return Ok(filename);
     }

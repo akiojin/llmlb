@@ -413,6 +413,50 @@ async fn test_register_model_contract() {
         .await
         .unwrap();
     assert_eq!(safetensors_repo_only.status(), StatusCode::CREATED);
+
+    // shard URL指定時は index を優先して登録する
+    Mock::given(method("GET"))
+        .and(path("/api/models/sharded/with-index"))
+        .and(query_param("expand", "siblings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "siblings": [
+                {"rfilename": "config.json"},
+                {"rfilename": "tokenizer.json"},
+                {"rfilename": "model-00001-of-00002.safetensors"},
+                {"rfilename": "model-00002-of-00002.safetensors"},
+                {"rfilename": "model.safetensors.index.json"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let shard_payload = json!({
+        "repo": format!("{}/sharded/with-index/resolve/main/model-00001-of-00002.safetensors", mock.uri()),
+        "chat_template": "test template"
+    });
+
+    let shard_response = app
+        .clone()
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/v0/models/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&shard_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(shard_response.status(), StatusCode::CREATED);
+    let shard_body = to_bytes(shard_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let shard_body: serde_json::Value = serde_json::from_slice(&shard_body).unwrap();
+    assert_eq!(
+        shard_body["filename"].as_str(),
+        Some("model.safetensors.index.json")
+    );
 }
 
 /// safetensors登録では config.json + tokenizer.json を必須とする

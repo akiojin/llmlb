@@ -13,3 +13,6 @@
 [submodule "node/third_party/nlohmann-json"]
 	path = node/third_party/nlohmann-json
 	url = https://github.com/nlohmann/json.git
+[submodule "node/third_party/openai-gpt-oss"]
+	path = node/third_party/openai-gpt-oss
+	url = https://github.com/openai/gpt-oss.git

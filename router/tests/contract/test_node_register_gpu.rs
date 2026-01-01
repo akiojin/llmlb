@@ -160,7 +160,7 @@ async fn register_gpu_node_missing_devices_is_rejected() {
         "machine_name": "cpu-only",
         "ip_address": "10.0.0.20",
         "runtime_version": "0.1.42",
-        "runtime_port": 11434,
+        "runtime_port": 32768,
         "gpu_available": true,
         "gpu_devices": []
     });

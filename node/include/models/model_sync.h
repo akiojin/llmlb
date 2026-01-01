@@ -23,6 +23,13 @@ struct SyncStatusInfo {
     std::chrono::system_clock::time_point updated_at{};
     std::vector<std::string> last_to_download;
     std::vector<std::string> last_to_delete;
+    struct DownloadProgress {
+        std::string model_id;
+        std::string file;
+        size_t downloaded_bytes{0};
+        size_t total_bytes{0};
+    };
+    std::optional<DownloadProgress> current_download;
 };
 
 struct ModelSyncResult {
@@ -114,7 +121,7 @@ private:
     std::unordered_map<std::string, RemoteModel> remote_models_;
 
     mutable std::mutex status_mutex_;
-    SyncStatusInfo status_;
+    mutable SyncStatusInfo status_;
 };
 
 }  // namespace llm_node

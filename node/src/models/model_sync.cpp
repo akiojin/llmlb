@@ -61,6 +61,7 @@ ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_.state = SyncState::Idle;
         status_.updated_at = std::chrono::system_clock::now();
+        status_.current_download.reset();
     }
     // Load persisted ETag cache if present
     const auto cache_path = fs::path(models_dir_) / ".etag_cache.json";
@@ -203,6 +204,7 @@ ModelSyncResult ModelSync::sync() {
             std::lock_guard<std::mutex> lock(status_mutex_);
             status_.state = SyncState::Running;
             status_.updated_at = std::chrono::system_clock::now();
+            status_.current_download.reset();
         }
 
         auto remote_models = fetchRemoteModels();
@@ -509,8 +511,24 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                     }
                 }
 
+                auto progress_cb = [this, model_id, name, cb](size_t downloaded, size_t total) {
+                    {
+                        std::lock_guard<std::mutex> lock(status_mutex_);
+                        status_.current_download = SyncStatusInfo::DownloadProgress{
+                            model_id,
+                            name,
+                            downloaded,
+                            total,
+                        };
+                        status_.updated_at = std::chrono::system_clock::now();
+                    }
+                    if (cb) {
+                        cb(downloaded, total);
+                    }
+                };
+
                 const auto local_dir = ModelStorage::modelNameToDir(model_id);
-                auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, cb, digest);
+                auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, progress_cb, digest);
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);

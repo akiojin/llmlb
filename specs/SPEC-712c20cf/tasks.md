@@ -360,7 +360,7 @@
 - **ステータス**: ✅ 完了
 - **検証ログ (2025-11-02)**:
   - `make openai-tests` により、`/v1/chat/completions`・`/v1/completions` の正常系／未登録ノード／404エラーがOpenAI互換レスポンスで返ることを確認
-  - `curl http://127.0.0.1:8080/v1/chat/completions` でノードを経由した疎通を手動確認済み（`gpt-oss-20b` 応答およびメモリ不足エラーの両ケースを取得）
+  - `curl http://127.0.0.1:32768/v1/chat/completions` でノードを経由した疎通を手動確認済み（`gpt-oss-20b` 応答およびメモリ不足エラーの両ケースを取得）
   - `make openai-tests` のストリーミングケースを追加し、`stream: true` 指定時にSSEレスポンスがそのまま転送されることを確認（2025-11-03）
 
 ### T004: 同一マシン複数ノードE2E ✅

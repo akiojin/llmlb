@@ -221,7 +221,7 @@ curl -X POST ${routerUrl}/v0/nodes \\
     "machine_name": "gpu-server-1",
     "ip_address": "192.168.1.100",
     "runtime_version": "0.1.0",
-    "runtime_port": 11434,
+    "runtime_port": 32768,
     "gpu_available": true,
     "gpu_devices": [
       {"model": "NVIDIA RTX 4090", "count": 1}

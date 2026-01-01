@@ -91,7 +91,7 @@ npx @llm-router/mcp-server
       "command": "npx",
       "args": ["-y", "@llm-router/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:32768",
         "LLM_ROUTER_API_KEY": "sk_your_api_key"
       }
     }
@@ -111,10 +111,10 @@ cargo build --release -p llm-router
 
 # Run
 ./target/release/llm-router
-# Default: http://0.0.0.0:8080
+# Default: http://0.0.0.0:32768
 
 # Access dashboard
-# Open http://localhost:8080/dashboard in browser
+# Open http://localhost:32768/dashboard in browser
 ```
 
 **Environment Variables:**
@@ -122,7 +122,7 @@ cargo build --release -p llm-router
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
-| `LLM_ROUTER_PORT` | `8080` | Listen port |
+| `LLM_ROUTER_PORT` | `32768` | Listen port |
 | `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
 | `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret |
 | `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
@@ -171,15 +171,15 @@ npm run start:node
 # cd node && cmake -B build -S . && cmake --build build --config Release
 # # Linux / CUDA:
 # # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
+# LLM_ROUTER_URL=http://localhost:32768 ./node/build/llm-node
 ```
 
 **Environment Variables:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
-| `LLM_NODE_PORT` | `11435` | Node listen port |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with |
+| `LLM_NODE_PORT` | `32769` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
@@ -195,8 +195,8 @@ npm run start:node
 docker build --build-arg CUDA=cpu -t llm-node:latest node/
 
 # Run
-docker run --rm -p 11435:11435 \
-  -e LLM_ROUTER_URL=http://host.docker.internal:8080 \
+docker run --rm -p 32769:32769 \
+  -e LLM_ROUTER_URL=http://host.docker.internal:32768 \
   llm-node:latest
 ```
 
@@ -298,25 +298,25 @@ LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
 
 #### Traditional Method (Without Router)
 ```bash
-# Direct access to each node API (default: node_port=11435)
-curl http://machine1:11435/v1/chat/completions -d '...'
-curl http://machine2:11435/v1/chat/completions -d '...'
-curl http://machine3:11435/v1/chat/completions -d '...'
+# Direct access to each node API (default: node_port=32769)
+curl http://machine1:32769/v1/chat/completions -d '...'
+curl http://machine2:32769/v1/chat/completions -d '...'
+curl http://machine3:32769/v1/chat/completions -d '...'
 ```
 
 #### With Router (Proxy)
 ```bash
 # Unified access to Router - automatic routing to the optimal node
-curl http://router:8080/v1/chat/completions -d '...'
-curl http://router:8080/v1/chat/completions -d '...'
-curl http://router:8080/v1/chat/completions -d '...'
+curl http://router:32768/v1/chat/completions -d '...'
+curl http://router:32768/v1/chat/completions -d '...'
+curl http://router:32768/v1/chat/completions -d '...'
 ```
 
 **Detailed Request Flow:**
 
 1. **Client → Router**
    ```
-   POST http://router:8080/v1/chat/completions
+   POST http://router:32768/v1/chat/completions
    Content-Type: application/json
 
    {"model": "llama2", "messages": [...]}
@@ -328,7 +328,7 @@ curl http://router:8080/v1/chat/completions -d '...'
 
 3. **Router → Node (Internal Communication)**
    ```
-   POST http://node1:11435/v1/chat/completions
+   POST http://node1:32769/v1/chat/completions
    Content-Type: application/json
 
    {"model": "llama2", "messages": [...]}
@@ -418,7 +418,7 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
    ```
 2. Open:
    ```
-   http://localhost:8080/dashboard
+   http://localhost:32768/dashboard
    ```
 
 ## Hugging Face registration (safetensors / GGUF)
@@ -507,7 +507,7 @@ Artifact: `target/release/llm-router`
 ### 2) Run with Docker
 ```bash
 docker build -t llm-router:latest .
-docker run --rm -p 8080:8080 --gpus all \
+docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
   llm-router:latest
 ```
@@ -528,19 +528,19 @@ See [Node (C++)](#node-c) section in Quick Start.
 1. **Start Router**
    ```bash
    ./target/release/llm-router
-   # Default: http://0.0.0.0:8080
+   # Default: http://0.0.0.0:32768
    ```
 
 2. **Start Nodes on Multiple Machines**
    ```bash
    # Machine 1
-   LLM_ROUTER_URL=http://router:8080 \
+   LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
 
    # Machine 2
-   LLM_ROUTER_URL=http://router:8080 \
+   LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
@@ -548,7 +548,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
 3. **Send Inference Requests to Router (OpenAI-compatible)**
    ```bash
-   curl http://router:8080/v1/chat/completions \
+   curl http://router:32768/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -560,7 +560,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
    **Image generation example**
    ```bash
-   curl http://router:8080/v1/images/generations \
+   curl http://router:32768/v1/images/generations \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -574,7 +574,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
    **Image understanding example**
    ```bash
-   curl http://router:8080/v1/chat/completions \
+   curl http://router:32768/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -593,7 +593,7 @@ See [Node (C++)](#node-c) section in Quick Start.
    ```
 4. **List Registered Nodes**
    ```bash
-   curl http://router:8080/v0/nodes \
+   curl http://router:32768/v0/nodes \
      # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
@@ -605,7 +605,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
-| `LLM_ROUTER_PORT` | `8080` | Listen port | `ROUTER_PORT` |
+| `LLM_ROUTER_PORT` | `32768` | Listen port | `ROUTER_PORT` |
 | `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | Database URL | `DATABASE_URL` |
 | `LLM_ROUTER_DATA_DIR` | `~/.llm-router` | Base directory for DB/log defaults | - |
 | `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
@@ -637,9 +637,9 @@ Cloud / external services:
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
 | `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
-| `LLM_NODE_PORT` | `11435` | Node listen port | - |
+| `LLM_NODE_PORT` | `32769` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
@@ -801,7 +801,7 @@ web interface
 
 #### Via Web Dashboard
 
-1. Open the router dashboard: `http://localhost:8080/dashboard`
+1. Open the router dashboard: `http://localhost:32768/dashboard`
 2. Navigate to the "Request History" section
 3. Use filters to narrow down specific requests
 4. Click on any request to view full details including request/response bodies
@@ -987,7 +987,7 @@ Register a node.
   "machine_name": "my-machine",
   "ip_address": "192.168.1.100",
   "runtime_version": "0.1.0",
-  "runtime_port": 11434,
+  "runtime_port": 32768,
   "gpu_available": true,
   "gpu_devices": [
     { "model": "NVIDIA RTX 4090", "count": 2 }
@@ -1001,7 +1001,7 @@ Register a node.
 {
   "node_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
-  "node_api_port": 11435,
+  "node_api_port": 32769,
   "node_token": "nt_xxx"
 }
 ```

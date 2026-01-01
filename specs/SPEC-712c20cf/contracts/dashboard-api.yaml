@@ -8,9 +8,9 @@ info:
   contact:
     name: LLM Router Team
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:32768
     description: Local development server
-  - url: http://router:8080
+  - url: http://router:32768
     description: Production server
 
 paths:
@@ -68,6 +68,13 @@ paths:
                       registered_at: "2025-10-31T10:00:00Z"
                       last_seen: "2025-10-31T12:30:00Z"
                       uptime_seconds: 9000
+                      sync_state: "running"
+                      sync_progress:
+                        model_id: "gpt-oss-20b"
+                        file: "model.gguf"
+                        downloaded_bytes: 1048576
+                        total_bytes: 1073741824
+                      sync_updated_at: "2025-10-31T12:30:05Z"
                     - id: "234e5678-e89b-12d3-a456-426614174001"
                       machine_name: "server-02"
                       ip_address: "192.168.1.101"
@@ -218,6 +225,38 @@ components:
           type: integer
           format: int64
           description: 直近でオンラインになってからの経過時間（秒）。Offlineまたは不明な場合は0。
+        sync_state:
+          type: string
+          enum: [idle, running, success, failed]
+          description: モデル同期状態
+          example: "running"
+        sync_progress:
+          type: object
+          description: モデル同期の進捗情報
+          properties:
+            model_id:
+              type: string
+              description: 対象モデルID
+              example: "gpt-oss-20b"
+            file:
+              type: string
+              description: 対象ファイル名
+              example: "model.gguf"
+            downloaded_bytes:
+              type: integer
+              format: int64
+              description: ダウンロード済みバイト数
+              example: 1048576
+            total_bytes:
+              type: integer
+              format: int64
+              description: 総バイト数
+              example: 1073741824
+        sync_updated_at:
+          type: string
+          format: date-time
+          description: 同期状態の最終更新時刻（ISO 8601形式）
+          example: "2025-10-31T12:30:05Z"
           example: 9000
           minimum: 0
 

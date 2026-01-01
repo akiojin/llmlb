@@ -51,6 +51,10 @@ private:
         EngineHandle engine;
     };
 
+    static std::vector<const EngineEntry*> filterCandidates(const std::vector<EngineEntry>& entries,
+                                                            const ModelDescriptor& descriptor,
+                                                            const std::string& capability);
+
     std::unordered_map<std::string, std::vector<EngineEntry>> engines_;
     std::unordered_map<std::string, std::string> engine_ids_;
 };

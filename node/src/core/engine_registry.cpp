@@ -7,8 +7,7 @@
 
 namespace llm_node {
 
-namespace {
-std::vector<const EngineRegistry::EngineEntry*> filterCandidates(
+std::vector<const EngineRegistry::EngineEntry*> EngineRegistry::filterCandidates(
     const std::vector<EngineRegistry::EngineEntry>& entries,
     const ModelDescriptor& descriptor,
     const std::string& capability) {
@@ -33,7 +32,6 @@ std::vector<const EngineRegistry::EngineEntry*> filterCandidates(
 
     return candidates;
 }
-}  // namespace
 
 bool EngineRegistry::registerEngine(std::unique_ptr<Engine> engine,
                                     const EngineRegistration& registration,

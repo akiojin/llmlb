@@ -88,7 +88,7 @@ public:
     /// 依存関係が注入されているか確認
     bool isInitialized() const { return manager_ != nullptr && model_storage_ != nullptr; }
 
-    /// モデルをロード（ローカルまたは共有パスから解決）
+    /// モデルをロード（ローカルまたは外部/プロキシ解決）
     /// @return ロード結果（成功/失敗）
     ModelLoadResult loadModel(const std::string& model_name, const std::string& capability = "text");
 

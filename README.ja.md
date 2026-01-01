@@ -41,8 +41,8 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 - ロードバランシング: 利用可能なノードへ自動ルーティング
 - ダッシュボード: `/dashboard` でノード、リクエスト履歴、ログ、モデルを管理
 - ノード自己登録: ノードは起動時にルーターへ登録し、ハートビートを送信
-- ノード主導モデル同期: ノードはルーターの `/v0/models` と `/v0/models/blob/:model_name` を参照して
-  必要なモデルを取得（ルーターからの push 配布なし）
+- ノード主導モデル同期: ノードは `/v0/models` + マニフェストを参照し、
+  HFから直接ダウンロードして同期（ルーターからの push 配布なし）
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
 ## ダッシュボード
@@ -211,7 +211,6 @@ cmake --build build --config Release
 | `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
 | `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
-| `LLM_NODE_SHARED_MODELS_DIR` | (未設定) | 共有モデルディレクトリ（任意） |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
@@ -323,9 +322,8 @@ Router (OpenAI-compatible)
 - ルーターからノードへの push 配布は行いません。
 - ノードはモデルをオンデマンドで次の順に解決します。
   - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
-  - 共有ストレージ（`LLM_NODE_SHARED_MODELS_DIR`、コピーせず直接参照）
   - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_NODE_ORIGIN_ALLOWLIST`）
-  - ルーター・プロキシ経由ダウンロード（`GET /v0/models/registry/:model_name/manifest.json` + files）
+  - ルーターのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
 - ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。
@@ -374,7 +372,7 @@ Router (OpenAI-compatible)
     - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
     - safetensors のテキスト生成はネイティブエンジンがある場合のみ対応します
       （gpt-ossはMetal対応済み、DirectMLは進行中）。GGUFのみのモデルは `gguf` を選択してください。
-  - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）を入力します。
+  - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）またはファイルURLを入力します。
   - `format=gguf` の場合:
     - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
   - `format=safetensors` の場合:
@@ -386,12 +384,14 @@ Router (OpenAI-compatible)
       - モデル配下に配置（例: `<model_dir>/gptoss_directml.dll`）するか、
       - `LLM_NODE_GPTOSS_DML_LIB` に絶対パスを指定してください。
       - 本リポジトリの GitHub Releases から取得してください（Apache-2.0）。
+  - ルーターは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
-- ノードはモデルをプッシュ配布されず、オンデマンドでルーターから取得します:
+  - ノードはモデルをプッシュ配布されず、オンデマンドで取得します:
   - `GET /v0/models/registry/:model_name/manifest.json`
-  - `GET /v0/models/registry/:model_name/files/:file_name`
-  - （互換）単一GGUFのみ: `GET /v0/models/blob/:model_name`
+- API:
+  - `POST /v0/models/register` (`repo` と任意の `filename`)
+- `/v1/models` は登録済みモデルを返し、`ready` はノード同期に基づきます。
 
 ## API 仕様
 
@@ -408,7 +408,7 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`, `GET /v0/models/blob/*`） |
+| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`） |
 | `api` | OpenAI 互換推論 API（`/v1/*`） |
 | `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
@@ -441,10 +441,7 @@ Router (OpenAI-compatible)
 - GET `/v0/models`（登録済みモデル一覧、APIキー: `node` または `admin`）
 - POST `/v0/models/register`（admin権限）
 - DELETE `/v0/models/*model_name`（admin権限）
-- POST `/v0/models/discover-gguf`（admin権限）
 - GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node`）
-- GET `/v0/models/registry/:model_name/files/:file_name`（APIキー: `node`）
-- GET `/v0/models/blob/:model_name`（互換: 単一GGUFのみ, APIキー: `node` または `admin`）
 
 #### ダッシュボード/監視
 
@@ -490,8 +487,12 @@ make quality-checks
 
 - gpt-oss（自動）: `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
-- gpt-oss (Linux / CUDA, GGUF): `make poc-gptoss-cuda`
+- gpt-oss (Linux / CUDA, GGUF・実験扱い): `make poc-gptoss-cuda`
   - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
+
+補足:
+- gpt-oss-20b は safetensors（index + shards + config/tokenizer）を正本とします。
+- GPU必須（macOS=Metal / Windows=DirectML）。Linux/CUDAは実験扱いです。
 
 Dashboard を更新する場合:
 

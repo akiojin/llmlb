@@ -342,7 +342,6 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
     if (in_registry && !engine_.isInitialized()) {
         return true;
     }
-
     // Try to resolve/load via ModelResolver (local -> shared -> router API)
     // loadModel() handles the full resolution flow
     auto load_result = engine_.loadModel(model, capability);

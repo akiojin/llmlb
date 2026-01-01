@@ -1,44 +1,34 @@
-# データモデル: SPEC-11106000 Hugging Face GGUFモデル対応登録
+# データモデル: SPEC-11106000 Hugging Face URL 登録（変換なし）
 
 ## エンティティ
 
 ### ModelInfo（拡張）
-- `name`: String — 対応モデルID（例: `hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf`）
-- `source`: Enum { `predefined`, `hf_gguf`, `hf_pending_conversion` }
-- `display_name`: String — UI/CLI表示用（例: `Llama-2-7B Q4_K_M (TheBloke)`）
-- `size_bytes`: u64 — ダウンロードサイズ
-- `required_memory_bytes`: u64? — 推奨メモリ（あれば）
-- `tags`: Vec<String> — 用途・量子化ラベル
-- `download_url`: String — GGUF直接URL（HF raw もしくは内部ストレージ）
+- `name`: String — 対応モデルID（例: `hf/org/repo` または `hf/org/repo/model.safetensors`）
+- `source`: Enum { `predefined`, `hf` }
+- `display_name`: String — UI/CLI表示用（例: `Llama-2-7B (TheBloke)`）
 - `repo`: String — HFリポジトリ名
-- `filename`: String — GGUFファイル名
-- `last_modified`: DateTime? — HF最終更新
-- `status`: Enum { `available`, `registered`, `downloaded` } — カタログ上の状態
-- `notes`: String? — 警告/補足（容量超過など）
+- `filename`: String? — ファイルURL登録時の対象ファイル名（repo登録時はnull）
+- `revision`: String? — HFのrevision/commit（必要時）
+- `artifacts`: Vec<ModelArtifact> — Node向けマニフェスト（ファイル一覧）
+- `size_bytes`: u64? — 合計サイズ（任意）
+- `tags`: Vec<String>? — 用途・量子化ラベル（任意）
+- `last_modified`: DateTime? — HF最終更新（任意）
 
-### AvailableModelView（HFカタログ用）
-- `models`: [ModelInfo-like] — カタログエントリ
-- `source`: String — `"hf"` など
-- `pagination`: { `limit`, `offset`, `total` }?
-- `cached`: bool — キャッシュ使用フラグ
-
-### DownloadTask（既存拡張）
-- `task_id`: UUID
-- `model_name`: String
-- `target`: Enum { `all`, `specific` }
-- `node_ids`: Vec<UUID>
-- `status`: Enum { `pending`, `downloading`, `completed`, `failed` }
-- `progress`: f32 (0–1)
-- `speed_bps`: u64?
-- `error`: String?
+### ModelArtifact（新規）
+- `filename`: String — ファイル名（HF repo内のパス）
+- `format`: Enum { `safetensors`, `gguf`, `metal`, `onnx`, `other` }
+- `size_bytes`: u64? — ファイルサイズ（任意）
+- `sha256`: String? — 署名/検証用（任意）
+- `notes`: String? — 補足（例: `requires_metal`, `quant=q4_k_m`）
 
 ## 関係
-- ModelInfo は router の対応モデルリストに格納され、/v1/models で exposed。
-- AvailableModelView は /v0/models/available で HF カタログを提供。
-- DownloadTask はモデル配布・ダウンロード進行を表し、ノードのタスク更新と紐づく。
+- ModelInfo は router の対応モデルリストに格納され、/v1/models で外部公開される。
+- Node は `/v0/models/registry/:model_name/manifest.json` から ModelArtifact を取得し、
+  自身のruntime/GPU要件に合うファイルをHFから直接ダウンロードする。
 
 ## バリデーション
 - `name` は一意。`hf/` プレフィックス必須（hf系）。
-- `download_url` は https であること。
-- `size_bytes` が 0 または未設定の場合、警告を返す。
-- ノードダウンロード時、`required_memory_bytes` がノード GPU メモリを超える場合は警告を付与。
+- `repo` は必須。
+- `filename` が指定された場合、`artifacts` 内の一致ファイルが存在すること。
+- `artifacts` は対応形式（safetensors/gguf/metal等）のいずれかを含むこと。
+- サイズやハッシュが未取得の場合は null を許可（Node側で検証する）。

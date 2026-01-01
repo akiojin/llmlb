@@ -18,21 +18,20 @@
 ## スコープ
 - Node側のエンジン抽象化（EngineRegistry/Engineの責務）
 - 実行環境の前提（GPU必須）
-- 登録時に確定した形式とHFメタデータに基づくエンジン選択
+- マニフェストとローカル実体に基づくエンジン選択
 
 ## 非ゴール
-- モデル登録・形式選択・保存（モデル管理領域）
+- モデル登録・保存（モデル管理領域）
 - 自動変換/量子化生成
 - Nemotron推論エンジンの詳細設計（TBD）
 
 ## 原則
 - `metadata.json` のような独自メタデータには依存しない
-- エンジン選択は「登録時に確定したアーティファクト」を正とする
-- safetensors と GGUF が共存する場合は **登録時に形式選択が必須**
-  （実行時の自動判別やフォールバックは禁止）
+- エンジン選択は「マニフェストとローカル実体」を正とする
+- 形式選択はRouterで行わず、Nodeがruntime/GPU要件に応じて判断する
 
 ## 決定事項（共有用サマリ）
-- **責務分離**: 形式選択は登録時に確定し、実行時はその結果に従う（実行時の自動判別/フォールバック禁止）。
+- **責務分離**: 形式選択はNode側で行い、ルーターはマニフェスト提供に徹する。
 - **Node前提**: Node は Python 依存を導入しない。
 - **GPU前提**: GPU 非搭載ノードは対象外（登録不可）。
 - **対応OS/GPU**:
@@ -40,9 +39,8 @@
   - Windows: DirectML（D3D12）を主経路とする
   - Linux: 当面は非対応（CUDAは実験扱い）
   - WSL2: 対象外（Windowsはネイティブのみ）
-- **形式選択必須**: safetensors と GGUF が両方ある場合は登録時に format を指定する。
-  safetensors は推奨だが、自動選択は行わない。
-- **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、登録時の形式選択を置き換えない。
+- **形式選択**: safetensors/GGUF/Metal 等の選択は Node が実行環境に応じて行う。
+- **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、Nodeが選択したアーティファクトを置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
 - **内蔵エンジンの要件は単一化**: 詳細は「内蔵エンジン要件（単一要件）」に統合済み。
 
@@ -72,11 +70,11 @@
 ```
 ┌──────────────┐               ┌────────────────────────────────────┐
 │  Router      │               │                Node                │
-│  - 登録/形式 │──manifest────▶│  ModelStorage / Resolver            │
+│  - 登録/メタ │──manifest────▶│  ModelStorage / Resolver            │
 │  - HF検証    │               │  - config/tokenizer検証             │
-└──────────────┘               │  - format/runtime確定               │
+└──────────────┘               │  - runtime確定                      │
                                 │  - 必要アーティファクト選択         │
-                                │  - 共有パス or 外部ソース/プロキシ   │
+                                │  - 外部ソース（HF等）から直接取得   │
                                 │             │
                                 │             ▼
                                 │     EngineRegistry
@@ -96,20 +94,21 @@
 ### 主要コンポーネント
 
 - **Router**
-  - 登録時に **形式（safetensors/gguf）を確定**し、HF metadata を検証する。
-  - 形式選択の結果を **manifest** として Node に配布する（ファイル一覧/由来）。
+  - 登録時に **メタデータとマニフェスト（ファイル一覧）** を保存する。
+  - **形式はRouterで確定しない**。Nodeがruntime/GPU要件に応じて選択する。
+  - ルーターはモデルバイナリを保持しない。
 - **Node / ModelStorage + Resolver**
   - 形式・ファイルの整合性（`config.json` / `tokenizer.json` / shard / index）を検証。
-  - GPUバックエンドに応じて **必要アーティファクトを選択**し、共有パス or 外部ソース/プロキシから取得する。
+  - GPUバックエンドに応じて **必要アーティファクトを選択**し、外部ソース（HF等）から直接取得する。
   - `ModelDescriptor` を生成（format / primary_path / runtime / capabilities）。
 - **EngineRegistry**
   - `RuntimeType` に基づき **外側の推論エンジンを確定**する。
-  - Node は登録時の形式と metadata を正とし、**実行時の自動判別や形式切替は行わない**。
+  - Node はマニフェストとローカル実体を正とし、**実行時の自動変換は行わない**。
 - **Inference Engine（外側）**
   - 共通の推論インターフェース。内部で runtime に応じてプラグインを振り分ける。
   - GGUF → `llama.cpp`、TTS → `ONNX Runtime`、safetensors → 独自エンジン群（すべてプラグイン）。
   - 公式最適化アーティファクトは **実行キャッシュ**として利用可能だが、
-    登録時の形式選択は上書きしない。
+    Nodeが選択したアーティファクトは上書きしない。
 
 ### プラグイン設計指針（Node）
 
@@ -127,20 +126,20 @@
 
 | RuntimeType | 主用途 | 主要アーティファクト | 備考 |
 |---|---|---|---|
-| `LlamaCpp` | LLM / Embedding | GGUF | 登録時に `format=gguf` を選択した場合 |
+| `LlamaCpp` | LLM / Embedding | GGUF | NodeがGGUFアーティファクトを選択した場合 |
 | `GptOssCpp` | gpt-oss | safetensors + 公式最適化 | macOSはMetal最適化、WindowsはDirectMLを主経路 |
 | `NemotronCpp` | Nemotron | safetensors | **TBD**（Windows DirectML想定、Linux CUDAは実験扱い） |
-| `WhisperCpp` | ASR | GGML/GGUF（当面） | safetensors正本 → 変換で運用、将来は独自エンジン |
+| `WhisperCpp` | ASR | GGML/GGUF（当面） | 変換は行わない。safetensors対応は将来検討 |
 | `StableDiffusion` | 画像生成 | safetensors（直接） | stable-diffusion.cpp を当面利用 |
 | `OnnxRuntime` | TTS | ONNX | Python依存なしで運用する |
 
-### 形式選択とエンジン選択の原則
+### アーティファクト選択とエンジン選択の原則
 
-1. **Router が登録時に形式を確定**（`format=safetensors` / `format=gguf`）。
-2. **safetensors/GGUF が共存する場合、format は必須指定**（自動判別禁止）。
-3. **Node は登録時の形式を尊重**し、runtime を metadata から決定する。
-4. **safetensors は推奨**だが、format に従って実行する（実行時フォールバック禁止）。
-5. **最適化アーティファクトは “実行キャッシュ”** であり、形式選択は上書きしない。
+1. **Router は形式を確定せず**、マニフェストのみを提供する。
+2. **Node がruntime/GPU要件に応じてアーティファクトを選択**する。
+3. **変換は行わない**（safetensors/GGUF/Metalはそのまま扱う）。
+4. **最適化アーティファクトは “実行キャッシュ”** として利用可能だが、
+   ローカル実体に存在しない場合はHFから直接取得する。
 
 ## 性能/メモリ要件（測定と制約）
 

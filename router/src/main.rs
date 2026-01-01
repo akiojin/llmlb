@@ -18,7 +18,7 @@ struct ServerConfig {
 impl ServerConfig {
     fn from_env() -> Self {
         let host = get_env_with_fallback_or("LLM_ROUTER_HOST", "ROUTER_HOST", "0.0.0.0");
-        let port = get_env_with_fallback_parse("LLM_ROUTER_PORT", "ROUTER_PORT", 8080);
+        let port = get_env_with_fallback_parse("LLM_ROUTER_PORT", "ROUTER_PORT", 51280);
         Self { host, port }
     }
 
@@ -156,12 +156,6 @@ async fn run_server(config: ServerConfig) {
     // Load registered models (HF etc.)
     llm_router::api::models::load_registered_models_from_storage(db_pool.clone()).await;
 
-    // venv環境をセットアップ（非GGUF変換に必要）
-    info!("Setting up Python venv for model conversion...");
-    if let Err(e) = llm_router::convert::setup_venv() {
-        tracing::warn!("venv setup failed (conversion may not work): {}", e);
-    }
-
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");
 
@@ -186,21 +180,6 @@ async fn run_server(config: ServerConfig) {
         "auto",
     );
     info!("Load balancer mode: {}", load_balancer_mode);
-
-    let convert_concurrency: usize =
-        get_env_with_fallback_parse("LLM_ROUTER_CONVERT_CONCURRENCY", "CONVERT_CONCURRENCY", 2);
-    let convert_manager =
-        llm_router::convert::ConvertTaskManager::new(convert_concurrency, db_pool.clone());
-    // 起動時に変換用スクリプトと依存をチェック（不足ならエラー終了）
-    llm_router::convert::verify_convert_ready()
-        .expect("HF変換スクリプトまたはPython依存が不足しています");
-    // 再起動後に pending_conversion のモデルを自動で再キュー
-    let pending_models = llm_router::api::models::list_registered_models();
-    let convert_manager_for_resume = convert_manager.clone();
-    tokio::spawn(async move {
-        llm_router::convert::resume_pending_converts(&convert_manager_for_resume, pending_models)
-            .await;
-    });
 
     // リクエスト履歴ストレージを初期化（SQLite使用）
     let request_history = std::sync::Arc::new(
@@ -230,9 +209,6 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
-    // SPEC-dcaeaec4 FR-7: プッシュ通知用コンテキストを初期化
-    llm_router::convert::set_notification_context(registry.clone(), http_client.clone());
-
     // 定期的なモデル整合性チェックを開始（5分間隔）
     // NOTE: db_poolはAppStateにmoveされるため、先にcloneしてから渡す
     llm_router::api::models::start_periodic_sync(registry.clone(), db_pool.clone());
@@ -241,7 +217,6 @@ async fn run_server(config: ServerConfig) {
         registry: registry.clone(),
         load_manager,
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client,

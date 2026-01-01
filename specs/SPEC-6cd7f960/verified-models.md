@@ -115,9 +115,12 @@ huggingface-cli download bartowski/MODEL-GGUF MODEL-Q4_K_M.gguf --local-dir ./mo
 # 1. safetensorsファイルをダウンロード
 huggingface-cli download openai/gpt-oss-120b --local-dir ./models/gpt-oss
 
-# 2. 内蔵エンジンでロード確認
-# llm-router経由でロード
-curl -X POST http://localhost:3000/v0/models/pull -d '{"model_id": "gpt-oss"}'
+# 2. ルーターに登録（メタデータのみ）
+curl -X POST http://localhost:3000/v0/models/register \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "openai/gpt-oss-120b"}'
+
+# Node が同期してダウンロードするまで待機
 
 # 3. 推論テスト
 curl http://localhost:3000/v1/chat/completions \

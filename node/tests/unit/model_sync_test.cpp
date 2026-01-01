@@ -13,11 +13,29 @@ namespace fs = std::filesystem;
 
 class ModelServer {
 public:
+    void setServeV0(bool enable) { serve_v0_ = enable; }
+    void setServeV1(bool enable) { serve_v1_ = enable; }
+    void setV0Response(std::string body) { v0_response_body = std::move(body); }
+    void setV1Response(std::string body) { v1_response_body = std::move(body); }
+
     void start(int port) {
-        // /v1/models - ModelSync が使用するエンドポイント（OpenAI互換形式）
-        server_.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
+        // /v0/models - 登録済みモデル一覧
+        server_.Get("/v0/models", [this](const httplib::Request&, httplib::Response& res) {
+            if (!serve_v0_) {
+                res.status = 404;
+                return;
+            }
             res.status = 200;
-            res.set_content(response_body, "application/json");
+            res.set_content(v0_response_body, "application/json");
+        });
+        // /v1/models - fallback (OpenAI互換形式)
+        server_.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
+            if (!serve_v1_) {
+                res.status = 404;
+                return;
+            }
+            res.status = 200;
+            res.set_content(v1_response_body, "application/json");
         });
         thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
         while (!server_.is_running()) {
@@ -34,8 +52,12 @@ public:
 
     httplib::Server server_;
     std::thread thread_;
+    // /v0/models: array of registered models (uses "name" field)
+    std::string v0_response_body{R"([{"name":"gpt-oss-7b"},{"name":"gpt-oss-20b"}])"};
     // /v1/models: OpenAI互換形式 {"data": [...]} with "id" field
-    std::string response_body{R"({"data":[{"id":"gpt-oss-7b"},{"id":"gpt-oss-20b"}]})"};
+    std::string v1_response_body{R"({"data":[{"id":"gpt-oss-7b"},{"id":"gpt-oss-20b"}]})"};
+    bool serve_v0_{true};
+    bool serve_v1_{false};
 };
 
 class TempDirGuard {
@@ -89,7 +111,7 @@ TEST(ModelSyncTest, EmptyWhenRouterUnavailable) {
 
 TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     ModelServer server;
-    server.response_body = R"({"data":[{"id":"m1"},{"id":"m2"}]})";
+    server.setV0Response(R"([{"name":"m1"},{"name":"m2"}])");
     server.start(18086);
 
     TempDirGuard guard;
@@ -117,49 +139,6 @@ TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     server.stop();
 }
 
-// Per SPEC-dcaeaec4 FR-3: When path is directly accessible, no download needed
-// (and no copy - InferenceEngine uses the path directly)
-TEST(ModelSyncTest, UsesSharedPathDirectlyWhenAvailable) {
-    // Prepare shared model file
-    TempDirGuard shared_guard;
-    fs::create_directories(shared_guard.path);
-    auto shared_file = shared_guard.path / "model.gguf";
-    {
-        std::ofstream ofs(shared_file);
-        ofs << "abc";
-        ofs.flush();
-    }
-
-    // Verify source file exists
-    ASSERT_TRUE(fs::exists(shared_file)) << "Source file not created: " << shared_file;
-
-    // HTTP server returning /v1/models with path pointing to shared_file
-    const int port = 18097; // Unique port to avoid conflicts
-    ModelServer server;
-    server.response_body = std::string(R"({"data":[{"id":"gpt-oss-7b","path":")") + shared_file.string() + R"("}]})";
-    server.start(port);
-
-    // Give server time to fully initialize
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-    TempDirGuard local_guard;
-    ModelSync sync("http://127.0.0.1:" + std::to_string(port), local_guard.path.string());
-
-    auto result = sync.sync();
-
-    server.stop();
-
-    // Should not queue download because shared path is accessible
-    EXPECT_TRUE(result.to_download.empty()) << "to_download should be empty but has " << result.to_download.size() << " items";
-
-    // Per FR-3: No copy to local - InferenceEngine will use getRemotePath() directly
-    auto target = local_guard.path / "gpt-oss-7b" / "model.gguf";
-    EXPECT_FALSE(fs::exists(target)) << "Target file should NOT exist (no copy per spec)";
-
-    // Verify getRemotePath returns the accessible path
-    EXPECT_EQ(sync.getRemotePath("gpt-oss-7b"), shared_file.string());
-}
-
 TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     const int port = 18130;
     const std::string base = "http://127.0.0.1:" + std::to_string(port);
@@ -168,18 +147,21 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     std::atomic<int> gguf_hits{0};
 
     server.Get("/v0/models/registry/gpt-oss-artifacts/manifest.json",
-               [](const httplib::Request&, httplib::Response& res) {
+               [base](const httplib::Request&, httplib::Response& res) {
                    res.status = 200;
-                   res.set_content(R"({"files":[{"name":"model.gguf"},{"name":"model.metal.bin"}]})",
-                                   "application/json");
+                   res.set_content(
+                       std::string("{\"files\":[{\"name\":\"model.gguf\",\"url\":\"") +
+                           base + "/files/model.gguf\"}," +
+                           "{\"name\":\"model.metal.bin\",\"url\":\"" + base + "/files/model.metal.bin\"}]}",
+                       "application/json");
                });
-    server.Get("/v0/models/registry/gpt-oss-artifacts/files/model.gguf",
+    server.Get("/files/model.gguf",
                [&gguf_hits](const httplib::Request&, httplib::Response& res) {
         gguf_hits.fetch_add(1);
         res.status = 200;
         res.set_content("data", "application/octet-stream");
     });
-    server.Get("/v0/models/registry/gpt-oss-artifacts/files/model.metal.bin",
+    server.Get("/files/model.metal.bin",
                [&metal_hits](const httplib::Request&, httplib::Response& res) {
         metal_hits.fetch_add(1);
         res.status = 200;

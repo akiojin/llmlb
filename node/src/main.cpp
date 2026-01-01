@@ -177,14 +177,13 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         auto model_resolver = std::make_shared<llm_node::ModelResolver>(
             cfg.models_dir,
-            cfg.shared_models_dir,
             router_url,
             cfg.router_api_key);
         if (!cfg.origin_allowlist.empty()) {
             model_resolver->setOriginAllowlist(cfg.origin_allowlist);
         }
 
-        // Initialize inference engine with dependencies (ModelResolver handles local/shared/router resolution)
+        // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
         if (!cfg.engine_plugins_dir.empty() && std::filesystem::exists(cfg.engine_plugins_dir)) {
             std::string plugin_error;

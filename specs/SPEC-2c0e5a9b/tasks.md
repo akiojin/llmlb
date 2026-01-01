@@ -22,8 +22,8 @@
 ## Core
 - [x] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
 - [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
-- [ ] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
-- [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
+- [x] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
+- [x] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
 - [x] Node: DirectML 最適化アーティファクト（model.directml.bin / model.dml.bin）をロード対象として扱う。

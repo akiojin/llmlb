@@ -373,6 +373,7 @@ interface OpenAIModelsResponse {
 
 // 後方互換用: RegisteredModelView は OpenAIModel にマッピング
 export interface RegisteredModelView {
+  owned_by?: string // "router" | "openai" | "google" | "anthropic"
   name: string
   source?: string
   description?: string
@@ -399,6 +400,7 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
       : undefined
   return {
     name: model.id,
+    owned_by: model.owned_by,
     lifecycle_status: model.lifecycle_status,
     download_progress: model.download_progress ?? undefined,
     ready: model.ready,

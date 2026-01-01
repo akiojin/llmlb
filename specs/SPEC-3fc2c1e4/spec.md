@@ -121,6 +121,7 @@
   - GPU 要件（Metal / DirectML / CUDA(実験)）
 - **互換性**: C ABI を固定し、ABI 互換を破る変更は abi_version を更新する
 - **解決順序**: EngineRegistry が RuntimeType と format をキーにプラグインを解決する
+  - ベンチマーク未設定の場合、**プラグイン（非builtin）を優先**し、builtinはフォールバックとする
 
 ### RuntimeType とエンジンの対応（現状）
 

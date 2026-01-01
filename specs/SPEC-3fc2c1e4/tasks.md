@@ -20,6 +20,7 @@
 - [x] Tests: EngineRegistry の capability フィルタを検証する
 - [x] Node: ModelDescriptor に capabilities を付与し、runtime→capabilities を埋める
 - [x] Tests: EngineRegistry のベンチマーク選択とフォールバックを検証する
+- [x] Node: ベンチマーク未設定時はプラグイン（非builtin）を優先する
 - [ ] DirectML推論パスの実装（演算カーネル、KVキャッシュ、サンプリング）
 - [ ] 実GPU環境の統合テスト（小型モデルでE2E）
 - [ ] 性能/メモリ要件の測定と制約の明文化

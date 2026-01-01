@@ -85,6 +85,10 @@ static void create_gptoss_safetensors_model_with_shards(const fs::path& models_d
     })";
 }
 
+static void write_manifest_with_format(const fs::path& model_dir, const std::string& format) {
+    std::ofstream(model_dir / "manifest.json") << std::string(R"({"format":")") + format + R"(","files":[]})";
+}
+
 // FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
@@ -175,6 +179,50 @@ TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
     EXPECT_EQ(desc->runtime, "nemotron_cpp");
     EXPECT_EQ(desc->format, "safetensors");
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
+}
+
+TEST(ModelStorageTest, ManifestFormatPrefersSafetensorsOverGguf) {
+    TempModelDir tmp;
+    const std::string model_name = "openai-gpt-oss-20b";
+    create_model(tmp.base, model_name);
+    create_gptoss_safetensors_model_with_index(tmp.base, model_name);
+    write_manifest_with_format(tmp.base / model_name, "safetensors");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor(model_name);
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->format, "safetensors");
+    EXPECT_EQ(desc->runtime, "gptoss_cpp");
+
+    auto list = storage.listAvailable();
+    auto it = std::find_if(list.begin(), list.end(), [&](const ModelInfo& info) {
+        return info.name == model_name;
+    });
+    ASSERT_TRUE(it != list.end());
+    EXPECT_EQ(it->format, "safetensors");
+}
+
+TEST(ModelStorageTest, ManifestFormatPrefersGgufOverSafetensors) {
+    TempModelDir tmp;
+    const std::string model_name = "openai-gpt-oss-7b";
+    create_model(tmp.base, model_name);
+    create_gptoss_safetensors_model_with_index(tmp.base, model_name);
+    write_manifest_with_format(tmp.base / model_name, "gguf");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor(model_name);
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->format, "gguf");
+    EXPECT_EQ(desc->runtime, "llama_cpp");
+
+    auto list = storage.listAvailable();
+    auto it = std::find_if(list.begin(), list.end(), [&](const ModelInfo& info) {
+        return info.name == model_name;
+    });
+    ASSERT_TRUE(it != list.end());
+    EXPECT_EQ(it->format, "gguf");
 }
 
 TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGguf) {

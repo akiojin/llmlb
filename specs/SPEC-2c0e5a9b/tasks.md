@@ -25,7 +25,7 @@
 - [ ] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
 - [ ] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
-- [ ] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
+- [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導、supported_models.json の artifacts 指定）。
 - [ ] Node: DirectML 向け gpt-oss プラグインの最小スケルトンを追加。
 
 ## Unit Tests (GREEN)
@@ -42,3 +42,7 @@
 - [x] Router: 公式 Metal アーティファクト `metal/model.bin` を `model.metal.bin` として任意取得（allowlist）
 - [x] Router: registry manifest に `runtimes` ヒントを付与（Node が未対応モデルの取得をスキップ可能）
 - [x] Node: registry manifest の `runtimes` を見て未対応モデルのダウンロードをスキップ
+
+## ブロッカー
+- gpt-oss safetensors 推論（Metal/DirectML）は GPU 実行環境と USE_GPTOSS ビルドが必要
+- DirectML 実装/検証には Windows + GPU + DirectML 実行環境が必要

@@ -1,8 +1,28 @@
-# タスク: SPEC-6cd7f960（改定中）
+# タスク: SPEC-6cd7f960 対応モデルリスト型管理
 
-旧設計（ModelHub/Pull前提）のタスクは無効。新方針に合わせて再計画する。
+## 方針
+- 対応モデルは静的リストで管理する
+- ルーターはバイナリを保持せず、Node が HF から直接取得する
+- UI は Model Hub（対応モデル）と Local（登録済み）の2タブ
 
-## 方針更新（2025-12-31）
-- `/v0/models/pull` は廃止
-- URL登録は維持（`/v0/models/register`）
-- Nodeがマニフェストに従ってHFから直接取得
+## Tasks
+
+### Router
+- [x] 対応モデルリストを JSON で定義する
+- [x] `/v0/models/hub` で対応モデル + 状態を返す（available/registered/ready）
+- [x] HF動的情報（downloads/likes）をキャッシュ付きで付与する
+- [x] `/v0/models/register` を維持し、pull/ダウンロード系APIを廃止する
+
+### Node
+- [x] マニフェスト参照 + HF 直取得の動線を維持する
+
+### Dashboard
+- [x] Model Hub タブに Register 導線を提供する
+- [x] Local タブで登録済みモデルの状態を表示する
+
+### Tests
+- [x] Model Hub API（/v0/models/hub）の一覧と状態を検証する
+- [x] Dashboard の Model Hub 表示を検証する
+
+### Docs
+- [x] 仕様/計画/タスクの再整理（本SPEC）

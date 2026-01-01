@@ -16,3 +16,6 @@
 [submodule "node/third_party/openai-gpt-oss"]
 	path = node/third_party/openai-gpt-oss
 	url = https://github.com/openai/gpt-oss.git
+[submodule "vendor/pest_generator"]
+	path = vendor/pest_generator
+	url = https://github.com/pest-parser/pest.git

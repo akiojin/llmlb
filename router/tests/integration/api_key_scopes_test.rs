@@ -23,7 +23,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
 
@@ -31,7 +30,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),

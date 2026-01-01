@@ -179,9 +179,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
             cfg.router_api_key = j["router_api_key"].get<std::string>();
         }
         if (j.contains("models_dir") && j["models_dir"].is_string()) cfg.models_dir = j["models_dir"].get<std::string>();
-        if (j.contains("shared_models_dir") && j["shared_models_dir"].is_string()) {
-            cfg.shared_models_dir = j["shared_models_dir"].get<std::string>();
-        }
         if (j.contains("node_port") && j["node_port"].is_number()) cfg.node_port = j["node_port"].get<int>();
         if (j.contains("heartbeat_interval_sec") && j["heartbeat_interval_sec"].is_number()) {
             cfg.heartbeat_interval_sec = j["heartbeat_interval_sec"].get<int>();
@@ -241,11 +238,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     if (auto v = getEnvWithFallback("LLM_NODE_MODELS_DIR", "LLM_MODELS_DIR")) {
         cfg.models_dir = *v;
         log << "env:MODELS_DIR=" << *v << " ";
-        used_env = true;
-    }
-    if (auto v = getEnvWithFallback("LLM_NODE_SHARED_MODELS_DIR", "LLM_SHARED_MODELS_DIR")) {
-        cfg.shared_models_dir = *v;
-        log << "env:SHARED_MODELS_DIR=" << *v << " ";
         used_env = true;
     }
     if (const char* v = std::getenv("LLM_NODE_ENGINE_PLUGINS_DIR")) {

@@ -355,29 +355,14 @@ export interface OpenAIModel {
   lifecycle_status: LifecycleStatus
   download_progress?: DownloadProgress | null
   ready: boolean
-  path?: string
-  download_url?: string
+  repo?: string | null
+  filename?: string | null
+  size_bytes?: number
+  required_memory_bytes?: number
+  source?: string
+  tags?: string[]
+  description?: string
   chat_template?: string
-}
-
-// /v0/models/discover-gguf response types
-export interface GgufFileInfo {
-  filename: string
-  size_bytes: number
-  quantization?: string | null
-}
-
-export interface GgufDiscoveryResult {
-  repo: string
-  provider: string
-  trusted: boolean
-  files: GgufFileInfo[]
-}
-
-export interface DiscoverGgufResponse {
-  base_model: string
-  gguf_alternatives: GgufDiscoveryResult[]
-  cached: boolean
 }
 
 // /v1/models レスポンス
@@ -395,27 +380,37 @@ export interface RegisteredModelView {
   lifecycle_status: LifecycleStatus
   download_progress?: DownloadProgress
   ready: boolean
-  path?: string
-  download_url?: string
   repo?: string
   filename?: string
   size_gb?: number
   required_memory_gb?: number
   tags: string[]
   capabilities?: ModelCapabilities
+  chat_template?: string
 }
 
 // OpenAIModel を RegisteredModelView に変換
 function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
+  const sizeGb =
+    typeof model.size_bytes === 'number' ? model.size_bytes / (1024 * 1024 * 1024) : undefined
+  const requiredGb =
+    typeof model.required_memory_bytes === 'number'
+      ? model.required_memory_bytes / (1024 * 1024 * 1024)
+      : undefined
   return {
     name: model.id,
     lifecycle_status: model.lifecycle_status,
     download_progress: model.download_progress ?? undefined,
     ready: model.ready,
-    path: model.path,
-    download_url: model.download_url,
+    source: model.source,
+    description: model.description,
+    repo: model.repo ?? undefined,
+    filename: model.filename ?? undefined,
+    size_gb: sizeGb,
+    required_memory_gb: requiredGb,
     capabilities: model.capabilities,
-    tags: [],
+    tags: model.tags ?? [],
+    chat_template: model.chat_template,
   }
 }
 
@@ -455,16 +450,6 @@ export interface ModelWithStatus extends SupportedModel {
   hf_info?: HfInfo
 }
 
-// SPEC-6cd7f960: Pull リクエスト/レスポンス
-export interface PullModelRequest {
-  model_id: string
-}
-
-export interface PullModelResponse {
-  model_id: string
-  status: string
-}
-
 export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
     // /v1/models - OpenAI互換モデル一覧（lifecycle_status含む）
@@ -490,25 +475,13 @@ export const modelsApi = {
 
   register: (data: {
     repo: string
-    format?: 'safetensors' | 'gguf'
     filename?: string
-    gguf_policy?: 'quality' | 'memory' | 'speed'
+    display_name?: string
+    chat_template?: string
   }) =>
     fetchWithAuth<unknown>('/v0/models/register', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
-
-  discoverGguf: (model: string) =>
-    fetchWithAuth<DiscoverGgufResponse>('/v0/models/discover-gguf', {
-      method: 'POST',
-      body: JSON.stringify({ model }),
-    }),
-
-  pull: (modelId: string) =>
-    fetchWithAuth<PullModelResponse>('/v0/models/pull', {
-      method: 'POST',
-      body: JSON.stringify({ model_id: modelId }),
     }),
 
   delete: (modelName: string) =>
@@ -516,7 +489,6 @@ export const modelsApi = {
       method: 'DELETE',
     }),
 
-  // NOTE: convert, getConvertTasks, getConvertTask, deleteConvertTask は廃止
   // ダウンロード状態は getRegistered の lifecycle_status で確認
 }
 

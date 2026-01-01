@@ -24,7 +24,7 @@ const GUIDE_CATEGORIES = [
   {
     id: "model-management",
     name: "llm-router-model-api",
-    description: "Model management endpoints: /v0/models/* (register, discover, delete, blob)",
+    description: "Model management endpoints: /v0/models/* (register, delete, manifest)",
   },
   {
     id: "dashboard",
@@ -87,7 +87,7 @@ ${routerUrl}
 - /v1/* (scope: \`api\`)
 - /v0/nodes (scope: \`node\`)
 - /v0/health (scope: \`node\`)
-- /v0/models/blob/* (scope: \`node\`)
+- /v0/models/registry/:model_name/manifest.json (scope: \`node\`)
 - /v0/* admin endpoints (scope: \`admin\`)
 
 ### 2. JWT Authentication (Management APIs)
@@ -123,7 +123,7 @@ For \`/v0/health\`, include **both** \`X-Node-Token\` and \`Authorization: Beare
 |----------|-----------|-------------|
 | OpenAI-Compatible | /v1/* | Chat, completions, embeddings, models |
 | Node Management | /v0/nodes | Register/manage inference nodes |
-| Model Management | /v0/models/* | Register/delete/discover models, blob download |
+| Model Management | /v0/models/* | Register/delete models, manifest |
 | Dashboard | /v0/dashboard/* | Stats, metrics, overview |
 | Authentication | /v0/auth/* | Login, logout, user info |
 
@@ -301,8 +301,8 @@ curl -X POST ${routerUrl}/v0/models/register \
   }'
 \`\`\`
 
-If \`filename\` is omitted, the router tries to find a GGUF file in the repo. If none exists, it will queue a conversion task.
-Track progress via \`GET ${routerUrl}/v1/models\` (lifecycle_status fields).
+If \`filename\` is omitted, the router stores the manifest for the repo and nodes choose compatible artifacts.
+The router does **not** download binaries or run conversions.
 
 ## Delete Model
 
@@ -313,25 +313,13 @@ curl -X DELETE ${routerUrl}/v0/models/llama-2-7b \
   -H "Authorization: Bearer ADMIN_API_KEY"
 \`\`\`
 
-## Discover GGUF Files
+## Model Manifest
 
-**Endpoint**: POST ${routerUrl}/v0/models/discover-gguf
-
-\`\`\`bash
-curl -X POST ${routerUrl}/v0/models/discover-gguf \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ADMIN_API_KEY" \
-  -d '{"model": "openai/gpt-oss-20b"}'
-\`\`\`
-
-## Model Blob Download
-
-**Endpoint**: GET ${routerUrl}/v0/models/blob/:model_name
+**Endpoint**: GET ${routerUrl}/v0/models/registry/:model_name/manifest.json
 
 \`\`\`bash
-curl -L ${routerUrl}/v0/models/blob/gpt-oss-20b \
-  -H "Authorization: Bearer NODE_API_KEY" \
-  -o model.gguf
+curl ${routerUrl}/v0/models/registry/gpt-oss-20b/manifest.json \
+  -H "Authorization: Bearer NODE_API_KEY"
 \`\`\`
 
 ## Model ID Format

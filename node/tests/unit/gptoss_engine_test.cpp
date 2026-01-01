@@ -162,3 +162,54 @@ TEST(GptOssEngineTest, GeneratesTextWhenGpuArtifactsPresent) {
     EXPECT_FALSE(output.empty());
 #endif
 }
+
+TEST(GptOssEngineTest, DirectmlRuntimeMissingReportsError) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "USE_GPTOSS not enabled";
+#else
+    TempDir tmp;
+    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
+    fs::create_directories(model_dir);
+    write_text(model_dir / "config.json", "{}");
+    write_text(model_dir / "tokenizer.json", "{}");
+    write_text(model_dir / "model.safetensors", "");
+    write_text(model_dir / "model.directml.bin", "cache");
+
+    ModelDescriptor desc;
+    desc.name = "openai/gpt-oss-20b";
+    desc.runtime = "gptoss_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors").string();
+
+    struct EnvGuard {
+        const char* key;
+        std::string prev;
+        bool had_prev{false};
+        explicit EnvGuard(const char* k, const std::string& value) : key(k) {
+            if (const char* v = std::getenv(key)) {
+                prev = v;
+                had_prev = true;
+            }
+            _putenv_s(key, value.c_str());
+        }
+        ~EnvGuard() {
+            if (had_prev) {
+                _putenv_s(key, prev.c_str());
+            } else {
+                _putenv_s(key, "");
+            }
+        }
+    };
+
+    auto missing_path = (tmp.path / "missing-gptoss-directml.dll").string();
+    EnvGuard guard("LLM_NODE_GPTOSS_DML_LIB", missing_path);
+
+    GptOssEngine engine;
+    auto res = engine.loadModel(desc);
+    EXPECT_FALSE(res.success);
+    EXPECT_NE(res.error_message.find("DirectML runtime"), std::string::npos);
+#endif
+}

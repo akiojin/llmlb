@@ -753,6 +753,13 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         return result;
     }
 
+    if (!capability.empty() && !desc->capabilities.empty()) {
+        if (std::find(desc->capabilities.begin(), desc->capabilities.end(), capability) == desc->capabilities.end()) {
+            result.error_message = "Model does not support capability: " + capability;
+            return result;
+        }
+    }
+
     Engine* engine = engines_ ? engines_->resolve(*desc, capability) : nullptr;
     if (!engine) {
         result.error_message = "No engine registered for runtime: " + desc->runtime;

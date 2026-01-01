@@ -338,13 +338,20 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
         return false;
     }
     // Check local registry first
-    if (registry_.hasModel(model)) {
+    const bool in_registry = registry_.hasModel(model);
+    if (in_registry && !engine_.isInitialized()) {
         return true;
     }
+
     // Try to resolve/load via ModelResolver (local -> shared -> router API)
     // loadModel() handles the full resolution flow
     auto load_result = engine_.loadModel(model, capability);
     if (!load_result.success) {
+        const std::string prefix = "Model does not support capability:";
+        if (load_result.error_message.rfind(prefix, 0) == 0) {
+            respondError(res, 400, "invalid_request", load_result.error_message);
+            return false;
+        }
         respondError(res, 404, "model_not_found",
             load_result.error_message.empty() ? "model not found" : load_result.error_message);
         return false;

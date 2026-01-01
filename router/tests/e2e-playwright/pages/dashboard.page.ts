@@ -166,11 +166,11 @@ export class DashboardPage {
     await this.page.waitForTimeout(300);
   }
 
-  async pullModel(modelId: string) {
-    // Find the model card and click Pull button
+  async registerModel(modelId: string) {
+    // Find the model card and click Register button
     const modelCard = this.page.locator(`[data-model-id="${modelId}"]`);
-    const pullButton = modelCard.locator('button:has-text("Pull")');
-    await pullButton.click();
+    const registerButton = modelCard.locator('button:has-text("Register")');
+    await registerButton.click();
     await this.page.waitForTimeout(500);
   }
 

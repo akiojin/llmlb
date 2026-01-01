@@ -168,7 +168,7 @@ API利用者として、管理者から発行されたAPIキーを使用してOp
 - **FR-008**: APIキー発行時にスコープを選択できるUIをダッシュボードに提供する
 - **FR-009**: `admin`スコープは他のすべてのスコープの権限を包含する
 - **FR-010**: `/v0`の管理系エンドポイント（`/v0/users`, `/v0/api-keys`, `/v0/nodes`の管理操作, `/v0/metrics/*`）および`/v1/models`の管理操作（`POST /v1/models/register`, `DELETE /v1/models/:name`）は`admin`スコープまたはJWT認証を要求する
-- **FR-011**: モデル配信エンドポイント（`/v1/models/blob/*`）は`node`スコープを要求する
+- **FR-011**: モデル同期用エンドポイント（`/v0/models/registry/:model_name/manifest.json`）は`node`スコープを要求する
 - **FR-012**: `viewer`ロールのユーザーは管理系APIへアクセスできない（403）
 - **FR-013**: ノードは`LLM_NODE_API_KEY`で`node`スコープのAPIキーを指定して登録する
 - **FR-014**: `/v0/health`は`node`スコープのAPIキーとノードトークンを要求する

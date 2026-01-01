@@ -42,14 +42,12 @@ pub async fn spawn_test_router() -> TestServer {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -211,14 +209,12 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = test_jwt_secret();
 
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),

@@ -7,7 +7,7 @@
 
 ## 対象エンドポイントの利用者
 - **管理者**: /v0 の管理系 API を操作。
-- **ノード**: /v0/nodes 登録、/v0/models/blob から配信。
+- **ノード**: /v0/nodes 登録、マニフェスト取得（/v0/models/registry/:model_name/manifest.json）。
 - **外部クライアント**: /v1/* 推論 API。
 
 ## 仕様上の整理ポイント

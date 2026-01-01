@@ -47,25 +47,11 @@ std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens
 
 std::optional<ModelDescriptor> resolve_descriptor(
     const ModelStorage* storage,
-    const ModelSync* sync,
     const std::string& model_name) {
     if (!storage) return std::nullopt;
 
     auto desc = storage->resolveDescriptor(model_name);
     if (desc) return desc;
-
-    if (sync) {
-        auto remote = sync->getRemotePath(model_name);
-        if (!remote.empty()) {
-            ModelDescriptor fallback;
-            fallback.name = model_name;
-            fallback.runtime = "llama_cpp";
-            fallback.format = "gguf";
-            fallback.primary_path = remote;
-            fallback.model_dir = "";
-            return fallback;
-        }
-    }
 
     return std::nullopt;
 }
@@ -421,13 +407,6 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
         return gguf_path;
     }
 
-    if (model_sync_ != nullptr) {
-        gguf_path = model_sync_->getRemotePath(model_name);
-        if (!gguf_path.empty()) {
-            return gguf_path;
-        }
-    }
-
     if (error_message) *error_message = "Model not found: " + model_name;
     return "";
 }
@@ -443,7 +422,7 @@ std::string InferenceEngine::generateChat(
         return "Response to: " + messages.back().content;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model);
+    auto desc = resolve_descriptor(model_storage_, model);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model);
     }
@@ -527,6 +506,12 @@ std::string InferenceEngine::generateChatWithImages(
                                 bitmaps_c_ptr.size());
     if (res != 0) {
         throw std::runtime_error("Failed to tokenize vision prompt");
+    }
+
+    llama_memory_t mem = llama_get_memory(ctx);
+    if (mem) {
+        // Reset sequence positions to avoid KV cache position mismatches across requests.
+        llama_memory_clear(mem, false);
     }
 
     llama_pos new_n_past = 0;
@@ -645,7 +630,7 @@ std::string InferenceEngine::generateCompletion(
         return "Response to: " + prompt;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model);
+    auto desc = resolve_descriptor(model_storage_, model);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model);
     }
@@ -675,7 +660,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model);
+    auto desc = resolve_descriptor(model_storage_, model);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model);
     }
@@ -730,7 +715,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model_name);
+    auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
         result.error_message = "Model not found: " + model_name;
         return result;
@@ -762,7 +747,7 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model_name);
+    auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model_name);
     }

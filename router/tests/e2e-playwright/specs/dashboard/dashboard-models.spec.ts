@@ -75,11 +75,11 @@ test.describe('Dashboard Models Tab @dashboard', () => {
       expect(count).toBeGreaterThanOrEqual(0);
     });
 
-    test('M-09: Model cards show Pull button for available models', async ({ page }) => {
+    test('M-09: Model cards show Register button for available models', async ({ page }) => {
       await page.waitForTimeout(500);
-      // Look for Pull buttons
-      const pullButtons = page.locator('button:has-text("Pull")');
-      const count = await pullButtons.count();
+      // Look for Register buttons
+      const registerButtons = page.locator('button:has-text("Register")');
+      const count = await registerButtons.count();
       // May have 0 if all models already downloaded or API unavailable
       expect(count).toBeGreaterThanOrEqual(0);
     });
@@ -109,15 +109,15 @@ test.describe('Dashboard Models Tab @dashboard', () => {
       expect(apiCalled).toBe(true);
     });
 
-    test('M-12: Pull button triggers /v0/models/pull', async ({ page }) => {
-      // Mock the pull endpoint
-      let pullCalled = false;
-      await page.route('**/v0/models/pull', async (route) => {
-        pullCalled = true;
+    test('M-12: Register button triggers /v0/models/register', async ({ page }) => {
+      // Mock the register endpoint
+      let registerCalled = false;
+      await page.route('**/v0/models/register', async (route) => {
+        registerCalled = true;
         await route.fulfill({
-          status: 200,
+          status: 201,
           contentType: 'application/json',
-          body: JSON.stringify({ model_id: 'test-model', status: 'queued' }),
+          body: JSON.stringify({ name: 'test-model', status: 'registered' }),
         });
       });
 
@@ -147,12 +147,12 @@ test.describe('Dashboard Models Tab @dashboard', () => {
       await dashboard.hubTab.click();
       await page.waitForTimeout(500);
 
-      // Find and click Pull button
-      const pullButton = page.locator('button:has-text("Pull")').first();
-      if (await pullButton.isVisible()) {
-        await pullButton.click();
+      // Find and click Register button
+      const registerButton = page.locator('button:has-text("Register")').first();
+      if (await registerButton.isVisible()) {
+        await registerButton.click();
         await page.waitForTimeout(500);
-        expect(pullCalled).toBe(true);
+        expect(registerCalled).toBe(true);
       }
     });
   });

@@ -26,7 +26,7 @@ export default defineConfig({
     ? undefined
     : {
         command:
-          'LLM_CONVERT_SCRIPT=router/tests/e2e-playwright/mock_convert.py LLM_ROUTER_SKIP_API_KEY=1 cargo run --release -p llm-router',
+          'LLM_ROUTER_SKIP_API_KEY=1 cargo run --release -p llm-router',
         url: 'http://localhost:8080/dashboard',
         reuseExistingServer: !process.env.CI,
         timeout: 120000,

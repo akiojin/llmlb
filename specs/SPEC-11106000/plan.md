@@ -1,12 +1,12 @@
-# 実装計画: Hugging Face URL 登録（形式選択）
+# 実装計画: Hugging Face URL 登録（変換なし・メタデータ登録）
 
 **機能ID**: `SPEC-11106000` | **日付**: 2025-12-01 | **仕様**: specs/SPEC-11106000/spec.md  
 **入力**: `/specs/SPEC-11106000/spec.md` の機能仕様
 
 ## 概要
-- HFカタログUIは廃止し、単一テキストエリアにHFリポジトリ/ファイルURLを貼るだけで登録。
-- safetensors/GGUFが両方ある場合は `format` を必須にし、選択した形式で登録する。
-- /v1/models には実体（safetensors/GGUF）が存在するものだけ返す。重複はエラー。
+- HFリポジトリ/ファイルURLを登録し、ルーターは**メタデータとマニフェストのみ**を保持する。
+- **モデルバイナリはルーターに保持せず**、NodeがHFから直接ダウンロードしてキャッシュする。
+- /v1/models は登録済みモデルを返し、ready はNodeの同期状態に従う。
 
 ## 技術コンテキスト
 - **言語/バージョン**: Rust 1.75+（router/cli）、TypeScript/JSなしのプレーン JS (web static)、C++ノードは変更最小。
@@ -15,8 +15,8 @@
 - **テスト**: cargo test (router)、JSは軽量ユニット or 集約E2E（既存フレームに合わせる）。
 - **対象プラットフォーム**: Linux (server)、ブラウザ（現行ダッシュボード）。
 - **プロジェクトタイプ**: web（backend + frontend + cli）。
-- **パフォーマンス目標**: HF一覧 API 応答 P95 3s以内、登録反映 5s以内、進捗ポーリング5s間隔。
-- **制約**: HF API レートリミット; ノードは manifest から自己ダウンロードする前提。
+- **パフォーマンス目標**: HFメタ取得 P95 3s以内、登録反映 5s以内、同期ポーリング5s間隔。
+- **制約**: HF API レートリミット; Nodeはmanifestに従い外部ソースから直接取得。
 - **スケール/スコープ**: 対応モデル数 O(10〜100)、ノード O(10) 想定。
 
 ## 憲章チェック
@@ -31,26 +31,27 @@
 - docs: specs/SPEC-11106000/{research.md, data-model.md, quickstart.md, contracts/} を生成。  
 - backend (router): src/api/models.rs, registry/models.rs 付近拡張。  
 - frontend (web/static): models.js + UIテンプレート拡張。  
-- cli: 既存 `llm-router` に `model list/add/download` サブコマンド追加。
+- cli: 既存 `llm-router` に `model list/add` サブコマンドを整理。
 
 ## Phase 0: アウトライン＆リサーチ
 - HF API: repoメタ（siblings）取得と認証要否のみ確認。カタログ一覧は扱わない。
-- モデルID命名: `hf/{repo}/{filename}` 固定。
-- 形式選択: 両方存在時は必須、片方のみは省略可。
+- モデルID命名: `hf/{repo}` または `hf/{repo}/{filename}` を基本形とする。
+- 形式選択はルーターで行わず、Nodeがruntime/GPU要件に応じて選択する。
 
 ## Phase 1: 設計＆契約
-- data-model.md: ModelInfo 拡張（format, gguf_policy, source, download_url, status, size, repo/filename）。
-- contracts:  
-  - `POST /v0/models/register` repo-only/filename指定、`format`/`gguf_policy` 指定。  
-  - `/v1/models` は実体があるもののみ。  
-- quickstart.md: URL貼付→形式選択→登録→/v1/models までの手順を記載。
+- data-model.md: ModelInfo 拡張（repo, filename?, source, status, size, artifacts）。
+- contracts:
+  - `POST /v0/models/register` repo-only/filename指定（バイナリ取得なし）。
+  - `GET /v0/models/registry/:model_name/manifest.json` でNode向けマニフェストを提供。
+  - `/v1/models` は登録済みモデルとready状態を返す。
+- quickstart.md: URL貼付→登録→/v1/models 反映→Node同期の手順を記載。
 
 ## Phase 2: タスク計画アプローチ
-- Contract tests: register（repo/file, format必須/省略、gguf_policy, duplicate, not-found）、/v1/models 実体のみ。
-- Integration: HF siblingsモック→形式選択→登録→/v1/models 出現。
-- Frontend: URL登録フォーム、`format`/`gguf_policy` 選択UI、バナー、登録済みリストのE2E。
-- CLI: scope外（今回はWeb/API中心）※必要なら後追い。
-- 実装: registry永続化、/v1/models フィルタ、UIの選択/説明表示。
+- Contract tests: register（repo/file, duplicate, not-found）、/v1/models readyの表現。
+- Integration: HF metadata取得→登録→manifest確認→/v1/models 反映。
+- Frontend: URL登録フォームのみ、format/gguf_policy UIは削除。
+- CLI: `model download` は削除またはNode側導線に変更。
+- 実装: registry永続化、manifest生成、/v1/models ready整合。
 
 ## 複雑さトラッキング
 | 違反 | 必要な理由 | 代替案を却下した理由 |

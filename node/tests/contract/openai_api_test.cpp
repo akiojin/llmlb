@@ -113,3 +113,35 @@ TEST_F(OpenAIContractFixture, EmbeddingsRequiresModel) {
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 400);
 }
+
+TEST_F(OpenAIContractFixture, CompletionsRejectsEmptyPrompt) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"   "})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+}
+
+TEST_F(OpenAIContractFixture, CompletionsRejectsTemperatureOutOfRange) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hi","temperature":-0.5})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+}
+
+TEST_F(OpenAIContractFixture, CompletionsRejectsTopPOutOfRange) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hi","top_p":1.5})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+}
+
+TEST_F(OpenAIContractFixture, CompletionsRejectsTopKOutOfRange) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hi","top_k":-1})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+}

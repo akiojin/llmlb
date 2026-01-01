@@ -3,6 +3,8 @@
 #include <nlohmann/json.hpp>
 #include <limits>
 #include <memory>
+#include <cctype>
+#include <algorithm>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
@@ -28,22 +30,54 @@ bool checkReady(httplib::Response& res) {
     }
     return true;
 }
-InferenceParams parseInferenceParams(const nlohmann::json& body) {
-    InferenceParams params;
+bool isBlank(const std::string& value) {
+    return std::all_of(value.begin(), value.end(),
+        [](unsigned char c) { return std::isspace(c) != 0; });
+}
+
+bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, std::string& error) {
+    params = InferenceParams{};
 
     // OpenAI-compatible fields
     if (body.contains("max_tokens") && body["max_tokens"].is_number_integer()) {
         int v = body["max_tokens"].get<int>();
         if (v > 0) params.max_tokens = static_cast<size_t>(v);
     }
-    if (body.contains("temperature") && body["temperature"].is_number()) {
-        params.temperature = body["temperature"].get<float>();
+    if (body.contains("temperature")) {
+        if (!body["temperature"].is_number()) {
+            error = "temperature must be a number";
+            return false;
+        }
+        const float value = body["temperature"].get<float>();
+        if (value < 0.0f || value > 2.0f) {
+            error = "temperature must be between 0 and 2";
+            return false;
+        }
+        params.temperature = value;
     }
-    if (body.contains("top_p") && body["top_p"].is_number()) {
-        params.top_p = body["top_p"].get<float>();
+    if (body.contains("top_p")) {
+        if (!body["top_p"].is_number()) {
+            error = "top_p must be a number";
+            return false;
+        }
+        const float value = body["top_p"].get<float>();
+        if (value < 0.0f || value > 1.0f) {
+            error = "top_p must be between 0 and 1";
+            return false;
+        }
+        params.top_p = value;
     }
-    if (body.contains("top_k") && body["top_k"].is_number_integer()) {
-        params.top_k = body["top_k"].get<int>();
+    if (body.contains("top_k")) {
+        if (!body["top_k"].is_number_integer()) {
+            error = "top_k must be an integer";
+            return false;
+        }
+        const int value = body["top_k"].get<int>();
+        if (value < 0) {
+            error = "top_k must be >= 0";
+            return false;
+        }
+        params.top_k = value;
     }
     if (body.contains("repeat_penalty") && body["repeat_penalty"].is_number()) {
         params.repeat_penalty = body["repeat_penalty"].get<float>();
@@ -55,7 +89,7 @@ InferenceParams parseInferenceParams(const nlohmann::json& body) {
         }
     }
 
-    return params;
+    return true;
 }
 }  // namespace
 
@@ -176,7 +210,12 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 return;
             }
             bool stream = body.value("stream", false);
-            const auto params = parseInferenceParams(body);
+            InferenceParams params;
+            std::string params_error;
+            if (!parseInferenceParams(body, params, params_error)) {
+                respondError(res, 400, "invalid_request", params_error);
+                return;
+            }
             std::string output;
             if (!parsed.image_urls.empty()) {
                 output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
@@ -241,7 +280,16 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             std::string model = body.value("model", "");
             if (!validateModel(model, "text", res)) return;
             std::string prompt = body.value("prompt", "");
-            const auto params = parseInferenceParams(body);
+            if (prompt.empty() || isBlank(prompt)) {
+                respondError(res, 400, "invalid_request", "prompt must not be empty");
+                return;
+            }
+            InferenceParams params;
+            std::string params_error;
+            if (!parseInferenceParams(body, params, params_error)) {
+                respondError(res, 400, "invalid_request", params_error);
+                return;
+            }
             std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
             json resp = {
                 {"id", "cmpl-1"},

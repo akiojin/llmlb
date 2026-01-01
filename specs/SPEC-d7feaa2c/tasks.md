@@ -156,6 +156,105 @@
 - [ ] T145 キャンセル即時応答テスト
 - [ ] T146 並行ロードテスト
 
+## パラメータ検証（Session 2025-12-31 Part 4）
+- [ ] T147 サンプリングパラメータ範囲検証の実装
+  - temperature/top_p/top_kの範囲チェック
+  - 不正値は400エラー
+- [ ] T148 空プロンプト検証の実装
+  - 空/空白のみプロンプトを拒否
+
+## stop sequences（Session 2025-12-31 Part 4）
+- [ ] T149 stop sequences検出ロジックの実装
+  - 生成ループ内でトークン列マッチング
+  - 複数stop sequenceの同時監視
+
+## logprobs（Session 2025-12-31 Part 4）
+- [ ] T150 logprobs返却の実装
+  - OpenAI互換フォーマット
+  - top_logprobsパラメータ対応
+
+## max_tokens（Session 2025-12-31 Part 4）
+- [ ] T151 max_tokensデフォルト値の実装
+  - config.jsonからmax_position_embeddings取得
+  - プロンプト長を差し引いて計算
+
+## アーキテクチャ検証（Session 2025-12-31 Part 4）
+- [ ] T152 ロード前アーキテクチャ検証の実装
+  - manifestとconfig.jsonの照合
+  - 不一致時はロード開始前エラー
+
+## フォーマット統合（Session 2025-12-31 Part 4）
+- [ ] T153 manifest.jsonへのformatsフィールド追加
+  - サポートフォーマット一覧を宣言
+- [ ] T154 マルチフォーマットローダーの実装
+  - ファイル形式に応じたローダー振り分け
+
+## Tests（Session 2025-12-31 Part 4）
+- [ ] T155 パラメータ検証テスト
+- [ ] T156 stop sequences検出テスト
+- [ ] T157 logprobs返却テスト
+- [ ] T158 アーキテクチャ検証テスト
+
+## 量子化・モデル指定（Session 2025-12-31 Part 5）
+- [ ] T159 量子化指定パーサーの実装
+  - `modelname:quantization` フォーマットのパース
+  - 完全一致マッチング（大文字小文字・記号区別）
+- [ ] T160 デフォルト量子化の設定機構
+  - モデル登録時にデフォルト量子化を指定
+  - 未指定時のフォールバック
+
+## Prefix Caching（Session 2025-12-31 Part 5）
+- [ ] T161 Prefix Cacheの実装
+  - 同一プレフィックスのKVキャッシュ共有
+  - プロンプトハッシュをキーとした管理
+- [ ] T162 Prefix Cache VRAM割当管理
+  - 空きVRAMの割合ベースで上限設定
+  - LRUによるエントリ削除
+
+## Vision対応（Session 2025-12-31 Part 5）
+- [ ] T163 mmproj自動検出の実装
+  - モデルディレクトリ内のmmproj検索
+  - 自動ロード機構
+
+## スケーラビリティ（Session 2025-12-31 Part 5）
+- [ ] T164 レプリカ配置の実装
+  - 同一モデルの複数GPUロード
+  - レプリカステータス管理
+- [ ] T165 ラウンドロビン負荷分散の実装
+  - レプリカ間でのリクエスト振り分け
+  - 障害レプリカのスキップ
+
+## chat_template（Session 2025-12-31 Part 5）
+- [ ] T166 injaライブラリ統合
+  - C++ Jinjaライブラリの導入
+  - ビルドシステム統合
+- [ ] T167 chat_templateレンダリングの実装
+  - config.jsonからのテンプレート読み込み
+  - messagesの変換とレンダリング
+
+## Function Calling（Session 2025-12-31 Part 5）
+- [ ] T168 Function Calling検出の実装
+  - ツール定義のプロンプト埋め込み
+  - 出力からのJSON検出
+- [ ] T169 finish_reason="tool_calls"対応
+  - ツール呼び出し検出時のレスポンス整形
+
+## manifest.json拡張（Session 2025-12-31 Part 5）
+- [ ] T170 manifest.jsonへのmodalities追加
+  - completion/embeddingモードの宣言
+- [ ] T171 manifest.jsonへのlicense追加
+  - ライセンス情報フィールド
+- [ ] T172 manifest.jsonへのsupports_vision追加
+  - Vision対応フラグ
+
+## Tests（Session 2025-12-31 Part 5）
+- [ ] T173 量子化指定パーステスト
+- [ ] T174 Prefix Cacheヒット/ミステスト
+- [ ] T175 mmproj自動検出テスト
+- [ ] T176 レプリカ負荷分散テスト
+- [ ] T177 chat_templateレンダリングテスト
+- [ ] T178 Function Calling検出テスト
+
 ## Deferred（TBD）
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定（別SPEC）
 - Nemotron向けの新エンジン（推論エンジン）の実装（Metal/DirectML）

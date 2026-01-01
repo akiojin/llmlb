@@ -284,3 +284,201 @@ struct InferenceCacheEntry {
 - プラグインIDごとに単一インスタンス
 - 1つのプラグインが複数モデルを内部管理
 - モデルごとの分離はプラグイン内部で実装
+
+---
+
+## Session 2025-12-31 追加設計 Part 4
+
+### パラメータ検証設計
+
+**Node側検証**:
+
+- サンプリングパラメータの範囲チェック
+  - temperature: 0.0 ～ 2.0
+  - top_p: 0.0 ～ 1.0
+  - top_k: 1 ～ vocab_size
+- 不正値は即座に400エラー
+
+**空プロンプト検証**:
+
+- プロンプトが空または空白のみの場合は400 Bad Request
+- Router側で早期検証（Nodeまで到達させない）
+
+### stop sequences設計
+
+**検出ロジック**:
+
+- Node/プラグイン内の生成ループで実装
+- 生成済みトークン列の末尾をチェック
+- 複数のstop sequenceを同時監視可能
+
+**実装方式**:
+
+```
+for each generated_token:
+    append to output
+    for each stop_seq in stop_sequences:
+        if output.ends_with(stop_seq):
+            truncate stop_seq from output
+            return output
+```
+
+### logprobs設計
+
+**返却フォーマット**:
+
+- OpenAI互換のlogprobs構造を返却
+- top_logprobs パラメータで上位N件を指定
+
+**データ構造**:
+
+```
+{
+  "logprobs": {
+    "tokens": ["Hello", " world"],
+    "token_logprobs": [-0.5, -0.3],
+    "top_logprobs": [
+      {"Hello": -0.5, "Hi": -1.2},
+      {" world": -0.3, " there": -0.8}
+    ]
+  }
+}
+```
+
+### max_tokensデフォルト値設計
+
+**取得方法**:
+
+1. モデルのconfig.jsonからmax_position_embeddingsを取得
+2. プロンプト長を差し引いた残りを生成可能トークン数とする
+3. 明示的なmax_tokens指定がある場合はそちらを優先
+
+### アーキテクチャ検証設計
+
+**チェックタイミング**:
+
+1. モデルロードリクエスト受信時
+2. manifestのarchitectures配列を取得
+3. config.jsonのmodel_type/architecturesと照合
+4. 不一致時はロード開始前にエラー返却
+
+**エラーメッセージ**:
+
+```
+Model architecture 'llama' is not supported by plugin 'nemotron_engine'.
+Supported: ['nemotron', 'mamba']
+```
+
+### フォーマット統合設計
+
+**プラグインの責務**:
+
+- 単一プラグインが複数フォーマット（GGUF/safetensors）をサポート可能
+- ロード時にファイル拡張子/マジックバイトで判定
+- 内部で適切なローダーに振り分け
+
+**manifest.json拡張**:
+
+```json
+{
+  "id": "llama_cpp",
+  "formats": ["gguf", "safetensors"],
+  "architectures": ["llama", "mistral", "gemma"]
+}
+```
+
+## Session 2025-12-31 追加設計 Part 5
+
+### 量子化指定設計
+
+**モデル名フォーマット**:
+
+- `modelname:quantization` 形式でAPI呼び出し時に指定
+- 例: `llama-7b:Q4_K_M`, `mistral-7b:Q5_K_S`
+- 量子化未指定時はデフォルト量子化を使用（登録時に設定）
+
+**マッチングルール**:
+
+- 完全一致のみ（正規化なし）
+- 大文字/小文字区別あり
+- ハイフン/アンダースコア区別あり
+- 例: `Q4_K_M` ≠ `q4-k-m` ≠ `Q4-K-M`
+
+### Prefix Caching設計
+
+**キャッシュ戦略**:
+
+- 同一システムプロンプトのKVキャッシュをリクエスト間で共有
+- プロンプトハッシュをキーとしてKV状態を保持
+- 共通プレフィックス部分のみキャッシュ
+
+**メモリ管理**:
+
+- モデルロード後の空きVRAMのN%（設定可能）をキャッシュに割当
+- LRUでキャッシュエントリを管理
+- VRAM圧迫時は古いエントリから削除
+
+### mmproj自動検出設計
+
+**検出ロジック**:
+
+1. モデルディレクトリをスキャン
+2. `mmproj-*.gguf` または `*-mmproj.gguf` パターンにマッチするファイルを検索
+3. 見つかった場合は自動的にロード
+4. 見つからない場合はテキストモデルとして動作
+
+### レプリカ配置設計
+
+**配置戦略**:
+
+- 同一モデルを複数GPUに独立してロード
+- 各レプリカは独立したKVキャッシュを持つ
+- ホストが全レプリカのステータスを管理
+
+**負荷分散**:
+
+- ラウンドロビン方式でリクエストを振り分け
+- レプリカ障害時は自動的にスキップ
+- 健全なレプリカのみに振り分け
+
+### chat_templateレンダリング設計
+
+**Jinjaライブラリ**:
+
+- inja（C++ヘッダーオンリーライブラリ）を使用
+- HuggingFace互換のchat_templateをサポート
+- カスタム関数（raise_exception等）は必要に応じて拡張
+
+**レンダリングフロー**:
+
+1. config.jsonからchat_templateを取得
+2. messagesをJinjaコンテキストに変換
+3. injaでテンプレートをレンダリング
+4. 生成されたプロンプト文字列をプラグインに渡す
+
+### Function Calling設計
+
+**実装レイヤー**:
+
+- Node/プラグイン側で実装
+- tool定義をプロンプトに埋め込み
+- 出力JSONパースでツール呼び出しを検出
+
+**フロー**:
+
+1. ツール定義をシステムプロンプトに追加
+2. モデル出力からJSON形式のツール呼び出しを検出
+3. 検出時はfinish_reason="tool_calls"で返却
+
+### manifest.json拡張（Part 5）
+
+```json
+{
+  "id": "llama_cpp",
+  "formats": ["gguf", "safetensors"],
+  "architectures": ["llama", "mistral", "gemma"],
+  "modalities": ["completion", "embedding"],
+  "license": "MIT",
+  "supports_vision": true
+}
+```

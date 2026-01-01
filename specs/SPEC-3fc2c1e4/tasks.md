@@ -16,6 +16,9 @@
 - [x] Node: ベンチマーク結果に基づいて EngineRegistry が解決する
 - [x] Node: EngineRegistry が format に一致するエンジンのみ解決する
 - [x] Tests: EngineRegistry の format フィルタを検証する
+- [x] Router: registry manifest に format を明示する
+- [x] Node: manifest format を優先して ModelStorage が format を確定する
+- [x] Tests: manifest format 優先の contract/unit テストを追加する
 - [x] Node: EngineRegistry が capability に一致するエンジンのみ解決する
 - [x] Tests: EngineRegistry の capability フィルタを検証する
 - [x] Node: InferenceEngine が endpoint に応じた capability でモデルをロードする

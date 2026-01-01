@@ -810,6 +810,7 @@ struct ManifestFile {
 
 #[derive(Serialize)]
 struct Manifest {
+    format: String,
     files: Vec<ManifestFile>,
 }
 
@@ -846,6 +847,14 @@ fn resolve_manifest_format(model_name: &str, dir: &std::path::Path) -> ManifestF
     }
 
     ManifestFormat::Unknown
+}
+
+fn manifest_format_label(format: ManifestFormat) -> &'static str {
+    match format {
+        ManifestFormat::Gguf => "gguf",
+        ManifestFormat::Safetensors => "safetensors",
+        ManifestFormat::Unknown => "unknown",
+    }
 }
 
 fn should_include_manifest_file(format: ManifestFormat, name: &str) -> bool {
@@ -2045,8 +2054,11 @@ pub async fn get_model_registry_manifest(
         append_official_gpu_artifacts(&mut files, model_info.as_ref(), runtime_hint.as_ref());
     }
 
-    let body =
-        serde_json::to_string(&Manifest { files }).unwrap_or_else(|_| "{\"files\":[]}".into());
+    let body = serde_json::to_string(&Manifest {
+        format: manifest_format_label(format).to_string(),
+        files,
+    })
+    .unwrap_or_else(|_| "{\"format\":\"unknown\",\"files\":[]}".into());
     Response::builder()
         .status(StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, "application/json")

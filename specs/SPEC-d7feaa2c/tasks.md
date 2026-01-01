@@ -164,7 +164,7 @@
   - 空/空白のみプロンプトを拒否
 
 ## stop sequences（Session 2025-12-31 Part 4）
-- [ ] T149 stop sequences検出ロジックの実装
+- [x] T149 stop sequences検出ロジックの実装
   - 生成ループ内でトークン列マッチング
   - 複数stop sequenceの同時監視
 
@@ -191,7 +191,7 @@
 
 ## Tests（Session 2025-12-31 Part 4）
 - [x] T155 パラメータ検証テスト
-- [ ] T156 stop sequences検出テスト
+- [x] T156 stop sequences検出テスト
 - [ ] T157 logprobs返却テスト
 - [ ] T158 アーキテクチャ検証テスト
 

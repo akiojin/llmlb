@@ -91,6 +91,47 @@ bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, s
 
     return true;
 }
+
+bool parseStopSequences(const nlohmann::json& body, std::vector<std::string>& stops, std::string& error) {
+    stops.clear();
+    if (!body.contains("stop") || body["stop"].is_null()) {
+        return true;
+    }
+    const auto& stop = body["stop"];
+    if (stop.is_string()) {
+        auto value = stop.get<std::string>();
+        if (!value.empty()) stops.push_back(std::move(value));
+        return true;
+    }
+    if (stop.is_array()) {
+        for (const auto& item : stop) {
+            if (!item.is_string()) {
+                error = "stop must be a string or array of strings";
+                return false;
+            }
+            auto value = item.get<std::string>();
+            if (!value.empty()) stops.push_back(std::move(value));
+        }
+        return true;
+    }
+    error = "stop must be a string or array of strings";
+    return false;
+}
+
+std::string applyStopSequences(std::string output, const std::vector<std::string>& stops) {
+    if (stops.empty()) return output;
+    size_t earliest = std::string::npos;
+    for (const auto& stop : stops) {
+        if (stop.empty()) continue;
+        size_t pos = output.find(stop);
+        if (pos != std::string::npos && (earliest == std::string::npos || pos < earliest)) {
+            earliest = pos;
+        }
+    }
+    if (earliest == std::string::npos) return output;
+    output.resize(earliest);
+    return output;
+}
 }  // namespace
 
 struct ParsedChatMessages {
@@ -216,12 +257,19 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", params_error);
                 return;
             }
+            std::vector<std::string> stops;
+            std::string stop_error;
+            if (!parseStopSequences(body, stops, stop_error)) {
+                respondError(res, 400, "invalid_request", stop_error);
+                return;
+            }
             std::string output;
             if (!parsed.image_urls.empty()) {
                 output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
             } else {
                 output = engine_.generateChat(parsed.messages, model, params);
             }
+            output = applyStopSequences(std::move(output), stops);
             output = sanitize_utf8_lossy(output);
 
             if (stream) {
@@ -290,7 +338,15 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", params_error);
                 return;
             }
-            std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
+            std::vector<std::string> stops;
+            std::string stop_error;
+            if (!parseStopSequences(body, stops, stop_error)) {
+                respondError(res, 400, "invalid_request", stop_error);
+                return;
+            }
+            std::string output = engine_.generateCompletion(prompt, model, params);
+            output = applyStopSequences(std::move(output), stops);
+            output = sanitize_utf8_lossy(output);
             json resp = {
                 {"id", "cmpl-1"},
                 {"object", "text_completion"},

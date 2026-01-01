@@ -145,3 +145,25 @@ TEST_F(OpenAIContractFixture, CompletionsRejectsTopKOutOfRange) {
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 400);
 }
+
+TEST_F(OpenAIContractFixture, ChatCompletionsAppliesStopSequence) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"ping STOP pong"}],"stop":"STOP"})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    std::string content = j["choices"][0]["message"]["content"];
+    EXPECT_EQ(content, "Response to: ping ");
+}
+
+TEST_F(OpenAIContractFixture, CompletionsAppliesStopSequenceArray) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello STOP world","stop":["STOP","END"]})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    std::string text = j["choices"][0]["text"];
+    EXPECT_EQ(text, "Response to: hello ");
+}

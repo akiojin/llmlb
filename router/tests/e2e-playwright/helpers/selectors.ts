@@ -38,7 +38,7 @@ export const DashboardSelectors = {
     // Model Hub elements
     hubSearch: '#hub-search',
     hubModelCard: '[data-model-card]',
-    hubPullButton: '[data-pull-button]',
+    hubRegisterButton: 'button:has-text("Register")',
     hubModelStatus: '[data-model-status]',
     // Individual model card elements
     modelCard: '.model-card',

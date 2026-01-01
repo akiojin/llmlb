@@ -14,6 +14,7 @@
 
 #include "utils/config.h"
 #include "utils/file_lock.h"
+#include "utils/allowlist.h"
 #include "utils/url_encode.h"
 #include "models/model_storage.h"
 
@@ -211,6 +212,29 @@ ParsedUrl parseUrl(const std::string& url) {
     return parsed;
 }
 
+std::optional<std::string> hfTokenForHost(const std::string& host) {
+    const char* token = std::getenv("HF_TOKEN");
+    if (!token || !*token) return std::nullopt;
+
+    const auto lower = llm_node::toLowerAscii(host);
+    if (lower == "huggingface.co" || llm_node::endsWith(lower, ".huggingface.co")) {
+        return std::string(token);
+    }
+
+    const char* base = std::getenv("HF_BASE_URL");
+    if (base && *base) {
+        ParsedUrl parsed = parseUrl(base);
+        if (!parsed.host.empty()) {
+            const auto base_lower = llm_node::toLowerAscii(parsed.host);
+            if (lower == base_lower) {
+                return std::string(token);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::milliseconds timeout) {
     if (url.scheme.empty() || url.host.empty()) {
         return nullptr;
@@ -341,6 +365,17 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
         return "";
     }
 
+    const std::optional<std::string> hf_token = is_relative ? std::nullopt : hfTokenForHost(url.host);
+    auto apply_auth = [&](httplib::Headers& headers) {
+        if (is_relative) {
+            if (!api_key_.empty()) {
+                headers.emplace("Authorization", "Bearer " + api_key_);
+            }
+        } else if (hf_token.has_value()) {
+            headers.emplace("Authorization", "Bearer " + *hf_token);
+        }
+    };
+
     fs::path out_path = fs::path(models_dir_) / filename;
     fs::create_directories(out_path.parent_path());
 
@@ -361,9 +396,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
     // If-None-Match handling: use simple GET and short-circuit 304 without streaming
     if (!if_none_match.empty()) {
         httplib::Headers hdrs{{"If-None-Match", if_none_match}};
-        if (is_relative && !api_key_.empty()) {
-            hdrs.emplace("Authorization", "Bearer " + api_key_);
-        }
+        apply_auth(hdrs);
         for (int attempt = 0; attempt <= max_retries_; ++attempt) {
             auto res = client->Get(url.path, hdrs);
             if (res) {
@@ -413,9 +446,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
             auto start_time = std::chrono::steady_clock::now();
 
             httplib::Headers headers;
-            if (is_relative && !api_key_.empty()) {
-                headers.emplace("Authorization", "Bearer " + api_key_);
-            }
+            apply_auth(headers);
             if (use_range && offset > 0) {
                 headers.emplace("Range", "bytes=" + std::to_string(offset) + "-");
             }

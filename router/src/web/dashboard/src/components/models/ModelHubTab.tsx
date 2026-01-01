@@ -23,72 +23,76 @@ function formatDownloads(downloads?: number): string {
   return String(downloads)
 }
 
-function statusBadge(status: ModelStatus) {
+function statusBadge(status: ModelStatus, lifecycle?: string) {
   switch (status) {
+    case 'downloading':
+      return (
+        <Badge variant="secondary" data-model-status="downloading">
+          Preparing
+        </Badge>
+      )
     case 'downloaded':
       return (
-        <Badge variant="online" className="gap-1">
+        <Badge variant="online" className="gap-1" data-model-status="ready">
           <Check className="h-3 w-3" />
           Ready
         </Badge>
       )
-    case 'downloading':
+    default:
+      if (lifecycle === 'registered') {
+        return (
+          <Badge variant="secondary" data-model-status="registered">
+            Registered
+          </Badge>
+        )
+      }
       return (
-        <Badge variant="secondary" className="gap-1">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Downloading
+        <Badge variant="outline" data-model-status="available">
+          Available
         </Badge>
       )
-    case 'available':
-    default:
-      return <Badge variant="outline">Available</Badge>
   }
 }
 
 interface ModelCardProps {
   model: ModelWithStatus
-  onPull: (modelId: string) => void
-  isPulling: boolean
+  onRegister: (model: ModelWithStatus) => void
+  isRegistering: boolean
 }
 
-function ModelCard({ model, onPull, isPulling }: ModelCardProps) {
-  const canPull = model.status === 'available'
-  const isDownloading = model.status === 'downloading'
+function ModelCard({ model, onRegister, isRegistering }: ModelCardProps) {
+  const isRegistered = model.lifecycle_status === 'registered'
+  const canRegister = model.status === 'available' && !isRegistered
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-md">
+    <Card
+      className="model-card overflow-hidden transition-shadow hover:shadow-md"
+      data-model-card="true"
+      data-model-id={model.id}
+      data-testid="model-card"
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
-            <h4 className="truncate font-medium">{model.name}</h4>
-            <p className="text-xs text-muted-foreground line-clamp-2">
+            <h4 className="truncate font-medium" data-model-name={model.name}>
+              {model.name}
+            </h4>
+            <p
+              className="text-xs text-muted-foreground line-clamp-2"
+              data-model-description={model.description}
+            >
               {model.description}
             </p>
           </div>
-          {statusBadge(model.status)}
+          {statusBadge(model.status, model.lifecycle_status)}
         </div>
-
-        {/* Download Progress */}
-        {isDownloading && model.download_progress && (
-          <div className="mt-3">
-            <div className="h-1.5 w-full rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${Math.round(model.download_progress.percent * 100)}%` }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {Math.round(model.download_progress.percent * 100)}%
-              {model.download_progress.error && (
-                <span className="text-destructive"> - {model.download_progress.error}</span>
-              )}
-            </p>
-          </div>
-        )}
 
         {/* Model Info */}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
+          <span
+            className="flex items-center gap-1"
+            data-model-size={formatBytes(model.size_bytes)}
+          >
             <HardDrive className="h-3 w-3" />
             {formatBytes(model.size_bytes)}
           </span>
@@ -123,19 +127,19 @@ function ModelCard({ model, onPull, isPulling }: ModelCardProps) {
 
         {/* Actions */}
         <div className="mt-4">
-          {canPull && (
+          {canRegister && (
             <Button
               size="sm"
-              onClick={() => onPull(model.id)}
-              disabled={isPulling}
+              onClick={() => onRegister(model)}
+              disabled={isRegistering}
               className="w-full"
             >
-              {isPulling ? (
+              {isRegistering ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Download className="mr-2 h-4 w-4" />
               )}
-              Pull
+              Register
             </Button>
           )}
           {model.status === 'downloaded' && (
@@ -144,10 +148,10 @@ function ModelCard({ model, onPull, isPulling }: ModelCardProps) {
               Ready to use
             </div>
           )}
-          {isDownloading && (
+          {isRegistered && model.status !== 'downloaded' && (
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Downloading...
+              <Check className="h-4 w-4 text-green-500" />
+              Registered
             </div>
           )}
         </div>
@@ -159,7 +163,7 @@ function ModelCard({ model, onPull, isPulling }: ModelCardProps) {
 export function ModelHubTab() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [pullingId, setPullingId] = useState<string | null>(null)
+  const [registeringId, setRegisteringId] = useState<string | null>(null)
 
   const { data: models, isLoading } = useQuery({
     queryKey: ['models-hub'],
@@ -167,24 +171,27 @@ export function ModelHubTab() {
     refetchInterval: 5000,
   })
 
-  const pullMutation = useMutation({
-    mutationFn: (modelId: string) => {
-      setPullingId(modelId)
-      return modelsApi.pull(modelId)
+  const registerMutation = useMutation({
+    mutationFn: (model: ModelWithStatus) => {
+      setRegisteringId(model.id)
+      return modelsApi.register({
+        repo: model.repo,
+        filename: model.recommended_filename,
+      })
     },
-    onSuccess: (_, modelId) => {
+    onSuccess: (_, model) => {
       queryClient.invalidateQueries({ queryKey: ['models-hub'] })
       queryClient.invalidateQueries({ queryKey: ['registered-models'] })
-      toast({ title: `Model ${modelId} pull started` })
-      setPullingId(null)
+      toast({ title: `Model ${model.name} registered` })
+      setRegisteringId(null)
     },
-    onError: (error, modelId) => {
+    onError: (error, model) => {
       toast({
-        title: `Failed to pull ${modelId}`,
+        title: `Failed to register ${model.name}`,
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
-      setPullingId(null)
+      setRegisteringId(null)
     },
   })
 
@@ -210,6 +217,7 @@ export function ModelHubTab() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          id="hub-search"
           placeholder="Search models..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -218,23 +226,25 @@ export function ModelHubTab() {
       </div>
 
       {/* Model Grid */}
-      {!filteredModels || filteredModels.length === 0 ? (
-        <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
-          <Download className="h-8 w-8" />
-          <p>No models found</p>
-        </div>
-      ) : (
-        <div className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3')}>
-          {filteredModels.map((model) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              onPull={(id) => pullMutation.mutate(id)}
-              isPulling={pullingId === model.id}
-            />
-          ))}
-        </div>
-      )}
+      <div id="hub-models-list">
+        {!filteredModels || filteredModels.length === 0 ? (
+          <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
+            <Download className="h-8 w-8" />
+            <p>No models found</p>
+          </div>
+        ) : (
+          <div className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3')}>
+            {filteredModels.map((model) => (
+              <ModelCard
+                key={model.id}
+                model={model}
+                onRegister={(m) => registerMutation.mutate(m)}
+                isRegistering={registeringId === model.id}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -47,7 +47,7 @@ CREATE TABLE models (
     required_memory INTEGER,
     source TEXT,
     path TEXT,
-    download_url TEXT,
+    artifacts_json TEXT,
     repo_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

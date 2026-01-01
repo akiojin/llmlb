@@ -8,7 +8,7 @@
 ## 決定事項（共有用サマリ）
 - 画像生成は **safetensors正本** を前提に実行する
 - stable-diffusion.cpp を当面利用し、safetensors を直接ロードできる前提とする
-- safetensors と GGUF が共存する場合、登録時の format 指定を必須とする
+- safetensors/GGUF/Metal の選択は Node が実行環境に応じて行う（登録時の形式指定は行わない）
 - Node実行時はPython依存を導入しない
 
 ## ユーザーシナリオ＆テスト *(必須)*
@@ -124,8 +124,8 @@
 
 - 画像生成はsafetensorsを正本として直接読み込めるエンジンを使用する
 - stable-diffusion.cpp は safetensors を直接ロードできる前提で継続利用する
-- GGUFは登録時に `format=gguf` を選択した場合のみ使用する
-- safetensors と GGUF が共存する場合は format 指定が必須（実行時の自動フォールバックは禁止）
+- GGUFは利用可能な場合に Node が選択する（登録時の形式指定は行わない）
+- safetensors/GGUF が共存する場合でも、形式指定は行わず Node が選択する
 - GPUメモリを大量に消費する（SDXL: 8GB+）
 - 1枚あたりの生成時間は数秒〜数十秒
 - 入力画像のファイルサイズは最大4MBに制限される
@@ -166,12 +166,12 @@
 - 処理速度目標: 1024x1024画像を30秒以内（成功基準2で明記）
 - 同時処理: 5件以上（成功基準5で明記）
 - API互換性: OpenAI Images API互換（成功基準3で明記）
-- 対応モデル形式: safetensors / GGUF（登録時に選択）
+- 対応モデル形式: safetensors / GGUF（Nodeが選択）
 
 **方針更新**:
 
 - stable-diffusion.cpp は safetensors 直接読み込みの前提で運用する
-- safetensors と GGUF が共存する場合は format 指定を必須とする
+- safetensors と GGUF が共存する場合でも format 指定は行わない
 
 ## 成功基準 *(必須)*
 

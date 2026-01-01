@@ -45,7 +45,7 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 - **Real-time Monitoring**: Comprehensive visualization of node states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **Self-registering Nodes**: Nodes automatically register with the Router
-- **Node-driven Model Sync**: Nodes pull models via router `/v0/models` and `/v0/models/blob/:model_name` (no push-based distribution)
+- **Node-driven Model Sync**: Nodes pull metadata via `/v0/models` + manifest and download directly from Hugging Face
 - **WebUI Management**: Manage node settings, monitoring, and control through
   browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
@@ -181,7 +181,6 @@ npm run start:node
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
 | `LLM_NODE_PORT` | `11435` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
-| `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
@@ -365,9 +364,8 @@ curl http://router:8080/v1/chat/completions -d '...'
 - The router never pushes models to nodes.
 - Nodes resolve models on-demand in this order:
   - local cache (`LLM_NODE_MODELS_DIR`)
-  - shared router cache mount (`LLM_NODE_SHARED_MODELS_DIR`, direct reference, no copy)
   - allowlisted origin download (Hugging Face, etc.; configure via `LLM_NODE_ORIGIN_ALLOWLIST`)
-  - router proxy download (`GET /v0/models/registry/:model_name/manifest.json` + files)
+  - manifest-based selection from the router (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
 - Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
@@ -428,22 +426,12 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
-  - Choose `format`: `safetensors` (native engine: TBD) or `gguf` (llama.cpp fallback).
-    - If the repo contains both `safetensors` and `.gguf`, `format` is required.
-    - Note: text generation via `safetensors` is TBD (engine implementation will be decided later). Use `gguf` if you need to run the model now.
-  - Enter a Hugging Face repo (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
-  - For `format=gguf`:
-    - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
-      to auto-pick from GGUF siblings.
-  - For `format=safetensors`:
-    - The HF snapshot must include `config.json` and `tokenizer.json`.
-    - Sharded weights must include an `.index.json`.
-  - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
-  - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
-  - Nodes pull models on-demand via the model registry endpoints:
-    - `GET /v0/models/registry/:model_name/manifest.json`
-    - `GET /v0/models/registry/:model_name/files/:file_name`
-    - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
+  - Paste a Hugging Face repo (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`) or file URL.
+  - Router stores **metadata + manifest only** (no binary download).
+- API:
+  - `POST /v0/models/register` with `repo` and optional `filename`.
+- `/v1/models` lists registered models; `ready` reflects node sync status.
+- Nodes pull the manifest (`GET /v0/models/registry/:model_name/manifest.json`) and download directly from Hugging Face.
 
 ## Installation
 
@@ -653,7 +641,6 @@ Cloud / external services:
 | `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
 | `LLM_NODE_PORT` | `11435` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
-| `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) | `LLM_SHARED_MODELS_DIR` |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
@@ -730,8 +717,12 @@ make openai-tests
 
 - gpt-oss (auto): `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
-- gpt-oss (Linux / CUDA via GGUF): `make poc-gptoss-cuda`
+- gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
   - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
+
+Notes:
+- gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
+- GPU is required. Supported backends: macOS (Metal) and Windows (DirectML). Linux/CUDA is experimental.
 
 ### Spec-Driven Development
 
@@ -866,7 +857,7 @@ to `.migrated`.
 
 | Scope | Grants |
 |-------|--------|
-| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`, `GET /v0/models/blob/*`) |
+| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) |
 | `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
 | `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
@@ -925,10 +916,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/v0/models` | List registered models (node sync) | API key (node or admin) |
 | POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
 | DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
-| POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin) |
 | GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (node or admin) |
-| GET | `/v0/models/registry/:model_name/files/:file_name` | Serve model file | API key (node or admin) |
-| GET | `/v0/models/blob/:model_name` | Legacy single-file model download (GGUF) | API key (node or admin) |
 
 #### Dashboard Endpoints
 
@@ -1043,8 +1031,6 @@ List available models with Azure OpenAI-style capabilities.
         "speech_to_text": false,
         "image_generation": false
       },
-      "lifecycle_status": "registered",
-      "download_progress": null,
       "ready": true
     }
   ]
@@ -1052,7 +1038,7 @@ List available models with Azure OpenAI-style capabilities.
 ```
 
 > **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
-> `lifecycle_status`, `download_progress`, and `ready` are router extensions.
+> `ready` is a router extension derived from node sync state.
 
 #### POST /v1/chat/completions
 

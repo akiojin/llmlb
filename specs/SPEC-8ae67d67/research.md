@@ -1,18 +1,11 @@
 # リサーチ（廃止）: ルーター主導のモデル自動配布機能
 
-**機能ID**: `SPEC-8ae67d67`
-**ステータス**: 廃止 (2025-12-13)
+本仕様は廃止され、ルーターからノードへの push 配布は行いません。
 
-本仕様のリサーチ内容は採用されません。ルーターからノードへの配布（push）は実装しない方針です。
+## 現行の採用方針
 
-## 現行設計（採用）
-
-- ノード主導でモデルを同期する
-  - モデル一覧: `GET /v1/models`
-  - モデル取得: `GET /v0/models/blob/:model_name`
-- ルーターはモデルの取得・登録・一覧化を担う（配布は行わない）
-  - `GET /v0/models/available`
-  - `POST /v0/models/register`
-  - `GET /v0/models/registered`
+- モデル一覧: `GET /v1/models`
+- マニフェスト: `GET /v0/models/registry/:model_name/manifest.json`
+- Node が HF から直接ダウンロード
 
 詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。

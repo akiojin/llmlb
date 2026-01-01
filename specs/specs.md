@@ -1,8 +1,8 @@
 # 機能仕様一覧
 
-> 自動生成: 2025-12-29 16:40:56
+> 自動生成: 2025-12-31 18:30:00
 >
-> 総SPEC数: **45** | 廃止: 1 | plan.md欠損: 0
+> 総SPEC数: **45** | 廃止: 2 | plan.md欠損: 0
 
 **凡例:**
 
@@ -15,10 +15,10 @@
 | SPEC ID | 依存先 |
 |---------|--------|
 | `SPEC-05098000` | SPEC-589f2df1, SPEC-35375000 |
-| `SPEC-08d2b908` | SPEC-dcaeaec4, SPEC-11106000, SPEC-a61b24f2, SPEC-48678000, SPEC-6c2d9f1e |
+| `SPEC-08d2b908` | SPEC-dcaeaec4, SPEC-11106000, SPEC-48678000, SPEC-6c2d9f1e |
 | `SPEC-11106000` | SPEC-dcaeaec4 |
 | `SPEC-26006000` | SPEC-dcaeaec4 |
-| `SPEC-2c0e5a9b` | SPEC-3fc2c1e4, SPEC-d7feaa2c, SPEC-08d2b908, SPEC-a61b24f2, SPEC-11106000 |
+| `SPEC-2c0e5a9b` | SPEC-3fc2c1e4, SPEC-d7feaa2c, SPEC-08d2b908, SPEC-11106000 |
 | `SPEC-32637000` | SPEC-6c2d9f1e |
 | `SPEC-3fc2c1e4` | SPEC-d7feaa2c, SPEC-2c0e5a9b, SPEC-efff1da7 |
 | `SPEC-48678000` | SPEC-11106000, SPEC-dcaeaec4 |
@@ -27,7 +27,7 @@
 | `SPEC-7c0a37e0` | SPEC-d4eb8796 |
 | `SPEC-82491000` | SPEC-4b6e9f2a |
 | `SPEC-83825900` | SPEC-efff1da7, SPEC-d7feaa2c |
-| `SPEC-a61b24f2` | SPEC-08d2b908 |
+| `SPEC-a61b24f2` | - |
 | `SPEC-ae3f974e` | SPEC-dcaeaec4 |
 | `SPEC-e03a404c` | SPEC-6c2d9f1e |
 | `SPEC-ea015fbb` | SPEC-712c20cf, SPEC-d4eb8796, SPEC-fbc50d97 |
@@ -60,16 +60,16 @@
 |---------|--------|--------|----------|------|
 | `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | ✅ | P2 | ✅ |
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | ✅ | P1 | ✅ |
-| `SPEC-11106000` | Hugging Face URL 登録（GGUF優先・自動変換つき） | ✅ | P1 | ✅ |
+| `SPEC-11106000` | Hugging Face URL 登録（変換なし） | ✅ | P1 | 🔨 |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | ✅ | P2 | ✅ |
 | `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ | P1 | ✅ |
 | `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
-| `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | ✅ |
+| `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | 🔨 |
 | `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | 🔨 |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ | P2 | ✅ |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | 🔨 |
-| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | ✅ | P1 | ✅ |
+| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | 🗑️ | - | - |
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
@@ -124,13 +124,13 @@
 
 ## 優先度サマリー
 
-### P1（最優先）- 23件
+### P1（最優先）- 22件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 完了 |
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | 完了 |
-| `SPEC-11106000` | Hugging Face URL 登録（GGUF優先・自動変換つき） | 完了 |
+| `SPEC-11106000` | Hugging Face URL 登録（変換なし） | 改定中 |
 | `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 完了 |
 | `SPEC-32637000` | モデル capabilities に基づくルーティング検証 | 完了 |
 | `SPEC-32e2b31a` | LLM Router System（統合版・アーカイブ） | 完了 |
@@ -141,11 +141,10 @@
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | 完了 |
 | `SPEC-63acef08` | 統一APIプロキシ | 完了 |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | 完了 |
-| `SPEC-6cd7f960` | 対応モデルリスト型管理 | 完了 |
+| `SPEC-6cd7f960` | 対応モデルリスト型管理 | 改定中 |
 | `SPEC-799b8e2b` | 共通ログシステム | 完了 |
 | `SPEC-7c0a37e0` | APIキースコープシステム | 完了 |
 | `SPEC-94621a1f` | ノード自己登録システム | 完了 |
-| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | 完了 |
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | 完了 |
 | `SPEC-d4eb8796` | ルーター認証・アクセス制御 | 完了 |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |

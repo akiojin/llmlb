@@ -123,8 +123,6 @@ CREATE TABLE IF NOT EXISTS models (
     description TEXT NOT NULL DEFAULT '',
     required_memory INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'predefined',
-    download_url TEXT,
-    path TEXT,
     chat_template TEXT,
     repo TEXT,
     filename TEXT,

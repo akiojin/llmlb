@@ -39,6 +39,7 @@
 
 ## Docs
 - [x] README.md / README.ja.md に gpt-oss safetensors 前提と実行要件を追記。
+- [x] Docs: DirectML ランタイムの配布元（GitHub Releases）を明記。
 
 ## Exploratory (既存作業の記録)
 - [x] Node: `config.json` から gpt-oss runtime を検出（`gptoss_cpp`）

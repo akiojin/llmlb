@@ -444,6 +444,7 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
     - Windows (DirectML) requires `gptoss_directml.dll`.
       - Place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
       - set `LLM_NODE_GPTOSS_DML_LIB` to an absolute path.
+      - Download from this repository's GitHub Releases (Apache-2.0).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
   - Nodes pull models on-demand via the model registry endpoints:

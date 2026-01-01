@@ -385,6 +385,7 @@ Router (OpenAI-compatible)
     - Windows（DirectML）は `gptoss_directml.dll` が必要です。
       - モデル配下に配置（例: `<model_dir>/gptoss_directml.dll`）するか、
       - `LLM_NODE_GPTOSS_DML_LIB` に絶対パスを指定してください。
+      - 本リポジトリの GitHub Releases から取得してください（Apache-2.0）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
 - ノードはモデルをプッシュ配布されず、オンデマンドでルーターから取得します:

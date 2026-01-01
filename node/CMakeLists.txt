@@ -56,6 +56,8 @@ else()
 endif()
 if(APPLE AND BUILD_WITH_METAL)
     option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" ON)
+elseif(WIN32)
+    option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" ON)
 else()
     option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" OFF)
 endif()
@@ -172,12 +174,18 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors-cpp
 )
 
-# OpenAI gpt-oss Metal backend (macOS)
-if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
-    include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
-    )
+# OpenAI gpt-oss headers
+if(BUILD_WITH_GPTOSS)
+    if(APPLE AND BUILD_WITH_METAL)
+        include_directories(
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
+        )
+    elseif(WIN32)
+        include_directories(
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+        )
+    endif()
 endif()
 
 # whisper.cpp include directories
@@ -236,6 +244,11 @@ if(APPLE AND BUILD_WITH_METAL)
         message(WARNING "Metal frameworks not found, disabling Metal support")
         set(BUILD_WITH_METAL OFF)
     endif()
+endif()
+
+# DirectML support (Windows)
+if(WIN32 AND BUILD_WITH_GPTOSS)
+    add_definitions(-DUSE_GPTOSS)
 endif()
 
 # ROCm support
@@ -382,6 +395,21 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
     add_dependencies(llm_engine_gptoss gptoss_build_metallib)
     target_link_options(llm_engine_gptoss PRIVATE
         LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
+    )
+    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
+elseif(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_gptoss SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
+    )
+    target_include_directories(llm_engine_gptoss
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(llm_engine_gptoss
+        PRIVATE
+            spdlog::spdlog_header_only
     )
     set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
 endif()

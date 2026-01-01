@@ -11,10 +11,30 @@ on:
       - develop
 
 jobs:
+  # パス変更検出（Rustジョブの条件付き実行用）
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'router/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/lint.yml'
+
   rust-lint:
     # 要件: FR-004
     # 目的: Rust lintチェック（fmt, clippy）
     name: Rust Format & Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
 
     steps:

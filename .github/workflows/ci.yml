@@ -50,6 +50,8 @@ jobs:
 
   rust:
     name: Rust (fmt/clippy/test) ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -132,6 +134,8 @@ jobs:
 
   coverage-rust:
     name: Coverage (Rust)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

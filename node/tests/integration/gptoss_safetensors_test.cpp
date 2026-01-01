@@ -2,8 +2,10 @@
 #include <httplib.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -63,11 +65,90 @@ void create_safetensors_missing_metadata(const fs::path& models_dir, const std::
     // config.json / tokenizer.json are intentionally missing.
 }
 
-void create_gptoss_safetensors_model(const fs::path& models_dir, const std::string& model_id) {
-    auto dir = ensure_model_dir(models_dir, model_id);
-    write_text(dir / "config.json", R"({"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]})");
-    write_text(dir / "tokenizer.json", R"({"dummy":true})");
-    write_text(dir / "model.safetensors.index.json", R"({"weight_map":{}})");
+struct GptOssTestModel {
+    fs::path models_dir;
+    std::string model_id;
+    fs::path model_dir;
+};
+
+std::optional<GptOssTestModel> resolve_gptoss_test_model(std::string& error) {
+    const char* model_dir_env = std::getenv("LLM_NODE_GPTOSS_TEST_MODEL_DIR");
+    const char* models_dir_env = std::getenv("LLM_NODE_GPTOSS_TEST_MODELS_DIR");
+    const char* model_id_env = std::getenv("LLM_NODE_GPTOSS_TEST_MODEL_ID");
+
+    fs::path model_dir;
+    fs::path models_dir;
+    std::string model_id;
+
+    if (model_dir_env && *model_dir_env) {
+        model_dir = fs::path(model_dir_env);
+    }
+    if (models_dir_env && *models_dir_env) {
+        models_dir = fs::path(models_dir_env);
+    }
+    if (model_id_env && *model_id_env) {
+        model_id = model_id_env;
+    }
+
+    if (models_dir.empty()) {
+        if (model_dir.empty()) {
+            error = "LLM_NODE_GPTOSS_TEST_MODEL_DIR or LLM_NODE_GPTOSS_TEST_MODELS_DIR is not set";
+            return std::nullopt;
+        }
+        models_dir = model_dir.parent_path();
+    }
+
+    if (model_id.empty()) {
+        if (model_dir.empty()) {
+            error = "LLM_NODE_GPTOSS_TEST_MODEL_ID is not set";
+            return std::nullopt;
+        }
+        std::error_code ec;
+        auto rel = fs::relative(model_dir, models_dir, ec);
+        if (ec || rel.empty() || rel.string().rfind("..", 0) == 0) {
+            error = "gpt-oss model dir must be under models dir";
+            return std::nullopt;
+        }
+        model_id = ModelStorage::dirNameToModel(rel.string());
+    }
+
+    if (model_dir.empty()) {
+        model_dir = models_dir / ModelStorage::modelNameToDir(model_id);
+    }
+
+    if (!fs::exists(model_dir)) {
+        error = "gpt-oss model directory does not exist";
+        return std::nullopt;
+    }
+
+    if (!fs::exists(model_dir / "config.json") || !fs::exists(model_dir / "tokenizer.json")) {
+        error = "config.json or tokenizer.json is missing in gpt-oss model directory";
+        return std::nullopt;
+    }
+
+    const auto index_path = model_dir / "model.safetensors.index.json";
+    const auto st_path = model_dir / "model.safetensors";
+    if (!fs::exists(index_path) && !fs::exists(st_path)) {
+        error = "safetensors index/model file not found in gpt-oss model directory";
+        return std::nullopt;
+    }
+
+    GptOssTestModel model;
+    model.models_dir = models_dir;
+    model.model_id = model_id;
+    model.model_dir = model_dir;
+    return model;
+}
+
+bool has_metal_artifact(const fs::path& model_dir) {
+    return fs::exists(model_dir / "model.metal.bin") ||
+           fs::exists(model_dir / "metal" / "model.bin") ||
+           fs::exists(model_dir / "model.bin");
+}
+
+bool has_directml_artifact(const fs::path& model_dir) {
+    return fs::exists(model_dir / "model.directml.bin") ||
+           fs::exists(model_dir / "model.dml.bin");
 }
 }  // namespace
 
@@ -92,18 +173,27 @@ TEST(GptOssSafetensorsIntegrationTest, ExcludesMissingMetadataModels) {
     EXPECT_EQ(std::find(names.begin(), names.end(), "openai/gpt-oss-20b"), names.end());
 }
 
-// TDD RED: gpt-oss safetensors inference path is not implemented yet.
-TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromSafetensorsE2E) {
-    GTEST_SKIP() << "TDD RED: gpt-oss safetensors inference path not implemented yet";
-    llm_node::set_ready(true);
-    TempModelDir tmp;
-    create_gptoss_safetensors_model(tmp.path(), "openai/gpt-oss-20b");
+TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromMetalArtifactE2E) {
+#if !defined(__APPLE__)
+    GTEST_SKIP() << "Metal backend is only supported on macOS";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "USE_GPTOSS not enabled";
+#else
+    std::string error;
+    auto model = resolve_gptoss_test_model(error);
+    if (!model) {
+        GTEST_SKIP() << error;
+    }
+    if (!has_metal_artifact(model->model_dir)) {
+        GTEST_SKIP() << "Metal artifact not found in model dir";
+    }
 
-    ModelStorage storage(tmp.path().string());
-    LlamaManager llama(tmp.path().string());
+    llm_node::set_ready(true);
+    ModelStorage storage(model->models_dir.string());
+    LlamaManager llama(model->models_dir.string());
     InferenceEngine engine(llama, storage);
     ModelRegistry registry;
-    registry.setModels({"openai/gpt-oss-20b"});
+    registry.setModels({model->model_id});
 
     NodeConfig config;
     OpenAIEndpoints openai(registry, engine, config);
@@ -112,11 +202,55 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromSafetensorsE2E) {
     server.start();
 
     httplib::Client cli("127.0.0.1", 18150);
-    std::string body = R"({"model":"openai/gpt-oss-20b","messages":[{"role":"user","content":"hello"}]})";
+    std::string body =
+        std::string(R"({"model":")") + model->model_id +
+        R"(","messages":[{"role":"user","content":"hello"}]})";
     auto res = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
     EXPECT_NE(res->body.find("\"content\""), std::string::npos);
 
     server.stop();
+#endif
+}
+
+TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromDirectmlArtifactE2E) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "USE_GPTOSS not enabled";
+#else
+    std::string error;
+    auto model = resolve_gptoss_test_model(error);
+    if (!model) {
+        GTEST_SKIP() << error;
+    }
+    if (!has_directml_artifact(model->model_dir)) {
+        GTEST_SKIP() << "DirectML artifact not found in model dir";
+    }
+
+    llm_node::set_ready(true);
+    ModelStorage storage(model->models_dir.string());
+    LlamaManager llama(model->models_dir.string());
+    InferenceEngine engine(llama, storage);
+    ModelRegistry registry;
+    registry.setModels({model->model_id});
+
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18151, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18151);
+    std::string body =
+        std::string(R"({"model":")") + model->model_id +
+        R"(","messages":[{"role":"user","content":"hello"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    EXPECT_NE(res->body.find("\"content\""), std::string::npos);
+
+    server.stop();
+#endif
 }

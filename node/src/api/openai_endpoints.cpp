@@ -168,7 +168,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
-            if (!validateModel(model, res)) return;
+            if (!validateModel(model, "text", res)) return;
             ParsedChatMessages parsed;
             std::string parse_error;
             if (!parseChatMessages(body, parsed, parse_error)) {
@@ -239,7 +239,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
         try {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
-            if (!validateModel(model, res)) return;
+            if (!validateModel(model, "text", res)) return;
             std::string prompt = body.value("prompt", "");
             const auto params = parseInferenceParams(body);
             std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
@@ -269,7 +269,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 return;
             }
             std::string model = body["model"].get<std::string>();
-            if (!validateModel(model, res)) return;
+            if (!validateModel(model, "embeddings", res)) return;
 
             // inputを解析（文字列または文字列の配列）
             std::vector<std::string> inputs;
@@ -330,19 +330,27 @@ void OpenAIEndpoints::respondError(httplib::Response& res, int status, const std
     setJson(res, {{"error", code}, {"message", message}});
 }
 
-bool OpenAIEndpoints::validateModel(const std::string& model, httplib::Response& res) {
+bool OpenAIEndpoints::validateModel(const std::string& model,
+                                    const std::string& capability,
+                                    httplib::Response& res) {
     if (model.empty()) {
         respondError(res, 400, "model_required", "model is required");
         return false;
     }
     // Check local registry first
-    if (registry_.hasModel(model)) {
+    const bool in_registry = registry_.hasModel(model);
+    if (in_registry && !engine_.isInitialized()) {
         return true;
     }
-    // Try to resolve/load via ModelResolver (local -> router manifest)
+    // Try to resolve/load via ModelResolver (local -> shared -> router API)
     // loadModel() handles the full resolution flow
-    auto load_result = engine_.loadModel(model);
+    auto load_result = engine_.loadModel(model, capability);
     if (!load_result.success) {
+        const std::string prefix = "Model does not support capability:";
+        if (load_result.error_message.rfind(prefix, 0) == 0) {
+            respondError(res, 400, "invalid_request", load_result.error_message);
+            return false;
+        }
         respondError(res, 404, "model_not_found",
             load_result.error_message.empty() ? "model not found" : load_result.error_message);
         return false;

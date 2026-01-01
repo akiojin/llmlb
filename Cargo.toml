@@ -31,7 +31,7 @@ tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 sysinfo = "0.30"
 
 [patch.crates-io]
-pest_generator = { path = "vendor/pest_generator" }
+pest_generator = { path = "vendor/pest_generator/generator" }
 
 [profile.release]
 opt-level = 3

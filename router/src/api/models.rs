@@ -850,6 +850,7 @@ fn append_supported_artifacts(
             priority,
             runtimes,
             url: Some(url),
+            optional: None,
         });
         existing.insert(artifact.name.clone());
     }
@@ -920,11 +921,21 @@ struct ManifestFile {
     runtimes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    optional: Option<bool>,
 }
 
 #[derive(Serialize)]
 struct Manifest {
+    format: String,
     files: Vec<ManifestFile>,
+}
+
+fn manifest_format_label(format: ArtifactFormat) -> &'static str {
+    match format {
+        ArtifactFormat::Gguf => "gguf",
+        ArtifactFormat::Safetensors => "safetensors",
+    }
 }
 
 fn manifest_file_priority(name: &str) -> Option<i32> {
@@ -935,7 +946,6 @@ fn manifest_file_priority(name: &str) -> Option<i32> {
         _ => None,
     }
 }
-
 fn resolve_safetensors_primary(
     siblings: &[HfSibling],
     requested: Option<String>,
@@ -1415,6 +1425,7 @@ pub async fn get_model_registry_manifest(
                 priority: None,
                 runtimes: runtime_hint.clone(),
                 url: Some(hf_resolve_url(&base_url, &repo, &selection.filename)),
+                optional: None,
             });
         }
         ArtifactFormat::Safetensors => {
@@ -1455,6 +1466,7 @@ pub async fn get_model_registry_manifest(
                     priority: manifest_file_priority(&name),
                     runtimes: runtime_hint.clone(),
                     url: Some(hf_resolve_url(&base_url, &repo, &name)),
+                    optional: None,
                 });
             }
         }
@@ -1466,6 +1478,7 @@ pub async fn get_model_registry_manifest(
             priority: manifest_file_priority("model.metal.bin"),
             runtimes: runtime_hint.clone(),
             url: Some(hf_resolve_url(&base_url, &repo, &metal_path)),
+            optional: None,
         });
     }
 
@@ -1482,8 +1495,11 @@ pub async fn get_model_registry_manifest(
             .unwrap();
     }
 
-    let body =
-        serde_json::to_string(&Manifest { files }).unwrap_or_else(|_| "{\"files\":[]}".into());
+    let body = serde_json::to_string(&Manifest {
+        format: manifest_format_label(selection.format).to_string(),
+        files,
+    })
+    .unwrap_or_else(|_| "{\"format\":\"unknown\",\"files\":[]}".into());
     Response::builder()
         .status(StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
@@ -1662,6 +1678,7 @@ mod tests {
                 "https://hf.example.com/openai/gpt-oss-20b/resolve/main/model.safetensors.index.json"
                     .into(),
             ),
+            optional: None,
         }];
 
         let runtime_hint = Some(vec!["gptoss_cpp".into()]);

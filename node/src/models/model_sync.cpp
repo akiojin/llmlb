@@ -470,8 +470,9 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             size_t file_bps = f.value("max_bps", static_cast<size_t>(0));
 
             int priority = f.value("priority", 0);
+            bool optional = f.value("optional", false);
 
-            auto task_fn = [this, &downloader, model_id, url, name, digest, cb, model_cfg, file_chunk, file_bps, priority]() {
+            auto task_fn = [this, &downloader, model_id, url, name, digest, cb, model_cfg, file_chunk, file_bps, priority, optional]() {
                 size_t orig_chunk = downloader.getChunkSize();
                 size_t orig_bps = downloader.getMaxBytesPerSec();
 
@@ -532,6 +533,9 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);
+                if (out.empty() && optional) {
+                    return true;
+                }
                 return !out.empty();
             };
 

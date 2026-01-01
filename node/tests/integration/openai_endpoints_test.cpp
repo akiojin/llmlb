@@ -1,15 +1,45 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 
 #include "api/http_server.h"
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
+#include "core/llama_manager.h"
 #include "models/model_registry.h"
+#include "models/model_storage.h"
 #include "core/inference_engine.h"
 #include "utils/config.h"
 #include "runtime/state.h"
 
 using namespace llm_node;
+namespace fs = std::filesystem;
+
+namespace {
+class TempDir {
+public:
+    TempDir() {
+        auto base = fs::temp_directory_path() / fs::path("openai-endpoints-XXXXXX");
+        std::string tmpl = base.string();
+        std::vector<char> buf(tmpl.begin(), tmpl.end());
+        buf.push_back('\0');
+        char* created = mkdtemp(buf.data());
+        path = created ? fs::path(created) : fs::temp_directory_path();
+    }
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+    fs::path path;
+};
+
+void write_text(const fs::path& path, const std::string& content) {
+    std::ofstream ofs(path);
+    ofs << content;
+}
+}  // namespace
 
 TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     llm_node::set_ready(true);  // Ensure node is ready
@@ -172,6 +202,38 @@ TEST(OpenAIEndpointsTest, ReturnsErrorOnMissingModel) {
     auto res = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 400);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
+    llm_node::set_ready(true);
+
+    TempDir tmp;
+    const std::string model_id = "openai/gpt-oss-20b";
+    auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_id);
+    fs::create_directories(model_dir);
+    write_text(model_dir / "config.json", R"({"architectures":["GptOssForCausalLM"]})");
+    write_text(model_dir / "tokenizer.json", R"({"dummy":true})");
+    write_text(model_dir / "model.safetensors", "dummy");
+
+    ModelStorage storage(tmp.path.string());
+    LlamaManager llama(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+    ModelRegistry registry;
+    registry.setModels({model_id});
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18098, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18098);
+    std::string body = std::string(R"({"model":")") + model_id + R"(","input":"hello"})";
+    auto res = cli.Post("/v1/embeddings", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("does not support capability"), std::string::npos);
 
     server.stop();
 }

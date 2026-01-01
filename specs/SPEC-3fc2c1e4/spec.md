@@ -42,8 +42,24 @@
 - **形式選択**: safetensors/GGUF/Metal 等の選択は Node が実行環境に応じて行う。
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、Nodeが選択したアーティファクトを置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
-- **内蔵エンジンはプラグイン形式**: Node 本体は Engine Host とし、各エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能にする。
-- **ABI固定**: プラグインは C ABI で互換性を保証し、`abi_version` を必須とする。
+- **内蔵エンジンの要件は単一化**: 詳細は「内蔵エンジン要件（単一要件）」に統合済み。
+
+## 内蔵エンジン要件（単一要件）
+
+- **REQ-IE-001**: 内蔵エンジンは **RuntimeType/format/capabilities** に基づく単一の分類規約を持ち、  
+  LLM/Embedding（`LlamaCpp`,`GptOssCpp`,`NemotronCpp`）、ASR（`WhisperCpp`）、TTS（`OnnxRuntime`）、  
+  画像生成（`StableDiffusion`）、画像認識（新エンジン）として扱う。  
+  **内蔵エンジンの具体例**は llama.cpp / gpt-oss / nemotron / whisper.cpp / stable-diffusion.cpp / ONNX Runtime とする。  
+  併せて、次の条件を **1つの要件として**満たすこと:
+  - **プラグイン形式**: Node 本体は Engine Host とし、エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能。
+  - **ABI固定**: プラグインは C ABI で互換性を保証し、`abi_version` を必須とする。
+  - **選択ソース**: 登録時に確定した `format` と HF 由来メタデータ（`config.json` 等）を正とし、  
+    `metadata.json` のような独自メタデータには依存しない。
+  - **自動フォールバック禁止**: safetensors/GGUF が共存する場合は登録時の `format` 指定が必須で、  
+    実行時の形式切替は行わない。
+  - **GPU前提**: エンジンは GPU 前提（macOS=Metal / Windows=DirectML / Linux=Cudaは実験扱い）。
+  - **可否判定**: この分類は EngineRegistry/EngineHost および `/v1/models` の可否判定に反映され、  
+    **未対応カテゴリは登録対象から除外**される。
 
 ## 内蔵エンジンのアーキテクチャ（概念）
 
@@ -104,6 +120,7 @@
   - GPU 要件（Metal / DirectML / CUDA(実験)）
 - **互換性**: C ABI を固定し、ABI 互換を破る変更は abi_version を更新する
 - **解決順序**: EngineRegistry が RuntimeType と format をキーにプラグインを解決する
+  - ベンチマーク未設定の場合、**プラグイン（非builtin）を優先**し、builtinはフォールバックとする
 
 ### RuntimeType とエンジンの対応（現状）
 
@@ -123,6 +140,14 @@
 3. **変換は行わない**（safetensors/GGUF/Metalはそのまま扱う）。
 4. **最適化アーティファクトは “実行キャッシュ”** として利用可能だが、
    ローカル実体に存在しない場合はHFから直接取得する。
+
+## 性能/メモリ要件（測定と制約）
+
+- **測定タイミング**: モデル登録時・エンジン更新時にベンチマークを実行する。
+- **測定指標**: throughput（tokens/sec）、TTFT、VRAM使用率（ピーク/平均）を記録する。
+- **測定条件**: コンテキスト長やバッチサイズなどの条件をメタデータとして保持する。
+- **制約**: VRAM使用率が90%を超過、またはOOMの場合は失敗として扱う。
+- **反映**: 測定結果は EngineRegistry の選択に反映する。
 
 ### Nemotron の位置づけ
 
@@ -182,6 +207,10 @@
   - スループット（tokens/sec）+ TTFT + VRAM使用率の加重スコア
 - **結果保存**: モデルメタデータに埋め込み
   - supported_models.json等にベンチマーク結果を追記
+- **保存形式（暫定）**:
+  - モデルメタデータ内に「engine_id → 複合スコア」の対応を保持する
+  - EngineRegistryはこのスコアを参照して同一runtime内のエンジンを選択する
+  - 参照できない場合は登録順の先頭エンジンを選択し、警告ログを残す
 
 **エラーハンドリング**:
 

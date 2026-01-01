@@ -39,7 +39,7 @@
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | ✅ | P1 | ✅ |
 | `SPEC-32e2b31a` | LLM Router System（統合版・アーカイブ） | ✅ | P1 | ✅ |
 | `SPEC-35375000` | ルーター負荷最適化 | ✅ | P1 | ✅ |
-| `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | ✅ | P2 | 🔨 |
+| `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | ✅ | P2 | ✅ |
 | `SPEC-443acc8c` | ヘルスチェックシステム | ✅ | P1 | ✅ |
 | `SPEC-589f2df1` | ロードバランシングシステム | ✅ | P1 | ✅ |
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | ✅ | P1 | ✅ |
@@ -60,16 +60,16 @@
 |---------|--------|--------|----------|------|
 | `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | ✅ | P2 | ✅ |
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | ✅ | P1 | ✅ |
-| `SPEC-11106000` | Hugging Face URL 登録（変換なし） | ✅ | P1 | 🔨 |
+| `SPEC-11106000` | Hugging Face URL 登録（変換なし） | ✅ | P1 | ✅ |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | ✅ | P2 | ✅ |
 | `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ | P1 | ✅ |
 | `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
-| `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | 🔨 |
-| `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | 🔨 |
+| `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | ✅ |
+| `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | ✅ |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ | P2 | ✅ |
-| `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | 🔨 |
-| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | 🗑️ | - | - |
+| `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | ✅ |
+| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | ✅ | P1 | ✅ |
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
@@ -130,7 +130,7 @@
 |---------|--------|------|
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 完了 |
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | 完了 |
-| `SPEC-11106000` | Hugging Face URL 登録（変換なし） | 改定中 |
+| `SPEC-11106000` | Hugging Face URL 登録（変換なし） | 完了 |
 | `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 完了 |
 | `SPEC-32637000` | モデル capabilities に基づくルーティング検証 | 完了 |
 | `SPEC-32e2b31a` | LLM Router System（統合版・アーカイブ） | 完了 |
@@ -141,7 +141,7 @@
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | 完了 |
 | `SPEC-63acef08` | 統一APIプロキシ | 完了 |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | 完了 |
-| `SPEC-6cd7f960` | 対応モデルリスト型管理 | 改定中 |
+| `SPEC-6cd7f960` | 対応モデルリスト型管理 | 完了 |
 | `SPEC-799b8e2b` | 共通ログシステム | 完了 |
 | `SPEC-7c0a37e0` | APIキースコープシステム | 完了 |
 | `SPEC-94621a1f` | ノード自己登録システム | 完了 |
@@ -159,15 +159,15 @@
 | `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | 完了 |
 | `SPEC-1970e39f` | 構造化ロギング強化 | 完了 |
 | `SPEC-1f2a9c3d` | SPEC-log-api: Node / Router Log Retrieval API | 完了 |
-| `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | 実装中 |
+| `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | 完了 |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | 完了 |
-| `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | 実装中 |
+| `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | 完了 |
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | 完了 |
 | `SPEC-48678000` | モデル自動解決機能 | 完了 |
 | `SPEC-4b6e9f2a` | クラウドモデルプレフィックスルーティング | 完了 |
 | `SPEC-5fc9fe92` | Playground Chat マルチモーダル対応 | 完了 |
 | `SPEC-712c20cf` | 管理ダッシュボード | 完了 |
-| `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | 実装中 |
+| `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | 完了 |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | 完了 |
 | `SPEC-a7e6d40a` | CLI インターフェース整備 | 完了 |
 | `SPEC-dc648675` | Worktree環境での作業境界強制システム | 完了 |

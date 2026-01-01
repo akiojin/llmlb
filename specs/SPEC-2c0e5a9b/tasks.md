@@ -27,6 +27,7 @@
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導）。
 - [x] Node: DirectML 最適化アーティファクト（model.directml.bin / model.dml.bin）をロード対象として扱う。
+- [x] Node: DirectML ランタイム DLL を動的ロードし、未配置時は明示エラーを返す。
 - [x] Node: DirectML 向け gpt-oss プラグインの最小スケルトンを追加。
 
 ## Unit Tests (GREEN)
@@ -34,6 +35,7 @@
 - [x] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
 - [x] Node: manifest の optional ファイルは取得失敗でも継続できるユニットテスト。
 - [x] Node: プラグイン manifest/ABI の検証ユニットテスト。
+- [x] Node: DirectML ランタイム未配置時のロード失敗を検証するユニットテスト。
 
 ## Docs
 - [x] README.md / README.ja.md に gpt-oss safetensors 前提と実行要件を追記。

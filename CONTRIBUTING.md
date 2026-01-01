@@ -10,6 +10,8 @@ changes small, well-documented, and fully verified before pushing.
   helpful (例: `fix(api): cloud key warning`).
 - Run the full quality gate locally; do not push on red tests or lint.
 - Default to simplicity; avoid adding dependencies unless necessary.
+- Third-party OSS must be added as git submodules.
+- Do not modify submodule contents directly; use a fork if changes are required.
 
 ## Workflow
 1. Read relevant specs under `specs/` and `.assistant/PLANS.md`.

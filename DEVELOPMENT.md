@@ -47,3 +47,6 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 - Upstream (leejet/stable-diffusion.cpp) updates are synced manually on demand
   (cherry-pick/merge into the fork) to keep control of breaking changes.
 - We do not plan to open upstream PRs for these changes unless explicitly requested.
+- Third-party OSS should be added as git submodules.
+- Do not modify submodule contents directly. If changes are required, use a fork
+  and update the submodule pointer.

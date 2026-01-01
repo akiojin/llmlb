@@ -739,7 +739,7 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
     return tokens.back();
 }
 
-ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
+ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const std::string& capability) {
     ModelLoadResult result;
 
     if (!isInitialized()) {
@@ -753,7 +753,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
         return result;
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, capability) : nullptr;
     if (!engine) {
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;
@@ -784,13 +784,19 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         throw std::runtime_error("Model not found: " + model_name);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
 
     return engine->generateEmbeddings(inputs, *desc);
 }
+
+#ifdef LLM_NODE_TESTING
+void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
+    engines_ = std::move(registry);
+}
+#endif
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
     Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;

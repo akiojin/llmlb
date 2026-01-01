@@ -18,6 +18,9 @@
 - [x] Tests: EngineRegistry の format フィルタを検証する
 - [x] Node: EngineRegistry が capability に一致するエンジンのみ解決する
 - [x] Tests: EngineRegistry の capability フィルタを検証する
+- [x] Node: InferenceEngine が endpoint に応じた capability でモデルをロードする
+- [x] Node: generateEmbeddings で embeddings capability を指定して解決する
+- [x] Tests: capability 指定に応じたエンジン解決（loadModel/embeddings）を検証する
 - [x] Node: ModelDescriptor に capabilities を付与し、runtime→capabilities を埋める
 - [x] Tests: EngineRegistry のベンチマーク選択とフォールバックを検証する
 - [x] Node: ベンチマーク未設定時はプラグイン（非builtin）を優先する

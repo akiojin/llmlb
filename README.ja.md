@@ -382,6 +382,9 @@ Router (OpenAI-compatible)
     - シャーディングされている場合は `.index.json` が必要です。
     - gpt-oss は公式GPUアーティファクトを優先します:
       `model.metal.bin`（Metal）/ `model.directml.bin` または `model.dml.bin`（DirectML）。
+    - Windows（DirectML）は `gptoss_directml.dll` が必要です。
+      - モデル配下に配置（例: `<model_dir>/gptoss_directml.dll`）するか、
+      - `LLM_NODE_GPTOSS_DML_LIB` に絶対パスを指定してください。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
 - ノードはモデルをプッシュ配布されず、オンデマンドでルーターから取得します:

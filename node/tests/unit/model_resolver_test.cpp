@@ -55,7 +55,7 @@ public:
             std::string body = manifest_body_;
             if (body.empty()) {
                 body = std::string("{\"files\":[{\"name\":\"model.gguf\",\"url\":\"") +
-                       baseUrl() + "/files/model.gguf\"}]}") ;
+                       baseUrl() + "/files/model.gguf\"}]}";
             }
             res.status = 200;
             res.set_content(body, "application/json");

@@ -19,3 +19,6 @@
 [submodule "vendor/pest_generator"]
 	path = vendor/pest_generator
 	url = https://github.com/pest-parser/pest.git
+[submodule "node/third_party/safetensors-cpp"]
+	path = node/third_party/safetensors-cpp
+	url = https://github.com/syoyo/safetensors-cpp

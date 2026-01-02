@@ -684,6 +684,11 @@ std::string InferenceEngine::generateChatWithImages(
 
     llama_sampler_free(sampler);
 
+    llama_memory_t end_mem = llama_get_memory(ctx);
+    if (end_mem) {
+        llama_memory_clear(end_mem, false);
+    }
+
     apply_stop_sequences_suffix(output, stop_sequences);
 
     if (isGptOssModel(model)) {

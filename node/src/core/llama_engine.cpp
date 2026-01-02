@@ -437,7 +437,8 @@ std::string LlamaEngine::generateChat(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
-
+    KvCacheScope kv_scope(ctx);
+    KvCacheScope kv_scope(ctx);
 
     // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
     std::string prompt = applyModelChatTemplate(model, messages);
@@ -650,6 +651,7 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model");
     }
+    KvCacheScope kv_scope(ctx);
 
     // 3. vocab取得とプロンプト処理（モデル固有のチャットテンプレートを使用）
     const llama_vocab* vocab = llama_model_get_vocab(model);
@@ -915,10 +917,7 @@ std::vector<std::vector<float>> LlamaEngine::generateEmbeddings(
         tokens.resize(static_cast<size_t>(n_tokens));
 
         // メモリをクリア（新しい入力をエンコードする前に）
-        llama_memory_t mem = llama_get_memory(ctx);
-        if (mem) {
-            llama_memory_clear(mem, false);
-        }
+        reset_kv_cache(ctx, "embed_input");
 
         // バッチを作成（全トークンのembeddingを出力）
         llama_batch batch = llama_batch_init(static_cast<int32_t>(tokens.size()), 0, 1);

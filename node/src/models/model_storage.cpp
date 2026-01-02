@@ -16,6 +16,24 @@ using json = nlohmann::json;
 namespace llm_node {
 
 namespace {
+std::optional<ParsedModelName> parse_model_name_with_quantization(const std::string& model_name) {
+    if (model_name.empty()) return std::nullopt;
+    auto pos = model_name.find(':');
+    if (pos == std::string::npos) {
+        return ParsedModelName{model_name, std::nullopt};
+    }
+    if (model_name.find(':', pos + 1) != std::string::npos) {
+        return std::nullopt;
+    }
+    if (pos == 0 || pos == model_name.size() - 1) {
+        return std::nullopt;
+    }
+    return ParsedModelName{
+        model_name.substr(0, pos),
+        model_name.substr(pos + 1),
+    };
+}
+
 bool is_regular_or_symlink_file(const fs::path& path) {
     std::error_code ec;
     auto st = fs::symlink_status(path, ec);
@@ -93,6 +111,47 @@ std::optional<std::string> load_manifest_format(const fs::path& model_dir) {
     } catch (...) {
         return std::string("invalid");
     }
+}
+
+std::optional<std::string> load_manifest_quantization(const fs::path& model_dir) {
+    const auto manifest_path = model_dir / "manifest.json";
+    if (!is_regular_or_symlink_file(manifest_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(manifest_path);
+        json j;
+        ifs >> j;
+        if (!j.contains("quantization")) return std::nullopt;
+        if (!j["quantization"].is_string()) return std::nullopt;
+        const auto value = j["quantization"].get<std::string>();
+        if (value.empty()) return std::nullopt;
+        return value;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+void apply_manifest_quantization(ModelDescriptor& desc, const fs::path& model_dir) {
+    auto quant = load_manifest_quantization(model_dir);
+    if (!quant) return;
+    if (!desc.metadata.has_value() || !desc.metadata->is_object()) {
+        desc.metadata = nlohmann::json::object();
+    }
+    (*desc.metadata)["quantization"] = *quant;
+}
+
+void apply_quantization_request(ModelDescriptor& desc, const std::optional<std::string>& request) {
+    std::optional<std::string> effective = request;
+    if (!effective && desc.metadata && desc.metadata->contains("quantization")) {
+        const auto& q = (*desc.metadata)["quantization"];
+        if (q.is_string()) {
+            effective = q.get<std::string>();
+        }
+    }
+    if (!effective) return;
+    if (!desc.metadata.has_value() || !desc.metadata->is_object()) {
+        desc.metadata = nlohmann::json::object();
+    }
+    (*desc.metadata)["quantization_request"] = *effective;
 }
 
 std::optional<std::vector<std::string>> load_safetensors_index_shards(const fs::path& index_path) {
@@ -387,7 +446,9 @@ std::string sanitizeModelId(const std::string& input) {
 ModelStorage::ModelStorage(std::string models_dir) : models_dir_(std::move(models_dir)) {}
 
 std::string ModelStorage::modelNameToDir(const std::string& model_name) {
-    return sanitizeModelId(model_name);
+    auto parsed = parse_model_name_with_quantization(model_name);
+    const std::string& base = parsed ? parsed->base : model_name;
+    return sanitizeModelId(base);
 }
 
 std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
@@ -395,8 +456,14 @@ std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
     return sanitizeModelId(dir_name);
 }
 
+std::optional<ParsedModelName> ModelStorage::parseModelName(const std::string& model_name) {
+    return parse_model_name_with_quantization(model_name);
+}
+
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {
-    const std::string dir_name = modelNameToDir(model_name);
+    auto parsed = parse_model_name_with_quantization(model_name);
+    if (!parsed) return "";
+    const std::string dir_name = modelNameToDir(parsed->base);
     const auto model_dir = fs::path(models_dir_) / dir_name;
     if (auto manifest_format = load_manifest_format(model_dir)) {
         if (*manifest_format != "gguf") {
@@ -506,6 +573,7 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
         if (info.format == "gguf") {
             desc.runtime = "llama_cpp";
             desc.capabilities = capabilities_for_runtime(desc.runtime);
+            apply_manifest_quantization(desc, fs::path(desc.model_dir));
             out.push_back(std::move(desc));
             continue;
         }
@@ -519,6 +587,7 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
             if (auto meta = build_safetensors_metadata(fs::path(desc.model_dir), fs::path(desc.primary_path))) {
                 desc.metadata = std::move(*meta);
             }
+            apply_manifest_quantization(desc, fs::path(desc.model_dir));
             out.push_back(std::move(desc));
             continue;
         }
@@ -527,7 +596,9 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
 }
 
 std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string& model_name) const {
-    const std::string dir_name = modelNameToDir(model_name);
+    auto parsed = parse_model_name_with_quantization(model_name);
+    if (!parsed) return std::nullopt;
+    const std::string dir_name = modelNameToDir(parsed->base);
     const auto model_dir = fs::path(models_dir_) / dir_name;
 
     if (auto manifest_format = load_manifest_format(model_dir)) {
@@ -541,6 +612,8 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
                 desc.primary_path = gguf_path.string();
                 desc.model_dir = model_dir.string();
                 desc.capabilities = capabilities_for_runtime(desc.runtime);
+                apply_manifest_quantization(desc, model_dir);
+                apply_quantization_request(desc, parsed->quantization);
                 return desc;
             }
             return std::nullopt;
@@ -560,6 +633,8 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
                 if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
                     desc.metadata = std::move(*meta);
                 }
+                apply_manifest_quantization(desc, model_dir);
+                apply_quantization_request(desc, parsed->quantization);
                 return desc;
             }
             return std::nullopt;
@@ -576,6 +651,8 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         desc.primary_path = gguf_path.string();
         desc.model_dir = model_dir.string();
         desc.capabilities = capabilities_for_runtime(desc.runtime);
+        apply_manifest_quantization(desc, model_dir);
+        apply_quantization_request(desc, parsed->quantization);
         return desc;
     }
 
@@ -593,6 +670,8 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
             desc.metadata = std::move(*meta);
         }
+        apply_manifest_quantization(desc, model_dir);
+        apply_quantization_request(desc, parsed->quantization);
         return desc;
     }
 
@@ -600,7 +679,9 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
 }
 
 bool ModelStorage::validateModel(const std::string& model_name) const {
-    const std::string dir_name = modelNameToDir(model_name);
+    auto parsed = parse_model_name_with_quantization(model_name);
+    if (!parsed) return false;
+    const std::string dir_name = modelNameToDir(parsed->base);
     const auto model_dir = fs::path(models_dir_) / dir_name;
     if (auto manifest_format = load_manifest_format(model_dir)) {
         if (*manifest_format == "gguf") {

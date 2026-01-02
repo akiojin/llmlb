@@ -413,8 +413,17 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
         return "";
     }
 
+    auto parsed = ModelStorage::parseModelName(model_name);
+    if (!parsed) {
+        if (error_message) {
+            *error_message = "Invalid model name (invalid quantization format): " + model_name;
+        }
+        return "";
+    }
+    const std::string& lookup_name = parsed->base;
+
     if (model_resolver_ != nullptr) {
-        auto resolved = model_resolver_->resolve(model_name);
+        auto resolved = model_resolver_->resolve(lookup_name);
         if (resolved.success) {
             return resolved.path;
         }
@@ -422,12 +431,12 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
         return "";
     }
 
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    std::string gguf_path = model_storage_->resolveGguf(lookup_name);
     if (!gguf_path.empty()) {
         return gguf_path;
     }
 
-    if (error_message) *error_message = "Model not found: " + model_name;
+    if (error_message) *error_message = "Model not found: " + lookup_name;
     return "";
 }
 
@@ -732,6 +741,11 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
 
     if (!isInitialized()) {
         result.error_message = "InferenceEngine not initialized";
+        return result;
+    }
+
+    if (!ModelStorage::parseModelName(model_name).has_value()) {
+        result.error_message = "Invalid model name (invalid quantization format): " + model_name;
         return result;
     }
 

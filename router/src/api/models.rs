@@ -878,6 +878,8 @@ struct ManifestFile {
 struct Manifest {
     format: String,
     files: Vec<ManifestFile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantization: Option<String>,
 }
 
 fn manifest_format_label(format: ArtifactFormat) -> &'static str {
@@ -894,6 +896,54 @@ fn manifest_file_priority(name: &str) -> Option<i32> {
         "model.metal.bin" => Some(5),
         _ => None,
     }
+}
+
+fn is_quantization_token(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    if !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return false;
+    }
+    let upper = token.to_ascii_uppercase();
+    let has_digit = |s: &str| s.chars().any(|c| c.is_ascii_digit());
+    let starts_with_digit = |s: &str| s.chars().next().is_some_and(|c| c.is_ascii_digit());
+
+    if let Some(rest) = upper.strip_prefix("IQ") {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix('Q') {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix("BF") {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix("FP") {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix('F') {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix("MX") {
+        return has_digit(rest);
+    }
+    false
+}
+
+fn infer_quantization_from_filename(filename: &str) -> Option<String> {
+    let file = std::path::Path::new(filename)
+        .file_name()?
+        .to_string_lossy();
+    if !file.to_ascii_lowercase().ends_with(".gguf") {
+        return None;
+    }
+    let stem = file.strip_suffix(".gguf").unwrap_or(&file);
+    for token in stem.split(['-', '.']).rev() {
+        if is_quantization_token(token) {
+            return Some(token.to_string());
+        }
+    }
+    None
 }
 fn resolve_safetensors_primary(
     siblings: &[HfSibling],
@@ -1360,6 +1410,17 @@ pub async fn get_model_registry_manifest(
         ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo).await,
     };
 
+    let supported_quantization = get_supported_models()
+        .into_iter()
+        .find(|m| m.repo.eq_ignore_ascii_case(&repo))
+        .and_then(|m| m.quantization);
+    let quantization = match selection.format {
+        ArtifactFormat::Gguf => supported_quantization
+            .clone()
+            .or_else(|| infer_quantization_from_filename(&selection.filename)),
+        ArtifactFormat::Safetensors => supported_quantization.clone(),
+    };
+
     let base_url = hf_base_url();
     let mut files: Vec<ManifestFile> = Vec::new();
 
@@ -1430,6 +1491,7 @@ pub async fn get_model_registry_manifest(
     let body = serde_json::to_string(&Manifest {
         format: manifest_format_label(selection.format).to_string(),
         files,
+        quantization,
     })
     .unwrap_or_else(|_| "{\"format\":\"unknown\",\"files\":[]}".into());
     Response::builder()

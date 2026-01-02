@@ -311,6 +311,49 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramInsufficient) {
     EXPECT_NE(result.error_message.find("VRAM"), std::string::npos);
 }
 
+TEST(InferenceEngineTest, LoadModelRejectsWhenVramBudgetExceeded) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration primary_reg;
+    primary_reg.engine_id = "budget_engine";
+    primary_reg.engine_version = "test";
+    primary_reg.formats = {"gguf"};
+    primary_reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(1536),
+        primary_reg,
+        nullptr));
+
+    EngineRegistration other_reg;
+    other_reg.engine_id = "other_engine";
+    other_reg.engine_version = "test";
+    other_reg.formats = {"gguf"};
+    other_reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(256),
+        other_reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 0, 0, 2048};
+    });
+
+    auto result = engine.loadModel(model_name);
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_NE(result.error_message.find("budget"), std::string::npos);
+}
+
 TEST(InferenceEngineTest, OpenAIResponds503WhenVramInsufficient) {
     llm_node::set_ready(true);
     TempDir tmp;

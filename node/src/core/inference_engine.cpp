@@ -5,6 +5,7 @@
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
 #include "core/nemotron_engine.h"
+#include "core/request_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"
 #include "models/model_descriptor.h"
@@ -28,18 +29,19 @@ namespace {
 std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens) {
     std::vector<std::string> tokens;
     std::string current;
+    const size_t effective_max_tokens = max_tokens == 0 ? kDefaultMaxTokens : max_tokens;
     for (char c : text) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (!current.empty()) {
                 tokens.push_back(current);
-                if (tokens.size() >= max_tokens) break;
+                if (tokens.size() >= effective_max_tokens) break;
                 current.clear();
             }
         } else {
             current.push_back(c);
         }
     }
-    if (!current.empty() && tokens.size() < max_tokens) {
+    if (!current.empty() && tokens.size() < effective_max_tokens) {
         tokens.push_back(current);
     }
     return tokens;
@@ -461,6 +463,7 @@ std::string InferenceEngine::generateChat(
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
 
+    RequestWatchdog watchdog;
     return engine->generateChat(messages, *desc, params);
 }
 
@@ -479,6 +482,8 @@ std::string InferenceEngine::generateChatWithImages(
         if (messages.empty()) return "";
         return "Response to: " + messages.back().content;
     }
+
+    RequestWatchdog watchdog;
 
     std::string error;
     std::string gguf_path = resolveModelPath(model_name, &error);
@@ -664,6 +669,7 @@ std::string InferenceEngine::generateCompletion(
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
 
+    RequestWatchdog watchdog;
     return engine->generateCompletion(prompt, *desc, params);
 }
 
@@ -694,6 +700,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
 
+    RequestWatchdog watchdog;
     return engine->generateChatStream(messages, *desc, params, on_token);
 }
 
@@ -804,6 +811,7 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
 
+    RequestWatchdog watchdog;
     return engine->generateEmbeddings(inputs, *desc);
 }
 

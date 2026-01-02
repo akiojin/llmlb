@@ -107,8 +107,17 @@
 - **Inference Engine（外側）**
   - 共通の推論インターフェース。内部で runtime に応じてプラグインを振り分ける。
   - GGUF → `llama.cpp`、TTS → `ONNX Runtime`、safetensors → 独自エンジン群（すべてプラグイン）。
+  - **GGUFは llama.cpp が複数アーキテクチャ（llama/mistral/gemma/phi 等）を横断的に駆動**する。
+  - **safetensorsは原則「モデルごとの専用エンジン」**で対応する（例: gpt-oss, nemotron）。
+    - 汎用safetensorsエンジンの可能性は否定しないが、**初期要件では前提にしない**。
   - 公式最適化アーティファクトは **実行キャッシュ**として利用可能だが、
     Nodeが選択したアーティファクトは上書きしない。
+
+### GPUバックエンド（最下層レイヤー）
+
+- **Metal**（macOS / Apple Silicon）
+- **DirectML**（Windows / D3D12）
+- **CUDA**（Linux: 実験扱い）
 
 ### プラグイン設計指針（Node）
 

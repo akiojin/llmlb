@@ -41,10 +41,10 @@ test.describe('Dashboard Stats Grid @dashboard', () => {
     await expect(gpuMemory).toBeVisible();
   });
 
-  test('S-07: Stats grid contains 6 cards', async ({ page }) => {
-    // All 6 stat cards should be visible
+  test('S-07: Stats grid contains 8 cards', async ({ page }) => {
+    // All 8 stat cards should be visible
     const statCards = page.locator('[data-stat]');
-    await expect(statCards).toHaveCount(6);
+    await expect(statCards).toHaveCount(8);
   });
 
   test('S-08: Stats update on refresh', async ({ page }) => {

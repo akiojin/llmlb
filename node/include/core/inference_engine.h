@@ -100,6 +100,10 @@ public:
 
     /// エンジンプラグインをロードする
     bool loadEnginePlugins(const std::filesystem::path& directory, std::string& error);
+    /// エンジンプラグインをシャドウロードして差し替える
+    bool reloadEnginePlugins(const std::filesystem::path& directory, std::string& error);
+    /// リクエストがアイドルなら保留中のプラグイン差し替えを適用
+    void applyPendingEnginePluginsIfIdle(std::string* error = nullptr);
 
 #ifdef LLM_NODE_TESTING
     /// テスト専用: EngineRegistry を差し替える

@@ -39,6 +39,10 @@ public:
     bool registerEngine(EngineHandle engine, const EngineRegistration& registration, std::string* error);
     void registerEngine(std::unique_ptr<Engine> engine);
     void registerEngine(EngineHandle engine);
+    bool replaceEngine(EngineHandle engine,
+                       const EngineRegistration& registration,
+                       EngineHandle* replaced,
+                       std::string* error);
     Engine* resolve(const std::string& runtime) const;
     Engine* resolve(const ModelDescriptor& descriptor) const;
     Engine* resolve(const ModelDescriptor& descriptor, const std::string& capability) const;

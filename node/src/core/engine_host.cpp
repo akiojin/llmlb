@@ -186,9 +186,97 @@ bool isGpuTargetCompatible(const std::vector<std::string>& gpu_targets) {
     return false;
 }
 
+struct LoadedPluginState {
+    std::string engine_id;
+    std::filesystem::path library_path;
+    LibraryHandle library;
+    EngineRegistry::EngineHandle engine;
+    EngineRegistration registration;
+};
+
+bool preparePlugin(const std::filesystem::path& manifest_path,
+                   const EngineHostContext& context,
+                   LoadedPluginState& state,
+                   bool& skipped,
+                   std::string& error,
+                   const EngineHost& host) {
+    skipped = false;
+    state = {};
+
+    EnginePluginManifest manifest;
+    if (!host.loadManifest(manifest_path, manifest, error)) return false;
+
+    if (!isGpuTargetCompatible(manifest.gpu_targets)) {
+        skipped = true;
+        error.clear();
+        return true;
+    }
+
+    auto lib_path = resolveLibraryPath(manifest_path.parent_path(), manifest.library);
+    auto lib = openLibrary(lib_path, error);
+    if (!lib) return false;
+
+    auto create_fn = reinterpret_cast<llm_node_create_engine_fn>(
+        loadSymbol(lib, "llm_node_create_engine", error));
+    if (!create_fn) {
+        closeLibrary(lib);
+        return false;
+    }
+    auto destroy_fn = reinterpret_cast<llm_node_destroy_engine_fn>(
+        loadSymbol(lib, "llm_node_destroy_engine", error));
+    if (!destroy_fn) {
+        closeLibrary(lib);
+        return false;
+    }
+
+    Engine* engine = create_fn(&context);
+    if (!engine) {
+        error = "engine factory returned null";
+        closeLibrary(lib);
+        return false;
+    }
+
+    if (std::find(manifest.runtimes.begin(), manifest.runtimes.end(), engine->runtime()) ==
+        manifest.runtimes.end()) {
+        error = "engine runtime not declared in manifest";
+        destroy_fn(engine);
+        closeLibrary(lib);
+        return false;
+    }
+
+    EngineDeleter deleter;
+    deleter.destroy = destroy_fn;
+    EngineRegistry::EngineHandle handle(engine, deleter);
+
+    EngineRegistration registration;
+    registration.engine_id = manifest.engine_id;
+    registration.engine_version = manifest.engine_version;
+    registration.formats = manifest.formats;
+    registration.architectures = manifest.architectures;
+    registration.capabilities = manifest.capabilities;
+
+    state.engine_id = manifest.engine_id;
+    state.library_path = lib_path;
+    state.library = lib;
+    state.engine = std::move(handle);
+    state.registration = std::move(registration);
+    return true;
+}
+
 }  // namespace
 
 EngineHost::~EngineHost() {
+    for (auto& pending : pending_) {
+        pending.engine.reset();
+        LibraryHandle handle;
+#ifdef _WIN32
+        handle.handle = reinterpret_cast<HMODULE>(pending.handle);
+#else
+        handle.handle = pending.handle;
+#endif
+        closeLibrary(handle);
+        pending.handle = nullptr;
+    }
     for (auto& plugin : plugins_) {
         LibraryHandle handle;
 #ifdef _WIN32
@@ -351,69 +439,25 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
                             EngineRegistry& registry,
                             const EngineHostContext& context,
                             std::string& error) {
-    EnginePluginManifest manifest;
-    if (!loadManifest(manifest_path, manifest, error)) return false;
+    LoadedPluginState state;
+    bool skipped = false;
+    if (!preparePlugin(manifest_path, context, state, skipped, error, *this)) return false;
+    if (skipped) return true;
 
-    if (!isGpuTargetCompatible(manifest.gpu_targets)) {
-        error.clear();
-        return true;
-    }
-
-    auto lib_path = resolveLibraryPath(manifest_path.parent_path(), manifest.library);
-    auto lib = openLibrary(lib_path, error);
-    if (!lib) return false;
-
-    auto create_fn = reinterpret_cast<llm_node_create_engine_fn>(
-        loadSymbol(lib, "llm_node_create_engine", error));
-    if (!create_fn) {
-        closeLibrary(lib);
-        return false;
-    }
-    auto destroy_fn = reinterpret_cast<llm_node_destroy_engine_fn>(
-        loadSymbol(lib, "llm_node_destroy_engine", error));
-    if (!destroy_fn) {
-        closeLibrary(lib);
-        return false;
-    }
-
-    Engine* engine = create_fn(&context);
-    if (!engine) {
-        error = "engine factory returned null";
-        closeLibrary(lib);
-        return false;
-    }
-
-    if (std::find(manifest.runtimes.begin(), manifest.runtimes.end(), engine->runtime()) ==
-        manifest.runtimes.end()) {
-        error = "engine runtime not declared in manifest";
-        destroy_fn(engine);
-        closeLibrary(lib);
-        return false;
-    }
-
-    EngineDeleter deleter;
-    deleter.destroy = destroy_fn;
-    EngineRegistry::EngineHandle handle(engine, deleter);
-    EngineRegistration registration;
-    registration.engine_id = manifest.engine_id;
-    registration.engine_version = manifest.engine_version;
-    registration.formats = manifest.formats;
-    registration.architectures = manifest.architectures;
-    registration.capabilities = manifest.capabilities;
     std::string reg_error;
-    if (!registry.registerEngine(std::move(handle), registration, &reg_error)) {
+    if (!registry.registerEngine(std::move(state.engine), state.registration, &reg_error)) {
         error = reg_error;
-        closeLibrary(lib);
+        closeLibrary(state.library);
         return false;
     }
 
     LoadedPlugin loaded;
-    loaded.engine_id = manifest.engine_id;
-    loaded.library_path = lib_path;
+    loaded.engine_id = state.engine_id;
+    loaded.library_path = state.library_path;
 #ifdef _WIN32
-    loaded.handle = reinterpret_cast<void*>(lib.handle);
+    loaded.handle = reinterpret_cast<void*>(state.library.handle);
 #else
-    loaded.handle = lib.handle;
+    loaded.handle = state.library.handle;
 #endif
     plugins_.push_back(std::move(loaded));
     return true;
@@ -461,6 +505,140 @@ bool EngineHost::loadPluginsFromDir(const std::filesystem::path& directory,
         return false;
     }
 
+    return ok;
+}
+
+bool EngineHost::stagePlugin(const std::filesystem::path& manifest_path,
+                             const EngineHostContext& context,
+                             std::string& error) {
+    LoadedPluginState state;
+    bool skipped = false;
+    if (!preparePlugin(manifest_path, context, state, skipped, error, *this)) return false;
+    if (skipped) return true;
+
+    auto pending_it = std::find_if(pending_.begin(), pending_.end(), [&](const PendingPlugin& entry) {
+        return entry.engine_id == state.engine_id;
+    });
+    if (pending_it != pending_.end()) {
+        pending_it->engine.reset();
+        LibraryHandle handle;
+#ifdef _WIN32
+        handle.handle = reinterpret_cast<HMODULE>(pending_it->handle);
+#else
+        handle.handle = pending_it->handle;
+#endif
+        closeLibrary(handle);
+        pending_.erase(pending_it);
+    }
+
+    PendingPlugin pending;
+    pending.engine_id = state.engine_id;
+    pending.library_path = state.library_path;
+#ifdef _WIN32
+    pending.handle = reinterpret_cast<void*>(state.library.handle);
+#else
+    pending.handle = state.library.handle;
+#endif
+    pending.engine = std::move(state.engine);
+    pending.registration = std::move(state.registration);
+    pending_.push_back(std::move(pending));
+    return true;
+}
+
+bool EngineHost::stagePluginsFromDir(const std::filesystem::path& directory,
+                                     const EngineHostContext& context,
+                                     std::string& error) {
+    error.clear();
+    if (directory.empty()) return true;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(directory, ec)) {
+        return true;
+    }
+
+    bool ok = true;
+    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+        if (ec) break;
+        std::filesystem::path manifest_path;
+        if (entry.is_directory()) {
+            manifest_path = entry.path() / "manifest.json";
+        } else if (entry.is_regular_file() && entry.path().filename() == "manifest.json") {
+            manifest_path = entry.path();
+        } else {
+            continue;
+        }
+
+        if (!std::filesystem::exists(manifest_path)) {
+            continue;
+        }
+
+        std::string load_error;
+        if (!stagePlugin(manifest_path, context, load_error)) {
+            ok = false;
+            if (error.empty()) {
+                error = load_error;
+            }
+        }
+    }
+
+    if (ec && error.empty()) {
+        error = "failed to scan plugin directory: " + directory.string();
+        return false;
+    }
+
+    return ok;
+}
+
+bool EngineHost::applyPendingPlugins(EngineRegistry& registry, std::string& error) {
+    error.clear();
+    bool ok = true;
+    for (auto& pending : pending_) {
+        std::string reg_error;
+        EngineRegistry::EngineHandle replaced;
+        if (!registry.replaceEngine(std::move(pending.engine), pending.registration, &replaced, &reg_error)) {
+            ok = false;
+            if (error.empty()) {
+                error = reg_error;
+            }
+            LibraryHandle handle;
+#ifdef _WIN32
+            handle.handle = reinterpret_cast<HMODULE>(pending.handle);
+#else
+            handle.handle = pending.handle;
+#endif
+            closeLibrary(handle);
+            pending.handle = nullptr;
+            continue;
+        }
+
+        LibraryHandle old_handle;
+        bool had_old_handle = false;
+        auto existing_it = std::find_if(plugins_.begin(), plugins_.end(), [&](const LoadedPlugin& entry) {
+            return entry.engine_id == pending.engine_id;
+        });
+        if (existing_it != plugins_.end()) {
+#ifdef _WIN32
+            old_handle.handle = reinterpret_cast<HMODULE>(existing_it->handle);
+#else
+            old_handle.handle = existing_it->handle;
+#endif
+            had_old_handle = true;
+            plugins_.erase(existing_it);
+        }
+
+        replaced.reset();
+        if (had_old_handle) {
+            closeLibrary(old_handle);
+        }
+
+        LoadedPlugin loaded;
+        loaded.engine_id = pending.engine_id;
+        loaded.library_path = pending.library_path;
+        loaded.handle = pending.handle;
+        plugins_.push_back(std::move(loaded));
+    }
+
+    pending_.clear();
     return ok;
 }
 

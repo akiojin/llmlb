@@ -14,6 +14,7 @@
 #include "mtmd.h"
 #include "mtmd-helper.h"
 #include "utils/stop_sequences.h"
+#include "runtime/state.h"
 
 #include <spdlog/spdlog.h>
 
@@ -398,6 +399,54 @@ bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, 
     context.llama_manager = manager_;
 
     return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
+}
+
+bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
+    if (!engines_) {
+        error = "EngineRegistry not initialized";
+        return false;
+    }
+
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    if (!engine_host_.stagePluginsFromDir(directory, context, error)) {
+        return false;
+    }
+
+    applyPendingEnginePluginsIfIdle(&error);
+    return error.empty();
+}
+
+void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) {
+    if (!engines_) {
+        if (error) *error = "EngineRegistry not initialized";
+        return;
+    }
+
+    if (!engine_host_.hasPendingPlugins()) {
+        if (error) error->clear();
+        return;
+    }
+
+    if (active_request_count() > 0) {
+        if (error) error->clear();
+        return;
+    }
+
+    std::string apply_error;
+    if (!engine_host_.applyPendingPlugins(*engines_, apply_error)) {
+        if (error) {
+            *error = apply_error;
+        }
+        if (!apply_error.empty()) {
+            spdlog::warn("Engine plugin reload failed: {}", apply_error);
+        }
+    } else if (error) {
+        error->clear();
+    }
 }
 
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {

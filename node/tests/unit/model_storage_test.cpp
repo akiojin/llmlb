@@ -34,6 +34,11 @@ static void create_model(const fs::path& models_dir, const std::string& dir_name
     std::ofstream(model_dir / "model.gguf") << "dummy gguf content";
 }
 
+static void create_gguf_file(const fs::path& model_dir, const std::string& filename) {
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / filename) << "dummy gguf content";
+}
+
 static void create_safetensors_model_with_index(const fs::path& models_dir, const std::string& dir_name) {
     auto model_dir = models_dir / dir_name;
     fs::create_directories(model_dir);
@@ -94,6 +99,17 @@ static void write_manifest_with_formats(const fs::path& model_dir, const std::ve
     nlohmann::json j;
     j["formats"] = formats;
     j["files"] = nlohmann::json::array();
+    std::ofstream(model_dir / "manifest.json") << j.dump();
+}
+
+static void write_manifest_with_format_and_quantization(
+    const fs::path& model_dir,
+    const std::string& format,
+    const std::string& quantization) {
+    nlohmann::json j;
+    j["format"] = format;
+    j["files"] = nlohmann::json::array();
+    j["quantization"] = quantization;
     std::ofstream(model_dir / "manifest.json") << j.dump();
 }
 
@@ -268,6 +284,77 @@ TEST(ModelStorageTest, ManifestFormatsPrefersFirstEntryGguf) {
     ASSERT_TRUE(desc.has_value());
     EXPECT_EQ(desc->format, "gguf");
     EXPECT_EQ(desc->runtime, "llama_cpp");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorSelectsQuantizedGguf) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-7b";
+    auto model_dir = tmp.base / model_name;
+    create_gguf_file(model_dir, "llama-7b.Q4_K_M.gguf");
+    create_gguf_file(model_dir, "llama-7b.Q5_K_M.gguf");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("llama-7b:Q4_K_M");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->format, "gguf");
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "llama-7b.Q4_K_M.gguf");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorRejectsUnknownQuantization) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-7b";
+    auto model_dir = tmp.base / model_name;
+    create_gguf_file(model_dir, "llama-7b.Q4_K_M.gguf");
+    create_gguf_file(model_dir, "llama-7b.Q5_K_M.gguf");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("llama-7b:Q6_K");
+
+    EXPECT_FALSE(desc.has_value());
+}
+
+TEST(ModelStorageTest, ResolveDescriptorQuantizationIsCaseSensitive) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-7b";
+    auto model_dir = tmp.base / model_name;
+    create_gguf_file(model_dir, "llama-7b.Q4_K_M.gguf");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("llama-7b:q4_k_m");
+
+    EXPECT_FALSE(desc.has_value());
+}
+
+TEST(ModelStorageTest, ResolveDescriptorUsesManifestDefaultQuantization) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-7b";
+    auto model_dir = tmp.base / model_name;
+    create_gguf_file(model_dir, "model.gguf");
+    write_manifest_with_format_and_quantization(model_dir, "gguf", "Q4_K_M");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("llama-7b");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.gguf");
+
+    auto quantized = storage.resolveDescriptor("llama-7b:Q4_K_M");
+    ASSERT_TRUE(quantized.has_value());
+    EXPECT_EQ(fs::path(quantized->primary_path).filename(), "model.gguf");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorRejectsMismatchedManifestQuantization) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-7b";
+    auto model_dir = tmp.base / model_name;
+    create_gguf_file(model_dir, "model.gguf");
+    write_manifest_with_format_and_quantization(model_dir, "gguf", "Q4_K_M");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("llama-7b:Q5_K_M");
+
+    EXPECT_FALSE(desc.has_value());
 }
 
 TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGguf) {

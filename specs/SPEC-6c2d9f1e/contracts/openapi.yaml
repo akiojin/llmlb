@@ -1,0 +1,210 @@
+openapi: 3.0.3
+info:
+  title: Multimodal I/O API
+  version: 1.0.0
+  description: 画像・音声入出力のマルチモーダルAPI
+
+paths:
+  /v1/images/generations:
+    post:
+      summary: 画像生成
+      operationId: createImage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/audio/transcriptions:
+    post:
+      summary: 音声認識（Speech to Text）
+      operationId: createTranscription
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TranscriptionRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/audio/speech:
+    post:
+      summary: 音声合成（Text to Speech）
+      operationId: createSpeech
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeechRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/models/{model_name}:
+    delete:
+      summary: モデル削除
+      operationId: deleteModel
+      parameters:
+        - name: model_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 削除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  schemas:
+    ImageGenerationRequest:
+      type: object
+      required:
+        - model
+        - prompt
+      properties:
+        model:
+          type: string
+          example: stable-diffusion-v2
+        prompt:
+          type: string
+          example: A beautiful sunset
+        n:
+          type: integer
+          default: 1
+        size:
+          type: string
+          enum: ["256x256", "512x512", "1024x1024"]
+          default: "512x512"
+
+    ImageResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+
+    TranscriptionRequest:
+      type: object
+      required:
+        - file
+        - model
+      properties:
+        file:
+          type: string
+          format: binary
+        model:
+          type: string
+          example: whisper-large-v3
+
+    TranscriptionResponse:
+      type: object
+      properties:
+        text:
+          type: string
+
+    SpeechRequest:
+      type: object
+      required:
+        - model
+        - input
+        - voice
+      properties:
+        model:
+          type: string
+          example: vibevoice
+        input:
+          type: string
+          example: Hello, world!
+        voice:
+          type: string
+          enum: [alloy, echo, fable, onyx, nova, shimmer]
+
+    DeleteResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [model]
+        deleted:
+          type: boolean
+
+  responses:
+    BadRequest:
+      description: 不正なリクエスト
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: モデルが見つからない
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ServiceUnavailable:
+      description: 対応ノードが利用不可
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string

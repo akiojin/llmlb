@@ -169,7 +169,7 @@
   - 複数stop sequenceの同時監視
 
 ## logprobs（Session 2025-12-31 Part 4）
-- [ ] T150 logprobs返却の実装
+- [x] T150 logprobs返却の実装
   - OpenAI互換フォーマット
   - top_logprobsパラメータ対応
 
@@ -192,7 +192,7 @@
 ## Tests（Session 2025-12-31 Part 4）
 - [x] T155 パラメータ検証テスト
 - [x] T156 stop sequences検出テスト
-- [ ] T157 logprobs返却テスト
+- [x] T157 logprobs返却テスト
 - [x] T158 アーキテクチャ検証テスト
 
 ## 量子化・モデル指定（Session 2025-12-31 Part 5）

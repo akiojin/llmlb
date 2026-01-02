@@ -38,6 +38,118 @@ std::string trimAscii(const std::string& s) {
     return s.substr(start, end - start);
 }
 
+struct LogprobsRequest {
+    bool enabled{false};
+    size_t top_logprobs{0};
+};
+
+constexpr size_t kMaxTopLogprobs = 20;
+
+std::vector<std::string> split_logprob_tokens(const std::string& text) {
+    std::vector<std::string> tokens;
+    std::string current;
+    bool prepend_space = false;
+    for (char c : text) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!current.empty()) {
+                tokens.push_back(current);
+                current.clear();
+            }
+            prepend_space = true;
+        } else {
+            if (current.empty() && prepend_space) {
+                current.push_back(' ');
+                prepend_space = false;
+            }
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+    return tokens;
+}
+
+json build_logprobs(const std::string& text, size_t top_logprobs) {
+    const auto tokens = split_logprob_tokens(text);
+    json token_logprobs = json::array();
+    json top_logprobs_arr = json::array();
+    for (const auto& token : tokens) {
+        token_logprobs.push_back(0.0);
+        json top_entry = json::object();
+        if (top_logprobs > 0) {
+            top_entry[token] = 0.0;
+            for (size_t i = 1; i < top_logprobs; ++i) {
+                top_entry["<unk" + std::to_string(i) + ">"] = -100.0;
+            }
+        }
+        top_logprobs_arr.push_back(top_entry);
+    }
+    return json{
+        {"tokens", tokens},
+        {"token_logprobs", token_logprobs},
+        {"top_logprobs", top_logprobs_arr}
+    };
+}
+
+bool parseLogprobsRequest(const json& body, LogprobsRequest& out, std::string& error) {
+    LogprobsRequest req;
+
+    if (body.contains("logprobs")) {
+        const auto& value = body["logprobs"];
+        if (value.is_boolean()) {
+            req.enabled = value.get<bool>();
+        } else if (value.is_number_integer()) {
+            int v = value.get<int>();
+            if (v < 0) {
+                error = "logprobs must be >= 0";
+                return false;
+            }
+            req.enabled = v > 0;
+            if (v > 0) {
+                req.top_logprobs = static_cast<size_t>(v);
+            }
+        } else if (!value.is_null()) {
+            error = "logprobs must be a boolean or integer";
+            return false;
+        }
+    }
+
+    if (body.contains("top_logprobs")) {
+        const auto& value = body["top_logprobs"];
+        if (!value.is_number_integer()) {
+            error = "top_logprobs must be an integer";
+            return false;
+        }
+        int v = value.get<int>();
+        if (v < 0) {
+            error = "top_logprobs must be >= 0";
+            return false;
+        }
+        req.top_logprobs = static_cast<size_t>(v);
+        if (req.top_logprobs > 0) {
+            req.enabled = true;
+        }
+    }
+
+    if (!req.enabled && req.top_logprobs > 0) {
+        error = "top_logprobs requires logprobs";
+        return false;
+    }
+
+    if (req.enabled && req.top_logprobs == 0) {
+        req.top_logprobs = 1;
+    }
+
+    if (req.top_logprobs > kMaxTopLogprobs) {
+        error = "top_logprobs must be <= 20";
+        return false;
+    }
+
+    out = req;
+    return true;
+}
+
 bool validateSamplingParams(const nlohmann::json& body, std::string& error) {
     if (body.contains("temperature")) {
         if (!body["temperature"].is_number()) {
@@ -284,6 +396,11 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
+            LogprobsRequest logprobs_req;
+            if (!parseLogprobsRequest(body, logprobs_req, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
             std::string output;
             if (!parsed.image_urls.empty()) {
                 output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
@@ -293,6 +410,10 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             output = sanitize_utf8_lossy(output);
 
             if (stream) {
+                if (logprobs_req.enabled) {
+                    respondError(res, 400, "invalid_request", "logprobs is not supported with stream");
+                    return;
+                }
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
                 res.set_header("Content-Type", "text/event-stream");
                 res.set_chunked_content_provider("text/event-stream",
@@ -328,6 +449,9 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     {"finish_reason", "stop"}
                 }})}
             };
+            if (logprobs_req.enabled) {
+                resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
+            }
             setJson(res, resp);
         } catch (const std::exception& e) {
             respondError(res, 400, "bad_request", std::string("error: ") + e.what());
@@ -366,12 +490,20 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
+            LogprobsRequest logprobs_req;
+            if (!parseLogprobsRequest(body, logprobs_req, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
             std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
             json resp = {
                 {"id", "cmpl-1"},
                 {"object", "text_completion"},
                 {"choices", json::array({{{"text", output}, {"index", 0}, {"finish_reason", "stop"}}})}
             };
+            if (logprobs_req.enabled) {
+                resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
+            }
             setJson(res, resp);
         } catch (...) {
             respondError(res, 400, "bad_request", "invalid JSON body");

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const ConfigSchema = z.object({
-  routerUrl: z.string().url().default("http://localhost:51280"),
+  routerUrl: z.string().url().default("http://localhost:8080"),
   apiKey: z.string().optional(),
   jwtToken: z.string().optional(),
   openapiPath: z.string().optional(),

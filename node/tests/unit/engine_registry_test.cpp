@@ -21,6 +21,7 @@ public:
     llm_node::ModelLoadResult loadModel(const llm_node::ModelDescriptor&) override {
         llm_node::ModelLoadResult result;
         result.success = true;
+        result.error_code = llm_node::EngineErrorCode::kOk;
         return result;
     }
 

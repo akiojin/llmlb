@@ -6,6 +6,7 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
 #include "core/engine_registry.h"
+#include "core/engine_error.h"
 #include "models/model_descriptor.h"
 #include "models/model_storage.h"
 
@@ -64,6 +65,7 @@ public:
         if (calls_) calls_->push_back("load:" + name_);
         ModelLoadResult result;
         result.success = true;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -200,6 +202,24 @@ TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {
     EXPECT_TRUE(embed_result.success);
     ASSERT_EQ(calls.size(), 1u);
     EXPECT_EQ(calls[0], "load:embed");
+}
+
+TEST(InferenceEngineTest, LoadModelInvalidQuantizationReturnsUnsupportedError) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto result = engine.loadModel("example/model:");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
+}
+
+TEST(InferenceEngineTest, LoadModelWithoutInitializationReturnsInternalError) {
+    InferenceEngine engine;
+    auto result = engine.loadModel("example/model");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kInternal);
 }
 
 TEST(InferenceEngineTest, GenerateEmbeddingsUsesEmbeddingEngine) {

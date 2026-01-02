@@ -1,8 +1,8 @@
 # 機能仕様一覧
 
-> 最終更新: 2026-01-02
+> 最終更新: 2026-01-02 (廃止SPEC整理)
 >
-> 総SPEC数: **45** | 廃止: 2 | plan.md欠損: 0 | 依存関係完全化済み
+> 総SPEC数: **45** | 廃止: 4 | plan.md欠損: 0 | 依存関係完全化済み
 
 **凡例:**
 
@@ -12,14 +12,14 @@
 
 ## 依存関係マトリクス
 
-> 45件中、明示的な依存関係があるSPEC: 29件 | 基盤SPEC（依存なし）: 14件 | 廃止: 2件
+> 45件中、明示的な依存関係があるSPEC: 29件 | 基盤SPEC（依存なし）: 12件 | 廃止: 4件
 
 | SPEC ID | 依存先 | 備考 |
 |---------|--------|------|
-| `SPEC-026b2cde` | - | 基盤機能 |
-| `SPEC-05098000` | SPEC-589f2df1, SPEC-35375000 | キューイング |
+| `SPEC-026b2cde` | SPEC-fbc50d97 | ページネーション |
+| `SPEC-05098000` | SPEC-589f2df1, SPEC-63acef08 | キューイング |
 | `SPEC-08d2b908` | SPEC-dcaeaec4, SPEC-11106000, SPEC-48678000, SPEC-6c2d9f1e | 統合仕様 |
-| `SPEC-0c4f3e5c` | - | 基盤機能 |
+| `SPEC-0c4f3e5c` | - | 🗑️ 廃止（→SPEC-dcaeaec4） |
 | `SPEC-11106000` | SPEC-dcaeaec4 | HF登録 |
 | `SPEC-1970e39f` | SPEC-799b8e2b | ロギング |
 | `SPEC-1f2a9c3d` | SPEC-799b8e2b | ログAPI |
@@ -28,16 +28,16 @@
 | `SPEC-32637000` | SPEC-6c2d9f1e | ルーティング |
 | `SPEC-32e2b31a` | - | アーカイブ |
 | `SPEC-35375000` | - | 基盤機能 |
-| `SPEC-3df1b977` | - | 基盤機能 |
+| `SPEC-3df1b977` | - | 🗑️ 廃止（→SPEC-48678000） |
 | `SPEC-3fc2c1e4` | SPEC-d7feaa2c, SPEC-efff1da7 | 統合仕様 |
 | `SPEC-443acc8c` | SPEC-94621a1f | ヘルスチェック |
 | `SPEC-47649000` | - | 基盤機能 |
 | `SPEC-47c6f44c` | - | CI/CD |
 | `SPEC-48678000` | SPEC-11106000, SPEC-dcaeaec4, SPEC-6cd7f960 | モデル解決 |
-| `SPEC-4b6e9f2a` | - | 基盤機能 |
+| `SPEC-4b6e9f2a` | SPEC-63acef08 | クラウドルーティング |
 | `SPEC-589f2df1` | SPEC-63acef08 | ロードバランシング |
 | `SPEC-5cd7b614` | - | 基盤機能 |
-| `SPEC-5fc9fe92` | SPEC-e03a404c | Playground |
+| `SPEC-5fc9fe92` | SPEC-712c20cf | Playground |
 | `SPEC-63acef08` | SPEC-94621a1f | 統一APIプロキシ |
 | `SPEC-6c2d9f1e` | SPEC-11106000, SPEC-26006000, SPEC-32637000 | モデル登録 |
 | `SPEC-6cd7f960` | SPEC-11106000, SPEC-dcaeaec4, SPEC-d4eb8796, SPEC-94621a1f | モデルリスト |
@@ -48,7 +48,7 @@
 | `SPEC-83825900` | SPEC-efff1da7, SPEC-d7feaa2c | PoC |
 | `SPEC-8a2d1d43` | - | 基盤機能 |
 | `SPEC-94621a1f` | - | **基盤**: ノード登録 |
-| `SPEC-a61b24f2` | - | 基盤機能 |
+| `SPEC-a61b24f2` | - | 🗑️ 廃止（統合仕様へ移行） |
 | `SPEC-a7e6d40a` | - | CLI |
 | `SPEC-ae3f974e` | SPEC-dcaeaec4 | 画像生成 |
 | `SPEC-d4eb8796` | SPEC-443acc8c | 認証 |
@@ -57,7 +57,7 @@
 | `SPEC-dcaeaec4` | - | **基盤**: ストレージ |
 | `SPEC-e03a404c` | SPEC-6c2d9f1e, SPEC-47649000 | 画像認識 |
 | `SPEC-ea015fbb` | SPEC-712c20cf, SPEC-d4eb8796, SPEC-fbc50d97, SPEC-5fc9fe92 | UI索引 |
-| `SPEC-ee2aa3ef` | - | CI/CD |
+| `SPEC-ee2aa3ef` | SPEC-47c6f44c | CI/CD |
 | `SPEC-efff1da7` | - | PoC |
 | `SPEC-fbc50d97` | SPEC-63acef08 | 履歴保存 |
 | `SPEC-8ae67d67` | - | 🗑️ 廃止 |
@@ -99,9 +99,9 @@
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
 | `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | ✅ | P2 | ✅ |
-| `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | ✅ | P1 | ✅ |
+| `SPEC-0c4f3e5c` | 廃止: LLM runtimeモデルストレージ形式サポート | 🗑️ | - | - |
 | `SPEC-11106000` | Hugging Face URL 登録（変換なし） | ✅ | P1 | ✅ |
-| `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | ✅ | P2 | ✅ |
+| `SPEC-3df1b977` | 廃止: モデルファイル破損時の自動修復機能 | 🗑️ | - | - |
 | `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ | P1 | ✅ |
 | `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
@@ -109,7 +109,7 @@
 | `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | ✅ |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ | P2 | ✅ |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | ✅ |
-| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | ✅ | P1 | ✅ |
+| `SPEC-a61b24f2` | 廃止: モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | 🗑️ | - | - |
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
@@ -164,12 +164,11 @@
 
 ## 優先度サマリー
 
-### P1（最優先）- 22件
+### P1（最優先）- 20件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 完了 |
-| `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | 完了 |
 | `SPEC-11106000` | Hugging Face URL 登録（変換なし） | 完了 |
 | `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 完了 |
 | `SPEC-32637000` | モデル capabilities に基づくルーティング検証 | 完了 |
@@ -191,7 +190,7 @@
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
 
-### P2（重要）- 19件
+### P2（重要）- 18件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
@@ -200,7 +199,6 @@
 | `SPEC-1970e39f` | 構造化ロギング強化 | 完了 |
 | `SPEC-1f2a9c3d` | SPEC-log-api: Node / Router Log Retrieval API | 完了 |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | 完了 |
-| `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | 完了 |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | 完了 |
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | 完了 |
 | `SPEC-48678000` | モデル自動解決機能 | 完了 |
@@ -222,8 +220,11 @@
 | `SPEC-83825900` | Nemotron CUDA PoC | 完了 |
 | `SPEC-efff1da7` | SPEC-efff1da7: Nemotron safetensors-cpp PoC | 完了 |
 
-### 廃止 - 1件
+### 廃止 - 4件
 
-| SPEC ID | 機能名 | 状態 |
-|---------|--------|------|
-| `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 廃止 |
+| SPEC ID | 機能名 | 置換先 |
+|---------|--------|--------|
+| `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | SPEC-dcaeaec4 |
+| `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | SPEC-48678000 |
+| `SPEC-8ae67d67` | ルーター主導のモデル自動配布機能 | SPEC-dcaeaec4 |
+| `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF） | 統合仕様へ移行 |

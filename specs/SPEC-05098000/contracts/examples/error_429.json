@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "キューが満杯です。5秒後に再試行してください。",
+    "type": "queue_full",
+    "code": "queue_full",
+    "retry_after": 5
+  }
+}

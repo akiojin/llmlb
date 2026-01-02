@@ -1,0 +1,10 @@
+{
+  "description": "GET /v1/models リクエスト例",
+  "method": "GET",
+  "path": "/v1/models",
+  "headers": {
+    "Authorization": "Bearer sk-your-api-key",
+    "Content-Type": "application/json"
+  },
+  "curl_example": "curl -X GET 'http://localhost:8080/v1/models' -H 'Authorization: Bearer sk-your-api-key'"
+}

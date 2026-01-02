@@ -1,0 +1,237 @@
+openapi: 3.0.3
+info:
+  title: Request Queueing API
+  description: |
+    推論中ノードへの多重リクエストキューイング機能のAPI仕様。
+
+    SPEC-05098000に基づく実装。
+    既存の /v1/chat/completions エンドポイントにキューイング機能を追加。
+  version: 1.0.0
+  contact:
+    name: LLM Router Team
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /v1/chat/completions:
+    post:
+      operationId: createChatCompletion
+      summary: チャット補完を生成（キューイング対応）
+      description: |
+        チャット補完リクエストを送信する。
+
+        - ノードがアイドル状態の場合、即座に処理開始
+        - 全ノードが処理中の場合、キューで待機
+        - キューが満杯の場合、HTTP 429を返却
+        - キュー待機タイムアウト時、HTTP 504を返却
+
+        レスポンスヘッダーでキュー状態を通知:
+        - `X-Queue-Position`: キュー内の位置
+        - `X-Estimated-Wait`: 推定待ち時間（秒）
+      tags:
+        - Chat
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: 補完生成成功
+          headers:
+            X-Queue-Position:
+              description: キュー内の位置（キュー待機時のみ）
+              schema:
+                type: integer
+            X-Estimated-Wait:
+              description: 推定待ち時間（秒、キュー待機時のみ）
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+        '429':
+          description: キュー満杯
+          headers:
+            Retry-After:
+              description: 再試行までの推奨待機時間（秒）
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueFullError'
+        '504':
+          description: キュー待機タイムアウト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueTimeoutError'
+
+  /api/queue/stats:
+    get:
+      operationId: getQueueStats
+      summary: キュー統計情報を取得
+      description: |
+        現在のキュー状態と統計情報を取得する。
+        ダッシュボード表示用。
+      tags:
+        - Queue
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: 統計情報取得成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueStatsResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Bearer token形式でAPIキーを指定
+
+  schemas:
+    ChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: モデルID
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        stream:
+          type: boolean
+          default: false
+
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatChoice'
+
+    ChatChoice:
+      type: object
+      properties:
+        index:
+          type: integer
+        message:
+          $ref: '#/components/schemas/ChatMessage'
+        finish_reason:
+          type: string
+          enum: [stop, length]
+
+    QueueFullError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              example: キューが満杯です。5秒後に再試行してください。
+            type:
+              type: string
+              enum: [queue_full]
+            code:
+              type: string
+              enum: [queue_full]
+            retry_after:
+              type: integer
+              description: 推奨待機時間（秒）
+
+    QueueTimeoutError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              example: キュー待機タイムアウト（60秒）。再試行してください。
+            type:
+              type: string
+              enum: [queue_timeout]
+            code:
+              type: string
+              enum: [queue_timeout]
+            waited_secs:
+              type: integer
+              description: 実際の待機時間（秒）
+
+    QueueStatsResponse:
+      type: object
+      required:
+        - waiting_count
+        - processing_count
+      properties:
+        waiting_count:
+          type: integer
+          description: 現在の待機リクエスト数
+        processing_count:
+          type: integer
+          description: 現在の処理中リクエスト数
+        avg_wait_time_ms:
+          type: number
+          format: float
+          description: 過去1時間の平均待機時間（ミリ秒）
+        avg_process_time_ms:
+          type: number
+          format: float
+          description: 過去1時間の平均処理時間（ミリ秒）
+        timeout_count:
+          type: integer
+          description: 過去1時間のタイムアウト数
+        rejected_count:
+          type: integer
+          description: 過去1時間の429エラー数

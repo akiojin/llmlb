@@ -2,7 +2,7 @@
 
 ## ステータス
 
-- **Status**: Draft
+- **Status**: 実装待ち
 - **Priority**: P1
 - **Created**: 2025-12-28
 

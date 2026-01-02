@@ -1,0 +1,30 @@
+{
+  "node_id": "node-1",
+  "gpu_usage": 45.5,
+  "vram_usage": 78.2,
+  "gpu_temperature": 65.0,
+  "active_requests": 2,
+  "avg_response_time_ms": 1250.5,
+  "cpu_usage": 30.0,
+  "memory_usage": 50.0,
+  "history": [
+    {
+      "timestamp": "2025-01-01T11:59:00Z",
+      "gpu_usage": 42.0,
+      "vram_usage": 75.0,
+      "active_requests": 1
+    },
+    {
+      "timestamp": "2025-01-01T11:59:30Z",
+      "gpu_usage": 48.0,
+      "vram_usage": 78.0,
+      "active_requests": 3
+    },
+    {
+      "timestamp": "2025-01-01T12:00:00Z",
+      "gpu_usage": 45.5,
+      "vram_usage": 78.2,
+      "active_requests": 2
+    }
+  ]
+}

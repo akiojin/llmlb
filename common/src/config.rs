@@ -33,7 +33,7 @@ fn default_host() -> String {
 }
 
 fn default_port() -> u16 {
-    51280
+    8080
 }
 
 fn default_database_url() -> String {
@@ -63,7 +63,7 @@ impl Default for RouterConfig {
 /// Node設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
-    /// RouterのURL (デフォルト: "http://localhost:51280")
+    /// RouterのURL (デフォルト: "http://localhost:8080")
     #[serde(default = "default_router_url")]
     pub router_url: String,
 
@@ -81,7 +81,7 @@ pub struct NodeConfig {
 }
 
 fn default_router_url() -> String {
-    "http://localhost:51280".to_string()
+    "http://localhost:8080".to_string()
 }
 
 fn default_runtime_url() -> String {
@@ -112,7 +112,7 @@ mod tests {
         let config = RouterConfig::default();
 
         assert_eq!(config.host, "0.0.0.0");
-        assert_eq!(config.port, 51280);
+        assert_eq!(config.port, 8080);
         assert_eq!(config.database_url, "sqlite://router.db");
         assert_eq!(config.health_check_interval_secs, 30);
         assert_eq!(config.node_timeout_secs, 60);
@@ -122,7 +122,7 @@ mod tests {
     fn test_node_config_defaults() {
         let config = NodeConfig::default();
 
-        assert_eq!(config.router_url, "http://localhost:51280");
+        assert_eq!(config.router_url, "http://localhost:8080");
         assert_eq!(config.runtime_url, "http://localhost:11434");
         assert_eq!(config.heartbeat_interval_secs, 10);
         assert!(!config.auto_start);

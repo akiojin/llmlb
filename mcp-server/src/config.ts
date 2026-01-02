@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const ConfigSchema = z.object({
-  routerUrl: z.string().url().default("http://localhost:51280"),
+  routerUrl: z.string().url().default("http://localhost:8080"),
   apiKey: z.string().optional(),
   jwtToken: z.string().optional(),
   openapiPath: z.string().optional(),
@@ -12,7 +12,7 @@ export type ServerConfig = z.infer<typeof ConfigSchema>;
 
 export function loadConfig(): ServerConfig {
   const raw = {
-    routerUrl: process.env.LLM_ROUTER_URL || "http://localhost:51280",
+    routerUrl: process.env.LLM_ROUTER_URL || "http://localhost:8080",
     apiKey: process.env.LLM_ROUTER_API_KEY,
     jwtToken: process.env.LLM_ROUTER_JWT_TOKEN,
     openapiPath: process.env.LLM_ROUTER_OPENAPI_PATH,

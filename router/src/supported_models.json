@@ -78,5 +78,37 @@
     "format": "gguf",
     "engine": "llama_cpp",
     "platforms": ["macos-metal", "windows-directml", "linux-cuda"]
+  },
+  {
+    "id": "gpt-oss-20b",
+    "name": "GPT-OSS 20B",
+    "description": "OpenAI's GPT-OSS 20B (Metal optimized)",
+    "repo": "openai/gpt-oss-20b",
+    "recommended_filename": "model.safetensors.index.json",
+    "size_bytes": 13761316904,
+    "required_memory_bytes": 20641975356,
+    "tags": ["chat", "openai", "gpt-oss", "safetensors"],
+    "capabilities": ["TextGeneration"],
+    "quantization": null,
+    "parameter_count": "20B",
+    "format": "safetensors",
+    "engine": "gptoss_cpp",
+    "platforms": ["macos-metal"]
+  },
+  {
+    "id": "gpt-oss-120b",
+    "name": "GPT-OSS 120B",
+    "description": "OpenAI's GPT-OSS 120B (Metal optimized)",
+    "repo": "openai/gpt-oss-120b",
+    "recommended_filename": "model.safetensors.index.json",
+    "size_bytes": 65248893184,
+    "required_memory_bytes": 97873339776,
+    "tags": ["chat", "openai", "gpt-oss", "safetensors", "large"],
+    "capabilities": ["TextGeneration"],
+    "quantization": null,
+    "parameter_count": "120B",
+    "format": "safetensors",
+    "engine": "gptoss_cpp",
+    "platforms": ["macos-metal"]
   }
 ]

@@ -37,7 +37,8 @@ SPEC-6cd7f960 FR-1に基づき、検証なしでのモデル追加は禁止さ�
 
 | ID | 表示名 | HFリポジトリ | エンジン | 検証日 | プラットフォーム | 備考 |
 |----|-------|-------------|---------|--------|-----------------|------|
-| (未検証) | - | - | - | - | - | - |
+| gpt-oss-20b | GPT-OSS 20B | openai/gpt-oss-20b | gptoss_cpp | 2026-01-02 | macOS (Metal) | Metal最適化アーティファクト確認済み（推論スモークは別途） |
+| gpt-oss-120b | GPT-OSS 120B | openai/gpt-oss-120b | gptoss_cpp | 2026-01-02 | macOS (Metal) | Metal最適化アーティファクト確認済み（推論スモークは別途） |
 
 ## 検証待ちモデル（Docker Desktop Models）
 
@@ -72,8 +73,7 @@ SPEC-6cd7f960 FR-1に基づき、検証なしでのモデル追加は禁止さ�
 
 | ID | 表示名 | エンジン | ステータス |
 |----|-------|---------|----------|
-| gpt-oss | GPT-OSS | gptoss_cpp | 未検証（Metal） |
-| gpt-oss-safeguard | GPT-OSS Safeguard | gptoss_cpp | 未検証（Metal） |
+| gpt-oss-safeguard | GPT-OSS Safeguard | gptoss_cpp | 未検証（Metalアーティファクト無し） |
 | seed-oss | Seed OSS | gptoss_cpp | 未検証（Metal） |
 
 ### Vision（将来対応）
@@ -133,3 +133,4 @@ curl http://localhost:3000/v1/chat/completions \
 | 日付 | 更新内容 |
 |------|---------|
 | 2025-12-30 | 初版作成、Docker Desktop Modelsの検証待ちリストを追加 |
+| 2026-01-02 | GPT-OSS 20B/120BのMetalアーティファクト確認結果を追記 |

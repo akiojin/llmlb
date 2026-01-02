@@ -1,0 +1,353 @@
+openapi: 3.0.3
+info:
+  title: LLM-Router Model Storage API
+  description: |
+    モデルストレージ管理API。
+    ルーターは登録メタデータとマニフェストのみを提供し、
+    モデルバイナリはNodeが外部ソースから直接取得する。
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /v1/models:
+    get:
+      summary: 登録済みモデル一覧（OpenAI互換）
+      description: 外部クライアント向けのモデル一覧を取得
+      operationId: listModels
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: モデル一覧
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/models/register:
+    post:
+      summary: モデル登録
+      description: HuggingFace URLからモデルを登録
+      operationId: registerModel
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterModelRequest'
+      responses:
+        '201':
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredModel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/models/{model_id}:
+    delete:
+      summary: モデル削除
+      description: 登録済みモデルを削除
+      operationId: deleteModel
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: llama-3.2-1b
+      responses:
+        '204':
+          description: 削除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v0/models:
+    get:
+      summary: Node同期用モデル一覧
+      description: |
+        Node同期向けのメタデータ付きモデル一覧。
+        format, repo, filename等の情報を含む。
+      operationId: listModelsForSync
+      tags:
+        - Node Sync
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: モデル一覧（Node同期用）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncModelList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v0/models/registry/{model_id}/manifest.json:
+    get:
+      summary: モデルマニフェスト取得
+      description: |
+        特定モデルのファイル一覧（マニフェスト）を取得。
+        Nodeはこの情報を元に必要なアーティファクトを選択・ダウンロードする。
+      operationId: getModelManifest
+      tags:
+        - Node Sync
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: llama-3.2-1b
+      responses:
+        '200':
+          description: マニフェスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelManifest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: APIキー認証
+
+  schemas:
+    ModelList:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+
+    Model:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - owned_by
+      properties:
+        id:
+          type: string
+          example: llama-3.2-1b
+        object:
+          type: string
+          enum: [model]
+        created:
+          type: integer
+          format: int64
+          example: 1701388800
+        owned_by:
+          type: string
+          example: local
+
+    RegisterModelRequest:
+      type: object
+      required:
+        - repo
+      properties:
+        repo:
+          type: string
+          description: HuggingFaceリポジトリID
+          example: bartowski/Llama-3.2-1B-Instruct-GGUF
+        filename:
+          type: string
+          description: 特定ファイルを指定（オプション）
+          example: Llama-3.2-1B-Instruct-Q4_K_M.gguf
+
+    RegisteredModel:
+      type: object
+      required:
+        - id
+        - repo
+        - format
+        - registered_at
+      properties:
+        id:
+          type: string
+          example: llama-3.2-1b
+        name:
+          type: string
+          example: LLaMA 3.2 1B
+        repo:
+          type: string
+          example: bartowski/Llama-3.2-1B-Instruct-GGUF
+        format:
+          $ref: '#/components/schemas/ModelFormat'
+        size_bytes:
+          type: integer
+          format: int64
+          example: 800000000
+        registered_at:
+          type: string
+          format: date-time
+
+    SyncModelList:
+      type: object
+      required:
+        - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncModel'
+
+    SyncModel:
+      type: object
+      required:
+        - id
+        - format
+      properties:
+        id:
+          type: string
+          example: llama-3.2-1b
+        repo:
+          type: string
+          example: bartowski/Llama-3.2-1B-Instruct-GGUF
+        format:
+          $ref: '#/components/schemas/ModelFormat'
+        filename:
+          type: string
+          example: Llama-3.2-1B-Instruct-Q4_K_M.gguf
+
+    ModelManifest:
+      type: object
+      required:
+        - model_id
+        - files
+        - created_at
+      properties:
+        model_id:
+          type: string
+          example: llama-3.2-1b
+        repo:
+          type: string
+          example: bartowski/Llama-3.2-1B-Instruct-GGUF
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestFile'
+        created_at:
+          type: string
+          format: date-time
+
+    ManifestFile:
+      type: object
+      required:
+        - filename
+        - format
+        - size_bytes
+      properties:
+        filename:
+          type: string
+          example: Llama-3.2-1B-Instruct-Q4_K_M.gguf
+        format:
+          $ref: '#/components/schemas/ModelFormat'
+        size_bytes:
+          type: integer
+          format: int64
+          example: 800000000
+        sha256:
+          type: string
+          example: abc123def456...
+
+    ModelFormat:
+      type: string
+      enum:
+        - gguf
+        - safetensors
+        - metal
+        - unknown
+      example: gguf
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string
+
+  responses:
+    BadRequest:
+      description: リクエストが不正
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              message: "Invalid model ID: contains path traversal"
+              type: invalid_request_error
+              code: invalid_model_id
+
+    Unauthorized:
+      description: 認証エラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              message: "Invalid API key"
+              type: authentication_error
+              code: invalid_api_key
+
+    NotFound:
+      description: モデルが見つからない
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              message: "Model 'unknown-model' not found"
+              type: invalid_request_error
+              code: model_not_found

@@ -1,0 +1,24 @@
+{
+  "id": "llama_cpp",
+  "version": "1.0.0",
+  "abi_version": "1",
+  "gpu_backend": "metal",
+  "architectures": [
+    "llama",
+    "mistral",
+    "gemma",
+    "phi",
+    "qwen",
+    "qwen2"
+  ],
+  "formats": [
+    "gguf"
+  ],
+  "binary": "libllama_engine.dylib",
+  "modalities": [
+    "completion",
+    "embedding"
+  ],
+  "supports_vision": true,
+  "license": "MIT"
+}

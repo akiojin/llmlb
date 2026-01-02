@@ -50,6 +50,9 @@ pub mod cli;
 /// 対応モデル定義
 pub mod supported_models;
 
+/// ダッシュボードイベントバス
+pub mod events;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {
@@ -67,6 +70,8 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     /// リクエスト待機キュー設定
     pub queue_config: config::QueueConfig,
+    /// ダッシュボードイベントバス
+    pub event_bus: events::SharedEventBus,
 }
 
 #[cfg(test)]

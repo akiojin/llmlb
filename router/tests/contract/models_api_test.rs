@@ -110,6 +110,7 @@ async fn build_app() -> TestApp {
         jwt_secret,
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     let password_hash = llm_router::auth::password::hash_password("password123").unwrap();

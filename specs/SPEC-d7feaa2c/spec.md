@@ -248,6 +248,17 @@ register(format=...)  ───────▶    ModelStorage
 - **エラー粒度**: エラーコード＋メッセージ文字列
   - 粗粒度コード（約10種類）+ 詳細なメッセージ文字列
   - プラグインが詳細を説明
+- **エラーコード一覧**:
+  - `OK`: 成功
+  - `INVALID_ARGUMENT`: 入力や設定が不正
+  - `NOT_FOUND`: ファイル/モデルが見つからない
+  - `UNSUPPORTED`: 機能/フォーマット非対応
+  - `UNAVAILABLE`: ランタイム未提供/初期化不足
+  - `RESOURCE_EXHAUSTED`: VRAM/RAM不足など資源枯渇
+  - `TIMEOUT`: タイムアウト
+  - `CANCELLED`: キャンセル
+  - `INTERNAL`: プラグイン内部エラー
+  - `UNKNOWN`: 未分類
 - **依存ライブラリ**: 全てバンドル（自己完結）
   - cuDNN, MKL, GGML等は全てプラグインにバンドル
   - ファイルサイズは大きいが確実に動作
@@ -460,6 +471,8 @@ register(format=...)  ───────▶    ModelStorage
 - **Embedding対応**: 同一インターフェース
   - Completion/Embeddingモデルで同じプラグインAPIを使用
   - manifestでモード（completion/embedding）を宣言
+- **Vision対応フラグ**: manifestで宣言
+  - `supports_vision` でVision対応有無を示す
 
 **スケーラビリティ**:
 

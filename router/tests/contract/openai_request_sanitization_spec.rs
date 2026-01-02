@@ -62,6 +62,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
         jwt_secret,
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     TestApp {

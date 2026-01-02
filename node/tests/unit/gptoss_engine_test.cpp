@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 
 #include "core/gptoss_engine.h"
@@ -10,6 +11,14 @@
 
 using namespace llm_node;
 namespace fs = std::filesystem;
+
+namespace llm_node {
+std::string emitGptOssTextTokensForTest(const std::vector<uint32_t>& tokens,
+                                        uint32_t num_text_tokens,
+                                        const std::function<std::string(uint32_t)>& decode,
+                                        std::vector<std::string>* emitted,
+                                        const std::function<void(const std::string&)>& on_token);
+}
 
 namespace {
 class TempDir {
@@ -161,6 +170,26 @@ TEST(GptOssEngineTest, GeneratesTextWhenGpuArtifactsPresent) {
     auto output = engine.generateChat(messages, desc, params);
     EXPECT_FALSE(output.empty());
 #endif
+}
+
+TEST(GptOssEngineTest, StreamsDecodedTokensImmediately) {
+    std::vector<uint32_t> tokens = {1, 2, 3, 10};
+    std::vector<std::string> emitted;
+    std::vector<std::string> callbacks;
+    auto decode = [](uint32_t token) {
+        return std::string(1, static_cast<char>('a' + token - 1));
+    };
+
+    auto output = llm_node::emitGptOssTextTokensForTest(
+        tokens,
+        4,
+        decode,
+        &emitted,
+        [&](const std::string& piece) { callbacks.push_back(piece); });
+
+    EXPECT_EQ(output, "abc");
+    EXPECT_EQ(emitted, callbacks);
+    ASSERT_EQ(emitted.size(), 3u);
 }
 
 TEST(GptOssEngineTest, DirectmlRuntimeMissingReportsError) {

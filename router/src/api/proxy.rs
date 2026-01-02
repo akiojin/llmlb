@@ -158,6 +158,7 @@ mod tests {
             jwt_secret,
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 
@@ -174,6 +175,8 @@ mod tests {
                 None,
                 Some(false),
                 Some((4, 4)),
+                None,
+                None,
             )
             .await
             .ok();
@@ -217,7 +220,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -250,7 +253,7 @@ mod tests {
             machine_name: "machine1".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -276,7 +279,7 @@ mod tests {
             machine_name: "machine2".to_string(),
             ip_address: "192.168.1.101".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),

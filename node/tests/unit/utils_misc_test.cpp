@@ -33,7 +33,7 @@ TEST(JsonUtilsTest, ParseJsonHandlesInvalid) {
 }
 
 TEST(JsonUtilsTest, HasRequiredKeysAndFallbacks) {
-    nlohmann::json j = {{"name", "node"}, {"port", 8080}};
+    nlohmann::json j = {{"name", "node"}, {"port", 32768}};
     std::string missing;
     EXPECT_TRUE(has_required_keys(j, {"name", "port"}, &missing));
     EXPECT_TRUE(missing.empty());
@@ -41,7 +41,7 @@ TEST(JsonUtilsTest, HasRequiredKeysAndFallbacks) {
     EXPECT_FALSE(has_required_keys(j, {"name", "port", "host"}, &missing));
     EXPECT_EQ(missing, "host");
 
-    EXPECT_EQ(get_or<int>(j, "port", 0), 8080);
+    EXPECT_EQ(get_or<int>(j, "port", 0), 32768);
     EXPECT_EQ(get_or<std::string>(j, "host", "localhost"), "localhost");
 }
 

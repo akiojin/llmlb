@@ -81,12 +81,16 @@ export class DashboardPage {
 
   async goto() {
     await this.page.goto('/dashboard');
-    // Wait for page to settle
-    await this.page.waitForLoadState('networkidle');
+    // Wait for page to settle (use 'load' instead of 'networkidle' due to WebSocket connections)
+    await this.page.waitForLoadState('load');
+    // Wait a moment for any JavaScript redirects
+    await this.page.waitForTimeout(500);
     // Handle login if redirected to login page
     if (this.page.url().includes('login')) {
       await this.login();
     }
+    // Wait for dashboard content to be visible
+    await this.page.waitForSelector('#theme-toggle', { timeout: 10000 });
   }
 
   async gotoModels() {
@@ -116,7 +120,8 @@ export class DashboardPage {
     await this.page.click('button[type="submit"]');
     // Wait for redirect to dashboard (the URL will NOT contain 'login' after successful login)
     await this.page.waitForFunction(() => !window.location.href.includes('login'), { timeout: 10000 });
-    await this.page.waitForLoadState('networkidle');
+    // Use 'load' instead of 'networkidle' due to WebSocket connections
+    await this.page.waitForLoadState('load');
   }
 
   async toggleTheme() {

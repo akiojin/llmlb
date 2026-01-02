@@ -26,7 +26,7 @@ async fn test_round_robin_load_balancing() {
                 .parse::<IpAddr>()
                 .unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -115,7 +115,7 @@ async fn test_load_based_balancing_favors_low_cpu_nodes() {
             machine_name: "high-cpu-node".to_string(),
             ip_address: "192.168.2.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -135,7 +135,7 @@ async fn test_load_based_balancing_favors_low_cpu_nodes() {
             machine_name: "low-cpu-node".to_string(),
             ip_address: "192.168.2.11".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -223,7 +223,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
             machine_name: "slow-node".to_string(),
             ip_address: "192.168.3.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -243,7 +243,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
             machine_name: "fast-node".to_string(),
             ip_address: "192.168.3.11".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -316,7 +316,7 @@ async fn test_load_balancer_excludes_non_online_nodes() {
             machine_name: "pending-node".to_string(),
             ip_address: "192.168.4.10".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -337,7 +337,7 @@ async fn test_load_balancer_excludes_non_online_nodes() {
             machine_name: "online-node".to_string(),
             ip_address: "192.168.4.11".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),

@@ -116,7 +116,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),

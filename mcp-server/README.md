@@ -24,7 +24,7 @@ Add to your `.mcp.json`:
       "command": "npx",
       "args": ["-y", "@llm-router/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:32768",
         "LLM_ROUTER_API_KEY": "sk_your_api_key"
       }
     }
@@ -36,7 +36,7 @@ Add to your `.mcp.json`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_ROUTER_URL` | Base URL of the LLM Router | `http://localhost:8080` |
+| `LLM_ROUTER_URL` | Base URL of the LLM Router | `http://localhost:32768` |
 | `LLM_ROUTER_API_KEY` | API key for inference endpoints | - |
 | `LLM_ROUTER_JWT_TOKEN` | JWT token for management APIs | - |
 | `LLM_ROUTER_OPENAPI_PATH` | Path to custom OpenAPI spec | - |
@@ -57,10 +57,10 @@ Execute curl commands against the LLM Router API with automatic authentication.
 
 ```bash
 # List models
-curl http://localhost:8080/v1/models
+curl http://localhost:32768/v1/models
 
 # Chat completion
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:32768/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"llama3.2:3b","messages":[{"role":"user","content":"Hello"}]}'
 ```

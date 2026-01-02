@@ -43,7 +43,7 @@
     }
   ],
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "baseUrl", "value": "http://localhost:32768" },
     { "key": "OPENAI_API_KEY", "value": "set-me" }
   ]
 }

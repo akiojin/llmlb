@@ -7,6 +7,7 @@ pub mod audio;
 pub mod auth;
 pub mod cloud_models;
 pub mod dashboard;
+pub mod dashboard_ws;
 pub mod health;
 pub mod images;
 pub mod invitations;
@@ -257,6 +258,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/playground", get(serve_playground_index))
         .route("/playground/", get(serve_playground_index))
         .route("/playground/*path", get(serve_playground_asset))
+        // WebSocket endpoint for real-time dashboard updates
+        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
         .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
 }
@@ -360,6 +363,7 @@ mod tests {
             jwt_secret,
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         };
         (state, registry)
     }
@@ -434,7 +438,7 @@ mod tests {
                 machine_name: "test-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -471,7 +475,7 @@ mod tests {
                 machine_name: "overview-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -511,7 +515,7 @@ mod tests {
                 machine_name: "metrics-route".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),

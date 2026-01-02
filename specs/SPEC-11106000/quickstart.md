@@ -13,7 +13,7 @@
 
 ### API
 ```bash
-curl -sS http://localhost:8080/v0/models/register \
+curl -sS http://localhost:32768/v0/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo":"org/repo"}' | jq .
 ```
@@ -21,7 +21,7 @@ curl -sS http://localhost:8080/v0/models/register \
 ファイルURL登録の場合は `filename` を指定する:
 
 ```bash
-curl -sS http://localhost:8080/v0/models/register \
+curl -sS http://localhost:32768/v0/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo":"org/repo","filename":"model.safetensors"}' | jq .
 ```
@@ -33,7 +33,7 @@ curl -sS http://localhost:8080/v0/models/register \
 
 ## 3. /v1/models で ready を確認
 ```bash
-curl -sS http://localhost:8080/v1/models | jq .
+curl -sS http://localhost:32768/v1/models | jq .
 ```
 
 `ready=true` になれば推論に利用できます。

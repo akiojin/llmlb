@@ -283,7 +283,7 @@ pub enum RequestStatus {
 ```rust
 pub struct RouterConfig {
     pub host: String,              // "0.0.0.0"
-    pub port: u16,                 // 8080
+    pub port: u16,                 // 32768
     pub database_url: String,      // "sqlite://router.db"
     pub health_check_interval_secs: u64,  // 30秒
     pub node_timeout_secs: u64,   // 60秒
@@ -293,8 +293,8 @@ pub struct RouterConfig {
 **Config (Node)**:
 ```rust
 pub struct NodeConfig {
-    pub router_url: String,        // "http://router:8080"
-    pub runtime_url: String,        // "http://localhost:11434"
+    pub router_url: String,        // "http://router:32768"
+    pub runtime_url: String,        // "http://localhost:32768"
     pub heartbeat_interval_secs: u64,  // 10秒
     pub auto_start: bool,          // Windows起動時の自動起動
 }
@@ -312,7 +312,7 @@ info:
   description: 複数LLM runtimeインスタンスを管理する中央集権型システム
 
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:32768
     description: ローカル開発環境
 
 paths:
@@ -730,15 +730,15 @@ components:
   2. 環境変数`ALL_PROXY`を確認
   3. プロキシなしで接続
 - **認証付きプロキシ対応**:
-  - `http://user:pass@proxy.example.com:8080` 形式をサポート
+  - `http://user:pass@proxy.example.com:32768` 形式をサポート
 - **プロキシ除外**: `NO_PROXY`環境変数で除外ホストを指定可能
 
 **実装場所**: `node/src/runtime.rs:download()` でHTTPクライアント作成時にプロキシ設定
 
 **環境変数**:
-- `HTTP_PROXY=http://proxy.example.com:8080`
+- `HTTP_PROXY=http://proxy.example.com:32768`
 - `HTTPS_PROXY=https://proxy.example.com:8443`
-- `ALL_PROXY=http://proxy.example.com:8080`
+- `ALL_PROXY=http://proxy.example.com:32768`
 - `NO_PROXY=localhost,127.0.0.1,.local`
 
 ### 依存関係追加

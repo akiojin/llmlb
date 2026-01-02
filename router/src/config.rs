@@ -190,11 +190,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_env_with_fallback_parse() {
-        std::env::set_var("TEST_NEW_VAR6", "8080");
+        std::env::set_var("TEST_NEW_VAR6", "32768");
         std::env::remove_var("TEST_OLD_VAR6");
 
         let result: u16 = get_env_with_fallback_parse("TEST_NEW_VAR6", "TEST_OLD_VAR6", 3000);
-        assert_eq!(result, 8080);
+        assert_eq!(result, 32768);
 
         std::env::remove_var("TEST_NEW_VAR6");
     }

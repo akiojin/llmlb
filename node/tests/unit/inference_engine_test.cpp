@@ -64,6 +64,7 @@ public:
         if (calls_) calls_->push_back("load:" + name_);
         ModelLoadResult result;
         result.success = true;
+        result.code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -152,6 +153,76 @@ TEST(InferenceEngineTest, SampleNextTokenReturnsLast) {
     InferenceEngine engine;
     std::vector<std::string> tokens = {"x", "y", "z"};
     EXPECT_EQ(engine.sampleNextToken(tokens), "z");
+}
+
+TEST(InferenceEngineTest, LoadModelReturnsUnavailableWhenNotInitialized) {
+    InferenceEngine engine;
+    auto result = engine.loadModel("missing/model");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kUnavailable);
+    EXPECT_NE(result.error_message.find("not initialized"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelReturnsNotFoundWhenMissingModel) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto result = engine.loadModel("missing/model");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kNotFound);
+    EXPECT_NE(result.error_message.find("Model not found"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto result = engine.loadModel(model_name, "image");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
+    EXPECT_NE(result.error_message.find("capability"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
+    TempDir tmp;
+    const std::string model_name = "openai/gpt-oss-20b";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "text_engine";
+    reg.engine_version = "test";
+    reg.formats = {"safetensors"};
+    reg.architectures = {"llama"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("gptoss_cpp", "text", nullptr, true, false),
+        reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto result = engine.loadModel(model_name, "text");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
+    EXPECT_NE(result.error_message.find("architecture"), std::string::npos);
 }
 
 TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {

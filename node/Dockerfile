@@ -38,13 +38,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM runtime-${CUDA} AS runtime
 
 ENV LLM_MODELS_DIR=/var/lib/runtime/models
-ENV LLM_ROUTER_URL=http://router:8080
-ENV LLM_NODE_PORT=11435
+ENV LLM_ROUTER_URL=http://router:32768
+ENV LLM_NODE_PORT=32769
 
 WORKDIR /app
 COPY --from=build /usr/local /usr/local
 
-EXPOSE 11435
+EXPOSE 32769
 VOLUME ["/var/lib/runtime/models"]
 
 ENTRYPOINT ["/usr/local/bin/llm-node"]

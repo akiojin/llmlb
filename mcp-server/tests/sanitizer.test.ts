@@ -6,33 +6,33 @@ describe("CurlSanitizer", () => {
 
   describe("sanitize", () => {
     it("should accept valid curl commands", () => {
-      const result = sanitizer.sanitize("curl http://localhost:8080/v1/models");
+      const result = sanitizer.sanitize("curl http://localhost:32768/v1/models");
       expect(result.valid).toBe(true);
     });
 
     it("should accept curl with headers", () => {
       const result = sanitizer.sanitize(
-        'curl -X POST http://localhost:8080/v1/chat -H "Content-Type: application/json"'
+        'curl -X POST http://localhost:32768/v1/chat -H "Content-Type: application/json"'
       );
       expect(result.valid).toBe(true);
     });
 
     it("should accept curl with data", () => {
       const result = sanitizer.sanitize(
-        'curl -X POST http://localhost:8080/api -d \'{"key":"value"}\''
+        'curl -X POST http://localhost:32768/api -d \'{"key":"value"}\''
       );
       expect(result.valid).toBe(true);
     });
 
     it("should reject non-curl commands", () => {
-      const result = sanitizer.sanitize("wget http://localhost:8080");
+      const result = sanitizer.sanitize("wget http://localhost:32768");
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('must start with "curl "');
     });
 
     it("should reject output file options", () => {
       const result = sanitizer.sanitize(
-        "curl -o /tmp/file http://localhost:8080"
+        "curl -o /tmp/file http://localhost:32768"
       );
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Forbidden option");
@@ -40,7 +40,7 @@ describe("CurlSanitizer", () => {
 
     it("should reject --output option", () => {
       const result = sanitizer.sanitize(
-        "curl --output=/tmp/file http://localhost:8080"
+        "curl --output=/tmp/file http://localhost:32768"
       );
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Forbidden option");
@@ -94,7 +94,7 @@ describe("CurlSanitizer", () => {
 
     it("should reject short option with value concatenated (-o/path)", () => {
       const result = sanitizer.sanitize(
-        "curl -o/tmp/file http://localhost:8080"
+        "curl -o/tmp/file http://localhost:32768"
       );
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Forbidden option");
@@ -102,7 +102,7 @@ describe("CurlSanitizer", () => {
 
     it("should reject -O with URL concatenated", () => {
       const result = sanitizer.sanitize(
-        "curl -Ohttp://localhost:8080/file"
+        "curl -Ohttp://localhost:32768/file"
       );
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Forbidden option");
@@ -110,7 +110,7 @@ describe("CurlSanitizer", () => {
 
     it("should reject -u with credentials concatenated", () => {
       const result = sanitizer.sanitize(
-        "curl -uadmin:password http://localhost:8080"
+        "curl -uadmin:password http://localhost:32768"
       );
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Forbidden option");
@@ -118,7 +118,7 @@ describe("CurlSanitizer", () => {
 
     it("should reject -K with config path concatenated", () => {
       const result = sanitizer.sanitize(
-        "curl -K/etc/curlrc http://localhost:8080"
+        "curl -K/etc/curlrc http://localhost:32768"
       );
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Forbidden option");
@@ -127,15 +127,15 @@ describe("CurlSanitizer", () => {
 
   describe("extractUrl", () => {
     it("should extract URL from simple command", () => {
-      const url = sanitizer.extractUrl("curl http://localhost:8080/v1/models");
-      expect(url).toBe("http://localhost:8080/v1/models");
+      const url = sanitizer.extractUrl("curl http://localhost:32768/v1/models");
+      expect(url).toBe("http://localhost:32768/v1/models");
     });
 
     it("should extract URL with options before", () => {
       const url = sanitizer.extractUrl(
-        "curl -X POST http://localhost:8080/api"
+        "curl -X POST http://localhost:32768/api"
       );
-      expect(url).toBe("http://localhost:8080/api");
+      expect(url).toBe("http://localhost:32768/api");
     });
 
     it("should extract URL with headers", () => {

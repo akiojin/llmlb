@@ -42,8 +42,8 @@ test.describe('Dashboard Header Controls @dashboard', () => {
   test('H-04: Refresh button updates data', async ({ page }) => {
     // Refresh button triggers page reload
     await dashboard.refresh();
-    // Wait for page reload to complete
-    await page.waitForLoadState('networkidle');
+    // Wait for page reload to complete (use 'load' instead of 'networkidle' due to WebSocket)
+    await page.waitForLoadState('load');
     // Page should still be on dashboard
     expect(page.url()).toContain('dashboard');
   });

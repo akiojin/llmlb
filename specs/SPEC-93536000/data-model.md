@@ -2,14 +2,21 @@
 
 **機能ID**: `SPEC-93536000`
 **作成日**: 2026-01-03
+**更新日**: 2026-01-03
 
-## 新規型定義
+## 設計原則
+
+- **シンプルさ優先**: ルーターはGPUバックエンド情報を持たない
+- **メモリのみ**: DB永続化なし、ルーター再起動時はノード再登録で復元
+- **プル型**: ルーターがノード登録時に/v1/modelsを取得
+
+## Node側の型定義（C++）
 
 ### GpuBackend 列挙型
 
-ノードのGPUバックエンド種別を表す。
+ノードのGPUバックエンド種別を表す。**ノード側のみで使用**。
 
-**ファイル**: `common/src/types.rs`
+**ファイル**: `node/src/system/gpu_detector.hpp`
 
 | バリアント | 説明 | プラットフォーム |
 |-----------|------|------------------|
@@ -19,64 +26,32 @@
 | `ROCm` | AMD ROCm | Linux |
 | `Cpu` | CPU演算のみ | 全プラットフォーム |
 
-**シリアライズ**: `snake_case` (例: `"metal"`, `"cuda"`, `"directml"`)
-
-## 既存型の拡張
+## Router側の型拡張（Rust）
 
 ### Node 構造体
 
-**ファイル**: `common/src/types.rs`
+**ファイル**: `router/src/registry/mod.rs`
 
 **追加フィールド**:
 
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
-| `gpu_backend` | `Option<GpuBackend>` | 検出されたGPUバックエンド |
 | `executable_models` | `Vec<String>` | このノードで実行可能なモデルID一覧 |
+| `excluded_models` | `HashSet<String>` | 推論失敗により一時除外中のモデルID |
 
-### RegisterRequest 構造体
+**注意**: `gpu_backend` フィールドは不要（ルーターはGPU情報を保持しない）
 
-**ファイル**: `router/src/api/nodes.rs`
+### RegisterRequest / HealthCheckRequest
 
-**追加フィールド**:
-
-| フィールド | 型 | 説明 |
-|-----------|-----|------|
-| `gpu_backend` | `Option<GpuBackend>` | ノードが自己申告するGPUバックエンド |
-
-### HealthCheckRequest 構造体
-
-**ファイル**: `common/src/protocol.rs`
-
-**追加フィールド**:
-
-| フィールド | 型 | 説明 |
-|-----------|-----|------|
-| `executable_models` | `Vec<String>` | GPU互換モデル一覧 |
-| `gpu_backend` | `Option<GpuBackend>` | GPUバックエンド |
+**変更なし** - 既存の構造体をそのまま使用
 
 ## データベーススキーマ
 
-### nodes テーブル拡張
+**変更なし** - executable_modelsはメモリのみで管理
 
-```sql
-ALTER TABLE nodes ADD COLUMN gpu_backend TEXT;
--- "metal", "cuda", "directml", "rocm", "cpu"
-```
+## プラットフォーム文字列（ノード側）
 
-### node_executable_models テーブル（新規）
-
-```sql
-CREATE TABLE node_executable_models (
-    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    model_id TEXT NOT NULL,
-    PRIMARY KEY (node_id, model_id)
-);
-```
-
-## プラットフォーム文字列
-
-モデルの `platforms` フィールドで使用される文字列:
+モデルの `platforms` フィールドで使用される文字列（ノード側のみ）:
 
 | 文字列 | 対応 GpuBackend |
 |--------|----------------|
@@ -87,7 +62,7 @@ CREATE TABLE node_executable_models (
 | `linux-rocm` | `ROCm` |
 | `cpu` | `Cpu` |
 
-## GPU互換性判定ロジック
+## GPU互換性判定ロジック（ノード側）
 
 ```text
 isCompatible(model, backend):
@@ -107,21 +82,34 @@ isCompatible(model, backend):
 
 ### Node `/v1/models` レスポンス
 
+**シンプルなモデルID一覧のみ**（GPU情報は含まない）。
+
+**モデルエントリの検証ルール**:
+
+- 「id」フィールドのみ必須、「object」フィールドはオプショナル
+- ID空・null・未定義のエントリはスキップ
+- 同じIDが複数回出現した場合は重複排除
+- 有効なエントリが1つ以上あれば登録を継続
+
 ```json
 {
   "object": "list",
-  "gpu_backend": "metal",
   "data": [
     {
       "id": "llama2-7b-q4",
-      "object": "model",
-      "platforms": ["macos-metal", "linux-cuda"]
+      "object": "model"
+    },
+    {
+      "id": "llama3-8b-q4",
+      "object": "model"
     }
   ]
 }
 ```
 
 ### Router `/v1/models` レスポンス
+
+オンラインノードのモデルを集約:
 
 ```json
 {
@@ -162,3 +150,43 @@ isCompatible(model, backend):
   }
 }
 ```
+
+### ノード登録拒否（/v1/models取得失敗）
+
+```json
+{
+  "error": {
+    "message": "Failed to fetch model list from node: connection timeout",
+    "type": "registration_error",
+    "code": "model_list_unavailable"
+  }
+}
+```
+
+### ノード登録拒否（空のモデルリスト）
+
+```json
+{
+  "error": {
+    "message": "Node reported no executable models",
+    "type": "registration_error",
+    "code": "no_executable_models"
+  }
+}
+```
+
+## モデル除外の状態遷移
+
+```text
+[正常] --推論失敗--> [除外中] --ノード再起動--> [正常]
+                         |
+                         +--> ノードオフライン --> [除外状態リセット]
+                         |
+                         +--> ノード再登録 --> [除外状態リセット]
+```
+
+- 推論失敗: 1回で即座に除外
+- 復帰条件: ノード再起動（再登録）のみ
+- ノードオフライン時: 除外状態も含めてクリア
+- ノード再登録時: excluded_modelsをクリアし新しいモデル一覧で更新
+- 進行中リクエスト: 除外は新規リクエストのみに影響、既存リクエストは継続

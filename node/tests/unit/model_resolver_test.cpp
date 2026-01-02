@@ -10,6 +10,7 @@
 #include <httplib.h>
 
 #include "models/model_resolver.h"
+#include "models/model_sync.h"
 
 using namespace llm_node;
 namespace fs = std::filesystem;
@@ -149,6 +150,28 @@ TEST(ModelResolverTest, DownloadFromRegistryWhenNotLocal) {
     EXPECT_FALSE(result.origin_attempted);
     EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
     EXPECT_TRUE(fs::exists(result.path));
+}
+
+TEST(ModelResolverTest, ReportsSyncProgressDuringRegistryDownload) {
+    TempModelDirs tmp;
+    RegistryServer server;
+    server.start(20006, "progress-model");
+
+    ModelSync sync(server.baseUrl(), tmp.local.string());
+    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    resolver.setSyncReporter(&sync);
+    auto result = resolver.resolve("progress-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    auto status = sync.getStatus();
+    EXPECT_NE(status.state, SyncState::Idle);
+    ASSERT_TRUE(status.current_download.has_value());
+    EXPECT_EQ(status.current_download->model_id, "progress-model");
+    EXPECT_EQ(status.current_download->file, "model.gguf");
+    EXPECT_GT(status.current_download->downloaded_bytes, 0u);
 }
 
 TEST(ModelResolverTest, DownloadBlockedByAllowlist) {

@@ -109,6 +109,8 @@
 - [x] T021 [P] Node: モデル同期の進捗/状態を取得できるようにする（モデル名・ファイル名・downloaded/total）
 - [x] T022 [P] Router: ヘルスチェックに同期状態を取り込み、APIで取得できるようにする
 - [x] T023 [P] Dashboard: ノード一覧/詳細に同期状態と進捗を表示する
+- [x] T024 [P] ModelResolver経由のダウンロード進捗をsync_stateとして報告する
+- [x] T025 [P] ModelResolverの進捗報告テストを追加する
 
 ## 依存関係
 

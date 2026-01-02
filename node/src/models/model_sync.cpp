@@ -55,6 +55,27 @@ SyncStatusInfo ModelSync::getStatus() const {
     return status_;
 }
 
+void ModelSync::reportExternalDownloadProgress(const std::string& model_id,
+                                               const std::string& file,
+                                               size_t downloaded_bytes,
+                                               size_t total_bytes) {
+    std::lock_guard<std::mutex> lock(status_mutex_);
+    status_.state = SyncState::Running;
+    status_.current_download = SyncStatusInfo::DownloadProgress{
+        model_id,
+        file,
+        downloaded_bytes,
+        total_bytes,
+    };
+    status_.updated_at = std::chrono::system_clock::now();
+}
+
+void ModelSync::reportExternalDownloadResult(bool success) {
+    std::lock_guard<std::mutex> lock(status_mutex_);
+    status_.state = success ? SyncState::Success : SyncState::Failed;
+    status_.updated_at = std::chrono::system_clock::now();
+}
+
 ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::milliseconds timeout)
     : base_url_(std::move(base_url)), models_dir_(std::move(models_dir)), timeout_(timeout) {
     {

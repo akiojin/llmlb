@@ -182,6 +182,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         if (!cfg.origin_allowlist.empty()) {
             model_resolver->setOriginAllowlist(cfg.origin_allowlist);
         }
+        model_resolver->setSyncReporter(model_sync.get());
 
         // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());

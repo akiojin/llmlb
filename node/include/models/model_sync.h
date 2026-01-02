@@ -101,6 +101,13 @@ public:
     // 直近の同期ステータスを取得
     SyncStatusInfo getStatus() const;
 
+    // 外部ダウンロード（ModelResolver等）から進捗/結果を報告
+    void reportExternalDownloadProgress(const std::string& model_id,
+                                        const std::string& file,
+                                        size_t downloaded_bytes,
+                                        size_t total_bytes);
+    void reportExternalDownloadResult(bool success);
+
     // Getter methods for paths
     const std::string& getModelsDir() const { return models_dir_; }
     const std::string& getBaseUrl() const { return base_url_; }

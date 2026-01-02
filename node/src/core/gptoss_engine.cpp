@@ -932,4 +932,26 @@ size_t GptOssEngine::getModelMaxContext(const ModelDescriptor& descriptor) const
 #endif
 }
 
+uint64_t GptOssEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
+    if (descriptor.model_dir.empty()) {
+        return 0;
+    }
+    const fs::path model_dir(descriptor.model_dir);
+    const fs::path model_bin =
+#if defined(_WIN32)
+        resolve_gptoss_directml_model_bin(model_dir);
+#else
+        resolve_gptoss_metal_model_bin(model_dir);
+#endif
+    if (model_bin.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    auto size = fs::file_size(model_bin, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<uint64_t>(size);
+}
+
 }  // namespace llm_node

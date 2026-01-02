@@ -6,6 +6,10 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
 #include "core/engine_registry.h"
+#include "api/openai_endpoints.h"
+#include "api/node_endpoints.h"
+#include "api/http_server.h"
+#include "models/model_registry.h"
 #include "models/model_descriptor.h"
 #include "models/model_storage.h"
 #include "system/resource_monitor.h"
@@ -305,6 +309,51 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramInsufficient) {
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
     EXPECT_NE(result.error_message.find("VRAM"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, OpenAIResponds503WhenVramInsufficient) {
+    llm_node::set_ready(true);
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "vram_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(2048),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 0, 0, 1024};
+    });
+
+    ModelRegistry api_registry;
+    api_registry.setModels({model_name});
+    NodeConfig config;
+    OpenAIEndpoints openai(api_registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18094, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18094);
+    std::string body = R"({"model":"example/model","prompt":"hello"})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 503);
+    EXPECT_NE(res->body.find("resource_exhausted"), std::string::npos);
+
+    server.stop();
 }
 
 TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {

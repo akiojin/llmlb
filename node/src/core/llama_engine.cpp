@@ -780,6 +780,18 @@ size_t LlamaEngine::getModelMaxContext(const ModelDescriptor& descriptor) const 
     return model_max_ctx_;
 }
 
+uint64_t LlamaEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
+    if (descriptor.primary_path.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    auto size = fs::file_size(descriptor.primary_path, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<uint64_t>(size);
+}
+
 // Embedding生成
 std::vector<std::vector<float>> LlamaEngine::generateEmbeddings(
     const std::vector<std::string>& inputs,

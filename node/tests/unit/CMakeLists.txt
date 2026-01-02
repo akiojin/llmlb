@@ -39,6 +39,11 @@ set(UNIT_TEST_SOURCES
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/vision_processor.cpp
+    ../../src/api/openai_endpoints.cpp
+    ../../src/api/node_endpoints.cpp
+    ../../src/api/http_server.cpp
+    ../../src/models/model_registry.cpp
+    ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/whisper_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp

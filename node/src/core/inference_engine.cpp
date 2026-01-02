@@ -355,7 +355,8 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     : manager_(&manager)
     , model_storage_(&model_storage)
     , model_sync_(model_sync)
-    , model_resolver_(model_resolver) {
+    , model_resolver_(model_resolver)
+    , resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
     engines_ = std::make_unique<EngineRegistry>();
     EngineRegistration llama_reg;
     llama_reg.engine_id = "builtin_llama_cpp";
@@ -831,6 +832,22 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         result.code = EngineErrorCode::kUnavailable;
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;
+    }
+
+    if (resource_usage_provider_) {
+        const auto usage = resource_usage_provider_();
+        const uint64_t required = engine->getModelVramBytes(*desc);
+        if (usage.vram_total_bytes > 0 && required > 0) {
+            const uint64_t available =
+                usage.vram_total_bytes > usage.vram_used_bytes
+                    ? usage.vram_total_bytes - usage.vram_used_bytes
+                    : 0;
+            if (required > available) {
+                result.code = EngineErrorCode::kResourceExhausted;
+                result.error_message = "Insufficient VRAM available";
+                return result;
+            }
+        }
     }
 
     result = engine->loadModel(*desc);

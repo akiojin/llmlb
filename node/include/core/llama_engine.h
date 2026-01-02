@@ -38,6 +38,7 @@ public:
         const ModelDescriptor& descriptor) const override;
 
     size_t getModelMaxContext(const ModelDescriptor& descriptor) const override;
+    uint64_t getModelVramBytes(const ModelDescriptor& descriptor) const override;
 
 private:
     LlamaManager& manager_;

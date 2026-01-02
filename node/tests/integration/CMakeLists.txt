@@ -32,8 +32,10 @@ set(INTEGRATION_TEST_SOURCES
 # Use platform-specific gpu_detector source
 if(APPLE)
     list(APPEND INTEGRATION_TEST_SOURCES ../../src/system/gpu_detector.mm)
+    list(APPEND INTEGRATION_TEST_SOURCES ../../src/system/resource_monitor.mm)
 else()
     list(APPEND INTEGRATION_TEST_SOURCES ../../src/system/gpu_detector.cpp)
+    list(APPEND INTEGRATION_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
 add_executable(llm-node-integration-tests

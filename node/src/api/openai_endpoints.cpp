@@ -637,6 +637,10 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
     auto load_result = engine_.loadModel(model, capability);
     if (!load_result.success) {
         const std::string prefix = "Model does not support capability:";
+        if (load_result.code == llm_node::EngineErrorCode::kResourceExhausted) {
+            respondError(res, 503, "resource_exhausted", load_result.error_message);
+            return false;
+        }
         if (load_result.error_message.rfind(prefix, 0) == 0) {
             respondError(res, 400, "invalid_request", load_result.error_message);
             return false;

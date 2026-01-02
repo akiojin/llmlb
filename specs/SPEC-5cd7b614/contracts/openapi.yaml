@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: GPU Required Node Registration API
+  version: 1.0.0
+  description: GPU必須ノード登録API
+
+paths:
+  /v0/nodes:
+    post:
+      summary: ノード登録（GPU必須）
+      operationId: registerNode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeRegistrationRequest'
+      responses:
+        '201':
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeRegistrationResponse'
+        '403':
+          description: GPU非搭載のため拒否
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GpuRequiredError'
+        '401':
+          description: 認証エラー
+
+components:
+  schemas:
+    NodeRegistrationRequest:
+      type: object
+      required:
+        - node_ip
+        - port
+        - gpu_devices
+      properties:
+        node_ip:
+          type: string
+          description: ノードのIPアドレス
+          example: "192.168.1.100"
+        port:
+          type: integer
+          description: ノードのポート番号
+          example: 11435
+        gpu_devices:
+          type: array
+          description: GPUデバイス情報（1つ以上必須）
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/GpuDevice'
+        gpu_capability:
+          $ref: '#/components/schemas/GpuCapability'
+
+    GpuDevice:
+      type: object
+      required:
+        - model
+        - count
+        - vendor
+      properties:
+        model:
+          type: string
+          description: GPUモデル名
+          example: "NVIDIA GeForce RTX 4090"
+        count:
+          type: integer
+          minimum: 1
+          description: デバイス数
+          example: 1
+        vendor:
+          type: string
+          enum: [nvidia, amd, intel, apple, unknown]
+          description: GPUベンダー
+
+    GpuCapability:
+      type: object
+      description: GPU能力情報（NVIDIAのみ）
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: GPU能力スコア
+          example: 9850
+        compute_capability:
+          type: string
+          description: CUDA Compute Capability
+          example: "8.9"
+        vram_gb:
+          type: number
+          description: VRAMサイズ（GB）
+          example: 24.0
+        max_clock_mhz:
+          type: integer
+          description: 最大クロック速度（MHz）
+          example: 2520
+
+    NodeRegistrationResponse:
+      type: object
+      properties:
+        node_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [registered]
+        gpu_devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/GpuDevice'
+        gpu_capability:
+          $ref: '#/components/schemas/GpuCapability'
+
+    GpuRequiredError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "GPU hardware is required for node registration"
+            type:
+              type: string
+              enum: [forbidden]
+            code:
+              type: string
+              enum: [gpu_required]

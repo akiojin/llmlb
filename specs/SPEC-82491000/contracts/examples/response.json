@@ -1,0 +1,53 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "llama-3.2-1b",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "router"
+    },
+    {
+      "id": "qwen2.5-coder-7b",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "router"
+    },
+    {
+      "id": "openai:gpt-4o",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "openai"
+    },
+    {
+      "id": "openai:gpt-4o-mini",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "openai"
+    },
+    {
+      "id": "anthropic:claude-3-5-sonnet-20241022",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "anthropic:claude-3-5-haiku-20241022",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "google:gemini-1.5-pro",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "google"
+    },
+    {
+      "id": "google:gemini-1.5-flash",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "google"
+    }
+  ]
+}

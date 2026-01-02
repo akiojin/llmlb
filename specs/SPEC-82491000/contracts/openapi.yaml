@@ -1,0 +1,196 @@
+openapi: 3.0.3
+info:
+  title: Cloud Provider Model List Integration API
+  description: |
+    クラウドプロバイダー（OpenAI、Google、Anthropic）のモデル一覧を
+    ローカルモデルと統合して返却するAPI仕様。
+
+    SPEC-82491000に基づく実装。
+  version: 1.0.0
+  contact:
+    name: LLM Router Team
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /v1/models:
+    get:
+      operationId: listModels
+      summary: 利用可能なモデル一覧を取得
+      description: |
+        ローカルモデルとクラウドプロバイダーのモデルを統合した一覧を返却する。
+
+        - クラウドモデルにはプロバイダー識別プレフィックス（`openai:`, `google:`, `anthropic:`）が付与される
+        - APIキーが設定されているプロバイダーのみからモデル一覧を取得
+        - 24時間のキャッシュを使用（キャッシュ有効時は100ms以内にレスポンス）
+        - 特定プロバイダーの障害時も他のプロバイダーのモデルは正常に返却
+      tags:
+        - Models
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: モデル一覧の取得成功
+          headers:
+            X-Cache-Status:
+              description: キャッシュステータス（HIT/MISS/STALE）
+              schema:
+                type: string
+                enum: [HIT, MISS, STALE]
+            X-Cache-Age:
+              description: キャッシュ経過時間（秒）
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+              examples:
+                with_cloud_providers:
+                  $ref: '#/components/examples/ModelsWithCloudProviders'
+                local_only:
+                  $ref: '#/components/examples/ModelsLocalOnly'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Bearer token形式でAPIキーを指定
+
+  schemas:
+    ModelsResponse:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+          enum: [list]
+          description: レスポンスオブジェクトタイプ
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+          description: モデル一覧
+
+    Model:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - owned_by
+      properties:
+        id:
+          type: string
+          description: |
+            モデルID。クラウドモデルはプレフィックス付き。
+            - ローカル: `llama-3.2-1b`
+            - OpenAI: `openai:gpt-4o`
+            - Anthropic: `anthropic:claude-3-5-sonnet-20241022`
+            - Google: `google:gemini-1.5-pro`
+          examples:
+            - llama-3.2-1b
+            - openai:gpt-4o
+            - anthropic:claude-3-5-sonnet-20241022
+            - google:gemini-1.5-pro
+        object:
+          type: string
+          enum: [model]
+          description: オブジェクトタイプ
+        created:
+          type: integer
+          format: int64
+          description: モデル作成日時（UNIXタイムスタンプ）
+        owned_by:
+          type: string
+          description: |
+            モデル所有者（プロバイダー識別子）
+            - `router`: ローカルモデル
+            - `openai`: OpenAIモデル
+            - `anthropic`: Anthropicモデル
+            - `google`: Googleモデル
+          enum:
+            - router
+            - openai
+            - anthropic
+            - google
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+              description: エラーメッセージ
+            type:
+              type: string
+              description: エラータイプ
+            code:
+              type: string
+              description: エラーコード
+
+  examples:
+    ModelsWithCloudProviders:
+      summary: クラウドプロバイダー統合モデル一覧
+      value:
+        object: list
+        data:
+          - id: llama-3.2-1b
+            object: model
+            created: 1700000000
+            owned_by: router
+          - id: openai:gpt-4o
+            object: model
+            created: 1700000000
+            owned_by: openai
+          - id: openai:gpt-4o-mini
+            object: model
+            created: 1700000000
+            owned_by: openai
+          - id: anthropic:claude-3-5-sonnet-20241022
+            object: model
+            created: 1700000000
+            owned_by: anthropic
+          - id: google:gemini-1.5-pro
+            object: model
+            created: 1700000000
+            owned_by: google
+
+    ModelsLocalOnly:
+      summary: ローカルモデルのみ（クラウドAPIキー未設定）
+      value:
+        object: list
+        data:
+          - id: llama-3.2-1b
+            object: model
+            created: 1700000000
+            owned_by: router
+          - id: qwen2.5-coder-7b
+            object: model
+            created: 1700000000
+            owned_by: router

@@ -8,6 +8,7 @@
 #include "core/engine_registry.h"
 #include "models/model_descriptor.h"
 #include "models/model_storage.h"
+#include "system/resource_monitor.h"
 
 using namespace llm_node;
 namespace fs = std::filesystem;
@@ -103,6 +104,55 @@ private:
     std::vector<std::string>* calls_{nullptr};
     bool supports_text_{false};
     bool supports_embeddings_{false};
+};
+
+class VramEngine final : public Engine {
+public:
+    explicit VramEngine(uint64_t required) : required_(required) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+    uint64_t getModelVramBytes(const ModelDescriptor&) const override { return required_; }
+
+private:
+    uint64_t required_{0};
 };
 
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
@@ -223,6 +273,38 @@ TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
     EXPECT_NE(result.error_message.find("architecture"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelRejectsWhenVramInsufficient) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "vram_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(2048),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 0, 0, 1024};
+    });
+
+    auto result = engine.loadModel(model_name);
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_NE(result.error_message.find("VRAM"), std::string::npos);
 }
 
 TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {

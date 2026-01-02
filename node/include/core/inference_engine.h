@@ -10,6 +10,7 @@
 #include "core/engine_types.h"
 #include "core/engine_host.h"
 #include "core/engine_registry.h"
+#include "system/resource_monitor.h"
 
 namespace llm_node {
 
@@ -108,6 +109,8 @@ public:
 #ifdef LLM_NODE_TESTING
     /// テスト専用: EngineRegistry を差し替える
     void setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry);
+    /// テスト専用: リソース使用量のプロバイダを差し替える
+    void setResourceUsageProviderForTest(std::function<ResourceUsage()> provider);
 #endif
 
 private:
@@ -119,6 +122,7 @@ private:
     std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
     mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
+    std::function<ResourceUsage()> resource_usage_provider_{};
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;

@@ -873,6 +873,10 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
 void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
     engines_ = std::move(registry);
 }
+
+void InferenceEngine::setResourceUsageProviderForTest(std::function<ResourceUsage()> provider) {
+    resource_usage_provider_ = std::move(provider);
+}
 #endif
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {

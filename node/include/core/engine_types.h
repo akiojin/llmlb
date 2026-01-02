@@ -18,7 +18,7 @@ struct ChatMessage {
 };
 
 struct InferenceParams {
-    size_t max_tokens{kDefaultMaxTokens};
+    size_t max_tokens{0};
     float temperature{0.8f};
     float top_p{0.9f};
     int top_k{40};
@@ -30,12 +30,10 @@ inline size_t resolve_effective_max_tokens(size_t requested,
                                            size_t prompt_tokens,
                                            size_t max_context) {
     if (max_context == 0 || prompt_tokens >= max_context) {
-        return requested;
+        return requested == 0 ? kDefaultMaxTokens : requested;
     }
     const size_t available = max_context - prompt_tokens;
-    if (requested == 0 || requested == kDefaultMaxTokens) {
-        return available;
-    }
+    if (requested == 0) return available;
     return std::min(requested, available);
 }
 

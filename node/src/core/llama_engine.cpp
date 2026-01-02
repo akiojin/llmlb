@@ -494,12 +494,7 @@ std::string LlamaEngine::generateChat(
         size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
         // デフォルト値(2048)の場合は利用可能な全容量を使用、
         // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, n_tokens, model_n_ctx);
         spdlog::info("Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }
@@ -709,12 +704,7 @@ std::vector<std::string> LlamaEngine::generateChatStream(
         size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
         // デフォルト値(2048)の場合は利用可能な全容量を使用、
         // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, n_tokens, model_n_ctx);
         spdlog::info("Streaming: Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }

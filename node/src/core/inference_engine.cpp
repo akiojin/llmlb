@@ -585,12 +585,7 @@ std::string InferenceEngine::generateChatWithImages(
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
     if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
         size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_positions, model_n_ctx);
         spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
             model_n_ctx, prompt_positions, available, effective_max_tokens);
     }

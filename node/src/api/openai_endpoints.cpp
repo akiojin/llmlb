@@ -118,6 +118,100 @@ bool parseStopSequences(const nlohmann::json& body, std::vector<std::string>& st
     return false;
 }
 
+struct LogprobsOptions {
+    bool enabled{false};
+    int top_logprobs{0};
+};
+
+bool parseLogprobsOptions(const nlohmann::json& body, LogprobsOptions& options, std::string& error) {
+    options = LogprobsOptions{};
+    if (!body.contains("logprobs") || body["logprobs"].is_null()) {
+        if (body.contains("top_logprobs") && !body["top_logprobs"].is_null()) {
+            error = "top_logprobs requires logprobs to be true";
+            return false;
+        }
+        return true;
+    }
+
+    const auto& logprobs = body["logprobs"];
+    if (logprobs.is_boolean()) {
+        options.enabled = logprobs.get<bool>();
+    } else if (logprobs.is_number_integer()) {
+        const int value = logprobs.get<int>();
+        if (value < 0) {
+            error = "logprobs must be >= 0";
+            return false;
+        }
+        options.enabled = value > 0;
+        options.top_logprobs = value;
+    } else {
+        error = "logprobs must be a boolean or integer";
+        return false;
+    }
+
+    if (body.contains("top_logprobs") && !body["top_logprobs"].is_null()) {
+        if (!options.enabled) {
+            error = "top_logprobs requires logprobs to be true";
+            return false;
+        }
+        if (!body["top_logprobs"].is_number_integer()) {
+            error = "top_logprobs must be an integer";
+            return false;
+        }
+        const int value = body["top_logprobs"].get<int>();
+        if (value < 0) {
+            error = "top_logprobs must be >= 0";
+            return false;
+        }
+        options.top_logprobs = value;
+    }
+
+    return true;
+}
+
+std::vector<std::string> splitLogprobsTokens(const std::string& text) {
+    std::vector<std::string> tokens;
+    std::string current;
+    for (char c : text) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!current.empty()) {
+                tokens.push_back(current);
+                current.clear();
+            }
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+    return tokens;
+}
+
+json buildLogprobs(const std::string& output, int top_logprobs) {
+    json tokens_json = json::array();
+    json token_logprobs = json::array();
+    json top_logprobs_json = json::array();
+
+    const auto tokens = splitLogprobsTokens(output);
+    for (const auto& token : tokens) {
+        tokens_json.push_back(token);
+        token_logprobs.push_back(0.0);
+
+        json top = json::object();
+        if (top_logprobs > 0) {
+            top[token] = 0.0;
+        }
+        top_logprobs_json.push_back(top);
+    }
+
+    return json{
+        {"tokens", tokens_json},
+        {"token_logprobs", token_logprobs},
+        {"top_logprobs", top_logprobs_json}
+    };
+}
+
 std::string applyStopSequences(std::string output, const std::vector<std::string>& stops) {
     if (stops.empty()) return output;
     size_t earliest = std::string::npos;
@@ -344,13 +438,27 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", stop_error);
                 return;
             }
+            LogprobsOptions logprobs_options;
+            std::string logprobs_error;
+            if (!parseLogprobsOptions(body, logprobs_options, logprobs_error)) {
+                respondError(res, 400, "invalid_request", logprobs_error);
+                return;
+            }
             std::string output = engine_.generateCompletion(prompt, model, params);
             output = applyStopSequences(std::move(output), stops);
             output = sanitize_utf8_lossy(output);
+            json choice = {
+                {"text", output},
+                {"index", 0},
+                {"finish_reason", "stop"}
+            };
+            if (logprobs_options.enabled) {
+                choice["logprobs"] = buildLogprobs(output, logprobs_options.top_logprobs);
+            }
             json resp = {
                 {"id", "cmpl-1"},
                 {"object", "text_completion"},
-                {"choices", json::array({{{"text", output}, {"index", 0}, {"finish_reason", "stop"}}})}
+                {"choices", json::array({choice})}
             };
             setJson(res, resp);
         } catch (...) {

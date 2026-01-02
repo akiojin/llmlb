@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ScreenRegistry",
+  "description": "Web UI画面一覧のレジストリ定義",
+  "type": "object",
+  "required": ["screens", "sections", "modals", "navigations"],
+  "properties": {
+    "screens": {
+      "type": "array",
+      "description": "画面定義の配列",
+      "items": {
+        "$ref": "#/definitions/Screen"
+      }
+    },
+    "sections": {
+      "type": "array",
+      "description": "セクション定義の配列",
+      "items": {
+        "$ref": "#/definitions/Section"
+      }
+    },
+    "modals": {
+      "type": "array",
+      "description": "モーダル定義の配列",
+      "items": {
+        "$ref": "#/definitions/Modal"
+      }
+    },
+    "navigations": {
+      "type": "array",
+      "description": "画面遷移定義の配列",
+      "items": {
+        "$ref": "#/definitions/Navigation"
+      }
+    }
+  },
+  "definitions": {
+    "Screen": {
+      "type": "object",
+      "required": ["id", "path", "name", "requiresAuth"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^SCR-\\d{3}$",
+          "description": "画面ID（SCR-001形式）"
+        },
+        "path": {
+          "type": "string",
+          "description": "画面パス"
+        },
+        "name": {
+          "type": "string",
+          "description": "画面名"
+        },
+        "description": {
+          "type": "string",
+          "description": "画面の説明"
+        },
+        "relatedSpec": {
+          "type": "string",
+          "pattern": "^SPEC-[a-z0-9]{8}$",
+          "description": "関連SPEC ID"
+        },
+        "requiresAuth": {
+          "type": "boolean",
+          "description": "認証必須かどうか"
+        }
+      }
+    },
+    "Section": {
+      "type": "object",
+      "required": ["id", "parentScreenId", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^SEC-\\d{3}$",
+          "description": "セクションID（SEC-001形式）"
+        },
+        "parentScreenId": {
+          "type": "string",
+          "pattern": "^SCR-\\d{3}$",
+          "description": "親画面ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "セクション名"
+        },
+        "description": {
+          "type": "string",
+          "description": "セクションの説明"
+        },
+        "relatedSpec": {
+          "type": "string",
+          "pattern": "^SPEC-[a-z0-9]{8}$",
+          "description": "関連SPEC ID"
+        }
+      }
+    },
+    "Modal": {
+      "type": "object",
+      "required": ["id", "parentScreenId", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^MOD-\\d{3}$",
+          "description": "モーダルID（MOD-001形式）"
+        },
+        "parentScreenId": {
+          "type": "string",
+          "pattern": "^SCR-\\d{3}$",
+          "description": "親画面ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "モーダル名"
+        },
+        "description": {
+          "type": "string",
+          "description": "モーダルの説明"
+        },
+        "relatedSpec": {
+          "type": "string",
+          "pattern": "^SPEC-[a-z0-9]{8}$",
+          "description": "関連SPEC ID"
+        }
+      }
+    },
+    "Navigation": {
+      "type": "object",
+      "required": ["from", "to", "trigger"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "遷移元画面ID"
+        },
+        "to": {
+          "type": "string",
+          "description": "遷移先画面ID"
+        },
+        "trigger": {
+          "type": "string",
+          "description": "遷移トリガー"
+        },
+        "condition": {
+          "type": "string",
+          "description": "遷移条件"
+        }
+      }
+    }
+  }
+}

@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "system/gpu_detector.h"
+#include "system/resource_monitor.h"
 #include "api/router_client.h"
 #include "models/model_sync.h"
 #include "models/model_resolver.h"
@@ -164,6 +165,21 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 spdlog::info("Max memory limit set to {} bytes", max_memory);
             }
         }
+
+        // Resource monitoring (VRAM/RAM watermark + LRU unload)
+        llm_node::ResourceMonitor resource_monitor([&llama_manager]() {
+            if (llm_node::active_request_count() > 0) {
+                spdlog::info("Resource monitor: active requests in flight; skipping LRU unload");
+                return false;
+            }
+            auto lru = llama_manager.getLeastRecentlyUsedModel();
+            if (!lru.has_value()) {
+                return false;
+            }
+            spdlog::warn("Resource monitor: unloading LRU model {}", lru.value());
+            return llama_manager.unloadModel(lru.value());
+        });
+        resource_monitor.start();
 
         // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
@@ -381,6 +397,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_ONNX_RUNTIME
                                         , &tts_manager
 #endif
+                                        , &resource_monitor
                                         ]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
@@ -423,7 +440,18 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                     }
                     sync_payload = payload;
                 }
-                router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
+                std::optional<llm_node::HeartbeatMetrics> metrics;
+                const auto usage = resource_monitor.latestUsage();
+                if (usage.mem_total_bytes > 0 || usage.vram_total_bytes > 0) {
+                    llm_node::HeartbeatMetrics data;
+                    data.mem_used_bytes = usage.mem_used_bytes;
+                    data.mem_total_bytes = usage.mem_total_bytes;
+                    if (usage.vram_total_bytes > 0) {
+                        data.gpu_utilization = usage.vramUsageRatio() * 100.0;
+                    }
+                    metrics = data;
+                }
+                router.sendHeartbeat(node_id, node_token, std::nullopt, metrics,
                                      loaded_models, loaded_embedding_models,
                                      loaded_asr_models, loaded_tts_models,
                                      supported_runtimes, sync_payload);
@@ -445,6 +473,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Cleanup
         std::cout << "Shutting down..." << std::endl;
         server.stop();
+        resource_monitor.stop();
         if (heartbeat_thread.joinable()) {
             heartbeat_thread.join();
         }

@@ -52,18 +52,47 @@ std::optional<std::string> load_manifest_format(const fs::path& model_dir) {
         std::ifstream ifs(manifest_path);
         json j;
         ifs >> j;
-        if (!j.contains("format") || !j["format"].is_string()) return std::nullopt;
-        std::string format = j["format"].get<std::string>();
-        std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        if (format == "gguf" || format == "safetensors") {
+        auto normalize = [](std::string format) {
+            std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
             return format;
+        };
+
+        auto accept_format = [&](const std::string& format) -> std::optional<std::string> {
+            const auto normalized = normalize(format);
+            if (normalized == "gguf" || normalized == "safetensors") {
+                return normalized;
+            }
+            return std::nullopt;
+        };
+
+        if (j.contains("format")) {
+            if (!j["format"].is_string()) return std::string("invalid");
+            const auto value = j["format"].get<std::string>();
+            if (auto parsed = accept_format(value)) return parsed;
+            return std::string("invalid");
         }
+
+        if (j.contains("formats")) {
+            if (!j["formats"].is_array()) return std::string("invalid");
+            std::vector<std::string> candidates;
+            for (const auto& item : j["formats"]) {
+                if (!item.is_string()) continue;
+                if (auto parsed = accept_format(item.get<std::string>())) {
+                    candidates.push_back(*parsed);
+                }
+            }
+            if (candidates.size() == 1) {
+                return candidates.front();
+            }
+            return std::string("invalid");
+        }
+
+        return std::string("invalid");
     } catch (...) {
-        return std::nullopt;
+        return std::string("invalid");
     }
-    return std::nullopt;
 }
 
 std::optional<std::vector<std::string>> load_safetensors_index_shards(const fs::path& index_path) {
@@ -535,6 +564,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
             }
             return std::nullopt;
         }
+        return std::nullopt;
     }
 
     const auto gguf_path = model_dir / "model.gguf";
@@ -579,6 +609,7 @@ bool ModelStorage::validateModel(const std::string& model_name) const {
         if (*manifest_format == "safetensors") {
             return resolve_safetensors_primary_in_dir(model_dir).has_value();
         }
+        return false;
     }
     if (is_valid_file(model_dir / "model.gguf")) return true;
     return resolve_safetensors_primary_in_dir(model_dir).has_value();

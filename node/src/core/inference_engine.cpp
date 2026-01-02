@@ -15,6 +15,7 @@
 #include "mtmd-helper.h"
 #include "utils/stop_sequences.h"
 #include "runtime/state.h"
+#include "system/gpu_detector.h"
 
 #include <spdlog/spdlog.h>
 
@@ -1179,10 +1180,36 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
     if (resource_usage_provider_) {
         const auto usage = resource_usage_provider_();
         const uint64_t required = engine->getModelVramBytes(*desc);
-        if (usage.vram_total_bytes > 0 && required > 0 && !engine_id.empty()) {
+        uint64_t vram_total_bytes = usage.vram_total_bytes;
+        uint64_t vram_available_bytes =
+            usage.vram_total_bytes > usage.vram_used_bytes
+                ? usage.vram_total_bytes - usage.vram_used_bytes
+                : 0;
+
+#ifndef LLM_NODE_TESTING
+        if (required > 0) {
+            GpuDetector detector;
+            const auto devices = detector.detect();
+            uint64_t max_total = 0;
+            uint64_t max_free = 0;
+            for (const auto& device : devices) {
+                if (!device.is_available) continue;
+                max_total = std::max<uint64_t>(max_total, device.memory_bytes);
+                max_free = std::max<uint64_t>(max_free, device.free_memory_bytes);
+            }
+            if (max_total > 0) {
+                vram_total_bytes = max_total;
+            }
+            if (max_free > 0) {
+                vram_available_bytes = max_free;
+            }
+        }
+#endif
+
+        if (vram_total_bytes > 0 && required > 0 && !engine_id.empty()) {
             const size_t engine_count = engines_ ? engines_->engineIdCount() : 0;
             if (engine_count > 0) {
-                const uint64_t budget = usage.vram_total_bytes / engine_count;
+                const uint64_t budget = vram_total_bytes / engine_count;
                 if (budget > 0 && required > budget) {
                     spdlog::warn(
                         "VRAM budget exceeded for engine {} (required={} budget={})",
@@ -1195,12 +1222,8 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
                 }
             }
         }
-        if (usage.vram_total_bytes > 0 && required > 0) {
-            const uint64_t available =
-                usage.vram_total_bytes > usage.vram_used_bytes
-                    ? usage.vram_total_bytes - usage.vram_used_bytes
-                    : 0;
-            if (required > available) {
+        if (vram_total_bytes > 0 && required > 0) {
+            if (required > vram_available_bytes) {
                 result.code = EngineErrorCode::kResourceExhausted;
                 result.error_message = "Insufficient VRAM available";
                 return result;

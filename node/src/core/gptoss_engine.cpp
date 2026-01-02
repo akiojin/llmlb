@@ -946,6 +946,10 @@ size_t GptOssEngine::getModelMaxContext(const ModelDescriptor& descriptor) const
 }
 
 uint64_t GptOssEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
+#ifndef USE_GPTOSS
+    (void)descriptor;
+    return 0;
+#else
     if (descriptor.model_dir.empty()) {
         return 0;
     }
@@ -965,6 +969,7 @@ uint64_t GptOssEngine::getModelVramBytes(const ModelDescriptor& descriptor) cons
         return 0;
     }
     return static_cast<uint64_t>(size);
+#endif
 }
 
 }  // namespace llm_node

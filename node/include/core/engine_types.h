@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "core/engine_error.h"
+
 namespace llm_node {
 
 constexpr size_t kDefaultMaxTokens = 2048;
@@ -39,6 +41,7 @@ inline size_t resolve_effective_max_tokens(size_t requested,
 
 struct ModelLoadResult {
     bool success{false};
+    EngineErrorCode error_code{EngineErrorCode::kLoadFailed};
     std::string error_message;
 };
 

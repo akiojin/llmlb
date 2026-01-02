@@ -791,16 +791,19 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     const std::string gguf_path = descriptor.primary_path;
     if (gguf_path.empty()) {
         result.error_message = "GGUF path is empty for model: " + descriptor.name;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (manager_.isLoaded(gguf_path)) {
         result.success = true;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
     if (!manager_.loadModelIfNeeded(gguf_path)) {
         result.error_message = "Failed to load model: " + gguf_path;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -814,6 +817,7 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     }
 
     result.success = true;
+    result.error_code = EngineErrorCode::kOk;
     return result;
 }
 

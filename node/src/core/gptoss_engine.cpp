@@ -461,6 +461,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     if (key.empty()) {
         result.success = false;
         result.error_message = "Model directory is empty";
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
@@ -468,6 +469,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         std::lock_guard<std::mutex> lock(mutex_);
         if (auto it = loaded_.find(key); it != loaded_.end()) {
             result.success = true;
+            result.error_code = EngineErrorCode::kOk;
             return it->second;
         }
     }
@@ -475,12 +477,14 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
 #ifndef USE_GPTOSS
     result.success = false;
     result.error_message = "gpt-oss engine requires Metal build (USE_GPTOSS)";
+    result.error_code = EngineErrorCode::kUnsupported;
     return nullptr;
 #else
     std::string validation_error;
     if (!validate_safetensors_files(descriptor, validation_error)) {
         result.success = false;
         result.error_message = validation_error;
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return nullptr;
     }
     const fs::path model_dir(descriptor.model_dir);
@@ -498,6 +502,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
 #else
             "gpt-oss Metal model artifact not found (expected model.metal.bin or metal/model.bin)";
 #endif
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return nullptr;
     }
 
@@ -507,6 +512,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         if (result.error_message.empty()) {
             result.error_message = "gpt-oss runtime library not available";
         }
+        result.error_code = EngineErrorCode::kUnsupported;
         return nullptr;
     }
 
@@ -515,6 +521,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     if (status != gptoss_status_success || model == nullptr) {
         result.success = false;
         result.error_message = "gptoss_model_create_from_file failed: status=" + std::to_string(status);
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
@@ -524,6 +531,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         api->model_release(model);
         result.success = false;
         result.error_message = "gptoss_model_get_tokenizer failed: status=" + std::to_string(status);
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
@@ -599,6 +607,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     }
 
     result.success = true;
+    result.error_code = EngineErrorCode::kOk;
     return lm;
 #endif
 }
@@ -606,6 +615,9 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
 ModelLoadResult GptOssEngine::loadModel(const ModelDescriptor& descriptor) {
     ModelLoadResult result;
     (void)ensureLoaded(descriptor, result);
+    if (result.success) {
+        result.error_code = EngineErrorCode::kOk;
+    }
     return result;
 }
 

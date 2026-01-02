@@ -741,23 +741,27 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
 
     if (!isInitialized()) {
         result.error_message = "InferenceEngine not initialized";
+        result.error_code = EngineErrorCode::kInternal;
         return result;
     }
 
     if (!ModelStorage::parseModelName(model_name).has_value()) {
         result.error_message = "Invalid model name (invalid quantization format): " + model_name;
+        result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
 
     auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
         result.error_message = "Model not found: " + model_name;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (!capability.empty() && !desc->capabilities.empty()) {
         if (std::find(desc->capabilities.begin(), desc->capabilities.end(), capability) == desc->capabilities.end()) {
             result.error_message = "Model does not support capability: " + capability;
+            result.error_code = EngineErrorCode::kUnsupported;
             return result;
         }
     }
@@ -768,12 +772,16 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         result.error_message = !resolve_error.empty()
                                    ? resolve_error
                                    : "No engine registered for runtime: " + desc->runtime;
+        result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
 
     result = engine->loadModel(*desc);
     if (result.success) {
+        result.error_code = EngineErrorCode::kOk;
         model_max_ctx_ = engine->getModelMaxContext(*desc);
+    } else if (result.error_code == EngineErrorCode::kLoadFailed && result.error_message.empty()) {
+        result.error_message = "Failed to load model: " + model_name;
     }
     return result;
 }

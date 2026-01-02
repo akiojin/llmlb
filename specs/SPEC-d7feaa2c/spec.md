@@ -124,6 +124,22 @@ register(format=...)  ───────▶    ModelStorage
 - Python依存は導入しない
 - Engine は動的プラグインであり、ABIバージョン一致のもののみロードされる
 
+## エラーコード
+粗粒度の共通エラーコード（約10種類）を定義し、詳細メッセージを併用する。
+
+| コード | 名前 | 説明 |
+|--------|------|------|
+| 0 | OK | 成功 |
+| 1 | OOM_VRAM | VRAM不足 |
+| 2 | OOM_RAM | RAM不足 |
+| 3 | MODEL_CORRUPT | モデルファイル破損 |
+| 4 | TIMEOUT | タイムアウト |
+| 5 | CANCELLED | キャンセル |
+| 6 | UNSUPPORTED | 未サポート機能 |
+| 7 | INTERNAL | 内部エラー |
+| 8 | ABI_MISMATCH | ABIバージョン不一致 |
+| 9 | LOAD_FAILED | ロード失敗 |
+
 ---
 
 ## Clarifications

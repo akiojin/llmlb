@@ -44,30 +44,30 @@ SPEC-6cd7f960 FR-1に基づき、検証なしでのモデル追加は禁止さ�
 
 ### TextGeneration（GGUF検証予定）
 
-| ID | 表示名 | 検証パス | ステータス |
-|----|-------|---------|----------|
-| kimi-k2 | Kimi K2 | A (GGUF) | 未検証 |
-| ministral3 | Ministral 3 | A (GGUF) | 未検証 |
-| qwen3 | Qwen3 | A (GGUF) | 未検証 |
-| granite-4.0-nano | Granite 4.0 Nano | A (GGUF) | 未検証 |
-| granite-4.0-h-nano | Granite 4.0 H Nano | A (GGUF) | 未検証 |
-| smollm2 | SmolLM2 | A (GGUF) | 未検証 |
-| granite-4.0-h-small | Granite 4.0 H Small | A (GGUF) | 未検証 |
-| granite-4.0-h-tiny | Granite 4.0 H Tiny | A (GGUF) | 未検証 |
-| granite-4.0-h-micro | Granite 4.0 H Micro | A (GGUF) | 未検証 |
-| granite-4.0-micro | Granite 4.0 Micro | A (GGUF) | 未検証 |
-| devstral-small | Devstral Small | A (GGUF) | 未検証 |
-| magistral-small-3.2 | Magistral Small 3.2 | A (GGUF) | 未検証 |
-| gemma3-qat | Gemma 3 QAT | A (GGUF) | 未検証 |
-| gemma3 | Gemma 3 | A (GGUF) | 未検証 |
-| qwen3-coder | Qwen3 Coder | A (GGUF) | 未検証 |
-| deepseek-r1-distill-llama | DeepSeek R1 Distill | A (GGUF) | 未検証 |
-| llama3.3 | Llama 3.3 | A (GGUF) | 未検証 |
-| llama3.1 | Llama 3.1 | A (GGUF) | 未検証 |
-| phi4 | Phi-4 | A (GGUF) | 未検証 |
-| qwq | QwQ | A (GGUF) | 未検証 |
-| deepcoder-preview | DeepCoder Preview | A (GGUF) | 未検証 |
-| mistral-nemo | Mistral Nemo | A (GGUF) | 未検証 |
+| ID | 表示名 | HFリポジトリ | GGUFファイル | 量子化 | 検証パス | ステータス |
+|----|-------|-------------|-------------|--------|---------|----------|
+| kimi-k2 | Kimi K2 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| ministral3 | Ministral 3 | bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF | mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 未検証 |
+| qwen3 | Qwen3 | bartowski/Qwen_Qwen3-0.6B-GGUF | Qwen_Qwen3-0.6B-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 未検証 |
+| granite-4.0-nano | Granite 4.0 Nano | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| granite-4.0-h-nano | Granite 4.0 H Nano | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| smollm2 | SmolLM2 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| granite-4.0-h-small | Granite 4.0 H Small | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| granite-4.0-h-tiny | Granite 4.0 H Tiny | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| granite-4.0-h-micro | Granite 4.0 H Micro | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| granite-4.0-micro | Granite 4.0 Micro | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| devstral-small | Devstral Small | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| magistral-small-3.2 | Magistral Small 3.2 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| gemma3-qat | Gemma 3 QAT | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| gemma3 | Gemma 3 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| qwen3-coder | Qwen3 Coder | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| deepseek-r1-distill-llama | DeepSeek R1 Distill | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| llama3.3 | Llama 3.3 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| llama3.1 | Llama 3.1 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| phi4 | Phi-4 | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| qwq | QwQ | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| deepcoder-preview | DeepCoder Preview | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| mistral-nemo | Mistral Nemo | TBD | TBD | TBD | A (GGUF) | 未検証 |
 
 ### TextGeneration（safetensors検証予定）
 

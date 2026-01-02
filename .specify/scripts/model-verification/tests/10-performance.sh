@@ -3,6 +3,9 @@
 # Measures inference speed
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Performance ==="
 
 # Skip for non-text models
@@ -20,11 +23,15 @@ echo "Generating $N_PREDICT tokens..."
 # Run inference with timing
 START_TIME=$(date +%s%N)
 
-OUTPUT=$("$LLM_NODE" \
-  --model "$MODEL" \
-  --n-predict $N_PREDICT \
-  --prompt "$PROMPT" \
-  2>&1)
+if [[ "${FORMAT:-}" == "gguf" ]]; then
+  OUTPUT=$(infer_command "$N_PREDICT" "$PROMPT" 2>&1)
+else
+  OUTPUT=$("$LLM_NODE" \
+    --model "$MODEL" \
+    --n-predict $N_PREDICT \
+    --prompt "$PROMPT" \
+    2>&1)
+fi
 
 END_TIME=$(date +%s%N)
 

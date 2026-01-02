@@ -3,6 +3,9 @@
 # Verifies model capability matches expected type
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Capability Detection ==="
 echo "Expected capability: $CAPABILITY"
 
@@ -12,11 +15,7 @@ echo "Expected capability: $CAPABILITY"
 case "$CAPABILITY" in
   TextGeneration)
     echo "Testing text generation capability..."
-    OUTPUT=$("$LLM_NODE" \
-      --model "$MODEL" \
-      --n-predict 10 \
-      --prompt "Hello" \
-      2>/dev/null || echo "")
+    OUTPUT=$(infer_command 10 "Hello" 2>/dev/null || echo "")
     if [[ -n "$OUTPUT" ]]; then
       echo "PASS: Text generation works"
       exit 0
@@ -35,6 +34,10 @@ case "$CAPABILITY" in
     ;;
   Embedding)
     echo "Testing embedding capability..."
+    if [[ "${FORMAT:-}" == "gguf" ]]; then
+      echo "SKIP: Embedding test requires engine-specific runner"
+      exit 77
+    fi
     OUTPUT=$("$LLM_NODE" \
       --model "$MODEL" \
       --embedding \

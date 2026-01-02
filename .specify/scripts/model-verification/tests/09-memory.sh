@@ -3,6 +3,9 @@
 # Measures memory consumption during inference
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Memory Usage ==="
 
 # Get initial memory (platform-specific)
@@ -21,11 +24,15 @@ echo "Initial memory: ${INITIAL_MEM}MB"
 
 # Run inference
 PROMPT="Write a short paragraph about memory management."
-OUTPUT=$("$LLM_NODE" \
-  --model "$MODEL" \
-  --n-predict 100 \
-  --prompt "$PROMPT" \
-  2>&1) &
+if [[ "${FORMAT:-}" == "gguf" ]]; then
+  OUTPUT=$(infer_command 100 "$PROMPT" 2>&1) &
+else
+  OUTPUT=$("$LLM_NODE" \
+    --model "$MODEL" \
+    --n-predict 100 \
+    --prompt "$PROMPT" \
+    2>&1) &
+fi
 PID=$!
 
 # Monitor memory during inference

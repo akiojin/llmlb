@@ -13,6 +13,7 @@ PLATFORM="macos-metal"
 ENGINE=""
 RESULTS_DIR=""
 LLM_NODE="${SCRIPT_DIR}/../../../node/build/llm-node"
+LLAMA_CLI="${SCRIPT_DIR}/../../../node/third_party/llama.cpp/build/bin/llama-cli"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -49,9 +50,17 @@ if [[ ! -f "$MODEL" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$LLM_NODE" ]]; then
-  echo "Error: llm-node not found or not executable: $LLM_NODE"
-  exit 1
+if [[ "$FORMAT" == "safetensors" ]]; then
+  if [[ ! -x "$LLM_NODE" ]]; then
+    echo "Error: llm-node not found or not executable: $LLM_NODE"
+    exit 1
+  fi
+else
+  if [[ ! -x "$LLAMA_CLI" ]]; then
+    echo "Error: llama-cli not found or not executable: $LLAMA_CLI"
+    echo "Build it with: cmake --build node/third_party/llama.cpp/build"
+    exit 1
+  fi
 fi
 
 # Determine engine based on format
@@ -68,7 +77,7 @@ fi
 mkdir -p "$RESULTS_DIR"
 
 # Export for test scripts
-export MODEL FORMAT CAPABILITY PLATFORM ENGINE LLM_NODE RESULTS_DIR SCRIPT_DIR
+export MODEL FORMAT CAPABILITY PLATFORM ENGINE LLM_NODE LLAMA_CLI RESULTS_DIR SCRIPT_DIR
 
 echo "=============================================="
 echo "       Model Verification Suite"

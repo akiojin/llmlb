@@ -104,6 +104,10 @@ register(format=...)  ───────▶    ModelStorage
 - Windows: DirectML（D3D12）
 - Linux: 当面は非対応（CUDAは実験扱い）
 
+### 現状の実運用確認（safetensors系LLM）
+- 安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
+- DirectMLは限定的、NemotronはTBD（後回し）。
+
 ## 非ゴール
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定・実装（後回し / TBDとして別途扱う）
 - Nemotron 推論の高速化・最適化

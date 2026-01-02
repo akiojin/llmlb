@@ -142,6 +142,10 @@
 | `StableDiffusion` | 画像生成 | safetensors（直接） | stable-diffusion.cpp を当面利用 |
 | `OnnxRuntime` | TTS | ONNX | Python依存なしで運用する |
 
+**現状の実運用確認**
+- safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
+- DirectMLは限定的、NemotronはTBD（後回し）。
+
 ### アーティファクト選択とエンジン選択の原則
 
 1. **Router は形式を確定せず**、マニフェストのみを提供する。

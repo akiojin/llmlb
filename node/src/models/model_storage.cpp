@@ -45,25 +45,48 @@ bool has_required_safetensors_metadata(const fs::path& model_dir) {
     return is_valid_file(model_dir / "config.json") && is_valid_file(model_dir / "tokenizer.json");
 }
 
-std::optional<std::string> load_manifest_format(const fs::path& model_dir) {
+std::vector<std::string> load_manifest_formats(const fs::path& model_dir) {
     const auto manifest_path = model_dir / "manifest.json";
-    if (!is_regular_or_symlink_file(manifest_path)) return std::nullopt;
+    if (!is_regular_or_symlink_file(manifest_path)) return {};
     try {
         std::ifstream ifs(manifest_path);
         json j;
         ifs >> j;
-        if (!j.contains("format") || !j["format"].is_string()) return std::nullopt;
-        std::string format = j["format"].get<std::string>();
-        std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        if (format == "gguf" || format == "safetensors") {
-            return format;
+        auto normalize_format = [](std::string value) -> std::optional<std::string> {
+            std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            if (value == "gguf" || value == "safetensors") return value;
+            return std::nullopt;
+        };
+
+        std::vector<std::string> out;
+        auto push_unique = [&out](const std::string& value) {
+            if (std::find(out.begin(), out.end(), value) == out.end()) {
+                out.push_back(value);
+            }
+        };
+
+        if (j.contains("formats") && j["formats"].is_array()) {
+            for (const auto& entry : j["formats"]) {
+                if (!entry.is_string()) continue;
+                if (auto fmt = normalize_format(entry.get<std::string>())) {
+                    push_unique(*fmt);
+                }
+            }
+            return out;
+        }
+
+        if (j.contains("format") && j["format"].is_string()) {
+            if (auto fmt = normalize_format(j["format"].get<std::string>())) {
+                push_unique(*fmt);
+            }
+            return out;
         }
     } catch (...) {
-        return std::nullopt;
+        return {};
     }
-    return std::nullopt;
+    return {};
 }
 
 std::optional<std::vector<std::string>> load_safetensors_index_shards(const fs::path& index_path) {
@@ -338,9 +361,10 @@ std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
     const auto model_dir = fs::path(models_dir_) / dir_name;
-    if (auto manifest_format = load_manifest_format(model_dir)) {
-        if (*manifest_format != "gguf") {
-            spdlog::debug("ModelStorage::resolveGguf: manifest format is {}, skip", *manifest_format);
+    auto manifest_formats = load_manifest_formats(model_dir);
+    if (!manifest_formats.empty()) {
+        if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") == manifest_formats.end()) {
+            spdlog::debug("ModelStorage::resolveGguf: manifest formats exclude gguf, skip");
             return "";
         }
     }
@@ -378,55 +402,59 @@ std::vector<ModelInfo> ModelStorage::listAvailable() const {
             continue;
         }
 
-        const auto manifest_format = load_manifest_format(model_dir);
+        const auto manifest_formats = load_manifest_formats(model_dir);
 
         // GGUF
         const auto gguf_path = model_dir / "model.gguf";
-        if (manifest_format && *manifest_format == "gguf") {
-            if (is_valid_file(gguf_path)) {
-                ModelInfo info;
-                info.name = dirNameToModel(relative.string());
-                info.format = "gguf";
-                info.primary_path = gguf_path.string();
-                info.valid = true;
-                out.push_back(std::move(info));
+        if (!manifest_formats.empty()) {
+            bool resolved = false;
+            for (const auto& fmt : manifest_formats) {
+                if (fmt == "gguf") {
+                    if (is_valid_file(gguf_path)) {
+                        ModelInfo info;
+                        info.name = dirNameToModel(relative.string());
+                        info.format = "gguf";
+                        info.primary_path = gguf_path.string();
+                        info.valid = true;
+                        out.push_back(std::move(info));
+                        resolved = true;
+                        break;
+                    }
+                } else if (fmt == "safetensors") {
+                    if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+                        ModelInfo info;
+                        info.name = dirNameToModel(relative.string());
+                        info.format = "safetensors";
+                        info.primary_path = primary->string();
+                        info.valid = true;
+                        out.push_back(std::move(info));
+                        resolved = true;
+                        break;
+                    }
+                }
             }
+            if (resolved) continue;
             continue;
         }
 
-        // safetensors
-        if (manifest_format && *manifest_format == "safetensors") {
-            if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-                ModelInfo info;
-                info.name = dirNameToModel(relative.string());
-                info.format = "safetensors";
-                info.primary_path = primary->string();
-                info.valid = true;
-                out.push_back(std::move(info));
-            }
+        if (is_valid_file(gguf_path)) {
+            ModelInfo info;
+            info.name = dirNameToModel(relative.string());
+            info.format = "gguf";
+            info.primary_path = gguf_path.string();
+            info.valid = true;
+            out.push_back(std::move(info));
             continue;
         }
 
-        if (!manifest_format) {
-            if (is_valid_file(gguf_path)) {
-                ModelInfo info;
-                info.name = dirNameToModel(relative.string());
-                info.format = "gguf";
-                info.primary_path = gguf_path.string();
-                info.valid = true;
-                out.push_back(std::move(info));
-                continue;
-            }
-
-            if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-                ModelInfo info;
-                info.name = dirNameToModel(relative.string());
-                info.format = "safetensors";
-                info.primary_path = primary->string();
-                info.valid = true;
-                out.push_back(std::move(info));
-                continue;
-            }
+        if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+            ModelInfo info;
+            info.name = dirNameToModel(relative.string());
+            info.format = "safetensors";
+            info.primary_path = primary->string();
+            info.valid = true;
+            out.push_back(std::move(info));
+            continue;
         }
     }
 
@@ -471,41 +499,42 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
     const std::string dir_name = modelNameToDir(model_name);
     const auto model_dir = fs::path(models_dir_) / dir_name;
 
-    if (auto manifest_format = load_manifest_format(model_dir)) {
-        if (*manifest_format == "gguf") {
-            const auto gguf_path = model_dir / "model.gguf";
-            if (is_valid_file(gguf_path)) {
-                ModelDescriptor desc;
-                desc.name = model_name;
-                desc.runtime = "llama_cpp";
-                desc.format = "gguf";
-                desc.primary_path = gguf_path.string();
-                desc.model_dir = model_dir.string();
-                desc.capabilities = capabilities_for_runtime(desc.runtime);
-                return desc;
-            }
-            return std::nullopt;
-        }
-        if (*manifest_format == "safetensors") {
-            if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-                std::vector<std::string> architectures;
-                auto rt = detect_runtime_from_config(model_dir, &architectures);
-                if (!rt) return std::nullopt;
-                ModelDescriptor desc;
-                desc.name = model_name;
-                desc.runtime = *rt;
-                desc.format = "safetensors";
-                desc.primary_path = primary->string();
-                desc.model_dir = model_dir.string();
-                desc.architectures = std::move(architectures);
-                desc.capabilities = capabilities_for_runtime(desc.runtime);
-                if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
-                    desc.metadata = std::move(*meta);
+    const auto manifest_formats = load_manifest_formats(model_dir);
+    if (!manifest_formats.empty()) {
+        for (const auto& fmt : manifest_formats) {
+            if (fmt == "gguf") {
+                const auto gguf_path = model_dir / "model.gguf";
+                if (is_valid_file(gguf_path)) {
+                    ModelDescriptor desc;
+                    desc.name = model_name;
+                    desc.runtime = "llama_cpp";
+                    desc.format = "gguf";
+                    desc.primary_path = gguf_path.string();
+                    desc.model_dir = model_dir.string();
+                    desc.capabilities = capabilities_for_runtime(desc.runtime);
+                    return desc;
                 }
-                return desc;
+            } else if (fmt == "safetensors") {
+                if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+                    std::vector<std::string> architectures;
+                    auto rt = detect_runtime_from_config(model_dir, &architectures);
+                    if (!rt) return std::nullopt;
+                    ModelDescriptor desc;
+                    desc.name = model_name;
+                    desc.runtime = *rt;
+                    desc.format = "safetensors";
+                    desc.primary_path = primary->string();
+                    desc.model_dir = model_dir.string();
+                    desc.architectures = std::move(architectures);
+                    desc.capabilities = capabilities_for_runtime(desc.runtime);
+                    if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
+                        desc.metadata = std::move(*meta);
+                    }
+                    return desc;
+                }
             }
-            return std::nullopt;
         }
+        return std::nullopt;
     }
 
     const auto gguf_path = model_dir / "model.gguf";
@@ -544,13 +573,16 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
 bool ModelStorage::validateModel(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(model_name);
     const auto model_dir = fs::path(models_dir_) / dir_name;
-    if (auto manifest_format = load_manifest_format(model_dir)) {
-        if (*manifest_format == "gguf") {
-            return is_valid_file(model_dir / "model.gguf");
+    auto manifest_formats = load_manifest_formats(model_dir);
+    if (!manifest_formats.empty()) {
+        for (const auto& fmt : manifest_formats) {
+            if (fmt == "gguf") {
+                if (is_valid_file(model_dir / "model.gguf")) return true;
+            } else if (fmt == "safetensors") {
+                if (resolve_safetensors_primary_in_dir(model_dir).has_value()) return true;
+            }
         }
-        if (*manifest_format == "safetensors") {
-            return resolve_safetensors_primary_in_dir(model_dir).has_value();
-        }
+        return false;
     }
     if (is_valid_file(model_dir / "model.gguf")) return true;
     return resolve_safetensors_primary_in_dir(model_dir).has_value();

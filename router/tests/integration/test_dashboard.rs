@@ -9,7 +9,16 @@ use serial_test::serial;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-async fn build_test_app() -> (AppState, Router) {
+/// Guard to reset AUTH_DISABLED on drop
+struct AuthDisabledGuard;
+
+impl Drop for AuthDisabledGuard {
+    fn drop(&mut self) {
+        std::env::remove_var("AUTH_DISABLED");
+    }
+}
+
+async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     let temp_dir = std::env::temp_dir().join(format!(
         "dashboard-ws-test-{}-{}",
         std::process::id(),
@@ -19,6 +28,9 @@ async fn build_test_app() -> (AppState, Router) {
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
+    // Disable authentication for integration tests (cleaned up by AuthDisabledGuard)
+    std::env::set_var("AUTH_DISABLED", "true");
+    let guard = AuthDisabledGuard;
 
     llm_router::api::models::clear_registered_models();
 
@@ -47,14 +59,14 @@ async fn build_test_app() -> (AppState, Router) {
     };
 
     let router = api::create_router(state.clone());
-    (state, router)
+    (state, router, guard)
 }
 
 #[tokio::test]
 #[serial]
 async fn test_dashboard_websocket_connection() {
     // Arrange: Router server startup
-    let (_state, router) = build_test_app().await;
+    let (_state, router, _guard) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -92,7 +104,7 @@ async fn test_dashboard_websocket_connection() {
 #[serial]
 async fn test_dashboard_receives_node_registration_event() {
     // Arrange: Router server startup
-    let (state, router) = build_test_app().await;
+    let (state, router, _guard) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -146,7 +158,7 @@ async fn test_dashboard_receives_node_registration_event() {
 #[serial]
 async fn test_dashboard_receives_node_status_change() {
     // Arrange: Router server startup
-    let (state, router) = build_test_app().await;
+    let (state, router, _guard) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 

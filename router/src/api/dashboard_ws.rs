@@ -2,29 +2,69 @@
 //!
 //! This module provides `/ws/dashboard` endpoint that streams
 //! DashboardEvents to connected clients in real-time.
+//!
+//! Authentication is required via JWT token passed as a query parameter `token`.
 
 use axum::extract::ws::{Message, WebSocket};
 use axum::{
-    extract::{State, WebSocketUpgrade},
+    extract::{Query, State, WebSocketUpgrade},
+    http::StatusCode,
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
+use llm_router_common::auth::UserRole;
+use serde::Deserialize;
 use tracing::{debug, warn};
 
 use crate::events::SharedEventBus;
 use crate::AppState;
 
+/// Query parameters for WebSocket connection
+#[derive(Debug, Deserialize)]
+pub struct WsAuthQuery {
+    /// JWT token for authentication
+    token: Option<String>,
+}
+
 /// WebSocket upgrade handler for dashboard events
 ///
-/// Clients connect to `/ws/dashboard` to receive real-time updates about:
+/// Clients connect to `/ws/dashboard?token=<JWT>` to receive real-time updates about:
 /// - Node registration/removal
 /// - Node status changes
 /// - Metrics updates
+///
+/// Authentication is required unless AUTH_DISABLED is set.
 pub async fn dashboard_ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state.event_bus.clone()))
+    Query(query): Query<WsAuthQuery>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    // Check if auth is disabled
+    let auth_disabled = crate::config::is_auth_disabled();
+
+    if !auth_disabled {
+        // Validate JWT token from query parameter
+        let token = query.token.ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                "Missing token query parameter".to_string(),
+            )
+        })?;
+
+        let claims = crate::auth::jwt::verify_jwt(&token, &state.jwt_secret).map_err(|e| {
+            warn!("WebSocket JWT verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e))
+        })?;
+
+        // Only admin users can access the dashboard WebSocket
+        if claims.role != UserRole::Admin {
+            return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
+        }
+
+        debug!("WebSocket authenticated for user: {}", claims.sub);
+    }
+
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state.event_bus.clone())))
 }
 
 async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {

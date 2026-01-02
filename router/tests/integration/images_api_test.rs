@@ -11,6 +11,7 @@ use axum::{
 };
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use serde_json::json;
+use serial_test::serial;
 use tower::ServiceExt;
 
 use crate::support::{
@@ -19,6 +20,9 @@ use crate::support::{
 };
 
 async fn build_app() -> Router {
+    // Ensure AUTH_DISABLED is not set (may be polluted by parallel tests)
+    std::env::remove_var("AUTH_DISABLED");
+
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -400,6 +404,7 @@ async fn test_image_api_routes_exist() {
 ///
 /// 認証ヘッダーなしで401を返す
 #[tokio::test]
+#[serial]
 async fn test_image_generation_without_auth_returns_401() {
     let app = build_app().await;
 

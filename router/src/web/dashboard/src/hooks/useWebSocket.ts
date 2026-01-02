@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { getToken } from '@/lib/api'
 
 export type DashboardEventType =
   | 'connected'
@@ -46,9 +47,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [lastEvent, setLastEvent] = useState<DashboardEvent | null>(null)
 
   const connect = useCallback(() => {
+    // Get JWT token for authentication
+    const token = getToken()
+    if (!token) {
+      console.warn('No JWT token available for WebSocket connection')
+      // Schedule reconnection to wait for authentication
+      reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval)
+      return
+    }
+
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
+    const wsUrl = `${protocol}//${window.location.host}/ws/dashboard?token=${encodeURIComponent(token)}`
 
     try {
       const ws = new WebSocket(wsUrl)
@@ -66,22 +76,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           onMessage?.(data)
 
           // Invalidate relevant queries based on event type
+          // Query keys must match those used in Dashboard.tsx
           switch (data.type) {
             case 'NodeRegistered':
             case 'NodeRemoved':
             case 'NodeStatusChanged':
-              // Invalidate nodes and overview queries
-              queryClient.invalidateQueries({ queryKey: ['dashboard', 'nodes'] })
-              queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
-              queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
+              // Invalidate dashboard overview query (includes nodes, stats)
+              queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+              queryClient.invalidateQueries({ queryKey: ['request-responses'] })
               break
             case 'MetricsUpdated':
-              // Invalidate metrics query for the specific node
-              if (data.data?.node_id) {
-                queryClient.invalidateQueries({
-                  queryKey: ['dashboard', 'metrics', data.data.node_id],
-                })
-              }
+              // Invalidate dashboard overview for metrics updates
+              queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
               break
           }
         } catch (err) {

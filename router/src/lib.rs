@@ -47,9 +47,6 @@ pub mod auth;
 /// CLIインターフェース
 pub mod cli;
 
-/// モデル変換タスク
-pub mod convert;
-
 /// 対応モデル定義
 pub mod supported_models;
 
@@ -65,8 +62,6 @@ pub struct AppState {
     pub load_manager: balancer::LoadManager,
     /// リクエスト履歴ストレージ
     pub request_history: std::sync::Arc<db::request_history::RequestHistoryStorage>,
-    /// 変換タスクマネージャー
-    pub convert_manager: convert::ConvertTaskManager,
     /// データベース接続プール
     pub db_pool: sqlx::SqlitePool,
     /// JWT秘密鍵

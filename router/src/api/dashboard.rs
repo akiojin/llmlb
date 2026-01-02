@@ -16,7 +16,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use llm_router_common::types::{GpuDeviceInfo, HealthMetrics, NodeStatus};
+use llm_router_common::types::{GpuDeviceInfo, HealthMetrics, NodeStatus, SyncProgress, SyncState};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Instant};
 use uuid::Uuid;
@@ -96,6 +96,15 @@ pub struct DashboardNode {
     /// GPU個数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gpu_count: Option<u32>,
+    /// モデル同期状態
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_state: Option<SyncState>,
+    /// モデル同期の進捗
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_progress: Option<SyncProgress>,
+    /// 同期状態の最終更新時刻
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_updated_at: Option<DateTime<Utc>>,
 }
 
 /// システム統計レスポンス
@@ -302,6 +311,9 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
                 gpu_available: Some(node.gpu_available),
                 gpu_model: node.gpu_model.clone(),
                 gpu_count: node.gpu_count,
+                sync_state: node.sync_state,
+                sync_progress: node.sync_progress.clone(),
+                sync_updated_at: node.sync_updated_at,
             }
         })
         .collect::<Vec<DashboardNode>>()
@@ -513,13 +525,11 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
@@ -545,7 +555,7 @@ mod tests {
             machine_name: "node-01".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
             runtime_version: "0.1.0".into(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -591,7 +601,7 @@ mod tests {
         let node = &body[0];
         assert_eq!(node.machine_name, "node-01");
         assert_eq!(node.status, NodeStatus::Online);
-        assert_eq!(node.runtime_port, 11434);
+        assert_eq!(node.runtime_port, 32768);
         assert_eq!(node.total_requests, 1);
         assert_eq!(node.successful_requests, 1);
         assert_eq!(node.failed_requests, 0);
@@ -612,7 +622,7 @@ mod tests {
                 machine_name: "node-01".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -630,7 +640,7 @@ mod tests {
                 machine_name: "node-02".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -720,7 +730,7 @@ mod tests {
                 machine_name: "node-history".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -763,7 +773,7 @@ mod tests {
                 machine_name: "overview".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 21)),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -798,7 +808,7 @@ mod tests {
                 machine_name: "metrics-node".into(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 31)),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),

@@ -39,13 +39,11 @@ async fn build_app() -> (Router, String) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
@@ -163,7 +161,7 @@ async fn register_gpu_node_missing_devices_is_rejected() {
         "machine_name": "cpu-only",
         "ip_address": "10.0.0.20",
         "runtime_version": "0.1.42",
-        "runtime_port": 11434,
+        "runtime_port": 32768,
         "gpu_available": true,
         "gpu_devices": []
     });

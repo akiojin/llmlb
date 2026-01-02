@@ -19,7 +19,7 @@ struct NodeInfo {
     std::string machine_name;    // Machine name
     std::string ip_address;      // IP address
     std::string runtime_version;  // LLM runtime version (e.g., "0.1.0")
-    uint16_t runtime_port;        // LLM runtime port (default: 11434)
+    uint16_t runtime_port;        // LLM runtime port (default: 32768)
     bool gpu_available{true};    // GPU available flag
     std::vector<GpuDeviceInfoForRouter> gpu_devices;  // GPU device list
     std::optional<uint32_t> gpu_count;   // Total GPU count (optional)
@@ -32,6 +32,18 @@ struct HeartbeatMetrics {
     double gpu_utilization{0.0};
     size_t mem_used_bytes{0};
     size_t mem_total_bytes{0};
+};
+
+struct SyncProgressForRouter {
+    std::string model_id;
+    std::string file;
+    uint64_t downloaded_bytes{0};
+    uint64_t total_bytes{0};
+};
+
+struct SyncStatusForRouter {
+    std::string state;  // "idle" | "running" | "success" | "failed"
+    std::optional<SyncProgressForRouter> progress;
 };
 
 struct NodeRegistrationResult {
@@ -58,6 +70,7 @@ public:
                        const std::vector<std::string>& loaded_asr_models = {},
                        const std::vector<std::string>& loaded_tts_models = {},
                        const std::vector<std::string>& supported_runtimes = {},
+                       const std::optional<SyncStatusForRouter>& sync_status = std::nullopt,
                        int max_retries = 2);
 
 private:

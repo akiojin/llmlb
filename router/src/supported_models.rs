@@ -1,8 +1,31 @@
 //! 対応モデル定義
 //!
 //! 動作確認済みモデルの静的定義
+//! モデル定義はsupported_models.jsonから読み込まれる
 
 use serde::{Deserialize, Serialize};
+
+/// 対応モデルに付随する追加アーティファクト定義
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SupportedArtifact {
+    /// 保存ファイル名（例: "model.metal.bin"）
+    pub name: String,
+    /// リポジトリ内の相対パス（例: "metal/model.bin"）
+    #[serde(default)]
+    pub path: Option<String>,
+    /// 直接URL（例: "https://huggingface.co/org/repo/resolve/main/metal/model.bin"）
+    #[serde(default)]
+    pub url: Option<String>,
+    /// 参照先リポジトリの上書き
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// ダウンロード優先度（高いほど優先）
+    #[serde(default)]
+    pub priority: Option<i32>,
+    /// 対応ランタイム
+    #[serde(default)]
+    pub runtimes: Option<Vec<String>>,
+}
 
 /// 対応モデル定義
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -29,84 +52,37 @@ pub struct SupportedModel {
     pub quantization: Option<String>,
     /// 元のパラメータ数（表示用、例: "7B"）
     pub parameter_count: Option<String>,
+    /// モデル形式（例: "gguf", "safetensors"）
+    #[serde(default = "default_format")]
+    pub format: String,
+    /// 使用エンジン（例: "llama_cpp", "gptoss_cpp", "nemotron_cpp"）
+    #[serde(default = "default_engine")]
+    pub engine: String,
+    /// 対応プラットフォーム（例: ["macos-metal", "windows-directml"]）
+    #[serde(default)]
+    pub platforms: Vec<String>,
+    /// 追加アーティファクト定義（任意）
+    #[serde(default)]
+    pub artifacts: Vec<SupportedArtifact>,
 }
+
+fn default_format() -> String {
+    "gguf".to_string()
+}
+
+fn default_engine() -> String {
+    "llama_cpp".to_string()
+}
+
+/// JSONファイルからモデル定義を読み込む
+const SUPPORTED_MODELS_JSON: &str = include_str!("supported_models.json");
 
 /// 対応モデル一覧を取得
 ///
 /// 動作確認済みモデルの静的リストを返す
+/// モデル定義はsupported_models.jsonから読み込まれる
 pub fn get_supported_models() -> Vec<SupportedModel> {
-    vec![
-        SupportedModel {
-            id: "qwen2.5-7b-instruct".into(),
-            name: "Qwen2.5 7B Instruct".into(),
-            description:
-                "Alibaba's multilingual instruction-tuned model with strong reasoning capabilities"
-                    .into(),
-            repo: "bartowski/Qwen2.5-7B-Instruct-GGUF".into(),
-            recommended_filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf".into(),
-            size_bytes: 4_920_000_000,
-            required_memory_bytes: 7_380_000_000,
-            tags: vec!["chat".into(), "multilingual".into(), "coding".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("7B".into()),
-        },
-        SupportedModel {
-            id: "llama3.2-3b-instruct".into(),
-            name: "Llama 3.2 3B Instruct".into(),
-            description: "Meta's lightweight instruction-tuned model optimized for edge deployment"
-                .into(),
-            repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".into(),
-            recommended_filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf".into(),
-            size_bytes: 2_020_000_000,
-            required_memory_bytes: 3_030_000_000,
-            tags: vec!["chat".into(), "lightweight".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("3B".into()),
-        },
-        SupportedModel {
-            id: "mistral-7b-instruct".into(),
-            name: "Mistral 7B Instruct".into(),
-            description:
-                "Mistral AI's efficient instruction-tuned model with sliding window attention"
-                    .into(),
-            repo: "bartowski/Mistral-7B-Instruct-v0.3-GGUF".into(),
-            recommended_filename: "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf".into(),
-            size_bytes: 4_370_000_000,
-            required_memory_bytes: 6_555_000_000,
-            tags: vec!["chat".into(), "efficient".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("7B".into()),
-        },
-        SupportedModel {
-            id: "phi-3-mini".into(),
-            name: "Phi-3 Mini".into(),
-            description: "Microsoft's compact yet powerful model for reasoning and coding".into(),
-            repo: "bartowski/Phi-3-mini-4k-instruct-GGUF".into(),
-            recommended_filename: "Phi-3-mini-4k-instruct-Q4_K_M.gguf".into(),
-            size_bytes: 2_390_000_000,
-            required_memory_bytes: 3_585_000_000,
-            tags: vec!["chat".into(), "coding".into(), "compact".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("3.8B".into()),
-        },
-        SupportedModel {
-            id: "gemma-2-9b".into(),
-            name: "Gemma 2 9B".into(),
-            description: "Google's open model with strong performance across diverse tasks".into(),
-            repo: "bartowski/gemma-2-9b-it-GGUF".into(),
-            recommended_filename: "gemma-2-9b-it-Q4_K_M.gguf".into(),
-            size_bytes: 5_760_000_000,
-            required_memory_bytes: 8_640_000_000,
-            tags: vec!["chat".into(), "multilingual".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("9B".into()),
-        },
-    ]
+    serde_json::from_str(SUPPORTED_MODELS_JSON).expect("Failed to parse supported_models.json")
 }
 
 /// IDで対応モデルを検索
@@ -142,6 +118,13 @@ mod tests {
             );
             assert!(model.size_bytes > 0, "ファイルサイズは0より大きい");
             assert!(model.required_memory_bytes > 0, "必要メモリは0より大きい");
+            for artifact in &model.artifacts {
+                assert!(!artifact.name.is_empty(), "アーティファクト名は必須");
+                assert!(
+                    artifact.url.is_some() || artifact.path.is_some(),
+                    "アーティファクトは url または path のいずれかが必須"
+                );
+            }
         }
     }
 

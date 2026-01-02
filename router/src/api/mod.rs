@@ -119,13 +119,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）
         .route("/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (Admin のみ: register/pull/delete/discover)
+        // モデル管理API (Admin のみ: register/delete)
         .route("/models/register", post(models::register_model))
-        .route(
-            "/models/discover-gguf",
-            post(models::discover_gguf_versions),
-        )
-        .route("/models/pull", post(models::pull_model))
         .route("/models/*model_name", delete(models::delete_model))
         // Prometheus metrics（cloud prefix含む独自メトリクス）
         .route("/metrics/cloud", get(cloud_metrics::export_metrics));
@@ -144,16 +139,10 @@ pub fn create_router(state: AppState) -> Router {
     // ノード登録（Nodeスコープが必要）
     let node_register_routes = Router::new()
         .route("/nodes", post(nodes::register_node))
-        // モデルファイル配信API (SPEC-48678000)
-        .route("/models/blob/:model_name", get(models::get_model_blob))
         // モデル配布レジストリ（複数ファイル: safetensors 等）
         .route(
             "/models/registry/:model_name/manifest.json",
             get(models::get_model_registry_manifest),
-        )
-        .route(
-            "/models/registry/:model_name/files/:file_name",
-            get(models::get_model_registry_file),
         );
 
     let node_register_routes = if auth_disabled {
@@ -169,10 +158,12 @@ pub fn create_router(state: AppState) -> Router {
                 crate::auth::middleware::api_key_auth_middleware,
             ))
     };
-
     // モデル一覧API (Admin OR Node スコープで利用可能)
+    // /v0/models はノード同期用の登録済みモデル一覧
+    // /v0/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
     let models_list_routes = Router::new()
-        .route("/models", get(models::list_models_with_status))
+        .route("/models", get(models::list_models))
+        .route("/models/hub", get(models::list_models_with_status))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::admin_or_node_middleware,
@@ -363,13 +354,11 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         let state = AppState {
             registry: registry.clone(),
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
@@ -449,7 +438,7 @@ mod tests {
                 machine_name: "test-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -486,7 +475,7 @@ mod tests {
                 machine_name: "overview-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -526,7 +515,7 @@ mod tests {
                 machine_name: "metrics-route".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),

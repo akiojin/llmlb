@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test';
  * - Authentication failures
  */
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = 'http://localhost:32768';
 
 test.describe('API Error Handling', () => {
 

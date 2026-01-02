@@ -1,15 +1,46 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
+#include <filesystem>
+#include <fstream>
+#include <vector>
+#include <nlohmann/json.hpp>
 
 #include "api/http_server.h"
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
+#include "core/llama_manager.h"
 #include "models/model_registry.h"
+#include "models/model_storage.h"
 #include "core/inference_engine.h"
 #include "utils/config.h"
 #include "runtime/state.h"
 
 using namespace llm_node;
+namespace fs = std::filesystem;
+
+namespace {
+class TempDir {
+public:
+    TempDir() {
+        auto base = fs::temp_directory_path() / fs::path("openai-endpoints-XXXXXX");
+        std::string tmpl = base.string();
+        std::vector<char> buf(tmpl.begin(), tmpl.end());
+        buf.push_back('\0');
+        char* created = mkdtemp(buf.data());
+        path = created ? fs::path(created) : fs::temp_directory_path();
+    }
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+    fs::path path;
+};
+
+void write_text(const fs::path& path, const std::string& content) {
+    std::ofstream ofs(path);
+    ofs << content;
+}
+}  // namespace
 
 TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     llm_node::set_ready(true);  // Ensure node is ready
@@ -54,6 +85,149 @@ TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 404);
     EXPECT_NE(res->body.find("model_not_found"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnInvalidTemperature) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18101, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18101);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}],"temperature":3.5})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("temperature"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnInvalidTopP) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18102, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18102);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","top_p":1.5})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("top_p"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnInvalidTopK) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18103, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18103);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","top_k":-1})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("top_k"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnEmptyPrompt) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18104, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18104);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"   "})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("prompt must not be empty"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, AppliesStopSequencesToCompletions) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18105, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18105);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","stop":"hello"})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    EXPECT_EQ(res->body.find("hello"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, ReturnsLogprobsForCompletions) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18106, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18106);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","logprobs":true,"top_logprobs":2})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+
+    auto payload = nlohmann::json::parse(res->body);
+    ASSERT_TRUE(payload.contains("choices"));
+    auto logprobs = payload["choices"][0]["logprobs"];
+    ASSERT_TRUE(logprobs.is_object());
+    ASSERT_TRUE(logprobs.contains("tokens"));
+    ASSERT_TRUE(logprobs.contains("token_logprobs"));
+    ASSERT_TRUE(logprobs.contains("top_logprobs"));
+
+    const auto& tokens = logprobs["tokens"];
+    const auto& token_logprobs = logprobs["token_logprobs"];
+    const auto& top_logprobs = logprobs["top_logprobs"];
+    EXPECT_EQ(tokens.size(), token_logprobs.size());
+    EXPECT_EQ(tokens.size(), top_logprobs.size());
+    if (!tokens.empty()) {
+        EXPECT_TRUE(top_logprobs[0].is_object());
+        EXPECT_GE(top_logprobs[0].size(), 2);
+    }
 
     server.stop();
 }
@@ -172,6 +346,38 @@ TEST(OpenAIEndpointsTest, ReturnsErrorOnMissingModel) {
     auto res = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 400);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
+    llm_node::set_ready(true);
+
+    TempDir tmp;
+    const std::string model_id = "openai/gpt-oss-20b";
+    auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_id);
+    fs::create_directories(model_dir);
+    write_text(model_dir / "config.json", R"({"architectures":["GptOssForCausalLM"]})");
+    write_text(model_dir / "tokenizer.json", R"({"dummy":true})");
+    write_text(model_dir / "model.safetensors", "dummy");
+
+    ModelStorage storage(tmp.path.string());
+    LlamaManager llama(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+    ModelRegistry registry;
+    registry.setModels({model_id});
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18098, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18098);
+    std::string body = std::string(R"({"model":")") + model_id + R"(","input":"hello"})";
+    auto res = cli.Post("/v1/embeddings", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("does not support capability"), std::string::npos);
 
     server.stop();
 }

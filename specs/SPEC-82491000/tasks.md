@@ -145,11 +145,13 @@
   - `cargo clippy -- -D warnings`
   - ✅ 完了
 
-- [ ] T023 [P] quickstart.md のシナリオを手動検証
+- [x] T023 [P] quickstart.md のシナリオを手動検証
   - 🟡 手動検証タスク
-  - 全プロバイダー設定時のレスポンス確認
-  - 一部プロバイダーのみ設定時の動作確認
-  - キャッシュ動作確認（2回目リクエストの高速化）
+  - 全プロバイダー設定時: owned_by に openai/google/anthropic/router を確認
+  - OpenAIのみ設定時: owned_by が openai/router のみ
+  - 無効OpenAIキー+Google有効: owned_by が google/router のみ
+  - キャッシュ動作確認: 2回目リクエストの高速化（/v1/models）
+  - ✅ 2026-01-01: OpenAI/Google/Anthropic同時 + OpenAIのみ + キャッシュ2回目の高速化を確認
 
 - [x] T024 コミット作成
   - `feat(api): /v1/modelsでクラウドプロバイダーモデル一覧を統合`

@@ -72,7 +72,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     info.machine_name = "test-host";
     info.ip_address = "127.0.0.1";
     info.runtime_version = "1.0.0";
-    info.runtime_port = 11434;
+    info.runtime_port = 32768;
     info.gpu_available = true;
     info.gpu_devices = {{.model = "Test GPU", .count = 1, .memory = 8ull * 1024 * 1024 * 1024}};
     info.gpu_count = 1;
@@ -94,7 +94,7 @@ TEST(RouterClientTest, RegisterNodeSuccess) {
     EXPECT_EQ(body["machine_name"], "test-host");
     EXPECT_EQ(body["ip_address"], "127.0.0.1");
     EXPECT_EQ(body["runtime_version"], "1.0.0");
-    EXPECT_EQ(body["runtime_port"], 11434);
+    EXPECT_EQ(body["runtime_port"], 32768);
     EXPECT_EQ(body["gpu_available"], true);
     EXPECT_EQ(body["gpu_devices"].size(), 1);
     EXPECT_EQ(body["gpu_devices"][0]["model"], "Test GPU");
@@ -112,7 +112,7 @@ TEST(RouterClientTest, RegisterNodeFailureWhenServerReturnsError) {
     info.machine_name = "test-host";
     info.ip_address = "127.0.0.1";
     info.runtime_version = "1.0.0";
-    info.runtime_port = 11434;
+    info.runtime_port = 32768;
     info.gpu_available = false;
 
     auto result = client.registerNode(info);
@@ -179,7 +179,7 @@ TEST(RouterClientTest, HeartbeatRetriesOnFailureAndSendsMetrics) {
     RouterClient client("http://127.0.0.1:18084");
     client.setApiKey("sk_test_node");
     HeartbeatMetrics m{12.5, 34.5, 1024, 2048};
-    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, {}, {}, {}, 2);
+    bool ok = client.sendHeartbeat("node-xyz", "retry-token", "ready", m, {}, {}, {}, {}, {}, std::nullopt, 2);
 
     server.stop();
 

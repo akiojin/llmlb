@@ -1,33 +1,44 @@
-# クイックスタート: HF GGUFモデル登録・ダウンロード
+# クイックスタート: HF URL 登録（変換なし・Node直ダウンロード）
 
 ## 前提
 - Router が起動済み
-- HF へのネットワーク到達性あり（必要なら `HF_TOKEN` を設定、社内ミラー利用時は `HF_BASE_URL` を上書き）
-- ノードは manifest に従い自己ダウンロード可能
+- Node が起動済み（HFへのネットワーク到達性あり）
+- HF へのアクセスが必要な場合は **Node側**で `HF_TOKEN` を設定
 
-## 1. カタログを確認
-- Web: 「モデル管理」→「対応可能モデル（HF）」タブを開く。検索でキーワード入力。
-- CLI: `llm-router model list --search llama --limit 10`
+## 1. モデルを登録
 
-## 2. 対応モデルに登録
-- Web: 対応可能リストから対象GGUFを選び「登録」。
-- CLI: `llm-router model add TheBloke/Llama-2-7B-GGUF --file llama-2-7b.Q4_K_M.gguf`
-- 成功すると /v1/models にIDが追加される。
-- レスポンス `warnings` にGPUメモリ不足の可能性が出た場合は、より小さいバリアントを選択する。
+### Web
+- 「モデル管理」画面のテキストエリアに HF リポジトリURL、
+  もしくは `org/repo` を貼り付けて登録。
 
-## 3. ダウンロードを指示
-- Web: 対応モデルタブでモデルを選択し「今すぐダウンロード」→「全ノード」または「指定ノード」を選ぶ。
-- CLI 全ノード: `llm-router model download hf/TheBloke/Llama-2-7B-GGUF/llama-2-7b.Q4_K_M.gguf --all`
-- CLI 指定ノード: `llm-router model download <name> --node <uuid>`
-- タスクIDが返る。
+### API
+```bash
+curl -sS http://localhost:32768/v0/models/register \
+  -H "Content-Type: application/json" \
+  -d '{"repo":"org/repo"}' | jq .
+```
 
-## 4. 進捗確認
-- Web: ダウンロードタスクリストに進捗が表示される（5秒間隔）。
-- CLI: `llm-router task show <task_id>` または再度 download コマンドで進捗取得。
+ファイルURL登録の場合は `filename` を指定する:
 
-## 5. 推論で利用
-- OpenAI互換エンドポイントで `model` に登録IDを指定して実行。モデルが未ロードならオンデマンドロードされる。
+```bash
+curl -sS http://localhost:32768/v0/models/register \
+  -H "Content-Type: application/json" \
+  -d '{"repo":"org/repo","filename":"model.safetensors"}' | jq .
+```
+
+## 2. Nodeが同期して取得
+- Nodeは起動時または同期通知時に /v0/models を参照し、
+  マニフェストに従って HF から直接ダウンロードします。
+- ルーターはバイナリを保持しません。
+
+## 3. /v1/models で ready を確認
+```bash
+curl -sS http://localhost:32768/v1/models | jq .
+```
+
+`ready=true` になれば推論に利用できます。
 
 ## トラブルシュート
-- HF 429/ダウン: CLI `--format json` で `cached:true` が返る。トークン設定または時間をおく。
-- ダウンロード失敗: タスクの `error` を確認。容量不足/URL不可の場合は別モデルを選定。
+- HF 429/ダウン: Node側で `HF_TOKEN` を設定、または時間を置いて再試行。
+- 登録失敗: 入力URL/ファイル名の誤り、HF非公開モデル、
+  またはファイル一覧取得失敗の可能性。

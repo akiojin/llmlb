@@ -30,7 +30,7 @@ fn test_model_source_all_variants_roundtrip() {
     let variants = vec![
         (ModelSource::Predefined, "predefined"),
         (ModelSource::HfGguf, "hf_gguf"),
-        (ModelSource::HfPendingConversion, "hf_pending_conversion"),
+        (ModelSource::HfSafetensors, "hf_safetensors"),
         (ModelSource::HfOnnx, "hf_onnx"),
     ];
 

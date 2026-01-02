@@ -7,6 +7,11 @@
 ## Setup
 - [x] 仕様の最新化（/v0認証必須、ユーザーロール追記）。
 
+## 追加対応（Session 2025-12-31）
+
+- [x] マニフェスト取得（`/v0/models/registry/:model_name/manifest.json`）を`node`スコープ必須に更新
+- [x] Node がマニフェスト取得時に APIキーを送信
+
 ## Contract Tests (router)
 - [x] [P] APIキーのスコープ不足で403が返ることを検証。
 - [x] [P] `node` と `api` の権限差を検証。
@@ -22,7 +27,7 @@
 - [x] APIキー認証/スコープ判定ミドルウェアを実装。
 - [x] `/v0` 管理系ルートを admin（JWT or admin）に制限。
 - [x] `/v0/nodes` を `node` スコープ必須に変更。
-- [x] `/v0/models/blob/*` を `node` スコープ必須に変更。
+- [x] `/v0/models/blob/*` を `node` スコープ必須に変更（旧仕様）。
 - [x] デバッグ用 API キー（sk_debug*）のスコープ対応。
 - [x] `/v0/health` を APIキー（`node`）必須に変更。
 
@@ -33,7 +38,7 @@
 ## Node (C++)
 - [x] `LLM_NODE_API_KEY` を設定可能にする。
 - [x] ノード登録時に APIキーを送信。
-- [x] モデル配信 (`/v0/models/blob`) に APIキーを送信。
+- [x] モデル配信 (`/v0/models/blob`) に APIキーを送信（旧仕様）。
 - [x] ハートビート (`/v0/health`) に APIキーを送信。
 
 ## Docs

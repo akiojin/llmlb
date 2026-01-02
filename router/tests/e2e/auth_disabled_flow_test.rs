@@ -43,14 +43,12 @@ async fn build_app() -> Router {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = support::router::test_jwt_secret();
 
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),

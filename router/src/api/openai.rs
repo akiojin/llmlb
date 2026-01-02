@@ -15,15 +15,14 @@ use llm_router_common::{
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
+use std::{collections::HashSet, net::IpAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::models::image;
-use crate::registry::models::{is_valid_model_file, router_model_path};
 use crate::{
     api::{
-        models::{list_registered_models, DownloadProgress, LifecycleStatus},
+        models::{list_registered_models, LifecycleStatus},
         nodes::AppError,
         proxy::{
             forward_streaming_response, save_request_record, select_available_node,
@@ -245,9 +244,6 @@ pub async fn embeddings(
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    use crate::convert::ConvertStatus;
-    use crate::registry::models::generate_model_id;
-
     // ルーターがサポートするモデルを取得
     let models = list_registered_models();
 
@@ -255,17 +251,18 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     let mut data: Vec<Value> = Vec::new();
     let mut registered_names: HashSet<String> = HashSet::new();
 
+    let ready_names: HashSet<String> = state
+        .registry
+        .list()
+        .await
+        .into_iter()
+        .flat_map(|node| node.loaded_models)
+        .collect();
+
     for m in models {
         registered_names.insert(m.name.clone());
 
-        let path = m
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|path| is_valid_model_file(path))
-            .or_else(|| router_model_path(&m.name));
-
-        let ready = path.is_some();
+        let ready = ready_names.contains(&m.name);
 
         // ライフサイクル状態を決定
         let lifecycle_status = if ready {
@@ -288,99 +285,17 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "lifecycle_status": lifecycle_status,
             "download_progress": null,
             "ready": ready,
+            // 追加メタデータ（ダッシュボード向け）
+            "repo": m.repo,
+            "filename": m.filename,
+            "size_bytes": m.size,
+            "required_memory_bytes": m.required_memory,
+            "source": m.source,
+            "tags": m.tags,
+            "description": m.description,
+            "chat_template": m.chat_template,
         });
         data.push(obj);
-    }
-
-    // ConvertTaskからダウンロード中/待機中のモデル情報を追加
-    let tasks = state.convert_manager.list_tasks().await;
-
-    for task in tasks {
-        let model_name = generate_model_id(&task.repo);
-
-        // 既に登録済みのモデルはlifecycle_statusを更新
-        if let Some(obj) = data.iter_mut().find(|v| v["id"] == model_name) {
-            let (lifecycle_status, download_progress) = match task.status {
-                ConvertStatus::Queued => (
-                    LifecycleStatus::Pending,
-                    Some(DownloadProgress {
-                        percent: 0.0,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::InProgress => (
-                    LifecycleStatus::Caching,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::Failed => (
-                    LifecycleStatus::Error,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: task.error.clone(),
-                    }),
-                ),
-                ConvertStatus::Completed => continue, // 完了済みは既存のlifecycle_statusを維持
-            };
-            obj["lifecycle_status"] = serde_json::to_value(&lifecycle_status).unwrap();
-            obj["download_progress"] = serde_json::to_value(&download_progress).unwrap();
-        } else if !registered_names.contains(&model_name) {
-            // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
-            let (lifecycle_status, download_progress) = match task.status {
-                ConvertStatus::Queued => (
-                    LifecycleStatus::Pending,
-                    Some(DownloadProgress {
-                        percent: 0.0,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::InProgress => (
-                    LifecycleStatus::Caching,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::Failed => (
-                    LifecycleStatus::Error,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: task.error.clone(),
-                    }),
-                ),
-                ConvertStatus::Completed => (LifecycleStatus::Registered, None),
-            };
-
-            // ダウンロード中のモデルは capabilities が不明なため、デフォルト（LLM）を使用
-            let caps = ModelCapabilities::default();
-
-            let obj = json!({
-                "id": model_name,
-                "object": "model",
-                "created": 0,
-                "owned_by": "router",
-                "capabilities": caps,
-                "lifecycle_status": lifecycle_status,
-                "download_progress": download_progress,
-                "ready": false,
-            });
-            data.push(obj);
-            registered_names.insert(model_name);
-        }
     }
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
@@ -412,21 +327,11 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 pub async fn get_model(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
     let all = list_registered_models();
-    let target = all.into_iter().find(|m| m.name == model_id).and_then(|m| {
-        let path = m
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|path| is_valid_model_file(path))
-            .or_else(|| router_model_path(&m.name));
-        path.map(|p| (m, p))
-    });
-
-    let (model, path) = match target {
+    let model = match all.into_iter().find(|m| m.name == model_id) {
         Some(v) => v,
         None => {
             // 404 を OpenAI 換算で返す
@@ -445,24 +350,39 @@ pub async fn get_model(
     // Azure OpenAI 形式の capabilities (boolean object)
     let caps: ModelCapabilities = model.get_capabilities().into();
 
-    let mut body = json!({
+    let ready_names: HashSet<String> = state
+        .registry
+        .list()
+        .await
+        .into_iter()
+        .flat_map(|node| node.loaded_models)
+        .collect();
+    let ready = ready_names.contains(&model_id);
+    let lifecycle_status = if ready {
+        LifecycleStatus::Registered
+    } else {
+        LifecycleStatus::Pending
+    };
+
+    let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
         "owned_by": "router",
         "capabilities": caps,
         // ダッシュボード用拡張フィールド
-        "lifecycle_status": LifecycleStatus::Registered,
-        "ready": true,
+        "lifecycle_status": lifecycle_status,
+        "ready": ready,
+        // 追加メタデータ（ダッシュボード向け）
+        "repo": model.repo,
+        "filename": model.filename,
+        "size_bytes": model.size,
+        "required_memory_bytes": model.required_memory,
+        "source": model.source,
+        "tags": model.tags,
+        "description": model.description,
+        "chat_template": model.chat_template,
     });
-
-    body["path"] = json!(path.to_string_lossy().to_string());
-    if let Some(url) = model.download_url {
-        body["download_url"] = json!(url);
-    }
-    if let Some(tpl) = model.chat_template {
-        body["chat_template"] = json!(tpl);
-    }
 
     Ok((StatusCode::OK, Json(body)).into_response())
 }
@@ -1634,12 +1554,10 @@ mod tests {
             .await
             .expect("migrations");
         let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
             http_client: reqwest::Client::new(),

@@ -23,11 +23,11 @@
    ```
    期待される出力:
    ```
-   [INFO] LLM Router starting on 0.0.0.0:8080
-   [INFO] Dashboard available at http://localhost:8080/dashboard
+   [INFO] LLM Router starting on 0.0.0.0:32768
+   [INFO] Dashboard available at http://localhost:32768/dashboard
    ```
 
-2. ブラウザで`http://localhost:8080/dashboard`にアクセス
+2. ブラウザで`http://localhost:32768/dashboard`にアクセス
 
 3. 期待される結果:
    - ダッシュボードページが表示される
@@ -53,13 +53,13 @@
    cmake --build node/build -j
 
    # ターミナル1
-   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11435 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=32769 ./node/build/llm-node
 
    # ターミナル2
-   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11436 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=11436 ./node/build/llm-node
 
    # ターミナル3
-   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11437 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=11437 ./node/build/llm-node
    ```
 
 2. ダッシュボードでノード一覧を確認
@@ -110,7 +110,7 @@
 
 2. 新しいノードを登録
    ```bash
-   LLM_ROUTER_URL=http://localhost:8080 LLM_NODE_PORT=11438 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=11438 ./node/build/llm-node
    ```
 
 3. 期待される結果:
@@ -183,16 +183,16 @@
 ### ノード一覧が空
 **原因**: ノードが登録されていない
 **解決策**:
-1. ノードを起動: `LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node`
+1. ノードを起動: `LLM_ROUTER_URL=http://localhost:32768 ./node/build/llm-node`
 2. 登録APIを手動で呼び出し:
    ```bash
-   curl -X POST http://localhost:8080/v0/nodes \
+   curl -X POST http://localhost:32768/v0/nodes \
      -H "Content-Type: application/json" \
      -d '{
        "machine_name": "test-node",
        "ip_address": "127.0.0.1",
        "runtime_version": "0.1.0",
-       "runtime_port": 11434,
+       "runtime_port": 32768,
        "gpu_available": true,
        "gpu_devices": [{"model":"Test GPU","count":1}]
      }'

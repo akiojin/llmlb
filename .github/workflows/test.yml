@@ -11,12 +11,13 @@ on:
       - develop
 
 jobs:
-  # パス変更検出（C++ジョブの条件付き実行用）
+  # パス変更検出（C++/Rustジョブの条件付き実行用）
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
       cpp: ${{ steps.filter.outputs.cpp }}
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -27,6 +28,11 @@ jobs:
               - 'node/**'
               - 'package.json'
               - '.github/actions/setup-cpp/**'
+              - '.github/workflows/test.yml'
+            rust:
+              - 'router/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - '.github/workflows/test.yml'
 
   tasks-check:
@@ -51,6 +57,8 @@ jobs:
     # 要件: FR-003
     # 目的: Rustテストを実行（複数OS）
     name: Rust Tests (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -61,6 +69,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -76,11 +86,15 @@ jobs:
     # 要件: OpenAI互換APIの回帰テスト
     # 目的: OpenAI APIとの互換性を確認
     name: OpenAI API Compatibility Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1

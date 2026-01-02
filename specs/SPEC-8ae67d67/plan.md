@@ -9,12 +9,11 @@
 
 - ノードはルーターのモデル一覧を取得し、自律的にモデルを同期する
   - `GET /v1/models`
-- モデルファイルはルーターが公開するモデル配信APIから取得する
-  - `GET /v0/models/blob/:model_name`
+- モデルファイルはルーターから配信せず、HFから直接取得する
+  - マニフェスト取得: `GET /v0/models/registry/:model_name/manifest.json`
 - ルーター側のモデル管理API（管理者向け）
-  - `GET /v0/models/available`
   - `POST /v0/models/register`
-  - `GET /v0/models/registered`
-  - `DELETE /v0/models/*model_name`
+  - `GET /v1/models`
+  - `DELETE /v1/models/:model_name`
 
 詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。

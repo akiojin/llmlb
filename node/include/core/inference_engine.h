@@ -88,9 +88,9 @@ public:
     /// 依存関係が注入されているか確認
     bool isInitialized() const { return manager_ != nullptr && model_storage_ != nullptr; }
 
-    /// モデルをロード（ローカルまたは共有パスから解決）
+    /// モデルをロード（ローカルまたは外部/プロキシ解決）
     /// @return ロード結果（成功/失敗）
-    ModelLoadResult loadModel(const std::string& model_name);
+    ModelLoadResult loadModel(const std::string& model_name, const std::string& capability = "text");
 
     /// モデルの最大コンテキストサイズを取得
     size_t getModelMaxContext() const { return model_max_ctx_; }
@@ -100,6 +100,11 @@ public:
 
     /// エンジンプラグインをロードする
     bool loadEnginePlugins(const std::filesystem::path& directory, std::string& error);
+
+#ifdef LLM_NODE_TESTING
+    /// テスト専用: EngineRegistry を差し替える
+    void setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry);
+#endif
 
 private:
     LlamaManager* manager_{nullptr};

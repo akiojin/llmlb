@@ -103,6 +103,15 @@ pub struct Node {
     /// 起動済みモデル数/総数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready_models: Option<(u8, u8)>,
+    /// モデル同期状態
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_state: Option<SyncState>,
+    /// モデル同期の進捗
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_progress: Option<SyncProgress>,
+    /// 同期状態の最終更新時刻
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_updated_at: Option<DateTime<Utc>>,
 }
 
 /// ノード状態
@@ -117,6 +126,33 @@ pub enum NodeStatus {
     Registering,
     /// オフライン
     Offline,
+}
+
+/// モデル同期状態
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncState {
+    /// 同期待機
+    Idle,
+    /// 同期中
+    Running,
+    /// 同期成功
+    Success,
+    /// 同期失敗
+    Failed,
+}
+
+/// モデル同期の進捗情報
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncProgress {
+    /// 対象モデルID
+    pub model_id: String,
+    /// 対象ファイル名
+    pub file: String,
+    /// ダウンロード済みバイト数
+    pub downloaded_bytes: u64,
+    /// 総バイト数
+    pub total_bytes: u64,
 }
 
 /// モデルタイプ
@@ -504,7 +540,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             status: NodeStatus::Online,
             registered_at: Utc::now(),
             last_seen: Utc::now(),
@@ -528,9 +564,12 @@ mod tests {
             gpu_model_name: Some("NVIDIA GeForce RTX 4090".to_string()),
             gpu_compute_capability: Some("8.9".to_string()),
             gpu_capability_score: Some(9850),
-            node_api_port: Some(11435),
+            node_api_port: Some(32769),
             initializing: false,
             ready_models: Some((1, 1)),
+            sync_state: None,
+            sync_progress: None,
+            sync_updated_at: None,
         };
 
         let json = serde_json::to_string(&node).unwrap();
@@ -546,7 +585,7 @@ mod tests {
             "machine_name": "machine",
             "ip_address": "127.0.0.1",
             "runtime_version": "0.1.0",
-            "runtime_port": 11434,
+            "runtime_port": 32768,
             "status": "online",
             "registered_at": "2025-10-31T00:00:00Z",
             "last_seen": "2025-10-31T00:00:00Z",
@@ -567,6 +606,9 @@ mod tests {
         assert!(node.gpu_compute_capability.is_none());
         assert!(node.gpu_capability_score.is_none());
         assert!(node.online_since.is_none());
+        assert!(node.sync_state.is_none());
+        assert!(node.sync_progress.is_none());
+        assert!(node.sync_updated_at.is_none());
     }
 
     #[test]
@@ -576,7 +618,7 @@ mod tests {
             "machine_name": "machine",
             "ip_address": "127.0.0.1",
             "runtime_version": "0.1.0",
-            "runtime_port": 11434,
+            "runtime_port": 32768,
             "status": "online",
             "registered_at": "2025-10-31T00:00:00Z",
             "last_seen": "2025-10-31T00:00:00Z",
@@ -585,7 +627,7 @@ mod tests {
 
         let node: Node = serde_json::from_str(json).unwrap();
         assert_eq!(node.runtime_version, "0.1.0");
-        assert_eq!(node.runtime_port, 11434);
+        assert_eq!(node.runtime_port, 32768);
     }
 
     #[test]

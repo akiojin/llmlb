@@ -23,6 +23,13 @@ struct SyncStatusInfo {
     std::chrono::system_clock::time_point updated_at{};
     std::vector<std::string> last_to_download;
     std::vector<std::string> last_to_delete;
+    struct DownloadProgress {
+        std::string model_id;
+        std::string file;
+        size_t downloaded_bytes{0};
+        size_t total_bytes{0};
+    };
+    std::optional<DownloadProgress> current_download;
 };
 
 struct ModelSyncResult {
@@ -37,8 +44,6 @@ struct DownloadHint {
 
 struct RemoteModel {
     std::string id;
-    std::string path;
-    std::string download_url;
     std::string chat_template;
 };
 
@@ -96,12 +101,16 @@ public:
     // 直近の同期ステータスを取得
     SyncStatusInfo getStatus() const;
 
+    // 外部ダウンロード（ModelResolver等）から進捗/結果を報告
+    void reportExternalDownloadProgress(const std::string& model_id,
+                                        const std::string& file,
+                                        size_t downloaded_bytes,
+                                        size_t total_bytes);
+    void reportExternalDownloadResult(bool success);
+
     // Getter methods for paths
     const std::string& getModelsDir() const { return models_dir_; }
     const std::string& getBaseUrl() const { return base_url_; }
-
-    // Get remote model path from router (empty string if not found or not accessible)
-    std::string getRemotePath(const std::string& model_id) const;
 
 private:
     std::string base_url_;
@@ -119,7 +128,7 @@ private:
     std::unordered_map<std::string, RemoteModel> remote_models_;
 
     mutable std::mutex status_mutex_;
-    SyncStatusInfo status_;
+    mutable SyncStatusInfo status_;
 };
 
 }  // namespace llm_node

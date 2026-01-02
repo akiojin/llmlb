@@ -21,8 +21,6 @@ struct ModelRow {
     description: String,
     required_memory: i64,
     source: String,
-    download_url: Option<String>,
-    path: Option<String>,
     chat_template: Option<String>,
     repo: Option<String>,
     filename: Option<String>,
@@ -42,7 +40,6 @@ impl ModelStorage {
             ModelSource::Predefined => "predefined",
             ModelSource::HfGguf => "hf_gguf",
             ModelSource::HfSafetensors => "hf_safetensors",
-            ModelSource::HfPendingConversion => "hf_pending_conversion",
             ModelSource::HfOnnx => "hf_onnx",
         };
 
@@ -57,16 +54,14 @@ impl ModelStorage {
         sqlx::query(
             r#"
             INSERT INTO models (name, size, description, required_memory, source,
-                               download_url, path, chat_template, repo, filename,
+                               chat_template, repo, filename,
                                last_modified, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET
                 size = excluded.size,
                 description = excluded.description,
                 required_memory = excluded.required_memory,
                 source = excluded.source,
-                download_url = excluded.download_url,
-                path = excluded.path,
                 chat_template = excluded.chat_template,
                 repo = excluded.repo,
                 filename = excluded.filename,
@@ -79,8 +74,6 @@ impl ModelStorage {
         .bind(&model.description)
         .bind(model.required_memory as i64)
         .bind(source_str)
-        .bind(&model.download_url)
-        .bind(&model.path)
         .bind(&model.chat_template)
         .bind(&model.repo)
         .bind(&model.filename)
@@ -174,8 +167,8 @@ impl ModelStorage {
             let source = match row.source.as_str() {
                 "hf_gguf" => ModelSource::HfGguf,
                 "hf_safetensors" => ModelSource::HfSafetensors,
-                "hf_pending_conversion" => ModelSource::HfPendingConversion,
                 "hf_onnx" => ModelSource::HfOnnx,
+                "hf_pending_conversion" => ModelSource::HfSafetensors,
                 _ => ModelSource::Predefined,
             };
 
@@ -193,8 +186,6 @@ impl ModelStorage {
                 tags,
                 capabilities,
                 source,
-                download_url: row.download_url,
-                path: row.path,
                 chat_template: row.chat_template,
                 repo: row.repo,
                 filename: row.filename,
@@ -222,8 +213,8 @@ impl ModelStorage {
                 let source = match row.source.as_str() {
                     "hf_gguf" => ModelSource::HfGguf,
                     "hf_safetensors" => ModelSource::HfSafetensors,
-                    "hf_pending_conversion" => ModelSource::HfPendingConversion,
                     "hf_onnx" => ModelSource::HfOnnx,
+                    "hf_pending_conversion" => ModelSource::HfSafetensors,
                     _ => ModelSource::Predefined,
                 };
 
@@ -241,8 +232,6 @@ impl ModelStorage {
                     tags,
                     capabilities,
                     source,
-                    download_url: row.download_url,
-                    path: row.path,
                     chat_template: row.chat_template,
                     repo: row.repo,
                     filename: row.filename,
@@ -345,8 +334,6 @@ mod tests {
             tags: vec!["llm".to_string(), "test".to_string()],
             capabilities: vec![ModelCapability::TextGeneration],
             source: ModelSource::Predefined,
-            download_url: Some("https://example.com/model.gguf".to_string()),
-            path: Some("/path/to/model".to_string()),
             chat_template: None,
             repo: Some("test/repo".to_string()),
             filename: Some("model.gguf".to_string()),

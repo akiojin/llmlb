@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="${1:-http://127.0.0.1:11435/health}"
+TARGET="${1:-http://127.0.0.1:32769/health}"
 DURATION="${DURATION:-30s}"
 CONNECTIONS="${CONNECTIONS:-128}"
 THREADS="${THREADS:-8}"

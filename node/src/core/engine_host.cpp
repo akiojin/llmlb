@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <cctype>
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
@@ -145,6 +146,46 @@ std::filesystem::path resolveLibraryPath(const std::filesystem::path& manifest_d
     return lib_path;
 }
 
+std::string toLower(std::string value) {
+    for (auto& ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
+
+std::vector<std::string> supportedGpuTargets() {
+    std::vector<std::string> targets;
+#ifdef USE_METAL
+    targets.push_back("metal");
+#endif
+#ifdef _WIN32
+    targets.push_back("directml");
+#endif
+#ifdef USE_CUDA
+    targets.push_back("cuda");
+#endif
+#ifdef USE_ROCM
+    targets.push_back("rocm");
+#endif
+    return targets;
+}
+
+bool isGpuTargetCompatible(const std::vector<std::string>& gpu_targets) {
+    if (gpu_targets.empty()) return true;
+    const auto supported = supportedGpuTargets();
+    if (supported.empty()) return false;
+
+    for (const auto& target : gpu_targets) {
+        const auto needle = toLower(target);
+        for (const auto& candidate : supported) {
+            if (needle == candidate) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 EngineHost::~EngineHost() {
@@ -184,6 +225,18 @@ bool EngineHost::validateManifest(const EnginePluginManifest& manifest,
         error = "formats is required";
         return false;
     }
+    if (manifest.architectures.empty()) {
+        error = "architectures is required";
+        return false;
+    }
+    if (manifest.modalities.empty()) {
+        error = "modalities is required";
+        return false;
+    }
+    if (manifest.license.empty()) {
+        error = "license is required";
+        return false;
+    }
     if (manifest.library.empty()) {
         error = "library is required";
         return false;
@@ -198,6 +251,18 @@ bool EngineHost::validateManifest(const EnginePluginManifest& manifest,
     for (const auto& format : manifest.formats) {
         if (format.empty()) {
             error = "formats contains empty value";
+            return false;
+        }
+    }
+    for (const auto& arch : manifest.architectures) {
+        if (arch.empty()) {
+            error = "architectures contains empty value";
+            return false;
+        }
+    }
+    for (const auto& modality : manifest.modalities) {
+        if (modality.empty()) {
+            error = "modalities contains empty value";
             return false;
         }
     }
@@ -229,6 +294,7 @@ bool EngineHost::loadManifest(const std::filesystem::path& manifest_path,
 
     if (!parseStringField(j, "engine_id", manifest.engine_id, error)) return false;
     if (!parseStringField(j, "engine_version", manifest.engine_version, error)) return false;
+    if (!parseStringField(j, "license", manifest.license, error)) return false;
     if (!parseStringField(j, "library", manifest.library, error)) return false;
 
     if (!j.contains("abi_version") || !j["abi_version"].is_number_integer()) {
@@ -239,6 +305,14 @@ bool EngineHost::loadManifest(const std::filesystem::path& manifest_path,
 
     if (!parseStringArray(j, "runtimes", manifest.runtimes, error)) return false;
     if (!parseStringArray(j, "formats", manifest.formats, error)) return false;
+    if (!parseStringArray(j, "architectures", manifest.architectures, error)) return false;
+    if (!parseStringArray(j, "modalities", manifest.modalities, error)) return false;
+
+    if (!j.contains("supports_vision") || !j["supports_vision"].is_boolean()) {
+        error = "supports_vision is required";
+        return false;
+    }
+    manifest.supports_vision = j["supports_vision"].get<bool>();
 
     if (j.contains("capabilities")) {
         if (!j["capabilities"].is_array()) {
@@ -280,6 +354,11 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
     EnginePluginManifest manifest;
     if (!loadManifest(manifest_path, manifest, error)) return false;
 
+    if (!isGpuTargetCompatible(manifest.gpu_targets)) {
+        error.clear();
+        return true;
+    }
+
     auto lib_path = resolveLibraryPath(manifest_path.parent_path(), manifest.library);
     auto lib = openLibrary(lib_path, error);
     if (!lib) return false;
@@ -315,7 +394,18 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
     EngineDeleter deleter;
     deleter.destroy = destroy_fn;
     EngineRegistry::EngineHandle handle(engine, deleter);
-    registry.registerEngine(std::move(handle));
+    EngineRegistration registration;
+    registration.engine_id = manifest.engine_id;
+    registration.engine_version = manifest.engine_version;
+    registration.formats = manifest.formats;
+    registration.architectures = manifest.architectures;
+    registration.capabilities = manifest.capabilities;
+    std::string reg_error;
+    if (!registry.registerEngine(std::move(handle), registration, &reg_error)) {
+        error = reg_error;
+        closeLibrary(lib);
+        return false;
+    }
 
     LoadedPlugin loaded;
     loaded.engine_id = manifest.engine_id;

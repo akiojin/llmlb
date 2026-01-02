@@ -13,6 +13,7 @@
 #include "models/model_sync.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
+#include "utils/stop_sequences.h"
 
 #include <spdlog/spdlog.h>
 
@@ -45,27 +46,20 @@ std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens
     return tokens;
 }
 
+std::string apply_stop_sequences_to_output(std::string output, const std::vector<std::string>& stop_sequences) {
+    if (stop_sequences.empty()) return output;
+    auto normalized = normalize_stop_sequences(stop_sequences);
+    apply_stop_sequences_suffix(output, normalized);
+    return output;
+}
+
 std::optional<ModelDescriptor> resolve_descriptor(
     const ModelStorage* storage,
-    const ModelSync* sync,
     const std::string& model_name) {
     if (!storage) return std::nullopt;
 
     auto desc = storage->resolveDescriptor(model_name);
     if (desc) return desc;
-
-    if (sync) {
-        auto remote = sync->getRemotePath(model_name);
-        if (!remote.empty()) {
-            ModelDescriptor fallback;
-            fallback.name = model_name;
-            fallback.runtime = "llama_cpp";
-            fallback.format = "gguf";
-            fallback.primary_path = remote;
-            fallback.model_dir = "";
-            return fallback;
-        }
-    }
 
     return std::nullopt;
 }
@@ -362,9 +356,29 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     , model_sync_(model_sync)
     , model_resolver_(model_resolver) {
     engines_ = std::make_unique<EngineRegistry>();
-    engines_->registerEngine(std::make_unique<LlamaEngine>(manager));
-    engines_->registerEngine(std::make_unique<GptOssEngine>());
-    engines_->registerEngine(std::make_unique<NemotronEngine>());
+    EngineRegistration llama_reg;
+    llama_reg.engine_id = "builtin_llama_cpp";
+    llama_reg.engine_version = "builtin";
+    llama_reg.formats = {"gguf"};
+    llama_reg.architectures = {"llama", "mistral", "gemma"};
+    llama_reg.capabilities = {"text", "embeddings"};
+    engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
+
+    EngineRegistration gptoss_reg;
+    gptoss_reg.engine_id = "builtin_gptoss_cpp";
+    gptoss_reg.engine_version = "builtin";
+    gptoss_reg.formats = {"safetensors"};
+    gptoss_reg.architectures = {"gptoss"};
+    gptoss_reg.capabilities = {"text"};
+    engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
+
+    EngineRegistration nemotron_reg;
+    nemotron_reg.engine_id = "builtin_nemotron_cpp";
+    nemotron_reg.engine_version = "builtin";
+    nemotron_reg.formats = {"safetensors"};
+    nemotron_reg.architectures = {"nemotron"};
+    nemotron_reg.capabilities = {"text"};
+    engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
 }
 
@@ -421,13 +435,6 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
         return gguf_path;
     }
 
-    if (model_sync_ != nullptr) {
-        gguf_path = model_sync_->getRemotePath(model_name);
-        if (!gguf_path.empty()) {
-            return gguf_path;
-        }
-    }
-
     if (error_message) *error_message = "Model not found: " + model_name;
     return "";
 }
@@ -440,15 +447,15 @@ std::string InferenceEngine::generateChat(
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode");
         if (messages.empty()) return "";
-        return "Response to: " + messages.back().content;
+        return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model);
+    auto desc = resolve_descriptor(model_storage_, model);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -469,7 +476,7 @@ std::string InferenceEngine::generateChatWithImages(
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
         if (messages.empty()) return "";
-        return "Response to: " + messages.back().content;
+        return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
     std::string error;
@@ -529,6 +536,12 @@ std::string InferenceEngine::generateChatWithImages(
         throw std::runtime_error("Failed to tokenize vision prompt");
     }
 
+    llama_memory_t mem = llama_get_memory(ctx);
+    if (mem) {
+        // Reset sequence positions to avoid KV cache position mismatches across requests.
+        llama_memory_clear(mem, false);
+    }
+
     llama_pos new_n_past = 0;
     const int32_t n_batch = llama_n_batch(ctx);
     if (mtmd_helper_eval_chunks(mctx,
@@ -566,6 +579,15 @@ std::string InferenceEngine::generateChatWithImages(
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
 
     std::string output;
+    static const std::vector<std::string> kDefaultStopSequences = {
+        "<|im_end|>",
+        "<|end|>",
+        "<|start|>",
+        "<|eot_id|>",
+        "</s>",
+        "<|endoftext|>",
+    };
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
 
     size_t effective_max_tokens = params.max_tokens;
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
@@ -595,6 +617,9 @@ std::string InferenceEngine::generateChatWithImages(
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
         if (len > 0) {
             output.append(buf, static_cast<size_t>(len));
+            if (apply_stop_sequences_suffix(output, stop_sequences)) {
+                break;
+            }
         }
 
         llama_sampler_accept(sampler, new_token);
@@ -609,23 +634,7 @@ std::string InferenceEngine::generateChatWithImages(
 
     llama_sampler_free(sampler);
 
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",
-        "<|end|>",
-        "<|start|>",
-        "<|eot_id|>",
-        "</s>",
-        "<|endoftext|>",
-    };
-
-    for (const auto& stop : stop_sequences) {
-        size_t pos = output.find(stop);
-        if (pos != std::string::npos) {
-            spdlog::debug("Vision: Truncating output at stop sequence '{}' at position {}", stop, pos);
-            output = output.substr(0, pos);
-            break;
-        }
-    }
+    apply_stop_sequences_suffix(output, stop_sequences);
 
     if (isGptOssModel(model)) {
         spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
@@ -642,15 +651,15 @@ std::string InferenceEngine::generateCompletion(
     const std::string& model,
     const InferenceParams& params) const {
     if (!isInitialized()) {
-        return "Response to: " + prompt;
+        return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model);
+    auto desc = resolve_descriptor(model_storage_, model);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -675,12 +684,12 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model);
+    auto desc = resolve_descriptor(model_storage_, model);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -722,28 +731,64 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
     return tokens.back();
 }
 
-ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
+namespace {
+std::string join_architectures(const std::vector<std::string>& architectures) {
+    if (architectures.empty()) return "";
+    std::ostringstream oss;
+    for (size_t i = 0; i < architectures.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << architectures[i];
+    }
+    return oss.str();
+}
+}  // namespace
+
+ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const std::string& capability) {
     ModelLoadResult result;
 
     if (!isInitialized()) {
+        result.code = EngineErrorCode::kUnavailable;
         result.error_message = "InferenceEngine not initialized";
         return result;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model_name);
+    auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
+        result.code = EngineErrorCode::kNotFound;
         result.error_message = "Model not found: " + model_name;
         return result;
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    if (!capability.empty() && !desc->capabilities.empty()) {
+        if (std::find(desc->capabilities.begin(), desc->capabilities.end(), capability) == desc->capabilities.end()) {
+            result.code = EngineErrorCode::kUnsupported;
+            result.error_message = "Model does not support capability: " + capability;
+            return result;
+        }
+    }
+
+    if (!desc->architectures.empty() && engines_ &&
+        !engines_->supportsArchitecture(desc->runtime, desc->architectures)) {
+        result.code = EngineErrorCode::kUnsupported;
+        std::string arch_list = join_architectures(desc->architectures);
+        result.error_message = arch_list.empty()
+            ? "Model architecture is not supported by any engine"
+            : ("Model architecture is not supported by any engine: " + arch_list);
+        return result;
+    }
+
+    Engine* engine = engines_ ? engines_->resolve(*desc, capability) : nullptr;
     if (!engine) {
+        result.code = EngineErrorCode::kUnavailable;
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;
     }
 
     result = engine->loadModel(*desc);
     if (result.success) {
+        if (result.code == EngineErrorCode::kUnknown) {
+            result.code = EngineErrorCode::kOk;
+        }
         model_max_ctx_ = engine->getModelMaxContext(*desc);
     }
     return result;
@@ -762,12 +807,12 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_sync_, model_name);
+    auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
         throw std::runtime_error("Model not found: " + model_name);
     }
 
-    Engine* engine = engines_ ? engines_->resolve(desc->runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
     if (!engine) {
         throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
     }
@@ -775,23 +820,33 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     return engine->generateEmbeddings(inputs, *desc);
 }
 
+#ifdef LLM_NODE_TESTING
+void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
+    engines_ = std::move(registry);
+}
+#endif
+
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
-    Engine* engine = engines_ ? engines_->resolve(descriptor.runtime) : nullptr;
+    Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;
     if (!engine) return false;
     if (!engine->supportsTextGeneration()) return false;
 
     if (descriptor.runtime == "gptoss_cpp") {
-#ifndef USE_GPTOSS
-        return false;
-#else
         namespace fs = std::filesystem;
         fs::path model_dir = descriptor.model_dir.empty()
                                  ? fs::path(descriptor.primary_path).parent_path()
                                  : fs::path(descriptor.model_dir);
         if (model_dir.empty()) return false;
+#if defined(_WIN32)
+        if (fs::exists(model_dir / "model.directml.bin")) return true;
+        if (fs::exists(model_dir / "model.dml.bin")) return true;
+        return false;
+#elif defined(__APPLE__)
         if (fs::exists(model_dir / "model.metal.bin")) return true;
         if (fs::exists(model_dir / "metal" / "model.bin")) return true;
         if (fs::exists(model_dir / "model.bin")) return true;
+        return false;
+#else
         return false;
 #endif
     }

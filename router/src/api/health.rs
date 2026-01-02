@@ -31,6 +31,8 @@ pub async fn health_check(
             req.gpu_capability_score,
             Some(req.initializing),
             req.ready_models,
+            req.sync_state,
+            req.sync_progress,
         )
         .await?;
 
@@ -63,7 +65,10 @@ pub async fn health_check(
 mod tests {
     use super::*;
     use crate::{balancer::LoadManager, registry::NodeRegistry};
-    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use llm_router_common::{
+        protocol::RegisterRequest,
+        types::{GpuDeviceInfo, SyncProgress, SyncState},
+    };
     use std::net::IpAddr;
     use uuid::Uuid;
 
@@ -80,13 +85,11 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
@@ -104,7 +107,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -139,6 +142,13 @@ mod tests {
             supported_runtimes: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
+            sync_state: Some(SyncState::Running),
+            sync_progress: Some(SyncProgress {
+                model_id: "test-model".to_string(),
+                file: "model.gguf".to_string(),
+                downloaded_bytes: 256,
+                total_bytes: 1024,
+            }),
         };
 
         let result = health_check(State(state.clone()), Json(health_req)).await;
@@ -148,6 +158,11 @@ mod tests {
         let node = state.registry.get(register_response.node_id).await.unwrap();
         assert_eq!(node.status, llm_router_common::types::NodeStatus::Pending);
         assert_eq!(node.loaded_models, vec!["gpt-oss-20b"]);
+        assert_eq!(node.sync_state, Some(SyncState::Running));
+        assert_eq!(
+            node.sync_progress.as_ref().map(|p| p.model_id.clone()),
+            Some("test-model".to_string())
+        );
     }
 
     #[tokio::test]
@@ -175,6 +190,8 @@ mod tests {
             supported_runtimes: Vec::new(),
             initializing: false,
             ready_models: None,
+            sync_state: None,
+            sync_progress: None,
         };
 
         let result = health_check(State(state), Json(health_req)).await;

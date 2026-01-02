@@ -5,6 +5,7 @@
 
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
+#include "core/engine_registry.h"
 #include "models/model_descriptor.h"
 #include "models/model_storage.h"
 
@@ -40,6 +41,68 @@ public:
         fs::remove_all(path, ec);
     }
     fs::path path;
+};
+
+class RecordingEngine final : public Engine {
+public:
+    RecordingEngine(std::string runtime,
+                    std::string name,
+                    std::vector<std::string>* calls,
+                    bool supports_text,
+                    bool supports_embeddings)
+        : runtime_(std::move(runtime))
+        , name_(std::move(name))
+        , calls_(calls)
+        , supports_text_(supports_text)
+        , supports_embeddings_(supports_embeddings) {}
+
+    std::string runtime() const override { return runtime_; }
+    bool supportsTextGeneration() const override { return supports_text_; }
+    bool supportsEmbeddings() const override { return supports_embeddings_; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        if (calls_) calls_->push_back("load:" + name_);
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        if (calls_) calls_->push_back("embeddings:" + name_);
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+private:
+    std::string runtime_;
+    std::string name_;
+    std::vector<std::string>* calls_{nullptr};
+    bool supports_text_{false};
+    bool supports_embeddings_{false};
 };
 
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
@@ -92,6 +155,166 @@ TEST(InferenceEngineTest, SampleNextTokenReturnsLast) {
     EXPECT_EQ(engine.sampleNextToken(tokens), "z");
 }
 
+TEST(InferenceEngineTest, LoadModelReturnsUnavailableWhenNotInitialized) {
+    InferenceEngine engine;
+    auto result = engine.loadModel("missing/model");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kUnavailable);
+    EXPECT_NE(result.error_message.find("not initialized"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelReturnsNotFoundWhenMissingModel) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto result = engine.loadModel("missing/model");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kNotFound);
+    EXPECT_NE(result.error_message.find("Model not found"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto result = engine.loadModel(model_name, "image");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
+    EXPECT_NE(result.error_message.find("capability"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
+    TempDir tmp;
+    const std::string model_name = "openai/gpt-oss-20b";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "text_engine";
+    reg.engine_version = "test";
+    reg.formats = {"safetensors"};
+    reg.architectures = {"llama"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("gptoss_cpp", "text", nullptr, true, false),
+        reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto result = engine.loadModel(model_name, "text");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
+    EXPECT_NE(result.error_message.find("architecture"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    std::vector<std::string> calls;
+
+    EngineRegistration text_reg;
+    text_reg.engine_id = "text_engine";
+    text_reg.engine_version = "test";
+    text_reg.formats = {"gguf"};
+    text_reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("llama_cpp", "text", &calls, true, false),
+        text_reg,
+        nullptr));
+
+    EngineRegistration embed_reg;
+    embed_reg.engine_id = "embed_engine";
+    embed_reg.engine_version = "test";
+    embed_reg.formats = {"gguf"};
+    embed_reg.capabilities = {"embeddings"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("llama_cpp", "embed", &calls, false, true),
+        embed_reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto text_result = engine.loadModel(model_name, "text");
+    EXPECT_TRUE(text_result.success);
+    ASSERT_EQ(calls.size(), 1u);
+    EXPECT_EQ(calls[0], "load:text");
+
+    calls.clear();
+    auto embed_result = engine.loadModel(model_name, "embeddings");
+    EXPECT_TRUE(embed_result.success);
+    ASSERT_EQ(calls.size(), 1u);
+    EXPECT_EQ(calls[0], "load:embed");
+}
+
+TEST(InferenceEngineTest, GenerateEmbeddingsUsesEmbeddingEngine) {
+    TempDir tmp;
+    const std::string model_name = "example/embed";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    std::vector<std::string> calls;
+
+    EngineRegistration text_reg;
+    text_reg.engine_id = "text_engine";
+    text_reg.engine_version = "test";
+    text_reg.formats = {"gguf"};
+    text_reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("llama_cpp", "text", &calls, true, false),
+        text_reg,
+        nullptr));
+
+    EngineRegistration embed_reg;
+    embed_reg.engine_id = "embed_engine";
+    embed_reg.engine_version = "test";
+    embed_reg.formats = {"gguf"};
+    embed_reg.capabilities = {"embeddings"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("llama_cpp", "embed", &calls, false, true),
+        embed_reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto embeddings = engine.generateEmbeddings({"hello"}, model_name);
+    ASSERT_EQ(embeddings.size(), 1u);
+    ASSERT_EQ(calls.size(), 1u);
+    EXPECT_EQ(calls[0], "embeddings:embed");
+}
+
 TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {
     const std::string raw =
         "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
@@ -119,6 +342,9 @@ TEST(InferenceEngineTest, PostProcessGptOssDoesNotTruncateStartTokenOnlyOutput) 
 }
 
 TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
+#if !defined(__APPLE__)
+    GTEST_SKIP() << "Metal backend is only supported on macOS";
+#else
     TempDir tmp;
     auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
     fs::create_directories(model_dir);
@@ -142,11 +368,35 @@ TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
 #else
     EXPECT_FALSE(engine.isModelSupported(desc));
 #endif
+#endif
 }
 
-// TDD RED: DirectML should allow safetensors without Metal artifact.
-TEST(InferenceEngineTest, GptOssAllowsSafetensorsOnDirectML) {
-    GTEST_SKIP() << "TDD RED: DirectML backend selection not implemented yet";
+TEST(InferenceEngineTest, GptOssRequiresDirectmlArtifactToBeSupported) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "gpt-oss DirectML engine not enabled";
+#else
+    TempDir tmp;
+    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
+    fs::create_directories(model_dir);
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    ModelDescriptor desc;
+    desc.name = "openai/gpt-oss-20b";
+    desc.runtime = "gptoss_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
+
+    EXPECT_FALSE(engine.isModelSupported(desc));
+
+    std::ofstream(model_dir / "model.directml.bin") << "cache";
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#endif
 }
 
 TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {

@@ -6,7 +6,7 @@ info:
     OpenAI-compatible endpoints with optional cloud routing by model prefix
     (openai:/google:/anthropic:).
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:32768
 paths:
   /v1/chat/completions:
     post:

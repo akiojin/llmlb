@@ -12,7 +12,7 @@ export const ExecuteCurlInputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'curl command to execute (e.g., "curl http://localhost:8080/v1/models")'
+      'curl command to execute (e.g., "curl http://localhost:32768/v1/models")'
     ),
   auto_auth: z
     .boolean()
@@ -52,10 +52,10 @@ SECURITY: Only requests to the configured router host are allowed.
 Authentication headers are automatically injected from environment variables.
 
 Examples:
-- List models: curl http://localhost:8080/v1/models
-- Chat completion: curl -X POST http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"...", "messages":[...]}'
-- List nodes: curl http://localhost:8080/v0/nodes
-- Dashboard stats: curl http://localhost:8080/v0/dashboard/stats
+- List models: curl http://localhost:32768/v1/models
+- Chat completion: curl -X POST http://localhost:32768/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"...", "messages":[...]}'
+- List nodes: curl http://localhost:32768/v0/nodes
+- Dashboard stats: curl http://localhost:32768/v0/dashboard/stats
 
 Refer to the 'llm-router-openapi' resource for full API documentation.`;
 
@@ -65,7 +65,7 @@ Refer to the 'llm-router-openapi' resource for full API documentation.`;
       command: {
         type: "string",
         description:
-          'curl command to execute (e.g., "curl http://localhost:8080/v1/models")',
+          'curl command to execute (e.g., "curl http://localhost:32768/v1/models")',
       },
       auto_auth: {
         type: "boolean",

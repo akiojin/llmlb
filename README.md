@@ -23,7 +23,7 @@ LLM Router supports a pluggable multi-engine architecture:
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
 | **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
-| **GPT-OSS** | Production | Metal-optimized inference | Apple Silicon |
+| **GPT-OSS** | Production (Metal), WIP (DirectML) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
@@ -45,7 +45,7 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 - **Real-time Monitoring**: Comprehensive visualization of node states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **Self-registering Nodes**: Nodes automatically register with the Router
-- **Node-driven Model Sync**: Nodes pull models via router `/v0/models` and `/v0/models/blob/:model_name` (no push-based distribution)
+- **Node-driven Model Sync**: Nodes pull metadata via `/v0/models` + manifest and download directly from Hugging Face
 - **WebUI Management**: Manage node settings, monitoring, and control through
   browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
@@ -91,7 +91,7 @@ npx @llm-router/mcp-server
       "command": "npx",
       "args": ["-y", "@llm-router/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:32768",
         "LLM_ROUTER_API_KEY": "sk_your_api_key"
       }
     }
@@ -111,10 +111,10 @@ cargo build --release -p llm-router
 
 # Run
 ./target/release/llm-router
-# Default: http://0.0.0.0:8080
+# Default: http://0.0.0.0:32768
 
 # Access dashboard
-# Open http://localhost:8080/dashboard in browser
+# Open http://localhost:32768/dashboard in browser
 ```
 
 **Environment Variables:**
@@ -122,7 +122,7 @@ cargo build --release -p llm-router
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
-| `LLM_ROUTER_PORT` | `8080` | Listen port |
+| `LLM_ROUTER_PORT` | `32768` | Listen port |
 | `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
 | `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret |
 | `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
@@ -171,17 +171,16 @@ npm run start:node
 # cd node && cmake -B build -S . && cmake --build build --config Release
 # # Linux / CUDA:
 # # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:8080 ./node/build/llm-node
+# LLM_ROUTER_URL=http://localhost:32768 ./node/build/llm-node
 ```
 
 **Environment Variables:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with |
-| `LLM_NODE_PORT` | `11435` | Node listen port |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with |
+| `LLM_NODE_PORT` | `32769` | Node listen port |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
-| `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
@@ -196,8 +195,8 @@ npm run start:node
 docker build --build-arg CUDA=cpu -t llm-node:latest node/
 
 # Run
-docker run --rm -p 11435:11435 \
-  -e LLM_ROUTER_URL=http://host.docker.internal:8080 \
+docker run --rm -p 32769:32769 \
+  -e LLM_ROUTER_URL=http://host.docker.internal:32768 \
   llm-node:latest
 ```
 
@@ -299,25 +298,25 @@ LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
 
 #### Traditional Method (Without Router)
 ```bash
-# Direct access to each node API (default: node_port=11435)
-curl http://machine1:11435/v1/chat/completions -d '...'
-curl http://machine2:11435/v1/chat/completions -d '...'
-curl http://machine3:11435/v1/chat/completions -d '...'
+# Direct access to each node API (default: node_port=32769)
+curl http://machine1:32769/v1/chat/completions -d '...'
+curl http://machine2:32769/v1/chat/completions -d '...'
+curl http://machine3:32769/v1/chat/completions -d '...'
 ```
 
 #### With Router (Proxy)
 ```bash
 # Unified access to Router - automatic routing to the optimal node
-curl http://router:8080/v1/chat/completions -d '...'
-curl http://router:8080/v1/chat/completions -d '...'
-curl http://router:8080/v1/chat/completions -d '...'
+curl http://router:32768/v1/chat/completions -d '...'
+curl http://router:32768/v1/chat/completions -d '...'
+curl http://router:32768/v1/chat/completions -d '...'
 ```
 
 **Detailed Request Flow:**
 
 1. **Client → Router**
    ```
-   POST http://router:8080/v1/chat/completions
+   POST http://router:32768/v1/chat/completions
    Content-Type: application/json
 
    {"model": "llama2", "messages": [...]}
@@ -329,7 +328,7 @@ curl http://router:8080/v1/chat/completions -d '...'
 
 3. **Router → Node (Internal Communication)**
    ```
-   POST http://node1:11435/v1/chat/completions
+   POST http://node1:32769/v1/chat/completions
    Content-Type: application/json
 
    {"model": "llama2", "messages": [...]}
@@ -365,9 +364,8 @@ curl http://router:8080/v1/chat/completions -d '...'
 - The router never pushes models to nodes.
 - Nodes resolve models on-demand in this order:
   - local cache (`LLM_NODE_MODELS_DIR`)
-  - shared router cache mount (`LLM_NODE_SHARED_MODELS_DIR`, direct reference, no copy)
   - allowlisted origin download (Hugging Face, etc.; configure via `LLM_NODE_ORIGIN_ALLOWLIST`)
-  - router proxy download (`GET /v0/models/registry/:model_name/manifest.json` + files)
+  - manifest-based selection from the router (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
 - Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
@@ -420,7 +418,7 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
    ```
 2. Open:
    ```
-   http://localhost:8080/dashboard
+   http://localhost:32768/dashboard
    ```
 
 ## Hugging Face registration (safetensors / GGUF)
@@ -428,22 +426,33 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
-  - Choose `format`: `safetensors` (native engine: TBD) or `gguf` (llama.cpp fallback).
+  - Choose `format`: `safetensors` (native engines) or `gguf` (llama.cpp fallback).
     - If the repo contains both `safetensors` and `.gguf`, `format` is required.
-    - Note: text generation via `safetensors` is TBD (engine implementation will be decided later). Use `gguf` if you need to run the model now.
-  - Enter a Hugging Face repo (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
+    - Safetensors text generation is available only when a native engine exists
+      (gpt-oss on Metal, DirectML is in progress). Use `gguf` for GGUF-only models.
+  - Enter a Hugging Face repo or file URL (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
   - For `format=gguf`:
     - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
       to auto-pick from GGUF siblings.
   - For `format=safetensors`:
     - The HF snapshot must include `config.json` and `tokenizer.json`.
     - Sharded weights must include an `.index.json`.
+    - gpt-oss prefers official GPU artifacts when present:
+      `model.metal.bin` (Metal) / `model.directml.bin` or `model.dml.bin` (DirectML).
+    - Windows (DirectML) requires `gptoss_directml.dll`.
+      - Place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
+      - set `LLM_NODE_GPTOSS_DML_LIB` to an absolute path.
+      - Download from this repository's GitHub Releases (Apache-2.0).
+  - Router stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
   - Nodes pull models on-demand via the model registry endpoints:
     - `GET /v0/models/registry/:model_name/manifest.json`
     - `GET /v0/models/registry/:model_name/files/:file_name`
     - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
+- API:
+  - `POST /v0/models/register` with `repo` and optional `filename`.
+- `/v1/models` lists registered models; `ready` reflects node sync status.
 
 ## Installation
 
@@ -519,7 +528,7 @@ Artifact: `target/release/llm-router`
 ### 2) Run with Docker
 ```bash
 docker build -t llm-router:latest .
-docker run --rm -p 8080:8080 --gpus all \
+docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
   llm-router:latest
 ```
@@ -540,19 +549,19 @@ See [Node (C++)](#node-c) section in Quick Start.
 1. **Start Router**
    ```bash
    ./target/release/llm-router
-   # Default: http://0.0.0.0:8080
+   # Default: http://0.0.0.0:32768
    ```
 
 2. **Start Nodes on Multiple Machines**
    ```bash
    # Machine 1
-   LLM_ROUTER_URL=http://router:8080 \
+   LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
 
    # Machine 2
-   LLM_ROUTER_URL=http://router:8080 \
+   LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
    ./node/build/llm-node
@@ -560,7 +569,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
 3. **Send Inference Requests to Router (OpenAI-compatible)**
    ```bash
-   curl http://router:8080/v1/chat/completions \
+   curl http://router:32768/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -572,7 +581,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
    **Image generation example**
    ```bash
-   curl http://router:8080/v1/images/generations \
+   curl http://router:32768/v1/images/generations \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -586,7 +595,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
    **Image understanding example**
    ```bash
-   curl http://router:8080/v1/chat/completions \
+   curl http://router:32768/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -603,10 +612,9 @@ See [Node (C++)](#node-c) section in Quick Start.
        "max_tokens": 300
      }'
    ```
-
 4. **List Registered Nodes**
    ```bash
-   curl http://router:8080/v0/nodes \
+   curl http://router:32768/v0/nodes \
      # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
@@ -618,7 +626,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
-| `LLM_ROUTER_PORT` | `8080` | Listen port | `ROUTER_PORT` |
+| `LLM_ROUTER_PORT` | `32768` | Listen port | `ROUTER_PORT` |
 | `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | Database URL | `DATABASE_URL` |
 | `LLM_ROUTER_DATA_DIR` | `~/.llm-router` | Base directory for DB/log defaults | - |
 | `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
@@ -650,11 +658,10 @@ Cloud / external services:
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | Router URL to register with | - |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
 | `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
-| `LLM_NODE_PORT` | `11435` | Node listen port | - |
+| `LLM_NODE_PORT` | `32769` | Node listen port | - |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
-| `LLM_NODE_SHARED_MODELS_DIR` | (unset) | Shared router cache mount (optional) | `LLM_SHARED_MODELS_DIR` |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
@@ -731,8 +738,12 @@ make openai-tests
 
 - gpt-oss (auto): `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
-- gpt-oss (Linux / CUDA via GGUF): `make poc-gptoss-cuda`
+- gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
   - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
+
+Notes:
+- gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
+- GPU is required. Supported backends: macOS (Metal) and Windows (DirectML). Linux/CUDA is experimental.
 
 ### Spec-Driven Development
 
@@ -811,7 +822,7 @@ web interface
 
 #### Via Web Dashboard
 
-1. Open the router dashboard: `http://localhost:8080/dashboard`
+1. Open the router dashboard: `http://localhost:32768/dashboard`
 2. Navigate to the "Request History" section
 3. Use filters to narrow down specific requests
 4. Click on any request to view full details including request/response bodies
@@ -867,7 +878,7 @@ to `.migrated`.
 
 | Scope | Grants |
 |-------|--------|
-| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/*`, `GET /v0/models/blob/*`) |
+| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) |
 | `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
 | `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
@@ -926,10 +937,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/v0/models` | List registered models (node sync) | API key (node or admin) |
 | POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
 | DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
-| POST | `/v0/models/discover-gguf` | Discover GGUF models | JWT+Admin or API key (admin) |
 | GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (node or admin) |
-| GET | `/v0/models/registry/:model_name/files/:file_name` | Serve model file | API key (node or admin) |
-| GET | `/v0/models/blob/:model_name` | Legacy single-file model download (GGUF) | API key (node or admin) |
 
 #### Dashboard Endpoints
 
@@ -1000,7 +1008,7 @@ Register a node.
   "machine_name": "my-machine",
   "ip_address": "192.168.1.100",
   "runtime_version": "0.1.0",
-  "runtime_port": 11434,
+  "runtime_port": 32768,
   "gpu_available": true,
   "gpu_devices": [
     { "model": "NVIDIA RTX 4090", "count": 2 }
@@ -1014,7 +1022,7 @@ Register a node.
 {
   "node_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
-  "node_api_port": 11435,
+  "node_api_port": 32769,
   "node_token": "nt_xxx"
 }
 ```
@@ -1044,8 +1052,6 @@ List available models with Azure OpenAI-style capabilities.
         "speech_to_text": false,
         "image_generation": false
       },
-      "lifecycle_status": "registered",
-      "download_progress": null,
       "ready": true
     }
   ]
@@ -1053,7 +1059,7 @@ List available models with Azure OpenAI-style capabilities.
 ```
 
 > **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
-> `lifecycle_status`, `download_progress`, and `ready` are router extensions.
+> `ready` is a router extension derived from node sync state.
 
 #### POST /v1/chat/completions
 

@@ -12,7 +12,7 @@ Env vars:
   MODEL_REPO            (default: ggml-org/gpt-oss-20b-GGUF)
   MODEL_FILENAME        (default: gpt-oss-20b-mxfp4.gguf)
   ROUTER_PORT           (default: 18080)
-  NODE_PORT             (default: 11435)   # runtime_port = NODE_PORT - 1
+  NODE_PORT             (default: 32769)   # runtime_port = NODE_PORT - 1
   ROUTER_BIN            (default: target/debug/llm-router)
   NODE_BIN              (default: node/build/llm-node)
 
@@ -55,7 +55,7 @@ ROUTER_HOME="${ROUTER_HOME:-"$POC_ROOT/router-home"}"
 NODE_HOME="${NODE_HOME:-"$POC_ROOT/node-home"}"
 
 ROUTER_PORT="${ROUTER_PORT:-18080}"
-NODE_PORT="${NODE_PORT:-11435}"
+NODE_PORT="${NODE_PORT:-32769}"
 TEMPERATURE="${TEMPERATURE:-0.2}"
 MAX_TOKENS="${MAX_TOKENS:-64}"
 SEED="${SEED:-0}"

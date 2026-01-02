@@ -139,6 +139,47 @@ TEST(ModelSyncTest, ReportsStatusTransitionsAndLastResult) {
     server.stop();
 }
 
+TEST(ModelSyncTest, ReportsDownloadProgressSnapshot) {
+    const int port = 18131;
+    const std::string base = "http://127.0.0.1:" + std::to_string(port);
+    httplib::Server server;
+
+    server.Get("/v0/models/registry/test-model/manifest.json",
+               [base](const httplib::Request&, httplib::Response& res) {
+                   res.status = 200;
+                   res.set_content(
+                       std::string("{\"files\":[{\"name\":\"model.gguf\",\"url\":\"") +
+                           base + "/files/model.gguf\"}]}",
+                       "application/json");
+               });
+    server.Get("/files/model.gguf",
+               [](const httplib::Request&, httplib::Response& res) {
+                   res.status = 200;
+                   res.set_content("data", "application/octet-stream");
+               });
+
+    std::thread th([&]() { server.listen("127.0.0.1", port); });
+    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    TempDirGuard dir;
+    ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
+    ModelSync sync(base, dir.path.string());
+    sync.setOriginAllowlist({"127.0.0.1/*"});
+
+    bool ok = sync.downloadModel(dl, "test-model", nullptr);
+
+    server.stop();
+    if (th.joinable()) th.join();
+
+    ASSERT_TRUE(ok);
+    auto status = sync.getStatus();
+    ASSERT_TRUE(status.current_download.has_value());
+    EXPECT_EQ(status.current_download->model_id, "test-model");
+    EXPECT_EQ(status.current_download->file, "model.gguf");
+    EXPECT_EQ(status.current_download->downloaded_bytes, 4u);
+    EXPECT_EQ(status.current_download->total_bytes, 4u);
+}
+
 TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     const int port = 18130;
     const std::string base = "http://127.0.0.1:" + std::to_string(port);

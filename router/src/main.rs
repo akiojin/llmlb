@@ -18,7 +18,7 @@ struct ServerConfig {
 impl ServerConfig {
     fn from_env() -> Self {
         let host = get_env_with_fallback_or("LLM_ROUTER_HOST", "ROUTER_HOST", "0.0.0.0");
-        let port = get_env_with_fallback_parse("LLM_ROUTER_PORT", "ROUTER_PORT", 8080);
+        let port = get_env_with_fallback_parse("LLM_ROUTER_PORT", "ROUTER_PORT", 32768);
         Self { host, port }
     }
 

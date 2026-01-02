@@ -116,14 +116,14 @@ huggingface-cli download bartowski/MODEL-GGUF MODEL-Q4_K_M.gguf --local-dir ./mo
 huggingface-cli download openai/gpt-oss-120b --local-dir ./models/gpt-oss
 
 # 2. ルーターに登録（メタデータのみ）
-curl -X POST http://localhost:3000/v0/models/register \
+curl -X POST http://localhost:32768/v0/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo": "openai/gpt-oss-120b"}'
 
 # Node が同期してダウンロードするまで待機
 
 # 3. 推論テスト
-curl http://localhost:3000/v1/chat/completions \
+curl http://localhost:32768/v1/chat/completions \
   -H "Authorization: Bearer sk_debug" \
   -d '{"model": "gpt-oss", "messages": [{"role": "user", "content": "Hello"}]}'
 ```

@@ -2,22 +2,22 @@ import { describe, expect, it } from "vitest";
 import { HostValidator } from "../src/security/validator.js";
 
 describe("HostValidator", () => {
-  const validator = new HostValidator("http://localhost:8080");
+  const validator = new HostValidator("http://localhost:32768");
 
   describe("validate", () => {
     it("should accept configured router URL", () => {
-      const result = validator.validate("http://localhost:8080/v1/models");
+      const result = validator.validate("http://localhost:32768/v1/models");
       expect(result.valid).toBe(true);
     });
 
     it("should accept localhost variants", () => {
       expect(validator.validate("http://localhost/api").valid).toBe(true);
-      expect(validator.validate("http://127.0.0.1:8080/api").valid).toBe(true);
+      expect(validator.validate("http://127.0.0.1:32768/api").valid).toBe(true);
       expect(validator.validate("http://127.0.0.1/api").valid).toBe(true);
     });
 
     it("should accept https protocol", () => {
-      const result = validator.validate("https://localhost:8080/api");
+      const result = validator.validate("https://localhost:32768/api");
       expect(result.valid).toBe(true);
     });
 
@@ -46,7 +46,7 @@ describe("HostValidator", () => {
     });
 
     it("should reject external hosts even with same port", () => {
-      const result = validator.validate("http://malicious.com:8080/api");
+      const result = validator.validate("http://malicious.com:32768/api");
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Host not allowed");
     });
@@ -88,10 +88,10 @@ describe("HostValidator", () => {
   });
 
   describe("localhost port handling", () => {
-    const localhostValidator = new HostValidator("http://localhost:8080");
+    const localhostValidator = new HostValidator("http://localhost:32768");
 
     it("should accept localhost with configured port", () => {
-      const result = localhostValidator.validate("http://localhost:8080/api");
+      const result = localhostValidator.validate("http://localhost:32768/api");
       expect(result.valid).toBe(true);
     });
 

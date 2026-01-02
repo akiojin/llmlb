@@ -163,6 +163,15 @@ export interface DashboardStats {
   average_gpu_memory_usage: number
 }
 
+export type SyncState = 'idle' | 'running' | 'success' | 'failed'
+
+export interface SyncProgress {
+  model_id: string
+  file: string
+  downloaded_bytes: number
+  total_bytes: number
+}
+
 export interface DashboardNode {
   node_id: string
   machine_name: string
@@ -185,6 +194,9 @@ export interface DashboardNode {
   tags?: string[]
   notes?: string
   ready_models?: string[]
+  sync_state?: SyncState
+  sync_progress?: SyncProgress
+  sync_updated_at?: string
 }
 
 export interface RequestHistoryItem {

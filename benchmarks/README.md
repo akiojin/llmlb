@@ -4,7 +4,7 @@ Router + local/クラウド経路の性能を測るための手順メモ。実�
 `benchmarks/results/YYYYMMDD-<run>.md` に残してください。
 
 ## 1. 前提
-- Router 起動済み (`ROUTER_PORT` デフォルト 8080)
+- Router 起動済み (`ROUTER_PORT` デフォルト 32768)
 - ローカル LLM ノードが最低 1 台オンライン
 - クラウドキーを試す場合: `OPENAI_API_KEY` / `GOOGLE_API_KEY` /
   `ANTHROPIC_API_KEY`
@@ -25,7 +25,7 @@ Router + local/クラウド経路の性能を測るための手順メモ。実�
 ## 3. コマンド例
 ```bash
 # wrk でローカル経路 (10スレッド, 50接続, 30秒)
-WRK_TARGET=http://localhost:8080 \
+WRK_TARGET=http://localhost:32768 \
 WRK_ENDPOINT=/v1/chat/completions \
 WRK_MODEL=gpt-oss:20b \
 scripts/benchmarks/run_wrk.sh \
@@ -35,7 +35,7 @@ scripts/benchmarks/run_wrk.sh \
 hey -n 200 -c 20 -m POST \
   -H "Content-Type: application/json" \
   -d '{"model":"openai:gpt-4o","messages":[{"role":"user","content":"ping"}]}' \
-  http://localhost:8080/v1/chat/completions
+  http://localhost:32768/v1/chat/completions
 ```
 
 `WRK_MODEL` を指定しない場合は gpt-oss:20b。`WRK_SCRIPT` を指定すれば既存の
@@ -82,7 +82,7 @@ python3 scripts/benchmarks/plot_csv.py -o benchmarks/results/plot.png benchmarks
 依存: `pip install matplotlib`
 
 ### 環境変数チートシート
-- `WRK_TARGET` (default `http://localhost:8080`)
+- `WRK_TARGET` (default `http://localhost:32768`)
 - `WRK_ENDPOINT` (default `/v1/chat/completions`)
 - `WRK_MODEL` (default `gpt-oss:20b`) — `run_wrk.sh` が簡易Luaを自動生成
 - `WRK_BODY_JSON` — フルJSONボディを直接渡したい場合

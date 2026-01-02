@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { type DashboardNode } from '@/lib/api'
-import { formatUptime, formatPercentage, formatRelativeTime, cn } from '@/lib/utils'
+import { formatUptime, formatPercentage, formatRelativeTime, formatBytes, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -182,6 +182,21 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
     )
   }
 
+  const syncBadgeVariant = (state?: DashboardNode['sync_state']) => {
+    switch (state) {
+      case 'running':
+        return 'warning'
+      case 'success':
+        return 'success'
+      case 'failed':
+        return 'destructive'
+      case 'idle':
+        return 'secondary'
+      default:
+        return 'outline'
+    }
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -310,6 +325,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       <SortIcon field="status" />
                     </div>
                   </TableHead>
+                  <TableHead>Sync</TableHead>
                   <TableHead>GPU</TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50"
@@ -344,7 +360,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
               <TableBody id="nodes-body">
                 {paginatedNodes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-32 text-center">
+                    <TableCell colSpan={10} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <Server className="h-8 w-8" />
                         <p>No nodes found</p>
@@ -405,6 +421,34 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                           />
                           {node.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {node.sync_state || node.sync_progress ? (
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant={syncBadgeVariant(node.sync_state)}
+                              className="w-fit capitalize"
+                            >
+                              {node.sync_state ?? 'running'}
+                            </Badge>
+                            {node.sync_progress ? (
+                              <div className="text-xs text-muted-foreground">
+                                {node.sync_progress.total_bytes > 0
+                                  ? `${Math.round(
+                                      (node.sync_progress.downloaded_bytes /
+                                        node.sync_progress.total_bytes) *
+                                        100
+                                    )}%`
+                                  : '—'}
+                                {' · '}
+                                {formatBytes(node.sync_progress.downloaded_bytes)} /{' '}
+                                {formatBytes(node.sync_progress.total_bytes)}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">

@@ -14,7 +14,7 @@ page.on('pageerror', err => {
 });
 
 console.log('Navigating to login page...');
-await page.goto('http://localhost:8080/dashboard/login.html', { waitUntil: 'networkidle', timeout: 30000 });
+await page.goto('http://localhost:32768/dashboard/login.html', { waitUntil: 'networkidle', timeout: 30000 });
 
 // Wait a bit for any lazy loading
 await page.waitForTimeout(3000);

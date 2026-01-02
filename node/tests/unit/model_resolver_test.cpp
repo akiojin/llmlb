@@ -8,8 +8,10 @@
 #include <thread>
 #include <vector>
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
 #include "models/model_resolver.h"
+#include "models/model_sync.h"
 
 using namespace llm_node;
 namespace fs = std::filesystem;
@@ -40,6 +42,7 @@ class RegistryServer {
 public:
     void setManifestBody(std::string body) { manifest_body_ = std::move(body); }
     void setFileBody(std::string body) { file_body_ = std::move(body); }
+    void setFiles(std::vector<std::pair<std::string, std::string>> files) { files_ = std::move(files); }
     void setServeManifest(bool enable) { serve_manifest_ = enable; }
 
     void start(int port, const std::string& model_name) {
@@ -61,11 +64,21 @@ public:
             res.set_content(body, "application/json");
         });
 
-        server_.Get("/files/model.gguf", [this](const httplib::Request&, httplib::Response& res) {
-            std::string body = file_body_.empty() ? std::string("GGUF test") : file_body_;
-            res.status = 200;
-            res.set_content(body, "application/octet-stream");
-        });
+        if (files_.empty()) {
+            server_.Get("/files/model.gguf", [this](const httplib::Request&, httplib::Response& res) {
+                std::string body = file_body_.empty() ? std::string("GGUF test") : file_body_;
+                res.status = 200;
+                res.set_content(body, "application/octet-stream");
+            });
+        } else {
+            for (const auto& entry : files_) {
+                const auto path = "/files/" + entry.first;
+                server_.Get(path.c_str(), [body = entry.second](const httplib::Request&, httplib::Response& res) {
+                    res.status = 200;
+                    res.set_content(body, "application/octet-stream");
+                });
+            }
+        }
 
         thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
         while (!server_.is_running()) {
@@ -91,6 +104,7 @@ private:
     std::string model_name_;
     std::string manifest_body_;
     std::string file_body_;
+    std::vector<std::pair<std::string, std::string>> files_;
     bool serve_manifest_{true};
 };
 
@@ -112,7 +126,7 @@ TEST(ModelResolverTest, LocalPathTakesPriority) {
     ModelResolver resolver(tmp.local.string(), "");
     auto result = resolver.resolve("gpt-oss-7b");
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
     EXPECT_FALSE(result.router_attempted);
 }
@@ -132,11 +146,33 @@ TEST(ModelResolverTest, DownloadFromRegistryWhenNotLocal) {
 
     server.stop();
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(result.router_attempted);
     EXPECT_FALSE(result.origin_attempted);
     EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
     EXPECT_TRUE(fs::exists(result.path));
+}
+
+TEST(ModelResolverTest, ReportsSyncProgressDuringRegistryDownload) {
+    TempModelDirs tmp;
+    RegistryServer server;
+    server.start(20006, "progress-model");
+
+    ModelSync sync(server.baseUrl(), tmp.local.string());
+    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    resolver.setSyncReporter(&sync);
+    auto result = resolver.resolve("progress-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success) << result.error_message;
+    auto status = sync.getStatus();
+    EXPECT_NE(status.state, SyncState::Idle);
+    ASSERT_TRUE(status.current_download.has_value());
+    EXPECT_EQ(status.current_download->model_id, "progress-model");
+    EXPECT_EQ(status.current_download->file, "model.gguf");
+    EXPECT_GT(status.current_download->downloaded_bytes, 0u);
 }
 
 TEST(ModelResolverTest, DownloadBlockedByAllowlist) {
@@ -197,6 +233,66 @@ TEST(ModelResolverTest, RouterDownloadHasTimeout) {
         << "Should have a download timeout configured";
     EXPECT_LE(resolver.getDownloadTimeoutMs(), 5 * 60 * 1000)
         << "Default timeout should be at most 5 minutes";
+}
+
+TEST(ModelResolverTest, SupportsSafetensorsAndGgufFormats) {
+    TempModelDirs tmp;
+    RegistryServer server;
+    server.setFiles({
+        {"model.gguf", "gguf"},
+        {"config.json", "{}"},
+        {"tokenizer.json", "{}"},
+        {"model.safetensors", "safetensors"}
+    });
+    server.start(20004, "mixed-format-model");
+    nlohmann::json manifest = {
+        {"files", {
+            {{"name", "model.gguf"}, {"url", server.baseUrl() + "/files/model.gguf"}},
+            {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
+            {{"name", "tokenizer.json"}, {"url", server.baseUrl() + "/files/tokenizer.json"}},
+            {{"name", "model.safetensors"}, {"url", server.baseUrl() + "/files/model.safetensors"}}
+        }}
+    };
+    server.setManifestBody(manifest.dump());
+
+    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("mixed-format-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success) << result.error_message;
+    EXPECT_TRUE(fs::exists(result.path));
+    EXPECT_EQ(fs::path(result.path).filename(), "model.gguf");
+}
+
+TEST(ModelResolverTest, MetalArtifactIsOptional) {
+    TempModelDirs tmp;
+    RegistryServer server;
+    server.setFiles({
+        {"config.json", R"({"architectures":["GptOssForCausalLM"]})"},
+        {"tokenizer.json", "{}"},
+        {"model.safetensors", "safetensors"}
+    });
+    server.start(20005, "gptoss-safetensors");
+    nlohmann::json manifest = {
+        {"files", {
+            {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
+            {{"name", "tokenizer.json"}, {"url", server.baseUrl() + "/files/tokenizer.json"}},
+            {{"name", "model.safetensors"}, {"url", server.baseUrl() + "/files/model.safetensors"}}
+        }}
+    };
+    server.setManifestBody(manifest.dump());
+
+    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("gptoss-safetensors");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success) << result.error_message;
+    EXPECT_TRUE(fs::exists(result.path));
+    EXPECT_EQ(fs::path(result.path).filename(), "model.safetensors");
 }
 
 // Clarification: Concurrent download limit (recommended: 1 per node)

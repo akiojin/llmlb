@@ -114,6 +114,7 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
                                  const std::vector<std::string>& loaded_asr_models,
                                  const std::vector<std::string>& loaded_tts_models,
                                  const std::vector<std::string>& supported_runtimes,
+                                 const std::optional<SyncStatusForRouter>& sync_status,
                                  int max_retries) {
     auto cli = make_client(base_url_, timeout_);
 
@@ -133,6 +134,18 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
         {"supported_runtimes", supported_runtimes},
         {"initializing", false},
     };
+
+    if (sync_status.has_value()) {
+        payload["sync_state"] = sync_status->state;
+        if (sync_status->progress.has_value()) {
+            payload["sync_progress"] = {
+                {"model_id", sync_status->progress->model_id},
+                {"file", sync_status->progress->file},
+                {"downloaded_bytes", sync_status->progress->downloaded_bytes},
+                {"total_bytes", sync_status->progress->total_bytes},
+            };
+        }
+    }
 
     // Add optional gpu_usage if metrics available
     if (metrics.has_value()) {

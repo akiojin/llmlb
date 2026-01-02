@@ -50,7 +50,7 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 ルーターが `/dashboard` で提供します。
 
 ```
-http://localhost:8080/dashboard
+http://localhost:32768/dashboard
 ```
 
 ## LLM アシスタント向け MCP サーバー
@@ -75,7 +75,7 @@ npx @llm-router/mcp-server
       "command": "npx",
       "args": ["-y", "@llm-router/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:32768",
         "LLM_ROUTER_API_KEY": "sk_your_api_key"
       }
     }
@@ -159,7 +159,7 @@ cargo build -p llm-router --release
 ### 2) Docker で起動
 ```bash
 docker build -t llm-router:latest .
-docker run --rm -p 8080:8080 --gpus all \
+docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
   llm-router:latest
 ```
@@ -188,7 +188,7 @@ cmake --build build --config Release
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
 | `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
-| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
+| `LLM_ROUTER_PORT` | `32768` | リッスンポート |
 | `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
 | `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
@@ -207,9 +207,9 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | ルーターURL |
 | `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
-| `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
+| `LLM_NODE_PORT` | `32769` | HTTPサーバーポート |
 | `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
 | `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
@@ -231,9 +231,9 @@ LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
 ```
 
 ### 6) 動作確認
-- ダッシュボード: `http://localhost:8080/dashboard`
-- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:8080/v0/health`
-- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:8080/v1/models`
+- ダッシュボード: `http://localhost:32768/dashboard`
+- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:32768/v0/health`
+- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:32768/v1/models`
 
 ## 利用方法（OpenAI互換エンドポイント）
 
@@ -244,7 +244,7 @@ LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
 
 ### 画像生成例
 ```bash
-curl http://localhost:8080/v1/images/generations \
+curl http://localhost:32768/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk_api_key" \
   -d '{
@@ -258,7 +258,7 @@ curl http://localhost:8080/v1/images/generations \
 
 ### 画像認識例
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:32768/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk_api_key" \
   -d '{

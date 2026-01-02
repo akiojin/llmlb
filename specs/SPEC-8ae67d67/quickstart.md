@@ -10,7 +10,7 @@
 Hugging Face 上のモデルをルーターに登録します（バイナリのダウンロードや変換は行いません）。
 
 ```bash
-curl -sS http://localhost:8080/v0/models/register \
+curl -sS http://localhost:32768/v0/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo":"org/repo"}' | jq .
 ```

@@ -5,6 +5,28 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 対応モデルに付随する追加アーティファクト定義
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SupportedArtifact {
+    /// 保存ファイル名（例: "model.metal.bin"）
+    pub name: String,
+    /// リポジトリ内の相対パス（例: "metal/model.bin"）
+    #[serde(default)]
+    pub path: Option<String>,
+    /// 直接URL（例: "https://huggingface.co/org/repo/resolve/main/metal/model.bin"）
+    #[serde(default)]
+    pub url: Option<String>,
+    /// 参照先リポジトリの上書き
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// ダウンロード優先度（高いほど優先）
+    #[serde(default)]
+    pub priority: Option<i32>,
+    /// 対応ランタイム
+    #[serde(default)]
+    pub runtimes: Option<Vec<String>>,
+}
+
 /// 対応モデル定義
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SupportedModel {
@@ -39,6 +61,9 @@ pub struct SupportedModel {
     /// 対応プラットフォーム（例: ["macos-metal", "windows-directml"]）
     #[serde(default)]
     pub platforms: Vec<String>,
+    /// 追加アーティファクト定義（任意）
+    #[serde(default)]
+    pub artifacts: Vec<SupportedArtifact>,
 }
 
 fn default_format() -> String {
@@ -93,6 +118,13 @@ mod tests {
             );
             assert!(model.size_bytes > 0, "ファイルサイズは0より大きい");
             assert!(model.required_memory_bytes > 0, "必要メモリは0より大きい");
+            for artifact in &model.artifacts {
+                assert!(!artifact.name.is_empty(), "アーティファクト名は必須");
+                assert!(
+                    artifact.url.is_some() || artifact.path.is_some(),
+                    "アーティファクトは url または path のいずれかが必須"
+                );
+            }
         }
     }
 

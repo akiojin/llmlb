@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include "models/model_downloader.h"
+#include "models/model_sync.h"
 #include "models/model_storage.h"
 #include "utils/allowlist.h"
 
@@ -84,6 +85,10 @@ void ModelResolver::setOriginAllowlist(std::vector<std::string> origin_allowlist
     origin_allowlist_ = std::move(origin_allowlist);
 }
 
+void ModelResolver::setSyncReporter(ModelSync* sync_reporter) {
+    sync_reporter_ = sync_reporter;
+}
+
 std::string ModelResolver::findLocal(const std::string& model_name) {
     if (local_path_.empty()) return "";
 
@@ -97,6 +102,16 @@ std::string ModelResolver::findLocal(const std::string& model_name) {
 
 std::string ModelResolver::downloadFromRegistry(const std::string& model_name) {
     if (router_url_.empty() || local_path_.empty()) return "";
+    auto report_progress = [this, &model_name](const std::string& file, size_t downloaded, size_t total) {
+        if (sync_reporter_) {
+            sync_reporter_->reportExternalDownloadProgress(model_name, file, downloaded, total);
+        }
+    };
+    auto report_result = [this](bool success) {
+        if (sync_reporter_) {
+            sync_reporter_->reportExternalDownloadResult(success);
+        }
+    };
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(download_timeout_ms_);
     {
@@ -139,37 +154,54 @@ std::string ModelResolver::downloadFromRegistry(const std::string& model_name) {
 
     auto manifest_path = downloader.fetchManifest(model_name);
     if (manifest_path.empty()) {
+        report_result(false);
         return "";
     }
 
     std::ifstream ifs(manifest_path);
     nlohmann::json manifest = nlohmann::json::parse(ifs, nullptr, false);
     if (manifest.is_discarded() || !manifest.contains("files") || !manifest["files"].is_array()) {
+        spdlog::warn("ModelResolver: invalid manifest for model {} at {}", model_name, manifest_path);
+        report_result(false);
         return "";
     }
 
     for (const auto& f : manifest["files"]) {
         std::string name = f.value("name", "");
-        if (name.empty()) return "";
+        if (name.empty()) {
+            report_result(false);
+            return "";
+        }
         if (!shouldDownloadForBackend(name)) continue;
 
         std::string url = f.value("url", "");
         if (url.empty()) {
             spdlog::warn("ModelResolver: manifest missing url for model {} file {}", model_name, name);
+            report_result(false);
             return "";
         }
         if (!isUrlAllowedByAllowlist(url, origin_allowlist_)) {
             spdlog::warn("ModelResolver: origin URL blocked by allowlist for model {} file {}", model_name, name);
+            report_result(false);
             return "";
         }
 
         const std::string rel_path = ModelStorage::modelNameToDir(model_name) + "/" + name;
-        const auto downloaded = downloader.downloadBlob(url, rel_path, nullptr);
+        report_progress(name, 0, 0);
+        const auto downloaded = downloader.downloadBlob(
+            url,
+            rel_path,
+            [report_progress, name](size_t downloaded_bytes, size_t total_bytes) {
+                report_progress(name, downloaded_bytes, total_bytes);
+            });
         if (downloaded.empty()) {
+            spdlog::warn("ModelResolver: download failed for model {} file {}", model_name, name);
+            report_result(false);
             return "";
         }
     }
 
+    report_result(true);
     return findLocal(model_name);
 }
 

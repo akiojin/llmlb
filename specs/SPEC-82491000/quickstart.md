@@ -15,7 +15,7 @@
 ### モデル一覧の取得
 
 ```bash
-curl -X GET http://localhost:8080/v1/models \
+curl -X GET http://localhost:32768/v1/models \
   -H "Authorization: Bearer sk_debug"
 ```
 
@@ -65,7 +65,7 @@ export GOOGLE_API_KEY="..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
 # モデル一覧取得
-curl -s http://localhost:8080/v1/models \
+curl -s http://localhost:32768/v1/models \
   -H "Authorization: Bearer sk_debug" | jq '.data[] | .id' | head -10
 ```
 
@@ -91,7 +91,7 @@ unset GOOGLE_API_KEY
 unset ANTHROPIC_API_KEY
 
 # モデル一覧取得
-curl -s http://localhost:8080/v1/models \
+curl -s http://localhost:32768/v1/models \
   -H "Authorization: Bearer sk_debug" | jq '.data[] | select(.owned_by == "openai") | .id'
 ```
 
@@ -107,11 +107,11 @@ curl -s http://localhost:8080/v1/models \
 
 ```bash
 # 1回目のリクエスト（キャッシュミス）
-time curl -s http://localhost:8080/v1/models \
+time curl -s http://localhost:32768/v1/models \
   -H "Authorization: Bearer sk_debug" > /dev/null
 
 # 2回目のリクエスト（キャッシュヒット - 高速）
-time curl -s http://localhost:8080/v1/models \
+time curl -s http://localhost:32768/v1/models \
   -H "Authorization: Bearer sk_debug" > /dev/null
 ```
 
@@ -128,7 +128,7 @@ export OPENAI_API_KEY="invalid-key"
 export GOOGLE_API_KEY="valid-key"
 
 # モデル一覧取得 - OpenAI以外は取得できる
-curl -s http://localhost:8080/v1/models \
+curl -s http://localhost:32768/v1/models \
   -H "Authorization: Bearer sk_debug" | jq '.data[] | .owned_by' | sort | uniq
 ```
 

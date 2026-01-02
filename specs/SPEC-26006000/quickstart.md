@@ -17,7 +17,7 @@
 
 ```bash
 # WAVファイルをテキストに変換
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@audio.wav" \
   -F "model=whisper-large-v3"
@@ -35,7 +35,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # 日本語を明示的に指定
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@meeting.mp3" \
   -F "model=whisper-large-v3" \
@@ -46,7 +46,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # verbose_json形式でタイムスタンプを取得
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@podcast.mp3" \
   -F "model=whisper-large-v3" \
@@ -81,7 +81,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # SRT形式で字幕ファイルを生成
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@video.mp3" \
   -F "model=whisper-large-v3" \
@@ -95,7 +95,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # テキストを音声に変換
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -110,7 +110,7 @@ curl -X POST http://localhost:8080/v1/audio/speech \
 
 ```bash
 # 女性音声で生成
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -135,7 +135,7 @@ curl -X POST http://localhost:8080/v1/audio/speech \
 
 ```bash
 # WAV形式で出力
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -154,7 +154,7 @@ curl -X POST http://localhost:8080/v1/audio/speech \
 
 ```bash
 # 1.5倍速で読み上げ
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -172,7 +172,7 @@ curl -X POST http://localhost:8080/v1/audio/speech \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:32768/v1",
     api_key="your-token"
 )
 

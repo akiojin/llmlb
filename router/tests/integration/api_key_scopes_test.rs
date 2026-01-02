@@ -226,7 +226,7 @@ async fn v0_health_requires_node_register_scope() {
     let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
     let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
-    let payload = node_payload(11435);
+    let payload = node_payload(32769);
     let register_response = app
         .clone()
         .oneshot(

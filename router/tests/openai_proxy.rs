@@ -72,6 +72,8 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
             None,
             Some(false),
             Some((4, 4)),
+            None,
+            None,
         )
         .await
         .ok();

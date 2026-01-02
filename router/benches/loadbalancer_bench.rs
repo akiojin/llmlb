@@ -30,7 +30,7 @@ async fn setup_nodes(count: usize) -> LoadManager {
                 machine_name: format!("node-{}", i),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, (i / 256) as u8, (i % 256) as u8)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),

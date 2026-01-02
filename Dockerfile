@@ -48,7 +48,7 @@ RUN mkdir -p "$PNPM_HOME" && \
     echo 'export PNPM_HOME="/root/.local/share/pnpm"' >> /root/.bashrc && \
     echo 'export PATH="$PNPM_HOME:$PATH"' >> /root/.bashrc
 
-EXPOSE 8080
+EXPOSE 32768
 
 WORKDIR /llm-router
 # Use bash to invoke entrypoint to avoid exec-bit and CRLF issues on Windows mounts

@@ -20,7 +20,7 @@ use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
@@ -807,6 +807,57 @@ fn find_metal_artifact(siblings: &[HfSibling]) -> Option<String> {
     None
 }
 
+fn append_supported_artifacts(
+    files: &mut Vec<ManifestFile>,
+    supported: Option<&SupportedModel>,
+    base_repo: &str,
+    base_url: &str,
+    runtime_hint: &Option<Vec<String>>,
+) -> Result<(), RouterError> {
+    let Some(model) = supported else {
+        return Ok(());
+    };
+    if model.artifacts.is_empty() {
+        return Ok(());
+    }
+
+    let mut existing: HashSet<String> = files.iter().map(|f| f.name.clone()).collect();
+    for artifact in &model.artifacts {
+        if artifact.name.trim().is_empty() {
+            continue;
+        }
+        if existing.contains(&artifact.name) {
+            continue;
+        }
+
+        let url = if let Some(url) = artifact.url.as_ref() {
+            url.clone()
+        } else if let Some(path) = artifact.path.as_ref() {
+            validate_artifact_path(path)?;
+            let repo = artifact.repo.as_deref().unwrap_or(base_repo);
+            hf_resolve_url(base_url, repo, path)
+        } else {
+            continue;
+        };
+
+        let priority = artifact
+            .priority
+            .or_else(|| manifest_file_priority(&artifact.name));
+        let runtimes = artifact.runtimes.clone().or_else(|| runtime_hint.clone());
+
+        files.push(ManifestFile {
+            name: artifact.name.clone(),
+            priority,
+            runtimes,
+            url: Some(url),
+            optional: None,
+        });
+        existing.insert(artifact.name.clone());
+    }
+
+    Ok(())
+}
+
 fn validate_artifact_path(path: &str) -> Result<(), RouterError> {
     if path.is_empty() {
         return Err(RouterError::Common(CommonError::Validation(
@@ -878,6 +929,8 @@ struct ManifestFile {
 struct Manifest {
     format: String,
     files: Vec<ManifestFile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantization: Option<String>,
 }
 
 fn manifest_format_label(format: ArtifactFormat) -> &'static str {
@@ -894,6 +947,31 @@ fn manifest_file_priority(name: &str) -> Option<i32> {
         "model.metal.bin" => Some(5),
         _ => None,
     }
+}
+
+fn infer_quantization_from_filename(filename: &str) -> Option<String> {
+    let lower = filename.to_ascii_lowercase();
+    if !lower.ends_with(".gguf") {
+        return None;
+    }
+    if filename.len() <= 5 {
+        return None;
+    }
+    let stem = &filename[..filename.len() - 5];
+    let idx = stem.rfind(['.', '-'])?;
+    if idx + 1 >= stem.len() {
+        return None;
+    }
+    let token = &stem[idx + 1..];
+    let mut chars = token.chars();
+    let first = chars.next()?;
+    if !first.is_ascii_alphabetic() {
+        return None;
+    }
+    if !token.chars().any(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(token.to_string())
 }
 fn resolve_safetensors_primary(
     siblings: &[HfSibling],
@@ -1345,6 +1423,10 @@ pub async fn get_model_registry_manifest(
         }
     };
 
+    let supported = get_supported_models()
+        .into_iter()
+        .find(|m| m.repo.eq_ignore_ascii_case(&repo));
+
     let selection = match resolve_primary_artifact(&siblings, model.filename.clone()) {
         Ok(sel) => sel,
         Err(e) => {
@@ -1358,6 +1440,13 @@ pub async fn get_model_registry_manifest(
     let runtime_hint = match selection.format {
         ArtifactFormat::Gguf => Some(vec!["llama_cpp".to_string()]),
         ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo).await,
+    };
+    let manifest_quantization = match selection.format {
+        ArtifactFormat::Gguf => supported
+            .as_ref()
+            .and_then(|m| m.quantization.clone())
+            .or_else(|| infer_quantization_from_filename(&selection.filename)),
+        ArtifactFormat::Safetensors => None,
     };
 
     let base_url = hf_base_url();
@@ -1427,9 +1516,23 @@ pub async fn get_model_registry_manifest(
         });
     }
 
+    if let Err(e) = append_supported_artifacts(
+        &mut files,
+        supported.as_ref(),
+        &repo,
+        &base_url,
+        &runtime_hint,
+    ) {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
+            .unwrap();
+    }
+
     let body = serde_json::to_string(&Manifest {
         format: manifest_format_label(selection.format).to_string(),
         files,
+        quantization: manifest_quantization,
     })
     .unwrap_or_else(|_| "{\"format\":\"unknown\",\"files\":[]}".into());
     Response::builder()
@@ -1524,6 +1627,7 @@ mod tests {
             format: "gguf".into(),
             engine: "llama_cpp".into(),
             platforms: vec!["macos-metal".into()],
+            artifacts: vec![],
         };
 
         let with_status = ModelWithStatus::from_supported(supported.clone());
@@ -1558,6 +1662,7 @@ mod tests {
                 "windows-directml".into(),
                 "linux-cuda".into(),
             ],
+            artifacts: vec![],
         };
 
         let with_status = ModelWithStatus::from_supported(supported);
@@ -1569,6 +1674,65 @@ mod tests {
         // skip_serializing_if により None フィールドは含まれない
         assert!(!json.contains("\"lifecycle_status\""));
         assert!(!json.contains("\"download_progress\""));
+    }
+
+    #[test]
+    fn test_append_supported_artifacts_adds_entries() {
+        use crate::supported_models::{SupportedArtifact, SupportedModel};
+
+        let supported = SupportedModel {
+            id: "gpt-oss-20b".into(),
+            name: "GPT-OSS 20B".into(),
+            description: "Test".into(),
+            repo: "openai/gpt-oss-20b".into(),
+            recommended_filename: "model.safetensors.index.json".into(),
+            size_bytes: 1,
+            required_memory_bytes: 1,
+            tags: vec!["test".into()],
+            capabilities: vec!["TextGeneration".into()],
+            quantization: None,
+            parameter_count: Some("20B".into()),
+            format: "safetensors".into(),
+            engine: "gptoss_cpp".into(),
+            platforms: vec!["macos-metal".into()],
+            artifacts: vec![SupportedArtifact {
+                name: "model.metal.bin".into(),
+                path: Some("metal/model.bin".into()),
+                url: None,
+                repo: Some("openai/gpt-oss-20b".into()),
+                priority: Some(5),
+                runtimes: Some(vec!["gptoss_cpp".into()]),
+            }],
+        };
+
+        let mut files = vec![ManifestFile {
+            name: "model.safetensors.index.json".into(),
+            priority: None,
+            runtimes: None,
+            url: Some(
+                "https://hf.example.com/openai/gpt-oss-20b/resolve/main/model.safetensors.index.json"
+                    .into(),
+            ),
+            optional: None,
+        }];
+
+        let runtime_hint = Some(vec!["gptoss_cpp".into()]);
+        append_supported_artifacts(
+            &mut files,
+            Some(&supported),
+            "openai/gpt-oss-20b",
+            "https://hf.example.com",
+            &runtime_hint,
+        )
+        .expect("append_supported_artifacts failed");
+
+        assert!(files.iter().any(|f| {
+            f.name == "model.metal.bin"
+                && f.url.as_deref()
+                    == Some(
+                        "https://hf.example.com/openai/gpt-oss-20b/resolve/main/metal/model.bin",
+                    )
+        }));
     }
 
     #[test]

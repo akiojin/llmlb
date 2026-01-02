@@ -10,6 +10,8 @@
 
 namespace llm_node {
 
+class ModelSync;
+
 // Result of model resolution
 struct ModelResolveResult {
     bool success = false;
@@ -38,6 +40,9 @@ public:
     // Set allowlist patterns for direct origin download (HF, etc.)
     void setOriginAllowlist(std::vector<std::string> origin_allowlist);
 
+    // Optional sync status reporter (ModelSync) for download progress
+    void setSyncReporter(ModelSync* sync_reporter);
+
     // Check if a download lock exists for the given model (for duplicate prevention)
     // @param model_name: Model identifier
     // @return true if download is in progress
@@ -54,6 +59,7 @@ private:
     std::string router_url_;
     std::string router_api_key_;
     std::vector<std::string> origin_allowlist_;
+    ModelSync* sync_reporter_{nullptr};
 
     int download_timeout_ms_{5 * 60 * 1000};
     int max_concurrent_downloads_{1};

@@ -1,4 +1,5 @@
 set(UNIT_TEST_SOURCES
+    continuous_batch_scheduler_test.cpp
     gpu_detector_test.cpp
     router_client_test.cpp
     model_sync_test.cpp
@@ -35,6 +36,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/model_pool.cpp
     ../../src/core/engine_registry.cpp
     ../../src/core/engine_host.cpp
+    ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp
@@ -96,6 +98,10 @@ if(APPLE)
         add_dependencies(llm-node-unit-tests gptoss_build_metallib)
         target_link_options(llm-node-unit-tests PRIVATE
             LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
+        )
+        target_include_directories(llm-node-unit-tests PRIVATE
+            ${GPTOSS_METAL_DIR}/include
+            ${GPTOSS_METAL_DIR}/source/include
         )
     endif()
 endif()

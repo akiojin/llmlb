@@ -7,6 +7,7 @@
 #include <memory>
 #include <stdexcept>
 #include <filesystem>
+#include <mutex>
 
 #include "core/engine_types.h"
 #include "core/engine_host.h"
@@ -22,6 +23,12 @@ class ModelSync;
 class ModelResolver;
 class VisionProcessor;
 struct ModelDescriptor;
+
+struct TokenMetrics {
+    double ttft_ms{0.0};
+    double tokens_per_second{0.0};
+    size_t token_count{0};
+};
 
 class InferenceEngine {
 public:
@@ -105,7 +112,9 @@ public:
     /// エンジンプラグインをシャドウロードして差し替える
     bool reloadEnginePlugins(const std::filesystem::path& directory, std::string& error);
     /// リクエストがアイドルなら保留中のプラグイン差し替えを適用
-    void applyPendingEnginePluginsIfIdle(std::string* error = nullptr);
+    void applyPendingEnginePluginsIfIdle(std::string* error = nullptr) const;
+    /// プラグイン再起動ポリシーを設定
+    void setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit);
 
 #ifdef LLM_NODE_TESTING
     /// テスト専用: EngineRegistry を差し替える
@@ -116,6 +125,14 @@ public:
     static void setWatchdogTimeoutForTest(std::chrono::milliseconds timeout);
     /// テスト専用: タイムアウト時の終了処理を差し替える
     static void setWatchdogTerminateHookForTest(std::function<void()> hook);
+    /// テスト専用: トークンメトリクスのフックを差し替える
+    static void setTokenMetricsHookForTest(std::function<void(const TokenMetrics&)> hook);
+    /// テスト専用: トークンメトリクス用の時刻取得を差し替える
+    static void setTokenMetricsClockForTest(std::function<uint64_t()> clock);
+    /// テスト専用: プラグイン再起動処理のフックを差し替える
+    static void setPluginRestartHookForTest(std::function<bool(std::string&)> hook);
+    /// テスト専用: プラグインディレクトリを指定する
+    void setEnginePluginsDirForTest(const std::filesystem::path& directory);
 #endif
 
 private:
@@ -123,17 +140,27 @@ private:
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
     ModelResolver* model_resolver_{nullptr};
-    EngineHost engine_host_;
-    std::unique_ptr<EngineRegistry> engines_;
+    mutable EngineHost engine_host_;
+    mutable std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
     mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
     std::function<ResourceUsage()> resource_usage_provider_{};
+    std::filesystem::path engine_plugins_dir_;
+    mutable std::chrono::steady_clock::time_point plugin_restart_last_{};
+    mutable uint64_t plugin_restart_request_count_{0};
+    mutable std::chrono::seconds plugin_restart_interval_{0};
+    mutable uint64_t plugin_restart_request_limit_{0};
+    mutable bool plugin_restart_pending_{false};
+    mutable std::mutex plugin_restart_mutex_;
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;
 
     /// モデルパス解決（ModelResolver優先）
     std::string resolveModelPath(const std::string& model_name, std::string* error_message = nullptr) const;
+    void maybeSchedulePluginRestart() const;
+    void handlePluginCrash() const;
+    bool stagePluginRestart(const char* reason, std::string& error) const;
 };
 
 }  // namespace llm_node

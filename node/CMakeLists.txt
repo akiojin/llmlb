@@ -267,25 +267,31 @@ endif()
 # OpenAI gpt-oss Metal library (macOS only)
 if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
     set(GPTOSS_METAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal)
+    if(NOT EXISTS "${GPTOSS_METAL_DIR}/source")
+        set(GPTOSS_METAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal)
+    endif()
+    if(NOT EXISTS "${GPTOSS_METAL_DIR}/source")
+        message(FATAL_ERROR "gpt-oss Metal sources not found: ${GPTOSS_METAL_DIR}/source")
+    endif()
     set(GPTOSS_METAL_LIB default.metallib)
 
     add_custom_command(
         OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/convert.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/embeddings.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/embeddings.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/expert_routing_metadata.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/expert_routing_metadata.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/matmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/matmul.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/moematmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/moematmul.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/gather_and_accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/gather_and_accumulate.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/random.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/random.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rmsnorm.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rmsnorm.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rope.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rope.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sample.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sample.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/scatter.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/scatter.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sdpa.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sdpa.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/topk.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/topk.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/convert.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/embeddings.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/embeddings.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/expert_routing_metadata.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/expert_routing_metadata.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/matmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/matmul.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/moematmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/moematmul.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/gather_and_accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/gather_and_accumulate.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/random.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/random.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rmsnorm.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rmsnorm.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rope.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rope.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sample.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sample.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/scatter.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/scatter.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sdpa.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sdpa.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/topk.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/topk.air"
         COMMAND xcrun -sdk macosx metallib
                 "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
                 "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
@@ -325,7 +331,7 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
 
     add_library(gptoss_metal_kernels STATIC ${GPTOSS_METAL_DIR}/source/metal.m ${GPTOSS_METAL_DIR}/source/metal-kernels.c)
     target_link_libraries(gptoss_metal_kernels PRIVATE gptoss_log)
-    target_include_directories(gptoss_metal_kernels PRIVATE ${GPTOSS_METAL_DIR}/source/include)
+    target_include_directories(gptoss_metal_kernels PRIVATE ${GPTOSS_METAL_DIR}/include ${GPTOSS_METAL_DIR}/source/include)
     add_dependencies(gptoss_metal_kernels gptoss_build_metallib)
     if(IOKIT_FRAMEWORK)
         target_link_libraries(gptoss_metal_kernels PRIVATE ${IOKIT_FRAMEWORK})
@@ -384,8 +390,8 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
+            ${GPTOSS_METAL_DIR}/include
+            ${GPTOSS_METAL_DIR}/source/include
     )
     target_link_libraries(llm_engine_gptoss
         PRIVATE

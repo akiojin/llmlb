@@ -54,6 +54,17 @@ struct KvCacheScope {
 private:
     llama_context* ctx_{nullptr};
 };
+
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
+    if (!params.on_token_callback) return;
+    params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
+}
 }  // namespace
 
 static const std::vector<std::string> kDefaultStopSequences = {
@@ -438,7 +449,6 @@ std::string LlamaEngine::generateChat(
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
     KvCacheScope kv_scope(ctx);
-    KvCacheScope kv_scope(ctx);
 
     // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
     std::string prompt = applyModelChatTemplate(model, messages);
@@ -562,6 +572,8 @@ std::string LlamaEngine::generateChat(
             spdlog::debug("EOG token received at position {}", i);
             break;
         }
+
+        emit_token_metrics(params, static_cast<uint32_t>(new_token));
 
         // トークンをテキストに変換
         char buf[256];
@@ -750,6 +762,8 @@ std::vector<std::string> LlamaEngine::generateChatStream(
         if (llama_vocab_is_eog(vocab, new_token)) {
             break;
         }
+
+        emit_token_metrics(params, static_cast<uint32_t>(new_token));
 
         char buf[256];
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);

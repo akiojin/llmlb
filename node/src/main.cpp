@@ -210,6 +210,15 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 spdlog::info("Engine plugins loaded from {}", cfg.engine_plugins_dir);
             }
         }
+        engine.setPluginRestartPolicy(
+            std::chrono::seconds(cfg.plugin_restart_interval_sec),
+            cfg.plugin_restart_request_limit);
+        if (cfg.plugin_restart_interval_sec > 0 || cfg.plugin_restart_request_limit > 0) {
+            spdlog::info(
+                "Engine plugin restart policy: interval={}s requests={}",
+                cfg.plugin_restart_interval_sec,
+                cfg.plugin_restart_request_limit);
+        }
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)

@@ -33,6 +33,87 @@
 namespace llm_node {
 
 namespace {
+struct TokenMetricsState {
+    uint64_t start_ns{0};
+    uint64_t first_token_ns{0};
+    uint64_t last_token_ns{0};
+    size_t token_count{0};
+};
+
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+#ifdef LLM_NODE_TESTING
+std::mutex g_token_metrics_mutex;
+std::function<void(const TokenMetrics&)> g_token_metrics_hook;
+std::function<uint64_t()> g_token_metrics_clock;
+std::mutex g_plugin_restart_hook_mutex;
+std::function<bool(std::string&)> g_plugin_restart_hook;
+#endif
+
+uint64_t token_metrics_now_ns() {
+#ifdef LLM_NODE_TESTING
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    if (g_token_metrics_clock) {
+        return g_token_metrics_clock();
+    }
+#endif
+    return steady_now_ns();
+}
+
+void token_metrics_callback(void* ctx, uint32_t, uint64_t timestamp_ns) {
+    auto* state = static_cast<TokenMetricsState*>(ctx);
+    if (!state) return;
+    state->token_count += 1;
+    if (state->first_token_ns == 0) {
+        state->first_token_ns = timestamp_ns;
+    }
+    state->last_token_ns = timestamp_ns;
+}
+
+TokenMetrics build_token_metrics(const TokenMetricsState& state) {
+    TokenMetrics metrics;
+    metrics.token_count = state.token_count;
+    if (state.token_count == 0) {
+        return metrics;
+    }
+    const uint64_t start = state.start_ns;
+    const uint64_t first = state.first_token_ns > 0 ? state.first_token_ns : start;
+    const uint64_t last = state.last_token_ns > 0 ? state.last_token_ns : first;
+    metrics.ttft_ms = static_cast<double>(first - start) / 1'000'000.0;
+    const double duration_s = last > start
+        ? static_cast<double>(last - start) / 1'000'000'000.0
+        : 0.0;
+    metrics.tokens_per_second = duration_s > 0.0
+        ? static_cast<double>(state.token_count) / duration_s
+        : 0.0;
+    return metrics;
+}
+
+void report_token_metrics(const TokenMetricsState& state, const std::string& model, const char* kind) {
+    if (state.token_count == 0) return;
+    TokenMetrics metrics = build_token_metrics(state);
+    spdlog::info("Token metrics: model={} kind={} ttft_ms={:.2f} tokens={} tokens_per_sec={:.2f}",
+        model,
+        kind ? kind : "unknown",
+        metrics.ttft_ms,
+        metrics.token_count,
+        metrics.tokens_per_second);
+#ifdef LLM_NODE_TESTING
+    std::function<void(const TokenMetrics&)> hook;
+    {
+        std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+        hook = g_token_metrics_hook;
+    }
+    if (hook) {
+        hook(metrics);
+    }
+#endif
+}
+
 std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens) {
     std::vector<std::string> tokens;
     std::string current;
@@ -477,6 +558,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     nemotron_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
+    plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
 InferenceEngine::InferenceEngine() = default;
@@ -489,6 +571,7 @@ bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, 
         return false;
     }
 
+    engine_plugins_dir_ = directory;
     EngineHostContext context;
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
@@ -503,6 +586,7 @@ bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory
         return false;
     }
 
+    engine_plugins_dir_ = directory;
     EngineHostContext context;
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
@@ -516,7 +600,7 @@ bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory
     return error.empty();
 }
 
-void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) {
+void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) const {
     if (!engines_) {
         if (error) *error = "EngineRegistry not initialized";
         return;
@@ -543,6 +627,18 @@ void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) {
     } else if (error) {
         error->clear();
     }
+    if (!engine_host_.hasPendingPlugins()) {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+    }
+}
+
+void InferenceEngine::setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit) {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    plugin_restart_interval_ = interval;
+    plugin_restart_request_limit_ = request_limit;
+    plugin_restart_request_count_ = 0;
+    plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -584,6 +680,89 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
     return "";
 }
 
+void InferenceEngine::maybeSchedulePluginRestart() const {
+    if (engine_plugins_dir_.empty()) return;
+
+    const auto now = std::chrono::steady_clock::now();
+    bool should_stage = false;
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) return;
+        if (plugin_restart_interval_.count() == 0 && plugin_restart_request_limit_ == 0) {
+            return;
+        }
+
+        plugin_restart_request_count_ += 1;
+        const bool due_by_requests = plugin_restart_request_limit_ > 0 &&
+            plugin_restart_request_count_ >= plugin_restart_request_limit_;
+        const bool due_by_time = plugin_restart_interval_.count() > 0 &&
+            (now - plugin_restart_last_) >= plugin_restart_interval_;
+        if (!due_by_requests && !due_by_time) {
+            return;
+        }
+
+        plugin_restart_pending_ = true;
+        plugin_restart_request_count_ = 0;
+        plugin_restart_last_ = now;
+        should_stage = true;
+    }
+
+    if (!should_stage) return;
+
+    std::string error;
+    if (!stagePluginRestart("periodic", error)) {
+        spdlog::warn("Engine plugin restart schedule failed: {}", error);
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+    }
+}
+
+void InferenceEngine::handlePluginCrash() const {
+    if (engine_plugins_dir_.empty()) return;
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) return;
+        plugin_restart_pending_ = true;
+    }
+
+    std::string error;
+    if (!stagePluginRestart("crash", error)) {
+        spdlog::warn("Engine plugin restart after crash failed: {}", error);
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+        return;
+    }
+
+    applyPendingEnginePluginsIfIdle();
+}
+
+bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
+    error.clear();
+#ifdef LLM_NODE_TESTING
+    {
+        std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
+        if (g_plugin_restart_hook) {
+            return g_plugin_restart_hook(error);
+        }
+    }
+#endif
+    if (engine_plugins_dir_.empty()) {
+        error = "engine plugins dir not set";
+        return false;
+    }
+
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    if (!engine_host_.stagePluginsFromDir(engine_plugins_dir_, context, error)) {
+        return false;
+    }
+    spdlog::info("Engine plugin restart staged ({})", reason ? reason : "unknown");
+    return true;
+}
+
 std::string InferenceEngine::generateChat(
     const std::vector<ChatMessage>& messages,
     const std::string& model,
@@ -596,6 +775,7 @@ std::string InferenceEngine::generateChat(
     }
 
     return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model);
@@ -606,7 +786,19 @@ std::string InferenceEngine::generateChat(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        return engine->generateChat(messages, *desc, params);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateChat(messages, *desc, params_with_metrics);
+            report_token_metrics(metrics, desc->name, "chat");
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
     });
 }
 
@@ -627,7 +819,14 @@ std::string InferenceEngine::generateChatWithImages(
     }
 
     return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
         std::string error;
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+
         std::string gguf_path = resolveModelPath(model_name, &error);
         if (gguf_path.empty()) {
             std::string msg = error.empty() ? "Model not found: " + model_name : error;
@@ -735,17 +934,17 @@ std::string InferenceEngine::generateChatWithImages(
             "</s>",
             "<|endoftext|>",
         };
-        auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
+        auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params_with_metrics.stop_sequences);
 
-        size_t effective_max_tokens = params.max_tokens;
+        size_t effective_max_tokens = params_with_metrics.max_tokens;
         int32_t model_n_ctx = llama_model_n_ctx_train(model);
         if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
             size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
             constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-            if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
+            if (params_with_metrics.max_tokens == DEFAULT_MAX_TOKENS || params_with_metrics.max_tokens == 0) {
                 effective_max_tokens = available;
             } else {
-                effective_max_tokens = std::min(params.max_tokens, available);
+                effective_max_tokens = std::min(params_with_metrics.max_tokens, available);
             }
             spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
                 model_n_ctx, prompt_positions, available, effective_max_tokens);
@@ -759,6 +958,13 @@ std::string InferenceEngine::generateChatWithImages(
             if (llama_vocab_is_eog(vocab, new_token)) {
                 spdlog::debug("Vision: EOG token received at position {}", i);
                 break;
+            }
+
+            if (params_with_metrics.on_token_callback) {
+                params_with_metrics.on_token_callback(
+                    params_with_metrics.on_token_callback_ctx,
+                    static_cast<uint32_t>(new_token),
+                    steady_now_ns());
             }
 
             char buf[256];
@@ -796,6 +1002,7 @@ std::string InferenceEngine::generateChatWithImages(
         }
 
         spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
+        report_token_metrics(metrics, model_name, "vision");
         return output;
     });
 }
@@ -809,6 +1016,7 @@ std::string InferenceEngine::generateCompletion(
     }
 
     return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model);
@@ -819,7 +1027,19 @@ std::string InferenceEngine::generateCompletion(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        return engine->generateCompletion(prompt, *desc, params);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateCompletion(prompt, *desc, params_with_metrics);
+            report_token_metrics(metrics, desc->name, "completion");
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
     });
 }
 
@@ -841,6 +1061,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     }
 
     return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model);
@@ -851,7 +1072,19 @@ std::vector<std::string> InferenceEngine::generateChatStream(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        return engine->generateChatStream(messages, *desc, params, on_token);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, on_token);
+            report_token_metrics(metrics, desc->name, "stream");
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
     });
 }
 
@@ -999,6 +1232,7 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     }
 
     return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model_name);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model_name);
@@ -1009,7 +1243,12 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        return engine->generateEmbeddings(inputs, *desc);
+        try {
+            return engine->generateEmbeddings(inputs, *desc);
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
     });
 }
 
@@ -1029,6 +1268,26 @@ void InferenceEngine::setWatchdogTimeoutForTest(std::chrono::milliseconds timeou
 void InferenceEngine::setWatchdogTerminateHookForTest(std::function<void()> hook) {
     std::lock_guard<std::mutex> lock(g_watchdog_mutex);
     g_watchdog_terminate = std::move(hook);
+}
+
+void InferenceEngine::setTokenMetricsHookForTest(std::function<void(const TokenMetrics&)> hook) {
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    g_token_metrics_hook = std::move(hook);
+}
+
+void InferenceEngine::setTokenMetricsClockForTest(std::function<uint64_t()> clock) {
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    g_token_metrics_clock = std::move(clock);
+}
+
+void InferenceEngine::setPluginRestartHookForTest(std::function<bool(std::string&)> hook) {
+    std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
+    g_plugin_restart_hook = std::move(hook);
+}
+
+void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& directory) {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    engine_plugins_dir_ = directory;
 }
 #endif
 

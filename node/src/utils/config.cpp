@@ -186,6 +186,12 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         if (j.contains("engine_plugins_dir") && j["engine_plugins_dir"].is_string()) {
             cfg.engine_plugins_dir = j["engine_plugins_dir"].get<std::string>();
         }
+        if (j.contains("plugin_restart_interval_sec") && j["plugin_restart_interval_sec"].is_number()) {
+            cfg.plugin_restart_interval_sec = j["plugin_restart_interval_sec"].get<int>();
+        }
+        if (j.contains("plugin_restart_request_limit") && j["plugin_restart_request_limit"].is_number()) {
+            cfg.plugin_restart_request_limit = j["plugin_restart_request_limit"].get<uint64_t>();
+        }
         if (j.contains("bind_address") && j["bind_address"].is_string()) cfg.bind_address = j["bind_address"].get<std::string>();
         if (j.contains("origin_allowlist")) {
             const auto& v = j["origin_allowlist"];
@@ -244,6 +250,20 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         cfg.engine_plugins_dir = v;
         log << "env:ENGINE_PLUGINS_DIR=" << cfg.engine_plugins_dir << " ";
         used_env = true;
+    }
+    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
+        try {
+            cfg.plugin_restart_interval_sec = std::stoi(*v);
+            log << "env:PLUGIN_RESTART_SECS=" << cfg.plugin_restart_interval_sec << " ";
+            used_env = true;
+        } catch (...) {}
+    }
+    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
+        try {
+            cfg.plugin_restart_request_limit = static_cast<uint64_t>(std::stoll(*v));
+            log << "env:PLUGIN_RESTART_REQUESTS=" << cfg.plugin_restart_request_limit << " ";
+            used_env = true;
+        } catch (...) {}
     }
     if (auto v = getEnvWithFallback("LLM_NODE_PORT", "LLM_NODE_PORT")) {
         // LLM_NODE_PORT is already the correct name

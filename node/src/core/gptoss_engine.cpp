@@ -75,6 +75,17 @@ void emit_text_token(uint32_t token,
     emit(piece);
 }
 
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
+    if (!params.on_token_callback) return;
+    params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
+}
+
 bool is_safetensors_index_file(const fs::path& path) {
     const std::string filename = path.filename().string();
     const std::string suffix = ".safetensors.index.json";
@@ -864,6 +875,8 @@ std::string GptOssEngine::generateCompletion(
         }
         if (tok == lm->end_token_id) break;
         if (tok == lm->start_token_id) break;
+
+        emit_token_metrics(params, tok);
 
         emit_text_token(tok, lm->num_text_tokens, decode_token, stream_state, nullptr, on_token);
         if (stream_state.stopped) {

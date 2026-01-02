@@ -347,3 +347,11 @@ TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {
     EXPECT_FALSE(engine.isModelSupported(desc));
 #endif
 }
+
+TEST(InferenceParamsTest, ResolvesEffectiveMaxTokensFromContext) {
+    const size_t default_tokens = kDefaultMaxTokens;
+    EXPECT_EQ(resolve_effective_max_tokens(default_tokens, 10, 100), 90u);
+    EXPECT_EQ(resolve_effective_max_tokens(5, 10, 100), 5u);
+    EXPECT_EQ(resolve_effective_max_tokens(500, 10, 100), 90u);
+    EXPECT_EQ(resolve_effective_max_tokens(default_tokens, 0, 0), default_tokens);
+}

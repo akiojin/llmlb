@@ -193,7 +193,7 @@ ModelLoadResult validate_safetensors_file(const fs::path& path, const std::strin
     ModelLoadResult result;
     if (!fs::exists(path)) {
         result.error_message = "Safetensors file not found: " + path.string();
-        result.error_code = EngineErrorCode::kModelCorrupt;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -279,7 +279,7 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
     fs::path primary(descriptor.primary_path);
     if (!fs::exists(primary)) {
         result.error_message = "Primary path not found: " + primary.string();
-        result.error_code = EngineErrorCode::kModelCorrupt;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -324,8 +324,9 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
                 std::string upload_err;
                 auto uploaded = upload_tensor_to_gpu(shard_path, kKnownTensorName, max_bytes, upload_err);
                 if (!uploaded) {
+                    result.success = false;
                     result.error_message = upload_err;
-                    result.error_code = EngineErrorCode::kLoadFailed;
+                    result.error_code = EngineErrorCode::kInternal;
                     return result;
                 }
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -344,8 +345,9 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
                 std::string upload_err;
                 auto uploaded = upload_tensor_to_gpu(primary, kKnownTensorName, max_bytes, upload_err);
                 if (!uploaded) {
+                    result.success = false;
                     result.error_message = upload_err;
-                    result.error_code = EngineErrorCode::kLoadFailed;
+                    result.error_code = EngineErrorCode::kInternal;
                     return result;
                 }
                 std::lock_guard<std::mutex> lock(mutex_);

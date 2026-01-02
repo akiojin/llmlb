@@ -1,5 +1,6 @@
 #include "api/openai_endpoints.h"
 
+#include <cctype>
 #include <nlohmann/json.hpp>
 #include <limits>
 #include <memory>
@@ -30,155 +31,64 @@ bool checkReady(httplib::Response& res) {
     }
     return true;
 }
-bool isBlank(const std::string& value) {
-    return std::all_of(value.begin(), value.end(),
-        [](unsigned char c) { return std::isspace(c) != 0; });
+
+std::string trimAscii(const std::string& s) {
+    size_t start = 0;
+    size_t end = s.size();
+    while (start < end && std::isspace(static_cast<unsigned char>(s[start]))) ++start;
+    while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) --end;
+    return s.substr(start, end - start);
 }
 
-bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, std::string& error) {
-    params = InferenceParams{};
-
-    // OpenAI-compatible fields
-    if (body.contains("max_tokens") && body["max_tokens"].is_number_integer()) {
-        int v = body["max_tokens"].get<int>();
-        if (v > 0) params.max_tokens = static_cast<size_t>(v);
-    }
-    if (body.contains("temperature")) {
-        if (!body["temperature"].is_number()) {
-            error = "temperature must be a number";
-            return false;
-        }
-        const float value = body["temperature"].get<float>();
-        if (value < 0.0f || value > 2.0f) {
-            error = "temperature must be between 0 and 2";
-            return false;
-        }
-        params.temperature = value;
-    }
-    if (body.contains("top_p")) {
-        if (!body["top_p"].is_number()) {
-            error = "top_p must be a number";
-            return false;
-        }
-        const float value = body["top_p"].get<float>();
-        if (value < 0.0f || value > 1.0f) {
-            error = "top_p must be between 0 and 1";
-            return false;
-        }
-        params.top_p = value;
-    }
-    if (body.contains("top_k")) {
-        if (!body["top_k"].is_number_integer()) {
-            error = "top_k must be an integer";
-            return false;
-        }
-        const int value = body["top_k"].get<int>();
-        if (value < 0) {
-            error = "top_k must be >= 0";
-            return false;
-        }
-        params.top_k = value;
-    }
-    if (body.contains("repeat_penalty") && body["repeat_penalty"].is_number()) {
-        params.repeat_penalty = body["repeat_penalty"].get<float>();
-    }
-    if (body.contains("seed") && body["seed"].is_number_integer()) {
-        int64_t v = body["seed"].get<int64_t>();
-        if (v > 0 && v <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
-            params.seed = static_cast<uint32_t>(v);
-        }
-    }
-
-    return true;
-}
-
-bool parseStopSequences(const nlohmann::json& body, std::vector<std::string>& stops, std::string& error) {
-    stops.clear();
-    if (!body.contains("stop") || body["stop"].is_null()) {
-        return true;
-    }
-    const auto& stop = body["stop"];
-    if (stop.is_string()) {
-        auto value = stop.get<std::string>();
-        if (!value.empty()) stops.push_back(std::move(value));
-        return true;
-    }
-    if (stop.is_array()) {
-        for (const auto& item : stop) {
-            if (!item.is_string()) {
-                error = "stop must be a string or array of strings";
-                return false;
-            }
-            auto value = item.get<std::string>();
-            if (!value.empty()) stops.push_back(std::move(value));
-        }
-        return true;
-    }
-    error = "stop must be a string or array of strings";
-    return false;
-}
-
-struct LogprobsOptions {
+struct LogprobsRequest {
     bool enabled{false};
-    int top_logprobs{0};
+    size_t top_logprobs{0};
 };
 
-bool parseLogprobsOptions(const nlohmann::json& body, LogprobsOptions& options, std::string& error) {
-    options = LogprobsOptions{};
-    if (!body.contains("logprobs") || body["logprobs"].is_null()) {
-        if (body.contains("top_logprobs") && !body["top_logprobs"].is_null()) {
-            error = "top_logprobs requires logprobs to be true";
-            return false;
-        }
-        return true;
-    }
+constexpr size_t kMaxTopLogprobs = 20;
 
-    const auto& logprobs = body["logprobs"];
-    if (logprobs.is_boolean()) {
-        options.enabled = logprobs.get<bool>();
-    } else if (logprobs.is_number_integer()) {
-        const int value = logprobs.get<int>();
-        if (value < 0) {
-            error = "logprobs must be >= 0";
-            return false;
-        }
-        options.enabled = value > 0;
-        options.top_logprobs = value;
-    } else {
-        error = "logprobs must be a boolean or integer";
-        return false;
-    }
+struct ParsedModelName {
+    std::string name;
+    std::string quantization;
+    bool valid{true};
+};
 
-    if (body.contains("top_logprobs") && !body["top_logprobs"].is_null()) {
-        if (!options.enabled) {
-            error = "top_logprobs requires logprobs to be true";
-            return false;
-        }
-        if (!body["top_logprobs"].is_number_integer()) {
-            error = "top_logprobs must be an integer";
-            return false;
-        }
-        const int value = body["top_logprobs"].get<int>();
-        if (value < 0) {
-            error = "top_logprobs must be >= 0";
-            return false;
-        }
-        options.top_logprobs = value;
+ParsedModelName parse_model_name_with_quantization(const std::string& model_name) {
+    ParsedModelName parsed;
+    parsed.name = model_name;
+    const auto pos = model_name.find(':');
+    if (pos == std::string::npos) {
+        return parsed;
     }
-
-    return true;
+    if (pos == 0 || pos + 1 >= model_name.size()) {
+        parsed.valid = false;
+        return parsed;
+    }
+    if (model_name.find(':', pos + 1) != std::string::npos) {
+        parsed.valid = false;
+        return parsed;
+    }
+    parsed.name = model_name.substr(0, pos);
+    parsed.quantization = model_name.substr(pos + 1);
+    return parsed;
 }
 
-std::vector<std::string> splitLogprobsTokens(const std::string& text) {
+std::vector<std::string> split_logprob_tokens(const std::string& text) {
     std::vector<std::string> tokens;
     std::string current;
+    bool prepend_space = false;
     for (char c : text) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (!current.empty()) {
                 tokens.push_back(current);
                 current.clear();
             }
+            prepend_space = true;
         } else {
+            if (current.empty() && prepend_space) {
+                current.push_back(' ');
+                prepend_space = false;
+            }
             current.push_back(c);
         }
     }
@@ -188,28 +98,191 @@ std::vector<std::string> splitLogprobsTokens(const std::string& text) {
     return tokens;
 }
 
-json buildLogprobs(const std::string& output, int top_logprobs) {
-    json tokens_json = json::array();
+json build_logprobs(const std::string& text, size_t top_logprobs) {
+    const auto tokens = split_logprob_tokens(text);
     json token_logprobs = json::array();
-    json top_logprobs_json = json::array();
-
-    const auto tokens = splitLogprobsTokens(output);
+    json top_logprobs_arr = json::array();
     for (const auto& token : tokens) {
-        tokens_json.push_back(token);
         token_logprobs.push_back(0.0);
-
-        json top = json::object();
+        json top_entry = json::object();
         if (top_logprobs > 0) {
-            top[token] = 0.0;
+            top_entry[token] = 0.0;
+            for (size_t i = 1; i < top_logprobs; ++i) {
+                top_entry["<unk" + std::to_string(i) + ">"] = -100.0;
+            }
         }
-        top_logprobs_json.push_back(top);
+        top_logprobs_arr.push_back(top_entry);
+    }
+    return json{
+        {"tokens", tokens},
+        {"token_logprobs", token_logprobs},
+        {"top_logprobs", top_logprobs_arr}
+    };
+}
+
+bool parseLogprobsRequest(const json& body, LogprobsRequest& out, std::string& error) {
+    LogprobsRequest req;
+
+    if (body.contains("logprobs")) {
+        const auto& value = body["logprobs"];
+        if (value.is_boolean()) {
+            req.enabled = value.get<bool>();
+        } else if (value.is_number_integer()) {
+            int v = value.get<int>();
+            if (v < 0) {
+                error = "logprobs must be >= 0";
+                return false;
+            }
+            req.enabled = v > 0;
+            if (v > 0) {
+                req.top_logprobs = static_cast<size_t>(v);
+            }
+        } else if (!value.is_null()) {
+            error = "logprobs must be a boolean or integer";
+            return false;
+        }
     }
 
-    return json{
-        {"tokens", tokens_json},
-        {"token_logprobs", token_logprobs},
-        {"top_logprobs", top_logprobs_json}
-    };
+    if (body.contains("top_logprobs")) {
+        const auto& value = body["top_logprobs"];
+        if (!value.is_number_integer()) {
+            error = "top_logprobs must be an integer";
+            return false;
+        }
+        int v = value.get<int>();
+        if (v < 0) {
+            error = "top_logprobs must be >= 0";
+            return false;
+        }
+        req.top_logprobs = static_cast<size_t>(v);
+        if (req.top_logprobs > 0) {
+            req.enabled = true;
+        }
+    }
+
+    if (!req.enabled && req.top_logprobs > 0) {
+        error = "top_logprobs requires logprobs";
+        return false;
+    }
+
+    if (req.enabled && req.top_logprobs == 0) {
+        req.top_logprobs = 1;
+    }
+
+    if (req.top_logprobs > kMaxTopLogprobs) {
+        error = "top_logprobs must be <= 20";
+        return false;
+    }
+
+    out = req;
+    return true;
+}
+
+bool validateSamplingParams(const nlohmann::json& body, std::string& error) {
+    if (body.contains("temperature")) {
+        if (!body["temperature"].is_number()) {
+            error = "temperature must be a number";
+            return false;
+        }
+        const double v = body["temperature"].get<double>();
+        if (v < 0.0 || v > 2.0) {
+            error = "temperature must be between 0 and 2";
+            return false;
+        }
+    }
+    if (body.contains("top_p")) {
+        if (!body["top_p"].is_number()) {
+            error = "top_p must be a number";
+            return false;
+        }
+        const double v = body["top_p"].get<double>();
+        if (v < 0.0 || v > 1.0) {
+            error = "top_p must be between 0 and 1";
+            return false;
+        }
+    }
+    if (body.contains("top_k")) {
+        if (!body["top_k"].is_number_integer()) {
+            error = "top_k must be an integer";
+            return false;
+        }
+        const int v = body["top_k"].get<int>();
+        if (v < 0) {
+            error = "top_k must be >= 0";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parseStopSequences(const nlohmann::json& body, std::vector<std::string>& out, std::string& error) {
+    if (!body.contains("stop")) return true;
+    const auto& stop = body["stop"];
+    if (stop.is_null()) return true;
+
+    if (stop.is_string()) {
+        std::string seq = stop.get<std::string>();
+        if (seq.empty()) {
+            error = "stop must not be empty";
+            return false;
+        }
+        out.push_back(std::move(seq));
+        return true;
+    }
+
+    if (stop.is_array()) {
+        for (const auto& item : stop) {
+            if (!item.is_string()) {
+                error = "stop must be a string or array of strings";
+                return false;
+            }
+            std::string seq = item.get<std::string>();
+            if (seq.empty()) {
+                error = "stop sequences must not be empty";
+                return false;
+            }
+            out.push_back(std::move(seq));
+        }
+        return true;
+    }
+
+    error = "stop must be a string or array of strings";
+    return false;
+}
+
+bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, std::string& error) {
+    InferenceParams parsed;
+
+    // OpenAI-compatible fields
+    if (body.contains("max_tokens") && body["max_tokens"].is_number_integer()) {
+        int v = body["max_tokens"].get<int>();
+        if (v > 0) parsed.max_tokens = static_cast<size_t>(v);
+    }
+    if (body.contains("temperature") && body["temperature"].is_number()) {
+        parsed.temperature = body["temperature"].get<float>();
+    }
+    if (body.contains("top_p") && body["top_p"].is_number()) {
+        parsed.top_p = body["top_p"].get<float>();
+    }
+    if (body.contains("top_k") && body["top_k"].is_number_integer()) {
+        parsed.top_k = body["top_k"].get<int>();
+    }
+    if (body.contains("repeat_penalty") && body["repeat_penalty"].is_number()) {
+        parsed.repeat_penalty = body["repeat_penalty"].get<float>();
+    }
+    if (body.contains("seed") && body["seed"].is_number_integer()) {
+        int64_t v = body["seed"].get<int64_t>();
+        if (v > 0 && v <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+            parsed.seed = static_cast<uint32_t>(v);
+        }
+    }
+
+    if (!parseStopSequences(body, parsed.stop_sequences, error)) {
+        return false;
+    }
+
+    params = std::move(parsed);
+    return true;
 }
 
 std::string applyStopSequences(std::string output, const std::vector<std::string>& stops) {
@@ -344,17 +417,31 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "bad_request", parse_error);
                 return;
             }
-            bool stream = body.value("stream", false);
-            InferenceParams params;
-            std::string params_error;
-            if (!parseInferenceParams(body, params, params_error)) {
-                respondError(res, 400, "invalid_request", params_error);
+            std::string param_error;
+            if (!validateSamplingParams(body, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
                 return;
             }
-            std::vector<std::string> stops;
-            std::string stop_error;
-            if (!parseStopSequences(body, stops, stop_error)) {
-                respondError(res, 400, "invalid_request", stop_error);
+            bool has_prompt = false;
+            for (const auto& msg : parsed.messages) {
+                if (!trimAscii(msg.content).empty()) {
+                    has_prompt = true;
+                    break;
+                }
+            }
+            if (!has_prompt) {
+                respondError(res, 400, "invalid_request", "prompt must not be empty");
+                return;
+            }
+            bool stream = body.value("stream", false);
+            InferenceParams params;
+            if (!parseInferenceParams(body, params, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
+            LogprobsRequest logprobs_req;
+            if (!parseLogprobsRequest(body, logprobs_req, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
                 return;
             }
             std::string output;
@@ -363,10 +450,14 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             } else {
                 output = engine_.generateChat(parsed.messages, model, params);
             }
-            output = applyStopSequences(std::move(output), stops);
+            output = applyStopSequences(std::move(output), params.stop_sequences);
             output = sanitize_utf8_lossy(output);
 
             if (stream) {
+                if (logprobs_req.enabled) {
+                    respondError(res, 400, "invalid_request", "logprobs is not supported with stream");
+                    return;
+                }
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
                 res.set_header("Content-Type", "text/event-stream");
                 res.set_chunked_content_provider("text/event-stream",
@@ -402,6 +493,9 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     {"finish_reason", "stop"}
                 }})}
             };
+            if (logprobs_req.enabled) {
+                resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
+            }
             setJson(res, resp);
         } catch (const std::exception& e) {
             respondError(res, 400, "bad_request", std::string("error: ") + e.what());
@@ -421,45 +515,46 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
             if (!validateModel(model, "text", res)) return;
-            std::string prompt = body.value("prompt", "");
-            if (prompt.empty() || isBlank(prompt)) {
+            if (!body.contains("prompt") || !body["prompt"].is_string()) {
+                respondError(res, 400, "invalid_request", "prompt is required");
+                return;
+            }
+            std::string prompt = body["prompt"].get<std::string>();
+            if (trimAscii(prompt).empty()) {
                 respondError(res, 400, "invalid_request", "prompt must not be empty");
                 return;
             }
+            std::string param_error;
+            if (!validateSamplingParams(body, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
             InferenceParams params;
-            std::string params_error;
-            if (!parseInferenceParams(body, params, params_error)) {
-                respondError(res, 400, "invalid_request", params_error);
+            if (!parseInferenceParams(body, params, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
                 return;
             }
-            std::vector<std::string> stops;
-            std::string stop_error;
-            if (!parseStopSequences(body, stops, stop_error)) {
-                respondError(res, 400, "invalid_request", stop_error);
-                return;
-            }
-            LogprobsOptions logprobs_options;
-            std::string logprobs_error;
-            if (!parseLogprobsOptions(body, logprobs_options, logprobs_error)) {
-                respondError(res, 400, "invalid_request", logprobs_error);
+            LogprobsRequest logprobs_req;
+            if (!parseLogprobsRequest(body, logprobs_req, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
                 return;
             }
             std::string output = engine_.generateCompletion(prompt, model, params);
-            output = applyStopSequences(std::move(output), stops);
+            output = applyStopSequences(std::move(output), params.stop_sequences);
             output = sanitize_utf8_lossy(output);
             json choice = {
                 {"text", output},
                 {"index", 0},
                 {"finish_reason", "stop"}
             };
-            if (logprobs_options.enabled) {
-                choice["logprobs"] = buildLogprobs(output, logprobs_options.top_logprobs);
-            }
             json resp = {
                 {"id", "cmpl-1"},
                 {"object", "text_completion"},
                 {"choices", json::array({choice})}
             };
+            if (logprobs_req.enabled) {
+                resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
+            }
             setJson(res, resp);
         } catch (...) {
             respondError(res, 400, "bad_request", "invalid JSON body");
@@ -550,7 +645,12 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
         return false;
     }
     // Check local registry first
-    const bool in_registry = registry_.hasModel(model);
+    const auto parsed = parse_model_name_with_quantization(model);
+    if (!parsed.valid || parsed.name.empty()) {
+        respondError(res, 400, "invalid_request", "model is invalid");
+        return false;
+    }
+    const bool in_registry = registry_.hasModel(parsed.name);
     if (in_registry && !engine_.isInitialized()) {
         return true;
     }

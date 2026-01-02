@@ -5,6 +5,9 @@
   "runtimes": ["gptoss_cpp"],
   "formats": ["safetensors"],
   "architectures": ["gpt_oss"],
+  "modalities": ["completion"],
+  "license": "Apache-2.0",
+  "supports_vision": false,
   "capabilities": ["text"],
   "gpu_targets": ["metal", "directml"],
   "library": "llm_engine_gptoss"

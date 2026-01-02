@@ -9,7 +9,7 @@
 
 import type { APIRequestContext, Page } from '@playwright/test';
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = 'http://localhost:32768';
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 // ============================================================================

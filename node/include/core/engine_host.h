@@ -18,7 +18,10 @@ struct EnginePluginManifest {
     std::vector<std::string> formats;
     std::vector<std::string> architectures;
     std::vector<std::string> capabilities;
+    std::vector<std::string> modalities;
     std::vector<std::string> gpu_targets;
+    std::string license;
+    bool supports_vision{false};
     std::string library;
 };
 

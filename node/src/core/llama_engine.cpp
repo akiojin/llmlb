@@ -1,14 +1,27 @@
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
 #include "include/llama.h"
+#include "utils/stop_sequences.h"
 
 #include <spdlog/spdlog.h>
 #include <random>
 #include <sstream>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 
 namespace llm_node {
+
+namespace fs = std::filesystem;
+
+static const std::vector<std::string> kDefaultStopSequences = {
+    "<|im_end|>",       // ChatML (Qwen3, etc.)
+    "<|end|>",          // gpt-oss, Some models
+    "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
+    "<|eot_id|>",       // Llama 3
+    "</s>",             // Llama 2, Mistral
+    "<|endoftext|>",    // GPT-style
+};
 
 // 前方宣言
 static std::string stripControlTokens(std::string text);
@@ -109,27 +122,8 @@ std::string postProcessGeneratedTextForTest(const std::string& output, bool is_g
     std::string processed = output;
 
     // Keep in sync with LlamaEngine::generateChat() post-processing.
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
-    };
-
-    for (const auto& stop : stop_sequences) {
-        size_t pos = processed.find(stop);
-        if (pos != std::string::npos) {
-            if (is_gptoss && stop == "<|start|>" && pos == 0) {
-                // gpt-ossの出力が <|start|> から始まる場合、それ自体は停止条件にしない
-                // （<|end|> が出ないケースで空文字になってしまうのを防ぐ）
-                continue;
-            }
-            processed = processed.substr(0, pos);
-            break;
-        }
-    }
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, {});
+    apply_stop_sequences_suffix(processed, stop_sequences);
 
     if (is_gptoss) {
         processed = cleanGptOssOutput(processed);
@@ -485,6 +479,7 @@ std::string LlamaEngine::generateChat(
 
     // 9. トークン生成ループ
     std::string output;
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
     // int32_t n_cur = n_tokens; // unused
 
     // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
@@ -522,6 +517,9 @@ std::string LlamaEngine::generateChat(
             }
             spdlog::debug("Token {}: id={}, len={}, bytes=[{}]", i, new_token, len, hex_bytes);
             output.append(buf, static_cast<size_t>(len));
+            if (apply_stop_sequences_suffix(output, stop_sequences)) {
+                break;
+            }
         }
 
         // サンプラーにトークンを通知
@@ -541,32 +539,7 @@ std::string LlamaEngine::generateChat(
     // 10. クリーンアップ
     llama_sampler_free(sampler);
 
-    // 11. 出力の後処理: chatMLテンプレートのストップトークンで切り詰め
-    // Qwen3などのモデルは<|im_end|>で応答を終了するが、EOGとして認識されない場合がある
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
-    };
-
-    for (const auto& stop : stop_sequences) {
-        size_t pos = output.find(stop);
-        if (pos != std::string::npos) {
-            if (is_gptoss && stop == "<|start|>" && pos == 0) {
-                // gpt-ossの出力が <|start|> から始まる場合、それ自体は停止条件にしない
-                // （<|end|> が出ないケースで空文字になってしまうのを防ぐ）
-                continue;
-            }
-            spdlog::debug("Truncating output at stop sequence '{}' at position {}", stop, pos);
-            output = output.substr(0, pos);
-            break;
-        }
-    }
-
-    // 12. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
+    // 11. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
     if (is_gptoss) {
         spdlog::info("Applying gpt-oss output cleanup, before: {} chars", output.size());
         output = cleanGptOssOutput(output);
@@ -684,18 +657,15 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
 
     // 6. ストリーミング生成ループ
-    // ストップシーケンスの定義（chatMLテンプレート用）
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
+    StopSequenceStream stop_stream(stop_sequences);
+    auto emit_chunk = [&](const std::string& chunk) {
+        if (chunk.empty()) return;
+        all_tokens.push_back(chunk);
+        if (on_token) {
+            on_token(chunk);
+        }
     };
-
-    std::string accumulated_output;  // ストップシーケンス検出用の累積出力
-    bool should_stop = false;
 
     // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
     size_t effective_max_tokens = params.max_tokens;
@@ -709,7 +679,7 @@ std::vector<std::string> LlamaEngine::generateChatStream(
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }
 
-    for (size_t i = 0; i < effective_max_tokens && !should_stop; i++) {
+    for (size_t i = 0; i < effective_max_tokens && !stop_stream.stopped(); i++) {
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
         if (llama_vocab_is_eog(vocab, new_token)) {
@@ -720,44 +690,10 @@ std::vector<std::string> LlamaEngine::generateChatStream(
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
         if (len > 0) {
             std::string piece(buf, static_cast<size_t>(len));
-            accumulated_output += piece;
-
-            // ストップシーケンスのチェック
-            for (const auto& stop : stop_sequences) {
-                size_t pos = accumulated_output.find(stop);
-                if (pos != std::string::npos) {
-                    spdlog::debug("Streaming: found stop sequence '{}' at position {}", stop, pos);
-                    // ストップシーケンス前の部分のみを送信
-                    if (pos > 0 && pos > accumulated_output.size() - piece.size()) {
-                        // 現在のピースがストップシーケンスを含む場合、その前の部分のみ送信
-                        std::string partial = piece.substr(0, pos - (accumulated_output.size() - piece.size()));
-                        if (!partial.empty() && on_token) {
-                            on_token(partial);
-                            all_tokens.push_back(partial);
-                        }
-                    } else if (pos == 0 || accumulated_output.find(stop) >= accumulated_output.size() - piece.size()) {
-                        // ストップシーケンスがこのピースで始まる場合、送信しない
-                    } else {
-                        all_tokens.push_back(piece);
-                        if (on_token) {
-                            on_token(piece);
-                        }
-                    }
-                    should_stop = true;
-                    break;
-                }
-            }
-
-            if (!should_stop) {
-                all_tokens.push_back(piece);
-                // コールバックで即座に送信
-                if (on_token) {
-                    on_token(piece);
-                }
-            }
+            stop_stream.push(piece, emit_chunk);
         }
 
-        if (!should_stop) {
+        if (!stop_stream.stopped()) {
             llama_sampler_accept(sampler, new_token);
 
             llama_batch next_batch = llama_batch_get_one(&new_token, 1);
@@ -766,6 +702,8 @@ std::vector<std::string> LlamaEngine::generateChatStream(
             }
         }
     }
+
+    stop_stream.flush(emit_chunk);
 
     // 完了を通知
     if (on_token) {
@@ -788,6 +726,13 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     if (manager_.isLoaded(gguf_path)) {
         result.success = true;
         result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::error_code ec;
+    if (!fs::exists(gguf_path, ec) || ec) {
+        result.error_message = "GGUF file not found: " + gguf_path;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 

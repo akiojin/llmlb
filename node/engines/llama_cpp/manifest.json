@@ -5,6 +5,9 @@
   "runtimes": ["llama_cpp"],
   "formats": ["gguf"],
   "architectures": ["llama", "mistral", "gemma", "phi"],
+  "modalities": ["completion", "embedding"],
+  "license": "MIT",
+  "supports_vision": false,
   "capabilities": ["text", "embeddings"],
   "gpu_targets": ["metal", "cuda"],
   "library": "llm_engine_llama_cpp"

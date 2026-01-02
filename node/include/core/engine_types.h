@@ -24,6 +24,7 @@ struct InferenceParams {
     int top_k{40};
     float repeat_penalty{1.1f};
     uint32_t seed{0};
+    std::vector<std::string> stop_sequences;
 };
 
 inline size_t resolve_effective_max_tokens(size_t requested,

@@ -6,11 +6,11 @@
 # wrk が必要 (mac: brew install wrk, linux: apt-get install wrk)
 
 # デフォルト (30s, 128c, 8t)
-./scripts/load-test.sh http://127.0.0.1:11435/health
+./scripts/load-test.sh http://127.0.0.1:32769/health
 
 # パラメータ例
 DURATION=60s CONNECTIONS=256 THREADS=12 RATE=5000 \
-  ./scripts/load-test.sh http://127.0.0.1:11435/health
+  ./scripts/load-test.sh http://127.0.0.1:32769/health
 ```
 
 環境変数:

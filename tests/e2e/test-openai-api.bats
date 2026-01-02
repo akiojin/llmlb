@@ -2,7 +2,7 @@
 # E2E tests for OpenAI-compatible API with local LLM
 #
 # Prerequisites:
-#   - Router running (LLM_ROUTER_URL, default: http://localhost:8080)
+#   - Router running (LLM_ROUTER_URL, default: http://localhost:32768)
 #   - Node running with at least one model available
 #   - API key set (LLM_ROUTER_API_KEY)
 #
@@ -12,7 +12,7 @@
 #   npx bats tests/e2e/test-openai-api.bats
 
 setup() {
-    ROUTER_URL="${LLM_ROUTER_URL:-http://localhost:8080}"
+    ROUTER_URL="${LLM_ROUTER_URL:-http://localhost:32768}"
     API_KEY="${LLM_ROUTER_API_KEY}"
 
     if [[ -z "$API_KEY" ]]; then

@@ -336,7 +336,7 @@ cargo run --bin router
 
 ## ログイン
 
-1. ブラウザで http://localhost:8080/dashboard にアクセス
+1. ブラウザで http://localhost:32768/dashboard にアクセス
 2. ログイン画面でユーザー名・パスワード入力
 3. ダッシュボードが表示される
 
@@ -352,7 +352,7 @@ cargo run --bin router
 curl -H "Authorization: Bearer sk_xxxxx" \
      -H "Content-Type: application/json" \
      -d '{"model":"gpt-oss:7b","messages":[{"role":"user","content":"Hello"}]}' \
-     http://localhost:8080/v1/chat/completions
+     http://localhost:32768/v1/chat/completions
 
 ## 認証無効化（プライベートネットワーク用）
 

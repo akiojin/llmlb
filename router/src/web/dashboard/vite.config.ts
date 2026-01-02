@@ -32,11 +32,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/v0': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:32768',
         changeOrigin: true,
       },
       '/v1': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:32768',
         changeOrigin: true,
       },
     },

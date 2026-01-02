@@ -14,6 +14,7 @@
 #include <unordered_set>
 
 #include <spdlog/spdlog.h>
+#include "utils/stop_sequences.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -31,6 +32,49 @@ namespace fs = std::filesystem;
 namespace llm_node {
 
 namespace {
+static const std::vector<std::string> kDefaultStopSequences = {
+    "<|im_end|>",
+    "<|end|>",
+    "<|start|>",
+    "<|eot_id|>",
+    "</s>",
+    "<|endoftext|>",
+};
+
+struct GptOssTokenEmitState {
+    std::string output;
+    std::optional<StopSequenceStream> stop_stream;
+    bool stopped{false};
+};
+
+void emit_text_token(uint32_t token,
+                     uint32_t num_text_tokens,
+                     const std::function<std::string(uint32_t)>& decode,
+                     GptOssTokenEmitState& state,
+                     std::vector<std::string>* emitted,
+                     const std::function<void(const std::string&)>& on_token) {
+    if (num_text_tokens == 0 || token >= num_text_tokens) return;
+    std::string piece = decode(token);
+    if (piece.empty()) return;
+    auto emit = [&](const std::string& chunk) {
+        if (chunk.empty()) return;
+        state.output.append(chunk);
+        if (emitted) {
+            emitted->push_back(chunk);
+        }
+        if (on_token) {
+            on_token(chunk);
+        }
+    };
+    if (state.stop_stream) {
+        if (state.stop_stream->push(piece, emit)) {
+            state.stopped = true;
+        }
+        return;
+    }
+    emit(piece);
+}
+
 bool is_safetensors_index_file(const fs::path& path) {
     const std::string filename = path.filename().string();
     const std::string suffix = ".safetensors.index.json";
@@ -426,6 +470,18 @@ std::string build_gptoss_system_prompt_text(const std::vector<ChatMessage>& mess
 
 }  // namespace
 
+std::string emitGptOssTextTokensForTest(const std::vector<uint32_t>& tokens,
+                                        uint32_t num_text_tokens,
+                                        const std::function<std::string(uint32_t)>& decode,
+                                        std::vector<std::string>* emitted,
+                                        const std::function<void(const std::string&)>& on_token) {
+    GptOssTokenEmitState state;
+    for (const auto& token : tokens) {
+        emit_text_token(token, num_text_tokens, decode, state, emitted, on_token);
+    }
+    return state.output;
+}
+
 struct GptOssEngine::LoadedModel {
     std::string model_path;
 #ifdef USE_GPTOSS
@@ -462,7 +518,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     if (key.empty()) {
         result.success = false;
         result.error_message = "Model directory is empty";
-        result.error_code = EngineErrorCode::kLoadFailed;
+        result.error_code = EngineErrorCode::kUnsupported;
         return nullptr;
     }
 
@@ -503,7 +559,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
 #else
             "gpt-oss Metal model artifact not found (expected model.metal.bin or metal/model.bin)";
 #endif
-        result.error_code = EngineErrorCode::kModelCorrupt;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
@@ -626,21 +682,22 @@ std::string GptOssEngine::generateChat(
     const std::vector<ChatMessage>& messages,
     const ModelDescriptor& descriptor,
     const InferenceParams& params) const {
-    return generateCompletion("", descriptor, params, &messages);
+    return generateCompletion("", descriptor, params, &messages, {});
 }
 
 std::string GptOssEngine::generateCompletion(
     const std::string& prompt,
     const ModelDescriptor& descriptor,
     const InferenceParams& params) const {
-    return generateCompletion(prompt, descriptor, params, nullptr);
+    return generateCompletion(prompt, descriptor, params, nullptr, {});
 }
 
 std::string GptOssEngine::generateCompletion(
     const std::string& prompt,
     const ModelDescriptor& descriptor,
     const InferenceParams& params,
-    const std::vector<ChatMessage>* chat_messages) const {
+    const std::vector<ChatMessage>* chat_messages,
+    const std::function<void(const std::string&)>& on_token) const {
 
     ModelLoadResult load_result;
     auto lm = ensureLoaded(descriptor, load_result);
@@ -766,8 +823,8 @@ std::string GptOssEngine::generateCompletion(
         max_context = *cfg_max;
     }
 
-    size_t max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_tokens, max_context);
-    if (max_tokens == 0) {
+    size_t effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_tokens, max_context);
+    if (effective_max_tokens == 0) {
         throw std::runtime_error("prompt exceeds model max context");
     }
     const uint64_t seed = resolve_seed(params.seed);
@@ -776,14 +833,28 @@ std::string GptOssEngine::generateCompletion(
     const float user_temperature = std::clamp(params.temperature, 0.0f, 2.0f);
     const float temperature = user_temperature == 0.0f ? 0.0f : std::clamp(1.0f / user_temperature, 0.0f, 8.0f);
 
-    std::string final_bytes;
-    final_bytes.reserve(max_tokens * 4);
+    GptOssTokenEmitState stream_state;
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
+    if (!stop_sequences.empty()) {
+        stream_state.stop_stream.emplace(std::move(stop_sequences));
+    }
+    stream_state.output.reserve(effective_max_tokens * 4);
 
     const bool trace = std::getenv("LLM_NODE_GPTOSS_TRACE") != nullptr;
     size_t trace_tokens_logged = 0;
     bool saw_return_token = false;
 
-    for (size_t i = 0; i < max_tokens; ++i) {
+    auto decode_token = [&](uint32_t token) {
+        const void* ptr = nullptr;
+        size_t sz = 0;
+        const auto decode_status = api->tokenizer_decode(lm->tokenizer, token, &ptr, &sz);
+        if (decode_status != gptoss_status_success || ptr == nullptr || sz == 0) {
+            return std::string();
+        }
+        return std::string(reinterpret_cast<const char*>(ptr), sz);
+    };
+
+    for (size_t i = 0; i < effective_max_tokens && !stream_state.stopped; ++i) {
         uint32_t tok = 0;
         size_t out_len = 0;
         status = api->context_sample(
@@ -805,15 +876,9 @@ std::string GptOssEngine::generateCompletion(
         if (tok == lm->end_token_id) break;
         if (tok == lm->start_token_id) break;
 
-        // text tokens
-        if (lm->num_text_tokens > 0 && tok < lm->num_text_tokens) {
-            const void* ptr = nullptr;
-            size_t sz = 0;
-            status = api->tokenizer_decode(lm->tokenizer, tok, &ptr, &sz);
-            if (status != gptoss_status_success || ptr == nullptr || sz == 0) {
-                continue;
-            }
-            final_bytes.append(reinterpret_cast<const char*>(ptr), sz);
+        emit_text_token(tok, lm->num_text_tokens, decode_token, stream_state, nullptr, on_token);
+        if (stream_state.stopped) {
+            break;
         }
 
         if (trace && trace_tokens_logged < 64) {
@@ -825,12 +890,23 @@ std::string GptOssEngine::generateCompletion(
     if (trace) {
         spdlog::info(
             "GptOssEngine trace summary: max_tokens={} saw_return_token={} final_bytes={}",
-            max_tokens,
+            effective_max_tokens,
             saw_return_token,
-            final_bytes.size());
+            stream_state.output.size());
     }
 
-    return trim_copy(std::move(final_bytes));
+    if (stream_state.stop_stream) {
+        auto emit_chunk = [&](const std::string& chunk) {
+            if (chunk.empty()) return;
+            stream_state.output.append(chunk);
+            if (on_token) {
+                on_token(chunk);
+            }
+        };
+        stream_state.stop_stream->flush(emit_chunk);
+    }
+
+    return trim_copy(std::move(stream_state.output));
 #endif
 }
 
@@ -839,11 +915,14 @@ std::vector<std::string> GptOssEngine::generateChatStream(
     const ModelDescriptor& descriptor,
     const InferenceParams& params,
     const std::function<void(const std::string&)>& on_token) const {
-    const std::string text = generateChat(messages, descriptor, params);
-    auto tokens = split_whitespace_tokens(text, params.max_tokens);
-    for (const auto& t : tokens) {
-        if (on_token) on_token(t);
-    }
+    std::vector<std::string> tokens;
+    auto token_cb = [&](const std::string& token) {
+        tokens.push_back(token);
+        if (on_token) {
+            on_token(token);
+        }
+    };
+    (void)generateCompletion("", descriptor, params, &messages, token_cb);
     return tokens;
 }
 

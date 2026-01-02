@@ -182,6 +182,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         if (!cfg.origin_allowlist.empty()) {
             model_resolver->setOriginAllowlist(cfg.origin_allowlist);
         }
+        model_resolver->setSyncReporter(model_sync.get());
 
         // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
@@ -312,7 +313,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Node IP address: {}", info.ip_address);
         info.runtime_version = "1.0.0";  // llm-node runtime version
         // Router calculates API port as runtime_port + 1, so report node_port - 1
-        info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 11434);
+        info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 32768);
         info.gpu_available = !gpu_devices.empty();
         info.gpu_devices = gpu_devices;
         if (!gpu_devices.empty()) {
@@ -372,6 +373,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         std::cout << "Starting heartbeat thread..." << std::endl;
         std::string node_token = reg.node_token;
         heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg,
+                                        model_sync,
                                         supported_runtimes
 #ifdef USE_WHISPER
                                         , &whisper_manager
@@ -393,10 +395,38 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_ONNX_RUNTIME
                 loaded_tts_models = tts_manager.getLoadedModels();
 #endif
+                std::optional<llm_node::SyncStatusForRouter> sync_payload;
+                if (model_sync) {
+                    const auto status = model_sync->getStatus();
+                    auto state_to_string = [](llm_node::SyncState state) {
+                        switch (state) {
+                            case llm_node::SyncState::Idle:
+                                return std::string("idle");
+                            case llm_node::SyncState::Running:
+                                return std::string("running");
+                            case llm_node::SyncState::Success:
+                                return std::string("success");
+                            case llm_node::SyncState::Failed:
+                                return std::string("failed");
+                        }
+                        return std::string("idle");
+                    };
+                    llm_node::SyncStatusForRouter payload;
+                    payload.state = state_to_string(status.state);
+                    if (status.current_download.has_value()) {
+                        payload.progress = llm_node::SyncProgressForRouter{
+                            status.current_download->model_id,
+                            status.current_download->file,
+                            static_cast<uint64_t>(status.current_download->downloaded_bytes),
+                            static_cast<uint64_t>(status.current_download->total_bytes),
+                        };
+                    }
+                    sync_payload = payload;
+                }
                 router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
                                      loaded_models, loaded_embedding_models,
                                      loaded_asr_models, loaded_tts_models,
-                                     supported_runtimes);
+                                     supported_runtimes, sync_payload);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }
         });

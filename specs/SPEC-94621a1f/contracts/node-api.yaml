@@ -5,9 +5,9 @@ info:
   version: 1.0.0
 
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:32768
     description: ローカル開発環境
-  - url: http://router:8080
+  - url: http://router:32768
     description: 本番環境
 
 paths:
@@ -164,7 +164,7 @@ components:
           type: integer
           format: int32
           description: ランタイム推論ポート番号
-          example: 11434
+          example: 32768
           minimum: 1
           maximum: 65535
         gpu_available:
@@ -238,6 +238,28 @@ components:
           type: integer
           format: int32
           description: 処理中リクエスト数
+        sync_state:
+          type: string
+          enum: [idle, running, success, failed]
+          description: モデル同期状態
+        sync_progress:
+          type: object
+          description: モデル同期の進捗情報
+          properties:
+            model_id:
+              type: string
+              description: 対象モデルID
+            file:
+              type: string
+              description: 対象ファイル名
+            downloaded_bytes:
+              type: integer
+              format: int64
+              description: ダウンロード済みバイト数
+            total_bytes:
+              type: integer
+              format: int64
+              description: 総バイト数
         average_response_time_ms:
           type: number
           format: float

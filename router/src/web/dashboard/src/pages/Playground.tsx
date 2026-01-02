@@ -529,7 +529,7 @@ export default function Playground() {
 
     const authHeader = apiKey ? `\n  -H 'Authorization: Bearer ${apiKey}' \\` : ''
 
-    return `curl -X POST 'http://localhost:8080/v1/chat/completions' \\
+    return `curl -X POST 'http://localhost:32768/v1/chat/completions' \\
   -H 'Content-Type: application/json' \\${authHeader}
   -d '${JSON.stringify(
     {

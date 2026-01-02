@@ -16,7 +16,7 @@ export default defineConfig({
     ['list'],
   ],
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:8080',
+    baseURL: process.env.BASE_URL || 'http://localhost:32768',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -27,7 +27,7 @@ export default defineConfig({
     : {
         command:
           'LLM_ROUTER_SKIP_API_KEY=1 cargo run --release -p llm-router',
-        url: 'http://localhost:8080/dashboard',
+        url: 'http://localhost:32768/dashboard',
         reuseExistingServer: !process.env.CI,
         timeout: 120000,
         cwd: '../../../',

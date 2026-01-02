@@ -68,6 +68,8 @@ async fn registry_manifest_includes_origin_urls() {
     let v: Value = serde_json::from_slice(&body).unwrap();
     let manifest_format = v.get("format").and_then(|f| f.as_str());
     assert_eq!(manifest_format, Some("gguf"));
+    let quantization = v.get("quantization").and_then(|q| q.as_str());
+    assert_eq!(quantization, Some("Q4_K_M"));
     let files = v.get("files").and_then(|f| f.as_array()).unwrap();
     let entry = files
         .iter()

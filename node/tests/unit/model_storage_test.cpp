@@ -96,11 +96,35 @@ static void write_manifest_with_formats(const fs::path& model_dir, const std::ve
     std::ofstream(model_dir / "manifest.json") << j.dump();
 }
 
+static void write_manifest_with_quantization(const fs::path& model_dir,
+                                              const std::string& format,
+                                              const std::string& quantization) {
+    nlohmann::json j;
+    j["format"] = format;
+    j["quantization"] = quantization;
+    j["files"] = nlohmann::json::array();
+    std::ofstream(model_dir / "manifest.json") << j.dump();
+}
+
 // FR-2: Model name format conversion (sanitized, lowercase)
 TEST(ModelStorageTest, ConvertModelNameToDirectoryName) {
     EXPECT_EQ(ModelStorage::modelNameToDir("gpt-oss-20b"), "gpt-oss-20b");
     EXPECT_EQ(ModelStorage::modelNameToDir("Mistral-7B-Instruct-v0.2"), "mistral-7b-instruct-v0.2");
     EXPECT_EQ(ModelStorage::modelNameToDir("model@name"), "model_name");
+}
+
+TEST(ModelStorageTest, ParseModelNameWithQuantization) {
+    auto parsed = ModelStorage::parseModelName("llama-7b:Q4_K_M");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->base, "llama-7b");
+    ASSERT_TRUE(parsed->quantization.has_value());
+    EXPECT_EQ(*parsed->quantization, "Q4_K_M");
+}
+
+TEST(ModelStorageTest, ParseModelNameRejectsInvalidQuantizationFormat) {
+    EXPECT_FALSE(ModelStorage::parseModelName("llama-7b:").has_value());
+    EXPECT_FALSE(ModelStorage::parseModelName(":Q4_K_M").has_value());
+    EXPECT_FALSE(ModelStorage::parseModelName("llama-7b:Q4_K_M:extra").has_value());
 }
 
 // FR-3: resolveGguf returns correct path
@@ -114,6 +138,21 @@ TEST(ModelStorageTest, ResolveGgufReturnsPathWhenPresent) {
     EXPECT_FALSE(path.empty());
     EXPECT_TRUE(fs::exists(path));
     EXPECT_EQ(fs::path(path).filename(), "model.gguf");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorAddsManifestQuantization) {
+    TempModelDir tmp;
+    auto model_dir = tmp.base / "quantized-model";
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+    write_manifest_with_quantization(model_dir, "gguf", "Q4_K_M");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("quantized-model");
+    ASSERT_TRUE(desc.has_value());
+    ASSERT_TRUE(desc->metadata.has_value());
+    EXPECT_EQ(desc->metadata->value("quantization", ""), "Q4_K_M");
+    EXPECT_EQ(desc->metadata->value("quantization_request", ""), "Q4_K_M");
 }
 
 // FR-3: resolveGguf returns empty when model not found

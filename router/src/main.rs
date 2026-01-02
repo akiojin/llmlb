@@ -246,6 +246,7 @@ async fn run_server(config: ServerConfig) {
         jwt_secret,
         http_client,
         queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     let router = api::create_router(state);

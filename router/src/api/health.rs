@@ -91,6 +91,7 @@ mod tests {
             jwt_secret,
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 

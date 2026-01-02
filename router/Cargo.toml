@@ -14,7 +14,7 @@ llm-router-common = { path = "../common" }
 tokio = { workspace = true }
 
 # Webフレームワーク
-axum = { workspace = true, features = ["multipart"] }
+axum = { workspace = true, features = ["multipart", "ws"] }
 tower = { workspace = true }
 tower-http = { workspace = true }
 include_dir = "0.7"
@@ -76,6 +76,7 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
 serial_test = "3.0"
 serde_urlencoded = "0.7"
+tokio-tungstenite = "0.24"
 
 [[bench]]
 name = "loadbalancer_bench"

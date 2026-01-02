@@ -2,6 +2,7 @@
 
 use crate::{
     balancer::{NodeLoadSnapshot, SystemSummary},
+    events::DashboardEvent,
     registry::NodeSettingsUpdate,
     AppState,
 };
@@ -221,6 +222,16 @@ pub async fn register_node(
         llm_router_common::protocol::RegisterStatus::Updated => StatusCode::OK,
     };
 
+    // Publish dashboard event for real-time updates
+    if let Ok(node) = state.registry.get(response.node_id).await {
+        state.event_bus.publish(DashboardEvent::NodeRegistered {
+            node_id: response.node_id,
+            machine_name: node.machine_name.clone(),
+            ip_address: node.ip_address.to_string(),
+            status: node.status,
+        });
+    }
+
     Ok((status_code, Json(response)))
 }
 
@@ -290,6 +301,12 @@ pub async fn delete_node(
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<StatusCode, AppError> {
     state.registry.delete(node_id).await?;
+
+    // Publish dashboard event for real-time updates
+    state
+        .event_bus
+        .publish(DashboardEvent::NodeRemoved { node_id });
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -298,7 +315,20 @@ pub async fn disconnect_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<StatusCode, AppError> {
+    // Get old status before disconnecting
+    let old_status = state.registry.get(node_id).await.ok().map(|n| n.status);
+
     state.registry.mark_offline(node_id).await?;
+
+    // Publish dashboard event for real-time updates
+    if let Some(old) = old_status {
+        state.event_bus.publish(DashboardEvent::NodeStatusChanged {
+            node_id,
+            old_status: old,
+            new_status: llm_router_common::types::NodeStatus::Offline,
+        });
+    }
+
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -413,6 +443,7 @@ mod tests {
             jwt_secret,
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 

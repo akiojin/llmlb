@@ -21,6 +21,7 @@ set(UNIT_TEST_SOURCES
     utils_misc_test.cpp
     utils_utf8_test.cpp
     request_guard_test.cpp
+    resource_monitor_test.cpp
     cli_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp
@@ -47,8 +48,10 @@ set(UNIT_TEST_SOURCES
 # Use platform-specific gpu_detector source
 if(APPLE)
     list(APPEND UNIT_TEST_SOURCES ../../src/system/gpu_detector.mm)
+    list(APPEND UNIT_TEST_SOURCES ../../src/system/resource_monitor.mm)
 else()
     list(APPEND UNIT_TEST_SOURCES ../../src/system/gpu_detector.cpp)
+    list(APPEND UNIT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
 add_executable(llm-node-unit-tests

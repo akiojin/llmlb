@@ -39,7 +39,8 @@
   - Windows: DirectML（D3D12）を主経路とする
   - Linux: 当面は非対応（CUDAは実験扱い）
   - WSL2: 対象外（Windowsはネイティブのみ）
-- **形式選択**: safetensors/GGUF/Metal 等の選択は Node が実行環境に応じて行う。
+- **形式選択**: safetensors/GGUF 等の **format は登録時に確定**し、実行時の切替は行わない。  
+  NodeはGPUに応じて **公式最適化アーティファクト**（例: Metal/DirectML向け）を選択する。
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、Nodeが選択したアーティファクトを置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
 - **内蔵エンジンの要件は単一化**: 詳細は「内蔵エンジン要件（単一要件）」に統合済み。
@@ -95,7 +96,7 @@
 
 - **Router**
   - 登録時に **メタデータとマニフェスト（ファイル一覧）** を保存する。
-  - **形式はRouterで確定しない**。Nodeがruntime/GPU要件に応じて選択する。
+  - **形式は登録時に確定**し、Nodeはformatを尊重する（実行時の切替は行わない）。
   - ルーターはモデルバイナリを保持しない。
 - **Node / ModelStorage + Resolver**
   - 形式・ファイルの整合性（`config.json` / `tokenizer.json` / shard / index）を検証。
@@ -118,6 +119,15 @@
 - **Metal**（macOS / Apple Silicon）
 - **DirectML**（Windows / D3D12）
 - **CUDA**（Linux: 実験扱い）
+
+## 現状の対応済みモデル/アーキテクチャ（2026-01-02時点）
+
+- **GGUF / llama.cpp**: llama/mistral/qwen/gemma/phi 系が検証済み。  
+  詳細なモデルIDと検証状況は `specs/SPEC-6cd7f960/verified-models.md` を正とする。
+- **safetensors / 内蔵エンジン**: 実運用で確認できているのは **gpt-oss（Metal/macOS）** のみ。  
+  DirectMLは未検証、NemotronはTBD（後回し）。
+- **その他モダリティ**（ASR/TTS/画像生成/画像認識/Embedding）:  
+  対応可否と検証済みモデルは `specs/SPEC-6cd7f960/verified-models.md` で管理する。
 
 ### プラグイン設計指針（Node）
 

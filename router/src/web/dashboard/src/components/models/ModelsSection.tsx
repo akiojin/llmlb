@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Box, Search, Plus, Trash2, Loader2, Store } from 'lucide-react'
+import { Box, Search, Plus, Trash2, Loader2, Store, Cloud } from 'lucide-react'
 import { ModelHubTab } from './ModelHubTab'
 
 function formatGb(value?: number | null): string {
@@ -43,6 +43,15 @@ function lifecycleStatusBadge(status: LifecycleStatus, ready: boolean) {
       return <Badge variant="outline">{status}</Badge>
   }
 }
+
+// Cloud provider display names and colors
+const CLOUD_PROVIDERS = {
+  openai: { name: 'OpenAI', color: 'text-green-600' },
+  anthropic: { name: 'Anthropic', color: 'text-orange-600' },
+  google: { name: 'Google', color: 'text-blue-600' },
+} as const
+
+type CloudProvider = keyof typeof CLOUD_PROVIDERS
 
 export function ModelsSection() {
   const queryClient = useQueryClient()
@@ -101,9 +110,73 @@ export function ModelsSection() {
     },
   })
 
-  const filteredRegistered = (registeredModels as RegisteredModelView[] | undefined)?.filter((m) =>
+  // Filter models by owned_by
+  const allModels = registeredModels as RegisteredModelView[] | undefined
+  const localModels = allModels?.filter((m) =>
+    m.owned_by === 'router' || !m.owned_by
+  )
+  const openaiModels = allModels?.filter((m) => m.owned_by === 'openai')
+  const anthropicModels = allModels?.filter((m) => m.owned_by === 'anthropic')
+  const googleModels = allModels?.filter((m) => m.owned_by === 'google')
+
+  // Apply search filter to local models
+  const filteredLocalModels = localModels?.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Helper to render cloud model cards (no delete button)
+  const renderCloudModelCard = (model: RegisteredModelView) => (
+    <Card key={model.name} className="overflow-hidden">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <h4 className="truncate font-medium">{model.name}</h4>
+            <p className="text-xs text-muted-foreground">
+              {model.owned_by || 'cloud'}
+            </p>
+          </div>
+          <Badge variant="online">Ready</Badge>
+        </div>
+        {model.description && (
+          <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
+            {model.description}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+
+  // Helper to render cloud tab content
+  const renderCloudTabContent = (
+    models: RegisteredModelView[] | undefined,
+    provider: CloudProvider
+  ) => {
+    if (isLoadingRegistered) {
+      return (
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-24 shimmer rounded" />
+          ))}
+        </div>
+      )
+    }
+    if (!models || models.length === 0) {
+      return (
+        <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
+          <Cloud className="h-8 w-8" />
+          <p>No {CLOUD_PROVIDERS[provider].name} models available</p>
+          <p className="text-sm">
+            Configure {CLOUD_PROVIDERS[provider].name} API key to access models
+          </p>
+        </div>
+      )
+    }
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {models.map(renderCloudModelCard)}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -116,13 +189,13 @@ export function ModelsSection() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="local" className="space-y-4">
-            <TabsList>
+            <TabsList className="flex-wrap">
               <TabsTrigger value="local" className="gap-2">
                 <Box className="h-4 w-4" />
                 Local
-                {registeredModels && (
+                {localModels && (
                   <Badge variant="secondary" className="ml-1">
-                    {(registeredModels as RegisteredModelView[]).length}
+                    {localModels.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -130,6 +203,33 @@ export function ModelsSection() {
                 <Store className="h-4 w-4" />
                 Model Hub
               </TabsTrigger>
+              {openaiModels && openaiModels.length > 0 && (
+                <TabsTrigger value="openai" className="gap-2">
+                  <Cloud className="h-4 w-4 text-green-600" />
+                  OpenAI
+                  <Badge variant="secondary" className="ml-1">
+                    {openaiModels.length}
+                  </Badge>
+                </TabsTrigger>
+              )}
+              {anthropicModels && anthropicModels.length > 0 && (
+                <TabsTrigger value="anthropic" className="gap-2">
+                  <Cloud className="h-4 w-4 text-orange-600" />
+                  Anthropic
+                  <Badge variant="secondary" className="ml-1">
+                    {anthropicModels.length}
+                  </Badge>
+                </TabsTrigger>
+              )}
+              {googleModels && googleModels.length > 0 && (
+                <TabsTrigger value="google" className="gap-2">
+                  <Cloud className="h-4 w-4 text-blue-600" />
+                  Google
+                  <Badge variant="secondary" className="ml-1">
+                    {googleModels.length}
+                  </Badge>
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {/* Local Models Tab */}
@@ -160,7 +260,7 @@ export function ModelsSection() {
                     <div key={i} className="h-24 shimmer rounded" />
                   ))}
                 </div>
-              ) : !filteredRegistered || filteredRegistered.length === 0 ? (
+              ) : !filteredLocalModels || filteredLocalModels.length === 0 ? (
                 <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Box className="h-8 w-8" />
                   <p>No local models</p>
@@ -170,7 +270,7 @@ export function ModelsSection() {
                 </div>
               ) : (
                 <div id="local-models-list" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredRegistered.map((model) => (
+                  {filteredLocalModels.map((model) => (
                     <Card key={model.name} className="overflow-hidden">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-3">
@@ -213,6 +313,21 @@ export function ModelsSection() {
             {/* Model Hub Tab */}
             <TabsContent value="hub">
               <ModelHubTab />
+            </TabsContent>
+
+            {/* OpenAI Tab */}
+            <TabsContent value="openai" className="space-y-4">
+              {renderCloudTabContent(openaiModels, 'openai')}
+            </TabsContent>
+
+            {/* Anthropic Tab */}
+            <TabsContent value="anthropic" className="space-y-4">
+              {renderCloudTabContent(anthropicModels, 'anthropic')}
+            </TabsContent>
+
+            {/* Google Tab */}
+            <TabsContent value="google" className="space-y-4">
+              {renderCloudTabContent(googleModels, 'google')}
             </TabsContent>
           </Tabs>
         </CardContent>

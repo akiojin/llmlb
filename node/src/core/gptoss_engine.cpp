@@ -144,6 +144,23 @@ bool validate_safetensors_files(const ModelDescriptor& descriptor, std::string& 
     return true;
 }
 
+std::optional<size_t> load_max_position_embeddings(const fs::path& model_dir) {
+    const auto cfg_path = model_dir / "config.json";
+    if (!fs::exists(cfg_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(cfg_path);
+        nlohmann::json j;
+        ifs >> j;
+        if (j.contains("max_position_embeddings") && j["max_position_embeddings"].is_number_integer()) {
+            const auto value = j["max_position_embeddings"].get<long long>();
+            if (value > 0) return static_cast<size_t>(value);
+        }
+    } catch (...) {
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 std::string trim_copy(std::string s) {
     auto l = s.find_first_not_of(" \t\n\r");
     if (l == std::string::npos) return "";
@@ -232,6 +249,7 @@ struct GptOssApi {
     using tokenizer_release_fn = decltype(&gptoss_tokenizer_release);
     using tokenizer_decode_fn = decltype(&gptoss_tokenizer_decode);
     using context_create_fn = decltype(&gptoss_context_create);
+    using context_get_num_tokens_fn = decltype(&gptoss_context_get_num_tokens);
     using context_append_tokens_fn = decltype(&gptoss_context_append_tokens);
     using context_append_chars_fn = decltype(&gptoss_context_append_chars);
     using context_sample_fn = decltype(&gptoss_context_sample);
@@ -250,6 +268,7 @@ struct GptOssApi {
     tokenizer_release_fn tokenizer_release{nullptr};
     tokenizer_decode_fn tokenizer_decode{nullptr};
     context_create_fn context_create{nullptr};
+    context_get_num_tokens_fn context_get_num_tokens{nullptr};
     context_append_tokens_fn context_append_tokens{nullptr};
     context_append_chars_fn context_append_chars{nullptr};
     context_sample_fn context_sample{nullptr};
@@ -296,6 +315,7 @@ std::shared_ptr<GptOssApi> load_gptoss_api_from_library(const fs::path& path, st
         !load_gptoss_symbol(handle, "gptoss_tokenizer_release", api->tokenizer_release, error) ||
         !load_gptoss_symbol(handle, "gptoss_tokenizer_decode", api->tokenizer_decode, error) ||
         !load_gptoss_symbol(handle, "gptoss_context_create", api->context_create, error) ||
+        !load_gptoss_symbol(handle, "gptoss_context_get_num_tokens", api->context_get_num_tokens, error) ||
         !load_gptoss_symbol(handle, "gptoss_context_append_tokens", api->context_append_tokens, error) ||
         !load_gptoss_symbol(handle, "gptoss_context_append_chars", api->context_append_chars, error) ||
         !load_gptoss_symbol(handle, "gptoss_context_sample", api->context_sample, error) ||
@@ -360,6 +380,7 @@ std::shared_ptr<GptOssApi> resolve_gptoss_api(const fs::path& model_dir, std::st
     api->tokenizer_release = &gptoss_tokenizer_release;
     api->tokenizer_decode = &gptoss_tokenizer_decode;
     api->context_create = &gptoss_context_create;
+    api->context_get_num_tokens = &gptoss_context_get_num_tokens;
     api->context_append_tokens = &gptoss_context_append_tokens;
     api->context_append_chars = &gptoss_context_append_chars;
     api->context_sample = &gptoss_context_sample;
@@ -713,7 +734,27 @@ std::string GptOssEngine::generateCompletion(
     append_text("final");
     append_token(lm->message_token_id);
 
-    const size_t max_tokens = params.max_tokens == 0 ? 1 : params.max_tokens;
+    size_t prompt_tokens = 0;
+    if (api->context_get_num_tokens) {
+        size_t num_tokens = 0;
+        status = api->context_get_num_tokens(ctx, &num_tokens);
+        if (status == gptoss_status_success) {
+            prompt_tokens = num_tokens;
+        } else {
+            spdlog::warn("GptOssEngine: gptoss_context_get_num_tokens failed: status={}", static_cast<int>(status));
+        }
+    }
+
+    fs::path model_dir = descriptor.model_dir.empty()
+                             ? fs::path(descriptor.primary_path).parent_path()
+                             : fs::path(descriptor.model_dir);
+    size_t max_context = lm->max_context;
+    if (auto cfg_max = load_max_position_embeddings(model_dir)) {
+        max_context = *cfg_max;
+    }
+
+    size_t max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_tokens, max_context);
+    if (max_tokens == 0) max_tokens = 1;
     const uint64_t seed = resolve_seed(params.seed);
     // gpt-oss Metal reference uses `exp((logit - max) * temperature)` i.e. this parameter is 1/T.
     // Convert OpenAI-style temperature (T) into inverse temperature for the kernel.

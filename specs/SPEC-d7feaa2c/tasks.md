@@ -174,7 +174,7 @@
   - top_logprobsパラメータ対応
 
 ## max_tokens（Session 2025-12-31 Part 4）
-- [ ] T151 max_tokensデフォルト値の実装
+- [x] T151 max_tokensデフォルト値の実装
   - config.jsonからmax_position_embeddings取得
   - プロンプト長を差し引いて計算
 

@@ -29,13 +29,39 @@ run_with_timeout() {
     "$timeout_bin" "$seconds" "$@"
     return $?
   fi
-  "$@"
+  "$@" &
+  local pid=$!
+  local elapsed=0
+  while kill -0 "$pid" >/dev/null 2>&1; do
+    if [[ "$elapsed" -ge "$seconds" ]]; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+      wait "$pid" >/dev/null 2>&1 || true
+      return 124
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  wait "$pid"
+}
+
+run_llm_node() {
+  local timeout_secs="${VERIFY_TIMEOUT_SECS:-120}"
+  if [[ -z "${LLM_NODE:-}" ]]; then
+    echo "FAIL: LLM_NODE is not set" >&2
+    exit 1
+  fi
+  if [[ ! -x "$LLM_NODE" ]]; then
+    echo "FAIL: llm-node not found: $LLM_NODE" >&2
+    exit 1
+  fi
+  run_with_timeout "$timeout_secs" "$LLM_NODE" "$@"
 }
 
 infer_command() {
   local n_predict="$1"
   local prompt="$2"
   shift 2
+  local timeout_secs="${VERIFY_TIMEOUT_SECS:-120}"
 
   if [[ "${FORMAT:-}" == "gguf" ]]; then
     if [[ -z "${LLAMA_CLI:-}" ]]; then
@@ -46,17 +72,28 @@ infer_command() {
       echo "FAIL: llama-cli not found: $LLAMA_CLI" >&2
       exit 1
     fi
-    "$LLAMA_CLI" -m "$MODEL" -n "$n_predict" -p "$prompt" "$@"
+    run_with_timeout "$timeout_secs" "$LLAMA_CLI" -m "$MODEL" -n "$n_predict" -p "$prompt" --single-turn "$@"
     return $?
   fi
 
-  if [[ -z "${LLM_NODE:-}" ]]; then
-    echo "FAIL: LLM_NODE is not set" >&2
-    exit 1
-  fi
-  if [[ ! -x "$LLM_NODE" ]]; then
-    echo "FAIL: llm-node not found: $LLM_NODE" >&2
-    exit 1
-  fi
-  "$LLM_NODE" --model "$MODEL" --n-predict "$n_predict" --prompt "$prompt" "$@"
+  run_llm_node --model "$MODEL" --n-predict "$n_predict" --prompt "$prompt" "$@"
+}
+
+format_chat_prompt() {
+  local template="${CHAT_TEMPLATE:-plain}"
+  local system_prompt="${CHAT_SYSTEM_PROMPT:-You are a helpful assistant.}"
+  local user_prompt_1="${CHAT_USER_PROMPT_1:-Hello.}"
+  local assistant_reply_1="${CHAT_ASSISTANT_REPLY_1:-Hello!}"
+  local user_prompt_2="${CHAT_USER_PROMPT_2:-What is 1+1?}"
+
+  case "$template" in
+    chatml|gpt-oss)
+      printf "<|im_start|>system\n%s\n<|im_end|>\n<|im_start|>user\n%s\n<|im_end|>\n<|im_start|>assistant\n%s\n<|im_end|>\n<|im_start|>user\n%s\n<|im_end|>\n<|im_start|>assistant\n" \
+        "$system_prompt" "$user_prompt_1" "$assistant_reply_1" "$user_prompt_2"
+      ;;
+    plain|*)
+      printf "System: %s\nUser: %s\nAssistant: %s\nUser: %s\nAssistant:" \
+        "$system_prompt" "$user_prompt_1" "$assistant_reply_1" "$user_prompt_2"
+      ;;
+  esac
 }

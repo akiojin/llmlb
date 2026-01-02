@@ -22,15 +22,7 @@ START_TIME=$(date +%s%N)
 FIRST_TOKEN_TIME=""
 TOKEN_COUNT=0
 
-if [[ "${FORMAT:-}" == "gguf" ]]; then
-  OUTPUT=$(infer_command 50 "$PROMPT" 2>&1)
-else
-  OUTPUT=$("$LLM_NODE" \
-    --model "$MODEL" \
-    --n-predict 50 \
-    --prompt "$PROMPT" \
-    2>&1)
-fi
+OUTPUT=$(infer_command 50 "$PROMPT" 2>&1)
 
 END_TIME=$(date +%s%N)
 

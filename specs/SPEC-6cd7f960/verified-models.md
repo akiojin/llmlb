@@ -32,6 +32,23 @@ SPEC-6cd7f960 FR-1に基づき、検証なしでのモデル追加は禁止さ�
 | mistral-7b-instruct | Mistral 7B Instruct | bartowski/Mistral-7B-Instruct-v0.3-GGUF | 2024-10-XX | macOS | 初期実装時に検証 |
 | phi-3-mini | Phi-3 Mini | bartowski/Phi-3-mini-4k-instruct-GGUF | 2024-10-XX | macOS | 初期実装時に検証 |
 | gemma-2-9b | Gemma 2 9B | bartowski/gemma-2-9b-it-GGUF | 2024-10-XX | macOS | 初期実装時に検証 |
+| qwen3 | Qwen3 0.6B | bartowski/Qwen_Qwen3-0.6B-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| ministral3 | Ministral 3 | bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| smollm2 | SmolLM2 1.7B Instruct | bartowski/SmolLM2-1.7B-Instruct-GGUF | 2026-01-03 | macOS | Q4_K_Sで検証 |
+| devstral-small | Devstral Small | mistralai/Devstral-Small-2507_gguf | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| phi4 | Phi-4 | bartowski/phi-4-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| granite-4.0-micro | Granite 4.0 Micro | ibm-granite/granite-4.0-micro-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| granite-4.0-h-micro | Granite 4.0 H Micro | bartowski/ibm-granite_granite-4.0-h-micro-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| granite-4.0-h-tiny | Granite 4.0 H Tiny | bartowski/ibm-granite_granite-4.0-h-tiny-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| granite-4.0-h-small | Granite 4.0 H Small | bartowski/ibm-granite_granite-4.0-h-small-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| mistral-nemo | Mistral Nemo Instruct 2407 | bartowski/Mistral-Nemo-Instruct-2407-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| deepseek-r1-distill-llama | DeepSeek R1 Distill Llama 8B | bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| magistral-small-3.2 | Magistral Small 3.2 | bartowski/mistralai_Magistral-Small-2507-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| qwq | QwQ 32B | Qwen/QwQ-32B-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| qwen3-coder | Qwen3 Coder 30B A3B Instruct | unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| gemma3 | Gemma 3 4B IT | ggml-org/gemma-3-4b-it-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| llama3.3 | Llama 3.3 8B Instruct 128K | shb777/Llama-3.3-8B-Instruct-128K-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
+| llama3.1 | Llama 3.1 8B Instruct | unsloth/Llama-3.1-8B-Instruct-GGUF | 2026-01-03 | macOS | Q4_K_Mで検証 |
 
 ### safetensors + 内蔵エンジン
 
@@ -46,28 +63,28 @@ SPEC-6cd7f960 FR-1に基づき、検証なしでのモデル追加は禁止さ�
 
 | ID | 表示名 | HFリポジトリ | GGUFファイル | 量子化 | 検証パス | ステータス |
 |----|-------|-------------|-------------|--------|---------|----------|
-| kimi-k2 | Kimi K2 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| ministral3 | Ministral 3 | bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF | mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 未検証 |
-| qwen3 | Qwen3 | bartowski/Qwen_Qwen3-0.6B-GGUF | Qwen_Qwen3-0.6B-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 未検証 |
-| granite-4.0-nano | Granite 4.0 Nano | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| granite-4.0-h-nano | Granite 4.0 H Nano | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| smollm2 | SmolLM2 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| granite-4.0-h-small | Granite 4.0 H Small | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| granite-4.0-h-tiny | Granite 4.0 H Tiny | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| granite-4.0-h-micro | Granite 4.0 H Micro | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| granite-4.0-micro | Granite 4.0 Micro | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| devstral-small | Devstral Small | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| magistral-small-3.2 | Magistral Small 3.2 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| gemma3-qat | Gemma 3 QAT | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| gemma3 | Gemma 3 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| qwen3-coder | Qwen3 Coder | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| deepseek-r1-distill-llama | DeepSeek R1 Distill | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| llama3.3 | Llama 3.3 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| llama3.1 | Llama 3.1 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| phi4 | Phi-4 | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| qwq | QwQ | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| deepcoder-preview | DeepCoder Preview | TBD | TBD | TBD | A (GGUF) | 未検証 |
-| mistral-nemo | Mistral Nemo | TBD | TBD | TBD | A (GGUF) | 未検証 |
+| kimi-k2 | Kimi K2 | ubergarm/Kimi-K2-Instruct-0905-GGUF | IQ4_KS/Kimi-K2-Instruct-0905-IQ4_KS-00001-of-00013.gguf | IQ4_KS | A (GGUF) | 未検証（GGUF分割・大容量） |
+| ministral3 | Ministral 3 | bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF | mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| qwen3 | Qwen3 | bartowski/Qwen_Qwen3-0.6B-GGUF | Qwen_Qwen3-0.6B-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| granite-4.0-nano | Granite 4.0 Nano | bartowski/ibm-granite_granite-4.0-nano-GGUF | ibm-granite_granite-4.0-nano-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 未検証（HFアクセス不可） |
+| granite-4.0-h-nano | Granite 4.0 H Nano | bartowski/ibm-granite_granite-4.0-h-nano-GGUF | ibm-granite_granite-4.0-h-nano-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 未検証（HFアクセス不可） |
+| smollm2 | SmolLM2 1.7B Instruct | bartowski/SmolLM2-1.7B-Instruct-GGUF | SmolLM2-1.7B-Instruct-Q4_K_S.gguf | Q4_K_S | A (GGUF) | 検証済み |
+| granite-4.0-h-micro | Granite 4.0 H Micro | bartowski/ibm-granite_granite-4.0-h-micro-GGUF | ibm-granite_granite-4.0-h-micro-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| granite-4.0-h-small | Granite 4.0 H Small | bartowski/ibm-granite_granite-4.0-h-small-GGUF | ibm-granite_granite-4.0-h-small-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| granite-4.0-h-tiny | Granite 4.0 H Tiny | bartowski/ibm-granite_granite-4.0-h-tiny-GGUF | ibm-granite_granite-4.0-h-tiny-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| granite-4.0-micro | Granite 4.0 Micro | ibm-granite/granite-4.0-micro-GGUF | granite-4.0-micro-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| devstral-small | Devstral Small | mistralai/Devstral-Small-2507_gguf | Devstral-Small-2507-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| magistral-small-3.2 | Magistral Small 3.2 | bartowski/mistralai_Magistral-Small-2507-GGUF | mistralai_Magistral-Small-2507-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| gemma3-qat | Gemma 3 QAT 4B IT | google/gemma-3-4b-it-qat-q4_0-gguf | gemma-3-4b-it-q4_0.gguf | Q4_0 | A (GGUF) | 未検証（HF gated） |
+| gemma3 | Gemma 3 4B IT | ggml-org/gemma-3-4b-it-GGUF | gemma-3-4b-it-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| qwen3-coder | Qwen3 Coder 30B A3B Instruct | unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF | Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| deepseek-r1-distill-llama | DeepSeek R1 Distill Llama 8B | bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF | DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| llama3.3 | Llama 3.3 8B Instruct 128K | shb777/Llama-3.3-8B-Instruct-128K-GGUF | llama-3.3-8b-instruct-q4_k_m.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| llama3.1 | Llama 3.1 8B Instruct | unsloth/Llama-3.1-8B-Instruct-GGUF | Llama-3.1-8B-Instruct-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| phi4 | Phi-4 | bartowski/phi-4-GGUF | phi-4-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| qwq | QwQ 32B | Qwen/QwQ-32B-GGUF | qwq-32b-q4_k_m.gguf | Q4_K_M | A (GGUF) | 検証済み |
+| deepcoder-preview | DeepCoder Preview | deepseek-ai/DeepCoder-Preview-GGUF | TBD | TBD | A (GGUF) | 未検証（HFアクセス不可） |
+| mistral-nemo | Mistral Nemo Instruct 2407 | bartowski/Mistral-Nemo-Instruct-2407-GGUF | Mistral-Nemo-Instruct-2407-Q4_K_M.gguf | Q4_K_M | A (GGUF) | 検証済み |
 
 ### TextGeneration（safetensors検証予定）
 
@@ -134,3 +151,4 @@ curl http://localhost:32768/v1/chat/completions \
 |------|---------|
 | 2025-12-30 | 初版作成、Docker Desktop Modelsの検証待ちリストを追加 |
 | 2026-01-02 | GPT-OSS 20B/120BのMetalアーティファクト確認結果を追記 |
+| 2026-01-03 | Qwen3/Ministral 3/SmolLM2/Devstral Small/Phi-4/Granite 4.0 Micro/H Micro/H Tiny/H Small/Mistral Nemo/DeepSeek R1 Distill/Magistral Small 3.2/QwQ/Qwen3 Coder/Gemma 3/Llama 3.3/Llama 3.1のGGUF検証結果を追加 |

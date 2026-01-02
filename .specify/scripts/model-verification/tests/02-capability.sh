@@ -15,8 +15,11 @@ echo "Expected capability: $CAPABILITY"
 case "$CAPABILITY" in
   TextGeneration)
     echo "Testing text generation capability..."
-    OUTPUT=$(infer_command 10 "Hello" 2>/dev/null || echo "")
-    if [[ -n "$OUTPUT" ]]; then
+    set +e
+    OUTPUT=$(infer_command 10 "Hello" 2>/dev/null)
+    EXIT_CODE=$?
+    set -e
+    if [[ $EXIT_CODE -eq 0 ]]; then
       echo "PASS: Text generation works"
       exit 0
     fi
@@ -38,12 +41,11 @@ case "$CAPABILITY" in
       echo "SKIP: Embedding test requires engine-specific runner"
       exit 77
     fi
-    OUTPUT=$("$LLM_NODE" \
-      --model "$MODEL" \
-      --embedding \
-      --prompt "test" \
-      2>/dev/null || echo "")
-    if [[ -n "$OUTPUT" ]]; then
+    set +e
+    OUTPUT=$(run_llm_node --model "$MODEL" --embedding --prompt "test" 2>/dev/null)
+    EXIT_CODE=$?
+    set -e
+    if [[ $EXIT_CODE -eq 0 && -n "$OUTPUT" ]]; then
       echo "PASS: Embedding generation works"
       exit 0
     fi

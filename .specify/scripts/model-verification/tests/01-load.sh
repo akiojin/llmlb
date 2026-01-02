@@ -26,7 +26,7 @@ fi
 
 # Try to load model with llm-node (quick validation mode)
 echo "Loading model..."
-run_with_timeout 60 infer_command 1 "test" 2>&1 | head -20
+infer_command 1 "test" 2>&1 | head -20
 
 echo "PASS: Model loaded successfully"
 exit 0

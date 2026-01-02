@@ -23,15 +23,7 @@ echo "Generating $N_PREDICT tokens..."
 # Run inference with timing
 START_TIME=$(date +%s%N)
 
-if [[ "${FORMAT:-}" == "gguf" ]]; then
-  OUTPUT=$(infer_command "$N_PREDICT" "$PROMPT" 2>&1)
-else
-  OUTPUT=$("$LLM_NODE" \
-    --model "$MODEL" \
-    --n-predict $N_PREDICT \
-    --prompt "$PROMPT" \
-    2>&1)
-fi
+OUTPUT=$(infer_command "$N_PREDICT" "$PROMPT" 2>&1)
 
 END_TIME=$(date +%s%N)
 

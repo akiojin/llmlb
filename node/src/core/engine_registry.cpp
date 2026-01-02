@@ -72,12 +72,6 @@ std::vector<const EngineRegistry::EngineEntry*> EngineRegistry::filterCandidates
             }
         }
 
-        if (!descriptor.architectures.empty() && !entry.architectures.empty()) {
-            if (!architectures_compatible(entry.architectures, descriptor.architectures)) {
-                continue;
-            }
-        }
-
         candidates.push_back(&entry);
     }
 

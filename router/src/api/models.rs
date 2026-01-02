@@ -929,6 +929,8 @@ struct ManifestFile {
 struct Manifest {
     format: String,
     files: Vec<ManifestFile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantization: Option<String>,
 }
 
 fn manifest_format_label(format: ArtifactFormat) -> &'static str {
@@ -945,6 +947,31 @@ fn manifest_file_priority(name: &str) -> Option<i32> {
         "model.metal.bin" => Some(5),
         _ => None,
     }
+}
+
+fn infer_quantization_from_filename(filename: &str) -> Option<String> {
+    let lower = filename.to_ascii_lowercase();
+    if !lower.ends_with(".gguf") {
+        return None;
+    }
+    if filename.len() <= 5 {
+        return None;
+    }
+    let stem = &filename[..filename.len() - 5];
+    let idx = stem.rfind(['.', '-'])?;
+    if idx + 1 >= stem.len() {
+        return None;
+    }
+    let token = &stem[idx + 1..];
+    let mut chars = token.chars();
+    let first = chars.next()?;
+    if !first.is_ascii_alphabetic() {
+        return None;
+    }
+    if !token.chars().any(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(token.to_string())
 }
 fn resolve_safetensors_primary(
     siblings: &[HfSibling],
@@ -1414,6 +1441,13 @@ pub async fn get_model_registry_manifest(
         ArtifactFormat::Gguf => Some(vec!["llama_cpp".to_string()]),
         ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo).await,
     };
+    let manifest_quantization = match selection.format {
+        ArtifactFormat::Gguf => supported
+            .as_ref()
+            .and_then(|m| m.quantization.clone())
+            .or_else(|| infer_quantization_from_filename(&selection.filename)),
+        ArtifactFormat::Safetensors => None,
+    };
 
     let base_url = hf_base_url();
     let mut files: Vec<ManifestFile> = Vec::new();
@@ -1498,6 +1532,7 @@ pub async fn get_model_registry_manifest(
     let body = serde_json::to_string(&Manifest {
         format: manifest_format_label(selection.format).to_string(),
         files,
+        quantization: manifest_quantization,
     })
     .unwrap_or_else(|_| "{\"format\":\"unknown\",\"files\":[]}".into());
     Response::builder()

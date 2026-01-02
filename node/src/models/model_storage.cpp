@@ -45,6 +45,178 @@ bool has_required_safetensors_metadata(const fs::path& model_dir) {
     return is_valid_file(model_dir / "config.json") && is_valid_file(model_dir / "tokenizer.json");
 }
 
+struct ParsedModelName {
+    std::string name;
+    std::string quantization;
+    bool valid{true};
+};
+
+ParsedModelName parse_model_name_with_quantization(const std::string& model_name) {
+    ParsedModelName parsed;
+    parsed.name = model_name;
+    const auto pos = model_name.find(':');
+    if (pos == std::string::npos) {
+        return parsed;
+    }
+    if (pos == 0 || pos + 1 >= model_name.size()) {
+        parsed.valid = false;
+        return parsed;
+    }
+    if (model_name.find(':', pos + 1) != std::string::npos) {
+        parsed.valid = false;
+        return parsed;
+    }
+    parsed.name = model_name.substr(0, pos);
+    parsed.quantization = model_name.substr(pos + 1);
+    return parsed;
+}
+
+bool ends_with_case_insensitive(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) return false;
+    const size_t offset = value.size() - suffix.size();
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        const auto lhs = static_cast<unsigned char>(value[offset + i]);
+        const auto rhs = static_cast<unsigned char>(suffix[i]);
+        if (std::tolower(lhs) != std::tolower(rhs)) return false;
+    }
+    return true;
+}
+
+bool is_gguf_filename(const std::string& filename) {
+    return ends_with_case_insensitive(filename, ".gguf");
+}
+
+std::vector<fs::path> list_gguf_files(const fs::path& model_dir) {
+    std::vector<fs::path> out;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+        const auto filename = entry.path().filename().string();
+        if (!is_gguf_filename(filename)) continue;
+        if (!is_valid_file(entry.path())) continue;
+        out.push_back(entry.path());
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<std::string> build_gguf_prefixes(const std::string& model_name) {
+    std::vector<std::string> prefixes;
+    const std::string leaf = fs::path(model_name).filename().string();
+    if (!leaf.empty()) {
+        prefixes.push_back(leaf);
+    }
+    if (std::find(prefixes.begin(), prefixes.end(), "model") == prefixes.end()) {
+        prefixes.push_back("model");
+    }
+    return prefixes;
+}
+
+std::optional<std::string> extract_quantization_token(
+    const std::string& stem,
+    const std::vector<std::string>& prefixes) {
+    for (const auto& prefix : prefixes) {
+        if (stem.size() <= prefix.size() + 1) continue;
+        if (stem.compare(0, prefix.size(), prefix) != 0) continue;
+        const char sep = stem[prefix.size()];
+        if (sep != '.' && sep != '-') continue;
+        const std::string token = stem.substr(prefix.size() + 1);
+        if (!token.empty()) return token;
+    }
+    return std::nullopt;
+}
+
+std::optional<fs::path> resolve_gguf_with_quantization(
+    const fs::path& model_dir,
+    const std::string& model_name,
+    const std::string& quantization) {
+    if (quantization.empty()) return std::nullopt;
+    auto files = list_gguf_files(model_dir);
+    if (files.empty()) return std::nullopt;
+
+    const auto prefixes = build_gguf_prefixes(model_name);
+    std::optional<fs::path> match;
+    for (const auto& file : files) {
+        const auto stem = file.stem().string();
+        const auto token = extract_quantization_token(stem, prefixes);
+        if (!token || *token != quantization) continue;
+        if (match.has_value()) {
+            return std::nullopt;
+        }
+        match = file;
+    }
+    return match;
+}
+
+std::optional<fs::path> resolve_single_gguf_file(const fs::path& model_dir) {
+    auto files = list_gguf_files(model_dir);
+    if (files.size() == 1) return files.front();
+    return std::nullopt;
+}
+
+std::optional<std::string> load_manifest_quantization(const fs::path& model_dir) {
+    const auto manifest_path = model_dir / "manifest.json";
+    if (!is_regular_or_symlink_file(manifest_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(manifest_path);
+        json j;
+        ifs >> j;
+        if (j.contains("quantization") && j["quantization"].is_string()) {
+            auto value = j["quantization"].get<std::string>();
+            if (!value.empty()) return value;
+        }
+    } catch (...) {
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+std::optional<fs::path> resolve_gguf_for_quantization(
+    const fs::path& model_dir,
+    const std::string& model_name,
+    const std::string& quantization,
+    const std::optional<std::string>& manifest_quantization) {
+    if (quantization.empty()) return std::nullopt;
+    if (auto match = resolve_gguf_with_quantization(model_dir, model_name, quantization)) {
+        return match;
+    }
+    if (manifest_quantization && *manifest_quantization == quantization) {
+        const auto default_path = model_dir / "model.gguf";
+        if (is_valid_file(default_path)) return default_path;
+        if (auto single = resolve_single_gguf_file(model_dir)) return single;
+    }
+    return std::nullopt;
+}
+
+std::optional<fs::path> resolve_gguf_path(
+    const fs::path& model_dir,
+    const std::string& model_name,
+    const std::string& quantization) {
+    const auto manifest_quantization = load_manifest_quantization(model_dir);
+    if (!quantization.empty()) {
+        return resolve_gguf_for_quantization(model_dir, model_name, quantization, manifest_quantization);
+    }
+    if (manifest_quantization) {
+        return resolve_gguf_for_quantization(
+            model_dir,
+            model_name,
+            *manifest_quantization,
+            manifest_quantization);
+    }
+
+    const auto default_path = model_dir / "model.gguf";
+    if (is_valid_file(default_path)) return default_path;
+
+    const std::string leaf = fs::path(model_name).filename().string();
+    if (!leaf.empty()) {
+        const auto leaf_path = model_dir / (leaf + ".gguf");
+        if (is_valid_file(leaf_path)) return leaf_path;
+    }
+
+    return resolve_single_gguf_file(model_dir);
+}
+
 std::vector<std::string> load_manifest_formats(const fs::path& model_dir) {
     const auto manifest_path = model_dir / "manifest.json";
     if (!is_regular_or_symlink_file(manifest_path)) return {};
@@ -359,7 +531,9 @@ std::string ModelStorage::dirNameToModel(const std::string& dir_name) {
 }
 
 std::string ModelStorage::resolveGguf(const std::string& model_name) const {
-    const std::string dir_name = modelNameToDir(model_name);
+    const auto parsed = parse_model_name_with_quantization(model_name);
+    if (!parsed.valid) return "";
+    const std::string dir_name = modelNameToDir(parsed.name);
     const auto model_dir = fs::path(models_dir_) / dir_name;
     auto manifest_formats = load_manifest_formats(model_dir);
     if (!manifest_formats.empty()) {
@@ -368,15 +542,11 @@ std::string ModelStorage::resolveGguf(const std::string& model_name) const {
             return "";
         }
     }
-    const auto gguf_path = model_dir / "model.gguf";
-
-    std::error_code ec;
-    auto st = fs::symlink_status(gguf_path, ec);
-    const bool ok = st.type() == fs::file_type::regular || st.type() == fs::file_type::symlink;
+    const auto gguf_path = resolve_gguf_path(model_dir, parsed.name, parsed.quantization);
     spdlog::debug("ModelStorage::resolveGguf: model={}, dir={}, path={}, exists={}",
-        model_name, dir_name, gguf_path.string(), ok);
+        model_name, dir_name, gguf_path ? gguf_path->string() : "", gguf_path.has_value());
 
-    if (ok) return gguf_path.string();
+    if (gguf_path) return gguf_path->string();
 
     return "";
 }
@@ -496,20 +666,38 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
 }
 
 std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string& model_name) const {
-    const std::string dir_name = modelNameToDir(model_name);
+    const auto parsed = parse_model_name_with_quantization(model_name);
+    if (!parsed.valid) return std::nullopt;
+    const std::string dir_name = modelNameToDir(parsed.name);
     const auto model_dir = fs::path(models_dir_) / dir_name;
 
     const auto manifest_formats = load_manifest_formats(model_dir);
     if (!manifest_formats.empty()) {
+        if (!parsed.quantization.empty()) {
+            if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") == manifest_formats.end()) {
+                return std::nullopt;
+            }
+            if (auto gguf_path = resolve_gguf_path(model_dir, parsed.name, parsed.quantization)) {
+                ModelDescriptor desc;
+                desc.name = model_name;
+                desc.runtime = "llama_cpp";
+                desc.format = "gguf";
+                desc.primary_path = gguf_path->string();
+                desc.model_dir = model_dir.string();
+                desc.capabilities = capabilities_for_runtime(desc.runtime);
+                return desc;
+            }
+            return std::nullopt;
+        }
+
         for (const auto& fmt : manifest_formats) {
             if (fmt == "gguf") {
-                const auto gguf_path = model_dir / "model.gguf";
-                if (is_valid_file(gguf_path)) {
+                if (auto gguf_path = resolve_gguf_path(model_dir, parsed.name, "")) {
                     ModelDescriptor desc;
                     desc.name = model_name;
                     desc.runtime = "llama_cpp";
                     desc.format = "gguf";
-                    desc.primary_path = gguf_path.string();
+                    desc.primary_path = gguf_path->string();
                     desc.model_dir = model_dir.string();
                     desc.capabilities = capabilities_for_runtime(desc.runtime);
                     return desc;
@@ -537,55 +725,68 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         return std::nullopt;
     }
 
-    const auto gguf_path = model_dir / "model.gguf";
-    if (is_valid_file(gguf_path)) {
+    if (auto gguf_path = resolve_gguf_path(model_dir, parsed.name, parsed.quantization)) {
         ModelDescriptor desc;
         desc.name = model_name;
         desc.runtime = "llama_cpp";
         desc.format = "gguf";
-        desc.primary_path = gguf_path.string();
+        desc.primary_path = gguf_path->string();
         desc.model_dir = model_dir.string();
         desc.capabilities = capabilities_for_runtime(desc.runtime);
         return desc;
     }
 
-    if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-        std::vector<std::string> architectures;
-        auto rt = detect_runtime_from_config(model_dir, &architectures);
-        if (!rt) return std::nullopt;
-        ModelDescriptor desc;
-        desc.name = model_name;
-        desc.runtime = *rt;
-        desc.format = "safetensors";
-        desc.primary_path = primary->string();
-        desc.model_dir = model_dir.string();
-        desc.architectures = std::move(architectures);
-        desc.capabilities = capabilities_for_runtime(desc.runtime);
-        if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
-            desc.metadata = std::move(*meta);
+    if (parsed.quantization.empty()) {
+        if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+            std::vector<std::string> architectures;
+            auto rt = detect_runtime_from_config(model_dir, &architectures);
+            if (!rt) return std::nullopt;
+            ModelDescriptor desc;
+            desc.name = model_name;
+            desc.runtime = *rt;
+            desc.format = "safetensors";
+            desc.primary_path = primary->string();
+            desc.model_dir = model_dir.string();
+            desc.architectures = std::move(architectures);
+            desc.capabilities = capabilities_for_runtime(desc.runtime);
+            if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
+                desc.metadata = std::move(*meta);
+            }
+            return desc;
         }
-        return desc;
     }
 
     return std::nullopt;
 }
 
 bool ModelStorage::validateModel(const std::string& model_name) const {
-    const std::string dir_name = modelNameToDir(model_name);
+    const auto parsed = parse_model_name_with_quantization(model_name);
+    if (!parsed.valid) return false;
+    const std::string dir_name = modelNameToDir(parsed.name);
     const auto model_dir = fs::path(models_dir_) / dir_name;
     auto manifest_formats = load_manifest_formats(model_dir);
     if (!manifest_formats.empty()) {
+        if (!parsed.quantization.empty()) {
+            if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") == manifest_formats.end()) {
+                return false;
+            }
+            return resolve_gguf_path(model_dir, parsed.name, parsed.quantization).has_value();
+        }
+
         for (const auto& fmt : manifest_formats) {
             if (fmt == "gguf") {
-                if (is_valid_file(model_dir / "model.gguf")) return true;
+                if (resolve_gguf_path(model_dir, parsed.name, "").has_value()) return true;
             } else if (fmt == "safetensors") {
                 if (resolve_safetensors_primary_in_dir(model_dir).has_value()) return true;
             }
         }
         return false;
     }
-    if (is_valid_file(model_dir / "model.gguf")) return true;
-    return resolve_safetensors_primary_in_dir(model_dir).has_value();
+    if (resolve_gguf_path(model_dir, parsed.name, parsed.quantization).has_value()) return true;
+    if (parsed.quantization.empty()) {
+        return resolve_safetensors_primary_in_dir(model_dir).has_value();
+    }
+    return false;
 }
 
 bool ModelStorage::deleteModel(const std::string& model_name) {

@@ -45,6 +45,32 @@ struct LogprobsRequest {
 
 constexpr size_t kMaxTopLogprobs = 20;
 
+struct ParsedModelName {
+    std::string name;
+    std::string quantization;
+    bool valid{true};
+};
+
+ParsedModelName parse_model_name_with_quantization(const std::string& model_name) {
+    ParsedModelName parsed;
+    parsed.name = model_name;
+    const auto pos = model_name.find(':');
+    if (pos == std::string::npos) {
+        return parsed;
+    }
+    if (pos == 0 || pos + 1 >= model_name.size()) {
+        parsed.valid = false;
+        return parsed;
+    }
+    if (model_name.find(':', pos + 1) != std::string::npos) {
+        parsed.valid = false;
+        return parsed;
+    }
+    parsed.name = model_name.substr(0, pos);
+    parsed.quantization = model_name.substr(pos + 1);
+    return parsed;
+}
+
 std::vector<std::string> split_logprob_tokens(const std::string& text) {
     std::vector<std::string> tokens;
     std::string current;
@@ -594,7 +620,12 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
         return false;
     }
     // Check local registry first
-    const bool in_registry = registry_.hasModel(model);
+    const auto parsed = parse_model_name_with_quantization(model);
+    if (!parsed.valid || parsed.name.empty()) {
+        respondError(res, 400, "invalid_request", "model is invalid");
+        return false;
+    }
+    const bool in_registry = registry_.hasModel(parsed.name);
     if (in_registry && !engine_.isInitialized()) {
         return true;
     }

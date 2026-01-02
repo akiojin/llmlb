@@ -291,4 +291,20 @@ bool EngineRegistry::supportsArchitecture(const std::string& runtime,
     return false;
 }
 
+size_t EngineRegistry::engineIdCount() const {
+    return engine_ids_.size();
+}
+
+std::string EngineRegistry::engineIdFor(const Engine* engine) const {
+    if (!engine) return "";
+    for (const auto& pair : engines_) {
+        for (const auto& entry : pair.second) {
+            if (entry.engine.get() == engine) {
+                return entry.engine_id;
+            }
+        }
+    }
+    return "";
+}
+
 }  // namespace llm_node

@@ -833,10 +833,27 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;
     }
+    const std::string engine_id = engines_ ? engines_->engineIdFor(engine) : "";
 
     if (resource_usage_provider_) {
         const auto usage = resource_usage_provider_();
         const uint64_t required = engine->getModelVramBytes(*desc);
+        if (usage.vram_total_bytes > 0 && required > 0 && !engine_id.empty()) {
+            const size_t engine_count = engines_ ? engines_->engineIdCount() : 0;
+            if (engine_count > 0) {
+                const uint64_t budget = usage.vram_total_bytes / engine_count;
+                if (budget > 0 && required > budget) {
+                    spdlog::warn(
+                        "VRAM budget exceeded for engine {} (required={} budget={})",
+                        engine_id,
+                        required,
+                        budget);
+                    result.code = EngineErrorCode::kResourceExhausted;
+                    result.error_message = "Insufficient VRAM budget available";
+                    return result;
+                }
+            }
+        }
         if (usage.vram_total_bytes > 0 && required > 0) {
             const uint64_t available =
                 usage.vram_total_bytes > usage.vram_used_bytes

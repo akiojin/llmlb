@@ -767,7 +767,9 @@ std::string GptOssEngine::generateCompletion(
     }
 
     size_t max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_tokens, max_context);
-    if (max_tokens == 0) max_tokens = 1;
+    if (max_tokens == 0) {
+        throw std::runtime_error("prompt exceeds model max context");
+    }
     const uint64_t seed = resolve_seed(params.seed);
     // gpt-oss Metal reference uses `exp((logit - max) * temperature)` i.e. this parameter is 1/T.
     // Convert OpenAI-style temperature (T) into inverse temperature for the kernel.

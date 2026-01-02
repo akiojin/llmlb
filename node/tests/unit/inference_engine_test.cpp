@@ -374,4 +374,6 @@ TEST(InferenceParamsTest, ResolvesEffectiveMaxTokensFromContext) {
     EXPECT_EQ(resolve_effective_max_tokens(500, 10, 100), 90u);
     EXPECT_EQ(resolve_effective_max_tokens(kDefaultMaxTokens, 100, 8192), kDefaultMaxTokens);
     EXPECT_EQ(resolve_effective_max_tokens(0, 0, 0), kDefaultMaxTokens);
+    EXPECT_EQ(resolve_effective_max_tokens(0, 100, 100), 0u);
+    EXPECT_EQ(resolve_effective_max_tokens(5, 100, 100), 0u);
 }

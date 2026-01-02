@@ -29,8 +29,11 @@ struct InferenceParams {
 inline size_t resolve_effective_max_tokens(size_t requested,
                                            size_t prompt_tokens,
                                            size_t max_context) {
-    if (max_context == 0 || prompt_tokens >= max_context) {
+    if (max_context == 0) {
         return requested == 0 ? kDefaultMaxTokens : requested;
+    }
+    if (prompt_tokens >= max_context) {
+        return 0;
     }
     const size_t available = max_context - prompt_tokens;
     if (requested == 0) return available;

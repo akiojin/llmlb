@@ -1,5 +1,6 @@
 #include "api/openai_endpoints.h"
 
+#include <cctype>
 #include <nlohmann/json.hpp>
 #include <limits>
 #include <memory>
@@ -28,34 +29,120 @@ bool checkReady(httplib::Response& res) {
     }
     return true;
 }
-InferenceParams parseInferenceParams(const nlohmann::json& body) {
-    InferenceParams params;
+
+std::string trimAscii(const std::string& s) {
+    size_t start = 0;
+    size_t end = s.size();
+    while (start < end && std::isspace(static_cast<unsigned char>(s[start]))) ++start;
+    while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) --end;
+    return s.substr(start, end - start);
+}
+
+bool validateSamplingParams(const nlohmann::json& body, std::string& error) {
+    if (body.contains("temperature")) {
+        if (!body["temperature"].is_number()) {
+            error = "temperature must be a number";
+            return false;
+        }
+        const double v = body["temperature"].get<double>();
+        if (v < 0.0 || v > 2.0) {
+            error = "temperature must be between 0 and 2";
+            return false;
+        }
+    }
+    if (body.contains("top_p")) {
+        if (!body["top_p"].is_number()) {
+            error = "top_p must be a number";
+            return false;
+        }
+        const double v = body["top_p"].get<double>();
+        if (v < 0.0 || v > 1.0) {
+            error = "top_p must be between 0 and 1";
+            return false;
+        }
+    }
+    if (body.contains("top_k")) {
+        if (!body["top_k"].is_number_integer()) {
+            error = "top_k must be an integer";
+            return false;
+        }
+        const int v = body["top_k"].get<int>();
+        if (v < 0) {
+            error = "top_k must be >= 0";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parseStopSequences(const nlohmann::json& body, std::vector<std::string>& out, std::string& error) {
+    if (!body.contains("stop")) return true;
+    const auto& stop = body["stop"];
+    if (stop.is_null()) return true;
+
+    if (stop.is_string()) {
+        std::string seq = stop.get<std::string>();
+        if (seq.empty()) {
+            error = "stop must not be empty";
+            return false;
+        }
+        out.push_back(std::move(seq));
+        return true;
+    }
+
+    if (stop.is_array()) {
+        for (const auto& item : stop) {
+            if (!item.is_string()) {
+                error = "stop must be a string or array of strings";
+                return false;
+            }
+            std::string seq = item.get<std::string>();
+            if (seq.empty()) {
+                error = "stop sequences must not be empty";
+                return false;
+            }
+            out.push_back(std::move(seq));
+        }
+        return true;
+    }
+
+    error = "stop must be a string or array of strings";
+    return false;
+}
+
+bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, std::string& error) {
+    InferenceParams parsed;
 
     // OpenAI-compatible fields
     if (body.contains("max_tokens") && body["max_tokens"].is_number_integer()) {
         int v = body["max_tokens"].get<int>();
-        if (v > 0) params.max_tokens = static_cast<size_t>(v);
+        if (v > 0) parsed.max_tokens = static_cast<size_t>(v);
     }
     if (body.contains("temperature") && body["temperature"].is_number()) {
-        params.temperature = body["temperature"].get<float>();
+        parsed.temperature = body["temperature"].get<float>();
     }
     if (body.contains("top_p") && body["top_p"].is_number()) {
-        params.top_p = body["top_p"].get<float>();
+        parsed.top_p = body["top_p"].get<float>();
     }
     if (body.contains("top_k") && body["top_k"].is_number_integer()) {
-        params.top_k = body["top_k"].get<int>();
+        parsed.top_k = body["top_k"].get<int>();
     }
     if (body.contains("repeat_penalty") && body["repeat_penalty"].is_number()) {
-        params.repeat_penalty = body["repeat_penalty"].get<float>();
+        parsed.repeat_penalty = body["repeat_penalty"].get<float>();
     }
     if (body.contains("seed") && body["seed"].is_number_integer()) {
         int64_t v = body["seed"].get<int64_t>();
         if (v > 0 && v <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
-            params.seed = static_cast<uint32_t>(v);
+            parsed.seed = static_cast<uint32_t>(v);
         }
     }
 
-    return params;
+    if (!parseStopSequences(body, parsed.stop_sequences, error)) {
+        return false;
+    }
+
+    params = std::move(parsed);
+    return true;
 }
 }  // namespace
 
@@ -175,8 +262,28 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "bad_request", parse_error);
                 return;
             }
+            std::string param_error;
+            if (!validateSamplingParams(body, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
+            bool has_prompt = false;
+            for (const auto& msg : parsed.messages) {
+                if (!trimAscii(msg.content).empty()) {
+                    has_prompt = true;
+                    break;
+                }
+            }
+            if (!has_prompt) {
+                respondError(res, 400, "invalid_request", "prompt must not be empty");
+                return;
+            }
             bool stream = body.value("stream", false);
-            const auto params = parseInferenceParams(body);
+            InferenceParams params;
+            if (!parseInferenceParams(body, params, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
             std::string output;
             if (!parsed.image_urls.empty()) {
                 output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
@@ -240,8 +347,25 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             auto body = json::parse(req.body);
             std::string model = body.value("model", "");
             if (!validateModel(model, "text", res)) return;
-            std::string prompt = body.value("prompt", "");
-            const auto params = parseInferenceParams(body);
+            if (!body.contains("prompt") || !body["prompt"].is_string()) {
+                respondError(res, 400, "invalid_request", "prompt is required");
+                return;
+            }
+            std::string prompt = body["prompt"].get<std::string>();
+            if (trimAscii(prompt).empty()) {
+                respondError(res, 400, "invalid_request", "prompt must not be empty");
+                return;
+            }
+            std::string param_error;
+            if (!validateSamplingParams(body, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
+            InferenceParams params;
+            if (!parseInferenceParams(body, params, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
             std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
             json resp = {
                 {"id", "cmpl-1"},

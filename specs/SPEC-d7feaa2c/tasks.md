@@ -74,13 +74,13 @@
   - リクエスト完了時に即座に解放
 
 ### エラーコード
-- [ ] T109 エラーコード体系の定義（C ABIヘッダー）
+- [x] T109 エラーコード体系の定義（C ABIヘッダー）
   - 10種類の粗粒度コード
   - メッセージ文字列付与機構
-- [ ] T110 エラーコードのドキュメント化
+- [x] T110 エラーコードのドキュメント化
 
 ### ストリーミング
-- [ ] T111 トークン単位即時送信の実装
+- [x] T111 トークン単位即時送信の実装
   - 1トークン生成ごとにコールバック
   - バッファリングなし
 
@@ -114,7 +114,7 @@
 - [ ] T126 プラグイン定期再起動ポリシーの実装
   - N時間経過 or Nリクエスト後に再起動
 - [ ] T127 プラグインクラッシュ検出と即座再起動
-- [ ] T128 manifest.jsonへのarchitecturesフィールド追加
+- [x] T128 manifest.jsonへのarchitecturesフィールド追加
 
 ## Tests（Session 2025-12-31 Part 2）
 - [ ] T129 マルチGPU負荷分散テスト
@@ -157,14 +157,14 @@
 - [ ] T146 並行ロードテスト
 
 ## パラメータ検証（Session 2025-12-31 Part 4）
-- [ ] T147 サンプリングパラメータ範囲検証の実装
+- [x] T147 サンプリングパラメータ範囲検証の実装
   - temperature/top_p/top_kの範囲チェック
   - 不正値は400エラー
-- [ ] T148 空プロンプト検証の実装
+- [x] T148 空プロンプト検証の実装
   - 空/空白のみプロンプトを拒否
 
 ## stop sequences（Session 2025-12-31 Part 4）
-- [ ] T149 stop sequences検出ロジックの実装
+- [x] T149 stop sequences検出ロジックの実装
   - 生成ループ内でトークン列マッチング
   - 複数stop sequenceの同時監視
 
@@ -174,26 +174,26 @@
   - top_logprobsパラメータ対応
 
 ## max_tokens（Session 2025-12-31 Part 4）
-- [ ] T151 max_tokensデフォルト値の実装
+- [x] T151 max_tokensデフォルト値の実装
   - config.jsonからmax_position_embeddings取得
   - プロンプト長を差し引いて計算
 
 ## アーキテクチャ検証（Session 2025-12-31 Part 4）
-- [ ] T152 ロード前アーキテクチャ検証の実装
+- [x] T152 ロード前アーキテクチャ検証の実装
   - manifestとconfig.jsonの照合
   - 不一致時はロード開始前エラー
 
 ## フォーマット統合（Session 2025-12-31 Part 4）
-- [ ] T153 manifest.jsonへのformatsフィールド追加
+- [x] T153 manifest.jsonへのformatsフィールド追加
   - サポートフォーマット一覧を宣言
 - [ ] T154 マルチフォーマットローダーの実装
   - ファイル形式に応じたローダー振り分け
 
 ## Tests（Session 2025-12-31 Part 4）
-- [ ] T155 パラメータ検証テスト
-- [ ] T156 stop sequences検出テスト
+- [x] T155 パラメータ検証テスト
+- [x] T156 stop sequences検出テスト
 - [ ] T157 logprobs返却テスト
-- [ ] T158 アーキテクチャ検証テスト
+- [x] T158 アーキテクチャ検証テスト
 
 ## 量子化・モデル指定（Session 2025-12-31 Part 5）
 - [ ] T159 量子化指定パーサーの実装
@@ -240,11 +240,11 @@
   - ツール呼び出し検出時のレスポンス整形
 
 ## manifest.json拡張（Session 2025-12-31 Part 5）
-- [ ] T170 manifest.jsonへのmodalities追加
+- [x] T170 manifest.jsonへのmodalities追加
   - completion/embeddingモードの宣言
-- [ ] T171 manifest.jsonへのlicense追加
+- [x] T171 manifest.jsonへのlicense追加
   - ライセンス情報フィールド
-- [ ] T172 manifest.jsonへのsupports_vision追加
+- [x] T172 manifest.jsonへのsupports_vision追加
   - Vision対応フラグ
 
 ## Tests（Session 2025-12-31 Part 5）

@@ -88,6 +88,111 @@ TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
     server.stop();
 }
 
+TEST(OpenAIEndpointsTest, Returns400OnInvalidTemperature) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18101, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18101);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}],"temperature":3.5})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("temperature"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnInvalidTopP) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18102, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18102);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","top_p":1.5})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("top_p"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnInvalidTopK) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18103, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18103);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","top_k":-1})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("top_k"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns400OnEmptyPrompt) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18104, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18104);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"   "})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+    EXPECT_NE(res->body.find("prompt must not be empty"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, AppliesStopSequencesToCompletions) {
+    llm_node::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18105, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18105);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello","stop":"hello"})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    EXPECT_EQ(res->body.find("hello"), std::string::npos);
+
+    server.stop();
+}
+
 // SPEC-dcaeaec4: Node returns 503 when not ready (syncing with router)
 TEST(OpenAIEndpointsTest, Returns503WhenNotReady) {
     // Set node to not ready state

@@ -8,6 +8,7 @@
 #include <thread>
 #include <vector>
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
 #include "models/model_resolver.h"
 #include "models/model_sync.h"
@@ -125,7 +126,7 @@ TEST(ModelResolverTest, LocalPathTakesPriority) {
     ModelResolver resolver(tmp.local.string(), "");
     auto result = resolver.resolve("gpt-oss-7b");
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
     EXPECT_FALSE(result.router_attempted);
 }
@@ -145,7 +146,7 @@ TEST(ModelResolverTest, DownloadFromRegistryWhenNotLocal) {
 
     server.stop();
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(result.router_attempted);
     EXPECT_FALSE(result.origin_attempted);
     EXPECT_TRUE(result.path.find(tmp.local.string()) != std::string::npos);
@@ -165,7 +166,7 @@ TEST(ModelResolverTest, ReportsSyncProgressDuringRegistryDownload) {
 
     server.stop();
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     auto status = sync.getStatus();
     EXPECT_NE(status.state, SyncState::Idle);
     ASSERT_TRUE(status.current_download.has_value());
@@ -244,12 +245,15 @@ TEST(ModelResolverTest, SupportsSafetensorsAndGgufFormats) {
         {"model.safetensors", "safetensors"}
     });
     server.start(20004, "mixed-format-model");
-    server.setManifestBody(std::string(R"({"files":[)") +
-        R"({"name":"model.gguf","url":")" + server.baseUrl() + R"(/files/model.gguf"},)" +
-        R"({"name":"config.json","url":")" + server.baseUrl() + R"(/files/config.json"},)" +
-        R"({"name":"tokenizer.json","url":")" + server.baseUrl() + R"(/files/tokenizer.json"},)" +
-        R"({"name":"model.safetensors","url":")" + server.baseUrl() + R"(/files/model.safetensors"})]" +
-        R"(})");
+    nlohmann::json manifest = {
+        {"files", {
+            {{"name", "model.gguf"}, {"url", server.baseUrl() + "/files/model.gguf"}},
+            {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
+            {{"name", "tokenizer.json"}, {"url", server.baseUrl() + "/files/tokenizer.json"}},
+            {{"name", "model.safetensors"}, {"url", server.baseUrl() + "/files/model.safetensors"}}
+        }}
+    };
+    server.setManifestBody(manifest.dump());
 
     ModelResolver resolver(tmp.local.string(), server.baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
@@ -257,7 +261,7 @@ TEST(ModelResolverTest, SupportsSafetensorsAndGgufFormats) {
 
     server.stop();
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(fs::exists(result.path));
     EXPECT_EQ(fs::path(result.path).filename(), "model.gguf");
 }
@@ -271,11 +275,14 @@ TEST(ModelResolverTest, MetalArtifactIsOptional) {
         {"model.safetensors", "safetensors"}
     });
     server.start(20005, "gptoss-safetensors");
-    server.setManifestBody(std::string(R"({"files":[)") +
-        R"({"name":"config.json","url":")" + server.baseUrl() + R"(/files/config.json"},)" +
-        R"({"name":"tokenizer.json","url":")" + server.baseUrl() + R"(/files/tokenizer.json"},)" +
-        R"({"name":"model.safetensors","url":")" + server.baseUrl() + R"(/files/model.safetensors"})]" +
-        R"(})");
+    nlohmann::json manifest = {
+        {"files", {
+            {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
+            {{"name", "tokenizer.json"}, {"url", server.baseUrl() + "/files/tokenizer.json"}},
+            {{"name", "model.safetensors"}, {"url", server.baseUrl() + "/files/model.safetensors"}}
+        }}
+    };
+    server.setManifestBody(manifest.dump());
 
     ModelResolver resolver(tmp.local.string(), server.baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
@@ -283,7 +290,7 @@ TEST(ModelResolverTest, MetalArtifactIsOptional) {
 
     server.stop();
 
-    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(fs::exists(result.path));
     EXPECT_EQ(fs::path(result.path).filename(), "model.safetensors");
 }

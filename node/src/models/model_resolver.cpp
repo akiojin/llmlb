@@ -161,6 +161,7 @@ std::string ModelResolver::downloadFromRegistry(const std::string& model_name) {
     std::ifstream ifs(manifest_path);
     nlohmann::json manifest = nlohmann::json::parse(ifs, nullptr, false);
     if (manifest.is_discarded() || !manifest.contains("files") || !manifest["files"].is_array()) {
+        spdlog::warn("ModelResolver: invalid manifest for model {} at {}", model_name, manifest_path);
         report_result(false);
         return "";
     }
@@ -194,6 +195,7 @@ std::string ModelResolver::downloadFromRegistry(const std::string& model_name) {
                 report_progress(name, downloaded_bytes, total_bytes);
             });
         if (downloaded.empty()) {
+            spdlog::warn("ModelResolver: download failed for model {} file {}", model_name, name);
             report_result(false);
             return "";
         }

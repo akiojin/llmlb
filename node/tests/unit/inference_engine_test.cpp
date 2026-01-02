@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
@@ -159,6 +162,57 @@ private:
     uint64_t required_{0};
 };
 
+class BlockingEngine final : public Engine {
+public:
+    explicit BlockingEngine(std::atomic<bool>* allow_return)
+        : allow_return_(allow_return) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        while (!allow_return_->load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return "done";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "done";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+private:
+    std::atomic<bool>* allow_return_{nullptr};
+};
+
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
     InferenceEngine engine;
     std::vector<ChatMessage> msgs = {
@@ -227,6 +281,56 @@ TEST(InferenceEngineTest, LoadModelReturnsNotFoundWhenMissingModel) {
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.code, EngineErrorCode::kNotFound);
     EXPECT_NE(result.error_message.find("Model not found"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, WatchdogTriggersTerminationOnTimeout) {
+    TempDir tmp;
+    const std::string model_name = "example/blocking";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    std::atomic<bool> allow_return{false};
+    std::atomic<bool> timeout_fired{false};
+
+    EngineRegistration reg;
+    reg.engine_id = "blocking_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.architectures = {"llama"};
+    reg.capabilities = {"text"};
+    registry->registerEngine(std::make_unique<BlockingEngine>(&allow_return), reg, nullptr);
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    InferenceEngine::setWatchdogTimeoutForTest(std::chrono::milliseconds(20));
+    InferenceEngine::setWatchdogTerminateHookForTest([&]() {
+        timeout_fired.store(true);
+        allow_return.store(true);
+    });
+
+    std::thread worker([&]() {
+        std::vector<ChatMessage> messages = {{"user", "hello"}};
+        (void)engine.generateChat(messages, model_name, {});
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!timeout_fired.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!timeout_fired.load()) {
+        allow_return.store(true);
+    }
+    worker.join();
+
+    EXPECT_TRUE(timeout_fired.load());
+
+    InferenceEngine::setWatchdogTimeoutForTest(std::chrono::seconds(30));
+    InferenceEngine::setWatchdogTerminateHookForTest({});
 }
 
 TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {

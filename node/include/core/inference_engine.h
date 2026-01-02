@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <vector>
 #include <functional>
@@ -111,6 +112,10 @@ public:
     void setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry);
     /// テスト専用: リソース使用量のプロバイダを差し替える
     void setResourceUsageProviderForTest(std::function<ResourceUsage()> provider);
+    /// テスト専用: ウォッチドッグのタイムアウトを差し替える
+    static void setWatchdogTimeoutForTest(std::chrono::milliseconds timeout);
+    /// テスト専用: タイムアウト時の終了処理を差し替える
+    static void setWatchdogTerminateHookForTest(std::function<void()> hook);
 #endif
 
 private:

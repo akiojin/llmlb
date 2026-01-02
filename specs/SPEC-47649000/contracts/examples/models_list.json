@@ -1,0 +1,28 @@
+{
+  "models": [
+    {
+      "id": "llama-3.2-1b",
+      "name": "Llama 3.2 1B",
+      "source": "hf_gguf",
+      "tags": ["chat", "instruct"],
+      "required_memory": 2147483648
+    },
+    {
+      "id": "mistral-7b",
+      "name": "Mistral 7B",
+      "source": "hf_safetensors",
+      "tags": ["chat", "instruct", "tools"],
+      "required_memory": 15032385536
+    },
+    {
+      "id": "llava-1.6",
+      "name": "LLaVA 1.6 7B",
+      "source": "hf_safetensors",
+      "tags": ["chat", "vision"],
+      "required_memory": 15032385536
+    }
+  ],
+  "total": 3,
+  "offset": 0,
+  "limit": 100
+}

@@ -1,0 +1,242 @@
+openapi: 3.0.3
+info:
+  title: LLM Router Load Optimization API
+  description: |
+    ルーター負荷最適化に関連するAPI仕様。
+
+    既存の `/v1/chat/completions` エンドポイントに対して、
+    バックプレッシャー制御とタイムアウト処理を追加する。
+
+    また、メトリクスエンドポイントで負荷状況を監視可能。
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発サーバー
+
+paths:
+  /v1/chat/completions:
+    post:
+      summary: チャット補完（負荷最適化対応）
+      description: |
+        負荷状況に応じて以下の動作を行います:
+
+        - **正常（0-50%）**: 即座に処理
+        - **警告（50-80%）**: 遅延付きで受付
+        - **過負荷（80%以上）**: 503で拒否
+
+        レスポンスヘッダーに負荷情報を含めます。
+      operationId: createChatCompletion
+      tags:
+        - Chat
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Queue-Size:
+              schema:
+                type: integer
+              description: 現在の待機キューサイズ
+            X-Queue-Wait-Ms:
+              schema:
+                type: integer
+              description: キュー待機時間（ミリ秒）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+        '503':
+          description: サービス過負荷（バックプレッシャー拒否）
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: リトライまでの推奨秒数
+            X-Queue-Size:
+              schema:
+                type: integer
+              description: 現在の待機キューサイズ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                queueFull:
+                  summary: キュー満杯
+                  value:
+                    error:
+                      message: "Service overloaded. Please retry later."
+                      type: "service_unavailable"
+                      code: "queue_full"
+        '504':
+          description: タイムアウト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                timeout:
+                  summary: 待機タイムアウト
+                  value:
+                    error:
+                      message: "Request timeout after 30 seconds"
+                      type: "gateway_timeout"
+                      code: "wait_timeout"
+
+  /metrics:
+    get:
+      summary: Prometheus メトリクス取得
+      description: |
+        Prometheus形式でメトリクスを取得します。
+
+        負荷最適化関連のメトリクス:
+        - `llm_router_queue_size`: 待機キューサイズ
+        - `llm_router_request_duration_seconds`: リクエスト処理時間
+        - `llm_router_backpressure_rejections_total`: バックプレッシャー拒否数
+        - `llm_router_cache_hits_total`: キャッシュヒット数
+        - `llm_router_cache_misses_total`: キャッシュミス数
+        - `llm_router_pool_connections`: 接続プール使用数
+      operationId: getMetrics
+      tags:
+        - Metrics
+      responses:
+        '200':
+          description: Prometheusメトリクス
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP llm_router_queue_size Current wait queue size
+                # TYPE llm_router_queue_size gauge
+                llm_router_queue_size 45
+
+                # HELP llm_router_request_duration_seconds Request processing duration
+                # TYPE llm_router_request_duration_seconds histogram
+                llm_router_request_duration_seconds_bucket{le="0.01"} 1000
+                llm_router_request_duration_seconds_bucket{le="0.05"} 2500
+                llm_router_request_duration_seconds_bucket{le="0.1"} 4000
+                llm_router_request_duration_seconds_sum 250.5
+                llm_router_request_duration_seconds_count 5000
+
+                # HELP llm_router_backpressure_rejections_total Total requests rejected
+                # TYPE llm_router_backpressure_rejections_total counter
+                llm_router_backpressure_rejections_total 50
+
+  /v0/load-status:
+    get:
+      summary: 負荷状況の取得
+      description: 現在の負荷状況とバックプレッシャー状態を取得します。
+      operationId: getLoadStatus
+      tags:
+        - Status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 負荷状況
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadStatus'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    ChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+        usage:
+          type: object
+
+    LoadStatus:
+      type: object
+      properties:
+        backpressure_state:
+          type: string
+          enum: [normal, warning, overloaded]
+          description: 現在のバックプレッシャー状態
+        queue_size:
+          type: integer
+          description: 現在の待機キューサイズ
+        max_queue_size:
+          type: integer
+          description: 最大待機キューサイズ
+        load_ratio:
+          type: number
+          format: float
+          description: 負荷率（0.0-1.0）
+        cache_hit_rate:
+          type: number
+          format: float
+          description: キャッシュヒット率
+        active_connections:
+          type: integer
+          description: 接続プールのアクティブ接続数
+      example:
+        backpressure_state: "warning"
+        queue_size: 60
+        max_queue_size: 100
+        load_ratio: 0.6
+        cache_hit_rate: 0.95
+        active_connections: 24
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+              enum:
+                - service_unavailable
+                - gateway_timeout
+            code:
+              type: string
+              enum:
+                - queue_full
+                - wait_timeout

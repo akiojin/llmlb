@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-vision-abc123",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "llava-1.6-7b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "この画像には、青い空を背景にした白い犬が写っています。犬は草の上に座っており、舌を出して楽しそうな表情をしています。背景には緑の木々が見え、晴れた日の公園のような場所で撮影されたようです。"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1024,
+    "completion_tokens": 85,
+    "total_tokens": 1109
+  }
+}

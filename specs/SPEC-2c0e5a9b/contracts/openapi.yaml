@@ -1,0 +1,145 @@
+openapi: 3.0.3
+info:
+  title: gpt-oss-20b Safetensors Model API
+  version: 1.0.0
+  description: gpt-oss-20b safetensors形式モデルの登録・実行API
+
+paths:
+  /v1/models/register:
+    post:
+      summary: モデル登録（safetensors形式）
+      operationId: registerSafetensorsModel
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelRegistrationRequest'
+      responses:
+        '200':
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelInfo'
+        '400':
+          description: 必須ファイル不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingFileError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: APIキー認証
+
+  schemas:
+    ModelRegistrationRequest:
+      type: object
+      required:
+        - name
+        - source
+        - format
+      properties:
+        name:
+          type: string
+          description: モデル名
+          example: "gpt-oss-20b"
+        source:
+          type: string
+          description: HuggingFaceリポジトリID
+          example: "openai/gpt-oss-20b"
+        format:
+          type: string
+          enum: [safetensors]
+          description: モデル形式（safetensors固定）
+
+    ModelInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "gpt-oss-20b"
+        object:
+          type: string
+          enum: [model]
+        created:
+          type: integer
+          format: int64
+        owned_by:
+          type: string
+          example: "openai"
+
+    SafetensorsManifest:
+      type: object
+      properties:
+        index_file:
+          type: string
+          description: シャーディングindexファイル
+          example: "model.safetensors.index.json"
+        shards:
+          type: array
+          items:
+            type: string
+          description: shardファイル一覧
+        total_size:
+          type: integer
+          format: int64
+          description: 総サイズ（バイト）
+
+    ExecutionCache:
+      type: object
+      properties:
+        source_repo:
+          type: string
+          description: 公式GPU最適化アーティファクトの取得元
+          example: "openai/gpt-oss-20b-metal"
+        file_path:
+          type: string
+          description: ファイルパス
+          example: "metal/model.bin"
+        backend:
+          type: string
+          enum: [metal, directml, cuda]
+          description: 対応GPUバックエンド
+
+    MissingFileError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Required file missing: config.json"
+            type:
+              type: string
+              enum: [invalid_request_error]
+            code:
+              type: string
+              enum: [missing_required_file]
+
+  responses:
+    Unauthorized:
+      description: 認証エラー
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Invalid or missing API key"
+                  type:
+                    type: string
+                    enum: [unauthorized]

@@ -4,6 +4,7 @@
   "abi_version": 1,
   "runtimes": ["llama_cpp"],
   "formats": ["gguf"],
+  "architectures": ["llama", "mistral", "gemma", "phi"],
   "capabilities": ["text", "embeddings"],
   "gpu_targets": ["metal", "cuda"],
   "library": "llm_engine_llama_cpp"

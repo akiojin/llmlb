@@ -242,6 +242,12 @@ bool EngineHost::validateManifest(const EnginePluginManifest& manifest,
             return false;
         }
     }
+    for (const auto& arch : manifest.architectures) {
+        if (arch.empty()) {
+            error = "architectures contains empty value";
+            return false;
+        }
+    }
 
     return true;
 }
@@ -280,6 +286,21 @@ bool EngineHost::loadManifest(const std::filesystem::path& manifest_path,
 
     if (!parseStringArray(j, "runtimes", manifest.runtimes, error)) return false;
     if (!parseStringArray(j, "formats", manifest.formats, error)) return false;
+
+    if (j.contains("architectures")) {
+        if (!j["architectures"].is_array()) {
+            error = "architectures must be an array";
+            return false;
+        }
+        manifest.architectures.clear();
+        for (const auto& item : j["architectures"]) {
+            if (!item.is_string()) {
+                error = "architectures must be an array of strings";
+                return false;
+            }
+            manifest.architectures.push_back(item.get<std::string>());
+        }
+    }
 
     if (j.contains("capabilities")) {
         if (!j["capabilities"].is_array()) {
@@ -365,6 +386,7 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
     registration.engine_id = manifest.engine_id;
     registration.engine_version = manifest.engine_version;
     registration.formats = manifest.formats;
+    registration.architectures = manifest.architectures;
     registration.capabilities = manifest.capabilities;
     std::string reg_error;
     if (!registry.registerEngine(std::move(handle), registration, &reg_error)) {

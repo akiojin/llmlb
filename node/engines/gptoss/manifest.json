@@ -4,6 +4,7 @@
   "abi_version": 1,
   "runtimes": ["gptoss_cpp"],
   "formats": ["safetensors"],
+  "architectures": ["gpt_oss"],
   "capabilities": ["text"],
   "gpu_targets": ["metal", "directml"],
   "library": "llm_engine_gptoss"

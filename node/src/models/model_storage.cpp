@@ -160,6 +160,78 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir)
     return std::nullopt;
 }
 
+std::string to_lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+std::string normalize_architecture_label(const std::string& raw) {
+    std::string lower = to_lower_ascii(raw);
+    std::string out;
+    out.reserve(lower.size());
+    char prev = '\0';
+    for (char c : lower) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            out.push_back(c);
+            prev = c;
+            continue;
+        }
+        if ((c == '_' || c == '-') && prev != '_') {
+            out.push_back('_');
+            prev = '_';
+        }
+    }
+    if (!out.empty() && out.back() == '_') {
+        out.pop_back();
+    }
+    return out;
+}
+
+std::string normalize_architecture_class(const std::string& raw) {
+    std::string lower = to_lower_ascii(raw);
+    auto pos = lower.find("for");
+    if (pos != std::string::npos && pos > 0) {
+        lower = lower.substr(0, pos);
+    }
+    return normalize_architecture_label(lower);
+}
+
+std::vector<std::string> load_architectures_from_config(const fs::path& model_dir) {
+    const auto cfg_path = model_dir / "config.json";
+    if (!fs::exists(cfg_path)) return {};
+    try {
+        std::ifstream ifs(cfg_path);
+        nlohmann::json j;
+        ifs >> j;
+
+        std::vector<std::string> out;
+        std::unordered_set<std::string> seen;
+        auto add = [&](const std::string& raw, bool is_class_name) {
+            const auto norm = is_class_name
+                                  ? normalize_architecture_class(raw)
+                                  : normalize_architecture_label(raw);
+            if (norm.empty()) return;
+            if (seen.insert(norm).second) {
+                out.push_back(norm);
+            }
+        };
+
+        if (j.contains("model_type") && j["model_type"].is_string()) {
+            add(j["model_type"].get<std::string>(), false);
+        }
+        if (j.contains("architectures") && j["architectures"].is_array()) {
+            for (const auto& a : j["architectures"]) {
+                if (!a.is_string()) continue;
+                add(a.get<std::string>(), true);
+            }
+        }
+        return out;
+    } catch (...) {
+        return {};
+    }
+}
+
 std::vector<std::string> capabilities_for_runtime(const std::string& runtime) {
     if (runtime == "llama_cpp") {
         return {"text", "embeddings"};
@@ -414,6 +486,7 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
             if (!rt) continue;
             desc.runtime = *rt;
             desc.capabilities = capabilities_for_runtime(desc.runtime);
+            desc.architectures = load_architectures_from_config(fs::path(desc.model_dir));
             if (auto meta = build_safetensors_metadata(fs::path(desc.model_dir), fs::path(desc.primary_path))) {
                 desc.metadata = std::move(*meta);
             }
@@ -454,6 +527,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
                 desc.primary_path = primary->string();
                 desc.model_dir = model_dir.string();
                 desc.capabilities = capabilities_for_runtime(desc.runtime);
+                desc.architectures = load_architectures_from_config(model_dir);
                 if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
                     desc.metadata = std::move(*meta);
                 }
@@ -485,6 +559,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         desc.primary_path = primary->string();
         desc.model_dir = model_dir.string();
         desc.capabilities = capabilities_for_runtime(desc.runtime);
+        desc.architectures = load_architectures_from_config(model_dir);
         if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
             desc.metadata = std::move(*meta);
         }

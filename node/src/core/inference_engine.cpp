@@ -352,6 +352,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     llama_reg.engine_id = "builtin_llama_cpp";
     llama_reg.engine_version = "builtin";
     llama_reg.formats = {"gguf"};
+    llama_reg.architectures = {"llama", "mistral", "gemma", "phi"};
     llama_reg.capabilities = {"text", "embeddings"};
     engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
 
@@ -359,6 +360,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     gptoss_reg.engine_id = "builtin_gptoss_cpp";
     gptoss_reg.engine_version = "builtin";
     gptoss_reg.formats = {"safetensors"};
+    gptoss_reg.architectures = {"gpt_oss"};
     gptoss_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
 
@@ -366,6 +368,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     nemotron_reg.engine_id = "builtin_nemotron_cpp";
     nemotron_reg.engine_version = "builtin";
     nemotron_reg.formats = {"safetensors"};
+    nemotron_reg.architectures = {"nemotron"};
     nemotron_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
@@ -745,9 +748,12 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         }
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, capability) : nullptr;
+    std::string resolve_error;
+    Engine* engine = engines_ ? engines_->resolve(*desc, capability, &resolve_error) : nullptr;
     if (!engine) {
-        result.error_message = "No engine registered for runtime: " + desc->runtime;
+        result.error_message = !resolve_error.empty()
+                                   ? resolve_error
+                                   : "No engine registered for runtime: " + desc->runtime;
         return result;
     }
 

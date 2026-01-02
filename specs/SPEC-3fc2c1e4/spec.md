@@ -146,6 +146,23 @@
 - safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
 - DirectMLは限定的、NemotronはTBD（後回し）。
 
+### 現在の対応済みモデル（2026-01-02時点）
+
+**Model Hub（`router/src/supported_models.json`）に登録済み**の範囲:
+
+- **GGUF / llama.cpp**:
+  - Qwen2.5 7B Instruct
+  - Llama 3.2 3B Instruct
+  - Mistral 7B Instruct
+  - Phi-3 Mini
+  - Gemma 2 9B
+- **safetensors / gpt-oss**:
+  - GPT-OSS 20B（Metal）
+  - GPT-OSS 120B（Metal）
+  - GPT-OSS Safeguard は **Metal最適化アーティファクト未提供**のため未対応
+
+詳細な検証状況は `specs/SPEC-6cd7f960/verified-models.md` を参照。
+
 ### アーティファクト選択とエンジン選択の原則
 
 1. **Router は形式を確定せず**、マニフェストのみを提供する。

@@ -9,8 +9,8 @@
 
 ## 追加対応（Session 2025-12-31）
 
-- [ ] マニフェスト取得（`/v0/models/registry/:model_name/manifest.json`）を`node`スコープ必須に更新
-- [ ] Node がマニフェスト取得時に APIキーを送信
+- [x] マニフェスト取得（`/v0/models/registry/:model_name/manifest.json`）を`node`スコープ必須に更新
+- [x] Node がマニフェスト取得時に APIキーを送信
 
 ## Contract Tests (router)
 - [x] [P] APIキーのスコープ不足で403が返ることを検証。

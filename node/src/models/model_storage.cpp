@@ -123,7 +123,45 @@ std::optional<nlohmann::json> build_safetensors_metadata(const fs::path& model_d
     return meta;
 }
 
-std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir) {
+std::string normalize_architecture_name(const std::string& value) {
+    std::string lower = value;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    std::string compact;
+    compact.reserve(lower.size());
+    for (char c : lower) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            compact.push_back(c);
+        }
+    }
+
+    if (compact.find("gptoss") != std::string::npos) return "gptoss";
+    if (compact.find("nemotron") != std::string::npos) return "nemotron";
+    if (compact.find("mistral") != std::string::npos) return "mistral";
+    if (compact.find("gemma") != std::string::npos) return "gemma";
+    if (compact.find("llama") != std::string::npos) return "llama";
+    if (compact.find("qwen") != std::string::npos) return "qwen";
+
+    return compact.empty() ? lower : compact;
+}
+
+std::vector<std::string> extract_architectures_from_config(const nlohmann::json& j) {
+    std::vector<std::string> out;
+    if (!j.contains("architectures") || !j["architectures"].is_array()) return out;
+
+    for (const auto& a : j["architectures"]) {
+        if (!a.is_string()) continue;
+        auto normalized = normalize_architecture_name(a.get<std::string>());
+        if (normalized.empty()) continue;
+        if (std::find(out.begin(), out.end(), normalized) == out.end()) {
+            out.push_back(std::move(normalized));
+        }
+    }
+    return out;
+}
+
+std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir,
+                                                      std::vector<std::string>* architectures) {
     const auto cfg_path = model_dir / "config.json";
     if (!fs::exists(cfg_path)) return std::nullopt;
     try {
@@ -132,6 +170,9 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir)
         ifs >> j;
 
         if (j.contains("architectures") && j["architectures"].is_array()) {
+            if (architectures) {
+                *architectures = extract_architectures_from_config(j);
+            }
             for (const auto& a : j["architectures"]) {
                 if (!a.is_string()) continue;
                 const auto s = a.get<std::string>();
@@ -410,9 +451,11 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
         }
 
         if (info.format == "safetensors") {
-            auto rt = detect_runtime_from_config(fs::path(desc.model_dir));
+            std::vector<std::string> architectures;
+            auto rt = detect_runtime_from_config(fs::path(desc.model_dir), &architectures);
             if (!rt) continue;
             desc.runtime = *rt;
+            desc.architectures = std::move(architectures);
             desc.capabilities = capabilities_for_runtime(desc.runtime);
             if (auto meta = build_safetensors_metadata(fs::path(desc.model_dir), fs::path(desc.primary_path))) {
                 desc.metadata = std::move(*meta);
@@ -445,7 +488,8 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         }
         if (*manifest_format == "safetensors") {
             if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-                auto rt = detect_runtime_from_config(model_dir);
+                std::vector<std::string> architectures;
+                auto rt = detect_runtime_from_config(model_dir, &architectures);
                 if (!rt) return std::nullopt;
                 ModelDescriptor desc;
                 desc.name = model_name;
@@ -453,6 +497,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
                 desc.format = "safetensors";
                 desc.primary_path = primary->string();
                 desc.model_dir = model_dir.string();
+                desc.architectures = std::move(architectures);
                 desc.capabilities = capabilities_for_runtime(desc.runtime);
                 if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
                     desc.metadata = std::move(*meta);
@@ -476,7 +521,8 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
     }
 
     if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-        auto rt = detect_runtime_from_config(model_dir);
+        std::vector<std::string> architectures;
+        auto rt = detect_runtime_from_config(model_dir, &architectures);
         if (!rt) return std::nullopt;
         ModelDescriptor desc;
         desc.name = model_name;
@@ -484,6 +530,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
         desc.format = "safetensors";
         desc.primary_path = primary->string();
         desc.model_dir = model_dir.string();
+        desc.architectures = std::move(architectures);
         desc.capabilities = capabilities_for_runtime(desc.runtime);
         if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
             desc.metadata = std::move(*meta);

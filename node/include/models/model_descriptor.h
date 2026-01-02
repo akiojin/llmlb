@@ -14,6 +14,7 @@ struct ModelDescriptor {
     std::string primary_path;
     std::string model_dir;
     std::optional<nlohmann::json> metadata;
+    std::vector<std::string> architectures;
     std::vector<std::string> capabilities;
 };
 

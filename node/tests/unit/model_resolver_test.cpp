@@ -40,6 +40,7 @@ class RegistryServer {
 public:
     void setManifestBody(std::string body) { manifest_body_ = std::move(body); }
     void setFileBody(std::string body) { file_body_ = std::move(body); }
+    void setFiles(std::vector<std::pair<std::string, std::string>> files) { files_ = std::move(files); }
     void setServeManifest(bool enable) { serve_manifest_ = enable; }
 
     void start(int port, const std::string& model_name) {
@@ -61,11 +62,21 @@ public:
             res.set_content(body, "application/json");
         });
 
-        server_.Get("/files/model.gguf", [this](const httplib::Request&, httplib::Response& res) {
-            std::string body = file_body_.empty() ? std::string("GGUF test") : file_body_;
-            res.status = 200;
-            res.set_content(body, "application/octet-stream");
-        });
+        if (files_.empty()) {
+            server_.Get("/files/model.gguf", [this](const httplib::Request&, httplib::Response& res) {
+                std::string body = file_body_.empty() ? std::string("GGUF test") : file_body_;
+                res.status = 200;
+                res.set_content(body, "application/octet-stream");
+            });
+        } else {
+            for (const auto& entry : files_) {
+                const auto path = "/files/" + entry.first;
+                server_.Get(path.c_str(), [body = entry.second](const httplib::Request&, httplib::Response& res) {
+                    res.status = 200;
+                    res.set_content(body, "application/octet-stream");
+                });
+            }
+        }
 
         thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
         while (!server_.is_running()) {
@@ -91,6 +102,7 @@ private:
     std::string model_name_;
     std::string manifest_body_;
     std::string file_body_;
+    std::vector<std::pair<std::string, std::string>> files_;
     bool serve_manifest_{true};
 };
 
@@ -197,6 +209,60 @@ TEST(ModelResolverTest, RouterDownloadHasTimeout) {
         << "Should have a download timeout configured";
     EXPECT_LE(resolver.getDownloadTimeoutMs(), 5 * 60 * 1000)
         << "Default timeout should be at most 5 minutes";
+}
+
+TEST(ModelResolverTest, SupportsSafetensorsAndGgufFormats) {
+    TempModelDirs tmp;
+    RegistryServer server;
+    server.setFiles({
+        {"model.gguf", "gguf"},
+        {"config.json", "{}"},
+        {"tokenizer.json", "{}"},
+        {"model.safetensors", "safetensors"}
+    });
+    server.start(20004, "mixed-format-model");
+    server.setManifestBody(std::string(R"({"files":[)") +
+        R"({"name":"model.gguf","url":")" + server.baseUrl() + R"(/files/model.gguf"},)" +
+        R"({"name":"config.json","url":")" + server.baseUrl() + R"(/files/config.json"},)" +
+        R"({"name":"tokenizer.json","url":")" + server.baseUrl() + R"(/files/tokenizer.json"},)" +
+        R"({"name":"model.safetensors","url":")" + server.baseUrl() + R"(/files/model.safetensors"})]" +
+        R"(})");
+
+    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("mixed-format-model");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(fs::exists(result.path));
+    EXPECT_EQ(fs::path(result.path).filename(), "model.gguf");
+}
+
+TEST(ModelResolverTest, MetalArtifactIsOptional) {
+    TempModelDirs tmp;
+    RegistryServer server;
+    server.setFiles({
+        {"config.json", R"({"architectures":["GptOssForCausalLM"]})"},
+        {"tokenizer.json", "{}"},
+        {"model.safetensors", "safetensors"}
+    });
+    server.start(20005, "gptoss-safetensors");
+    server.setManifestBody(std::string(R"({"files":[)") +
+        R"({"name":"config.json","url":")" + server.baseUrl() + R"(/files/config.json"},)" +
+        R"({"name":"tokenizer.json","url":")" + server.baseUrl() + R"(/files/tokenizer.json"},)" +
+        R"({"name":"model.safetensors","url":")" + server.baseUrl() + R"(/files/model.safetensors"})]" +
+        R"(})");
+
+    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    resolver.setOriginAllowlist({"127.0.0.1/*"});
+    auto result = resolver.resolve("gptoss-safetensors");
+
+    server.stop();
+
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(fs::exists(result.path));
+    EXPECT_EQ(fs::path(result.path).filename(), "model.safetensors");
 }
 
 // Clarification: Concurrent download limit (recommended: 1 per node)

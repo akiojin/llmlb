@@ -225,6 +225,18 @@ bool EngineHost::validateManifest(const EnginePluginManifest& manifest,
         error = "formats is required";
         return false;
     }
+    if (manifest.architectures.empty()) {
+        error = "architectures is required";
+        return false;
+    }
+    if (manifest.modalities.empty()) {
+        error = "modalities is required";
+        return false;
+    }
+    if (manifest.license.empty()) {
+        error = "license is required";
+        return false;
+    }
     if (manifest.library.empty()) {
         error = "library is required";
         return false;
@@ -239,6 +251,18 @@ bool EngineHost::validateManifest(const EnginePluginManifest& manifest,
     for (const auto& format : manifest.formats) {
         if (format.empty()) {
             error = "formats contains empty value";
+            return false;
+        }
+    }
+    for (const auto& arch : manifest.architectures) {
+        if (arch.empty()) {
+            error = "architectures contains empty value";
+            return false;
+        }
+    }
+    for (const auto& modality : manifest.modalities) {
+        if (modality.empty()) {
+            error = "modalities contains empty value";
             return false;
         }
     }
@@ -270,6 +294,7 @@ bool EngineHost::loadManifest(const std::filesystem::path& manifest_path,
 
     if (!parseStringField(j, "engine_id", manifest.engine_id, error)) return false;
     if (!parseStringField(j, "engine_version", manifest.engine_version, error)) return false;
+    if (!parseStringField(j, "license", manifest.license, error)) return false;
     if (!parseStringField(j, "library", manifest.library, error)) return false;
 
     if (!j.contains("abi_version") || !j["abi_version"].is_number_integer()) {
@@ -280,6 +305,14 @@ bool EngineHost::loadManifest(const std::filesystem::path& manifest_path,
 
     if (!parseStringArray(j, "runtimes", manifest.runtimes, error)) return false;
     if (!parseStringArray(j, "formats", manifest.formats, error)) return false;
+    if (!parseStringArray(j, "architectures", manifest.architectures, error)) return false;
+    if (!parseStringArray(j, "modalities", manifest.modalities, error)) return false;
+
+    if (!j.contains("supports_vision") || !j["supports_vision"].is_boolean()) {
+        error = "supports_vision is required";
+        return false;
+    }
+    manifest.supports_vision = j["supports_vision"].get<bool>();
 
     if (j.contains("capabilities")) {
         if (!j["capabilities"].is_array()) {
@@ -365,6 +398,7 @@ bool EngineHost::loadPlugin(const std::filesystem::path& manifest_path,
     registration.engine_id = manifest.engine_id;
     registration.engine_version = manifest.engine_version;
     registration.formats = manifest.formats;
+    registration.architectures = manifest.architectures;
     registration.capabilities = manifest.capabilities;
     std::string reg_error;
     if (!registry.registerEngine(std::move(handle), registration, &reg_error)) {

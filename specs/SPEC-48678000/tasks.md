@@ -60,9 +60,9 @@
 - [x] T007.1 エッジケーステスト追加
   - ✅ IncompleteDownloadIsRetried
   - ✅ PreventDuplicateDownloads
-- [ ] T007.3 技術制約テスト追加（仕様更新により再定義）
-  - [ ] SupportsSafetensorsAndGgufFormats
-  - [ ] MetalArtifactIsOptional
+- [x] T007.3 技術制約テスト追加（仕様更新により再定義）
+  - [x] SupportsSafetensorsAndGgufFormats
+  - [x] MetalArtifactIsOptional
 - [x] T007.4 Clarificationsテスト追加
   - ✅ RouterDownloadHasTimeout（外部ソース/プロキシのタイムアウト）
   - ✅ ConcurrentDownloadLimit（同時ダウンロード数の上限）
@@ -106,9 +106,9 @@
 
 ## Phase 3.6: 進捗可視化（追加）
 
-- [ ] T021 [P] Node: モデル同期の進捗/状態を取得できるようにする（モデル名・ファイル名・downloaded/total）
-- [ ] T022 [P] Router: ヘルスチェックに同期状態を取り込み、APIで取得できるようにする
-- [ ] T023 [P] Dashboard: ノード一覧/詳細に同期状態と進捗を表示する
+- [x] T021 [P] Node: モデル同期の進捗/状態を取得できるようにする（モデル名・ファイル名・downloaded/total）
+- [x] T022 [P] Router: ヘルスチェックに同期状態を取り込み、APIで取得できるようにする
+- [x] T023 [P] Dashboard: ノード一覧/詳細に同期状態と進捗を表示する
 
 ## 依存関係
 

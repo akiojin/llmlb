@@ -1,11 +1,55 @@
 #include "core/engine_registry.h"
 
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <optional>
 #include <spdlog/spdlog.h>
 
 namespace llm_node {
+
+namespace {
+std::string normalize_architecture_name(const std::string& value) {
+    std::string lower = value;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::string compact;
+    compact.reserve(lower.size());
+    for (char c : lower) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            compact.push_back(c);
+        }
+    }
+    if (compact.find("gptoss") != std::string::npos) return "gptoss";
+    if (compact.find("nemotron") != std::string::npos) return "nemotron";
+    if (compact.find("mistral") != std::string::npos) return "mistral";
+    if (compact.find("gemma") != std::string::npos) return "gemma";
+    if (compact.find("llama") != std::string::npos) return "llama";
+    if (compact.find("qwen") != std::string::npos) return "qwen";
+    return compact.empty() ? lower : compact;
+}
+
+bool architectures_compatible(const std::vector<std::string>& supported,
+                              const std::vector<std::string>& requested) {
+    if (requested.empty()) return true;
+    if (supported.empty()) return true;
+
+    std::vector<std::string> normalized_supported;
+    normalized_supported.reserve(supported.size());
+    for (const auto& entry : supported) {
+        normalized_supported.push_back(normalize_architecture_name(entry));
+    }
+
+    for (const auto& req : requested) {
+        const auto needle = normalize_architecture_name(req);
+        for (const auto& candidate : normalized_supported) {
+            if (needle == candidate) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+}  // namespace
 
 std::vector<const EngineRegistry::EngineEntry*> EngineRegistry::filterCandidates(
     const std::vector<EngineRegistry::EngineEntry>& entries,
@@ -23,6 +67,12 @@ std::vector<const EngineRegistry::EngineEntry*> EngineRegistry::filterCandidates
 
         if (!capability.empty() && !entry.capabilities.empty()) {
             if (std::find(entry.capabilities.begin(), entry.capabilities.end(), capability) == entry.capabilities.end()) {
+                continue;
+            }
+        }
+
+        if (!descriptor.architectures.empty() && !entry.architectures.empty()) {
+            if (!architectures_compatible(entry.architectures, descriptor.architectures)) {
                 continue;
             }
         }
@@ -62,6 +112,7 @@ bool EngineRegistry::registerEngine(EngineHandle engine,
     entry.engine_id = engine_id;
     entry.engine_version = engine_version;
     entry.formats = registration.formats;
+    entry.architectures = registration.architectures;
     entry.capabilities = registration.capabilities;
     entry.engine = std::move(engine);
     engines_[runtime].push_back(std::move(entry));
@@ -161,6 +212,27 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor, const std::st
     }
 
     return candidates.front()->engine.get();
+}
+
+bool EngineRegistry::hasRuntime(const std::string& runtime) const {
+    auto it = engines_.find(runtime);
+    if (it == engines_.end()) return false;
+    return !it->second.empty();
+}
+
+bool EngineRegistry::supportsArchitecture(const std::string& runtime,
+                                          const std::vector<std::string>& architectures) const {
+    auto it = engines_.find(runtime);
+    if (it == engines_.end()) return false;
+    const auto& entries = it->second;
+    if (entries.empty()) return false;
+    if (architectures.empty()) return true;
+    for (const auto& entry : entries) {
+        if (architectures_compatible(entry.architectures, architectures)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace llm_node

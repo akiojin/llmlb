@@ -7,6 +7,7 @@ import {
   type RequestResponsesPage,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
+import { useDashboardWebSocket } from '@/hooks/useWebSocket'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { NodeTable } from '@/components/dashboard/NodeTable'
@@ -18,9 +19,13 @@ import { AlertCircle, Server, History, FileText, Box } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { isConnected: wsConnected } = useDashboardWebSocket()
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchStartRef = useRef<number | null>(null)
+
+  // When WebSocket is connected, reduce polling frequency
+  const pollingInterval = wsConnected ? 10000 : 5000
 
   const fetchWithTiming = useCallback(async () => {
     fetchStartRef.current = performance.now()
@@ -34,7 +39,7 @@ export default function Dashboard() {
   const { data, isLoading, error, refetch } = useQuery<DashboardOverview>({
     queryKey: ['dashboard-overview'],
     queryFn: fetchWithTiming,
-    refetchInterval: 5000,
+    refetchInterval: pollingInterval,
   })
 
   // リクエスト履歴（個別リクエスト詳細）を取得
@@ -42,7 +47,7 @@ export default function Dashboard() {
     useQuery<RequestResponsesPage>({
       queryKey: ['request-responses'],
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
-      refetchInterval: 5000,
+      refetchInterval: pollingInterval,
     })
 
   // RequestResponseRecord を RequestHistoryItem にマッピング

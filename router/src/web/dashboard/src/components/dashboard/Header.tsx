@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useTheme } from '@/hooks/useTheme'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -34,17 +35,11 @@ interface HeaderProps {
 
 export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }: HeaderProps) {
   const { logout } = useAuth()
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const { theme, toggleTheme } = useTheme()
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
   const [invitationModalOpen, setInvitationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(newTheme)
-    document.documentElement.classList.toggle('dark', newTheme === 'dark')
-  }
 
   const handleRefresh = () => {
     setIsRefreshing(true)

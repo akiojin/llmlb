@@ -30,6 +30,19 @@ interface StatCardProps {
   dataStat?: string
 }
 
+// Tailwind JIT では動的クラス生成が機能しないため、静的マップを使用
+const accentColorClasses: Record<string, string> = {
+  primary: 'bg-primary/10 group-hover:bg-primary/20',
+  'chart-1': 'bg-chart-1/10 group-hover:bg-chart-1/20',
+  'chart-2': 'bg-chart-2/10 group-hover:bg-chart-2/20',
+  'chart-3': 'bg-chart-3/10 group-hover:bg-chart-3/20',
+  'chart-4': 'bg-chart-4/10 group-hover:bg-chart-4/20',
+  'chart-5': 'bg-chart-5/10 group-hover:bg-chart-5/20',
+  success: 'bg-success/10 group-hover:bg-success/20',
+  warning: 'bg-warning/10 group-hover:bg-warning/20',
+  destructive: 'bg-destructive/10 group-hover:bg-destructive/20',
+}
+
 function StatCard({
   title,
   value,
@@ -60,7 +73,7 @@ function StatCard({
             )}
           </div>
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-lg bg-${accentColor}/10 transition-colors group-hover:bg-${accentColor}/20`}
+            className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${accentColorClasses[accentColor] || accentColorClasses.primary}`}
           >
             {icon}
           </div>

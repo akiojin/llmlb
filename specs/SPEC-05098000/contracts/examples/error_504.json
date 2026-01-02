@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "キュー待機タイムアウト（60秒）。再試行してください。",
+    "type": "queue_timeout",
+    "code": "queue_timeout",
+    "waited_secs": 60
+  }
+}

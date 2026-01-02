@@ -1,0 +1,108 @@
+openapi: 3.0.3
+info:
+  title: Request History Pagination API
+  version: 1.0.0
+  description: リクエスト履歴一覧のページネーション機能
+
+paths:
+  /api/dashboard/request-history:
+    get:
+      summary: リクエスト履歴一覧を取得
+      description: ページネーション付きでリクエスト履歴を取得する
+      operationId: getRequestHistory
+      parameters:
+        - name: page
+          in: query
+          description: ページ番号（1始まり）
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: 1ページあたりの件数
+          schema:
+            type: integer
+            enum: [10, 25, 50, 100]
+            default: 25
+        - name: model
+          in: query
+          description: モデル名フィルタ（部分一致）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRequestHistory'
+        '401':
+          description: 認証エラー
+
+components:
+  schemas:
+    PaginatedRequestHistory:
+      type: object
+      required:
+        - records
+        - total
+        - page
+        - per_page
+        - total_pages
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequestHistoryRecord'
+        total:
+          type: integer
+          description: 総レコード数
+          example: 150
+        page:
+          type: integer
+          description: 現在のページ番号
+          example: 1
+        per_page:
+          type: integer
+          description: 1ページあたりの件数
+          example: 25
+        total_pages:
+          type: integer
+          description: 総ページ数
+          example: 6
+
+    RequestHistoryRecord:
+      type: object
+      required:
+        - id
+        - timestamp
+        - model
+        - status
+        - duration_ms
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: レコードID
+        timestamp:
+          type: string
+          format: date-time
+          description: リクエスト日時
+        model:
+          type: string
+          description: モデル名
+        node_id:
+          type: string
+          format: uuid
+          description: 処理ノードID
+        client_ip:
+          type: string
+          description: クライアントIP
+        status:
+          type: string
+          enum: [success, error]
+          description: 処理結果
+        duration_ms:
+          type: integer
+          description: 処理時間（ミリ秒）

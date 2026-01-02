@@ -605,8 +605,11 @@ std::string InferenceEngine::generateChatWithImages(
 
     size_t effective_max_tokens = params.max_tokens;
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
+    if (model_n_ctx > 0) {
+        size_t available = 0;
+        if (prompt_positions < static_cast<size_t>(model_n_ctx)) {
+            available = static_cast<size_t>(model_n_ctx) - prompt_positions;
+        }
         effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_positions, model_n_ctx);
         spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
             model_n_ctx, prompt_positions, available, effective_max_tokens);

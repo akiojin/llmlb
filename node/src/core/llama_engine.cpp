@@ -9,10 +9,52 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <functional>
+#include <utility>
 
 namespace llm_node {
 
 namespace fs = std::filesystem;
+
+namespace {
+#ifdef LLM_NODE_TESTING
+std::function<void(const char*)> kv_cache_reset_hook;
+#endif
+
+void notify_kv_cache_reset(const char* reason) {
+#ifdef LLM_NODE_TESTING
+    if (kv_cache_reset_hook) {
+        kv_cache_reset_hook(reason);
+    }
+#else
+    (void)reason;
+#endif
+}
+
+void reset_kv_cache(llama_context* ctx, const char* reason) {
+    notify_kv_cache_reset(reason);
+    if (!ctx) return;
+    llama_memory_t mem = llama_get_memory(ctx);
+    if (mem) {
+        llama_memory_clear(mem, false);
+    }
+}
+
+struct KvCacheScope {
+    explicit KvCacheScope(llama_context* ctx) : ctx_(ctx) {
+        reset_kv_cache(ctx_, "request_start");
+    }
+    ~KvCacheScope() {
+        reset_kv_cache(ctx_, "request_end");
+    }
+
+    KvCacheScope(const KvCacheScope&) = delete;
+    KvCacheScope& operator=(const KvCacheScope&) = delete;
+
+private:
+    llama_context* ctx_{nullptr};
+};
+}  // namespace
 
 static const std::vector<std::string> kDefaultStopSequences = {
     "<|im_end|>",       // ChatML (Qwen3, etc.)
@@ -32,6 +74,16 @@ std::string extractGptOssFinalMessageForTest(const std::string& output);
 // コンストラクタ
 LlamaEngine::LlamaEngine(LlamaManager& manager)
     : manager_(manager) {}
+
+#ifdef LLM_NODE_TESTING
+void LlamaEngine::setKvCacheResetHookForTest(KvCacheResetHook hook) {
+    kv_cache_reset_hook = std::move(hook);
+}
+
+void LlamaEngine::runKvCacheScopeForTest() {
+    KvCacheScope scope(nullptr);
+}
+#endif
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string LlamaEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -385,6 +437,7 @@ std::string LlamaEngine::generateChat(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
+
 
     // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
     std::string prompt = applyModelChatTemplate(model, messages);

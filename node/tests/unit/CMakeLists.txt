@@ -5,6 +5,7 @@ set(UNIT_TEST_SOURCES
     model_downloader_test.cpp
     model_storage_test.cpp
     inference_engine_test.cpp
+    llama_engine_kv_cache_test.cpp
     gptoss_engine_test.cpp
     engine_registry_test.cpp
     engine_host_test.cpp

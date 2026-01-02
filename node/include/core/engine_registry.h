@@ -13,6 +13,7 @@ struct EngineRegistration {
     std::string engine_id;
     std::string engine_version;
     std::vector<std::string> formats;
+    std::vector<std::string> architectures;
     std::vector<std::string> capabilities;
 };
 
@@ -41,12 +42,14 @@ public:
     Engine* resolve(const std::string& runtime) const;
     Engine* resolve(const ModelDescriptor& descriptor) const;
     Engine* resolve(const ModelDescriptor& descriptor, const std::string& capability) const;
+    Engine* resolve(const ModelDescriptor& descriptor, const std::string& capability, std::string* error) const;
 
 private:
     struct EngineEntry {
         std::string engine_id;
         std::string engine_version;
         std::vector<std::string> formats;
+        std::vector<std::string> architectures;
         std::vector<std::string> capabilities;
         EngineHandle engine;
     };

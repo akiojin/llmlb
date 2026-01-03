@@ -14,18 +14,107 @@
 #include "mtmd.h"
 #include "mtmd-helper.h"
 #include "utils/stop_sequences.h"
+#include "runtime/state.h"
+#include "system/gpu_detector.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cctype>
+#include <condition_variable>
+#include <cstdlib>
 #include <filesystem>
+#include <mutex>
 #include <sstream>
+#include <thread>
+#include <type_traits>
 
 namespace llm_node {
 
 namespace {
+struct TokenMetricsState {
+    uint64_t start_ns{0};
+    uint64_t first_token_ns{0};
+    uint64_t last_token_ns{0};
+    size_t token_count{0};
+};
+
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+#ifdef LLM_NODE_TESTING
+std::mutex g_token_metrics_mutex;
+std::function<void(const TokenMetrics&)> g_token_metrics_hook;
+std::function<uint64_t()> g_token_metrics_clock;
+std::mutex g_plugin_restart_hook_mutex;
+std::function<bool(std::string&)> g_plugin_restart_hook;
+#endif
+
+uint64_t token_metrics_now_ns() {
+#ifdef LLM_NODE_TESTING
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    if (g_token_metrics_clock) {
+        return g_token_metrics_clock();
+    }
+#endif
+    return steady_now_ns();
+}
+
+void token_metrics_callback(void* ctx, uint32_t, uint64_t timestamp_ns) {
+    auto* state = static_cast<TokenMetricsState*>(ctx);
+    if (!state) return;
+    state->token_count += 1;
+    if (state->first_token_ns == 0) {
+        state->first_token_ns = timestamp_ns;
+    }
+    state->last_token_ns = timestamp_ns;
+}
+
+TokenMetrics build_token_metrics(const TokenMetricsState& state) {
+    TokenMetrics metrics;
+    metrics.token_count = state.token_count;
+    if (state.token_count == 0) {
+        return metrics;
+    }
+    const uint64_t start = state.start_ns;
+    const uint64_t first = state.first_token_ns > 0 ? state.first_token_ns : start;
+    const uint64_t last = state.last_token_ns > 0 ? state.last_token_ns : first;
+    metrics.ttft_ms = static_cast<double>(first - start) / 1'000'000.0;
+    const double duration_s = last > start
+        ? static_cast<double>(last - start) / 1'000'000'000.0
+        : 0.0;
+    metrics.tokens_per_second = duration_s > 0.0
+        ? static_cast<double>(state.token_count) / duration_s
+        : 0.0;
+    return metrics;
+}
+
+void report_token_metrics(const TokenMetricsState& state, const std::string& model, const char* kind) {
+    if (state.token_count == 0) return;
+    TokenMetrics metrics = build_token_metrics(state);
+    spdlog::info("Token metrics: model={} kind={} ttft_ms={:.2f} tokens={} tokens_per_sec={:.2f}",
+        model,
+        kind ? kind : "unknown",
+        metrics.ttft_ms,
+        metrics.token_count,
+        metrics.tokens_per_second);
+#ifdef LLM_NODE_TESTING
+    std::function<void(const TokenMetrics&)> hook;
+    {
+        std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+        hook = g_token_metrics_hook;
+    }
+    if (hook) {
+        hook(metrics);
+    }
+#endif
+}
+
 std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens) {
     std::vector<std::string> tokens;
     std::string current;
@@ -51,6 +140,95 @@ std::string apply_stop_sequences_to_output(std::string output, const std::vector
     auto normalized = normalize_stop_sequences(stop_sequences);
     apply_stop_sequences_suffix(output, normalized);
     return output;
+}
+
+constexpr auto kDefaultRequestTimeout = std::chrono::seconds(30);
+std::atomic<int64_t> g_watchdog_timeout_ms{
+    std::chrono::duration_cast<std::chrono::milliseconds>(kDefaultRequestTimeout).count()};
+std::mutex g_watchdog_mutex;
+std::function<void()> g_watchdog_terminate;
+
+void default_watchdog_terminate() {
+    spdlog::critical("Request watchdog timeout exceeded; terminating process");
+    std::abort();
+}
+
+class RequestWatchdog {
+public:
+    RequestWatchdog(std::chrono::milliseconds timeout, std::function<void()> on_timeout)
+        : timeout_(timeout)
+        , on_timeout_(std::move(on_timeout)) {
+        if (timeout_.count() <= 0 || !on_timeout_) {
+            active_ = false;
+            return;
+        }
+        thread_ = std::thread([this]() { run(); });
+    }
+
+    RequestWatchdog(const RequestWatchdog&) = delete;
+    RequestWatchdog& operator=(const RequestWatchdog&) = delete;
+
+    void disarm() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!active_) return;
+            active_ = false;
+        }
+        cv_.notify_all();
+    }
+
+    ~RequestWatchdog() {
+        disarm();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+private:
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!active_) return;
+        const bool cancelled = cv_.wait_for(lock, timeout_, [this]() { return !active_; });
+        if (cancelled || !active_) return;
+        lock.unlock();
+        on_timeout_();
+    }
+
+    std::chrono::milliseconds timeout_{0};
+    std::function<void()> on_timeout_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool active_{true};
+    std::thread thread_;
+};
+
+std::chrono::milliseconds get_watchdog_timeout() {
+    return std::chrono::milliseconds(g_watchdog_timeout_ms.load());
+}
+
+std::function<void()> get_watchdog_terminate_hook() {
+    std::lock_guard<std::mutex> lock(g_watchdog_mutex);
+    if (!g_watchdog_terminate) {
+        g_watchdog_terminate = default_watchdog_terminate;
+    }
+    return g_watchdog_terminate;
+}
+
+template <typename Fn>
+auto run_with_watchdog(Fn&& fn) {
+    const auto timeout = get_watchdog_timeout();
+    if (timeout.count() <= 0) {
+        return fn();
+    }
+    RequestWatchdog watchdog(timeout, get_watchdog_terminate_hook());
+    if constexpr (std::is_void_v<decltype(fn())>) {
+        fn();
+        watchdog.disarm();
+    } else {
+        auto result = fn();
+        watchdog.disarm();
+        return result;
+    }
 }
 
 std::optional<ModelDescriptor> resolve_descriptor(
@@ -354,7 +532,8 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     : manager_(&manager)
     , model_storage_(&model_storage)
     , model_sync_(model_sync)
-    , model_resolver_(model_resolver) {
+    , model_resolver_(model_resolver)
+    , resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
     engines_ = std::make_unique<EngineRegistry>();
     EngineRegistration llama_reg;
     llama_reg.engine_id = "builtin_llama_cpp";
@@ -380,6 +559,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     nemotron_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
+    plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
 InferenceEngine::InferenceEngine() = default;
@@ -392,12 +572,74 @@ bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, 
         return false;
     }
 
+    engine_plugins_dir_ = directory;
     EngineHostContext context;
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
 
     return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
+}
+
+bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
+    if (!engines_) {
+        error = "EngineRegistry not initialized";
+        return false;
+    }
+
+    engine_plugins_dir_ = directory;
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    if (!engine_host_.stagePluginsFromDir(directory, context, error)) {
+        return false;
+    }
+
+    applyPendingEnginePluginsIfIdle(&error);
+    return error.empty();
+}
+
+void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) const {
+    if (!engines_) {
+        if (error) *error = "EngineRegistry not initialized";
+        return;
+    }
+
+    if (!engine_host_.hasPendingPlugins()) {
+        if (error) error->clear();
+        return;
+    }
+
+    if (active_request_count() > 0) {
+        if (error) error->clear();
+        return;
+    }
+
+    std::string apply_error;
+    if (!engine_host_.applyPendingPlugins(*engines_, apply_error)) {
+        if (error) {
+            *error = apply_error;
+        }
+        if (!apply_error.empty()) {
+            spdlog::warn("Engine plugin reload failed: {}", apply_error);
+        }
+    } else if (error) {
+        error->clear();
+    }
+    if (!engine_host_.hasPendingPlugins()) {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+    }
+}
+
+void InferenceEngine::setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit) {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    plugin_restart_interval_ = interval;
+    plugin_restart_request_limit_ = request_limit;
+    plugin_restart_request_count_ = 0;
+    plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -439,6 +681,89 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
     return "";
 }
 
+void InferenceEngine::maybeSchedulePluginRestart() const {
+    if (engine_plugins_dir_.empty()) return;
+
+    const auto now = std::chrono::steady_clock::now();
+    bool should_stage = false;
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) return;
+        if (plugin_restart_interval_.count() == 0 && plugin_restart_request_limit_ == 0) {
+            return;
+        }
+
+        plugin_restart_request_count_ += 1;
+        const bool due_by_requests = plugin_restart_request_limit_ > 0 &&
+            plugin_restart_request_count_ >= plugin_restart_request_limit_;
+        const bool due_by_time = plugin_restart_interval_.count() > 0 &&
+            (now - plugin_restart_last_) >= plugin_restart_interval_;
+        if (!due_by_requests && !due_by_time) {
+            return;
+        }
+
+        plugin_restart_pending_ = true;
+        plugin_restart_request_count_ = 0;
+        plugin_restart_last_ = now;
+        should_stage = true;
+    }
+
+    if (!should_stage) return;
+
+    std::string error;
+    if (!stagePluginRestart("periodic", error)) {
+        spdlog::warn("Engine plugin restart schedule failed: {}", error);
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+    }
+}
+
+void InferenceEngine::handlePluginCrash() const {
+    if (engine_plugins_dir_.empty()) return;
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) return;
+        plugin_restart_pending_ = true;
+    }
+
+    std::string error;
+    if (!stagePluginRestart("crash", error)) {
+        spdlog::warn("Engine plugin restart after crash failed: {}", error);
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+        return;
+    }
+
+    applyPendingEnginePluginsIfIdle();
+}
+
+bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
+    error.clear();
+#ifdef LLM_NODE_TESTING
+    {
+        std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
+        if (g_plugin_restart_hook) {
+            return g_plugin_restart_hook(error);
+        }
+    }
+#endif
+    if (engine_plugins_dir_.empty()) {
+        error = "engine plugins dir not set";
+        return false;
+    }
+
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    if (!engine_host_.stagePluginsFromDir(engine_plugins_dir_, context, error)) {
+        return false;
+    }
+    spdlog::info("Engine plugin restart staged ({})", reason ? reason : "unknown");
+    return true;
+}
+
 std::string InferenceEngine::generateChat(
     const std::vector<ChatMessage>& messages,
     const std::string& model,
@@ -450,17 +775,32 @@ std::string InferenceEngine::generateChat(
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
-    auto desc = resolve_descriptor(model_storage_, model);
-    if (!desc) {
-        throw std::runtime_error("Model not found: " + model);
-    }
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model);
+        }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
-    if (!engine) {
-        throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
-    }
+        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
 
-    return engine->generateChat(messages, *desc, params);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateChat(messages, *desc, params_with_metrics);
+            report_token_metrics(metrics, desc->name, "chat");
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
+    });
 }
 
 std::string InferenceEngine::generateChatWithImages(
@@ -479,171 +819,193 @@ std::string InferenceEngine::generateChatWithImages(
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
-    std::string error;
-    std::string gguf_path = resolveModelPath(model_name, &error);
-    if (gguf_path.empty()) {
-        std::string msg = error.empty() ? "Model not found: " + model_name : error;
-        spdlog::error("{}", msg);
-        throw std::runtime_error(msg);
-    }
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        std::string error;
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
 
-    if (!manager_->loadModelIfNeeded(gguf_path)) {
-        throw std::runtime_error("Failed to load model: " + gguf_path);
-    }
-
-    llama_context* ctx = manager_->getContext(gguf_path);
-    llama_model* model = manager_->getModel(gguf_path);
-
-    if (!ctx || !model) {
-        throw std::runtime_error("Failed to get context/model for: " + gguf_path);
-    }
-
-    if (!vision_processor_) {
-        vision_processor_ = std::make_unique<VisionProcessor>(*model_storage_);
-    }
-
-    std::string vision_error;
-    mtmd_context* mctx = vision_processor_->getOrCreateContext(model_name, gguf_path, model, vision_error);
-    if (!mctx) {
-        throw std::runtime_error(vision_error.empty() ? "Vision model not available" : vision_error);
-    }
-
-    mtmd::bitmaps bitmaps;
-    if (!vision_processor_->prepareBitmaps(mctx, image_urls, bitmaps, vision_error)) {
-        throw std::runtime_error(vision_error.empty() ? "Failed to prepare images" : vision_error);
-    }
-
-    std::string prompt = applyModelChatTemplate(model, messages);
-    spdlog::debug("Vision prompt: {}", prompt);
-
-    bool is_gptoss = isGptOssModel(model);
-    bool add_special = !is_gptoss;
-    bool parse_special = is_gptoss;
-
-    mtmd_input_text text;
-    text.text = prompt.c_str();
-    text.add_special = add_special;
-    text.parse_special = parse_special;
-
-    mtmd::input_chunks chunks(mtmd_input_chunks_init());
-    auto bitmaps_c_ptr = bitmaps.c_ptr();
-    int32_t res = mtmd_tokenize(mctx,
-                                chunks.ptr.get(),
-                                &text,
-                                bitmaps_c_ptr.data(),
-                                bitmaps_c_ptr.size());
-    if (res != 0) {
-        throw std::runtime_error("Failed to tokenize vision prompt");
-    }
-
-    llama_memory_t mem = llama_get_memory(ctx);
-    if (mem) {
-        // Reset sequence positions to avoid KV cache position mismatches across requests.
-        llama_memory_clear(mem, false);
-    }
-
-    llama_pos new_n_past = 0;
-    const int32_t n_batch = llama_n_batch(ctx);
-    if (mtmd_helper_eval_chunks(mctx,
-                                ctx,
-                                chunks.ptr.get(),
-                                0,
-                                0,
-                                n_batch,
-                                true,
-                                &new_n_past) != 0) {
-        throw std::runtime_error("Failed to evaluate vision prompt");
-    }
-
-    size_t prompt_positions = new_n_past < 0 ? 0 : static_cast<size_t>(new_n_past);
-    spdlog::debug("Vision prompt positions: {}", prompt_positions);
-
-    llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
-    llama_sampler* sampler = llama_sampler_chain_init(sparams);
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
-    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,
-        params.repeat_penalty,
-        0.0f,
-        0.0f
-    ));
-
-    uint32_t seed = params.seed;
-    if (seed == 0) {
-        seed = static_cast<uint32_t>(
-            std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
-    }
-    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
-
-    std::string output;
-    static const std::vector<std::string> kDefaultStopSequences = {
-        "<|im_end|>",
-        "<|end|>",
-        "<|start|>",
-        "<|eot_id|>",
-        "</s>",
-        "<|endoftext|>",
-    };
-    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
-
-    size_t effective_max_tokens = params.max_tokens;
-    int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
-        spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
-            model_n_ctx, prompt_positions, available, effective_max_tokens);
-    }
-
-    const llama_vocab* vocab = llama_model_get_vocab(model);
-
-    for (size_t i = 0; i < effective_max_tokens; i++) {
-        llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
-
-        if (llama_vocab_is_eog(vocab, new_token)) {
-            spdlog::debug("Vision: EOG token received at position {}", i);
-            break;
+        std::string gguf_path = resolveModelPath(model_name, &error);
+        if (gguf_path.empty()) {
+            std::string msg = error.empty() ? "Model not found: " + model_name : error;
+            spdlog::error("{}", msg);
+            throw std::runtime_error(msg);
         }
 
-        char buf[256];
-        int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
-        if (len > 0) {
-            output.append(buf, static_cast<size_t>(len));
-            if (apply_stop_sequences_suffix(output, stop_sequences)) {
+        if (!manager_->loadModelIfNeeded(gguf_path)) {
+            throw std::runtime_error("Failed to load model: " + gguf_path);
+        }
+
+        llama_context* ctx = manager_->getContext(gguf_path);
+        llama_model* model = manager_->getModel(gguf_path);
+
+        if (!ctx || !model) {
+            throw std::runtime_error("Failed to get context/model for: " + gguf_path);
+        }
+
+        if (!vision_processor_) {
+            vision_processor_ = std::make_unique<VisionProcessor>(*model_storage_);
+        }
+
+        std::string vision_error;
+        mtmd_context* mctx = vision_processor_->getOrCreateContext(model_name, gguf_path, model, vision_error);
+        if (!mctx) {
+            throw std::runtime_error(vision_error.empty() ? "Vision model not available" : vision_error);
+        }
+
+        mtmd::bitmaps bitmaps;
+        if (!vision_processor_->prepareBitmaps(mctx, image_urls, bitmaps, vision_error)) {
+            throw std::runtime_error(vision_error.empty() ? "Failed to prepare images" : vision_error);
+        }
+
+        std::string prompt = applyModelChatTemplate(model, messages);
+        spdlog::debug("Vision prompt: {}", prompt);
+
+        bool is_gptoss = isGptOssModel(model);
+        bool add_special = !is_gptoss;
+        bool parse_special = is_gptoss;
+
+        mtmd_input_text text;
+        text.text = prompt.c_str();
+        text.add_special = add_special;
+        text.parse_special = parse_special;
+
+        mtmd::input_chunks chunks(mtmd_input_chunks_init());
+        auto bitmaps_c_ptr = bitmaps.c_ptr();
+        int32_t res = mtmd_tokenize(mctx,
+                                    chunks.ptr.get(),
+                                    &text,
+                                    bitmaps_c_ptr.data(),
+                                    bitmaps_c_ptr.size());
+        if (res != 0) {
+            throw std::runtime_error("Failed to tokenize vision prompt");
+        }
+
+        llama_memory_t mem = llama_get_memory(ctx);
+        if (mem) {
+            // Reset sequence positions to avoid KV cache position mismatches across requests.
+            llama_memory_clear(mem, false);
+        }
+
+        llama_pos new_n_past = 0;
+        const int32_t n_batch = llama_n_batch(ctx);
+        if (mtmd_helper_eval_chunks(mctx,
+                                    ctx,
+                                    chunks.ptr.get(),
+                                    0,
+                                    0,
+                                    n_batch,
+                                    true,
+                                    &new_n_past) != 0) {
+            throw std::runtime_error("Failed to evaluate vision prompt");
+        }
+
+        size_t prompt_positions = new_n_past < 0 ? 0 : static_cast<size_t>(new_n_past);
+        spdlog::debug("Vision prompt positions: {}", prompt_positions);
+
+        llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+        llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
+        llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+            64,
+            params.repeat_penalty,
+            0.0f,
+            0.0f
+        ));
+
+        uint32_t seed = params.seed;
+        if (seed == 0) {
+            seed = static_cast<uint32_t>(
+                std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
+        }
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+
+        std::string output;
+        static const std::vector<std::string> kDefaultStopSequences = {
+            "<|im_end|>",
+            "<|end|>",
+            "<|start|>",
+            "<|eot_id|>",
+            "</s>",
+            "<|endoftext|>",
+        };
+        auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params_with_metrics.stop_sequences);
+
+        size_t effective_max_tokens = params_with_metrics.max_tokens;
+        int32_t model_n_ctx = llama_model_n_ctx_train(model);
+        if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
+            size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
+            constexpr size_t DEFAULT_MAX_TOKENS = 2048;
+            if (params_with_metrics.max_tokens == DEFAULT_MAX_TOKENS || params_with_metrics.max_tokens == 0) {
+                effective_max_tokens = available;
+            } else {
+                effective_max_tokens = std::min(params_with_metrics.max_tokens, available);
+            }
+            spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
+                model_n_ctx, prompt_positions, available, effective_max_tokens);
+        }
+
+        const llama_vocab* vocab = llama_model_get_vocab(model);
+
+        for (size_t i = 0; i < effective_max_tokens; i++) {
+            llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+            if (llama_vocab_is_eog(vocab, new_token)) {
+                spdlog::debug("Vision: EOG token received at position {}", i);
+                break;
+            }
+
+            if (params_with_metrics.on_token_callback) {
+                params_with_metrics.on_token_callback(
+                    params_with_metrics.on_token_callback_ctx,
+                    static_cast<uint32_t>(new_token),
+                    steady_now_ns());
+            }
+
+            char buf[256];
+            int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
+            if (len > 0) {
+                output.append(buf, static_cast<size_t>(len));
+                if (apply_stop_sequences_suffix(output, stop_sequences)) {
+                    break;
+                }
+            }
+
+            llama_sampler_accept(sampler, new_token);
+
+            llama_batch next_batch = llama_batch_get_one(&new_token, 1);
+            int32_t gen_decode_result = llama_decode(ctx, next_batch);
+            if (gen_decode_result != 0) {
+                spdlog::warn("Vision: llama_decode failed during generation: {}", gen_decode_result);
                 break;
             }
         }
 
-        llama_sampler_accept(sampler, new_token);
+        llama_sampler_free(sampler);
 
-        llama_batch next_batch = llama_batch_get_one(&new_token, 1);
-        int32_t gen_decode_result = llama_decode(ctx, next_batch);
-        if (gen_decode_result != 0) {
-            spdlog::warn("Vision: llama_decode failed during generation: {}", gen_decode_result);
-            break;
+        llama_memory_t end_mem = llama_get_memory(ctx);
+        if (end_mem) {
+            llama_memory_clear(end_mem, false);
         }
-    }
 
-    llama_sampler_free(sampler);
+        apply_stop_sequences_suffix(output, stop_sequences);
 
-    apply_stop_sequences_suffix(output, stop_sequences);
+        if (isGptOssModel(model)) {
+            spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
+            output = cleanGptOssOutput(output);
+            spdlog::info("Vision: After cleanup: {} chars", output.size());
+        }
 
-    if (isGptOssModel(model)) {
-        spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
-        output = cleanGptOssOutput(output);
-        spdlog::info("Vision: After cleanup: {} chars", output.size());
-    }
-
-    spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
-    return output;
+        spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
+        report_token_metrics(metrics, model_name, "vision");
+        return output;
+    });
 }
 
 std::string InferenceEngine::generateCompletion(
@@ -654,17 +1016,32 @@ std::string InferenceEngine::generateCompletion(
         return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
 
-    auto desc = resolve_descriptor(model_storage_, model);
-    if (!desc) {
-        throw std::runtime_error("Model not found: " + model);
-    }
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model);
+        }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
-    if (!engine) {
-        throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
-    }
+        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
 
-    return engine->generateCompletion(prompt, *desc, params);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateCompletion(prompt, *desc, params_with_metrics);
+            report_token_metrics(metrics, desc->name, "completion");
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
+    });
 }
 
 std::vector<std::string> InferenceEngine::generateChatStream(
@@ -684,17 +1061,32 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model);
-    if (!desc) {
-        throw std::runtime_error("Model not found: " + model);
-    }
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model);
+        }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
-    if (!engine) {
-        throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
-    }
+        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
 
-    return engine->generateChatStream(messages, *desc, params, on_token);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, on_token);
+            report_token_metrics(metrics, desc->name, "stream");
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
+    });
 }
 
 std::vector<std::string> InferenceEngine::generateChatStream(
@@ -783,6 +1175,61 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         result.error_message = "No engine registered for runtime: " + desc->runtime;
         return result;
     }
+    const std::string engine_id = engines_ ? engines_->engineIdFor(engine) : "";
+
+    if (resource_usage_provider_) {
+        const auto usage = resource_usage_provider_();
+        const uint64_t required = engine->getModelVramBytes(*desc);
+        uint64_t vram_total_bytes = usage.vram_total_bytes;
+        uint64_t vram_available_bytes =
+            usage.vram_total_bytes > usage.vram_used_bytes
+                ? usage.vram_total_bytes - usage.vram_used_bytes
+                : 0;
+
+#ifndef LLM_NODE_TESTING
+        if (required > 0) {
+            GpuDetector detector;
+            const auto devices = detector.detect();
+            uint64_t max_total = 0;
+            uint64_t max_free = 0;
+            for (const auto& device : devices) {
+                if (!device.is_available) continue;
+                max_total = std::max<uint64_t>(max_total, device.memory_bytes);
+                max_free = std::max<uint64_t>(max_free, device.free_memory_bytes);
+            }
+            if (max_total > 0) {
+                vram_total_bytes = max_total;
+            }
+            if (max_free > 0) {
+                vram_available_bytes = max_free;
+            }
+        }
+#endif
+
+        if (vram_total_bytes > 0 && required > 0 && !engine_id.empty()) {
+            const size_t engine_count = engines_ ? engines_->engineIdCount() : 0;
+            if (engine_count > 0) {
+                const uint64_t budget = vram_total_bytes / engine_count;
+                if (budget > 0 && required > budget) {
+                    spdlog::warn(
+                        "VRAM budget exceeded for engine {} (required={} budget={})",
+                        engine_id,
+                        required,
+                        budget);
+                    result.code = EngineErrorCode::kResourceExhausted;
+                    result.error_message = "Insufficient VRAM budget available";
+                    return result;
+                }
+            }
+        }
+        if (vram_total_bytes > 0 && required > 0) {
+            if (required > vram_available_bytes) {
+                result.code = EngineErrorCode::kResourceExhausted;
+                result.error_message = "Insufficient VRAM available";
+                return result;
+            }
+        }
+    }
 
     result = engine->loadModel(*desc);
     if (result.success) {
@@ -807,22 +1254,63 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
-    auto desc = resolve_descriptor(model_storage_, model_name);
-    if (!desc) {
-        throw std::runtime_error("Model not found: " + model_name);
-    }
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model_name);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model_name);
+        }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
-    if (!engine) {
-        throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
-    }
+        Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
 
-    return engine->generateEmbeddings(inputs, *desc);
+        try {
+            return engine->generateEmbeddings(inputs, *desc);
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
+    });
 }
 
 #ifdef LLM_NODE_TESTING
 void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
     engines_ = std::move(registry);
+}
+
+void InferenceEngine::setResourceUsageProviderForTest(std::function<ResourceUsage()> provider) {
+    resource_usage_provider_ = std::move(provider);
+}
+
+void InferenceEngine::setWatchdogTimeoutForTest(std::chrono::milliseconds timeout) {
+    g_watchdog_timeout_ms.store(timeout.count());
+}
+
+void InferenceEngine::setWatchdogTerminateHookForTest(std::function<void()> hook) {
+    std::lock_guard<std::mutex> lock(g_watchdog_mutex);
+    g_watchdog_terminate = std::move(hook);
+}
+
+void InferenceEngine::setTokenMetricsHookForTest(std::function<void(const TokenMetrics&)> hook) {
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    g_token_metrics_hook = std::move(hook);
+}
+
+void InferenceEngine::setTokenMetricsClockForTest(std::function<uint64_t()> clock) {
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    g_token_metrics_clock = std::move(clock);
+}
+
+void InferenceEngine::setPluginRestartHookForTest(std::function<bool(std::string&)> hook) {
+    std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
+    g_plugin_restart_hook = std::move(hook);
+}
+
+void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& directory) {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    engine_plugins_dir_ = directory;
 }
 #endif
 

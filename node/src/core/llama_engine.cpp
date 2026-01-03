@@ -9,10 +9,63 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <functional>
+#include <utility>
 
 namespace llm_node {
 
 namespace fs = std::filesystem;
+
+namespace {
+#ifdef LLM_NODE_TESTING
+std::function<void(const char*)> kv_cache_reset_hook;
+#endif
+
+void notify_kv_cache_reset(const char* reason) {
+#ifdef LLM_NODE_TESTING
+    if (kv_cache_reset_hook) {
+        kv_cache_reset_hook(reason);
+    }
+#else
+    (void)reason;
+#endif
+}
+
+void reset_kv_cache(llama_context* ctx, const char* reason) {
+    notify_kv_cache_reset(reason);
+    if (!ctx) return;
+    llama_memory_t mem = llama_get_memory(ctx);
+    if (mem) {
+        llama_memory_clear(mem, false);
+    }
+}
+
+struct KvCacheScope {
+    explicit KvCacheScope(llama_context* ctx) : ctx_(ctx) {
+        reset_kv_cache(ctx_, "request_start");
+    }
+    ~KvCacheScope() {
+        reset_kv_cache(ctx_, "request_end");
+    }
+
+    KvCacheScope(const KvCacheScope&) = delete;
+    KvCacheScope& operator=(const KvCacheScope&) = delete;
+
+private:
+    llama_context* ctx_{nullptr};
+};
+
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
+    if (!params.on_token_callback) return;
+    params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
+}
+}  // namespace
 
 static const std::vector<std::string> kDefaultStopSequences = {
     "<|im_end|>",       // ChatML (Qwen3, etc.)
@@ -32,6 +85,16 @@ std::string extractGptOssFinalMessageForTest(const std::string& output);
 // コンストラクタ
 LlamaEngine::LlamaEngine(LlamaManager& manager)
     : manager_(manager) {}
+
+#ifdef LLM_NODE_TESTING
+void LlamaEngine::setKvCacheResetHookForTest(KvCacheResetHook hook) {
+    kv_cache_reset_hook = std::move(hook);
+}
+
+void LlamaEngine::runKvCacheScopeForTest() {
+    KvCacheScope scope(nullptr);
+}
+#endif
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string LlamaEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -385,6 +448,7 @@ std::string LlamaEngine::generateChat(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
+    KvCacheScope kv_scope(ctx);
 
     // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
     std::string prompt = applyModelChatTemplate(model, messages);
@@ -509,6 +573,8 @@ std::string LlamaEngine::generateChat(
             break;
         }
 
+        emit_token_metrics(params, static_cast<uint32_t>(new_token));
+
         // トークンをテキストに変換
         char buf[256];
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
@@ -597,6 +663,7 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model");
     }
+    KvCacheScope kv_scope(ctx);
 
     // 3. vocab取得とプロンプト処理（モデル固有のチャットテンプレートを使用）
     const llama_vocab* vocab = llama_model_get_vocab(model);
@@ -696,6 +763,8 @@ std::vector<std::string> LlamaEngine::generateChatStream(
             break;
         }
 
+        emit_token_metrics(params, static_cast<uint32_t>(new_token));
+
         char buf[256];
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
         if (len > 0) {
@@ -780,6 +849,18 @@ size_t LlamaEngine::getModelMaxContext(const ModelDescriptor& descriptor) const 
     return model_max_ctx_;
 }
 
+uint64_t LlamaEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
+    if (descriptor.primary_path.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    auto size = fs::file_size(descriptor.primary_path, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<uint64_t>(size);
+}
+
 // Embedding生成
 std::vector<std::vector<float>> LlamaEngine::generateEmbeddings(
     const std::vector<std::string>& inputs,
@@ -850,10 +931,7 @@ std::vector<std::vector<float>> LlamaEngine::generateEmbeddings(
         tokens.resize(static_cast<size_t>(n_tokens));
 
         // メモリをクリア（新しい入力をエンコードする前に）
-        llama_memory_t mem = llama_get_memory(ctx);
-        if (mem) {
-            llama_memory_clear(mem, false);
-        }
+        reset_kv_cache(ctx, "embed_input");
 
         // バッチを作成（全トークンのembeddingを出力）
         llama_batch batch = llama_batch_init(static_cast<int32_t>(tokens.size()), 0, 1);

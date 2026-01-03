@@ -38,6 +38,13 @@ public:
         const ModelDescriptor& descriptor) const override;
 
     size_t getModelMaxContext(const ModelDescriptor& descriptor) const override;
+    uint64_t getModelVramBytes(const ModelDescriptor& descriptor) const override;
+
+#ifdef LLM_NODE_TESTING
+    using KvCacheResetHook = std::function<void(const char*)>;
+    static void setKvCacheResetHookForTest(KvCacheResetHook hook);
+    static void runKvCacheScopeForTest();
+#endif
 
 private:
     LlamaManager& manager_;

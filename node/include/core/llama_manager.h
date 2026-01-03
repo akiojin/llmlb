@@ -21,6 +21,7 @@ struct LlamaContext {
     llama_model* model{nullptr};
     llama_context* ctx{nullptr};
     size_t gpu_layers{0};
+    int gpu_id{-1};
 
     // デストラクタでリソース解放
     ~LlamaContext();
@@ -106,6 +107,7 @@ private:
     std::unordered_map<std::string, std::unique_ptr<LlamaContext>> loaded_models_;
     size_t gpu_layers_{0};
     size_t memory_bytes_{0};
+    std::unordered_map<std::string, int> model_gpu_ids_;
 
     // オンデマンドロード用の設定
     std::chrono::milliseconds idle_timeout_{std::chrono::minutes(5)};

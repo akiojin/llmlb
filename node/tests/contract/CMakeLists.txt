@@ -22,6 +22,14 @@ set(CONTRACT_TEST_SOURCES
     ../../src/runtime/state.cpp
 )
 
+if(APPLE)
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/gpu_detector.mm)
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/resource_monitor.mm)
+else()
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/gpu_detector.cpp)
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
+endif()
+
 add_executable(llm-node-contract-tests
     ${CONTRACT_TEST_SOURCES}
 )

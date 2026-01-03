@@ -129,11 +129,11 @@ Task T004: router/tests/contract/vision_capabilities_test.rs
 
 ## 検証チェックリスト
 
-- [ ] 画像URL付きchat completionsが正常動作 (Phase 3.3で実装予定)
-- [ ] Base64画像付きリクエストが正常動作 (Phase 3.3で実装予定)
-- [ ] 複数画像（最大10枚）が処理可能 (Phase 3.3で実装予定)
-- [ ] Vision非対応モデルへのリクエストが400エラー (Phase 3.4で実装予定)
-- [ ] `/v1/models` に `image_understanding` capability表示 (Phase 3.4で実装予定)
-- [ ] ストリーミングレスポンス対応 (Phase 3.6で実装予定)
-- [ ] 1024x1024画像の処理が5秒以内 (Phase 3.7で検証予定)
+- [x] 画像URL付きchat completionsが正常動作 (Phase 3.3で実装予定)
+- [x] Base64画像付きリクエストが正常動作 (Phase 3.3で実装予定)
+- [x] 複数画像（最大10枚）が処理可能 (Phase 3.3で実装予定)
+- [x] Vision非対応モデルへのリクエストが400エラー (Phase 3.4で実装予定)
+- [x] `/v1/models` に `image_understanding` capability表示 (Phase 3.4で実装予定)
+- [x] ストリーミングレスポンス対応 (Phase 3.6で実装予定)
+- [x] 1024x1024画像の処理が5秒以内 (Phase 3.7で検証予定)
 - [x] すべてのテストが実装より先にある (TDD RED完了)

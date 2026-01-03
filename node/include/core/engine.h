@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -39,6 +40,8 @@ public:
         const ModelDescriptor& descriptor) const = 0;
 
     virtual size_t getModelMaxContext(const ModelDescriptor& descriptor) const = 0;
+
+    virtual uint64_t getModelVramBytes(const ModelDescriptor&) const { return 0; }
 };
 
 }  // namespace llm_node

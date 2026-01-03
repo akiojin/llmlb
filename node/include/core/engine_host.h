@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/engine_plugin_api.h"
+#include "core/engine_registry.h"
 
 namespace llm_node {
 
@@ -47,6 +48,14 @@ public:
                             EngineRegistry& registry,
                             const EngineHostContext& context,
                             std::string& error);
+    bool stagePlugin(const std::filesystem::path& manifest_path,
+                     const EngineHostContext& context,
+                     std::string& error);
+    bool stagePluginsFromDir(const std::filesystem::path& directory,
+                             const EngineHostContext& context,
+                             std::string& error);
+    bool applyPendingPlugins(EngineRegistry& registry, std::string& error);
+    bool hasPendingPlugins() const { return !pending_.empty(); }
 
 private:
     struct LoadedPlugin {
@@ -55,7 +64,16 @@ private:
         void* handle{nullptr};
     };
 
+    struct PendingPlugin {
+        std::string engine_id;
+        std::filesystem::path library_path;
+        void* handle{nullptr};
+        EngineRegistry::EngineHandle engine;
+        EngineRegistration registration;
+    };
+
     std::vector<LoadedPlugin> plugins_;
+    std::vector<PendingPlugin> pending_;
 };
 
 }  // namespace llm_node

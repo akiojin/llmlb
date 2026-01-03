@@ -90,8 +90,8 @@ SPEC-6cd7f960 FR-1に基づき、検証なしでのモデル追加は禁止さ�
 
 | ID | 表示名 | エンジン | ステータス |
 |----|-------|---------|----------|
-| gpt-oss-safeguard | GPT-OSS Safeguard | gptoss_cpp | 未検証（Metalアーティファクト無し） |
-| seed-oss | Seed OSS | gptoss_cpp | 未検証（Metal） |
+| gpt-oss-safeguard | GPT-OSS Safeguard | gptoss_cpp | 未検証（HFリポジトリ未公開） |
+| seed-oss | Seed OSS | gptoss_cpp | 未検証（HFリポジトリ未公開） |
 
 ### Vision（将来対応）
 
@@ -152,3 +152,4 @@ curl http://localhost:32768/v1/chat/completions \
 | 2025-12-30 | 初版作成、Docker Desktop Modelsの検証待ちリストを追加 |
 | 2026-01-02 | GPT-OSS 20B/120BのMetalアーティファクト確認結果を追記 |
 | 2026-01-03 | Qwen3/Ministral 3/SmolLM2/Devstral Small/Phi-4/Granite 4.0 Micro/H Micro/H Tiny/H Small/Mistral Nemo/DeepSeek R1 Distill/Magistral Small 3.2/QwQ/Qwen3 Coder/Gemma 3/Llama 3.3/Llama 3.1のGGUF検証結果を追加 |
+| 2026-01-03 | gpt-oss-safeguard/seed-ossのHF未公開ステータスを追記 |

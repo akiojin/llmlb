@@ -42,6 +42,6 @@
 - [ ] `router/src/supported_models.json` に追加し、Model Hub に反映
 
 ### 3) safetensors 検証フロー
-- [ ] gpt-oss-safeguard の **Metal最適化アーティファクト有無** を再確認
-  - 無い場合は「未検証（Metalアーティファクト無し）」を維持
-- [ ] safetensors の検証フロー（Metal）を明文化し、`verified-models.md` に追記
+- [x] gpt-oss-safeguard の **Metal最適化アーティファクト有無** を再確認
+  - 無い場合は「未検証（Metalアーティファクト無し）」または「HF未公開」を維持
+- [x] safetensors の検証フロー（Metal）を明文化し、`verified-models.md` に追記

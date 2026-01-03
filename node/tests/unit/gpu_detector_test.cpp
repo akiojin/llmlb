@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <optional>
 
 #include "system/gpu_detector.h"
 
@@ -19,9 +20,9 @@ TEST(GpuDetectorTest, TotalMemorySumsAvailableDevicesOnly) {
     GpuDetector detector;
 
     std::vector<llm_node::GpuDevice> devices = {
-        {0, "NVIDIA A100", 40ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
-        {1, "AMD Test", 16ull * 1024 * 1024 * 1024, "gfx1100", "amd", false},
-        {2, "Apple M3", 8ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
+        {0, "NVIDIA A100", 40ull * 1024 * 1024 * 1024, 30ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+        {1, "AMD Test", 16ull * 1024 * 1024 * 1024, 8ull * 1024 * 1024 * 1024, "gfx1100", "amd", false},
+        {2, "Apple M3", 8ull * 1024 * 1024 * 1024, 7ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
     };
 
     detector.setDetectedDevicesForTest(devices);
@@ -35,9 +36,9 @@ TEST(GpuDetectorTest, CapabilityScoreWeightsByVendorAndComputeCapability) {
     GpuDetector detector;
 
     std::vector<llm_node::GpuDevice> devices = {
-        {0, "NVIDIA 8GB", 8ull * 1024 * 1024 * 1024, "8.6", "nvidia", true},
-        {1, "AMD 16GB", 16ull * 1024 * 1024 * 1024, "gfx1100", "amd", true},
-        {2, "Apple 4GB", 4ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
+        {0, "NVIDIA 8GB", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.6", "nvidia", true},
+        {1, "AMD 16GB", 16ull * 1024 * 1024 * 1024, 12ull * 1024 * 1024 * 1024, "gfx1100", "amd", true},
+        {2, "Apple 4GB", 4ull * 1024 * 1024 * 1024, 3ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
     };
 
     detector.setDetectedDevicesForTest(devices);
@@ -60,11 +61,51 @@ TEST(GpuDetectorTest, RequireGpuReflectsAvailability) {
     EXPECT_FALSE(detector.requireGpu());
 
     std::vector<llm_node::GpuDevice> devices = {
-        {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
-        {1, "Disabled", 4ull * 1024 * 1024 * 1024, "5.0", "nvidia", false},
+        {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+        {1, "Disabled", 4ull * 1024 * 1024 * 1024, 1ull * 1024 * 1024 * 1024, "5.0", "nvidia", false},
     };
     detector.setDetectedDevicesForTest(devices);
     EXPECT_TRUE(detector.requireGpu());
+}
+
+TEST(GpuDetectorTest, SelectGpuPrefersLoadedDevice) {
+    GpuDetector detector;
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, 2ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+        {1, "NVIDIA", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    auto selected = detector.selectGpu(0);
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value(), 0);
+}
+
+TEST(GpuDetectorTest, SelectGpuChoosesMostFreeMemory) {
+    GpuDetector detector;
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "GPU0", 8ull * 1024 * 1024 * 1024, 1ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+        {1, "GPU1", 8ull * 1024 * 1024 * 1024, 5ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+        {2, "GPU2", 8ull * 1024 * 1024 * 1024, 3ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    auto selected = detector.selectGpu(std::nullopt);
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value(), 1);
+}
+
+TEST(GpuDetectorTest, SelectGpuSkipsUnavailableDevices) {
+    GpuDetector detector;
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "GPU0", 8ull * 1024 * 1024 * 1024, 7ull * 1024 * 1024 * 1024, "8.0", "nvidia", false},
+        {1, "GPU1", 8ull * 1024 * 1024 * 1024, 4ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    auto selected = detector.selectGpu(std::nullopt);
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value(), 1);
 }
 
 }  // namespace

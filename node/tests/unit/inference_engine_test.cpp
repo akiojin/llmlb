@@ -1,14 +1,25 @@
 #include <gtest/gtest.h>
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
+#include <stdexcept>
+#include <thread>
 
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
 #include "core/engine_registry.h"
 #include "core/engine_error.h"
+#include "api/openai_endpoints.h"
+#include "api/node_endpoints.h"
+#include "api/http_server.h"
+#include "models/model_registry.h"
 #include "models/model_descriptor.h"
 #include "models/model_storage.h"
+#include "system/resource_monitor.h"
+#include "runtime/state.h"
 
 using namespace llm_node;
 namespace fs = std::filesystem;
@@ -106,6 +117,207 @@ private:
     bool supports_embeddings_{false};
 };
 
+class VramEngine final : public Engine {
+public:
+    explicit VramEngine(uint64_t required) : required_(required) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+    uint64_t getModelVramBytes(const ModelDescriptor&) const override { return required_; }
+
+private:
+    uint64_t required_{0};
+};
+
+class BlockingEngine final : public Engine {
+public:
+    explicit BlockingEngine(std::atomic<bool>* allow_return)
+        : allow_return_(allow_return) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        while (!allow_return_->load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return "done";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "done";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+private:
+    std::atomic<bool>* allow_return_{nullptr};
+};
+
+class MetricsEngine final : public Engine {
+public:
+    MetricsEngine(uint64_t first_ns, uint64_t last_ns, bool* saw_callback)
+        : first_ns_(first_ns)
+        , last_ns_(last_ns)
+        , saw_callback_(saw_callback) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams& params) const override {
+        if (params.on_token_callback) {
+            if (saw_callback_) {
+                *saw_callback_ = true;
+            }
+            params.on_token_callback(params.on_token_callback_ctx, 1, first_ns_);
+            params.on_token_callback(params.on_token_callback_ctx, 2, last_ns_);
+        }
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+private:
+    uint64_t first_ns_{0};
+    uint64_t last_ns_{0};
+    bool* saw_callback_{nullptr};
+};
+
+class ThrowingEngine final : public Engine {
+public:
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        throw std::runtime_error("engine crash");
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        throw std::runtime_error("engine crash");
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        throw std::runtime_error("engine crash");
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        throw std::runtime_error("engine crash");
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+};
+
 TEST(InferenceEngineTest, GeneratesChatFromLastUserMessage) {
     InferenceEngine engine;
     std::vector<ChatMessage> msgs = {
@@ -176,6 +388,56 @@ TEST(InferenceEngineTest, LoadModelReturnsNotFoundWhenMissingModel) {
     EXPECT_NE(result.error_message.find("Model not found"), std::string::npos);
 }
 
+TEST(InferenceEngineTest, WatchdogTriggersTerminationOnTimeout) {
+    TempDir tmp;
+    const std::string model_name = "example/blocking";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    std::atomic<bool> allow_return{false};
+    std::atomic<bool> timeout_fired{false};
+
+    EngineRegistration reg;
+    reg.engine_id = "blocking_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.architectures = {"llama"};
+    reg.capabilities = {"text"};
+    registry->registerEngine(std::make_unique<BlockingEngine>(&allow_return), reg, nullptr);
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    InferenceEngine::setWatchdogTimeoutForTest(std::chrono::milliseconds(20));
+    InferenceEngine::setWatchdogTerminateHookForTest([&]() {
+        timeout_fired.store(true);
+        allow_return.store(true);
+    });
+
+    std::thread worker([&]() {
+        std::vector<ChatMessage> messages = {{"user", "hello"}};
+        (void)engine.generateChat(messages, model_name, {});
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!timeout_fired.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!timeout_fired.load()) {
+        allow_return.store(true);
+    }
+    worker.join();
+
+    EXPECT_TRUE(timeout_fired.load());
+
+    InferenceEngine::setWatchdogTimeoutForTest(std::chrono::seconds(30));
+    InferenceEngine::setWatchdogTerminateHookForTest({});
+}
+
 TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
     TempDir tmp;
     const std::string model_name = "example/model";
@@ -224,6 +486,126 @@ TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
     EXPECT_NE(result.error_message.find("architecture"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelRejectsWhenVramInsufficient) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "vram_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(2048),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 0, 0, 1024};
+    });
+
+    auto result = engine.loadModel(model_name);
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_NE(result.error_message.find("VRAM"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, LoadModelRejectsWhenVramBudgetExceeded) {
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration primary_reg;
+    primary_reg.engine_id = "budget_engine";
+    primary_reg.engine_version = "test";
+    primary_reg.formats = {"gguf"};
+    primary_reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(1536),
+        primary_reg,
+        nullptr));
+
+    EngineRegistration other_reg;
+    other_reg.engine_id = "other_engine";
+    other_reg.engine_version = "test";
+    other_reg.formats = {"gguf"};
+    other_reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(256),
+        other_reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 0, 0, 2048};
+    });
+
+    auto result = engine.loadModel(model_name);
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_NE(result.error_message.find("budget"), std::string::npos);
+}
+
+TEST(InferenceEngineTest, OpenAIResponds503WhenVramInsufficient) {
+    llm_node::set_ready(true);
+    TempDir tmp;
+    const std::string model_name = "example/model";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "vram_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<VramEngine>(2048),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 0, 0, 1024};
+    });
+
+    ModelRegistry api_registry;
+    api_registry.setModels({model_name});
+    NodeConfig config;
+    OpenAIEndpoints openai(api_registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18094, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18094);
+    std::string body = R"({"model":"example/model","prompt":"hello"})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 503);
+    EXPECT_NE(res->body.find("resource_exhausted"), std::string::npos);
+
+    server.stop();
 }
 
 TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {
@@ -446,4 +828,132 @@ TEST(InferenceParamsTest, ResolvesEffectiveMaxTokensFromContext) {
     EXPECT_EQ(resolve_effective_max_tokens(0, 0, 0), kDefaultMaxTokens);
     EXPECT_EQ(resolve_effective_max_tokens(0, 100, 100), 0u);
     EXPECT_EQ(resolve_effective_max_tokens(5, 100, 100), 0u);
+}
+
+TEST(InferenceEngineTest, ComputesTokenMetricsFromCallback) {
+    TempDir tmp;
+    const std::string model_name = "example/metrics";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "metrics_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.architectures = {"llama"};
+    reg.capabilities = {"text"};
+
+    const uint64_t start_ns = 1'000'000'000ULL;
+    const uint64_t first_ns = start_ns + 100'000'000ULL;
+    const uint64_t last_ns = start_ns + 300'000'000ULL;
+    bool saw_callback = false;
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<MetricsEngine>(first_ns, last_ns, &saw_callback),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    std::optional<TokenMetrics> captured;
+    InferenceEngine::setTokenMetricsClockForTest([&]() { return start_ns; });
+    InferenceEngine::setTokenMetricsHookForTest([&](const TokenMetrics& metrics) {
+        captured = metrics;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "hello"}};
+    (void)engine.generateChat(messages, model_name, {});
+
+    EXPECT_TRUE(saw_callback);
+    ASSERT_TRUE(captured.has_value());
+    EXPECT_EQ(captured->token_count, 2u);
+    EXPECT_NEAR(captured->ttft_ms, 100.0, 0.5);
+    EXPECT_NEAR(captured->tokens_per_second, 2.0 / 0.3, 0.5);
+
+    InferenceEngine::setTokenMetricsHookForTest({});
+    InferenceEngine::setTokenMetricsClockForTest({});
+}
+
+TEST(InferenceEngineTest, SchedulesPluginRestartAfterRequestLimit) {
+    TempDir tmp;
+    const std::string model_name = "example/restart";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "restart_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("llama_cpp", "restart", nullptr, true, false),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+    engine.setPluginRestartPolicy(std::chrono::seconds(0), 2);
+
+    std::atomic<int> restart_calls{0};
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        restart_calls.fetch_add(1);
+        return true;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "hello"}};
+    (void)engine.generateChat(messages, model_name, {});
+    EXPECT_EQ(restart_calls.load(), 0);
+
+    (void)engine.generateChat(messages, model_name, {});
+    EXPECT_EQ(restart_calls.load(), 1);
+
+    InferenceEngine::setPluginRestartHookForTest({});
+}
+
+TEST(InferenceEngineTest, RestartsPluginAfterCrash) {
+    TempDir tmp;
+    const std::string model_name = "example/crash";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "crash_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<ThrowingEngine>(),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    std::atomic<int> restart_calls{0};
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        restart_calls.fetch_add(1);
+        return true;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "boom"}};
+    EXPECT_THROW((void)engine.generateChat(messages, model_name, {}), std::runtime_error);
+    EXPECT_EQ(restart_calls.load(), 1);
+
+    InferenceEngine::setPluginRestartHookForTest({});
 }

@@ -11,6 +11,8 @@
 using namespace llm_node;
 
 TEST(LoggerTest, InitSetsLevelAndWritesToSink) {
+    auto original_logger = spdlog::default_logger();
+    auto original_level = spdlog::get_level();
     std::stringstream ss;
     auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(ss);
     llm_node::logger::init("debug", "%v", "", {sink});
@@ -19,6 +21,11 @@ TEST(LoggerTest, InitSetsLevelAndWritesToSink) {
     EXPECT_EQ(spdlog::default_logger()->level(), spdlog::level::debug);
     auto output = ss.str();
     EXPECT_NE(output.find("hello"), std::string::npos);
+
+    // Restore default logger to avoid dangling stream sinks in later tests.
+    spdlog::set_default_logger(std::move(original_logger));
+    spdlog::set_level(original_level);
+    spdlog::drop("llm-node");
 }
 
 TEST(JsonUtilsTest, ParseJsonHandlesInvalid) {

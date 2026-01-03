@@ -17,6 +17,8 @@ struct ChatMessage {
     std::string content;
 };
 
+using OnTokenCallback = void (*)(void* ctx, uint32_t token_id, uint64_t timestamp_ns);
+
 struct InferenceParams {
     size_t max_tokens{0};
     float temperature{0.8f};
@@ -25,6 +27,8 @@ struct InferenceParams {
     float repeat_penalty{1.1f};
     uint32_t seed{0};
     std::vector<std::string> stop_sequences;
+    OnTokenCallback on_token_callback{nullptr};
+    void* on_token_callback_ctx{nullptr};
 };
 
 inline size_t resolve_effective_max_tokens(size_t requested,

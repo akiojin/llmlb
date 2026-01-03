@@ -397,4 +397,8 @@ size_t NemotronEngine::getModelMaxContext(const ModelDescriptor&) const {
     return 0;
 }
 
+uint64_t NemotronEngine::getModelVramBytes(const ModelDescriptor&) const {
+    return 0;
+}
+
 }  // namespace llm_node

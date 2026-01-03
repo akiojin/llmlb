@@ -32,6 +32,8 @@ struct NodeConfig {
     std::string bind_address{"0.0.0.0"};
     std::string ip_address;  // Empty means auto-detect
     std::string default_embedding_model{"nomic-embed-text-v1.5"};
+    int plugin_restart_interval_sec{0};
+    uint64_t plugin_restart_request_limit{0};
 };
 
 NodeConfig loadNodeConfig();

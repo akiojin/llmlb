@@ -75,6 +75,17 @@ void emit_text_token(uint32_t token,
     emit(piece);
 }
 
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
+    if (!params.on_token_callback) return;
+    params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
+}
+
 bool is_safetensors_index_file(const fs::path& path) {
     const std::string filename = path.filename().string();
     const std::string suffix = ".safetensors.index.json";
@@ -876,6 +887,8 @@ std::string GptOssEngine::generateCompletion(
         if (tok == lm->end_token_id) break;
         if (tok == lm->start_token_id) break;
 
+        emit_token_metrics(params, tok);
+
         emit_text_token(tok, lm->num_text_tokens, decode_token, stream_state, nullptr, on_token);
         if (stream_state.stopped) {
             break;
@@ -940,6 +953,33 @@ size_t GptOssEngine::getModelMaxContext(const ModelDescriptor& descriptor) const
     return lm->max_context;
 #else
     return 0;
+#endif
+}
+
+uint64_t GptOssEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
+#ifndef USE_GPTOSS
+    (void)descriptor;
+    return 0;
+#else
+    if (descriptor.model_dir.empty()) {
+        return 0;
+    }
+    const fs::path model_dir(descriptor.model_dir);
+    const fs::path model_bin =
+#if defined(_WIN32)
+        resolve_gptoss_directml_model_bin(model_dir);
+#else
+        resolve_gptoss_metal_model_bin(model_dir);
+#endif
+    if (model_bin.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    auto size = fs::file_size(model_bin, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<uint64_t>(size);
 #endif
 }
 

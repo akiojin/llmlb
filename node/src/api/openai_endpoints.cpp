@@ -402,6 +402,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
+        engine_.applyPendingEnginePluginsIfIdle();
         auto guard = RequestGuard::try_acquire();
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
@@ -506,6 +507,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
+        engine_.applyPendingEnginePluginsIfIdle();
         auto guard = RequestGuard::try_acquire();
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
@@ -563,6 +565,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
+        engine_.applyPendingEnginePluginsIfIdle();
         auto guard = RequestGuard::try_acquire();
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
@@ -659,6 +662,10 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
     auto load_result = engine_.loadModel(model, capability);
     if (!load_result.success) {
         const std::string prefix = "Model does not support capability:";
+        if (load_result.code == llm_node::EngineErrorCode::kResourceExhausted) {
+            respondError(res, 503, "resource_exhausted", load_result.error_message);
+            return false;
+        }
         if (load_result.error_message.rfind(prefix, 0) == 0) {
             respondError(res, 400, "invalid_request", load_result.error_message);
             return false;

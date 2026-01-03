@@ -174,6 +174,62 @@ void EngineRegistry::registerEngine(EngineHandle engine) {
     }
 }
 
+bool EngineRegistry::replaceEngine(EngineHandle engine,
+                                   const EngineRegistration& registration,
+                                   EngineHandle* replaced,
+                                   std::string* error) {
+    if (!engine) return false;
+
+    const std::string runtime = engine->runtime();
+    const std::string engine_id = registration.engine_id.empty() ? runtime : registration.engine_id;
+    const std::string engine_version = registration.engine_version.empty() ? "builtin" : registration.engine_version;
+
+    auto existing = engine_ids_.find(engine_id);
+    if (existing == engine_ids_.end()) {
+        if (replaced) {
+            replaced->reset();
+        }
+        return registerEngine(std::move(engine), registration, error);
+    }
+
+    if (existing->second != runtime) {
+        if (error) {
+            *error = "engine_id already registered for a different runtime: " + engine_id;
+        }
+        return false;
+    }
+
+    auto it = engines_.find(runtime);
+    if (it == engines_.end()) {
+        if (error) {
+            *error = "engine runtime not found for replacement: " + runtime;
+        }
+        return false;
+    }
+
+    auto& entries = it->second;
+    auto entry_it = std::find_if(entries.begin(), entries.end(), [&](const EngineEntry& entry) {
+        return entry.engine_id == engine_id;
+    });
+    if (entry_it == entries.end()) {
+        if (error) {
+            *error = "engine_id not found for replacement: " + engine_id;
+        }
+        return false;
+    }
+
+    if (replaced) {
+        *replaced = std::move(entry_it->engine);
+    }
+
+    entry_it->engine = std::move(engine);
+    entry_it->engine_version = engine_version;
+    entry_it->formats = registration.formats;
+    entry_it->architectures = registration.architectures;
+    entry_it->capabilities = registration.capabilities;
+    return true;
+}
+
 Engine* EngineRegistry::resolve(const std::string& runtime) const {
     auto it = engines_.find(runtime);
     if (it == engines_.end()) return nullptr;
@@ -311,6 +367,22 @@ bool EngineRegistry::supportsArchitecture(const std::string& runtime,
         }
     }
     return false;
+}
+
+size_t EngineRegistry::engineIdCount() const {
+    return engine_ids_.size();
+}
+
+std::string EngineRegistry::engineIdFor(const Engine* engine) const {
+    if (!engine) return "";
+    for (const auto& pair : engines_) {
+        for (const auto& entry : pair.second) {
+            if (entry.engine.get() == engine) {
+                return entry.engine_id;
+            }
+        }
+    }
+    return "";
 }
 
 }  // namespace llm_node

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 #include <string>
 #include <memory>
@@ -10,6 +11,7 @@ struct GpuDevice {
     int id;
     std::string name;
     size_t memory_bytes;
+    size_t free_memory_bytes;
     std::string compute_capability;
     std::string vendor;  // "nvidia", "amd", "apple"
     bool is_available;
@@ -37,6 +39,9 @@ public:
 
     // Get GPU capability score (for router compatibility)
     double getCapabilityScore() const;
+
+    // Select GPU by available VRAM (prefer_loaded_gpu if available)
+    std::optional<int> selectGpu(std::optional<int> prefer_loaded_gpu = std::nullopt) const;
 
 private:
     std::vector<GpuDevice> detected_devices_;

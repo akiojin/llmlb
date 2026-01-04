@@ -276,6 +276,10 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     return true;
 }
 
+bool dml_graph_ready(const DmlGraph& graph) {
+    return graph.has_prefill && graph.has_decode;
+}
+
 bool safe_mul_size(size_t a, size_t b, size_t& out) {
     if (a == 0 || b == 0) {
         out = 0;
@@ -1126,6 +1130,14 @@ gptoss_status GPTOSS_ABI gptoss_context_reset(gptoss_context_t context) {
 
 gptoss_status GPTOSS_ABI gptoss_context_process(gptoss_context_t context) {
     if (!context) return gptoss_status_invalid_argument;
+    auto* ctx = reinterpret_cast<GptossContext*>(context);
+    auto* model = reinterpret_cast<GptossModel*>(ctx->model);
+    if (!model || !uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
+        return gptoss_status_unsupported_system;
+    }
+    if (!dml_graph_ready(model->dml_graph)) {
+        return gptoss_status_unsupported_argument;
+    }
     return gptoss_status_unsupported_system;
 }
 
@@ -1137,6 +1149,14 @@ gptoss_status GPTOSS_ABI gptoss_context_sample(
     uint32_t* /*tokens_out*/,
     size_t* /*num_tokens_out*/) {
     if (!context) return gptoss_status_invalid_argument;
+    auto* ctx = reinterpret_cast<GptossContext*>(context);
+    auto* model = reinterpret_cast<GptossModel*>(ctx->model);
+    if (!model || !uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
+        return gptoss_status_unsupported_system;
+    }
+    if (!dml_graph_ready(model->dml_graph)) {
+        return gptoss_status_unsupported_argument;
+    }
     return gptoss_status_unsupported_system;
 }
 

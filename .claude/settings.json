@@ -14,6 +14,15 @@
             "command": ".claude/hooks/block-cd-command.sh"
           }
         ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-quality-checks-in-task.sh"
+          }
+        ]
       }
     ]
   },

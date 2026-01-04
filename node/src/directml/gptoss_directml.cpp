@@ -36,6 +36,10 @@ struct GptossUuid {
     uint8_t bytes[16];
 };
 
+constexpr std::array<uint8_t, 16> kDirectMlLayoutUuid = {
+    0xD8, 0xC0, 0x7A, 0xC6, 0x8F, 0xC8, 0x4A, 0x24, 0xAD, 0x47, 0x34, 0xC8, 0x28, 0xB7, 0x16, 0xA8,
+};
+
 struct GptossModelHeader {
     uint32_t context_length;
     uint32_t num_blocks;
@@ -73,6 +77,13 @@ struct GptossTokenizer {
     uint32_t num_text_tokens{0};
 };
 
+struct DmlPlan {
+    size_t kv_cache_elements{0};
+    size_t kv_cache_bytes{0};
+    size_t vocab_embeddings_elements{0};
+    size_t vocab_embeddings_bytes{0};
+};
+
 struct GptossModel {
     std::atomic<uint32_t> ref_count{1};
     std::string model_dir;
@@ -81,6 +92,7 @@ struct GptossModel {
     uint32_t vocabulary_size{0};
     GptossModelHeader header{};
     GptossUuid layout_uuid{};
+    DmlPlan dml_plan{};
 };
 
 bool read_exact(std::ifstream& in, void* out, size_t size) {
@@ -118,6 +130,27 @@ gptoss_special_token decode_special_token_uuid(const GptossUuid& uuid) {
     return gptoss_special_token_invalid;
 }
 
+bool build_dml_plan(const GptossModelHeader& header, uint32_t vocabulary_size, DmlPlan& plan) {
+    if (header.context_length == 0 || header.num_blocks == 0 || header.num_kv_heads == 0 || header.head_dim == 0) {
+        return false;
+    }
+    const size_t kv_elements =
+        static_cast<size_t>(header.num_blocks) *
+        static_cast<size_t>(header.context_length) *
+        static_cast<size_t>(header.num_kv_heads) *
+        static_cast<size_t>(header.head_dim) * 2;
+    plan.kv_cache_elements = kv_elements;
+    plan.kv_cache_bytes = kv_elements * sizeof(float);
+
+    if (vocabulary_size != 0 && header.embedding_dim != 0) {
+        const size_t embed_elements =
+            static_cast<size_t>(vocabulary_size) * static_cast<size_t>(header.embedding_dim);
+        plan.vocab_embeddings_elements = embed_elements;
+        plan.vocab_embeddings_bytes = embed_elements * sizeof(float);
+    }
+    return true;
+}
+
 gptoss_status load_gptoss_model_file(const fs::path& path,
                                      GptossModelHeader& model_header,
                                      GptossUuid& layout_uuid,
@@ -140,10 +173,6 @@ gptoss_status load_gptoss_model_file(const fs::path& path,
     static const std::array<uint8_t, 16> kAppleGpuLayoutUuid = {
         0x22, 0x91, 0x77, 0xA8, 0x57, 0x75, 0x42, 0x68, 0xBF, 0xD8, 0xD5, 0x88, 0xB3, 0x51, 0xC5, 0x6D,
     };
-    static const std::array<uint8_t, 16> kDirectMlLayoutUuid = {
-        0xD8, 0xC0, 0x7A, 0xC6, 0x8F, 0xC8, 0x4A, 0x24, 0xAD, 0x47, 0x34, 0xC8, 0x28, 0xB7, 0x16, 0xA8,
-    };
-
     GptossUuid model_uuid{};
     if (!read_exact(in, &model_uuid, sizeof(model_uuid))) return gptoss_status_io_error;
     if (!uuid_equals(model_uuid, kModelUuid)) return gptoss_status_invalid_argument;
@@ -552,6 +581,9 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
         model->max_context_length = model->header.context_length;
         model->vocabulary_size = tokenizer->num_text_tokens + tokenizer->num_special_tokens;
         model->layout_uuid = layout_uuid;
+        if (uuid_equals(layout_uuid, kDirectMlLayoutUuid)) {
+            build_dml_plan(model->header, model->vocabulary_size, model->dml_plan);
+        }
         model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
         *model_out = reinterpret_cast<gptoss_model_t>(model);
         return gptoss_status_success;

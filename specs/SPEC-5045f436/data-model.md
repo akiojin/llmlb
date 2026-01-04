@@ -7,7 +7,7 @@
 
 ## SQLiteスキーマ
 
-### マイグレーション: 003_add_token_statistics.sql
+### マイグレーション: 004_add_token_statistics.sql
 
 ```sql
 -- request_history テーブルにトークンカラム追加

@@ -4,11 +4,14 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -24,6 +27,168 @@
 namespace fs = std::filesystem;
 
 namespace {
+struct GptossFileHeader {
+    char magic[12];
+    uint32_t zero;
+};
+
+struct GptossUuid {
+    uint8_t bytes[16];
+};
+
+struct GptossModelHeader {
+    uint32_t context_length;
+    uint32_t num_blocks;
+    uint32_t num_experts;
+    uint32_t num_active_experts;
+    uint32_t embedding_dim;
+    uint32_t mlp_dim;
+    float swiglu_limit;
+    uint32_t head_dim;
+    uint32_t num_heads;
+    uint32_t num_kv_heads;
+    uint32_t attention_window;
+    float rope_theta;
+    float interpolation_scale;
+    float yarn_offset;
+    float yarn_scale;
+    float yarn_multiplier;
+    float rmsnorm_epsilon;
+};
+
+struct GptossTokenizerHeader {
+    uint32_t num_special_tokens;
+    uint32_t num_text_tokens;
+    uint32_t regex_size;
+    uint32_t tokens_size;
+};
+
+struct GptossTokenizer {
+    std::atomic<uint32_t> ref_count{1};
+    std::vector<std::string> id_to_token;
+    std::unordered_map<std::string, uint32_t> token_to_id;
+    std::array<uint32_t, gptoss_special_token_max - 1> special_ids{};
+    std::vector<uint8_t> tokens_blob;
+    uint32_t num_special_tokens{0};
+    uint32_t num_text_tokens{0};
+};
+
+struct GptossModel {
+    std::atomic<uint32_t> ref_count{1};
+    std::string model_dir;
+    gptoss_tokenizer_t tokenizer{nullptr};
+    uint32_t max_context_length{0};
+    uint32_t vocabulary_size{0};
+};
+
+bool read_exact(std::ifstream& in, void* out, size_t size) {
+    in.read(reinterpret_cast<char*>(out), static_cast<std::streamsize>(size));
+    return in.good() && in.gcount() == static_cast<std::streamsize>(size);
+}
+
+bool uuid_equals(const GptossUuid& uuid, const std::array<uint8_t, 16>& value) {
+    return std::memcmp(uuid.bytes, value.data(), value.size()) == 0;
+}
+
+gptoss_special_token decode_special_token_uuid(const GptossUuid& uuid) {
+    static const std::array<std::pair<std::array<uint8_t, 16>, gptoss_special_token>, 9> mapping = {{
+        {{{0x55, 0xA7, 0x7C, 0x2F, 0x8A, 0x01, 0x4C, 0x54, 0x8A, 0xC2, 0x31, 0x3B, 0xFC, 0x7E, 0x20, 0x8D}}, gptoss_special_token_start},
+        {{{0x16, 0xE4, 0x04, 0x31, 0xF4, 0x7F, 0x4B, 0x22, 0xB5, 0x9B, 0x8B, 0x27, 0x8F, 0xC3, 0x0A, 0x54}}, gptoss_special_token_message},
+        {{{0xFC, 0xAC, 0x2F, 0x6D, 0x47, 0x05, 0x4F, 0x6B, 0xB2, 0x28, 0x64, 0x2A, 0xCC, 0xAC, 0x72, 0x38}}, gptoss_special_token_end},
+        {{{0xF7, 0x99, 0xFF, 0x69, 0x19, 0x92, 0x43, 0xC4, 0xA3, 0xD8, 0xD8, 0x31, 0xF4, 0x75, 0xDC, 0x75}}, gptoss_special_token_return},
+        {{{0xE1, 0x5B, 0xA7, 0x02, 0x28, 0xC4, 0x42, 0x92, 0xAB, 0x8F, 0xFF, 0xA4, 0x34, 0x70, 0x91, 0x28}}, gptoss_special_token_refusal},
+        {{{0xC0, 0xBB, 0x14, 0xC7, 0x60, 0x22, 0x49, 0xDA, 0xAD, 0x08, 0x79, 0x2D, 0x67, 0xE8, 0xB4, 0x70}}, gptoss_special_token_constrain},
+        {{{0xFD, 0x3D, 0xDA, 0x11, 0xC8, 0xAB, 0x40, 0x33, 0x87, 0x6E, 0xD9, 0x3D, 0xEB, 0x17, 0x2C, 0x93}}, gptoss_special_token_channel},
+        {{{0x12, 0x20, 0xF7, 0x96, 0xE3, 0x88, 0x4D, 0xE5, 0xB4, 0x87, 0xFE, 0x2E, 0xB5, 0xFE, 0x03, 0xC0}}, gptoss_special_token_call},
+        {{{0x07, 0xD7, 0xDA, 0x55, 0xB3, 0x46, 0x4C, 0xFF, 0x8B, 0x37, 0x7C, 0xEF, 0xAC, 0xF8, 0xA3, 0xE8}}, gptoss_special_token_untrusted},
+    }};
+    for (const auto& entry : mapping) {
+        if (uuid_equals(uuid, entry.first)) {
+            return entry.second;
+        }
+    }
+    static const std::array<uint8_t, 16> kEndUntrusted = {
+        0xF2, 0x65, 0xBD, 0x9C, 0xC7, 0x17, 0x46, 0x9E, 0xA4, 0x47, 0x92, 0x06, 0x87, 0xD6, 0x5D, 0x90,
+    };
+    if (uuid_equals(uuid, kEndUntrusted)) {
+        return gptoss_special_token_end_untrusted;
+    }
+    return gptoss_special_token_invalid;
+}
+
+bool load_gptoss_model_file(const fs::path& path, uint32_t& max_context, struct GptossTokenizer& tokenizer) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+
+    GptossFileHeader header{};
+    if (!read_exact(in, &header, sizeof(header))) return false;
+    if (std::memcmp(header.magic, "GPT-OSS v1.0", sizeof(header.magic)) != 0 || header.zero != 0) {
+        return false;
+    }
+
+    static const std::array<uint8_t, 16> kModelUuid = {
+        0xDF, 0x52, 0xDC, 0x86, 0x17, 0x89, 0x4E, 0xD0, 0xA2, 0x95, 0x66, 0xF1, 0x05, 0x08, 0x14, 0x5B,
+    };
+    static const std::array<uint8_t, 16> kTokenizerUuid = {
+        0x74, 0x01, 0xAD, 0xED, 0x2A, 0x95, 0x40, 0xCB, 0xB7, 0x82, 0x9C, 0xCE, 0xBA, 0xAF, 0xE7, 0x2B,
+    };
+
+    GptossUuid model_uuid{};
+    if (!read_exact(in, &model_uuid, sizeof(model_uuid))) return false;
+    if (!uuid_equals(model_uuid, kModelUuid)) return false;
+
+    GptossModelHeader model_header{};
+    if (!read_exact(in, &model_header, sizeof(model_header))) return false;
+    max_context = model_header.context_length;
+
+    GptossUuid layout_uuid{};
+    if (!read_exact(in, &layout_uuid, sizeof(layout_uuid))) return false;
+
+    GptossUuid tokenizer_uuid{};
+    if (!read_exact(in, &tokenizer_uuid, sizeof(tokenizer_uuid))) return false;
+    if (!uuid_equals(tokenizer_uuid, kTokenizerUuid)) return false;
+
+    GptossTokenizerHeader tok_header{};
+    if (!read_exact(in, &tok_header, sizeof(tok_header))) return false;
+
+    tokenizer.special_ids.fill(UINT32_MAX);
+    tokenizer.num_special_tokens = tok_header.num_special_tokens;
+    tokenizer.num_text_tokens = tok_header.num_text_tokens;
+
+    for (uint32_t idx = 0; idx < tok_header.num_special_tokens; ++idx) {
+        GptossUuid token_uuid{};
+        if (!read_exact(in, &token_uuid, sizeof(token_uuid))) return false;
+        const auto token_type = decode_special_token_uuid(token_uuid);
+        if (token_type != gptoss_special_token_invalid) {
+            tokenizer.special_ids[token_type - 1] = tok_header.num_text_tokens + idx;
+        }
+    }
+
+    if (tok_header.regex_size != 0) {
+        in.seekg(static_cast<std::streamoff>(tok_header.regex_size), std::ios::cur);
+        if (!in.good()) return false;
+    }
+
+    if (tok_header.tokens_size != 0) {
+        tokenizer.tokens_blob.resize(tok_header.tokens_size);
+        if (!read_exact(in, tokenizer.tokens_blob.data(), tok_header.tokens_size)) return false;
+    } else {
+        return false;
+    }
+
+    const uint8_t* ptr = tokenizer.tokens_blob.data();
+    const uint8_t* end = ptr + tokenizer.tokens_blob.size();
+    for (uint32_t t = 0; t < tokenizer.num_text_tokens; ++t) {
+        if (ptr + sizeof(uint16_t) > end) return false;
+        uint16_t len = 0;
+        std::memcpy(&len, ptr, sizeof(len));
+        ptr += sizeof(uint16_t);
+        if (ptr + len > end) return false;
+        ptr += len;
+    }
+
+    return true;
+}
 
 #ifdef _WIN32
 using Microsoft::WRL::ComPtr;
@@ -121,21 +286,6 @@ bool ensure_dml_runtime(std::string& error) {
 }
 #endif
 
-struct GptossTokenizer {
-    std::atomic<uint32_t> ref_count{1};
-    std::vector<std::string> id_to_token;
-    std::unordered_map<std::string, uint32_t> token_to_id;
-    std::array<uint32_t, gptoss_special_token_max - 1> special_ids{};
-    uint32_t num_special_tokens{0};
-};
-
-struct GptossModel {
-    std::atomic<uint32_t> ref_count{1};
-    std::string model_dir;
-    gptoss_tokenizer_t tokenizer{nullptr};
-    uint32_t max_context_length{0};
-};
-
 struct GptossContext {
     std::atomic<uint32_t> ref_count{1};
     gptoss_model_t model{nullptr};
@@ -210,6 +360,8 @@ bool load_tokenizer(const fs::path& tokenizer_path, GptossTokenizer& tokenizer) 
     if (model_it == json.end() || !parse_vocab(*model_it, tokenizer)) return false;
 
     map_special_tokens(tokenizer);
+    tokenizer.num_text_tokens = static_cast<uint32_t>(
+        tokenizer.id_to_token.size() - tokenizer.num_special_tokens);
     return true;
 }
 
@@ -228,7 +380,77 @@ uint32_t load_max_context_length(const fs::path& config_path) {
     return 0;
 }
 
+bool is_directml_model_bin(const fs::path& path) {
+    auto name = path.filename().string();
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return name == "model.directml.bin" || name == "model.dml.bin";
+}
+
+bool tokenizer_uses_blob(const GptossTokenizer& tokenizer) {
+    return !tokenizer.tokens_blob.empty();
+}
+
+gptoss_status decode_blob_token(const GptossTokenizer& tokenizer,
+                                uint32_t token,
+                                const char** token_ptr_out,
+                                size_t* token_size_out) {
+    if (token >= tokenizer.num_text_tokens) return gptoss_status_invalid_argument;
+    const uint8_t* ptr = tokenizer.tokens_blob.data();
+    const uint8_t* end = ptr + tokenizer.tokens_blob.size();
+    for (uint32_t t = 0; t < tokenizer.num_text_tokens; ++t) {
+        if (ptr + sizeof(uint16_t) > end) return gptoss_status_invalid_argument;
+        uint16_t len = 0;
+        std::memcpy(&len, ptr, sizeof(len));
+        ptr += sizeof(uint16_t);
+        if (ptr + len > end) return gptoss_status_invalid_argument;
+        if (t == token) {
+            *token_ptr_out = reinterpret_cast<const char*>(ptr);
+            *token_size_out = len;
+            return gptoss_status_success;
+        }
+        ptr += len;
+    }
+    return gptoss_status_invalid_argument;
+}
+
+gptoss_status tokenize_blob(const GptossTokenizer& tokenizer,
+                            const char* text,
+                            size_t size,
+                            std::vector<uint32_t>& out) {
+    size_t remaining = size;
+    const char* current = text;
+    while (remaining != 0) {
+        uint32_t best_token = UINT32_MAX;
+        uint32_t best_length = 0;
+        const uint8_t* ptr = tokenizer.tokens_blob.data();
+        const uint8_t* end = ptr + tokenizer.tokens_blob.size();
+        for (uint32_t t = 0; t < tokenizer.num_text_tokens; ++t) {
+            if (ptr + sizeof(uint16_t) > end) return gptoss_status_invalid_argument;
+            uint16_t len = 0;
+            std::memcpy(&len, ptr, sizeof(len));
+            ptr += sizeof(uint16_t);
+            if (ptr + len > end) return gptoss_status_invalid_argument;
+            if (len <= remaining && len > best_length) {
+                if (std::memcmp(current, ptr, len) == 0) {
+                    best_token = t;
+                    best_length = len;
+                }
+            }
+            ptr += len;
+        }
+        if (best_token == UINT32_MAX) return gptoss_status_invalid_argument;
+        out.push_back(best_token);
+        current += best_length;
+        remaining -= best_length;
+    }
+    return gptoss_status_success;
+}
+
 gptoss_status tokenize_into(const GptossTokenizer& tokenizer, const char* text, size_t size, std::vector<uint32_t>& out) {
+    if (tokenizer_uses_blob(tokenizer)) {
+        return tokenize_blob(tokenizer, text, size, out);
+    }
     const uint32_t unknown_id = find_unknown_token_id(tokenizer);
     std::string current;
     current.reserve(16);
@@ -291,6 +513,28 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
     }
 #endif
 
+    if (is_directml_model_bin(path)) {
+        auto model = new (std::nothrow) GptossModel();
+        if (!model) return gptoss_status_insufficient_memory;
+        model->model_dir = model_dir.string();
+
+        auto tokenizer = new (std::nothrow) GptossTokenizer();
+        if (!tokenizer) {
+            delete model;
+            return gptoss_status_insufficient_memory;
+        }
+        if (!load_gptoss_model_file(path, model->max_context_length, *tokenizer)) {
+            delete tokenizer;
+            delete model;
+            return gptoss_status_invalid_argument;
+        }
+
+        model->vocabulary_size = tokenizer->num_text_tokens + tokenizer->num_special_tokens;
+        model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
+        *model_out = reinterpret_cast<gptoss_model_t>(model);
+        return gptoss_status_success;
+    }
+
     const fs::path config_path = model_dir / "config.json";
     const fs::path tokenizer_path = model_dir / "tokenizer.json";
     if (!fs::exists(config_path) || !fs::exists(tokenizer_path)) {
@@ -313,6 +557,7 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
         return gptoss_status_io_error;
     }
 
+    model->vocabulary_size = static_cast<uint32_t>(tokenizer->id_to_token.size());
     model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
     *model_out = reinterpret_cast<gptoss_model_t>(model);
     return gptoss_status_success;
@@ -372,7 +617,11 @@ gptoss_status GPTOSS_ABI gptoss_tokenizer_get_num_text_tokens(
     uint32_t* num_text_tokens_out) {
     if (!tokenizer || !num_text_tokens_out) return gptoss_status_invalid_argument;
     auto* ptr = reinterpret_cast<GptossTokenizer*>(tokenizer);
-    *num_text_tokens_out = static_cast<uint32_t>(ptr->id_to_token.size() - ptr->num_special_tokens);
+    if (tokenizer_uses_blob(*ptr)) {
+        *num_text_tokens_out = ptr->num_text_tokens;
+    } else {
+        *num_text_tokens_out = static_cast<uint32_t>(ptr->id_to_token.size() - ptr->num_special_tokens);
+    }
     return gptoss_status_success;
 }
 
@@ -390,7 +639,11 @@ gptoss_status GPTOSS_ABI gptoss_tokenizer_get_num_tokens(
     uint32_t* num_tokens_out) {
     if (!tokenizer || !num_tokens_out) return gptoss_status_invalid_argument;
     auto* ptr = reinterpret_cast<GptossTokenizer*>(tokenizer);
-    *num_tokens_out = static_cast<uint32_t>(ptr->id_to_token.size());
+    if (tokenizer_uses_blob(*ptr)) {
+        *num_tokens_out = ptr->num_text_tokens + ptr->num_special_tokens;
+    } else {
+        *num_tokens_out = static_cast<uint32_t>(ptr->id_to_token.size());
+    }
     return gptoss_status_success;
 }
 
@@ -401,6 +654,9 @@ gptoss_status GPTOSS_ABI gptoss_tokenizer_decode(
     size_t* token_size_out) {
     if (!tokenizer || !token_ptr_out || !token_size_out) return gptoss_status_invalid_argument;
     auto* ptr = reinterpret_cast<GptossTokenizer*>(tokenizer);
+    if (tokenizer_uses_blob(*ptr)) {
+        return decode_blob_token(*ptr, token, token_ptr_out, token_size_out);
+    }
     if (token >= ptr->id_to_token.size()) return gptoss_status_invalid_argument;
     const std::string& tok = ptr->id_to_token[token];
     *token_ptr_out = tok.c_str();
@@ -506,6 +762,14 @@ gptoss_status GPTOSS_ABI gptoss_context_append_tokens(
     const uint32_t* tokens) {
     if (!context || (num_tokens != 0 && !tokens)) return gptoss_status_invalid_argument;
     auto* ctx = reinterpret_cast<GptossContext*>(context);
+    auto* model = reinterpret_cast<GptossModel*>(ctx->model);
+    if (model && model->vocabulary_size != 0) {
+        for (size_t i = 0; i < num_tokens; ++i) {
+            if (tokens[i] >= model->vocabulary_size) {
+                return gptoss_status_invalid_argument;
+            }
+        }
+    }
     if (ctx->tokens.size() + num_tokens > ctx->max_tokens) {
         return gptoss_status_context_overflow;
     }

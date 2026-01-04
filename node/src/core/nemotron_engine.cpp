@@ -1048,7 +1048,7 @@ size_t NemotronEngine::getModelMaxContext(const ModelDescriptor& descriptor) con
 #endif
 }
 
-uint64_t NemotronEngine::getModelVramBytes(const ModelDescriptor&) const {
+uint64_t NemotronEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
 #if !defined(_WIN32) || !defined(USE_GPTOSS)
     (void)descriptor;
     return 0;

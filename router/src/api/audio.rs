@@ -273,6 +273,9 @@ pub async fn transcriptions(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -377,6 +380,9 @@ pub async fn speech(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);

@@ -141,6 +141,7 @@ struct DmlExecState {
     ComPtr<ID3D12CommandQueue> command_queue;
     ComPtr<ID3D12Fence> fence;
     HANDLE fence_event{nullptr};
+    uint64_t fence_value{0};
 #endif
     bool initialized{false};
 };
@@ -596,6 +597,27 @@ bool init_dml_exec_state(DmlExecState& state) {
         return false;
     }
     state.initialized = true;
+    return true;
+}
+
+bool reset_dml_command_list(DmlExecState& state) {
+    if (!state.initialized) return false;
+    if (FAILED(state.allocator->Reset())) return false;
+    if (FAILED(state.command_list->Reset(state.allocator.Get(), nullptr))) return false;
+    return true;
+}
+
+bool submit_dml_command_list(DmlExecState& state) {
+    if (!state.initialized) return false;
+    if (FAILED(state.command_list->Close())) return false;
+    ID3D12CommandList* lists[] = {state.command_list.Get()};
+    state.command_queue->ExecuteCommandLists(1, lists);
+    state.fence_value += 1;
+    if (FAILED(state.command_queue->Signal(state.fence.Get(), state.fence_value))) return false;
+    if (state.fence->GetCompletedValue() < state.fence_value) {
+        if (FAILED(state.fence->SetEventOnCompletion(state.fence_value, state.fence_event))) return false;
+        WaitForSingleObject(state.fence_event, INFINITE);
+    }
     return true;
 }
 #endif

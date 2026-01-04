@@ -117,6 +117,109 @@ private:
     bool supports_embeddings_{false};
 };
 
+class CountingEngine final : public Engine {
+public:
+    explicit CountingEngine(std::string output_prefix = "out")
+        : output_prefix_(std::move(output_prefix)) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        const int call_index = completion_calls_.fetch_add(1) + 1;
+        return output_prefix_ + std::to_string(call_index);
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+    int completionCalls() const { return completion_calls_.load(); }
+
+private:
+    std::string output_prefix_;
+    mutable std::atomic<int> completion_calls_{0};
+};
+
+class SizedEngine final : public Engine {
+public:
+    explicit SizedEngine(size_t output_size) : output_size_(output_size) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        completion_calls_.fetch_add(1);
+        return std::string(output_size_, 'x');
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+    int completionCalls() const { return completion_calls_.load(); }
+
+private:
+    size_t output_size_{0};
+    mutable std::atomic<int> completion_calls_{0};
+};
+
 class VramEngine final : public Engine {
 public:
     explicit VramEngine(uint64_t required) : required_(required) {}
@@ -714,6 +817,86 @@ TEST(InferenceEngineTest, GenerateEmbeddingsUsesEmbeddingEngine) {
     ASSERT_EQ(embeddings.size(), 1u);
     ASSERT_EQ(calls.size(), 1u);
     EXPECT_EQ(calls[0], "embeddings:embed");
+}
+
+TEST(InferenceEngineTest, CachesCompletionWhenTemperatureZero) {
+    TempDir tmp;
+    const std::string model_name = "example/cache";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 10000, 0, 0};
+    });
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "cache_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    auto engine_impl = std::make_unique<CountingEngine>("out-");
+    auto* engine_raw = engine_impl.get();
+    ASSERT_TRUE(registry->registerEngine(std::move(engine_impl), reg, nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    InferenceParams cached_params;
+    cached_params.temperature = 0.0f;
+
+    auto first = engine.generateCompletion("hello", model_name, cached_params);
+    auto second = engine.generateCompletion("hello", model_name, cached_params);
+    EXPECT_EQ(engine_raw->completionCalls(), 1);
+    EXPECT_EQ(first, second);
+
+    auto third = engine.generateCompletion("different", model_name, cached_params);
+    EXPECT_EQ(engine_raw->completionCalls(), 2);
+    EXPECT_NE(third, second);
+
+    InferenceParams uncached_params;
+    uncached_params.temperature = 0.7f;
+    (void)engine.generateCompletion("hello", model_name, uncached_params);
+    (void)engine.generateCompletion("hello", model_name, uncached_params);
+    EXPECT_EQ(engine_raw->completionCalls(), 4);
+}
+
+TEST(InferenceEngineTest, EvictsInferenceCacheWhenOverLimit) {
+    TempDir tmp;
+    const std::string model_name = "example/cache-evict";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+    engine.setResourceUsageProviderForTest([]() {
+        return ResourceUsage{0, 10000, 0, 0};
+    });
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "cache_eviction_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    auto engine_impl = std::make_unique<SizedEngine>(300);
+    auto* engine_raw = engine_impl.get();
+    ASSERT_TRUE(registry->registerEngine(std::move(engine_impl), reg, nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    InferenceParams params;
+    params.temperature = 0.0f;
+
+    (void)engine.generateCompletion("a", model_name, params);
+    (void)engine.generateCompletion("b", model_name, params);
+    EXPECT_EQ(engine_raw->completionCalls(), 2);
+
+    (void)engine.generateCompletion("a", model_name, params);
+    EXPECT_EQ(engine_raw->completionCalls(), 3);
 }
 
 TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {

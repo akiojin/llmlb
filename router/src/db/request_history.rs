@@ -435,6 +435,9 @@ struct RequestHistoryRow {
     error_message: Option<String>,
     #[allow(dead_code)]
     completed_at: String,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    total_tokens: Option<i64>,
 }
 
 impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
@@ -511,6 +514,9 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             duration_ms: row.duration_ms as u64,
             status,
             completed_at,
+            input_tokens: row.input_tokens.map(|v| v as u32),
+            output_tokens: row.output_tokens.map(|v| v as u32),
+            total_tokens: row.total_tokens.map(|v| v as u32),
         })
     }
 }
@@ -643,6 +649,9 @@ mod tests {
             duration_ms: 1000,
             status: RecordStatus::Success,
             completed_at: timestamp + Duration::seconds(1),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
         }
     }
 

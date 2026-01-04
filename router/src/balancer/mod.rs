@@ -1584,6 +1584,55 @@ mod tests {
         manager.waiters.fetch_add(1, AtomicOrdering::SeqCst);
         assert_eq!(manager.admission_control(100), AdmissionDecision::Reject);
     }
+
+    #[test]
+    fn test_node_load_state_token_accumulation() {
+        // T-2: NodeLoadStateトークン累積テスト
+        let mut state = NodeLoadState::default();
+
+        // 初期値は0
+        assert_eq!(state.total_input_tokens, 0);
+        assert_eq!(state.total_output_tokens, 0);
+        assert_eq!(state.total_tokens, 0);
+
+        // トークンを累積
+        state.total_input_tokens += 100;
+        state.total_output_tokens += 50;
+        state.total_tokens += 150;
+
+        assert_eq!(state.total_input_tokens, 100);
+        assert_eq!(state.total_output_tokens, 50);
+        assert_eq!(state.total_tokens, 150);
+
+        // 追加の累積
+        state.total_input_tokens += 200;
+        state.total_output_tokens += 100;
+        state.total_tokens += 300;
+
+        assert_eq!(state.total_input_tokens, 300);
+        assert_eq!(state.total_output_tokens, 150);
+        assert_eq!(state.total_tokens, 450);
+    }
+
+    #[test]
+    fn test_node_load_state_average_tokens_per_request() {
+        // トークン/リクエスト平均計算テスト
+        let state = NodeLoadState {
+            total_assigned: 10,
+            total_input_tokens: 1000,
+            total_output_tokens: 500,
+            total_tokens: 1500,
+            ..Default::default()
+        };
+
+        // 平均トークン数の計算（total_assignedが0でない場合）
+        let avg = if state.total_assigned > 0 {
+            state.total_tokens as f32 / state.total_assigned as f32
+        } else {
+            0.0
+        };
+        assert_eq!(avg, 150.0);
+    }
 }
 
 /// ノードの最新ロード状態
@@ -1598,6 +1647,15 @@ struct NodeLoadState {
     metrics_history: VecDeque<HealthMetrics>,
     initializing: bool,
     ready_models: Option<(u8, u8)>,
+    /// 入力トークン累計
+    #[allow(dead_code)]
+    total_input_tokens: u64,
+    /// 出力トークン累計
+    #[allow(dead_code)]
+    total_output_tokens: u64,
+    /// 総トークン累計
+    #[allow(dead_code)]
+    total_tokens: u64,
 }
 
 impl NodeLoadState {

@@ -187,6 +187,9 @@ pub async fn generations(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -416,6 +419,9 @@ pub async fn edits(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -606,6 +612,9 @@ pub async fn variations(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);

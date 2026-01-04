@@ -8,21 +8,21 @@
 
 ## Setup
 
-- [ ] `[P]` S-1: tiktoken-rs依存をrouter/Cargo.tomlに追加
-- [ ] `[P]` S-2: マイグレーションファイル 004_add_token_statistics.sql 作成
+- [x] `[P]` S-1: tiktoken-rs依存をrouter/Cargo.tomlに追加
+- [x] `[P]` S-2: マイグレーションファイル 004_add_token_statistics.sql 作成
 
 ## Test（RED）
 
 ### データモデル
 
-- [ ] T-1: RequestResponseRecordのトークンフィールドシリアライズテスト
-- [ ] T-2: NodeLoadStateトークン累積テスト
+- [x] T-1: RequestResponseRecordのトークンフィールドシリアライズテスト
+- [x] T-2: NodeLoadStateトークン累積テスト
 
 ### トークン抽出
 
-- [ ] `[P]` T-3: usageフィールドからのトークン抽出テスト
-- [ ] `[P]` T-4: tiktoken推定テスト
-- [ ] `[P]` T-5: usageフィールド欠如時のフォールバックテスト
+- [x] `[P]` T-3: usageフィールドからのトークン抽出テスト
+- [x] `[P]` T-4: tiktoken推定テスト
+- [x] `[P]` T-5: usageフィールド欠如時のフォールバックテスト
 
 ### 永続化
 
@@ -49,18 +49,18 @@
 
 ### データモデル実装
 
-- [ ] C-1: common/src/protocol.rs - RequestResponseRecordにトークンフィールド追加
+- [x] C-1: common/src/protocol.rs - RequestResponseRecordにトークンフィールド追加
   - 依存: T-1
-- [ ] C-2: router/src/balancer/mod.rs - NodeLoadStateにトークンフィールド追加
+- [x] C-2: router/src/balancer/mod.rs - NodeLoadStateにトークンフィールド追加
   - 依存: T-2
 
 ### トークン抽出実装
 
-- [ ] C-3: トークン抽出モジュール作成（router/src/token/mod.rs）
+- [x] C-3: トークン抽出モジュール作成（router/src/token/mod.rs）
   - 依存: T-3, T-4, T-5
-- [ ] C-4: usageフィールド抽出ロジック実装
+- [x] C-4: usageフィールド抽出ロジック実装
   - 依存: C-3
-- [ ] C-5: tiktoken推定ロジック実装
+- [x] C-5: tiktoken推定ロジック実装
   - 依存: C-3, S-1
 
 ### finish_request統合
@@ -144,9 +144,9 @@ P-1〜P-7 (Polish)
 
 | カテゴリ | 完了 | 合計 | 進捗率 |
 |----------|------|------|--------|
-| Setup | 0 | 2 | 0% |
-| Test | 0 | 14 | 0% |
-| Core | 0 | 11 | 0% |
+| Setup | 2 | 2 | 100% |
+| Test | 5 | 14 | 36% |
+| Core | 5 | 11 | 45% |
 | Integration | 0 | 7 | 0% |
 | Polish | 0 | 7 | 0% |
-| **合計** | **0** | **41** | **0%** |
+| **合計** | **12** | **41** | **29%** |

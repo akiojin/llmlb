@@ -1455,6 +1455,11 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
         model->weights_offset = weights_offset;
         model->weights_bytes = weights_bytes;
         model->has_weights_blob = weights_bytes > 0;
+        if (uuid_equals(layout_uuid, kDirectMlLayoutUuid) && !model->has_weights_blob) {
+            delete tokenizer;
+            delete model;
+            return gptoss_status_invalid_argument;
+        }
         if (uuid_equals(layout_uuid, kDirectMlLayoutUuid)) {
             build_dml_plan(model->header, model->vocabulary_size, model->dml_plan);
             build_dml_tensor_layout(model->header, model->vocabulary_size, model->dml_layout);

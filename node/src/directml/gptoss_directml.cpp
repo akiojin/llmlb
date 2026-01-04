@@ -79,6 +79,7 @@ struct GptossModel {
     gptoss_tokenizer_t tokenizer{nullptr};
     uint32_t max_context_length{0};
     uint32_t vocabulary_size{0};
+    GptossModelHeader header{};
 };
 
 bool read_exact(std::ifstream& in, void* out, size_t size) {
@@ -116,7 +117,9 @@ gptoss_special_token decode_special_token_uuid(const GptossUuid& uuid) {
     return gptoss_special_token_invalid;
 }
 
-bool load_gptoss_model_file(const fs::path& path, uint32_t& max_context, struct GptossTokenizer& tokenizer) {
+bool load_gptoss_model_file(const fs::path& path,
+                            GptossModelHeader& model_header,
+                            struct GptossTokenizer& tokenizer) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return false;
 
@@ -140,9 +143,7 @@ bool load_gptoss_model_file(const fs::path& path, uint32_t& max_context, struct 
     if (!read_exact(in, &model_uuid, sizeof(model_uuid))) return false;
     if (!uuid_equals(model_uuid, kModelUuid)) return false;
 
-    GptossModelHeader model_header{};
     if (!read_exact(in, &model_header, sizeof(model_header))) return false;
-    max_context = model_header.context_length;
 
     GptossUuid layout_uuid{};
     if (!read_exact(in, &layout_uuid, sizeof(layout_uuid))) return false;
@@ -191,7 +192,7 @@ bool load_gptoss_model_file(const fs::path& path, uint32_t& max_context, struct 
         ptr += len;
     }
 
-    return true;
+    return model_header.context_length != 0;
 }
 
 #ifdef _WIN32
@@ -527,12 +528,13 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
             delete model;
             return gptoss_status_insufficient_memory;
         }
-        if (!load_gptoss_model_file(path, model->max_context_length, *tokenizer)) {
+        if (!load_gptoss_model_file(path, model->header, *tokenizer)) {
             delete tokenizer;
             delete model;
             return gptoss_status_invalid_argument;
         }
 
+        model->max_context_length = model->header.context_length;
         model->vocabulary_size = tokenizer->num_text_tokens + tokenizer->num_special_tokens;
         model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
         *model_out = reinterpret_cast<gptoss_model_t>(model);

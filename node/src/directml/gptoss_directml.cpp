@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -685,7 +686,11 @@ gptoss_status load_gptoss_model_file(const fs::path& path,
         const auto file_size = fs::file_size(path, ec);
         if (ec) return gptoss_status_io_error;
         if (file_size < static_cast<uintmax_t>(weights_offset)) return gptoss_status_io_error;
-        const size_t weights_bytes = static_cast<size_t>(file_size - static_cast<uintmax_t>(weights_offset));
+        const uintmax_t remaining = file_size - static_cast<uintmax_t>(weights_offset);
+        if (remaining > static_cast<uintmax_t>(std::numeric_limits<size_t>::max())) {
+            return gptoss_status_invalid_argument;
+        }
+        const size_t weights_bytes = static_cast<size_t>(remaining);
         if (weights_offset_out) *weights_offset_out = static_cast<size_t>(weights_offset);
         if (weights_bytes_out) *weights_bytes_out = weights_bytes;
     }

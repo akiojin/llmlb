@@ -14,6 +14,7 @@
 - Updated tests and docs/specs for the new DirectML runtime flow.
 - Added DirectML device initialization (DXGI/D3D12/DML) in the in-tree runtime.
 - Parsed gpt-oss DirectML artifacts (header + tokenizer blob) for model load.
+- Rejected Metal layout UUID in DirectML artifact loader (guardrail).
 
 ### Plan B (proposed) + acceptance line
 - Goal: Ship a self-hosted DirectML runtime that is shared by gpt-oss and Nemotron and validates the DirectML stack.

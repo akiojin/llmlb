@@ -132,6 +132,9 @@ bool load_gptoss_model_file(const fs::path& path, uint32_t& max_context, struct 
     static const std::array<uint8_t, 16> kTokenizerUuid = {
         0x74, 0x01, 0xAD, 0xED, 0x2A, 0x95, 0x40, 0xCB, 0xB7, 0x82, 0x9C, 0xCE, 0xBA, 0xAF, 0xE7, 0x2B,
     };
+    static const std::array<uint8_t, 16> kAppleGpuLayoutUuid = {
+        0x22, 0x91, 0x77, 0xA8, 0x57, 0x75, 0x42, 0x68, 0xBF, 0xD8, 0xD5, 0x88, 0xB3, 0x51, 0xC5, 0x6D,
+    };
 
     GptossUuid model_uuid{};
     if (!read_exact(in, &model_uuid, sizeof(model_uuid))) return false;
@@ -143,6 +146,7 @@ bool load_gptoss_model_file(const fs::path& path, uint32_t& max_context, struct 
 
     GptossUuid layout_uuid{};
     if (!read_exact(in, &layout_uuid, sizeof(layout_uuid))) return false;
+    if (uuid_equals(layout_uuid, kAppleGpuLayoutUuid)) return false;
 
     GptossUuid tokenizer_uuid{};
     if (!read_exact(in, &tokenizer_uuid, sizeof(tokenizer_uuid))) return false;

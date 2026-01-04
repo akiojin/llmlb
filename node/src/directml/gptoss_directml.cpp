@@ -525,6 +525,8 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     if (!read_logits_from_gpu(ctx->dml_exec, model->dml_layout.vocab_size, logits, ctx->dml_buffers)) {
         return gptoss_status_internal;
     }
+    ctx->last_logits = std::move(logits);
+    ctx->logits_ready = !ctx->last_logits.empty();
 #endif
     return gptoss_status_unsupported_system;
 }
@@ -1046,6 +1048,8 @@ struct GptossContext {
     DmlBuffers dml_buffers{};
     DmlBindings dml_bindings{};
     DmlExecState dml_exec{};
+    std::vector<float> last_logits;
+    bool logits_ready{false};
 };
 
 uint32_t find_unknown_token_id(const GptossTokenizer& tokenizer) {

@@ -371,11 +371,30 @@ bool dml_graph_ready(const DmlGraph& graph) {
     return graph.has_prefill && graph.has_decode;
 }
 
+bool compile_dml_operators(DmlGraph& graph, DmlExecState& exec_state) {
+#ifdef _WIN32
+    if (!exec_state.initialized || !exec_state.dml_device) return false;
+    if (!graph.desc.initialized) return false;
+    graph.prefill_op.Reset();
+    graph.decode_op.Reset();
+    graph.has_prefill = false;
+    graph.has_decode = false;
+    return true;
+#else
+    (void)graph;
+    (void)exec_state;
+    return false;
+#endif
+}
+
 gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (!ctx || !ctx->model) return gptoss_status_invalid_argument;
     auto* model = reinterpret_cast<GptossModel*>(ctx->model);
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
+    }
+    if (!model->dml_graph.has_prefill) {
+        compile_dml_operators(model->dml_graph, ctx->dml_exec);
     }
     if (!dml_graph_ready(model->dml_graph)) {
         return gptoss_status_unsupported_argument;
@@ -391,6 +410,9 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     auto* model = reinterpret_cast<GptossModel*>(ctx->model);
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
+    }
+    if (!model->dml_graph.has_decode) {
+        compile_dml_operators(model->dml_graph, ctx->dml_exec);
     }
     if (!dml_graph_ready(model->dml_graph)) {
         return gptoss_status_unsupported_argument;

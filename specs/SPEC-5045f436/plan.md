@@ -32,7 +32,7 @@
 
 | ファイル | 変更内容 |
 |----------|----------|
-| `router/migrations/003_add_token_statistics.sql` | 新規マイグレーション作成 |
+| `router/migrations/004_add_token_statistics.sql` | 新規マイグレーション作成 |
 | `common/src/protocol.rs` | RequestResponseRecordにトークンフィールド追加 |
 
 ### Phase 2: コア実装
@@ -63,7 +63,7 @@
 ### SQLiteマイグレーション
 
 ```sql
--- router/migrations/003_add_token_statistics.sql
+-- router/migrations/004_add_token_statistics.sql
 
 -- request_history テーブルにトークンカラム追加
 ALTER TABLE request_history ADD COLUMN input_tokens INTEGER;

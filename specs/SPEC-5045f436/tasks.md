@@ -9,7 +9,7 @@
 ## Setup
 
 - [ ] `[P]` S-1: tiktoken-rs依存をrouter/Cargo.tomlに追加
-- [ ] `[P]` S-2: マイグレーションファイル 003_add_token_statistics.sql 作成
+- [ ] `[P]` S-2: マイグレーションファイル 004_add_token_statistics.sql 作成
 
 ## Test（RED）
 

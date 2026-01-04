@@ -521,6 +521,10 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
             nullptr);
     }
     if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    std::vector<float> logits;
+    if (!read_logits_from_gpu(ctx->dml_exec, model->dml_layout.vocab_size, logits, ctx->dml_buffers)) {
+        return gptoss_status_internal;
+    }
 #endif
     return gptoss_status_unsupported_system;
 }
@@ -975,6 +979,60 @@ bool upload_tokens_to_gpu(DmlExecState& state,
     if (!reset_dml_command_list(state)) return false;
     state.command_list->CopyBufferRegion(buffers.token_buffer.Get(), 0, upload.Get(), 0, bytes);
     if (!submit_dml_command_list(state)) return false;
+    return true;
+}
+
+bool read_logits_from_gpu(DmlExecState& state,
+                          size_t vocab_size,
+                          std::vector<float>& logits,
+                          DmlBuffers& buffers) {
+    if (!state.initialized || !buffers.logits_buffer) return false;
+    if (vocab_size == 0) return false;
+    const size_t bytes = vocab_size * sizeof(float);
+
+    ComPtr<ID3D12Resource> readback;
+    D3D12_HEAP_PROPERTIES heap_props = {};
+    heap_props.Type = D3D12_HEAP_TYPE_READBACK;
+    heap_props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap_props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap_props.CreationNodeMask = 1;
+    heap_props.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    desc.Alignment = 0;
+    desc.Width = static_cast<UINT64>(bytes);
+    desc.Height = 1;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_UNKNOWN;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    if (FAILED(dml_runtime().device->CreateCommittedResource(
+            &heap_props,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&readback)))) {
+        return false;
+    }
+
+    if (!reset_dml_command_list(state)) return false;
+    state.command_list->CopyBufferRegion(readback.Get(), 0, buffers.logits_buffer.Get(), 0, bytes);
+    if (!submit_dml_command_list(state)) return false;
+
+    logits.resize(vocab_size);
+    void* mapped = nullptr;
+    D3D12_RANGE range = {0, static_cast<SIZE_T>(bytes)};
+    if (FAILED(readback->Map(0, &range, &mapped))) {
+        return false;
+    }
+    std::memcpy(logits.data(), mapped, bytes);
+    readback->Unmap(0, nullptr);
     return true;
 }
 #endif

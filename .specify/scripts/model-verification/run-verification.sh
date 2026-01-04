@@ -15,6 +15,7 @@ RESULTS_DIR=""
 CHAT_TEMPLATE=""
 LLM_NODE="${SCRIPT_DIR}/../../../node/build/llm-node"
 LLAMA_CLI="${SCRIPT_DIR}/../../../node/third_party/llama.cpp/build/bin/llama-cli"
+TEST_TIMEOUT_SEC="${TEST_TIMEOUT_SEC:-900}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --chat-template) CHAT_TEMPLATE="$2"; shift 2;;
     --llm-node) LLM_NODE="$2"; shift 2;;
     --results-dir) RESULTS_DIR="$2"; shift 2;;
+    --timeout) TEST_TIMEOUT_SEC="$2"; shift 2;;
     -h|--help)
       echo "Usage: $0 --model <path> [options]"
       echo "Options:"
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --chat-template Chat prompt style for test 08: plain|chatml (optional)"
       echo "  --llm-node    Path to llm-node binary"
       echo "  --results-dir Directory to store results"
+      echo "  --timeout    Per-test timeout seconds (default: ${TEST_TIMEOUT_SEC})"
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1;;
@@ -50,6 +53,11 @@ fi
 
 if [[ ! -f "$MODEL" ]]; then
   echo "Error: Model file not found: $MODEL"
+  exit 1
+fi
+
+if ! [[ "$TEST_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || [[ "$TEST_TIMEOUT_SEC" -le 0 ]]; then
+  echo "Error: --timeout must be a positive integer (seconds)"
   exit 1
 fi
 
@@ -90,6 +98,7 @@ echo "Format:     $FORMAT"
 echo "Engine:     $ENGINE"
 echo "Capability: $CAPABILITY"
 echo "Platform:   $PLATFORM"
+echo "Timeout:    ${TEST_TIMEOUT_SEC}s"
 if [[ -n "$CHAT_TEMPLATE" ]]; then
   echo "Chat tmpl:  $CHAT_TEMPLATE"
 fi
@@ -111,7 +120,7 @@ run_test() {
 
   echo -n "Running: $test_name ... "
 
-  if bash "$test_script" > "$RESULTS_DIR/${test_name}.log" 2>&1; then
+  if run_with_timeout "$TEST_TIMEOUT_SEC" bash "$test_script" > "$RESULTS_DIR/${test_name}.log" 2>&1; then
     echo "✅ PASSED"
     RESULTS+=("$test_name:PASSED")
     ((PASSED++))
@@ -122,6 +131,10 @@ run_test() {
       echo "⏭️  SKIPPED"
       RESULTS+=("$test_name:SKIPPED")
       ((SKIPPED++))
+    elif [[ $exit_code -eq 124 ]]; then
+      echo "⏱️  TIMEOUT (see $RESULTS_DIR/${test_name}.log)"
+      RESULTS+=("$test_name:TIMEOUT")
+      ((FAILED++))
     else
       echo "❌ FAILED (see $RESULTS_DIR/${test_name}.log)"
       RESULTS+=("$test_name:FAILED")
@@ -129,6 +142,42 @@ run_test() {
     fi
     return $exit_code
   fi
+}
+
+run_with_timeout() {
+  local timeout_sec="$1"
+  shift
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --preserve-status "${timeout_sec}s" "$@"
+    return $?
+  fi
+
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout --preserve-status "${timeout_sec}s" "$@"
+    return $?
+  fi
+
+  "$@" &
+  local cmd_pid=$!
+  local start_ts
+  start_ts="$(date +%s)"
+
+  while kill -0 "$cmd_pid" >/dev/null 2>&1; do
+    local now_ts
+    now_ts="$(date +%s)"
+    if (( now_ts - start_ts >= timeout_sec )); then
+      kill -TERM "$cmd_pid" >/dev/null 2>&1 || true
+      sleep 2
+      kill -KILL "$cmd_pid" >/dev/null 2>&1 || true
+      wait "$cmd_pid" >/dev/null 2>&1 || true
+      return 124
+    fi
+    sleep 1
+  done
+
+  wait "$cmd_pid"
+  return $?
 }
 
 # Run all tests in order
@@ -172,6 +221,7 @@ echo ""
       PASSED) echo "- ✅ $name";;
       FAILED) echo "- ❌ $name";;
       SKIPPED) echo "- ⏭️  $name";;
+      TIMEOUT) echo "- ⏱️  $name";;
     esac
   done
 } > "$RESULTS_DIR/summary.md"

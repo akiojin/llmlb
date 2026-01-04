@@ -461,6 +461,9 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
         return gptoss_status_insufficient_resources;
     }
 #ifdef _WIN32
+    if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
+        return gptoss_status_internal;
+    }
     if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
     if (ctx->dml_exec.binding_table) {
         ctx->dml_exec.binding_table->BindInputs(1, &ctx->dml_bindings.token_binding_desc);
@@ -497,6 +500,9 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
         return gptoss_status_insufficient_resources;
     }
 #ifdef _WIN32
+    if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
+        return gptoss_status_internal;
+    }
     if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
     if (ctx->dml_exec.binding_table) {
         if (!ctx->dml_exec.binding_table_for_decode) {
@@ -916,6 +922,59 @@ bool submit_dml_command_list(DmlExecState& state) {
         if (FAILED(state.fence->SetEventOnCompletion(state.fence_value, state.fence_event))) return false;
         WaitForSingleObject(state.fence_event, INFINITE);
     }
+    return true;
+}
+
+bool upload_tokens_to_gpu(DmlExecState& state,
+                          const std::vector<uint32_t>& tokens,
+                          DmlBuffers& buffers) {
+    if (!state.initialized || !state.command_list || !state.command_queue || !state.allocator) return false;
+    if (!buffers.token_buffer) return false;
+    const size_t bytes = tokens.size() * sizeof(uint32_t);
+    if (bytes == 0) return true;
+
+    ComPtr<ID3D12Resource> upload;
+    D3D12_HEAP_PROPERTIES heap_props = {};
+    heap_props.Type = D3D12_HEAP_TYPE_UPLOAD;
+    heap_props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap_props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap_props.CreationNodeMask = 1;
+    heap_props.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    desc.Alignment = 0;
+    desc.Width = static_cast<UINT64>(bytes);
+    desc.Height = 1;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_UNKNOWN;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    if (FAILED(dml_runtime().device->CreateCommittedResource(
+            &heap_props,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&upload)))) {
+        return false;
+    }
+
+    void* mapped = nullptr;
+    D3D12_RANGE range = {0, 0};
+    if (FAILED(upload->Map(0, &range, &mapped))) {
+        return false;
+    }
+    std::memcpy(mapped, tokens.data(), bytes);
+    upload->Unmap(0, nullptr);
+
+    if (!reset_dml_command_list(state)) return false;
+    state.command_list->CopyBufferRegion(buffers.token_buffer.Get(), 0, upload.Get(), 0, bytes);
+    if (!submit_dml_command_list(state)) return false;
     return true;
 }
 #endif

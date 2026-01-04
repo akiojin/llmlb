@@ -178,6 +178,7 @@ struct DmlExecState {
     HANDLE fence_event{nullptr};
     uint64_t fence_value{0};
     ComPtr<IDMLCommandRecorder> recorder;
+    ComPtr<IDMLBindingTable> binding_table;
 #endif
     bool initialized{false};
 };
@@ -851,6 +852,29 @@ bool init_dml_exec_state(DmlExecState& state) {
     return true;
 }
 
+bool init_dml_binding_table(DmlExecState& state,
+                            const DmlGraph& graph,
+                            const DmlBindings& bindings) {
+    if (!state.initialized || !state.dml_device) return false;
+    if (!graph.prefill_op || !graph.decode_op) return false;
+    if (!bindings.initialized) return false;
+
+    DML_BINDING_TABLE_DESC table_desc = {};
+    table_desc.Dispatchable = graph.prefill_op.Get();
+    table_desc.CPUDescriptorHandle = {};
+    table_desc.GPUDescriptorHandle = {};
+    table_desc.SizeInDescriptors = 1;
+
+    state.binding_table.Reset();
+    if (FAILED(state.dml_device->CreateBindingTable(&table_desc, IID_PPV_ARGS(&state.binding_table)))) {
+        return false;
+    }
+
+    state.binding_table->BindInputs(1, &bindings.token_binding_desc);
+    state.binding_table->BindOutputs(1, &bindings.logits_binding_desc);
+    return true;
+}
+
 bool reset_dml_command_list(DmlExecState& state) {
     if (!state.initialized) return false;
     if (FAILED(state.allocator->Reset())) return false;
@@ -1322,6 +1346,12 @@ gptoss_status GPTOSS_ABI gptoss_context_create(
             delete ctx;
             return gptoss_status_insufficient_resources;
         }
+#ifdef _WIN32
+        if (!init_dml_binding_table(ctx->dml_exec, model_ptr->dml_graph, ctx->dml_bindings)) {
+            delete ctx;
+            return gptoss_status_insufficient_resources;
+        }
+#endif
     }
     gptoss_model_retain(model);
     *context_out = reinterpret_cast<gptoss_context_t>(ctx);

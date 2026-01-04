@@ -465,6 +465,82 @@ impl RequestHistoryStorage {
             })
             .collect())
     }
+
+    /// 日次トークン統計を取得
+    pub async fn get_daily_token_statistics(
+        &self,
+        days: u32,
+    ) -> RouterResult<Vec<crate::api::dashboard::DailyTokenStats>> {
+        let rows = sqlx::query_as::<_, DailyTokenStatisticsRow>(
+            r#"
+            SELECT
+                DATE(timestamp) as date,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COUNT(*) as request_count
+            FROM request_history
+            WHERE timestamp >= DATE('now', '-' || ? || ' days')
+            GROUP BY DATE(timestamp)
+            ORDER BY date DESC
+            "#,
+        )
+        .bind(days as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            RouterError::Database(format!("Failed to get daily token statistics: {}", e))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| crate::api::dashboard::DailyTokenStats {
+                date: row.date,
+                total_input_tokens: row.total_input_tokens as u64,
+                total_output_tokens: row.total_output_tokens as u64,
+                total_tokens: row.total_tokens as u64,
+                request_count: row.request_count as u64,
+            })
+            .collect())
+    }
+
+    /// 月次トークン統計を取得
+    pub async fn get_monthly_token_statistics(
+        &self,
+        months: u32,
+    ) -> RouterResult<Vec<crate::api::dashboard::MonthlyTokenStats>> {
+        let rows = sqlx::query_as::<_, MonthlyTokenStatisticsRow>(
+            r#"
+            SELECT
+                strftime('%Y-%m', timestamp) as month,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COUNT(*) as request_count
+            FROM request_history
+            WHERE timestamp >= DATE('now', '-' || ? || ' months')
+            GROUP BY strftime('%Y-%m', timestamp)
+            ORDER BY month DESC
+            "#,
+        )
+        .bind(months as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            RouterError::Database(format!("Failed to get monthly token statistics: {}", e))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| crate::api::dashboard::MonthlyTokenStats {
+                month: row.month,
+                total_input_tokens: row.total_input_tokens as u64,
+                total_output_tokens: row.total_output_tokens as u64,
+                total_tokens: row.total_tokens as u64,
+                request_count: row.request_count as u64,
+            })
+            .collect())
+    }
 }
 
 fn legacy_request_history_path() -> RouterResult<PathBuf> {
@@ -764,6 +840,26 @@ struct ModelTokenStatisticsRow {
 struct NodeTokenStatisticsRow {
     node_id: String,
     node_machine_name: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+    request_count: i64,
+}
+
+/// SQLiteから取得したトークン統計行（日次）
+#[derive(sqlx::FromRow)]
+struct DailyTokenStatisticsRow {
+    date: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+    request_count: i64,
+}
+
+/// SQLiteから取得したトークン統計行（月次）
+#[derive(sqlx::FromRow)]
+struct MonthlyTokenStatisticsRow {
+    month: String,
     total_input_tokens: i64,
     total_output_tokens: i64,
     total_tokens: i64,

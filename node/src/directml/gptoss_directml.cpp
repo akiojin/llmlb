@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -480,8 +481,10 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
             nullptr);
     }
     if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
-#endif
+    return gptoss_status_success;
+#else
     return gptoss_status_unsupported_system;
+#endif
 }
 
 gptoss_status run_dml_decode(GptossContext* ctx) {
@@ -527,8 +530,10 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     }
     ctx->last_logits = std::move(logits);
     ctx->logits_ready = !ctx->last_logits.empty();
-#endif
+    return gptoss_status_success;
+#else
     return gptoss_status_unsupported_system;
+#endif
 }
 
 bool safe_mul_size(size_t a, size_t b, size_t& out) {
@@ -1050,7 +1055,57 @@ struct GptossContext {
     DmlExecState dml_exec{};
     std::vector<float> last_logits;
     bool logits_ready{false};
+    uint64_t rng_state{0};
+    bool rng_initialized{false};
 };
+
+uint64_t next_rng(uint64_t& state) {
+    if (state == 0) {
+        state = UINT64_C(0x9e3779b97f4a7c15);
+    }
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    return state * UINT64_C(2685821657736338717);
+}
+
+double rng_uniform_01(uint64_t& state) {
+    const uint64_t value = next_rng(state);
+    return static_cast<double>(value >> 11) * (1.0 / 9007199254740992.0);
+}
+
+bool sample_from_logits(const std::vector<float>& logits,
+                        float temperature,
+                        uint64_t& rng_state,
+                        uint32_t& token_out) {
+    if (logits.empty()) return false;
+    auto max_it = std::max_element(logits.begin(), logits.end());
+    if (max_it == logits.end()) return false;
+    const float max_logit = *max_it;
+    if (!(temperature > 0.0f)) {
+        token_out = static_cast<uint32_t>(std::distance(logits.begin(), max_it));
+        return true;
+    }
+
+    double sum = 0.0;
+    for (float logit : logits) {
+        sum += std::exp(static_cast<double>(logit - max_logit) * static_cast<double>(temperature));
+    }
+    if (!(sum > 0.0)) return false;
+
+    const double target = rng_uniform_01(rng_state) * sum;
+    double cumulative = 0.0;
+    for (size_t i = 0; i < logits.size(); ++i) {
+        cumulative += std::exp(static_cast<double>(logits[i] - max_logit) * static_cast<double>(temperature));
+        if (cumulative >= target) {
+            token_out = static_cast<uint32_t>(i);
+            return true;
+        }
+    }
+
+    token_out = static_cast<uint32_t>(std::distance(logits.begin(), max_it));
+    return true;
+}
 
 uint32_t find_unknown_token_id(const GptossTokenizer& tokenizer) {
     static const char* kUnknownTokens[] = {"<unk>", "<|unk|>", "<|unknown|>"};
@@ -1590,14 +1645,44 @@ gptoss_status GPTOSS_ABI gptoss_context_process(gptoss_context_t context) {
 
 gptoss_status GPTOSS_ABI gptoss_context_sample(
     gptoss_context_t context,
-    float /*temperature*/,
-    uint64_t /*rng_state*/,
-    size_t /*num_tokens*/,
-    uint32_t* /*tokens_out*/,
-    size_t* /*num_tokens_out*/) {
+    float temperature,
+    uint64_t rng_state,
+    size_t num_tokens,
+    uint32_t* tokens_out,
+    size_t* num_tokens_out) {
     if (!context) return gptoss_status_invalid_argument;
     auto* ctx = reinterpret_cast<GptossContext*>(context);
-    return run_dml_decode(ctx);
+    if (num_tokens == 0) {
+        if (num_tokens_out) *num_tokens_out = 0;
+        return gptoss_status_success;
+    }
+    if (!tokens_out || !num_tokens_out) return gptoss_status_invalid_argument;
+    if (!ctx->model) return gptoss_status_invalid_argument;
+    if (ctx->tokens.size() >= ctx->max_tokens) return gptoss_status_context_overflow;
+    if (!ctx->rng_initialized) {
+        ctx->rng_state = rng_state == 0 ? UINT64_C(0x9e3779b97f4a7c15) : rng_state;
+        ctx->rng_initialized = true;
+    }
+
+    const float effective_temperature = temperature < 0.0f ? 0.0f : temperature;
+    size_t produced = 0;
+    for (size_t i = 0; i < num_tokens; ++i) {
+        const auto status = run_dml_decode(ctx);
+        if (status != gptoss_status_success) return status;
+        if (!ctx->logits_ready || ctx->last_logits.empty()) return gptoss_status_internal;
+
+        uint32_t token = 0;
+        if (!sample_from_logits(ctx->last_logits, effective_temperature, ctx->rng_state, token)) {
+            return gptoss_status_internal;
+        }
+        if (ctx->tokens.size() >= ctx->max_tokens) return gptoss_status_context_overflow;
+        ctx->tokens.push_back(token);
+        tokens_out[i] = token;
+        produced++;
+        ctx->logits_ready = false;
+    }
+    *num_tokens_out = produced;
+    return gptoss_status_success;
 }
 
 gptoss_status GPTOSS_ABI gptoss_context_retain(gptoss_context_t context) {

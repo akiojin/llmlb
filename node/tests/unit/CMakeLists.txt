@@ -19,6 +19,7 @@ set(UNIT_TEST_SOURCES
     whisper_manager_test.cpp
     onnx_tts_manager_test.cpp
     sd_manager_test.cpp
+    watchdog_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
     utils_utf8_test.cpp
@@ -41,6 +42,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/request_watchdog.cpp
     ../../src/core/vision_processor.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp

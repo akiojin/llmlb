@@ -39,7 +39,8 @@
   - Windows: DirectML（D3D12）を主経路とする
   - Linux: 当面は非対応（CUDAは実験扱い）
   - WSL2: 対象外（Windowsはネイティブのみ）
-- **形式選択**: safetensors/GGUF/Metal 等の選択は Node が実行環境に応じて行う。
+- **形式選択**: safetensors/GGUF 等の **format は登録時に確定**し、実行時の切替は行わない。  
+  NodeはGPUに応じて **公式最適化アーティファクト**（例: Metal/DirectML向け）を選択する。
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、Nodeが選択したアーティファクトを置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
 - **内蔵エンジンの要件は単一化**: 詳細は「内蔵エンジン要件（単一要件）」に統合済み。
@@ -95,7 +96,7 @@
 
 - **Router**
   - 登録時に **メタデータとマニフェスト（ファイル一覧）** を保存する。
-  - **形式はRouterで確定しない**。Nodeがruntime/GPU要件に応じて選択する。
+  - **形式は登録時に確定**し、Nodeはformatを尊重する（実行時の切替は行わない）。
   - ルーターはモデルバイナリを保持しない。
 - **Node / ModelStorage + Resolver**
   - 形式・ファイルの整合性（`config.json` / `tokenizer.json` / shard / index）を検証。
@@ -107,8 +108,26 @@
 - **Inference Engine（外側）**
   - 共通の推論インターフェース。内部で runtime に応じてプラグインを振り分ける。
   - GGUF → `llama.cpp`、TTS → `ONNX Runtime`、safetensors → 独自エンジン群（すべてプラグイン）。
+  - **GGUFは llama.cpp が複数アーキテクチャ（llama/mistral/gemma/phi 等）を横断的に駆動**する。
+  - **safetensorsは原則「モデルごとの専用エンジン」**で対応する（例: gpt-oss, nemotron）。
+    - 汎用safetensorsエンジンの可能性は否定しないが、**初期要件では前提にしない**。
   - 公式最適化アーティファクトは **実行キャッシュ**として利用可能だが、
     Nodeが選択したアーティファクトは上書きしない。
+
+### GPUバックエンド（最下層レイヤー）
+
+- **Metal**（macOS / Apple Silicon）
+- **DirectML**（Windows / D3D12）
+- **CUDA**（Linux: 実験扱い）
+
+## 現状の対応済みモデル/アーキテクチャ（2026-01-02時点）
+
+- **GGUF / llama.cpp**: llama/mistral/qwen/gemma/phi 系が検証済み。  
+  詳細なモデルIDと検証状況は `specs/SPEC-6cd7f960/verified-models.md` を正とする。
+- **safetensors / 内蔵エンジン**: 実運用で確認できているのは **gpt-oss（Metal/macOS）** のみ。  
+  DirectMLは未検証、NemotronはTBD（後回し）。
+- **その他モダリティ**（ASR/TTS/画像生成/画像認識/Embedding）:  
+  対応可否と検証済みモデルは `specs/SPEC-6cd7f960/verified-models.md` で管理する。
 
 ### プラグイン設計指針（Node）
 
@@ -132,6 +151,27 @@
 | `WhisperCpp` | ASR | GGML/GGUF（当面） | 変換は行わない。safetensors対応は将来検討 |
 | `StableDiffusion` | 画像生成 | safetensors（直接） | stable-diffusion.cpp を当面利用 |
 | `OnnxRuntime` | TTS | ONNX | Python依存なしで運用する |
+
+**現状の実運用確認**
+- safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
+- DirectMLは限定的、NemotronはTBD（後回し）。
+
+### 現在の対応済みモデル（2026-01-02時点）
+
+**Model Hub（`router/src/supported_models.json`）に登録済み**の範囲:
+
+- **GGUF / llama.cpp**:
+  - Qwen2.5 7B Instruct
+  - Llama 3.2 3B Instruct
+  - Mistral 7B Instruct
+  - Phi-3 Mini
+  - Gemma 2 9B
+- **safetensors / gpt-oss**:
+  - GPT-OSS 20B（Metal）
+  - GPT-OSS 120B（Metal）
+  - GPT-OSS Safeguard は **Metal最適化アーティファクト未提供**のため未対応
+
+詳細な検証状況は `specs/SPEC-6cd7f960/verified-models.md` を参照。
 
 ### アーティファクト選択とエンジン選択の原則
 

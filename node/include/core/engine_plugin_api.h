@@ -6,7 +6,7 @@ namespace llm_node {
 
 class LlamaManager;
 
-constexpr int kEnginePluginAbiVersion = 1;
+constexpr int kEnginePluginAbiVersion = 2;
 
 struct EngineHostContext {
     int abi_version{0};

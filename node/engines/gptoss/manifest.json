@@ -1,10 +1,10 @@
 {
   "engine_id": "gptoss_cpp",
   "engine_version": "0.1.0",
-  "abi_version": 1,
+  "abi_version": 2,
   "runtimes": ["gptoss_cpp"],
   "formats": ["safetensors"],
-  "architectures": ["gptoss"],
+  "architectures": ["gpt_oss"],
   "modalities": ["completion"],
   "license": "Apache-2.0",
   "supports_vision": false,

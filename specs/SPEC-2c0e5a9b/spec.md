@@ -36,6 +36,7 @@
 - **Python依存なし**: Node は Python 依存を導入しない。
 - **GPU前提**: GPU非搭載ノードは対象外。
 - **対応OS/GPU**: macOS=Metal、Windows=DirectML。Linuxは当面非対応（CUDAは実験扱い）。
+- **現状の実運用確認**: safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。DirectMLは限定的、NemotronはTBD。
 - **chat_template**: 無い場合はデフォルトテンプレートを利用する。
 - **プラグイン形式**: gpt-oss 実行エンジンは Node のプラグインとして提供する。
 

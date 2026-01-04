@@ -3,6 +3,9 @@
 # Verifies model can handle conversation context
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Multi-turn Chat ==="
 
 # Skip for non-text models
@@ -11,12 +14,26 @@ if [[ "$CAPABILITY" != "TextGeneration" ]]; then
   exit 77
 fi
 
-# This test is optional - skip if chat template not available
-echo "SKIP: Multi-turn chat test requires chat template support"
-echo "Future: Implement chat template detection and multi-turn testing"
-exit 77
+CHAT_PROMPT=$(format_chat_prompt)
+echo "Chat template: ${CHAT_TEMPLATE:-plain}"
+echo "Prompt preview:"
+echo "$CHAT_PROMPT"
 
-# Future implementation:
-# 1. Detect chat template from model
-# 2. Format multi-turn conversation
-# 3. Verify context is maintained
+set +e
+OUTPUT=$(infer_command 80 "$CHAT_PROMPT" 2>&1)
+EXIT_CODE=$?
+set -e
+
+if [[ $EXIT_CODE -ne 0 ]]; then
+  echo "FAIL: Chat inference failed (exit $EXIT_CODE)"
+  exit 1
+fi
+
+OUTPUT_LEN=${#OUTPUT}
+if [[ $OUTPUT_LEN -lt 10 ]]; then
+  echo "FAIL: Chat output too short ($OUTPUT_LEN chars)"
+  exit 1
+fi
+
+echo "PASS: Chat test completed (output: $OUTPUT_LEN chars)"
+exit 0

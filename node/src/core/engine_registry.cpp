@@ -4,6 +4,7 @@
 #include <cctype>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <spdlog/spdlog.h>
 
 namespace llm_node {
@@ -71,16 +72,50 @@ std::vector<const EngineRegistry::EngineEntry*> EngineRegistry::filterCandidates
             }
         }
 
-        if (!descriptor.architectures.empty() && !entry.architectures.empty()) {
-            if (!architectures_compatible(entry.architectures, descriptor.architectures)) {
-                continue;
-            }
-        }
-
         candidates.push_back(&entry);
     }
 
     return candidates;
+}
+
+std::string normalize_architecture(std::string value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char c : value) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+    }
+    return out;
+}
+
+bool has_architecture_match(const std::vector<std::string>& supported,
+                            const std::vector<std::string>& requested) {
+    if (supported.empty() || requested.empty()) return true;
+    std::vector<std::string> normalized_supported;
+    normalized_supported.reserve(supported.size());
+    for (const auto& s : supported) {
+        normalized_supported.push_back(normalize_architecture(s));
+    }
+    for (const auto& r : requested) {
+        const auto nr = normalize_architecture(r);
+        if (nr.empty()) continue;
+        if (std::find(normalized_supported.begin(), normalized_supported.end(), nr) != normalized_supported.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string join_architectures(const std::vector<std::string>& values) {
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << "'" << values[i] << "'";
+    }
+    oss << "]";
+    return oss.str();
 }
 
 bool EngineRegistry::registerEngine(std::unique_ptr<Engine> engine,
@@ -208,13 +243,56 @@ Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor) const {
 }
 
 Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor, const std::string& capability) const {
+    return resolve(descriptor, capability, nullptr);
+}
+
+Engine* EngineRegistry::resolve(const ModelDescriptor& descriptor,
+                                const std::string& capability,
+                                std::string* error) const {
     auto it = engines_.find(descriptor.runtime);
-    if (it == engines_.end()) return nullptr;
+    if (it == engines_.end()) {
+        if (error) *error = "No engine registered for runtime: " + descriptor.runtime;
+        return nullptr;
+    }
     const auto& entries = it->second;
-    if (entries.empty()) return nullptr;
+    if (entries.empty()) {
+        if (error) *error = "No engine registered for runtime: " + descriptor.runtime;
+        return nullptr;
+    }
 
     auto candidates = filterCandidates(entries, descriptor, capability);
-    if (candidates.empty()) return nullptr;
+    if (candidates.empty()) {
+        if (error) *error = "No engine registered for runtime: " + descriptor.runtime;
+        return nullptr;
+    }
+
+    if (!descriptor.architectures.empty()) {
+        std::vector<const EngineEntry*> arch_candidates;
+        arch_candidates.reserve(candidates.size());
+        for (const auto* entry : candidates) {
+            if (has_architecture_match(entry->architectures, descriptor.architectures)) {
+                arch_candidates.push_back(entry);
+            }
+        }
+        if (arch_candidates.empty()) {
+            if (error) {
+                std::vector<std::string> supported;
+                for (const auto* entry : candidates) {
+                    supported.insert(supported.end(),
+                                     entry->architectures.begin(),
+                                     entry->architectures.end());
+                }
+                const std::string requested = descriptor.architectures.front();
+                const std::string engine_id = candidates.front()->engine_id;
+                *error = "Model architecture '" + requested +
+                         "' is not supported by engine '" + engine_id +
+                         "'. Supported: " + join_architectures(supported);
+            }
+            return nullptr;
+        }
+        candidates = std::move(arch_candidates);
+    }
+
     if (candidates.size() == 1) return candidates.front()->engine.get();
 
     std::optional<std::string> preferred;

@@ -19,6 +19,11 @@ struct ModelInfo {
     bool valid{false};      // Whether the model file exists and is valid
 };
 
+struct ParsedModelName {
+    std::string base;
+    std::optional<std::string> quantization;
+};
+
 class ModelStorage {
 public:
     explicit ModelStorage(std::string models_dir);
@@ -28,6 +33,9 @@ public:
 
     // Reverse conversion: directory name to model name (best-effort)
     static std::string dirNameToModel(const std::string& dir_name);
+
+    // Parse optional quantization suffix (modelname:quantization)
+    static std::optional<ParsedModelName> parseModelName(const std::string& model_name);
 
     // Legacy helper: resolve GGUF file path for a model.
     // Prefer resolveDescriptor() for new code (supports safetensors too).

@@ -104,6 +104,10 @@ register(format=...)  ───────▶    ModelStorage
 - Windows: DirectML（D3D12）
 - Linux: 当面は非対応（CUDAは実験扱い）
 
+### 現状の実運用確認（safetensors系LLM）
+- 安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
+- DirectMLは限定的、NemotronはTBD（後回し）。
+
 ## 非ゴール
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定・実装（後回し / TBDとして別途扱う）
 - Nemotron 推論の高速化・最適化
@@ -123,6 +127,22 @@ register(format=...)  ───────▶    ModelStorage
 - エンジン判定結果は /v1/models の応答に影響し、未対応モデルは登録対象から除外できる
 - Python依存は導入しない
 - Engine は動的プラグインであり、ABIバージョン一致のもののみロードされる
+
+## エラーコード
+粗粒度の共通エラーコード（約10種類）を定義し、詳細メッセージを併用する。
+
+| コード | 名前 | 説明 |
+|--------|------|------|
+| 0 | OK | 成功 |
+| 1 | OOM_VRAM | VRAM不足 |
+| 2 | OOM_RAM | RAM不足 |
+| 3 | MODEL_CORRUPT | モデルファイル破損 |
+| 4 | TIMEOUT | タイムアウト |
+| 5 | CANCELLED | キャンセル |
+| 6 | UNSUPPORTED | 未サポート機能 |
+| 7 | INTERNAL | 内部エラー |
+| 8 | ABI_MISMATCH | ABIバージョン不一致 |
+| 9 | LOAD_FAILED | ロード失敗 |
 
 ---
 

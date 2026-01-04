@@ -402,6 +402,21 @@ bool EngineHost::loadManifest(const std::filesystem::path& manifest_path,
     }
     manifest.supports_vision = j["supports_vision"].get<bool>();
 
+    if (j.contains("architectures")) {
+        if (!j["architectures"].is_array()) {
+            error = "architectures must be an array";
+            return false;
+        }
+        manifest.architectures.clear();
+        for (const auto& item : j["architectures"]) {
+            if (!item.is_string()) {
+                error = "architectures must be an array of strings";
+                return false;
+            }
+            manifest.architectures.push_back(item.get<std::string>());
+        }
+    }
+
     if (j.contains("capabilities")) {
         if (!j["capabilities"].is_array()) {
             error = "capabilities must be an array";

@@ -3,6 +3,9 @@
 # Verifies basic text generation works
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Basic Inference ==="
 
 # Skip for non-text models
@@ -14,11 +17,7 @@ fi
 PROMPT="Hello, who are you?"
 echo "Prompt: $PROMPT"
 
-OUTPUT=$("$LLM_NODE" \
-  --model "$MODEL" \
-  --n-predict 50 \
-  --prompt "$PROMPT" \
-  2>&1)
+OUTPUT=$(infer_command 50 "$PROMPT" 2>&1)
 
 echo "Output:"
 echo "$OUTPUT"

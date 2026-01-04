@@ -949,29 +949,52 @@ fn manifest_file_priority(name: &str) -> Option<i32> {
     }
 }
 
+fn is_quantization_token(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    if !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return false;
+    }
+    let upper = token.to_ascii_uppercase();
+    let has_digit = |s: &str| s.chars().any(|c| c.is_ascii_digit());
+    let starts_with_digit = |s: &str| s.chars().next().is_some_and(|c| c.is_ascii_digit());
+
+    if let Some(rest) = upper.strip_prefix("IQ") {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix('Q') {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix("BF") {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix("FP") {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix('F') {
+        return starts_with_digit(rest);
+    }
+    if let Some(rest) = upper.strip_prefix("MX") {
+        return has_digit(rest);
+    }
+    false
+}
+
 fn infer_quantization_from_filename(filename: &str) -> Option<String> {
-    let lower = filename.to_ascii_lowercase();
-    if !lower.ends_with(".gguf") {
+    let file = std::path::Path::new(filename)
+        .file_name()?
+        .to_string_lossy();
+    if !file.to_ascii_lowercase().ends_with(".gguf") {
         return None;
     }
-    if filename.len() <= 5 {
-        return None;
+    let stem = file.strip_suffix(".gguf").unwrap_or(&file);
+    for token in stem.split(['-', '.']).rev() {
+        if is_quantization_token(token) {
+            return Some(token.to_string());
+        }
     }
-    let stem = &filename[..filename.len() - 5];
-    let idx = stem.rfind(['.', '-'])?;
-    if idx + 1 >= stem.len() {
-        return None;
-    }
-    let token = &stem[idx + 1..];
-    let mut chars = token.chars();
-    let first = chars.next()?;
-    if !first.is_ascii_alphabetic() {
-        return None;
-    }
-    if !token.chars().any(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    Some(token.to_string())
+    None
 }
 fn resolve_safetensors_primary(
     siblings: &[HfSibling],

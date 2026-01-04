@@ -12,6 +12,8 @@ pub mod health;
 pub mod images;
 pub mod invitations;
 pub mod logs;
+/// モデル名のパース（量子化サフィックス対応）
+pub mod model_name;
 pub mod models;
 pub mod nodes;
 pub mod openai;

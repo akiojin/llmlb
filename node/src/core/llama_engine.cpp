@@ -549,16 +549,14 @@ std::string LlamaEngine::generateChat(
     // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
     size_t effective_max_tokens = params.max_tokens;
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+    if (model_n_ctx > 0) {
+        size_t available = 0;
+        if (static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+            available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        }
         // デフォルト値(2048)の場合は利用可能な全容量を使用、
         // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, n_tokens, model_n_ctx);
         spdlog::info("Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }
@@ -742,16 +740,14 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
     size_t effective_max_tokens = params.max_tokens;
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+    if (model_n_ctx > 0) {
+        size_t available = 0;
+        if (static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+            available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        }
         // デフォルト値(2048)の場合は利用可能な全容量を使用、
         // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, n_tokens, model_n_ctx);
         spdlog::info("Streaming: Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }
@@ -797,27 +793,27 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     ModelLoadResult result;
     const std::string gguf_path = descriptor.primary_path;
     if (gguf_path.empty()) {
-        result.code = EngineErrorCode::kInvalidArgument;
         result.error_message = "GGUF path is empty for model: " + descriptor.name;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (manager_.isLoaded(gguf_path)) {
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
     std::error_code ec;
     if (!fs::exists(gguf_path, ec) || ec) {
-        result.code = EngineErrorCode::kNotFound;
         result.error_message = "GGUF file not found: " + gguf_path;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (!manager_.loadModelIfNeeded(gguf_path)) {
-        result.code = EngineErrorCode::kInternal;
         result.error_message = "Failed to load model: " + gguf_path;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -831,7 +827,7 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     }
 
     result.success = true;
-    result.code = EngineErrorCode::kOk;
+    result.error_code = EngineErrorCode::kOk;
     return result;
 }
 

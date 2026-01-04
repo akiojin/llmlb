@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        model_name::parse_quantized_model_name,
         models::list_registered_models,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
@@ -118,15 +119,15 @@ pub async fn generations(
         return openai_error("n must be between 1 and 10", StatusCode::BAD_REQUEST);
     }
 
+    let parsed = parse_quantized_model_name(&payload.model).map_err(AppError::from)?;
+    let lookup_model = parsed.base;
+
     // モデルの ImageGeneration capability を検証
     let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == payload.model) {
+    if let Some(model_info) = models.iter().find(|m| m.name == lookup_model) {
         if !model_info.has_capability(ModelCapability::ImageGeneration) {
             return openai_error(
-                format!(
-                    "Model '{}' does not support image generation",
-                    payload.model
-                ),
+                format!("Model '{}' does not support image generation", parsed.raw),
                 StatusCode::BAD_REQUEST,
             );
         }

@@ -218,6 +218,100 @@ pub async fn get_node_metrics(
     Ok(Json(history))
 }
 
+/// GET /v0/dashboard/stats/tokens - トークン統計取得
+pub async fn get_token_stats(
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
+    let stats = state
+        .request_history
+        .get_token_statistics()
+        .await
+        .map_err(AppError::from)?;
+    Ok(Json(stats))
+}
+
+/// 日次トークン統計クエリパラメータ
+#[derive(Debug, Clone, Deserialize)]
+pub struct DailyTokenStatsQuery {
+    /// 取得する日数（デフォルト: 30）
+    #[serde(default = "default_days")]
+    pub days: Option<u32>,
+}
+
+fn default_days() -> Option<u32> {
+    Some(30)
+}
+
+/// 日次トークン統計レスポンス
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyTokenStats {
+    /// 日付（YYYY-MM-DD形式）
+    pub date: String,
+    /// 入力トークン合計
+    pub total_input_tokens: u64,
+    /// 出力トークン合計
+    pub total_output_tokens: u64,
+    /// 総トークン合計
+    pub total_tokens: u64,
+    /// リクエスト数
+    pub request_count: u64,
+}
+
+/// GET /v0/dashboard/stats/tokens/daily - 日次トークン統計取得
+pub async fn get_daily_token_stats(
+    State(state): State<AppState>,
+    Query(query): Query<DailyTokenStatsQuery>,
+) -> Result<Json<Vec<DailyTokenStats>>, AppError> {
+    let days = query.days.unwrap_or(30);
+    let stats = state
+        .request_history
+        .get_daily_token_statistics(days)
+        .await
+        .map_err(AppError::from)?;
+    Ok(Json(stats))
+}
+
+/// 月次トークン統計クエリパラメータ
+#[derive(Debug, Clone, Deserialize)]
+pub struct MonthlyTokenStatsQuery {
+    /// 取得する月数（デフォルト: 12）
+    #[serde(default = "default_months")]
+    pub months: Option<u32>,
+}
+
+fn default_months() -> Option<u32> {
+    Some(12)
+}
+
+/// 月次トークン統計レスポンス
+#[derive(Debug, Clone, Serialize)]
+pub struct MonthlyTokenStats {
+    /// 月（YYYY-MM形式）
+    pub month: String,
+    /// 入力トークン合計
+    pub total_input_tokens: u64,
+    /// 出力トークン合計
+    pub total_output_tokens: u64,
+    /// 総トークン合計
+    pub total_tokens: u64,
+    /// リクエスト数
+    pub request_count: u64,
+}
+
+/// GET /v0/dashboard/stats/tokens/monthly - 月次トークン統計取得
+pub async fn get_monthly_token_stats(
+    State(state): State<AppState>,
+    Query(query): Query<MonthlyTokenStatsQuery>,
+) -> Result<Json<Vec<MonthlyTokenStats>>, AppError> {
+    let months = query.months.unwrap_or(12);
+    let stats = state
+        .request_history
+        .get_monthly_token_statistics(months)
+        .await
+        .map_err(AppError::from)?;
+    Ok(Json(stats))
+}
+
 async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
     let registry = state.registry.clone();
     let load_manager = state.load_manager.clone();
@@ -1126,5 +1220,146 @@ mod tests {
         assert_eq!(stats.total_input_tokens, 300); // 100 + 200
         assert_eq!(stats.total_output_tokens, 150); // 50 + 100
         assert_eq!(stats.total_tokens, 450); // 150 + 300
+    }
+
+    // T-10: /api/dashboard/stats/tokens エンドポイントテスト
+    #[tokio::test]
+    async fn test_get_token_stats_endpoint() {
+        let state = create_state().await;
+
+        // テストデータを保存
+        use chrono::Utc;
+        use llm_router_common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
+        use uuid::Uuid;
+
+        let node_id = Uuid::new_v4();
+        let record = RequestResponseRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type: RequestType::Chat,
+            model: "test-model".to_string(),
+            node_id,
+            node_machine_name: "test-node".to_string(),
+            node_ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+            client_ip: None,
+            request_body: serde_json::Value::Null,
+            response_body: None,
+            duration_ms: 100,
+            status: RecordStatus::Success,
+            completed_at: Utc::now(),
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            total_tokens: Some(150),
+        };
+        state.request_history.save_record(&record).await.unwrap();
+
+        // トークン統計エンドポイントを呼び出し
+        let response = get_token_stats(State(state)).await.unwrap();
+        let stats = response.0;
+
+        // T-10: エンドポイントが正しいトークン統計を返すことを確認
+        assert_eq!(stats.total_input_tokens, 100);
+        assert_eq!(stats.total_output_tokens, 50);
+        assert_eq!(stats.total_tokens, 150);
+    }
+
+    // I-4: /api/dashboard/stats/tokens/daily エンドポイントテスト
+    #[tokio::test]
+    async fn test_get_daily_token_stats_endpoint() {
+        let state = create_state().await;
+
+        // テストデータを保存（今日の日付で）
+        use chrono::Utc;
+        use llm_router_common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
+        use uuid::Uuid;
+
+        let node_id = Uuid::new_v4();
+        let record = RequestResponseRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type: RequestType::Chat,
+            model: "test-model".to_string(),
+            node_id,
+            node_machine_name: "test-node".to_string(),
+            node_ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+            client_ip: None,
+            request_body: serde_json::Value::Null,
+            response_body: None,
+            duration_ms: 100,
+            status: RecordStatus::Success,
+            completed_at: Utc::now(),
+            input_tokens: Some(200),
+            output_tokens: Some(100),
+            total_tokens: Some(300),
+        };
+        state.request_history.save_record(&record).await.unwrap();
+
+        // 日次統計エンドポイントを呼び出し
+        let query = DailyTokenStatsQuery { days: Some(7) };
+        let response = get_daily_token_stats(State(state), Query(query))
+            .await
+            .unwrap();
+        let stats = response.0;
+
+        // I-4: エンドポイントが日次トークン統計を返すことを確認
+        assert!(!stats.is_empty());
+        // 今日のデータが含まれていることを確認
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let today_stats = stats.iter().find(|s| s.date == today);
+        assert!(today_stats.is_some());
+        let today_stats = today_stats.unwrap();
+        assert_eq!(today_stats.total_input_tokens, 200);
+        assert_eq!(today_stats.total_output_tokens, 100);
+        assert_eq!(today_stats.total_tokens, 300);
+    }
+
+    // I-5: /api/dashboard/stats/tokens/monthly エンドポイントテスト
+    #[tokio::test]
+    async fn test_get_monthly_token_stats_endpoint() {
+        let state = create_state().await;
+
+        // テストデータを保存（今月の日付で）
+        use chrono::Utc;
+        use llm_router_common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
+        use uuid::Uuid;
+
+        let node_id = Uuid::new_v4();
+        let record = RequestResponseRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type: RequestType::Chat,
+            model: "test-model".to_string(),
+            node_id,
+            node_machine_name: "test-node".to_string(),
+            node_ip: std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+            client_ip: None,
+            request_body: serde_json::Value::Null,
+            response_body: None,
+            duration_ms: 100,
+            status: RecordStatus::Success,
+            completed_at: Utc::now(),
+            input_tokens: Some(500),
+            output_tokens: Some(250),
+            total_tokens: Some(750),
+        };
+        state.request_history.save_record(&record).await.unwrap();
+
+        // 月次統計エンドポイントを呼び出し
+        let query = MonthlyTokenStatsQuery { months: Some(12) };
+        let response = get_monthly_token_stats(State(state), Query(query))
+            .await
+            .unwrap();
+        let stats = response.0;
+
+        // I-5: エンドポイントが月次トークン統計を返すことを確認
+        assert!(!stats.is_empty());
+        // 今月のデータが含まれていることを確認
+        let this_month = Utc::now().format("%Y-%m").to_string();
+        let month_stats = stats.iter().find(|s| s.month == this_month);
+        assert!(month_stats.is_some());
+        let month_stats = month_stats.unwrap();
+        assert_eq!(month_stats.total_input_tokens, 500);
+        assert_eq!(month_stats.total_output_tokens, 250);
+        assert_eq!(month_stats.total_tokens, 750);
     }
 }

@@ -105,8 +105,31 @@ struct DmlTensorSpec {
 
 struct DmlGraph {
 #ifdef _WIN32
+    struct BufferTensor {
+        std::vector<uint32_t> sizes;
+        std::vector<uint32_t> strides;
+        DML_BUFFER_TENSOR_DESC buffer_desc{};
+        DML_TENSOR_DESC tensor_desc{};
+    };
+
+    struct OperatorDesc {
+        DML_ELEMENT_WISE_IDENTITY_OPERATOR_DESC identity_desc{};
+        DML_OPERATOR_DESC op_desc{};
+        bool prepared{false};
+    };
+
+    struct GraphDesc {
+        BufferTensor token_ids;
+        BufferTensor logits;
+        BufferTensor kv_cache;
+        bool initialized{false};
+    };
+
     ComPtr<IDMLCompiledOperator> prefill_op;
     ComPtr<IDMLCompiledOperator> decode_op;
+    OperatorDesc prefill_desc;
+    OperatorDesc decode_desc;
+    GraphDesc desc;
 #endif
     DmlTensorLayout layout{};
     std::vector<DmlTensorSpec> prefill_inputs;
@@ -133,6 +156,18 @@ struct DmlBuffers {
     bool initialized{false};
 };
 
+struct DmlBindings {
+#ifdef _WIN32
+    DML_BUFFER_BINDING token_binding{};
+    DML_BUFFER_BINDING logits_binding{};
+    DML_BUFFER_BINDING kv_cache_binding{};
+    DML_BINDING_DESC token_binding_desc{};
+    DML_BINDING_DESC logits_binding_desc{};
+    DML_BINDING_DESC kv_cache_binding_desc{};
+#endif
+    bool initialized{false};
+};
+
 struct DmlExecState {
 #ifdef _WIN32
     ComPtr<IDMLDevice> dml_device;
@@ -142,6 +177,7 @@ struct DmlExecState {
     ComPtr<ID3D12Fence> fence;
     HANDLE fence_event{nullptr};
     uint64_t fence_value{0};
+    ComPtr<IDMLCommandRecorder> recorder;
 #endif
     bool initialized{false};
 };
@@ -239,6 +275,89 @@ bool validate_tensor_spec(const DmlTensorSpec& spec) {
     return true;
 }
 
+#ifdef _WIN32
+bool compute_strides(const std::vector<uint32_t>& sizes, std::vector<uint32_t>& strides) {
+    if (sizes.empty()) return false;
+    strides.assign(sizes.size(), 0);
+    uint64_t stride = 1;
+    for (size_t idx = sizes.size(); idx-- > 0;) {
+        if (stride > UINT32_MAX) return false;
+        strides[idx] = static_cast<uint32_t>(stride);
+        stride *= sizes[idx];
+    }
+    return true;
+}
+
+bool compute_total_bytes(const std::vector<uint32_t>& sizes, uint32_t element_size, size_t& out) {
+    if (element_size == 0) return false;
+    size_t total = 1;
+    for (auto dim : sizes) {
+        if (!safe_mul_size(total, dim, total)) return false;
+    }
+    return safe_mul_size(total, element_size, out);
+}
+
+bool build_buffer_tensor(const DmlTensorSpec& spec,
+                         DML_TENSOR_DATA_TYPE dtype,
+                         DmlGraph::BufferTensor& out) {
+    if (!validate_tensor_spec(spec)) return false;
+    out.sizes = spec.dims;
+    if (!compute_strides(out.sizes, out.strides)) return false;
+
+    size_t bytes = 0;
+    if (!compute_total_bytes(out.sizes, spec.element_size, bytes)) return false;
+    out.buffer_desc = {};
+    out.buffer_desc.DataType = dtype;
+    out.buffer_desc.Flags = DML_TENSOR_FLAG_NONE;
+    out.buffer_desc.DimensionCount = static_cast<uint32_t>(out.sizes.size());
+    out.buffer_desc.Sizes = out.sizes.data();
+    out.buffer_desc.Strides = out.strides.data();
+    out.buffer_desc.TotalTensorSizeInBytes = bytes;
+    out.buffer_desc.GuaranteedBaseOffsetAlignment = 0;
+
+    out.tensor_desc = {};
+    out.tensor_desc.Type = DML_TENSOR_TYPE_BUFFER;
+    out.tensor_desc.Desc = &out.buffer_desc;
+    return true;
+}
+
+bool build_dml_graph_desc(const DmlTensorSpec& token_ids,
+                          const DmlTensorSpec& logits,
+                          const DmlTensorSpec& kv_cache,
+                          DmlGraph::GraphDesc& desc) {
+    if (token_ids.element_size != sizeof(uint32_t)) return false;
+    if (logits.element_size != sizeof(float)) return false;
+    if (kv_cache.element_size != sizeof(float)) return false;
+
+    if (!build_buffer_tensor(token_ids, DML_TENSOR_DATA_TYPE_UINT32, desc.token_ids)) return false;
+    if (!build_buffer_tensor(logits, DML_TENSOR_DATA_TYPE_FLOAT32, desc.logits)) return false;
+    if (!build_buffer_tensor(kv_cache, DML_TENSOR_DATA_TYPE_FLOAT32, desc.kv_cache)) return false;
+    desc.initialized = true;
+    return true;
+}
+
+bool prepare_dml_operator_descs(DmlGraph& graph) {
+    if (!graph.desc.initialized) return false;
+    graph.prefill_desc.identity_desc = {};
+    graph.prefill_desc.identity_desc.InputTensor = &graph.desc.logits.tensor_desc;
+    graph.prefill_desc.identity_desc.OutputTensor = &graph.desc.logits.tensor_desc;
+    graph.prefill_desc.op_desc = {};
+    graph.prefill_desc.op_desc.Type = DML_OPERATOR_ELEMENT_WISE_IDENTITY;
+    graph.prefill_desc.op_desc.Desc = &graph.prefill_desc.identity_desc;
+    graph.prefill_desc.prepared = true;
+
+    graph.decode_desc.identity_desc = {};
+    graph.decode_desc.identity_desc.InputTensor = &graph.desc.logits.tensor_desc;
+    graph.decode_desc.identity_desc.OutputTensor = &graph.desc.logits.tensor_desc;
+    graph.decode_desc.op_desc = {};
+    graph.decode_desc.op_desc.Type = DML_OPERATOR_ELEMENT_WISE_IDENTITY;
+    graph.decode_desc.op_desc.Desc = &graph.decode_desc.identity_desc;
+    graph.decode_desc.prepared = true;
+
+    return true;
+}
+#endif
+
 bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     if (layout.vocab_size == 0 ||
         layout.embedding_dim == 0 ||
@@ -259,6 +378,11 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     graph.prefill_outputs = {logits, kv_cache};
     graph.decode_inputs = {token_ids, kv_cache};
     graph.decode_outputs = {logits, kv_cache};
+#ifdef _WIN32
+    if (!build_dml_graph_desc(token_ids, logits, kv_cache, graph.desc)) return false;
+    if (!prepare_dml_operator_descs(graph)) return false;
+    graph.initialized = graph.desc.initialized;
+#endif
     for (const auto& spec : graph.prefill_inputs) {
         if (!validate_tensor_spec(spec)) return false;
     }
@@ -281,18 +405,68 @@ bool dml_graph_ready(const DmlGraph& graph) {
     return graph.has_prefill && graph.has_decode;
 }
 
+bool compile_dml_operators(DmlGraph& graph, DmlExecState& exec_state) {
+#ifdef _WIN32
+    if (!exec_state.initialized || !exec_state.dml_device) return false;
+    if (!graph.desc.initialized) return false;
+    if (!graph.prefill_desc.prepared || !graph.decode_desc.prepared) return false;
+    graph.prefill_op.Reset();
+    graph.decode_op.Reset();
+
+    ComPtr<IDMLOperator> prefill_op;
+    if (FAILED(exec_state.dml_device->CreateOperator(&graph.prefill_desc.op_desc, IID_PPV_ARGS(&prefill_op)))) {
+        return false;
+    }
+    if (FAILED(exec_state.dml_device->CompileOperator(prefill_op.Get(), DML_EXECUTION_FLAG_NONE,
+                                                      IID_PPV_ARGS(&graph.prefill_op)))) {
+        return false;
+    }
+
+    ComPtr<IDMLOperator> decode_op;
+    if (FAILED(exec_state.dml_device->CreateOperator(&graph.decode_desc.op_desc, IID_PPV_ARGS(&decode_op)))) {
+        return false;
+    }
+    if (FAILED(exec_state.dml_device->CompileOperator(decode_op.Get(), DML_EXECUTION_FLAG_NONE,
+                                                      IID_PPV_ARGS(&graph.decode_op)))) {
+        return false;
+    }
+
+    graph.has_prefill = graph.prefill_op != nullptr;
+    graph.has_decode = graph.decode_op != nullptr;
+    return graph.has_prefill && graph.has_decode;
+#else
+    (void)graph;
+    (void)exec_state;
+    return false;
+#endif
+}
+
 gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (!ctx || !ctx->model) return gptoss_status_invalid_argument;
     auto* model = reinterpret_cast<GptossModel*>(ctx->model);
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
     }
+    if (!model->dml_graph.has_prefill) {
+        compile_dml_operators(model->dml_graph, ctx->dml_exec);
+    }
     if (!dml_graph_ready(model->dml_graph)) {
         return gptoss_status_unsupported_argument;
     }
-    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized) {
+    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized || !ctx->dml_bindings.initialized) {
         return gptoss_status_insufficient_resources;
     }
+#ifdef _WIN32
+    if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    if (ctx->dml_exec.recorder && model->dml_graph.prefill_op) {
+        ctx->dml_exec.recorder->RecordDispatch(
+            ctx->dml_exec.command_list.Get(),
+            model->dml_graph.prefill_op.Get(),
+            nullptr,
+            nullptr);
+    }
+    if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+#endif
     return gptoss_status_unsupported_system;
 }
 
@@ -302,12 +476,26 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
     }
+    if (!model->dml_graph.has_decode) {
+        compile_dml_operators(model->dml_graph, ctx->dml_exec);
+    }
     if (!dml_graph_ready(model->dml_graph)) {
         return gptoss_status_unsupported_argument;
     }
-    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized) {
+    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized || !ctx->dml_bindings.initialized) {
         return gptoss_status_insufficient_resources;
     }
+#ifdef _WIN32
+    if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    if (ctx->dml_exec.recorder && model->dml_graph.decode_op) {
+        ctx->dml_exec.recorder->RecordDispatch(
+            ctx->dml_exec.command_list.Get(),
+            model->dml_graph.decode_op.Get(),
+            nullptr,
+            nullptr);
+    }
+    if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+#endif
     return gptoss_status_unsupported_system;
 }
 
@@ -586,6 +774,36 @@ bool init_dml_buffers(const DmlContextPlan& plan, DmlBuffers& buffers) {
     return true;
 }
 
+bool init_dml_bindings(const DmlGraph::GraphDesc& desc,
+                       const DmlBuffers& buffers,
+                       DmlBindings& bindings) {
+    if (!desc.initialized) return false;
+    if (!buffers.initialized) return false;
+    if (!buffers.token_buffer || !buffers.logits_buffer || !buffers.kv_cache_buffer) return false;
+
+    bindings.token_binding.Buffer = buffers.token_buffer.Get();
+    bindings.token_binding.Offset = 0;
+    bindings.token_binding.SizeInBytes = desc.token_ids.buffer_desc.TotalTensorSizeInBytes;
+
+    bindings.logits_binding.Buffer = buffers.logits_buffer.Get();
+    bindings.logits_binding.Offset = 0;
+    bindings.logits_binding.SizeInBytes = desc.logits.buffer_desc.TotalTensorSizeInBytes;
+
+    bindings.kv_cache_binding.Buffer = buffers.kv_cache_buffer.Get();
+    bindings.kv_cache_binding.Offset = 0;
+    bindings.kv_cache_binding.SizeInBytes = desc.kv_cache.buffer_desc.TotalTensorSizeInBytes;
+
+    bindings.token_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
+    bindings.token_binding_desc.Desc = &bindings.token_binding;
+    bindings.logits_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
+    bindings.logits_binding_desc.Desc = &bindings.logits_binding;
+    bindings.kv_cache_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
+    bindings.kv_cache_binding_desc.Desc = &bindings.kv_cache_binding;
+
+    bindings.initialized = true;
+    return true;
+}
+
 bool init_dml_exec_state(DmlExecState& state) {
     std::string error;
     if (!ensure_dml_runtime(error)) {
@@ -626,6 +844,9 @@ bool init_dml_exec_state(DmlExecState& state) {
     if (!state.fence_event) {
         return false;
     }
+    if (FAILED(DMLCreateCommandRecorder(IID_PPV_ARGS(&state.recorder)))) {
+        return false;
+    }
     state.initialized = true;
     return true;
 }
@@ -659,6 +880,7 @@ struct GptossContext {
     size_t max_tokens{0};
     DmlContextPlan dml_plan{};
     DmlBuffers dml_buffers{};
+    DmlBindings dml_bindings{};
     DmlExecState dml_exec{};
 };
 
@@ -1090,6 +1312,12 @@ gptoss_status GPTOSS_ABI gptoss_context_create(
             delete ctx;
             return gptoss_status_insufficient_resources;
         }
+#ifdef _WIN32
+        if (!init_dml_bindings(model_ptr->dml_graph.desc, ctx->dml_buffers, ctx->dml_bindings)) {
+            delete ctx;
+            return gptoss_status_insufficient_resources;
+        }
+#endif
         if (!init_dml_exec_state(ctx->dml_exec)) {
             delete ctx;
             return gptoss_status_insufficient_resources;

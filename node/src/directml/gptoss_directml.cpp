@@ -105,8 +105,23 @@ struct DmlTensorSpec {
 
 struct DmlGraph {
 #ifdef _WIN32
+    struct BufferTensor {
+        std::vector<uint32_t> sizes;
+        std::vector<uint32_t> strides;
+        DML_BUFFER_TENSOR_DESC buffer_desc{};
+        DML_TENSOR_DESC tensor_desc{};
+    };
+
+    struct GraphDesc {
+        BufferTensor token_ids;
+        BufferTensor logits;
+        BufferTensor kv_cache;
+        bool initialized{false};
+    };
+
     ComPtr<IDMLCompiledOperator> prefill_op;
     ComPtr<IDMLCompiledOperator> decode_op;
+    GraphDesc desc;
 #endif
     DmlTensorLayout layout{};
     std::vector<DmlTensorSpec> prefill_inputs;
@@ -239,6 +254,68 @@ bool validate_tensor_spec(const DmlTensorSpec& spec) {
     return true;
 }
 
+#ifdef _WIN32
+bool compute_strides(const std::vector<uint32_t>& sizes, std::vector<uint32_t>& strides) {
+    if (sizes.empty()) return false;
+    strides.assign(sizes.size(), 0);
+    uint64_t stride = 1;
+    for (size_t idx = sizes.size(); idx-- > 0;) {
+        if (stride > UINT32_MAX) return false;
+        strides[idx] = static_cast<uint32_t>(stride);
+        stride *= sizes[idx];
+    }
+    return true;
+}
+
+bool compute_total_bytes(const std::vector<uint32_t>& sizes, uint32_t element_size, size_t& out) {
+    if (element_size == 0) return false;
+    size_t total = 1;
+    for (auto dim : sizes) {
+        if (!safe_mul_size(total, dim, total)) return false;
+    }
+    return safe_mul_size(total, element_size, out);
+}
+
+bool build_buffer_tensor(const DmlTensorSpec& spec,
+                         DML_TENSOR_DATA_TYPE dtype,
+                         DmlGraph::BufferTensor& out) {
+    if (!validate_tensor_spec(spec)) return false;
+    out.sizes = spec.dims;
+    if (!compute_strides(out.sizes, out.strides)) return false;
+
+    size_t bytes = 0;
+    if (!compute_total_bytes(out.sizes, spec.element_size, bytes)) return false;
+    out.buffer_desc = {};
+    out.buffer_desc.DataType = dtype;
+    out.buffer_desc.Flags = DML_TENSOR_FLAG_NONE;
+    out.buffer_desc.DimensionCount = static_cast<uint32_t>(out.sizes.size());
+    out.buffer_desc.Sizes = out.sizes.data();
+    out.buffer_desc.Strides = out.strides.data();
+    out.buffer_desc.TotalTensorSizeInBytes = bytes;
+    out.buffer_desc.GuaranteedBaseOffsetAlignment = 0;
+
+    out.tensor_desc = {};
+    out.tensor_desc.Type = DML_TENSOR_TYPE_BUFFER;
+    out.tensor_desc.Desc = &out.buffer_desc;
+    return true;
+}
+
+bool build_dml_graph_desc(const DmlTensorSpec& token_ids,
+                          const DmlTensorSpec& logits,
+                          const DmlTensorSpec& kv_cache,
+                          DmlGraph::GraphDesc& desc) {
+    if (token_ids.element_size != sizeof(uint32_t)) return false;
+    if (logits.element_size != sizeof(float)) return false;
+    if (kv_cache.element_size != sizeof(float)) return false;
+
+    if (!build_buffer_tensor(token_ids, DML_TENSOR_DATA_TYPE_UINT32, desc.token_ids)) return false;
+    if (!build_buffer_tensor(logits, DML_TENSOR_DATA_TYPE_FLOAT32, desc.logits)) return false;
+    if (!build_buffer_tensor(kv_cache, DML_TENSOR_DATA_TYPE_FLOAT32, desc.kv_cache)) return false;
+    desc.initialized = true;
+    return true;
+}
+#endif
+
 bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     if (layout.vocab_size == 0 ||
         layout.embedding_dim == 0 ||
@@ -259,6 +336,10 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     graph.prefill_outputs = {logits, kv_cache};
     graph.decode_inputs = {token_ids, kv_cache};
     graph.decode_outputs = {logits, kv_cache};
+#ifdef _WIN32
+    if (!build_dml_graph_desc(token_ids, logits, kv_cache, graph.desc)) return false;
+    graph.initialized = graph.desc.initialized;
+#endif
     for (const auto& spec : graph.prefill_inputs) {
         if (!validate_tensor_spec(spec)) return false;
     }

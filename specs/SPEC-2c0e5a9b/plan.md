@@ -1,15 +1,16 @@
 # SPEC-2c0e5a9b: Plan
 
 ## 方針
-  - gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する
+
+- gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する
 - エンジン選択は既存の抽象化（`SPEC-d7feaa2c`）を利用し、登録時の `format` と `config.json` 等の HF 由来メタデータに従う。
 - gpt-oss 実行エンジンは **プラグイン形式（動的ロード）** で提供する。
 - `chat_template` の解釈は C++ Node に寄せず、Router 側で Jinja 互換レンダリングを行い、Node には最終プロンプト（テキスト）を渡す方針を前提とする。
 - Node は Python 依存なしで動作する（必須）。
 - Nemotron 推論エンジンは本件では扱わない（別SPECで後日）。
 - 実行の優先順位:
-  1) 公式のGPU最適化アーティファクト（バックエンド依存、許可リスト対象）
-  2) safetensors（正本）
+  - 公式のGPU最適化アーティファクト（バックエンド依存、許可リスト対象）
+  - safetensors（正本）
 - 対応OS/GPU: macOS=Metal、Windows=CUDA、Linuxは非対応。DirectMLは実験扱い。
 
 ## 対象モデルとアーティファクト（前提）

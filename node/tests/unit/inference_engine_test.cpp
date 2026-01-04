@@ -1140,3 +1140,103 @@ TEST(InferenceEngineTest, RestartsPluginAfterCrash) {
 
     InferenceEngine::setPluginRestartHookForTest({});
 }
+
+// T181: クラッシュ後即時503返却
+TEST(InferenceEngineTest, RejectsNewRequestsWhilePluginRestartPending) {
+    TempDir tmp;
+    const std::string model_name = "example/crash503";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "crash503_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<ThrowingEngine>(),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    // Hook to capture restart calls but NOT actually restart
+    std::atomic<int> restart_calls{0};
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        restart_calls.fetch_add(1);
+        return true;  // Restart staged but pending
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "boom"}};
+
+    // First request crashes the engine
+    EXPECT_THROW((void)engine.generateChat(messages, model_name, {}), std::runtime_error);
+    EXPECT_EQ(restart_calls.load(), 1);
+
+    // Verify restart is pending
+    EXPECT_TRUE(engine.isPluginRestartPendingForTest());
+
+    // Second request should be immediately rejected with ServiceUnavailable
+    try {
+        (void)engine.generateChat(messages, model_name, {});
+        FAIL() << "Expected exception for service unavailable";
+    } catch (const std::exception& e) {
+        EXPECT_NE(std::string(e.what()).find("service unavailable"), std::string::npos);
+    }
+
+    InferenceEngine::setPluginRestartHookForTest({});
+}
+
+TEST(InferenceEngineTest, RejectsStreamRequestsWhilePluginRestartPending) {
+    TempDir tmp;
+    const std::string model_name = "example/crash503stream";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "crash503stream_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<ThrowingEngine>(),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        return true;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "boom"}};
+
+    // First request crashes the engine
+    EXPECT_THROW(
+        (void)engine.generateChatStream(messages, model_name, {}, [](const std::string&){}),
+        std::runtime_error);
+
+    // Stream request should also be rejected
+    try {
+        (void)engine.generateChatStream(messages, model_name, {}, [](const std::string&){});
+        FAIL() << "Expected exception for service unavailable";
+    } catch (const std::exception& e) {
+        EXPECT_NE(std::string(e.what()).find("service unavailable"), std::string::npos);
+    }
+
+    InferenceEngine::setPluginRestartHookForTest({});
+}

@@ -908,6 +908,14 @@ std::string InferenceEngine::generateChat(
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
@@ -962,6 +970,14 @@ std::string InferenceEngine::generateChatWithImages(
         spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
         if (messages.empty()) return "";
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
+    }
+
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
     }
 
     return run_with_watchdog([&]() {
@@ -1162,6 +1178,14 @@ std::string InferenceEngine::generateCompletion(
         return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
@@ -1217,6 +1241,14 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         }
         if (on_token) on_token("[DONE]");
         return tokens;
+    }
+
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
     }
 
     return run_with_watchdog([&]() {
@@ -1438,6 +1470,14 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model_name);
@@ -1495,6 +1535,11 @@ void InferenceEngine::setPluginRestartHookForTest(std::function<bool(std::string
 void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& directory) {
     std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
     engine_plugins_dir_ = directory;
+}
+
+bool InferenceEngine::isPluginRestartPendingForTest() const {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    return plugin_restart_pending_;
 }
 #endif
 

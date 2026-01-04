@@ -439,10 +439,9 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
     - Sharded weights must include an `.index.json`.
     - gpt-oss prefers official GPU artifacts when present:
       `model.metal.bin` (Metal) / `model.directml.bin` or `model.dml.bin` (DirectML).
-    - Windows (DirectML) requires `gptoss_directml.dll`.
-      - Place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
-      - set `LLM_NODE_GPTOSS_DML_LIB` to an absolute path.
-      - Download from this repository's GitHub Releases (Apache-2.0).
+    - Windows (DirectML) uses `gptoss_directml.dll` (and `nemotron_directml.dll` for Nemotron).
+      - Built as part of the Windows build; place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
+      - set `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` to an absolute path.
   - Router stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.

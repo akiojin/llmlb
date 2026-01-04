@@ -89,7 +89,9 @@ TEST(NemotronEngineTest, LoadsIndexAndValidatesShard) {
 
 TEST(NemotronEngineTest, SupportsTextGenerationDependsOnCuda) {
     llm_node::NemotronEngine engine;
-#ifdef USE_CUDA
+#if defined(_WIN32) && defined(USE_GPTOSS)
+    EXPECT_TRUE(engine.supportsTextGeneration());
+#elif defined(USE_CUDA)
     EXPECT_TRUE(engine.supportsTextGeneration());
 #else
     EXPECT_FALSE(engine.supportsTextGeneration());
@@ -113,4 +115,79 @@ TEST(NemotronEngineTest, FailsWithoutRequiredMetadata) {
 
     EXPECT_FALSE(result.success);
     EXPECT_NE(result.error_message.find("config.json"), std::string::npos);
+}
+
+TEST(NemotronEngineTest, DirectmlRuntimeMissingReportsError) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "USE_GPTOSS not enabled";
+#else
+    TempDir tmp;
+    auto model_dir = tmp.base / "nvidia" / "nemotron";
+    fs::create_directories(model_dir);
+    write_required_metadata(model_dir);
+    std::ofstream(model_dir / "model.safetensors") << "";
+    std::ofstream(model_dir / "model.directml.bin") << "cache";
+
+    llm_node::ModelDescriptor desc;
+    desc.name = "nvidia/nemotron";
+    desc.runtime = "nemotron_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors").string();
+
+    struct EnvGuard {
+        const char* key;
+        std::string prev;
+        bool had_prev{false};
+        explicit EnvGuard(const char* k, const std::string& value) : key(k) {
+            if (const char* v = std::getenv(key)) {
+                prev = v;
+                had_prev = true;
+            }
+            _putenv_s(key, value.c_str());
+        }
+        ~EnvGuard() {
+            if (had_prev) {
+                _putenv_s(key, prev.c_str());
+            } else {
+                _putenv_s(key, "");
+            }
+        }
+    };
+
+    auto missing_path = (tmp.base / "missing-nemotron-directml.dll").string();
+    EnvGuard guard("LLM_NODE_NEMOTRON_DML_LIB", missing_path);
+
+    llm_node::NemotronEngine engine;
+    auto result = engine.loadModel(desc);
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.find("DirectML runtime"), std::string::npos);
+#endif
+}
+
+TEST(NemotronEngineTest, MissingPrimaryPathReportsError) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "USE_GPTOSS not enabled";
+#else
+    TempDir tmp;
+    auto model_dir = tmp.base / "nvidia" / "nemotron";
+    fs::create_directories(model_dir);
+    write_required_metadata(model_dir);
+
+    llm_node::ModelDescriptor desc;
+    desc.name = "nvidia/nemotron";
+    desc.runtime = "nemotron_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors").string();
+
+    llm_node::NemotronEngine engine;
+    auto result = engine.loadModel(desc);
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.find("Primary path not found"), std::string::npos);
+#endif
 }

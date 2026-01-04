@@ -346,6 +346,33 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
     target_link_libraries(gptoss_metal PRIVATE gptoss_log gptoss_metal_kernels)
 endif()
 
+# OpenAI gpt-oss DirectML runtime (Windows, built in-tree)
+if(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(gptoss_directml SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
+    )
+    target_include_directories(gptoss_directml
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
+    )
+    target_link_libraries(gptoss_directml PRIVATE d3d12 dxgi dxguid)
+    target_compile_definitions(gptoss_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
+    set_target_properties(gptoss_directml PROPERTIES OUTPUT_NAME "gptoss_directml")
+
+    add_library(nemotron_directml SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
+    )
+    target_include_directories(nemotron_directml
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
+    )
+    target_link_libraries(nemotron_directml PRIVATE d3d12 dxgi dxguid)
+    target_compile_definitions(nemotron_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
+    set_target_properties(nemotron_directml PROPERTIES OUTPUT_NAME "nemotron_directml")
+endif()
+
 # Utils library (config etc.)
 add_library(utils_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/config.cpp
@@ -418,6 +445,24 @@ elseif(WIN32 AND BUILD_WITH_GPTOSS)
             spdlog::spdlog_header_only
     )
     set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
+endif()
+
+# Engine plugin: nemotron (DirectML on Windows)
+if(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_nemotron SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/nemotron_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/nemotron_engine.cpp
+    )
+    target_include_directories(llm_engine_nemotron
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(llm_engine_nemotron
+        PRIVATE
+            spdlog::spdlog_header_only
+    )
+    set_target_properties(llm_engine_nemotron PROPERTIES OUTPUT_NAME "llm_engine_nemotron")
 endif()
 
 # Collect source files

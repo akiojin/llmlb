@@ -1346,6 +1346,7 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
 #if defined(_WIN32)
         if (fs::exists(model_dir / "model.directml.bin")) return true;
         if (fs::exists(model_dir / "model.dml.bin")) return true;
+        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
         return false;
 #elif defined(__APPLE__)
         if (fs::exists(model_dir / "model.metal.bin")) return true;
@@ -1358,10 +1359,20 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
     }
 
     if (descriptor.runtime == "nemotron_cpp") {
-#ifndef USE_CUDA
+#if defined(_WIN32) && defined(USE_GPTOSS)
+        namespace fs = std::filesystem;
+        fs::path model_dir = descriptor.model_dir.empty()
+                                 ? fs::path(descriptor.primary_path).parent_path()
+                                 : fs::path(descriptor.model_dir);
+        if (model_dir.empty()) return false;
+        if (fs::exists(model_dir / "model.directml.bin")) return true;
+        if (fs::exists(model_dir / "model.dml.bin")) return true;
+        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
         return false;
-#else
+#elif defined(USE_CUDA)
         return true;
+#else
+        return false;
 #endif
     }
 

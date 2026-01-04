@@ -532,6 +532,63 @@ fn hf_base_url() -> String {
         .to_string()
 }
 
+#[allow(dead_code)]
+#[derive(Clone)]
+struct GgufDiscoveryCache;
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum GgufSelectionPolicy {
+    Quality,
+    Memory,
+    Speed,
+}
+
+#[allow(dead_code)]
+static GGUF_DISCOVERY_CACHE: Lazy<RwLock<HashMap<String, GgufDiscoveryCache>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+#[allow(dead_code)]
+const GGUF_DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// 信頼できるGGUFプロバイダーの優先順位
+#[allow(dead_code)]
+const TRUSTED_PROVIDERS: &[&str] = &[
+    "ggml-org",
+    "bartowski",
+    "lmstudio-community",
+    "unsloth",
+    "TheBloke",
+];
+
+/// サポートする量子化タイプ（API/UI共通）
+#[allow(dead_code)]
+const SUPPORTED_QUANTIZATION_LABELS: &[&str] = &[
+    "BF16", "F32", "F16", "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "Q4_K_M", "Q4_K_S", "Q4_0",
+    "MXFP4", "Q3_K_M", "Q3_K_S", "Q2_K", "IQ4_XS", "IQ3_M", "IQ2_M",
+];
+
+#[allow(dead_code)]
+pub(crate) fn normalize_quantization_label(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    for label in SUPPORTED_QUANTIZATION_LABELS {
+        if label.eq_ignore_ascii_case(trimmed) {
+            return Some((*label).to_string());
+        }
+    }
+    None
+}
+
+#[allow(dead_code)]
+fn extract_quantization(filename: &str) -> Option<String> {
+    infer_quantization_from_filename(filename)
+        .and_then(|token| normalize_quantization_label(&token))
+}
+
 fn hf_resolve_url(base_url: &str, repo: &str, filename: &str) -> String {
     format!("{}/{}/resolve/main/{}", base_url, repo, filename)
 }
@@ -1069,6 +1126,147 @@ fn resolve_safetensors_primary(
     )))
 }
 
+#[allow(dead_code)]
+fn gguf_quality_rank(label: &str) -> u32 {
+    match label {
+        "F32" => 0,
+        "BF16" => 1,
+        "F16" => 2,
+        "Q8_0" => 3,
+        "Q6_K" => 4,
+        "Q5_K_M" => 5,
+        "Q5_K_S" => 6,
+        "Q5_0" => 7,
+        "Q4_K_M" => 8,
+        "Q4_K_S" => 9,
+        "Q4_0" => 10,
+        "MXFP4" => 11,
+        "Q3_K_M" => 12,
+        "Q3_K_S" => 13,
+        "Q2_K" => 14,
+        "IQ4_XS" => 15,
+        "IQ3_M" => 16,
+        "IQ2_M" => 17,
+        _ => 999,
+    }
+}
+
+#[allow(dead_code)]
+fn gguf_speed_acceptable(label: &str) -> bool {
+    matches!(
+        label,
+        "F32"
+            | "BF16"
+            | "F16"
+            | "Q8_0"
+            | "Q6_K"
+            | "Q5_K_M"
+            | "Q5_K_S"
+            | "Q5_0"
+            | "Q4_K_M"
+            | "Q4_K_S"
+            | "Q4_0"
+            | "MXFP4"
+    )
+}
+
+#[allow(dead_code)]
+fn resolve_gguf_by_policy(
+    siblings: &[HfSibling],
+    policy: GgufSelectionPolicy,
+) -> Result<String, RouterError> {
+    let ggufs: Vec<_> = siblings
+        .iter()
+        .filter(|s| is_gguf_filename(&s.rfilename))
+        .collect();
+    if ggufs.is_empty() {
+        return Err(RouterError::Common(CommonError::Validation(
+            "No GGUF file found in repository".into(),
+        )));
+    }
+
+    let selected = match policy {
+        GgufSelectionPolicy::Quality => ggufs
+            .iter()
+            .min_by(|a, b| {
+                let qa = extract_quantization(&a.rfilename)
+                    .map(|q| gguf_quality_rank(&q))
+                    .unwrap_or(999);
+                let qb = extract_quantization(&b.rfilename)
+                    .map(|q| gguf_quality_rank(&q))
+                    .unwrap_or(999);
+                qa.cmp(&qb)
+                    // 同rankならサイズが大きい方を優先（高精度の可能性）
+                    .then_with(|| sibling_size_bytes(b).cmp(&sibling_size_bytes(a)))
+                    .then_with(|| a.rfilename.cmp(&b.rfilename))
+            })
+            .copied()
+            .unwrap(),
+        GgufSelectionPolicy::Memory => ggufs
+            .iter()
+            .min_by(|a, b| {
+                sibling_size_bytes(a)
+                    .cmp(&sibling_size_bytes(b))
+                    .then_with(|| a.rfilename.cmp(&b.rfilename))
+            })
+            .copied()
+            .unwrap(),
+        GgufSelectionPolicy::Speed => {
+            let mut candidates: Vec<_> = ggufs
+                .iter()
+                .filter(|s| {
+                    extract_quantization(&s.rfilename)
+                        .map(|q| gguf_speed_acceptable(&q))
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
+            if candidates.is_empty() {
+                candidates = ggufs.clone();
+            }
+            candidates
+                .iter()
+                .min_by(|a, b| {
+                    sibling_size_bytes(a)
+                        .cmp(&sibling_size_bytes(b))
+                        .then_with(|| a.rfilename.cmp(&b.rfilename))
+                })
+                .copied()
+                .unwrap()
+        }
+    };
+
+    Ok(selected.rfilename.clone())
+}
+
+/// リポジトリ内のGGUFファイルを量子化指定で解決
+#[allow(dead_code)]
+async fn resolve_quantized_gguf_in_repo(
+    http_client: &reqwest::Client,
+    repo: &str,
+    quantization: &str,
+) -> Result<String, RouterError> {
+    let siblings = fetch_repo_siblings(http_client, repo).await?;
+    let filename = siblings
+        .iter()
+        .map(|s| s.rfilename.clone())
+        .find(|f| {
+            if !f.to_ascii_lowercase().ends_with(".gguf") {
+                return false;
+            }
+            match extract_quantization(f) {
+                Some(q) => q == quantization,
+                None => false,
+            }
+        })
+        .ok_or_else(|| {
+            RouterError::Common(CommonError::Validation(
+                "No GGUF file found for specified quantization".into(),
+            ))
+        })?;
+    Ok(filename)
+}
+
 /// HuggingFaceのtokenizer_config.jsonからchat_templateを取得
 async fn fetch_chat_template_from_hf(http_client: &reqwest::Client, repo: &str) -> Option<String> {
     let base_url = std::env::var("HF_BASE_URL")
@@ -1131,6 +1329,18 @@ struct HfSibling {
 struct HfLfs {
     /// ファイルサイズ
     size: Option<u64>,
+}
+
+/// HFモデル情報（discover_gguf_versions用）
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct HfModel {
+    /// モデルID (例: "bartowski/Qwen2.5-7B-Instruct-GGUF")
+    #[serde(rename = "id", alias = "modelId")]
+    model_id: String,
+    /// ファイル一覧
+    #[serde(default)]
+    siblings: Vec<HfSibling>,
 }
 
 /// Axum用のエラーレスポンス型
@@ -1629,6 +1839,33 @@ mod tests {
             serde_json::to_string(&ModelStatus::Downloaded).unwrap(),
             "\"downloaded\""
         );
+    }
+
+    #[test]
+    fn test_extract_quantization_detects_mxfp4() {
+        assert_eq!(
+            extract_quantization("gpt-oss-20b-mxfp4.gguf"),
+            Some("MXFP4".to_string())
+        );
+        assert_eq!(
+            normalize_quantization_label("mxfp4"),
+            Some("MXFP4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_hf_model_deserialize_accepts_id_field() {
+        let input = r#"{"id":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
+        let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
+        assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
+    }
+
+    #[test]
+    fn test_hf_model_deserialize_accepts_model_id_field_alias() {
+        let input =
+            r#"{"modelId":"ggml-org/gpt-oss-20b-GGUF","siblings":[{"rfilename":"a.gguf"}]}"#;
+        let parsed: HfModel = serde_json::from_str(input).expect("deserialize");
+        assert_eq!(parsed.model_id, "ggml-org/gpt-oss-20b-GGUF");
     }
 
     #[test]

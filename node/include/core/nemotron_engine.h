@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -17,7 +19,9 @@ public:
 
     std::string runtime() const override { return "nemotron_cpp"; }
     bool supportsTextGeneration() const override {
-#ifdef USE_CUDA
+#if defined(_WIN32) && defined(USE_GPTOSS)
+        return true;
+#elif defined(USE_CUDA)
         return true;
 #else
         return false;
@@ -49,8 +53,18 @@ public:
     uint64_t getModelVramBytes(const ModelDescriptor& descriptor) const override;
 
 private:
+    struct LoadedModel;
+    std::shared_ptr<LoadedModel> ensureLoaded(const ModelDescriptor& descriptor,
+                                              ModelLoadResult& result) const;
+    std::string generateCompletionInternal(
+        const std::string& prompt,
+        const ModelDescriptor& descriptor,
+        const InferenceParams& params,
+        const std::vector<ChatMessage>* chat_messages,
+        const std::function<void(const std::string&)>& on_token) const;
     mutable std::mutex mutex_;
     std::unordered_set<std::string> loaded_;
+    std::unordered_map<std::string, std::shared_ptr<LoadedModel>> loaded_models_;
 #ifdef USE_CUDA
     struct CudaBuffer {
         void* device_ptr{nullptr};

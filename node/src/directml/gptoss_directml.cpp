@@ -181,6 +181,7 @@ struct DmlExecState {
     uint64_t fence_value{0};
     ComPtr<IDMLCommandRecorder> recorder;
     ComPtr<IDMLBindingTable> binding_table;
+    bool binding_table_for_decode{false};
 #endif
     bool initialized{false};
 };
@@ -461,6 +462,13 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     }
 #ifdef _WIN32
     if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    if (ctx->dml_exec.binding_table) {
+        ctx->dml_exec.binding_table->BindInputs(1, &ctx->dml_bindings.token_binding_desc);
+        ctx->dml_exec.binding_table->BindOutputs(
+            static_cast<UINT>(ctx->dml_bindings.prefill_output_descs.size()),
+            ctx->dml_bindings.prefill_output_descs.data());
+        ctx->dml_exec.binding_table_for_decode = false;
+    }
     if (ctx->dml_exec.recorder && model->dml_graph.prefill_op) {
         ctx->dml_exec.recorder->RecordDispatch(
             ctx->dml_exec.command_list.Get(),
@@ -491,10 +499,13 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
 #ifdef _WIN32
     if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
     if (ctx->dml_exec.binding_table) {
-        ctx->dml_exec.binding_table->BindInputs(
-            static_cast<UINT>(ctx->dml_bindings.decode_input_descs.size()),
-            ctx->dml_bindings.decode_input_descs.data());
-        ctx->dml_exec.binding_table->BindOutputs(1, &ctx->dml_bindings.logits_binding_desc);
+        if (!ctx->dml_exec.binding_table_for_decode) {
+            ctx->dml_exec.binding_table->BindInputs(
+                static_cast<UINT>(ctx->dml_bindings.decode_input_descs.size()),
+                ctx->dml_bindings.decode_input_descs.data());
+            ctx->dml_exec.binding_table->BindOutputs(1, &ctx->dml_bindings.logits_binding_desc);
+            ctx->dml_exec.binding_table_for_decode = true;
+        }
     }
     if (ctx->dml_exec.recorder && model->dml_graph.decode_op) {
         ctx->dml_exec.recorder->RecordDispatch(
@@ -883,6 +894,7 @@ bool init_dml_binding_table(DmlExecState& state,
 
     state.binding_table->BindInputs(1, &bindings.token_binding_desc);
     state.binding_table->BindOutputs(2, bindings.prefill_output_descs.data());
+    state.binding_table_for_decode = false;
     return true;
 }
 

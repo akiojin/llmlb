@@ -208,6 +208,9 @@ struct GptossModel {
     DmlPlan dml_plan{};
     DmlTensorLayout dml_layout{};
     DmlGraph dml_graph{};
+#ifdef _WIN32
+    ComPtr<ID3D12Resource> weights_buffer;
+#endif
 };
 
 bool read_exact(std::ifstream& in, void* out, size_t size) {
@@ -882,6 +885,43 @@ bool create_dml_staging_buffer(ID3D12Device* device,
     return SUCCEEDED(hr);
 }
 
+bool upload_weights_to_gpu(const GptossModel& model, ComPtr<ID3D12Resource>& out) {
+    if (!model.has_weights_blob || model.model_path.empty()) return false;
+    std::ifstream in(model.model_path, std::ios::binary);
+    if (!in) return false;
+    in.seekg(static_cast<std::streamoff>(model.weights_offset), std::ios::beg);
+    if (!in.good()) return false;
+
+    std::vector<uint8_t> payload(model.weights_bytes);
+    if (!read_exact(in, payload.data(), payload.size())) return false;
+
+    auto& runtime = dml_runtime();
+    if (!runtime.initialized || !runtime.device) return false;
+    if (!create_dml_buffer(runtime.device.Get(), model.weights_bytes, out)) return false;
+
+    ComPtr<ID3D12Resource> upload;
+    if (!create_dml_staging_buffer(runtime.device.Get(),
+                                   model.weights_bytes,
+                                   D3D12_HEAP_TYPE_UPLOAD,
+                                   D3D12_RESOURCE_STATE_GENERIC_READ,
+                                   upload)) {
+        return false;
+    }
+
+    void* mapped = nullptr;
+    D3D12_RANGE range = {0, 0};
+    if (FAILED(upload->Map(0, &range, &mapped))) return false;
+    std::memcpy(mapped, payload.data(), payload.size());
+    upload->Unmap(0, nullptr);
+
+    DmlExecState exec;
+    if (!init_dml_exec_state(exec)) return false;
+    if (!reset_dml_command_list(exec)) return false;
+    exec.command_list->CopyBufferRegion(out.Get(), 0, upload.Get(), 0, payload.size());
+    if (!submit_dml_command_list(exec)) return false;
+    return true;
+}
+
 bool init_dml_buffers(const DmlContextPlan& plan, DmlBuffers& buffers) {
     std::string error;
     if (!ensure_dml_runtime(error)) {
@@ -1419,6 +1459,15 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
             build_dml_plan(model->header, model->vocabulary_size, model->dml_plan);
             build_dml_tensor_layout(model->header, model->vocabulary_size, model->dml_layout);
             build_dml_graph_stub(model->dml_layout, model->dml_graph);
+#ifdef _WIN32
+            if (model->has_weights_blob && !model->weights_buffer) {
+                if (!upload_weights_to_gpu(*model, model->weights_buffer)) {
+                    delete tokenizer;
+                    delete model;
+                    return gptoss_status_insufficient_resources;
+                }
+            }
+#endif
         }
         model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
         *model_out = reinterpret_cast<gptoss_model_t>(model);

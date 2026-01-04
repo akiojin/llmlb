@@ -112,6 +112,12 @@ struct DmlGraph {
         DML_TENSOR_DESC tensor_desc{};
     };
 
+    struct OperatorDesc {
+        DML_ELEMENT_WISE_IDENTITY_OPERATOR_DESC identity_desc{};
+        DML_OPERATOR_DESC op_desc{};
+        bool prepared{false};
+    };
+
     struct GraphDesc {
         BufferTensor token_ids;
         BufferTensor logits;
@@ -121,6 +127,8 @@ struct DmlGraph {
 
     ComPtr<IDMLCompiledOperator> prefill_op;
     ComPtr<IDMLCompiledOperator> decode_op;
+    OperatorDesc prefill_desc;
+    OperatorDesc decode_desc;
     GraphDesc desc;
 #endif
     DmlTensorLayout layout{};
@@ -323,6 +331,27 @@ bool build_dml_graph_desc(const DmlTensorSpec& token_ids,
     desc.initialized = true;
     return true;
 }
+
+bool prepare_dml_operator_descs(DmlGraph& graph) {
+    if (!graph.desc.initialized) return false;
+    graph.prefill_desc.identity_desc = {};
+    graph.prefill_desc.identity_desc.InputTensor = &graph.desc.logits.tensor_desc;
+    graph.prefill_desc.identity_desc.OutputTensor = &graph.desc.logits.tensor_desc;
+    graph.prefill_desc.op_desc = {};
+    graph.prefill_desc.op_desc.Type = DML_OPERATOR_ELEMENT_WISE_IDENTITY;
+    graph.prefill_desc.op_desc.Desc = &graph.prefill_desc.identity_desc;
+    graph.prefill_desc.prepared = true;
+
+    graph.decode_desc.identity_desc = {};
+    graph.decode_desc.identity_desc.InputTensor = &graph.desc.logits.tensor_desc;
+    graph.decode_desc.identity_desc.OutputTensor = &graph.desc.logits.tensor_desc;
+    graph.decode_desc.op_desc = {};
+    graph.decode_desc.op_desc.Type = DML_OPERATOR_ELEMENT_WISE_IDENTITY;
+    graph.decode_desc.op_desc.Desc = &graph.decode_desc.identity_desc;
+    graph.decode_desc.prepared = true;
+
+    return true;
+}
 #endif
 
 bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
@@ -347,6 +376,7 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     graph.decode_outputs = {logits, kv_cache};
 #ifdef _WIN32
     if (!build_dml_graph_desc(token_ids, logits, kv_cache, graph.desc)) return false;
+    if (!prepare_dml_operator_descs(graph)) return false;
     graph.initialized = graph.desc.initialized;
 #endif
     for (const auto& spec : graph.prefill_inputs) {
@@ -375,6 +405,7 @@ bool compile_dml_operators(DmlGraph& graph, DmlExecState& exec_state) {
 #ifdef _WIN32
     if (!exec_state.initialized || !exec_state.dml_device) return false;
     if (!graph.desc.initialized) return false;
+    if (!graph.prefill_desc.prepared || !graph.decode_desc.prepared) return false;
     graph.prefill_op.Reset();
     graph.decode_op.Reset();
     graph.has_prefill = false;

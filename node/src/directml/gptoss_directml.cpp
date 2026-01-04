@@ -190,6 +190,9 @@ struct DmlExecState {
     bool initialized{false};
 };
 
+struct GptossContext;
+uint32_t select_stub_token(const GptossContext& ctx, uint32_t vocab_size);
+
 struct GptossModel {
     std::atomic<uint32_t> ref_count{1};
     std::string model_dir;
@@ -456,6 +459,9 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
     }
+    if (model->dml_graph.stub_graph) {
+        return gptoss_status_success;
+    }
     if (!model->dml_graph.has_prefill) {
         compile_dml_operators(model->dml_graph, ctx->dml_exec);
     }
@@ -466,15 +472,6 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
         return gptoss_status_insufficient_resources;
     }
 #ifdef _WIN32
-    if (model->dml_graph.stub_graph) {
-        ctx->last_logits.assign(model->dml_layout.vocab_size, 0.0f);
-        const uint32_t token = select_stub_token(*ctx, model->dml_layout.vocab_size);
-        if (!ctx->last_logits.empty()) {
-            ctx->last_logits[token] = 1.0f;
-        }
-        ctx->logits_ready = !ctx->last_logits.empty();
-        return gptoss_status_success;
-    }
     if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
         return gptoss_status_internal;
     }
@@ -505,6 +502,15 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     auto* model = reinterpret_cast<GptossModel*>(ctx->model);
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
+    }
+    if (model->dml_graph.stub_graph) {
+        ctx->last_logits.assign(model->dml_layout.vocab_size, 0.0f);
+        const uint32_t token = select_stub_token(*ctx, model->dml_layout.vocab_size);
+        if (!ctx->last_logits.empty()) {
+            ctx->last_logits[token] = 1.0f;
+        }
+        ctx->logits_ready = !ctx->last_logits.empty();
+        return gptoss_status_success;
     }
     if (!model->dml_graph.has_decode) {
         compile_dml_operators(model->dml_graph, ctx->dml_exec);

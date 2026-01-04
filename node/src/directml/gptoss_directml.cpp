@@ -91,9 +91,16 @@ struct DmlPlan {
 struct DmlTensorLayout {
     uint32_t vocab_size{0};
     uint32_t embedding_dim{0};
+    uint32_t context_length{0};
+    uint32_t num_blocks{0};
     uint32_t num_heads{0};
     uint32_t num_kv_heads{0};
     uint32_t head_dim{0};
+};
+
+struct DmlTensorSpec {
+    std::vector<uint32_t> dims;
+    uint32_t element_size{0};
 };
 
 struct DmlGraph {
@@ -102,6 +109,10 @@ struct DmlGraph {
     ComPtr<IDMLCompiledOperator> decode_op;
 #endif
     DmlTensorLayout layout{};
+    std::vector<DmlTensorSpec> prefill_inputs;
+    std::vector<DmlTensorSpec> prefill_outputs;
+    std::vector<DmlTensorSpec> decode_inputs;
+    std::vector<DmlTensorSpec> decode_outputs;
     bool initialized{false};
 };
 
@@ -196,6 +207,8 @@ bool build_dml_tensor_layout(const GptossModelHeader& header,
     if (header.num_heads == 0 || header.num_kv_heads == 0 || header.head_dim == 0) return false;
     layout.vocab_size = vocabulary_size;
     layout.embedding_dim = header.embedding_dim;
+    layout.context_length = header.context_length;
+    layout.num_blocks = header.num_blocks;
     layout.num_heads = header.num_heads;
     layout.num_kv_heads = header.num_kv_heads;
     layout.head_dim = header.head_dim;
@@ -203,7 +216,17 @@ bool build_dml_tensor_layout(const GptossModelHeader& header,
 }
 
 bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
+    DmlTensorSpec token_ids{{1}, sizeof(uint32_t)};
+    DmlTensorSpec logits{{1, layout.vocab_size}, sizeof(float)};
+    DmlTensorSpec kv_cache{
+        {layout.num_blocks, layout.context_length, layout.num_kv_heads, layout.head_dim, 2},
+        sizeof(float)};
+
     graph.layout = layout;
+    graph.prefill_inputs = {token_ids};
+    graph.prefill_outputs = {logits, kv_cache};
+    graph.decode_inputs = {token_ids, kv_cache};
+    graph.decode_outputs = {logits, kv_cache};
     graph.initialized = false;
     return true;
 }

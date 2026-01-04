@@ -53,6 +53,9 @@ pub mod supported_models;
 /// ダッシュボードイベントバス
 pub mod events;
 
+/// トークン抽出・推定
+pub mod token;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {

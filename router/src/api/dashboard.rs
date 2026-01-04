@@ -105,6 +105,12 @@ pub struct DashboardNode {
     /// 同期状態の最終更新時刻
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_updated_at: Option<DateTime<Utc>>,
+    /// 入力トークン累計
+    pub total_input_tokens: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 総トークン累計
+    pub total_tokens: u64,
 }
 
 /// システム統計レスポンス
@@ -148,6 +154,12 @@ pub struct DashboardStats {
     pub google_key_present: bool,
     /// ANTHROPIC_API_KEY が設定されているか
     pub anthropic_key_present: bool,
+    /// 入力トークン累計
+    pub total_input_tokens: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 総トークン累計
+    pub total_tokens: u64,
 }
 
 /// ダッシュボード概要レスポンス
@@ -252,6 +264,9 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
                 average_response_time_ms,
                 metrics_last_updated_at,
                 metrics_stale,
+                total_input_tokens,
+                total_output_tokens,
+                total_tokens,
             ) = if let Some(snapshot) = snapshot {
                 (
                     snapshot.cpu_usage,
@@ -271,11 +286,14 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
                     snapshot.average_response_time_ms,
                     snapshot.last_updated,
                     snapshot.is_stale,
+                    snapshot.total_input_tokens,
+                    snapshot.total_output_tokens,
+                    snapshot.total_tokens,
                 )
             } else {
                 (
                     None, None, None, None, None, None, None, None, None, None, 0, 0, 0, 0, None,
-                    None, true,
+                    None, true, 0, 0, 0,
                 )
             };
 
@@ -314,6 +332,9 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
                 sync_state: node.sync_state,
                 sync_progress: node.sync_progress.clone(),
                 sync_updated_at: node.sync_updated_at,
+                total_input_tokens,
+                total_output_tokens,
+                total_tokens,
             }
         })
         .collect::<Vec<DashboardNode>>()
@@ -353,6 +374,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         openai_key_present,
         google_key_present,
         anthropic_key_present,
+        total_input_tokens: summary.total_input_tokens,
+        total_output_tokens: summary.total_output_tokens,
+        total_tokens: summary.total_tokens,
     }
 }
 
@@ -929,5 +953,178 @@ mod tests {
         // ページサイズ100を指定
         let query: RequestHistoryQuery = serde_urlencoded::from_str("per_page=100").unwrap();
         assert_eq!(query.per_page, 100);
+    }
+
+    // T-8: DashboardNodeトークンフィールド応答テスト
+    #[tokio::test]
+    async fn test_dashboard_node_has_token_statistics_fields() {
+        let state = create_state().await;
+
+        // ノードを登録
+        let register_req = RegisterRequest {
+            machine_name: "token-node".into(),
+            ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 50)),
+            runtime_version: "0.1.0".into(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+        let node_id = state.registry.register(register_req).await.unwrap().node_id;
+        state.registry.approve(node_id).await.unwrap();
+
+        // メトリクスを記録してOnline状態にする
+        state
+            .load_manager
+            .record_metrics(MetricsUpdate {
+                node_id,
+                cpu_usage: 30.0,
+                memory_usage: 40.0,
+                gpu_usage: Some(50.0),
+                gpu_memory_usage: Some(60.0),
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                average_response_time_ms: Some(100.0),
+                initializing: false,
+                ready_models: Some((0, 0)),
+            })
+            .await
+            .unwrap();
+
+        // トークン使用量を記録するリクエストを完了
+        use crate::token::TokenUsage;
+        let token_usage = TokenUsage::new(Some(100), Some(50), Some(150));
+        state.load_manager.begin_request(node_id).await.unwrap();
+        state
+            .load_manager
+            .finish_request_with_tokens(
+                node_id,
+                RequestOutcome::Success,
+                Duration::from_millis(100),
+                Some(token_usage),
+            )
+            .await
+            .unwrap();
+
+        // DashboardNodeを取得
+        let response = get_nodes(State(state.clone())).await;
+        let nodes = response.0;
+        assert_eq!(nodes.len(), 1);
+
+        let node = &nodes[0];
+        // T-8: トークン統計フィールドが存在し、正しい値を持つことを確認
+        assert_eq!(node.total_input_tokens, 100);
+        assert_eq!(node.total_output_tokens, 50);
+        assert_eq!(node.total_tokens, 150);
+    }
+
+    // T-9: DashboardStatsトークンフィールド応答テスト
+    #[tokio::test]
+    async fn test_dashboard_stats_has_token_statistics_fields() {
+        let state = create_state().await;
+
+        // 2つのノードを登録
+        let node1_id = state
+            .registry
+            .register(RegisterRequest {
+                machine_name: "stats-node-1".into(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 51)),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+        state.registry.approve(node1_id).await.unwrap();
+
+        let node2_id = state
+            .registry
+            .register(RegisterRequest {
+                machine_name: "stats-node-2".into(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 52)),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+        state.registry.approve(node2_id).await.unwrap();
+
+        // 両ノードをOnline状態にする
+        for node_id in [node1_id, node2_id] {
+            state
+                .load_manager
+                .record_metrics(MetricsUpdate {
+                    node_id,
+                    cpu_usage: 30.0,
+                    memory_usage: 40.0,
+                    gpu_usage: None,
+                    gpu_memory_usage: None,
+                    gpu_memory_total_mb: None,
+                    gpu_memory_used_mb: None,
+                    gpu_temperature: None,
+                    gpu_model_name: None,
+                    gpu_compute_capability: None,
+                    gpu_capability_score: None,
+                    active_requests: 0,
+                    average_response_time_ms: None,
+                    initializing: false,
+                    ready_models: Some((0, 0)),
+                })
+                .await
+                .unwrap();
+        }
+
+        // ノード1: 100入力 + 50出力
+        use crate::token::TokenUsage;
+        state.load_manager.begin_request(node1_id).await.unwrap();
+        state
+            .load_manager
+            .finish_request_with_tokens(
+                node1_id,
+                RequestOutcome::Success,
+                Duration::from_millis(100),
+                Some(TokenUsage::new(Some(100), Some(50), Some(150))),
+            )
+            .await
+            .unwrap();
+
+        // ノード2: 200入力 + 100出力
+        state.load_manager.begin_request(node2_id).await.unwrap();
+        state
+            .load_manager
+            .finish_request_with_tokens(
+                node2_id,
+                RequestOutcome::Success,
+                Duration::from_millis(100),
+                Some(TokenUsage::new(Some(200), Some(100), Some(300))),
+            )
+            .await
+            .unwrap();
+
+        // DashboardStatsを取得
+        let stats = get_stats(State(state)).await.0;
+
+        // T-9: トークン統計フィールドが存在し、集計値が正しいことを確認
+        assert_eq!(stats.total_input_tokens, 300); // 100 + 200
+        assert_eq!(stats.total_output_tokens, 150); // 50 + 100
+        assert_eq!(stats.total_tokens, 450); // 150 + 300
     }
 }

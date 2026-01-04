@@ -31,8 +31,8 @@
 
 ### API
 
-- [ ] `[P]` T-8: DashboardNodeトークンフィールド応答テスト
-- [ ] `[P]` T-9: DashboardStatsトークンフィールド応答テスト
+- [x] `[P]` T-8: DashboardNodeトークンフィールド応答テスト
+- [x] `[P]` T-9: DashboardStatsトークンフィールド応答テスト
 - [ ] `[P]` T-10: /api/dashboard/stats/tokens エンドポイントテスト
 
 ### ストリーミング
@@ -88,9 +88,9 @@
 
 ### API実装
 
-- [ ] I-1: DashboardNodeにトークン統計フィールド追加
+- [x] I-1: DashboardNodeにトークン統計フィールド追加
   - 依存: C-7, C-10, T-8
-- [ ] I-2: DashboardStatsにトークン統計フィールド追加
+- [x] I-2: DashboardStatsにトークン統計フィールド追加
   - 依存: C-10, T-9
 - [ ] I-3: /api/dashboard/stats/tokens エンドポイント実装
   - 依存: C-10, T-10
@@ -145,8 +145,8 @@ P-1〜P-7 (Polish)
 | カテゴリ | 完了 | 合計 | 進捗率 |
 |----------|------|------|--------|
 | Setup | 2 | 2 | 100% |
-| Test | 9 | 14 | 64% |
+| Test | 11 | 14 | 79% |
 | Core | 11 | 11 | 100% |
-| Integration | 0 | 7 | 0% |
+| Integration | 2 | 7 | 29% |
 | Polish | 0 | 7 | 0% |
-| **合計** | **22** | **41** | **54%** |
+| **合計** | **26** | **41** | **63%** |

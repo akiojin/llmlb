@@ -1840,6 +1840,12 @@ pub struct NodeLoadSnapshot {
     pub last_updated: Option<DateTime<Utc>>,
     /// メトリクスが鮮度閾値を超えているか
     pub is_stale: bool,
+    /// 入力トークン累計
+    pub total_input_tokens: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 総トークン累計
+    pub total_tokens: u64,
 }
 
 /// システム全体の統計サマリー
@@ -1873,6 +1879,12 @@ pub struct SystemSummary {
     pub queued_requests: usize,
     /// 最新メトリクス更新時刻
     pub last_metrics_updated_at: Option<DateTime<Utc>>,
+    /// 入力トークン累計
+    pub total_input_tokens: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 総トークン累計
+    pub total_tokens: u64,
 }
 
 /// ロードマネージャー
@@ -2610,6 +2622,15 @@ impl LoadManager {
                     .failed_requests
                     .saturating_add(load_state.error_count);
 
+                // トークン統計を集計
+                summary.total_input_tokens = summary
+                    .total_input_tokens
+                    .saturating_add(load_state.total_input_tokens);
+                summary.total_output_tokens = summary
+                    .total_output_tokens
+                    .saturating_add(load_state.total_output_tokens);
+                summary.total_tokens = summary.total_tokens.saturating_add(load_state.total_tokens);
+
                 let completed = load_state.success_count + load_state.error_count;
                 if completed > 0 {
                     total_latency_ms = total_latency_ms.saturating_add(load_state.total_latency_ms);
@@ -2760,6 +2781,9 @@ impl LoadManager {
             average_response_time_ms: load_state.effective_average_ms(),
             last_updated: load_state.last_updated(),
             is_stale: load_state.is_stale(now),
+            total_input_tokens: load_state.total_input_tokens,
+            total_output_tokens: load_state.total_output_tokens,
+            total_tokens: load_state.total_tokens,
         }
     }
 

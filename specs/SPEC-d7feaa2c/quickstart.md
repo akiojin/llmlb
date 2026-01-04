@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| プラットフォーム | macOS (Metal) または Windows (DirectML) |
+Windows (CUDA)
 | GPU | Apple Silicon または DirectX 12対応GPU |
 | プラグイン | `engines/` 配下に配置済み |
 

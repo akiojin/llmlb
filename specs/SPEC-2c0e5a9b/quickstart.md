@@ -1,8 +1,8 @@
-# クイックスタート: gpt-oss-20b safetensors 実行
+﻿# クイックスタート: gpt-oss-20b safetensors 実行
 
 ## 前提条件
 
-- GPU搭載ノードが登録済み（Metal または DirectML）
+- GPU搭載ノードが登録済み（Metal または CUDA）
 - HuggingFace アクセストークン（プライベートモデルの場合）
 - ネットワーク接続（モデルダウンロード用）
 
@@ -12,7 +12,7 @@
 # APIキー認証
 export API_KEY="sk_your_api_key"
 
-# gpt-oss-20b を safetensors 形式で登録
+# gpt-oss-20b をsafetensors 形式で登録
 curl -X POST http://localhost:3000/v1/models/register \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
@@ -26,7 +26,7 @@ curl -X POST http://localhost:3000/v1/models/register \
 ## 2. モデル状態確認
 
 ```bash
-# モデル一覧取得（ready状態を確認）
+# モデル一覧取得（ready 状態を確認）
 curl http://localhost:3000/v1/models \
   -H "Authorization: Bearer $API_KEY"
 ```
@@ -88,7 +88,7 @@ HuggingFace リポジトリに必須ファイルが存在することを確認�
 
 ### GPU未対応エラー
 
-DirectML 初期実装では公式GPU最適化アーティファクトが必須です。
+Windows では CUDA を使用します。DirectML は実験扱いで、公式GPU最適化アーティファクトが必須です。
 safetensors からの直接推論は後続バージョンで対応予定。
-???? Hugging Face `openai/gpt-oss-*` ?? DirectML ?????????????????????
-`model.directml.bin` / `model.dml.bin` ????????????
+現時点の Hugging Face `openai/gpt-oss-*` には DirectML 向けアーティファクトが含まれていないため、
+`model.directml.bin` / `model.dml.bin` を別途用意してください。

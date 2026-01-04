@@ -23,7 +23,7 @@
 ## 矛盾/漏れ一覧（2025-12-24 時点）
 
 - **GPU対象範囲の不一致（対応済み）**  
-  - 決定事項: macOSはApple Silicon/Metal、WindowsはDirectML、Linuxは非対応（CUDAは実験扱い）、WSL2は対象外。  
+  - 決定事項: macOSはApple Silicon/Metal、WindowsはCUDA、Linuxは非対応。DirectMLは実験扱い、WSL2は対象外。
   - `SPEC-5cd7b614` は AMD/Intel を含む前提、Docker for Mac を含むため差分がある。
 - **モデルストレージ設計の古い前提（対応済み）**  
   - `SPEC-dcaeaec4/plan.md` に `metadata.json` の記載と GGUF中心のディレクトリ構造が残っている。

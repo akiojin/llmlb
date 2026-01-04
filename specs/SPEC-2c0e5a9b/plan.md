@@ -1,7 +1,7 @@
 # SPEC-2c0e5a9b: Plan
 
 ## 方針
-- safetensors を正本とし、Node 側で “推論エンジン（線）” を追加して gpt-oss-20b を GPU 実行する。
+  - gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する
 - エンジン選択は既存の抽象化（`SPEC-d7feaa2c`）を利用し、登録時の `format` と `config.json` 等の HF 由来メタデータに従う。
 - gpt-oss 実行エンジンは **プラグイン形式（動的ロード）** で提供する。
 - `chat_template` の解釈は C++ Node に寄せず、Router 側で Jinja 互換レンダリングを行い、Node には最終プロンプト（テキスト）を渡す方針を前提とする。
@@ -10,7 +10,7 @@
 - 実行の優先順位:
   1) 公式のGPU最適化アーティファクト（バックエンド依存、許可リスト対象）
   2) safetensors（正本）
-- 対応OS/GPU: macOS=Metal、Windows=DirectML、Linuxは非対応（CUDAは実験扱い）
+- 対応OS/GPU: macOS=Metal、Windows=CUDA、Linuxは非対応。DirectMLは実験扱い。
 
 ## 対象モデルとアーティファクト（前提）
 - 対象: `openai/gpt-oss-20b`
@@ -39,9 +39,9 @@
   - gpt-oss を `config.json` から検出し、対応 runtime を決定できる
   - safetensors（index + shards）を 1 モデルとして検証できる
 - Engine:
-  - gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/DirectML）を提供する
+  - gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する
 - 公式最適化アーティファクトがローカルにある場合はそれを優先してロードする
-  - WindowsはDirectML、macOSはMetalの最小経路を先に確立する
+  - WindowsはCUDA、macOSはMetalの最小経路を先に確立する
   - 対応不可の場合は明確に未対応として扱い、ready 一覧から除外できる
 
 ## 決定事項（設計合意）
@@ -51,7 +51,7 @@
 - 登録形式は常に `format=safetensors` を維持し、公式最適化アーティファクトは実行キャッシュとして扱う。
 
 ## 主要な要明確化（実装前に決めること）
-- DirectML 実行の実装範囲（初期は最小機能で成立させる）。
+- Windows CUDA 実行の実装範囲（初期は最小機能で成立させる）。
 - 公式GPU最適化アーティファクトの「自動利用 / 明示 opt-in」方針。
 - プラグイン ABI の固定方針（バージョン更新ルール）。
 

@@ -52,7 +52,7 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、safetensors�
 - Nodeにエンジン抽象化レイヤーが導入され、llama.cpp 等の複数エンジンを選択できる
 - エンジンは **動的プラグイン** として追加・更新できる
 - `metadata.json` のような llm-router 独自メタデータファイルに依存せず、エンジン選択が実装される
-- **対応OS/GPUの前提が明確**（macOS: Metal、Windows: DirectML、Linux: 非対応/CUDAは実験）
+Windows: CUDA
 
 ## アーキテクチャ（Nodeエンジン層・詳細）
 
@@ -101,18 +101,18 @@ register(format=...)  ───────▶    ModelStorage
 
 ### OS/GPU前提（本仕様の前提）
 - macOS: Apple Silicon + Metal
-- Windows: DirectML（D3D12）
+Windows: CUDA
 - Linux: 当面は非対応（CUDAは実験扱い）
 
-### Windows DirectML（Nemotron）実装前提
-- **DLL/API互換**: gpt-oss DirectML DLL と同一の C API（`gptoss_*` シンボル）を前提とする。
+### Windows CUDA（Nemotron）実装前提
+- **DLL/API??**: gpt-oss CUDA DLL (TBD) ???? C API?`gptoss_*` ????????????
 - **DLL?**: Windows???? `gptoss_directml.dll` / `nemotron_directml.dll` ?????????????????? `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???DLL?????
 - **???????????**: safetensors??????????????`model.directml.bin` / `model.dml.bin` ?????????????
 - **safetensors ??**: `config.json` / `tokenizer.json` / index+shards ?????DirectML ? safetensors ?????????`model.directml.bin` / `model.dml.bin` ?????????
 
 ### 現状の実運用確認（safetensors系LLM）
 - 安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
-- DirectMLは限定的、NemotronはTBD（後回し）。
+- Windows CUDAが主経路、DirectMLは限定的、NemotronはTBD（後回し）。
 
 ## アーキテクチャ（Nodeエンジン層）
 
@@ -166,7 +166,7 @@ register(format=...)  ───────▶    ModelStorage
 - 開発者として、モデル形式が増えてもNodeのエンジン選択が壊れない構造にしたい
 
 ## 保留事項（TBD）
-- Nemotron向けの新エンジン（推論エンジン）は別SPECとして後日仕様化する（後回し / TBD。Metal/DirectML対応方針、CUDA実験扱い、chat_template互換、dtype戦略など）。
+- Nemotron向けの新エンジン（推論エンジン）は別SPECとして後日仕様化する（後回し / TBD。Metal/CUDA対応方針、CUDA実験扱い、chat_template互換、dtype戦略など）。
 
 ## 受け入れ条件
 - Nodeが登録時の選択（safetensors/GGUF）と `config.json` に従ってエンジンを選択する

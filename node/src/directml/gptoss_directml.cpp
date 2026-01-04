@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -27,6 +28,9 @@
 namespace fs = std::filesystem;
 
 namespace {
+#ifdef _WIN32
+using Microsoft::WRL::ComPtr;
+#endif
 struct GptossFileHeader {
     char magic[12];
     uint32_t zero;
@@ -88,6 +92,15 @@ struct DmlContextPlan {
     size_t token_buffer_bytes{0};
     size_t logits_buffer_bytes{0};
     size_t kv_cache_bytes{0};
+};
+
+struct DmlBuffers {
+#ifdef _WIN32
+    ComPtr<ID3D12Resource> token_buffer;
+    ComPtr<ID3D12Resource> logits_buffer;
+    ComPtr<ID3D12Resource> kv_cache_buffer;
+#endif
+    bool initialized{false};
 };
 
 struct GptossModel {
@@ -280,8 +293,6 @@ gptoss_status load_gptoss_model_file(const fs::path& path,
 }
 
 #ifdef _WIN32
-using Microsoft::WRL::ComPtr;
-
 struct DmlRuntime {
     ComPtr<IDXGIAdapter1> adapter;
     ComPtr<ID3D12Device> device;
@@ -290,6 +301,16 @@ struct DmlRuntime {
     bool initialized{false};
     std::string error;
 };
+
+static DmlRuntime& dml_runtime() {
+    static DmlRuntime runtime;
+    return runtime;
+}
+
+static std::once_flag& dml_runtime_once() {
+    static std::once_flag once;
+    return once;
+}
 
 bool init_dml_runtime(DmlRuntime& runtime) {
     ComPtr<IDXGIFactory6> factory;
@@ -364,13 +385,60 @@ bool init_dml_runtime(DmlRuntime& runtime) {
 }
 
 bool ensure_dml_runtime(std::string& error) {
-    static DmlRuntime runtime;
-    static std::once_flag once;
-    std::call_once(once, [&]() { runtime.initialized = init_dml_runtime(runtime); });
+    auto& runtime = dml_runtime();
+    std::call_once(dml_runtime_once(), [&]() { runtime.initialized = init_dml_runtime(runtime); });
     if (!runtime.initialized) {
         error = runtime.error;
         return false;
     }
+    return true;
+}
+
+bool create_dml_buffer(ID3D12Device* device, size_t bytes, ComPtr<ID3D12Resource>& out) {
+    if (!device || bytes == 0) return false;
+    D3D12_HEAP_PROPERTIES heap_props = {};
+    heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap_props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap_props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap_props.CreationNodeMask = 1;
+    heap_props.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    desc.Alignment = 0;
+    desc.Width = static_cast<UINT64>(bytes);
+    desc.Height = 1;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_UNKNOWN;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    HRESULT hr = device->CreateCommittedResource(
+        &heap_props,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_COMMON,
+        nullptr,
+        IID_PPV_ARGS(out.GetAddressOf()));
+    return SUCCEEDED(hr);
+}
+
+bool init_dml_buffers(const DmlContextPlan& plan, DmlBuffers& buffers) {
+    std::string error;
+    if (!ensure_dml_runtime(error)) {
+        return false;
+    }
+    auto& runtime = dml_runtime();
+    if (!runtime.initialized || !runtime.device) {
+        return false;
+    }
+    if (!create_dml_buffer(runtime.device.Get(), plan.token_buffer_bytes, buffers.token_buffer)) return false;
+    if (!create_dml_buffer(runtime.device.Get(), plan.logits_buffer_bytes, buffers.logits_buffer)) return false;
+    if (!create_dml_buffer(runtime.device.Get(), plan.kv_cache_bytes, buffers.kv_cache_buffer)) return false;
+    buffers.initialized = true;
     return true;
 }
 #endif
@@ -381,6 +449,7 @@ struct GptossContext {
     std::vector<uint32_t> tokens;
     size_t max_tokens{0};
     DmlContextPlan dml_plan{};
+    DmlBuffers dml_buffers{};
 };
 
 uint32_t find_unknown_token_id(const GptossTokenizer& tokenizer) {
@@ -804,6 +873,10 @@ gptoss_status GPTOSS_ABI gptoss_context_create(
                                     ctx->dml_plan)) {
             delete ctx;
             return gptoss_status_invalid_argument;
+        }
+        if (!init_dml_buffers(ctx->dml_plan, ctx->dml_buffers)) {
+            delete ctx;
+            return gptoss_status_insufficient_resources;
         }
     }
     gptoss_model_retain(model);

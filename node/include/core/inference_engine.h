@@ -23,6 +23,7 @@ class ModelSync;
 class ModelResolver;
 class VisionProcessor;
 struct ModelDescriptor;
+class InferenceCache;
 
 struct TokenMetrics {
     double ttft_ms{0.0};
@@ -144,6 +145,7 @@ private:
     mutable std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
     mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
+    mutable std::unique_ptr<InferenceCache> inference_cache_{nullptr};
     std::function<ResourceUsage()> resource_usage_provider_{};
     std::filesystem::path engine_plugins_dir_;
     mutable std::chrono::steady_clock::time_point plugin_restart_last_{};

@@ -27,14 +27,69 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
+#include <list>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 
 namespace llm_node {
 
+class InferenceCache {
+public:
+    std::optional<std::string> get(const std::string& key) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = entries_.find(key);
+        if (it == entries_.end()) return std::nullopt;
+        lru_.splice(lru_.begin(), lru_, it->second);
+        return it->second->value;
+    }
+
+    void put(const std::string& key, const std::string& value, size_t max_bytes) {
+        if (max_bytes == 0) return;
+        const size_t entry_bytes = key.size() + value.size();
+        if (entry_bytes > max_bytes) return;
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = entries_.find(key);
+        if (it != entries_.end()) {
+            current_bytes_ -= it->second->bytes;
+            it->second->value = value;
+            it->second->bytes = entry_bytes;
+            lru_.splice(lru_.begin(), lru_, it->second);
+            current_bytes_ += entry_bytes;
+        } else {
+            lru_.push_front(Entry{key, value, entry_bytes});
+            entries_[key] = lru_.begin();
+            current_bytes_ += entry_bytes;
+        }
+
+        while (current_bytes_ > max_bytes && !lru_.empty()) {
+            auto last_it = std::prev(lru_.end());
+            current_bytes_ -= last_it->bytes;
+            entries_.erase(last_it->key);
+            lru_.pop_back();
+        }
+    }
+
+private:
+    struct Entry {
+        std::string key;
+        std::string value;
+        size_t bytes{0};
+    };
+
+    std::list<Entry> lru_;
+    std::unordered_map<std::string, std::list<Entry>::iterator> entries_;
+    size_t current_bytes_{0};
+    std::mutex mutex_;
+};
+
 namespace {
+constexpr double kInferenceCacheRamRatio = 0.05;
+
 struct TokenMetricsState {
     uint64_t start_ns{0};
     uint64_t first_token_ns{0};
@@ -93,6 +148,68 @@ TokenMetrics build_token_metrics(const TokenMetricsState& state) {
         ? static_cast<double>(state.token_count) / duration_s
         : 0.0;
     return metrics;
+}
+
+void append_with_length(std::string& out, const std::string& value) {
+    out.append(std::to_string(value.size()));
+    out.push_back(':');
+    out.append(value);
+    out.push_back('|');
+}
+
+std::string build_cache_key_base(const std::string& model, const InferenceParams& params) {
+    std::string key;
+    key.reserve(model.size() + 128);
+    key.append("model=");
+    append_with_length(key, model);
+    key.append("max_tokens=").append(std::to_string(params.max_tokens)).append("|");
+    key.append("temperature=").append(std::to_string(params.temperature)).append("|");
+    key.append("top_p=").append(std::to_string(params.top_p)).append("|");
+    key.append("top_k=").append(std::to_string(params.top_k)).append("|");
+    key.append("repeat_penalty=").append(std::to_string(params.repeat_penalty)).append("|");
+    key.append("seed=").append(std::to_string(params.seed)).append("|");
+    key.append("stop_count=").append(std::to_string(params.stop_sequences.size())).append("|");
+    for (const auto& stop : params.stop_sequences) {
+        append_with_length(key, stop);
+    }
+    return key;
+}
+
+std::string build_completion_cache_key(const std::string& prompt,
+                                       const std::string& model,
+                                       const InferenceParams& params) {
+    std::string key = build_cache_key_base(model, params);
+    key.append("prompt=");
+    append_with_length(key, prompt);
+    return key;
+}
+
+std::string build_chat_cache_key(const std::vector<ChatMessage>& messages,
+                                 const std::string& model,
+                                 const InferenceParams& params) {
+    std::string key = build_cache_key_base(model, params);
+    key.append("messages=").append(std::to_string(messages.size())).append("|");
+    for (const auto& message : messages) {
+        append_with_length(key, message.role);
+        append_with_length(key, message.content);
+    }
+    return key;
+}
+
+size_t inference_cache_limit_bytes(const std::function<ResourceUsage()>& provider) {
+    if (!provider) return 0;
+    try {
+        const auto usage = provider();
+        if (usage.mem_total_bytes == 0 || usage.mem_used_bytes >= usage.mem_total_bytes) {
+            return 0;
+        }
+        const uint64_t available = usage.mem_total_bytes - usage.mem_used_bytes;
+        const auto limit = static_cast<long double>(available) * kInferenceCacheRamRatio;
+        if (limit <= 0.0L) return 0;
+        return static_cast<size_t>(limit);
+    } catch (...) {
+        return 0;
+    }
 }
 
 void report_token_metrics(const TokenMetricsState& state, const std::string& model, const char* kind) {
@@ -536,6 +653,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     , model_sync_(model_sync)
     , model_resolver_(model_resolver)
     , resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
+    inference_cache_ = std::make_unique<InferenceCache>();
     engines_ = std::make_unique<EngineRegistry>();
     EngineRegistration llama_reg;
     llama_reg.engine_id = "builtin_llama_cpp";
@@ -564,7 +682,10 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
-InferenceEngine::InferenceEngine() = default;
+InferenceEngine::InferenceEngine()
+    : resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
+    inference_cache_ = std::make_unique<InferenceCache>();
+}
 
 InferenceEngine::~InferenceEngine() = default;
 
@@ -798,6 +919,15 @@ std::string InferenceEngine::generateChat(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
+        const bool cache_enabled = params.temperature <= 0.0f;
+        std::string cache_key;
+        if (cache_enabled && inference_cache_) {
+            cache_key = build_chat_cache_key(messages, model, params);
+            if (auto cached = inference_cache_->get(cache_key)) {
+                return *cached;
+            }
+        }
+
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
         InferenceParams params_with_metrics = params;
@@ -806,6 +936,9 @@ std::string InferenceEngine::generateChat(
         try {
             auto output = engine->generateChat(messages, *desc, params_with_metrics);
             report_token_metrics(metrics, desc->name, "chat");
+            if (cache_enabled && inference_cache_) {
+                inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+            }
             return output;
         } catch (...) {
             handlePluginCrash();
@@ -1040,6 +1173,15 @@ std::string InferenceEngine::generateCompletion(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
+        const bool cache_enabled = params.temperature <= 0.0f;
+        std::string cache_key;
+        if (cache_enabled && inference_cache_) {
+            cache_key = build_completion_cache_key(prompt, model, params);
+            if (auto cached = inference_cache_->get(cache_key)) {
+                return *cached;
+            }
+        }
+
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
         InferenceParams params_with_metrics = params;
@@ -1048,6 +1190,9 @@ std::string InferenceEngine::generateCompletion(
         try {
             auto output = engine->generateCompletion(prompt, *desc, params_with_metrics);
             report_token_metrics(metrics, desc->name, "completion");
+            if (cache_enabled && inference_cache_) {
+                inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+            }
             return output;
         } catch (...) {
             handlePluginCrash();

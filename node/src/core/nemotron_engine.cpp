@@ -639,7 +639,12 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
     if (status != gptoss_status_success || model == nullptr) {
         result.success = false;
         result.error_message = "nemotron model_create_from_file failed: status=" + std::to_string(status);
-        result.error_code = EngineErrorCode::kLoadFailed;
+        if (status == gptoss_status_unsupported_argument) {
+            result.error_message += " (unsupported DirectML artifact/layout)";
+            result.error_code = EngineErrorCode::kUnsupported;
+        } else {
+            result.error_code = EngineErrorCode::kLoadFailed;
+        }
         return nullptr;
     }
 

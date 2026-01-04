@@ -185,6 +185,21 @@ fs::path resolve_nemotron_directml_model_bin(const fs::path& model_dir) {
     return {};
 }
 
+fs::path resolve_nemotron_directml_model_file(const ModelDescriptor& descriptor) {
+    fs::path model_dir = descriptor.model_dir.empty()
+                             ? fs::path(descriptor.primary_path).parent_path()
+                             : fs::path(descriptor.model_dir);
+    if (model_dir.empty()) return {};
+    if (auto bin = resolve_nemotron_directml_model_bin(model_dir); !bin.empty()) {
+        return bin;
+    }
+    fs::path primary = descriptor.primary_path.empty() ? fs::path() : fs::path(descriptor.primary_path);
+    if (!primary.empty() && fs::exists(primary)) {
+        return primary;
+    }
+    return {};
+}
+
 struct NemotronApi {
     using model_create_from_file_fn = decltype(&gptoss_model_create_from_file);
     using model_get_tokenizer_fn = decltype(&gptoss_model_get_tokenizer);
@@ -600,11 +615,11 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
         }
     }
 
-    const fs::path model_bin = resolve_nemotron_directml_model_bin(*model_dir);
-    if (model_bin.empty()) {
+    const fs::path model_file = resolve_nemotron_directml_model_file(descriptor);
+    if (model_file.empty()) {
         result.success = false;
         result.error_message =
-            "nemotron DirectML model artifact not found (expected model.directml.bin or model.dml.bin)";
+            "nemotron DirectML model artifact not found (expected model.directml.bin, model.dml.bin, or safetensors)";
         result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
@@ -620,7 +635,7 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
     }
 
     gptoss_model_t model = nullptr;
-    enum gptoss_status status = api->model_create_from_file(model_bin.string().c_str(), &model);
+    enum gptoss_status status = api->model_create_from_file(model_file.string().c_str(), &model);
     if (status != gptoss_status_success || model == nullptr) {
         result.success = false;
         result.error_message = "nemotron model_create_from_file failed: status=" + std::to_string(status);
@@ -647,7 +662,7 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
     }
 
     auto lm = std::make_shared<LoadedModel>();
-    lm->model_path = model_bin.string();
+    lm->model_path = model_file.string();
     lm->api = api;
     lm->model = model;
     lm->tokenizer = tokenizer;
@@ -1044,12 +1059,12 @@ uint64_t NemotronEngine::getModelVramBytes(const ModelDescriptor&) const {
         return 0;
     }
     const fs::path model_dir(descriptor.model_dir);
-    const fs::path model_bin = resolve_nemotron_directml_model_bin(model_dir);
-    if (model_bin.empty()) {
+    const fs::path model_file = resolve_nemotron_directml_model_file(descriptor);
+    if (model_file.empty()) {
         return 0;
     }
     std::error_code ec;
-    auto size = fs::file_size(model_bin, ec);
+    auto size = fs::file_size(model_file, ec);
     if (ec) {
         return 0;
     }

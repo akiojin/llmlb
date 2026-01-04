@@ -1346,6 +1346,7 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
 #if defined(_WIN32)
         if (fs::exists(model_dir / "model.directml.bin")) return true;
         if (fs::exists(model_dir / "model.dml.bin")) return true;
+        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
         return false;
 #elif defined(__APPLE__)
         if (fs::exists(model_dir / "model.metal.bin")) return true;
@@ -1366,6 +1367,7 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
         if (model_dir.empty()) return false;
         if (fs::exists(model_dir / "model.directml.bin")) return true;
         if (fs::exists(model_dir / "model.dml.bin")) return true;
+        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
         return false;
 #elif defined(USE_CUDA)
         return true;

@@ -146,6 +146,10 @@ TEST(GptOssEngineTest, GeneratesTextWhenGpuArtifactsPresent) {
     const auto& desc = *desc_opt;
 
 #if defined(_WIN32)
+    const char* enable_dml = std::getenv("LLM_NODE_GPTOSS_DML_INFERENCE");
+    if (!enable_dml || std::string(enable_dml) != "1") {
+        GTEST_SKIP() << "DirectML inference runtime is not enabled";
+    }
     if (!fs::exists(fs::path(desc.model_dir) / "model.directml.bin") &&
         !fs::exists(fs::path(desc.model_dir) / "model.dml.bin")) {
         GTEST_SKIP() << "DirectML artifact not found in model dir";

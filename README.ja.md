@@ -380,10 +380,9 @@ Router (OpenAI-compatible)
     - シャーディングされている場合は `.index.json` が必要です。
     - gpt-oss は公式GPUアーティファクトを優先します:
       `model.metal.bin`（Metal）/ `model.directml.bin` または `model.dml.bin`（DirectML）。
-    - Windows（DirectML）は `gptoss_directml.dll` が必要です。
-      - モデル配下に配置（例: `<model_dir>/gptoss_directml.dll`）するか、
-      - `LLM_NODE_GPTOSS_DML_LIB` に絶対パスを指定してください。
-      - 本リポジトリの GitHub Releases から取得してください（Apache-2.0）。
+    - Windows?DirectML?? `gptoss_directml.dll`?Nemotron? `nemotron_directml.dll`????????
+      - Windows?????????DLL???????????: `<model_dir>/gptoss_directml.dll`?????
+      - `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???????????????
   - ルーターは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。

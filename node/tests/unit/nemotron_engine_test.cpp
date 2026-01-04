@@ -167,7 +167,7 @@ TEST(NemotronEngineTest, DirectmlRuntimeMissingReportsError) {
 #endif
 }
 
-TEST(NemotronEngineTest, DirectmlArtifactMissingReportsError) {
+TEST(NemotronEngineTest, MissingPrimaryPathReportsError) {
 #if !defined(_WIN32)
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
@@ -177,7 +177,6 @@ TEST(NemotronEngineTest, DirectmlArtifactMissingReportsError) {
     auto model_dir = tmp.base / "nvidia" / "nemotron";
     fs::create_directories(model_dir);
     write_required_metadata(model_dir);
-    std::ofstream(model_dir / "model.safetensors") << "";
 
     llm_node::ModelDescriptor desc;
     desc.name = "nvidia/nemotron";
@@ -189,6 +188,6 @@ TEST(NemotronEngineTest, DirectmlArtifactMissingReportsError) {
     llm_node::NemotronEngine engine;
     auto result = engine.loadModel(desc);
     EXPECT_FALSE(result.success);
-    EXPECT_NE(result.error_message.find("model.directml.bin"), std::string::npos);
+    EXPECT_NE(result.error_message.find("Primary path not found"), std::string::npos);
 #endif
 }

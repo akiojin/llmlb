@@ -772,7 +772,7 @@ TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
 #endif
 }
 
-TEST(InferenceEngineTest, GptOssRequiresDirectmlArtifactToBeSupported) {
+TEST(InferenceEngineTest, GptOssSupportsSafetensorsOnDirectml) {
 #if !defined(_WIN32)
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
@@ -795,7 +795,7 @@ TEST(InferenceEngineTest, GptOssRequiresDirectmlArtifactToBeSupported) {
 
     EXPECT_FALSE(engine.isModelSupported(desc));
 
-    std::ofstream(model_dir / "model.directml.bin") << "cache";
+    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
     EXPECT_TRUE(engine.isModelSupported(desc));
 #endif
 }

@@ -346,6 +346,31 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
     target_link_libraries(gptoss_metal PRIVATE gptoss_log gptoss_metal_kernels)
 endif()
 
+# OpenAI gpt-oss DirectML runtime (Windows, built in-tree)
+if(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(gptoss_directml SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
+    )
+    target_include_directories(gptoss_directml
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
+    )
+    target_compile_definitions(gptoss_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
+    set_target_properties(gptoss_directml PROPERTIES OUTPUT_NAME "gptoss_directml")
+
+    add_library(nemotron_directml SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
+    )
+    target_include_directories(nemotron_directml
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
+    )
+    target_compile_definitions(nemotron_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
+    set_target_properties(nemotron_directml PROPERTIES OUTPUT_NAME "nemotron_directml")
+endif()
+
 # Utils library (config etc.)
 add_library(utils_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/config.cpp

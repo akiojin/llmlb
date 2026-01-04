@@ -1234,7 +1234,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
                         engine_id,
                         required,
                         budget);
-                    result.code = EngineErrorCode::kResourceExhausted;
+                    result.error_code = EngineErrorCode::kOomVram;
                     result.error_message = "Insufficient VRAM budget available";
                     return result;
                 }
@@ -1242,7 +1242,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         }
         if (vram_total_bytes > 0 && required > 0) {
             if (required > vram_available_bytes) {
-                result.code = EngineErrorCode::kResourceExhausted;
+                result.error_code = EngineErrorCode::kOomVram;
                 result.error_message = "Insufficient VRAM available";
                 return result;
             }

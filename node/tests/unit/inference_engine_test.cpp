@@ -128,7 +128,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -178,7 +178,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -231,7 +231,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -285,7 +285,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -516,7 +516,7 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramInsufficient) {
 
     auto result = engine.loadModel(model_name);
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kOomVram);
     EXPECT_NE(result.error_message.find("VRAM"), std::string::npos);
 }
 
@@ -559,7 +559,7 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramBudgetExceeded) {
 
     auto result = engine.loadModel(model_name);
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kOomVram);
     EXPECT_NE(result.error_message.find("budget"), std::string::npos);
 }
 

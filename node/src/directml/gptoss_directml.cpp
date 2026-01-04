@@ -215,7 +215,24 @@ bool build_dml_tensor_layout(const GptossModelHeader& header,
     return true;
 }
 
+bool validate_tensor_spec(const DmlTensorSpec& spec) {
+    if (spec.element_size == 0) return false;
+    if (spec.dims.empty()) return false;
+    for (auto dim : spec.dims) {
+        if (dim == 0) return false;
+    }
+    return true;
+}
+
 bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
+    if (layout.vocab_size == 0 ||
+        layout.embedding_dim == 0 ||
+        layout.context_length == 0 ||
+        layout.num_blocks == 0 ||
+        layout.num_kv_heads == 0 ||
+        layout.head_dim == 0) {
+        return false;
+    }
     DmlTensorSpec token_ids{{1}, sizeof(uint32_t)};
     DmlTensorSpec logits{{1, layout.vocab_size}, sizeof(float)};
     DmlTensorSpec kv_cache{
@@ -227,6 +244,18 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     graph.prefill_outputs = {logits, kv_cache};
     graph.decode_inputs = {token_ids, kv_cache};
     graph.decode_outputs = {logits, kv_cache};
+    for (const auto& spec : graph.prefill_inputs) {
+        if (!validate_tensor_spec(spec)) return false;
+    }
+    for (const auto& spec : graph.prefill_outputs) {
+        if (!validate_tensor_spec(spec)) return false;
+    }
+    for (const auto& spec : graph.decode_inputs) {
+        if (!validate_tensor_spec(spec)) return false;
+    }
+    for (const auto& spec : graph.decode_outputs) {
+        if (!validate_tensor_spec(spec)) return false;
+    }
     graph.initialized = false;
     return true;
 }

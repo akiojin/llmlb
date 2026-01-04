@@ -11,6 +11,7 @@ import {
   Zap,
   HardDrive,
   Hourglass,
+  MessageSquare,
 } from 'lucide-react'
 
 interface StatsCardsProps {
@@ -104,6 +105,16 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
       icon: <Activity className="h-5 w-5 text-chart-2" />,
       accentColor: 'chart-2',
       dataStat: 'total-requests',
+    },
+    {
+      title: 'Total Tokens',
+      value: stats ? formatNumber(stats.total_tokens) : '—',
+      subtitle: stats
+        ? `In: ${formatNumber(stats.total_input_tokens)} / Out: ${formatNumber(stats.total_output_tokens)}`
+        : undefined,
+      icon: <MessageSquare className="h-5 w-5 text-chart-5" />,
+      accentColor: 'chart-5',
+      dataStat: 'total-tokens',
     },
     {
       title: 'Active Requests',

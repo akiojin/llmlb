@@ -16,9 +16,7 @@ set(UNIT_TEST_SOURCES
     llama_manager_test.cpp
     model_pool_test.cpp
     model_loader_test.cpp
-    whisper_manager_test.cpp
     onnx_tts_manager_test.cpp
-    sd_manager_test.cpp
     watchdog_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
@@ -43,6 +41,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/request_watchdog.cpp
+    ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp
@@ -54,6 +53,15 @@ set(UNIT_TEST_SOURCES
     ../../src/core/sd_manager.cpp
     ../../src/runtime/state.cpp
 )
+
+# Add whisper tests only when whisper is enabled
+if(BUILD_WITH_WHISPER)
+    list(APPEND UNIT_TEST_SOURCES whisper_manager_test.cpp)
+endif()
+# Add sd tests only when sd is enabled
+if(BUILD_WITH_SD)
+    list(APPEND UNIT_TEST_SOURCES sd_manager_test.cpp)
+endif()
 
 # Use platform-specific gpu_detector source
 if(APPLE)
@@ -73,8 +81,6 @@ target_link_libraries(llm-node-unit-tests
         test_common
         llama
         mtmd
-        whisper
-        stable-diffusion
         common
         nlohmann_json::nlohmann_json
         utils_lib
@@ -82,6 +88,12 @@ target_link_libraries(llm-node-unit-tests
         OpenSSL::Crypto
 )
 
+if(BUILD_WITH_WHISPER)
+    target_link_libraries(llm-node-unit-tests PRIVATE whisper)
+endif()
+if(BUILD_WITH_SD)
+    target_link_libraries(llm-node-unit-tests PRIVATE stable-diffusion)
+endif()
 if(BUILD_WITH_ONNX)
     target_link_libraries(llm-node-unit-tests PRIVATE onnxruntime::onnxruntime)
 endif()

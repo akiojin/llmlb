@@ -17,6 +17,7 @@ set(CONTRACT_TEST_SOURCES
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/request_watchdog.cpp
+    ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp
     ../../src/core/llama_manager.cpp
     ../../src/api/router_client.cpp

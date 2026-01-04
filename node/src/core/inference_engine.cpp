@@ -6,6 +6,7 @@
 #include "core/llama_manager.h"
 #include "core/nemotron_engine.h"
 #include "core/request_watchdog.h"
+#include "core/token_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"
 #include "models/model_descriptor.h"
@@ -1235,11 +1236,31 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
+
+        // Token-to-token timeout watchdog
+        std::atomic<bool> token_timeout{false};
+        TokenWatchdog token_watchdog(TokenWatchdog::defaultTimeout(), [&token_timeout]() {
+            token_timeout.store(true);
+        });
+
+        // Wrap on_token callback to kick the watchdog on each token
+        auto wrapped_on_token = [&](const std::string& token) {
+            if (token_timeout.load()) {
+                throw std::runtime_error("Token generation timeout: no token received within timeout period");
+            }
+            token_watchdog.kick();
+            if (on_token) {
+                on_token(token);
+            }
+        };
+
         try {
-            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, on_token);
+            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, wrapped_on_token);
+            token_watchdog.stop();
             report_token_metrics(metrics, desc->name, "stream");
             return output;
         } catch (...) {
+            token_watchdog.stop();
             handlePluginCrash();
             throw;
         }

@@ -99,21 +99,25 @@ impl RequestHistoryStorage {
         };
         let completed_at = record.completed_at.to_rfc3339();
 
+        let input_tokens = record.input_tokens.map(|v| v as i64);
+        let output_tokens = record.output_tokens.map(|v| v as i64);
+        let total_tokens = record.total_tokens.map(|v| v as i64);
+
         let insert_sql = if ignore_conflicts {
             r#"
             INSERT OR IGNORE INTO request_history (
                 id, timestamp, request_type, model, node_id, node_machine_name,
                 node_ip, client_ip, request_body, response_body, duration_ms,
-                status, error_message, completed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, error_message, completed_at, input_tokens, output_tokens, total_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         } else {
             r#"
             INSERT INTO request_history (
                 id, timestamp, request_type, model, node_id, node_machine_name,
                 node_ip, client_ip, request_body, response_body, duration_ms,
-                status, error_message, completed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, error_message, completed_at, input_tokens, output_tokens, total_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         };
 
@@ -132,6 +136,9 @@ impl RequestHistoryStorage {
             .bind(&status)
             .bind(&error_message)
             .bind(&completed_at)
+            .bind(input_tokens)
+            .bind(output_tokens)
+            .bind(total_tokens)
             .execute(&self.pool)
             .await
             .map_err(|e| RouterError::Database(format!("Failed to save record: {}", e)))?;
@@ -364,6 +371,99 @@ impl RequestHistoryStorage {
         };
 
         result.map_err(|e| RouterError::Database(format!("Failed to query records: {}", e)))
+    }
+
+    /// トークン統計を取得（全体）
+    pub async fn get_token_statistics(&self) -> RouterResult<TokenStatistics> {
+        let row = sqlx::query_as::<_, TokenStatisticsRow>(
+            r#"
+            SELECT
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(total_tokens), 0) as total_tokens
+            FROM request_history
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| RouterError::Database(format!("Failed to get token statistics: {}", e)))?;
+
+        Ok(TokenStatistics {
+            total_input_tokens: row.total_input_tokens as u64,
+            total_output_tokens: row.total_output_tokens as u64,
+            total_tokens: row.total_tokens as u64,
+        })
+    }
+
+    /// トークン統計を取得（モデル別）
+    pub async fn get_token_statistics_by_model(&self) -> RouterResult<Vec<ModelTokenStatistics>> {
+        let rows = sqlx::query_as::<_, ModelTokenStatisticsRow>(
+            r#"
+            SELECT
+                model,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COUNT(*) as request_count
+            FROM request_history
+            GROUP BY model
+            ORDER BY total_tokens DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            RouterError::Database(format!("Failed to get token statistics by model: {}", e))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ModelTokenStatistics {
+                model: row.model,
+                total_input_tokens: row.total_input_tokens as u64,
+                total_output_tokens: row.total_output_tokens as u64,
+                total_tokens: row.total_tokens as u64,
+                request_count: row.request_count as u64,
+            })
+            .collect())
+    }
+
+    /// トークン統計を取得（ノード別）
+    pub async fn get_token_statistics_by_node(&self) -> RouterResult<Vec<NodeTokenStatistics>> {
+        let rows = sqlx::query_as::<_, NodeTokenStatisticsRow>(
+            r#"
+            SELECT
+                node_id,
+                node_machine_name,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COUNT(*) as request_count
+            FROM request_history
+            GROUP BY node_id
+            ORDER BY total_tokens DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            RouterError::Database(format!("Failed to get token statistics by node: {}", e))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                let node_id = Uuid::parse_str(&row.node_id).ok()?;
+                Some(NodeTokenStatistics {
+                    node_id,
+                    node_machine_name: row.node_machine_name,
+                    total_input_tokens: row.total_input_tokens as u64,
+                    total_output_tokens: row.total_output_tokens as u64,
+                    total_tokens: row.total_tokens as u64,
+                    request_count: row.request_count as u64,
+                })
+            })
+            .collect())
     }
 }
 
@@ -598,6 +698,78 @@ pub struct FilteredRecords {
     pub per_page: usize,
 }
 
+/// トークン統計（全体）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TokenStatistics {
+    /// 入力トークン合計
+    pub total_input_tokens: u64,
+    /// 出力トークン合計
+    pub total_output_tokens: u64,
+    /// 総トークン合計
+    pub total_tokens: u64,
+}
+
+/// トークン統計（モデル別）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ModelTokenStatistics {
+    /// モデル名
+    pub model: String,
+    /// 入力トークン合計
+    pub total_input_tokens: u64,
+    /// 出力トークン合計
+    pub total_output_tokens: u64,
+    /// 総トークン合計
+    pub total_tokens: u64,
+    /// リクエスト数
+    pub request_count: u64,
+}
+
+/// トークン統計（ノード別）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NodeTokenStatistics {
+    /// ノードID
+    pub node_id: Uuid,
+    /// ノードマシン名
+    pub node_machine_name: String,
+    /// 入力トークン合計
+    pub total_input_tokens: u64,
+    /// 出力トークン合計
+    pub total_output_tokens: u64,
+    /// 総トークン合計
+    pub total_tokens: u64,
+    /// リクエスト数
+    pub request_count: u64,
+}
+
+/// SQLiteから取得したトークン統計行（全体）
+#[derive(sqlx::FromRow)]
+struct TokenStatisticsRow {
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+}
+
+/// SQLiteから取得したトークン統計行（モデル別）
+#[derive(sqlx::FromRow)]
+struct ModelTokenStatisticsRow {
+    model: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+    request_count: i64,
+}
+
+/// SQLiteから取得したトークン統計行（ノード別）
+#[derive(sqlx::FromRow)]
+struct NodeTokenStatisticsRow {
+    node_id: String,
+    node_machine_name: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+    request_count: i64,
+}
+
 /// 定期クリーンアップタスクを開始
 pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
     tokio::spawn(async move {
@@ -769,5 +941,134 @@ mod tests {
         assert!(migrated.exists());
 
         std::env::remove_var(LEGACY_DATA_DIR_ENV);
+    }
+
+    // T-6: request_historyテーブルへのトークン保存テスト
+    #[tokio::test]
+    async fn test_save_and_load_record_with_tokens() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.input_tokens = Some(100);
+        record.output_tokens = Some(50);
+        record.total_tokens = Some(150);
+
+        storage.save_record(&record).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].input_tokens, Some(100));
+        assert_eq!(loaded[0].output_tokens, Some(50));
+        assert_eq!(loaded[0].total_tokens, Some(150));
+    }
+
+    #[tokio::test]
+    async fn test_save_and_load_record_with_partial_tokens() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.input_tokens = Some(100);
+        // output_tokens と total_tokens は None
+
+        storage.save_record(&record).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].input_tokens, Some(100));
+        assert_eq!(loaded[0].output_tokens, None);
+        assert_eq!(loaded[0].total_tokens, None);
+    }
+
+    // T-7: トークン集計クエリテスト（累計/日次/月次）
+    #[tokio::test]
+    async fn test_token_aggregation_total() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        // 複数レコードを作成
+        for i in 0..3 {
+            let mut record = create_test_record(Utc::now() - Duration::seconds(i));
+            record.id = Uuid::new_v4();
+            record.input_tokens = Some(100);
+            record.output_tokens = Some(50);
+            record.total_tokens = Some(150);
+            storage.save_record(&record).await.unwrap();
+        }
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 300);
+        assert_eq!(stats.total_output_tokens, 150);
+        assert_eq!(stats.total_tokens, 450);
+    }
+
+    #[tokio::test]
+    async fn test_token_aggregation_by_model() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        // モデルAのレコード
+        let mut record_a = create_test_record(Utc::now());
+        record_a.model = "model-a".to_string();
+        record_a.input_tokens = Some(100);
+        record_a.output_tokens = Some(50);
+        record_a.total_tokens = Some(150);
+        storage.save_record(&record_a).await.unwrap();
+
+        // モデルBのレコード
+        let mut record_b = create_test_record(Utc::now());
+        record_b.id = Uuid::new_v4();
+        record_b.model = "model-b".to_string();
+        record_b.input_tokens = Some(200);
+        record_b.output_tokens = Some(100);
+        record_b.total_tokens = Some(300);
+        storage.save_record(&record_b).await.unwrap();
+
+        let stats = storage.get_token_statistics_by_model().await.unwrap();
+        assert_eq!(stats.len(), 2);
+
+        let model_a_stats = stats.iter().find(|s| s.model == "model-a").unwrap();
+        assert_eq!(model_a_stats.total_input_tokens, 100);
+        assert_eq!(model_a_stats.total_output_tokens, 50);
+
+        let model_b_stats = stats.iter().find(|s| s.model == "model-b").unwrap();
+        assert_eq!(model_b_stats.total_input_tokens, 200);
+        assert_eq!(model_b_stats.total_output_tokens, 100);
+    }
+
+    #[tokio::test]
+    async fn test_token_aggregation_by_node() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let node_id_1 = Uuid::new_v4();
+        let node_id_2 = Uuid::new_v4();
+
+        // ノード1のレコード
+        let mut record_1 = create_test_record(Utc::now());
+        record_1.node_id = node_id_1;
+        record_1.input_tokens = Some(100);
+        record_1.output_tokens = Some(50);
+        record_1.total_tokens = Some(150);
+        storage.save_record(&record_1).await.unwrap();
+
+        // ノード2のレコード
+        let mut record_2 = create_test_record(Utc::now());
+        record_2.id = Uuid::new_v4();
+        record_2.node_id = node_id_2;
+        record_2.input_tokens = Some(200);
+        record_2.output_tokens = Some(100);
+        record_2.total_tokens = Some(300);
+        storage.save_record(&record_2).await.unwrap();
+
+        let stats = storage.get_token_statistics_by_node().await.unwrap();
+        assert_eq!(stats.len(), 2);
+
+        let node_1_stats = stats.iter().find(|s| s.node_id == node_id_1).unwrap();
+        assert_eq!(node_1_stats.total_input_tokens, 100);
+
+        let node_2_stats = stats.iter().find(|s| s.node_id == node_id_2).unwrap();
+        assert_eq!(node_2_stats.total_input_tokens, 200);
     }
 }

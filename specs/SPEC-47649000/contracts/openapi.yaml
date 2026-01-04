@@ -1,0 +1,301 @@
+openapi: 3.0.3
+info:
+  title: LLM Router Model Metadata API
+  description: |
+    モデルメタデータ管理のAPI仕様。
+
+    モデル一覧取得、タグ検索、ソースフィルタリングを提供する。
+    SQLiteバックエンドにより高速な検索を実現。
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発サーバー
+
+paths:
+  /v0/models:
+    get:
+      summary: モデル一覧の取得（拡張版）
+      description: |
+        登録済みモデルの一覧を取得する。
+        タグやソースでのフィルタリングが可能。
+      operationId: listModelsExtended
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tag
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          description: タグによるフィルタ（複数指定でAND条件）
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [hf_safetensors, hf_gguf, hf_onnx, predefined]
+          description: ソースによるフィルタ
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: 名前による部分一致検索
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: ページネーション オフセット
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+          description: ページネーション 件数
+      responses:
+        '200':
+          description: モデル一覧
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsListResponse'
+
+  /v1/models:
+    get:
+      summary: モデル一覧の取得（OpenAI互換）
+      description: |
+        OpenAI API互換のモデル一覧取得。
+        後方互換性のため、フィルタ機能は限定的。
+      operationId: listModels
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: モデル一覧
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIModelsResponse'
+
+  /v0/models/{model_id}:
+    get:
+      summary: モデル詳細の取得
+      description: 特定モデルの詳細情報を取得する。
+      operationId: getModel
+      tags:
+        - Models
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: モデルID
+      responses:
+        '200':
+          description: モデル詳細
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelDetail'
+        '404':
+          description: モデルが見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/tags:
+    get:
+      summary: 利用可能タグ一覧の取得
+      description: システムに登録されているすべてのタグを取得する。
+      operationId: listTags
+      tags:
+        - Tags
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: タグ一覧
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagsResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    ModelsListResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelSummary'
+        total:
+          type: integer
+          description: 総件数
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    ModelSummary:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          description: モデルID
+        name:
+          type: string
+          description: モデル名
+        source:
+          type: string
+          enum: [hf_safetensors, hf_gguf, hf_onnx, predefined]
+          description: モデルソース
+        tags:
+          type: array
+          items:
+            type: string
+          description: タグ一覧
+        required_memory:
+          type: integer
+          description: 必要メモリ（バイト）
+      example:
+        id: "llama-3.2-1b"
+        name: "Llama 3.2 1B"
+        source: "hf_gguf"
+        tags: ["chat", "instruct"]
+        required_memory: 2147483648
+
+    ModelDetail:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        size:
+          type: integer
+          description: ファイルサイズ（バイト）
+        description:
+          type: string
+        required_memory:
+          type: integer
+        source:
+          type: string
+        path:
+          type: string
+        repo_id:
+          type: string
+          description: HuggingFace リポジトリID
+        tags:
+          type: array
+          items:
+            type: string
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artifact'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Artifact:
+      type: object
+      properties:
+        filename:
+          type: string
+        url:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+
+    OpenAIModelsResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenAIModel'
+
+    OpenAIModel:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [model]
+        owned_by:
+          type: string
+        permission:
+          type: array
+          items:
+            type: object
+
+    TagsResponse:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+          description: 利用可能タグ一覧
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: タグごとのモデル数
+      example:
+        tags: ["chat", "instruct", "vision", "tools", "embedding"]
+        counts:
+          chat: 15
+          instruct: 12
+          vision: 3
+          tools: 5
+          embedding: 4
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string

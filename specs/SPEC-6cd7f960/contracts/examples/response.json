@@ -1,0 +1,80 @@
+{
+  "models": [
+    {
+      "model": {
+        "id": "llama-3.2-1b",
+        "name": "LLaMA 3.2 1B",
+        "description": "Lightweight model for quick inference",
+        "repo": "bartowski/Llama-3.2-1B-Instruct-GGUF",
+        "recommended_filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "size_bytes": 800000000,
+        "required_memory_bytes": 1600000000,
+        "tags": ["chat", "instruct", "lightweight"],
+        "capabilities": ["TextGeneration"],
+        "quantization": "Q4_K_M",
+        "parameter_count": "1B",
+        "format": "Gguf",
+        "engine": "llama.cpp",
+        "platforms": ["Linux", "Windows", "MacOS"]
+      },
+      "status": "Available",
+      "hf_stats": {
+        "downloads": 50000,
+        "stars": 120,
+        "last_modified": "2024-12-01T00:00:00Z"
+      },
+      "available_nodes": 0
+    },
+    {
+      "model": {
+        "id": "qwen2.5-coder-7b",
+        "name": "Qwen2.5 Coder 7B",
+        "description": "Code generation model optimized for programming tasks",
+        "repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+        "recommended_filename": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+        "size_bytes": 4500000000,
+        "required_memory_bytes": 8000000000,
+        "tags": ["code", "instruct", "programming"],
+        "capabilities": ["TextGeneration"],
+        "quantization": "Q4_K_M",
+        "parameter_count": "7B",
+        "format": "Gguf",
+        "engine": "llama.cpp",
+        "platforms": ["Linux", "Windows", "MacOS"]
+      },
+      "status": "Ready",
+      "hf_stats": {
+        "downloads": 25000,
+        "stars": 85,
+        "last_modified": "2024-11-15T00:00:00Z"
+      },
+      "available_nodes": 2
+    },
+    {
+      "model": {
+        "id": "llava-1.6-7b",
+        "name": "LLaVA 1.6 7B",
+        "description": "Vision-language model for image understanding",
+        "repo": "cjpais/llava-1.6-mistral-7b-gguf",
+        "recommended_filename": "llava-v1.6-mistral-7b.Q4_K_M.gguf",
+        "size_bytes": 4500000000,
+        "required_memory_bytes": 8000000000,
+        "tags": ["vision", "multimodal", "chat"],
+        "capabilities": ["TextGeneration", "ImageUnderstanding"],
+        "quantization": "Q4_K_M",
+        "parameter_count": "7B",
+        "format": "Gguf",
+        "engine": "llama.cpp",
+        "platforms": ["Linux", "Windows", "MacOS"]
+      },
+      "status": "Downloading",
+      "download_progress": 0.45,
+      "hf_stats": {
+        "downloads": 15000,
+        "stars": 60,
+        "last_modified": "2024-10-20T00:00:00Z"
+      },
+      "available_nodes": 0
+    }
+  ]
+}

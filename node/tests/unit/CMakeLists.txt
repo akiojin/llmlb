@@ -1,11 +1,15 @@
 set(UNIT_TEST_SOURCES
+    continuous_batch_scheduler_test.cpp
     gpu_detector_test.cpp
     router_client_test.cpp
     model_sync_test.cpp
     model_downloader_test.cpp
     model_storage_test.cpp
     inference_engine_test.cpp
+    llama_engine_kv_cache_test.cpp
+    gptoss_engine_test.cpp
     engine_registry_test.cpp
+    engine_host_test.cpp
     nemotron_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
@@ -15,10 +19,12 @@ set(UNIT_TEST_SOURCES
     whisper_manager_test.cpp
     onnx_tts_manager_test.cpp
     sd_manager_test.cpp
+    watchdog_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
     utils_utf8_test.cpp
     request_guard_test.cpp
+    resource_monitor_test.cpp
     cli_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp
@@ -30,10 +36,19 @@ set(UNIT_TEST_SOURCES
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
     ../../src/core/engine_registry.cpp
+    ../../src/core/engine_host.cpp
+    ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/request_watchdog.cpp
+    ../../src/core/vision_processor.cpp
+    ../../src/api/openai_endpoints.cpp
+    ../../src/api/node_endpoints.cpp
+    ../../src/api/http_server.cpp
+    ../../src/models/model_registry.cpp
+    ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/whisper_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp
@@ -43,8 +58,10 @@ set(UNIT_TEST_SOURCES
 # Use platform-specific gpu_detector source
 if(APPLE)
     list(APPEND UNIT_TEST_SOURCES ../../src/system/gpu_detector.mm)
+    list(APPEND UNIT_TEST_SOURCES ../../src/system/resource_monitor.mm)
 else()
     list(APPEND UNIT_TEST_SOURCES ../../src/system/gpu_detector.cpp)
+    list(APPEND UNIT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
 add_executable(llm-node-unit-tests
@@ -55,6 +72,7 @@ target_link_libraries(llm-node-unit-tests
     PRIVATE
         test_common
         llama
+        mtmd
         whisper
         stable-diffusion
         common
@@ -63,6 +81,10 @@ target_link_libraries(llm-node-unit-tests
         OpenSSL::SSL
         OpenSSL::Crypto
 )
+
+if(BUILD_WITH_ONNX)
+    target_link_libraries(llm-node-unit-tests PRIVATE onnxruntime::onnxruntime)
+endif()
 
 # Link Metal frameworks on macOS
 if(APPLE)
@@ -79,6 +101,10 @@ if(APPLE)
         target_link_options(llm-node-unit-tests PRIVATE
             LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
         )
+        target_include_directories(llm-node-unit-tests PRIVATE
+            ${GPTOSS_METAL_DIR}/include
+            ${GPTOSS_METAL_DIR}/source/include
+        )
     endif()
 endif()
 
@@ -92,6 +118,14 @@ target_compile_definitions(llm-node-unit-tests
     PRIVATE
         LLM_NODE_TESTING=1
 )
+
+# Ensure whisper/sd manager implementations are compiled in unit tests
+if(BUILD_WITH_WHISPER)
+    target_compile_definitions(llm-node-unit-tests PRIVATE USE_WHISPER=1)
+endif()
+if(BUILD_WITH_SD)
+    target_compile_definitions(llm-node-unit-tests PRIVATE USE_SD=1)
+endif()
 
 add_test(
     NAME llm-node-unit-tests

@@ -1,0 +1,19 @@
+{
+  "node_id": "node-1",
+  "gpu_metrics": {
+    "usage": 45.5,
+    "vram_usage": 78.2,
+    "temperature": 65.0,
+    "vram_used_mb": 18000,
+    "vram_total_mb": 24000
+  },
+  "system_metrics": {
+    "cpu_usage": 30.0,
+    "memory_usage": 50.0
+  },
+  "active_requests": 2,
+  "loaded_models": [
+    "llama-3.2-1b",
+    "all-minilm-l6-v2"
+  ]
+}

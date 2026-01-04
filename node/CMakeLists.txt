@@ -20,13 +20,23 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Options
+option(PORTABLE_BUILD "Build with portable CPU flags for CI/cross-platform compatibility" OFF)
+
 # Compiler flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         add_compile_options(-g -O0)
     else()
-        add_compile_options(-O3 -march=native)
+        add_compile_options(-O3)
+        if(PORTABLE_BUILD)
+            # Use baseline x86-64 for maximum compatibility
+            add_compile_options(-march=x86-64 -mtune=generic)
+        else()
+            # Optimize for the build machine's CPU
+            add_compile_options(-march=native)
+        endif()
     endif()
 elseif(MSVC)
     # Enable UTF-8 source and execution charset for Japanese comments
@@ -39,10 +49,14 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_WITH_CUDA "Build with CUDA support" OFF)
 if(APPLE)
     option(BUILD_WITH_METAL "Build with Metal support (macOS)" ON)
+    option(BUILD_WITH_SD_METAL "Build stable-diffusion with Metal backend (macOS)" ON)
 else()
     option(BUILD_WITH_METAL "Build with Metal support (macOS)" OFF)
+    option(BUILD_WITH_SD_METAL "Build stable-diffusion with Metal backend (macOS)" OFF)
 endif()
 if(APPLE AND BUILD_WITH_METAL)
+    option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" ON)
+elseif(WIN32)
     option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" ON)
 else()
     option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" OFF)
@@ -87,6 +101,11 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/llama.cpp)
+
+# mtmd requires LLAMA_INSTALL_VERSION which is scoped to llama.cpp subdirectory
+# Define it here so mtmd can build correctly when added separately
+set(LLAMA_INSTALL_VERSION "0.0.0" CACHE STRING "llama.cpp install version for mtmd" FORCE)
+add_subdirectory(third_party/llama.cpp/tools/mtmd EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/nlohmann-json)
 
 # whisper.cpp for ASR (Speech-to-Text)
@@ -115,7 +134,7 @@ if(BUILD_WITH_SD)
     set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     # stable-diffusion.cpp uses its own ggml, configure it to use system ggml if possible
     # For now, let it build its own to avoid version conflicts
-    if(APPLE AND BUILD_WITH_METAL)
+    if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_SD_METAL)
         set(SD_METAL ON CACHE BOOL "" FORCE)
     endif()
     if(BUILD_WITH_CUDA)
@@ -155,12 +174,18 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors-cpp
 )
 
-# OpenAI gpt-oss Metal backend (macOS)
-if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
-    include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
-    )
+# OpenAI gpt-oss headers
+if(BUILD_WITH_GPTOSS)
+    if(APPLE AND BUILD_WITH_METAL)
+        include_directories(
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
+        )
+    elseif(WIN32)
+        include_directories(
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+        )
+    endif()
 endif()
 
 # whisper.cpp include directories
@@ -221,6 +246,11 @@ if(APPLE AND BUILD_WITH_METAL)
     endif()
 endif()
 
+# DirectML support (Windows)
+if(WIN32 AND BUILD_WITH_GPTOSS)
+    add_definitions(-DUSE_GPTOSS)
+endif()
+
 # ROCm support
 if(BUILD_WITH_ROCM)
     find_package(hip)
@@ -237,25 +267,31 @@ endif()
 # OpenAI gpt-oss Metal library (macOS only)
 if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
     set(GPTOSS_METAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal)
+    if(NOT EXISTS "${GPTOSS_METAL_DIR}/source")
+        set(GPTOSS_METAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal)
+    endif()
+    if(NOT EXISTS "${GPTOSS_METAL_DIR}/source")
+        message(FATAL_ERROR "gpt-oss Metal sources not found: ${GPTOSS_METAL_DIR}/source")
+    endif()
     set(GPTOSS_METAL_LIB default.metallib)
 
     add_custom_command(
         OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/convert.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/embeddings.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/embeddings.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/expert_routing_metadata.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/expert_routing_metadata.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/matmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/matmul.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/moematmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/moematmul.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/gather_and_accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/gather_and_accumulate.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/random.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/random.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rmsnorm.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rmsnorm.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rope.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rope.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sample.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sample.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/scatter.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/scatter.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sdpa.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sdpa.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/topk.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/topk.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/convert.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/embeddings.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/embeddings.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/expert_routing_metadata.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/expert_routing_metadata.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/matmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/matmul.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/moematmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/moematmul.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/gather_and_accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/gather_and_accumulate.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/random.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/random.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rmsnorm.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rmsnorm.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rope.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rope.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sample.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sample.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/scatter.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/scatter.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sdpa.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sdpa.air"
+        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/topk.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/topk.air"
         COMMAND xcrun -sdk macosx metallib
                 "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
                 "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
@@ -295,7 +331,7 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
 
     add_library(gptoss_metal_kernels STATIC ${GPTOSS_METAL_DIR}/source/metal.m ${GPTOSS_METAL_DIR}/source/metal-kernels.c)
     target_link_libraries(gptoss_metal_kernels PRIVATE gptoss_log)
-    target_include_directories(gptoss_metal_kernels PRIVATE ${GPTOSS_METAL_DIR}/source/include)
+    target_include_directories(gptoss_metal_kernels PRIVATE ${GPTOSS_METAL_DIR}/include ${GPTOSS_METAL_DIR}/source/include)
     add_dependencies(gptoss_metal_kernels gptoss_build_metallib)
     if(IOKIT_FRAMEWORK)
         target_link_libraries(gptoss_metal_kernels PRIVATE ${IOKIT_FRAMEWORK})
@@ -323,6 +359,67 @@ add_library(utils_lib STATIC
 target_include_directories(utils_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 
+# Engine plugin: llama.cpp
+add_library(llm_engine_llama_cpp SHARED
+    ${CMAKE_CURRENT_SOURCE_DIR}/engines/llama_cpp/llama_engine_plugin.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_engine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_manager.cpp
+)
+target_include_directories(llm_engine_llama_cpp
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
+)
+target_link_libraries(llm_engine_llama_cpp
+    PRIVATE
+        llama
+        spdlog::spdlog_header_only
+)
+set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
+
+# Engine plugin: gpt-oss
+if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_gptoss SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
+    )
+    target_include_directories(llm_engine_gptoss
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${GPTOSS_METAL_DIR}/include
+            ${GPTOSS_METAL_DIR}/source/include
+    )
+    target_link_libraries(llm_engine_gptoss
+        PRIVATE
+            gptoss_metal
+            spdlog::spdlog_header_only
+    )
+    add_dependencies(llm_engine_gptoss gptoss_build_metallib)
+    target_link_options(llm_engine_gptoss PRIVATE
+        LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
+    )
+    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
+elseif(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_gptoss SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
+    )
+    target_include_directories(llm_engine_gptoss
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(llm_engine_gptoss
+        PRIVATE
+            spdlog::spdlog_header_only
+    )
+    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
+endif()
+
 # Collect source files
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
@@ -343,11 +440,14 @@ add_executable(llm-node ${SOURCES})
 target_link_libraries(llm-node PRIVATE
     llama
     common
+    mtmd
     utils_lib
     ${CMAKE_THREAD_LIBS_INIT}
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+
+target_compile_definitions(llm-node PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # CUDA support (llm-node)
 if(BUILD_WITH_CUDA AND CUDAToolkit_FOUND)

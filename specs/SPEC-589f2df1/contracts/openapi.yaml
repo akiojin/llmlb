@@ -1,0 +1,221 @@
+openapi: 3.0.3
+info:
+  title: LLM Router Load Balancing API
+  description: |
+    ロードバランシングシステムのAPI仕様。
+
+    ノードの負荷状況を取得し、メトリクスベースの
+    ノード選択を可能にする。
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発サーバー
+
+paths:
+  /v0/nodes:
+    get:
+      summary: ノード一覧と負荷状況の取得
+      description: 登録済みノードの一覧と現在の負荷状況を取得する。
+      operationId: listNodes
+      tags:
+        - Nodes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ノード一覧
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeListResponse'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/nodes/{node_id}/metrics:
+    get:
+      summary: ノードメトリクスの取得
+      description: 特定ノードの詳細なメトリクスを取得する。
+      operationId: getNodeMetrics
+      tags:
+        - Nodes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ノードID
+      responses:
+        '200':
+          description: ノードメトリクス
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeMetricsResponse'
+        '404':
+          description: ノードが見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/load-balancer/stats:
+    get:
+      summary: ロードバランサー統計の取得
+      description: ロードバランサーの選択統計を取得する。
+      operationId: getLoadBalancerStats
+      tags:
+        - LoadBalancer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ロードバランサー統計
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadBalancerStats'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    NodeListResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeInfo'
+      example:
+        nodes:
+          - id: "node-1"
+            state: "online"
+            gpu_usage: 45.5
+            vram_usage: 78.2
+            active_requests: 2
+            capability_score: 2400
+          - id: "node-2"
+            state: "online"
+            gpu_usage: 20.0
+            vram_usage: 50.0
+            active_requests: 0
+            capability_score: 2400
+
+    NodeInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ノードID
+        state:
+          type: string
+          enum: [pending, registering, online, offline]
+          description: ノード状態
+        gpu_usage:
+          type: number
+          format: float
+          description: GPU使用率（%）
+        vram_usage:
+          type: number
+          format: float
+          description: VRAM使用率（%）
+        active_requests:
+          type: integer
+          description: 処理中リクエスト数
+        capability_score:
+          type: integer
+          description: GPU能力スコア（0-10000）
+        last_seen:
+          type: string
+          format: date-time
+          description: 最終ハートビート時刻
+
+    NodeMetricsResponse:
+      type: object
+      properties:
+        node_id:
+          type: string
+        gpu_usage:
+          type: number
+        vram_usage:
+          type: number
+        gpu_temperature:
+          type: number
+        active_requests:
+          type: integer
+        avg_response_time_ms:
+          type: number
+        cpu_usage:
+          type: number
+        memory_usage:
+          type: number
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricsPoint'
+
+    MetricsPoint:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        gpu_usage:
+          type: number
+        vram_usage:
+          type: number
+        active_requests:
+          type: integer
+
+    LoadBalancerStats:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [metrics, round_robin]
+          description: 現在のモード
+        total_selections:
+          type: integer
+          description: 累計選択回数
+        selections_by_node:
+          type: object
+          additionalProperties:
+            type: integer
+          description: ノード別選択回数
+        selections_by_reason:
+          type: object
+          additionalProperties:
+            type: integer
+          description: 理由別選択回数
+        avg_selection_time_ms:
+          type: number
+          description: 平均選択時間（ms）
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string

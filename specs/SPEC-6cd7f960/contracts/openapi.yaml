@@ -1,0 +1,445 @@
+openapi: 3.0.3
+info:
+  title: Supported Model List Management API
+  description: |
+    対応モデルリスト型管理のAPI仕様。
+    静的に定義された対応モデル一覧の取得、モデル登録（Pull開始）、
+    リアルタイム状態更新のWebSocket接続を提供する。
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /v0/models:
+    get:
+      summary: 対応モデル一覧を取得
+      description: |
+        supported_models.jsonに定義された全モデルと、
+        各モデルの現在の状態（Available/Registered/Downloading/Ready/Error）を返す。
+        HuggingFace統計情報（ダウンロード数、スター数）も含まれる。
+      operationId: listModels
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: 状態でフィルタリング
+          required: false
+          schema:
+            $ref: '#/components/schemas/ModelStatus'
+        - name: capability
+          in: query
+          description: 機能でフィルタリング
+          required: false
+          schema:
+            $ref: '#/components/schemas/ModelCapability'
+        - name: tag
+          in: query
+          description: タグでフィルタリング
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: モデル一覧
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v0/models/register:
+    post:
+      summary: モデルを登録（Pull開始）
+      description: |
+        指定されたモデルIDを登録し、ノードへのダウンロードを開始する。
+        モデルIDはsupported_models.jsonに存在する必要がある。
+      operationId: registerModel
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelRegisterRequest'
+      responses:
+        '202':
+          description: 登録受付
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRegisterResponse'
+        '400':
+          description: 無効なリクエスト（未対応モデル）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 既に登録済み
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v0/models/{model_id}:
+    get:
+      summary: モデル詳細を取得
+      description: 指定されたモデルの詳細情報と状態を返す。
+      operationId: getModel
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: モデル詳細
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelWithStatus'
+        '404':
+          description: モデルが見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: モデルを削除
+      description: 登録済みモデルを削除し、ノードからファイルを削除する。
+      operationId: deleteModel
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 削除成功
+        '404':
+          description: モデルが見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ws/models:
+    get:
+      summary: モデル状態WebSocket
+      description: |
+        モデル状態の変更をリアルタイムで受信するWebSocket接続。
+        ModelStatusChanged, NodeStatusChanged, MetricsUpdatedイベントを配信。
+      operationId: modelWebSocket
+      responses:
+        '101':
+          description: WebSocket接続確立
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+
+  schemas:
+    ModelListResponse:
+      type: object
+      required:
+        - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelWithStatus'
+
+    ModelWithStatus:
+      type: object
+      required:
+        - model
+        - status
+        - available_nodes
+      properties:
+        model:
+          $ref: '#/components/schemas/SupportedModel'
+        status:
+          $ref: '#/components/schemas/ModelStatus'
+        hf_stats:
+          $ref: '#/components/schemas/HfStats'
+        download_progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: ダウンロード進捗（0.0〜1.0）
+        available_nodes:
+          type: integer
+          description: このモデルが利用可能なノード数
+
+    SupportedModel:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - repo
+        - recommended_filename
+        - size_bytes
+        - required_memory_bytes
+        - tags
+        - capabilities
+        - quantization
+        - parameter_count
+        - format
+        - engine
+        - platforms
+      properties:
+        id:
+          type: string
+          description: モデル識別子
+          example: llama-3.2-1b
+        name:
+          type: string
+          description: 表示名
+          example: LLaMA 3.2 1B
+        description:
+          type: string
+          description: 説明文
+        repo:
+          type: string
+          description: HuggingFaceリポジトリID
+          example: bartowski/Llama-3.2-1B-Instruct-GGUF
+        recommended_filename:
+          type: string
+          description: 推奨ファイル名
+        size_bytes:
+          type: integer
+          format: int64
+          description: ファイルサイズ（バイト）
+        required_memory_bytes:
+          type: integer
+          format: int64
+          description: 必要VRAMサイズ（バイト）
+        tags:
+          type: array
+          items:
+            type: string
+          description: タグ一覧
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelCapability'
+        quantization:
+          type: string
+          description: 量子化形式
+          example: Q4_K_M
+        parameter_count:
+          type: string
+          description: パラメータ数
+          example: 7B
+        format:
+          $ref: '#/components/schemas/ModelFormat'
+        engine:
+          type: string
+          description: 対応エンジン
+          example: llama.cpp
+        platforms:
+          type: array
+          items:
+            $ref: '#/components/schemas/Platform'
+
+    ModelStatus:
+      type: string
+      enum:
+        - Available
+        - Registered
+        - Downloading
+        - Ready
+        - Error
+      description: |
+        - Available: Hub上で利用可能（未ダウンロード）
+        - Registered: 登録済み（ダウンロード待ち）
+        - Downloading: ダウンロード中
+        - Ready: 利用可能（ダウンロード済み）
+        - Error: エラー状態
+
+    ModelCapability:
+      type: string
+      enum:
+        - TextGeneration
+        - ImageUnderstanding
+        - ImageGeneration
+        - SpeechToText
+        - TextToSpeech
+
+    ModelFormat:
+      type: string
+      enum:
+        - Gguf
+        - Safetensors
+        - PyTorch
+
+    Platform:
+      type: string
+      enum:
+        - Linux
+        - Windows
+        - MacOS
+
+    HfStats:
+      type: object
+      properties:
+        downloads:
+          type: integer
+          format: int64
+          description: ダウンロード数
+        stars:
+          type: integer
+          format: int64
+          description: スター数
+        last_modified:
+          type: string
+          format: date-time
+          description: 最終更新日時
+
+    ModelRegisterRequest:
+      type: object
+      required:
+        - model_id
+      properties:
+        model_id:
+          type: string
+          description: 登録するモデルID（supported_models.jsonから）
+          example: llama-3.2-1b
+
+    ModelRegisterResponse:
+      type: object
+      required:
+        - model_id
+        - status
+        - message
+      properties:
+        model_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/ModelStatus'
+        message:
+          type: string
+          example: Model registration started
+
+    WsEvent:
+      oneOf:
+        - $ref: '#/components/schemas/ModelStatusChangedEvent'
+        - $ref: '#/components/schemas/NodeStatusChangedEvent'
+        - $ref: '#/components/schemas/MetricsUpdatedEvent'
+
+    ModelStatusChangedEvent:
+      type: object
+      required:
+        - type
+        - model_id
+        - status
+      properties:
+        type:
+          type: string
+          enum:
+            - ModelStatusChanged
+        model_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/ModelStatus'
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    NodeStatusChangedEvent:
+      type: object
+      required:
+        - type
+        - node_id
+        - status
+      properties:
+        type:
+          type: string
+          enum:
+            - NodeStatusChanged
+        node_id:
+          type: string
+        status:
+          type: string
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              model_id:
+                type: string
+              lifecycle_status:
+                type: string
+
+    MetricsUpdatedEvent:
+      type: object
+      required:
+        - type
+        - node_id
+        - gpu_usage
+        - memory_usage
+        - request_count
+      properties:
+        type:
+          type: string
+          enum:
+            - MetricsUpdated
+        node_id:
+          type: string
+        gpu_usage:
+          type: number
+          format: float
+        memory_usage:
+          type: number
+          format: float
+        request_count:
+          type: integer
+          format: int64
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string

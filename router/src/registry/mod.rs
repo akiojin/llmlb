@@ -9,7 +9,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{RouterError, RouterResult},
     protocol::{RegisterRequest, RegisterResponse, RegisterStatus},
-    types::{GpuDeviceInfo, Node, NodeStatus},
+    types::{GpuDeviceInfo, Node, NodeStatus, SyncProgress, SyncState},
 };
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
@@ -192,6 +192,9 @@ impl NodeRegistry {
             node.node_api_port = Some(req.runtime_port + 1);
             node.initializing = true;
             node.ready_models = Some((0, 0));
+            node.sync_state = None;
+            node.sync_progress = None;
+            node.sync_updated_at = None;
             (id, RegisterStatus::Updated, node.clone())
         } else {
             // 新規ノードを登録
@@ -226,6 +229,9 @@ impl NodeRegistry {
                 node_api_port: Some(req.runtime_port + 1),
                 initializing: true,
                 ready_models: Some((0, 0)),
+                sync_state: None,
+                sync_progress: None,
+                sync_updated_at: None,
             };
             nodes.insert(node_id, node.clone());
             (node_id, RegisterStatus::Registered, node)
@@ -272,6 +278,8 @@ impl NodeRegistry {
         gpu_capability_score: Option<u32>,
         initializing: Option<bool>,
         ready_models: Option<(u8, u8)>,
+        sync_state: Option<SyncState>,
+        sync_progress: Option<SyncProgress>,
     ) -> RouterResult<()> {
         let node_to_save = {
             let mut nodes = self.nodes.write().await;
@@ -302,6 +310,11 @@ impl NodeRegistry {
             }
             if ready_models.is_some() {
                 node.ready_models = ready_models;
+            }
+            if sync_state.is_some() || sync_progress.is_some() {
+                node.sync_state = sync_state;
+                node.sync_progress = sync_progress;
+                node.sync_updated_at = Some(now);
             }
 
             // 状態遷移ロジック
@@ -559,7 +572,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -584,7 +597,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -610,7 +623,7 @@ mod tests {
             machine_name: "approve-ready".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -630,6 +643,8 @@ mod tests {
                 None,
                 Some(false),
                 Some((1, 1)),
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -649,7 +664,7 @@ mod tests {
             machine_name: "approve-not-ready".to_string(),
             ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -668,6 +683,8 @@ mod tests {
                 None,
                 Some(true),
                 Some((0, 1)),
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -685,7 +702,7 @@ mod tests {
             machine_name: "machine1".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -698,7 +715,7 @@ mod tests {
             machine_name: "machine2".to_string(),
             ip_address: "192.168.1.101".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -718,7 +735,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -741,7 +758,7 @@ mod tests {
             machine_name: "settings-machine".to_string(),
             ip_address: "192.168.1.150".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -777,7 +794,7 @@ mod tests {
                 machine_name: "delete-me".to_string(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -800,7 +817,7 @@ mod tests {
                 machine_name: "models".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -821,6 +838,8 @@ mod tests {
                     "phi-3".into(),
                 ]),
                 None, // loaded_embedding_models
+                None,
+                None,
                 None,
                 None,
                 None,

@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
 set -e
+
+if [ "${HUSKY:-}" = "0" ]; then
+  echo "HUSKY=0 is not allowed in this repo." >&2
+  exit 1
+fi
 
 # Try to limit tasks check to the current SPEC branch; otherwise skip tasks to avoid
 # unrelated specs blocking local commits. CI will still run its own gate.

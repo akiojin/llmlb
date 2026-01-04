@@ -6,7 +6,7 @@
 ## 前提条件
 
 - llm-router v1.6.0+ がインストール済み
-- ポート 8080 が利用可能
+- ポート 32768 が利用可能
 
 ## 1. 初回起動と管理者作成
 
@@ -17,6 +17,8 @@ export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD=secure123
 cargo run --bin router
 ```
+
+**補足**: デバッグビルドでは `admin` / `test` が固定で有効です。環境変数での管理者作成はリリースビルド向けです。
 
 または、起動スクリプトに記述：
 
@@ -42,12 +44,12 @@ cargo run --bin router
 パスワード: ********
 [INFO] 管理者ユーザー 'admin' を作成しました。
 [INFO] ルーターを起動しています...
-[INFO] サーバーがポート 8080 で起動しました
+[INFO] サーバーがポート 32768 で起動しました
 ```
 
 ## 2. ダッシュボードログイン
 
-1. ブラウザで [http://localhost:8080/dashboard](http://localhost:8080/dashboard) にアクセス
+1. ブラウザで [http://localhost:32768/dashboard](http://localhost:32768/dashboard) にアクセス
 2. ログイン画面が表示される
 3. 作成したユーザー名とパスワードを入力
 4. 「ログイン」ボタンをクリック
@@ -73,16 +75,16 @@ cargo run --bin router
 
 ```bash
 # ログインしてJWTトークンを取得
-JWT_TOKEN=$(curl -X POST http://localhost:8080/v0/auth/login \
+JWT_TOKEN=$(curl -X POST http://localhost:32768/v0/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"secure123"}' \
   | jq -r '.token')
 
 # APIキー発行
-API_KEY=$(curl -X POST http://localhost:8080/v0/api-keys \
+API_KEY=$(curl -X POST http://localhost:32768/v0/api-keys \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"my-chatbot"}' \
+  -d '{"name":"my-chatbot","scopes":["api:inference","node:register"]}' \
   | jq -r '.key')
 
 echo "発行されたAPIキー: $API_KEY"
@@ -94,7 +96,7 @@ echo "発行されたAPIキー: $API_KEY"
 
 ```bash
 # チャット補完API
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:32768/v1/chat/completions \
   -H "Authorization: Bearer sk_xxxxx..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -105,14 +107,14 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-**テスト検証**: レスポンスが正常に返ることを確認
+**テスト検証**: `200 OK`（ノード・モデルが登録済みの場合）、または `404 Not Found`（モデル未登録）/`503 Service Unavailable`（ノード未登録）のいずれかで、`401 Unauthorized` にならないことを確認
 
 ### デバッグビルド時（固定デバッグAPIキー）
 
 デバッグビルド（`debug_assertions`）では、固定のデバッグAPIキー `sk_debug` を利用できる。
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:32768/v1/chat/completions \
   -H "X-API-Key: sk_debug" \
   -H "Content-Type: application/json" \
   -d '{
@@ -126,7 +128,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 ### 無効なAPIキーでのアクセス（失敗テスト）
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:32768/v1/chat/completions \
   -H "Authorization: Bearer invalid_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -143,13 +145,13 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 
 ```bash
 # ログインしてJWTトークンを取得
-JWT_TOKEN=$(curl -X POST http://localhost:8080/v0/auth/login \
+JWT_TOKEN=$(curl -X POST http://localhost:32768/v0/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"secure123"}' \
   | jq -r '.token')
 
 # 新規ユーザー作成
-curl -X POST http://localhost:8080/v0/users \
+curl -X POST http://localhost:32768/v0/users \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -162,7 +164,7 @@ curl -X POST http://localhost:8080/v0/users \
 ### ユーザー一覧表示
 
 ```bash
-curl -X GET http://localhost:8080/v0/users \
+curl -X GET http://localhost:32768/v0/users \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -171,7 +173,7 @@ curl -X GET http://localhost:8080/v0/users \
 ### パスワード変更
 
 ```bash
-curl -X PUT http://localhost:8080/v0/users/{user_id} \
+curl -X PUT http://localhost:32768/v0/users/{user_id} \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"password": "new_password456"}'
@@ -183,13 +185,14 @@ curl -X PUT http://localhost:8080/v0/users/{user_id} \
 
 ```bash
 # ノード登録APIを呼び出す
-RESPONSE=$(curl -X POST http://localhost:8080/v0/nodes \
+RESPONSE=$(curl -X POST http://localhost:32768/v0/nodes \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "machine_name": "test-node",
     "ip_address": "192.168.1.100",
     "runtime_version": "0.1.0",
-    "runtime_port": 11434,
+    "runtime_port": 32768,
     "gpu_available": true,
     "gpu_devices": [{
       "model": "NVIDIA RTX 3090",
@@ -210,7 +213,7 @@ echo "ノードトークン: $NODE_TOKEN"
 
 ```bash
 # ノードトークンを使用してヘルスチェック（node_id 必須）
-curl -X POST http://localhost:8080/v0/health \
+curl -X POST http://localhost:32768/v0/health \
   -H "X-Node-Token: $NODE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -230,7 +233,7 @@ curl -X POST http://localhost:8080/v0/health \
 ### トークンなしでのアクセス（失敗テスト）
 
 ```bash
-curl -X POST http://localhost:8080/v0/health \
+curl -X POST http://localhost:32768/v0/health \
   -H "Content-Type: application/json" \
   -d '{
     "node_id": "'$NODE_ID'",
@@ -258,10 +261,10 @@ cargo run -p llm-router
 
 ```bash
 # 認証なしでAPIにアクセス
-curl -X GET http://localhost:8080/v0/nodes
+curl -X GET http://localhost:32768/v0/nodes
 
 # ダッシュボードにログインなしでアクセス可能
-open http://localhost:8080/dashboard
+open http://localhost:32768/dashboard
 ```
 
 **テスト検証**: 認証なしですべてのAPIとダッシュボードにアクセスできることを確認
@@ -288,7 +291,7 @@ cargo run -p llm-router
 **解決方法**: パスワードをリセット（管理者権限が必要）
 
 ```bash
-curl -X PUT http://localhost:8080/v0/users/{user_id} \
+curl -X PUT http://localhost:32768/v0/users/{user_id} \
   -H "Authorization: Bearer $ADMIN_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"password": "new_password"}'

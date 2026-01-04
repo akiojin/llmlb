@@ -1,9 +1,5 @@
 {
   "mcpServers": {
-    "context7": {
-      "type": "sse",
-      "url": "https://mcp.context7.com/sse"
-    },
     "markitdown": {
       "type": "stdio",
       "command": "uvx",
@@ -11,16 +7,12 @@
         "markitdown-mcp"
       ]
     },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@executeautomation/playwright-mcp-server"]
-    },
     "llm-router": {
       "type": "stdio",
       "command": "node",
       "args": ["./mcp-server/dist/index.js"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:51280",
         "LLM_ROUTER_OPENAPI_PATH": "./docs/openapi.yaml"
       }
     }

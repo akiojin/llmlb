@@ -9,6 +9,7 @@
 - 既存SPECを「詳細仕様」として参照し、重複/矛盾を排除する
 - 依存関係マトリクスを更新する
 - NemotronエンジンはTBDとして後回しにする
+- 内蔵エンジンはプラグイン形式（動的ロード）で統一する
 
 ## 更新対象
 - `specs/specs.md`（カテゴリ分割/依存関係）
@@ -22,7 +23,7 @@
 ## 矛盾/漏れ一覧（2025-12-24 時点）
 
 - **GPU対象範囲の不一致（対応済み）**  
-  - 決定事項: macOSはApple Siliconのみ、Linux/WindowsはCUDA、WSL2はGPU検出時のみ、Dockerは対象外。  
+  - 決定事項: macOSはApple Silicon/Metal、WindowsはDirectML、Linuxは非対応（CUDAは実験扱い）、WSL2は対象外。  
   - `SPEC-5cd7b614` は AMD/Intel を含む前提、Docker for Mac を含むため差分がある。
 - **モデルストレージ設計の古い前提（対応済み）**  
   - `SPEC-dcaeaec4/plan.md` に `metadata.json` の記載と GGUF中心のディレクトリ構造が残っている。
@@ -32,7 +33,7 @@
   - 決定事項: 自動変換は禁止。再取得（再ダウンロード）のみ。
 - **音声エンジンの不一致（対応済み）**  
   - `SPEC-26006000` / `SPEC-6c2d9f1e` が whisper.cpp/ONNX 前提。
-  - 決定事項: ASR/TTS ともに新エンジンへ置換、safetensors 直読が原則、Python依存なし。
+  - 決定事項: ASRはwhisper.cpp（GGUF運用）、TTSはONNX Runtime、Python依存なし。
 - **画像生成エンジンの不一致（対応済み / 要調査あり）**  
   - `SPEC-ae3f974e` が stable-diffusion.cpp + GGML/GGUF 前提。
   - 決定事項: safetensors を正本とし、GGUFは存在しない場合のみフォールバック。  

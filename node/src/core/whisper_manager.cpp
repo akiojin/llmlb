@@ -167,6 +167,18 @@ TranscriptionResult WhisperManager::transcribe(
     }
 
     whisper_full_params wparams = createParams(params);
+    if (!whisper_is_multilingual(ctx)) {
+        if (params.language.empty() || params.language == "auto") {
+            spdlog::info("Whisper model is English-only; forcing language to 'en'");
+            wparams.language = "en";
+            wparams.detect_language = false;
+        } else if (params.language != "en") {
+            spdlog::warn("Whisper model is English-only; overriding language '{}' to 'en'",
+                         params.language);
+            wparams.language = "en";
+            wparams.detect_language = false;
+        }
+    }
 
     spdlog::debug("Running whisper transcription on {} samples", audio_data.size());
 

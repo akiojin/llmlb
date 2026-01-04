@@ -135,7 +135,7 @@ Options:
   -V, --version  Print version information
 
 Environment Variables:
-  LLM_ROUTER_PORT              Server port (default: 8080)
+  LLM_ROUTER_PORT              Server port (default: 32768)
   LLM_ROUTER_HOST              Server host (default: 0.0.0.0)
   LLM_ROUTER_LOG_LEVEL         Log level (default: info)
   LLM_ROUTER_JWT_SECRET        JWT signing secret
@@ -209,8 +209,8 @@ Options:
   -V, --version  Print version information
 
 Environment Variables:
-  LLM_ROUTER_URL              Router URL (default: http://127.0.0.1:8080)
-  LLM_NODE_PORT               Node listen port (default: 11435)
+  LLM_ROUTER_URL              Router URL (default: http://127.0.0.1:32768)
+  LLM_NODE_PORT               Node listen port (default: 32769)
   LLM_NODE_LOG_LEVEL          Log level (default: info)
   LLM_NODE_MODELS_DIR         Model storage directory
 ```

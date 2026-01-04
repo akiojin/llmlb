@@ -6,11 +6,14 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include <unistd.h>
 
 #include "system/gpu_detector.h"
+#include "system/resource_monitor.h"
 #include "api/router_client.h"
 #include "models/model_sync.h"
+#include "models/model_resolver.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
 #include "core/llama_manager.h"
@@ -163,15 +166,59 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
+        // Resource monitoring (VRAM/RAM watermark + LRU unload)
+        llm_node::ResourceMonitor resource_monitor([&llama_manager]() {
+            if (llm_node::active_request_count() > 0) {
+                spdlog::info("Resource monitor: active requests in flight; skipping LRU unload");
+                return false;
+            }
+            auto lru = llama_manager.getLeastRecentlyUsedModel();
+            if (!lru.has_value()) {
+                return false;
+            }
+            spdlog::warn("Resource monitor: unloading LRU model {}", lru.value());
+            return llama_manager.unloadModel(lru.value());
+        });
+        resource_monitor.start();
+
         // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
         if (!cfg.router_api_key.empty()) {
             model_sync->setApiKey(cfg.router_api_key);
         }
         model_sync->setSupportedRuntimes(supported_runtimes);
+        if (!cfg.origin_allowlist.empty()) {
+            model_sync->setOriginAllowlist(cfg.origin_allowlist);
+        }
 
-        // Initialize inference engine with dependencies (pass model_sync for remote path resolution)
-        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get());
+        auto model_resolver = std::make_shared<llm_node::ModelResolver>(
+            cfg.models_dir,
+            router_url,
+            cfg.router_api_key);
+        if (!cfg.origin_allowlist.empty()) {
+            model_resolver->setOriginAllowlist(cfg.origin_allowlist);
+        }
+        model_resolver->setSyncReporter(model_sync.get());
+
+        // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
+        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
+        if (!cfg.engine_plugins_dir.empty() && std::filesystem::exists(cfg.engine_plugins_dir)) {
+            std::string plugin_error;
+            if (!engine.loadEnginePlugins(cfg.engine_plugins_dir, plugin_error)) {
+                spdlog::warn("Engine plugins load failed: {}", plugin_error);
+            } else {
+                spdlog::info("Engine plugins loaded from {}", cfg.engine_plugins_dir);
+            }
+        }
+        engine.setPluginRestartPolicy(
+            std::chrono::seconds(cfg.plugin_restart_interval_sec),
+            cfg.plugin_restart_request_limit);
+        if (cfg.plugin_restart_interval_sec > 0 || cfg.plugin_restart_request_limit > 0) {
+            spdlog::info(
+                "Engine plugin restart policy: interval={}s requests={}",
+                cfg.plugin_restart_interval_sec,
+                cfg.plugin_restart_request_limit);
+        }
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
@@ -183,10 +230,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
 #ifdef USE_ONNX_RUNTIME
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager, cfg);
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager);
         spdlog::info("Audio endpoints registered for ASR + TTS");
 #else
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, cfg);
+        llm_node::AudioEndpoints audio_endpoints(whisper_manager);
         spdlog::info("Audio endpoints registered for ASR");
 #endif
         audio_endpoints.registerRoutes(server.getServer());
@@ -194,7 +241,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
 #ifdef USE_SD
         // Register image endpoints for image generation
-        llm_node::ImageEndpoints image_endpoints(sd_manager, cfg);
+        llm_node::ImageEndpoints image_endpoints(sd_manager);
         image_endpoints.registerRoutes(server.getServer());
         spdlog::info("Image endpoints registered for image generation");
 #endif
@@ -291,7 +338,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Node IP address: {}", info.ip_address);
         info.runtime_version = "1.0.0";  // llm-node runtime version
         // Router calculates API port as runtime_port + 1, so report node_port - 1
-        info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 11434);
+        info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 32768);
         info.gpu_available = !gpu_devices.empty();
         info.gpu_devices = gpu_devices;
         if (!gpu_devices.empty()) {
@@ -351,6 +398,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         std::cout << "Starting heartbeat thread..." << std::endl;
         std::string node_token = reg.node_token;
         heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg,
+                                        model_sync,
                                         supported_runtimes
 #ifdef USE_WHISPER
                                         , &whisper_manager
@@ -358,6 +406,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_ONNX_RUNTIME
                                         , &tts_manager
 #endif
+                                        , &resource_monitor
                                         ]() {
             while (llm_node::is_running()) {
                 // 現在ロードされているモデルを取得
@@ -372,10 +421,49 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_ONNX_RUNTIME
                 loaded_tts_models = tts_manager.getLoadedModels();
 #endif
-                router.sendHeartbeat(node_id, node_token, std::nullopt, std::nullopt,
+                std::optional<llm_node::SyncStatusForRouter> sync_payload;
+                if (model_sync) {
+                    const auto status = model_sync->getStatus();
+                    auto state_to_string = [](llm_node::SyncState state) {
+                        switch (state) {
+                            case llm_node::SyncState::Idle:
+                                return std::string("idle");
+                            case llm_node::SyncState::Running:
+                                return std::string("running");
+                            case llm_node::SyncState::Success:
+                                return std::string("success");
+                            case llm_node::SyncState::Failed:
+                                return std::string("failed");
+                        }
+                        return std::string("idle");
+                    };
+                    llm_node::SyncStatusForRouter payload;
+                    payload.state = state_to_string(status.state);
+                    if (status.current_download.has_value()) {
+                        payload.progress = llm_node::SyncProgressForRouter{
+                            status.current_download->model_id,
+                            status.current_download->file,
+                            static_cast<uint64_t>(status.current_download->downloaded_bytes),
+                            static_cast<uint64_t>(status.current_download->total_bytes),
+                        };
+                    }
+                    sync_payload = payload;
+                }
+                std::optional<llm_node::HeartbeatMetrics> metrics;
+                const auto usage = resource_monitor.latestUsage();
+                if (usage.mem_total_bytes > 0 || usage.vram_total_bytes > 0) {
+                    llm_node::HeartbeatMetrics data;
+                    data.mem_used_bytes = usage.mem_used_bytes;
+                    data.mem_total_bytes = usage.mem_total_bytes;
+                    if (usage.vram_total_bytes > 0) {
+                        data.gpu_utilization = usage.vramUsageRatio() * 100.0;
+                    }
+                    metrics = data;
+                }
+                router.sendHeartbeat(node_id, node_token, std::nullopt, metrics,
                                      loaded_models, loaded_embedding_models,
                                      loaded_asr_models, loaded_tts_models,
-                                     supported_runtimes);
+                                     supported_runtimes, sync_payload);
                 std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
             }
         });
@@ -394,6 +482,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Cleanup
         std::cout << "Shutting down..." << std::endl;
         server.stop();
+        resource_monitor.stop();
         if (heartbeat_thread.joinable()) {
             heartbeat_thread.join();
         }

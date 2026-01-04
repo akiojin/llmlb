@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { type DashboardNode, type LogEntry, nodesApi, dashboardApi } from '@/lib/api'
-import { formatUptime, formatPercentage, formatRelativeTime, cn } from '@/lib/utils'
+import { formatUptime, formatPercentage, formatRelativeTime, formatBytes, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +33,7 @@ import {
   Cpu,
   HardDrive,
   Zap,
+  Download,
   Clock,
   Activity,
   Save,
@@ -145,6 +146,35 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
     gpu_usage: m.gpu_usage ?? undefined,
   }))
 
+  const syncBadgeVariant = (state?: DashboardNode['sync_state']) => {
+    switch (state) {
+      case 'running':
+        return 'warning'
+      case 'success':
+        return 'success'
+      case 'failed':
+        return 'destructive'
+      case 'idle':
+        return 'secondary'
+      default:
+        return 'outline'
+    }
+  }
+
+  const syncProgress = node.sync_progress
+  const syncPercent =
+    syncProgress && syncProgress.total_bytes > 0
+      ? Math.round((syncProgress.downloaded_bytes / syncProgress.total_bytes) * 100)
+      : null
+  const syncFallbackText =
+    node.sync_state === 'running'
+      ? 'Waiting for download'
+      : node.sync_state === 'success'
+      ? 'Sync complete'
+      : node.sync_state === 'failed'
+      ? 'Sync failed'
+      : 'No sync activity'
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden">
@@ -207,7 +237,7 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
               </div>
             </div>
 
-            <Separator />
+            {node.gpu_model ? <Separator /> : null}
 
             {/* GPU Info */}
             {node.gpu_model && (
@@ -244,6 +274,75 @@ export function NodeDetailModal({ node, open, onOpenChange }: NodeDetailModalPro
                 </div>
               </div>
             )}
+
+            <Separator />
+
+            {/* Model Sync */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Download className="h-4 w-4" />
+                Model Sync
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">State</p>
+                  {node.sync_state ? (
+                    <Badge
+                      variant={syncBadgeVariant(node.sync_state)}
+                      className="w-fit capitalize"
+                    >
+                      {node.sync_state}
+                    </Badge>
+                  ) : (
+                    <p className="text-sm">—</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Last Updated</p>
+                  <p className="text-sm">
+                    {formatRelativeTime(node.sync_updated_at)}
+                  </p>
+                </div>
+              </div>
+              {syncProgress ? (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-mono">
+                      {syncProgress.model_id}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {syncProgress.file}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-full rounded-full bg-muted">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all',
+                          syncPercent !== null && syncPercent > 80
+                            ? 'bg-destructive'
+                            : syncPercent !== null && syncPercent > 50
+                            ? 'bg-warning'
+                            : 'bg-success'
+                        )}
+                        style={{ width: `${syncPercent ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-xs">
+                      {syncPercent !== null ? `${syncPercent}%` : '—'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {formatBytes(syncProgress.downloaded_bytes)} /{' '}
+                    {formatBytes(syncProgress.total_bytes)}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {syncFallbackText}
+                </p>
+              )}
+            </div>
 
             {/* Ready Models */}
             {node.ready_models && node.ready_models.length > 0 && (

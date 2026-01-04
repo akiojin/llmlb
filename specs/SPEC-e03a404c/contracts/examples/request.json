@@ -1,0 +1,22 @@
+{
+  "model": "llava-1.6-7b",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "この画像に何が写っていますか？詳しく説明してください。"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://example.com/sample-image.jpg"
+          }
+        }
+      ]
+    }
+  ],
+  "max_tokens": 300,
+  "temperature": 0.7
+}

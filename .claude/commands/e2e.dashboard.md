@@ -56,11 +56,11 @@ MCP Playwrightツールを使用して、LLM Router DashboardのE2Eテストを�
 
 | ID | テスト内容 | セレクタ | 操作 |
 |---|----------|---------|------|
-| M-01 | URL入力フィールド | `#hf-register-url` | 存在確認 |
-| M-02 | 登録ボタン | `#hf-register-url-submit` | 存在確認 |
-| M-03 | 登録済みモデル一覧 | `#registered-models-list` | 内容確認 |
-| M-04 | Download Tasks | `#download-tasks-list` | 内容確認 |
-| M-05 | Convert Tasks | `#convert-tasks-list` | 内容確認 |
+| M-01 | Localタブ | `button[role="tab"]:has-text("Local")` | 存在確認・クリック |
+| M-02 | Model Hubタブ | `button[role="tab"]:has-text("Model Hub")` | 存在確認・クリック |
+| M-03 | ローカルモデル一覧 | `#local-models-list` | 内容確認 |
+| M-04 | Model Hubカード | `[data-testid="model-card"]` | 内容確認 |
+| M-05 | Pullボタン | `button:has-text("Pull")` | 存在確認・クリック |
 
 ### Phase 5: Nodes Tab テスト
 

@@ -111,6 +111,20 @@ pub fn get_default_embedding_model() -> String {
         .unwrap_or_else(|_| "nomic-embed-text-v1.5".to_string())
 }
 
+/// 認証無効化モードの有効/無効を取得
+///
+/// 環境変数 `AUTH_DISABLED` が `true/1/yes/on` のときに有効化する。
+pub fn is_auth_disabled() -> bool {
+    std::env::var("AUTH_DISABLED")
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,11 +190,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_env_with_fallback_parse() {
-        std::env::set_var("TEST_NEW_VAR6", "8080");
+        std::env::set_var("TEST_NEW_VAR6", "32768");
         std::env::remove_var("TEST_OLD_VAR6");
 
         let result: u16 = get_env_with_fallback_parse("TEST_NEW_VAR6", "TEST_OLD_VAR6", 3000);
-        assert_eq!(result, 8080);
+        assert_eq!(result, 32768);
 
         std::env::remove_var("TEST_NEW_VAR6");
     }

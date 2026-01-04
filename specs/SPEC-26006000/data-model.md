@@ -31,7 +31,7 @@ pub enum ModelType {
 - デフォルト値は `Llm`
 - シリアライズ時は小文字スネークケース
 
-### 2. RuntimeType (新規)
+### 2. RuntimeType (更新)
 
 **ファイル**: `common/src/types.rs`
 
@@ -41,14 +41,11 @@ pub enum ModelType {
 pub enum RuntimeType {
     /// llama.cpp (テキスト生成、Embedding)
     #[default]
-    #[serde(rename = "llama_cpp")]
     LlamaCpp,
-    /// Audio ASR engine (safetensors)
-    #[serde(rename = "audio_asr")]
-    AudioAsr,
-    /// Audio TTS engine (safetensors)
-    #[serde(rename = "audio_tts")]
-    AudioTts,
+    /// whisper.cpp (音声認識)
+    WhisperCpp,
+    /// ONNX Runtime (音声合成)
+    OnnxRuntime,
 }
 ```
 
@@ -58,8 +55,8 @@ pub enum RuntimeType {
 |-----------|-------------|
 | Llm | LlamaCpp |
 | Embedding | LlamaCpp |
-| SpeechToText | AudioAsr |
-| TextToSpeech | AudioTts |
+| SpeechToText | WhisperCpp |
+| TextToSpeech | OnnxRuntime |
 
 ### 3. RequestType (拡張)
 

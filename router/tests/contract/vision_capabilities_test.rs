@@ -13,7 +13,7 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
-    use llm_router::registry::models::{model_name_to_dir, router_models_dir, ModelInfo};
+    use llm_router::registry::models::ModelInfo;
     use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
 
@@ -31,9 +31,6 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
-        std::env::set_var("HOME", &temp_dir);
-        std::env::set_var("USERPROFILE", &temp_dir);
-
         llm_router::api::models::clear_registered_models();
 
         let registry = NodeRegistry::new();
@@ -48,17 +45,16 @@ mod common {
         let request_history = std::sync::Arc::new(
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         let state = AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool: db_pool.clone(),
             jwt_secret,
             http_client: reqwest::Client::new(),
             queue_config: llm_router::config::QueueConfig::from_env(),
+            event_bus: llm_router::events::create_shared_event_bus(),
         };
 
         let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
@@ -71,7 +67,7 @@ mod common {
             "test-key",
             user.id,
             None,
-            vec![ApiKeyScope::ApiInference],
+            vec![ApiKeyScope::Api],
         )
         .await
         .expect("create api key")
@@ -89,14 +85,7 @@ mod common {
     /// TDD RED: capabilities.image_understanding が実装されていないため、
     /// この関数が呼ばれても実際には capabilities は設定されない
     pub fn register_vision_model(name: &str) {
-        let base = router_models_dir().expect("router models dir should exist");
-        let model_dir = base.join(model_name_to_dir(name));
-        std::fs::create_dir_all(&model_dir).unwrap();
-        let model_path = model_dir.join("model.gguf");
-        std::fs::write(&model_path, b"GGUF").unwrap();
-
-        let mut model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
-        model.path = Some(model_path.to_string_lossy().to_string());
+        let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
         // TODO: Vision capability を設定する必要がある
         // model.capabilities.push(ModelCapability::ImageUnderstanding);
         llm_router::api::models::upsert_registered_model(model);
@@ -104,14 +93,7 @@ mod common {
 
     /// テスト用のテキストのみ対応モデルを登録する
     pub fn register_text_only_model(name: &str) {
-        let base = router_models_dir().expect("router models dir should exist");
-        let model_dir = base.join(model_name_to_dir(name));
-        std::fs::create_dir_all(&model_dir).unwrap();
-        let model_path = model_dir.join("model.gguf");
-        std::fs::write(&model_path, b"GGUF").unwrap();
-
-        let mut model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
-        model.path = Some(model_path.to_string_lossy().to_string());
+        let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
         // Vision capability なし
         llm_router::api::models::upsert_registered_model(model);
     }

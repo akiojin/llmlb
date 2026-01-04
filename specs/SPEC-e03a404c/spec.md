@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-e03a404c`
 **作成日**: 2025-12-24
-**ステータス**: 下書き
+**ステータス**: 実装待ち
 **入力**: ユーザー説明: "画像認識モデル対応（Image Understanding）- llm-routerにVisionモデル対応を追加し、画像を含むチャットリクエストを処理できるようにする。OpenAI Vision API互換のエンドポイント（/v1/chat/completions with images）を実装する。"
 
 ## 決定事項（共有用サマリ）

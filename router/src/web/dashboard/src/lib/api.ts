@@ -163,6 +163,15 @@ export interface DashboardStats {
   average_gpu_memory_usage: number
 }
 
+export type SyncState = 'idle' | 'running' | 'success' | 'failed'
+
+export interface SyncProgress {
+  model_id: string
+  file: string
+  downloaded_bytes: number
+  total_bytes: number
+}
+
 export interface DashboardNode {
   node_id: string
   machine_name: string
@@ -185,6 +194,9 @@ export interface DashboardNode {
   tags?: string[]
   notes?: string
   ready_models?: string[]
+  sync_state?: SyncState
+  sync_progress?: SyncProgress
+  sync_updated_at?: string
 }
 
 export interface RequestHistoryItem {
@@ -355,8 +367,13 @@ export interface OpenAIModel {
   lifecycle_status: LifecycleStatus
   download_progress?: DownloadProgress | null
   ready: boolean
-  path?: string
-  download_url?: string
+  repo?: string | null
+  filename?: string | null
+  size_bytes?: number
+  required_memory_bytes?: number
+  source?: string
+  tags?: string[]
+  description?: string
   chat_template?: string
 }
 
@@ -388,6 +405,7 @@ interface OpenAIModelsResponse {
 
 // 後方互換用: RegisteredModelView は OpenAIModel にマッピング
 export interface RegisteredModelView {
+  owned_by?: string // "router" | "openai" | "google" | "anthropic"
   name: string
   source?: string
   description?: string
@@ -395,33 +413,76 @@ export interface RegisteredModelView {
   lifecycle_status: LifecycleStatus
   download_progress?: DownloadProgress
   ready: boolean
-  path?: string
-  download_url?: string
   repo?: string
   filename?: string
   size_gb?: number
   required_memory_gb?: number
   tags: string[]
   capabilities?: ModelCapabilities
+  chat_template?: string
 }
 
 // OpenAIModel を RegisteredModelView に変換
 function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
+  const sizeGb =
+    typeof model.size_bytes === 'number' ? model.size_bytes / (1024 * 1024 * 1024) : undefined
+  const requiredGb =
+    typeof model.required_memory_bytes === 'number'
+      ? model.required_memory_bytes / (1024 * 1024 * 1024)
+      : undefined
   return {
     name: model.id,
+    owned_by: model.owned_by,
     lifecycle_status: model.lifecycle_status,
     download_progress: model.download_progress ?? undefined,
     ready: model.ready,
-    path: model.path,
-    download_url: model.download_url,
+    source: model.source,
+    description: model.description,
+    repo: model.repo ?? undefined,
+    filename: model.filename ?? undefined,
+    size_gb: sizeGb,
+    required_memory_gb: requiredGb,
     capabilities: model.capabilities,
-    tags: [],
+    tags: model.tags ?? [],
+    chat_template: model.chat_template,
   }
 }
 
 // NOTE: AvailableModelView, AvailableModelsResponse, ConvertTask は廃止
 // HFカタログは直接 https://huggingface.co を参照
 // ダウンロード状態は /v1/models の lifecycle_status で確認
+
+// SPEC-6cd7f960: 対応モデル定義
+export interface SupportedModel {
+  id: string
+  name: string
+  description: string
+  repo: string
+  recommended_filename: string
+  size_bytes: number
+  required_memory_bytes: number
+  tags: string[]
+  capabilities: string[]
+  quantization?: string
+  parameter_count?: string
+}
+
+// SPEC-6cd7f960: HuggingFace動的情報
+export interface HfInfo {
+  downloads?: number
+  likes?: number
+}
+
+// SPEC-6cd7f960: モデル状態
+export type ModelStatus = 'available' | 'downloading' | 'downloaded'
+
+// SPEC-6cd7f960: 対応モデル + 状態
+export interface ModelWithStatus extends SupportedModel {
+  status: ModelStatus
+  lifecycle_status?: LifecycleStatus
+  download_progress?: DownloadProgress | null
+  hf_info?: HfInfo
+}
 
 export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
@@ -444,13 +505,13 @@ export const modelsApi = {
     return json.data.map(toRegisteredModelView)
   },
 
-  // NOTE: getAvailable は廃止 - HFカタログは直接 https://huggingface.co を参照
+  getHub: () => fetchWithAuth<ModelWithStatus[]>('/v0/models/hub'),
 
   register: (data: {
     repo: string
-    format?: 'safetensors' | 'gguf'
     filename?: string
-    gguf_policy?: 'quality' | 'memory' | 'speed'
+    display_name?: string
+    chat_template?: string
   }) =>
     fetchWithAuth<unknown>('/v0/models/register', {
       method: 'POST',
@@ -468,12 +529,11 @@ export const modelsApi = {
       method: 'DELETE',
     }),
 
-  // NOTE: convert, getConvertTasks, getConvertTask, deleteConvertTask は廃止
   // ダウンロード状態は getRegistered の lifecycle_status で確認
 }
 
 // API Keys API
-export type ApiKeyScope = 'node:register' | 'api:inference' | 'admin:*'
+export type ApiKeyScope = 'node' | 'api' | 'admin'
 
 export interface ApiKey {
   id: string

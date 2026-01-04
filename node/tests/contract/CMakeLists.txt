@@ -8,16 +8,28 @@ set(CONTRACT_TEST_SOURCES
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
     ../../src/models/model_storage.cpp
+    ../../src/models/model_resolver.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/engine_registry.cpp
+    ../../src/core/engine_host.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/gptoss_engine.cpp
     ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/request_watchdog.cpp
+    ../../src/core/vision_processor.cpp
     ../../src/core/llama_manager.cpp
     ../../src/api/router_client.cpp
     ../../src/runtime/state.cpp
 )
+
+if(APPLE)
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/gpu_detector.mm)
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/resource_monitor.mm)
+else()
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/gpu_detector.cpp)
+    list(APPEND CONTRACT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
+endif()
 
 add_executable(llm-node-contract-tests
     ${CONTRACT_TEST_SOURCES}
@@ -27,6 +39,7 @@ target_link_libraries(llm-node-contract-tests
     PRIVATE
         test_common
         llama
+        mtmd
         common
         nlohmann_json::nlohmann_json
         utils_lib

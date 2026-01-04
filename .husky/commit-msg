@@ -1,4 +1,16 @@
 #!/usr/bin/env sh
+set -e
+
+if [ "${HUSKY:-}" = "0" ]; then
+  echo "HUSKY=0 is not allowed in this repo." >&2
+  exit 1
+fi
 
 # validate commit message before completing the commit
-commitlint --edit "$1"
+if command -v pnpm >/dev/null 2>&1; then
+  pnpm exec commitlint --edit "$1"
+elif command -v npx >/dev/null 2>&1; then
+  npx --no-install commitlint --edit "$1"
+else
+  commitlint --edit "$1"
+fi

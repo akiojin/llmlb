@@ -46,6 +46,7 @@ public:
         const ModelDescriptor& descriptor) const override;
 
     size_t getModelMaxContext(const ModelDescriptor& descriptor) const override;
+    uint64_t getModelVramBytes(const ModelDescriptor& descriptor) const override;
 
 private:
     struct LoadedModel;
@@ -56,7 +57,8 @@ private:
     std::string generateCompletion(const std::string& prompt,
                                    const ModelDescriptor& descriptor,
                                    const InferenceParams& params,
-                                   const std::vector<ChatMessage>* chat_messages) const;
+                                   const std::vector<ChatMessage>* chat_messages,
+                                   const std::function<void(const std::string&)>& on_token) const;
 
     mutable std::mutex mutex_;
     mutable std::unordered_map<std::string, std::shared_ptr<LoadedModel>> loaded_;

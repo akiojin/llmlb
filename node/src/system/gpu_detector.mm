@@ -32,6 +32,7 @@ std::vector<GpuDevice> GpuDetector::detect() {
         dev.id = 0;
         dev.name = "Apple GPU (Metal support not compiled)";
         dev.memory_bytes = 0;  // Unknown
+        dev.free_memory_bytes = 0;
         dev.compute_capability = "unknown";
         dev.vendor = "apple";
         dev.is_available = false;  // Not usable without Metal
@@ -94,6 +95,32 @@ double GpuDetector::getCapabilityScore() const {
     return score;
 }
 
+std::optional<int> GpuDetector::selectGpu(std::optional<int> prefer_loaded_gpu) const {
+    const GpuDevice* preferred = nullptr;
+    if (prefer_loaded_gpu.has_value()) {
+        for (const auto& dev : detected_devices_) {
+            if (dev.id == prefer_loaded_gpu.value() && dev.is_available) {
+                preferred = &dev;
+                break;
+            }
+        }
+    }
+    if (preferred) return preferred->id;
+
+    const GpuDevice* best = nullptr;
+    size_t best_free = 0;
+    for (const auto& dev : detected_devices_) {
+        if (!dev.is_available) continue;
+        const size_t free_bytes = dev.free_memory_bytes > 0 ? dev.free_memory_bytes : dev.memory_bytes;
+        if (!best || free_bytes > best_free) {
+            best = &dev;
+            best_free = free_bytes;
+        }
+    }
+    if (best) return best->id;
+    return std::nullopt;
+}
+
 std::vector<GpuDevice> GpuDetector::detectCuda() {
     // CUDA is not available on macOS
     return std::vector<GpuDevice>();
@@ -115,6 +142,13 @@ std::vector<GpuDevice> GpuDetector::detectMetal() {
 
             // Get recommended working set size (approximate available memory)
             dev.memory_bytes = [mtl_device recommendedMaxWorkingSetSize];
+            dev.free_memory_bytes = dev.memory_bytes;
+            if ([mtl_device respondsToSelector:@selector(currentAllocatedSize)]) {
+                const uint64_t used = static_cast<uint64_t>([mtl_device currentAllocatedSize]);
+                if (dev.memory_bytes >= used) {
+                    dev.free_memory_bytes = dev.memory_bytes - used;
+                }
+            }
 
             // Metal doesn't have compute capability like CUDA
             if ([mtl_device supportsFamily:MTLGPUFamilyMetal3]) {
@@ -130,6 +164,10 @@ std::vector<GpuDevice> GpuDetector::detectMetal() {
 
             devices.push_back(dev);
         }
+
+#if !__has_feature(objc_arc)
+        [metal_devices release];
+#endif
     }
 #endif
 

@@ -47,8 +47,11 @@ pub mod auth;
 /// CLIインターフェース
 pub mod cli;
 
-/// モデル変換タスク
-pub mod convert;
+/// 対応モデル定義
+pub mod supported_models;
+
+/// ダッシュボードイベントバス
+pub mod events;
 
 /// アプリケーション状態
 #[derive(Clone)]
@@ -59,8 +62,6 @@ pub struct AppState {
     pub load_manager: balancer::LoadManager,
     /// リクエスト履歴ストレージ
     pub request_history: std::sync::Arc<db::request_history::RequestHistoryStorage>,
-    /// 変換タスクマネージャー
-    pub convert_manager: convert::ConvertTaskManager,
     /// データベース接続プール
     pub db_pool: sqlx::SqlitePool,
     /// JWT秘密鍵
@@ -69,6 +70,8 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     /// リクエスト待機キュー設定
     pub queue_config: config::QueueConfig,
+    /// ダッシュボードイベントバス
+    pub event_bus: events::SharedEventBus,
 }
 
 #[cfg(test)]

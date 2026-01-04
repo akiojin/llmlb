@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: Model Capabilities API
+  version: 1.0.0
+  description: モデル capabilities 検証機能
+
+paths:
+  /v1/models:
+    get:
+      summary: モデル一覧を取得
+      description: 登録されているモデルとそのcapabilitiesを取得する
+      operationId: listModels
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsListResponse'
+
+components:
+  schemas:
+    ModelsListResponse:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelObject'
+
+    ModelObject:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - owned_by
+      properties:
+        id:
+          type: string
+          description: モデルID
+          example: llama-3.1-8b
+        object:
+          type: string
+          enum: [model]
+        created:
+          type: integer
+          description: 作成日時（Unix timestamp）
+          example: 1704067200
+        owned_by:
+          type: string
+          description: モデル所有者
+          example: local
+        capabilities:
+          type: array
+          description: モデルが対応するAPI機能
+          items:
+            $ref: '#/components/schemas/ModelCapability'
+          example: ["text_generation", "vision"]
+
+    ModelCapability:
+      type: string
+      enum:
+        - text_generation
+        - text_to_speech
+        - speech_to_text
+        - image_generation
+        - vision
+        - embedding
+      description: |
+        モデルが対応するAPI機能:
+        - text_generation: /v1/chat/completions, /v1/completions
+        - text_to_speech: /v1/audio/speech
+        - speech_to_text: /v1/audio/transcriptions
+        - image_generation: /v1/images/generations
+        - vision: /v1/chat/completions (with images)
+        - embedding: /v1/embeddings
+
+    CapabilityMismatchError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              description: エラーメッセージ
+              example: "Model 'llama-3.1-8b' does not support text-to-speech"
+            type:
+              type: string
+              enum: [invalid_request_error]
+            code:
+              type: string
+              enum: [model_capability_mismatch]

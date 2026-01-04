@@ -39,17 +39,16 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager, String) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry: registry.clone(),
         load_manager: load_manager.clone(),
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
     let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
     let admin_user =
@@ -61,7 +60,7 @@ async fn build_router() -> (Router, NodeRegistry, LoadManager, String) {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::AdminAll],
+        vec![ApiKeyScope::Admin],
     )
     .await
     .expect("create admin api key")
@@ -161,7 +160,7 @@ async fn dashboard_nodes_and_stats_reflect_registry() {
             machine_name: "node-smoke".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 42)),
             runtime_version: "0.1.0".into(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
@@ -258,7 +257,7 @@ async fn dashboard_request_history_tracks_activity() {
             machine_name: "history-node".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7)),
             runtime_version: "0.1.0".into(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
@@ -318,7 +317,7 @@ async fn dashboard_overview_returns_combined_payload() {
             machine_name: "overview-smoke".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9)),
             runtime_version: "0.1.0".into(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),
@@ -369,7 +368,7 @@ async fn dashboard_node_metrics_endpoint_returns_history() {
             machine_name: "metrics-endpoint".into(),
             ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
             runtime_version: "0.1.0".into(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices("Test GPU"),
             gpu_count: Some(1),

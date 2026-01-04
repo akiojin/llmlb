@@ -18,7 +18,7 @@ std::string getHelpMessage() {
     oss << "\n";
     oss << "ENVIRONMENT VARIABLES:\n";
     oss << "    LLM_NODE_MODELS_DIR          Model files directory (default: ~/.llm-router/models)\n";
-    oss << "    LLM_NODE_PORT                HTTP server port (default: 11435)\n";
+    oss << "    LLM_NODE_PORT                HTTP server port (default: 32769)\n";
     oss << "    LLM_NODE_HEARTBEAT_SECS      Heartbeat interval in seconds (default: 10)\n";
     // GPU必須。許可フラグは廃止。
     oss << "    LLM_NODE_BIND_ADDRESS        Bind address (default: 0.0.0.0)\n";
@@ -26,8 +26,8 @@ std::string getHelpMessage() {
     oss << "    LLM_NODE_LOG_LEVEL           Log level: trace, debug, info, warn, error (default: info)\n";
     oss << "    LLM_NODE_LOG_RETENTION_DAYS  Log retention days (default: 7)\n";
     oss << "\n";
-    oss << "    LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:8080)\n";
-    oss << "    LLM_NODE_API_KEY             API key for node registration/heartbeat (scope: node:register)\n";
+    oss << "    LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:32768)\n";
+    oss << "    LLM_NODE_API_KEY             API key for node registration/heartbeat (scope: node)\n";
     oss << "    LLM_NODE_IP                  Node IP address for registration (auto-detect)\n";
     oss << "    LLM_NODE_CONFIG              Path to config JSON file\n";
     oss << "\n";

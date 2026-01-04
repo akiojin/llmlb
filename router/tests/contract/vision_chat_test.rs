@@ -48,17 +48,16 @@ mod common {
         let request_history = std::sync::Arc::new(
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         let state = AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool: db_pool.clone(),
             jwt_secret,
             http_client: reqwest::Client::new(),
             queue_config: llm_router::config::QueueConfig::from_env(),
+            event_bus: llm_router::events::create_shared_event_bus(),
         };
 
         let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
@@ -71,7 +70,7 @@ mod common {
             "test-key",
             user.id,
             None,
-            vec![ApiKeyScope::ApiInference],
+            vec![ApiKeyScope::Api],
         )
         .await
         .expect("create api key")

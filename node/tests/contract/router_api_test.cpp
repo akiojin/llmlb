@@ -47,7 +47,7 @@ TEST_F(RouterContractFixture, RegisterNodeReturnsId) {
     info.machine_name = "test-host";
     info.ip_address = "127.0.0.1";
     info.runtime_version = "1.0.0";
-    info.runtime_port = 11434;
+    info.runtime_port = 32768;
     info.gpu_available = true;
     info.gpu_devices = {{.model = "Test GPU", .count = 1, .memory = 4ull * 1024 * 1024 * 1024}};
     info.supported_runtimes = {"llama_cpp"};

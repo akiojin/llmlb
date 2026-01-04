@@ -14,12 +14,13 @@
 
 #include "utils/config.h"
 #include "utils/file_lock.h"
+#include "utils/allowlist.h"
 #include "utils/url_encode.h"
 #include "models/model_storage.h"
 
 namespace {
 
-struct ParsedUrl {
+struct HttpUrl {
     std::string scheme;
     std::string host;
     int port{0};
@@ -198,10 +199,10 @@ private:
     Sha256Ctx ctx_;
 };
 
-ParsedUrl parseUrl(const std::string& url) {
+HttpUrl parseUrl(const std::string& url) {
     static const std::regex re(R"(^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/:]+)(?::(\d+))?(.*)$)");
     std::smatch match;
-    ParsedUrl parsed;
+    HttpUrl parsed;
     if (std::regex_match(url, match, re)) {
         parsed.scheme = match[1].str();
         parsed.host = match[2].str();
@@ -211,39 +212,58 @@ ParsedUrl parseUrl(const std::string& url) {
     return parsed;
 }
 
-std::unique_ptr<httplib::Client> makeClient(const ParsedUrl& url, std::chrono::milliseconds timeout) {
+std::optional<std::string> hfTokenForHost(const std::string& host) {
+    const char* token = std::getenv("HF_TOKEN");
+    if (!token || !*token) return std::nullopt;
+
+    const auto lower = llm_node::toLowerAscii(host);
+    if (lower == "huggingface.co" || llm_node::endsWith(lower, ".huggingface.co")) {
+        return std::string(token);
+    }
+
+    const char* base = std::getenv("HF_BASE_URL");
+    if (base && *base) {
+        HttpUrl parsed = parseUrl(base);
+        if (!parsed.host.empty()) {
+            const auto base_lower = llm_node::toLowerAscii(parsed.host);
+            if (lower == base_lower) {
+                return std::string(token);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::unique_ptr<httplib::Client> makeClient(const HttpUrl& url, std::chrono::milliseconds timeout) {
     if (url.scheme.empty() || url.host.empty()) {
         return nullptr;
     }
 
-    std::unique_ptr<httplib::Client> client;
-
-    const bool use_https = url.scheme == "https";
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    if (use_https) {
-        client = std::make_unique<httplib::SSLClient>(url.host, url.port);
-    }
-#else
-    if (use_https) {
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+    if (url.scheme == "https") {
         return nullptr;  // HTTPS is not supported in this build
     }
 #endif
 
-    if (!use_https) {
-        client = std::make_unique<httplib::Client>(url.host, url.port);
+    // Build scheme://host:port format for Client's universal interface
+    std::string scheme_host_port = url.scheme + "://" + url.host;
+    if (url.port != 0) {
+        scheme_host_port += ":" + std::to_string(url.port);
     }
 
-    if (client) {
+    auto client = std::make_unique<httplib::Client>(scheme_host_port);
+    if (client && client->is_valid()) {
         const int sec = static_cast<int>(timeout.count() / 1000);
         const int usec = static_cast<int>((timeout.count() % 1000) * 1000);
         client->set_connection_timeout(sec, usec);
         client->set_read_timeout(sec, usec);
         client->set_write_timeout(sec, usec);
         client->set_follow_location(true);
+        return client;
     }
 
-    return client;
+    return nullptr;
 }
 
 }  // namespace
@@ -269,7 +289,7 @@ ModelDownloader::ModelDownloader(std::string registry_base, std::string models_d
 }
 
 std::string ModelDownloader::fetchManifest(const std::string& model_id) {
-    ParsedUrl base = parseUrl(registry_base_);
+    HttpUrl base = parseUrl(registry_base_);
     if (base.scheme.empty() || base.host.empty()) return "";
 
     auto client = makeClient(base, timeout_);
@@ -320,7 +340,7 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
 
 std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std::string& filename, ProgressCallback cb,
     const std::string& expected_sha256, const std::string& if_none_match) {
-    ParsedUrl url = parseUrl(blob_url);
+    HttpUrl url = parseUrl(blob_url);
     // Keep whether the original URL was relative before resolving against registry_base_.
     const bool is_relative = url.scheme.empty();
 
@@ -345,6 +365,17 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
         return "";
     }
 
+    const std::optional<std::string> hf_token = is_relative ? std::nullopt : hfTokenForHost(url.host);
+    auto apply_auth = [&](httplib::Headers& headers) {
+        if (is_relative) {
+            if (!api_key_.empty()) {
+                headers.emplace("Authorization", "Bearer " + api_key_);
+            }
+        } else if (hf_token.has_value()) {
+            headers.emplace("Authorization", "Bearer " + *hf_token);
+        }
+    };
+
     fs::path out_path = fs::path(models_dir_) / filename;
     fs::create_directories(out_path.parent_path());
 
@@ -365,9 +396,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
     // If-None-Match handling: use simple GET and short-circuit 304 without streaming
     if (!if_none_match.empty()) {
         httplib::Headers hdrs{{"If-None-Match", if_none_match}};
-        if (is_relative && !api_key_.empty()) {
-            hdrs.emplace("Authorization", "Bearer " + api_key_);
-        }
+        apply_auth(hdrs);
         for (int attempt = 0; attempt <= max_retries_; ++attempt) {
             auto res = client->Get(url.path, hdrs);
             if (res) {
@@ -417,9 +446,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
             auto start_time = std::chrono::steady_clock::now();
 
             httplib::Headers headers;
-            if (is_relative && !api_key_.empty()) {
-                headers.emplace("Authorization", "Bearer " + api_key_);
-            }
+            apply_auth(headers);
             if (use_range && offset > 0) {
                 headers.emplace("Range", "bytes=" + std::to_string(offset) + "-");
             }

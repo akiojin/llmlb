@@ -36,7 +36,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Install uv/uvx
 RUN curl -fsSL https://astral.sh/uv/install.sh | bash
 
-RUN npm i -g pnpm@latest
+# Enable corepack for pnpm (managed via package.json packageManager field)
+RUN corepack enable
 
 # Setup pnpm global bin directory manually
 ENV PNPM_HOME="/root/.local/share/pnpm"
@@ -47,14 +48,7 @@ RUN mkdir -p "$PNPM_HOME" && \
     echo 'export PNPM_HOME="/root/.local/share/pnpm"' >> /root/.bashrc && \
     echo 'export PATH="$PNPM_HOME:$PATH"' >> /root/.bashrc
 
-RUN npm i -g \
-    npm@latest \
-    pnpm@latest \
-    bun@latest \
-    @commitlint/cli@latest \
-    @commitlint/config-conventional@latest
-
-EXPOSE 8080
+EXPOSE 32768
 
 WORKDIR /llm-router
 # Use bash to invoke entrypoint to avoid exec-bit and CRLF issues on Windows mounts

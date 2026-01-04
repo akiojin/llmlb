@@ -6,16 +6,17 @@
 ## 概要
 
 llm-nodeがモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
-ルーターが返す配布情報（共有パス or ダウンロードURL）を優先利用する。
+ルーターは**登録情報とマニフェストのみ**を提供する。
+モデルバイナリは保持せず、NodeがHF等の外部ソースから**直接ダウンロード**してキャッシュする。
 LLM runtime固有のストレージ形式への暗黙フォールバックは撤廃する。
 
 ## 技術コンテキスト
 
-**言語/バージョン**: C++17, Rust 1.75+
-**主要依存関係**: llama.cpp, Axum
-**ストレージ**: ファイルシステム (`~/.llm-router/models/`)
-**テスト**: Google Test, cargo test
-**対象プラットフォーム**: Linux/macOS
+**言語/バージョン**: C++17, Rust 1.75+  
+**主要依存関係**: llama.cpp, Axum  
+**ストレージ**: ファイルシステム (`~/.llm-router/models/`)  
+**テスト**: Google Test, cargo test  
+**対象プラットフォーム**: Linux/macOS  
 **プロジェクトタイプ**: web (node/, router/)
 
 ## 憲章チェック
@@ -39,22 +40,23 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ├── router.db            # ルーターDB（SQLite）
 └── models/
     ├── gpt-oss-20b/
+    │   ├── config.json
+    │   ├── tokenizer.json
     │   ├── model.safetensors.index.json
-    │   ├── model-00001-of-000xx.safetensors
-    │   └── tokenizer.json
+    │   ├── model-00001-of-0000X.safetensors
+    │   └── model.metal.bin  # (optional)
     └── qwen3-coder-30b/
         └── model.gguf
 ```
 
-## アーティファクト解決フロー
+## モデル解決フロー（Node主導）
 
 ```text
-1. 登録時に確定した形式（safetensors/GGUF）を正とする
-2. ローカル ~/.llm-router/models/<name>/ に該当ファイルが揃っていれば採用
-3. ルーター /v0/models の path が存在し読み取り可能 → 直接使用（共有ストレージ）
-4. path 不可 → ルーター /v0/models/blob/:model_name からダウンロード
-5. いずれも不可 → download_url からダウンロード
-6. いずれも不可 → エラー
+1. ローカル ~/.llm-router/models/<name>/ を確認（必要アーティファクトが揃っていれば採用）
+2. ルーターのマニフェストを取得（/v0/models/registry/:model/manifest.json）
+3. Nodeがruntime/GPU要件に合うアーティファクトを選択
+4. HF等の外部ソースから直接ダウンロードして保存
+5. いずれも不可 → エラー
 ```
 
 ## Phase 2: タスク計画アプローチ
@@ -64,7 +66,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 1. runtime_compat.cpp → model_storage.cpp リネーム
 2. LLM runtime manifest/blob解析ロジック削除
 3. 独自ディレクトリ構造実装
-4. ルーターAPI連携（/v0/models, /v0/models/blob）
+4. ルーターAPI連携（/v0/models, manifest）
 5. ノード起動時同期ロジック
 6. プッシュ通知受信ハンドラ
 7. 統合テスト

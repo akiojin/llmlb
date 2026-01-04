@@ -10,14 +10,39 @@
 #include <algorithm>
 #include <thread>
 #include "utils/config.h"
+#include "utils/allowlist.h"
 #include "utils/file_lock.h"
-#include "utils/url_encode.h"
 #include "models/model_storage.h"
+#include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace llm_node {
+namespace {
+bool isMetalArtifactName(const std::string& name) {
+    const auto lower = toLowerAscii(name);
+    return lower == "model.metal.bin";
+}
+
+bool isDirectMlArtifactName(const std::string& name) {
+    const auto lower = toLowerAscii(name);
+    return lower == "model.directml.bin" || lower == "model.dml.bin";
+}
+
+bool shouldDownloadForBackend(const std::string& name) {
+#if defined(__APPLE__)
+    if (isDirectMlArtifactName(name)) return false;
+    return true;
+#elif defined(_WIN32)
+    if (isMetalArtifactName(name)) return false;
+    return true;
+#else
+    if (isMetalArtifactName(name) || isDirectMlArtifactName(name)) return false;
+    return true;
+#endif
+}
+}  // namespace
 
 size_t ModelSync::defaultConcurrency() {
     auto cfg = loadDownloadConfig();
@@ -30,12 +55,34 @@ SyncStatusInfo ModelSync::getStatus() const {
     return status_;
 }
 
+void ModelSync::reportExternalDownloadProgress(const std::string& model_id,
+                                               const std::string& file,
+                                               size_t downloaded_bytes,
+                                               size_t total_bytes) {
+    std::lock_guard<std::mutex> lock(status_mutex_);
+    status_.state = SyncState::Running;
+    status_.current_download = SyncStatusInfo::DownloadProgress{
+        model_id,
+        file,
+        downloaded_bytes,
+        total_bytes,
+    };
+    status_.updated_at = std::chrono::system_clock::now();
+}
+
+void ModelSync::reportExternalDownloadResult(bool success) {
+    std::lock_guard<std::mutex> lock(status_mutex_);
+    status_.state = success ? SyncState::Success : SyncState::Failed;
+    status_.updated_at = std::chrono::system_clock::now();
+}
+
 ModelSync::ModelSync(std::string base_url, std::string models_dir, std::chrono::milliseconds timeout)
     : base_url_(std::move(base_url)), models_dir_(std::move(models_dir)), timeout_(timeout) {
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_.state = SyncState::Idle;
         status_.updated_at = std::chrono::system_clock::now();
+        status_.current_download.reset();
     }
     // Load persisted ETag cache if present
     const auto cache_path = fs::path(models_dir_) / ".etag_cache.json";
@@ -84,29 +131,32 @@ void ModelSync::setSupportedRuntimes(std::vector<std::string> supported_runtimes
     supported_runtimes_ = std::move(supported_runtimes);
 }
 
+void ModelSync::setOriginAllowlist(std::vector<std::string> origin_allowlist) {
+    std::lock_guard<std::mutex> lock(etag_mutex_);
+    origin_allowlist_ = std::move(origin_allowlist);
+}
+
 std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Client cli(base_url_.c_str());
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
-    // /v1/models を使用（OpenAI互換 + ダッシュボード拡張フィールド）
-    std::optional<std::string> node_token;
+    // /v0/models を使用（登録済みモデル一覧）
     std::optional<std::string> api_key;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
-        node_token = node_token_;
         api_key = api_key_;
     }
 
     httplib::Result res;
     if (api_key.has_value() && !api_key->empty()) {
         httplib::Headers headers = {{"Authorization", "Bearer " + *api_key}};
-        // /v0/models provides node sync metadata (path/download_url); /v1/models is OpenAI-compatible.
         res = cli.Get("/v0/models", headers);
-    } else if (node_token.has_value() && !node_token->empty()) {
-        httplib::Headers headers = {{"X-Node-Token", *node_token}};
-        res = cli.Get("/v1/models", headers);
     } else {
+        res = cli.Get("/v0/models");
+    }
+    if (!res || res->status < 200 || res->status >= 300) {
+        // fallback for auth-disabled routers (legacy /v1/models)
         res = cli.Get("/v1/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
@@ -117,8 +167,8 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
 
-        // /v1/models は { "object": "list", "data": [...] } 形式を返す
-        // 後方互換性のため配列形式もサポート
+        // /v0/models は配列形式、/v1/models は { "object": "list", "data": [...] }
+        // 後方互換性のため両方をサポート
         const json* models_array = nullptr;
         if (body.is_array()) {
             models_array = &body;
@@ -128,20 +178,17 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
 
         if (models_array) {
             for (const auto& m : *models_array) {
-                // /v1/models では "id" フィールドを使用
                 std::string model_id;
-                if (m.contains("id") && m["id"].is_string()) {
-                    model_id = m["id"].get<std::string>();
-                } else if (m.contains("name") && m["name"].is_string()) {
+                if (m.contains("name") && m["name"].is_string()) {
                     model_id = m["name"].get<std::string>();
+                } else if (m.contains("id") && m["id"].is_string()) {
+                    model_id = m["id"].get<std::string>();
                 } else {
                     continue;
                 }
 
                 RemoteModel rm;
                 rm.id = model_id;
-                rm.path = m.value("path", "");
-                rm.download_url = m.value("download_url", "");
                 rm.chat_template = m.value("chat_template", "");
 
                 if (m.contains("etag") && m["etag"].is_string()) {
@@ -178,6 +225,7 @@ ModelSyncResult ModelSync::sync() {
             std::lock_guard<std::mutex> lock(status_mutex_);
             status_.state = SyncState::Running;
             status_.updated_at = std::chrono::system_clock::now();
+            status_.current_download.reset();
         }
 
         auto remote_models = fetchRemoteModels();
@@ -268,29 +316,18 @@ ModelSyncResult ModelSync::sync() {
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;
 
-            // SPEC-dcaeaec4 FR-3: If router provides a directly accessible shared path,
-            // do not download/copy. InferenceEngine can load directly from that path.
-            if (auto it = remote_map.find(id); it != remote_map.end()) {
-                const auto& info = it->second;
-                if (!info.path.empty()) {
-                    std::error_code ec;
-                    if (fs::exists(info.path, ec) && !ec && fs::is_regular_file(info.path, ec) && !ec) {
-                        continue;
-                    }
-                }
-            }
-
             bool ok = downloadModel(downloader, id, nullptr);
 
-            // As a last resort (legacy), allow direct download_url for single-file GGUF.
-            // safetensors は複数ファイルのため、このフォールバックでは扱わない。
-            auto it = remote_map.find(id);
-            if (!ok && it != remote_map.end()) {
-                const auto& info = it->second;
-                if (!info.download_url.empty() && info.download_url.find(".gguf") != std::string::npos) {
-                    const auto filename = ModelStorage::modelNameToDir(id) + "/model.gguf";
-                    auto out = downloader.downloadBlob(info.download_url, filename, nullptr);
-                    ok = !out.empty();
+            // metadata (chat_template) - persist only when we downloaded locally
+            if (ok) {
+                auto it = remote_map.find(id);
+                if (it != remote_map.end() && !it->second.chat_template.empty()) {
+                    auto meta_dir = fs::path(models_dir_) / ModelStorage::modelNameToDir(id);
+                    auto meta_path = meta_dir / "metadata.json";
+                    nlohmann::json meta;
+                    meta["chat_template"] = it->second.chat_template;
+                    std::ofstream ofs(meta_path, std::ios::binary | std::ios::trunc);
+                    ofs << meta.dump();
                 }
             }
 
@@ -381,26 +418,6 @@ void ModelSync::setModelOverrides(std::unordered_map<std::string, ModelOverrides
     return downloader.downloadBlob(blob_url, filename, cb, expected_sha256, if_none_match);
 }
 
-std::string ModelSync::getRemotePath(const std::string& model_id) const {
-    std::lock_guard<std::mutex> lock(etag_mutex_);
-    auto it = remote_models_.find(model_id);
-    if (it == remote_models_.end()) {
-        return "";
-    }
-
-    const auto& path = it->second.path;
-    if (path.empty()) {
-        return "";
-    }
-
-    // Verify path exists and is accessible
-    std::error_code ec;
-    if (fs::exists(path, ec) && !ec && fs::is_regular_file(path, ec) && !ec) {
-        return path;
-    }
-    return "";
-}
-
 bool ModelSync::downloadModel(ModelDownloader& downloader,
                               const std::string& model_id,
                               ProgressCallback cb) const {
@@ -412,9 +429,11 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
     }
 
     std::vector<std::string> supported_runtimes;
+    std::vector<std::string> origin_allowlist;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
         supported_runtimes = supported_runtimes_;
+        origin_allowlist = origin_allowlist_;
     }
 
     auto manifest_path = downloader.fetchManifest(model_id);
@@ -436,6 +455,9 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         for (const auto& f : j["files"]) {
             std::string name = f.value("name", "");
             if (name.empty()) return false;
+            if (!shouldDownloadForBackend(name)) {
+                continue;
+            }
 
             // If the manifest entry specifies allowed runtimes, skip files that this node cannot use.
             // Backward-compatible: older routers won't include `runtimes`.
@@ -457,17 +479,21 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             std::string digest = f.value("digest", "");
             std::string url = f.value("url", "");
             if (url.empty()) {
-                url = downloader.getRegistryBase();
-                if (!url.empty() && url.back() != '/') url.push_back('/');
-                url += urlEncodePathSegment(model_id) + "/files/" + urlEncodePathSegment(name);
+                spdlog::warn("ModelSync: manifest missing url for model {} file {}", model_id, name);
+                return false;
+            }
+            if (!isUrlAllowedByAllowlist(url, origin_allowlist)) {
+                spdlog::warn("ModelSync: origin URL blocked by allowlist for model {} file {}", model_id, name);
+                return false;
             }
 
             size_t file_chunk = f.value("chunk", static_cast<size_t>(0));
             size_t file_bps = f.value("max_bps", static_cast<size_t>(0));
 
             int priority = f.value("priority", 0);
+            bool optional = f.value("optional", false);
 
-            auto task_fn = [this, &downloader, model_id, url, name, digest, cb, model_cfg, file_chunk, file_bps, priority]() {
+            auto task_fn = [this, &downloader, model_id, url, name, digest, cb, model_cfg, file_chunk, file_bps, priority, optional]() {
                 size_t orig_chunk = downloader.getChunkSize();
                 size_t orig_bps = downloader.getMaxBytesPerSec();
 
@@ -507,11 +533,30 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                     }
                 }
 
+                auto progress_cb = [this, model_id, name, cb](size_t downloaded, size_t total) {
+                    {
+                        std::lock_guard<std::mutex> lock(status_mutex_);
+                        status_.current_download = SyncStatusInfo::DownloadProgress{
+                            model_id,
+                            name,
+                            downloaded,
+                            total,
+                        };
+                        status_.updated_at = std::chrono::system_clock::now();
+                    }
+                    if (cb) {
+                        cb(downloaded, total);
+                    }
+                };
+
                 const auto local_dir = ModelStorage::modelNameToDir(model_id);
-                auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, cb, digest);
+                auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, progress_cb, digest);
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);
+                if (out.empty() && optional) {
+                    return true;
+                }
                 return !out.empty();
             };
 

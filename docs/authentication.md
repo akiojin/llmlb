@@ -18,7 +18,7 @@ Clients send the token via `Authorization: Bearer <jwt>`.
 
 ## API keys (OpenAI-compatible `/v1/*`)
 
-Protected endpoints (API key with `api:inference` scope required):
+Protected endpoints (API key with `api` scope required):
 
 - `POST /v1/chat/completions`
 - `POST /v1/completions`
@@ -39,18 +39,18 @@ should send only one auth scheme per request.
 
 ### API key scopes
 
-- `api:inference`: OpenAI-compatible `/v1/*` inference endpoints
-- `node:register`: `POST /v0/nodes` (node registration), `POST /v0/health` (heartbeat), `GET /v0/models` (node model sync), `GET /v0/models/blob/*` (model blob download)
-- `admin:*`: All admin operations (dashboard, users, API keys, model management, metrics, node management)
+- `api`: OpenAI-compatible `/v1/*` inference endpoints
+- `node`: `POST /v0/nodes` (node registration), `POST /v0/health` (heartbeat), `GET /v0/models` (node model sync), `GET /v0/models/registry/:model_name/manifest.json` (manifest)
+- `admin`: All admin operations (dashboard, users, API keys, model management, metrics, node management)
 
-`admin:*` includes all other scopes. Keys created before scopes were introduced are treated as having all scopes for backward compatibility.
+`admin` includes all other scopes. Keys created before scopes were introduced are treated as having all scopes for backward compatibility.
 
 Debug builds only:
 
 - `sk_debug` is accepted for all scopes
-- `sk_debug_api` for `api:inference`
-- `sk_debug_node` for `node:register`
-- `sk_debug_admin` for `admin:*`
+- `sk_debug_api` for `api`
+- `sk_debug_node` for `node`
+- `sk_debug_admin` for `admin`
 
 ## Node token (node → router)
 

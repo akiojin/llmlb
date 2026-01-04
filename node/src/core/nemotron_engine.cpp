@@ -193,6 +193,7 @@ ModelLoadResult validate_safetensors_file(const fs::path& path, const std::strin
     ModelLoadResult result;
     if (!fs::exists(path)) {
         result.error_message = "Safetensors file not found: " + path.string();
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -201,6 +202,7 @@ ModelLoadResult validate_safetensors_file(const fs::path& path, const std::strin
     std::string err;
     if (!safetensors::mmap_from_file(path.string(), &st, &warn, &err)) {
         result.error_message = err.empty() ? "Failed to mmap safetensors file" : err;
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return result;
     }
 
@@ -211,15 +213,18 @@ ModelLoadResult validate_safetensors_file(const fs::path& path, const std::strin
     std::string validate_err;
     if (!safetensors::validate_data_offsets(st, validate_err)) {
         result.error_message = validate_err.empty() ? "Invalid data_offsets in safetensors" : validate_err;
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return result;
     }
 
     if (!expected_tensor.empty() && !st.tensors.count(expected_tensor)) {
         result.error_message = "Expected tensor not found: " + expected_tensor;
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return result;
     }
 
     result.success = true;
+    result.error_code = EngineErrorCode::kOk;
     return result;
 }
 }  // namespace
@@ -241,20 +246,24 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
     ModelLoadResult result;
     if (!descriptor.format.empty() && descriptor.format != "safetensors") {
         result.error_message = "Nemotron engine supports safetensors only";
+        result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
     if (descriptor.primary_path.empty()) {
         result.error_message = "Nemotron primary path is empty";
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     const auto model_dir = resolve_model_dir(descriptor);
     if (!model_dir) {
         result.error_message = "Nemotron model_dir is empty";
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
     if (auto missing = validate_required_metadata(*model_dir)) {
         result.error_message = *missing;
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return result;
     }
 
@@ -262,6 +271,7 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (loaded_.count(descriptor.primary_path) != 0) {
             result.success = true;
+            result.error_code = EngineErrorCode::kOk;
             return result;
         }
     }
@@ -269,6 +279,7 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
     fs::path primary(descriptor.primary_path);
     if (!fs::exists(primary)) {
         result.error_message = "Primary path not found: " + primary.string();
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -277,22 +288,26 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
         auto index = load_json(primary, err);
         if (!index) {
             result.error_message = err;
+            result.error_code = EngineErrorCode::kModelCorrupt;
             return result;
         }
         auto shards = collect_shards(*index, *model_dir, err);
         if (!shards) {
             result.error_message = err;
+            result.error_code = EngineErrorCode::kModelCorrupt;
             return result;
         }
         for (const auto& shard : *shards) {
             if (!is_regular_nonempty_file(shard)) {
                 result.error_message = "Shard file missing or empty: " + shard.string();
+                result.error_code = EngineErrorCode::kModelCorrupt;
                 return result;
             }
         }
         auto shard = find_shard_for_tensor(*index, kKnownTensorName, err);
         if (!shard) {
             result.error_message = err;
+            result.error_code = EngineErrorCode::kModelCorrupt;
             return result;
         }
         fs::path shard_path(*shard);
@@ -309,7 +324,9 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
                 std::string upload_err;
                 auto uploaded = upload_tensor_to_gpu(shard_path, kKnownTensorName, max_bytes, upload_err);
                 if (!uploaded) {
+                    result.success = false;
                     result.error_message = upload_err;
+                    result.error_code = EngineErrorCode::kInternal;
                     return result;
                 }
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -328,7 +345,9 @@ ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
                 std::string upload_err;
                 auto uploaded = upload_tensor_to_gpu(primary, kKnownTensorName, max_bytes, upload_err);
                 if (!uploaded) {
+                    result.success = false;
                     result.error_message = upload_err;
+                    result.error_code = EngineErrorCode::kInternal;
                     return result;
                 }
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -375,6 +394,10 @@ std::vector<std::vector<float>> NemotronEngine::generateEmbeddings(
 }
 
 size_t NemotronEngine::getModelMaxContext(const ModelDescriptor&) const {
+    return 0;
+}
+
+uint64_t NemotronEngine::getModelVramBytes(const ModelDescriptor&) const {
     return 0;
 }
 

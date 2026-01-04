@@ -9,6 +9,7 @@
 #include <sstream>
 #include <spdlog/spdlog.h>
 #include "utils/file_lock.h"
+#include "utils/allowlist.h"
 
 namespace llm_node {
 
@@ -30,8 +31,6 @@ std::optional<std::string> getEnvWithFallback(const char* new_name, const char* 
 }  // namespace
 
 DownloadConfig loadDownloadConfig() {
-    DownloadConfig cfg;
-
     auto info = loadDownloadConfigWithLog();
     return info.first;
 }
@@ -171,6 +170,8 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
 
     // defaults: ~/.llm-router/models/
     cfg.models_dir = defaultConfigPath().empty() ? ".llm-router/models" : (defaultConfigPath().parent_path() / "models").string();
+    cfg.engine_plugins_dir = defaultConfigPath().empty() ? ".llm-router/engines" : (defaultConfigPath().parent_path() / "engines").string();
+    cfg.origin_allowlist = splitAllowlistCsv("huggingface.co/*,cdn-lfs.huggingface.co/*");
 
     auto apply_json = [&](const nlohmann::json& j) {
         if (j.contains("router_url") && j["router_url"].is_string()) cfg.router_url = j["router_url"].get<std::string>();
@@ -182,7 +183,30 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         if (j.contains("heartbeat_interval_sec") && j["heartbeat_interval_sec"].is_number()) {
             cfg.heartbeat_interval_sec = j["heartbeat_interval_sec"].get<int>();
         }
+        if (j.contains("engine_plugins_dir") && j["engine_plugins_dir"].is_string()) {
+            cfg.engine_plugins_dir = j["engine_plugins_dir"].get<std::string>();
+        }
+        if (j.contains("plugin_restart_interval_sec") && j["plugin_restart_interval_sec"].is_number()) {
+            cfg.plugin_restart_interval_sec = j["plugin_restart_interval_sec"].get<int>();
+        }
+        if (j.contains("plugin_restart_request_limit") && j["plugin_restart_request_limit"].is_number()) {
+            cfg.plugin_restart_request_limit = j["plugin_restart_request_limit"].get<uint64_t>();
+        }
         if (j.contains("bind_address") && j["bind_address"].is_string()) cfg.bind_address = j["bind_address"].get<std::string>();
+        if (j.contains("origin_allowlist")) {
+            const auto& v = j["origin_allowlist"];
+            std::vector<std::string> list;
+            if (v.is_array()) {
+                for (const auto& item : v) {
+                    if (item.is_string()) {
+                        list.push_back(item.get<std::string>());
+                    }
+                }
+            } else if (v.is_string()) {
+                list = splitAllowlistCsv(v.get<std::string>());
+            }
+            if (!list.empty()) cfg.origin_allowlist = std::move(list);
+        }
     };
 
     // file
@@ -222,6 +246,25 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         log << "env:MODELS_DIR=" << *v << " ";
         used_env = true;
     }
+    if (const char* v = std::getenv("LLM_NODE_ENGINE_PLUGINS_DIR")) {
+        cfg.engine_plugins_dir = v;
+        log << "env:ENGINE_PLUGINS_DIR=" << cfg.engine_plugins_dir << " ";
+        used_env = true;
+    }
+    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
+        try {
+            cfg.plugin_restart_interval_sec = std::stoi(*v);
+            log << "env:PLUGIN_RESTART_SECS=" << cfg.plugin_restart_interval_sec << " ";
+            used_env = true;
+        } catch (...) {}
+    }
+    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
+        try {
+            cfg.plugin_restart_request_limit = static_cast<uint64_t>(std::stoll(*v));
+            log << "env:PLUGIN_RESTART_REQUESTS=" << cfg.plugin_restart_request_limit << " ";
+            used_env = true;
+        } catch (...) {}
+    }
     if (auto v = getEnvWithFallback("LLM_NODE_PORT", "LLM_NODE_PORT")) {
         // LLM_NODE_PORT is already the correct name
         try {
@@ -241,6 +284,14 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         cfg.bind_address = *v;
         log << "env:BIND_ADDRESS=" << *v << " ";
         used_env = true;
+    }
+    if (auto v = getEnvWithFallback("LLM_NODE_ORIGIN_ALLOWLIST", "LLM_ORIGIN_ALLOWLIST")) {
+        auto list = splitAllowlistCsv(*v);
+        if (!list.empty()) {
+            cfg.origin_allowlist = std::move(list);
+            log << "env:ORIGIN_ALLOWLIST=" << *v << " ";
+            used_env = true;
+        }
     }
 
     if (auto v = getEnvWithFallback("LLM_NODE_IP", "LLM_NODE_IP")) {

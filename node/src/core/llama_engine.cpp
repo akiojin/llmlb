@@ -1,14 +1,80 @@
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
 #include "include/llama.h"
+#include "utils/stop_sequences.h"
 
 #include <spdlog/spdlog.h>
 #include <random>
 #include <sstream>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <functional>
+#include <utility>
 
 namespace llm_node {
+
+namespace fs = std::filesystem;
+
+namespace {
+#ifdef LLM_NODE_TESTING
+std::function<void(const char*)> kv_cache_reset_hook;
+#endif
+
+void notify_kv_cache_reset(const char* reason) {
+#ifdef LLM_NODE_TESTING
+    if (kv_cache_reset_hook) {
+        kv_cache_reset_hook(reason);
+    }
+#else
+    (void)reason;
+#endif
+}
+
+void reset_kv_cache(llama_context* ctx, const char* reason) {
+    notify_kv_cache_reset(reason);
+    if (!ctx) return;
+    llama_memory_t mem = llama_get_memory(ctx);
+    if (mem) {
+        llama_memory_clear(mem, false);
+    }
+}
+
+struct KvCacheScope {
+    explicit KvCacheScope(llama_context* ctx) : ctx_(ctx) {
+        reset_kv_cache(ctx_, "request_start");
+    }
+    ~KvCacheScope() {
+        reset_kv_cache(ctx_, "request_end");
+    }
+
+    KvCacheScope(const KvCacheScope&) = delete;
+    KvCacheScope& operator=(const KvCacheScope&) = delete;
+
+private:
+    llama_context* ctx_{nullptr};
+};
+
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
+    if (!params.on_token_callback) return;
+    params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
+}
+}  // namespace
+
+static const std::vector<std::string> kDefaultStopSequences = {
+    "<|im_end|>",       // ChatML (Qwen3, etc.)
+    "<|end|>",          // gpt-oss, Some models
+    "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
+    "<|eot_id|>",       // Llama 3
+    "</s>",             // Llama 2, Mistral
+    "<|endoftext|>",    // GPT-style
+};
 
 // 前方宣言
 static std::string stripControlTokens(std::string text);
@@ -19,6 +85,16 @@ std::string extractGptOssFinalMessageForTest(const std::string& output);
 // コンストラクタ
 LlamaEngine::LlamaEngine(LlamaManager& manager)
     : manager_(manager) {}
+
+#ifdef LLM_NODE_TESTING
+void LlamaEngine::setKvCacheResetHookForTest(KvCacheResetHook hook) {
+    kv_cache_reset_hook = std::move(hook);
+}
+
+void LlamaEngine::runKvCacheScopeForTest() {
+    KvCacheScope scope(nullptr);
+}
+#endif
 
 // チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
 std::string LlamaEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
@@ -109,27 +185,8 @@ std::string postProcessGeneratedTextForTest(const std::string& output, bool is_g
     std::string processed = output;
 
     // Keep in sync with LlamaEngine::generateChat() post-processing.
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
-    };
-
-    for (const auto& stop : stop_sequences) {
-        size_t pos = processed.find(stop);
-        if (pos != std::string::npos) {
-            if (is_gptoss && stop == "<|start|>" && pos == 0) {
-                // gpt-ossの出力が <|start|> から始まる場合、それ自体は停止条件にしない
-                // （<|end|> が出ないケースで空文字になってしまうのを防ぐ）
-                continue;
-            }
-            processed = processed.substr(0, pos);
-            break;
-        }
-    }
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, {});
+    apply_stop_sequences_suffix(processed, stop_sequences);
 
     if (is_gptoss) {
         processed = cleanGptOssOutput(processed);
@@ -391,6 +448,7 @@ std::string LlamaEngine::generateChat(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
+    KvCacheScope kv_scope(ctx);
 
     // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
     std::string prompt = applyModelChatTemplate(model, messages);
@@ -485,21 +543,20 @@ std::string LlamaEngine::generateChat(
 
     // 9. トークン生成ループ
     std::string output;
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
     // int32_t n_cur = n_tokens; // unused
 
     // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
     size_t effective_max_tokens = params.max_tokens;
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+    if (model_n_ctx > 0) {
+        size_t available = 0;
+        if (static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+            available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        }
         // デフォルト値(2048)の場合は利用可能な全容量を使用、
         // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, n_tokens, model_n_ctx);
         spdlog::info("Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }
@@ -514,6 +571,8 @@ std::string LlamaEngine::generateChat(
             break;
         }
 
+        emit_token_metrics(params, static_cast<uint32_t>(new_token));
+
         // トークンをテキストに変換
         char buf[256];
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
@@ -527,6 +586,9 @@ std::string LlamaEngine::generateChat(
             }
             spdlog::debug("Token {}: id={}, len={}, bytes=[{}]", i, new_token, len, hex_bytes);
             output.append(buf, static_cast<size_t>(len));
+            if (apply_stop_sequences_suffix(output, stop_sequences)) {
+                break;
+            }
         }
 
         // サンプラーにトークンを通知
@@ -546,32 +608,7 @@ std::string LlamaEngine::generateChat(
     // 10. クリーンアップ
     llama_sampler_free(sampler);
 
-    // 11. 出力の後処理: chatMLテンプレートのストップトークンで切り詰め
-    // Qwen3などのモデルは<|im_end|>で応答を終了するが、EOGとして認識されない場合がある
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
-    };
-
-    for (const auto& stop : stop_sequences) {
-        size_t pos = output.find(stop);
-        if (pos != std::string::npos) {
-            if (is_gptoss && stop == "<|start|>" && pos == 0) {
-                // gpt-ossの出力が <|start|> から始まる場合、それ自体は停止条件にしない
-                // （<|end|> が出ないケースで空文字になってしまうのを防ぐ）
-                continue;
-            }
-            spdlog::debug("Truncating output at stop sequence '{}' at position {}", stop, pos);
-            output = output.substr(0, pos);
-            break;
-        }
-    }
-
-    // 12. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
+    // 11. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
     if (is_gptoss) {
         spdlog::info("Applying gpt-oss output cleanup, before: {} chars", output.size());
         output = cleanGptOssOutput(output);
@@ -624,6 +661,7 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model");
     }
+    KvCacheScope kv_scope(ctx);
 
     // 3. vocab取得とプロンプト処理（モデル固有のチャットテンプレートを使用）
     const llama_vocab* vocab = llama_model_get_vocab(model);
@@ -689,85 +727,48 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
 
     // 6. ストリーミング生成ループ
-    // ストップシーケンスの定義（chatMLテンプレート用）
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
+    auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params.stop_sequences);
+    StopSequenceStream stop_stream(stop_sequences);
+    auto emit_chunk = [&](const std::string& chunk) {
+        if (chunk.empty()) return;
+        all_tokens.push_back(chunk);
+        if (on_token) {
+            on_token(chunk);
+        }
     };
-
-    std::string accumulated_output;  // ストップシーケンス検出用の累積出力
-    bool should_stop = false;
 
     // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
     size_t effective_max_tokens = params.max_tokens;
     int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+    if (model_n_ctx > 0) {
+        size_t available = 0;
+        if (static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
+            available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
+        }
         // デフォルト値(2048)の場合は利用可能な全容量を使用、
         // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
+        effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, n_tokens, model_n_ctx);
         spdlog::info("Streaming: Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
             model_n_ctx, n_tokens, available, effective_max_tokens);
     }
 
-    for (size_t i = 0; i < effective_max_tokens && !should_stop; i++) {
+    for (size_t i = 0; i < effective_max_tokens && !stop_stream.stopped(); i++) {
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
         if (llama_vocab_is_eog(vocab, new_token)) {
             break;
         }
 
+        emit_token_metrics(params, static_cast<uint32_t>(new_token));
+
         char buf[256];
         int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
         if (len > 0) {
             std::string piece(buf, static_cast<size_t>(len));
-            accumulated_output += piece;
-
-            // ストップシーケンスのチェック
-            for (const auto& stop : stop_sequences) {
-                size_t pos = accumulated_output.find(stop);
-                if (pos != std::string::npos) {
-                    spdlog::debug("Streaming: found stop sequence '{}' at position {}", stop, pos);
-                    // ストップシーケンス前の部分のみを送信
-                    if (pos > 0 && pos > accumulated_output.size() - piece.size()) {
-                        // 現在のピースがストップシーケンスを含む場合、その前の部分のみ送信
-                        std::string partial = piece.substr(0, pos - (accumulated_output.size() - piece.size()));
-                        if (!partial.empty() && on_token) {
-                            on_token(partial);
-                            all_tokens.push_back(partial);
-                        }
-                    } else if (pos == 0 || accumulated_output.find(stop) >= accumulated_output.size() - piece.size()) {
-                        // ストップシーケンスがこのピースで始まる場合、送信しない
-                    } else {
-                        all_tokens.push_back(piece);
-                        if (on_token) {
-                            on_token(piece);
-                        }
-                    }
-                    should_stop = true;
-                    break;
-                }
-            }
-
-            if (!should_stop) {
-                all_tokens.push_back(piece);
-                // コールバックで即座に送信
-                if (on_token) {
-                    on_token(piece);
-                }
-            }
+            stop_stream.push(piece, emit_chunk);
         }
 
-        if (!should_stop) {
+        if (!stop_stream.stopped()) {
             llama_sampler_accept(sampler, new_token);
 
             llama_batch next_batch = llama_batch_get_one(&new_token, 1);
@@ -776,6 +777,8 @@ std::vector<std::string> LlamaEngine::generateChatStream(
             }
         }
     }
+
+    stop_stream.flush(emit_chunk);
 
     // 完了を通知
     if (on_token) {
@@ -791,16 +794,26 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     const std::string gguf_path = descriptor.primary_path;
     if (gguf_path.empty()) {
         result.error_message = "GGUF path is empty for model: " + descriptor.name;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (manager_.isLoaded(gguf_path)) {
         result.success = true;
+        result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::error_code ec;
+    if (!fs::exists(gguf_path, ec) || ec) {
+        result.error_message = "GGUF file not found: " + gguf_path;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (!manager_.loadModelIfNeeded(gguf_path)) {
         result.error_message = "Failed to load model: " + gguf_path;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
@@ -814,6 +827,7 @@ ModelLoadResult LlamaEngine::loadModel(const ModelDescriptor& descriptor) {
     }
 
     result.success = true;
+    result.error_code = EngineErrorCode::kOk;
     return result;
 }
 
@@ -829,6 +843,18 @@ size_t LlamaEngine::getModelMaxContext(const ModelDescriptor& descriptor) const 
         }
     }
     return model_max_ctx_;
+}
+
+uint64_t LlamaEngine::getModelVramBytes(const ModelDescriptor& descriptor) const {
+    if (descriptor.primary_path.empty()) {
+        return 0;
+    }
+    std::error_code ec;
+    auto size = fs::file_size(descriptor.primary_path, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<uint64_t>(size);
 }
 
 // Embedding生成
@@ -901,10 +927,7 @@ std::vector<std::vector<float>> LlamaEngine::generateEmbeddings(
         tokens.resize(static_cast<size_t>(n_tokens));
 
         // メモリをクリア（新しい入力をエンコードする前に）
-        llama_memory_t mem = llama_get_memory(ctx);
-        if (mem) {
-            llama_memory_clear(mem, false);
-        }
+        reset_kv_cache(ctx, "embed_input");
 
         // バッチを作成（全トークンのembeddingを出力）
         llama_batch batch = llama_batch_init(static_cast<int32_t>(tokens.size()), 0, 1);

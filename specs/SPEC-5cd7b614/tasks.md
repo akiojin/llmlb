@@ -6,7 +6,7 @@
 ## 更新メモ（共有用）
 
 - 2025-12-24: 対象GPUは **NVIDIA(CUDA) と Apple Siliconのみ**。AMD/Intel・Dockerは対象外。
-- 既存タスクのうち AMD/Docker に関するものは**旧方針の実施記録**として残す。
+- 2025-12-28: 方針変更により **WindowsはDirectML（AMD/Intel/NVIDIA）** を対象とし、Linuxは当面非対応。既存タスクは**旧方針の記録**として残す。
 
 ## ハイレベル進捗チェックリスト
 

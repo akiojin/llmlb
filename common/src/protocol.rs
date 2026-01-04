@@ -46,7 +46,7 @@ impl Default for RegisterRequest {
             machine_name: "localhost".to_string(),
             ip_address: "127.0.0.1".parse().unwrap(),
             runtime_version: "0.0.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: false,
             gpu_devices: Vec::new(),
             gpu_count: None,
@@ -140,6 +140,12 @@ pub struct HealthCheckRequest {
     /// 起動済みモデル数/総数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready_models: Option<(u8, u8)>,
+    /// モデル同期状態
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_state: Option<crate::types::SyncState>,
+    /// モデル同期進捗
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_progress: Option<crate::types::SyncProgress>,
 }
 
 /// LLM runtimeチャットリクエスト
@@ -161,6 +167,66 @@ pub struct ChatMessage {
     pub role: String,
     /// メッセージ内容
     pub content: String,
+}
+
+/// OpenAI Vision API互換のコンテンツパート
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentPart {
+    /// テキストパート
+    Text {
+        /// テキスト本文
+        text: String,
+    },
+    /// 画像URLパート
+    ImageUrl {
+        /// 画像URL情報
+        image_url: ImageUrl,
+    },
+}
+
+/// 画像URL詳細
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageUrl {
+    /// 画像URL（data URL含む）
+    pub url: String,
+    /// 解像度指定（OpenAI互換: "low" | "high" | "auto"）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Vision対応チャットコンテンツ
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum ChatContent {
+    /// 文字列のみ
+    Text(String),
+    /// コンテンツパート配列
+    Parts(Vec<ContentPart>),
+}
+
+/// Vision対応チャットメッセージ
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChatCompletionMessage {
+    /// ロール ("user", "assistant", "system")
+    pub role: String,
+    /// メッセージ内容
+    pub content: ChatContent,
+}
+
+/// Vision対応Chat Completionsリクエスト
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChatCompletionRequest {
+    /// モデル名
+    pub model: String,
+    /// メッセージ配列
+    pub messages: Vec<ChatCompletionMessage>,
+    /// ストリーミング有効化
+    #[serde(default)]
+    pub stream: bool,
+    /// 最大トークン数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
 }
 
 /// Generateリクエスト
@@ -449,7 +515,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),
@@ -502,6 +568,13 @@ mod tests {
             supported_runtimes: vec![crate::types::RuntimeType::LlamaCpp],
             initializing: true,
             ready_models: Some((1, 2)),
+            sync_state: Some(crate::types::SyncState::Running),
+            sync_progress: Some(crate::types::SyncProgress {
+                model_id: "gpt-oss-20b".to_string(),
+                file: "model.gguf".to_string(),
+                downloaded_bytes: 512,
+                total_bytes: 2048,
+            }),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -523,6 +596,8 @@ mod tests {
         );
         assert_eq!(request.loaded_asr_models, deserialized.loaded_asr_models);
         assert_eq!(request.loaded_tts_models, deserialized.loaded_tts_models);
+        assert_eq!(request.sync_state, deserialized.sync_state);
+        assert_eq!(request.sync_progress, deserialized.sync_progress);
     }
 
     #[test]
@@ -548,6 +623,8 @@ mod tests {
             supported_runtimes: vec![],
             initializing: false,
             ready_models: Some((1, 1)),
+            sync_state: None,
+            sync_progress: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();

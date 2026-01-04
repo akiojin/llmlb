@@ -11,18 +11,19 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapabilities, ModelCapability},
+    types::{ModelCapabilities, ModelCapability, VisionCapability},
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
+use std::{collections::HashSet, net::IpAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::registry::models::{is_valid_model_file, router_model_path};
+use crate::models::image;
 use crate::{
     api::{
-        models::{list_registered_models, DownloadProgress, LifecycleStatus},
+        model_name::{parse_quantized_model_name, ParsedModelName},
+        models::{list_registered_models, LifecycleStatus},
         nodes::AppError,
         proxy::{
             forward_streaming_response, save_request_record, select_available_node,
@@ -153,33 +154,59 @@ fn queue_error_response(
     response
 }
 
+fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Response {
+    let payload = json!({
+        "error": {
+            "message": message.into(),
+            "type": "invalid_request_error",
+            "code": status.as_u16(),
+        }
+    });
+
+    (status, Json(payload)).into_response()
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+    let parsed = if parse_cloud_model(&model).is_some() {
+        ParsedModelName {
+            raw: model.clone(),
+            base: model.clone(),
+            quantization: None,
+        }
+    } else {
+        parse_quantized_model_name(&model).map_err(AppError::from)?
+    };
 
     // モデルの TextGeneration capability を検証
     let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == model) {
+    if let Some(model_info) = models.iter().find(|m| m.name == parsed.base) {
         if !model_info.has_capability(ModelCapability::TextGeneration) {
             return Err(AppError::from(RouterError::Common(
                 CommonError::Validation(format!(
                     "Model '{}' does not support text generation",
-                    model
+                    parsed.raw
                 )),
             )));
         }
     }
     // 登録されていないモデルはノード側で処理（クラウドモデル等）
 
+    let payload = match prepare_vision_payload(&state, payload, &parsed).await {
+        Ok(payload) => payload,
+        Err(response) => return Ok(response),
+    };
+
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
         payload,
         "/v1/chat/completions",
-        model,
+        parsed.raw,
         stream,
         RequestType::Chat,
     )
@@ -192,6 +219,9 @@ pub async fn completions(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+    if parse_cloud_model(&model).is_none() {
+        parse_quantized_model_name(&model).map_err(AppError::from)?;
+    }
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
@@ -210,6 +240,9 @@ pub async fn embeddings(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
+    if parse_cloud_model(&model).is_none() {
+        parse_quantized_model_name(&model).map_err(AppError::from)?;
+    }
     proxy_openai_post(
         &state,
         payload,
@@ -227,9 +260,6 @@ pub async fn embeddings(
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    use crate::convert::ConvertStatus;
-    use crate::registry::models::generate_model_id;
-
     // ルーターがサポートするモデルを取得
     let models = list_registered_models();
 
@@ -237,17 +267,18 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     let mut data: Vec<Value> = Vec::new();
     let mut registered_names: HashSet<String> = HashSet::new();
 
+    let ready_names: HashSet<String> = state
+        .registry
+        .list()
+        .await
+        .into_iter()
+        .flat_map(|node| node.loaded_models)
+        .collect();
+
     for m in models {
         registered_names.insert(m.name.clone());
 
-        let path = m
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|path| is_valid_model_file(path))
-            .or_else(|| router_model_path(&m.name));
-
-        let ready = path.is_some();
+        let ready = ready_names.contains(&m.name);
 
         // ライフサイクル状態を決定
         let lifecycle_status = if ready {
@@ -270,99 +301,17 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "lifecycle_status": lifecycle_status,
             "download_progress": null,
             "ready": ready,
+            // 追加メタデータ（ダッシュボード向け）
+            "repo": m.repo,
+            "filename": m.filename,
+            "size_bytes": m.size,
+            "required_memory_bytes": m.required_memory,
+            "source": m.source,
+            "tags": m.tags,
+            "description": m.description,
+            "chat_template": m.chat_template,
         });
         data.push(obj);
-    }
-
-    // ConvertTaskからダウンロード中/待機中のモデル情報を追加
-    let tasks = state.convert_manager.list_tasks().await;
-
-    for task in tasks {
-        let model_name = generate_model_id(&task.repo);
-
-        // 既に登録済みのモデルはlifecycle_statusを更新
-        if let Some(obj) = data.iter_mut().find(|v| v["id"] == model_name) {
-            let (lifecycle_status, download_progress) = match task.status {
-                ConvertStatus::Queued => (
-                    LifecycleStatus::Pending,
-                    Some(DownloadProgress {
-                        percent: 0.0,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::InProgress => (
-                    LifecycleStatus::Caching,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::Failed => (
-                    LifecycleStatus::Error,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: task.error.clone(),
-                    }),
-                ),
-                ConvertStatus::Completed => continue, // 完了済みは既存のlifecycle_statusを維持
-            };
-            obj["lifecycle_status"] = serde_json::to_value(&lifecycle_status).unwrap();
-            obj["download_progress"] = serde_json::to_value(&download_progress).unwrap();
-        } else if !registered_names.contains(&model_name) {
-            // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
-            let (lifecycle_status, download_progress) = match task.status {
-                ConvertStatus::Queued => (
-                    LifecycleStatus::Pending,
-                    Some(DownloadProgress {
-                        percent: 0.0,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::InProgress => (
-                    LifecycleStatus::Caching,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::Failed => (
-                    LifecycleStatus::Error,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: task.error.clone(),
-                    }),
-                ),
-                ConvertStatus::Completed => (LifecycleStatus::Registered, None),
-            };
-
-            // ダウンロード中のモデルは capabilities が不明なため、デフォルト（LLM）を使用
-            let caps = ModelCapabilities::default();
-
-            let obj = json!({
-                "id": model_name,
-                "object": "model",
-                "created": 0,
-                "owned_by": "router",
-                "capabilities": caps,
-                "lifecycle_status": lifecycle_status,
-                "download_progress": download_progress,
-                "ready": false,
-            });
-            data.push(obj);
-            registered_names.insert(model_name);
-        }
     }
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
@@ -394,21 +343,11 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 pub async fn get_model(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
     let all = list_registered_models();
-    let target = all.into_iter().find(|m| m.name == model_id).and_then(|m| {
-        let path = m
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|path| is_valid_model_file(path))
-            .or_else(|| router_model_path(&m.name));
-        path.map(|p| (m, p))
-    });
-
-    let (model, path) = match target {
+    let model = match all.into_iter().find(|m| m.name == model_id) {
         Some(v) => v,
         None => {
             // 404 を OpenAI 換算で返す
@@ -427,24 +366,39 @@ pub async fn get_model(
     // Azure OpenAI 形式の capabilities (boolean object)
     let caps: ModelCapabilities = model.get_capabilities().into();
 
-    let mut body = json!({
+    let ready_names: HashSet<String> = state
+        .registry
+        .list()
+        .await
+        .into_iter()
+        .flat_map(|node| node.loaded_models)
+        .collect();
+    let ready = ready_names.contains(&model_id);
+    let lifecycle_status = if ready {
+        LifecycleStatus::Registered
+    } else {
+        LifecycleStatus::Pending
+    };
+
+    let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
         "owned_by": "router",
         "capabilities": caps,
         // ダッシュボード用拡張フィールド
-        "lifecycle_status": LifecycleStatus::Registered,
-        "ready": true,
+        "lifecycle_status": lifecycle_status,
+        "ready": ready,
+        // 追加メタデータ（ダッシュボード向け）
+        "repo": model.repo,
+        "filename": model.filename,
+        "size_bytes": model.size,
+        "required_memory_bytes": model.required_memory,
+        "source": model.source,
+        "tags": model.tags,
+        "description": model.description,
+        "chat_template": model.chat_template,
     });
-
-    body["path"] = json!(path.to_string_lossy().to_string());
-    if let Some(url) = model.download_url {
-        body["download_url"] = json!(url);
-    }
-    if let Some(tpl) = model.chat_template {
-        body["chat_template"] = json!(tpl);
-    }
 
     Ok((StatusCode::OK, Json(body)).into_response())
 }
@@ -472,6 +426,136 @@ fn extract_stream(payload: &Value) -> bool {
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
+}
+
+fn collect_image_urls(payload: &Value) -> Result<Vec<String>, String> {
+    let mut urls = Vec::new();
+    let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) else {
+        return Ok(urls);
+    };
+
+    for message in messages {
+        let Some(content) = message.get("content") else {
+            continue;
+        };
+        let Some(parts) = content.as_array() else {
+            continue;
+        };
+
+        for part in parts {
+            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                continue;
+            }
+            let image_url_value = part
+                .get("image_url")
+                .ok_or_else(|| "image_url is required".to_string())?;
+            let url = if let Some(url) = image_url_value.get("url").and_then(|v| v.as_str()) {
+                url
+            } else if let Some(url) = image_url_value.as_str() {
+                url
+            } else {
+                return Err("image_url.url is required".to_string());
+            };
+            urls.push(url.to_string());
+        }
+    }
+
+    Ok(urls)
+}
+
+fn replace_image_urls(payload: &mut Value, replacements: &[String]) -> Result<(), String> {
+    let mut index = 0usize;
+    let Some(messages) = payload.get_mut("messages").and_then(|v| v.as_array_mut()) else {
+        if replacements.is_empty() {
+            return Ok(());
+        }
+        return Err("messages must be an array".to_string());
+    };
+
+    for message in messages {
+        let Some(parts) = message.get_mut("content").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        for part in parts {
+            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                continue;
+            }
+            let new_url = replacements
+                .get(index)
+                .ok_or_else(|| "image_url replacement missing".to_string())?
+                .clone();
+            index += 1;
+
+            let Some(image_url_value) = part.get_mut("image_url") else {
+                return Err("image_url is required".to_string());
+            };
+            if let Some(obj) = image_url_value.as_object_mut() {
+                obj.insert("url".to_string(), Value::String(new_url));
+            } else if image_url_value.is_string() {
+                *image_url_value = Value::String(new_url);
+            } else {
+                return Err("image_url must be object or string".to_string());
+            }
+        }
+    }
+
+    if index != replacements.len() {
+        return Err("image_url replacement count mismatch".to_string());
+    }
+
+    Ok(())
+}
+
+async fn prepare_vision_payload(
+    state: &AppState,
+    mut payload: Value,
+    model: &ParsedModelName,
+) -> Result<Value, Response> {
+    let image_urls = collect_image_urls(&payload)
+        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
+    if image_urls.is_empty() {
+        return Ok(payload);
+    }
+
+    let models = list_registered_models();
+    let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
+        // 未登録モデル（クラウド等）はルーター側の検証をスキップ
+        return Ok(payload);
+    };
+    if !model_info.has_capability(ModelCapability::Vision) {
+        return Err(openai_error_response(
+            format!("Model '{}' does not support image understanding", model.raw),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let vision_limits = VisionCapability::default();
+    if image_urls.len() > vision_limits.max_image_count as usize {
+        return Err(openai_error_response(
+            format!("Too many images (max {})", vision_limits.max_image_count),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let mut embedded_urls = Vec::with_capacity(image_urls.len());
+    for url in image_urls {
+        match image::validate_image_url(&state.http_client, &url, &vision_limits).await {
+            Ok(image_data) => {
+                embedded_urls.push(image_data.to_data_url());
+            }
+            Err(err) => {
+                return Err(openai_error_response(
+                    err.to_string(),
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+        }
+    }
+
+    replace_image_urls(&mut payload, &embedded_urls)
+        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
+
+    Ok(payload)
 }
 
 fn parse_cloud_model(model: &str) -> Option<(String, String)> {
@@ -1486,16 +1570,15 @@ mod tests {
             .await
             .expect("migrations");
         let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 

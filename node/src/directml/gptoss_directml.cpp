@@ -1057,6 +1057,7 @@ struct GptossContext {
     bool logits_ready{false};
     uint64_t rng_state{0};
     bool rng_initialized{false};
+    bool prefill_done{false};
 };
 
 uint64_t next_rng(uint64_t& state) {
@@ -1608,6 +1609,7 @@ gptoss_status GPTOSS_ABI gptoss_context_append_chars(
     ctx->tokens.insert(ctx->tokens.end(), new_tokens.begin(), new_tokens.end());
     ctx->last_logits.clear();
     ctx->logits_ready = false;
+    ctx->prefill_done = false;
     if (num_tokens_out) *num_tokens_out = new_tokens.size();
     return gptoss_status_success;
 }
@@ -1632,6 +1634,7 @@ gptoss_status GPTOSS_ABI gptoss_context_append_tokens(
     ctx->tokens.insert(ctx->tokens.end(), tokens, tokens + num_tokens);
     ctx->last_logits.clear();
     ctx->logits_ready = false;
+    ctx->prefill_done = false;
     return gptoss_status_success;
 }
 
@@ -1641,6 +1644,7 @@ gptoss_status GPTOSS_ABI gptoss_context_reset(gptoss_context_t context) {
     ctx->tokens.clear();
     ctx->last_logits.clear();
     ctx->logits_ready = false;
+    ctx->prefill_done = false;
     return gptoss_status_success;
 }
 
@@ -1649,7 +1653,12 @@ gptoss_status GPTOSS_ABI gptoss_context_process(gptoss_context_t context) {
     auto* ctx = reinterpret_cast<GptossContext*>(context);
     ctx->last_logits.clear();
     ctx->logits_ready = false;
-    return run_dml_prefill(ctx);
+    ctx->prefill_done = false;
+    const auto status = run_dml_prefill(ctx);
+    if (status == gptoss_status_success) {
+        ctx->prefill_done = true;
+    }
+    return status;
 }
 
 gptoss_status GPTOSS_ABI gptoss_context_sample(
@@ -1675,6 +1684,11 @@ gptoss_status GPTOSS_ABI gptoss_context_sample(
 
     const float effective_temperature = temperature < 0.0f ? 0.0f : temperature;
     size_t produced = 0;
+    if (!ctx->prefill_done && !ctx->tokens.empty()) {
+        const auto status = run_dml_prefill(ctx);
+        if (status != gptoss_status_success) return status;
+        ctx->prefill_done = true;
+    }
     for (size_t i = 0; i < num_tokens; ++i) {
         const auto status = run_dml_decode(ctx);
         if (status != gptoss_status_success) return status;

@@ -2,7 +2,7 @@
 
 ## 更新メモ（共有用）
 - 2025-12-24: gpt-oss-20b は **safetensors 直読エンジンを主経路**とし、公式GPU最適化アーティファクトは**実行キャッシュ**として扱う。
-- 2025-12-28: 対応OS/GPUを **macOS=Metal / Windows=DirectML** に変更。Linuxは当面非対応（CUDAは実験扱い）。
+- 2025-12-28: 対応OS/GPUを **macOS=Metal / Windows=CUDA** に変更。Linuxは当面非対応（CUDAは実験扱い）。
 
 ## TDD順序（必須）
 - Contract → Integration → E2E → Unit → Core/Refactor の順で実施する。
@@ -22,7 +22,7 @@
 ## Core
 - [x] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
 - [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
-- [x] Node: gpt-oss safetensors 推論パス（Metal/DirectML）を plugin として実装する。
+- [x] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を plugin として実装する。
 - [x] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導、supported_models.json の artifacts 指定）。
@@ -49,5 +49,5 @@
 - [x] Node: registry manifest の `runtimes` を見て未対応モデルのダウンロードをスキップ
 
 ## ブロッカー
-- gpt-oss safetensors 推論（Metal/DirectML）は GPU 実行環境と USE_GPTOSS ビルドが必要
-- DirectML 実装/検証には Windows + GPU + DirectML 実行環境が必要
+- gpt-oss safetensors 推論（Metal/CUDA）は GPU 実行環境と USE_GPTOSS ビルドが必要
+- CUDA 実装/検証には Windows + NVIDIA GPU + CUDA 実行環境が必要

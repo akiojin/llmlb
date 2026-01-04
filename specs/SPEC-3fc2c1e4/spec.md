@@ -12,7 +12,7 @@
 
 ## 目的
 - Node側エンジン抽象化と推論責務を統合的に定義する
-- GPU前提（Metal/DirectML）の実行要件を明確化する
+- GPU前提（Metal/CUDA）の実行要件を明確化する
 - エンジン選択が登録時のアーティファクトに従うことを保証する
 
 ## スコープ
@@ -36,11 +36,11 @@
 - **GPU前提**: GPU 非搭載ノードは対象外（登録不可）。
 - **対応OS/GPU**:
   - macOS: Apple Silicon（Metal）
-  - Windows: DirectML（D3D12）を主経路とする
-  - Linux: 当面は非対応（CUDAは実験扱い）
+  - Windows: CUDA
+  - Linux: 当面は非対応
   - WSL2: 対象外（Windowsはネイティブのみ）
 - **形式選択**: safetensors/GGUF 等の **format は登録時に確定**し、実行時の切替は行わない。  
-  NodeはGPUに応じて **公式最適化アーティファクト**（例: Metal/DirectML向け）を選択する。
+  NodeはGPUに応じて **公式最適化アーティファクト**（例: Metal/CUDA向け）を選択する。
 - **最適化アーティファクト**: 公式最適化アーティファクトの利用優先はエンジン領域の実行最適化として扱い、Nodeが選択したアーティファクトを置き換えない。
 - **Nemotron**: 新エンジンの仕様/実装は後回し（TBD）。
 - **内蔵エンジンの要件は単一化**: 詳細は「内蔵エンジン要件（単一要件）」に統合済み。
@@ -58,7 +58,7 @@
     `metadata.json` のような独自メタデータには依存しない。
   - **自動フォールバック禁止**: safetensors/GGUF が共存する場合は登録時の `format` 指定が必須で、  
     実行時の形式切替は行わない。
-  - **GPU前提**: エンジンは GPU 前提（macOS=Metal / Windows=DirectML / Linux=Cudaは実験扱い）。
+  - **GPU前提**: エンジンは GPU 前提（macOS=Metal / Windows=CUDA / Linux=Cudaは実験扱い）。
   - **可否判定**: この分類は EngineRegistry/EngineHost および `/v1/models` の可否判定に反映され、  
     **未対応カテゴリは登録対象から除外**される。
 
@@ -86,7 +86,7 @@
                                 │    ├─ GGUF → llama.cpp (plugin)
                                 │    ├─ TTS  → ONNX Runtime (plugin)
                                 │    └─ safetensors → 独自エンジン群 (plugins)
-                                │          ├─ gpt-oss (Metal/DirectML)
+                                │          ├─ gpt-oss (Metal/CUDA)
                                 │          ├─ nemotron (TBD)
                                 │          └─ その他（Whisper/SD など）
                                 └────────────────────────────────────┘
@@ -117,15 +117,15 @@
 ### GPUバックエンド（最下層レイヤー）
 
 - **Metal**（macOS / Apple Silicon）
-- **DirectML**（Windows / D3D12）
-- **CUDA**（Linux: 実験扱い）
+- **CUDA**（Windows / NVIDIA）
+  - Linux: 当面は非対応
 
 ## 現状の対応済みモデル/アーキテクチャ（2026-01-02時点）
 
 - **GGUF / llama.cpp**: llama/mistral/qwen/gemma/phi 系が検証済み。  
   詳細なモデルIDと検証状況は `specs/SPEC-6cd7f960/verified-models.md` を正とする。
 - **safetensors / 内蔵エンジン**: 実運用で確認できているのは **gpt-oss（Metal/macOS）** のみ。  
-  DirectMLは未検証、NemotronはTBD（後回し）。
+  DirectMLは実験扱い、NemotronはTBD（後回し）。
 - **その他モダリティ**（ASR/TTS/画像生成/画像認識/Embedding）:  
   対応可否と検証済みモデルは `specs/SPEC-6cd7f960/verified-models.md` で管理する。
 
@@ -146,15 +146,15 @@
 | RuntimeType | 主用途 | 主要アーティファクト | 備考 |
 |---|---|---|---|
 | `LlamaCpp` | LLM / Embedding | GGUF | NodeがGGUFアーティファクトを選択した場合 |
-| `GptOssCpp` | gpt-oss | safetensors + 公式最適化 | macOSはMetal最適化、WindowsはDirectMLを主経路 |
-| `NemotronCpp` | Nemotron | safetensors | **TBD**（Windows DirectML想定、Linux CUDAは実験扱い） |
+| `GptOssCpp` | gpt-oss | safetensors + 公式最適化 | macOSはMetal最適化、WindowsはCUDAを主経路 |
+| `NemotronCpp` | Nemotron | safetensors | **TBD**（Windows CUDA想定、Linux CUDAは実験扱い） |
 | `WhisperCpp` | ASR | GGML/GGUF（当面） | 変換は行わない。safetensors対応は将来検討 |
 | `StableDiffusion` | 画像生成 | safetensors（直接） | stable-diffusion.cpp を当面利用 |
 | `OnnxRuntime` | TTS | ONNX | Python依存なしで運用する |
 
 **現状の実運用確認**
 - safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
-- DirectMLは限定的、NemotronはTBD（後回し）。
+- Windows CUDAが主経路、DirectMLは限定的、NemotronはTBD（後回し）。
 
 ### 現在の対応済みモデル（2026-01-02時点）
 
@@ -192,10 +192,10 @@
 ### Nemotron の位置づけ
 
 - 内蔵エンジンの **一部として Nemotron 対応を含む**。
-- **Windows DirectML を想定**し、Linux CUDA は実験扱い（Metalは将来対応）。
+- **Windows CUDA を想定**し、Linux CUDA は実験扱い（Metalは将来対応）。
 - Nemotron 専用の詳細設計は **TBD** として後段 SPEC に委譲。
-- **Windows DirectML ????**: gpt-oss DirectML ???? C API?`gptoss_*` ??????????Windows???? `gptoss_directml.dll` / `nemotron_directml.dll` ?????????????????? `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???DLL?????
-- **DirectML ?????**: safetensors??????????????`model.directml.bin` / `model.dml.bin` ?????????????????safetensors???????????
+- **Windows CUDA (TBD)**: gptoss_* C API ??????DLL/ENV ? TBD?
+- **DirectML (??)**: ??????????????`model.directml.bin` / `model.dml.bin` ??????
 
 ## 詳細仕様（参照）
 - **エンジン抽象化**: `SPEC-d7feaa2c`

@@ -164,6 +164,8 @@ struct DmlBindings {
     DML_BINDING_DESC token_binding_desc{};
     DML_BINDING_DESC logits_binding_desc{};
     DML_BINDING_DESC kv_cache_binding_desc{};
+    std::array<DML_BINDING_DESC, 2> decode_input_descs{};
+    std::array<DML_BINDING_DESC, 2> prefill_output_descs{};
 #endif
     bool initialized{false};
 };
@@ -463,7 +465,7 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
         ctx->dml_exec.recorder->RecordDispatch(
             ctx->dml_exec.command_list.Get(),
             model->dml_graph.prefill_op.Get(),
-            nullptr,
+            ctx->dml_exec.binding_table.Get(),
             nullptr);
     }
     if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
@@ -488,11 +490,17 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     }
 #ifdef _WIN32
     if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    if (ctx->dml_exec.binding_table) {
+        ctx->dml_exec.binding_table->BindInputs(
+            static_cast<UINT>(ctx->dml_bindings.decode_input_descs.size()),
+            ctx->dml_bindings.decode_input_descs.data());
+        ctx->dml_exec.binding_table->BindOutputs(1, &ctx->dml_bindings.logits_binding_desc);
+    }
     if (ctx->dml_exec.recorder && model->dml_graph.decode_op) {
         ctx->dml_exec.recorder->RecordDispatch(
             ctx->dml_exec.command_list.Get(),
             model->dml_graph.decode_op.Get(),
-            nullptr,
+            ctx->dml_exec.binding_table.Get(),
             nullptr);
     }
     if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
@@ -801,6 +809,9 @@ bool init_dml_bindings(const DmlGraph::GraphDesc& desc,
     bindings.kv_cache_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
     bindings.kv_cache_binding_desc.Desc = &bindings.kv_cache_binding;
 
+    bindings.decode_input_descs = {bindings.token_binding_desc, bindings.kv_cache_binding_desc};
+    bindings.prefill_output_descs = {bindings.logits_binding_desc, bindings.kv_cache_binding_desc};
+
     bindings.initialized = true;
     return true;
 }
@@ -863,7 +874,7 @@ bool init_dml_binding_table(DmlExecState& state,
     table_desc.Dispatchable = graph.prefill_op.Get();
     table_desc.CPUDescriptorHandle = {};
     table_desc.GPUDescriptorHandle = {};
-    table_desc.SizeInDescriptors = 1;
+    table_desc.SizeInDescriptors = 2;
 
     state.binding_table.Reset();
     if (FAILED(state.dml_device->CreateBindingTable(&table_desc, IID_PPV_ARGS(&state.binding_table)))) {
@@ -871,7 +882,7 @@ bool init_dml_binding_table(DmlExecState& state,
     }
 
     state.binding_table->BindInputs(1, &bindings.token_binding_desc);
-    state.binding_table->BindOutputs(1, &bindings.logits_binding_desc);
+    state.binding_table->BindOutputs(2, bindings.prefill_output_descs.data());
     return true;
 }
 

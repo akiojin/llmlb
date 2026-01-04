@@ -8,15 +8,15 @@
 
 ## Setup
 
-- [ ] `[P]` S-1: tiktoken-rs依存をrouter/Cargo.tomlに追加
-- [ ] `[P]` S-2: マイグレーションファイル 004_add_token_statistics.sql 作成
+- [x] `[P]` S-1: tiktoken-rs依存をrouter/Cargo.tomlに追加
+- [x] `[P]` S-2: マイグレーションファイル 004_add_token_statistics.sql 作成
 
 ## Test（RED）
 
 ### データモデル
 
-- [ ] T-1: RequestResponseRecordのトークンフィールドシリアライズテスト
-- [ ] T-2: NodeLoadStateトークン累積テスト
+- [x] T-1: RequestResponseRecordのトークンフィールドシリアライズテスト
+- [x] T-2: NodeLoadStateトークン累積テスト
 
 ### トークン抽出
 
@@ -49,9 +49,9 @@
 
 ### データモデル実装
 
-- [ ] C-1: common/src/protocol.rs - RequestResponseRecordにトークンフィールド追加
+- [x] C-1: common/src/protocol.rs - RequestResponseRecordにトークンフィールド追加
   - 依存: T-1
-- [ ] C-2: router/src/balancer/mod.rs - NodeLoadStateにトークンフィールド追加
+- [x] C-2: router/src/balancer/mod.rs - NodeLoadStateにトークンフィールド追加
   - 依存: T-2
 
 ### トークン抽出実装

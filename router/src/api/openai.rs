@@ -1057,6 +1057,9 @@ async fn proxy_openai_cloud_post(
                         message: format!("{e:?}"),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Err(e);
@@ -1097,6 +1100,9 @@ async fn proxy_openai_cloud_post(
             duration_ms: duration.as_millis() as u64,
             status: status_record,
             completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
         },
     );
 
@@ -1152,6 +1158,9 @@ async fn proxy_openai_post(
                         message: message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             let retry_after = queue_config.timeout.as_secs().max(1);
@@ -1182,6 +1191,9 @@ async fn proxy_openai_post(
                         message: message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Ok(queue_error_response(
@@ -1216,6 +1228,9 @@ async fn proxy_openai_post(
                         message: format!("Node selection failed: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Err(e.into());
@@ -1267,6 +1282,9 @@ async fn proxy_openai_post(
                         message: format!("Failed to proxy OpenAI request: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 
@@ -1299,6 +1317,9 @@ async fn proxy_openai_post(
                 duration_ms: duration.as_millis() as u64,
                 status: RecordStatus::Success,
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1344,6 +1365,9 @@ async fn proxy_openai_post(
                     message: message.clone(),
                 },
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1386,6 +1410,9 @@ async fn proxy_openai_post(
                 duration_ms: duration.as_millis() as u64,
                 status: RecordStatus::Success,
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1423,6 +1450,9 @@ async fn proxy_openai_post(
                     duration_ms: duration.as_millis() as u64,
                     status: RecordStatus::Success,
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 
@@ -1457,6 +1487,9 @@ async fn proxy_openai_post(
                         message: format!("Failed to parse OpenAI response: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 

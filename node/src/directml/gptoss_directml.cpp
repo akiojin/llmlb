@@ -161,6 +161,9 @@ struct DmlBindings {
     DML_BUFFER_BINDING token_binding{};
     DML_BUFFER_BINDING logits_binding{};
     DML_BUFFER_BINDING kv_cache_binding{};
+    DML_BINDING_DESC token_binding_desc{};
+    DML_BINDING_DESC logits_binding_desc{};
+    DML_BINDING_DESC kv_cache_binding_desc{};
 #endif
     bool initialized{false};
 };
@@ -174,6 +177,7 @@ struct DmlExecState {
     ComPtr<ID3D12Fence> fence;
     HANDLE fence_event{nullptr};
     uint64_t fence_value{0};
+    ComPtr<IDMLCommandRecorder> recorder;
 #endif
     bool initialized{false};
 };
@@ -452,6 +456,17 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized || !ctx->dml_bindings.initialized) {
         return gptoss_status_insufficient_resources;
     }
+#ifdef _WIN32
+    if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    if (ctx->dml_exec.recorder && model->dml_graph.prefill_op) {
+        ctx->dml_exec.recorder->RecordDispatch(
+            ctx->dml_exec.command_list.Get(),
+            model->dml_graph.prefill_op.Get(),
+            nullptr,
+            nullptr);
+    }
+    if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+#endif
     return gptoss_status_unsupported_system;
 }
 
@@ -470,6 +485,17 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized || !ctx->dml_bindings.initialized) {
         return gptoss_status_insufficient_resources;
     }
+#ifdef _WIN32
+    if (!reset_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    if (ctx->dml_exec.recorder && model->dml_graph.decode_op) {
+        ctx->dml_exec.recorder->RecordDispatch(
+            ctx->dml_exec.command_list.Get(),
+            model->dml_graph.decode_op.Get(),
+            nullptr,
+            nullptr);
+    }
+    if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+#endif
     return gptoss_status_unsupported_system;
 }
 
@@ -767,6 +793,13 @@ bool init_dml_bindings(const DmlGraph::GraphDesc& desc,
     bindings.kv_cache_binding.Offset = 0;
     bindings.kv_cache_binding.SizeInBytes = desc.kv_cache.buffer_desc.TotalTensorSizeInBytes;
 
+    bindings.token_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
+    bindings.token_binding_desc.Desc = &bindings.token_binding;
+    bindings.logits_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
+    bindings.logits_binding_desc.Desc = &bindings.logits_binding;
+    bindings.kv_cache_binding_desc.Type = DML_BINDING_TYPE_BUFFER;
+    bindings.kv_cache_binding_desc.Desc = &bindings.kv_cache_binding;
+
     bindings.initialized = true;
     return true;
 }
@@ -809,6 +842,9 @@ bool init_dml_exec_state(DmlExecState& state) {
     }
     state.fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (!state.fence_event) {
+        return false;
+    }
+    if (FAILED(DMLCreateCommandRecorder(IID_PPV_ARGS(&state.recorder)))) {
         return false;
     }
     state.initialized = true;

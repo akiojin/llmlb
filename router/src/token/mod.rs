@@ -33,6 +33,124 @@ impl TokenUsage {
     }
 }
 
+/// SSEストリーミングレスポンスのトークン累積器
+///
+/// OpenAI互換のSSEストリーミングレスポンスをパースし、
+/// チャンクごとにコンテンツを累積してトークン使用量を計算する
+#[derive(Debug)]
+pub struct StreamingTokenAccumulator {
+    /// モデル名（トークン推定用）
+    model: String,
+    /// 累積されたコンテンツ
+    accumulated_content: String,
+    /// 入力トークン数（リクエスト時に設定可能）
+    input_tokens: Option<u32>,
+    /// 抽出されたusageフィールド（最終チャンクから）
+    extracted_usage: Option<TokenUsage>,
+    /// ストリーム完了フラグ
+    done: bool,
+}
+
+impl StreamingTokenAccumulator {
+    /// 新しいStreamingTokenAccumulatorを作成
+    pub fn new(model: &str) -> Self {
+        Self {
+            model: model.to_string(),
+            accumulated_content: String::new(),
+            input_tokens: None,
+            extracted_usage: None,
+            done: false,
+        }
+    }
+
+    /// 入力トークン数を設定
+    pub fn set_input_tokens(&mut self, tokens: Option<u32>) {
+        self.input_tokens = tokens;
+    }
+
+    /// SSEチャンクを処理
+    pub fn process_chunk(&mut self, chunk: &str) {
+        // 空行やコメント行はスキップ
+        let chunk = chunk.trim();
+        if chunk.is_empty() || chunk.starts_with(':') {
+            return;
+        }
+
+        // "data: " プレフィックスを除去
+        let data = if let Some(stripped) = chunk.strip_prefix("data: ") {
+            stripped
+        } else if let Some(stripped) = chunk.strip_prefix("data:") {
+            stripped.trim()
+        } else {
+            return;
+        };
+
+        // [DONE] マーカーをチェック
+        if data == "[DONE]" {
+            self.done = true;
+            return;
+        }
+
+        // JSONパース
+        if let Ok(json) = serde_json::from_str::<Value>(data) {
+            // usageフィールドを抽出（最終チャンクに含まれる場合がある）
+            if let Some(usage) = extract_usage_from_response(&json) {
+                self.extracted_usage = Some(usage);
+            }
+
+            // delta.contentを抽出して累積
+            if let Some(choices) = json.get("choices").and_then(|c| c.as_array()) {
+                for choice in choices {
+                    if let Some(content) = choice
+                        .get("delta")
+                        .and_then(|d| d.get("content"))
+                        .and_then(|c| c.as_str())
+                    {
+                        self.accumulated_content.push_str(content);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 累積されたコンテンツを取得
+    pub fn accumulated_content(&self) -> &str {
+        &self.accumulated_content
+    }
+
+    /// ストリームが完了したかどうか
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// 最終的なTokenUsageを計算
+    pub fn finalize(&self) -> TokenUsage {
+        // usageフィールドが抽出されている場合はそれを使用
+        if let Some(ref usage) = self.extracted_usage {
+            return usage.clone();
+        }
+
+        // usageがない場合はtiktokenで推定
+        let output_tokens = if self.accumulated_content.is_empty() {
+            Some(0)
+        } else {
+            estimate_tokens(&self.accumulated_content, &self.model)
+        };
+
+        let input_tokens = self.input_tokens;
+
+        // total_tokensを計算
+        let total_tokens = match (input_tokens, output_tokens) {
+            (Some(i), Some(o)) => Some(i + o),
+            (Some(i), None) => Some(i),
+            (None, Some(o)) => Some(o),
+            (None, None) => None,
+        };
+
+        TokenUsage::new(input_tokens, output_tokens, total_tokens)
+    }
+}
+
 /// OpenAI互換レスポンスのusageフィールドからトークン数を抽出
 ///
 /// # Arguments
@@ -295,5 +413,125 @@ mod tests {
 
         let with_total = TokenUsage::new(None, None, Some(15));
         assert!(!with_total.is_empty());
+    }
+
+    // T-11: SSEチャンクごとのトークン累積テスト
+    #[test]
+    fn test_streaming_accumulator_parses_chunks() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // SSE形式のチャンク（OpenAI互換）
+        let chunk1 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"}}]}"#;
+        let chunk2 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":" world"}}]}"#;
+        let chunk3 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"!"}}]}"#;
+
+        accumulator.process_chunk(chunk1);
+        accumulator.process_chunk(chunk2);
+        accumulator.process_chunk(chunk3);
+
+        assert_eq!(accumulator.accumulated_content(), "Hello world!");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_handles_done_marker() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        let chunk1 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hi"}}]}"#;
+        let done = "data: [DONE]";
+
+        accumulator.process_chunk(chunk1);
+        accumulator.process_chunk(done);
+
+        assert!(accumulator.is_done());
+    }
+
+    #[test]
+    fn test_streaming_accumulator_extracts_usage_from_final_chunk() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // 最終チャンクにusageフィールドが含まれるパターン（OpenAI API stream_options.include_usage=true）
+        let chunk1 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Test"}}]}"#;
+        let final_chunk = r#"data: {"id":"chatcmpl-123","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#;
+        let done = "data: [DONE]";
+
+        accumulator.process_chunk(chunk1);
+        accumulator.process_chunk(final_chunk);
+        accumulator.process_chunk(done);
+
+        let usage = accumulator.finalize();
+        assert_eq!(usage.input_tokens, Some(10));
+        assert_eq!(usage.output_tokens, Some(5));
+        assert_eq!(usage.total_tokens, Some(15));
+    }
+
+    // T-12: ストリーミング完了時の最終集計テスト
+    #[test]
+    fn test_streaming_accumulator_estimates_tokens_when_no_usage() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // usageフィールドがないストリーミングレスポンス
+        let chunk1 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"}}]}"#;
+        let chunk2 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":" world"}}]}"#;
+        let done = "data: [DONE]";
+
+        accumulator.process_chunk(chunk1);
+        accumulator.process_chunk(chunk2);
+        accumulator.process_chunk(done);
+
+        // usageがない場合はtiktokenで推定
+        let usage = accumulator.finalize();
+        assert!(
+            usage.output_tokens.is_some(),
+            "出力トークンが推定されるべき"
+        );
+        // "Hello world" は2-3トークン程度
+        let output = usage.output_tokens.unwrap();
+        assert!(output > 0 && output < 10, "妥当なトークン数: {}", output);
+    }
+
+    #[test]
+    fn test_streaming_accumulator_with_input_tokens() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+        accumulator.set_input_tokens(Some(25)); // リクエスト時の入力トークン
+
+        let chunk1 = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Response"}}]}"#;
+        let done = "data: [DONE]";
+
+        accumulator.process_chunk(chunk1);
+        accumulator.process_chunk(done);
+
+        let usage = accumulator.finalize();
+        assert_eq!(usage.input_tokens, Some(25));
+        assert!(usage.output_tokens.is_some());
+        // total = input + output
+        assert!(usage.total_tokens.is_some());
+    }
+
+    #[test]
+    fn test_streaming_accumulator_handles_empty_stream() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        let done = "data: [DONE]";
+        accumulator.process_chunk(done);
+
+        let usage = accumulator.finalize();
+        // 空ストリームの場合はすべてNoneまたは0
+        assert!(
+            usage.is_empty() || usage.output_tokens == Some(0),
+            "空ストリームでは空のusageを返すべき"
+        );
+    }
+
+    #[test]
+    fn test_streaming_accumulator_handles_multiline_chunk() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // 複数行を含むチャンク
+        let chunk =
+            r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Line1\nLine2"}}]}"#;
+
+        accumulator.process_chunk(chunk);
+
+        assert_eq!(accumulator.accumulated_content(), "Line1\nLine2");
     }
 }

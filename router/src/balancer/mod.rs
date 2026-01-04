@@ -1633,6 +1633,96 @@ mod tests {
         };
         assert_eq!(avg, 150.0);
     }
+
+    #[tokio::test]
+    async fn test_finish_request_accumulates_tokens() {
+        use crate::token::TokenUsage;
+
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        let node = registry
+            .register(RegisterRequest {
+                machine_name: "token-test-node".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 50)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // リクエスト開始
+        manager.begin_request(node.node_id).await.unwrap();
+
+        // トークン使用量を含めてリクエスト終了
+        let token_usage = TokenUsage::new(Some(100), Some(50), Some(150));
+        manager
+            .finish_request_with_tokens(
+                node.node_id,
+                RequestOutcome::Success,
+                Duration::from_millis(100),
+                Some(token_usage),
+            )
+            .await
+            .unwrap();
+
+        // トークンが累積されていることを確認
+        let state = manager.state.read().await;
+        let entry = state.get(&node.node_id).unwrap();
+        assert_eq!(entry.total_input_tokens, 100);
+        assert_eq!(entry.total_output_tokens, 50);
+        assert_eq!(entry.total_tokens, 150);
+    }
+
+    #[tokio::test]
+    async fn test_finish_request_accumulates_multiple_tokens() {
+        use crate::token::TokenUsage;
+
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        let node = registry
+            .register(RegisterRequest {
+                machine_name: "multi-token-node".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 51)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // 複数のリクエストでトークンを累積
+        for i in 0..3 {
+            manager.begin_request(node.node_id).await.unwrap();
+            let token_usage = TokenUsage::new(Some(100 * (i + 1)), Some(50 * (i + 1)), None);
+            manager
+                .finish_request_with_tokens(
+                    node.node_id,
+                    RequestOutcome::Success,
+                    Duration::from_millis(100),
+                    Some(token_usage),
+                )
+                .await
+                .unwrap();
+        }
+
+        // 累積値を確認: 100+200+300=600, 50+100+150=300
+        let state = manager.state.read().await;
+        let entry = state.get(&node.node_id).unwrap();
+        assert_eq!(entry.total_input_tokens, 600);
+        assert_eq!(entry.total_output_tokens, 300);
+        assert_eq!(entry.total_tokens, 900); // 600 + 300
+    }
 }
 
 /// ノードの最新ロード状態
@@ -1648,13 +1738,10 @@ struct NodeLoadState {
     initializing: bool,
     ready_models: Option<(u8, u8)>,
     /// 入力トークン累計
-    #[allow(dead_code)]
     total_input_tokens: u64,
     /// 出力トークン累計
-    #[allow(dead_code)]
     total_output_tokens: u64,
     /// 総トークン累計
-    #[allow(dead_code)]
     total_tokens: u64,
 }
 
@@ -2195,6 +2282,89 @@ impl LoadManager {
             }
 
             entry.total_latency_ms = entry.total_latency_ms.saturating_add(duration.as_millis());
+        }
+
+        let updated_average = entry.average_latency_ms();
+
+        if let Some(metrics) = entry.last_metrics.as_mut() {
+            metrics.total_requests = entry.total_assigned;
+            if updated_average.is_some() {
+                metrics.average_response_time_ms = updated_average;
+            }
+            if let Some(latest) = entry.metrics_history.back_mut() {
+                latest.total_requests = metrics.total_requests;
+                if let Some(avg) = metrics.average_response_time_ms {
+                    latest.average_response_time_ms = Some(avg);
+                }
+                latest.gpu_usage = metrics.gpu_usage;
+                latest.gpu_memory_usage = metrics.gpu_memory_usage;
+            }
+        }
+
+        let should_notify_idle = entry.combined_active() == 0;
+
+        drop(state);
+        if should_notify_idle {
+            self.queue_notify.notify_waiters();
+        }
+        self.record_request_history(outcome, Utc::now()).await;
+
+        Ok(())
+    }
+
+    /// リクエスト完了を記録（トークン使用量含む）
+    pub async fn finish_request_with_tokens(
+        &self,
+        node_id: Uuid,
+        outcome: RequestOutcome,
+        duration: StdDuration,
+        token_usage: Option<crate::token::TokenUsage>,
+    ) -> RouterResult<()> {
+        self.registry.get(node_id).await?;
+
+        let mut state = self.state.write().await;
+        let entry = state.entry(node_id).or_default();
+
+        if let RequestOutcome::Queued = outcome {
+            // キューに積んだだけのものは active を増減させない
+        } else {
+            if entry.assigned_active > 0 {
+                entry.assigned_active -= 1;
+            }
+
+            match outcome {
+                RequestOutcome::Success => {
+                    entry.success_count = entry.success_count.saturating_add(1)
+                }
+                RequestOutcome::Error => entry.error_count = entry.error_count.saturating_add(1),
+                RequestOutcome::Queued => {}
+            }
+
+            entry.total_latency_ms = entry.total_latency_ms.saturating_add(duration.as_millis());
+
+            // トークン使用量を累積
+            if let Some(ref usage) = token_usage {
+                if let Some(input) = usage.input_tokens {
+                    entry.total_input_tokens =
+                        entry.total_input_tokens.saturating_add(input as u64);
+                }
+                if let Some(output) = usage.output_tokens {
+                    entry.total_output_tokens =
+                        entry.total_output_tokens.saturating_add(output as u64);
+                }
+                // total_tokensはinput + outputで計算するか、明示的に渡されたものを使用
+                let total = usage.total_tokens.or_else(|| {
+                    match (usage.input_tokens, usage.output_tokens) {
+                        (Some(i), Some(o)) => Some(i + o),
+                        (Some(i), None) => Some(i),
+                        (None, Some(o)) => Some(o),
+                        (None, None) => None,
+                    }
+                });
+                if let Some(t) = total {
+                    entry.total_tokens = entry.total_tokens.saturating_add(t as u64);
+                }
+            }
         }
 
         let updated_average = entry.average_latency_ms();

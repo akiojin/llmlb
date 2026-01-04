@@ -459,6 +459,9 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
     }
+    if (ctx->tokens.size() * sizeof(uint32_t) > ctx->dml_plan.token_buffer_bytes) {
+        return gptoss_status_context_overflow;
+    }
     if (!model->dml_graph.has_prefill) {
         compile_dml_operators(model->dml_graph, ctx->dml_exec);
     }
@@ -509,6 +512,12 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     auto* model = reinterpret_cast<GptossModel*>(ctx->model);
     if (!uuid_equals(model->layout_uuid, kDirectMlLayoutUuid)) {
         return gptoss_status_unsupported_system;
+    }
+    if (ctx->tokens.size() * sizeof(uint32_t) > ctx->dml_plan.token_buffer_bytes) {
+        return gptoss_status_context_overflow;
+    }
+    if (static_cast<size_t>(model->dml_layout.vocab_size) * sizeof(float) > ctx->dml_plan.logits_buffer_bytes) {
+        return gptoss_status_insufficient_resources;
     }
     if (!model->dml_graph.has_decode) {
         compile_dml_operators(model->dml_graph, ctx->dml_exec);

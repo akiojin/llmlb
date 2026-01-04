@@ -80,6 +80,7 @@ struct GptossModel {
     uint32_t max_context_length{0};
     uint32_t vocabulary_size{0};
     GptossModelHeader header{};
+    GptossUuid layout_uuid{};
 };
 
 bool read_exact(std::ifstream& in, void* out, size_t size) {
@@ -117,16 +118,17 @@ gptoss_special_token decode_special_token_uuid(const GptossUuid& uuid) {
     return gptoss_special_token_invalid;
 }
 
-bool load_gptoss_model_file(const fs::path& path,
-                            GptossModelHeader& model_header,
-                            struct GptossTokenizer& tokenizer) {
+gptoss_status load_gptoss_model_file(const fs::path& path,
+                                     GptossModelHeader& model_header,
+                                     GptossUuid& layout_uuid,
+                                     struct GptossTokenizer& tokenizer) {
     std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
+    if (!in) return gptoss_status_io_error;
 
     GptossFileHeader header{};
-    if (!read_exact(in, &header, sizeof(header))) return false;
+    if (!read_exact(in, &header, sizeof(header))) return gptoss_status_io_error;
     if (std::memcmp(header.magic, "GPT-OSS v1.0", sizeof(header.magic)) != 0 || header.zero != 0) {
-        return false;
+        return gptoss_status_invalid_argument;
     }
 
     static const std::array<uint8_t, 16> kModelUuid = {
@@ -140,21 +142,20 @@ bool load_gptoss_model_file(const fs::path& path,
     };
 
     GptossUuid model_uuid{};
-    if (!read_exact(in, &model_uuid, sizeof(model_uuid))) return false;
-    if (!uuid_equals(model_uuid, kModelUuid)) return false;
+    if (!read_exact(in, &model_uuid, sizeof(model_uuid))) return gptoss_status_io_error;
+    if (!uuid_equals(model_uuid, kModelUuid)) return gptoss_status_invalid_argument;
 
-    if (!read_exact(in, &model_header, sizeof(model_header))) return false;
+    if (!read_exact(in, &model_header, sizeof(model_header))) return gptoss_status_io_error;
 
-    GptossUuid layout_uuid{};
-    if (!read_exact(in, &layout_uuid, sizeof(layout_uuid))) return false;
-    if (uuid_equals(layout_uuid, kAppleGpuLayoutUuid)) return false;
+    if (!read_exact(in, &layout_uuid, sizeof(layout_uuid))) return gptoss_status_io_error;
+    if (uuid_equals(layout_uuid, kAppleGpuLayoutUuid)) return gptoss_status_unsupported_argument;
 
     GptossUuid tokenizer_uuid{};
-    if (!read_exact(in, &tokenizer_uuid, sizeof(tokenizer_uuid))) return false;
-    if (!uuid_equals(tokenizer_uuid, kTokenizerUuid)) return false;
+    if (!read_exact(in, &tokenizer_uuid, sizeof(tokenizer_uuid))) return gptoss_status_io_error;
+    if (!uuid_equals(tokenizer_uuid, kTokenizerUuid)) return gptoss_status_invalid_argument;
 
     GptossTokenizerHeader tok_header{};
-    if (!read_exact(in, &tok_header, sizeof(tok_header))) return false;
+    if (!read_exact(in, &tok_header, sizeof(tok_header))) return gptoss_status_io_error;
 
     tokenizer.special_ids.fill(UINT32_MAX);
     tokenizer.num_special_tokens = tok_header.num_special_tokens;
@@ -162,7 +163,7 @@ bool load_gptoss_model_file(const fs::path& path,
 
     for (uint32_t idx = 0; idx < tok_header.num_special_tokens; ++idx) {
         GptossUuid token_uuid{};
-        if (!read_exact(in, &token_uuid, sizeof(token_uuid))) return false;
+        if (!read_exact(in, &token_uuid, sizeof(token_uuid))) return gptoss_status_io_error;
         const auto token_type = decode_special_token_uuid(token_uuid);
         if (token_type != gptoss_special_token_invalid) {
             tokenizer.special_ids[token_type - 1] = tok_header.num_text_tokens + idx;
@@ -171,28 +172,29 @@ bool load_gptoss_model_file(const fs::path& path,
 
     if (tok_header.regex_size != 0) {
         in.seekg(static_cast<std::streamoff>(tok_header.regex_size), std::ios::cur);
-        if (!in.good()) return false;
+        if (!in.good()) return gptoss_status_io_error;
     }
 
     if (tok_header.tokens_size != 0) {
         tokenizer.tokens_blob.resize(tok_header.tokens_size);
-        if (!read_exact(in, tokenizer.tokens_blob.data(), tok_header.tokens_size)) return false;
+        if (!read_exact(in, tokenizer.tokens_blob.data(), tok_header.tokens_size)) return gptoss_status_io_error;
     } else {
-        return false;
+        return gptoss_status_invalid_argument;
     }
 
     const uint8_t* ptr = tokenizer.tokens_blob.data();
     const uint8_t* end = ptr + tokenizer.tokens_blob.size();
     for (uint32_t t = 0; t < tokenizer.num_text_tokens; ++t) {
-        if (ptr + sizeof(uint16_t) > end) return false;
+        if (ptr + sizeof(uint16_t) > end) return gptoss_status_invalid_argument;
         uint16_t len = 0;
         std::memcpy(&len, ptr, sizeof(len));
         ptr += sizeof(uint16_t);
-        if (ptr + len > end) return false;
+        if (ptr + len > end) return gptoss_status_invalid_argument;
         ptr += len;
     }
 
-    return model_header.context_length != 0;
+    if (model_header.context_length == 0) return gptoss_status_invalid_argument;
+    return gptoss_status_success;
 }
 
 #ifdef _WIN32
@@ -528,14 +530,17 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
             delete model;
             return gptoss_status_insufficient_memory;
         }
-        if (!load_gptoss_model_file(path, model->header, *tokenizer)) {
+        GptossUuid layout_uuid{};
+        auto status = load_gptoss_model_file(path, model->header, layout_uuid, *tokenizer);
+        if (status != gptoss_status_success) {
             delete tokenizer;
             delete model;
-            return gptoss_status_invalid_argument;
+            return status;
         }
 
         model->max_context_length = model->header.context_length;
         model->vocabulary_size = tokenizer->num_text_tokens + tokenizer->num_special_tokens;
+        model->layout_uuid = layout_uuid;
         model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
         *model_out = reinterpret_cast<gptoss_model_t>(model);
         return gptoss_status_success;

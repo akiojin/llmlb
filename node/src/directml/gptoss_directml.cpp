@@ -96,6 +96,15 @@ struct DmlTensorLayout {
     uint32_t head_dim{0};
 };
 
+struct DmlGraph {
+#ifdef _WIN32
+    ComPtr<IDMLCompiledOperator> prefill_op;
+    ComPtr<IDMLCompiledOperator> decode_op;
+#endif
+    DmlTensorLayout layout{};
+    bool initialized{false};
+};
+
 struct DmlContextPlan {
     size_t token_buffer_bytes{0};
     size_t logits_buffer_bytes{0};
@@ -121,6 +130,7 @@ struct GptossModel {
     GptossUuid layout_uuid{};
     DmlPlan dml_plan{};
     DmlTensorLayout dml_layout{};
+    DmlGraph dml_graph{};
 };
 
 bool read_exact(std::ifstream& in, void* out, size_t size) {
@@ -189,6 +199,12 @@ bool build_dml_tensor_layout(const GptossModelHeader& header,
     layout.num_heads = header.num_heads;
     layout.num_kv_heads = header.num_kv_heads;
     layout.head_dim = header.head_dim;
+    return true;
+}
+
+bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
+    graph.layout = layout;
+    graph.initialized = false;
     return true;
 }
 
@@ -718,6 +734,7 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
         if (uuid_equals(layout_uuid, kDirectMlLayoutUuid)) {
             build_dml_plan(model->header, model->vocabulary_size, model->dml_plan);
             build_dml_tensor_layout(model->header, model->vocabulary_size, model->dml_layout);
+            build_dml_graph_stub(model->dml_layout, model->dml_graph);
         }
         model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
         *model_out = reinterpret_cast<gptoss_model_t>(model);

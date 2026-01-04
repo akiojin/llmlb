@@ -1723,6 +1723,108 @@ mod tests {
         assert_eq!(entry.total_output_tokens, 300);
         assert_eq!(entry.total_tokens, 900); // 600 + 300
     }
+
+    // T-13: エラー応答時のトークンカウントテスト
+    #[tokio::test]
+    async fn test_finish_request_accumulates_tokens_on_error() {
+        use crate::token::TokenUsage;
+
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        let node = registry
+            .register(RegisterRequest {
+                machine_name: "error-token-node".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 60)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // リクエストを開始
+        manager.begin_request(node.node_id).await.unwrap();
+
+        // エラー応答でもトークンが累積されるべき（入力トークンは消費されている）
+        let token_usage = TokenUsage::new(Some(100), None, Some(100));
+        manager
+            .finish_request_with_tokens(
+                node.node_id,
+                RequestOutcome::Error, // エラー応答
+                Duration::from_millis(50),
+                Some(token_usage),
+            )
+            .await
+            .unwrap();
+
+        // エラー時でもトークンが記録されることを確認
+        let state = manager.state.read().await;
+        let entry = state.get(&node.node_id).unwrap();
+        assert_eq!(entry.total_input_tokens, 100);
+        assert_eq!(entry.total_tokens, 100);
+        assert_eq!(entry.error_count, 1); // エラーカウントも増加
+    }
+
+    // T-14: オフラインノードの統計保持テスト
+    #[tokio::test]
+    async fn test_offline_node_retains_token_statistics() {
+        use crate::token::TokenUsage;
+
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        let node = registry
+            .register(RegisterRequest {
+                machine_name: "offline-stats-node".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 61)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // トークンを累積
+        manager.begin_request(node.node_id).await.unwrap();
+        let token_usage = TokenUsage::new(Some(500), Some(250), Some(750));
+        manager
+            .finish_request_with_tokens(
+                node.node_id,
+                RequestOutcome::Success,
+                Duration::from_millis(100),
+                Some(token_usage),
+            )
+            .await
+            .unwrap();
+
+        // ノードをオフラインに設定（ヘルスチェック失敗をシミュレート）
+        {
+            let mut state = manager.state.write().await;
+            if let Some(entry) = state.get_mut(&node.node_id) {
+                entry.last_metrics = None; // メトリクスをクリア（オフライン状態をシミュレート）
+            }
+        }
+
+        // オフラインになってもトークン統計は保持される
+        let state = manager.state.read().await;
+        let entry = state.get(&node.node_id).unwrap();
+        assert_eq!(entry.total_input_tokens, 500);
+        assert_eq!(entry.total_output_tokens, 250);
+        assert_eq!(entry.total_tokens, 750);
+        assert!(
+            entry.last_metrics.is_none(),
+            "ノードはオフライン状態であるべき"
+        );
+    }
 }
 
 /// ノードの最新ロード状態

@@ -84,6 +84,12 @@ struct DmlPlan {
     size_t vocab_embeddings_bytes{0};
 };
 
+struct DmlContextPlan {
+    size_t token_buffer_bytes{0};
+    size_t logits_buffer_bytes{0};
+    size_t kv_cache_bytes{0};
+};
+
 struct GptossModel {
     std::atomic<uint32_t> ref_count{1};
     std::string model_dir;
@@ -148,6 +154,42 @@ bool build_dml_plan(const GptossModelHeader& header, uint32_t vocabulary_size, D
         plan.vocab_embeddings_elements = embed_elements;
         plan.vocab_embeddings_bytes = embed_elements * sizeof(float);
     }
+    return true;
+}
+
+bool safe_mul_size(size_t a, size_t b, size_t& out) {
+    if (a == 0 || b == 0) {
+        out = 0;
+        return true;
+    }
+    if (a > SIZE_MAX / b) return false;
+    out = a * b;
+    return true;
+}
+
+bool build_dml_context_plan(const GptossModelHeader& header,
+                            uint32_t vocabulary_size,
+                            size_t max_tokens,
+                            size_t max_batch_tokens,
+                            DmlContextPlan& plan) {
+    if (max_tokens == 0 || max_batch_tokens == 0) return false;
+    if (max_batch_tokens > max_tokens) return false;
+
+    size_t token_bytes = 0;
+    if (!safe_mul_size(max_tokens, sizeof(uint32_t), token_bytes)) return false;
+    plan.token_buffer_bytes = token_bytes;
+
+    size_t logits_elements = 0;
+    if (!safe_mul_size(max_batch_tokens, static_cast<size_t>(vocabulary_size), logits_elements)) return false;
+    if (!safe_mul_size(logits_elements, sizeof(float), plan.logits_buffer_bytes)) return false;
+
+    size_t kv_elements = 0;
+    if (!safe_mul_size(static_cast<size_t>(header.num_blocks), max_tokens, kv_elements)) return false;
+    if (!safe_mul_size(kv_elements, static_cast<size_t>(header.num_kv_heads), kv_elements)) return false;
+    if (!safe_mul_size(kv_elements, static_cast<size_t>(header.head_dim), kv_elements)) return false;
+    if (!safe_mul_size(kv_elements, static_cast<size_t>(2), kv_elements)) return false;
+    if (!safe_mul_size(kv_elements, sizeof(float), plan.kv_cache_bytes)) return false;
+
     return true;
 }
 
@@ -338,6 +380,7 @@ struct GptossContext {
     gptoss_model_t model{nullptr};
     std::vector<uint32_t> tokens;
     size_t max_tokens{0};
+    DmlContextPlan dml_plan{};
 };
 
 uint32_t find_unknown_token_id(const GptossTokenizer& tokenizer) {
@@ -752,6 +795,17 @@ gptoss_status GPTOSS_ABI gptoss_context_create(
     if (!ctx) return gptoss_status_insufficient_memory;
     ctx->model = model;
     ctx->max_tokens = max_tokens;
+    auto* model_ptr = reinterpret_cast<GptossModel*>(model);
+    if (uuid_equals(model_ptr->layout_uuid, kDirectMlLayoutUuid)) {
+        if (!build_dml_context_plan(model_ptr->header,
+                                    model_ptr->vocabulary_size,
+                                    ctx->max_tokens,
+                                    max_batch_tokens == 0 ? ctx->max_tokens : max_batch_tokens,
+                                    ctx->dml_plan)) {
+            delete ctx;
+            return gptoss_status_invalid_argument;
+        }
+    }
     gptoss_model_retain(model);
     *context_out = reinterpret_cast<gptoss_context_t>(ctx);
     return gptoss_status_success;

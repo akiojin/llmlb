@@ -2,6 +2,7 @@
 
 ## Note
 - Nemotron向けの新エンジン（推論エンジン）は後日仕様化（TBD）。本タスクはエンジンローダー抽象化が主対象。
+- Windows DirectML（gpt-oss API互換）による Nemotron 実行パスは実装済み。詳細は SPEC 本文を参照。
 
 ## Setup
 - [x] Nodeエンジン抽象化の設計メモ整理
@@ -38,6 +39,7 @@
 ## Spike（任意）
 - [x] NemotronEngineを追加（mmap + validation）
 - [x] NemotronEngineロードテスト
+- [x] Nemotron DirectML（Windows）実行パスの追加（DLLロード/アーティファクト選択）
 
 ## EngineHost拡張（Session 2025-12-31）
 

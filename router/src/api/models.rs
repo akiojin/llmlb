@@ -585,7 +585,8 @@ pub(crate) fn normalize_quantization_label(input: &str) -> Option<String> {
 
 #[allow(dead_code)]
 fn extract_quantization(filename: &str) -> Option<String> {
-    infer_quantization_from_filename(filename).and_then(|token| normalize_quantization_label(&token))
+    infer_quantization_from_filename(filename)
+        .and_then(|token| normalize_quantization_label(&token))
 }
 
 fn hf_resolve_url(base_url: &str, repo: &str, filename: &str) -> String {

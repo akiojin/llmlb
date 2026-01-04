@@ -4,7 +4,10 @@
 
 use axum::Router;
 use futures::StreamExt;
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{
+    api, auth::jwt::create_jwt, balancer::LoadManager, registry::NodeRegistry, AppState,
+};
+use llm_router_common::auth::UserRole;
 use serial_test::serial;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
@@ -62,11 +65,16 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     (state, router, guard)
 }
 
+fn ws_url_with_token(addr: std::net::SocketAddr, secret: &str) -> String {
+    let token = create_jwt("test-admin", UserRole::Admin, secret).expect("create test jwt");
+    format!("ws://{}/ws/dashboard?token={}", addr, token)
+}
+
 #[tokio::test]
 #[serial]
 async fn test_dashboard_websocket_connection() {
     // Arrange: Router server startup
-    let (_state, router, _guard) = build_test_app().await;
+    let (state, router, _guard) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -78,7 +86,7 @@ async fn test_dashboard_websocket_connection() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Act: WebSocket connection
-    let ws_url = format!("ws://{}/ws/dashboard", addr);
+    let ws_url = ws_url_with_token(addr, &state.jwt_secret);
     let (ws_stream, _) = connect_async(&ws_url)
         .await
         .expect("Failed to connect to WebSocket");
@@ -116,7 +124,7 @@ async fn test_dashboard_receives_node_registration_event() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect WebSocket
-    let ws_url = format!("ws://{}/ws/dashboard", addr);
+    let ws_url = ws_url_with_token(addr, &state.jwt_secret);
     let (ws_stream, _) = connect_async(&ws_url)
         .await
         .expect("Failed to connect to WebSocket");
@@ -170,7 +178,7 @@ async fn test_dashboard_receives_node_status_change() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect WebSocket
-    let ws_url = format!("ws://{}/ws/dashboard", addr);
+    let ws_url = ws_url_with_token(addr, &state.jwt_secret);
     let (ws_stream, _) = connect_async(&ws_url)
         .await
         .expect("Failed to connect to WebSocket");

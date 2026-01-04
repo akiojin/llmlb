@@ -194,6 +194,7 @@
 - 内蔵エンジンの **一部として Nemotron 対応を含む**。
 - **Windows DirectML を想定**し、Linux CUDA は実験扱い（Metalは将来対応）。
 - Nemotron 専用の詳細設計は **TBD** として後段 SPEC に委譲。
+- **Windows DirectML 実装前提**: gpt-oss DirectML DLL と同一の C API を前提とし、`nemotron_directml.dll` を動的ロード（環境変数 `LLM_NODE_NEMOTRON_DML_LIB` で上書き）。モデルアーティファクトは `model.directml.bin` / `model.dml.bin` を使用。
 
 ## 詳細仕様（参照）
 - **エンジン抽象化**: `SPEC-d7feaa2c`

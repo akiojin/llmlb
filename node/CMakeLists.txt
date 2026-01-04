@@ -420,6 +420,24 @@ elseif(WIN32 AND BUILD_WITH_GPTOSS)
     set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
 endif()
 
+# Engine plugin: nemotron (DirectML on Windows)
+if(WIN32 AND BUILD_WITH_GPTOSS)
+    add_library(llm_engine_nemotron SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/nemotron_engine_plugin.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/nemotron_engine.cpp
+    )
+    target_include_directories(llm_engine_nemotron
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(llm_engine_nemotron
+        PRIVATE
+            spdlog::spdlog_header_only
+    )
+    set_target_properties(llm_engine_nemotron PROPERTIES OUTPUT_NAME "llm_engine_nemotron")
+endif()
+
 # Collect source files
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp

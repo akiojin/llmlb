@@ -104,6 +104,12 @@ register(format=...)  ───────▶    ModelStorage
 - Windows: DirectML（D3D12）
 - Linux: 当面は非対応（CUDAは実験扱い）
 
+### Windows DirectML（Nemotron）実装前提
+- **DLL/API互換**: gpt-oss DirectML DLL と同一の C API（`gptoss_*` シンボル）を前提とする。
+- **DLL名**: 既定は `nemotron_directml.dll`。環境変数 `LLM_NODE_NEMOTRON_DML_LIB` で上書き可能。
+- **モデルアーティファクト**: `model.directml.bin` または `model.dml.bin` を使用する。
+- **safetensors 正本**: `config.json` / `tokenizer.json` / index+shards を検証し、実行は DirectML アーティファクトを優先する。
+
 ### 現状の実運用確認（safetensors系LLM）
 - 安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
 - DirectMLは限定的、NemotronはTBD（後回し）。

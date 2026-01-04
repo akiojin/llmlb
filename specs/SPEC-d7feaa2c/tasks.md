@@ -2,7 +2,7 @@
 
 ## Note
 - Nemotron向けの新エンジン（推論エンジン）は後日仕様化（TBD）。本タスクはエンジンローダー抽象化が主対象。
-- Windows DirectML（gpt-oss API互換）による Nemotron 実行パスは実装済み。詳細は SPEC 本文を参照。
+- Windows CUDA（gpt-oss API互換）による Nemotron 実行パスは実装済み。詳細は SPEC 本文を参照。
 
 ## Setup
 - [x] Nodeエンジン抽象化の設計メモ整理
@@ -39,7 +39,7 @@
 ## Spike（任意）
 - [x] NemotronEngineを追加（mmap + validation）
 - [x] NemotronEngineロードテスト
-- [x] Nemotron DirectML（Windows）実行パスの追加（DLLロード/アーティファクト選択）
+- [x] Nemotron CUDA（Windows）実行パスの追加（DLLロード/アーティファクト選択）
 
 ## EngineHost拡張（Session 2025-12-31）
 
@@ -308,6 +308,6 @@
 
 ## Deferred（TBD）
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定（別SPEC）
-- Nemotron向けの新エンジン（推論エンジン）の実装（Metal/DirectML）
+- Nemotron向けの新エンジン（推論エンジン）の実装（Metal/CUDA）
 - Router側: HF chat_template(Jinja) を完全互換でレンダリングし、Nodeへ最終プロンプトを渡す方針の具体化（別SPEC想定）
 - Nemotron GPU PoC: safetensors直読→GPU演算→E2E生成までの段階的検証（別SPEC想定）

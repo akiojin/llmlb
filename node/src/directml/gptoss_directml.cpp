@@ -470,6 +470,7 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     }
 #ifdef _WIN32
     if (model->dml_graph.stub_graph) {
+        set_stub_logits(*ctx, model->dml_layout.vocab_size);
         return gptoss_status_success;
     }
     if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
@@ -491,6 +492,12 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
             nullptr);
     }
     if (!submit_dml_command_list(ctx->dml_exec)) return gptoss_status_internal;
+    std::vector<float> logits;
+    if (!read_logits_from_gpu(ctx->dml_exec, model->dml_layout.vocab_size, logits, ctx->dml_buffers)) {
+        return gptoss_status_internal;
+    }
+    ctx->last_logits = std::move(logits);
+    ctx->logits_ready = !ctx->last_logits.empty();
     return gptoss_status_success;
 #else
     return gptoss_status_unsupported_system;
@@ -514,12 +521,7 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     }
 #ifdef _WIN32
     if (model->dml_graph.stub_graph) {
-        ctx->last_logits.assign(model->dml_layout.vocab_size, 0.0f);
-        const uint32_t token = select_stub_token(*ctx, model->dml_layout.vocab_size);
-        if (!ctx->last_logits.empty()) {
-            ctx->last_logits[token] = 1.0f;
-        }
-        ctx->logits_ready = !ctx->last_logits.empty();
+        set_stub_logits(*ctx, model->dml_layout.vocab_size);
         return gptoss_status_success;
     }
     if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
@@ -1091,6 +1093,15 @@ uint32_t select_stub_token(const GptossContext& ctx, uint32_t vocab_size) {
         if (last < vocab_size) return last;
     }
     return 0;
+}
+
+void set_stub_logits(GptossContext& ctx, uint32_t vocab_size) {
+    ctx.last_logits.assign(vocab_size, 0.0f);
+    const uint32_t token = select_stub_token(ctx, vocab_size);
+    if (!ctx.last_logits.empty()) {
+        ctx.last_logits[token] = 1.0f;
+    }
+    ctx.logits_ready = !ctx.last_logits.empty();
 }
 
 bool sample_from_logits(const std::vector<float>& logits,
@@ -1708,8 +1719,10 @@ gptoss_status GPTOSS_ABI gptoss_context_sample(
         ctx->prefill_done = true;
     }
     for (size_t i = 0; i < num_tokens; ++i) {
-        const auto status = run_dml_decode(ctx);
-        if (status != gptoss_status_success) return status;
+        if (!ctx->logits_ready) {
+            const auto status = run_dml_decode(ctx);
+            if (status != gptoss_status_success) return status;
+        }
         if (!ctx->logits_ready || ctx->last_logits.empty()) return gptoss_status_internal;
 
         uint32_t token = 0;

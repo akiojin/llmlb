@@ -1606,6 +1606,8 @@ gptoss_status GPTOSS_ABI gptoss_context_append_chars(
         return gptoss_status_context_overflow;
     }
     ctx->tokens.insert(ctx->tokens.end(), new_tokens.begin(), new_tokens.end());
+    ctx->last_logits.clear();
+    ctx->logits_ready = false;
     if (num_tokens_out) *num_tokens_out = new_tokens.size();
     return gptoss_status_success;
 }
@@ -1628,18 +1630,25 @@ gptoss_status GPTOSS_ABI gptoss_context_append_tokens(
         return gptoss_status_context_overflow;
     }
     ctx->tokens.insert(ctx->tokens.end(), tokens, tokens + num_tokens);
+    ctx->last_logits.clear();
+    ctx->logits_ready = false;
     return gptoss_status_success;
 }
 
 gptoss_status GPTOSS_ABI gptoss_context_reset(gptoss_context_t context) {
     if (!context) return gptoss_status_invalid_argument;
-    reinterpret_cast<GptossContext*>(context)->tokens.clear();
+    auto* ctx = reinterpret_cast<GptossContext*>(context);
+    ctx->tokens.clear();
+    ctx->last_logits.clear();
+    ctx->logits_ready = false;
     return gptoss_status_success;
 }
 
 gptoss_status GPTOSS_ABI gptoss_context_process(gptoss_context_t context) {
     if (!context) return gptoss_status_invalid_argument;
     auto* ctx = reinterpret_cast<GptossContext*>(context);
+    ctx->last_logits.clear();
+    ctx->logits_ready = false;
     return run_dml_prefill(ctx);
 }
 

@@ -137,6 +137,7 @@ struct DmlGraph {
     std::vector<DmlTensorSpec> prefill_outputs;
     std::vector<DmlTensorSpec> decode_inputs;
     std::vector<DmlTensorSpec> decode_outputs;
+    bool stub_graph{false};
     bool has_prefill{false};
     bool has_decode{false};
     bool initialized{false};
@@ -381,6 +382,7 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
         sizeof(float)};
 
     graph.layout = layout;
+    graph.stub_graph = true;
     graph.prefill_inputs = {token_ids};
     graph.prefill_outputs = {logits, kv_cache};
     graph.decode_inputs = {token_ids, kv_cache};
@@ -464,6 +466,15 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
         return gptoss_status_insufficient_resources;
     }
 #ifdef _WIN32
+    if (model->dml_graph.stub_graph) {
+        ctx->last_logits.assign(model->dml_layout.vocab_size, 0.0f);
+        const uint32_t token = select_stub_token(*ctx, model->dml_layout.vocab_size);
+        if (!ctx->last_logits.empty()) {
+            ctx->last_logits[token] = 1.0f;
+        }
+        ctx->logits_ready = !ctx->last_logits.empty();
+        return gptoss_status_success;
+    }
     if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
         return gptoss_status_internal;
     }
@@ -1065,6 +1076,15 @@ uint64_t next_rng(uint64_t& state) {
 double rng_uniform_01(uint64_t& state) {
     const uint64_t value = next_rng(state);
     return static_cast<double>(value >> 11) * (1.0 / 9007199254740992.0);
+}
+
+uint32_t select_stub_token(const GptossContext& ctx, uint32_t vocab_size) {
+    if (vocab_size == 0) return 0;
+    if (!ctx.tokens.empty()) {
+        const uint32_t last = ctx.tokens.back();
+        if (last < vocab_size) return last;
+    }
+    return 0;
 }
 
 bool sample_from_logits(const std::vector<float>& logits,

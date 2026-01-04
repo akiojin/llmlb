@@ -6,15 +6,120 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <d3d12.h>
+#include <dxgi1_6.h>
+#include <wrl/client.h>
+#include <DirectML.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace {
+
+#ifdef _WIN32
+using Microsoft::WRL::ComPtr;
+
+struct DmlRuntime {
+    ComPtr<IDXGIAdapter1> adapter;
+    ComPtr<ID3D12Device> device;
+    ComPtr<IDMLDevice> dml_device;
+    HMODULE dml_module{nullptr};
+    bool initialized{false};
+    std::string error;
+};
+
+bool init_dml_runtime(DmlRuntime& runtime) {
+    ComPtr<IDXGIFactory6> factory;
+    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) {
+        runtime.error = "DirectML: failed to create DXGI factory";
+        return false;
+    }
+
+    ComPtr<IDXGIAdapter1> adapter;
+    for (UINT index = 0; factory->EnumAdapterByGpuPreference(index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                                             IID_PPV_ARGS(&adapter)) != DXGI_ERROR_NOT_FOUND; ++index) {
+        DXGI_ADAPTER_DESC1 desc = {};
+        if (FAILED(adapter->GetDesc1(&desc))) continue;
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
+        runtime.adapter = adapter;
+        break;
+    }
+
+    if (!runtime.adapter) {
+        runtime.error = "DirectML: no compatible GPU adapter found";
+        return false;
+    }
+
+    hr = D3D12CreateDevice(runtime.adapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&runtime.device));
+    if (FAILED(hr)) {
+        runtime.error = "DirectML: failed to create D3D12 device";
+        return false;
+    }
+
+    runtime.dml_module = LoadLibraryW(L"DirectML.dll");
+    if (!runtime.dml_module) {
+        runtime.error = "DirectML: DirectML.dll not found";
+        return false;
+    }
+
+    using DmlCreateDeviceFn =
+        HRESULT(WINAPI*)(ID3D12Device*, DML_CREATE_DEVICE_FLAGS, REFIID, void**);
+    using DmlCreateDevice1Fn =
+        HRESULT(WINAPI*)(ID3D12Device*, DML_CREATE_DEVICE_FLAGS, DML_FEATURE_LEVEL, REFIID, void**);
+
+    auto create1_fn = reinterpret_cast<DmlCreateDevice1Fn>(
+        GetProcAddress(runtime.dml_module, "DMLCreateDevice1"));
+    auto create_fn = reinterpret_cast<DmlCreateDeviceFn>(
+        GetProcAddress(runtime.dml_module, "DMLCreateDevice"));
+    if (create1_fn) {
+        hr = create1_fn(runtime.device.Get(),
+                        DML_CREATE_DEVICE_FLAG_NONE,
+                        DML_FEATURE_LEVEL_1_0,
+                        IID_PPV_ARGS(&runtime.dml_device));
+        if (FAILED(hr) && create_fn) {
+            hr = create_fn(runtime.device.Get(),
+                           DML_CREATE_DEVICE_FLAG_NONE,
+                           IID_PPV_ARGS(&runtime.dml_device));
+        }
+    } else if (create_fn) {
+        hr = create_fn(runtime.device.Get(),
+                       DML_CREATE_DEVICE_FLAG_NONE,
+                       IID_PPV_ARGS(&runtime.dml_device));
+    } else {
+        runtime.error = "DirectML: DMLCreateDevice not exported";
+        return false;
+    }
+
+    if (FAILED(hr)) {
+        runtime.error = "DirectML: failed to create DML device";
+        return false;
+    }
+
+    runtime.initialized = true;
+    return true;
+}
+
+bool ensure_dml_runtime(std::string& error) {
+    static DmlRuntime runtime;
+    static std::once_flag once;
+    std::call_once(once, [&]() { runtime.initialized = init_dml_runtime(runtime); });
+    if (!runtime.initialized) {
+        error = runtime.error;
+        return false;
+    }
+    return true;
+}
+#endif
 
 struct GptossTokenizer {
     std::atomic<uint32_t> ref_count{1};
@@ -178,6 +283,13 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
     fs::path path(model_path);
     fs::path model_dir = fs::is_directory(path) ? path : path.parent_path();
     if (model_dir.empty()) return gptoss_status_invalid_argument;
+
+#ifdef _WIN32
+    std::string dml_error;
+    if (!ensure_dml_runtime(dml_error)) {
+        return gptoss_status_unsupported_system;
+    }
+#endif
 
     const fs::path config_path = model_dir / "config.json";
     const fs::path tokenizer_path = model_dir / "tokenizer.json";

@@ -356,6 +356,7 @@ if(WIN32 AND BUILD_WITH_GPTOSS)
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     )
+    target_link_libraries(gptoss_directml PRIVATE d3d12 dxgi dxguid)
     target_compile_definitions(gptoss_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
     set_target_properties(gptoss_directml PROPERTIES OUTPUT_NAME "gptoss_directml")
 
@@ -367,6 +368,7 @@ if(WIN32 AND BUILD_WITH_GPTOSS)
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     )
+    target_link_libraries(nemotron_directml PRIVATE d3d12 dxgi dxguid)
     target_compile_definitions(nemotron_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
     set_target_properties(nemotron_directml PROPERTIES OUTPUT_NAME "nemotron_directml")
 endif()

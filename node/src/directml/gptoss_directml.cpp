@@ -916,8 +916,17 @@ bool upload_weights_to_gpu(const GptossModel& model, ComPtr<ID3D12Resource>& out
 
     DmlExecState exec;
     if (!init_dml_exec_state(exec)) return false;
+    struct FenceEventGuard {
+        HANDLE* event{nullptr};
+        ~FenceEventGuard() {
+            if (event && *event) {
+                CloseHandle(*event);
+                *event = nullptr;
+            }
+        }
+    } guard{&exec.fence_event};
     if (!reset_dml_command_list(exec)) return false;
-    exec.command_list->CopyBufferRegion(out.Get(), 0, upload.Get(), 0, payload.size());
+    exec.command_list->CopyBufferRegion(out.Get(), 0, upload.Get(), 0, model.weights_bytes);
     if (!submit_dml_command_list(exec)) return false;
     return true;
 }

@@ -36,9 +36,21 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
   by default.
 
 ## Debugging Tips
+
 - Set `RUST_LOG=debug` for verbose router output.
 - Dashboard stats endpoint `/v0/dashboard/stats` shows cloud key presence.
 - For cloud routing, confirm the key is logged as present at startup.
+
+## Token Statistics
+
+The router tracks token usage for all requests (prompt_tokens, completion_tokens,
+total_tokens). Statistics are persisted to SQLite and available via dashboard API.
+
+- **Data source**: Node response `usage` field (preferred), tiktoken estimation (fallback)
+- **Streaming**: Tokens accumulated per chunk, final usage from last chunk
+- **API endpoints**: `/v0/dashboard/stats/tokens`, `/v0/dashboard/stats/tokens/daily`,
+  `/v0/dashboard/stats/tokens/monthly`
+- **Dashboard**: Statistics tab shows daily/monthly breakdown
 
 ## Submodules
 - `node/third_party/stable-diffusion.cpp` is pinned to the public fork

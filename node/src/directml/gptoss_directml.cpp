@@ -1674,6 +1674,8 @@ gptoss_status GPTOSS_ABI gptoss_context_reset(gptoss_context_t context) {
     ctx->last_logits.clear();
     ctx->logits_ready = false;
     ctx->prefill_done = false;
+    ctx->rng_state = 0;
+    ctx->rng_initialized = false;
     return gptoss_status_success;
 }
 

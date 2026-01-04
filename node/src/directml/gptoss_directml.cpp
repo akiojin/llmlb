@@ -148,6 +148,15 @@ struct DmlBuffers {
     bool initialized{false};
 };
 
+struct DmlBindings {
+#ifdef _WIN32
+    DML_BUFFER_BINDING token_binding{};
+    DML_BUFFER_BINDING logits_binding{};
+    DML_BUFFER_BINDING kv_cache_binding{};
+#endif
+    bool initialized{false};
+};
+
 struct DmlExecState {
 #ifdef _WIN32
     ComPtr<IDMLDevice> dml_device;
@@ -371,7 +380,7 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (!dml_graph_ready(model->dml_graph)) {
         return gptoss_status_unsupported_argument;
     }
-    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized) {
+    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized || !ctx->dml_bindings.initialized) {
         return gptoss_status_insufficient_resources;
     }
     return gptoss_status_unsupported_system;
@@ -386,7 +395,7 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     if (!dml_graph_ready(model->dml_graph)) {
         return gptoss_status_unsupported_argument;
     }
-    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized) {
+    if (!ctx->dml_buffers.initialized || !ctx->dml_exec.initialized || !ctx->dml_bindings.initialized) {
         return gptoss_status_insufficient_resources;
     }
     return gptoss_status_unsupported_system;
@@ -667,6 +676,29 @@ bool init_dml_buffers(const DmlContextPlan& plan, DmlBuffers& buffers) {
     return true;
 }
 
+bool init_dml_bindings(const DmlGraph::GraphDesc& desc,
+                       const DmlBuffers& buffers,
+                       DmlBindings& bindings) {
+    if (!desc.initialized) return false;
+    if (!buffers.initialized) return false;
+    if (!buffers.token_buffer || !buffers.logits_buffer || !buffers.kv_cache_buffer) return false;
+
+    bindings.token_binding.Buffer = buffers.token_buffer.Get();
+    bindings.token_binding.Offset = 0;
+    bindings.token_binding.SizeInBytes = desc.token_ids.buffer_desc.TotalTensorSizeInBytes;
+
+    bindings.logits_binding.Buffer = buffers.logits_buffer.Get();
+    bindings.logits_binding.Offset = 0;
+    bindings.logits_binding.SizeInBytes = desc.logits.buffer_desc.TotalTensorSizeInBytes;
+
+    bindings.kv_cache_binding.Buffer = buffers.kv_cache_buffer.Get();
+    bindings.kv_cache_binding.Offset = 0;
+    bindings.kv_cache_binding.SizeInBytes = desc.kv_cache.buffer_desc.TotalTensorSizeInBytes;
+
+    bindings.initialized = true;
+    return true;
+}
+
 bool init_dml_exec_state(DmlExecState& state) {
     std::string error;
     if (!ensure_dml_runtime(error)) {
@@ -740,6 +772,7 @@ struct GptossContext {
     size_t max_tokens{0};
     DmlContextPlan dml_plan{};
     DmlBuffers dml_buffers{};
+    DmlBindings dml_bindings{};
     DmlExecState dml_exec{};
 };
 
@@ -1171,6 +1204,12 @@ gptoss_status GPTOSS_ABI gptoss_context_create(
             delete ctx;
             return gptoss_status_insufficient_resources;
         }
+#ifdef _WIN32
+        if (!init_dml_bindings(model_ptr->dml_graph.desc, ctx->dml_buffers, ctx->dml_bindings)) {
+            delete ctx;
+            return gptoss_status_insufficient_resources;
+        }
+#endif
         if (!init_dml_exec_state(ctx->dml_exec)) {
             delete ctx;
             return gptoss_status_insufficient_resources;

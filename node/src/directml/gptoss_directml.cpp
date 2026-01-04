@@ -196,11 +196,15 @@ uint32_t select_stub_token(const GptossContext& ctx, uint32_t vocab_size);
 struct GptossModel {
     std::atomic<uint32_t> ref_count{1};
     std::string model_dir;
+    std::string model_path;
     gptoss_tokenizer_t tokenizer{nullptr};
     uint32_t max_context_length{0};
     uint32_t vocabulary_size{0};
     GptossModelHeader header{};
     GptossUuid layout_uuid{};
+    size_t weights_offset{0};
+    size_t weights_bytes{0};
+    bool has_weights_blob{false};
     DmlPlan dml_plan{};
     DmlTensorLayout dml_layout{};
     DmlGraph dml_graph{};
@@ -609,7 +613,9 @@ bool build_dml_context_plan(const GptossModelHeader& header,
 gptoss_status load_gptoss_model_file(const fs::path& path,
                                      GptossModelHeader& model_header,
                                      GptossUuid& layout_uuid,
-                                     struct GptossTokenizer& tokenizer) {
+                                     struct GptossTokenizer& tokenizer,
+                                     size_t* weights_offset_out,
+                                     size_t* weights_bytes_out) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return gptoss_status_io_error;
 
@@ -668,6 +674,17 @@ gptoss_status load_gptoss_model_file(const fs::path& path,
         if (!read_exact(in, tokenizer.tokens_blob.data(), tok_header.tokens_size)) return gptoss_status_io_error;
     } else {
         return gptoss_status_invalid_argument;
+    }
+    const auto weights_offset = in.tellg();
+    if (weights_offset == std::streampos(-1)) return gptoss_status_io_error;
+    if (weights_offset_out || weights_bytes_out) {
+        std::error_code ec;
+        const auto file_size = fs::file_size(path, ec);
+        if (ec) return gptoss_status_io_error;
+        if (file_size < static_cast<uintmax_t>(weights_offset)) return gptoss_status_io_error;
+        const size_t weights_bytes = static_cast<size_t>(file_size - static_cast<uintmax_t>(weights_offset));
+        if (weights_offset_out) *weights_offset_out = static_cast<size_t>(weights_offset);
+        if (weights_bytes_out) *weights_bytes_out = weights_bytes;
     }
 
     const uint8_t* ptr = tokenizer.tokens_blob.data();
@@ -1381,7 +1398,10 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
             return gptoss_status_insufficient_memory;
         }
         GptossUuid layout_uuid{};
-        auto status = load_gptoss_model_file(path, model->header, layout_uuid, *tokenizer);
+        size_t weights_offset = 0;
+        size_t weights_bytes = 0;
+        auto status = load_gptoss_model_file(path, model->header, layout_uuid, *tokenizer,
+                                             &weights_offset, &weights_bytes);
         if (status != gptoss_status_success) {
             delete tokenizer;
             delete model;
@@ -1391,6 +1411,10 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
         model->max_context_length = model->header.context_length;
         model->vocabulary_size = tokenizer->num_text_tokens + tokenizer->num_special_tokens;
         model->layout_uuid = layout_uuid;
+        model->model_path = path.string();
+        model->weights_offset = weights_offset;
+        model->weights_bytes = weights_bytes;
+        model->has_weights_blob = weights_bytes > 0;
         if (uuid_equals(layout_uuid, kDirectMlLayoutUuid)) {
             build_dml_plan(model->header, model->vocabulary_size, model->dml_plan);
             build_dml_tensor_layout(model->header, model->vocabulary_size, model->dml_layout);

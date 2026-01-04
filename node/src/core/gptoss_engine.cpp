@@ -300,14 +300,7 @@ fs::path resolve_gptoss_directml_model_file(const ModelDescriptor& descriptor) {
                              ? fs::path(descriptor.primary_path).parent_path()
                              : fs::path(descriptor.model_dir);
     if (model_dir.empty()) return {};
-    if (auto bin = resolve_gptoss_directml_model_bin(model_dir); !bin.empty()) {
-        return bin;
-    }
-    fs::path primary = descriptor.primary_path.empty() ? fs::path() : fs::path(descriptor.primary_path);
-    if (!primary.empty() && fs::exists(primary)) {
-        return primary;
-    }
-    return {};
+    return resolve_gptoss_directml_model_bin(model_dir);
 }
 
 struct GptOssApi {
@@ -583,7 +576,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         result.success = false;
         result.error_message =
 #if defined(_WIN32)
-            "gpt-oss DirectML model artifact not found (expected model.directml.bin, model.dml.bin, or safetensors)";
+            "gpt-oss DirectML model artifact not found (expected model.directml.bin or model.dml.bin)";
 #else
             "gpt-oss Metal model artifact not found (expected model.metal.bin or metal/model.bin)";
 #endif

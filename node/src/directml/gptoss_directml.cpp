@@ -408,9 +408,28 @@ bool compile_dml_operators(DmlGraph& graph, DmlExecState& exec_state) {
     if (!graph.prefill_desc.prepared || !graph.decode_desc.prepared) return false;
     graph.prefill_op.Reset();
     graph.decode_op.Reset();
-    graph.has_prefill = false;
-    graph.has_decode = false;
-    return true;
+
+    ComPtr<IDMLOperator> prefill_op;
+    if (FAILED(exec_state.dml_device->CreateOperator(&graph.prefill_desc.op_desc, IID_PPV_ARGS(&prefill_op)))) {
+        return false;
+    }
+    if (FAILED(exec_state.dml_device->CompileOperator(prefill_op.Get(), DML_EXECUTION_FLAG_NONE,
+                                                      IID_PPV_ARGS(&graph.prefill_op)))) {
+        return false;
+    }
+
+    ComPtr<IDMLOperator> decode_op;
+    if (FAILED(exec_state.dml_device->CreateOperator(&graph.decode_desc.op_desc, IID_PPV_ARGS(&decode_op)))) {
+        return false;
+    }
+    if (FAILED(exec_state.dml_device->CompileOperator(decode_op.Get(), DML_EXECUTION_FLAG_NONE,
+                                                      IID_PPV_ARGS(&graph.decode_op)))) {
+        return false;
+    }
+
+    graph.has_prefill = graph.prefill_op != nullptr;
+    graph.has_decode = graph.decode_op != nullptr;
+    return graph.has_prefill && graph.has_decode;
 #else
     (void)graph;
     (void)exec_state;

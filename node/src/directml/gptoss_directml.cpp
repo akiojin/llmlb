@@ -462,6 +462,12 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
     if (ctx->tokens.size() * sizeof(uint32_t) > ctx->dml_plan.token_buffer_bytes) {
         return gptoss_status_context_overflow;
     }
+#ifdef _WIN32
+    if (model->dml_graph.stub_graph) {
+        set_stub_logits(*ctx, model->dml_layout.vocab_size);
+        return gptoss_status_success;
+    }
+#endif
     if (!model->dml_graph.has_prefill) {
         compile_dml_operators(model->dml_graph, ctx->dml_exec);
     }
@@ -472,10 +478,6 @@ gptoss_status run_dml_prefill(GptossContext* ctx) {
         return gptoss_status_insufficient_resources;
     }
 #ifdef _WIN32
-    if (model->dml_graph.stub_graph) {
-        set_stub_logits(*ctx, model->dml_layout.vocab_size);
-        return gptoss_status_success;
-    }
     if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
         return gptoss_status_internal;
     }
@@ -519,6 +521,12 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
     if (static_cast<size_t>(model->dml_layout.vocab_size) * sizeof(float) > ctx->dml_plan.logits_buffer_bytes) {
         return gptoss_status_insufficient_resources;
     }
+#ifdef _WIN32
+    if (model->dml_graph.stub_graph) {
+        set_stub_logits(*ctx, model->dml_layout.vocab_size);
+        return gptoss_status_success;
+    }
+#endif
     if (!model->dml_graph.has_decode) {
         compile_dml_operators(model->dml_graph, ctx->dml_exec);
     }
@@ -529,10 +537,6 @@ gptoss_status run_dml_decode(GptossContext* ctx) {
         return gptoss_status_insufficient_resources;
     }
 #ifdef _WIN32
-    if (model->dml_graph.stub_graph) {
-        set_stub_logits(*ctx, model->dml_layout.vocab_size);
-        return gptoss_status_success;
-    }
     if (!upload_tokens_to_gpu(ctx->dml_exec, ctx->tokens, ctx->dml_buffers)) {
         return gptoss_status_internal;
     }

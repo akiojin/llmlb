@@ -113,6 +113,8 @@ struct DmlGraph {
     std::vector<DmlTensorSpec> prefill_outputs;
     std::vector<DmlTensorSpec> decode_inputs;
     std::vector<DmlTensorSpec> decode_outputs;
+    bool has_prefill{false};
+    bool has_decode{false};
     bool initialized{false};
 };
 
@@ -127,6 +129,18 @@ struct DmlBuffers {
     ComPtr<ID3D12Resource> token_buffer;
     ComPtr<ID3D12Resource> logits_buffer;
     ComPtr<ID3D12Resource> kv_cache_buffer;
+#endif
+    bool initialized{false};
+};
+
+struct DmlExecState {
+#ifdef _WIN32
+    ComPtr<IDMLDevice> dml_device;
+    ComPtr<ID3D12CommandAllocator> allocator;
+    ComPtr<ID3D12GraphicsCommandList> command_list;
+    ComPtr<ID3D12CommandQueue> command_queue;
+    ComPtr<ID3D12Fence> fence;
+    HANDLE fence_event{nullptr};
 #endif
     bool initialized{false};
 };
@@ -256,6 +270,8 @@ bool build_dml_graph_stub(const DmlTensorLayout& layout, DmlGraph& graph) {
     for (const auto& spec : graph.decode_outputs) {
         if (!validate_tensor_spec(spec)) return false;
     }
+    graph.has_prefill = false;
+    graph.has_decode = false;
     graph.initialized = false;
     return true;
 }
@@ -377,6 +393,9 @@ gptoss_status load_gptoss_model_file(const fs::path& path,
         model_header.num_heads == 0 ||
         model_header.num_kv_heads == 0 ||
         model_header.head_dim == 0) {
+        return gptoss_status_invalid_argument;
+    }
+    if (model_header.num_kv_heads > model_header.num_heads) {
         return gptoss_status_invalid_argument;
     }
     return gptoss_status_success;
@@ -531,6 +550,50 @@ bool init_dml_buffers(const DmlContextPlan& plan, DmlBuffers& buffers) {
     buffers.initialized = true;
     return true;
 }
+
+bool init_dml_exec_state(DmlExecState& state) {
+    std::string error;
+    if (!ensure_dml_runtime(error)) {
+        return false;
+    }
+    auto& runtime = dml_runtime();
+    if (!runtime.initialized || !runtime.device || !runtime.dml_device) {
+        return false;
+    }
+    state.dml_device = runtime.dml_device;
+
+    D3D12_COMMAND_QUEUE_DESC queue_desc = {};
+    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    queue_desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    queue_desc.NodeMask = 0;
+    if (FAILED(runtime.device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&state.command_queue)))) {
+        return false;
+    }
+    if (FAILED(runtime.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                      IID_PPV_ARGS(&state.allocator)))) {
+        return false;
+    }
+    if (FAILED(runtime.device->CreateCommandList(0,
+                                                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                state.allocator.Get(),
+                                                nullptr,
+                                                IID_PPV_ARGS(&state.command_list)))) {
+        return false;
+    }
+    if (FAILED(state.command_list->Close())) {
+        return false;
+    }
+    if (FAILED(runtime.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&state.fence)))) {
+        return false;
+    }
+    state.fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (!state.fence_event) {
+        return false;
+    }
+    state.initialized = true;
+    return true;
+}
 #endif
 
 struct GptossContext {
@@ -540,6 +603,7 @@ struct GptossContext {
     size_t max_tokens{0};
     DmlContextPlan dml_plan{};
     DmlBuffers dml_buffers{};
+    DmlExecState dml_exec{};
 };
 
 uint32_t find_unknown_token_id(const GptossTokenizer& tokenizer) {
@@ -970,6 +1034,10 @@ gptoss_status GPTOSS_ABI gptoss_context_create(
             delete ctx;
             return gptoss_status_insufficient_resources;
         }
+        if (!init_dml_exec_state(ctx->dml_exec)) {
+            delete ctx;
+            return gptoss_status_insufficient_resources;
+        }
     }
     gptoss_model_retain(model);
     *context_out = reinterpret_cast<gptoss_context_t>(ctx);
@@ -1085,6 +1153,12 @@ gptoss_status GPTOSS_ABI gptoss_context_release(gptoss_context_t context) {
         if (ptr->model) {
             gptoss_model_release(ptr->model);
         }
+#ifdef _WIN32
+        if (ptr->dml_exec.fence_event) {
+            CloseHandle(ptr->dml_exec.fence_event);
+            ptr->dml_exec.fence_event = nullptr;
+        }
+#endif
         delete ptr;
     }
     return gptoss_status_success;

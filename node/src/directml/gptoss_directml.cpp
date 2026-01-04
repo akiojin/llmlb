@@ -892,9 +892,6 @@ bool upload_weights_to_gpu(const GptossModel& model, ComPtr<ID3D12Resource>& out
     in.seekg(static_cast<std::streamoff>(model.weights_offset), std::ios::beg);
     if (!in.good()) return false;
 
-    std::vector<uint8_t> payload(model.weights_bytes);
-    if (!read_exact(in, payload.data(), payload.size())) return false;
-
     auto& runtime = dml_runtime();
     if (!runtime.initialized || !runtime.device) return false;
     if (!create_dml_buffer(runtime.device.Get(), model.weights_bytes, out)) return false;
@@ -911,7 +908,10 @@ bool upload_weights_to_gpu(const GptossModel& model, ComPtr<ID3D12Resource>& out
     void* mapped = nullptr;
     D3D12_RANGE range = {0, 0};
     if (FAILED(upload->Map(0, &range, &mapped))) return false;
-    std::memcpy(mapped, payload.data(), payload.size());
+    if (!read_exact(in, mapped, model.weights_bytes)) {
+        upload->Unmap(0, nullptr);
+        return false;
+    }
     upload->Unmap(0, nullptr);
 
     DmlExecState exec;

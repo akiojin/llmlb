@@ -193,7 +193,14 @@ gptoss_status load_gptoss_model_file(const fs::path& path,
         ptr += len;
     }
 
-    if (model_header.context_length == 0) return gptoss_status_invalid_argument;
+    if (model_header.context_length == 0 ||
+        model_header.num_blocks == 0 ||
+        model_header.embedding_dim == 0 ||
+        model_header.num_heads == 0 ||
+        model_header.num_kv_heads == 0 ||
+        model_header.head_dim == 0) {
+        return gptoss_status_invalid_argument;
+    }
     return gptoss_status_success;
 }
 

@@ -88,6 +88,14 @@ struct DmlPlan {
     size_t vocab_embeddings_bytes{0};
 };
 
+struct DmlTensorLayout {
+    uint32_t vocab_size{0};
+    uint32_t embedding_dim{0};
+    uint32_t num_heads{0};
+    uint32_t num_kv_heads{0};
+    uint32_t head_dim{0};
+};
+
 struct DmlContextPlan {
     size_t token_buffer_bytes{0};
     size_t logits_buffer_bytes{0};
@@ -112,6 +120,7 @@ struct GptossModel {
     GptossModelHeader header{};
     GptossUuid layout_uuid{};
     DmlPlan dml_plan{};
+    DmlTensorLayout dml_layout{};
 };
 
 bool read_exact(std::ifstream& in, void* out, size_t size) {
@@ -167,6 +176,19 @@ bool build_dml_plan(const GptossModelHeader& header, uint32_t vocabulary_size, D
         plan.vocab_embeddings_elements = embed_elements;
         plan.vocab_embeddings_bytes = embed_elements * sizeof(float);
     }
+    return true;
+}
+
+bool build_dml_tensor_layout(const GptossModelHeader& header,
+                             uint32_t vocabulary_size,
+                             DmlTensorLayout& layout) {
+    if (vocabulary_size == 0 || header.embedding_dim == 0) return false;
+    if (header.num_heads == 0 || header.num_kv_heads == 0 || header.head_dim == 0) return false;
+    layout.vocab_size = vocabulary_size;
+    layout.embedding_dim = header.embedding_dim;
+    layout.num_heads = header.num_heads;
+    layout.num_kv_heads = header.num_kv_heads;
+    layout.head_dim = header.head_dim;
     return true;
 }
 
@@ -695,6 +717,7 @@ gptoss_status GPTOSS_ABI gptoss_model_create_from_file(
         model->layout_uuid = layout_uuid;
         if (uuid_equals(layout_uuid, kDirectMlLayoutUuid)) {
             build_dml_plan(model->header, model->vocabulary_size, model->dml_plan);
+            build_dml_tensor_layout(model->header, model->vocabulary_size, model->dml_layout);
         }
         model->tokenizer = reinterpret_cast<gptoss_tokenizer_t>(tokenizer);
         *model_out = reinterpret_cast<gptoss_model_t>(model);

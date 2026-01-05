@@ -179,12 +179,12 @@ include_directories(
 if(BUILD_WITH_GPTOSS)
     if(APPLE AND BUILD_WITH_METAL)
         include_directories(
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/source/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
         )
     elseif(WIN32)
         include_directories(
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
         )
     endif()
 endif()
@@ -354,7 +354,7 @@ if(WIN32 AND BUILD_WITH_GPTOSS)
     )
     target_include_directories(gptoss_directml
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     )
     target_link_libraries(gptoss_directml PRIVATE d3d12 dxgi dxguid)
@@ -366,7 +366,7 @@ if(WIN32 AND BUILD_WITH_GPTOSS)
     )
     target_include_directories(nemotron_directml
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     )
     target_link_libraries(nemotron_directml PRIVATE d3d12 dxgi dxguid)

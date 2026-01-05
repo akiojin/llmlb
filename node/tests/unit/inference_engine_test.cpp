@@ -1714,3 +1714,118 @@ TEST(InferenceEngineTest, CancellationDoesNotAffectOtherRequests) {
     EXPECT_TRUE(request2_completed.load());
     EXPECT_EQ(token_count2.load(), 100);  // All 100 tokens generated
 }
+
+// ============================================================================
+// T166/T167: chat_template (minja) tests
+// ============================================================================
+
+#include "core/chat_template_renderer.h"
+
+TEST(ChatTemplateRendererTest, FromStringBasic) {
+    // ChatML format template
+    const std::string chatml_template = R"(
+{%- for message in messages %}
+<|im_start|>{{ message.role }}
+{{ message.content }}<|im_end|>
+{% endfor %}
+{%- if add_generation_prompt %}
+<|im_start|>assistant
+{%- endif %})";
+
+    auto renderer = ChatTemplateRenderer::fromString(chatml_template);
+
+    std::vector<ChatMessage> messages = {
+        {"system", "You are a helpful assistant."},
+        {"user", "Hello!"}
+    };
+
+    std::string result = renderer.render(messages, true);
+
+    // Should contain system message
+    EXPECT_TRUE(result.find("system") != std::string::npos);
+    EXPECT_TRUE(result.find("You are a helpful assistant.") != std::string::npos);
+
+    // Should contain user message
+    EXPECT_TRUE(result.find("user") != std::string::npos);
+    EXPECT_TRUE(result.find("Hello!") != std::string::npos);
+
+    // Should end with assistant prompt
+    EXPECT_TRUE(result.find("assistant") != std::string::npos);
+}
+
+TEST(ChatTemplateRendererTest, FromConfigJsonNotFound) {
+    TempDir temp;
+
+    // Create a config.json without chat_template
+    auto config_path = temp.path / "config.json";
+    std::ofstream(config_path) << R"({"model_type": "llama"})";
+
+    auto renderer = ChatTemplateRenderer::fromConfigJson(temp.path);
+    EXPECT_FALSE(renderer.has_value());
+}
+
+TEST(ChatTemplateRendererTest, FromConfigJsonWithChatTemplate) {
+    TempDir temp;
+
+    // Create a config.json with chat_template
+    auto config_path = temp.path / "config.json";
+    std::ofstream(config_path) << R"({
+        "model_type": "llama",
+        "chat_template": "{% for m in messages %}[{{ m.role }}]: {{ m.content }}\n{% endfor %}",
+        "bos_token": "<s>",
+        "eos_token": "</s>"
+    })";
+
+    auto renderer = ChatTemplateRenderer::fromConfigJson(temp.path);
+    ASSERT_TRUE(renderer.has_value());
+
+    std::vector<ChatMessage> messages = {
+        {"user", "Test message"}
+    };
+
+    std::string result = renderer->render(messages, false);
+    EXPECT_TRUE(result.find("[user]: Test message") != std::string::npos);
+}
+
+TEST(ChatTemplateRendererTest, BosEosTokens) {
+    auto renderer = ChatTemplateRenderer::fromString(
+        "{{ bos_token }}Hello{{ eos_token }}",
+        "<BOS>",
+        "<EOS>"
+    );
+
+    std::vector<ChatMessage> messages = {};
+    std::string result = renderer.render(messages, false);
+
+    EXPECT_TRUE(result.find("<BOS>") != std::string::npos);
+    EXPECT_TRUE(result.find("<EOS>") != std::string::npos);
+}
+
+TEST(ChatTemplateRendererTest, MultiTurnConversation) {
+    const std::string template_src = R"(
+{%- for message in messages %}
+<|{{ message.role }}|>{{ message.content }}
+{% endfor %}
+{%- if add_generation_prompt %}<|assistant|>{% endif %})";
+
+    auto renderer = ChatTemplateRenderer::fromString(template_src);
+
+    std::vector<ChatMessage> messages = {
+        {"system", "You are an AI."},
+        {"user", "Hi"},
+        {"assistant", "Hello!"},
+        {"user", "How are you?"}
+    };
+
+    std::string result = renderer.render(messages, true);
+
+    // All messages should be present
+    EXPECT_TRUE(result.find("<|system|>You are an AI.") != std::string::npos);
+    EXPECT_TRUE(result.find("<|user|>Hi") != std::string::npos);
+    EXPECT_TRUE(result.find("<|assistant|>Hello!") != std::string::npos);
+    EXPECT_TRUE(result.find("<|user|>How are you?") != std::string::npos);
+
+    // Generation prompt should be at the end
+    size_t last_assistant_pos = result.rfind("<|assistant|>");
+    EXPECT_TRUE(last_assistant_pos != std::string::npos);
+}

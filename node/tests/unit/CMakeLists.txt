@@ -43,6 +43,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp
+    ../../src/core/chat_template_renderer.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp
     ../../src/api/http_server.cpp

@@ -230,12 +230,13 @@
   - 障害レプリカのスキップ
 
 ## chat_template（Session 2025-12-31 Part 5）
-- [ ] T166 injaライブラリ統合
-  - C++ Jinjaライブラリの導入
-  - ビルドシステム統合
-- [ ] T167 chat_templateレンダリングの実装
-  - config.jsonからのテンプレート読み込み
-  - messagesの変換とレンダリング
+- [x] T166 injaライブラリ統合
+  - llama.cpp内蔵のminja（Jinja2パーサー）を使用
+  - CMakeLists.txtにvendorインクルードパスを追加
+- [x] T167 chat_templateレンダリングの実装
+  - ChatTemplateRendererクラスを新規作成
+  - config.jsonからのテンプレート読み込み対応
+  - messagesの変換とレンダリング実装
 
 ## Function Calling（Session 2025-12-31 Part 5）
 - [ ] T168 Function Calling検出の実装
@@ -257,7 +258,7 @@
 - [ ] T174 Prefix Cacheヒット/ミステスト
 - [ ] T175 mmproj自動検出テスト
 - [ ] T176 レプリカ負荷分散テスト
-- [ ] T177 chat_templateレンダリングテスト
+- [x] T177 chat_templateレンダリングテスト
 - [ ] T178 Function Calling検出テスト
 
 ## VRAM部分ロード障害（Session 2025-12-31 Part 6）

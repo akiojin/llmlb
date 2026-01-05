@@ -217,7 +217,7 @@
   - LRUによるエントリ削除
 
 ## Vision対応（Session 2025-12-31 Part 5）
-- [ ] T163 mmproj自動検出の実装
+- [x] T163 mmproj自動検出の実装
   - モデルディレクトリ内のmmproj検索
   - 自動ロード機構
 
@@ -256,7 +256,7 @@
 ## Tests（Session 2025-12-31 Part 5）
 - [x] T173 量子化指定パーステスト
 - [x] T174 Prefix Cacheヒット/ミステスト
-- [ ] T175 mmproj自動検出テスト
+- [x] T175 mmproj自動検出テスト
 - [ ] T176 レプリカ負荷分散テスト
 - [x] T177 chat_templateレンダリングテスト
 - [ ] T178 Function Calling検出テスト

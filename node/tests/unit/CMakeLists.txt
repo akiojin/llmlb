@@ -17,6 +17,7 @@ set(UNIT_TEST_SOURCES
     model_pool_test.cpp
     model_loader_test.cpp
     prefix_cache_test.cpp
+    vision_processor_test.cpp
     onnx_tts_manager_test.cpp
     watchdog_test.cpp
     utils_config_test.cpp

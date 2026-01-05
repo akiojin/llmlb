@@ -53,6 +53,9 @@ target_include_directories(llm-node-contract-tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
+# Enable testing mode for model registry (skip supported model filtering)
+target_compile_definitions(llm-node-contract-tests PRIVATE LLM_NODE_TESTING=1)
+
 # Link Metal frameworks / gpt-oss metal library on macOS
 if(APPLE)
     find_library(METAL_FRAMEWORK Metal)

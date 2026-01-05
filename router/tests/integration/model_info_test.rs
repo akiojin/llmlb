@@ -102,7 +102,9 @@ async fn test_list_installed_models_on_node() {
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": []
+            "data": [
+                {"id": "test-model", "object": "model"}
+            ]
         })))
         .mount(&mock_server)
         .await;

@@ -44,6 +44,10 @@ pub enum RouterError {
     #[error("No available nodes")]
     NoNodesAvailable,
 
+    /// No capable nodes for model
+    #[error("No capable nodes for model: {0}")]
+    NoCapableNodes(String),
+
     /// Database error
     #[error("Database error: {0}")]
     Database(String),
@@ -107,6 +111,7 @@ impl RouterError {
             Self::Common(_) => "Request error",
             Self::NodeNotFound(_) => "Node not found",
             Self::NoNodesAvailable => "No available nodes",
+            Self::NoCapableNodes(_) => "No capable nodes",
             Self::Database(_) => "Database error",
             Self::Http(_) => "Backend service unavailable",
             Self::Timeout(_) => "Request timeout",

@@ -944,6 +944,7 @@ std::string InferenceEngine::generateChat(
         params_with_metrics.on_token_callback_ctx = &metrics;
 
         // T136/T137: Exponential backoff retry on crash
+        // T138: Do not retry on cancellation - rethrow immediately
         constexpr int kMaxRetries = 4;
         constexpr int kInitialDelayMs = 100;
         std::exception_ptr last_exception;
@@ -963,6 +964,9 @@ std::string InferenceEngine::generateChat(
                     inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
                 }
                 return output;
+            } catch (const GenerationCancelledException&) {
+                // T138: Cancellation is not a crash - do not retry, rethrow immediately
+                throw;
             } catch (...) {
                 last_exception = std::current_exception();
                 if (attempt < kMaxRetries) {

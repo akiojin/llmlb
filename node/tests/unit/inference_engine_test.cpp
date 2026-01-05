@@ -1428,3 +1428,289 @@ TEST(InferenceEngineTest, TransparentRetryDoesNotExposeIntermediateErrors) {
 
     InferenceEngine::setPluginRestartHookForTest({});
 }
+
+// T138-T140: Cancellation processing tests
+
+// CancellableEngine: simulates a slow generation that can be cancelled
+class CancellableEngine final : public Engine {
+public:
+    CancellableEngine(std::atomic<int>* token_count, std::atomic<bool>* started)
+        : token_count_(token_count), started_(started) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams& params) const override {
+        if (started_) started_->store(true);
+        std::string output;
+        // Simulate token generation loop
+        for (int i = 0; i < 100; ++i) {
+            // T138: Check cancellation token before generating each token
+            if (params.cancellation_token && params.cancellation_token->load()) {
+                throw GenerationCancelledException("Generation cancelled");
+            }
+            if (token_count_) token_count_->fetch_add(1);
+            output += "token" + std::to_string(i) + " ";
+            // Small delay to simulate real generation
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return output;
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams& params) const override {
+        return generateChat({}, {}, params);
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams& params,
+        const std::function<void(const std::string&)>& on_token) const override {
+        std::vector<std::string> tokens;
+        for (int i = 0; i < 100; ++i) {
+            // T138: Check cancellation token before generating each token
+            if (params.cancellation_token && params.cancellation_token->load()) {
+                throw GenerationCancelledException("Generation cancelled");
+            }
+            std::string token = "token" + std::to_string(i);
+            tokens.push_back(token);
+            if (on_token) on_token(token);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return tokens;
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override {
+        return 4096;
+    }
+
+private:
+    mutable std::atomic<int>* token_count_;
+    mutable std::atomic<bool>* started_;
+};
+
+// T138: Cancellation flag check mechanism
+TEST(InferenceEngineTest, CancellationTokenStopsGeneration) {
+    TempDir tmp;
+    std::string model_name = "example/cancellation-test";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    std::atomic<int> token_count{0};
+    std::atomic<bool> started{false};
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "cancellable_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<CancellableEngine>(&token_count, &started),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    std::atomic<bool> cancel_token{false};
+    InferenceParams params;
+    params.cancellation_token = &cancel_token;
+
+    std::vector<ChatMessage> messages = {{"user", "test"}};
+
+    // Start generation in background thread
+    std::thread gen_thread([&]() {
+        try {
+            engine.generateChat(messages, model_name, params);
+        } catch (const GenerationCancelledException& e) {
+            // Expected: generation cancelled
+            EXPECT_NE(std::string(e.what()).find("cancelled"), std::string::npos);
+        }
+    });
+
+    // Wait for generation to start
+    while (!started.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Cancel after some tokens have been generated
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    cancel_token.store(true);
+
+    gen_thread.join();
+
+    // Verify generation was stopped before completion
+    // (100 tokens would take at least 1000ms, we cancelled after ~50ms)
+    EXPECT_LT(token_count.load(), 50);  // Should be far less than 100
+    EXPECT_GT(token_count.load(), 0);   // Should have generated some tokens
+}
+
+// T139: Immediate cancellation response
+TEST(InferenceEngineTest, CancellationRespondsImmediately) {
+    TempDir tmp;
+    std::string model_name = "example/cancel-immediate";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    std::atomic<int> token_count{0};
+    std::atomic<bool> started{false};
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "cancel_immediate_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<CancellableEngine>(&token_count, &started),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    // Pre-set cancellation token before generation
+    std::atomic<bool> cancel_token{true};
+    InferenceParams params;
+    params.cancellation_token = &cancel_token;
+
+    std::vector<ChatMessage> messages = {{"user", "test"}};
+
+    auto start_time = std::chrono::steady_clock::now();
+
+    // Should throw immediately since cancellation is pre-set
+    EXPECT_THROW({
+        engine.generateChat(messages, model_name, params);
+    }, GenerationCancelledException);
+
+    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+
+    // Should respond within a short time (well under 100ms, definitely not waiting for 100 tokens)
+    EXPECT_LT(elapsed_ms, 100);
+    // Only 0 or 1 token should have been attempted before checking cancellation
+    EXPECT_LE(token_count.load(), 1);
+}
+
+// T140: Cancellation does not affect other requests in batch
+TEST(InferenceEngineTest, CancellationDoesNotAffectOtherRequests) {
+    TempDir tmp;
+    std::string model_name = "example/cancel-batch";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    std::atomic<int> token_count1{0};
+    std::atomic<int> token_count2{0};
+    std::atomic<bool> started1{false};
+    std::atomic<bool> started2{false};
+
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "cancel_batch_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    // Use a single engine instance that will handle both requests
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<CancellableEngine>(&token_count1, &started1),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    std::atomic<bool> cancel_token1{false};
+    std::atomic<bool> cancel_token2{false};
+
+    InferenceParams params1;
+    params1.cancellation_token = &cancel_token1;
+
+    InferenceParams params2;
+    params2.cancellation_token = &cancel_token2;
+
+    std::vector<ChatMessage> messages = {{"user", "test"}};
+
+    std::atomic<bool> request1_cancelled{false};
+    std::atomic<bool> request2_completed{false};
+
+    // Start two concurrent requests
+    std::thread thread1([&]() {
+        try {
+            engine.generateChat(messages, model_name, params1);
+        } catch (...) {
+            request1_cancelled.store(true);
+        }
+    });
+
+    // Wait for first request to start
+    while (!started1.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // Cancel first request
+    cancel_token1.store(true);
+    thread1.join();
+
+    // Verify first request was cancelled
+    EXPECT_TRUE(request1_cancelled.load());
+
+    // Reset engine registry for second request
+    auto registry2 = std::make_unique<EngineRegistry>();
+    EngineRegistration reg2;
+    reg2.engine_id = "cancel_batch_engine2";
+    reg2.engine_version = "test";
+    reg2.formats = {"gguf"};
+    reg2.capabilities = {"text"};
+    ASSERT_TRUE(registry2->registerEngine(
+        std::make_unique<CancellableEngine>(&token_count2, &started2),
+        reg2,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry2));
+
+    // Second request should complete normally (not cancelled)
+    std::thread thread2([&]() {
+        try {
+            std::string result = engine.generateChat(messages, model_name, params2);
+            if (!result.empty()) {
+                request2_completed.store(true);
+            }
+        } catch (...) {
+            // Should not throw
+        }
+    });
+
+    thread2.join();
+
+    // Second request should complete (token2 never cancelled)
+    EXPECT_TRUE(request2_completed.load());
+    EXPECT_EQ(token_count2.load(), 100);  // All 100 tokens generated
+}

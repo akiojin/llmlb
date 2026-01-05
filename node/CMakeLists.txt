@@ -387,11 +387,18 @@ target_include_directories(utils_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 
 # Engine plugin: llama.cpp
-add_library(llm_engine_llama_cpp SHARED
+set(LLAMA_ENGINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/engines/llama_cpp/llama_engine_plugin.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_engine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_manager.cpp
 )
+# Add platform-specific gpu_detector
+if(APPLE)
+    list(APPEND LLAMA_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/system/gpu_detector.mm)
+else()
+    list(APPEND LLAMA_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/system/gpu_detector.cpp)
+endif()
+add_library(llm_engine_llama_cpp SHARED ${LLAMA_ENGINE_SOURCES})
 target_include_directories(llm_engine_llama_cpp
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -405,6 +412,10 @@ target_link_libraries(llm_engine_llama_cpp
         llama
         spdlog::spdlog_header_only
 )
+# Link Metal framework on Apple for gpu_detector
+if(APPLE)
+    target_link_libraries(llm_engine_llama_cpp PRIVATE "-framework Metal" "-framework Foundation")
+endif()
 set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
 
 # Engine plugin: gpt-oss

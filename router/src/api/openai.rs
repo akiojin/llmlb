@@ -31,7 +31,9 @@ use crate::{
         },
     },
     balancer::RequestOutcome,
-    cloud_metrics, AppState,
+    cloud_metrics,
+    token::extract_usage_from_response,
+    AppState,
 };
 
 fn map_reqwest_error(err: reqwest::Error) -> AppError {
@@ -1428,11 +1430,25 @@ async fn proxy_openai_post(
 
     match parsed {
         Ok(body) => {
+            // レスポンスからトークン使用量を抽出
+            let token_usage = extract_usage_from_response(&body);
+
             state
                 .load_manager
-                .finish_request(node_id, RequestOutcome::Success, duration)
+                .finish_request_with_tokens(
+                    node_id,
+                    RequestOutcome::Success,
+                    duration,
+                    token_usage.clone(),
+                )
                 .await
                 .map_err(AppError::from)?;
+
+            // RequestResponseRecordにトークン情報を保存
+            let (input_tokens, output_tokens, total_tokens) = token_usage
+                .as_ref()
+                .map(|u| (u.input_tokens, u.output_tokens, u.total_tokens))
+                .unwrap_or((None, None, None));
 
             save_request_record(
                 state.request_history.clone(),
@@ -1450,9 +1466,9 @@ async fn proxy_openai_post(
                     duration_ms: duration.as_millis() as u64,
                     status: RecordStatus::Success,
                     completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
                 },
             );
 

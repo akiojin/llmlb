@@ -45,7 +45,7 @@ PY
     printf '%s' ""
 }
 
-tool_name=$(get_json_value 'tool_name')
+tool_name=$(get_json_value '.tool_name')
 
 # Task ツール以外は許可
 if [ "$tool_name" != "Task" ]; then
@@ -53,7 +53,7 @@ if [ "$tool_name" != "Task" ]; then
 fi
 
 # プロンプトを取得
-prompt=$(get_json_value 'tool_input.prompt')
+prompt=$(get_json_value '.tool_input.prompt')
 prompt_lower=$(echo "$prompt" | tr '[:upper:]' '[:lower:]')
 
 # ブロックするパターン

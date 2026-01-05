@@ -78,7 +78,16 @@ async fn image_gen_handler(Json(_payload): Json<serde_json::Value>) -> impl Into
 }
 
 async fn models_handler() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({
+            "object": "list",
+            "data": [
+                {"id": "test-model", "object": "model"}
+            ]
+        })),
+    )
+        .into_response()
 }
 
 /// IMG001: 画像生成ノード選択テスト

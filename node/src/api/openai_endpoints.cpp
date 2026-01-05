@@ -394,7 +394,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
         json body;
         body["object"] = "list";
         body["data"] = json::array();
-        for (const auto& id : registry_.listModels()) {
+        for (const auto& id : registry_.listExecutableModels()) {
             body["data"].push_back({{"id", id}, {"object", "model"}});
         }
         setJson(res, body);

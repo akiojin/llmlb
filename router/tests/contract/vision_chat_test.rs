@@ -34,8 +34,6 @@ mod common {
         std::env::set_var("HOME", &temp_dir);
         std::env::set_var("USERPROFILE", &temp_dir);
 
-        llm_router::api::models::clear_registered_models();
-
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -45,6 +43,9 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        llm_router::api::models::clear_registered_models(&db_pool)
+            .await
+            .expect("clear registered models");
         let request_history = std::sync::Arc::new(
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );

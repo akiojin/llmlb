@@ -31,7 +31,7 @@ impl MockNodeServer {
             .and(path("/v1/models"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "object": "list",
-                "data": []
+                "data": [{"id": "mock-model"}]
             })))
             .mount(&server)
             .await;

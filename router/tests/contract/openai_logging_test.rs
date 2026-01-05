@@ -5,13 +5,26 @@
 //! - FR-003: プロキシエラーログ
 //! - FR-004: ノード選択失敗時の履歴保存
 
-use crate::support::router::{spawn_test_router, spawn_test_router_with_db};
+use crate::support::router::spawn_test_router_with_db;
+use llm_router::db::models::ModelStorage;
 use llm_router::db::request_history::RequestHistoryStorage;
+use llm_router::registry::models::ModelInfo;
 use llm_router_common::protocol::RecordStatus;
 use reqwest::Client;
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::sync::Arc;
+
+/// テスト用のモデル情報を作成
+fn create_test_model(name: &str) -> ModelInfo {
+    ModelInfo::new(
+        name.to_string(),
+        0,
+        format!("Test model: {}", name),
+        0,
+        vec![],
+    )
+}
 
 /// SQLiteからリクエスト履歴を読み込む
 async fn load_request_history_from_db(
@@ -27,8 +40,13 @@ async fn load_request_history_from_db(
 #[tokio::test]
 #[serial]
 async fn test_chat_completions_request_processed() {
-    let router = spawn_test_router().await;
+    let (router, db_pool) = spawn_test_router_with_db().await;
     let client = Client::new();
+
+    // モデルをDBに登録（ノードは登録しない）
+    let model = create_test_model("gpt-oss-20b");
+    let storage = ModelStorage::new(db_pool.clone());
+    storage.save_model(&model).await.unwrap();
 
     // ノードなしでリクエスト送信 → 503が返るはず
     let response = client
@@ -42,7 +60,7 @@ async fn test_chat_completions_request_processed() {
         .await
         .expect("request should be sent");
 
-    // ノードがないので503（Service Unavailable）が返る
+    // モデルは登録されているが、ノードがないので503（Service Unavailable）が返る
     assert_eq!(
         response.status().as_u16(),
         503,
@@ -54,8 +72,13 @@ async fn test_chat_completions_request_processed() {
 #[tokio::test]
 #[serial]
 async fn test_node_selection_failure_returns_error() {
-    let router = spawn_test_router().await;
+    let (router, db_pool) = spawn_test_router_with_db().await;
     let client = Client::new();
+
+    // モデルをDBに登録（ノードは登録しない）
+    let model = create_test_model("test-model");
+    let storage = ModelStorage::new(db_pool.clone());
+    storage.save_model(&model).await.unwrap();
 
     // ノードなしでリクエスト送信
     let response = client
@@ -74,7 +97,9 @@ async fn test_node_selection_failure_returns_error() {
     let body = response.text().await.expect("body should be readable");
     // エラーメッセージにノード関連の情報が含まれることを確認
     assert!(
-        body.contains("No nodes available") || body.contains("nodes"),
+        body.contains("No nodes available")
+            || body.contains("nodes")
+            || body.contains("No available nodes"),
         "Error message should mention nodes: {}",
         body
     );
@@ -91,6 +116,11 @@ async fn test_node_selection_failure_saves_request_history() {
     // spawn_test_router_with_db()でルーターとDBプールを取得
     let (router, db_pool) = spawn_test_router_with_db().await;
     let client = Client::new();
+
+    // モデルをDBに登録（ノードは登録しない）
+    let model = create_test_model("test-model-for-history");
+    let storage = ModelStorage::new(db_pool.clone());
+    storage.save_model(&model).await.unwrap();
 
     // ノードなしでリクエスト送信
     let _response = client
@@ -128,7 +158,10 @@ async fn test_node_selection_failure_saves_request_history() {
     match &latest.status {
         RecordStatus::Error { message } => {
             assert!(
-                message.contains("Node selection failed") || message.contains("No nodes"),
+                message.contains("Node selection failed")
+                    || message.contains("No nodes")
+                    || message.contains("No available nodes")
+                    || message.contains("support model"),
                 "Error message should indicate node selection failure: {}",
                 message
             );

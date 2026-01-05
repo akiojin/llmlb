@@ -47,9 +47,6 @@ pub mod auth;
 /// CLIインターフェース
 pub mod cli;
 
-/// 対応モデル定義
-pub mod supported_models;
-
 /// ダッシュボードイベントバス
 pub mod events;
 

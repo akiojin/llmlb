@@ -2258,6 +2258,27 @@ impl LoadManager {
         })
     }
 
+    /// 指定モデルに対応するアイドルノードが存在するか
+    async fn has_idle_nodes_for_model(&self, model_id: &str) -> bool {
+        let nodes = self.registry.get_nodes_for_model(model_id).await;
+        let online_nodes: Vec<_> = nodes
+            .into_iter()
+            .filter(|node| !node.initializing)
+            .collect();
+
+        if online_nodes.is_empty() {
+            return false;
+        }
+
+        let state = self.state.read().await;
+        online_nodes.iter().any(|node| {
+            state
+                .get(&node.id)
+                .map(|load| load.combined_active() == 0)
+                .unwrap_or(true)
+        })
+    }
+
     /// アイドルノードを選択（なければ None）
     pub async fn select_idle_node(&self) -> RouterResult<Option<Node>> {
         let nodes = self.registry.list().await;
@@ -2269,6 +2290,50 @@ impl LoadManager {
         if online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
+
+        let state = self.state.read().await;
+        let idle_nodes: Vec<_> = online_nodes
+            .iter()
+            .filter(|node| {
+                state
+                    .get(&node.id)
+                    .map(|load| load.combined_active() == 0)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        if idle_nodes.is_empty() {
+            return Ok(None);
+        }
+
+        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let round_robin_start = round_robin_cursor % online_nodes.len();
+        let round_robin_priority = compute_round_robin_priority(&online_nodes, round_robin_start);
+
+        let mut ordered = idle_nodes;
+        ordered.sort_by(|a, b| {
+            let a_rank = round_robin_priority
+                .get(&a.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            let b_rank = round_robin_priority
+                .get(&b.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            a_rank.cmp(&b_rank)
+        });
+
+        Ok(ordered.first().cloned())
+    }
+
+    /// モデル対応のアイドルノードを選択（なければ None）
+    pub async fn select_idle_node_for_model(&self, model_id: &str) -> RouterResult<Option<Node>> {
+        let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
+        let online_nodes: Vec<_> = online_nodes
+            .into_iter()
+            .filter(|node| !node.initializing)
+            .collect();
 
         let state = self.state.read().await;
         let idle_nodes: Vec<_> = online_nodes
@@ -2321,6 +2386,33 @@ impl LoadManager {
         let _guard = QueueWaiterGuard::new(self.queue_waiters.clone());
 
         if self.has_idle_nodes().await {
+            return WaitResult::Ready;
+        }
+
+        let result = tokio::time::timeout(timeout_duration, self.queue_notify.notified()).await;
+
+        match result {
+            Ok(_) => WaitResult::Ready,
+            Err(_) => WaitResult::Timeout,
+        }
+    }
+
+    /// タイムアウト付きでモデル対応のアイドルノード待機
+    pub async fn wait_for_idle_node_with_timeout_for_model(
+        &self,
+        model_id: &str,
+        max_waiters: usize,
+        timeout_duration: StdDuration,
+    ) -> WaitResult {
+        let current = self.queue_waiters.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+        if current > max_waiters {
+            self.queue_waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+            return WaitResult::CapacityExceeded;
+        }
+
+        let _guard = QueueWaiterGuard::new(self.queue_waiters.clone());
+
+        if self.has_idle_nodes_for_model(model_id).await {
             return WaitResult::Ready;
         }
 
@@ -2509,15 +2601,29 @@ impl LoadManager {
         Ok(())
     }
 
-    /// 適切なノードを選択
-    pub async fn select_node(&self) -> RouterResult<Node> {
-        let nodes = self.registry.list().await;
+    async fn collect_online_nodes(&self, model_id: Option<&str>) -> RouterResult<Vec<Node>> {
+        if let Some(model_id) = model_id {
+            let nodes = self.registry.get_nodes_for_model(model_id).await;
+            if nodes.is_empty() {
+                return Err(RouterError::NoCapableNodes(model_id.to_string()));
+            }
+            return Ok(nodes);
+        }
 
+        let nodes = self.registry.list().await;
         let online_nodes: Vec<_> = nodes
             .into_iter()
             .filter(|node| node.status == NodeStatus::Online)
             .collect();
 
+        if online_nodes.is_empty() {
+            return Err(RouterError::NoNodesAvailable);
+        }
+
+        Ok(online_nodes)
+    }
+
+    async fn select_node_from_candidates(&self, online_nodes: Vec<Node>) -> RouterResult<Node> {
         if online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
@@ -2630,6 +2736,18 @@ impl LoadManager {
         });
 
         Ok(spec_sorted[0].clone())
+    }
+
+    /// 適切なノードを選択
+    pub async fn select_node(&self) -> RouterResult<Node> {
+        let online_nodes = self.collect_online_nodes(None).await?;
+        self.select_node_from_candidates(online_nodes).await
+    }
+
+    /// 指定モデルに対応するノードを選択
+    pub async fn select_node_for_model(&self, model_id: &str) -> RouterResult<Node> {
+        let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
+        self.select_node_from_candidates(online_nodes).await
     }
 
     /// 指定されたノードのロードスナップショットを取得
@@ -2928,14 +3046,10 @@ impl LoadManager {
     /// let node = manager.select_node_by_metrics().await?;
     /// println!("Selected node: {}", node.machine_name);
     /// ```
-    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
-        let nodes = self.registry.list().await;
-
-        let online_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|node| node.status == NodeStatus::Online)
-            .collect();
-
+    async fn select_node_by_metrics_from_candidates(
+        &self,
+        online_nodes: Vec<Node>,
+    ) -> RouterResult<Node> {
         if online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
@@ -3019,6 +3133,20 @@ impl LoadManager {
         });
 
         Ok(best_nodes[0].clone())
+    }
+
+    /// メトリクスベースでノードを選択（モデル指定なし）
+    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
+        let online_nodes = self.collect_online_nodes(None).await?;
+        self.select_node_by_metrics_from_candidates(online_nodes)
+            .await
+    }
+
+    /// 指定モデルに対応するノードをメトリクスベースで選択
+    pub async fn select_node_by_metrics_for_model(&self, model_id: &str) -> RouterResult<Node> {
+        let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
+        self.select_node_by_metrics_from_candidates(online_nodes)
+            .await
     }
 }
 

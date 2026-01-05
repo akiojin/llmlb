@@ -359,7 +359,7 @@ async fn openai_v1_models_get_specific() {
 
     let client = Client::new();
 
-    // GET /v1/models/gpt-oss-20b （プリセット廃止のため未登録扱い）
+    // GET /v1/models/gpt-oss-20b - ノードが/v1/modelsで報告しているモデルは発見される
     let model_response = client
         .get(format!("http://{}/v1/models/gpt-oss-20b", router.addr()))
         .header("authorization", format!("Bearer {}", api_key))
@@ -367,7 +367,8 @@ async fn openai_v1_models_get_specific() {
         .await
         .expect("model request should succeed");
 
-    assert_eq!(model_response.status(), reqwest::StatusCode::NOT_FOUND);
+    // ノードスタブがこのモデルを報告しているため、200が返る
+    assert_eq!(model_response.status(), reqwest::StatusCode::OK);
 
     router.stop().await;
     node_stub.stop().await;

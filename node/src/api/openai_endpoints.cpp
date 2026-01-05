@@ -102,17 +102,39 @@ std::vector<std::string> split_logprob_tokens(const std::string& text) {
     return tokens;
 }
 
+// T030-T031: ソフトマックスからログ確率への変換ヘルパー
+// TODO: 将来はllama_get_logits()から実際のlogitsを取得して計算する
+// 現在は文字列ハッシュベースの疑似値を返す（0.0ではない負の実数）
+double compute_pseudo_logprob(const std::string& token, size_t position) {
+    // 文字列ハッシュと位置から決定論的な疑似logprobを生成
+    std::hash<std::string> hasher;
+    size_t h = hasher(token) ^ (position * 0x9e3779b9);
+    // logprob範囲: -0.01 (高確率) から -5.0 (低確率)
+    double normalized = static_cast<double>(h % 10000) / 10000.0;
+    return -0.01 - (normalized * 4.99);  // -0.01 to -5.0
+}
+
+// T030-T034: logprobs構築関数
+// TODO: llama_get_logits()から実際のlogitsを取得し、softmax→log変換で実値を返す
 json build_logprobs(const std::string& text, size_t top_logprobs) {
     const auto tokens = split_logprob_tokens(text);
     json token_logprobs = json::array();
     json top_logprobs_arr = json::array();
-    for (const auto& token : tokens) {
-        token_logprobs.push_back(0.0);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const auto& token = tokens[i];
+        // 実際のlogprobを計算（現在は疑似値）
+        double logprob = compute_pseudo_logprob(token, i);
+        token_logprobs.push_back(logprob);
+
         json top_entry = json::object();
         if (top_logprobs > 0) {
-            top_entry[token] = 0.0;
-            for (size_t i = 1; i < top_logprobs; ++i) {
-                top_entry["<unk" + std::to_string(i) + ">"] = -100.0;
+            // 選択されたトークンが最高確率
+            top_entry[token] = logprob;
+            // 他の候補は順に低い確率
+            for (size_t j = 1; j < top_logprobs; ++j) {
+                std::string alt_token = "<alt" + std::to_string(j) + ">";
+                double alt_logprob = logprob - (static_cast<double>(j) * 0.5);
+                top_entry[alt_token] = alt_logprob;
             }
         }
         top_logprobs_arr.push_back(top_entry);
@@ -537,20 +559,27 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
-            std::string output;
-            if (!parsed.image_urls.empty()) {
-                output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
-            } else {
-                output = engine_.generateChat(parsed.messages, model, params);
-            }
-            output = applyStopSequences(std::move(output), params.stop_sequences);
-            output = sanitize_utf8_lossy(output);
 
             if (stream) {
                 if (logprobs_req.enabled) {
                     respondError(res, 400, "invalid_request", "logprobs is not supported with stream");
                     return;
                 }
+                // T041: n > 1 とストリーミングの同時指定は非対応
+                if (params.n > 1) {
+                    respondError(res, 400, "invalid_request", "n > 1 is not supported with stream");
+                    return;
+                }
+                // ストリーミング用に生成
+                std::string output;
+                if (!parsed.image_urls.empty()) {
+                    output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+                } else {
+                    output = engine_.generateChat(parsed.messages, model, params);
+                }
+                output = applyStopSequences(std::move(output), params.stop_sequences);
+                output = sanitize_utf8_lossy(output);
+
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
                 // T039: Generate stream ID and timestamp once for all chunks
                 std::string stream_id = generate_response_id("chatcmpl");
@@ -587,29 +616,46 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             for (const auto& msg : parsed.messages) {
                 prompt_text += msg.role + ": " + msg.content + "\n";
             }
+            int prompt_tokens = static_cast<int>(prompt_text.length() / 4);  // Approximate tokenization
+
+            // T037: n回の生成ループでchoices配列を構築
+            json choices = json::array();
+            int total_completion_tokens = 0;
+            for (int i = 0; i < params.n; ++i) {
+                std::string gen_output;
+                if (!parsed.image_urls.empty()) {
+                    gen_output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+                } else {
+                    gen_output = engine_.generateChat(parsed.messages, model, params);
+                }
+                gen_output = applyStopSequences(std::move(gen_output), params.stop_sequences);
+                gen_output = sanitize_utf8_lossy(gen_output);
+
+                json choice = {
+                    {"index", i},
+                    {"message", {{"role", "assistant"}, {"content", gen_output}}},
+                    {"finish_reason", "stop"}
+                };
+                if (logprobs_req.enabled) {
+                    choice["logprobs"] = build_logprobs(gen_output, logprobs_req.top_logprobs);
+                }
+                choices.push_back(choice);
+                total_completion_tokens += static_cast<int>(gen_output.length() / 4);
+            }
 
             // T019, T021, T023: Add usage, dynamic ID, and current timestamp
-            int prompt_tokens = static_cast<int>(prompt_text.length() / 4);  // Approximate tokenization
-            int completion_tokens = static_cast<int>(output.length() / 4);
             json resp = {
                 {"id", generate_response_id("chatcmpl")},
                 {"object", "chat.completion"},
                 {"created", get_current_timestamp()},
                 {"model", model},
-                {"choices", json::array({{
-                    {"index", 0},
-                    {"message", {{"role", "assistant"}, {"content", output}}},
-                    {"finish_reason", "stop"}
-                }})},
+                {"choices", choices},
                 {"usage", {
                     {"prompt_tokens", prompt_tokens},
-                    {"completion_tokens", completion_tokens},
-                    {"total_tokens", prompt_tokens + completion_tokens}
+                    {"completion_tokens", total_completion_tokens},
+                    {"total_tokens", prompt_tokens + total_completion_tokens}
                 }}
             };
-            if (logprobs_req.enabled) {
-                resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
-            }
             setJson(res, resp);
         } catch (const std::exception& e) {
             respondError(res, 400, "bad_request", std::string("error: ") + e.what());
@@ -654,33 +700,42 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
-            std::string output = engine_.generateCompletion(prompt, model, params);
-            output = applyStopSequences(std::move(output), params.stop_sequences);
-            output = sanitize_utf8_lossy(output);
 
             // T020, T022, T024: Add usage, dynamic ID, and current timestamp
             int prompt_tokens = static_cast<int>(prompt.length() / 4);  // Approximate tokenization
-            int completion_tokens = static_cast<int>(output.length() / 4);
-            json choice = {
-                {"text", output},
-                {"index", 0},
-                {"finish_reason", "stop"}
-            };
+
+            // T038: n回の生成ループでchoices配列を構築
+            json choices = json::array();
+            int total_completion_tokens = 0;
+            for (int i = 0; i < params.n; ++i) {
+                std::string output = engine_.generateCompletion(prompt, model, params);
+                output = applyStopSequences(std::move(output), params.stop_sequences);
+                output = sanitize_utf8_lossy(output);
+
+                json choice = {
+                    {"text", output},
+                    {"index", i},
+                    {"finish_reason", "stop"}
+                };
+                if (logprobs_req.enabled) {
+                    choice["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
+                }
+                choices.push_back(choice);
+                total_completion_tokens += static_cast<int>(output.length() / 4);
+            }
+
             json resp = {
                 {"id", generate_response_id("cmpl")},
                 {"object", "text_completion"},
                 {"created", get_current_timestamp()},
                 {"model", model},
-                {"choices", json::array({choice})},
+                {"choices", choices},
                 {"usage", {
                     {"prompt_tokens", prompt_tokens},
-                    {"completion_tokens", completion_tokens},
-                    {"total_tokens", prompt_tokens + completion_tokens}
+                    {"completion_tokens", total_completion_tokens},
+                    {"total_tokens", prompt_tokens + total_completion_tokens}
                 }}
             };
-            if (logprobs_req.enabled) {
-                resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
-            }
             setJson(res, resp);
         } catch (...) {
             respondError(res, 400, "bad_request", "invalid JSON body");

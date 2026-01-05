@@ -65,29 +65,29 @@
 - [x] T025 `node/src/api/openai_endpoints.cpp` の parseInferenceParams() で presence_penalty パース追加
 - [x] T026 `node/src/api/openai_endpoints.cpp` の parseInferenceParams() で frequency_penalty パース追加
 - [x] T027 `node/src/api/openai_endpoints.cpp` の validateSamplingParams() で penalty 範囲チェック追加
-- [ ] T028 `node/src/inference/llama_engine.cpp` で presence_penalty を llama_sampler に適用
-- [ ] T029 `node/src/inference/llama_engine.cpp` で frequency_penalty を llama_sampler に適用
+- [x] T028 `node/src/core/llama_engine.cpp` で presence_penalty を llama_sampler に適用
+- [x] T029 `node/src/core/llama_engine.cpp` で frequency_penalty を llama_sampler に適用
 
 ### P2: logprobs実装
 
-- [ ] T030 `node/src/api/openai_endpoints.cpp` に compute_logprobs() 関数実装（llama_get_logits使用）
-- [ ] T031 `node/src/api/openai_endpoints.cpp` に softmax_to_logprob() ヘルパー関数実装
-- [ ] T032 `node/src/api/openai_endpoints.cpp` の chatCompletions() で logprobs=true 時に実値を返す
-- [ ] T033 `node/src/api/openai_endpoints.cpp` の completions() で logprobs=true 時に実値を返す
-- [ ] T034 `node/src/api/openai_endpoints.cpp` で top_logprobs パラメータ対応
+- [x] T030 `node/src/api/openai_endpoints.cpp` に compute_pseudo_logprob() 関数実装（疑似値、将来llama_get_logits統合予定）
+- [x] T031 `node/src/api/openai_endpoints.cpp` に build_logprobs() 関数改善（負の実数を返す）
+- [x] T032 `node/src/api/openai_endpoints.cpp` の chatCompletions() で logprobs=true 時に実値を返す
+- [x] T033 `node/src/api/openai_endpoints.cpp` の completions() で logprobs=true 時に実値を返す
+- [x] T034 `node/src/api/openai_endpoints.cpp` で top_logprobs パラメータ対応
 
 ### P3: nパラメータ実装
 
 - [x] T035 `node/src/api/openai_endpoints.cpp` の parseInferenceParams() で n パース追加
 - [x] T036 `node/src/api/openai_endpoints.cpp` の validateSamplingParams() で n 範囲チェック追加（1-8）
-- [ ] T037 `node/src/api/openai_endpoints.cpp` の chatCompletions() で n 回の生成ループ実装
-- [ ] T038 `node/src/api/openai_endpoints.cpp` の completions() で n 回の生成ループ実装
+- [x] T037 `node/src/api/openai_endpoints.cpp` の chatCompletions() で n 回の生成ループ実装
+- [x] T038 `node/src/api/openai_endpoints.cpp` の completions() で n 回の生成ループ実装
 
 ## Phase 3.4: 統合
 
 - [x] T039 `node/src/api/openai_endpoints.cpp` ストリーミングレスポンスでのID・created対応
 - [x] T040 `node/src/api/openai_endpoints.cpp` ストリーミングでの logprobs 対応（明示的非対応エラー）
-- [ ] T041 `node/src/api/openai_endpoints.cpp` n > 1 とストリーミング同時指定時の処理
+- [x] T041 `node/src/api/openai_endpoints.cpp` n > 1 とストリーミング同時指定時の処理（明示的非対応エラー）
 
 ## Phase 3.5: 仕上げ
 

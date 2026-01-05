@@ -239,10 +239,10 @@
   - messagesの変換とレンダリング実装
 
 ## Function Calling（Session 2025-12-31 Part 5）
-- [ ] T168 Function Calling検出の実装
+- [x] T168 Function Calling検出の実装
   - ツール定義のプロンプト埋め込み
   - 出力からのJSON検出
-- [ ] T169 finish_reason="tool_calls"対応
+- [x] T169 finish_reason="tool_calls"対応
   - ツール呼び出し検出時のレスポンス整形
 
 ## manifest.json拡張（Session 2025-12-31 Part 5）
@@ -259,7 +259,7 @@
 - [x] T175 mmproj自動検出テスト
 - [x] T176 レプリカ負荷分散テスト
 - [x] T177 chat_templateレンダリングテスト
-- [ ] T178 Function Calling検出テスト
+- [x] T178 Function Calling検出テスト
 
 ## VRAM部分ロード障害（Session 2025-12-31 Part 6）
 - [ ] T179 部分ロード時VRAM不足の即時全解放実装

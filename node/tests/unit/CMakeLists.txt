@@ -16,6 +16,7 @@ set(UNIT_TEST_SOURCES
     llama_manager_test.cpp
     model_pool_test.cpp
     model_loader_test.cpp
+    prefix_cache_test.cpp
     onnx_tts_manager_test.cpp
     watchdog_test.cpp
     utils_config_test.cpp
@@ -33,6 +34,7 @@ set(UNIT_TEST_SOURCES
     ../../src/models/model_resolver.cpp
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
+    ../../src/core/prefix_cache.cpp
     ../../src/core/engine_registry.cpp
     ../../src/core/engine_host.cpp
     ../../src/core/continuous_batch_scheduler.cpp

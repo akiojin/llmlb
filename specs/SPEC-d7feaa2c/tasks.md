@@ -209,10 +209,10 @@
   - 未指定時のフォールバック
 
 ## Prefix Caching（Session 2025-12-31 Part 5）
-- [ ] T161 Prefix Cacheの実装
+- [x] T161 Prefix Cacheの実装
   - 同一プレフィックスのKVキャッシュ共有
   - プロンプトハッシュをキーとした管理
-- [ ] T162 Prefix Cache VRAM割当管理
+- [x] T162 Prefix Cache VRAM割当管理
   - 空きVRAMの割合ベースで上限設定
   - LRUによるエントリ削除
 
@@ -255,7 +255,7 @@
 
 ## Tests（Session 2025-12-31 Part 5）
 - [x] T173 量子化指定パーステスト
-- [ ] T174 Prefix Cacheヒット/ミステスト
+- [x] T174 Prefix Cacheヒット/ミステスト
 - [ ] T175 mmproj自動検出テスト
 - [ ] T176 レプリカ負荷分散テスト
 - [x] T177 chat_templateレンダリングテスト

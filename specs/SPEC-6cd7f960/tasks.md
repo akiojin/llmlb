@@ -32,14 +32,21 @@
 - [x] gpt-oss 20B/120B を Model Hub に追加（Metalアーティファクト確認済み）
 
 ### 2) Docker Desktop Models 検証フロー（GGUF）
-- [ ] 追加対象（Docker Desktop Models）の **HF repo / GGUFファイル / 量子化** を確定する
+- [x] 追加対象（Docker Desktop Models）の **HF repo / GGUFファイル / 量子化** を確定する
   - `specs/SPEC-6cd7f960/verified-models.md` に決定内容を追記
   - 同名モデルが複数ある場合は **最小量子化（Q4/Q5系）優先** で選ぶ
-- [ ] `node/third_party/llama.cpp` または `node/build` の `llama-cli` でロード確認
-- [ ] テキスト生成の最小スモーク（短文で 1-2 トークン以上）を確認
-- [ ] メモリ使用量の記録（`required_memory_bytes` の更新）
-- [ ] 検証ログを `specs/SPEC-6cd7f960/verified-models.md` に記録
-- [ ] `router/src/supported_models.json` に追加し、Model Hub に反映
+- [x] `node/third_party/llama.cpp` または `node/build` の `llama-cli` でロード確認
+- [x] テキスト生成の最小スモーク（短文で 1-2 トークン以上）を確認
+- [x] メモリ使用量の記録（`required_memory_bytes` の更新）
+- [x] 検証ログを `specs/SPEC-6cd7f960/verified-models.md` に記録
+- [x] `router/src/supported_models.json` に追加し、Model Hub に反映
+
+**完了ステータス（2026-01-05）:**
+アクセス可能な全Docker Desktop Modelsの検証を完了。以下のモデルは外部要因でブロック:
+- kimi-k2: GGUF分割・大容量（13ファイル）
+- granite-4.0-nano/h-nano: HFアクセス不可
+- gemma3-qat: HF gated
+- deepcoder-preview: HFアクセス不可
 
 ### 3) safetensors 検証フロー
 - [x] gpt-oss-safeguard の **Metal最適化アーティファクト有無** を再確認

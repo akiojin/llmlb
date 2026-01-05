@@ -85,7 +85,7 @@
 - 廃止機能を「後方互換」名目でコードやテストに残すこと（廃止が決まったら完全削除する）
 - ダミー/フェイク/モック実装を本番コードに含めること（テスト専用コードは例外）
 - 検証やチェックをスキップするための環境変数やフラグを使用すること
-- Task toolやTaskOutputで`cargo fmt --check`、`make quality-checks`等の長時間実行コマンドを実行すること（コンテキストを大量消費するため、直接Bashツールで実行すること）
+- Task toolやTaskOutputで`cargo fmt --check`、`make quality-checks`等の長時間実行コマンドを実行すること（コンテキストを大量消費しLLMがクラッシュするため、直接Bashツールで出力制限付きで実行すること。詳細は「ローカル検証」セクション参照）
 
 ## 現在の目的
 
@@ -207,6 +207,32 @@ GitHub Actions が実行する検証を**全てローカルで事前に成功さ
 - OpenAI互換APIのみを個別に確認したい場合は `make openai-tests` を実行すること。
 - いずれかが失敗した状態でコミットすることを固く禁止する。失敗原因を解消し、再実行→合格を確認してからコミットせよ。
 - ローカル検証結果を残すため、必要に応じて実行ログをメモし、レビュー時に提示できるようにすること。
+
+#### ⚠️ コンテキスト消費を抑える実行方法（Claude Code向け）
+
+Task toolやバックグラウンドタスクで品質チェックを実行すると、大量の出力がコンテキストに蓄積されLLMがクラッシュする可能性がある。**必ず直接Bashツールで、出力を制限して実行すること。**
+
+```bash
+# ❌ NG: Task toolやバックグラウンドで実行
+# ❌ NG: 出力制限なしで実行
+
+# ✅ OK: 直接Bashで出力制限付き実行（推奨パターン）
+
+# フォーマットチェック（成功/失敗のみ確認）
+cargo fmt --check > /dev/null 2>&1 && echo "✓ fmt OK" || echo "✗ fmt FAIL"
+
+# Clippy（最後の20行のみ表示）
+cargo clippy -- -D warnings 2>&1 | tail -20
+
+# テスト（サマリのみ表示）
+cargo test 2>&1 | grep -E "(test result|FAILED|passed|failed)" | tail -10
+
+# markdownlint（エラー数のみ確認）
+pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" 2>&1 | tail -10
+
+# 全体を一括確認（出力制限付き）
+make quality-checks 2>&1 | tail -50
+```
 
 ### commitlint準拠コミットログ（絶対厳守・バージョニング直結）
 

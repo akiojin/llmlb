@@ -13,9 +13,10 @@ import { StatsCards } from '@/components/dashboard/StatsCards'
 import { NodeTable } from '@/components/dashboard/NodeTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
+import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { ModelsSection } from '@/components/models/ModelsSection'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Server, History, FileText, Box } from 'lucide-react'
+import { AlertCircle, Server, History, FileText, Box, BarChart3 } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -113,7 +114,7 @@ export default function Dashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="nodes" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="nodes" className="gap-2">
               <Server className="h-4 w-4" />
               <span className="hidden sm:inline">Nodes</span>
@@ -121,6 +122,10 @@ export default function Dashboard() {
             <TabsTrigger value="models" className="gap-2">
               <Box className="h-4 w-4" />
               <span className="hidden sm:inline">Models</span>
+            </TabsTrigger>
+            <TabsTrigger value="statistics" className="gap-2">
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden sm:inline">Statistics</span>
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-2">
               <History className="h-4 w-4" />
@@ -138,6 +143,10 @@ export default function Dashboard() {
 
           <TabsContent value="models" className="animate-fade-in">
             <ModelsSection />
+          </TabsContent>
+
+          <TabsContent value="statistics" className="animate-fade-in">
+            <TokenStatsSection />
           </TabsContent>
 
           <TabsContent value="history" className="animate-fade-in">

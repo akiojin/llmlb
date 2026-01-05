@@ -118,6 +118,16 @@ pub fn create_router(state: AppState) -> Router {
             "/dashboard/request-responses/export",
             get(dashboard::export_request_responses),
         )
+        // トークン統計API
+        .route("/dashboard/stats/tokens", get(dashboard::get_token_stats))
+        .route(
+            "/dashboard/stats/tokens/daily",
+            get(dashboard::get_daily_token_stats),
+        )
+        .route(
+            "/dashboard/stats/tokens/monthly",
+            get(dashboard::get_monthly_token_stats),
+        )
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）
         .route("/nodes/:node_id/logs", get(logs::get_node_logs))

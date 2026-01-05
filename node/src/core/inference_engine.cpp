@@ -5,6 +5,7 @@
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
 #include "core/nemotron_engine.h"
+#include "core/request_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"
 #include "models/model_descriptor.h"
@@ -118,18 +119,19 @@ void report_token_metrics(const TokenMetricsState& state, const std::string& mod
 std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens) {
     std::vector<std::string> tokens;
     std::string current;
+    const size_t effective_max_tokens = max_tokens == 0 ? kDefaultMaxTokens : max_tokens;
     for (char c : text) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (!current.empty()) {
                 tokens.push_back(current);
-                if (tokens.size() >= max_tokens) break;
+                if (tokens.size() >= effective_max_tokens) break;
                 current.clear();
             }
         } else {
             current.push_back(c);
         }
     }
-    if (!current.empty() && tokens.size() < max_tokens) {
+    if (!current.empty() && tokens.size() < effective_max_tokens) {
         tokens.push_back(current);
     }
     return tokens;
@@ -539,7 +541,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     llama_reg.engine_id = "builtin_llama_cpp";
     llama_reg.engine_version = "builtin";
     llama_reg.formats = {"gguf"};
-    llama_reg.architectures = {"llama", "mistral", "gemma"};
+    llama_reg.architectures = {"llama", "mistral", "gemma", "phi"};
     llama_reg.capabilities = {"text", "embeddings"};
     engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
 
@@ -547,7 +549,7 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     gptoss_reg.engine_id = "builtin_gptoss_cpp";
     gptoss_reg.engine_version = "builtin";
     gptoss_reg.formats = {"safetensors"};
-    gptoss_reg.architectures = {"gptoss"};
+    gptoss_reg.architectures = {"gpt_oss"};
     gptoss_reg.capabilities = {"text"};
     engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
 
@@ -663,8 +665,17 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
         return "";
     }
 
+    auto parsed = ModelStorage::parseModelName(model_name);
+    if (!parsed) {
+        if (error_message) {
+            *error_message = "Invalid model name (invalid quantization format): " + model_name;
+        }
+        return "";
+    }
+    const std::string& lookup_name = parsed->base;
+
     if (model_resolver_ != nullptr) {
-        auto resolved = model_resolver_->resolve(model_name);
+        auto resolved = model_resolver_->resolve(lookup_name);
         if (resolved.success) {
             return resolved.path;
         }
@@ -672,12 +683,12 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
         return "";
     }
 
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
+    std::string gguf_path = model_storage_->resolveGguf(lookup_name);
     if (!gguf_path.empty()) {
         return gguf_path;
     }
 
-    if (error_message) *error_message = "Model not found: " + model_name;
+    if (error_message) *error_message = "Model not found: " + lookup_name;
     return "";
 }
 
@@ -939,14 +950,15 @@ std::string InferenceEngine::generateChatWithImages(
 
         size_t effective_max_tokens = params_with_metrics.max_tokens;
         int32_t model_n_ctx = llama_model_n_ctx_train(model);
-        if (model_n_ctx > 0 && prompt_positions < static_cast<size_t>(model_n_ctx)) {
-            size_t available = static_cast<size_t>(model_n_ctx) - prompt_positions;
-            constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-            if (params_with_metrics.max_tokens == DEFAULT_MAX_TOKENS || params_with_metrics.max_tokens == 0) {
-                effective_max_tokens = available;
-            } else {
-                effective_max_tokens = std::min(params_with_metrics.max_tokens, available);
+        if (model_n_ctx > 0) {
+            size_t available = 0;
+            if (prompt_positions < static_cast<size_t>(model_n_ctx)) {
+                available = static_cast<size_t>(model_n_ctx) - prompt_positions;
             }
+            effective_max_tokens = resolve_effective_max_tokens(
+                params_with_metrics.max_tokens,
+                prompt_positions,
+                model_n_ctx);
             spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
                 model_n_ctx, prompt_positions, available, effective_max_tokens);
         }
@@ -1139,40 +1151,46 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
     ModelLoadResult result;
 
     if (!isInitialized()) {
-        result.code = EngineErrorCode::kUnavailable;
         result.error_message = "InferenceEngine not initialized";
+        result.error_code = EngineErrorCode::kInternal;
+        return result;
+    }
+
+    if (!ModelStorage::parseModelName(model_name).has_value()) {
+        result.error_message = "Invalid model name (invalid quantization format): " + model_name;
+        result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
 
     auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
-        result.code = EngineErrorCode::kNotFound;
         result.error_message = "Model not found: " + model_name;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
     if (!capability.empty() && !desc->capabilities.empty()) {
         if (std::find(desc->capabilities.begin(), desc->capabilities.end(), capability) == desc->capabilities.end()) {
-            result.code = EngineErrorCode::kUnsupported;
             result.error_message = "Model does not support capability: " + capability;
+            result.error_code = EngineErrorCode::kUnsupported;
             return result;
         }
     }
 
     if (!desc->architectures.empty() && engines_ &&
         !engines_->supportsArchitecture(desc->runtime, desc->architectures)) {
-        result.code = EngineErrorCode::kUnsupported;
-        std::string arch_list = join_architectures(desc->architectures);
-        result.error_message = arch_list.empty()
-            ? "Model architecture is not supported by any engine"
-            : ("Model architecture is not supported by any engine: " + arch_list);
+        result.error_code = EngineErrorCode::kUnsupported;
+        result.error_message = "Model architecture is not supported by any engine";
         return result;
     }
 
-    Engine* engine = engines_ ? engines_->resolve(*desc, capability) : nullptr;
+    std::string resolve_error;
+    Engine* engine = engines_ ? engines_->resolve(*desc, capability, &resolve_error) : nullptr;
     if (!engine) {
-        result.code = EngineErrorCode::kUnavailable;
-        result.error_message = "No engine registered for runtime: " + desc->runtime;
+        result.error_message = !resolve_error.empty()
+                                   ? resolve_error
+                                   : "No engine registered for runtime: " + desc->runtime;
+        result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
     const std::string engine_id = engines_ ? engines_->engineIdFor(engine) : "";
@@ -1216,7 +1234,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
                         engine_id,
                         required,
                         budget);
-                    result.code = EngineErrorCode::kResourceExhausted;
+                    result.error_code = EngineErrorCode::kOomVram;
                     result.error_message = "Insufficient VRAM budget available";
                     return result;
                 }
@@ -1224,7 +1242,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         }
         if (vram_total_bytes > 0 && required > 0) {
             if (required > vram_available_bytes) {
-                result.code = EngineErrorCode::kResourceExhausted;
+                result.error_code = EngineErrorCode::kOomVram;
                 result.error_message = "Insufficient VRAM available";
                 return result;
             }
@@ -1233,10 +1251,10 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
 
     result = engine->loadModel(*desc);
     if (result.success) {
-        if (result.code == EngineErrorCode::kUnknown) {
-            result.code = EngineErrorCode::kOk;
-        }
+        result.error_code = EngineErrorCode::kOk;
         model_max_ctx_ = engine->getModelMaxContext(*desc);
+    } else if (result.error_code == EngineErrorCode::kLoadFailed && result.error_message.empty()) {
+        result.error_message = "Failed to load model: " + model_name;
     }
     return result;
 }

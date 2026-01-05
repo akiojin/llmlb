@@ -46,6 +46,7 @@ public:
     Engine* resolve(const std::string& runtime) const;
     Engine* resolve(const ModelDescriptor& descriptor) const;
     Engine* resolve(const ModelDescriptor& descriptor, const std::string& capability) const;
+    Engine* resolve(const ModelDescriptor& descriptor, const std::string& capability, std::string* error) const;
     bool hasRuntime(const std::string& runtime) const;
     bool supportsArchitecture(const std::string& runtime, const std::vector<std::string>& architectures) const;
     size_t engineIdCount() const;

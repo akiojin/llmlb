@@ -21,7 +21,7 @@ public:
     llm_node::ModelLoadResult loadModel(const llm_node::ModelDescriptor&) override {
         llm_node::ModelLoadResult result;
         result.success = true;
-        result.code = llm_node::EngineErrorCode::kOk;
+        result.error_code = llm_node::EngineErrorCode::kOk;
         return result;
     }
 
@@ -219,6 +219,32 @@ TEST(EngineRegistryTest, ResolvesByCapability) {
 
     EXPECT_EQ(registry.resolve(desc, "embeddings"), engine_embed_ptr);
     EXPECT_NE(registry.resolve(desc, "embeddings"), engine_text_ptr);
+}
+
+TEST(EngineRegistryTest, RejectsUnsupportedArchitecture) {
+    EngineRegistry registry;
+
+    auto engine = std::make_unique<FakeEngine>("arch");
+    auto* engine_ptr = engine.get();
+    EngineRegistration reg;
+    reg.engine_id = "engine_arch";
+    reg.engine_version = "0.1.0";
+    reg.architectures = {"nemotron", "mamba"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine), reg, nullptr));
+
+    ModelDescriptor desc;
+    desc.runtime = "fake";
+    desc.architectures = {"llama"};
+
+    std::string error;
+    EXPECT_EQ(registry.resolve(desc, "", &error), nullptr);
+    EXPECT_NE(error.find("architecture"), std::string::npos);
+    EXPECT_NE(error.find("nemotron"), std::string::npos);
+
+    desc.architectures = {"mamba"};
+    error.clear();
+    EXPECT_EQ(registry.resolve(desc, "", &error), engine_ptr);
+    EXPECT_TRUE(error.empty());
 }
 
 TEST(EngineRegistryTest, ReturnsNullWhenCapabilityMismatch) {

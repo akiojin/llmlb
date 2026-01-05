@@ -3,6 +3,9 @@
 # Verifies model can handle Japanese input/output
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Japanese Language Support ==="
 
 # Skip for non-text models
@@ -14,11 +17,7 @@ fi
 PROMPT="こんにちは。あなたは誰ですか？日本語で答えてください。"
 echo "Prompt: $PROMPT"
 
-OUTPUT=$("$LLM_NODE" \
-  --model "$MODEL" \
-  --n-predict 100 \
-  --prompt "$PROMPT" \
-  2>&1)
+OUTPUT=$(infer_command 100 "$PROMPT" 2>&1)
 
 echo "Output:"
 echo "$OUTPUT"

@@ -3,6 +3,9 @@
 # Verifies model can produce streaming token output
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Streaming Output ==="
 
 # Skip for non-text models
@@ -19,12 +22,7 @@ START_TIME=$(date +%s%N)
 FIRST_TOKEN_TIME=""
 TOKEN_COUNT=0
 
-# Use a subshell to capture streaming output
-OUTPUT=$("$LLM_NODE" \
-  --model "$MODEL" \
-  --n-predict 50 \
-  --prompt "$PROMPT" \
-  2>&1)
+OUTPUT=$(infer_command 50 "$PROMPT" 2>&1)
 
 END_TIME=$(date +%s%N)
 

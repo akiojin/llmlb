@@ -11,6 +11,7 @@
 #include "core/inference_engine.h"
 #include "core/llama_manager.h"
 #include "core/engine_registry.h"
+#include "core/engine_error.h"
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
 #include "api/http_server.h"
@@ -75,7 +76,7 @@ public:
         if (calls_) calls_->push_back("load:" + name_);
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -127,7 +128,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -177,7 +178,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -230,7 +231,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -284,7 +285,7 @@ public:
     ModelLoadResult loadModel(const ModelDescriptor&) override {
         ModelLoadResult result;
         result.success = true;
-        result.code = EngineErrorCode::kOk;
+        result.error_code = EngineErrorCode::kOk;
         return result;
     }
 
@@ -371,7 +372,7 @@ TEST(InferenceEngineTest, LoadModelReturnsUnavailableWhenNotInitialized) {
     InferenceEngine engine;
     auto result = engine.loadModel("missing/model");
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kUnavailable);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kInternal);
     EXPECT_NE(result.error_message.find("not initialized"), std::string::npos);
 }
 
@@ -383,7 +384,7 @@ TEST(InferenceEngineTest, LoadModelReturnsNotFoundWhenMissingModel) {
 
     auto result = engine.loadModel("missing/model");
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kNotFound);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kLoadFailed);
     EXPECT_NE(result.error_message.find("Model not found"), std::string::npos);
 }
 
@@ -450,7 +451,7 @@ TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
 
     auto result = engine.loadModel(model_name, "image");
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
     EXPECT_NE(result.error_message.find("capability"), std::string::npos);
 }
 
@@ -483,7 +484,7 @@ TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
 
     auto result = engine.loadModel(model_name, "text");
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kUnsupported);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
     EXPECT_NE(result.error_message.find("architecture"), std::string::npos);
 }
 
@@ -515,7 +516,7 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramInsufficient) {
 
     auto result = engine.loadModel(model_name);
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kOomVram);
     EXPECT_NE(result.error_message.find("VRAM"), std::string::npos);
 }
 
@@ -558,7 +559,7 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramBudgetExceeded) {
 
     auto result = engine.loadModel(model_name);
     EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.code, EngineErrorCode::kResourceExhausted);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kOomVram);
     EXPECT_NE(result.error_message.find("budget"), std::string::npos);
 }
 
@@ -653,6 +654,24 @@ TEST(InferenceEngineTest, LoadModelUsesCapabilityToResolveEngine) {
     EXPECT_TRUE(embed_result.success);
     ASSERT_EQ(calls.size(), 1u);
     EXPECT_EQ(calls[0], "load:embed");
+}
+
+TEST(InferenceEngineTest, LoadModelInvalidQuantizationReturnsUnsupportedError) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto result = engine.loadModel("example/model:");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
+}
+
+TEST(InferenceEngineTest, LoadModelWithoutInitializationReturnsInternalError) {
+    InferenceEngine engine;
+    auto result = engine.loadModel("example/model");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kInternal);
 }
 
 TEST(InferenceEngineTest, GenerateEmbeddingsUsesEmbeddingEngine) {
@@ -799,6 +818,16 @@ TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {
 #else
     EXPECT_FALSE(engine.isModelSupported(desc));
 #endif
+}
+
+TEST(InferenceParamsTest, ResolvesEffectiveMaxTokensFromContext) {
+    EXPECT_EQ(resolve_effective_max_tokens(0, 10, 100), 90u);
+    EXPECT_EQ(resolve_effective_max_tokens(5, 10, 100), 5u);
+    EXPECT_EQ(resolve_effective_max_tokens(500, 10, 100), 90u);
+    EXPECT_EQ(resolve_effective_max_tokens(kDefaultMaxTokens, 100, 8192), kDefaultMaxTokens);
+    EXPECT_EQ(resolve_effective_max_tokens(0, 0, 0), kDefaultMaxTokens);
+    EXPECT_EQ(resolve_effective_max_tokens(0, 100, 100), 0u);
+    EXPECT_EQ(resolve_effective_max_tokens(5, 100, 100), 0u);
 }
 
 TEST(InferenceEngineTest, ComputesTokenMetricsFromCallback) {

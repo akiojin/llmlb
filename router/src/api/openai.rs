@@ -15,18 +15,18 @@ use llm_router_common::{
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::IpAddr, time::Instant};
+use std::{collections::HashMap, net::IpAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::models::image;
 use crate::{
     api::{
-        models::{list_registered_models, LifecycleStatus},
+        models::{list_registered_models, load_registered_model, LifecycleStatus},
         nodes::AppError,
         proxy::{
             forward_streaming_response, save_request_record, select_available_node,
-            select_available_node_with_queue, QueueSelection,
+            select_available_node_with_queue_for_model, QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -165,6 +165,18 @@ fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Resp
     (status, Json(payload)).into_response()
 }
 
+fn model_unavailable_response(message: impl Into<String>, code: &str) -> Response {
+    let payload = json!({
+        "error": {
+            "message": message.into(),
+            "type": "service_unavailable",
+            "code": code,
+        }
+    });
+
+    (StatusCode::SERVICE_UNAVAILABLE, Json(payload)).into_response()
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
@@ -173,7 +185,7 @@ pub async fn chat_completions(
     let model = extract_model(&payload)?;
 
     // モデルの TextGeneration capability を検証
-    let models = list_registered_models();
+    let models = list_registered_models(&state.db_pool).await?;
     if let Some(model_info) = models.iter().find(|m| m.name == model) {
         if !model_info.has_capability(ModelCapability::TextGeneration) {
             return Err(AppError::from(RouterError::Common(
@@ -244,58 +256,59 @@ pub async fn embeddings(
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    // ルーターがサポートするモデルを取得
-    let models = list_registered_models();
+    // オンラインノードの実行可能モデルを取得
+    let mut available_models: Vec<String> = state
+        .registry
+        .list_executable_models_online()
+        .await
+        .into_iter()
+        .collect();
+    available_models.sort();
+
+    // 登録済みモデルのメタデータを取得（存在する場合のみ利用）
+    let mut registered_map: std::collections::HashMap<String, crate::registry::models::ModelInfo> =
+        HashMap::new();
+    for model in list_registered_models(&state.db_pool).await? {
+        registered_map.insert(model.name.clone(), model);
+    }
 
     // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
     let mut data: Vec<Value> = Vec::new();
-    let mut registered_names: HashSet<String> = HashSet::new();
 
-    let ready_names: HashSet<String> = state
-        .registry
-        .list()
-        .await
-        .into_iter()
-        .flat_map(|node| node.loaded_models)
-        .collect();
-
-    for m in models {
-        registered_names.insert(m.name.clone());
-
-        let ready = ready_names.contains(&m.name);
-
-        // ライフサイクル状態を決定
-        let lifecycle_status = if ready {
-            LifecycleStatus::Registered
+    for model_id in available_models {
+        if let Some(m) = registered_map.get(&model_id) {
+            let caps: ModelCapabilities = m.get_capabilities().into();
+            let obj = json!({
+                "id": m.name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router",
+                "capabilities": caps,
+                "lifecycle_status": LifecycleStatus::Registered,
+                "download_progress": null,
+                "ready": true,
+                "repo": m.repo,
+                "filename": m.filename,
+                "size_bytes": m.size,
+                "required_memory_bytes": m.required_memory,
+                "source": m.source,
+                "tags": m.tags,
+                "description": m.description,
+                "chat_template": m.chat_template,
+            });
+            data.push(obj);
         } else {
-            LifecycleStatus::Pending
-        };
-
-        // Azure OpenAI 形式の capabilities (boolean object)
-        let caps: ModelCapabilities = m.get_capabilities().into();
-
-        let obj = json!({
-            "id": m.name,
-            "object": "model",
-            "created": 0,
-            "owned_by": "router",
-            // Azure OpenAI 形式の capabilities
-            "capabilities": caps,
-            // ダッシュボード用拡張フィールド
-            "lifecycle_status": lifecycle_status,
-            "download_progress": null,
-            "ready": ready,
-            // 追加メタデータ（ダッシュボード向け）
-            "repo": m.repo,
-            "filename": m.filename,
-            "size_bytes": m.size,
-            "required_memory_bytes": m.required_memory,
-            "source": m.source,
-            "tags": m.tags,
-            "description": m.description,
-            "chat_template": m.chat_template,
-        });
-        data.push(obj);
+            let obj = json!({
+                "id": model_id,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router",
+                "lifecycle_status": LifecycleStatus::Registered,
+                "download_progress": null,
+                "ready": true,
+            });
+            data.push(obj);
+        }
     }
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
@@ -330,58 +343,67 @@ pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
-    let all = list_registered_models();
-    let model = match all.into_iter().find(|m| m.name == model_id) {
-        Some(v) => v,
-        None => {
-            // 404 を OpenAI 換算で返す
-            let body = json!({
-                "error": {
-                    "message": "The model does not exist",
-                    "type": "invalid_request_error",
-                    "param": "model",
-                    "code": "model_not_found"
-                }
-            });
-            return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
-        }
-    };
+    let available_models = state.registry.list_executable_models_online().await;
+    let mut registered_map: HashMap<String, crate::registry::models::ModelInfo> = HashMap::new();
+    for model in list_registered_models(&state.db_pool).await? {
+        registered_map.insert(model.name.clone(), model);
+    }
 
-    // Azure OpenAI 形式の capabilities (boolean object)
-    let caps: ModelCapabilities = model.get_capabilities().into();
+    let model = registered_map.remove(&model_id);
 
-    let ready_names: HashSet<String> = state
-        .registry
-        .list()
-        .await
-        .into_iter()
-        .flat_map(|node| node.loaded_models)
-        .collect();
-    let ready = ready_names.contains(&model_id);
-    let lifecycle_status = if ready {
-        LifecycleStatus::Registered
-    } else {
-        LifecycleStatus::Pending
-    };
+    if model.is_none() && !available_models.contains(&model_id) {
+        // 404 を OpenAI 換算で返す
+        let body = json!({
+            "error": {
+                "message": "The model does not exist",
+                "type": "invalid_request_error",
+                "param": "model",
+                "code": "model_not_found"
+            }
+        });
+        return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
+    }
+
+    if let Some(model) = model {
+        // Azure OpenAI 形式の capabilities (boolean object)
+        let caps: ModelCapabilities = model.get_capabilities().into();
+        let ready = available_models.contains(&model_id);
+        let lifecycle_status = if ready {
+            LifecycleStatus::Registered
+        } else {
+            LifecycleStatus::Pending
+        };
+
+        let body = json!({
+            "id": model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "router",
+            "capabilities": caps,
+            // ダッシュボード用拡張フィールド
+            "lifecycle_status": lifecycle_status,
+            "ready": ready,
+            // 追加メタデータ（ダッシュボード向け）
+            "repo": model.repo,
+            "filename": model.filename,
+            "size_bytes": model.size,
+            "required_memory_bytes": model.required_memory,
+            "source": model.source,
+            "tags": model.tags,
+            "description": model.description,
+            "chat_template": model.chat_template,
+        });
+
+        return Ok((StatusCode::OK, Json(body)).into_response());
+    }
 
     let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
         "owned_by": "router",
-        "capabilities": caps,
-        // ダッシュボード用拡張フィールド
-        "lifecycle_status": lifecycle_status,
-        "ready": ready,
-        // 追加メタデータ（ダッシュボード向け）
-        "repo": model.repo,
-        "filename": model.filename,
-        "size_bytes": model.size,
-        "required_memory_bytes": model.required_memory,
-        "source": model.source,
-        "tags": model.tags,
-        "description": model.description,
-        "chat_template": model.chat_template,
+        "lifecycle_status": LifecycleStatus::Registered,
+        "ready": true,
     });
 
     Ok((StatusCode::OK, Json(body)).into_response())
@@ -501,7 +523,9 @@ async fn prepare_vision_payload(
         return Ok(payload);
     }
 
-    let models = list_registered_models();
+    let models = list_registered_models(&state.db_pool)
+        .await
+        .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
     let Some(model_info) = models.iter().find(|m| m.name == model) else {
         // 未登録モデル（クラウド等）はルーター側の検証をスキップ
         return Ok(payload);
@@ -1101,6 +1125,14 @@ async fn proxy_openai_post(
             .await;
     }
 
+    if !state.registry.has_model_reported(&model).await {
+        let is_registered = load_registered_model(&state.db_pool, &model).await?;
+        if is_registered.is_none() {
+            let message = format!("The model '{}' does not exist", model);
+            return Ok(openai_error_response(message, StatusCode::NOT_FOUND));
+        }
+    }
+
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
@@ -1108,7 +1140,7 @@ async fn proxy_openai_post(
     let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: ノード選択失敗時もリクエスト履歴に記録する
-    let node = match select_available_node_with_queue(state, queue_config).await {
+    let node = match select_available_node_with_queue_for_model(state, queue_config, &model).await {
         Ok(QueueSelection::Ready {
             node,
             queued_wait_ms: wait_ms,
@@ -1176,6 +1208,11 @@ async fn proxy_openai_post(
             ));
         }
         Err(e) => {
+            let error_message = if matches!(e, RouterError::NoCapableNodes(_)) {
+                format!("No available nodes support model: {}", model)
+            } else {
+                format!("Node selection failed: {}", e)
+            };
             error!(
                 endpoint = %target_path,
                 model = %model,
@@ -1197,11 +1234,17 @@ async fn proxy_openai_post(
                     response_body: None,
                     duration_ms: queued_wait_ms.unwrap_or(0) as u64,
                     status: RecordStatus::Error {
-                        message: format!("Node selection failed: {}", e),
+                        message: error_message.clone(),
                     },
                     completed_at: Utc::now(),
                 },
             );
+            if matches!(e, RouterError::NoCapableNodes(_)) {
+                return Ok(model_unavailable_response(
+                    error_message,
+                    "no_capable_nodes",
+                ));
+            }
             return Err(e.into());
         }
     };
@@ -1232,6 +1275,19 @@ async fn proxy_openai_post(
                 .finish_request(node_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+
+            if let Err(err) = state
+                .registry
+                .exclude_model_from_node(node_id, &model)
+                .await
+            {
+                warn!(
+                    node_id = %node_id,
+                    model = %model,
+                    error = %err,
+                    "Failed to exclude model after proxy request failure"
+                );
+            }
 
             save_request_record(
                 state.request_history.clone(),
@@ -1300,6 +1356,19 @@ async fn proxy_openai_post(
             .finish_request(node_id, RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
+
+        if let Err(err) = state
+            .registry
+            .exclude_model_from_node(node_id, &model)
+            .await
+        {
+            warn!(
+                node_id = %node_id,
+                model = %model,
+                error = %err,
+                "Failed to exclude model after non-success response"
+            );
+        }
 
         let status = response.status();
         let status_code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -1422,6 +1491,19 @@ async fn proxy_openai_post(
                 .finish_request(node_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+
+            if let Err(err) = state
+                .registry
+                .exclude_model_from_node(node_id, &model)
+                .await
+            {
+                warn!(
+                    node_id = %node_id,
+                    model = %model,
+                    error = %err,
+                    "Failed to exclude model after response parse error"
+                );
+            }
 
             save_request_record(
                 state.request_history.clone(),
@@ -1980,12 +2062,12 @@ mod tests {
             RequestType::Chat,
         )
         .await;
-        let err = res.unwrap_err();
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("NoNodesAvailable") || msg.contains("No available nodes"),
-            "expected local-path node error, got {}",
-            msg
+        // モデルが登録されておらず、どのノードも報告していない場合は404
+        let response = res.expect("expected 404 response, not Err");
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::NOT_FOUND,
+            "expected NOT_FOUND for unregistered model"
         );
     }
     #[tokio::test]

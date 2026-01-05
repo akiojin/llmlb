@@ -7,6 +7,14 @@
 
 namespace llm_node {
 
+enum class GpuBackend {
+    Metal,
+    Cuda,
+    DirectML,
+    Rocm,
+    Cpu,
+};
+
 struct GpuDevice {
     int id;
     std::string name;
@@ -39,6 +47,9 @@ public:
 
     // Get GPU capability score (for router compatibility)
     double getCapabilityScore() const;
+
+    // Get detected GPU backend
+    GpuBackend getGpuBackend() const;
 
     // Select GPU by available VRAM (prefer_loaded_gpu if available)
     std::optional<int> selectGpu(std::optional<int> prefer_loaded_gpu = std::nullopt) const;

@@ -13,9 +13,11 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
+    use llm_router::db::models::ModelStorage;
     use llm_router::registry::models::ModelInfo;
     use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
+    use sqlx::SqlitePool;
 
     pub struct TestApp {
         pub app: Router,
@@ -31,8 +33,6 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
-        llm_router::api::models::clear_registered_models();
-
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -42,6 +42,9 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        llm_router::api::models::clear_registered_models(&db_pool)
+            .await
+            .expect("clear registered models");
         let request_history = std::sync::Arc::new(
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
@@ -84,18 +87,20 @@ mod common {
     /// テスト用のVision対応モデルを登録する
     /// TDD RED: capabilities.image_understanding が実装されていないため、
     /// この関数が呼ばれても実際には capabilities は設定されない
-    pub fn register_vision_model(name: &str) {
+    pub async fn register_vision_model(db_pool: &SqlitePool, name: &str) {
         let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
         // TODO: Vision capability を設定する必要がある
         // model.capabilities.push(ModelCapability::ImageUnderstanding);
-        llm_router::api::models::upsert_registered_model(model);
+        let storage = ModelStorage::new(db_pool.clone());
+        storage.save_model(&model).await.unwrap();
     }
 
     /// テスト用のテキストのみ対応モデルを登録する
-    pub fn register_text_only_model(name: &str) {
+    pub async fn register_text_only_model(db_pool: &SqlitePool, name: &str) {
         let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
         // Vision capability なし
-        llm_router::api::models::upsert_registered_model(model);
+        let storage = ModelStorage::new(db_pool.clone());
+        storage.save_model(&model).await.unwrap();
     }
 }
 
@@ -114,8 +119,7 @@ async fn test_vision_model_has_image_understanding_capability() {
     } = build_app().await;
 
     // Vision対応モデルを登録
-    register_vision_model("llava-v1.5-7b");
-    llm_router::api::models::persist_registered_models(&db_pool).await;
+    register_vision_model(&db_pool, "llava-v1.5-7b").await;
 
     let response = app
         .oneshot(
@@ -162,8 +166,7 @@ async fn test_text_model_has_no_image_understanding_capability() {
     } = build_app().await;
 
     // テキストのみ対応モデルを登録
-    register_text_only_model("llama-3.1-8b");
-    llm_router::api::models::persist_registered_models(&db_pool).await;
+    register_text_only_model(&db_pool, "llama-3.1-8b").await;
 
     let response = app
         .oneshot(
@@ -212,11 +215,10 @@ async fn test_mixed_models_capabilities() {
     } = build_app().await;
 
     // 両方のモデルを登録
-    register_vision_model("llava-v1.5-7b");
-    register_vision_model("qwen-vl-7b");
-    register_text_only_model("llama-3.1-8b");
-    register_text_only_model("mistral-7b");
-    llm_router::api::models::persist_registered_models(&db_pool).await;
+    register_vision_model(&db_pool, "llava-v1.5-7b").await;
+    register_vision_model(&db_pool, "qwen-vl-7b").await;
+    register_text_only_model(&db_pool, "llama-3.1-8b").await;
+    register_text_only_model(&db_pool, "mistral-7b").await;
 
     let response = app
         .oneshot(
@@ -282,8 +284,7 @@ async fn test_models_response_includes_capabilities_field() {
         db_pool,
     } = build_app().await;
 
-    register_vision_model("test-model");
-    llm_router::api::models::persist_registered_models(&db_pool).await;
+    register_vision_model(&db_pool, "test-model").await;
 
     let response = app
         .oneshot(

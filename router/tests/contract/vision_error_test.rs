@@ -13,9 +13,11 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
+    use llm_router::db::models::ModelStorage;
     use llm_router::registry::models::ModelInfo;
     use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
+    use sqlx::SqlitePool;
 
     pub struct TestApp {
         pub app: Router,
@@ -35,8 +37,6 @@ mod common {
         std::env::set_var("HOME", &temp_dir);
         std::env::set_var("USERPROFILE", &temp_dir);
 
-        llm_router::api::models::clear_registered_models();
-
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -46,6 +46,9 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        llm_router::api::models::clear_registered_models(&db_pool)
+            .await
+            .expect("clear registered models");
         let request_history = std::sync::Arc::new(
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
@@ -86,11 +89,12 @@ mod common {
     }
 
     /// テスト用のテキストのみ対応モデルを登録する
-    pub fn register_text_only_model(name: &str) {
+    pub async fn register_text_only_model(db_pool: &SqlitePool, name: &str) {
         let model = ModelInfo::new(name.to_string(), 0, "test".to_string(), 0, vec![]);
         // Vision capabilityを持たないモデルとして登録
         // capabilities は空のまま (image_understandingなし)
-        llm_router::api::models::upsert_registered_model(model);
+        let storage = ModelStorage::new(db_pool.clone());
+        storage.save_model(&model).await.unwrap();
     }
 }
 
@@ -102,10 +106,14 @@ use common::{build_app, register_text_only_model};
 #[serial]
 #[ignore = "TDD RED: Vision capability validation not yet implemented"]
 async fn test_image_request_to_non_vision_model_returns_400() {
-    let common::TestApp { app, api_key, .. } = build_app().await;
+    let common::TestApp {
+        app,
+        api_key,
+        db_pool,
+    } = build_app().await;
 
     // Vision非対応のテキストモデルを登録
-    register_text_only_model("llama-3.1-8b");
+    register_text_only_model(&db_pool, "llama-3.1-8b").await;
 
     let request_body = json!({
         "model": "llama-3.1-8b",

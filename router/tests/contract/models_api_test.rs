@@ -5,6 +5,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use llm_router::db::models::ModelStorage;
 use llm_router::registry::models::ModelInfo;
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::auth::{ApiKeyScope, UserRole};
@@ -44,12 +45,18 @@ async fn registry_manifest_includes_origin_urls() {
         .mount(&mock)
         .await;
 
-    let TestApp { app, node_key, .. } = build_app().await;
+    let TestApp {
+        app,
+        node_key,
+        db_pool,
+        ..
+    } = build_app().await;
 
     let mut model = ModelInfo::new(model_name.to_string(), 0, repo.to_string(), 0, vec![]);
     model.repo = Some(repo.to_string());
     model.filename = Some(filename.to_string());
-    llm_router::api::models::upsert_registered_model(model);
+    let storage = ModelStorage::new(db_pool.clone());
+    storage.save_model(&model).await.unwrap();
 
     let encoded = model_name.replace("/", "%2F");
     let response = app
@@ -86,8 +93,6 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
-
-    llm_router::api::models::clear_registered_models();
 
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
@@ -312,7 +317,7 @@ async fn test_register_model_contract() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // /v1/models に含まれること（ready=false）
+    // /v1/models はオンラインノードの実行可能モデルのみ返すため、未登録ノードでは含まれない
     let models_res = app
         .clone()
         .oneshot(
@@ -330,11 +335,10 @@ async fn test_register_model_contract() {
     let data = body["data"]
         .as_array()
         .expect("'data' must be an array on /v1/models");
-    let entry = data
-        .iter()
-        .find(|m| m["id"] == "test/repo")
-        .expect("/v1/models must include registered model");
-    assert_eq!(entry["ready"], false);
+    assert!(
+        data.iter().all(|m| m["id"] != "test/repo"),
+        "/v1/models should not include registered model without online nodes"
+    );
 
     // 重複登録は400
     let dup = app
@@ -567,8 +571,8 @@ async fn test_delete_model_removes_from_list() {
     let model_name = "delete-me";
 
     let model = ModelInfo::new(model_name.to_string(), 0, "test".to_string(), 0, vec![]);
-    llm_router::api::models::upsert_registered_model(model);
-    llm_router::api::models::persist_registered_models(&db_pool).await;
+    let storage = ModelStorage::new(db_pool.clone());
+    storage.save_model(&model).await.unwrap();
 
     let models_res = app
         .clone()
@@ -587,9 +591,9 @@ async fn test_delete_model_removes_from_list() {
     assert!(
         body["data"]
             .as_array()
-            .map(|arr| arr.iter().any(|m| m["id"] == model_name))
+            .map(|arr| arr.iter().all(|m| m["id"] != model_name))
             .unwrap_or(false),
-        "model should exist before delete"
+        "model should not appear in /v1/models without online nodes"
     );
 
     let delete_res = app
@@ -624,6 +628,6 @@ async fn test_delete_model_removes_from_list() {
             .as_array()
             .map(|arr| arr.iter().all(|m| m["id"] != model_name))
             .unwrap_or(false),
-        "model should be removed after delete"
+        "model should remain absent in /v1/models after delete"
     );
 }

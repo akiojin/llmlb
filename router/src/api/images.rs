@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        models::list_registered_models,
+        models::load_registered_model,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
     },
@@ -119,8 +119,8 @@ pub async fn generations(
     }
 
     // モデルの ImageGeneration capability を検証
-    let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == payload.model) {
+    let model_info = load_registered_model(&state.db_pool, &payload.model).await?;
+    if let Some(model_info) = model_info {
         if !model_info.has_capability(ModelCapability::ImageGeneration) {
             return openai_error(
                 format!(

@@ -46,11 +46,16 @@ pub(crate) enum QueueSelection {
     },
 }
 
-pub(crate) async fn select_available_node_with_queue(
+pub(crate) async fn select_available_node_with_queue_for_model(
     state: &AppState,
     queue_config: QueueConfig,
+    model_id: &str,
 ) -> Result<QueueSelection, RouterError> {
-    match state.load_manager.select_idle_node().await? {
+    match state
+        .load_manager
+        .select_idle_node_for_model(model_id)
+        .await?
+    {
         Some(node) => Ok(QueueSelection::Ready {
             node: Box::new(node),
             queued_wait_ms: None,
@@ -59,14 +64,22 @@ pub(crate) async fn select_available_node_with_queue(
             let wait_start = Instant::now();
             match state
                 .load_manager
-                .wait_for_idle_node_with_timeout(queue_config.max_waiters, queue_config.timeout)
+                .wait_for_idle_node_with_timeout_for_model(
+                    model_id,
+                    queue_config.max_waiters,
+                    queue_config.timeout,
+                )
                 .await
             {
                 WaitResult::CapacityExceeded => Ok(QueueSelection::CapacityExceeded),
                 WaitResult::Timeout => Ok(QueueSelection::Timeout {
                     waited_ms: wait_start.elapsed().as_millis(),
                 }),
-                WaitResult::Ready => match state.load_manager.select_idle_node().await? {
+                WaitResult::Ready => match state
+                    .load_manager
+                    .select_idle_node_for_model(model_id)
+                    .await?
+                {
                     Some(node) => Ok(QueueSelection::Ready {
                         node: Box::new(node),
                         queued_wait_ms: Some(wait_start.elapsed().as_millis()),

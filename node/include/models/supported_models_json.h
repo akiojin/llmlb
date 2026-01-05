@@ -1,3 +1,8 @@
+#pragma once
+
+namespace llm_node {
+
+constexpr const char kSupportedModelsJson[] = R"json(
 [
   {
     "id": "qwen2.5-7b-instruct",
@@ -80,3 +85,6 @@
     "platforms": ["macos-metal", "windows-directml", "linux-cuda"]
   }
 ]
+)json";
+
+}  // namespace llm_node

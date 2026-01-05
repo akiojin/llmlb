@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        models::list_registered_models,
+        models::load_registered_model,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
     },
@@ -189,8 +189,8 @@ pub async fn transcriptions(
     };
 
     // モデルの SpeechToText capability を検証
-    let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == model) {
+    let model_info = load_registered_model(&state.db_pool, &model).await?;
+    if let Some(model_info) = model_info {
         if !model_info.has_capability(ModelCapability::SpeechToText) {
             return openai_error(
                 format!("Model '{}' does not support speech-to-text", model),
@@ -310,8 +310,8 @@ pub async fn speech(
     }
 
     // モデルの TextToSpeech capability を検証
-    let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == payload.model) {
+    let model_info = load_registered_model(&state.db_pool, &payload.model).await?;
+    if let Some(model_info) = model_info {
         if !model_info.has_capability(ModelCapability::TextToSpeech) {
             return openai_error(
                 format!("Model '{}' does not support text-to-speech", payload.model),

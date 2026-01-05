@@ -211,3 +211,99 @@ TEST(EngineHostTest, SkipsPluginWithUnsupportedGpuTarget) {
     std::error_code ec;
     fs::remove_all(temp, ec);
 }
+
+// =============================================================================
+// T183, T190: プラグインログ統合テスト
+// =============================================================================
+
+using llm_node::PluginLogLevel;
+using llm_node::PluginLogCallback;
+using llm_node::pluginLogLevelToString;
+using llm_node::defaultPluginLogHandler;
+
+TEST(PluginLogTest, EngineHostContextHasLogCallbackField) {
+    EngineHostContext context;
+    // デフォルトでnullptr
+    EXPECT_EQ(context.log_callback, nullptr);
+    EXPECT_EQ(context.log_callback_ctx, nullptr);
+}
+
+TEST(PluginLogTest, LogLevelToStringReturnsCorrectValues) {
+    EXPECT_STREQ(pluginLogLevelToString(PluginLogLevel::kTrace), "trace");
+    EXPECT_STREQ(pluginLogLevelToString(PluginLogLevel::kDebug), "debug");
+    EXPECT_STREQ(pluginLogLevelToString(PluginLogLevel::kInfo), "info");
+    EXPECT_STREQ(pluginLogLevelToString(PluginLogLevel::kWarn), "warn");
+    EXPECT_STREQ(pluginLogLevelToString(PluginLogLevel::kError), "error");
+}
+
+TEST(PluginLogTest, LogLevelToStringReturnsUnknownForInvalidLevel) {
+    auto invalid_level = static_cast<PluginLogLevel>(999);
+    EXPECT_STREQ(pluginLogLevelToString(invalid_level), "unknown");
+}
+
+namespace {
+struct CapturedLog {
+    std::string plugin_id;
+    int level{-1};
+    std::string message;
+    int call_count{0};
+};
+
+void testLogCallback(void* ctx, const char* plugin_id, int level, const char* message) {
+    auto* captured = static_cast<CapturedLog*>(ctx);
+    if (captured) {
+        captured->plugin_id = plugin_id ? plugin_id : "";
+        captured->level = level;
+        captured->message = message ? message : "";
+        captured->call_count++;
+    }
+}
+}  // namespace
+
+TEST(PluginLogTest, LogCallbackReceivesAllParameters) {
+    CapturedLog captured;
+    EngineHostContext context;
+    context.log_callback = testLogCallback;
+    context.log_callback_ctx = &captured;
+
+    // コールバックを呼び出し
+    context.log_callback(context.log_callback_ctx, "test_plugin",
+                         static_cast<int>(PluginLogLevel::kWarn), "test message");
+
+    EXPECT_EQ(captured.plugin_id, "test_plugin");
+    EXPECT_EQ(captured.level, static_cast<int>(PluginLogLevel::kWarn));
+    EXPECT_EQ(captured.message, "test message");
+    EXPECT_EQ(captured.call_count, 1);
+}
+
+TEST(PluginLogTest, DefaultLogHandlerHandlesNullPluginId) {
+    // nullのplugin_idでクラッシュしないことを確認
+    defaultPluginLogHandler(nullptr, nullptr, static_cast<int>(PluginLogLevel::kInfo), "message");
+    // クラッシュしなければ成功
+}
+
+TEST(PluginLogTest, DefaultLogHandlerHandlesNullMessage) {
+    // nullのmessageでクラッシュしないことを確認
+    defaultPluginLogHandler(nullptr, "plugin", static_cast<int>(PluginLogLevel::kInfo), nullptr);
+    // クラッシュしなければ成功
+}
+
+TEST(PluginLogTest, DefaultLogHandlerHandlesAllLogLevels) {
+    // 全レベルでクラッシュしないことを確認
+    defaultPluginLogHandler(nullptr, "test", static_cast<int>(PluginLogLevel::kTrace), "trace");
+    defaultPluginLogHandler(nullptr, "test", static_cast<int>(PluginLogLevel::kDebug), "debug");
+    defaultPluginLogHandler(nullptr, "test", static_cast<int>(PluginLogLevel::kInfo), "info");
+    defaultPluginLogHandler(nullptr, "test", static_cast<int>(PluginLogLevel::kWarn), "warn");
+    defaultPluginLogHandler(nullptr, "test", static_cast<int>(PluginLogLevel::kError), "error");
+    defaultPluginLogHandler(nullptr, "test", 999, "unknown level");
+    // クラッシュしなければ成功
+}
+
+TEST(PluginLogTest, PluginLogLevelEnumHasCorrectIntValues) {
+    // C ABIとの互換性のため、enumの整数値を確認
+    EXPECT_EQ(static_cast<int>(PluginLogLevel::kTrace), 0);
+    EXPECT_EQ(static_cast<int>(PluginLogLevel::kDebug), 1);
+    EXPECT_EQ(static_cast<int>(PluginLogLevel::kInfo), 2);
+    EXPECT_EQ(static_cast<int>(PluginLogLevel::kWarn), 3);
+    EXPECT_EQ(static_cast<int>(PluginLogLevel::kError), 4);
+}

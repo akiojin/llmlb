@@ -35,12 +35,129 @@
 namespace llm_node {
 
 namespace {
+
+// T182: トークン間タイムアウトのデフォルト値（5秒）
+constexpr auto kDefaultInterTokenTimeout = std::chrono::milliseconds(5000);
+
+#ifdef LLM_NODE_TESTING
+std::mutex g_inter_token_timeout_mutex;
+std::chrono::milliseconds g_inter_token_timeout_override{0};
+#endif
+
+std::chrono::milliseconds get_inter_token_timeout() {
+#ifdef LLM_NODE_TESTING
+    std::lock_guard<std::mutex> lock(g_inter_token_timeout_mutex);
+    if (g_inter_token_timeout_override.count() > 0) {
+        return g_inter_token_timeout_override;
+    }
+#endif
+    return kDefaultInterTokenTimeout;
+}
+
+// T182: トークン間タイムアウト監視クラス
+class InterTokenWatchdog {
+public:
+    explicit InterTokenWatchdog(std::chrono::milliseconds timeout)
+        : timeout_(timeout)
+        , last_reset_(std::chrono::steady_clock::now()) {
+        if (timeout_.count() <= 0) {
+            active_ = false;
+            return;
+        }
+        thread_ = std::thread([this]() { run(); });
+    }
+
+    InterTokenWatchdog(const InterTokenWatchdog&) = delete;
+    InterTokenWatchdog& operator=(const InterTokenWatchdog&) = delete;
+
+    ~InterTokenWatchdog() {
+        disarm();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    void reset() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        last_reset_ = std::chrono::steady_clock::now();
+    }
+
+    bool hasTimedOut() const {
+        return timed_out_.load(std::memory_order_acquire);
+    }
+
+    void disarm() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!active_) return;
+            active_ = false;
+        }
+        cv_.notify_all();
+    }
+
+private:
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (active_) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_reset_);
+            if (elapsed >= timeout_) {
+                timed_out_.store(true, std::memory_order_release);
+                spdlog::warn("Inter-token timeout: {}ms since last token", elapsed.count());
+                return;
+            }
+            auto remaining = timeout_ - elapsed;
+            cv_.wait_for(lock, remaining, [this]() { return !active_; });
+        }
+    }
+
+    std::chrono::milliseconds timeout_;
+    std::chrono::steady_clock::time_point last_reset_;
+    std::thread thread_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool active_{true};
+    std::atomic<bool> timed_out_{false};
+};
+
 struct TokenMetricsState {
     uint64_t start_ns{0};
     uint64_t first_token_ns{0};
     uint64_t last_token_ns{0};
     size_t token_count{0};
 };
+
+// T182: InterTokenWatchdog用のコンテキスト
+struct InterTokenWatchdogContext {
+    InterTokenWatchdog* watchdog{nullptr};
+    TokenMetricsState* metrics{nullptr};
+};
+
+// T182: トークン生成時にウォッチドッグをリセットするコールバック
+void inter_token_watchdog_callback(void* ctx, uint32_t token_id, uint64_t timestamp_ns) {
+    (void)token_id;  // unused
+    auto* context = static_cast<InterTokenWatchdogContext*>(ctx);
+    if (!context) return;
+    // ウォッチドッグをリセット
+    if (context->watchdog) {
+        context->watchdog->reset();
+    }
+    // メトリクスも更新
+    if (context->metrics) {
+        context->metrics->token_count += 1;
+        if (context->metrics->first_token_ns == 0) {
+            context->metrics->first_token_ns = timestamp_ns;
+        }
+        context->metrics->last_token_ns = timestamp_ns;
+    }
+}
+
+// T182: アボートチェック用コールバック
+bool inter_token_abort_check(void* ctx) {
+    auto* context = static_cast<InterTokenWatchdogContext*>(ctx);
+    if (!context || !context->watchdog) return false;
+    return context->watchdog->hasTimedOut();
+}
 
 uint64_t steady_now_ns() {
     return static_cast<uint64_t>(
@@ -66,61 +183,7 @@ uint64_t token_metrics_now_ns() {
     return steady_now_ns();
 }
 
-// T136-T137: Exponential backoff retry configuration
-struct RetryConfig {
-    int max_retries{4};
-    std::chrono::milliseconds initial_delay{100};
-    std::chrono::milliseconds max_total{30000};
-};
-
-// T136: Exponential backoff retry helper
-// T137: Transparent retry after crash (invisible to client)
-template <typename Fn>
-auto with_retry(Fn&& fn, const RetryConfig& config, std::function<void()> on_crash) -> decltype(fn()) {
-    std::exception_ptr last_exception;
-    auto total_start = std::chrono::steady_clock::now();
-    auto delay = config.initial_delay;
-
-    for (int attempt = 0; attempt <= config.max_retries; ++attempt) {
-        try {
-            return fn();
-        } catch (...) {
-            last_exception = std::current_exception();
-
-            // Check total time limit
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - total_start);
-            if (elapsed >= config.max_total) {
-                spdlog::warn("Retry exhausted: total time {}ms exceeded {}ms limit",
-                             elapsed.count(), config.max_total.count());
-                break;
-            }
-
-            // Don't retry on last attempt
-            if (attempt >= config.max_retries) {
-                spdlog::warn("Retry exhausted after {} attempts", attempt + 1);
-                break;
-            }
-
-            // Notify crash handler for transparent recovery
-            if (on_crash) {
-                on_crash();
-            }
-
-            spdlog::info("Retrying after {}ms (attempt {}/{})",
-                         delay.count(), attempt + 1, config.max_retries);
-            std::this_thread::sleep_for(delay);
-
-            // Exponential backoff: 100ms -> 200ms -> 400ms -> 800ms
-            delay = std::min(delay * 2, config.max_total - elapsed);
-        }
-    }
-
-    if (last_exception) {
-        std::rethrow_exception(last_exception);
-    }
-    throw std::runtime_error("Retry failed without exception");
-}
+// T136-T137: with_retry() and RetryConfig are now defined in inference_engine.h
 
 void token_metrics_callback(void* ctx, uint32_t, uint64_t timestamp_ns) {
     auto* state = static_cast<TokenMetricsState*>(ctx);
@@ -300,8 +363,10 @@ std::optional<ModelDescriptor> resolve_descriptor(
     return std::nullopt;
 }
 
-// ChatML形式でプロンプトを構築するフォールバック関数
-static std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
+}  // namespace
+
+// ChatML形式でプロンプトを構築するフォールバック関数（ヘッダーからエクスポート）
+std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
     std::ostringstream oss;
     for (const auto& msg : messages) {
         oss << "<|im_start|>" << msg.role << "\n" << msg.content << "<|im_end|>\n";
@@ -310,6 +375,8 @@ static std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
     oss << "<|im_start|>assistant\n";
     return oss.str();
 }
+
+namespace {
 
 // 制御トークンを除去してトリム
 static std::string stripControlTokens(std::string text) {
@@ -804,6 +871,21 @@ void InferenceEngine::handlePluginCrash() const {
     applyPendingEnginePluginsIfIdle();
 }
 
+// =============================================================================
+// T181: クラッシュ後503即時返却
+// =============================================================================
+
+bool InferenceEngine::isInRecoveryMode() const {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    return plugin_restart_pending_;
+}
+
+void InferenceEngine::clearRecoveryMode() {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    plugin_restart_pending_ = false;
+    spdlog::info("Recovery mode cleared");
+}
+
 bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
     error.clear();
 #ifdef LLM_NODE_TESTING
@@ -835,6 +917,11 @@ std::string InferenceEngine::generateChat(
     const std::vector<ChatMessage>& messages,
     const std::string& model,
     const InferenceParams& params) const {
+
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
 
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode");
@@ -1084,6 +1171,11 @@ std::string InferenceEngine::generateCompletion(
     const std::string& prompt,
     const std::string& model,
     const InferenceParams& params) const {
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
+
     if (!isInitialized()) {
         return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
@@ -1126,6 +1218,11 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     const InferenceParams& params,
     const std::function<void(const std::string&)>& on_token) const {
 
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
+
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode for streaming");
         std::string text = messages.empty() ? "" : "Response to: " + messages.back().content;
@@ -1149,16 +1246,37 @@ std::vector<std::string> InferenceEngine::generateChatStream(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
+        // T182: トークン間タイムアウト監視を設定
+        auto inter_token_timeout = get_inter_token_timeout();
+        InterTokenWatchdog inter_token_watchdog(inter_token_timeout);
+
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
-        InferenceParams params_with_metrics = params;
-        params_with_metrics.on_token_callback = &token_metrics_callback;
-        params_with_metrics.on_token_callback_ctx = &metrics;
+
+        InterTokenWatchdogContext watchdog_context;
+        watchdog_context.watchdog = &inter_token_watchdog;
+        watchdog_context.metrics = &metrics;
+
+        InferenceParams params_with_watchdog = params;
+        params_with_watchdog.on_token_callback = &inter_token_watchdog_callback;
+        params_with_watchdog.on_token_callback_ctx = &watchdog_context;
+        params_with_watchdog.abort_callback = &inter_token_abort_check;
+        params_with_watchdog.abort_callback_ctx = &watchdog_context;
+
         try {
-            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, on_token);
+            auto output = engine->generateChatStream(messages, *desc, params_with_watchdog, on_token);
+            inter_token_watchdog.disarm();
+
+            // T182: タイムアウトが発生していた場合はエラーを投げる
+            if (inter_token_watchdog.hasTimedOut()) {
+                throw TokenTimeoutError("Inter-token timeout: no token generated within " +
+                    std::to_string(inter_token_timeout.count()) + "ms");
+            }
+
             report_token_metrics(metrics, desc->name, "stream");
             return output;
         } catch (...) {
+            inter_token_watchdog.disarm();
             handlePluginCrash();
             throw;
         }
@@ -1327,6 +1445,11 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     const std::vector<std::string>& inputs,
     const std::string& model_name) const {
 
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
+
     if (!isInitialized()) {
         std::vector<std::vector<float>> results;
         results.reserve(inputs.size());
@@ -1397,6 +1520,11 @@ void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& di
     std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
     engine_plugins_dir_ = directory;
 }
+
+void InferenceEngine::setInterTokenTimeoutForTest(std::chrono::milliseconds timeout) {
+    std::lock_guard<std::mutex> lock(g_inter_token_timeout_mutex);
+    g_inter_token_timeout_override = timeout;
+}
 #endif
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
@@ -1433,6 +1561,104 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
     }
 
     return true;
+}
+
+// T168: Format tool definitions for prompt embedding
+std::string formatToolsForPrompt(const std::vector<ToolDefinition>& tools) {
+    if (tools.empty()) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << "\n\nYou have access to the following tools:\n\n";
+
+    for (const auto& tool : tools) {
+        oss << "### " << tool.name << "\n";
+        if (!tool.description.empty()) {
+            oss << tool.description << "\n";
+        }
+        if (!tool.parameters_json.empty()) {
+            oss << "Parameters: " << tool.parameters_json << "\n";
+        }
+        oss << "\n";
+    }
+
+    oss << "To use a tool, respond with a JSON object in this format:\n";
+    oss << R"({"name": "tool_name", "arguments": {...}})";
+    oss << "\n\nRespond with regular text if no tool is needed.\n";
+
+    return oss.str();
+}
+
+// T168: Detect tool calls from model output
+std::vector<ToolCall> detectToolCalls(const std::string& output) {
+    std::vector<ToolCall> calls;
+
+    // Look for JSON objects that might be tool calls
+    // Pattern: {"name": "...", "arguments": {...}}
+    size_t pos = 0;
+    while (pos < output.size()) {
+        // Find start of potential JSON object
+        size_t start = output.find('{', pos);
+        if (start == std::string::npos) break;
+
+        // Try to find matching closing brace
+        int depth = 1;
+        size_t end = start + 1;
+        bool in_string = false;
+        char prev_char = 0;
+
+        while (end < output.size() && depth > 0) {
+            char c = output[end];
+            if (c == '"' && prev_char != '\\') {
+                in_string = !in_string;
+            } else if (!in_string) {
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+            }
+            prev_char = c;
+            end++;
+        }
+
+        if (depth != 0) {
+            pos = start + 1;
+            continue;
+        }
+
+        std::string json_str = output.substr(start, end - start);
+
+        // Try to parse as JSON
+        try {
+            auto j = nlohmann::json::parse(json_str);
+
+            // Check if it looks like a tool call
+            if (j.contains("name") && j["name"].is_string()) {
+                ToolCall call;
+                call.function_name = j["name"].get<std::string>();
+
+                if (j.contains("arguments")) {
+                    if (j["arguments"].is_object()) {
+                        call.arguments_json = j["arguments"].dump();
+                    } else if (j["arguments"].is_string()) {
+                        call.arguments_json = j["arguments"].get<std::string>();
+                    }
+                }
+
+                // Generate a unique call ID
+                static std::atomic<uint64_t> call_counter{0};
+                call.id = "call_" + std::to_string(call_counter.fetch_add(1));
+
+                calls.push_back(std::move(call));
+                spdlog::debug("Detected tool call: {}", call.function_name);
+            }
+        } catch (const std::exception&) {
+            // Not valid JSON, continue searching
+        }
+
+        pos = end;
+    }
+
+    return calls;
 }
 
 }  // namespace llm_node

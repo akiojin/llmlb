@@ -957,3 +957,250 @@ TEST(InferenceEngineTest, RestartsPluginAfterCrash) {
 
     InferenceEngine::setPluginRestartHookForTest({});
 }
+
+// T177: ChatML template rendering tests
+TEST(ChatTemplateTest, BuildsChatMLPromptWithSingleMessage) {
+    std::vector<ChatMessage> messages = {{"user", "Hello"}};
+    std::string result = buildChatMLPrompt(messages);
+
+    EXPECT_TRUE(result.find("<|im_start|>user\nHello<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>assistant\n") != std::string::npos);
+}
+
+TEST(ChatTemplateTest, BuildsChatMLPromptWithMultipleMessages) {
+    std::vector<ChatMessage> messages = {
+        {"system", "You are a helpful assistant."},
+        {"user", "What is 2+2?"},
+        {"assistant", "4"},
+        {"user", "What is 3+3?"}
+    };
+    std::string result = buildChatMLPrompt(messages);
+
+    EXPECT_TRUE(result.find("<|im_start|>system\nYou are a helpful assistant.<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>user\nWhat is 2+2?<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>assistant\n4<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>user\nWhat is 3+3?<|im_end|>") != std::string::npos);
+    // Ends with assistant prompt (the final segment of the prompt)
+    EXPECT_TRUE(result.find("<|im_start|>assistant\n") != std::string::npos);
+    // Verify it ends with the assistant prompt marker
+    const std::string assistant_marker = "<|im_start|>assistant\n";
+    EXPECT_EQ(result.substr(result.size() - assistant_marker.size()), assistant_marker);
+}
+
+TEST(ChatTemplateTest, BuildsChatMLPromptWithEmptyContent) {
+    std::vector<ChatMessage> messages = {{"user", ""}};
+    std::string result = buildChatMLPrompt(messages);
+
+    EXPECT_TRUE(result.find("<|im_start|>user\n<|im_end|>") != std::string::npos);
+}
+
+TEST(ChatTemplateTest, BuildsChatMLPromptWithMultilineContent) {
+    std::vector<ChatMessage> messages = {{"user", "Line1\nLine2\nLine3"}};
+    std::string result = buildChatMLPrompt(messages);
+
+    EXPECT_TRUE(result.find("<|im_start|>user\nLine1\nLine2\nLine3<|im_end|>") != std::string::npos);
+}
+
+TEST(ChatTemplateTest, BuildsChatMLPromptPreservesMessageOrder) {
+    std::vector<ChatMessage> messages = {
+        {"user", "First"},
+        {"assistant", "Second"},
+        {"user", "Third"}
+    };
+    std::string result = buildChatMLPrompt(messages);
+
+    size_t pos_first = result.find("First");
+    size_t pos_second = result.find("Second");
+    size_t pos_third = result.find("Third");
+
+    EXPECT_LT(pos_first, pos_second);
+    EXPECT_LT(pos_second, pos_third);
+}
+
+// =============================================================================
+// T144: 指数バックオフリトライテスト
+// =============================================================================
+
+TEST(RetryTest, SucceedsOnFirstAttempt) {
+    RetryConfig config;
+    config.max_retries = 4;
+    config.initial_delay = std::chrono::milliseconds(1);
+
+    int attempt_count = 0;
+    auto result = with_retry(
+        [&]() {
+            ++attempt_count;
+            return 42;
+        },
+        config
+    );
+
+    EXPECT_EQ(result, 42);
+    EXPECT_EQ(attempt_count, 1);
+}
+
+TEST(RetryTest, RetriesOnFailureThenSucceeds) {
+    RetryConfig config;
+    config.max_retries = 4;
+    config.initial_delay = std::chrono::milliseconds(1);
+
+    int attempt_count = 0;
+    auto result = with_retry(
+        [&]() -> int {
+            ++attempt_count;
+            if (attempt_count < 3) {
+                throw std::runtime_error("temporary error");
+            }
+            return 42;
+        },
+        config
+    );
+
+    EXPECT_EQ(result, 42);
+    EXPECT_EQ(attempt_count, 3);  // Failed twice, succeeded on third
+}
+
+TEST(RetryTest, ThrowsAfterMaxRetries) {
+    RetryConfig config;
+    config.max_retries = 2;
+    config.initial_delay = std::chrono::milliseconds(1);
+
+    int attempt_count = 0;
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("persistent error");
+            },
+            config
+        );
+    }, std::runtime_error);
+
+    EXPECT_EQ(attempt_count, 3);  // Initial + 2 retries
+}
+
+TEST(RetryTest, CallsOnCrashCallback) {
+    RetryConfig config;
+    config.max_retries = 3;
+    config.initial_delay = std::chrono::milliseconds(1);
+
+    int attempt_count = 0;
+    int crash_callback_count = 0;
+
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("crash");
+            },
+            config,
+            [&]() { ++crash_callback_count; }
+        );
+    }, std::runtime_error);
+
+    EXPECT_EQ(attempt_count, 4);  // Initial + 3 retries
+    EXPECT_EQ(crash_callback_count, 3);  // Called after each failed retry (except last)
+}
+
+TEST(RetryTest, ExponentialBackoffDelays) {
+    RetryConfig config;
+    config.max_retries = 3;
+    config.initial_delay = std::chrono::milliseconds(10);
+    config.max_total = std::chrono::milliseconds(1000);
+
+    int attempt_count = 0;
+    auto start = std::chrono::steady_clock::now();
+
+    // This test will fail after max_retries, but we measure the delay
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("fail");
+            },
+            config
+        );
+    }, std::runtime_error);
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    // Minimum delay: 10ms + 20ms + 40ms = 70ms
+    // Allow some margin for execution time
+    EXPECT_GE(elapsed.count(), 60);
+    EXPECT_EQ(attempt_count, 4);
+}
+
+TEST(RetryTest, StopsWhenMaxTotalExceeded) {
+    RetryConfig config;
+    config.max_retries = 100;  // High number
+    config.initial_delay = std::chrono::milliseconds(50);
+    config.max_total = std::chrono::milliseconds(100);  // Low total limit
+
+    int attempt_count = 0;
+    auto start = std::chrono::steady_clock::now();
+
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("fail");
+            },
+            config
+        );
+    }, std::runtime_error);
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    // Should stop due to max_total limit, not max_retries
+    EXPECT_LT(attempt_count, 10);
+    // Total time should be less than 2x the max_total
+    EXPECT_LT(elapsed.count(), 300);
+}
+
+// =============================================================================
+// T181, T188: クラッシュ後503即時返却テスト
+// =============================================================================
+
+TEST(ServiceUnavailableTest, ThrowsCorrectException) {
+    ServiceUnavailableError error("test message");
+    EXPECT_STREQ(error.what(), "test message");
+}
+
+TEST(ServiceUnavailableTest, IsRecoveryModeReturnsFalseByDefault) {
+    InferenceEngine engine;  // スタブモード
+    EXPECT_FALSE(engine.isInRecoveryMode());
+}
+
+TEST(ServiceUnavailableTest, ClearRecoveryModeNoOpWhenNotInRecovery) {
+    InferenceEngine engine;  // スタブモード
+    // clearRecoveryMode should not crash when not in recovery mode
+    engine.clearRecoveryMode();
+    EXPECT_FALSE(engine.isInRecoveryMode());
+}
+
+// =============================================================================
+// T182, T189: トークン間タイムアウトテスト
+// =============================================================================
+
+TEST(TokenTimeoutTest, TokenTimeoutErrorHasCorrectMessage) {
+    TokenTimeoutError error("inter-token timeout: 5000ms");
+    EXPECT_STREQ(error.what(), "inter-token timeout: 5000ms");
+}
+
+TEST(TokenTimeoutTest, TokenTimeoutErrorInheritsFromRuntimeError) {
+    TokenTimeoutError error("test");
+    // Verify it can be caught as std::runtime_error
+    try {
+        throw error;
+    } catch (const std::runtime_error& e) {
+        EXPECT_STREQ(e.what(), "test");
+    }
+}
+
+TEST(TokenTimeoutTest, AbortCallbackInInferenceParamsDefaultsToNull) {
+    InferenceParams params;
+    EXPECT_EQ(params.abort_callback, nullptr);
+    EXPECT_EQ(params.abort_callback_ctx, nullptr);
+}

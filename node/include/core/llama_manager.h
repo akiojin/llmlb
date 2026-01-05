@@ -94,6 +94,32 @@ public:
     void setMaxMemoryBytes(size_t max_bytes);
     size_t getMaxMemoryBytes() const;
 
+    // VRAM制限設定（並行ロード用）
+    void setMaxVramBytes(size_t max_bytes);
+    size_t getMaxVramBytes() const;
+
+    // VRAM必要量の推定（ファイルサイズベース）
+    size_t estimateVramRequired(const std::string& model_path) const;
+
+    // 並行ロード可能かチェック（VRAM空き確認）
+    bool canLoadConcurrently(const std::string& model_path, size_t required_vram) const;
+
+    // ロード中モデルの追跡
+    bool isLoading(const std::string& model_path) const;
+    void markAsLoading(const std::string& model_path, size_t estimated_vram);
+    void markAsLoaded(const std::string& model_path);
+
+    // T179: ロード失敗時のクリーンアップ
+    // - loading状態をクリア
+    // - evict_lru=trueならVRAM確保のためLRUモデルをアンロード
+    void handleLoadFailure(const std::string& model_path, bool evict_lru = false);
+
+    // T179: VRAM不足からの回復を試みる
+    // - LRUモデルを順次アンロードしてVRAMを確保
+    // - required_vramに達するまでアンロードを繰り返す
+    // - 返り値: 解放されたバイト数
+    size_t evictForVram(size_t required_vram);
+
     // 最終アクセス時刻取得
     std::optional<std::chrono::steady_clock::time_point> getLastAccessTime(
         const std::string& model_path) const;
@@ -113,6 +139,10 @@ private:
     std::chrono::milliseconds idle_timeout_{std::chrono::minutes(5)};
     size_t max_loaded_models_{0};  // 0 = 無制限
     size_t max_memory_bytes_{0};   // 0 = 無制限
+    size_t max_vram_bytes_{0};     // 0 = 無制限
+
+    // 並行ロード用: ロード中モデルの追跡
+    std::unordered_map<std::string, size_t> loading_models_;  // path -> estimated_vram
 
     // アクセス時刻追跡
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_access_;

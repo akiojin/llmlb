@@ -4,6 +4,8 @@
 #include <nlohmann/json.hpp>
 #include <limits>
 #include <memory>
+#include <cctype>
+#include <algorithm>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
@@ -282,6 +284,21 @@ bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, s
     params = std::move(parsed);
     return true;
 }
+
+std::string applyStopSequences(std::string output, const std::vector<std::string>& stops) {
+    if (stops.empty()) return output;
+    size_t earliest = std::string::npos;
+    for (const auto& stop : stops) {
+        if (stop.empty()) continue;
+        size_t pos = output.find(stop);
+        if (pos != std::string::npos && (earliest == std::string::npos || pos < earliest)) {
+            earliest = pos;
+        }
+    }
+    if (earliest == std::string::npos) return output;
+    output.resize(earliest);
+    return output;
+}
 }  // namespace
 
 struct ParsedChatMessages {
@@ -434,6 +451,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             } else {
                 output = engine_.generateChat(parsed.messages, model, params);
             }
+            output = applyStopSequences(std::move(output), params.stop_sequences);
             output = sanitize_utf8_lossy(output);
 
             if (stream) {
@@ -523,11 +541,18 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
-            std::string output = sanitize_utf8_lossy(engine_.generateCompletion(prompt, model, params));
+            std::string output = engine_.generateCompletion(prompt, model, params);
+            output = applyStopSequences(std::move(output), params.stop_sequences);
+            output = sanitize_utf8_lossy(output);
+            json choice = {
+                {"text", output},
+                {"index", 0},
+                {"finish_reason", "stop"}
+            };
             json resp = {
                 {"id", "cmpl-1"},
                 {"object", "text_completion"},
-                {"choices", json::array({{{"text", output}, {"index", 0}, {"finish_reason", "stop"}}})}
+                {"choices", json::array({choice})}
             };
             if (logprobs_req.enabled) {
                 resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
@@ -637,7 +662,8 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
     auto load_result = engine_.loadModel(model, capability);
     if (!load_result.success) {
         const std::string prefix = "Model does not support capability:";
-        if (load_result.code == llm_node::EngineErrorCode::kResourceExhausted) {
+        if (load_result.error_code == llm_node::EngineErrorCode::kOomVram ||
+            load_result.error_code == llm_node::EngineErrorCode::kOomRam) {
             respondError(res, 503, "resource_exhausted", load_result.error_message);
             return false;
         }

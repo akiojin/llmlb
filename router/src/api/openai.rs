@@ -22,6 +22,7 @@ use uuid::Uuid;
 use crate::models::image;
 use crate::{
     api::{
+        model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         nodes::AppError,
         proxy::{
@@ -183,6 +184,15 @@ pub async fn chat_completions(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+    let parsed = if parse_cloud_model(&model).is_some() {
+        ParsedModelName {
+            raw: model.clone(),
+            base: model.clone(),
+            quantization: None,
+        }
+    } else {
+        parse_quantized_model_name(&model).map_err(AppError::from)?
+    };
 
     // モデルの TextGeneration capability を検証
     let models = list_registered_models(&state.db_pool).await?;
@@ -191,14 +201,14 @@ pub async fn chat_completions(
             return Err(AppError::from(RouterError::Common(
                 CommonError::Validation(format!(
                     "Model '{}' does not support text generation",
-                    model
+                    parsed.raw
                 )),
             )));
         }
     }
     // 登録されていないモデルはノード側で処理（クラウドモデル等）
 
-    let payload = match prepare_vision_payload(&state, payload, &model).await {
+    let payload = match prepare_vision_payload(&state, payload, &parsed).await {
         Ok(payload) => payload,
         Err(response) => return Ok(response),
     };
@@ -208,7 +218,7 @@ pub async fn chat_completions(
         &state,
         payload,
         "/v1/chat/completions",
-        model,
+        parsed.raw,
         stream,
         RequestType::Chat,
     )
@@ -221,6 +231,9 @@ pub async fn completions(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+    if parse_cloud_model(&model).is_none() {
+        parse_quantized_model_name(&model).map_err(AppError::from)?;
+    }
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
@@ -239,6 +252,9 @@ pub async fn embeddings(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
+    if parse_cloud_model(&model).is_none() {
+        parse_quantized_model_name(&model).map_err(AppError::from)?;
+    }
     proxy_openai_post(
         &state,
         payload,
@@ -515,7 +531,7 @@ fn replace_image_urls(payload: &mut Value, replacements: &[String]) -> Result<()
 async fn prepare_vision_payload(
     state: &AppState,
     mut payload: Value,
-    model: &str,
+    model: &ParsedModelName,
 ) -> Result<Value, Response> {
     let image_urls = collect_image_urls(&payload)
         .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
@@ -526,13 +542,13 @@ async fn prepare_vision_payload(
     let models = list_registered_models(&state.db_pool)
         .await
         .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
-    let Some(model_info) = models.iter().find(|m| m.name == model) else {
+    let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
         // 未登録モデル（クラウド等）はルーター側の検証をスキップ
         return Ok(payload);
     };
     if !model_info.has_capability(ModelCapability::Vision) {
         return Err(openai_error_response(
-            format!("Model '{}' does not support image understanding", model),
+            format!("Model '{}' does not support image understanding", model.raw),
             StatusCode::BAD_REQUEST,
         ));
     }
@@ -1065,6 +1081,9 @@ async fn proxy_openai_cloud_post(
                         message: format!("{e:?}"),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Err(e);
@@ -1105,6 +1124,9 @@ async fn proxy_openai_cloud_post(
             duration_ms: duration.as_millis() as u64,
             status: status_record,
             completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
         },
     );
 
@@ -1168,6 +1190,9 @@ async fn proxy_openai_post(
                         message: message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             let retry_after = queue_config.timeout.as_secs().max(1);
@@ -1198,6 +1223,9 @@ async fn proxy_openai_post(
                         message: message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Ok(queue_error_response(
@@ -1237,6 +1265,9 @@ async fn proxy_openai_post(
                         message: error_message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             if matches!(e, RouterError::NoCapableNodes(_)) {
@@ -1307,6 +1338,9 @@ async fn proxy_openai_post(
                         message: format!("Failed to proxy OpenAI request: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 
@@ -1339,6 +1373,9 @@ async fn proxy_openai_post(
                 duration_ms: duration.as_millis() as u64,
                 status: RecordStatus::Success,
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1397,6 +1434,9 @@ async fn proxy_openai_post(
                     message: message.clone(),
                 },
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1439,6 +1479,9 @@ async fn proxy_openai_post(
                 duration_ms: duration.as_millis() as u64,
                 status: RecordStatus::Success,
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1476,6 +1519,9 @@ async fn proxy_openai_post(
                     duration_ms: duration.as_millis() as u64,
                     status: RecordStatus::Success,
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 
@@ -1523,6 +1569,9 @@ async fn proxy_openai_post(
                         message: format!("Failed to parse OpenAI response: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 

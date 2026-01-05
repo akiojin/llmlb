@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        model_name::parse_quantized_model_name,
         models::load_registered_model,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
@@ -187,13 +188,15 @@ pub async fn transcriptions(
         Some(m) => m,
         None => return openai_error("Missing required field: model", StatusCode::BAD_REQUEST),
     };
+    let parsed = parse_quantized_model_name(&model).map_err(AppError::from)?;
+    let _lookup_model = parsed.base;
 
     // モデルの SpeechToText capability を検証
     let model_info = load_registered_model(&state.db_pool, &model).await?;
     if let Some(model_info) = model_info {
         if !model_info.has_capability(ModelCapability::SpeechToText) {
             return openai_error(
-                format!("Model '{}' does not support speech-to-text", model),
+                format!("Model '{}' does not support speech-to-text", parsed.raw),
                 StatusCode::BAD_REQUEST,
             );
         }
@@ -270,6 +273,9 @@ pub async fn transcriptions(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -309,12 +315,15 @@ pub async fn speech(
         );
     }
 
+    let parsed = parse_quantized_model_name(&payload.model).map_err(AppError::from)?;
+    let _lookup_model = parsed.base;
+
     // モデルの TextToSpeech capability を検証
     let model_info = load_registered_model(&state.db_pool, &payload.model).await?;
     if let Some(model_info) = model_info {
         if !model_info.has_capability(ModelCapability::TextToSpeech) {
             return openai_error(
-                format!("Model '{}' does not support text-to-speech", payload.model),
+                format!("Model '{}' does not support text-to-speech", parsed.raw),
                 StatusCode::BAD_REQUEST,
             );
         }
@@ -371,6 +380,9 @@ pub async fn speech(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);

@@ -12,6 +12,8 @@ pub mod health;
 pub mod images;
 pub mod invitations;
 pub mod logs;
+/// モデル名のパース（量子化サフィックス対応）
+pub mod model_name;
 pub mod models;
 pub mod nodes;
 pub mod openai;
@@ -115,6 +117,16 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/dashboard/request-responses/export",
             get(dashboard::export_request_responses),
+        )
+        // トークン統計API
+        .route("/dashboard/stats/tokens", get(dashboard::get_token_stats))
+        .route(
+            "/dashboard/stats/tokens/daily",
+            get(dashboard::get_daily_token_stats),
+        )
+        .route(
+            "/dashboard/stats/tokens/monthly",
+            get(dashboard::get_monthly_token_stats),
         )
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）

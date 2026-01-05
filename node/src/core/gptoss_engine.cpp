@@ -199,6 +199,23 @@ bool validate_safetensors_files(const ModelDescriptor& descriptor, std::string& 
     return true;
 }
 
+std::optional<size_t> load_max_position_embeddings(const fs::path& model_dir) {
+    const auto cfg_path = model_dir / "config.json";
+    if (!fs::exists(cfg_path)) return std::nullopt;
+    try {
+        std::ifstream ifs(cfg_path);
+        nlohmann::json j;
+        ifs >> j;
+        if (j.contains("max_position_embeddings") && j["max_position_embeddings"].is_number_integer()) {
+            const auto value = j["max_position_embeddings"].get<long long>();
+            if (value > 0) return static_cast<size_t>(value);
+        }
+    } catch (...) {
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 std::string trim_copy(std::string s) {
     auto l = s.find_first_not_of(" \t\n\r");
     if (l == std::string::npos) return "";
@@ -224,18 +241,19 @@ std::string current_utc_date_yyyy_mm_dd() {
 std::vector<std::string> split_whitespace_tokens(const std::string& text, size_t max_tokens) {
     std::vector<std::string> tokens;
     std::string current;
+    const size_t effective_max_tokens = max_tokens == 0 ? kDefaultMaxTokens : max_tokens;
     for (char c : text) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (!current.empty()) {
                 tokens.push_back(current);
-                if (tokens.size() >= max_tokens) break;
+                if (tokens.size() >= effective_max_tokens) break;
                 current.clear();
             }
         } else {
             current.push_back(c);
         }
     }
-    if (!current.empty() && tokens.size() < max_tokens) {
+    if (!current.empty() && tokens.size() < effective_max_tokens) {
         tokens.push_back(current);
     }
     return tokens;
@@ -510,38 +528,31 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     const std::string key = !descriptor.model_dir.empty() ? descriptor.model_dir : descriptor.primary_path;
     if (key.empty()) {
         result.success = false;
-        result.code = EngineErrorCode::kInvalidArgument;
         result.error_message = "Model directory is empty";
+        result.error_code = EngineErrorCode::kUnsupported;
         return nullptr;
     }
-
-    auto code_for_validation_error = [](const std::string& message) {
-        if (message.find("missing") != std::string::npos || message.find("not found") != std::string::npos) {
-            return EngineErrorCode::kNotFound;
-        }
-        return EngineErrorCode::kInvalidArgument;
-    };
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (auto it = loaded_.find(key); it != loaded_.end()) {
             result.success = true;
-            result.code = EngineErrorCode::kOk;
+            result.error_code = EngineErrorCode::kOk;
             return it->second;
         }
     }
 
 #ifndef USE_GPTOSS
     result.success = false;
-    result.code = EngineErrorCode::kUnavailable;
     result.error_message = "gpt-oss engine requires Metal build (USE_GPTOSS)";
+    result.error_code = EngineErrorCode::kUnsupported;
     return nullptr;
 #else
     std::string validation_error;
     if (!validate_safetensors_files(descriptor, validation_error)) {
         result.success = false;
-        result.code = code_for_validation_error(validation_error);
         result.error_message = validation_error;
+        result.error_code = EngineErrorCode::kModelCorrupt;
         return nullptr;
     }
     const fs::path model_dir(descriptor.model_dir);
@@ -553,23 +564,23 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
 #endif
     if (model_bin.empty()) {
         result.success = false;
-        result.code = EngineErrorCode::kNotFound;
         result.error_message =
 #if defined(_WIN32)
             "gpt-oss DirectML model artifact not found (expected model.directml.bin or model.dml.bin)";
 #else
             "gpt-oss Metal model artifact not found (expected model.metal.bin or metal/model.bin)";
 #endif
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
     auto api = resolve_gptoss_api(model_dir, result.error_message);
     if (!api) {
         result.success = false;
-        result.code = EngineErrorCode::kUnavailable;
         if (result.error_message.empty()) {
             result.error_message = "gpt-oss runtime library not available";
         }
+        result.error_code = EngineErrorCode::kUnsupported;
         return nullptr;
     }
 
@@ -577,8 +588,8 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     enum gptoss_status status = api->model_create_from_file(model_bin.string().c_str(), &model);
     if (status != gptoss_status_success || model == nullptr) {
         result.success = false;
-        result.code = EngineErrorCode::kInternal;
         result.error_message = "gptoss_model_create_from_file failed: status=" + std::to_string(status);
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
@@ -587,8 +598,8 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     if (status != gptoss_status_success || tokenizer == nullptr) {
         api->model_release(model);
         result.success = false;
-        result.code = EngineErrorCode::kInternal;
         result.error_message = "gptoss_model_get_tokenizer failed: status=" + std::to_string(status);
+        result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
 
@@ -664,7 +675,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     }
 
     result.success = true;
-    result.code = EngineErrorCode::kOk;
+    result.error_code = EngineErrorCode::kOk;
     return lm;
 #endif
 }
@@ -672,6 +683,9 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
 ModelLoadResult GptOssEngine::loadModel(const ModelDescriptor& descriptor) {
     ModelLoadResult result;
     (void)ensureLoaded(descriptor, result);
+    if (result.success) {
+        result.error_code = EngineErrorCode::kOk;
+    }
     return result;
 }
 
@@ -803,30 +817,27 @@ std::string GptOssEngine::generateCompletion(
 
     size_t prompt_tokens = 0;
     if (api->context_get_num_tokens) {
-        enum gptoss_status count_status = api->context_get_num_tokens(ctx, &prompt_tokens);
-        if (count_status != gptoss_status_success) {
-            spdlog::warn("gptoss_context_get_num_tokens failed: status={}", static_cast<int>(count_status));
-            prompt_tokens = 0;
-        }
-    }
-
-    constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-    size_t effective_max_tokens = params.max_tokens;
-    if (lm->max_context > 0) {
-        size_t available = 0;
-        if (prompt_tokens < lm->max_context) {
-            available = lm->max_context - prompt_tokens;
-        }
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
+        size_t num_tokens = 0;
+        status = api->context_get_num_tokens(ctx, &num_tokens);
+        if (status == gptoss_status_success) {
+            prompt_tokens = num_tokens;
         } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
+            spdlog::warn("GptOssEngine: gptoss_context_get_num_tokens failed: status={}", static_cast<int>(status));
         }
     }
-    if (effective_max_tokens == 0) {
-        return std::string();
+
+    fs::path model_dir = descriptor.model_dir.empty()
+                             ? fs::path(descriptor.primary_path).parent_path()
+                             : fs::path(descriptor.model_dir);
+    size_t max_context = lm->max_context;
+    if (auto cfg_max = load_max_position_embeddings(model_dir)) {
+        max_context = *cfg_max;
     }
 
+    size_t effective_max_tokens = resolve_effective_max_tokens(params.max_tokens, prompt_tokens, max_context);
+    if (effective_max_tokens == 0) {
+        throw std::runtime_error("prompt exceeds model max context");
+    }
     const uint64_t seed = resolve_seed(params.seed);
     // gpt-oss Metal reference uses `exp((logit - max) * temperature)` i.e. this parameter is 1/T.
     // Convert OpenAI-style temperature (T) into inverse temperature for the kernel.

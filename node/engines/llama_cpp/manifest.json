@@ -1,10 +1,10 @@
 {
   "engine_id": "llama_cpp",
   "engine_version": "0.1.0",
-  "abi_version": 1,
+  "abi_version": 2,
   "runtimes": ["llama_cpp"],
   "formats": ["gguf"],
-  "architectures": ["llama", "mistral", "gemma"],
+  "architectures": ["llama", "mistral", "gemma", "phi"],
   "modalities": ["completion", "embedding"],
   "license": "MIT",
   "supports_vision": false,

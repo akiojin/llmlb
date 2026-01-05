@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        model_name::parse_quantized_model_name,
         models::load_registered_model,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
@@ -118,15 +119,15 @@ pub async fn generations(
         return openai_error("n must be between 1 and 10", StatusCode::BAD_REQUEST);
     }
 
+    let parsed = parse_quantized_model_name(&payload.model).map_err(AppError::from)?;
+    let _lookup_model = parsed.base;
+
     // モデルの ImageGeneration capability を検証
     let model_info = load_registered_model(&state.db_pool, &payload.model).await?;
     if let Some(model_info) = model_info {
         if !model_info.has_capability(ModelCapability::ImageGeneration) {
             return openai_error(
-                format!(
-                    "Model '{}' does not support image generation",
-                    payload.model
-                ),
+                format!("Model '{}' does not support image generation", parsed.raw),
                 StatusCode::BAD_REQUEST,
             );
         }
@@ -186,6 +187,9 @@ pub async fn generations(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -415,6 +419,9 @@ pub async fn edits(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -605,6 +612,9 @@ pub async fn variations(
             }
         },
         completed_at: Utc::now(),
+        input_tokens: None,
+        output_tokens: None,
+        total_tokens: None,
     };
 
     save_request_record(state.request_history.clone(), record);

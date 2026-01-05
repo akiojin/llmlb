@@ -3,6 +3,9 @@
 # Verifies that the model can be loaded by the engine
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 echo "=== Test: Model Loading ==="
 echo "Model: $MODEL"
 echo "Engine: $ENGINE"
@@ -23,11 +26,7 @@ fi
 
 # Try to load model with llm-node (quick validation mode)
 echo "Loading model..."
-timeout 60 "$LLM_NODE" \
-  --model "$MODEL" \
-  --n-predict 1 \
-  --prompt "test" \
-  2>&1 | head -20
+infer_command 1 "test" 2>&1 | head -20
 
 echo "PASS: Model loaded successfully"
 exit 0

@@ -161,6 +161,10 @@ export interface DashboardStats {
   average_response_time_ms: number
   average_gpu_usage: number
   average_gpu_memory_usage: number
+  // Token statistics
+  total_input_tokens: number
+  total_output_tokens: number
+  total_tokens: number
 }
 
 export type SyncState = 'idle' | 'running' | 'success' | 'failed'
@@ -197,6 +201,10 @@ export interface DashboardNode {
   sync_state?: SyncState
   sync_progress?: SyncProgress
   sync_updated_at?: string
+  // Token statistics
+  total_input_tokens: number
+  total_output_tokens: number
+  total_tokens: number
 }
 
 export interface RequestHistoryItem {
@@ -260,12 +268,41 @@ export interface LogResponse {
   path?: string
 }
 
+// Token Statistics API types
+export interface TokenStats {
+  total_input_tokens: number
+  total_output_tokens: number
+  total_tokens: number
+  request_count: number
+}
+
+export interface DailyTokenStats extends TokenStats {
+  date: string
+}
+
+export interface MonthlyTokenStats extends TokenStats {
+  month: string
+}
+
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/v0/dashboard/overview'),
 
   getNodes: () => fetchWithAuth<DashboardNode[]>('/v0/dashboard/nodes'),
 
   getStats: () => fetchWithAuth<DashboardStats>('/v0/dashboard/stats'),
+
+  // Token statistics endpoints
+  getTokenStats: () => fetchWithAuth<TokenStats>('/v0/dashboard/stats/tokens'),
+
+  getDailyTokenStats: (days?: number) =>
+    fetchWithAuth<DailyTokenStats[]>('/v0/dashboard/stats/tokens/daily', {
+      params: { days },
+    }),
+
+  getMonthlyTokenStats: (months?: number) =>
+    fetchWithAuth<MonthlyTokenStats[]>('/v0/dashboard/stats/tokens/monthly', {
+      params: { months },
+    }),
 
   getRequestHistory: (limit?: number) =>
     fetchWithAuth<RequestHistoryItem[]>('/v0/dashboard/request-history', {

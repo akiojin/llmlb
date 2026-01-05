@@ -152,7 +152,7 @@ TEST(EngineHostTest, LoadsManifestFromFile) {
     std::ofstream(manifest_path) << R"({
         "engine_id": "llama_cpp",
         "engine_version": "0.1.0",
-        "abi_version": 1,
+        "abi_version": 2,
         "runtimes": ["llama_cpp"],
         "formats": ["gguf"],
         "architectures": ["llama"],
@@ -192,7 +192,7 @@ TEST(EngineHostTest, SkipsPluginWithUnsupportedGpuTarget) {
     std::ofstream(manifest_path) << R"({
         "engine_id": "dummy_engine",
         "engine_version": "0.1.0",
-        "abi_version": 1,
+        "abi_version": 2,
         "runtimes": ["dummy_runtime"],
         "formats": ["gguf"],
         "architectures": ["llama"],

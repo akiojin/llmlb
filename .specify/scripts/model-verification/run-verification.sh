@@ -12,7 +12,9 @@ CAPABILITY="TextGeneration"
 PLATFORM="macos-metal"
 ENGINE=""
 RESULTS_DIR=""
+CHAT_TEMPLATE=""
 LLM_NODE="${SCRIPT_DIR}/../../../node/build/llm-node"
+LLAMA_CLI="${SCRIPT_DIR}/../../../node/third_party/llama.cpp/build/bin/llama-cli"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -21,6 +23,7 @@ while [[ $# -gt 0 ]]; do
     --format) FORMAT="$2"; shift 2;;
     --capability) CAPABILITY="$2"; shift 2;;
     --platform) PLATFORM="$2"; shift 2;;
+    --chat-template) CHAT_TEMPLATE="$2"; shift 2;;
     --llm-node) LLM_NODE="$2"; shift 2;;
     --results-dir) RESULTS_DIR="$2"; shift 2;;
     -h|--help)
@@ -30,6 +33,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --format      Model format: safetensors|gguf (default: safetensors)"
       echo "  --capability  Model capability: TextGeneration|Vision|Audio|Embedding|Reranker"
       echo "  --platform    Target platform: macos-metal|linux-cuda|windows-directml"
+      echo "  --chat-template Chat prompt style for test 08: plain|chatml (optional)"
       echo "  --llm-node    Path to llm-node binary"
       echo "  --results-dir Directory to store results"
       exit 0
@@ -49,9 +53,17 @@ if [[ ! -f "$MODEL" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$LLM_NODE" ]]; then
-  echo "Error: llm-node not found or not executable: $LLM_NODE"
-  exit 1
+if [[ "$FORMAT" == "safetensors" ]]; then
+  if [[ ! -x "$LLM_NODE" ]]; then
+    echo "Error: llm-node not found or not executable: $LLM_NODE"
+    exit 1
+  fi
+else
+  if [[ ! -x "$LLAMA_CLI" ]]; then
+    echo "Error: llama-cli not found or not executable: $LLAMA_CLI"
+    echo "Build it with: cmake --build node/third_party/llama.cpp/build"
+    exit 1
+  fi
 fi
 
 # Determine engine based on format
@@ -68,7 +80,7 @@ fi
 mkdir -p "$RESULTS_DIR"
 
 # Export for test scripts
-export MODEL FORMAT CAPABILITY PLATFORM ENGINE LLM_NODE RESULTS_DIR SCRIPT_DIR
+export MODEL FORMAT CAPABILITY PLATFORM ENGINE LLM_NODE LLAMA_CLI RESULTS_DIR SCRIPT_DIR CHAT_TEMPLATE
 
 echo "=============================================="
 echo "       Model Verification Suite"
@@ -78,6 +90,9 @@ echo "Format:     $FORMAT"
 echo "Engine:     $ENGINE"
 echo "Capability: $CAPABILITY"
 echo "Platform:   $PLATFORM"
+if [[ -n "$CHAT_TEMPLATE" ]]; then
+  echo "Chat tmpl:  $CHAT_TEMPLATE"
+fi
 echo "Results:    $RESULTS_DIR"
 echo "=============================================="
 echo ""
@@ -119,6 +134,10 @@ run_test() {
 # Run all tests in order
 for test_script in "$SCRIPT_DIR/tests/"*.sh; do
   if [[ -f "$test_script" ]]; then
+    base_name="$(basename "$test_script")"
+    if [[ "$base_name" == _* ]]; then
+      continue
+    fi
     run_test "$test_script" || true
   fi
 done

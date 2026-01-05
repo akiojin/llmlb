@@ -18,6 +18,7 @@ set(UNIT_TEST_SOURCES
     model_loader_test.cpp
     prefix_cache_test.cpp
     vision_processor_test.cpp
+    replica_manager_test.cpp
     onnx_tts_manager_test.cpp
     watchdog_test.cpp
     utils_config_test.cpp
@@ -46,6 +47,7 @@ set(UNIT_TEST_SOURCES
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp
+    ../../src/core/replica_manager.cpp
     ../../src/core/chat_template_renderer.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp

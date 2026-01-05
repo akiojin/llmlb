@@ -13,7 +13,6 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
-    use llm_router::registry::models::ModelInfo;
     use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
 
@@ -85,16 +84,11 @@ mod common {
         }
     }
 
-    /// テスト用のテキストのみ対応モデルを登録する
-    pub fn register_text_only_model(name: &str) {
-        let model = ModelInfo::new(name.to_string(), 0, "test".to_string(), 0, vec![]);
-        // Vision capabilityを持たないモデルとして登録
-        // capabilities は空のまま (image_understandingなし)
-        llm_router::api::models::upsert_registered_model(model);
-    }
+    // NOTE: SPEC-93536000 により、ルーター側のモデルレジストリは廃止されました。
+    // モデルのcapability検証はノード側で行われます。
 }
 
-use common::{build_app, register_text_only_model};
+use common::build_app;
 
 /// FR-004: Vision非対応モデルへの画像付きリクエストを400エラーで拒否
 /// TDD RED: capabilities検証が未実装のため失敗する
@@ -104,8 +98,8 @@ use common::{build_app, register_text_only_model};
 async fn test_image_request_to_non_vision_model_returns_400() {
     let common::TestApp { app, api_key, .. } = build_app().await;
 
-    // Vision非対応のテキストモデルを登録
-    register_text_only_model("llama-3.1-8b");
+    // NOTE: SPEC-93536000 により、モデルのcapability検証はノード側で行われます。
+    // このテストはノードがモデルをexecutable_modelsに登録している前提で動作します。
 
     let request_body = json!({
         "model": "llama-3.1-8b",

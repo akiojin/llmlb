@@ -934,4 +934,308 @@ mod tests {
             vec!["a".to_string(), "b".to_string(), "c".to_string()]
         );
     }
+
+    // SPEC-93536000: get_nodes_for_model() Unit Tests (6.1)
+
+    #[tokio::test]
+    async fn test_get_nodes_for_model_returns_online_nodes_with_model() {
+        let registry = NodeRegistry::new();
+
+        // ノード1を登録してOnlineにする
+        let node1_id = registry
+            .register(RegisterRequest {
+                machine_name: "node1".into(),
+                ip_address: "127.0.0.1".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // executable_modelsを設定
+        registry
+            .update_last_seen(
+                node1_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)),
+                None,
+                None,
+                Some(vec!["llama-3.1-8b".into(), "mistral-7b".into()]),
+            )
+            .await
+            .unwrap();
+
+        // Onlineに遷移
+        registry.approve(node1_id).await.unwrap();
+
+        // モデルでフィルタ
+        let nodes = registry.get_nodes_for_model("llama-3.1-8b").await;
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].id, node1_id);
+
+        // 存在しないモデル
+        let nodes = registry.get_nodes_for_model("nonexistent-model").await;
+        assert!(nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_nodes_for_model_excludes_offline_nodes() {
+        let registry = NodeRegistry::new();
+
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "offline-node".into(),
+                ip_address: "127.0.0.2".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // executable_modelsを設定（まだPending状態）
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)),
+                None,
+                None,
+                Some(vec!["llama-3.1-8b".into()]),
+            )
+            .await
+            .unwrap();
+
+        // Pending状態のノードは取得されない
+        let nodes = registry.get_nodes_for_model("llama-3.1-8b").await;
+        assert!(nodes.is_empty());
+
+        // Onlineにしてから取得
+        registry.approve(node_id).await.unwrap();
+        let nodes = registry.get_nodes_for_model("llama-3.1-8b").await;
+        assert_eq!(nodes.len(), 1);
+
+        // Offlineにマーク
+        registry.mark_offline(node_id).await.unwrap();
+        let nodes = registry.get_nodes_for_model("llama-3.1-8b").await;
+        assert!(nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_nodes_for_model_excludes_excluded_models() {
+        let registry = NodeRegistry::new();
+
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "exclude-test".into(),
+                ip_address: "127.0.0.3".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // executable_modelsを設定
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)),
+                None,
+                None,
+                Some(vec!["llama-3.1-8b".into(), "mistral-7b".into()]),
+            )
+            .await
+            .unwrap();
+
+        registry.approve(node_id).await.unwrap();
+
+        // 両方のモデルが取得可能
+        assert_eq!(registry.get_nodes_for_model("llama-3.1-8b").await.len(), 1);
+        assert_eq!(registry.get_nodes_for_model("mistral-7b").await.len(), 1);
+
+        // llama-3.1-8bを除外
+        registry
+            .exclude_model_from_node(node_id, "llama-3.1-8b")
+            .await
+            .unwrap();
+
+        // llama-3.1-8bは取得されなくなる
+        assert!(registry
+            .get_nodes_for_model("llama-3.1-8b")
+            .await
+            .is_empty());
+        // mistral-7bは取得可能
+        assert_eq!(registry.get_nodes_for_model("mistral-7b").await.len(), 1);
+    }
+
+    // SPEC-93536000: exclude_model_from_node() Unit Tests (6.2)
+
+    #[tokio::test]
+    async fn test_exclude_model_from_node_adds_to_excluded_list() {
+        let registry = NodeRegistry::new();
+
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "exclude-add".into(),
+                ip_address: "127.0.0.4".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        let node = registry.get(node_id).await.unwrap();
+        assert!(node.excluded_models.is_empty());
+
+        registry
+            .exclude_model_from_node(node_id, "failing-model")
+            .await
+            .unwrap();
+
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.excluded_models, vec!["failing-model"]);
+    }
+
+    #[tokio::test]
+    async fn test_exclude_model_from_node_prevents_duplicate() {
+        let registry = NodeRegistry::new();
+
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "exclude-dup".into(),
+                ip_address: "127.0.0.5".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // 同じモデルを2回除外
+        registry
+            .exclude_model_from_node(node_id, "dup-model")
+            .await
+            .unwrap();
+        registry
+            .exclude_model_from_node(node_id, "dup-model")
+            .await
+            .unwrap();
+
+        let node = registry.get(node_id).await.unwrap();
+        // 重複は追加されない
+        assert_eq!(node.excluded_models.len(), 1);
+        assert_eq!(node.excluded_models[0], "dup-model");
+    }
+
+    #[tokio::test]
+    async fn test_exclude_model_from_node_returns_error_for_nonexistent_node() {
+        let registry = NodeRegistry::new();
+        let fake_id = Uuid::new_v4();
+
+        let result = registry
+            .exclude_model_from_node(fake_id, "some-model")
+            .await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), RouterError::NodeNotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_model_exists_in_any_node() {
+        let registry = NodeRegistry::new();
+
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "exists-test".into(),
+                ip_address: "127.0.0.6".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // executable_modelsを設定
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)),
+                None,
+                None,
+                Some(vec!["gpt-4".into()]),
+            )
+            .await
+            .unwrap();
+
+        // Pending状態では存在しないと判定
+        assert!(!registry.model_exists_in_any_node("gpt-4").await);
+
+        // Onlineに遷移
+        registry.approve(node_id).await.unwrap();
+
+        // 存在確認
+        assert!(registry.model_exists_in_any_node("gpt-4").await);
+        assert!(!registry.model_exists_in_any_node("nonexistent").await);
+
+        // excluded_modelsには影響されない（存在確認のみ）
+        registry
+            .exclude_model_from_node(node_id, "gpt-4")
+            .await
+            .unwrap();
+        assert!(registry.model_exists_in_any_node("gpt-4").await);
+    }
 }

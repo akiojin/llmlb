@@ -49,22 +49,22 @@
 
 ### Polish
 
-- [ ] 5.1 REGISTERED_MODELS と supported_models.json を削除
+- [x] 5.1 REGISTERED_MODELS と supported_models.json を削除
 - [x] 5.2 SPEC-dcaeaec4 FR-9 を廃止としてマーク
 
 ## Phase 6: テスト
 
 ### Test
 
-- [ ] [P] 6.1 Unit Test: `get_nodes_for_model()` フィルタリング
-- [ ] [P] 6.2 Unit Test: `exclude_model_from_node()` 動作確認
-- [ ] [P] 6.3 Unit Test: ノード登録時の/v1/models取得
-- [ ] 6.4 Integration Test: モデル対応ノードへのルーティング
-- [ ] 6.5 Integration Test: 非対応モデルへの503エラー
-- [ ] 6.6 Integration Test: 存在しないモデルへの404エラー
-- [ ] 6.7 Integration Test: 推論失敗後のモデル除外
-- [ ] 6.8 Integration Test: ノード再起動後のモデル復帰
-- [ ] 6.9 E2E Test: Metal専用モデルがCUDAノードにルーティングされないこと
+- [x] [P] 6.1 Unit Test: `get_nodes_for_model()` フィルタリング
+- [x] [P] 6.2 Unit Test: `exclude_model_from_node()` 動作確認
+- [x] [P] 6.3 Integration Test: ノード登録時の/v1/models取得
+- [x] 6.4 Integration Test: モデル対応ノードへのルーティング (TDD RED)
+- [x] 6.5 Integration Test: 非対応モデルへの503エラー (TDD RED)
+- [x] 6.6 Integration Test: 存在しないモデルへの404エラー
+- [x] 6.7 Integration Test: 推論失敗後のモデル除外 (TDD RED)
+- [x] 6.8 Integration Test: ノード再起動後のモデル復帰 (TDD RED)
+- [x] 6.9 E2E Test: Metal専用モデルがCUDAノードにルーティングされないこと (TDD RED)
 
 ## 凡例
 

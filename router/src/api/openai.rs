@@ -11,7 +11,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapabilities, ModelCapability, VisionCapability},
+    types::VisionCapability,
 };
 use reqwest;
 use serde_json::{json, Value};
@@ -23,7 +23,7 @@ use crate::models::image;
 use crate::{
     api::{
         model_name::{parse_quantized_model_name, ParsedModelName},
-        models::{list_registered_models, LifecycleStatus},
+        models::LifecycleStatus,
         nodes::AppError,
         proxy::{
             forward_streaming_response, save_request_record, select_available_node,
@@ -182,19 +182,7 @@ pub async fn chat_completions(
         parse_quantized_model_name(&model).map_err(AppError::from)?
     };
 
-    // モデルの TextGeneration capability を検証
-    let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == parsed.base) {
-        if !model_info.has_capability(ModelCapability::TextGeneration) {
-            return Err(AppError::from(RouterError::Common(
-                CommonError::Validation(format!(
-                    "Model '{}' does not support text generation",
-                    parsed.raw
-                )),
-            )));
-        }
-    }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    // NOTE: 機能チェックはノード側で行う（SPEC-93536000）
 
     let payload = match prepare_vision_payload(&state, payload, &parsed).await {
         Ok(payload) => payload,
@@ -284,14 +272,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         }
     }
 
-    // 登録済みモデル情報も取得（メタデータ付与用）
-    let registered_models = list_registered_models();
-    let registered_map: std::collections::HashMap<_, _> = registered_models
-        .into_iter()
-        .map(|m| (m.name.clone(), m))
-        .collect();
-
-    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
+    // OpenAI互換レスポンス形式（executable_models からモデル一覧を生成）
     let mut data: Vec<Value> = Vec::new();
 
     for model_id in &executable_model_ids {
@@ -302,41 +283,16 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             LifecycleStatus::Pending
         };
 
-        // 登録済みモデルからメタデータを取得（存在する場合）
-        if let Some(m) = registered_map.get(model_id) {
-            let caps: ModelCapabilities = m.get_capabilities().into();
-            let obj = json!({
-                "id": model_id,
-                "object": "model",
-                "created": 0,
-                "owned_by": "router",
-                "capabilities": caps,
-                "lifecycle_status": lifecycle_status,
-                "download_progress": null,
-                "ready": ready,
-                "repo": m.repo,
-                "filename": m.filename,
-                "size_bytes": m.size,
-                "required_memory_bytes": m.required_memory,
-                "source": m.source,
-                "tags": m.tags,
-                "description": m.description,
-                "chat_template": m.chat_template,
-            });
-            data.push(obj);
-        } else {
-            // メタデータがない場合は最小限のOpenAI互換レスポンス
-            let obj = json!({
-                "id": model_id,
-                "object": "model",
-                "created": 0,
-                "owned_by": "node",
-                "lifecycle_status": lifecycle_status,
-                "download_progress": null,
-                "ready": ready,
-            });
-            data.push(obj);
-        }
+        let obj = json!({
+            "id": model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "node",
+            "lifecycle_status": lifecycle_status,
+            "download_progress": null,
+            "ready": ready,
+        });
+        data.push(obj);
     }
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
@@ -413,40 +369,16 @@ pub async fn get_model(
         LifecycleStatus::Pending
     };
 
-    // 登録済みモデル情報からメタデータを取得（存在する場合）
-    let all = list_registered_models();
-    if let Some(model) = all.into_iter().find(|m| m.name == model_id) {
-        let caps: ModelCapabilities = model.get_capabilities().into();
-        let body = json!({
-            "id": model_id,
-            "object": "model",
-            "created": 0,
-            "owned_by": "router",
-            "capabilities": caps,
-            "lifecycle_status": lifecycle_status,
-            "ready": is_loaded,
-            "repo": model.repo,
-            "filename": model.filename,
-            "size_bytes": model.size,
-            "required_memory_bytes": model.required_memory,
-            "source": model.source,
-            "tags": model.tags,
-            "description": model.description,
-            "chat_template": model.chat_template,
-        });
-        Ok((StatusCode::OK, Json(body)).into_response())
-    } else {
-        // メタデータがない場合は最小限のOpenAI互換レスポンス
-        let body = json!({
-            "id": model_id,
-            "object": "model",
-            "created": 0,
-            "owned_by": "node",
-            "lifecycle_status": lifecycle_status,
-            "ready": is_loaded,
-        });
-        Ok((StatusCode::OK, Json(body)).into_response())
-    }
+    // OpenAI互換レスポンス（SPEC-93536000 でメタデータはノード側に委譲）
+    let body = json!({
+        "id": model_id,
+        "object": "model",
+        "created": 0,
+        "owned_by": "node",
+        "lifecycle_status": lifecycle_status,
+        "ready": is_loaded,
+    });
+    Ok((StatusCode::OK, Json(body)).into_response())
 }
 
 fn extract_model(payload: &Value) -> Result<String, AppError> {
@@ -555,7 +487,7 @@ fn replace_image_urls(payload: &mut Value, replacements: &[String]) -> Result<()
 async fn prepare_vision_payload(
     state: &AppState,
     mut payload: Value,
-    model: &ParsedModelName,
+    _model: &ParsedModelName,
 ) -> Result<Value, Response> {
     let image_urls = collect_image_urls(&payload)
         .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
@@ -563,18 +495,7 @@ async fn prepare_vision_payload(
         return Ok(payload);
     }
 
-    let models = list_registered_models();
-    let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
-        // 未登録モデル（クラウド等）はルーター側の検証をスキップ
-        return Ok(payload);
-    };
-    if !model_info.has_capability(ModelCapability::Vision) {
-        return Err(openai_error_response(
-            format!("Model '{}' does not support image understanding", model.raw),
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-
+    // NOTE: Vision capability チェックはノード側で行う（SPEC-93536000）
     let vision_limits = VisionCapability::default();
     if image_urls.len() > vision_limits.max_image_count as usize {
         return Err(openai_error_response(

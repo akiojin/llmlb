@@ -526,11 +526,12 @@ std::string LlamaEngine::generateChat(
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
 
     // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
+    // T028-T029: OpenAI互換のpresence_penalty/frequency_penaltyを適用
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,                      // last_n: 直近64トークンを考慮
-        params.repeat_penalty,   // repeat_penalty: 1.1
-        0.0f,                    // frequency_penalty
-        0.0f                     // presence_penalty
+        64,                        // last_n: 直近64トークンを考慮
+        params.repeat_penalty,     // repeat_penalty: 1.1
+        params.frequency_penalty,  // frequency_penalty: OpenAI互換
+        params.presence_penalty    // presence_penalty: OpenAI互換
     ));
 
     // シード設定
@@ -712,11 +713,12 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
 
     // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
+    // T028-T029: OpenAI互換のpresence_penalty/frequency_penaltyを適用
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,                      // last_n: 直近64トークンを考慮
-        params.repeat_penalty,   // repeat_penalty: 1.1
-        0.0f,                    // frequency_penalty
-        0.0f                     // presence_penalty
+        64,                        // last_n: 直近64トークンを考慮
+        params.repeat_penalty,     // repeat_penalty: 1.1
+        params.frequency_penalty,  // frequency_penalty: OpenAI互換
+        params.presence_penalty    // presence_penalty: OpenAI互換
     ));
 
     uint32_t seed = params.seed;

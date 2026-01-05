@@ -923,11 +923,12 @@ std::string InferenceEngine::generateChatWithImages(
         llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
         llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
         llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
+        // T028-T029: OpenAI互換のpresence_penalty/frequency_penaltyを適用
         llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-            64,
-            params.repeat_penalty,
-            0.0f,
-            0.0f
+            64,                        // last_n: 直近64トークンを考慮
+            params.repeat_penalty,     // repeat_penalty
+            params.frequency_penalty,  // frequency_penalty: OpenAI互換
+            params.presence_penalty    // presence_penalty: OpenAI互換
         ));
 
         uint32_t seed = params.seed;

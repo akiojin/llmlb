@@ -6,6 +6,10 @@
 #include <memory>
 #include <cctype>
 #include <algorithm>
+#include <chrono>
+#include <random>
+#include <sstream>
+#include <iomanip>
 #include "models/model_registry.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
@@ -212,6 +216,42 @@ bool validateSamplingParams(const nlohmann::json& body, std::string& error) {
             return false;
         }
     }
+    // T027: Validate presence_penalty range (-2.0 to 2.0)
+    if (body.contains("presence_penalty")) {
+        if (!body["presence_penalty"].is_number()) {
+            error = "presence_penalty must be a number";
+            return false;
+        }
+        const double v = body["presence_penalty"].get<double>();
+        if (v < -2.0 || v > 2.0) {
+            error = "presence_penalty must be between -2 and 2";
+            return false;
+        }
+    }
+    // T027: Validate frequency_penalty range (-2.0 to 2.0)
+    if (body.contains("frequency_penalty")) {
+        if (!body["frequency_penalty"].is_number()) {
+            error = "frequency_penalty must be a number";
+            return false;
+        }
+        const double v = body["frequency_penalty"].get<double>();
+        if (v < -2.0 || v > 2.0) {
+            error = "frequency_penalty must be between -2 and 2";
+            return false;
+        }
+    }
+    // T036: Validate n parameter range (1-8)
+    if (body.contains("n")) {
+        if (!body["n"].is_number_integer()) {
+            error = "n must be an integer";
+            return false;
+        }
+        const int v = body["n"].get<int>();
+        if (v < 1 || v > 8) {
+            error = "n must be between 1 and 8";
+            return false;
+        }
+    }
     return true;
 }
 
@@ -277,6 +317,35 @@ bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, s
         }
     }
 
+    // T025-T026: Parse presence_penalty and frequency_penalty
+    if (body.contains("presence_penalty") && body["presence_penalty"].is_number()) {
+        parsed.presence_penalty = body["presence_penalty"].get<float>();
+    }
+    if (body.contains("frequency_penalty") && body["frequency_penalty"].is_number()) {
+        parsed.frequency_penalty = body["frequency_penalty"].get<float>();
+    }
+
+    // T035: Parse n parameter
+    if (body.contains("n") && body["n"].is_number_integer()) {
+        parsed.n = body["n"].get<int>();
+    }
+
+    // Parse logprobs settings
+    if (body.contains("logprobs")) {
+        const auto& value = body["logprobs"];
+        if (value.is_boolean()) {
+            parsed.logprobs = value.get<bool>();
+        } else if (value.is_number_integer() && value.get<int>() > 0) {
+            parsed.logprobs = true;
+        }
+    }
+    if (body.contains("top_logprobs") && body["top_logprobs"].is_number_integer()) {
+        parsed.top_logprobs = body["top_logprobs"].get<int>();
+        if (parsed.top_logprobs > 0) {
+            parsed.logprobs = true;
+        }
+    }
+
     if (!parseStopSequences(body, parsed.stop_sequences, error)) {
         return false;
     }
@@ -300,6 +369,29 @@ std::string applyStopSequences(std::string output, const std::vector<std::string
     return output;
 }
 }  // namespace
+
+// T017: Generate unique response ID with prefix, timestamp, and random component
+std::string generate_response_id(const std::string& prefix) {
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()).count();
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 0xFFFF);
+
+    std::ostringstream oss;
+    oss << prefix << "-" << std::hex << ms << "-"
+        << std::setw(4) << std::setfill('0') << dis(gen);
+    return oss.str();
+}
+
+// T018: Get current Unix timestamp in seconds
+int64_t get_current_timestamp() {
+    auto now = std::chrono::system_clock::now();
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        now.time_since_epoch()).count();
+}
 
 struct ParsedChatMessages {
     std::vector<ChatMessage> messages;
@@ -460,14 +552,19 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     return;
                 }
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
+                // T039: Generate stream ID and timestamp once for all chunks
+                std::string stream_id = generate_response_id("chatcmpl");
+                int64_t stream_created = get_current_timestamp();
                 res.set_header("Content-Type", "text/event-stream");
                 res.set_chunked_content_provider("text/event-stream",
-                    [output, guard_ptr](size_t offset, httplib::DataSink& sink) {
+                    [output, model, stream_id, stream_created, guard_ptr](size_t offset, httplib::DataSink& sink) {
                         if (offset == 0) {
                             // OpenAI compatible streaming format
                             json event_data = {
-                                {"id", "chatcmpl-1"},
+                                {"id", stream_id},
                                 {"object", "chat.completion.chunk"},
+                                {"created", stream_created},
+                                {"model", model},
                                 {"choices", json::array({{
                                     {"index", 0},
                                     {"delta", {{"content", output}}},
@@ -485,14 +582,30 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 return;
             }
 
+            // T019: Build prompt from messages for token counting
+            std::string prompt_text;
+            for (const auto& msg : parsed.messages) {
+                prompt_text += msg.role + ": " + msg.content + "\n";
+            }
+
+            // T019, T021, T023: Add usage, dynamic ID, and current timestamp
+            int prompt_tokens = static_cast<int>(prompt_text.length() / 4);  // Approximate tokenization
+            int completion_tokens = static_cast<int>(output.length() / 4);
             json resp = {
-                {"id", "chatcmpl-1"},
+                {"id", generate_response_id("chatcmpl")},
                 {"object", "chat.completion"},
+                {"created", get_current_timestamp()},
+                {"model", model},
                 {"choices", json::array({{
                     {"index", 0},
                     {"message", {{"role", "assistant"}, {"content", output}}},
                     {"finish_reason", "stop"}
-                }})}
+                }})},
+                {"usage", {
+                    {"prompt_tokens", prompt_tokens},
+                    {"completion_tokens", completion_tokens},
+                    {"total_tokens", prompt_tokens + completion_tokens}
+                }}
             };
             if (logprobs_req.enabled) {
                 resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
@@ -544,15 +657,26 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             std::string output = engine_.generateCompletion(prompt, model, params);
             output = applyStopSequences(std::move(output), params.stop_sequences);
             output = sanitize_utf8_lossy(output);
+
+            // T020, T022, T024: Add usage, dynamic ID, and current timestamp
+            int prompt_tokens = static_cast<int>(prompt.length() / 4);  // Approximate tokenization
+            int completion_tokens = static_cast<int>(output.length() / 4);
             json choice = {
                 {"text", output},
                 {"index", 0},
                 {"finish_reason", "stop"}
             };
             json resp = {
-                {"id", "cmpl-1"},
+                {"id", generate_response_id("cmpl")},
                 {"object", "text_completion"},
-                {"choices", json::array({choice})}
+                {"created", get_current_timestamp()},
+                {"model", model},
+                {"choices", json::array({choice})},
+                {"usage", {
+                    {"prompt_tokens", prompt_tokens},
+                    {"completion_tokens", completion_tokens},
+                    {"total_tokens", prompt_tokens + completion_tokens}
+                }}
             };
             if (logprobs_req.enabled) {
                 resp["choices"][0]["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);

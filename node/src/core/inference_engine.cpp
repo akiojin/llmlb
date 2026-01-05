@@ -942,17 +942,38 @@ std::string InferenceEngine::generateChat(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
-        try {
-            auto output = engine->generateChat(messages, *desc, params_with_metrics);
-            report_token_metrics(metrics, desc->name, "chat");
-            if (cache_enabled && inference_cache_) {
-                inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+
+        // T136/T137: Exponential backoff retry on crash
+        constexpr int kMaxRetries = 4;
+        constexpr int kInitialDelayMs = 100;
+        std::exception_ptr last_exception;
+
+        for (int attempt = 0; attempt <= kMaxRetries; ++attempt) {
+            if (attempt > 0) {
+                // Exponential backoff: 100ms, 200ms, 400ms, 800ms
+                int delay_ms = kInitialDelayMs * (1 << (attempt - 1));
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+                spdlog::debug("Retry attempt {} after {}ms delay", attempt, delay_ms);
             }
-            return output;
-        } catch (...) {
-            handlePluginCrash();
-            throw;
+
+            try {
+                auto output = engine->generateChat(messages, *desc, params_with_metrics);
+                report_token_metrics(metrics, desc->name, "chat");
+                if (cache_enabled && inference_cache_) {
+                    inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+                }
+                return output;
+            } catch (...) {
+                last_exception = std::current_exception();
+                if (attempt < kMaxRetries) {
+                    spdlog::warn("Engine crashed on attempt {}, will retry", attempt + 1);
+                }
+            }
         }
+
+        // All retries exhausted
+        handlePluginCrash();
+        std::rethrow_exception(last_exception);
     });
 }
 

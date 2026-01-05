@@ -1240,3 +1240,191 @@ TEST(InferenceEngineTest, RejectsStreamRequestsWhilePluginRestartPending) {
 
     InferenceEngine::setPluginRestartHookForTest({});
 }
+
+// T136/T137: 指数バックオフリトライ
+// クラッシュ後に透過的リトライを行い、成功時はクライアントに見えない形で結果を返す
+class RetryCountingEngine final : public Engine {
+public:
+    RetryCountingEngine(std::atomic<int>* counter, int fail_count)
+        : call_counter_(counter), fail_until_(fail_count) {}
+
+    std::string runtime() const override { return "llama_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor&) override {
+        ModelLoadResult result;
+        result.success = true;
+        result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        int count = call_counter_->fetch_add(1);
+        if (count < fail_until_) {
+            throw std::runtime_error("Engine crash (attempt " + std::to_string(count + 1) + ")");
+        }
+        return "Success after " + std::to_string(count + 1) + " attempts";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override {
+        return 4096;
+    }
+
+private:
+    mutable std::atomic<int>* call_counter_;
+    int fail_until_;
+};
+
+TEST(InferenceEngineTest, RetriesWithExponentialBackoffOnCrash) {
+    TempDir tmp;
+    std::string model_name = "example/retry-test";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    std::atomic<int> call_counter{0};
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "retry_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RetryCountingEngine>(&call_counter, 2),  // Fail first 2 attempts
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    std::atomic<int> restart_calls{0};
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        restart_calls.fetch_add(1);
+        return true;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "test"}};
+
+    // Should succeed after transparent retry
+    auto start = std::chrono::steady_clock::now();
+    std::string result = engine.generateChat(messages, model_name, {});
+    auto elapsed = std::chrono::steady_clock::now() - start;
+
+    // Verify retry occurred (3 total calls: 2 failures + 1 success)
+    EXPECT_EQ(call_counter.load(), 3);
+    EXPECT_EQ(result, "Success after 3 attempts");
+
+    // Verify exponential backoff delay (100ms + 200ms = 300ms minimum)
+    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 200);
+
+    InferenceEngine::setPluginRestartHookForTest({});
+}
+
+TEST(InferenceEngineTest, RetriesUpToMaximumAttempts) {
+    TempDir tmp;
+    std::string model_name = "example/retry-max";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    std::atomic<int> call_counter{0};
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "retry_max_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RetryCountingEngine>(&call_counter, 100),  // Always fail
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        return true;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "test"}};
+
+    // Should fail after max retries (4 retries = 5 total attempts: 1 initial + 4 retries)
+    EXPECT_THROW((void)engine.generateChat(messages, model_name, {}), std::runtime_error);
+
+    // Verify max retry attempts (1 initial + 4 retries = 5)
+    EXPECT_EQ(call_counter.load(), 5);
+
+    InferenceEngine::setPluginRestartHookForTest({});
+}
+
+TEST(InferenceEngineTest, TransparentRetryDoesNotExposeIntermediateErrors) {
+    TempDir tmp;
+    std::string model_name = "example/retry-transparent";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "model.gguf") << "gguf";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    std::atomic<int> call_counter{0};
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "retry_transparent_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RetryCountingEngine>(&call_counter, 1),  // Fail first attempt only
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    engine.setEnginePluginsDirForTest(tmp.path);
+
+    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
+        return true;
+    });
+
+    std::vector<ChatMessage> messages = {{"user", "test"}};
+
+    // Should return successful result without any indication of intermediate failure
+    std::string result = engine.generateChat(messages, model_name, {});
+    EXPECT_FALSE(result.empty());
+    EXPECT_EQ(result.find("error"), std::string::npos);
+    EXPECT_EQ(result.find("crash"), std::string::npos);
+
+    InferenceEngine::setPluginRestartHookForTest({});
+}

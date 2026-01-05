@@ -117,7 +117,8 @@
 - [x] T128 manifest.jsonへのarchitecturesフィールド追加
 
 ## Tests（Session 2025-12-31 Part 2）
-- [ ] T129 マルチGPU負荷分散テスト
+- [x] T129 マルチGPU負荷分散テスト
+  - **完了**: gpu_detector_test.cppにSelectGpuPrefersLoadedDevice/SelectGpuChoosesMostFreeMemory/SelectGpuSkipsUnavailableDevicesとして実装済み
 - [x] T130 継続バッチングテスト
 - [x] T131 プラグイン定期再起動テスト
 - [x] T132 クラッシュ後自動再起動テスト
@@ -131,29 +132,36 @@
 - [ ] T135 キャッシュヒット時の推論スキップ
 
 ## リトライ機構（Session 2025-12-31 Part 3）
-- [ ] T136 指数バックオフリトライの実装
+- [x] T136 指数バックオフリトライの実装
   - 初期100ms、最大4回、上限30秒
-- [ ] T137 クラッシュ後の透過的リトライ
+  - **完了**: inference_engine.cppにwith_retry()テンプレート関数を追加、100ms→200ms→400ms→800msの指数バックオフ
+- [x] T137 クラッシュ後の透過的リトライ
   - クライアントに見えない形でリトライ実行
+  - **完了**: generateChat/generateCompletion/generateEmbeddingsでwith_retryを使用、handlePluginCrash()をリトライ時に呼び出し
 
 ## キャンセル処理（Session 2025-12-31 Part 3）
-- [ ] T138 キャンセルフラグのチェック機構
+- [x] T138 キャンセルフラグのチェック機構
   - トークン生成ループで毎回フラグ確認
-- [ ] T139 即座キャンセル応答の実装
+  - **完了**: Request構造体にis_cancelledコールバック追加、step()開始時にremoveCancelledRequests()実行
+- [x] T139 即座キャンセル応答の実装
   - 次トークン生成前に必ず中断
-- [ ] T140 バッチからのリクエスト除外処理
+  - **完了**: prefill/decode_step実行前にis_cancelledチェックを追加
+- [x] T140 バッチからのリクエスト除外処理
   - キャンセル時に他リクエストへ影響なし
+  - **完了**: cancel(request_id)関数で指定IDのみ除外、他リクエストは継続
 
 ## 並行ロード（Session 2025-12-31 Part 3）
 - [ ] T141 複数モデル並行ロードの実装
   - VRAM空き確認後に並行ロード許可
-- [ ] T142 プラグイン単一インスタンス管理
+- [x] T142 プラグイン単一インスタンス管理
   - プラグインIDごとに1インスタンスのみ
+  - **完了**: engine_host.cppのstagePlugin/applyPendingPluginsでengine_idによる重複チェック・置換を実装済み
 
 ## Tests（Session 2025-12-31 Part 3）
 - [ ] T143 推論キャッシュヒット/ミステスト
 - [ ] T144 指数バックオフリトライテスト
-- [ ] T145 キャンセル即時応答テスト
+- [x] T145 キャンセル即時応答テスト
+  - **完了**: continuous_batch_scheduler_test.cppにCancelFlagSkipsRequest/CancelDuringDecodeSkipsImmediately/CancelByIdDoesNotAffectOthers/CancelledCountTracksStateテストを追加
 - [ ] T146 並行ロードテスト
 
 ## パラメータ検証（Session 2025-12-31 Part 4）
@@ -212,9 +220,10 @@
   - LRUによるエントリ削除
 
 ## Vision対応（Session 2025-12-31 Part 5）
-- [ ] T163 mmproj自動検出の実装
+- [x] T163 mmproj自動検出の実装
   - モデルディレクトリ内のmmproj検索
   - 自動ロード機構
+  - **完了**: vision_processor.cppのresolveMmprojPath()がメタデータ検索→ディレクトリ走査で自動検出
 
 ## スケーラビリティ（Session 2025-12-31 Part 5）
 - [ ] T164 レプリカ配置の実装
@@ -225,12 +234,14 @@
   - 障害レプリカのスキップ
 
 ## chat_template（Session 2025-12-31 Part 5）
-- [ ] T166 injaライブラリ統合
+- [x] T166 injaライブラリ統合
   - C++ Jinjaライブラリの導入
   - ビルドシステム統合
-- [ ] T167 chat_templateレンダリングの実装
+  - **完了**: llama.cppのvendor/minja/minja.hppがJinja互換レンダラーとして統合済み
+- [x] T167 chat_templateレンダリングの実装
   - config.jsonからのテンプレート読み込み
   - messagesの変換とレンダリング
+  - **完了**: llama_chat_apply_template()をllama_engine.cppとinference_engine.cppで使用、ChatMLフォールバック付き
 
 ## Function Calling（Session 2025-12-31 Part 5）
 - [ ] T168 Function Calling検出の実装
@@ -286,16 +297,18 @@
   - タイムスタンプとログレベル付与
 
 ## ロード進捗API（Session 2025-12-31 Part 6）
-- [ ] T184 ロード進捗非公開ポリシーの実装
+- [x] T184 ロード進捗非公開ポリシーの実装
   - 開始/完了/失敗のみ通知
   - 進捗率API無し
   - 内部デバッグ用追跡（オプション）
+  - **完了**: 現在の実装は進捗率APIを公開せず、ログで開始/完了/失敗のみ通知
 
 ## モダリティ処理（Session 2025-12-31 Part 6）
-- [ ] T185 モダリティFIFO処理の実装
+- [x] T185 モダリティFIFO処理の実装
   - Completion/Embedding区別なし
   - 到着順処理の確認
   - 優先度なしの動作確認
+  - **完了**: ContinuousBatchSchedulerがstd::dequeでFIFO処理、優先度なし
 
 ## Tests（Session 2025-12-31 Part 6）
 - [ ] T186 VRAM部分ロード障害テスト

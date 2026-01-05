@@ -66,6 +66,62 @@ uint64_t token_metrics_now_ns() {
     return steady_now_ns();
 }
 
+// T136-T137: Exponential backoff retry configuration
+struct RetryConfig {
+    int max_retries{4};
+    std::chrono::milliseconds initial_delay{100};
+    std::chrono::milliseconds max_total{30000};
+};
+
+// T136: Exponential backoff retry helper
+// T137: Transparent retry after crash (invisible to client)
+template <typename Fn>
+auto with_retry(Fn&& fn, const RetryConfig& config, std::function<void()> on_crash) -> decltype(fn()) {
+    std::exception_ptr last_exception;
+    auto total_start = std::chrono::steady_clock::now();
+    auto delay = config.initial_delay;
+
+    for (int attempt = 0; attempt <= config.max_retries; ++attempt) {
+        try {
+            return fn();
+        } catch (...) {
+            last_exception = std::current_exception();
+
+            // Check total time limit
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - total_start);
+            if (elapsed >= config.max_total) {
+                spdlog::warn("Retry exhausted: total time {}ms exceeded {}ms limit",
+                             elapsed.count(), config.max_total.count());
+                break;
+            }
+
+            // Don't retry on last attempt
+            if (attempt >= config.max_retries) {
+                spdlog::warn("Retry exhausted after {} attempts", attempt + 1);
+                break;
+            }
+
+            // Notify crash handler for transparent recovery
+            if (on_crash) {
+                on_crash();
+            }
+
+            spdlog::info("Retrying after {}ms (attempt {}/{})",
+                         delay.count(), attempt + 1, config.max_retries);
+            std::this_thread::sleep_for(delay);
+
+            // Exponential backoff: 100ms -> 200ms -> 400ms -> 800ms
+            delay = std::min(delay * 2, config.max_total - elapsed);
+        }
+    }
+
+    if (last_exception) {
+        std::rethrow_exception(last_exception);
+    }
+    throw std::runtime_error("Retry failed without exception");
+}
+
 void token_metrics_callback(void* ctx, uint32_t, uint64_t timestamp_ns) {
     auto* state = static_cast<TokenMetricsState*>(ctx);
     if (!state) return;
@@ -803,14 +859,18 @@ std::string InferenceEngine::generateChat(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
-        try {
-            auto output = engine->generateChat(messages, *desc, params_with_metrics);
-            report_token_metrics(metrics, desc->name, "chat");
-            return output;
-        } catch (...) {
-            handlePluginCrash();
-            throw;
-        }
+
+        // T136-T137: Retry with exponential backoff, transparent to client
+        RetryConfig retry_config;
+        auto output = with_retry(
+            [&]() {
+                return engine->generateChat(messages, *desc, params_with_metrics);
+            },
+            retry_config,
+            [this]() { handlePluginCrash(); }
+        );
+        report_token_metrics(metrics, desc->name, "chat");
+        return output;
     });
 }
 
@@ -1045,14 +1105,18 @@ std::string InferenceEngine::generateCompletion(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
-        try {
-            auto output = engine->generateCompletion(prompt, *desc, params_with_metrics);
-            report_token_metrics(metrics, desc->name, "completion");
-            return output;
-        } catch (...) {
-            handlePluginCrash();
-            throw;
-        }
+
+        // T136-T137: Retry with exponential backoff, transparent to client
+        RetryConfig retry_config;
+        auto output = with_retry(
+            [&]() {
+                return engine->generateCompletion(prompt, *desc, params_with_metrics);
+            },
+            retry_config,
+            [this]() { handlePluginCrash(); }
+        );
+        report_token_metrics(metrics, desc->name, "completion");
+        return output;
     });
 }
 
@@ -1284,12 +1348,15 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        try {
-            return engine->generateEmbeddings(inputs, *desc);
-        } catch (...) {
-            handlePluginCrash();
-            throw;
-        }
+        // T136-T137: Retry with exponential backoff, transparent to client
+        RetryConfig retry_config;
+        return with_retry(
+            [&]() {
+                return engine->generateEmbeddings(inputs, *desc);
+            },
+            retry_config,
+            [this]() { handlePluginCrash(); }
+        );
     });
 }
 

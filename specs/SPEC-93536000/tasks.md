@@ -8,49 +8,49 @@
 
 ### Setup
 
-- [ ] [P] 1.1 `Node` 構造体に `executable_models: Vec<String>` を追加
-- [ ] [P] 1.2 `Node` 構造体に `excluded_models: HashSet<String>` を追加
+- [x] [P] 1.1 `Node` 構造体に `executable_models: Vec<String>` を追加
+- [x] [P] 1.2 `Node` 構造体に `excluded_models: Vec<String>` を追加（一貫性のためVecを使用）
 
 ## Phase 2: Node側実装
 
 ### Core
 
-- [ ] 2.1 `GpuBackend` 列挙型を `node/src/system/gpu_detector.hpp` に追加
-- [ ] 2.2 `GpuDetector::getGpuBackend()` 関数を実装
-- [ ] 2.3 `ModelRegistry::listExecutableModels(GpuBackend)` を実装
-- [ ] 2.4 `ModelRegistry::isCompatible(ModelInfo, GpuBackend)` を実装
-- [ ] 2.5 `/v1/models` APIを拡張し、GPU互換モデルIDのみを返す
+- [x] 2.1 `GpuBackend` 列挙型を `node/include/system/gpu_detector.h` に追加
+- [x] 2.2 `GpuDetector::getGpuBackend()` 関数を実装
+- [x] 2.3 `ModelRegistry::listExecutableModels(GpuBackend)` を実装
+- [x] 2.4 `ModelRegistry::isCompatible(ModelInfo, GpuBackend)` を実装
+- [x] 2.5 `/v1/models` APIを拡張し、GPU互換モデルIDのみを返す
 
 ## Phase 3: Router側実装（コア）
 
 ### Core
 
-- [ ] 3.1 ノード登録時に `/v1/models` を呼び出してモデル一覧を取得（プル型）
-- [ ] 3.2 `/v1/models` 取得失敗時の登録拒否を実装
-- [ ] 3.3 空のモデルリスト時の登録拒否を実装
-- [ ] 3.4 `NodeRegistry::get_nodes_for_model()` を実装
-- [ ] 3.5 `NodeRegistry::exclude_model_from_node()` を実装（モデル単位除外）
-- [ ] **3.6** `select_node()` にモデルフィルタを追加（最重要）
-- [ ] **3.7** `select_available_node_with_queue()` に `model_id` 引数を追加
-- [ ] 3.8 `chat_completions()` で model_id を渡すよう修正
-- [ ] 3.9 `embeddings()` で model_id を渡すよう修正
-- [ ] 3.10 `completions()` で model_id を渡すよう修正
-- [ ] 3.11 推論失敗時のモデル除外処理を追加（proxy.rs）
+- [x] 3.1 ノード登録時に `/v1/models` を呼び出してモデル一覧を取得（プル型）
+- [x] 3.2 `/v1/models` 取得失敗時の登録拒否を実装
+- [x] 3.3 空のモデルリスト時の登録拒否を実装
+- [x] 3.4 `NodeRegistry::get_nodes_for_model()` を実装
+- [x] 3.5 `NodeRegistry::exclude_model_from_node()` を実装（モデル単位除外）
+- [x] **3.6** `select_node()` にモデルフィルタを追加（最重要）
+- [x] **3.7** `select_available_node_with_queue()` に `model_id` 引数を追加
+- [x] 3.8 `chat_completions()` で model_id を渡すよう修正
+- [x] 3.9 `embeddings()` で model_id を渡すよう修正
+- [x] 3.10 `completions()` で model_id を渡すよう修正
+- [x] 3.11 推論失敗時のモデル除外処理を追加（proxy.rs）
 
 ## Phase 4: Router側実装（API）
 
 ### Integration
 
-- [ ] 4.1 `/v1/models` APIをノードベース集約に変更
-- [ ] 4.2 `NoCapableNodes` エラー型を追加 (`router/src/error.rs`)
-- [ ] 4.3 404 Model Not Found エラーハンドリングを実装
+- [x] 4.1 `/v1/models` APIをノードベース集約に変更
+- [x] 4.2 `NoCapableNodes` エラー型を追加 (`common/src/error.rs`)
+- [x] 4.3 404 Model Not Found エラーハンドリングを実装
 
 ## Phase 5: 廃止対応
 
 ### Polish
 
 - [ ] 5.1 REGISTERED_MODELS と supported_models.json を削除
-- [ ] 5.2 SPEC-dcaeaec4 FR-9 を廃止としてマーク
+- [x] 5.2 SPEC-dcaeaec4 FR-9 を廃止としてマーク
 
 ## Phase 6: テスト
 

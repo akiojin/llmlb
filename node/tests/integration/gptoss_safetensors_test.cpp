@@ -196,7 +196,7 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromMetalArtifactE2E) {
     registry.setModels({model->model_id});
 
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
     NodeEndpoints node;
     HttpServer server(18150, openai, node);
     server.start();
@@ -237,7 +237,7 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromDirectmlArtifactE2E) {
     registry.setModels({model->model_id});
 
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
     NodeEndpoints node;
     HttpServer server(18151, openai, node);
     server.start();

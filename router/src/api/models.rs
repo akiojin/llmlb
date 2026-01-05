@@ -1358,6 +1358,8 @@ impl IntoResponse for AppError {
         let (status, message) = match &self.0 {
             RouterError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
             RouterError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            RouterError::NoCapableNodes(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            RouterError::ModelNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
             RouterError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
             RouterError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             RouterError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),

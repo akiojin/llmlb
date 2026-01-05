@@ -88,11 +88,12 @@ async fn v0_nodes_requires_node_register_scope() {
         create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let mock_server = MockServer::start().await;
+    // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": []
+            "data": [{"id": "test-model", "object": "model"}]
         })))
         .mount(&mock_server)
         .await;

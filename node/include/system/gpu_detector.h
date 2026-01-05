@@ -7,6 +7,32 @@
 
 namespace llm_node {
 
+/**
+ * @brief GPUバックエンドの種類
+ *
+ * SPEC-93536000: モデル互換性チェックに使用。
+ * モデルがどのGPUバックエンドで実行可能かを判定する。
+ */
+enum class GpuBackend {
+    kMetal,  ///< Apple Metal (macOS)
+    kCuda,   ///< NVIDIA CUDA
+    kRocm,   ///< AMD ROCm
+    kCpu     ///< CPUのみ（GPU無し）
+};
+
+/**
+ * @brief GpuBackendを文字列に変換
+ */
+inline std::string gpuBackendToString(GpuBackend backend) {
+    switch (backend) {
+        case GpuBackend::kMetal: return "metal";
+        case GpuBackend::kCuda: return "cuda";
+        case GpuBackend::kRocm: return "rocm";
+        case GpuBackend::kCpu: return "cpu";
+    }
+    return "unknown";
+}
+
 struct GpuDevice {
     int id;
     std::string name;
@@ -42,6 +68,9 @@ public:
 
     // Select GPU by available VRAM (prefer_loaded_gpu if available)
     std::optional<int> selectGpu(std::optional<int> prefer_loaded_gpu = std::nullopt) const;
+
+    // Get the GPU backend type (SPEC-93536000)
+    GpuBackend getGpuBackend() const;
 
 private:
     std::vector<GpuDevice> detected_devices_;

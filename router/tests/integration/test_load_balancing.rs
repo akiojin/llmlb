@@ -73,7 +73,7 @@ async fn test_round_robin_load_balancing() {
     let mut distribution: HashMap<_, usize> = HashMap::new();
 
     for _ in 0..9 {
-        let node = load_manager.select_node().await.unwrap();
+        let node = load_manager.select_node(None).await.unwrap();
         let entry = distribution.entry(node.id).or_default();
         *entry += 1;
 
@@ -195,7 +195,7 @@ async fn test_load_based_balancing_favors_low_cpu_nodes() {
         .unwrap();
 
     for _ in 0..10 {
-        let selected = load_manager.select_node().await.unwrap();
+        let selected = load_manager.select_node(None).await.unwrap();
         assert_eq!(
             selected.id, low_cpu_node,
             "Load-based balancer should prefer low CPU node"
@@ -301,7 +301,7 @@ async fn test_load_based_balancing_prefers_lower_latency() {
         .await
         .unwrap();
 
-    let selected = load_manager.select_node().await.unwrap();
+    let selected = load_manager.select_node(None).await.unwrap();
     assert_eq!(selected.id, fast_node);
 }
 
@@ -377,7 +377,7 @@ async fn test_load_balancer_excludes_non_online_nodes() {
 
     // select_node は Online のノードのみを選択すべき
     for _ in 0..5 {
-        let selected = load_manager.select_node().await.unwrap();
+        let selected = load_manager.select_node(None).await.unwrap();
         assert_eq!(
             selected.id, online_node,
             "Load balancer should exclude non-online nodes and only select Online nodes"

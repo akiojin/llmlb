@@ -696,7 +696,7 @@ TEST(InferenceEngineTest, OpenAIResponds503WhenVramInsufficient) {
     ModelRegistry api_registry;
     api_registry.setModels({model_name});
     NodeConfig config;
-    OpenAIEndpoints openai(api_registry, engine, config);
+    OpenAIEndpoints openai(api_registry, engine, config, GpuBackend::kCpu);
     NodeEndpoints node;
     HttpServer server(18094, openai, node);
     server.start();

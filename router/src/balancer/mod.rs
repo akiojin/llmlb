@@ -266,7 +266,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node().await.unwrap();
+        let selected = manager.select_node(None).await.unwrap();
         assert_eq!(selected.id, fast_node);
     }
 
@@ -412,7 +412,7 @@ mod tests {
             .unwrap();
 
         // 低負荷ノードが選ばれることを期待
-        let selected = manager.select_node_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(selected.id, low_load_node);
     }
 
@@ -497,7 +497,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node().await.unwrap();
+        let selected = manager.select_node(None).await.unwrap();
         assert_eq!(selected.id, low_cpu_node);
     }
 
@@ -582,7 +582,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node().await.unwrap();
+        let selected = manager.select_node(None).await.unwrap();
         assert_eq!(selected.id, lower_cpu_node);
     }
 
@@ -670,12 +670,12 @@ mod tests {
             .unwrap();
 
         // メトリクスあり＋ハイスペックが最優先
-        let first = manager.select_node().await.unwrap();
+        let first = manager.select_node(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         // ハイスペックがビジーになったらフォールバック先のスペックへ切り替え
         manager.begin_request(high_spec_node).await.unwrap();
-        let second = manager.select_node().await.unwrap();
+        let second = manager.select_node(None).await.unwrap();
         assert_eq!(second.id, fallback_node);
     }
 
@@ -760,12 +760,12 @@ mod tests {
             .await
             .unwrap();
 
-        let first = manager.select_node().await.unwrap();
+        let first = manager.select_node(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         manager.begin_request(high_spec_node).await.unwrap();
 
-        let second = manager.select_node().await.unwrap();
+        let second = manager.select_node(None).await.unwrap();
         assert_eq!(second.id, mid_spec_node);
     }
 
@@ -834,7 +834,7 @@ mod tests {
 
         // メトリクスのあるノードが選ばれることを期待
         // （メトリクスなしノードはcandidatesに含まれず、ラウンドロビンにフォールバック）
-        let selected = manager.select_node_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics(None).await.unwrap();
         // メトリクスがある方が優先されるはず
         assert_eq!(selected.id, with_metrics);
     }
@@ -920,7 +920,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(selected.id, low_gpu_node);
     }
 
@@ -1006,7 +1006,7 @@ mod tests {
             .await
             .unwrap();
 
-        let first = manager.select_node_by_metrics().await.unwrap();
+        let first = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         manager
@@ -1030,7 +1030,7 @@ mod tests {
             .await
             .unwrap();
 
-        let second = manager.select_node_by_metrics().await.unwrap();
+        let second = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(second.id, fallback_node);
     }
 
@@ -1115,7 +1115,7 @@ mod tests {
             .await
             .unwrap();
 
-        let first = manager.select_node_by_metrics().await.unwrap();
+        let first = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         manager
@@ -1139,7 +1139,7 @@ mod tests {
             .await
             .unwrap();
 
-        let second = manager.select_node_by_metrics().await.unwrap();
+        let second = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(second.id, low_spec_node);
     }
 
@@ -1839,6 +1839,7 @@ impl LoadManager {
                     ready_models,
                     None,
                     None,
+                    None, // executable_models
                 )
                 .await
             {
@@ -2000,16 +2001,42 @@ impl LoadManager {
     }
 
     /// アイドルノードを選択（なければ None）
-    pub async fn select_idle_node(&self) -> RouterResult<Option<Node>> {
-        let nodes = self.registry.list().await;
-        let online_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|node| node.status == NodeStatus::Online && !node.initializing)
-            .collect();
+    ///
+    /// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+    pub async fn select_idle_node(&self, model_id: Option<&str>) -> RouterResult<Option<Node>> {
+        // SPEC-93536000: まずオンラインノードが存在するかチェック（503 vs 404の区別）
+        // オンラインノードがゼロの場合は503（一時的なサービス利用不可）
+        let all_online_nodes: Vec<_> = {
+            let nodes = self.registry.list().await;
+            nodes
+                .into_iter()
+                .filter(|node| node.status == NodeStatus::Online && !node.initializing)
+                .collect()
+        };
 
-        if online_nodes.is_empty() {
+        if all_online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
+
+        // SPEC-93536000: モデルID指定時はモデル対応ノードのみを取得
+        let online_nodes: Vec<_> = if let Some(mid) = model_id {
+            // オンラインノードがあるので、モデルの存在をチェック（404 vs 503の区別）
+            if !self.registry.model_exists_in_any_node(mid).await {
+                return Err(RouterError::ModelNotFound(mid.to_string()));
+            }
+            let capable_nodes = self.registry.get_nodes_for_model(mid).await;
+            let filtered: Vec<_> = capable_nodes
+                .into_iter()
+                .filter(|node| !node.initializing)
+                .collect();
+            if filtered.is_empty() {
+                // モデルは存在するが、すべてexcludedまたはオフライン
+                return Err(RouterError::NoCapableNodes(mid.to_string()));
+            }
+            filtered
+        } else {
+            all_online_nodes
+        };
 
         let state = self.state.read().await;
         let idle_nodes: Vec<_> = online_nodes
@@ -2168,17 +2195,38 @@ impl LoadManager {
     }
 
     /// 適切なノードを選択
-    pub async fn select_node(&self) -> RouterResult<Node> {
-        let nodes = self.registry.list().await;
+    ///
+    /// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+    pub async fn select_node(&self, model_id: Option<&str>) -> RouterResult<Node> {
+        // SPEC-93536000: まずオンラインノードが存在するかチェック（503 vs 404の区別）
+        // オンラインノードがゼロの場合は503（一時的なサービス利用不可）
+        let all_online_nodes: Vec<_> = {
+            let nodes = self.registry.list().await;
+            nodes
+                .into_iter()
+                .filter(|node| node.status == NodeStatus::Online)
+                .collect()
+        };
 
-        let online_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|node| node.status == NodeStatus::Online)
-            .collect();
-
-        if online_nodes.is_empty() {
+        if all_online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
+
+        // SPEC-93536000: モデルID指定時はモデル対応ノードのみを取得
+        let online_nodes: Vec<_> = if let Some(mid) = model_id {
+            // オンラインノードがあるので、モデルの存在をチェック（404 vs 503の区別）
+            if !self.registry.model_exists_in_any_node(mid).await {
+                return Err(RouterError::ModelNotFound(mid.to_string()));
+            }
+            let capable_nodes = self.registry.get_nodes_for_model(mid).await;
+            if capable_nodes.is_empty() {
+                // モデルは存在するが、すべてexcludedまたはオフライン
+                return Err(RouterError::NoCapableNodes(mid.to_string()));
+            }
+            capable_nodes
+        } else {
+            all_online_nodes
+        };
 
         let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
         let round_robin_start = round_robin_cursor % online_nodes.len();
@@ -2571,20 +2619,41 @@ impl LoadManager {
     ///
     /// ```ignore
     /// let manager = LoadManager::new(registry);
-    /// let node = manager.select_node_by_metrics().await?;
+    /// let node = manager.select_node_by_metrics(None).await?;
     /// println!("Selected node: {}", node.machine_name);
     /// ```
-    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
-        let nodes = self.registry.list().await;
+    ///
+    /// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+    pub async fn select_node_by_metrics(&self, model_id: Option<&str>) -> RouterResult<Node> {
+        // SPEC-93536000: まずオンラインノードが存在するかチェック（503 vs 404の区別）
+        // オンラインノードがゼロの場合は503（一時的なサービス利用不可）
+        let all_online_nodes: Vec<_> = {
+            let nodes = self.registry.list().await;
+            nodes
+                .into_iter()
+                .filter(|node| node.status == NodeStatus::Online)
+                .collect()
+        };
 
-        let online_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|node| node.status == NodeStatus::Online)
-            .collect();
-
-        if online_nodes.is_empty() {
+        if all_online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
+
+        // SPEC-93536000: モデルID指定時はモデル対応ノードのみを取得
+        let online_nodes: Vec<_> = if let Some(mid) = model_id {
+            // オンラインノードがあるので、モデルの存在をチェック（404 vs 503の区別）
+            if !self.registry.model_exists_in_any_node(mid).await {
+                return Err(RouterError::ModelNotFound(mid.to_string()));
+            }
+            let capable_nodes = self.registry.get_nodes_for_model(mid).await;
+            if capable_nodes.is_empty() {
+                // モデルは存在するが、すべてexcludedまたはオフライン
+                return Err(RouterError::NoCapableNodes(mid.to_string()));
+            }
+            capable_nodes
+        } else {
+            all_online_nodes
+        };
 
         let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
         let round_robin_start = round_robin_cursor % online_nodes.len();

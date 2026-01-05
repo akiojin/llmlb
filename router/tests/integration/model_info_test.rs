@@ -97,12 +97,17 @@ async fn test_available_models_endpoint_is_removed() {
 #[tokio::test]
 async fn test_list_installed_models_on_node() {
     // モックサーバーを起動
+    // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": []
+            "data": [{
+                "id": "test-model",
+                "object": "model",
+                "owned_by": "runtime"
+            }]
         })))
         .mount(&mock_server)
         .await;
@@ -231,6 +236,7 @@ async fn test_model_matrix_view_multiple_nodes() {
     let (app, admin_key) = build_app().await;
 
     // 複数のモックサーバーを起動
+    // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
     let mut mock_servers = Vec::new();
     for _ in 0..3 {
         let mock_server = MockServer::start().await;
@@ -238,7 +244,11 @@ async fn test_model_matrix_view_multiple_nodes() {
             .and(path("/v1/models"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "object": "list",
-                "data": []
+                "data": [{
+                    "id": "test-model",
+                    "object": "model",
+                    "owned_by": "runtime"
+                }]
             })))
             .mount(&mock_server)
             .await;

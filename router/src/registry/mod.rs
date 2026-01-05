@@ -232,6 +232,8 @@ impl NodeRegistry {
                 sync_state: None,
                 sync_progress: None,
                 sync_updated_at: None,
+                executable_models: Vec::new(),
+                excluded_models: Vec::new(),
             };
             nodes.insert(node_id, node.clone());
             (node_id, RegisterStatus::Registered, node)
@@ -266,6 +268,33 @@ impl NodeRegistry {
         list
     }
 
+    /// SPEC-93536000: 指定モデルを実行可能なノード一覧を取得
+    /// executable_modelsに含まれ、excluded_modelsに含まれないノードを返す
+    pub async fn get_nodes_for_model(&self, model_id: &str) -> Vec<Node> {
+        let nodes = self.nodes.read().await;
+        nodes
+            .values()
+            .filter(|n| {
+                // Onlineノードのみ対象
+                n.status == NodeStatus::Online
+                    // executable_modelsに含まれている
+                    && n.executable_models.iter().any(|m| m == model_id)
+                    // excluded_modelsに含まれていない
+                    && !n.excluded_models.iter().any(|m| m == model_id)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// SPEC-93536000: 指定モデルがいずれかのオンラインノードのexecutable_modelsに存在するかチェック
+    /// excluded_modelsは考慮しない（モデルの「存在」のみを確認）
+    pub async fn model_exists_in_any_node(&self, model_id: &str) -> bool {
+        let nodes = self.nodes.read().await;
+        nodes.values().any(|n| {
+            n.status == NodeStatus::Online && n.executable_models.iter().any(|m| m == model_id)
+        })
+    }
+
     /// ノードの最終確認時刻を更新
     #[allow(clippy::too_many_arguments)]
     pub async fn update_last_seen(
@@ -280,6 +309,7 @@ impl NodeRegistry {
         ready_models: Option<(u8, u8)>,
         sync_state: Option<SyncState>,
         sync_progress: Option<SyncProgress>,
+        executable_models: Option<Vec<String>>,
     ) -> RouterResult<()> {
         let node_to_save = {
             let mut nodes = self.nodes.write().await;
@@ -294,6 +324,10 @@ impl NodeRegistry {
             }
             if let Some(embedding_models) = loaded_embedding_models {
                 node.loaded_embedding_models = normalize_models(embedding_models);
+            }
+            // SPEC-93536000: executable_modelsを更新
+            if let Some(models) = executable_models {
+                node.executable_models = normalize_models(models);
             }
             // GPU能力情報を更新
             if gpu_model_name.is_some() {
@@ -392,6 +426,34 @@ impl NodeRegistry {
 
         // ロック解放後にストレージ保存
         self.save_to_storage(&node_to_save).await?;
+        Ok(())
+    }
+
+    /// SPEC-93536000: ノードから特定モデルを除外
+    /// 推論失敗などで一時的にモデルを無効化する場合に使用
+    pub async fn exclude_model_from_node(&self, node_id: Uuid, model_id: &str) -> RouterResult<()> {
+        let node_to_save = {
+            let mut nodes = self.nodes.write().await;
+            let node = nodes
+                .get_mut(&node_id)
+                .ok_or(RouterError::NodeNotFound(node_id))?;
+            // 重複追加を避ける
+            if !node.excluded_models.contains(&model_id.to_string()) {
+                node.excluded_models.push(model_id.to_string());
+            }
+            node.clone()
+        };
+
+        // 永続化（失敗しても致命ではないがログとして残す）
+        if let Err(e) = self.save_to_storage(&node_to_save).await {
+            warn!(
+                node_id = %node_id,
+                model_id = %model_id,
+                error = %e,
+                "Failed to persist excluded_models update"
+            );
+        }
+
         Ok(())
     }
 
@@ -645,6 +707,7 @@ mod tests {
                 Some((1, 1)),
                 None,
                 None,
+                None, // executable_models
             )
             .await
             .unwrap();
@@ -685,6 +748,7 @@ mod tests {
                 Some((0, 1)),
                 None,
                 None,
+                None, // executable_models
             )
             .await
             .unwrap();
@@ -845,6 +909,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // executable_models
             )
             .await
             .unwrap();

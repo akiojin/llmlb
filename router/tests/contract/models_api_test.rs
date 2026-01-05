@@ -314,13 +314,15 @@ async fn test_register_model_contract() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // /v1/models に含まれること（ready=false）
+    // SPEC-93536000: 登録済みモデルは /v0/models で確認
+    // /v1/models はオンラインノードの executable_models を集約するため、
+    // ノードがない状態では登録済みモデルは表示されない
     let models_res = app
         .clone()
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v1/models")
+                .uri("/v0/models")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -328,15 +330,13 @@ async fn test_register_model_contract() {
         .unwrap();
     assert_eq!(models_res.status(), StatusCode::OK);
     let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let data = body["data"]
-        .as_array()
-        .expect("'data' must be an array on /v1/models");
+    let data: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     let entry = data
         .iter()
-        .find(|m| m["id"] == "test/repo")
-        .expect("/v1/models must include registered model");
-    assert_eq!(entry["ready"], false);
+        .find(|m| m["name"] == "test/repo")
+        .expect("/v0/models must include registered model");
+    // /v0/models は ModelInfo を返すので、name フィールドで確認
+    assert_eq!(entry["repo"], "test/repo");
 
     // 重複登録は400
     let dup = app
@@ -572,12 +572,14 @@ async fn test_delete_model_removes_from_list() {
     llm_router::api::models::upsert_registered_model(model);
     llm_router::api::models::persist_registered_models(&db_pool).await;
 
+    // SPEC-93536000: 登録済みモデルは /v0/models で確認
+    // /v1/models はオンラインノードの executable_models を集約するため使用しない
     let models_res = app
         .clone()
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v1/models")
+                .uri("/v0/models")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -585,12 +587,9 @@ async fn test_delete_model_removes_from_list() {
         .unwrap();
     assert_eq!(models_res.status(), StatusCode::OK);
     let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let data: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(
-        body["data"]
-            .as_array()
-            .map(|arr| arr.iter().any(|m| m["id"] == model_name))
-            .unwrap_or(false),
+        data.iter().any(|m| m["name"] == model_name),
         "model should exist before delete"
     );
 
@@ -607,12 +606,13 @@ async fn test_delete_model_removes_from_list() {
         .unwrap();
     assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
 
+    // SPEC-93536000: 登録済みモデルは /v0/models で確認
     let models_res = app
         .clone()
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v1/models")
+                .uri("/v0/models")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -620,12 +620,9 @@ async fn test_delete_model_removes_from_list() {
         .unwrap();
     assert_eq!(models_res.status(), StatusCode::OK);
     let body = to_bytes(models_res.into_body(), usize::MAX).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let data: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(
-        body["data"]
-            .as_array()
-            .map(|arr| arr.iter().all(|m| m["id"] != model_name))
-            .unwrap_or(false),
+        data.iter().all(|m| m["name"] != model_name),
         "model should be removed after delete"
     );
 }

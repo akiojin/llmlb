@@ -66,12 +66,17 @@ async fn build_router() -> (Router, String) {
 #[tokio::test]
 async fn dashboard_nodes_include_gpu_devices() {
     // モックサーバーを起動
+    // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "object": "list",
-            "data": []
+            "data": [{
+                "id": "test-model",
+                "object": "model",
+                "owned_by": "runtime"
+            }]
         })))
         .mount(&mock_server)
         .await;

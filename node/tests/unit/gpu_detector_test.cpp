@@ -177,4 +177,70 @@ TEST(GpuDetectorTest, SelectGpuIgnoresPreferredIfUnavailable) {
     EXPECT_EQ(selected.value(), 1);
 }
 
+// T2.1: GpuBackend 列挙型テスト
+
+TEST(GpuBackendTest, GpuBackendToStringReturnsCorrectValue) {
+    using llm_node::GpuBackend;
+    EXPECT_EQ(gpuBackendToString(GpuBackend::kMetal), "metal");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::kCuda), "cuda");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::kRocm), "rocm");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::kCpu), "cpu");
+}
+
+// T2.2: getGpuBackend テスト
+
+TEST(GpuDetectorTest, GetGpuBackendReturnsCpuWhenNoGpu) {
+    using llm_node::GpuBackend;
+    GpuDetector detector;
+    detector.setDetectedDevicesForTest({});
+
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kCpu);
+}
+
+TEST(GpuDetectorTest, GetGpuBackendReturnsCudaForNvidia) {
+    using llm_node::GpuBackend;
+    GpuDetector detector;
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "NVIDIA RTX 4090", 24ull * 1024 * 1024 * 1024, 20ull * 1024 * 1024 * 1024, "8.9", "nvidia", true},
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kCuda);
+}
+
+TEST(GpuDetectorTest, GetGpuBackendReturnsMetalForApple) {
+    using llm_node::GpuBackend;
+    GpuDetector detector;
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "Apple M3 Max", 48ull * 1024 * 1024 * 1024, 40ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kMetal);
+}
+
+TEST(GpuDetectorTest, GetGpuBackendReturnsRocmForAmd) {
+    using llm_node::GpuBackend;
+    GpuDetector detector;
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "AMD Radeon RX 7900 XTX", 24ull * 1024 * 1024 * 1024, 20ull * 1024 * 1024 * 1024, "gfx1100", "amd", true},
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kRocm);
+}
+
+TEST(GpuDetectorTest, GetGpuBackendPrioritizesFirstAvailableGpu) {
+    using llm_node::GpuBackend;
+    GpuDetector detector;
+    // 複数ベンダーのGPUがある場合、最初の利用可能なGPUのバックエンドを返す
+    std::vector<llm_node::GpuDevice> devices = {
+        {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", false}, // unavailable
+        {1, "AMD", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "gfx1100", "amd", true}, // available
+    };
+    detector.setDetectedDevicesForTest(devices);
+
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kRocm);
+}
+
 }  // namespace

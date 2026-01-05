@@ -23,6 +23,7 @@ set(UNIT_TEST_SOURCES
     partial_load_guard_test.cpp
     plugin_logger_test.cpp
     onnx_tts_manager_test.cpp
+    model_registry_test.cpp
     watchdog_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp

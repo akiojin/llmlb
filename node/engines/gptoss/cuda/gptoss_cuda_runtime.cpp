@@ -5,14 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 
-#ifndef CUDA_RUNTIME_NAME
-#define CUDA_RUNTIME_NAME "cuda_runtime"
-#endif
-
 namespace {
-const char* runtime_name() {
-    return CUDA_RUNTIME_NAME;
-}
+constexpr const char* kRuntimeName = "gptoss_cuda";
 
 bool should_log() {
     return std::getenv("LLM_NODE_CUDA_RUNTIME_LOG") != nullptr;
@@ -20,7 +14,7 @@ bool should_log() {
 
 void log_not_implemented(const char* fn) {
     if (!should_log()) return;
-    std::fprintf(stderr, "[%s] %s: CUDA runtime not implemented\n", runtime_name(), fn);
+    std::fprintf(stderr, "[%s] %s: CUDA runtime not implemented\n", kRuntimeName, fn);
 }
 
 void clear_tokens(uint32_t* tokens_out, size_t* count_out) {

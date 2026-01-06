@@ -61,12 +61,13 @@ typedef enum {
 
 /* Structs */
 typedef struct {
-    int32_t n_ctx;              /* Context size (default: 2048) */
+    int32_t n_ctx;              /* Context size (default: 4096) */
     int32_t n_batch;            /* Batch size (default: 512) */
-    int32_t n_threads;          /* CPU threads (default: auto) */
+    int32_t n_threads;          /* CPU threads (0: auto) */
     int32_t n_gpu_layers;       /* GPU layers (-1: all) */
     int32_t device_id;          /* GPU device ID (default: 0) */
-    bool    use_mmap;           /* Use mmap (default: true) */
+    bool    use_mmap;           /* Use mmap (default: false) */
+    bool    use_mlock;          /* Use mlock (default: false) */
     bool    kv_cache_quant;     /* KV cache quantization (default: false) */
     stcpp_backend_type backend; /* Backend type */
 } stcpp_context_params;
@@ -110,6 +111,7 @@ typedef void (*stcpp_error_callback)(
 /* Initialization / Cleanup */
 void stcpp_init(void);
 void stcpp_free(void);
+void stcpp_free_string(char* str);  /* Free a string returned by stcpp functions */
 const char* stcpp_version(void);
 int32_t stcpp_abi_version(void);
 void stcpp_set_log_callback(stcpp_log_callback callback, void* user_data);

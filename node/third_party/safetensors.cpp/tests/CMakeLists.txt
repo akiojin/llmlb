@@ -40,6 +40,9 @@ add_executable(stcpp_unit_tests
     unit/tokenizer_json_test.cpp
     unit/tokenization_test.cpp
     unit/chat_template_test.cpp
+    unit/model_load_test.cpp
+    unit/generation_test.cpp
+    unit/cancel_test.cpp
 )
 target_link_libraries(stcpp_unit_tests
     PRIVATE

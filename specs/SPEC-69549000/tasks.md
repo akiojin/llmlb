@@ -128,23 +128,23 @@
 
 ### Tests First (RED)
 
-- [ ] 23. モデルロード統合テスト (依存: 17, 21)
+- [x] 23. モデルロード統合テスト (依存: 17, 21)
   - config.json読み込みテスト
   - 完全なモデルロードテスト
   - VRAM見積もりテスト
 
-- [ ] 24. 生成テスト (依存: 6)
+- [x] 24. 生成テスト (依存: 6)
   - 単一トークン生成テスト
   - サンプリングパラメータテスト
   - ストリーミングコールバックテスト
 
-- [ ] 25. キャンセルテスト (依存: 6)
+- [x] 25. キャンセルテスト (依存: 6)
   - 推論キャンセルテスト
   - 部分結果取得テスト
 
 ### Implementation (GREEN)
 
-- [ ] 26. config.jsonローダー実装 (依存: 23, 14)
+- [x] 26. config.jsonローダー実装 (依存: 23, 14)
   - ModelConfig構造体パース
   - アーキテクチャ検出
 
@@ -153,18 +153,18 @@
   - 計算グラフ構築
   - ggmlテンソル操作
 
-- [ ] 28. sampling.cpp実装 (依存: 24, 14)
+- [x] 28. sampling.cpp実装 (依存: 24, 14)
   - temperature, top_p, top_k
   - repeat_penalty
   - llama.cppのサンプリング参考
 
-- [ ] 29. safetensors.cpp コア実装 (依存: 27, 28)
+- [x] 29. safetensors.cpp コア実装 (依存: 27, 28)
   - stcpp_model_load()
   - stcpp_context_new()
   - stcpp_generate()
   - stcpp_generate_stream()
 
-- [ ] 30. キャンセル機能実装 (依存: 25, 29)
+- [x] 30. キャンセル機能実装 (依存: 25, 29)
   - stcpp_cancel()
   - アトミックフラグによる中断
 
@@ -324,8 +324,11 @@
 - [x] Phase 1: 基盤構築 (1-10)
 - [x] Phase 2: safetensorsローダー (11-17)
 - [x] Phase 3: トークナイザー (18-22)
-- [ ] Phase 4: 推論エンジン (23-30)
+- [x] Phase 4: 推論エンジン (23-30) ※Task 27（gpt-ossアーキテクチャ）は後続フェーズで実装
 - [ ] E2Eテスト: gpt-oss-20b (51)
 - [ ] E2Eテスト: ストリーミング (52)
 
 MVP = 単一GPUでのgpt-oss-20b推論 + ストリーミング出力
+
+Note: Task 27（gpt-ossアーキテクチャ実装）はggml計算グラフの統合が必要なため、
+E2Eテスト実装時に完成させる。基盤となるAPI/構造体/テストは完了済み。

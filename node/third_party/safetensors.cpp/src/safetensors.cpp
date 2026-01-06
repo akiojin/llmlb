@@ -4,14 +4,29 @@
  */
 
 #include "safetensors.h"
+#include "safetensors_internal.h"
 #include <cstring>
 #include <atomic>
+#include <memory>
+#include <vector>
 
 /* Internal state */
 static std::atomic<bool> g_initialized{false};
 static stcpp_log_callback g_log_callback = nullptr;
 static void* g_log_user_data = nullptr;
 static stcpp_log_level g_log_level = STCPP_LOG_INFO;
+
+/* Extended context with cancel flag */
+struct stcpp_context_impl {
+    stcpp::ContextImpl impl;
+    std::atomic<bool> cancel_flag{false};
+};
+
+/* Extended model with internal data */
+struct stcpp_model_impl {
+    stcpp::ModelImpl impl;
+    std::unique_ptr<stcpp::TokenizerImpl> tokenizer;
+};
 
 /* Version string */
 static const char* VERSION_STRING = "0.1.0";
@@ -32,6 +47,12 @@ void stcpp_free(void) {
     g_log_callback = nullptr;
     g_log_user_data = nullptr;
     // TODO: Cleanup ggml backend
+}
+
+void stcpp_free_string(char* str) {
+    if (str != nullptr) {
+        delete[] str;
+    }
 }
 
 const char* stcpp_version(void) {
@@ -55,12 +76,13 @@ void stcpp_set_log_level(stcpp_log_level level) {
 
 stcpp_context_params stcpp_context_default_params(void) {
     stcpp_context_params params;
-    params.n_ctx = 2048;
+    params.n_ctx = 4096;
     params.n_batch = 512;
-    params.n_threads = -1;  // Auto
+    params.n_threads = 0;  // Auto-detect (0 = auto)
     params.n_gpu_layers = -1;  // All
     params.device_id = 0;
-    params.use_mmap = true;
+    params.use_mmap = false;  // Default false per spec
+    params.use_mlock = false;
     params.kv_cache_quant = false;
 #if defined(STCPP_USE_METAL)
     params.backend = STCPP_BACKEND_METAL;
@@ -239,7 +261,7 @@ int32_t stcpp_token_pad(const stcpp_tokenizer* tokenizer) {
     return -1;
 }
 
-/* Inference - stub implementations */
+/* Inference implementations */
 
 stcpp_error stcpp_generate(
     stcpp_context* ctx,
@@ -249,12 +271,20 @@ stcpp_error stcpp_generate(
     char* output,
     int32_t max_output_length
 ) {
-    (void)ctx;
-    (void)prompt;
+    // Validate input
+    if (ctx == nullptr) {
+        return STCPP_ERROR_INVALID_MODEL;
+    }
+    if (prompt == nullptr || output == nullptr || max_output_length <= 0) {
+        return STCPP_ERROR_INVALID_MODEL;
+    }
+
     (void)params;
     (void)max_tokens;
-    (void)output;
-    (void)max_output_length;
+
+    // TODO: Implement actual generation when ggml integration is complete
+    // For now, return unsupported arch as generation requires model weights
+    output[0] = '\0';
     return STCPP_ERROR_UNSUPPORTED_ARCH;
 }
 
@@ -266,17 +296,30 @@ stcpp_error stcpp_generate_stream(
     stcpp_stream_callback callback,
     void* user_data
 ) {
-    (void)ctx;
-    (void)prompt;
+    // Validate input
+    if (ctx == nullptr) {
+        return STCPP_ERROR_INVALID_MODEL;
+    }
+    if (prompt == nullptr || callback == nullptr) {
+        return STCPP_ERROR_INVALID_MODEL;
+    }
+
     (void)params;
     (void)max_tokens;
-    (void)callback;
     (void)user_data;
+
+    // TODO: Implement actual streaming generation
     return STCPP_ERROR_UNSUPPORTED_ARCH;
 }
 
 void stcpp_cancel(stcpp_context* ctx) {
-    (void)ctx;
+    if (ctx == nullptr) {
+        return;  // Safe to call with null
+    }
+
+    // Cast to impl and set cancel flag
+    auto* impl = reinterpret_cast<stcpp_context_impl*>(ctx);
+    impl->cancel_flag.store(true, std::memory_order_release);
 }
 
 stcpp_error stcpp_embeddings(

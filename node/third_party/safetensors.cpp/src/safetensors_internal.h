@@ -107,6 +107,14 @@ struct ChatTemplate {
     bool valid = false;
 };
 
+/* Generation result structure (for internal use) */
+struct stcpp_generate_result {
+    const char* output;
+    int32_t n_tokens;
+    bool finished;
+    const char* error;
+};
+
 /* Utility functions */
 
 // Convert dtype string to enum

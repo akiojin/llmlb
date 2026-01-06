@@ -58,6 +58,11 @@
 - CUDAアーティファクトが存在しない場合、モデルは ready にならない。
 - DirectMLのみが利用可能な環境では CUDA を要求しない（DirectMLは本仕様の対象外）。
 
+## 実装方針 (補足)
+
+- CUDA DLL は本リポジトリ内の `node/src/cuda/` で管理し、CMake で `gptoss_cuda.dll` / `nemotron_cuda.dll` を生成する。
+- `poc/` は参考用であり、仕様・実装の正とはしない。
+
 ## 要件 (必須)
 
 ### 機能要件

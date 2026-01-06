@@ -352,7 +352,7 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
 endif()
 
 # OpenAI gpt-oss DirectML runtime (Windows, built in-tree)
-if(WIN32 AND BUILD_WITH_GPTOSS AND (BUILD_WITH_DIRECTML OR BUILD_WITH_CUDA))
+if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_DIRECTML)
     add_library(gptoss_directml SHARED
         ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
     )
@@ -376,6 +376,33 @@ if(WIN32 AND BUILD_WITH_GPTOSS AND (BUILD_WITH_DIRECTML OR BUILD_WITH_CUDA))
     target_link_libraries(nemotron_directml PRIVATE d3d12 dxgi dxguid)
     target_compile_definitions(nemotron_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
     set_target_properties(nemotron_directml PROPERTIES OUTPUT_NAME "nemotron_directml")
+endif()
+
+# OpenAI gpt-oss CUDA runtime (Windows, built in-tree)
+if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_CUDA)
+    add_library(gptoss_cuda SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/cuda_runtime_stub.cpp
+    )
+    target_include_directories(gptoss_cuda
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
+    )
+    target_compile_definitions(gptoss_cuda PRIVATE GPTOSS_ABI=__declspec(dllexport))
+    target_compile_definitions(gptoss_cuda PRIVATE CUDA_RUNTIME_NAME=\"gptoss_cuda\")
+    set_target_properties(gptoss_cuda PROPERTIES OUTPUT_NAME "gptoss_cuda")
+
+    add_library(nemotron_cuda SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/cuda_runtime_stub.cpp
+    )
+    target_include_directories(nemotron_cuda
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
+    )
+    target_compile_definitions(nemotron_cuda PRIVATE GPTOSS_ABI=__declspec(dllexport))
+    target_compile_definitions(nemotron_cuda PRIVATE CUDA_RUNTIME_NAME=\"nemotron_cuda\")
+    set_target_properties(nemotron_cuda PROPERTIES OUTPUT_NAME "nemotron_cuda")
 endif()
 
 # Utils library (config etc.)
@@ -493,6 +520,7 @@ file(GLOB_RECURSE SOURCES
 )
 # Exclude DirectML files (Windows-only, built separately)
 list(FILTER SOURCES EXCLUDE REGEX ".*/directml/.*")
+list(FILTER SOURCES EXCLUDE REGEX ".*/cuda/.*")
 
 # Include Objective-C++ files on Apple platforms
 if(APPLE)

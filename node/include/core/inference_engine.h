@@ -134,6 +134,8 @@ public:
     static void setPluginRestartHookForTest(std::function<bool(std::string&)> hook);
     /// テスト専用: プラグインディレクトリを指定する
     void setEnginePluginsDirForTest(const std::filesystem::path& directory);
+    /// テスト専用: プラグイン再起動待ち状態を取得する
+    bool isPluginRestartPendingForTest() const;
 #endif
 
 private:

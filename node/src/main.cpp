@@ -222,7 +222,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
-        llm_node::OpenAIEndpoints openai(registry, engine, cfg);
+        llm_node::OpenAIEndpoints openai(registry, engine, cfg, gpu_detector.getGpuBackend());
         llm_node::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
         llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);

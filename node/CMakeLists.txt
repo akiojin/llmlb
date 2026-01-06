@@ -47,6 +47,7 @@ endif()
 # Options
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_WITH_CUDA "Build with CUDA support" OFF)
+option(BUILD_WITH_DIRECTML "Build with DirectML support (Windows, frozen)" OFF)
 if(APPLE)
     option(BUILD_WITH_METAL "Build with Metal support (macOS)" ON)
     option(BUILD_WITH_SD_METAL "Build stable-diffusion with Metal backend (macOS)" ON)
@@ -171,6 +172,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/vendor  # T166: minja Jinja2 parser
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors-cpp
 )
 
@@ -249,6 +251,9 @@ endif()
 # DirectML support (Windows)
 if(WIN32 AND BUILD_WITH_GPTOSS)
     add_definitions(-DUSE_GPTOSS)
+    if(BUILD_WITH_DIRECTML)
+        add_definitions(-DUSE_DIRECTML)
+    endif()
 endif()
 
 # ROCm support
@@ -347,7 +352,7 @@ if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
 endif()
 
 # OpenAI gpt-oss DirectML runtime (Windows, built in-tree)
-if(WIN32 AND BUILD_WITH_GPTOSS)
+if(WIN32 AND BUILD_WITH_GPTOSS AND (BUILD_WITH_DIRECTML OR BUILD_WITH_CUDA))
     add_library(gptoss_directml SHARED
         ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
     )
@@ -387,11 +392,18 @@ target_include_directories(utils_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 
 # Engine plugin: llama.cpp
-add_library(llm_engine_llama_cpp SHARED
+set(LLAMA_ENGINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/engines/llama_cpp/llama_engine_plugin.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_engine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_manager.cpp
 )
+# Add platform-specific gpu_detector
+if(APPLE)
+    list(APPEND LLAMA_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/system/gpu_detector.mm)
+else()
+    list(APPEND LLAMA_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/system/gpu_detector.cpp)
+endif()
+add_library(llm_engine_llama_cpp SHARED ${LLAMA_ENGINE_SOURCES})
 target_include_directories(llm_engine_llama_cpp
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -405,6 +417,10 @@ target_link_libraries(llm_engine_llama_cpp
         llama
         spdlog::spdlog_header_only
 )
+# Link Metal framework on Apple for gpu_detector
+if(APPLE)
+    target_link_libraries(llm_engine_llama_cpp PRIVATE "-framework Metal" "-framework Foundation")
+endif()
 set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
 
 # Engine plugin: gpt-oss
@@ -444,11 +460,14 @@ elseif(WIN32 AND BUILD_WITH_GPTOSS)
         PRIVATE
             spdlog::spdlog_header_only
     )
+    if(BUILD_WITH_CUDA)
+        target_compile_definitions(llm_engine_gptoss PRIVATE USE_CUDA)
+    endif()
     set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
 endif()
 
 # Engine plugin: nemotron (DirectML on Windows)
-if(WIN32 AND BUILD_WITH_GPTOSS)
+if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_DIRECTML)
     add_library(llm_engine_nemotron SHARED
         ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/nemotron_engine_plugin.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/nemotron_engine.cpp
@@ -462,6 +481,9 @@ if(WIN32 AND BUILD_WITH_GPTOSS)
         PRIVATE
             spdlog::spdlog_header_only
     )
+    if(BUILD_WITH_CUDA)
+        target_compile_definitions(llm_engine_nemotron PRIVATE USE_CUDA)
+    endif()
     set_target_properties(llm_engine_nemotron PROPERTIES OUTPUT_NAME "llm_engine_nemotron")
 endif()
 

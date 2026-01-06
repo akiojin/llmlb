@@ -27,11 +27,16 @@ impl MockNodeServer {
         let server = MockServer::start().await;
 
         // /v1/models エンドポイントをモック
+        // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
         Mock::given(method("GET"))
             .and(path("/v1/models"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "object": "list",
-                "data": []
+                "data": [{
+                    "id": "test-model",
+                    "object": "model",
+                    "owned_by": "runtime"
+                }]
             })))
             .mount(&server)
             .await;

@@ -167,6 +167,7 @@ std::optional<std::string> VisionProcessor::resolveMmprojPath(const std::string&
                                                               const std::string& model_path) const {
     const fs::path model_dir = fs::path(model_path).parent_path();
 
+    // メタデータから明示的なmmproj指定を確認
     if (auto descriptor = model_storage_.resolveDescriptor(model_name); descriptor && descriptor->metadata) {
         const auto& metadata = *descriptor->metadata;
         static const char* kKeys[] = {"mmproj_path", "mmproj", "mmproj_file"};
@@ -189,26 +190,8 @@ std::optional<std::string> VisionProcessor::resolveMmprojPath(const std::string&
         }
     }
 
-    std::vector<fs::path> candidates;
-    std::error_code ec;
-    if (!fs::exists(model_dir, ec)) {
-        return std::nullopt;
-    }
-    for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
-        if (ec) break;
-        if (!entry.is_regular_file()) continue;
-        if (entry.path().extension() != ".gguf") continue;
-        std::string filename = toLower(entry.path().filename().string());
-        if (filename.find("mmproj") == std::string::npos) continue;
-        candidates.push_back(entry.path());
-    }
-
-    if (candidates.empty()) {
-        return std::nullopt;
-    }
-
-    std::sort(candidates.begin(), candidates.end());
-    return candidates.front().string();
+    // ディレクトリスキャンによる自動検出
+    return findMmprojInDirectory(model_dir.string());
 }
 
 bool VisionProcessor::loadImageData(const std::string& url,
@@ -312,6 +295,32 @@ bool VisionProcessor::fetchHttpUrl(const std::string& url,
 
     out.assign(res->body.begin(), res->body.end());
     return !out.empty();
+}
+
+std::optional<std::string> findMmprojInDirectory(const std::string& model_dir) {
+    std::vector<fs::path> candidates;
+    std::error_code ec;
+    const fs::path dir_path(model_dir);
+
+    if (!fs::exists(dir_path, ec)) {
+        return std::nullopt;
+    }
+
+    for (const auto& entry : fs::directory_iterator(dir_path, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+        if (entry.path().extension() != ".gguf") continue;
+        std::string filename = toLower(entry.path().filename().string());
+        if (filename.find("mmproj") == std::string::npos) continue;
+        candidates.push_back(entry.path());
+    }
+
+    if (candidates.empty()) {
+        return std::nullopt;
+    }
+
+    std::sort(candidates.begin(), candidates.end());
+    return candidates.front().string();
 }
 
 }  // namespace llm_node

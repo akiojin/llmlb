@@ -412,6 +412,8 @@ impl NodeStorage {
             sync_state: None,
             sync_progress: None,
             sync_updated_at: None,
+            executable_models: Vec::new(),
+            excluded_models: Vec::new(),
         })
     }
 
@@ -572,6 +574,8 @@ mod tests {
             sync_state: None,
             sync_progress: None,
             sync_updated_at: None,
+            executable_models: vec!["llama-3.1-8b".to_string()],
+            excluded_models: Vec::new(),
         }
     }
 

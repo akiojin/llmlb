@@ -78,8 +78,13 @@ async fn speech_handler() -> impl IntoResponse {
         .unwrap()
 }
 
+// SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
 async fn models_handler() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({ "data": [{"id": "test-model", "object": "model"}] })),
+    )
+        .into_response()
 }
 
 fn build_transcription_multipart(boundary: &str) -> Vec<u8> {

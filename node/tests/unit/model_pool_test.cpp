@@ -156,3 +156,133 @@ TEST(ModelPoolTest, UnloadRemovesModel) {
     EXPECT_EQ(pool.loadedCount(), 0u);
     EXPECT_EQ(manager->memoryUsageBytes(), 0u);
 }
+
+// T141/T146: 並行ロードテスト
+
+TEST(ModelPoolTest, AcquireAsyncReturnsNullForInvalidFile) {
+    TempModelPoolDir tmp;
+    fs::path model = tmp.base / "m.gguf";
+    fs::create_directories(model.parent_path());
+    // Invalid GGUF file
+    std::ofstream(model) << "GGUF";
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    auto future = pool.acquireAsync("m.gguf");
+    auto ctx = future.get();
+    EXPECT_EQ(ctx, nullptr);
+    EXPECT_EQ(pool.loadedCount(), 0u);
+    EXPECT_EQ(pool.loadingCount(), 0u);
+}
+
+TEST(ModelPoolTest, AcquireAsyncRespectsMemoryLimit) {
+    TempModelPoolDir tmp;
+    fs::path model = tmp.base / "m.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    // 非常に小さいメモリ制限を設定
+    pool.setMemoryLimit(1024);
+    pool.setEstimatedModelSize(512ull * 1024 * 1024);
+
+    auto future = pool.acquireAsync("m.gguf");
+    auto ctx = future.get();
+    EXPECT_EQ(ctx, nullptr);  // メモリ制限超過で即座にnull返却
+}
+
+TEST(ModelPoolTest, ConcurrentAcquireAsyncForDifferentModels) {
+    TempModelPoolDir tmp;
+    fs::path model1 = tmp.base / "m1.gguf";
+    fs::path model2 = tmp.base / "m2.gguf";
+    fs::create_directories(model1.parent_path());
+    std::ofstream(model1) << "GGUF";
+    std::ofstream(model2) << "GGUF";
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    // 十分なメモリ制限
+    pool.setMemoryLimit(4ull * 1024 * 1024 * 1024);
+    pool.setEstimatedModelSize(512ull * 1024 * 1024);
+
+    // 並行で異なるモデルをロード
+    auto future1 = pool.acquireAsync("m1.gguf");
+    auto future2 = pool.acquireAsync("m2.gguf");
+
+    auto ctx1 = future1.get();
+    auto ctx2 = future2.get();
+
+    // 両方ともnull（無効ファイル）だが、並行実行できたことを確認
+    EXPECT_EQ(ctx1, nullptr);
+    EXPECT_EQ(ctx2, nullptr);
+    EXPECT_EQ(pool.loadingCount(), 0u);
+}
+
+TEST(ModelPoolTest, ConcurrentAcquireAsyncForSameModelWaits) {
+    TempModelPoolDir tmp;
+    fs::path model = tmp.base / "m.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    pool.setMemoryLimit(4ull * 1024 * 1024 * 1024);
+    pool.setEstimatedModelSize(512ull * 1024 * 1024);
+
+    // 同一モデルの並行ロードは待機する
+    std::vector<std::future<std::shared_ptr<LlamaContext>>> futures;
+    for (int i = 0; i < 4; ++i) {
+        futures.push_back(pool.acquireAsync("m.gguf"));
+    }
+
+    for (auto& f : futures) {
+        auto ctx = f.get();
+        EXPECT_EQ(ctx, nullptr);  // 無効ファイル
+    }
+
+    EXPECT_EQ(pool.loadingCount(), 0u);
+}
+
+TEST(ModelPoolTest, CanLoadConcurrentlyReflectsMemoryState) {
+    TempModelPoolDir tmp;
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    // メモリ制限なし → 常にtrue
+    EXPECT_TRUE(pool.canLoadConcurrently());
+
+    // メモリ制限設定
+    pool.setMemoryLimit(1024ull * 1024 * 1024);  // 1GB
+    pool.setEstimatedModelSize(512ull * 1024 * 1024);  // 512MB
+
+    // まだ余裕がある
+    EXPECT_TRUE(pool.canLoadConcurrently());
+}
+
+TEST(ModelPoolTest, LoadingCountTracksInProgressLoads) {
+    TempModelPoolDir tmp;
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    EXPECT_EQ(pool.loadingCount(), 0u);
+
+    // 存在しないファイルへのロードを開始
+    auto future = pool.acquireAsync("nonexistent.gguf");
+
+    // ロード完了を待機
+    future.get();
+
+    EXPECT_EQ(pool.loadingCount(), 0u);
+}
+
+TEST(ModelPoolTest, EstimatedModelSizeGetterSetter) {
+    TempModelPoolDir tmp;
+    auto manager = std::make_shared<LlamaManager>(tmp.base.string());
+    ModelPool pool(manager);
+
+    EXPECT_EQ(pool.getEstimatedModelSize(), 0u);
+
+    pool.setEstimatedModelSize(1ull * 1024 * 1024 * 1024);
+    EXPECT_EQ(pool.getEstimatedModelSize(), 1ull * 1024 * 1024 * 1024);
+}

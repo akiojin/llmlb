@@ -1,14 +1,23 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "core/engine_error.h"
 
 namespace llm_node {
+
+// T138: Exception thrown when generation is cancelled
+class GenerationCancelledException : public std::runtime_error {
+public:
+    explicit GenerationCancelledException(const std::string& message = "Generation cancelled")
+        : std::runtime_error(message) {}
+};
 
 constexpr size_t kDefaultMaxTokens = 2048;
 
@@ -29,6 +38,8 @@ struct InferenceParams {
     std::vector<std::string> stop_sequences;
     OnTokenCallback on_token_callback{nullptr};
     void* on_token_callback_ctx{nullptr};
+    // T138: Cancellation token - set to true to cancel generation
+    std::atomic<bool>* cancellation_token{nullptr};
 };
 
 inline size_t resolve_effective_max_tokens(size_t requested,

@@ -196,7 +196,7 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromMetalArtifactE2E) {
     registry.setModels({model->model_id});
 
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
     NodeEndpoints node;
     HttpServer server(18150, openai, node);
     server.start();
@@ -219,6 +219,8 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromDirectmlArtifactE2E) {
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
     GTEST_SKIP() << "USE_GPTOSS not enabled";
+#elif !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
 #else
     std::string error;
     auto model = resolve_gptoss_test_model(error);
@@ -237,7 +239,7 @@ TEST(GptOssSafetensorsIntegrationTest, GeneratesTokenFromDirectmlArtifactE2E) {
     registry.setModels({model->model_id});
 
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
     NodeEndpoints node;
     HttpServer server(18151, openai, node);
     server.start();

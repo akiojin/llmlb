@@ -131,6 +131,20 @@ pub async fn register_node(
             })
             .unwrap_or_default();
 
+        // SPEC-93536000 3.3: 空のモデルリスト時は登録拒否
+        if models.is_empty() {
+            error!(
+                "Node registration rejected: node returned empty model list at {}",
+                health_url
+            );
+            return Err(AppError(RouterError::Common(
+                llm_router_common::error::CommonError::Validation(
+                    "Node has no executable models. At least one model must be available."
+                        .to_string(),
+                ),
+            )));
+        }
+
         let models_count = models.len().min(u8::MAX as usize) as u8;
 
         let ready_models = json
@@ -191,11 +205,12 @@ pub async fn register_node(
     response.node_token = Some(node_token_with_plaintext.token);
 
     // 取得した初期状態を反映
+    // SPEC-93536000: executable_modelsにも/v1/modelsから取得したモデル一覧を設定
     if let Err(e) = state
         .registry
         .update_last_seen(
             response.node_id,
-            Some(loaded_models),
+            Some(loaded_models.clone()),
             None, // loaded_embedding_models
             None,
             None,
@@ -204,6 +219,7 @@ pub async fn register_node(
             ready_models,
             None,
             None,
+            Some(loaded_models), // executable_models
         )
         .await
     {
@@ -353,6 +369,10 @@ impl IntoResponse for AppError {
             RouterError::NoNodesAvailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
+            RouterError::NoCapableNodes(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
+            }
+            RouterError::ModelNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
             RouterError::ServiceUnavailable(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }

@@ -295,12 +295,30 @@ fs::path resolve_gptoss_directml_model_bin(const fs::path& model_dir) {
     return {};
 }
 
+fs::path resolve_gptoss_cuda_model_bin(const fs::path& model_dir) {
+    const fs::path p1 = model_dir / "model.cuda.bin";
+    if (fs::exists(p1)) return p1;
+    const fs::path p2 = model_dir / "cuda" / "model.bin";
+    if (fs::exists(p2)) return p2;
+    const fs::path p3 = model_dir / "model.bin";
+    if (fs::exists(p3)) return p3;
+    return {};
+}
+
 fs::path resolve_gptoss_directml_model_file(const ModelDescriptor& descriptor) {
     fs::path model_dir = descriptor.model_dir.empty()
                              ? fs::path(descriptor.primary_path).parent_path()
                              : fs::path(descriptor.model_dir);
     if (model_dir.empty()) return {};
     return resolve_gptoss_directml_model_bin(model_dir);
+}
+
+fs::path resolve_gptoss_cuda_model_file(const ModelDescriptor& descriptor) {
+    fs::path model_dir = descriptor.model_dir.empty()
+                             ? fs::path(descriptor.primary_path).parent_path()
+                             : fs::path(descriptor.model_dir);
+    if (model_dir.empty()) return {};
+    return resolve_gptoss_cuda_model_bin(model_dir);
 }
 
 struct GptOssApi {
@@ -363,7 +381,7 @@ bool load_gptoss_symbol(HMODULE handle, const char* name, Fn& out, std::string& 
 std::shared_ptr<GptOssApi> load_gptoss_api_from_library(const fs::path& path, std::string& error) {
     HMODULE handle = LoadLibraryA(path.string().c_str());
     if (!handle) {
-        error = "gpt-oss DirectML runtime library load failed: " + path.string();
+        error = "gpt-oss runtime library load failed: " + path.string();
         return nullptr;
     }
 
@@ -403,11 +421,20 @@ std::shared_ptr<GptOssApi> resolve_gptoss_api(const fs::path& model_dir, std::st
     }
 
 #ifdef _WIN32
-    const char* override_path = std::getenv("LLM_NODE_GPTOSS_DML_LIB");
+    const char* override_path = nullptr;
+    fs::path default_name;
+#if defined(USE_DIRECTML)
+    override_path = std::getenv("LLM_NODE_GPTOSS_DML_LIB");
+    default_name = "gptoss_directml.dll";
+#elif defined(USE_CUDA)
+    override_path = std::getenv("LLM_NODE_GPTOSS_CUDA_LIB");
+    default_name = "gptoss_cuda.dll";
+#endif
+
     if (override_path && *override_path) {
         fs::path path(override_path);
         if (!fs::exists(path)) {
-            error = "gpt-oss DirectML runtime library not found: " + path.string();
+            error = "gpt-oss runtime library not found: " + path.string();
             return nullptr;
         }
         auto api = load_gptoss_api_from_library(path, error);
@@ -417,22 +444,33 @@ std::shared_ptr<GptOssApi> resolve_gptoss_api(const fs::path& model_dir, std::st
         return api;
     }
 
-    const fs::path model_lib = model_dir.empty() ? fs::path() : (model_dir / "gptoss_directml.dll");
-    if (!model_lib.empty() && fs::exists(model_lib)) {
-        auto api = load_gptoss_api_from_library(model_lib, error);
-        if (api) {
-            cached = api;
+    if (!default_name.empty()) {
+        const fs::path model_lib = model_dir.empty() ? fs::path() : (model_dir / default_name);
+        if (!model_lib.empty() && fs::exists(model_lib)) {
+            auto api = load_gptoss_api_from_library(model_lib, error);
+            if (api) {
+                cached = api;
+            }
+            return api;
         }
+
+        auto api = load_gptoss_api_from_library(default_name, error);
+        if (!api) {
+#if defined(USE_DIRECTML)
+            error = "gpt-oss DirectML runtime library not found (set LLM_NODE_GPTOSS_DML_LIB)";
+#elif defined(USE_CUDA)
+            error = "gpt-oss CUDA runtime library not found (set LLM_NODE_GPTOSS_CUDA_LIB)";
+#else
+            error = "gpt-oss runtime library not found";
+#endif
+            return nullptr;
+        }
+        cached = api;
         return api;
     }
 
-    auto api = load_gptoss_api_from_library("gptoss_directml.dll", error);
-    if (!api) {
-        error = "gpt-oss DirectML runtime library not found (set LLM_NODE_GPTOSS_DML_LIB)";
-        return nullptr;
-    }
-    cached = api;
-    return api;
+    error = "gpt-oss runtime library is disabled";
+    return nullptr;
 #else
     auto api = std::make_shared<GptOssApi>();
     api->model_create_from_file = &gptoss_model_create_from_file;
@@ -556,6 +594,12 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
     result.error_code = EngineErrorCode::kUnsupported;
     return nullptr;
 #else
+#if defined(_WIN32) && !defined(USE_DIRECTML) && !defined(USE_CUDA)
+    result.success = false;
+    result.error_message = "gpt-oss Windows runtime is not enabled (build with CUDA or DirectML)";
+    result.error_code = EngineErrorCode::kUnsupported;
+    return nullptr;
+#endif
     std::string validation_error;
     if (!validate_safetensors_files(descriptor, validation_error)) {
         result.success = false;
@@ -568,7 +612,13 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
                              : fs::path(descriptor.model_dir);
     const fs::path model_file =
 #if defined(_WIN32)
+#if defined(USE_DIRECTML)
         resolve_gptoss_directml_model_file(descriptor);
+#elif defined(USE_CUDA)
+        resolve_gptoss_cuda_model_file(descriptor);
+#else
+        fs::path{};
+#endif
 #else
         resolve_gptoss_metal_model_bin(model_dir);
 #endif
@@ -576,7 +626,13 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         result.success = false;
         result.error_message =
 #if defined(_WIN32)
+#if defined(USE_DIRECTML)
             "gpt-oss DirectML model artifact not found (expected model.directml.bin or model.dml.bin)";
+#elif defined(USE_CUDA)
+            "gpt-oss CUDA model artifact not found (expected model.cuda.bin or cuda/model.bin)";
+#else
+            "gpt-oss Windows runtime not enabled";
+#endif
 #else
             "gpt-oss Metal model artifact not found (expected model.metal.bin or metal/model.bin)";
 #endif
@@ -600,7 +656,7 @@ std::shared_ptr<GptOssEngine::LoadedModel> GptOssEngine::ensureLoaded(
         result.success = false;
         result.error_message = "gptoss_model_create_from_file failed: status=" + std::to_string(status);
         if (status == gptoss_status_unsupported_argument) {
-            result.error_message += " (unsupported DirectML artifact/layout)";
+            result.error_message += " (unsupported GPU artifact/layout)";
             result.error_code = EngineErrorCode::kUnsupported;
         } else {
             result.error_code = EngineErrorCode::kLoadFailed;
@@ -981,7 +1037,13 @@ uint64_t GptOssEngine::getModelVramBytes(const ModelDescriptor& descriptor) cons
                                    : fs::path(descriptor.model_dir);
     const fs::path model_file =
 #if defined(_WIN32)
+#if defined(USE_DIRECTML)
         resolve_gptoss_directml_model_file(descriptor);
+#elif defined(USE_CUDA)
+        resolve_gptoss_cuda_model_file(descriptor);
+#else
+        fs::path{};
+#endif
 #else
         resolve_gptoss_metal_model_bin(model_dir);
 #endif

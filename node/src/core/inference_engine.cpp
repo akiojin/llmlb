@@ -1,5 +1,6 @@
 #include "core/inference_engine.h"
 
+#include "core/engine_host.h"
 #include "core/engine_registry.h"
 #include "core/gptoss_engine.h"
 #include "core/llama_engine.h"
@@ -702,6 +703,8 @@ bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, 
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
+    context.log_callback = defaultPluginLogHandler;
+    context.log_callback_ctx = nullptr;
 
     return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
 }
@@ -717,6 +720,8 @@ bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
+    context.log_callback = defaultPluginLogHandler;
+    context.log_callback_ctx = nullptr;
 
     if (!engine_host_.stagePluginsFromDir(directory, context, error)) {
         return false;
@@ -905,6 +910,8 @@ bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error)
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
+    context.log_callback = defaultPluginLogHandler;
+    context.log_callback_ctx = nullptr;
 
     if (!engine_host_.stagePluginsFromDir(engine_plugins_dir_, context, error)) {
         return false;

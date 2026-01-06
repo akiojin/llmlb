@@ -153,8 +153,6 @@ async fn run_server(config: ServerConfig) {
     let registry = registry::NodeRegistry::with_storage(db_pool.clone())
         .await
         .expect("Failed to initialize node registry");
-    // Load registered models (HF etc.)
-    llm_router::api::models::load_registered_models_from_storage(db_pool.clone()).await;
 
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");
@@ -208,10 +206,6 @@ async fn run_server(config: ServerConfig) {
         .tcp_keepalive(std::time::Duration::from_secs(30))
         .build()
         .expect("Failed to create HTTP client");
-
-    // 定期的なモデル整合性チェックを開始（5分間隔）
-    // NOTE: db_poolはAppStateにmoveされるため、先にcloneしてから渡す
-    llm_router::api::models::start_periodic_sync(registry.clone(), db_pool.clone());
 
     let state = AppState {
         registry: registry.clone(),

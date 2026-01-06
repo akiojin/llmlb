@@ -135,11 +135,16 @@ async fn test_complete_api_key_flow() {
         .await
         .unwrap();
 
-    // ノードが登録されていないため503エラーが返されるが、認証は成功している
+    // 認証は成功している（401/403以外が返れば認証OK）
+    // - 404: モデルが登録されていない
+    // - 503: ノードが登録されていない
+    // - 200: 成功
     assert!(
-        use_key_response.status() == StatusCode::SERVICE_UNAVAILABLE
+        use_key_response.status() == StatusCode::NOT_FOUND
+            || use_key_response.status() == StatusCode::SERVICE_UNAVAILABLE
             || use_key_response.status() == StatusCode::OK,
-        "API key should authenticate successfully (503 = no nodes, OK = success)"
+        "API key should authenticate successfully (404 = model not found, 503 = no nodes, OK = success), got: {}",
+        use_key_response.status()
     );
 
     // Step 4: APIキーの一覧を取得

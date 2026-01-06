@@ -6,7 +6,6 @@ use crate::{
     db::models::ModelStorage,
     registry::models::{extract_repo_id, generate_model_id, ModelInfo},
     registry::NodeRegistry,
-    supported_models::{get_supported_models, SupportedModel},
     AppState,
 };
 use axum::{
@@ -15,12 +14,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use llm_router_common::error::{CommonError, RouterError};
+use llm_router_common::error::{CommonError, RouterError, RouterResult};
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
@@ -234,22 +233,27 @@ pub struct ModelWithStatus {
 }
 
 impl ModelWithStatus {
-    /// SupportedModelからModelWithStatusを作成（available状態）
-    pub fn from_supported(model: SupportedModel) -> Self {
+    /// 登録済みモデルからModelWithStatusを作成（available状態）
+    pub fn from_registered(model: &ModelInfo) -> Self {
+        let capabilities = model
+            .get_capabilities()
+            .iter()
+            .map(|cap| format!("{:?}", cap))
+            .collect();
         Self {
-            id: model.id,
-            name: model.name,
-            description: model.description,
-            repo: model.repo,
-            recommended_filename: model.recommended_filename,
-            size_bytes: model.size_bytes,
-            required_memory_bytes: model.required_memory_bytes,
-            tags: model.tags,
-            capabilities: model.capabilities,
-            quantization: model.quantization,
-            parameter_count: model.parameter_count,
+            id: model.name.clone(),
+            name: model.name.clone(),
+            description: model.description.clone(),
+            repo: model.repo.clone().unwrap_or_default(),
+            recommended_filename: model.filename.clone().unwrap_or_default(),
+            size_bytes: model.size,
+            required_memory_bytes: model.required_memory,
+            tags: model.tags.clone(),
+            capabilities,
+            quantization: None,
+            parameter_count: None,
             status: ModelStatus::Available,
-            lifecycle_status: None,
+            lifecycle_status: Some(LifecycleStatus::Registered),
             download_progress: None,
             hf_info: None,
         }
@@ -272,45 +276,33 @@ pub struct DownloadProgress {
 // NOTE: RegisteredModelView と model_info_to_registered_view は /v0/models 廃止に伴い削除。
 // ダッシュボードは /v1/models を使用し、TypeScript側で型を定義。
 
-// ===== Registered model store (in-memory) =====
-static REGISTERED_MODELS: Lazy<RwLock<Vec<ModelInfo>>> = Lazy::new(|| RwLock::new(Vec::new()));
-
-/// 登録済みモデルをストレージからロード
-pub async fn load_registered_models_from_storage(pool: SqlitePool) {
-    let storage = ModelStorage::new(pool);
-    if let Ok(models) = storage.load_models().await {
-        let mut store = REGISTERED_MODELS.write().unwrap();
-        *store = models;
-    }
-}
-
 // NOTE: get_registered_models() ハンドラは廃止されました。
 // モデル一覧は /v1/models を使用してください（openai::list_models）。
 // LifecycleStatus, DownloadProgress 型は openai.rs で使用するため維持。
 
 /// 登録済みモデル一覧を取得
-pub fn list_registered_models() -> Vec<ModelInfo> {
-    REGISTERED_MODELS.read().unwrap().clone()
+pub async fn list_registered_models(pool: &SqlitePool) -> RouterResult<Vec<ModelInfo>> {
+    let storage = ModelStorage::new(pool.clone());
+    storage.load_models().await
 }
 
 /// GET /v0/models - 登録済みモデル一覧（拡張メタデータ付き）
 ///
 /// ノード同期用途向け。配列を直接返す。
 /// NOTE: この関数は既存のノード同期用途で維持。ダッシュボードは list_models_with_status() を使用。
-pub async fn list_models() -> Json<Vec<ModelInfo>> {
-    Json(list_registered_models())
+pub async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<ModelInfo>>, AppError> {
+    let models = list_registered_models(&state.db_pool).await?;
+    Ok(Json(models))
 }
 
-/// GET /v0/models/hub - 対応モデル一覧 + 状態（SPEC-6cd7f960）
+/// GET /v0/models/hub - 登録済みモデル一覧 + 状態（SPEC-6cd7f960）
 ///
-/// ダッシュボードのModel Hub用。全ての対応モデルを状態付きで返す。
+/// ダッシュボードのModel Hub用。登録済みモデルを状態付きで返す。
 /// HF動的情報（ダウンロード数、いいね数）も含む。
-pub async fn list_models_with_status(State(state): State<AppState>) -> Json<Vec<ModelWithStatus>> {
-    let supported = get_supported_models();
-    let registered = list_registered_models();
-    // 登録済みモデル名のセット（登録済み判定用）
-    let registered_names: std::collections::HashSet<_> =
-        registered.iter().map(|m| m.name.clone()).collect();
+pub async fn list_models_with_status(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ModelWithStatus>>, AppError> {
+    let registered = list_registered_models(&state.db_pool).await?;
 
     // ノードが報告しているreadyモデル名のセット
     let ready_names: std::collections::HashSet<String> = state
@@ -322,12 +314,12 @@ pub async fn list_models_with_status(State(state): State<AppState>) -> Json<Vec<
         .collect();
 
     // HF情報を並列取得（タイムアウト付き）
-    let hf_info_futures: Vec<_> = supported
+    let hf_info_futures: Vec<_> = registered
         .iter()
-        .map(|model| {
+        .filter_map(|model| {
+            let repo = model.repo.clone()?;
             let client = state.http_client.clone();
-            let repo = model.repo.clone();
-            async move { (repo.clone(), fetch_hf_info(&client, &repo).await) }
+            Some(async move { (repo.clone(), fetch_hf_info(&client, &repo).await) })
         })
         .collect();
 
@@ -336,180 +328,31 @@ pub async fn list_models_with_status(State(state): State<AppState>) -> Json<Vec<
         .into_iter()
         .collect();
 
-    let mut result: Vec<ModelWithStatus> = Vec::with_capacity(supported.len());
+    let mut result: Vec<ModelWithStatus> = Vec::with_capacity(registered.len());
 
-    for model in supported {
-        let mut with_status = ModelWithStatus::from_supported(model.clone());
-
-        // モデルIDからmodel_nameを生成（repo形式）
-        let model_name = generate_model_id(&model.repo);
-
-        if registered_names.contains(&model_name) {
-            with_status.lifecycle_status = Some(LifecycleStatus::Registered);
-            if ready_names.contains(&model_name) {
-                with_status.status = ModelStatus::Downloaded;
+    for model in registered {
+        let mut with_status = ModelWithStatus::from_registered(&model);
+        if ready_names.contains(&model.name) {
+            with_status.status = ModelStatus::Downloaded;
+        }
+        if let Some(repo) = model.repo.as_ref() {
+            if let Some(Some(info)) = hf_infos.get(repo) {
+                with_status.hf_info = Some(info.clone());
             }
         }
-
-        // HF情報を設定
-        if let Some(Some(info)) = hf_infos.get(&model.repo) {
-            with_status.hf_info = Some(info.clone());
-        }
-
         result.push(with_status);
     }
 
-    Json(result)
+    Ok(Json(result))
 }
 
-fn find_model_by_name(name: &str) -> Option<ModelInfo> {
-    list_registered_models()
-        .into_iter()
-        .find(|m| m.name == name)
-}
-
-/// 登録モデルを追加（重複チェックあり）
-pub(crate) fn add_registered_model(model: ModelInfo) -> Result<(), RouterError> {
-    let mut store = REGISTERED_MODELS.write().unwrap();
-    if store.iter().any(|m| m.name == model.name) {
-        return Err(RouterError::InvalidModelName(
-            "Model already registered".into(),
-        ));
-    }
-    store.push(model);
-    Ok(())
-}
-
-/// 既存登録モデルを更新または追加（重複エラーにせず上書き）
-pub fn upsert_registered_model(model: ModelInfo) {
-    let mut store = REGISTERED_MODELS.write().unwrap();
-    if let Some(existing) = store.iter_mut().find(|m| m.name == model.name) {
-        *existing = model;
-    } else {
-        store.push(model);
-    }
-}
-
-/// 登録モデルを名前で削除し、削除が行われたかを返す
-pub fn remove_registered_model(name: &str) -> bool {
-    let mut store = REGISTERED_MODELS.write().unwrap();
-    let initial_len = store.len();
-    store.retain(|m| m.name != name);
-    initial_len != store.len()
-}
-
-/// 登録モデルを永続化（失敗はログのみ）
-pub async fn persist_registered_models(pool: &SqlitePool) {
-    if let Ok(store) = std::panic::catch_unwind(|| REGISTERED_MODELS.read().unwrap().clone()) {
-        let storage = ModelStorage::new(pool.clone());
-        if let Err(e) = storage.save_models(&store).await {
-            tracing::error!("Failed to persist registered models: {}", e);
-        }
-    }
-}
-
-/// 登録モデルの整合性チェックを実行
-///
-/// チェック内容:
-/// 1. DBとメモリの整合性確認
-/// 2. ノードのロード状態を確認
-/// 3. 不整合があれば警告ログを出力
-///
-/// NOTE: 自動削除は行わない（手動介入を想定）
-pub async fn sync_registered_models(registry: &NodeRegistry, pool: &SqlitePool) {
-    tracing::debug!("Starting model consistency check");
-
+/// 登録済みモデルを名前で取得
+pub async fn load_registered_model(
+    pool: &SqlitePool,
+    name: &str,
+) -> RouterResult<Option<ModelInfo>> {
     let storage = ModelStorage::new(pool.clone());
-
-    // 1. DBからモデルをロード
-    let db_models = match storage.load_models().await {
-        Ok(models) => models,
-        Err(e) => {
-            tracing::error!("Failed to load models from DB: {}", e);
-            return;
-        }
-    };
-
-    // 2. メモリ上のモデルを取得
-    let memory_models = list_registered_models();
-
-    // 3. DB vs メモリの整合性チェック
-    let db_names: std::collections::HashSet<_> = db_models.iter().map(|m| m.name.clone()).collect();
-    let memory_names: std::collections::HashSet<_> =
-        memory_models.iter().map(|m| m.name.clone()).collect();
-
-    // DBにあってメモリにないモデル
-    let in_db_only: Vec<_> = db_names.difference(&memory_names).collect();
-    if !in_db_only.is_empty() {
-        tracing::warn!(
-            models=?in_db_only,
-            "Models in DB but not in memory - reloading from DB"
-        );
-        // DBからメモリに復元
-        let mut store = REGISTERED_MODELS.write().unwrap();
-        for model in &db_models {
-            if in_db_only.contains(&&model.name) {
-                store.push(model.clone());
-            }
-        }
-    }
-
-    // メモリにあってDBにないモデル
-    let in_memory_only: Vec<_> = memory_names.difference(&db_names).collect();
-    if !in_memory_only.is_empty() {
-        tracing::warn!(
-            models=?in_memory_only,
-            "Models in memory but not in DB - persisting to DB"
-        );
-        // メモリからDBに永続化
-        persist_registered_models(pool).await;
-    }
-
-    // 4. ノードロード状態の確認
-    let nodes = registry.list().await;
-    let mut loaded_on_nodes: std::collections::HashMap<String, Vec<String>> = HashMap::new();
-    for node in &nodes {
-        for model_name in &node.loaded_models {
-            loaded_on_nodes
-                .entry(model_name.clone())
-                .or_default()
-                .push(node.id.to_string());
-        }
-    }
-
-    // 登録済みモデルのノードロード状態をログ
-    let registered_names: std::collections::HashSet<_> = list_registered_models()
-        .iter()
-        .map(|m| m.name.clone())
-        .collect();
-    let loaded_names: std::collections::HashSet<_> = loaded_on_nodes.keys().cloned().collect();
-
-    // ノードにロード済みだが未登録のモデル
-    let loaded_but_unregistered: Vec<_> = loaded_names.difference(&registered_names).collect();
-    if !loaded_but_unregistered.is_empty() {
-        tracing::info!(
-            models=?loaded_but_unregistered,
-            "Models loaded on nodes but not registered"
-        );
-    }
-
-    tracing::debug!(
-        db_count = db_models.len(),
-        memory_count = memory_models.len(),
-        nodes_count = nodes.len(),
-        "Model consistency check completed"
-    );
-}
-
-/// 定期的な整合性チェックを開始（5分間隔）
-pub fn start_periodic_sync(registry: NodeRegistry, pool: SqlitePool) {
-    tokio::spawn(async move {
-        let interval = Duration::from_secs(300); // 5分
-        loop {
-            tokio::time::sleep(interval).await;
-            sync_registered_models(&registry, &pool).await;
-        }
-    });
+    storage.load_model(name).await
 }
 
 // ===== HuggingFace helpers =====
@@ -807,57 +650,6 @@ fn find_metal_artifact(siblings: &[HfSibling]) -> Option<String> {
     None
 }
 
-fn append_supported_artifacts(
-    files: &mut Vec<ManifestFile>,
-    supported: Option<&SupportedModel>,
-    base_repo: &str,
-    base_url: &str,
-    runtime_hint: &Option<Vec<String>>,
-) -> Result<(), RouterError> {
-    let Some(model) = supported else {
-        return Ok(());
-    };
-    if model.artifacts.is_empty() {
-        return Ok(());
-    }
-
-    let mut existing: HashSet<String> = files.iter().map(|f| f.name.clone()).collect();
-    for artifact in &model.artifacts {
-        if artifact.name.trim().is_empty() {
-            continue;
-        }
-        if existing.contains(&artifact.name) {
-            continue;
-        }
-
-        let url = if let Some(url) = artifact.url.as_ref() {
-            url.clone()
-        } else if let Some(path) = artifact.path.as_ref() {
-            validate_artifact_path(path)?;
-            let repo = artifact.repo.as_deref().unwrap_or(base_repo);
-            hf_resolve_url(base_url, repo, path)
-        } else {
-            continue;
-        };
-
-        let priority = artifact
-            .priority
-            .or_else(|| manifest_file_priority(&artifact.name));
-        let runtimes = artifact.runtimes.clone().or_else(|| runtime_hint.clone());
-
-        files.push(ManifestFile {
-            name: artifact.name.clone(),
-            priority,
-            runtimes,
-            url: Some(url),
-            optional: None,
-        });
-        existing.insert(artifact.name.clone());
-    }
-
-    Ok(())
-}
-
 fn validate_artifact_path(path: &str) -> Result<(), RouterError> {
     if path.is_empty() {
         return Err(RouterError::Common(CommonError::Validation(
@@ -890,26 +682,6 @@ fn extract_filename_from_hf_url(input: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn parse_supported_capabilities(caps: &[String]) -> Vec<llm_router_common::types::ModelCapability> {
-    use llm_router_common::types::ModelCapability;
-    let mut out = Vec::new();
-    for cap in caps {
-        match cap.as_str() {
-            "TextGeneration" => out.push(ModelCapability::TextGeneration),
-            "TextToSpeech" => out.push(ModelCapability::TextToSpeech),
-            "SpeechToText" => out.push(ModelCapability::SpeechToText),
-            "ImageGeneration" => out.push(ModelCapability::ImageGeneration),
-            "Vision" => out.push(ModelCapability::Vision),
-            "Embedding" => out.push(ModelCapability::Embedding),
-            _ => {}
-        }
-    }
-    if out.is_empty() {
-        out.push(ModelCapability::TextGeneration);
-    }
-    out
 }
 
 #[derive(Serialize)]
@@ -1109,9 +881,33 @@ async fn fetch_chat_template_from_hf(http_client: &reqwest::Client, repo: &str) 
     }
 }
 
-/// 登録モデルのインメモリキャッシュをクリア（テスト用）
-pub fn clear_registered_models() {
-    *REGISTERED_MODELS.write().unwrap() = Vec::new();
+/// 登録モデルを全削除（テスト用）
+pub async fn clear_registered_models(pool: &SqlitePool) -> RouterResult<()> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| RouterError::Database(format!("Failed to begin transaction: {}", e)))?;
+
+    sqlx::query("DELETE FROM model_tags")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RouterError::Database(format!("Failed to delete model_tags: {}", e)))?;
+    sqlx::query("DELETE FROM model_capabilities")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            RouterError::Database(format!("Failed to delete model_capabilities: {}", e))
+        })?;
+    sqlx::query("DELETE FROM models")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RouterError::Database(format!("Failed to delete models: {}", e)))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| RouterError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+    Ok(())
 }
 
 /// HFリポジトリのsiblings情報
@@ -1162,6 +958,7 @@ impl IntoResponse for AppError {
             RouterError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
             RouterError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.to_string()),
             RouterError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.to_string()),
+            RouterError::NoCapableNodes(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             RouterError::Common(err) => (StatusCode::BAD_REQUEST, err.to_string()),
         };
 
@@ -1239,29 +1036,23 @@ pub async fn register_model(
     let repo = extract_repo_id(&req.repo);
 
     let name = generate_model_id(&repo);
-    if find_model_by_name(&name).is_some() {
+    if load_registered_model(&state.db_pool, &name)
+        .await?
+        .is_some()
+    {
         return Err(RouterError::Common(CommonError::Validation(
             "Model already registered".into(),
         ))
         .into());
     }
 
-    let mut filename_hint = req
+    let filename_hint = req
         .filename
         .clone()
         .or_else(|| extract_filename_from_hf_url(&req.repo));
 
     if let Some(fname) = filename_hint.as_ref() {
         validate_artifact_path(fname)?;
-    }
-
-    if filename_hint.is_none() {
-        if let Some(supported) = get_supported_models()
-            .into_iter()
-            .find(|m| m.repo.eq_ignore_ascii_case(&repo))
-        {
-            filename_hint = Some(supported.recommended_filename);
-        }
     }
 
     let siblings = fetch_repo_siblings(&state.http_client, &repo).await?;
@@ -1308,33 +1099,15 @@ pub async fn register_model(
         fetch_chat_template_from_hf(&state.http_client, &repo).await
     };
 
-    let supported = get_supported_models()
-        .into_iter()
-        .find(|m| m.repo.eq_ignore_ascii_case(&repo));
-
-    let (description, tags, capabilities, size_bytes, required_memory_bytes) =
-        if let Some(m) = supported.clone() {
-            (
-                m.description,
-                m.tags,
-                parse_supported_capabilities(&m.capabilities),
-                m.size_bytes.max(content_length),
-                m.required_memory_bytes.max(required_memory),
-            )
-        } else {
-            let mut tags = Vec::new();
-            match selection.format {
-                ArtifactFormat::Gguf => tags.push("gguf".to_string()),
-                ArtifactFormat::Safetensors => tags.push("safetensors".to_string()),
-            }
-            (
-                req.display_name.clone().unwrap_or_else(|| repo.clone()),
-                tags,
-                vec![llm_router_common::types::ModelCapability::TextGeneration],
-                content_length,
-                required_memory,
-            )
-        };
+    let mut tags = Vec::new();
+    match selection.format {
+        ArtifactFormat::Gguf => tags.push("gguf".to_string()),
+        ArtifactFormat::Safetensors => tags.push("safetensors".to_string()),
+    }
+    let description = req.display_name.clone().unwrap_or_else(|| repo.clone());
+    let capabilities = vec![llm_router_common::types::ModelCapability::TextGeneration];
+    let size_bytes = content_length;
+    let required_memory_bytes = required_memory;
 
     let source = match selection.format {
         ArtifactFormat::Gguf => crate::registry::models::ModelSource::HfGguf,
@@ -1356,8 +1129,8 @@ pub async fn register_model(
         status: Some("registered".to_string()),
     };
 
-    add_registered_model(model)?;
-    persist_registered_models(&state.db_pool).await;
+    let storage = ModelStorage::new(state.db_pool.clone());
+    storage.save_model(&model).await?;
 
     tracing::info!(
         repo = %repo,
@@ -1387,13 +1160,12 @@ pub async fn delete_model(
     State(state): State<AppState>,
     Path(model_name): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    let removed = remove_registered_model(&model_name);
-    if removed {
-        persist_registered_models(&state.db_pool).await;
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(RouterError::Common(CommonError::Validation("model not found".into())).into())
+    let storage = ModelStorage::new(state.db_pool.clone());
+    if storage.load_model(&model_name).await?.is_none() {
+        return Err(RouterError::Common(CommonError::Validation("model not found".into())).into());
     }
+    storage.delete_model(&model_name).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// GET /v0/models/registry/:model_name/manifest.json - モデル配布マニフェスト
@@ -1413,18 +1185,21 @@ pub async fn get_model_registry_manifest(
             .unwrap();
     }
 
-    let model = match list_registered_models()
-        .into_iter()
-        .find(|m| m.name == model_name)
-    {
-        Some(m) => m,
-        None => {
+    let model = match load_registered_model(&state.db_pool, &model_name).await {
+        Ok(Some(m)) => m,
+        Ok(None) => {
             return Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::from(format!(
                     "{{\"error\": \"Model not found: {}\"}}",
                     model_name
                 )))
+                .unwrap();
+        }
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
                 .unwrap();
         }
     };
@@ -1446,10 +1221,6 @@ pub async fn get_model_registry_manifest(
         }
     };
 
-    let supported = get_supported_models()
-        .into_iter()
-        .find(|m| m.repo.eq_ignore_ascii_case(&repo));
-
     let selection = match resolve_primary_artifact(&siblings, model.filename.clone()) {
         Ok(sel) => sel,
         Err(e) => {
@@ -1465,10 +1236,7 @@ pub async fn get_model_registry_manifest(
         ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo).await,
     };
     let manifest_quantization = match selection.format {
-        ArtifactFormat::Gguf => supported
-            .as_ref()
-            .and_then(|m| m.quantization.clone())
-            .or_else(|| infer_quantization_from_filename(&selection.filename)),
+        ArtifactFormat::Gguf => infer_quantization_from_filename(&selection.filename),
         ArtifactFormat::Safetensors => None,
     };
 
@@ -1537,19 +1305,6 @@ pub async fn get_model_registry_manifest(
             url: Some(hf_resolve_url(&base_url, &repo, &metal_path)),
             optional: None,
         });
-    }
-
-    if let Err(e) = append_supported_artifacts(
-        &mut files,
-        supported.as_ref(),
-        &repo,
-        &base_url,
-        &runtime_hint,
-    ) {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-            .unwrap();
     }
 
     let body = serde_json::to_string(&Manifest {
@@ -1632,144 +1387,52 @@ mod tests {
     }
 
     #[test]
-    fn test_model_with_status_from_supported() {
-        use crate::supported_models::SupportedModel;
+    fn test_model_with_status_from_registered() {
+        let mut model = ModelInfo::new(
+            "test-model".to_string(),
+            1000,
+            "Test Model".to_string(),
+            1500,
+            vec!["test".to_string()],
+        );
+        model.repo = Some("test/repo".into());
+        model.filename = Some("model.gguf".into());
 
-        let supported = SupportedModel {
-            id: "test-model".into(),
-            name: "Test Model".into(),
-            description: "A test model".into(),
-            repo: "test/repo".into(),
-            recommended_filename: "model.gguf".into(),
-            size_bytes: 1000,
-            required_memory_bytes: 1500,
-            tags: vec!["test".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("7B".into()),
-            format: "gguf".into(),
-            engine: "llama_cpp".into(),
-            platforms: vec!["macos-metal".into()],
-            artifacts: vec![],
-        };
-
-        let with_status = ModelWithStatus::from_supported(supported.clone());
+        let with_status = ModelWithStatus::from_registered(&model);
 
         assert_eq!(with_status.id, "test-model");
-        assert_eq!(with_status.name, "Test Model");
+        assert_eq!(with_status.name, "test-model");
+        assert_eq!(with_status.description, "Test Model");
         assert_eq!(with_status.status, ModelStatus::Available);
-        assert!(with_status.lifecycle_status.is_none());
+        assert_eq!(
+            with_status.lifecycle_status,
+            Some(LifecycleStatus::Registered)
+        );
         assert!(with_status.download_progress.is_none());
         assert!(with_status.hf_info.is_none());
     }
+
     #[test]
     fn test_model_with_status_serialization() {
-        use crate::supported_models::SupportedModel;
+        let mut model = ModelInfo::new(
+            "qwen2.5-7b-instruct".to_string(),
+            4_920_000_000,
+            "Qwen2.5 7B Instruct".to_string(),
+            7_380_000_000,
+            vec!["chat".to_string()],
+        );
+        model.repo = Some("bartowski/Qwen2.5-7B-Instruct-GGUF".into());
+        model.filename = Some("Qwen2.5-7B-Instruct-Q4_K_M.gguf".into());
 
-        let supported = SupportedModel {
-            id: "qwen2.5-7b-instruct".into(),
-            name: "Qwen2.5 7B Instruct".into(),
-            description: "Test".into(),
-            repo: "bartowski/Qwen2.5-7B-Instruct-GGUF".into(),
-            recommended_filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf".into(),
-            size_bytes: 4_920_000_000,
-            required_memory_bytes: 7_380_000_000,
-            tags: vec!["chat".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: Some("Q4_K_M".into()),
-            parameter_count: Some("7B".into()),
-            format: "gguf".into(),
-            engine: "llama_cpp".into(),
-            platforms: vec![
-                "macos-metal".into(),
-                "windows-directml".into(),
-                "linux-cuda".into(),
-            ],
-            artifacts: vec![],
-        };
-
-        let with_status = ModelWithStatus::from_supported(supported);
+        let with_status = ModelWithStatus::from_registered(&model);
         let json = serde_json::to_string(&with_status).expect("シリアライズに失敗");
 
         // JSONに必要なフィールドが含まれることを確認
         assert!(json.contains("\"id\":\"qwen2.5-7b-instruct\""));
         assert!(json.contains("\"status\":\"available\""));
+        assert!(json.contains("\"lifecycle_status\":\"registered\""));
         // skip_serializing_if により None フィールドは含まれない
-        assert!(!json.contains("\"lifecycle_status\""));
         assert!(!json.contains("\"download_progress\""));
-    }
-
-    #[test]
-    fn test_append_supported_artifacts_adds_entries() {
-        use crate::supported_models::{SupportedArtifact, SupportedModel};
-
-        let supported = SupportedModel {
-            id: "gpt-oss-20b".into(),
-            name: "GPT-OSS 20B".into(),
-            description: "Test".into(),
-            repo: "openai/gpt-oss-20b".into(),
-            recommended_filename: "model.safetensors.index.json".into(),
-            size_bytes: 1,
-            required_memory_bytes: 1,
-            tags: vec!["test".into()],
-            capabilities: vec!["TextGeneration".into()],
-            quantization: None,
-            parameter_count: Some("20B".into()),
-            format: "safetensors".into(),
-            engine: "gptoss_cpp".into(),
-            platforms: vec!["macos-metal".into()],
-            artifacts: vec![SupportedArtifact {
-                name: "model.metal.bin".into(),
-                path: Some("metal/model.bin".into()),
-                url: None,
-                repo: Some("openai/gpt-oss-20b".into()),
-                priority: Some(5),
-                runtimes: Some(vec!["gptoss_cpp".into()]),
-            }],
-        };
-
-        let mut files = vec![ManifestFile {
-            name: "model.safetensors.index.json".into(),
-            priority: None,
-            runtimes: None,
-            url: Some(
-                "https://hf.example.com/openai/gpt-oss-20b/resolve/main/model.safetensors.index.json"
-                    .into(),
-            ),
-            optional: None,
-        }];
-
-        let runtime_hint = Some(vec!["gptoss_cpp".into()]);
-        append_supported_artifacts(
-            &mut files,
-            Some(&supported),
-            "openai/gpt-oss-20b",
-            "https://hf.example.com",
-            &runtime_hint,
-        )
-        .expect("append_supported_artifacts failed");
-
-        assert!(files.iter().any(|f| {
-            f.name == "model.metal.bin"
-                && f.url.as_deref()
-                    == Some(
-                        "https://hf.example.com/openai/gpt-oss-20b/resolve/main/metal/model.bin",
-                    )
-        }));
-    }
-
-    #[test]
-    fn test_list_models_with_status_returns_all_supported_models() {
-        // list_models_with_status()が全ての対応モデルを返すことを確認
-        // NOTE: このテストはlist_models_with_status()実装後に有効化
-        let supported = get_supported_models();
-        assert!(!supported.is_empty(), "対応モデルが存在すること");
-
-        // 各モデルがModelWithStatusに変換できることを確認
-        for model in supported {
-            let with_status = ModelWithStatus::from_supported(model);
-            assert_eq!(with_status.status, ModelStatus::Available);
-        }
     }
 
     #[test]
@@ -1786,18 +1449,5 @@ mod tests {
         let empty_info = HfInfo::default();
         let empty_json = serde_json::to_string(&empty_info).expect("シリアライズに失敗");
         assert_eq!(empty_json, "{}");
-    }
-
-    #[test]
-    fn test_pull_model_validates_supported_model() {
-        use crate::supported_models::{find_supported_model, is_supported_model};
-
-        // 対応モデルは有効
-        assert!(is_supported_model("qwen2.5-7b-instruct"));
-        assert!(find_supported_model("qwen2.5-7b-instruct").is_some());
-
-        // 非対応モデルは無効
-        assert!(!is_supported_model("unsupported-model"));
-        assert!(find_supported_model("unsupported-model").is_none());
     }
 }

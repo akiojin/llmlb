@@ -32,8 +32,6 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     std::env::set_var("AUTH_DISABLED", "true");
     let guard = AuthDisabledGuard;
 
-    llm_router::api::models::clear_registered_models();
-
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -43,6 +41,9 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    llm_router::api::models::clear_registered_models(&db_pool)
+        .await
+        .expect("clear registered models");
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );

@@ -147,3 +147,182 @@ TEST(LlamaManagerTest, RejectsTooShortBlobName) {
     // This tests that the format validation works correctly
     EXPECT_FALSE(mgr.loadModel(bad_blob.filename().string()));
 }
+
+// =============================================================================
+// T141, T146: 並行ロードテスト
+// =============================================================================
+
+TEST(LlamaManagerTest, EstimateVramRequiredReturnsFileSize) {
+    TempModelFile tmp;
+    fs::path model = tmp.base / "test.gguf";
+    fs::create_directories(model.parent_path());
+    // Create a 1KB test file
+    std::string content(1024, 'x');
+    std::ofstream(model) << content;
+
+    LlamaManager mgr(tmp.base.string());
+    size_t estimated = mgr.estimateVramRequired(model.string());
+    // VRAM estimate should be approximately file size (with some overhead factor)
+    EXPECT_GE(estimated, 1024u);
+    EXPECT_LE(estimated, 2048u);  // Allow up to 2x overhead
+}
+
+TEST(LlamaManagerTest, EstimateVramRequiredReturnsZeroForMissingFile) {
+    TempModelFile tmp;
+    LlamaManager mgr(tmp.base.string());
+    size_t estimated = mgr.estimateVramRequired("nonexistent.gguf");
+    EXPECT_EQ(estimated, 0u);
+}
+
+TEST(LlamaManagerTest, CanLoadConcurrentlyReturnsFalseWhenInsufficientVram) {
+    TempModelFile tmp;
+    fs::path model = tmp.base / "large.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";  // Small file for testing
+
+    LlamaManager mgr(tmp.base.string());
+    // Set a very small VRAM limit
+    mgr.setMaxVramBytes(100);
+    // Create large file size estimate situation
+    EXPECT_FALSE(mgr.canLoadConcurrently(model.string(), 1024 * 1024));  // 1MB required
+}
+
+TEST(LlamaManagerTest, CanLoadConcurrentlyReturnsTrueWhenSufficientVram) {
+    TempModelFile tmp;
+    fs::path model = tmp.base / "small.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+    // Set a large VRAM limit
+    mgr.setMaxVramBytes(1024 * 1024 * 1024);  // 1GB
+    EXPECT_TRUE(mgr.canLoadConcurrently(model.string(), 1024));  // 1KB required
+}
+
+TEST(LlamaManagerTest, TracksLoadingModels) {
+    TempModelFile tmp;
+    fs::path model = tmp.base / "test.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+    // Initially no models are loading
+    EXPECT_FALSE(mgr.isLoading(model.string()));
+
+    // Mark as loading
+    mgr.markAsLoading(model.string(), 1024);
+    EXPECT_TRUE(mgr.isLoading(model.string()));
+
+    // Mark as not loading
+    mgr.markAsLoaded(model.string());
+    EXPECT_FALSE(mgr.isLoading(model.string()));
+}
+
+TEST(LlamaManagerTest, LoadingModelsAffectVramCalculation) {
+    TempModelFile tmp;
+    fs::path model1 = tmp.base / "model1.gguf";
+    fs::path model2 = tmp.base / "model2.gguf";
+    fs::create_directories(model1.parent_path());
+    std::ofstream(model1) << "GGUF";
+    std::ofstream(model2) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+    mgr.setMaxVramBytes(2000);  // 2KB limit
+
+    // Model1 uses 1KB VRAM
+    mgr.markAsLoading(model1.string(), 1000);
+
+    // Model2 also wants 1KB - should still fit (but barely)
+    EXPECT_TRUE(mgr.canLoadConcurrently(model2.string(), 1000));
+
+    // But 1.5KB would exceed
+    EXPECT_FALSE(mgr.canLoadConcurrently(model2.string(), 1500));
+}
+
+// =============================================================================
+// T179, T186: VRAM部分ロード障害対応テスト
+// =============================================================================
+
+TEST(LlamaManagerTest, HandleLoadFailureClearsLoadingState) {
+    TempModelFile tmp;
+    fs::path model = tmp.base / "test.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+
+    // Mark as loading
+    mgr.markAsLoading(model.string(), 1024);
+    EXPECT_TRUE(mgr.isLoading(model.string()));
+
+    // Handle load failure should clear loading state
+    mgr.handleLoadFailure(model.string(), false);
+    EXPECT_FALSE(mgr.isLoading(model.string()));
+}
+
+TEST(LlamaManagerTest, HandleLoadFailureWithEvictLru) {
+    TempModelFile tmp;
+    fs::path model1 = tmp.base / "model1.gguf";
+    fs::path model2 = tmp.base / "model2.gguf";
+    fs::create_directories(model1.parent_path());
+    std::ofstream(model1) << "GGUF";
+    std::ofstream(model2) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+
+    // Mark model2 as loading (simulating a load in progress)
+    mgr.markAsLoading(model2.string(), 1024);
+
+    // handleLoadFailure with evict_lru=true should attempt to evict LRU
+    // Since no models are actually loaded, this is a no-op but shouldn't crash
+    mgr.handleLoadFailure(model2.string(), true);
+    EXPECT_FALSE(mgr.isLoading(model2.string()));
+}
+
+TEST(LlamaManagerTest, EvictForVramReturnsZeroWhenNoModelsLoaded) {
+    TempModelFile tmp;
+    LlamaManager mgr(tmp.base.string());
+
+    // No models loaded, evictForVram should return 0
+    size_t freed = mgr.evictForVram(1024 * 1024);
+    EXPECT_EQ(freed, 0u);
+}
+
+TEST(LlamaManagerTest, LoadFailureDoesNotAffectLoadingState) {
+    TempModelFile tmp;
+    fs::path model1 = tmp.base / "model1.gguf";
+    fs::path model2 = tmp.base / "model2.gguf";
+    fs::create_directories(model1.parent_path());
+    std::ofstream(model1) << "GGUF";
+    std::ofstream(model2) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+    mgr.setMaxVramBytes(10000);
+
+    // Mark both as loading
+    mgr.markAsLoading(model1.string(), 5000);
+    mgr.markAsLoading(model2.string(), 5000);
+
+    // Model1 fails - should only clear model1's loading state
+    mgr.handleLoadFailure(model1.string(), false);
+
+    EXPECT_FALSE(mgr.isLoading(model1.string()));
+    EXPECT_TRUE(mgr.isLoading(model2.string()));  // model2 still loading
+}
+
+TEST(LlamaManagerTest, VramRecoveryAllowsRetryAfterFailure) {
+    TempModelFile tmp;
+    fs::path model = tmp.base / "test.gguf";
+    fs::create_directories(model.parent_path());
+    std::ofstream(model) << "GGUF";
+
+    LlamaManager mgr(tmp.base.string());
+    mgr.setMaxVramBytes(2000);
+
+    // First load attempt fails
+    mgr.markAsLoading(model.string(), 1500);
+    mgr.handleLoadFailure(model.string(), false);
+
+    // After failure, VRAM should be available for retry
+    EXPECT_TRUE(mgr.canLoadConcurrently(model.string(), 1500));
+}

@@ -33,6 +33,8 @@ public:
     static const char* marker();
 
 private:
+    friend class VisionProcessorTest;
+
     const ModelStorage& model_storage_;
     mutable std::mutex mutex_;
     mutable std::unordered_map<std::string, mtmd::context_ptr> contexts_;

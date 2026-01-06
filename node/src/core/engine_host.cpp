@@ -7,6 +7,7 @@
 #include <sstream>
 #include <cctype>
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -15,6 +16,48 @@
 #endif
 
 namespace llm_node {
+
+// T183: プラグインログレベルを文字列に変換
+const char* pluginLogLevelToString(PluginLogLevel level) {
+    switch (level) {
+        case PluginLogLevel::kTrace: return "trace";
+        case PluginLogLevel::kDebug: return "debug";
+        case PluginLogLevel::kInfo:  return "info";
+        case PluginLogLevel::kWarn:  return "warn";
+        case PluginLogLevel::kError: return "error";
+        default: return "unknown";
+    }
+}
+
+// T183: デフォルトのプラグインログハンドラ
+void defaultPluginLogHandler(void* /*ctx*/, const char* plugin_id, int level, const char* message) {
+    if (!plugin_id || !message) return;
+
+    const auto log_level = static_cast<PluginLogLevel>(level);
+
+    // spdlogにプラグインIDプレフィックス付きでログ出力
+    // タイムスタンプはspdlogが自動付与
+    switch (log_level) {
+        case PluginLogLevel::kTrace:
+            spdlog::trace("[plugin:{}] {}", plugin_id, message);
+            break;
+        case PluginLogLevel::kDebug:
+            spdlog::debug("[plugin:{}] {}", plugin_id, message);
+            break;
+        case PluginLogLevel::kInfo:
+            spdlog::info("[plugin:{}] {}", plugin_id, message);
+            break;
+        case PluginLogLevel::kWarn:
+            spdlog::warn("[plugin:{}] {}", plugin_id, message);
+            break;
+        case PluginLogLevel::kError:
+            spdlog::error("[plugin:{}] {}", plugin_id, message);
+            break;
+        default:
+            spdlog::info("[plugin:{}] {}", plugin_id, message);
+            break;
+    }
+}
 
 namespace {
 

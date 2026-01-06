@@ -46,7 +46,7 @@
   - `stcpp_init()` / `stcpp_free()` テスト
   - `stcpp_version()` / `stcpp_abi_version()` テスト
 
-- [ ] 8. C API契約テスト: モデル操作 (依存: 6) `[P]`
+- [x] 8. C API契約テスト: モデル操作 (依存: 6) `[P]`
   - `stcpp_model_load()` / `stcpp_model_free()` テスト
   - エラーケース（ファイル不在、無効モデル）
 
@@ -54,23 +54,23 @@
   - `stcpp_context_new()` / `stcpp_context_free()` テスト
   - `stcpp_context_default_params()` テスト
 
-- [ ] 10. C API契約テスト: トークナイザー (依存: 6) `[P]`
+- [x] 10. C API契約テスト: トークナイザー (依存: 6) `[P]`
   - `stcpp_tokenize()` / `stcpp_detokenize()` テスト
 
 ## Phase 2: safetensorsローダー
 
 ### Tests First (RED)
 
-- [ ] 11. safetensorsパーサーテスト (依存: 6)
+- [x] 11. safetensorsパーサーテスト (依存: 6)
   - ヘッダー解析テスト
   - テンソルメタデータ読み込みテスト
   - 無効ファイルエラーテスト
 
-- [ ] 12. テンソル変換テスト (依存: 6)
+- [x] 12. テンソル変換テスト (依存: 6)
   - safetensors → ggml_tensor変換テスト
   - FP16/BF16対応テスト
 
-- [ ] 13. 分割ファイルローダーテスト (依存: 6)
+- [x] 13. 分割ファイルローダーテスト (依存: 6)
   - index.json解析テスト
   - 複数ファイル結合テスト
 
@@ -80,17 +80,17 @@
   - contracts/c-api.mdに基づく型定義
   - 関数宣言
 
-- [ ] 15. safetensors-loader.cpp実装 (依存: 11, 14)
+- [x] 15. safetensors-loader.cpp実装 (依存: 11, 14)
   - stable-diffusion.cppの実装を参考に移植
   - mmapサポート
   - ヘッダー解析
   - テンソル読み込み
 
-- [ ] 16. 分割ファイルローダー実装 (依存: 13, 15)
+- [x] 16. 分割ファイルローダー実装 (依存: 13, 15)
   - index.json解析
   - 複数ファイル結合
 
-- [ ] 17. テンソル変換実装 (依存: 12, 15)
+- [x] 17. テンソル変換実装 (依存: 12, 15)
   - safetensors → ggml_tensor変換
   - dtype対応（FP16, BF16）
 
@@ -322,7 +322,7 @@
 以下のタスクが完了した時点でMVP達成:
 
 - [x] Phase 1: 基盤構築 (1-10)
-- [ ] Phase 2: safetensorsローダー (11-17)
+- [x] Phase 2: safetensorsローダー (11-17)
 - [ ] Phase 3: トークナイザー (18-22)
 - [ ] Phase 4: 推論エンジン (23-30)
 - [ ] E2Eテスト: gpt-oss-20b (51)

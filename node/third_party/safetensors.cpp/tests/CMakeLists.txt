@@ -18,6 +18,8 @@ add_executable(stcpp_contract_tests
     contract/init_test.cpp
     contract/version_test.cpp
     contract/params_test.cpp
+    contract/model_test.cpp
+    contract/tokenizer_test.cpp
 )
 target_link_libraries(stcpp_contract_tests
     PRIVATE
@@ -29,9 +31,12 @@ target_include_directories(stcpp_contract_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-# Unit tests (placeholder for future)
+# Unit tests
 add_executable(stcpp_unit_tests
     unit/placeholder_test.cpp
+    unit/safetensors_parser_test.cpp
+    unit/tensor_conversion_test.cpp
+    unit/split_loader_test.cpp
 )
 target_link_libraries(stcpp_unit_tests
     PRIVATE

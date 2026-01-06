@@ -1,0 +1,331 @@
+# Tasks: safetensors.cpp
+
+**機能ID**: SPEC-69549000
+**日付**: 2026-01-06
+**仕様**: [spec.md](./spec.md) | **計画**: [plan.md](./plan.md)
+
+## 凡例
+
+- `[P]` - 並列実行可能
+- `[ ]` - 未着手
+- `[x]` - 完了
+- 依存: 前提タスク番号
+
+## Phase 1: 基盤構築
+
+### Setup
+
+- [x] 1. プロジェクトディレクトリ構造作成 `[P]`
+  - `node/third_party/safetensors.cpp/` 配下に構造を作成
+  - `include/`, `src/`, `examples/`, `tests/` ディレクトリ
+
+- [ ] 2. ggmlサブモジュール追加 `[P]` (Worktree環境のため手動実行が必要)
+  - `git submodule add https://github.com/ggml-org/ggml ggml`
+  - `.gitmodules` 更新
+  - Note: CMakeLists.txtは親プロジェクトのggmlを利用する設定で対応済み
+
+- [x] 3. CMakeLists.txt作成 (依存: 1, 2)
+  - ggmlサブディレクトリ追加
+  - GPUバックエンド選択オプション（STCPP_METAL, STCPP_CUDA等）
+  - ライブラリターゲット定義
+
+- [x] 4. LICENSE (MIT) 作成 `[P]`
+
+- [x] 5. README.md作成 `[P]`
+  - ビルド手順
+  - 使用例
+  - 対応GPU
+
+### Contract Tests
+
+- [x] 6. テストフレームワーク設定 (依存: 3)
+  - googletestを追加
+  - CTest統合
+
+- [x] 7. C API契約テスト: 初期化/終了 (依存: 6) `[P]`
+  - `stcpp_init()` / `stcpp_free()` テスト
+  - `stcpp_version()` / `stcpp_abi_version()` テスト
+
+- [ ] 8. C API契約テスト: モデル操作 (依存: 6) `[P]`
+  - `stcpp_model_load()` / `stcpp_model_free()` テスト
+  - エラーケース（ファイル不在、無効モデル）
+
+- [x] 9. C API契約テスト: コンテキスト操作 (依存: 6) `[P]`
+  - `stcpp_context_new()` / `stcpp_context_free()` テスト
+  - `stcpp_context_default_params()` テスト
+
+- [ ] 10. C API契約テスト: トークナイザー (依存: 6) `[P]`
+  - `stcpp_tokenize()` / `stcpp_detokenize()` テスト
+
+## Phase 2: safetensorsローダー
+
+### Tests First (RED)
+
+- [ ] 11. safetensorsパーサーテスト (依存: 6)
+  - ヘッダー解析テスト
+  - テンソルメタデータ読み込みテスト
+  - 無効ファイルエラーテスト
+
+- [ ] 12. テンソル変換テスト (依存: 6)
+  - safetensors → ggml_tensor変換テスト
+  - FP16/BF16対応テスト
+
+- [ ] 13. 分割ファイルローダーテスト (依存: 6)
+  - index.json解析テスト
+  - 複数ファイル結合テスト
+
+### Implementation (GREEN)
+
+- [x] 14. safetensors.hヘッダー作成 (依存: 3)
+  - contracts/c-api.mdに基づく型定義
+  - 関数宣言
+
+- [ ] 15. safetensors-loader.cpp実装 (依存: 11, 14)
+  - stable-diffusion.cppの実装を参考に移植
+  - mmapサポート
+  - ヘッダー解析
+  - テンソル読み込み
+
+- [ ] 16. 分割ファイルローダー実装 (依存: 13, 15)
+  - index.json解析
+  - 複数ファイル結合
+
+- [ ] 17. テンソル変換実装 (依存: 12, 15)
+  - safetensors → ggml_tensor変換
+  - dtype対応（FP16, BF16）
+
+## Phase 3: トークナイザー
+
+### Tests First (RED)
+
+- [ ] 18. tokenizer.json解析テスト (依存: 6)
+  - vocab読み込みテスト
+  - BPEマージルール読み込みテスト
+  - 特殊トークン読み込みテスト
+
+- [ ] 19. トークン化テスト (依存: 6)
+  - 基本テキストのトークン化
+  - 特殊トークン追加
+  - エッジケース（空文字、長文）
+
+- [ ] 20. チャットテンプレートテスト (依存: 6)
+  - Jinja2テンプレート解析
+  - メッセージフォーマット適用
+
+### Implementation (GREEN)
+
+- [ ] 21. tokenizer.cpp実装 (依存: 18, 19, 14)
+  - tokenizer.json解析
+  - BPEエンコード/デコード
+  - llama.cppのトークナイザー参考
+
+- [ ] 22. chat-template.cpp実装 (依存: 20, 14)
+  - Jinja2サブセット解析
+  - テンプレート適用
+  - llama.cppのテンプレートエンジン参考
+
+## Phase 4: 推論エンジン（MVP）
+
+### Tests First (RED)
+
+- [ ] 23. モデルロード統合テスト (依存: 17, 21)
+  - config.json読み込みテスト
+  - 完全なモデルロードテスト
+  - VRAM見積もりテスト
+
+- [ ] 24. 生成テスト (依存: 6)
+  - 単一トークン生成テスト
+  - サンプリングパラメータテスト
+  - ストリーミングコールバックテスト
+
+- [ ] 25. キャンセルテスト (依存: 6)
+  - 推論キャンセルテスト
+  - 部分結果取得テスト
+
+### Implementation (GREEN)
+
+- [ ] 26. config.jsonローダー実装 (依存: 23, 14)
+  - ModelConfig構造体パース
+  - アーキテクチャ検出
+
+- [ ] 27. gpt-ossアーキテクチャ実装 (依存: 26)
+  - src/arch/gptoss.cpp
+  - 計算グラフ構築
+  - ggmlテンソル操作
+
+- [ ] 28. sampling.cpp実装 (依存: 24, 14)
+  - temperature, top_p, top_k
+  - repeat_penalty
+  - llama.cppのサンプリング参考
+
+- [ ] 29. safetensors.cpp コア実装 (依存: 27, 28)
+  - stcpp_model_load()
+  - stcpp_context_new()
+  - stcpp_generate()
+  - stcpp_generate_stream()
+
+- [ ] 30. キャンセル機能実装 (依存: 25, 29)
+  - stcpp_cancel()
+  - アトミックフラグによる中断
+
+## Phase 5: KVキャッシュ
+
+### Tests First (RED)
+
+- [ ] 31. KVキャッシュテスト (依存: 29)
+  - キャッシュ割り当てテスト
+  - キャッシュクリアテスト
+  - 量子化テスト（INT8/FP8）
+
+- [ ] 32. プロンプトキャッシュテスト (依存: 29)
+  - キャッシュ保存テスト
+  - キャッシュ読み込みテスト
+  - 再利用効果測定
+
+### Implementation (GREEN)
+
+- [ ] 33. kv-cache.cpp実装 (依存: 31)
+  - KVキャッシュ管理
+  - INT8/FP8量子化
+  - llama.cppのKVキャッシュ参考
+
+- [ ] 34. プロンプトキャッシュ実装 (依存: 32, 33)
+  - stcpp_prompt_cache_save()
+  - stcpp_prompt_cache_load()
+
+## Phase 6: バッチ処理
+
+### Tests First (RED)
+
+- [ ] 35. バッチ処理テスト (依存: 29)
+  - 複数リクエスト追加テスト
+  - バッチデコードテスト
+  - リクエストキャンセルテスト
+
+### Implementation (GREEN)
+
+- [ ] 36. batch.cpp実装 (依存: 35)
+  - stcpp_batch_new()
+  - stcpp_batch_add()
+  - stcpp_batch_decode()
+  - continuous batching
+
+## Phase 7: 埋め込み
+
+### Tests First (RED)
+
+- [ ] 37. 埋め込みテスト (依存: 29)
+  - 埋め込み生成テスト
+  - 次元数確認テスト
+  - バッチ埋め込みテスト
+
+### Implementation (GREEN)
+
+- [ ] 38. 埋め込み実装 (依存: 37)
+  - stcpp_embeddings()
+  - stcpp_embeddings_dims()
+
+## Phase 8: LoRA
+
+### Tests First (RED)
+
+- [ ] 39. LoRAテスト (依存: 29)
+  - LoRAロードテスト
+  - LoRA適用テスト
+  - ホットリロードテスト
+
+### Implementation (GREEN)
+
+- [ ] 40. lora.cpp実装 (依存: 39)
+  - stcpp_lora_load()
+  - stcpp_lora_apply()
+  - stcpp_lora_remove()
+
+## Phase 9: 追加アーキテクチャ
+
+- [ ] 41. nemotronアーキテクチャテスト (依存: 29)
+- [ ] 42. nemotronアーキテクチャ実装 (依存: 41)
+  - src/arch/nemotron.cpp
+
+## Phase 10: 高度な機能
+
+- [ ] 43. Rope Scalingテスト (依存: 29)
+- [ ] 44. Rope Scaling実装 (依存: 43)
+  - Linear/NTKスケーリング
+
+- [ ] 45. Sliding Window Attentionテスト (依存: 29)
+- [ ] 46. Sliding Window Attention実装 (依存: 45)
+
+- [ ] 47. GQA/MQAテスト (依存: 29)
+- [ ] 48. GQA/MQA実装 (依存: 47)
+
+## Phase 11: マルチGPU
+
+- [ ] 49. マルチGPUテスト (依存: 29)
+  - Pipeline Parallelismテスト
+  - デバイス間通信テスト
+
+- [ ] 50. マルチGPU実装 (依存: 49)
+  - レイヤー分割
+  - デバイス間同期
+
+## Phase 12: 仕上げ
+
+### Integration Tests
+
+- [ ] 51. E2Eテスト: gpt-oss-20b (依存: 29)
+  - 完全なモデルロード→推論→結果検証
+
+- [ ] 52. E2Eテスト: ストリーミング (依存: 51)
+
+- [ ] 53. E2Eテスト: continuous batching (依存: 36, 51)
+
+### Documentation
+
+- [ ] 54. APIリファレンス作成 (依存: 29)
+- [ ] 55. チュートリアル作成 (依存: 51)
+- [ ] 56. サンプルコード充実 (依存: 51)
+
+### Performance
+
+- [ ] 57. ベンチマークツール作成 (依存: 51)
+- [ ] 58. HuggingFace transformers比較ベンチマーク (依存: 57)
+- [ ] 59. VRAM使用量最適化 (依存: 58)
+
+### CI/CD
+
+- [ ] 60. CIワークフロー作成 (依存: 51) `[P]`
+  - ビルドテスト
+  - ユニットテスト
+  - HuggingFace Tinyモデルでの統合テスト
+
+## 依存関係グラフ（主要パス）
+
+```text
+1,2 → 3 → 6 → 7,8,9,10 (契約テスト)
+                ↓
+            11,12,13 → 15,16,17 (ローダー)
+                          ↓
+                      18,19,20 → 21,22 (トークナイザー)
+                                   ↓
+                               23,24,25 → 26,27,28,29 (推論MVP)
+                                              ↓
+                                          31,32 → 33,34 (KVキャッシュ)
+                                              ↓
+                                          35 → 36 (バッチ)
+                                              ↓
+                                          51,52,53 (E2E)
+```
+
+## MVP完了条件
+
+以下のタスクが完了した時点でMVP達成:
+
+- [x] Phase 1: 基盤構築 (1-10)
+- [ ] Phase 2: safetensorsローダー (11-17)
+- [ ] Phase 3: トークナイザー (18-22)
+- [ ] Phase 4: 推論エンジン (23-30)
+- [ ] E2Eテスト: gpt-oss-20b (51)
+- [ ] E2Eテスト: ストリーミング (52)
+
+MVP = 単一GPUでのgpt-oss-20b推論 + ストリーミング出力

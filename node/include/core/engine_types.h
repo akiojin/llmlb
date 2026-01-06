@@ -56,6 +56,9 @@ struct InferenceParams {
     int n{1};                       // 1 ~ 8 (生成する候補数)
     bool logprobs{false};           // logprobs を返すか
     int top_logprobs{0};            // 0 ~ 20 (上位候補数)
+
+    // Output: if non-null and logprobs=true, filled with actual logprob data
+    std::vector<TokenLogprob>* out_logprobs{nullptr};
 };
 
 inline size_t resolve_effective_max_tokens(size_t requested,
@@ -71,6 +74,13 @@ inline size_t resolve_effective_max_tokens(size_t requested,
     if (requested == 0) return available;
     return std::min(requested, available);
 }
+
+/// Token-level log probability information for OpenAI API compatibility
+struct TokenLogprob {
+    std::string token;                                      // The generated token
+    double logprob{0.0};                                   // Log probability of the token
+    std::vector<std::pair<std::string, double>> top_logprobs;  // Top alternative tokens with logprobs
+};
 
 struct ModelLoadResult {
     bool success{false};

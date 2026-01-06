@@ -11,6 +11,13 @@ namespace llm_node {
 
 class EngineRegistry;
 
+/// T183: デフォルトのプラグインログハンドラ（spdlog経由でログ出力）
+/// ログメッセージにプラグインIDプレフィックスとタイムスタンプを付与
+void defaultPluginLogHandler(void* ctx, const char* plugin_id, int level, const char* message);
+
+/// T183: プラグインログレベルを文字列に変換
+const char* pluginLogLevelToString(PluginLogLevel level);
+
 struct EnginePluginManifest {
     std::string engine_id;
     std::string engine_version;

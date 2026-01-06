@@ -26,6 +26,11 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 | **Stable Diffusion** | 本番稼働 | 画像生成 | CUDA、Metal |
 | **Nemotron** | 検証中 | Safetensors形式 | CUDA |
 
+**エンジン選択方針**:
+
+- **GGUFが用意されているモデル** → llama.cppで対応（Metal/CUDA対応済み）
+- **GGUFがないモデル（safetensorsのみ）** → 内蔵エンジンを実装（Metal/CUDA対応が必須）
+
 ### マルチモーダル対応
 
 テキスト生成に加え、OpenAI 互換 API で以下の機能を提供：

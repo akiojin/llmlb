@@ -28,6 +28,11 @@ LLM Router supports a pluggable multi-engine architecture:
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
 
+**Engine Selection Policy**:
+
+- **Models with GGUF available** → Use llama.cpp (Metal/CUDA ready)
+- **Models with safetensors only** → Implement built-in engine (Metal/CUDA support required)
+
 ### Multimodal Support
 
 Beyond text generation, LLM Router provides OpenAI-compatible APIs for:

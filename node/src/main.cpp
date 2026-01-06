@@ -99,6 +99,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Initialize model registry (empty for now, will sync after registration)
         llm_node::ModelRegistry registry;
+        registry.setGpuBackend(gpu_detector.getGpuBackend());
 
         // Determine models directory
         std::string models_dir = cfg.models_dir.empty()

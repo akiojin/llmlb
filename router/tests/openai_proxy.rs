@@ -57,6 +57,21 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
     let node_id = register_response.node_id;
     state.registry.approve(node_id).await.unwrap();
 
+    // ノードが報告するモデルとして登録（これがないとモデル存在チェックで404になる）
+    state
+        .registry
+        .update_executable_models(
+            node_id,
+            vec![
+                "gpt-oss-20b".to_string(),
+                "gpt-oss-120b".to_string(),
+                "test-model".to_string(),
+                "test-embed".to_string(),
+            ],
+        )
+        .await
+        .ok();
+
     // レジストリにロード済みモデル・初期化解除を反映
     state
         .registry
@@ -474,7 +489,7 @@ async fn test_openai_models_list_success() {
     .unwrap();
 
     // ローカルモデルのみをフィルタ（クラウドプロバイダープレフィックスを除外）
-    // SPEC-82491000でクラウドモデルが追加されたため、ローカルモデルのみを検証
+    // ノードが報告するモデルは executable_models として登録されるため、ローカルモデルとして表示される
     let cloud_prefixes = ["openai:", "google:", "anthropic:"];
     let local_models: Vec<&serde_json::Value> = value["data"]
         .as_array()
@@ -488,12 +503,14 @@ async fn test_openai_models_list_success() {
         })
         .unwrap_or_default();
 
+    // ノードが報告するモデルがローカルモデルとして表示される
     assert!(
-        local_models.is_empty(),
-        "/v1/models should have no local models when no downloaded models exist"
+        !local_models.is_empty(),
+        "/v1/models should include models reported by nodes"
     );
 }
 
+/// ノードが報告するモデルは /v1/models/:model_id で詳細を取得できる
 #[tokio::test]
 async fn test_openai_model_detail_success() {
     let mock_server = MockServer::start().await;
@@ -523,5 +540,6 @@ async fn test_openai_model_detail_success() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    // ノードが報告するモデルは executable_models に登録されるため、200が返る
+    assert_eq!(response.status(), StatusCode::OK);
 }

@@ -44,6 +44,14 @@ pub enum RouterError {
     #[error("No available nodes")]
     NoNodesAvailable,
 
+    /// SPEC-93536000: No nodes capable of executing the specified model (temporary)
+    #[error("No nodes capable of executing model: {0}")]
+    NoCapableNodes(String),
+
+    /// SPEC-93536000: Model not found in any node's executable_models (permanent)
+    #[error("Model not found: {0}")]
+    ModelNotFound(String),
+
     /// Database error
     #[error("Database error: {0}")]
     Database(String),
@@ -107,6 +115,8 @@ impl RouterError {
             Self::Common(_) => "Request error",
             Self::NodeNotFound(_) => "Node not found",
             Self::NoNodesAvailable => "No available nodes",
+            Self::NoCapableNodes(_) => "No capable nodes for model",
+            Self::ModelNotFound(_) => "Model not found",
             Self::Database(_) => "Database error",
             Self::Http(_) => "Backend service unavailable",
             Self::Timeout(_) => "Request timeout",

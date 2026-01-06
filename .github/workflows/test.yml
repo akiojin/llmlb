@@ -11,6 +11,30 @@ on:
       - develop
 
 jobs:
+  # パス変更検出（C++/Rustジョブの条件付き実行用）
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      cpp: ${{ steps.filter.outputs.cpp }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cpp:
+              - 'node/**'
+              - 'package.json'
+              - '.github/actions/setup-cpp/**'
+              - '.github/workflows/test.yml'
+            rust:
+              - 'router/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/test.yml'
+
   tasks-check:
     # 要件: FR-002
     # 目的: tasks.mdの全タスク完了をチェック
@@ -33,6 +57,8 @@ jobs:
     # 要件: FR-003
     # 目的: Rustテストを実行（複数OS）
     name: Rust Tests (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -43,6 +69,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -58,11 +86,15 @@ jobs:
     # 要件: OpenAI互換APIの回帰テスト
     # 目的: OpenAI APIとの互換性を確認
     name: OpenAI API Compatibility Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -77,6 +109,8 @@ jobs:
   cpp-tests:
     # C++ノードのビルドとテスト
     name: C++ Tests (Ubuntu)
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -88,11 +122,22 @@ jobs:
       - name: Setup C++ build environment
         uses: ./.github/actions/setup-cpp
 
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-test-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-test-
+
       - name: Configure C++ project
-        run: cmake -S node -B node/build -DBUILD_TESTS=ON
+        run: cmake -S node -B node/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
 
       - name: Build C++ project
         run: cmake --build node/build --config Release
+
+      - name: Show ccache stats
+        run: ccache -s
 
       - name: Run C++ tests
         run: ctest --output-on-failure

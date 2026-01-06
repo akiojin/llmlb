@@ -3,7 +3,7 @@
 use axum::body::Body;
 use axum::{
     extract::{Path, State},
-    http::{header::CONTENT_TYPE, HeaderValue, StatusCode},
+    http::{header::CONTENT_TYPE, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -11,20 +11,24 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapabilities, ModelCapability},
+    types::VisionCapability,
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::IpAddr, path::PathBuf, time::Instant};
+use std::{collections::HashSet, net::IpAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::registry::models::{is_valid_model_file, router_model_path};
+use crate::models::image;
 use crate::{
     api::{
-        models::{list_registered_models, DownloadProgress, LifecycleStatus},
+        model_name::{parse_quantized_model_name, ParsedModelName},
+        models::LifecycleStatus,
         nodes::AppError,
-        proxy::{forward_streaming_response, save_request_record, select_available_node},
+        proxy::{
+            forward_streaming_response, save_request_record, select_available_node,
+            select_available_node_with_queue, QueueSelection,
+        },
     },
     balancer::RequestOutcome,
     cloud_metrics, AppState,
@@ -109,33 +113,88 @@ fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
     redact_data_url(payload)
 }
 
+fn add_queue_headers(response: &mut Response, wait_ms: u128) {
+    let headers = response.headers_mut();
+    headers.insert(
+        HeaderName::from_static("x-queue-status"),
+        HeaderValue::from_static("queued"),
+    );
+    let wait_value = wait_ms.to_string();
+    if let Ok(value) = HeaderValue::from_str(&wait_value) {
+        headers.insert(HeaderName::from_static("x-queue-wait-ms"), value);
+    }
+}
+
+fn queue_error_response(
+    status: StatusCode,
+    message: &str,
+    error_type: &str,
+    retry_after: Option<u64>,
+) -> Response {
+    let mut response = (
+        status,
+        Json(json!({
+            "error": {
+                "message": message,
+                "type": error_type,
+                "code": status.as_u16(),
+            }
+        })),
+    )
+        .into_response();
+
+    if let Some(value) = retry_after {
+        if let Ok(header_value) = HeaderValue::from_str(&value.to_string()) {
+            response
+                .headers_mut()
+                .insert(HeaderName::from_static("retry-after"), header_value);
+        }
+    }
+
+    response
+}
+
+fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Response {
+    let payload = json!({
+        "error": {
+            "message": message.into(),
+            "type": "invalid_request_error",
+            "code": status.as_u16(),
+        }
+    });
+
+    (status, Json(payload)).into_response()
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
-
-    // モデルの TextGeneration capability を検証
-    let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == model) {
-        if !model_info.has_capability(ModelCapability::TextGeneration) {
-            return Err(AppError::from(RouterError::Common(
-                CommonError::Validation(format!(
-                    "Model '{}' does not support text generation",
-                    model
-                )),
-            )));
+    let parsed = if parse_cloud_model(&model).is_some() {
+        ParsedModelName {
+            raw: model.clone(),
+            base: model.clone(),
+            quantization: None,
         }
-    }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    } else {
+        parse_quantized_model_name(&model).map_err(AppError::from)?
+    };
+
+    // NOTE: 機能チェックはノード側で行う（SPEC-93536000）
+
+    let payload = match prepare_vision_payload(&state, payload, &parsed).await {
+        Ok(payload) => payload,
+        Err(response) => return Ok(response),
+    };
 
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
         payload,
         "/v1/chat/completions",
-        model,
+        parsed.raw,
         stream,
         RequestType::Chat,
     )
@@ -148,6 +207,9 @@ pub async fn completions(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
+    if parse_cloud_model(&model).is_none() {
+        parse_quantized_model_name(&model).map_err(AppError::from)?;
+    }
     let stream = extract_stream(&payload);
     proxy_openai_post(
         &state,
@@ -166,6 +228,9 @@ pub async fn embeddings(
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
     let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
+    if parse_cloud_model(&model).is_none() {
+        parse_quantized_model_name(&model).map_err(AppError::from)?;
+    }
     proxy_openai_post(
         &state,
         payload,
@@ -181,48 +246,48 @@ pub async fn embeddings(
 ///
 /// OpenAI API 互換形式に Azure OpenAI 形式の capabilities と
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
-/// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
+///
+/// SPEC-93536000: オンラインノードの executable_models を集約して返す
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    use crate::convert::ConvertStatus;
-    use crate::registry::models::generate_model_id;
+    // SPEC-93536000: オンラインノードから実行可能なモデル一覧を集約
+    let nodes = state.registry.list().await;
+    let online_nodes: Vec<_> = nodes
+        .into_iter()
+        .filter(|n| n.status == llm_router_common::types::NodeStatus::Online)
+        .collect();
 
-    // ルーターがサポートするモデルを取得
-    let models = list_registered_models();
+    // 実行可能モデル（excluded_modelsを除外）をユニークに集約
+    let mut executable_model_ids: HashSet<String> = HashSet::new();
+    let mut loaded_model_ids: HashSet<String> = HashSet::new();
 
-    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
+    for node in &online_nodes {
+        let excluded: HashSet<_> = node.excluded_models.iter().cloned().collect();
+        for model_id in &node.executable_models {
+            if !excluded.contains(model_id) {
+                executable_model_ids.insert(model_id.clone());
+            }
+        }
+        for model_id in &node.loaded_models {
+            loaded_model_ids.insert(model_id.clone());
+        }
+    }
+
+    // OpenAI互換レスポンス形式（executable_models からモデル一覧を生成）
     let mut data: Vec<Value> = Vec::new();
-    let mut registered_names: HashSet<String> = HashSet::new();
 
-    for m in models {
-        registered_names.insert(m.name.clone());
-
-        let path = m
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|path| is_valid_model_file(path))
-            .or_else(|| router_model_path(&m.name));
-
-        let ready = path.is_some();
-
-        // ライフサイクル状態を決定
+    for model_id in &executable_model_ids {
+        let ready = loaded_model_ids.contains(model_id);
         let lifecycle_status = if ready {
             LifecycleStatus::Registered
         } else {
             LifecycleStatus::Pending
         };
 
-        // Azure OpenAI 形式の capabilities (boolean object)
-        let caps: ModelCapabilities = m.get_capabilities().into();
-
         let obj = json!({
-            "id": m.name,
+            "id": model_id,
             "object": "model",
             "created": 0,
-            "owned_by": "router",
-            // Azure OpenAI 形式の capabilities
-            "capabilities": caps,
-            // ダッシュボード用拡張フィールド
+            "owned_by": "node",
             "lifecycle_status": lifecycle_status,
             "download_progress": null,
             "ready": ready,
@@ -230,95 +295,20 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         data.push(obj);
     }
 
-    // ConvertTaskからダウンロード中/待機中のモデル情報を追加
-    let tasks = state.convert_manager.list_tasks().await;
-
-    for task in tasks {
-        let model_name = generate_model_id(&task.repo);
-
-        // 既に登録済みのモデルはlifecycle_statusを更新
-        if let Some(obj) = data.iter_mut().find(|v| v["id"] == model_name) {
-            let (lifecycle_status, download_progress) = match task.status {
-                ConvertStatus::Queued => (
-                    LifecycleStatus::Pending,
-                    Some(DownloadProgress {
-                        percent: 0.0,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::InProgress => (
-                    LifecycleStatus::Caching,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::Failed => (
-                    LifecycleStatus::Error,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: task.error.clone(),
-                    }),
-                ),
-                ConvertStatus::Completed => continue, // 完了済みは既存のlifecycle_statusを維持
-            };
-            obj["lifecycle_status"] = serde_json::to_value(&lifecycle_status).unwrap();
-            obj["download_progress"] = serde_json::to_value(&download_progress).unwrap();
-        } else if !registered_names.contains(&model_name) {
-            // 未登録だがConvertTaskが存在するモデル（ダウンロード中）
-            let (lifecycle_status, download_progress) = match task.status {
-                ConvertStatus::Queued => (
-                    LifecycleStatus::Pending,
-                    Some(DownloadProgress {
-                        percent: 0.0,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::InProgress => (
-                    LifecycleStatus::Caching,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: None,
-                    }),
-                ),
-                ConvertStatus::Failed => (
-                    LifecycleStatus::Error,
-                    Some(DownloadProgress {
-                        percent: task.progress as f64,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        error: task.error.clone(),
-                    }),
-                ),
-                ConvertStatus::Completed => (LifecycleStatus::Registered, None),
-            };
-
-            // ダウンロード中のモデルは capabilities が不明なため、デフォルト（LLM）を使用
-            let caps = ModelCapabilities::default();
-
-            let obj = json!({
-                "id": model_name,
-                "object": "model",
-                "created": 0,
-                "owned_by": "router",
-                "capabilities": caps,
-                "lifecycle_status": lifecycle_status,
-                "download_progress": download_progress,
-                "ready": false,
-            });
-            data.push(obj);
-            registered_names.insert(model_name);
-        }
+    // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
+    let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
+    for cm in cloud_models {
+        let obj = json!({
+            "id": cm.id,
+            "object": cm.object,
+            "created": cm.created,
+            "owned_by": cm.owned_by,
+            // クラウドモデルはリモートで常に利用可能
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": true,
+        });
+        data.push(obj);
     }
 
     let body = json!({
@@ -333,59 +323,61 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 // /v1/models に Azure OpenAI 形式の capabilities とダッシュボード拡張が統合されています。
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
+///
+/// SPEC-93536000: ノードのexecutable_modelsからモデルの存在を確認
 pub async fn get_model(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
-    let all = list_registered_models();
-    let target = all.into_iter().find(|m| m.name == model_id).and_then(|m| {
-        let path = m
-            .path
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|path| is_valid_model_file(path))
-            .or_else(|| router_model_path(&m.name));
-        path.map(|p| (m, p))
-    });
+    // SPEC-93536000: オンラインノードからモデルの実行可能性を確認
+    let nodes = state.registry.list().await;
+    let online_nodes: Vec<_> = nodes
+        .into_iter()
+        .filter(|n| n.status == llm_router_common::types::NodeStatus::Online)
+        .collect();
 
-    let (model, path) = match target {
-        Some(v) => v,
-        None => {
-            // 404 を OpenAI 換算で返す
-            let body = json!({
-                "error": {
-                    "message": "The model does not exist",
-                    "type": "invalid_request_error",
-                    "param": "model",
-                    "code": "model_not_found"
-                }
-            });
-            return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
+    // モデルが実行可能かチェック
+    let mut is_executable = false;
+    let mut is_loaded = false;
+
+    for node in &online_nodes {
+        let excluded: HashSet<_> = node.excluded_models.iter().cloned().collect();
+        if node.executable_models.contains(&model_id) && !excluded.contains(&model_id) {
+            is_executable = true;
         }
+        if node.loaded_models.contains(&model_id) {
+            is_loaded = true;
+        }
+    }
+
+    if !is_executable {
+        // 404 を OpenAI 換算で返す
+        let body = json!({
+            "error": {
+                "message": "The model does not exist",
+                "type": "invalid_request_error",
+                "param": "model",
+                "code": "model_not_found"
+            }
+        });
+        return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
+    }
+
+    let lifecycle_status = if is_loaded {
+        LifecycleStatus::Registered
+    } else {
+        LifecycleStatus::Pending
     };
 
-    // Azure OpenAI 形式の capabilities (boolean object)
-    let caps: ModelCapabilities = model.get_capabilities().into();
-
-    let mut body = json!({
+    // OpenAI互換レスポンス（SPEC-93536000 でメタデータはノード側に委譲）
+    let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
-        "owned_by": "router",
-        "capabilities": caps,
-        // ダッシュボード用拡張フィールド
-        "lifecycle_status": LifecycleStatus::Registered,
-        "ready": true,
+        "owned_by": "node",
+        "lifecycle_status": lifecycle_status,
+        "ready": is_loaded,
     });
-
-    body["path"] = json!(path.to_string_lossy().to_string());
-    if let Some(url) = model.download_url {
-        body["download_url"] = json!(url);
-    }
-    if let Some(tpl) = model.chat_template {
-        body["chat_template"] = json!(tpl);
-    }
-
     Ok((StatusCode::OK, Json(body)).into_response())
 }
 
@@ -412,6 +404,125 @@ fn extract_stream(payload: &Value) -> bool {
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
+}
+
+fn collect_image_urls(payload: &Value) -> Result<Vec<String>, String> {
+    let mut urls = Vec::new();
+    let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) else {
+        return Ok(urls);
+    };
+
+    for message in messages {
+        let Some(content) = message.get("content") else {
+            continue;
+        };
+        let Some(parts) = content.as_array() else {
+            continue;
+        };
+
+        for part in parts {
+            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                continue;
+            }
+            let image_url_value = part
+                .get("image_url")
+                .ok_or_else(|| "image_url is required".to_string())?;
+            let url = if let Some(url) = image_url_value.get("url").and_then(|v| v.as_str()) {
+                url
+            } else if let Some(url) = image_url_value.as_str() {
+                url
+            } else {
+                return Err("image_url.url is required".to_string());
+            };
+            urls.push(url.to_string());
+        }
+    }
+
+    Ok(urls)
+}
+
+fn replace_image_urls(payload: &mut Value, replacements: &[String]) -> Result<(), String> {
+    let mut index = 0usize;
+    let Some(messages) = payload.get_mut("messages").and_then(|v| v.as_array_mut()) else {
+        if replacements.is_empty() {
+            return Ok(());
+        }
+        return Err("messages must be an array".to_string());
+    };
+
+    for message in messages {
+        let Some(parts) = message.get_mut("content").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        for part in parts {
+            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                continue;
+            }
+            let new_url = replacements
+                .get(index)
+                .ok_or_else(|| "image_url replacement missing".to_string())?
+                .clone();
+            index += 1;
+
+            let Some(image_url_value) = part.get_mut("image_url") else {
+                return Err("image_url is required".to_string());
+            };
+            if let Some(obj) = image_url_value.as_object_mut() {
+                obj.insert("url".to_string(), Value::String(new_url));
+            } else if image_url_value.is_string() {
+                *image_url_value = Value::String(new_url);
+            } else {
+                return Err("image_url must be object or string".to_string());
+            }
+        }
+    }
+
+    if index != replacements.len() {
+        return Err("image_url replacement count mismatch".to_string());
+    }
+
+    Ok(())
+}
+
+async fn prepare_vision_payload(
+    state: &AppState,
+    mut payload: Value,
+    _model: &ParsedModelName,
+) -> Result<Value, Response> {
+    let image_urls = collect_image_urls(&payload)
+        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
+    if image_urls.is_empty() {
+        return Ok(payload);
+    }
+
+    // NOTE: Vision capability チェックはノード側で行う（SPEC-93536000）
+    let vision_limits = VisionCapability::default();
+    if image_urls.len() > vision_limits.max_image_count as usize {
+        return Err(openai_error_response(
+            format!("Too many images (max {})", vision_limits.max_image_count),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let mut embedded_urls = Vec::with_capacity(image_urls.len());
+    for url in image_urls {
+        match image::validate_image_url(&state.http_client, &url, &vision_limits).await {
+            Ok(image_data) => {
+                embedded_urls.push(image_data.to_data_url());
+            }
+            Err(err) => {
+                return Err(openai_error_response(
+                    err.to_string(),
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+        }
+    }
+
+    replace_image_urls(&mut payload, &embedded_urls)
+        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
+
+    Ok(payload)
 }
 
 fn parse_cloud_model(model: &str) -> Option<(String, String)> {
@@ -976,10 +1087,78 @@ async fn proxy_openai_post(
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
+    let queue_config = state.queue_config;
+    let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: ノード選択失敗時もリクエスト履歴に記録する
-    let node = match select_available_node(state).await {
-        Ok(n) => n,
+    // SPEC-93536000: モデル対応ノードを選択
+    let node = match select_available_node_with_queue(state, queue_config, Some(&model)).await {
+        Ok(QueueSelection::Ready {
+            node,
+            queued_wait_ms: wait_ms,
+        }) => {
+            queued_wait_ms = wait_ms;
+            *node
+        }
+        Ok(QueueSelection::CapacityExceeded) => {
+            let message = "Request queue is full".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: Uuid::nil(),
+                    node_machine_name: "N/A".to_string(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: 0,
+                    status: RecordStatus::Error {
+                        message: message.clone(),
+                    },
+                    completed_at: Utc::now(),
+                },
+            );
+            let retry_after = queue_config.timeout.as_secs().max(1);
+            return Ok(queue_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                &message,
+                "rate_limit_exceeded",
+                Some(retry_after),
+            ));
+        }
+        Ok(QueueSelection::Timeout { waited_ms }) => {
+            let message = "Queue wait timeout".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: Uuid::nil(),
+                    node_machine_name: "N/A".to_string(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: waited_ms as u64,
+                    status: RecordStatus::Error {
+                        message: message.clone(),
+                    },
+                    completed_at: Utc::now(),
+                },
+            );
+            return Ok(queue_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                &message,
+                "timeout",
+                None,
+            ));
+        }
         Err(e) => {
             error!(
                 endpoint = %target_path,
@@ -1000,7 +1179,7 @@ async fn proxy_openai_post(
                     client_ip: None,
                     request_body,
                     response_body: None,
-                    duration_ms: 0,
+                    duration_ms: queued_wait_ms.unwrap_or(0) as u64,
                     status: RecordStatus::Error {
                         message: format!("Node selection failed: {}", e),
                     },
@@ -1059,6 +1238,20 @@ async fn proxy_openai_post(
                 },
             );
 
+            // SPEC-93536000: 推論失敗時にモデルを除外
+            if let Err(exclude_err) = state
+                .registry
+                .exclude_model_from_node(node_id, &model)
+                .await
+            {
+                tracing::warn!(
+                    node_id = %node_id,
+                    model = %model,
+                    error = %exclude_err,
+                    "Failed to exclude model from node after inference failure"
+                );
+            }
+
             return Err(RouterError::Http(format!("Failed to proxy OpenAI request: {}", e)).into());
         }
     };
@@ -1091,7 +1284,11 @@ async fn proxy_openai_post(
             },
         );
 
-        return forward_streaming_response(response).map_err(AppError::from);
+        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
+        if let Some(wait_ms) = queued_wait_ms {
+            add_queue_headers(&mut axum_response, wait_ms);
+        }
+        return Ok(axum_response);
     }
 
     if !response.status().is_success() {
@@ -1132,6 +1329,23 @@ async fn proxy_openai_post(
             },
         );
 
+        // SPEC-93536000: サーバーエラー（5xx）の場合はモデルを除外
+        // クライアントエラー（4xx）は除外しない（リクエストの問題であるため）
+        if status_code.is_server_error() {
+            if let Err(exclude_err) = state
+                .registry
+                .exclude_model_from_node(node_id, &model)
+                .await
+            {
+                tracing::warn!(
+                    node_id = %node_id,
+                    model = %model,
+                    error = %exclude_err,
+                    "Failed to exclude model from node after inference failure"
+                );
+            }
+        }
+
         let payload = json!({
             "error": {
                 "message": message,
@@ -1140,7 +1354,11 @@ async fn proxy_openai_post(
             }
         });
 
-        return Ok((status_code, Json(payload)).into_response());
+        let mut response = (status_code, Json(payload)).into_response();
+        if let Some(wait_ms) = queued_wait_ms {
+            add_queue_headers(&mut response, wait_ms);
+        }
+        return Ok(response);
     }
 
     if stream {
@@ -1170,7 +1388,11 @@ async fn proxy_openai_post(
             },
         );
 
-        return forward_streaming_response(response).map_err(AppError::from);
+        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
+        if let Some(wait_ms) = queued_wait_ms {
+            add_queue_headers(&mut axum_response, wait_ms);
+        }
+        return Ok(axum_response);
     }
 
     let parsed = response.json::<Value>().await;
@@ -1203,7 +1425,11 @@ async fn proxy_openai_post(
                 },
             );
 
-            Ok((StatusCode::OK, Json(body)).into_response())
+            let mut response = (StatusCode::OK, Json(body)).into_response();
+            if let Some(wait_ms) = queued_wait_ms {
+                add_queue_headers(&mut response, wait_ms);
+            }
+            Ok(response)
         }
         Err(e) => {
             state
@@ -1240,7 +1466,8 @@ async fn proxy_openai_post(
 
 #[allow(dead_code)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
-    let node = select_available_node(state).await?;
+    // NOTE: GETリクエストはモデル指定なしで任意のノードを選択
+    let node = select_available_node(state, None).await?;
     let node_id = node.id;
 
     state
@@ -1343,15 +1570,15 @@ mod tests {
             .await
             .expect("migrations");
         let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret: "test-secret".into(),
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 
@@ -1771,8 +1998,14 @@ mod tests {
         .await;
         let err = res.unwrap_err();
         let msg = format!("{:?}", err);
+        // SPEC-93536000: NoCapableNodes/ModelNotFound も許容（モデル指定時のエラー）
         assert!(
-            msg.contains("NoNodesAvailable") || msg.contains("No available nodes"),
+            msg.contains("NoNodesAvailable")
+                || msg.contains("No available nodes")
+                || msg.contains("NoCapableNodes")
+                || msg.contains("No capable nodes")
+                || msg.contains("ModelNotFound")
+                || msg.contains("Model not found"),
             "expected local-path node error, got {}",
             msg
         );

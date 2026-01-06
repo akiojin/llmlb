@@ -2,6 +2,7 @@
 
 use crate::{
     balancer::{NodeLoadSnapshot, SystemSummary},
+    events::DashboardEvent,
     registry::NodeSettingsUpdate,
     AppState,
 };
@@ -130,6 +131,20 @@ pub async fn register_node(
             })
             .unwrap_or_default();
 
+        // SPEC-93536000 3.3: 空のモデルリスト時は登録拒否
+        if models.is_empty() {
+            error!(
+                "Node registration rejected: node returned empty model list at {}",
+                health_url
+            );
+            return Err(AppError(RouterError::Common(
+                llm_router_common::error::CommonError::Validation(
+                    "Node has no executable models. At least one model must be available."
+                        .to_string(),
+                ),
+            )));
+        }
+
         let models_count = models.len().min(u8::MAX as usize) as u8;
 
         let ready_models = json
@@ -190,17 +205,21 @@ pub async fn register_node(
     response.node_token = Some(node_token_with_plaintext.token);
 
     // 取得した初期状態を反映
+    // SPEC-93536000: executable_modelsにも/v1/modelsから取得したモデル一覧を設定
     if let Err(e) = state
         .registry
         .update_last_seen(
             response.node_id,
-            Some(loaded_models),
+            Some(loaded_models.clone()),
             None, // loaded_embedding_models
             None,
             None,
             None,
             Some(initializing),
             ready_models,
+            None,
+            None,
+            Some(loaded_models), // executable_models
         )
         .await
     {
@@ -220,6 +239,16 @@ pub async fn register_node(
         llm_router_common::protocol::RegisterStatus::Registered => StatusCode::CREATED,
         llm_router_common::protocol::RegisterStatus::Updated => StatusCode::OK,
     };
+
+    // Publish dashboard event for real-time updates
+    if let Ok(node) = state.registry.get(response.node_id).await {
+        state.event_bus.publish(DashboardEvent::NodeRegistered {
+            node_id: response.node_id,
+            machine_name: node.machine_name.clone(),
+            ip_address: node.ip_address.to_string(),
+            status: node.status,
+        });
+    }
 
     Ok((status_code, Json(response)))
 }
@@ -290,6 +319,12 @@ pub async fn delete_node(
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<StatusCode, AppError> {
     state.registry.delete(node_id).await?;
+
+    // Publish dashboard event for real-time updates
+    state
+        .event_bus
+        .publish(DashboardEvent::NodeRemoved { node_id });
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -298,7 +333,20 @@ pub async fn disconnect_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<StatusCode, AppError> {
+    // Get old status before disconnecting
+    let old_status = state.registry.get(node_id).await.ok().map(|n| n.status);
+
     state.registry.mark_offline(node_id).await?;
+
+    // Publish dashboard event for real-time updates
+    if let Some(old) = old_status {
+        state.event_bus.publish(DashboardEvent::NodeStatusChanged {
+            node_id,
+            old_status: old,
+            new_status: llm_router_common::types::NodeStatus::Offline,
+        });
+    }
+
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -321,6 +369,10 @@ impl IntoResponse for AppError {
             RouterError::NoNodesAvailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
+            RouterError::NoCapableNodes(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
+            }
+            RouterError::ModelNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
             RouterError::ServiceUnavailable(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
@@ -402,16 +454,16 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 
@@ -430,7 +482,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -461,7 +513,7 @@ mod tests {
             machine_name: "machine1".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -476,7 +528,7 @@ mod tests {
             machine_name: "machine2".to_string(),
             ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -498,7 +550,7 @@ mod tests {
             machine_name: "gpu-required-test".to_string(),
             ip_address: "192.168.1.101".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: false,
             gpu_devices: Vec::new(),
             gpu_count: None,
@@ -525,7 +577,7 @@ mod tests {
             machine_name: "missing-gpu-devices".to_string(),
             ip_address: "192.168.1.102".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: Vec::new(),
             gpu_count: None,
@@ -553,7 +605,7 @@ mod tests {
             machine_name: "shared-machine".to_string(),
             ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -596,7 +648,7 @@ mod tests {
             machine_name: "metrics-machine".to_string(),
             ip_address: "192.168.1.150".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -656,6 +708,7 @@ mod tests {
         assert_eq!(summary.registering_nodes, 0);
         assert_eq!(summary.total_requests, 0);
         assert_eq!(summary.total_active_requests, 0);
+        assert_eq!(summary.queued_requests, 0);
         assert!(summary.average_response_time_ms.is_none());
         assert!(summary.last_metrics_updated_at.is_none());
     }
@@ -669,7 +722,7 @@ mod tests {
             machine_name: "stats-machine".to_string(),
             ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -746,6 +799,7 @@ mod tests {
         assert_eq!(summary.successful_requests, 1);
         assert_eq!(summary.failed_requests, 1);
         assert_eq!(summary.total_active_requests, 2);
+        assert_eq!(summary.queued_requests, 0);
         let avg = summary.average_response_time_ms.unwrap();
         assert!((avg - 160.0).abs() < 0.1);
         assert!(summary.last_metrics_updated_at.is_some());
@@ -761,7 +815,7 @@ mod tests {
             machine_name: "approve-node".to_string(),
             ip_address: "192.168.1.120".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -803,7 +857,7 @@ mod tests {
             machine_name: "approve-node-viewer".to_string(),
             ip_address: "192.168.1.121".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: sample_gpu_devices(),
             gpu_count: Some(1),
@@ -845,7 +899,7 @@ mod tests {
                 machine_name: "node-settings".into(),
                 ip_address: "10.0.0.5".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -888,7 +942,7 @@ mod tests {
                 machine_name: "delete-node".into(),
                 ip_address: "10.0.0.7".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -919,7 +973,7 @@ mod tests {
                 machine_name: "disconnect-node".into(),
                 ip_address: "10.0.0.8".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -947,7 +1001,7 @@ mod tests {
             machine_name: "no-gpu-machine".to_string(),
             ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: false,
             gpu_devices: Vec::new(),
             gpu_count: None,

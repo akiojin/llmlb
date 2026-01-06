@@ -35,7 +35,7 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
    **結果** 指定ポートでルーターサービスが起動する
 2. **前提** 環境変数が未設定、
    **実行** `llm-router`を引数なしで実行、
-   **結果** デフォルト設定（ポート8080）でルーターサービスが起動する
+   **結果** デフォルト設定（ポート32768）でルーターサービスが起動する
 
 ---
 
@@ -99,7 +99,7 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 以下の機能は廃止され、完全に削除されました：
 
 - `user` サブコマンド（list/add/delete）- API経由 `/v0/users/*` を使用
-- `model` サブコマンド（list/add/download）- API経由 `/v0/models/*` を使用
+- `model` サブコマンド（list/add/download）- API経由 `/v1/models/*` を使用
 - `--preload-model` オプション - Dashboard経由でモデル配布を実行
 
 ### 環境変数（設定）
@@ -108,7 +108,7 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 
 | 環境変数 | 説明 | デフォルト値 |
 |---------|------|------------|
-| `LLM_ROUTER_PORT` | 待受ポート | 8080 |
+| `LLM_ROUTER_PORT` | 待受ポート | 32768 |
 | `LLM_ROUTER_HOST` | 待受アドレス | 0.0.0.0 |
 | `LLM_ROUTER_LOG_LEVEL` | ログレベル | info |
 | `LLM_ROUTER_JWT_SECRET` | JWT署名キー | ランダム生成 |
@@ -180,8 +180,8 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 
 | 環境変数 | 説明 | デフォルト値 |
 |---------|------|------------|
-| `LLM_ROUTER_URL` | ルーターURL | `http://127.0.0.1:8080` |
-| `LLM_NODE_PORT` | 待受ポート | 11435 |
+| `LLM_ROUTER_URL` | ルーターURL | `http://127.0.0.1:32768` |
+| `LLM_NODE_PORT` | 待受ポート | 32769 |
 | `LLM_NODE_IP` | ノードIP | (自動検出) |
 | `LLM_NODE_MODELS_DIR` | モデル保存先 | `~/.runtime/models` |
 | `LLM_NODE_LOG_LEVEL` | ログレベル | info |
@@ -205,7 +205,7 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 - インタラクティブモード（対話形式での設定）
 - 設定ファイル（YAML/TOML）からの読み込み
 - CLI経由のユーザー管理（API `/v0/users/*` で対応済み）
-- CLI経由のモデル管理（API `/v0/models/*` で対応済み）
+- CLI経由のモデル管理（API `/v1/models/*` で対応済み）
 
 ---
 
@@ -252,3 +252,24 @@ Router/Node共に、CLIは以下のオプションのみをサポート：
 - 引数なしでサーバー起動
 - 全プラットフォーム対応（Linux CLI、Windows/macOS GUI トレイ）
 - 廃止コマンド（user/model）の完全削除
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。実装も完了しています。
+
+**確認済み事項**:
+
+- CLIオプション: -h/--help, -V/--version のみ（FR-002, FR-003で明記）
+- 設定方式: 環境変数のみ、CLIオプションで設定値は受け付けない（FR-004で明記）
+- 環境変数プレフィックス: Router=LLM_ROUTER_*, Node=LLM_NODE_*
+- JWT_SECRET: 自動生成・永続化（~/.llm-router/jwt_secret）（FR-013~FR-016で明記）
+
+**廃止された機能**:
+
+- userサブコマンド → API /v0/users/*
+- modelサブコマンド → API /v1/models/*
+- --preload-modelオプション → Dashboard経由

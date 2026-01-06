@@ -5,11 +5,15 @@
 pub mod api_keys;
 pub mod audio;
 pub mod auth;
+pub mod cloud_models;
 pub mod dashboard;
+pub mod dashboard_ws;
 pub mod health;
 pub mod images;
 pub mod invitations;
 pub mod logs;
+/// モデル名のパース（量子化サフィックス対応）
+pub mod model_name;
 pub mod models;
 pub mod nodes;
 pub mod openai;
@@ -43,17 +47,26 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 
 /// APIルーターを作成
 pub fn create_router(state: AppState) -> Router {
+    let auth_disabled = crate::config::is_auth_disabled();
+
     // `/v0/*`: llm-router独自API（管理/運用向け）
     // JWTが必要な認証ルート（ログイン以外）
     let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
-        .route("/auth/logout", post(auth::logout))
-        .layer(middleware::from_fn_with_state(
+        .route("/auth/logout", post(auth::logout));
+
+    let auth_routes = if auth_disabled {
+        auth_routes.layer(middleware::from_fn(
+            crate::auth::middleware::inject_dummy_admin_claims,
+        ))
+    } else {
+        auth_routes.layer(middleware::from_fn_with_state(
             state.jwt_secret.clone(),
             crate::auth::middleware::jwt_auth_middleware,
-        ));
+        ))
+    };
 
-    // 管理者API（JWTまたはadmin:*スコープAPIキー）
+    // 管理者API（JWTまたはadminスコープAPIキー）
     let admin_routes = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
         .route(
@@ -108,50 +121,56 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）
         .route("/nodes/:node_id/logs", get(logs::get_node_logs))
-        // モデル管理API (SPEC-11106000 / SPEC-dcaeaec4)
-        .route("/models/register", post(models::register_model))
-        .route("/models/*model_name", delete(models::delete_model))
-        .route(
-            "/models/discover-gguf",
-            post(models::discover_gguf_endpoint),
-        )
         // Prometheus metrics（cloud prefix含む独自メトリクス）
-        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
-        .layer(middleware::from_fn_with_state(
+        .route("/metrics/cloud", get(cloud_metrics::export_metrics));
+
+    let admin_routes = if auth_disabled {
+        admin_routes.layer(middleware::from_fn(
+            crate::auth::middleware::inject_dummy_admin_claims,
+        ))
+    } else {
+        admin_routes.layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::admin_or_api_key_middleware,
-        ));
-
-    // ノード登録（node:registerスコープが必要）
-    let node_register_routes = Router::new()
-        .route("/nodes", post(nodes::register_node))
-        .route("/models", get(models::list_models))
-        // モデルファイル配信API (SPEC-48678000)
-        .route("/models/blob/:model_name", get(models::get_model_blob))
-        .layer(middleware::from_fn_with_state(
-            ApiKeyScope::NodeRegister,
-            crate::auth::middleware::require_api_key_scope_middleware,
         ))
-        .layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_auth_middleware,
-        ));
+    };
 
+    // ノード登録（Nodeスコープが必要）
+    let node_register_routes = Router::new().route("/nodes", post(nodes::register_node));
+
+    let node_register_routes = if auth_disabled {
+        node_register_routes
+    } else {
+        node_register_routes
+            .layer(middleware::from_fn_with_state(
+                ApiKeyScope::Node,
+                crate::auth::middleware::require_api_key_scope_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::api_key_auth_middleware,
+            ))
+    };
     // ノードトークン + APIキー認証が必要なルート
-    let node_protected_routes = Router::new()
-        .route("/health", post(health::health_check))
-        .layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::node_token_auth_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            ApiKeyScope::NodeRegister,
-            crate::auth::middleware::require_api_key_scope_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_auth_middleware,
-        ));
+    let node_protected_routes = Router::new().route("/health", post(health::health_check));
+
+    let node_protected_routes = if auth_disabled {
+        node_protected_routes
+    } else {
+        node_protected_routes
+            .layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::node_token_auth_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                ApiKeyScope::Node,
+                crate::auth::middleware::require_api_key_scope_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::api_key_auth_middleware,
+            ))
+    };
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
     let api_key_routes = Router::new()
@@ -166,27 +185,35 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/images/edits", post(images::edits))
         .route("/v1/images/variations", post(images::variations));
 
-    let api_key_protected_routes = api_key_routes
-        .layer(middleware::from_fn_with_state(
-            ApiKeyScope::ApiInference,
-            crate::auth::middleware::require_api_key_scope_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_auth_middleware,
-        ));
+    let api_key_protected_routes = if auth_disabled {
+        api_key_routes
+    } else {
+        api_key_routes
+            .layer(middleware::from_fn_with_state(
+                ApiKeyScope::Api,
+                crate::auth::middleware::require_api_key_scope_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::api_key_auth_middleware,
+            ))
+    };
 
     // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model));
 
-    let models_protected_routes = models_routes.layer(middleware::from_fn_with_state(
-        state.db_pool.clone(),
-        crate::auth::middleware::api_key_or_node_token_auth_middleware,
-    ));
+    let models_protected_routes = if auth_disabled {
+        models_routes
+    } else {
+        models_routes.layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_or_node_token_auth_middleware,
+        ))
+    };
 
-    // NOTE: /v0/models (GET) はノード同期専用です。
+    // NOTE: /v0/models (GET) は Admin/Node スコープ共用。
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
 
     Router::new()
@@ -212,6 +239,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/playground", get(serve_playground_index))
         .route("/playground/", get(serve_playground_index))
         .route("/playground/*path", get(serve_playground_asset))
+        // WebSocket endpoint for real-time dashboard updates
+        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
         .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
 }
@@ -306,16 +335,16 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         let state = AppState {
             registry: registry.clone(),
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         };
         (state, registry)
     }
@@ -390,7 +419,7 @@ mod tests {
                 machine_name: "test-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -427,7 +456,7 @@ mod tests {
                 machine_name: "overview-node".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -467,7 +496,7 @@ mod tests {
                 machine_name: "metrics-route".into(),
                 ip_address: "127.0.0.1".parse().unwrap(),
                 runtime_version: "0.1.0".into(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),

@@ -1,0 +1,317 @@
+openapi: 3.0.3
+info:
+  title: LLM Router Logging API
+  description: 共通ログシステムのAPI仕様
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発サーバー
+
+paths:
+  /v0/logs:
+    get:
+      summary: ログエントリの取得
+      description: |
+        フィルタ条件に基づいてログエントリを取得します。
+        ログはタイムスタンプの降順（新しい順）で返されます。
+      operationId: getLogs
+      tags:
+        - Logging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: level
+          in: query
+          description: ログレベルでフィルタ
+          schema:
+            $ref: '#/components/schemas/LogLevel'
+        - name: category
+          in: query
+          description: カテゴリでフィルタ
+          schema:
+            $ref: '#/components/schemas/LogCategory'
+        - name: since
+          in: query
+          description: 開始時刻（ISO 8601形式）
+          schema:
+            type: string
+            format: date-time
+            example: "2025-12-01T00:00:00Z"
+        - name: until
+          in: query
+          description: 終了時刻（ISO 8601形式）
+          schema:
+            type: string
+            format: date-time
+            example: "2025-12-01T23:59:59Z"
+        - name: request_id
+          in: query
+          description: リクエストIDでフィルタ
+          schema:
+            type: string
+            example: "abc123"
+        - name: model
+          in: query
+          description: モデル名でフィルタ
+          schema:
+            type: string
+            example: "llama-3.2-1b"
+        - name: node_id
+          in: query
+          description: ノードIDでフィルタ
+          schema:
+            type: string
+            example: "node-1"
+        - name: limit
+          in: query
+          description: 取得件数（最大1000）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          description: オフセット
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: ログエントリのリスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogResponse'
+        '400':
+          description: 不正なリクエスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/logs/stream:
+    get:
+      summary: ログのリアルタイムストリーム
+      description: |
+        WebSocket接続でリアルタイムにログを受信します。
+        接続後、新規ログが発生するたびにJSON形式で送信されます。
+      operationId: streamLogs
+      tags:
+        - Logging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: level
+          in: query
+          description: ログレベルでフィルタ
+          schema:
+            $ref: '#/components/schemas/LogLevel'
+        - name: category
+          in: query
+          description: カテゴリでフィルタ
+          schema:
+            $ref: '#/components/schemas/LogCategory'
+      responses:
+        '101':
+          description: WebSocket接続に切り替え
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/logs/stats:
+    get:
+      summary: ログ統計情報の取得
+      description: 指定期間のログ統計情報を取得します。
+      operationId: getLogStats
+      tags:
+        - Logging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: since
+          in: query
+          description: 開始時刻（ISO 8601形式）
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          description: 終了時刻（ISO 8601形式）
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: ログ統計情報
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogStats'
+        '401':
+          description: 認証エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    LogLevel:
+      type: string
+      enum:
+        - trace
+        - debug
+        - info
+        - warn
+        - error
+      description: ログレベル
+
+    LogCategory:
+      type: string
+      enum:
+        - system
+        - api
+        - model
+        - inference
+        - sync
+        - repair
+        - health
+      description: ログカテゴリ
+
+    LogEntry:
+      type: object
+      required:
+        - ts
+        - level
+        - category
+        - msg
+      properties:
+        ts:
+          type: string
+          format: date-time
+          description: タイムスタンプ（ISO 8601）
+          example: "2025-12-01T12:00:00.000Z"
+        level:
+          $ref: '#/components/schemas/LogLevel'
+        category:
+          $ref: '#/components/schemas/LogCategory'
+        msg:
+          type: string
+          description: ログメッセージ
+          example: "Request received"
+        request_id:
+          type: string
+          description: リクエストID
+          example: "abc123"
+        model:
+          type: string
+          description: モデル名
+          example: "llama-3.2-1b"
+        node_id:
+          type: string
+          description: ノードID
+          example: "node-1"
+      additionalProperties: true
+
+    LogResponse:
+      type: object
+      required:
+        - logs
+        - total
+        - has_more
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogEntry'
+        total:
+          type: integer
+          description: フィルタ条件に一致する総件数
+          example: 150
+        has_more:
+          type: boolean
+          description: さらにログがあるかどうか
+          example: true
+
+    LogStats:
+      type: object
+      required:
+        - total_count
+        - by_level
+        - by_category
+      properties:
+        total_count:
+          type: integer
+          description: 総ログ件数
+          example: 10000
+        by_level:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            error: 50
+            warn: 200
+            info: 8000
+            debug: 1750
+        by_category:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            api: 5000
+            inference: 3000
+            model: 500
+            system: 1500
+        error_rate:
+          type: number
+          format: float
+          description: エラー率（%）
+          example: 0.5
+        period:
+          type: object
+          properties:
+            since:
+              type: string
+              format: date-time
+            until:
+              type: string
+              format: date-time
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+              description: エラーメッセージ
+            type:
+              type: string
+              description: エラータイプ
+            code:
+              type: string
+              description: エラーコード

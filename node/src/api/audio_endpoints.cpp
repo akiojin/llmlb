@@ -1,21 +1,29 @@
 #include "api/audio_endpoints.h"
 #include "core/whisper_manager.h"
 #include "core/onnx_tts_manager.h"
+#include "runtime/state.h"
 
 #include <spdlog/spdlog.h>
 #include <cstring>
 #include <algorithm>
 
+#define MINIAUDIO_IMPLEMENTATION
+#define MA_NO_DEVICE_IO
+#define MA_NO_ENGINE
+#define MA_NO_NODE_GRAPH
+#define MA_NO_RESOURCE_MANAGER
+#define MA_NO_THREADING
+#include "vendor/miniaudio/miniaudio.h"
+
 namespace llm_node {
 
-AudioEndpoints::AudioEndpoints(WhisperManager& whisper_manager, const NodeConfig& config)
-    : whisper_manager_(whisper_manager), tts_manager_(nullptr), config_(config) {
+AudioEndpoints::AudioEndpoints(WhisperManager& whisper_manager)
+    : whisper_manager_(whisper_manager), tts_manager_(nullptr) {
 }
 
 AudioEndpoints::AudioEndpoints(WhisperManager& whisper_manager,
-                               OnnxTtsManager& tts_manager,
-                               const NodeConfig& config)
-    : whisper_manager_(whisper_manager), tts_manager_(&tts_manager), config_(config) {
+                               OnnxTtsManager& tts_manager)
+    : whisper_manager_(whisper_manager), tts_manager_(&tts_manager) {
 }
 
 void AudioEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
@@ -56,6 +64,12 @@ void AudioEndpoints::registerRoutes(httplib::Server& server) {
 
 void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::Response& res) {
     spdlog::debug("Handling transcription request");
+
+    auto guard = RequestGuard::try_acquire();
+    if (!guard) {
+        respondError(res, 429, "too_many_requests", "Node is busy");
+        return;
+    }
 
     // multipart/form-dataの検証
     if (!req.form.has_file("file")) {
@@ -113,7 +127,7 @@ void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::
 
     if (sample_rate == 0) {
         respondError(res, 400, "invalid_audio",
-                     "Failed to decode audio file. Supported formats: WAV (16-bit PCM)");
+                     "Failed to decode audio file. Supported formats: WAV, MP3, FLAC, OGG");
         return;
     }
 
@@ -197,6 +211,12 @@ void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::
 void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response& res) {
     spdlog::debug("Handling speech request");
 
+    auto guard = RequestGuard::try_acquire();
+    if (!guard) {
+        respondError(res, 429, "too_many_requests", "Node is busy");
+        return;
+    }
+
     // TTS manager が未設定の場合
     if (!tts_manager_) {
         respondError(res, 501, "not_implemented",
@@ -279,16 +299,25 @@ void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response
     }
 
     // Content-Typeの設定
+    std::string output_format = params.response_format;
+    if (!result.format.empty()) {
+        if (result.format != params.response_format) {
+            spdlog::info("Overriding response_format from '{}' to '{}' based on synthesis output",
+                         params.response_format, result.format);
+        }
+        output_format = result.format;
+    }
+
     std::string content_type;
-    if (params.response_format == "mp3") {
+    if (output_format == "mp3") {
         content_type = "audio/mpeg";
-    } else if (params.response_format == "opus") {
+    } else if (output_format == "opus") {
         content_type = "audio/opus";
-    } else if (params.response_format == "aac") {
+    } else if (output_format == "aac") {
         content_type = "audio/aac";
-    } else if (params.response_format == "flac") {
+    } else if (output_format == "flac") {
         content_type = "audio/flac";
-    } else if (params.response_format == "wav") {
+    } else if (output_format == "wav") {
         content_type = "audio/wav";
     } else {
         content_type = "audio/pcm";
@@ -301,7 +330,7 @@ void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response
         content_type);
 
     spdlog::info("Speech synthesis completed: {} bytes, format={}",
-                 result.audio_data.size(), params.response_format);
+                 result.audio_data.size(), output_format);
 }
 
 int AudioEndpoints::decodeAudioToFloat(const std::string& audio_data,
@@ -309,116 +338,41 @@ int AudioEndpoints::decodeAudioToFloat(const std::string& audio_data,
                                         std::vector<float>& out_samples) {
     out_samples.clear();
 
-    // WAV形式のみサポート（他の形式は将来追加）
-    if (content_type.find("wav") != std::string::npos ||
-        content_type.find("wave") != std::string::npos) {
+    (void)content_type;
 
-        int sample_rate, channels, bits_per_sample;
-        size_t data_offset, data_size;
+    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_uint64 frame_count = 0;
+    void* pcm_frames = nullptr;
 
-        if (!parseWavHeader(audio_data, sample_rate, channels,
-                           bits_per_sample, data_offset, data_size)) {
-            spdlog::error("Failed to parse WAV header");
-            return 0;
-        }
+    ma_result result = ma_decode_memory(audio_data.data(), audio_data.size(),
+                                        &config, &frame_count, &pcm_frames);
 
-        // 16-bit PCMのみサポート
-        if (bits_per_sample != 16) {
-            spdlog::error("Only 16-bit WAV supported, got {} bits", bits_per_sample);
-            return 0;
-        }
+    if (result != MA_SUCCESS || pcm_frames == nullptr || frame_count == 0) {
+        spdlog::error("Failed to decode audio data (miniaudio result={})",
+                      static_cast<int>(result));
+        return 0;
+    }
 
-        // サンプル数を計算
-        size_t num_samples = data_size / (bits_per_sample / 8) / channels;
-        out_samples.reserve(num_samples);
+    const ma_uint32 channels = config.channels;
+    const ma_uint32 sample_rate = config.sampleRate;
+    const float* samples = static_cast<const float*>(pcm_frames);
+    const size_t total_samples = static_cast<size_t>(frame_count) * channels;
 
-        const int16_t* samples = reinterpret_cast<const int16_t*>(
-            audio_data.data() + data_offset);
-
-        // モノラルに変換しながらfloatに変換
-        for (size_t i = 0; i < num_samples; ++i) {
-            if (channels == 1) {
-                out_samples.push_back(samples[i] / 32768.0f);
-            } else {
-                // ステレオ→モノラル（平均）
-                float sum = 0.0f;
-                for (int ch = 0; ch < channels; ++ch) {
-                    sum += samples[i * channels + ch] / 32768.0f;
-                }
-                out_samples.push_back(sum / channels);
+    if (channels == 1) {
+        out_samples.assign(samples, samples + total_samples);
+    } else {
+        out_samples.reserve(static_cast<size_t>(frame_count));
+        for (ma_uint64 i = 0; i < frame_count; ++i) {
+            float sum = 0.0f;
+            for (ma_uint32 ch = 0; ch < channels; ++ch) {
+                sum += samples[i * channels + ch];
             }
-        }
-
-        return sample_rate;
-    }
-
-    spdlog::error("Unsupported audio format: {}", content_type);
-    return 0;
-}
-
-bool AudioEndpoints::parseWavHeader(const std::string& data, int& sample_rate,
-                                     int& channels, int& bits_per_sample,
-                                     size_t& data_offset, size_t& data_size) {
-    if (data.size() < 44) {
-        return false;
-    }
-
-    const uint8_t* buf = reinterpret_cast<const uint8_t*>(data.data());
-
-    // RIFF header
-    if (std::memcmp(buf, "RIFF", 4) != 0) {
-        return false;
-    }
-
-    // WAVE format
-    if (std::memcmp(buf + 8, "WAVE", 4) != 0) {
-        return false;
-    }
-
-    // fmt chunk を探す
-    size_t pos = 12;
-    while (pos + 8 < data.size()) {
-        uint32_t chunk_size;
-        std::memcpy(&chunk_size, buf + pos + 4, 4);
-
-        if (std::memcmp(buf + pos, "fmt ", 4) == 0) {
-            if (chunk_size < 16 || pos + 8 + chunk_size > data.size()) {
-                return false;
-            }
-
-            uint16_t audio_format;
-            std::memcpy(&audio_format, buf + pos + 8, 2);
-
-            // PCM (1) またはIEEE float (3)のみサポート
-            if (audio_format != 1 && audio_format != 3) {
-                spdlog::error("Unsupported WAV format: {}", audio_format);
-                return false;
-            }
-
-            uint16_t num_channels;
-            std::memcpy(&num_channels, buf + pos + 10, 2);
-            channels = num_channels;
-
-            uint32_t sr;
-            std::memcpy(&sr, buf + pos + 12, 4);
-            sample_rate = static_cast<int>(sr);
-
-            uint16_t bps;
-            std::memcpy(&bps, buf + pos + 22, 2);
-            bits_per_sample = bps;
-
-            pos += 8 + chunk_size;
-        } else if (std::memcmp(buf + pos, "data", 4) == 0) {
-            data_offset = pos + 8;
-            data_size = chunk_size;
-            return true;
-        } else {
-            // 他のチャンクをスキップ
-            pos += 8 + chunk_size;
+            out_samples.push_back(sum / static_cast<float>(channels));
         }
     }
 
-    return false;
+    ma_free(pcm_frames, nullptr);
+    return static_cast<int>(sample_rate);
 }
 
 }  // namespace llm_node

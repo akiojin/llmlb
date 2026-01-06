@@ -16,5 +16,11 @@ mod images_api_test;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 
+#[path = "integration/vision_api_test.rs"]
+mod vision_api_test;
+
+#[path = "integration/test_dashboard.rs"]
+mod test_dashboard;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

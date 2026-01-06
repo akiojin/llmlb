@@ -3,6 +3,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <thread>
+#include "runtime/state.h"
 
 namespace llm_node {
 
@@ -113,6 +114,7 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
                                  const std::vector<std::string>& loaded_asr_models,
                                  const std::vector<std::string>& loaded_tts_models,
                                  const std::vector<std::string>& supported_runtimes,
+                                 const std::optional<SyncStatusForRouter>& sync_status,
                                  int max_retries) {
     auto cli = make_client(base_url_, timeout_);
 
@@ -124,7 +126,7 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
             (metrics->mem_total_bytes > 0 ?
                 static_cast<float>(metrics->mem_used_bytes) / static_cast<float>(metrics->mem_total_bytes) * 100.0f : 0.0f)
             : 0.0f},
-        {"active_requests", 0},
+        {"active_requests", static_cast<int>(active_request_count())},
         {"loaded_models", loaded_models},
         {"loaded_embedding_models", loaded_embedding_models},
         {"loaded_asr_models", loaded_asr_models},
@@ -132,6 +134,18 @@ bool RouterClient::sendHeartbeat(const std::string& node_id, const std::string& 
         {"supported_runtimes", supported_runtimes},
         {"initializing", false},
     };
+
+    if (sync_status.has_value()) {
+        payload["sync_state"] = sync_status->state;
+        if (sync_status->progress.has_value()) {
+            payload["sync_progress"] = {
+                {"model_id", sync_status->progress->model_id},
+                {"file", sync_status->progress->file},
+                {"downloaded_bytes", sync_status->progress->downloaded_bytes},
+                {"total_bytes", sync_status->progress->total_bytes},
+            };
+        }
+    }
 
     // Add optional gpu_usage if metrics available
     if (metrics.has_value()) {

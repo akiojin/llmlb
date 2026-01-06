@@ -1,0 +1,14 @@
+{
+  "backpressure_state": "warning",
+  "queue_size": 60,
+  "max_queue_size": 100,
+  "load_ratio": 0.6,
+  "cache_hit_rate": 0.95,
+  "active_connections": 24,
+  "stats": {
+    "total_requests": 50000,
+    "rejected_requests": 120,
+    "timeout_requests": 15,
+    "avg_wait_time_ms": 45
+  }
+}

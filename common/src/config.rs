@@ -11,7 +11,7 @@ pub struct RouterConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// ポート番号 (デフォルト: 8080)
+    /// ポート番号 (デフォルト: 32768)
     #[serde(default = "default_port")]
     pub port: u16,
 
@@ -33,7 +33,7 @@ fn default_host() -> String {
 }
 
 fn default_port() -> u16 {
-    8080
+    32768
 }
 
 fn default_database_url() -> String {
@@ -63,11 +63,11 @@ impl Default for RouterConfig {
 /// Node設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
-    /// RouterのURL (デフォルト: "http://localhost:8080")
+    /// RouterのURL (デフォルト: "http://localhost:32768")
     #[serde(default = "default_router_url")]
     pub router_url: String,
 
-    /// ノードランタイムのURL (デフォルト: "http://localhost:11434")
+    /// ノードランタイムのURL (デフォルト: "http://localhost:32768")
     #[serde(rename = "runtime_url", default = "default_runtime_url")]
     pub runtime_url: String,
 
@@ -81,11 +81,11 @@ pub struct NodeConfig {
 }
 
 fn default_router_url() -> String {
-    "http://localhost:8080".to_string()
+    "http://localhost:32768".to_string()
 }
 
 fn default_runtime_url() -> String {
-    "http://localhost:11434".to_string()
+    "http://localhost:32768".to_string()
 }
 
 fn default_heartbeat_interval() -> u64 {
@@ -112,7 +112,7 @@ mod tests {
         let config = RouterConfig::default();
 
         assert_eq!(config.host, "0.0.0.0");
-        assert_eq!(config.port, 8080);
+        assert_eq!(config.port, 32768);
         assert_eq!(config.database_url, "sqlite://router.db");
         assert_eq!(config.health_check_interval_secs, 30);
         assert_eq!(config.node_timeout_secs, 60);
@@ -122,8 +122,8 @@ mod tests {
     fn test_node_config_defaults() {
         let config = NodeConfig::default();
 
-        assert_eq!(config.router_url, "http://localhost:8080");
-        assert_eq!(config.runtime_url, "http://localhost:11434");
+        assert_eq!(config.router_url, "http://localhost:32768");
+        assert_eq!(config.runtime_url, "http://localhost:32768");
         assert_eq!(config.heartbeat_interval_secs, 10);
         assert!(!config.auto_start);
     }
@@ -141,12 +141,12 @@ mod tests {
 
     #[test]
     fn test_node_config_deserialization() {
-        let json = r#"{"router_url":"http://192.168.1.10:8080","auto_start":true}"#;
+        let json = r#"{"router_url":"http://192.168.1.10:32768","auto_start":true}"#;
         let config: NodeConfig = serde_json::from_str(json).unwrap();
 
-        assert_eq!(config.router_url, "http://192.168.1.10:8080");
+        assert_eq!(config.router_url, "http://192.168.1.10:32768");
         assert!(config.auto_start);
         // デフォルト値が適用される
-        assert_eq!(config.runtime_url, "http://localhost:11434");
+        assert_eq!(config.runtime_url, "http://localhost:32768");
     }
 }

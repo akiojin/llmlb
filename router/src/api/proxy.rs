@@ -1,6 +1,6 @@
 //! LLM runtimeプロキシ APIハンドラー
 
-use crate::AppState;
+use crate::{config::QueueConfig, AppState};
 use axum::{
     body::Body,
     http::{HeaderName, HeaderValue, StatusCode},
@@ -8,27 +8,76 @@ use axum::{
 };
 use futures::TryStreamExt;
 use llm_router_common::{error::RouterError, protocol::RequestResponseRecord};
-use std::{io, sync::Arc};
+use std::{io, sync::Arc, time::Instant};
 
+use crate::balancer::WaitResult;
+
+/// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
 pub(crate) async fn select_available_node(
     state: &AppState,
+    model_id: Option<&str>,
 ) -> Result<llm_router_common::types::Node, RouterError> {
     let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     match mode.as_str() {
         "metrics" => {
             // メトリクスベース選択（T014-T015で実装）
-            state.load_manager.select_node_by_metrics().await
+            state.load_manager.select_node_by_metrics(model_id).await
         }
         _ => {
             // デフォルト: 既存の高度なロードバランシング
-            let node = state.load_manager.select_node().await?;
+            let node = state.load_manager.select_node(model_id).await?;
             if node.initializing {
                 return Err(RouterError::ServiceUnavailable(
                     "All nodes are warming up models".into(),
                 ));
             }
             Ok(node)
+        }
+    }
+}
+
+pub(crate) enum QueueSelection {
+    Ready {
+        node: Box<llm_router_common::types::Node>,
+        queued_wait_ms: Option<u128>,
+    },
+    CapacityExceeded,
+    Timeout {
+        waited_ms: u128,
+    },
+}
+
+/// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+pub(crate) async fn select_available_node_with_queue(
+    state: &AppState,
+    queue_config: QueueConfig,
+    model_id: Option<&str>,
+) -> Result<QueueSelection, RouterError> {
+    match state.load_manager.select_idle_node(model_id).await? {
+        Some(node) => Ok(QueueSelection::Ready {
+            node: Box::new(node),
+            queued_wait_ms: None,
+        }),
+        None => {
+            let wait_start = Instant::now();
+            match state
+                .load_manager
+                .wait_for_idle_node_with_timeout(queue_config.max_waiters, queue_config.timeout)
+                .await
+            {
+                WaitResult::CapacityExceeded => Ok(QueueSelection::CapacityExceeded),
+                WaitResult::Timeout => Ok(QueueSelection::Timeout {
+                    waited_ms: wait_start.elapsed().as_millis(),
+                }),
+                WaitResult::Ready => match state.load_manager.select_idle_node(model_id).await? {
+                    Some(node) => Ok(QueueSelection::Ready {
+                        node: Box::new(node),
+                        queued_wait_ms: Some(wait_start.elapsed().as_millis()),
+                    }),
+                    None => Err(RouterError::NoNodesAvailable),
+                },
+            }
         }
     }
 }
@@ -104,16 +153,16 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
-        let convert_manager = crate::convert::ConvertTaskManager::new(1, db_pool.clone());
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
             load_manager,
             request_history,
-            convert_manager,
             db_pool,
             jwt_secret,
             http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
         }
     }
 
@@ -130,6 +179,9 @@ mod tests {
                 None,
                 Some(false),
                 Some((4, 4)),
+                None,
+                None,
+                None, // executable_models
             )
             .await
             .ok();
@@ -160,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn test_select_available_node_no_nodes() {
         let state = create_test_state().await;
-        let result = select_available_node(&state).await;
+        let result = select_available_node(&state, None).await;
         assert!(matches!(result, Err(RouterError::NoNodesAvailable)));
     }
 
@@ -173,7 +225,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -190,7 +242,7 @@ mod tests {
         // mark as ready so load balancer can pick
         mark_ready(&state, response.node_id).await;
 
-        let result = select_available_node(&state).await;
+        let result = select_available_node(&state, None).await;
         assert!(result.is_ok());
 
         let node = result.unwrap();
@@ -206,7 +258,7 @@ mod tests {
             machine_name: "machine1".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -232,7 +284,7 @@ mod tests {
             machine_name: "machine2".to_string(),
             ip_address: "192.168.1.101".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             gpu_available: true,
             gpu_devices: vec![GpuDeviceInfo {
                 model: "Test GPU".to_string(),
@@ -249,7 +301,7 @@ mod tests {
         // mark second node ready
         mark_ready(&state, response2.node_id).await;
 
-        let result = select_available_node(&state).await;
+        let result = select_available_node(&state, None).await;
         assert!(result.is_ok());
 
         let node = result.unwrap();

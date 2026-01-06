@@ -28,16 +28,16 @@ async fn build_app() -> Router {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     api::create_router(state)
@@ -78,8 +78,13 @@ async fn speech_handler() -> impl IntoResponse {
         .unwrap()
 }
 
+// SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
 async fn models_handler() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({ "data": [{"id": "test-model", "object": "model"}] })),
+    )
+        .into_response()
 }
 
 fn build_transcription_multipart(boundary: &str) -> Vec<u8> {

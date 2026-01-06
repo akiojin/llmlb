@@ -21,7 +21,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = support::router::test_jwt_secret();
 
     // テスト用の管理者ユーザーを作成
@@ -34,10 +33,11 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     (api::create_router(state), db_pool)

@@ -23,7 +23,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
     let load_manager = LoadManager::new(registry.clone());
     let request_history =
         std::sync::Arc::new(llm_router::db::request_history::RequestHistoryStorage::new().unwrap());
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1);
     let db_pool = support::router::create_test_db_pool().await;
     let jwt_secret = support::router::test_jwt_secret();
 
@@ -31,10 +30,11 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     (api::create_router(state), db_pool)
@@ -83,16 +83,17 @@ async fn v0_nodes_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::NodeRegister]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
     let api_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::ApiInference]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let mock_server = MockServer::start().await;
+    // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": []
+            "data": [{"id": "test-model", "object": "model"}]
         })))
         .mount(&mock_server)
         .await;
@@ -152,9 +153,9 @@ async fn v1_inference_requires_api_inference_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::NodeRegister]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
     let api_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::ApiInference]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let payload = json!({
         "model": "test-model",
@@ -203,7 +204,7 @@ async fn v1_inference_requires_api_inference_scope() {
 #[tokio::test]
 async fn admin_scope_allows_dashboard_overview() {
     let (app, db_pool) = build_app().await;
-    let admin_key = create_api_key(&db_pool, vec![ApiKeyScope::AdminAll]).await;
+    let admin_key = create_api_key(&db_pool, vec![ApiKeyScope::Admin]).await;
 
     let response = app
         .oneshot(
@@ -224,10 +225,10 @@ async fn admin_scope_allows_dashboard_overview() {
 async fn v0_health_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
-    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::NodeRegister]).await;
-    let api_key = create_api_key(&db_pool, vec![ApiKeyScope::ApiInference]).await;
+    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
+    let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
-    let payload = node_payload(11435);
+    let payload = node_payload(32769);
     let register_response = app
         .clone()
         .oneshot(

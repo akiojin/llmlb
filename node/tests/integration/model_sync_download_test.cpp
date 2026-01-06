@@ -34,6 +34,7 @@ public:
 class RouterAndRegistryServer {
 public:
     void start(int router_port, int registry_port) {
+        registry_base_ = "http://127.0.0.1:" + std::to_string(registry_port);
         // ModelSync now uses /v1/models (OpenAI-compatible format)
         router_.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
@@ -41,13 +42,16 @@ public:
             res.set_content(R"({"object":"list","data":[{"id":"gpt-oss-7b","etag":"\"etag-1\"","size":3}]})", "application/json");
         });
 
-        registry_.Get(R"(/gpt-oss-7b/manifest.json)", [](const httplib::Request&, httplib::Response& res) {
+        registry_.Get(R"(/v0/models/registry/gpt-oss-7b/manifest.json)", [this](const httplib::Request&, httplib::Response& res) {
             res.status = 200;
-            res.set_content(R"({"model":"gpt-oss-7b","files":[{"name":"blob.bin","digest":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}]})",
-                            "application/json");
+            std::string body = std::string("{\"model\":\"gpt-oss-7b\",\"files\":[{\"name\":\"blob.bin\",\"digest\":\"") +
+                               "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" +
+                               "\",\"url\":\"" + registry_base_ +
+                               "/v0/models/registry/gpt-oss-7b/files/blob.bin\"}]}";
+            res.set_content(body, "application/json");
         });
 
-        registry_.Get("/blob.bin", [](const httplib::Request& req, httplib::Response& res) {
+        registry_.Get(R"(/v0/models/registry/gpt-oss-7b/files/blob.bin)", [](const httplib::Request& req, httplib::Response& res) {
             const std::string body = "abc";
             auto inm = req.get_header_value("If-None-Match");
             if (inm == "\"etag-1\"" || inm == "etag-1") {
@@ -83,6 +87,7 @@ private:
     httplib::Server registry_;
     std::thread router_thread_;
     std::thread registry_thread_;
+    std::string registry_base_;
 };
 
 TEST(ModelSyncIntegrationTest, SyncsAndDownloadsMissingModel) {
@@ -92,6 +97,7 @@ TEST(ModelSyncIntegrationTest, SyncsAndDownloadsMissingModel) {
     TempDirGuard tmp;
 
     ModelSync sync("http://127.0.0.1:18110", tmp.path.string());
+    sync.setOriginAllowlist({"127.0.0.1/*"});
     auto diff = sync.sync();
     ASSERT_EQ(diff.to_download.size(), 1u);
     EXPECT_EQ(diff.to_download[0], "gpt-oss-7b");
@@ -102,7 +108,7 @@ TEST(ModelSyncIntegrationTest, SyncsAndDownloadsMissingModel) {
     ASSERT_TRUE(cached_size.has_value());
     EXPECT_EQ(*cached_size, 3u);
 
-    ModelDownloader dl("http://127.0.0.1:18111", tmp.path.string());
+    ModelDownloader dl("http://127.0.0.1:18111/v0/models/registry", tmp.path.string());
 
     ASSERT_TRUE(sync.downloadModel(dl, "gpt-oss-7b"));
 

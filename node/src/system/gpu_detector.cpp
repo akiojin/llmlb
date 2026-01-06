@@ -50,6 +50,7 @@ std::vector<GpuDevice> GpuDetector::detect() {
             dev.id = 0;
             dev.name = "NVIDIA GPU (CUDA support not compiled)";
             dev.memory_bytes = 0;  // Unknown
+            dev.free_memory_bytes = 0;
             dev.compute_capability = "unknown";
             dev.vendor = "nvidia";
             dev.is_available = false;  // Not usable without CUDA
@@ -127,6 +128,48 @@ double GpuDetector::getCapabilityScore() const {
     return score;
 }
 
+std::optional<int> GpuDetector::selectGpu(std::optional<int> prefer_loaded_gpu) const {
+    const GpuDevice* preferred = nullptr;
+    if (prefer_loaded_gpu.has_value()) {
+        for (const auto& dev : detected_devices_) {
+            if (dev.id == prefer_loaded_gpu.value() && dev.is_available) {
+                preferred = &dev;
+                break;
+            }
+        }
+    }
+    if (preferred) return preferred->id;
+
+    const GpuDevice* best = nullptr;
+    size_t best_free = 0;
+    for (const auto& dev : detected_devices_) {
+        if (!dev.is_available) continue;
+        const size_t free_bytes = dev.free_memory_bytes > 0 ? dev.free_memory_bytes : dev.memory_bytes;
+        if (!best || free_bytes > best_free) {
+            best = &dev;
+            best_free = free_bytes;
+        }
+    }
+    if (best) return best->id;
+    return std::nullopt;
+}
+
+GpuBackend GpuDetector::getGpuBackend() const {
+    // Find the first available GPU and return its backend
+    for (const auto& dev : detected_devices_) {
+        if (!dev.is_available) continue;
+
+        if (dev.vendor == "nvidia") {
+            return GpuBackend::kCuda;
+        } else if (dev.vendor == "apple") {
+            return GpuBackend::kMetal;
+        } else if (dev.vendor == "amd") {
+            return GpuBackend::kRocm;
+        }
+    }
+    return GpuBackend::kCpu;
+}
+
 std::vector<GpuDevice> GpuDetector::detectCuda() {
     std::vector<GpuDevice> devices;
 
@@ -142,6 +185,9 @@ std::vector<GpuDevice> GpuDetector::detectCuda() {
     nvmlReturn_t nvml_result = nvmlInit();
     bool nvml_available = (nvml_result == NVML_SUCCESS);
 
+    int prev_device = 0;
+    const bool has_prev = (cudaGetDevice(&prev_device) == cudaSuccess);
+
     for (int i = 0; i < device_count; ++i) {
         cudaDeviceProp prop;
         cuda_err = cudaGetDeviceProperties(&prop, i);
@@ -152,6 +198,17 @@ std::vector<GpuDevice> GpuDetector::detectCuda() {
         dev.id = i;
         dev.name = prop.name;
         dev.memory_bytes = prop.totalGlobalMem;
+        dev.free_memory_bytes = 0;
+
+        size_t free_bytes = 0;
+        size_t total_bytes = 0;
+        if (cudaSetDevice(i) == cudaSuccess &&
+            cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess) {
+            dev.free_memory_bytes = free_bytes;
+            if (total_bytes > 0) {
+                dev.memory_bytes = total_bytes;
+            }
+        }
 
         // Format compute capability
         std::stringstream ss;
@@ -174,6 +231,10 @@ std::vector<GpuDevice> GpuDetector::detectCuda() {
 
     if (nvml_available) {
         nvmlShutdown();
+    }
+
+    if (has_prev) {
+        cudaSetDevice(prev_device);
     }
 #endif
 
@@ -219,6 +280,13 @@ std::vector<GpuDevice> GpuDetector::detectRocm() {
                 dev.memory_bytes = total_mem;
             } else {
                 dev.memory_bytes = 0;
+            }
+            uint64_t used_mem = 0;
+            ret = rsmi_dev_memory_usage_get(i, RSMI_MEM_TYPE_VRAM, &used_mem);
+            if (ret == RSMI_STATUS_SUCCESS && dev.memory_bytes >= used_mem) {
+                dev.free_memory_bytes = dev.memory_bytes - used_mem;
+            } else {
+                dev.free_memory_bytes = 0;
             }
 
             // ROCm doesn't have a direct compute capability equivalent

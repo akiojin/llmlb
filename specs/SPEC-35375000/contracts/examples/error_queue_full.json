@@ -1,0 +1,7 @@
+{
+  "error": {
+    "message": "Service overloaded. Please retry later.",
+    "type": "service_unavailable",
+    "code": "queue_full"
+  }
+}

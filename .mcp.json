@@ -1,9 +1,5 @@
 {
   "mcpServers": {
-    "context7": {
-      "type": "sse",
-      "url": "https://mcp.context7.com/sse"
-    },
     "markitdown": {
       "type": "stdio",
       "command": "uvx",
@@ -11,29 +7,12 @@
         "markitdown-mcp"
       ]
     },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@executeautomation/playwright-mcp-server"]
-    },
-    "serena": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/oraios/serena",
-        "serena-mcp-server",
-        "--context",
-        "ide-assistant",
-        "--project",
-        "$(pwd)"
-      ]
-    },
     "llm-router": {
       "type": "stdio",
       "command": "node",
       "args": ["./mcp-server/dist/index.js"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:32768",
         "LLM_ROUTER_OPENAPI_PATH": "./docs/openapi.yaml"
       }
     }

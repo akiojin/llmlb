@@ -16,10 +16,20 @@ namespace {
 const char kBase64Chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+std::string extractFirstError(const std::vector<ImageGenerationResult>& results,
+                              const std::string& default_message) {
+    for (const auto& result : results) {
+        if (!result.error.empty()) {
+            return result.error;
+        }
+    }
+    return default_message;
+}
+
 }  // namespace
 
-ImageEndpoints::ImageEndpoints(SDManager& sd_manager, const NodeConfig& config)
-    : sd_manager_(sd_manager), config_(config) {}
+ImageEndpoints::ImageEndpoints(SDManager& sd_manager)
+    : sd_manager_(sd_manager) {}
 
 void ImageEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
     res.set_content(body.dump(), "application/json");
@@ -163,6 +173,11 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
     std::string quality = body.value("quality", "standard");
     std::string style = body.value("style", "vivid");
     std::string response_format = body.value("response_format", "url");
+    int steps = body.value("steps", 20);
+    if (steps < 1 || steps > 100) {
+        respondError(res, 400, "invalid_steps", "steps must be between 1 and 100");
+        return;
+    }
 
     // Prepare generation parameters
     ImageGenParams params;
@@ -172,6 +187,7 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
     params.batch_count = n;
     params.quality = quality;
     params.style = style;
+    params.steps = steps;
 
     // Load model if needed
     if (!sd_manager_.loadModelIfNeeded(model)) {
@@ -210,8 +226,10 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
     }
 
     if (data_array.empty()) {
-        respondError(res, 500, "all_generations_failed",
-                     "All image generations failed");
+        respondError(res,
+                     500,
+                     "all_generations_failed",
+                     extractFirstError(results, "All image generations failed"));
         return;
     }
 
@@ -342,7 +360,10 @@ void ImageEndpoints::handleEdits(const httplib::Request& req,
     }
 
     if (data_array.empty()) {
-        respondError(res, 500, "all_edits_failed", "All image edits failed");
+        respondError(res,
+                     500,
+                     "all_edits_failed",
+                     extractFirstError(results, "All image edits failed"));
         return;
     }
 
@@ -455,8 +476,10 @@ void ImageEndpoints::handleVariations(const httplib::Request& req,
     }
 
     if (data_array.empty()) {
-        respondError(res, 500, "all_variations_failed",
-                     "All image variations failed");
+        respondError(res,
+                     500,
+                     "all_variations_failed",
+                     extractFirstError(results, "All image variations failed"));
         return;
     }
 

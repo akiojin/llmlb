@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="${WRK_TARGET:-http://localhost:8080}"
+TARGET="${WRK_TARGET:-http://localhost:32768}"
 ENDPOINT="${WRK_ENDPOINT:-/v1/chat/completions}"
 
 if ! command -v wrk >/dev/null 2>&1; then

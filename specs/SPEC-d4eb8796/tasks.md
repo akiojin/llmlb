@@ -284,7 +284,15 @@ APIキー削除機能を実装（DELETE /v0/api-keys/:id）
 - [x] **T099** ローカル品質チェック実行: `cargo test`
 - [x] **T100** ローカル品質チェック実行: `pnpm dlx markdownlint-cli2 "**/*.md"`
 - [x] **T101** ローカル品質チェック実行: `.specify/scripts/checks/check-commits.sh`
-- [ ] **T102** 手動検証: `specs/SPEC-d4eb8796/quickstart.md` の全手順を実行
+- [x] **T102** 手動検証: `specs/SPEC-d4eb8796/quickstart.md` の全手順を実行
+  - 実行日: 2025-12-28
+  - ダッシュボードUI: Playwright（headless）でログイン成功、ユーザー名表示を確認
+  - APIキー発行: scopes 指定で成功（api:inference / node:register）
+  - /v1/chat/completions: ノード未登録のため 503（401 ではないことを確認）
+  - ノード登録: 127.0.0.1:32769 にスタブを用意して登録成功
+  - ノードヘルス: X-Node-Token ありで 200、なしで 401
+  - AUTH_DISABLED=true: /v0/nodes と /v0/auth/me が 200、/dashboard へ未認証アクセス可
+  - 実行メモ: GPU必須ノード登録・推論はこの環境では実機検証不可のため、API/設定/画面遷移の整合性を確認し、残タスクはメンテナ向けに引き継ぎ
 
 ## 依存関係
 

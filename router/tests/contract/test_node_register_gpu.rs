@@ -39,16 +39,16 @@ async fn build_app() -> (Router, String) {
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
-    let convert_manager = llm_router::convert::ConvertTaskManager::new(1, db_pool.clone());
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
         registry,
         load_manager,
         request_history,
-        convert_manager,
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
     };
 
     let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
@@ -61,7 +61,7 @@ async fn build_app() -> (Router, String) {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::AdminAll],
+        vec![ApiKeyScope::Admin],
     )
     .await
     .expect("create admin api key")
@@ -74,12 +74,17 @@ async fn build_app() -> (Router, String) {
 #[serial]
 async fn register_gpu_node_success() {
     // モックサーバーを起動してヘルスチェックに応答
+    // SPEC-93536000: ノード登録時に/v1/modelsを取得し、空のリストは登録拒否される
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": []
+            "data": [{
+                "id": "test-model",
+                "object": "model",
+                "owned_by": "runtime"
+            }]
         })))
         .mount(&mock_server)
         .await;
@@ -161,7 +166,7 @@ async fn register_gpu_node_missing_devices_is_rejected() {
         "machine_name": "cpu-only",
         "ip_address": "10.0.0.20",
         "runtime_version": "0.1.42",
-        "runtime_port": 11434,
+        "runtime_port": 32768,
         "gpu_available": true,
         "gpu_devices": []
     });

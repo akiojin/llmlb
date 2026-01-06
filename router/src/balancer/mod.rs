@@ -53,6 +53,23 @@ pub enum WaitResult {
     CapacityExceeded,
 }
 
+#[derive(Debug)]
+struct QueueWaiterGuard {
+    waiters: Arc<AtomicUsize>,
+}
+
+impl QueueWaiterGuard {
+    fn new(waiters: Arc<AtomicUsize>) -> Self {
+        Self { waiters }
+    }
+}
+
+impl Drop for QueueWaiterGuard {
+    fn drop(&mut self) {
+        self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+    }
+}
+
 /// アドミッション制御の判断結果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdmissionDecision {
@@ -178,7 +195,7 @@ mod tests {
                 machine_name: "slow".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -194,7 +211,7 @@ mod tests {
                 machine_name: "fast".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -249,7 +266,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node().await.unwrap();
+        let selected = manager.select_node(None).await.unwrap();
         assert_eq!(selected.id, fast_node);
     }
 
@@ -263,7 +280,7 @@ mod tests {
                 machine_name: "history".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 3)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -318,7 +335,7 @@ mod tests {
                 machine_name: "low-load".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 10)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -335,7 +352,7 @@ mod tests {
                 machine_name: "high-load".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 11)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -395,7 +412,7 @@ mod tests {
             .unwrap();
 
         // 低負荷ノードが選ばれることを期待
-        let selected = manager.select_node_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(selected.id, low_load_node);
     }
 
@@ -409,7 +426,7 @@ mod tests {
                 machine_name: "low-cpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -425,7 +442,7 @@ mod tests {
                 machine_name: "high-cpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 2)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -480,7 +497,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node().await.unwrap();
+        let selected = manager.select_node(None).await.unwrap();
         assert_eq!(selected.id, low_cpu_node);
     }
 
@@ -494,7 +511,7 @@ mod tests {
                 machine_name: "high-load-lower".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 10)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -510,7 +527,7 @@ mod tests {
                 machine_name: "high-load-higher".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 1, 11)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -565,7 +582,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node().await.unwrap();
+        let selected = manager.select_node(None).await.unwrap();
         assert_eq!(selected.id, lower_cpu_node);
     }
 
@@ -579,7 +596,7 @@ mod tests {
                 machine_name: "metrics-only".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 50)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -595,7 +612,7 @@ mod tests {
                 machine_name: "no-metrics".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 51)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -653,12 +670,12 @@ mod tests {
             .unwrap();
 
         // メトリクスあり＋ハイスペックが最優先
-        let first = manager.select_node().await.unwrap();
+        let first = manager.select_node(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         // ハイスペックがビジーになったらフォールバック先のスペックへ切り替え
         manager.begin_request(high_spec_node).await.unwrap();
-        let second = manager.select_node().await.unwrap();
+        let second = manager.select_node(None).await.unwrap();
         assert_eq!(second.id, fallback_node);
     }
 
@@ -672,7 +689,7 @@ mod tests {
                 machine_name: "gpu-strong".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 2, 0, 1)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -688,7 +705,7 @@ mod tests {
                 machine_name: "gpu-mid".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 2, 0, 2)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -743,12 +760,12 @@ mod tests {
             .await
             .unwrap();
 
-        let first = manager.select_node().await.unwrap();
+        let first = manager.select_node(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         manager.begin_request(high_spec_node).await.unwrap();
 
-        let second = manager.select_node().await.unwrap();
+        let second = manager.select_node(None).await.unwrap();
         assert_eq!(second.id, mid_spec_node);
     }
 
@@ -763,7 +780,7 @@ mod tests {
                 machine_name: "with-metrics".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 20)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -780,7 +797,7 @@ mod tests {
                 machine_name: "without-metrics".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 21)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -817,7 +834,7 @@ mod tests {
 
         // メトリクスのあるノードが選ばれることを期待
         // （メトリクスなしノードはcandidatesに含まれず、ラウンドロビンにフォールバック）
-        let selected = manager.select_node_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics(None).await.unwrap();
         // メトリクスがある方が優先されるはず
         assert_eq!(selected.id, with_metrics);
     }
@@ -832,7 +849,7 @@ mod tests {
                 machine_name: "low-gpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 10)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -848,7 +865,7 @@ mod tests {
                 machine_name: "high-gpu".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 11)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -903,7 +920,7 @@ mod tests {
             .await
             .unwrap();
 
-        let selected = manager.select_node_by_metrics().await.unwrap();
+        let selected = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(selected.id, low_gpu_node);
     }
 
@@ -917,7 +934,7 @@ mod tests {
                 machine_name: "metrics-mode".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 60)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -933,7 +950,7 @@ mod tests {
                 machine_name: "metrics-missing".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 61)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -989,7 +1006,7 @@ mod tests {
             .await
             .unwrap();
 
-        let first = manager.select_node_by_metrics().await.unwrap();
+        let first = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         manager
@@ -1013,7 +1030,7 @@ mod tests {
             .await
             .unwrap();
 
-        let second = manager.select_node_by_metrics().await.unwrap();
+        let second = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(second.id, fallback_node);
     }
 
@@ -1027,7 +1044,7 @@ mod tests {
                 machine_name: "metrics-strong".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 3, 0, 1)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1043,7 +1060,7 @@ mod tests {
                 machine_name: "metrics-basic".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 3, 0, 2)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1098,7 +1115,7 @@ mod tests {
             .await
             .unwrap();
 
-        let first = manager.select_node_by_metrics().await.unwrap();
+        let first = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(first.id, high_spec_node);
 
         manager
@@ -1122,7 +1139,7 @@ mod tests {
             .await
             .unwrap();
 
-        let second = manager.select_node_by_metrics().await.unwrap();
+        let second = manager.select_node_by_metrics(None).await.unwrap();
         assert_eq!(second.id, low_spec_node);
     }
 
@@ -1136,7 +1153,7 @@ mod tests {
                 machine_name: "init-node".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 4, 0, 1)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1216,7 +1233,7 @@ mod tests {
                 machine_name: "limited".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 4, 0, 2)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1343,7 +1360,7 @@ mod tests {
                 machine_name: "timeout-test".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1373,7 +1390,7 @@ mod tests {
                 machine_name: "capacity-test".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1417,7 +1434,7 @@ mod tests {
                 machine_name: "ready-test".to_string(),
                 ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 3)),
                 runtime_version: "0.1.0".to_string(),
-                runtime_port: 11434,
+                runtime_port: 32768,
                 gpu_available: true,
                 gpu_devices: sample_gpu_devices(),
                 gpu_count: Some(1),
@@ -1590,7 +1607,8 @@ impl NodeLoadState {
             .as_ref()
             .map(|m| m.active_requests)
             .unwrap_or(0);
-        heartbeat_active.saturating_add(self.assigned_active)
+        // Avoid double counting when node heartbeat mirrors router-assigned requests.
+        heartbeat_active.max(self.assigned_active)
     }
 
     fn average_latency_ms(&self) -> Option<f32> {
@@ -1706,6 +1724,8 @@ pub struct SystemSummary {
     pub average_gpu_memory_usage: Option<f32>,
     /// 処理中リクエスト総数
     pub total_active_requests: u32,
+    /// 待機中リクエスト総数
+    pub queued_requests: usize,
     /// 最新メトリクス更新時刻
     pub last_metrics_updated_at: Option<DateTime<Utc>>,
 }
@@ -1724,6 +1744,10 @@ pub struct LoadManager {
     ready_notify: Arc<Notify>,
     /// 待機中リクエスト数（上限判定用）
     waiters: Arc<AtomicUsize>,
+    /// リクエストキュー待機中の通知
+    queue_notify: Arc<Notify>,
+    /// リクエストキュー待機数
+    queue_waiters: Arc<AtomicUsize>,
 }
 
 /// ハートビートから記録するメトリクス値
@@ -1772,6 +1796,8 @@ impl LoadManager {
             pending: Arc::new(AtomicUsize::new(0)),
             ready_notify: Arc::new(Notify::new()),
             waiters: Arc::new(AtomicUsize::new(0)),
+            queue_notify: Arc::new(Notify::new()),
+            queue_waiters: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -1811,6 +1837,9 @@ impl LoadManager {
                     None,
                     Some(initializing),
                     ready_models,
+                    None,
+                    None,
+                    None, // executable_models
                 )
                 .await
             {
@@ -1824,6 +1853,8 @@ impl LoadManager {
 
         let mut state = self.state.write().await;
         let entry = state.entry(node_id).or_default();
+        let was_active = entry.combined_active() > 0;
+        let was_initializing = entry.initializing;
 
         let derived_average = average_response_time_ms.or_else(|| entry.average_latency_ms());
         let timestamp = Utc::now();
@@ -1852,6 +1883,11 @@ impl LoadManager {
         if !entry.initializing {
             self.ready_notify.notify_waiters();
         }
+        if (was_active && entry.combined_active() == 0)
+            || (was_initializing && !entry.initializing && entry.combined_active() == 0)
+        {
+            self.queue_notify.notify_waiters();
+        }
 
         Ok(())
     }
@@ -1869,6 +1905,9 @@ impl LoadManager {
         entry.ready_models = ready_models;
         if !initializing {
             self.ready_notify.notify_waiters();
+            if entry.combined_active() == 0 {
+                self.queue_notify.notify_waiters();
+            }
         }
     }
 
@@ -1928,6 +1967,132 @@ impl LoadManager {
         let result = tokio::time::timeout(timeout_duration, self.ready_notify.notified()).await;
 
         self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+
+        match result {
+            Ok(_) => WaitResult::Ready,
+            Err(_) => WaitResult::Timeout,
+        }
+    }
+
+    /// リクエストキュー待機数を取得
+    pub fn queue_waiters(&self) -> usize {
+        self.queue_waiters.load(AtomicOrdering::Relaxed)
+    }
+
+    /// アイドルノードが存在するか
+    async fn has_idle_nodes(&self) -> bool {
+        let nodes = self.registry.list().await;
+        let online_nodes: Vec<_> = nodes
+            .into_iter()
+            .filter(|node| node.status == NodeStatus::Online && !node.initializing)
+            .collect();
+
+        if online_nodes.is_empty() {
+            return false;
+        }
+
+        let state = self.state.read().await;
+        online_nodes.iter().any(|node| {
+            state
+                .get(&node.id)
+                .map(|load| load.combined_active() == 0)
+                .unwrap_or(true)
+        })
+    }
+
+    /// アイドルノードを選択（なければ None）
+    ///
+    /// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+    pub async fn select_idle_node(&self, model_id: Option<&str>) -> RouterResult<Option<Node>> {
+        // SPEC-93536000: まずオンラインノードが存在するかチェック（503 vs 404の区別）
+        // オンラインノードがゼロの場合は503（一時的なサービス利用不可）
+        let all_online_nodes: Vec<_> = {
+            let nodes = self.registry.list().await;
+            nodes
+                .into_iter()
+                .filter(|node| node.status == NodeStatus::Online && !node.initializing)
+                .collect()
+        };
+
+        if all_online_nodes.is_empty() {
+            return Err(RouterError::NoNodesAvailable);
+        }
+
+        // SPEC-93536000: モデルID指定時はモデル対応ノードのみを取得
+        let online_nodes: Vec<_> = if let Some(mid) = model_id {
+            // オンラインノードがあるので、モデルの存在をチェック（404 vs 503の区別）
+            if !self.registry.model_exists_in_any_node(mid).await {
+                return Err(RouterError::ModelNotFound(mid.to_string()));
+            }
+            let capable_nodes = self.registry.get_nodes_for_model(mid).await;
+            let filtered: Vec<_> = capable_nodes
+                .into_iter()
+                .filter(|node| !node.initializing)
+                .collect();
+            if filtered.is_empty() {
+                // モデルは存在するが、すべてexcludedまたはオフライン
+                return Err(RouterError::NoCapableNodes(mid.to_string()));
+            }
+            filtered
+        } else {
+            all_online_nodes
+        };
+
+        let state = self.state.read().await;
+        let idle_nodes: Vec<_> = online_nodes
+            .iter()
+            .filter(|node| {
+                state
+                    .get(&node.id)
+                    .map(|load| load.combined_active() == 0)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        if idle_nodes.is_empty() {
+            return Ok(None);
+        }
+
+        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let round_robin_start = round_robin_cursor % online_nodes.len();
+        let round_robin_priority = compute_round_robin_priority(&online_nodes, round_robin_start);
+
+        let mut ordered = idle_nodes;
+        ordered.sort_by(|a, b| {
+            let a_rank = round_robin_priority
+                .get(&a.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            let b_rank = round_robin_priority
+                .get(&b.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            a_rank.cmp(&b_rank)
+        });
+
+        Ok(ordered.first().cloned())
+    }
+
+    /// タイムアウト付きでアイドルノード待機
+    pub async fn wait_for_idle_node_with_timeout(
+        &self,
+        max_waiters: usize,
+        timeout_duration: StdDuration,
+    ) -> WaitResult {
+        let current = self.queue_waiters.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+        if current > max_waiters {
+            self.queue_waiters.fetch_sub(1, AtomicOrdering::SeqCst);
+            return WaitResult::CapacityExceeded;
+        }
+
+        let _guard = QueueWaiterGuard::new(self.queue_waiters.clone());
+
+        if self.has_idle_nodes().await {
+            return WaitResult::Ready;
+        }
+
+        let result = tokio::time::timeout(timeout_duration, self.queue_notify.notified()).await;
 
         match result {
             Ok(_) => WaitResult::Ready,
@@ -2018,24 +2183,50 @@ impl LoadManager {
             }
         }
 
+        let should_notify_idle = entry.combined_active() == 0;
+
         drop(state);
+        if should_notify_idle {
+            self.queue_notify.notify_waiters();
+        }
         self.record_request_history(outcome, Utc::now()).await;
 
         Ok(())
     }
 
     /// 適切なノードを選択
-    pub async fn select_node(&self) -> RouterResult<Node> {
-        let nodes = self.registry.list().await;
+    ///
+    /// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+    pub async fn select_node(&self, model_id: Option<&str>) -> RouterResult<Node> {
+        // SPEC-93536000: まずオンラインノードが存在するかチェック（503 vs 404の区別）
+        // オンラインノードがゼロの場合は503（一時的なサービス利用不可）
+        let all_online_nodes: Vec<_> = {
+            let nodes = self.registry.list().await;
+            nodes
+                .into_iter()
+                .filter(|node| node.status == NodeStatus::Online)
+                .collect()
+        };
 
-        let online_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|node| node.status == NodeStatus::Online)
-            .collect();
-
-        if online_nodes.is_empty() {
+        if all_online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
+
+        // SPEC-93536000: モデルID指定時はモデル対応ノードのみを取得
+        let online_nodes: Vec<_> = if let Some(mid) = model_id {
+            // オンラインノードがあるので、モデルの存在をチェック（404 vs 503の区別）
+            if !self.registry.model_exists_in_any_node(mid).await {
+                return Err(RouterError::ModelNotFound(mid.to_string()));
+            }
+            let capable_nodes = self.registry.get_nodes_for_model(mid).await;
+            if capable_nodes.is_empty() {
+                // モデルは存在するが、すべてexcludedまたはオフライン
+                return Err(RouterError::NoCapableNodes(mid.to_string()));
+            }
+            capable_nodes
+        } else {
+            all_online_nodes
+        };
 
         let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
         let round_robin_start = round_robin_cursor % online_nodes.len();
@@ -2206,6 +2397,7 @@ impl LoadManager {
                 .iter()
                 .filter(|node| node.status == NodeStatus::Offline)
                 .count(),
+            queued_requests: self.queue_waiters.load(AtomicOrdering::Relaxed),
             ..Default::default()
         };
 
@@ -2427,20 +2619,41 @@ impl LoadManager {
     ///
     /// ```ignore
     /// let manager = LoadManager::new(registry);
-    /// let node = manager.select_node_by_metrics().await?;
+    /// let node = manager.select_node_by_metrics(None).await?;
     /// println!("Selected node: {}", node.machine_name);
     /// ```
-    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
-        let nodes = self.registry.list().await;
+    ///
+    /// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
+    pub async fn select_node_by_metrics(&self, model_id: Option<&str>) -> RouterResult<Node> {
+        // SPEC-93536000: まずオンラインノードが存在するかチェック（503 vs 404の区別）
+        // オンラインノードがゼロの場合は503（一時的なサービス利用不可）
+        let all_online_nodes: Vec<_> = {
+            let nodes = self.registry.list().await;
+            nodes
+                .into_iter()
+                .filter(|node| node.status == NodeStatus::Online)
+                .collect()
+        };
 
-        let online_nodes: Vec<_> = nodes
-            .into_iter()
-            .filter(|node| node.status == NodeStatus::Online)
-            .collect();
-
-        if online_nodes.is_empty() {
+        if all_online_nodes.is_empty() {
             return Err(RouterError::NoNodesAvailable);
         }
+
+        // SPEC-93536000: モデルID指定時はモデル対応ノードのみを取得
+        let online_nodes: Vec<_> = if let Some(mid) = model_id {
+            // オンラインノードがあるので、モデルの存在をチェック（404 vs 503の区別）
+            if !self.registry.model_exists_in_any_node(mid).await {
+                return Err(RouterError::ModelNotFound(mid.to_string()));
+            }
+            let capable_nodes = self.registry.get_nodes_for_model(mid).await;
+            if capable_nodes.is_empty() {
+                // モデルは存在するが、すべてexcludedまたはオフライン
+                return Err(RouterError::NoCapableNodes(mid.to_string()));
+            }
+            capable_nodes
+        } else {
+            all_online_nodes
+        };
 
         let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
         let round_robin_start = round_robin_cursor % online_nodes.len();

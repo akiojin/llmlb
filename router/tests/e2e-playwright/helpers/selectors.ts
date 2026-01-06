@@ -29,17 +29,22 @@ export const DashboardSelectors = {
 
   // Models Tab
   models: {
-    // Register button opens the convert modal (excludes tabs)
-    registerButton: 'button:not([role="tab"]):has-text("Register")',
-    // Register/Convert modal fields
-    convertModal: '#convert-modal',
-    convertModalClose: '#convert-modal-close',
-    convertRepo: '#convert-repo',
-    convertFilename: '#convert-filename',
-    convertSubmit: '#convert-submit',
+    // Tab navigation
+    localTab: 'button[role="tab"]:has-text("Local")',
+    hubTab: 'button[role="tab"]:has-text("Model Hub")',
     // Model lists
     localModelsList: '#local-models-list',
-    registeringTasksList: '#registering-tasks',
+    hubModelsList: '#hub-models-list',
+    // Model Hub elements
+    hubSearch: '#hub-search',
+    hubModelCard: '[data-model-card]',
+    hubRegisterButton: 'button:has-text("Register")',
+    hubModelStatus: '[data-model-status]',
+    // Individual model card elements
+    modelCard: '.model-card',
+    modelName: '[data-model-name]',
+    modelDescription: '[data-model-description]',
+    modelSize: '[data-model-size]',
   },
 
   // Nodes Tab

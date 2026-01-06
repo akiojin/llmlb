@@ -1,0 +1,299 @@
+openapi: 3.0.3
+info:
+  title: Image Understanding API
+  description: |
+    画像認識モデル対応（Image Understanding）のAPI仕様。
+    OpenAI Vision API互換のエンドポイントを提供。
+
+    SPEC-e03a404cに基づく実装。
+  version: 1.0.0
+  contact:
+    name: LLM Router Team
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /v1/chat/completions:
+    post:
+      operationId: createVisionChatCompletion
+      summary: 画像を含むチャット補完を生成
+      description: |
+        画像URLまたはBase64エンコードされた画像を含むチャットリクエストを処理する。
+
+        - 対応形式: JPEG, PNG, GIF, WebP
+        - 最大画像サイズ: 10MB/画像
+        - 最大画像数: 10枚/リクエスト
+        - Vision非対応モデルへの画像付きリクエストは400エラー
+      tags:
+        - Vision
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VisionChatRequest'
+            examples:
+              image_url:
+                $ref: '#/components/examples/ImageUrlRequest'
+              base64:
+                $ref: '#/components/examples/Base64Request'
+              multiple_images:
+                $ref: '#/components/examples/MultipleImagesRequest'
+      responses:
+        '200':
+          description: 補完生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+        '400':
+          description: リクエストエラー（非対応モデル、無効な画像等）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisionErrorResponse'
+              examples:
+                model_not_supported:
+                  $ref: '#/components/examples/ModelNotSupportedError'
+                image_too_large:
+                  $ref: '#/components/examples/ImageTooLargeError'
+                unsupported_format:
+                  $ref: '#/components/examples/UnsupportedFormatError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Bearer token形式でAPIキーを指定
+
+  schemas:
+    VisionChatRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: Vision対応モデルID
+          example: llava-1.6-7b
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisionMessage'
+        stream:
+          type: boolean
+          default: false
+        max_tokens:
+          type: integer
+          minimum: 1
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+
+    VisionMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          oneOf:
+            - type: string
+              description: テキストのみのコンテンツ
+            - type: array
+              items:
+                $ref: '#/components/schemas/ContentPart'
+              description: マルチモーダルコンテンツ
+
+    ContentPart:
+      oneOf:
+        - $ref: '#/components/schemas/TextContent'
+        - $ref: '#/components/schemas/ImageUrlContent'
+
+    TextContent:
+      type: object
+      required:
+        - type
+        - text
+      properties:
+        type:
+          type: string
+          enum: [text]
+        text:
+          type: string
+
+    ImageUrlContent:
+      type: object
+      required:
+        - type
+        - image_url
+      properties:
+        type:
+          type: string
+          enum: [image_url]
+        image_url:
+          type: object
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: 画像URL または data:image/...;base64,... 形式
+            detail:
+              type: string
+              enum: [auto, low, high]
+              default: auto
+              description: 詳細レベル（現在は無視されauto扱い）
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choice'
+        usage:
+          $ref: '#/components/schemas/Usage'
+
+    Choice:
+      type: object
+      properties:
+        index:
+          type: integer
+        message:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [assistant]
+            content:
+              type: string
+        finish_reason:
+          type: string
+          enum: [stop, length]
+
+    Usage:
+      type: object
+      properties:
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+
+    VisionErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+              enum: [invalid_request_error]
+            code:
+              type: string
+              enum:
+                - model_not_supported
+                - image_too_large
+                - too_many_images
+                - unsupported_format
+                - invalid_base64
+                - fetch_failed
+                - fetch_timeout
+                - corrupted_image
+
+  examples:
+    ImageUrlRequest:
+      summary: 画像URLを使用したリクエスト
+      value:
+        model: llava-1.6-7b
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: この画像に何が写っていますか？
+              - type: image_url
+                image_url:
+                  url: https://example.com/image.jpg
+
+    Base64Request:
+      summary: Base64画像を使用したリクエスト
+      value:
+        model: llava-1.6-7b
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: この画像を説明してください
+              - type: image_url
+                image_url:
+                  url: "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+
+    MultipleImagesRequest:
+      summary: 複数画像の比較
+      value:
+        model: llava-1.6-7b
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: これら2つの画像の違いを説明してください
+              - type: image_url
+                image_url:
+                  url: https://example.com/image1.jpg
+              - type: image_url
+                image_url:
+                  url: https://example.com/image2.jpg
+
+    ModelNotSupportedError:
+      summary: Vision非対応モデルエラー
+      value:
+        error:
+          message: "Model 'llama-3.2-1b' does not support image understanding"
+          type: invalid_request_error
+          code: model_not_supported
+
+    ImageTooLargeError:
+      summary: 画像サイズ超過エラー
+      value:
+        error:
+          message: "Image size 15728640 bytes exceeds maximum 10485760 bytes"
+          type: invalid_request_error
+          code: image_too_large
+
+    UnsupportedFormatError:
+      summary: サポートされていない形式エラー
+      value:
+        error:
+          message: "Image format 'image/tiff' is not supported. Supported formats: jpeg, png, gif, webp"
+          type: invalid_request_error
+          code: unsupported_format

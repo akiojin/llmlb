@@ -118,13 +118,11 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 ## 技術制約 *(該当する場合)*
 
 - 以下のGPUベンダーをサポート:
-  - **NVIDIA GPU**: NVML (NVIDIA Management Library) 経由で検出、またはデバイスファイル (`/dev/nvidia0`) で検出
-  - **Apple Silicon**: Metal API、`lscpu`コマンド、または `/proc/cpuinfo` で検出 (M1/M2/M3/M4シリーズ)
-  - **AMD GPU**: sysfs KFD Topology (`/sys/class/kfd/kfd/topology/nodes`) で検出（Linuxのみ）
-  - **Intel GPU**: sysinfo経由で検出（Linuxのみ）
-- Linux、Windows、macOS環境でのGPU検出をサポート
-- **Docker for Mac対応**: Linuxコンテナ内でもApple Siliconを自動検出（`lscpu`と`/proc/cpuinfo`を使用）
-- GPUベンダー検出の優先順位: 環境変数 → NVIDIA → AMD → Apple Silicon
+Windows (CUDA/NVML)
+  - **Apple Silicon**: Metal API で検出 (M1/M2/M3/M4シリーズ)
+  - **NVIDIA GPU (任意)**: NVML で詳細情報取得（能力スコア用）
+- **対応OS**: Windows / macOS（Linuxは当面非対応、CUDAは実験扱い）
+CUDA(NVML)
 
 ---
 
@@ -134,10 +132,9 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 
 - ノードマシンに何らかのGPU（NVIDIA/Apple/AMD/Intel）が搭載されている
 - 該当するGPUドライバーがインストールされている
-  - NVIDIA: NVIDIA GPU Driver + CUDA Toolkit
+Windows: CUDA/NVML
   - Apple Silicon: macOS標準（Metal API）
-  - AMD: ROCm Driver（Linuxの場合）
-  - Intel: Intel GPU Driver
+  - NVIDIA: NVML が利用可能（能力スコア用、任意）
 - LLM runtimeがGPUを利用する設定になっている
 
 ---
@@ -147,10 +144,9 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 この機能は以下に依存します:
 
 - 各GPUベンダーのドライバーとツールキット
-  - NVIDIA: CUDA Toolkit / NVML
+Windows: CUDA/NVML
   - Apple: Metal Framework (macOS標準)
-  - AMD: ROCm (Linuxのみ)
-  - Intel: Intel GPU Driver
+  - NVIDIA: NVML（能力スコア用）
 - ノード・ルーター間の通信プロトコル
 - データベースストレージ機能
 
@@ -176,3 +172,29 @@ LLM runtimeルーターの運用管理者として、ルーターを起動した
 - ✅ ユーザーが「何を」必要とし「なぜ」必要なのかに焦点を当てる
 - ❌ 「どのように」実装するかを避ける (技術スタック、API、コード構造なし)
 - 👥 ビジネス関係者向けに記述 (開発者向けではない)
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。実装も完了しています。
+
+**確認済み事項**:
+
+- GPU必須: 登録リクエストに`gpu_devices`フィールド必須、count>0検証（FR-001, FR-002で明記）
+- 拒否レスポンス: 403 Forbidden（FR-003で明記）
+- 自動削除: ルーター起動時にGPU非搭載ノードを自動削除（FR-004で明記）
+- GPU能力スコア: 0-10000、メモリ・クロック・Compute Capabilityから算出（FR-008, FR-010で明記）
+
+**サポートGPU**:
+
+CUDA/NVML
+- Apple Silicon: Metal API検出（M1/M2/M3/M4）
+- NVIDIA: NVML経由検出、能力スコア対応
+
+**エッジケースの確認**:
+
+- GPU検出失敗時: 登録拒否
+- モデル名取得不可時: 「不明」として登録許可

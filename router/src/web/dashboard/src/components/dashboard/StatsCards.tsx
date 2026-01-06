@@ -10,6 +10,7 @@ import {
   XCircle,
   Zap,
   HardDrive,
+  Hourglass,
 } from 'lucide-react'
 
 interface StatsCardsProps {
@@ -27,6 +28,19 @@ interface StatCardProps {
   isLoading?: boolean
   delay?: number
   dataStat?: string
+}
+
+// Tailwind JIT では動的クラス生成が機能しないため、静的マップを使用
+const accentColorClasses: Record<string, string> = {
+  primary: 'bg-primary/10 group-hover:bg-primary/20',
+  'chart-1': 'bg-chart-1/10 group-hover:bg-chart-1/20',
+  'chart-2': 'bg-chart-2/10 group-hover:bg-chart-2/20',
+  'chart-3': 'bg-chart-3/10 group-hover:bg-chart-3/20',
+  'chart-4': 'bg-chart-4/10 group-hover:bg-chart-4/20',
+  'chart-5': 'bg-chart-5/10 group-hover:bg-chart-5/20',
+  success: 'bg-success/10 group-hover:bg-success/20',
+  warning: 'bg-warning/10 group-hover:bg-warning/20',
+  destructive: 'bg-destructive/10 group-hover:bg-destructive/20',
 }
 
 function StatCard({
@@ -59,7 +73,7 @@ function StatCard({
             )}
           </div>
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-lg bg-${accentColor}/10 transition-colors group-hover:bg-${accentColor}/20`}
+            className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${accentColorClasses[accentColor] || accentColorClasses.primary}`}
           >
             {icon}
           </div>
@@ -90,6 +104,20 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
       icon: <Activity className="h-5 w-5 text-chart-2" />,
       accentColor: 'chart-2',
       dataStat: 'total-requests',
+    },
+    {
+      title: 'Active Requests',
+      value: stats ? formatNumber(stats.total_active_requests) : '—',
+      icon: <Cpu className="h-5 w-5 text-chart-1" />,
+      accentColor: 'chart-1',
+      dataStat: 'active-requests',
+    },
+    {
+      title: 'Queued Requests',
+      value: stats ? formatNumber(stats.queued_requests) : '—',
+      icon: <Hourglass className="h-5 w-5 text-chart-5" />,
+      accentColor: 'chart-5',
+      dataStat: 'queued-requests',
     },
     {
       title: 'Success Rate',

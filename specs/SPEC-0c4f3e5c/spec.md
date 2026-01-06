@@ -1,5 +1,7 @@
 # LLM runtimeモデルストレージ形式サポート
 
+**ステータス**: 廃止（置換: SPEC-dcaeaec4）
+
 ## 概要
 
 C++ NodeのLlamaManagerがLLM runtimeのネイティブモデルストレージ形式（blobファイル）を
@@ -89,3 +91,24 @@ blobファイル名（`sha256-xxxx`形式）に変換する。
 - モデル名からblobパスを正しく解決する
 - manifestが存在しない場合のエラー処理
 - 無効なmanifest形式のエラー処理
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
+
+**確認済み事項**:
+
+- 対応形式: GGUFファイル（.gguf）およびLLM runtime blobファイル（sha256-xxx）（FR-1で明記）
+- ストレージ構造: ~/.runtime/models/ 配下のmanifests/とblobs/（FR-2で明記）
+- Manifest解析: application/vnd.runtime.image.modelタイプからblobパス取得（FR-3で明記）
+- 後方互換性: 既存.ggufファイルロードは維持（NFR-1で明記）
+
+**テスト要件の確認**:
+
+- TDD-1: blobファイル名判定テスト
+- TDD-2: モデルロードテスト（.ggufとblob両対応）
+- TDD-3: パス解決テスト

@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: Log Retrieval API
+  version: 1.0.0
+  description: ノードおよびルーター経由のログ取得API
+
+paths:
+  /v0/logs:
+    get:
+      summary: ノードログ取得
+      description: ノード自身のログを末尾から指定行数取得する
+      operationId: getNodeLogs
+      parameters:
+        - name: tail
+          in: query
+          description: 取得する行数（1-1000、デフォルト200）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogsResponse'
+        '413':
+          description: レスポンスサイズ超過
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 内部エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v0/nodes/{node_id}/logs:
+    get:
+      summary: ノードログ取得（ルーター経由）
+      description: 指定ノードのログをプロキシして取得する
+      operationId: getNodeLogsByRouter
+      parameters:
+        - name: node_id
+          in: path
+          required: true
+          description: ノードID（UUID形式）
+          schema:
+            type: string
+            format: uuid
+        - name: tail
+          in: query
+          description: 取得する行数（1-1000、デフォルト200）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogsResponse'
+        '404':
+          description: ノードが見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: ノードへの接続失敗
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    LogsResponse:
+      type: object
+      required:
+        - entries
+        - path
+      properties:
+        entries:
+          type: array
+          description: ログエントリの配列
+          items:
+            $ref: '#/components/schemas/LogEntry'
+        path:
+          type: string
+          description: ログファイルのパス
+          example: /home/user/.llm-node/logs/current.jsonl
+
+    LogEntry:
+      type: object
+      required:
+        - timestamp
+        - level
+        - target
+        - message
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601形式のタイムスタンプ
+          example: "2025-01-02T10:30:00.123Z"
+        level:
+          type: string
+          enum: [TRACE, DEBUG, INFO, WARN, ERROR]
+          description: ログレベル
+        target:
+          type: string
+          description: ログ出力元モジュール
+          example: llm_node::api::router_client
+        message:
+          type: string
+          description: ログメッセージ
+          example: Heartbeat sent
+        request_id:
+          type: string
+          format: uuid
+          description: リクエスト追跡用ID（オプション）
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: エラーメッセージ
+          example: "Node 'abc123' not found"

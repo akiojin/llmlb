@@ -22,13 +22,13 @@ cargo run -p llm-router
 ### 2. ノード登録
 
 ```bash
-REGISTER_RES=$(curl -sS http://localhost:8080/v0/nodes \
+REGISTER_RES=$(curl -sS http://localhost:32768/v0/nodes \
   -H "Content-Type: application/json" \
   -d '{
     "machine_name": "server-01",
     "ip_address": "127.0.0.1",
     "runtime_version": "0.1.0",
-    "runtime_port": 11434,
+    "runtime_port": 32768,
     "gpu_available": true,
     "gpu_devices": [{"model":"NVIDIA RTX 4090","count":1}]
   }')
@@ -41,7 +41,7 @@ echo "$REGISTER_RES" | jq .
 ### 3. 管理者ログイン（JWT取得）
 
 ```bash
-LOGIN_RES=$(curl -sS http://localhost:8080/v0/auth/login \
+LOGIN_RES=$(curl -sS http://localhost:32768/v0/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
@@ -57,7 +57,7 @@ JWT_TOKEN=$(echo "$LOGIN_RES" | jq -r .token)
 ```bash
 NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
 
-curl -sS http://localhost:8080/v0/nodes/${NODE_ID}/approve \
+curl -sS http://localhost:32768/v0/nodes/${NODE_ID}/approve \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${JWT_TOKEN}" | jq .
 ```
@@ -65,7 +65,7 @@ curl -sS http://localhost:8080/v0/nodes/${NODE_ID}/approve \
 ### 5. ノード一覧確認
 
 ```bash
-curl -sS http://localhost:8080/v0/nodes | jq .
+curl -sS http://localhost:32768/v0/nodes | jq .
 ```
 
 ## ヘルスチェック送信（curlで確認）
@@ -76,7 +76,7 @@ curl -sS http://localhost:8080/v0/nodes | jq .
 NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
 NODE_TOKEN=$(echo "$REGISTER_RES" | jq -r .node_token)
 
-curl -sS http://localhost:8080/v0/health \
+curl -sS http://localhost:32768/v0/health \
   -H "Content-Type: application/json" \
   -H "X-Node-Token: ${NODE_TOKEN}" \
   -d "{

@@ -1,47 +1,365 @@
 #include "core/inference_engine.h"
+
+#include "core/engine_registry.h"
+#include "core/gptoss_engine.h"
+#include "core/llama_engine.h"
 #include "core/llama_manager.h"
+#include "core/nemotron_engine.h"
+#include "core/request_watchdog.h"
+#include "core/token_watchdog.h"
+#include "core/vision_processor.h"
+#include "include/llama.h"
+#include "models/model_descriptor.h"
+#include "models/model_resolver.h"
 #include "models/model_storage.h"
 #include "models/model_sync.h"
-#include "include/llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
+#include "utils/stop_sequences.h"
+#include "runtime/state.h"
+#include "system/gpu_detector.h"
 
 #include <spdlog/spdlog.h>
-#include <random>
-#include <sstream>
+
+#include <algorithm>
+#include <atomic>
 #include <chrono>
-#include <cmath>
+#include <cctype>
+#include <condition_variable>
+#include <cstdlib>
+#include <filesystem>
+#include <list>
+#include <mutex>
+#include <optional>
+#include <sstream>
+#include <thread>
+#include <type_traits>
+#include <unordered_map>
 
 namespace llm_node {
 
-// 前方宣言
-static std::string stripControlTokens(std::string text);
-static std::string extractGptOssFinalMessage(const std::string& output);
-std::string extractGptOssFinalMessageForTest(const std::string& output);
+class InferenceCache {
+public:
+    std::optional<std::string> get(const std::string& key) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = entries_.find(key);
+        if (it == entries_.end()) return std::nullopt;
+        lru_.splice(lru_.begin(), lru_, it->second);
+        return it->second->value;
+    }
 
-// コンストラクタ
-InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync)
-    : manager_(&manager)
-    , model_storage_(&model_storage)
-    , model_sync_(model_sync) {}
+    void put(const std::string& key, const std::string& value, size_t max_bytes) {
+        if (max_bytes == 0) return;
+        const size_t entry_bytes = key.size() + value.size();
+        if (entry_bytes > max_bytes) return;
 
-// チャットメッセージからプロンプトを構築（llama_chat_apply_template使用）
-std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
-    // この関数はモデルなしで呼ばれる互換性維持用のフォールバック
-    // 実際の推論では generateChat/generateChatStream 内で直接テンプレートを適用
-    std::ostringstream oss;
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = entries_.find(key);
+        if (it != entries_.end()) {
+            current_bytes_ -= it->second->bytes;
+            it->second->value = value;
+            it->second->bytes = entry_bytes;
+            lru_.splice(lru_.begin(), lru_, it->second);
+            current_bytes_ += entry_bytes;
+        } else {
+            lru_.push_front(Entry{key, value, entry_bytes});
+            entries_[key] = lru_.begin();
+            current_bytes_ += entry_bytes;
+        }
 
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-            oss << "System: " << msg.content << "\n\n";
-        } else if (msg.role == "user") {
-            oss << "User: " << msg.content << "\n\n";
-        } else if (msg.role == "assistant") {
-            oss << "Assistant: " << msg.content << "\n\n";
+        while (current_bytes_ > max_bytes && !lru_.empty()) {
+            auto last_it = std::prev(lru_.end());
+            current_bytes_ -= last_it->bytes;
+            entries_.erase(last_it->key);
+            lru_.pop_back();
         }
     }
 
-    // アシスタント応答の開始を示す
-    oss << "Assistant: ";
-    return oss.str();
+private:
+    struct Entry {
+        std::string key;
+        std::string value;
+        size_t bytes{0};
+    };
+
+    std::list<Entry> lru_;
+    std::unordered_map<std::string, std::list<Entry>::iterator> entries_;
+    size_t current_bytes_{0};
+    std::mutex mutex_;
+};
+
+namespace {
+constexpr double kInferenceCacheRamRatio = 0.05;
+
+struct TokenMetricsState {
+    uint64_t start_ns{0};
+    uint64_t first_token_ns{0};
+    uint64_t last_token_ns{0};
+    size_t token_count{0};
+};
+
+uint64_t steady_now_ns() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+#ifdef LLM_NODE_TESTING
+std::mutex g_token_metrics_mutex;
+std::function<void(const TokenMetrics&)> g_token_metrics_hook;
+std::function<uint64_t()> g_token_metrics_clock;
+std::mutex g_plugin_restart_hook_mutex;
+std::function<bool(std::string&)> g_plugin_restart_hook;
+#endif
+
+uint64_t token_metrics_now_ns() {
+#ifdef LLM_NODE_TESTING
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    if (g_token_metrics_clock) {
+        return g_token_metrics_clock();
+    }
+#endif
+    return steady_now_ns();
+}
+
+void token_metrics_callback(void* ctx, uint32_t, uint64_t timestamp_ns) {
+    auto* state = static_cast<TokenMetricsState*>(ctx);
+    if (!state) return;
+    state->token_count += 1;
+    if (state->first_token_ns == 0) {
+        state->first_token_ns = timestamp_ns;
+    }
+    state->last_token_ns = timestamp_ns;
+}
+
+TokenMetrics build_token_metrics(const TokenMetricsState& state) {
+    TokenMetrics metrics;
+    metrics.token_count = state.token_count;
+    if (state.token_count == 0) {
+        return metrics;
+    }
+    const uint64_t start = state.start_ns;
+    const uint64_t first = state.first_token_ns > 0 ? state.first_token_ns : start;
+    const uint64_t last = state.last_token_ns > 0 ? state.last_token_ns : first;
+    metrics.ttft_ms = static_cast<double>(first - start) / 1'000'000.0;
+    const double duration_s = last > start
+        ? static_cast<double>(last - start) / 1'000'000'000.0
+        : 0.0;
+    metrics.tokens_per_second = duration_s > 0.0
+        ? static_cast<double>(state.token_count) / duration_s
+        : 0.0;
+    return metrics;
+}
+
+void append_with_length(std::string& out, const std::string& value) {
+    out.append(std::to_string(value.size()));
+    out.push_back(':');
+    out.append(value);
+    out.push_back('|');
+}
+
+std::string build_cache_key_base(const std::string& model, const InferenceParams& params) {
+    std::string key;
+    key.reserve(model.size() + 128);
+    key.append("model=");
+    append_with_length(key, model);
+    key.append("max_tokens=").append(std::to_string(params.max_tokens)).append("|");
+    key.append("temperature=").append(std::to_string(params.temperature)).append("|");
+    key.append("top_p=").append(std::to_string(params.top_p)).append("|");
+    key.append("top_k=").append(std::to_string(params.top_k)).append("|");
+    key.append("repeat_penalty=").append(std::to_string(params.repeat_penalty)).append("|");
+    key.append("seed=").append(std::to_string(params.seed)).append("|");
+    key.append("stop_count=").append(std::to_string(params.stop_sequences.size())).append("|");
+    for (const auto& stop : params.stop_sequences) {
+        append_with_length(key, stop);
+    }
+    return key;
+}
+
+std::string build_completion_cache_key(const std::string& prompt,
+                                       const std::string& model,
+                                       const InferenceParams& params) {
+    std::string key = build_cache_key_base(model, params);
+    key.append("prompt=");
+    append_with_length(key, prompt);
+    return key;
+}
+
+std::string build_chat_cache_key(const std::vector<ChatMessage>& messages,
+                                 const std::string& model,
+                                 const InferenceParams& params) {
+    std::string key = build_cache_key_base(model, params);
+    key.append("messages=").append(std::to_string(messages.size())).append("|");
+    for (const auto& message : messages) {
+        append_with_length(key, message.role);
+        append_with_length(key, message.content);
+    }
+    return key;
+}
+
+size_t inference_cache_limit_bytes(const std::function<ResourceUsage()>& provider) {
+    if (!provider) return 0;
+    try {
+        const auto usage = provider();
+        if (usage.mem_total_bytes == 0 || usage.mem_used_bytes >= usage.mem_total_bytes) {
+            return 0;
+        }
+        const uint64_t available = usage.mem_total_bytes - usage.mem_used_bytes;
+        const auto limit = static_cast<long double>(available) * kInferenceCacheRamRatio;
+        if (limit <= 0.0L) return 0;
+        return static_cast<size_t>(limit);
+    } catch (...) {
+        return 0;
+    }
+}
+
+void report_token_metrics(const TokenMetricsState& state, const std::string& model, const char* kind) {
+    if (state.token_count == 0) return;
+    TokenMetrics metrics = build_token_metrics(state);
+    spdlog::info("Token metrics: model={} kind={} ttft_ms={:.2f} tokens={} tokens_per_sec={:.2f}",
+        model,
+        kind ? kind : "unknown",
+        metrics.ttft_ms,
+        metrics.token_count,
+        metrics.tokens_per_second);
+#ifdef LLM_NODE_TESTING
+    std::function<void(const TokenMetrics&)> hook;
+    {
+        std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+        hook = g_token_metrics_hook;
+    }
+    if (hook) {
+        hook(metrics);
+    }
+#endif
+}
+
+std::vector<std::string> split_tokens(const std::string& text, size_t max_tokens) {
+    std::vector<std::string> tokens;
+    std::string current;
+    const size_t effective_max_tokens = max_tokens == 0 ? kDefaultMaxTokens : max_tokens;
+    for (char c : text) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!current.empty()) {
+                tokens.push_back(current);
+                if (tokens.size() >= effective_max_tokens) break;
+                current.clear();
+            }
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty() && tokens.size() < effective_max_tokens) {
+        tokens.push_back(current);
+    }
+    return tokens;
+}
+
+std::string apply_stop_sequences_to_output(std::string output, const std::vector<std::string>& stop_sequences) {
+    if (stop_sequences.empty()) return output;
+    auto normalized = normalize_stop_sequences(stop_sequences);
+    apply_stop_sequences_suffix(output, normalized);
+    return output;
+}
+
+constexpr auto kDefaultRequestTimeout = std::chrono::seconds(30);
+std::atomic<int64_t> g_watchdog_timeout_ms{
+    std::chrono::duration_cast<std::chrono::milliseconds>(kDefaultRequestTimeout).count()};
+std::mutex g_watchdog_mutex;
+std::function<void()> g_watchdog_terminate;
+
+void default_watchdog_terminate() {
+    spdlog::critical("Request watchdog timeout exceeded; terminating process");
+    std::abort();
+}
+
+class RequestWatchdog {
+public:
+    RequestWatchdog(std::chrono::milliseconds timeout, std::function<void()> on_timeout)
+        : timeout_(timeout)
+        , on_timeout_(std::move(on_timeout)) {
+        if (timeout_.count() <= 0 || !on_timeout_) {
+            active_ = false;
+            return;
+        }
+        thread_ = std::thread([this]() { run(); });
+    }
+
+    RequestWatchdog(const RequestWatchdog&) = delete;
+    RequestWatchdog& operator=(const RequestWatchdog&) = delete;
+
+    void disarm() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!active_) return;
+            active_ = false;
+        }
+        cv_.notify_all();
+    }
+
+    ~RequestWatchdog() {
+        disarm();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+private:
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!active_) return;
+        const bool cancelled = cv_.wait_for(lock, timeout_, [this]() { return !active_; });
+        if (cancelled || !active_) return;
+        lock.unlock();
+        on_timeout_();
+    }
+
+    std::chrono::milliseconds timeout_{0};
+    std::function<void()> on_timeout_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool active_{true};
+    std::thread thread_;
+};
+
+std::chrono::milliseconds get_watchdog_timeout() {
+    return std::chrono::milliseconds(g_watchdog_timeout_ms.load());
+}
+
+std::function<void()> get_watchdog_terminate_hook() {
+    std::lock_guard<std::mutex> lock(g_watchdog_mutex);
+    if (!g_watchdog_terminate) {
+        g_watchdog_terminate = default_watchdog_terminate;
+    }
+    return g_watchdog_terminate;
+}
+
+template <typename Fn>
+auto run_with_watchdog(Fn&& fn) {
+    const auto timeout = get_watchdog_timeout();
+    if (timeout.count() <= 0) {
+        return fn();
+    }
+    RequestWatchdog watchdog(timeout, get_watchdog_terminate_hook());
+    if constexpr (std::is_void_v<decltype(fn())>) {
+        fn();
+        watchdog.disarm();
+    } else {
+        auto result = fn();
+        watchdog.disarm();
+        return result;
+    }
+}
+
+std::optional<ModelDescriptor> resolve_descriptor(
+    const ModelStorage* storage,
+    const std::string& model_name) {
+    if (!storage) return std::nullopt;
+
+    auto desc = storage->resolveDescriptor(model_name);
+    if (desc) return desc;
+
+    return std::nullopt;
 }
 
 // ChatML形式でプロンプトを構築するフォールバック関数
@@ -74,7 +392,7 @@ static std::string stripControlTokens(std::string text) {
 }
 
 // gpt-ossテンプレート（モデル側にテンプレが無い場合のフォールバック）。ユーザー入力は改変しない。
-static const char * GPT_OSS_TEMPLATE = R"tmpl({% for message in messages %}
+static const char* GPT_OSS_TEMPLATE = R"tmpl({% for message in messages %}
 {% if message['role'] == 'system' %}
 <|start|>system<|message|>{{ message['content'] }}<|end|>
 {% elif message['role'] == 'user' %}
@@ -97,11 +415,6 @@ static std::string extractGptOssFinalMessage(const std::string& output) {
     size_t endpos = output.find(end, start);
     std::string seg = endpos == std::string::npos ? output.substr(start) : output.substr(start, endpos - start);
     return stripControlTokens(seg);
-}
-
-// テスト用に公開する薄いラッパー（本番コードには影響なし）
-std::string extractGptOssFinalMessageForTest(const std::string& output) {
-    return extractGptOssFinalMessage(output);
 }
 
 // gpt-oss形式でプロンプトを構築する関数
@@ -141,6 +454,11 @@ static std::string buildGptOssPrompt(const std::vector<ChatMessage>& messages) {
 
 // gpt-ossモデルの出力から特殊トークンを除去する後処理関数
 static std::string cleanGptOssOutput(const std::string& output) {
+    const std::string marker = "<|channel|>final<|message|>";
+    if (output.find(marker) != std::string::npos) {
+        return extractGptOssFinalMessage(output);
+    }
+
     std::string result = output;
 
     // gpt-ossおよびChatMLの特殊トークンリスト
@@ -327,257 +645,622 @@ static std::string applyModelChatTemplate(
     spdlog::debug("Applied chat template: {} chars", prompt.size());
     return prompt;
 }
+}  // namespace
 
-// チャット生成（llama.cpp API使用）
+InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_storage, ModelSync* model_sync,
+                                 ModelResolver* model_resolver)
+    : manager_(&manager)
+    , model_storage_(&model_storage)
+    , model_sync_(model_sync)
+    , model_resolver_(model_resolver)
+    , resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
+    inference_cache_ = std::make_unique<InferenceCache>();
+    engines_ = std::make_unique<EngineRegistry>();
+    EngineRegistration llama_reg;
+    llama_reg.engine_id = "builtin_llama_cpp";
+    llama_reg.engine_version = "builtin";
+    llama_reg.formats = {"gguf"};
+    llama_reg.architectures = {"llama", "mistral", "gemma", "phi"};
+    llama_reg.capabilities = {"text", "embeddings"};
+    engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
+
+    EngineRegistration gptoss_reg;
+    gptoss_reg.engine_id = "builtin_gptoss_cpp";
+    gptoss_reg.engine_version = "builtin";
+    gptoss_reg.formats = {"safetensors"};
+    gptoss_reg.architectures = {"gpt_oss"};
+    gptoss_reg.capabilities = {"text"};
+    engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
+
+    EngineRegistration nemotron_reg;
+    nemotron_reg.engine_id = "builtin_nemotron_cpp";
+    nemotron_reg.engine_version = "builtin";
+    nemotron_reg.formats = {"safetensors"};
+    nemotron_reg.architectures = {"nemotron"};
+    nemotron_reg.capabilities = {"text"};
+    engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
+    vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
+    plugin_restart_last_ = std::chrono::steady_clock::now();
+}
+
+InferenceEngine::InferenceEngine()
+    : resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
+    inference_cache_ = std::make_unique<InferenceCache>();
+}
+
+InferenceEngine::~InferenceEngine() = default;
+
+bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
+    if (!engines_) {
+        error = "EngineRegistry not initialized";
+        return false;
+    }
+
+    engine_plugins_dir_ = directory;
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
+}
+
+bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
+    if (!engines_) {
+        error = "EngineRegistry not initialized";
+        return false;
+    }
+
+    engine_plugins_dir_ = directory;
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    if (!engine_host_.stagePluginsFromDir(directory, context, error)) {
+        return false;
+    }
+
+    applyPendingEnginePluginsIfIdle(&error);
+    return error.empty();
+}
+
+void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) const {
+    if (!engines_) {
+        if (error) *error = "EngineRegistry not initialized";
+        return;
+    }
+
+    if (!engine_host_.hasPendingPlugins()) {
+        if (error) error->clear();
+        return;
+    }
+
+    if (active_request_count() > 0) {
+        if (error) error->clear();
+        return;
+    }
+
+    std::string apply_error;
+    if (!engine_host_.applyPendingPlugins(*engines_, apply_error)) {
+        if (error) {
+            *error = apply_error;
+        }
+        if (!apply_error.empty()) {
+            spdlog::warn("Engine plugin reload failed: {}", apply_error);
+        }
+    } else if (error) {
+        error->clear();
+    }
+    if (!engine_host_.hasPendingPlugins()) {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+    }
+}
+
+void InferenceEngine::setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit) {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    plugin_restart_interval_ = interval;
+    plugin_restart_request_limit_ = request_limit;
+    plugin_restart_request_count_ = 0;
+    plugin_restart_last_ = std::chrono::steady_clock::now();
+}
+
+std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
+    std::ostringstream oss;
+    for (const auto& msg : messages) {
+        if (msg.role == "system") {
+            oss << "System: " << msg.content << "\n\n";
+        } else if (msg.role == "user") {
+            oss << "User: " << msg.content << "\n\n";
+        } else if (msg.role == "assistant") {
+            oss << "Assistant: " << msg.content << "\n\n";
+        }
+    }
+    oss << "Assistant: ";
+    return oss.str();
+}
+
+std::string InferenceEngine::resolveModelPath(const std::string& model_name, std::string* error_message) const {
+    if (!isInitialized()) {
+        if (error_message) *error_message = "InferenceEngine not initialized";
+        return "";
+    }
+
+    auto parsed = ModelStorage::parseModelName(model_name);
+    if (!parsed) {
+        if (error_message) {
+            *error_message = "Invalid model name (invalid quantization format): " + model_name;
+        }
+        return "";
+    }
+    const std::string& lookup_name = parsed->base;
+
+    if (model_resolver_ != nullptr) {
+        auto resolved = model_resolver_->resolve(lookup_name);
+        if (resolved.success) {
+            return resolved.path;
+        }
+        if (error_message) *error_message = resolved.error_message;
+        return "";
+    }
+
+    std::string gguf_path = model_storage_->resolveGguf(lookup_name);
+    if (!gguf_path.empty()) {
+        return gguf_path;
+    }
+
+    if (error_message) *error_message = "Model not found: " + lookup_name;
+    return "";
+}
+
+void InferenceEngine::maybeSchedulePluginRestart() const {
+    if (engine_plugins_dir_.empty()) return;
+
+    const auto now = std::chrono::steady_clock::now();
+    bool should_stage = false;
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) return;
+        if (plugin_restart_interval_.count() == 0 && plugin_restart_request_limit_ == 0) {
+            return;
+        }
+
+        plugin_restart_request_count_ += 1;
+        const bool due_by_requests = plugin_restart_request_limit_ > 0 &&
+            plugin_restart_request_count_ >= plugin_restart_request_limit_;
+        const bool due_by_time = plugin_restart_interval_.count() > 0 &&
+            (now - plugin_restart_last_) >= plugin_restart_interval_;
+        if (!due_by_requests && !due_by_time) {
+            return;
+        }
+
+        plugin_restart_pending_ = true;
+        plugin_restart_request_count_ = 0;
+        plugin_restart_last_ = now;
+        should_stage = true;
+    }
+
+    if (!should_stage) return;
+
+    std::string error;
+    if (!stagePluginRestart("periodic", error)) {
+        spdlog::warn("Engine plugin restart schedule failed: {}", error);
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+    }
+}
+
+void InferenceEngine::handlePluginCrash() const {
+    if (engine_plugins_dir_.empty()) return;
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) return;
+        plugin_restart_pending_ = true;
+    }
+
+    std::string error;
+    if (!stagePluginRestart("crash", error)) {
+        spdlog::warn("Engine plugin restart after crash failed: {}", error);
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        plugin_restart_pending_ = false;
+        return;
+    }
+
+    applyPendingEnginePluginsIfIdle();
+}
+
+bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
+    error.clear();
+#ifdef LLM_NODE_TESTING
+    {
+        std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
+        if (g_plugin_restart_hook) {
+            return g_plugin_restart_hook(error);
+        }
+    }
+#endif
+    if (engine_plugins_dir_.empty()) {
+        error = "engine plugins dir not set";
+        return false;
+    }
+
+    EngineHostContext context;
+    context.abi_version = EngineHost::kAbiVersion;
+    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
+    context.llama_manager = manager_;
+
+    if (!engine_host_.stagePluginsFromDir(engine_plugins_dir_, context, error)) {
+        return false;
+    }
+    spdlog::info("Engine plugin restart staged ({})", reason ? reason : "unknown");
+    return true;
+}
+
 std::string InferenceEngine::generateChat(
     const std::vector<ChatMessage>& messages,
-    const std::string& model_name,
+    const std::string& model,
     const InferenceParams& params) const {
 
-    // 依存関係が注入されていない場合はスタブモード
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode");
         if (messages.empty()) return "";
-        return "Response to: " + messages.back().content;
+        return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
-    // 1. モデルパス解決（固定ディレクトリのみを許容）
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
-    if (gguf_path.empty()) {
-        spdlog::error("Model not found in ~/.llm-router/models: {}", model_name);
-        throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
-    }
-
-    // 2. モデルロード（オンデマンドロードのみ。blob download 等への暗黙フォールバックはしない）
-    if (!manager_->loadModelIfNeeded(gguf_path)) {
-        throw std::runtime_error("Failed to load model: " + gguf_path);
-    }
-
-    // 3. コンテキストとモデル取得
-    llama_context* ctx = manager_->getContext(gguf_path);
-    llama_model* model = manager_->getModel(gguf_path);
-
-    if (!ctx || !model) {
-        throw std::runtime_error("Failed to get context/model for: " + gguf_path);
-    }
-
-    // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
-    std::string prompt = applyModelChatTemplate(model, messages);
-    spdlog::debug("Prompt: {}", prompt);
-
-    // 5. vocab取得
-    const llama_vocab* vocab = llama_model_get_vocab(model);
-    if (!vocab) {
-        throw std::runtime_error("Failed to get vocab from model");
-    }
-
-    // 6. トークン化
-    // gpt-ossモデルはadd_bos_token=falseを指定しているため、
-    // add_special=falseに設定。parse_special=trueで特殊トークンを認識させる。
-    bool is_gptoss = isGptOssModel(model);
-    bool add_special = !is_gptoss;  // gpt-oss以外はBOS追加
-    bool parse_special = is_gptoss; // gpt-ossは特殊トークンをパース
-
-    std::vector<llama_token> tokens(prompt.size() + 128);
-    int32_t n_tokens = llama_tokenize(
-        vocab,
-        prompt.c_str(),
-        static_cast<int32_t>(prompt.size()),
-        tokens.data(),
-        static_cast<int32_t>(tokens.size()),
-        add_special,
-        parse_special
-    );
-
-    if (n_tokens < 0) {
-        // バッファが小さすぎる場合、再割り当て
-        tokens.resize(static_cast<size_t>(-n_tokens));
-        n_tokens = llama_tokenize(
-            vocab,
-            prompt.c_str(),
-            static_cast<int32_t>(prompt.size()),
-            tokens.data(),
-            static_cast<int32_t>(tokens.size()),
-            add_special,
-            parse_special
-        );
-    }
-
-    if (n_tokens < 0) {
-        throw std::runtime_error("Failed to tokenize prompt");
-    }
-
-    tokens.resize(static_cast<size_t>(n_tokens));
-    spdlog::debug("Tokenized prompt: {} tokens", n_tokens);
-
-    // 7. バッチ分割処理でプロンプトをデコード
-    const int32_t batch_size = llama_n_batch(ctx);
-    spdlog::debug("Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
-
-    for (int32_t i = 0; i < n_tokens; i += batch_size) {
-        int32_t current_batch_size = std::min(batch_size, n_tokens - i);
-        llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
-
-        int32_t decode_result = llama_decode(ctx, batch);
-        if (decode_result != 0) {
-            spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}, error={}",
-                i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
-                n_tokens, batch_size, decode_result);
-            throw std::runtime_error("llama_decode failed");
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
         }
     }
 
-    // 8. サンプラーチェーン初期化
-    llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
-    llama_sampler* sampler = llama_sampler_chain_init(sparams);
-
-    // サンプリング戦略を追加
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
-
-    // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
-    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,                      // last_n: 直近64トークンを考慮
-        params.repeat_penalty,   // repeat_penalty: 1.1
-        0.0f,                    // frequency_penalty
-        0.0f                     // presence_penalty
-    ));
-
-    // シード設定
-    uint32_t seed = params.seed;
-    if (seed == 0) {
-        seed = static_cast<uint32_t>(
-            std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
-    }
-    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
-
-    // 9. トークン生成ループ
-    std::string output;
-    // int32_t n_cur = n_tokens; // unused
-
-    // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
-    size_t effective_max_tokens = params.max_tokens;
-    int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
-        // デフォルト値(2048)の場合は利用可能な全容量を使用、
-        // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
-        spdlog::info("Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
-            model_n_ctx, n_tokens, available, effective_max_tokens);
-    }
-
-    for (size_t i = 0; i < effective_max_tokens; i++) {
-        // トークンサンプリング
-        llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
-
-        // EOG（End of Generation）チェック
-        if (llama_vocab_is_eog(vocab, new_token)) {
-            spdlog::debug("EOG token received at position {}", i);
-            break;
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model);
         }
 
-        // トークンをテキストに変換
-        char buf[256];
-        int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
-        if (len > 0) {
-            // Debug: log token ID and raw bytes
-            std::string hex_bytes;
-            for (int32_t j = 0; j < len; j++) {
-                char hex[8];
-                snprintf(hex, sizeof(hex), "%02X ", static_cast<unsigned char>(buf[j]));
-                hex_bytes += hex;
+        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
+
+        const bool cache_enabled = params.temperature <= 0.0f;
+        std::string cache_key;
+        if (cache_enabled && inference_cache_) {
+            cache_key = build_chat_cache_key(messages, model, params);
+            if (auto cached = inference_cache_->get(cache_key)) {
+                return *cached;
             }
-            spdlog::debug("Token {}: id={}, len={}, bytes=[{}]", i, new_token, len, hex_bytes);
-            output.append(buf, static_cast<size_t>(len));
         }
 
-        // サンプラーにトークンを通知
-        llama_sampler_accept(sampler, new_token);
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
 
-        // 次のトークン用にバッチを準備
-        llama_batch next_batch = llama_batch_get_one(&new_token, 1);
-        int32_t gen_decode_result = llama_decode(ctx, next_batch);
-        if (gen_decode_result != 0) {
-            spdlog::warn("llama_decode failed during generation: {}", gen_decode_result);
-            break;
+        // T136/T137: Exponential backoff retry on crash
+        // T138: Do not retry on cancellation - rethrow immediately
+        constexpr int kMaxRetries = 4;
+        constexpr int kInitialDelayMs = 100;
+        std::exception_ptr last_exception;
+
+        for (int attempt = 0; attempt <= kMaxRetries; ++attempt) {
+            if (attempt > 0) {
+                // Exponential backoff: 100ms, 200ms, 400ms, 800ms
+                int delay_ms = kInitialDelayMs * (1 << (attempt - 1));
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+                spdlog::debug("Retry attempt {} after {}ms delay", attempt, delay_ms);
+            }
+
+            try {
+                auto output = engine->generateChat(messages, *desc, params_with_metrics);
+                report_token_metrics(metrics, desc->name, "chat");
+                if (cache_enabled && inference_cache_) {
+                    inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+                }
+                return output;
+            } catch (const GenerationCancelledException&) {
+                // T138: Cancellation is not a crash - do not retry, rethrow immediately
+                throw;
+            } catch (...) {
+                last_exception = std::current_exception();
+                if (attempt < kMaxRetries) {
+                    spdlog::warn("Engine crashed on attempt {}, will retry", attempt + 1);
+                }
+            }
         }
 
-        // n_cur++; // unused
-    }
-
-    // 10. クリーンアップ
-    llama_sampler_free(sampler);
-
-    // 11. 出力の後処理: chatMLテンプレートのストップトークンで切り詰め
-    // Qwen3などのモデルは<|im_end|>で応答を終了するが、EOGとして認識されない場合がある
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
-    };
-
-    for (const auto& stop : stop_sequences) {
-        size_t pos = output.find(stop);
-        if (pos != std::string::npos) {
-            spdlog::debug("Truncating output at stop sequence '{}' at position {}", stop, pos);
-            output = output.substr(0, pos);
-            break;
-        }
-    }
-
-    // 12. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
-    if (isGptOssModel(model)) {
-        spdlog::info("Applying gpt-oss output cleanup, before: {} chars", output.size());
-        output = cleanGptOssOutput(output);
-        spdlog::info("After cleanup: {} chars", output.size());
-    }
-
-    // Debug: log final output hex dump (first 100 bytes)
-    std::string hex_output;
-    for (size_t j = 0; j < std::min(output.size(), size_t(100)); j++) {
-        char hex[8];
-        snprintf(hex, sizeof(hex), "%02X ", static_cast<unsigned char>(output[j]));
-        hex_output += hex;
-    }
-    spdlog::info("Generated {} bytes for model {}, first 100 bytes: [{}]", output.size(), model_name, hex_output);
-    return output;
+        // All retries exhausted
+        handlePluginCrash();
+        std::rethrow_exception(last_exception);
+    });
 }
 
-// テキスト補完
+std::string InferenceEngine::generateChatWithImages(
+    const std::vector<ChatMessage>& messages,
+    const std::vector<std::string>& image_urls,
+    const std::string& model_name,
+    const InferenceParams& params) const {
+
+    if (image_urls.empty()) {
+        return generateChat(messages, model_name, params);
+    }
+
+    if (!isInitialized()) {
+        spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
+        if (messages.empty()) return "";
+        return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
+    }
+
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        std::string error;
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+
+        std::string gguf_path = resolveModelPath(model_name, &error);
+        if (gguf_path.empty()) {
+            std::string msg = error.empty() ? "Model not found: " + model_name : error;
+            spdlog::error("{}", msg);
+            throw std::runtime_error(msg);
+        }
+
+        if (!manager_->loadModelIfNeeded(gguf_path)) {
+            throw std::runtime_error("Failed to load model: " + gguf_path);
+        }
+
+        llama_context* ctx = manager_->getContext(gguf_path);
+        llama_model* model = manager_->getModel(gguf_path);
+
+        if (!ctx || !model) {
+            throw std::runtime_error("Failed to get context/model for: " + gguf_path);
+        }
+
+        if (!vision_processor_) {
+            vision_processor_ = std::make_unique<VisionProcessor>(*model_storage_);
+        }
+
+        std::string vision_error;
+        mtmd_context* mctx = vision_processor_->getOrCreateContext(model_name, gguf_path, model, vision_error);
+        if (!mctx) {
+            throw std::runtime_error(vision_error.empty() ? "Vision model not available" : vision_error);
+        }
+
+        mtmd::bitmaps bitmaps;
+        if (!vision_processor_->prepareBitmaps(mctx, image_urls, bitmaps, vision_error)) {
+            throw std::runtime_error(vision_error.empty() ? "Failed to prepare images" : vision_error);
+        }
+
+        std::string prompt = applyModelChatTemplate(model, messages);
+        spdlog::debug("Vision prompt: {}", prompt);
+
+        bool is_gptoss = isGptOssModel(model);
+        bool add_special = !is_gptoss;
+        bool parse_special = is_gptoss;
+
+        mtmd_input_text text;
+        text.text = prompt.c_str();
+        text.add_special = add_special;
+        text.parse_special = parse_special;
+
+        mtmd::input_chunks chunks(mtmd_input_chunks_init());
+        auto bitmaps_c_ptr = bitmaps.c_ptr();
+        int32_t res = mtmd_tokenize(mctx,
+                                    chunks.ptr.get(),
+                                    &text,
+                                    bitmaps_c_ptr.data(),
+                                    bitmaps_c_ptr.size());
+        if (res != 0) {
+            throw std::runtime_error("Failed to tokenize vision prompt");
+        }
+
+        llama_memory_t mem = llama_get_memory(ctx);
+        if (mem) {
+            // Reset sequence positions to avoid KV cache position mismatches across requests.
+            llama_memory_clear(mem, false);
+        }
+
+        llama_pos new_n_past = 0;
+        const int32_t n_batch = llama_n_batch(ctx);
+        if (mtmd_helper_eval_chunks(mctx,
+                                    ctx,
+                                    chunks.ptr.get(),
+                                    0,
+                                    0,
+                                    n_batch,
+                                    true,
+                                    &new_n_past) != 0) {
+            throw std::runtime_error("Failed to evaluate vision prompt");
+        }
+
+        size_t prompt_positions = new_n_past < 0 ? 0 : static_cast<size_t>(new_n_past);
+        spdlog::debug("Vision prompt positions: {}", prompt_positions);
+
+        llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+        llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
+        llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+            64,
+            params.repeat_penalty,
+            0.0f,
+            0.0f
+        ));
+
+        uint32_t seed = params.seed;
+        if (seed == 0) {
+            seed = static_cast<uint32_t>(
+                std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
+        }
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+
+        std::string output;
+        static const std::vector<std::string> kDefaultStopSequences = {
+            "<|im_end|>",
+            "<|end|>",
+            "<|start|>",
+            "<|eot_id|>",
+            "</s>",
+            "<|endoftext|>",
+        };
+        auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, params_with_metrics.stop_sequences);
+
+        size_t effective_max_tokens = params_with_metrics.max_tokens;
+        int32_t model_n_ctx = llama_model_n_ctx_train(model);
+        if (model_n_ctx > 0) {
+            size_t available = 0;
+            if (prompt_positions < static_cast<size_t>(model_n_ctx)) {
+                available = static_cast<size_t>(model_n_ctx) - prompt_positions;
+            }
+            effective_max_tokens = resolve_effective_max_tokens(
+                params_with_metrics.max_tokens,
+                prompt_positions,
+                model_n_ctx);
+            spdlog::info("Vision: Dynamic max_tokens: model_ctx={}, prompt_pos={}, available={}, effective={}",
+                model_n_ctx, prompt_positions, available, effective_max_tokens);
+        }
+
+        const llama_vocab* vocab = llama_model_get_vocab(model);
+
+        for (size_t i = 0; i < effective_max_tokens; i++) {
+            llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+            if (llama_vocab_is_eog(vocab, new_token)) {
+                spdlog::debug("Vision: EOG token received at position {}", i);
+                break;
+            }
+
+            if (params_with_metrics.on_token_callback) {
+                params_with_metrics.on_token_callback(
+                    params_with_metrics.on_token_callback_ctx,
+                    static_cast<uint32_t>(new_token),
+                    steady_now_ns());
+            }
+
+            char buf[256];
+            int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
+            if (len > 0) {
+                output.append(buf, static_cast<size_t>(len));
+                if (apply_stop_sequences_suffix(output, stop_sequences)) {
+                    break;
+                }
+            }
+
+            llama_sampler_accept(sampler, new_token);
+
+            llama_batch next_batch = llama_batch_get_one(&new_token, 1);
+            int32_t gen_decode_result = llama_decode(ctx, next_batch);
+            if (gen_decode_result != 0) {
+                spdlog::warn("Vision: llama_decode failed during generation: {}", gen_decode_result);
+                break;
+            }
+        }
+
+        llama_sampler_free(sampler);
+
+        llama_memory_t end_mem = llama_get_memory(ctx);
+        if (end_mem) {
+            llama_memory_clear(end_mem, false);
+        }
+
+        apply_stop_sequences_suffix(output, stop_sequences);
+
+        if (isGptOssModel(model)) {
+            spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
+            output = cleanGptOssOutput(output);
+            spdlog::info("Vision: After cleanup: {} chars", output.size());
+        }
+
+        spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
+        report_token_metrics(metrics, model_name, "vision");
+        return output;
+    });
+}
+
 std::string InferenceEngine::generateCompletion(
     const std::string& prompt,
     const std::string& model,
     const InferenceParams& params) const {
+    if (!isInitialized()) {
+        return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
+    }
 
-    // チャットメッセージとして処理
-    std::vector<ChatMessage> messages = {{"user", prompt}};
-    return generateChat(messages, model, params);
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model);
+        }
+
+        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
+
+        const bool cache_enabled = params.temperature <= 0.0f;
+        std::string cache_key;
+        if (cache_enabled && inference_cache_) {
+            cache_key = build_completion_cache_key(prompt, model, params);
+            if (auto cached = inference_cache_->get(cache_key)) {
+                return *cached;
+            }
+        }
+
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+        try {
+            auto output = engine->generateCompletion(prompt, *desc, params_with_metrics);
+            report_token_metrics(metrics, desc->name, "completion");
+            if (cache_enabled && inference_cache_) {
+                inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+            }
+            return output;
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
+    });
 }
 
-// ストリーミングチャット生成
 std::vector<std::string> InferenceEngine::generateChatStream(
     const std::vector<ChatMessage>& messages,
-    const std::string& model_name,
+    const std::string& model,
     const InferenceParams& params,
     const std::function<void(const std::string&)>& on_token) const {
 
-    std::vector<std::string> all_tokens;
-
-    // 依存関係が注入されていない場合はスタブモード
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode for streaming");
         std::string text = messages.empty() ? "" : "Response to: " + messages.back().content;
-        auto tokens = generateTokens(text, params.max_tokens);
+        auto tokens = split_tokens(text, params.max_tokens);
         for (const auto& t : tokens) {
             if (on_token) on_token(t);
         }
@@ -585,450 +1268,351 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    // 1. モデルパス解決（固定ディレクトリのみ）
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
-    if (gguf_path.empty()) {
-        throw std::runtime_error("Model not found in ~/.llm-router/models: " + model_name);
-    }
-
-    // 2. モデルロード（フォールバックなし）
-    if (!manager_->loadModelIfNeeded(gguf_path)) {
-        throw std::runtime_error("Failed to load model: " + gguf_path);
-    }
-
-    llama_context* ctx = manager_->getContext(gguf_path);
-    llama_model* model = manager_->getModel(gguf_path);
-
-    if (!ctx || !model) {
-        throw std::runtime_error("Failed to get context/model");
-    }
-
-    // 3. vocab取得とプロンプト処理（モデル固有のチャットテンプレートを使用）
-    const llama_vocab* vocab = llama_model_get_vocab(model);
-    std::string prompt = applyModelChatTemplate(model, messages);
-
-    // gpt-ossモデルはadd_bos_token=falseを指定しているため、
-    // add_special=falseに設定。parse_special=trueで特殊トークンを認識させる。
-    bool is_gptoss = isGptOssModel(model);
-    bool add_special = !is_gptoss;  // gpt-oss以外はBOS追加
-    bool parse_special = is_gptoss; // gpt-ossは特殊トークンをパース
-
-    std::vector<llama_token> tokens(prompt.size() + 128);
-    int32_t n_tokens = llama_tokenize(
-        vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-        tokens.data(), static_cast<int32_t>(tokens.size()), add_special, parse_special);
-
-    if (n_tokens < 0) {
-        tokens.resize(static_cast<size_t>(-n_tokens));
-        n_tokens = llama_tokenize(
-            vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-            tokens.data(), static_cast<int32_t>(tokens.size()), add_special, parse_special);
-    }
-
-    tokens.resize(static_cast<size_t>(n_tokens));
-
-    // 4. バッチ分割処理でプロンプトをデコード
-    const int32_t batch_size = llama_n_batch(ctx);
-    spdlog::debug("Streaming: Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
-
-    for (int32_t i = 0; i < n_tokens; i += batch_size) {
-        int32_t current_batch_size = std::min(batch_size, n_tokens - i);
-        llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
-
-        if (llama_decode(ctx, batch) != 0) {
-            spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}",
-                i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
-                n_tokens, batch_size);
-            throw std::runtime_error("llama_decode failed for prompt");
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
         }
     }
 
-    // 5. サンプラー初期化
-    llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
-    llama_sampler* sampler = llama_sampler_chain_init(sparams);
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
-
-    // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
-    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,                      // last_n: 直近64トークンを考慮
-        params.repeat_penalty,   // repeat_penalty: 1.1
-        0.0f,                    // frequency_penalty
-        0.0f                     // presence_penalty
-    ));
-
-    uint32_t seed = params.seed;
-    if (seed == 0) {
-        seed = static_cast<uint32_t>(
-            std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
-    }
-    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
-
-    // 6. ストリーミング生成ループ
-    // ストップシーケンスの定義（chatMLテンプレート用）
-    static const std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // ChatML (Qwen3, etc.)
-        "<|end|>",          // gpt-oss, Some models
-        "<|start|>",        // gpt-oss (新しいメッセージの開始を検出)
-        "<|eot_id|>",       // Llama 3
-        "</s>",             // Llama 2, Mistral
-        "<|endoftext|>",    // GPT-style
-    };
-
-    std::string accumulated_output;  // ストップシーケンス検出用の累積出力
-    bool should_stop = false;
-
-    // 動的max_tokens計算: モデルの最大コンテキストからプロンプト分を差し引く
-    size_t effective_max_tokens = params.max_tokens;
-    int32_t model_n_ctx = llama_model_n_ctx_train(model);
-    if (model_n_ctx > 0 && static_cast<size_t>(n_tokens) < static_cast<size_t>(model_n_ctx)) {
-        size_t available = static_cast<size_t>(model_n_ctx) - static_cast<size_t>(n_tokens);
-        // デフォルト値(2048)の場合は利用可能な全容量を使用、
-        // ユーザー指定がある場合はその値と利用可能な残り容量の小さい方を使用
-        constexpr size_t DEFAULT_MAX_TOKENS = 2048;
-        if (params.max_tokens == DEFAULT_MAX_TOKENS || params.max_tokens == 0) {
-            effective_max_tokens = available;
-        } else {
-            effective_max_tokens = std::min(params.max_tokens, available);
-        }
-        spdlog::info("Streaming: Dynamic max_tokens: model_ctx={}, prompt_tokens={}, available={}, effective={}",
-            model_n_ctx, n_tokens, available, effective_max_tokens);
-    }
-
-    for (size_t i = 0; i < effective_max_tokens && !should_stop; i++) {
-        llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
-
-        if (llama_vocab_is_eog(vocab, new_token)) {
-            break;
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model);
         }
 
-        char buf[256];
-        int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
-        if (len > 0) {
-            std::string piece(buf, static_cast<size_t>(len));
-            accumulated_output += piece;
+        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
 
-            // ストップシーケンスのチェック
-            for (const auto& stop : stop_sequences) {
-                size_t pos = accumulated_output.find(stop);
-                if (pos != std::string::npos) {
-                    spdlog::debug("Streaming: found stop sequence '{}' at position {}", stop, pos);
-                    // ストップシーケンス前の部分のみを送信
-                    if (pos > 0 && pos > accumulated_output.size() - piece.size()) {
-                        // 現在のピースがストップシーケンスを含む場合、その前の部分のみ送信
-                        std::string partial = piece.substr(0, pos - (accumulated_output.size() - piece.size()));
-                        if (!partial.empty() && on_token) {
-                            on_token(partial);
-                            all_tokens.push_back(partial);
-                        }
-                    } else if (pos == 0 || accumulated_output.find(stop) >= accumulated_output.size() - piece.size()) {
-                        // ストップシーケンスがこのピースで始まる場合、送信しない
-                    } else {
-                        all_tokens.push_back(piece);
-                        if (on_token) {
-                            on_token(piece);
-                        }
-                    }
-                    should_stop = true;
-                    break;
-                }
+        TokenMetricsState metrics;
+        metrics.start_ns = token_metrics_now_ns();
+        InferenceParams params_with_metrics = params;
+        params_with_metrics.on_token_callback = &token_metrics_callback;
+        params_with_metrics.on_token_callback_ctx = &metrics;
+
+        // Token-to-token timeout watchdog
+        std::atomic<bool> token_timeout{false};
+        TokenWatchdog token_watchdog(TokenWatchdog::defaultTimeout(), [&token_timeout]() {
+            token_timeout.store(true);
+        });
+
+        // Wrap on_token callback to kick the watchdog on each token
+        auto wrapped_on_token = [&](const std::string& token) {
+            if (token_timeout.load()) {
+                throw std::runtime_error("Token generation timeout: no token received within timeout period");
             }
-
-            if (!should_stop) {
-                all_tokens.push_back(piece);
-                // コールバックで即座に送信
-                if (on_token) {
-                    on_token(piece);
-                }
+            token_watchdog.kick();
+            if (on_token) {
+                on_token(token);
             }
+        };
+
+        try {
+            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, wrapped_on_token);
+            token_watchdog.stop();
+            report_token_metrics(metrics, desc->name, "stream");
+            return output;
+        } catch (...) {
+            token_watchdog.stop();
+            handlePluginCrash();
+            throw;
         }
-
-        if (!should_stop) {
-            llama_sampler_accept(sampler, new_token);
-
-            llama_batch next_batch = llama_batch_get_one(&new_token, 1);
-            if (llama_decode(ctx, next_batch) != 0) {
-                break;
-            }
-        }
-    }
-
-    // 完了を通知
-    if (on_token) {
-        on_token("[DONE]");
-    }
-
-    llama_sampler_free(sampler);
-    return all_tokens;
+    });
 }
 
-// 旧API互換のストリーミング（[DONE]を送信しない）
 std::vector<std::string> InferenceEngine::generateChatStream(
     const std::vector<ChatMessage>& messages,
     size_t max_tokens,
     const std::function<void(const std::string&)>& on_token) const {
-
-    // スタブモード: 旧実装と同じ動作を維持
     std::string text = generateChat(messages, "");
-    auto tokens = generateTokens(text, max_tokens);
+    auto tokens = split_tokens(text, max_tokens);
     for (const auto& t : tokens) {
         if (on_token) on_token(t);
     }
-    // 注: 旧APIでは[DONE]を送信しない
     return tokens;
 }
 
-// バッチ推論
 std::vector<std::vector<std::string>> InferenceEngine::generateBatch(
     const std::vector<std::string>& prompts,
     size_t max_tokens) const {
-
     std::vector<std::vector<std::string>> outputs;
     outputs.reserve(prompts.size());
-
     for (const auto& p : prompts) {
-        outputs.push_back(generateTokens(p, max_tokens));
+        outputs.push_back(split_tokens(p, max_tokens));
     }
     return outputs;
 }
 
-// 簡易トークン生成（スペース区切り、互換性維持）
 std::vector<std::string> InferenceEngine::generateTokens(
     const std::string& prompt,
     size_t max_tokens) const {
-
-    std::vector<std::string> tokens;
-    std::string current;
-
-    for (char c : prompt) {
-        if (std::isspace(static_cast<unsigned char>(c))) {
-            if (!current.empty()) {
-                tokens.push_back(current);
-                if (tokens.size() >= max_tokens) break;
-                current.clear();
-            }
-        } else {
-            current.push_back(c);
-        }
-    }
-
-    if (!current.empty() && tokens.size() < max_tokens) {
-        tokens.push_back(current);
-    }
-
-    return tokens;
+    return split_tokens(prompt, max_tokens);
 }
 
-// サンプリング（互換性維持）
 std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tokens) const {
     if (tokens.empty()) return "";
     return tokens.back();
 }
 
-// モデルをロード（ローカルまたは共有パスから解決）
-// SPEC-dcaeaec4 FR-3: パス解決の優先順位
-//   1. ローカル ~/.llm-router/models/<name>/model.gguf
-//   2. ルーターから取得したpath（直接参照、コピーなし）
-//   3. download_url からダウンロード（sync()で処理済み）
-ModelLoadResult InferenceEngine::loadModel(const std::string& model_name) {
+namespace {
+std::string join_architectures(const std::vector<std::string>& architectures) {
+    if (architectures.empty()) return "";
+    std::ostringstream oss;
+    for (size_t i = 0; i < architectures.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << architectures[i];
+    }
+    return oss.str();
+}
+}  // namespace
+
+ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const std::string& capability) {
     ModelLoadResult result;
 
     if (!isInitialized()) {
         result.error_message = "InferenceEngine not initialized";
+        result.error_code = EngineErrorCode::kInternal;
         return result;
     }
 
-    // 1. まずローカルストレージからパス解決を試行
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
-
-    // 2. ローカルになければ、ルーターのリモートパスを確認
-    if (gguf_path.empty() && model_sync_ != nullptr) {
-        gguf_path = model_sync_->getRemotePath(model_name);
-        if (!gguf_path.empty()) {
-            spdlog::info("Using remote path for model {}: {}", model_name, gguf_path);
-        }
+    if (!ModelStorage::parseModelName(model_name).has_value()) {
+        result.error_message = "Invalid model name (invalid quantization format): " + model_name;
+        result.error_code = EngineErrorCode::kUnsupported;
+        return result;
     }
 
-    if (gguf_path.empty()) {
+    auto desc = resolve_descriptor(model_storage_, model_name);
+    if (!desc) {
         result.error_message = "Model not found: " + model_name;
+        result.error_code = EngineErrorCode::kLoadFailed;
         return result;
     }
 
-    // 3. 既にロード済みならそのまま成功
-    if (manager_->isLoaded(gguf_path)) {
-        result.success = true;
-        return result;
-    }
-
-    // 4. モデルをロード
-    if (!manager_->loadModelIfNeeded(gguf_path)) {
-        result.error_message = "Failed to load model: " + gguf_path;
-        return result;
-    }
-
-    // 5. モデルの最大コンテキストサイズを取得
-    llama_model* model = manager_->getModel(gguf_path);
-    if (model) {
-        int32_t n_ctx_train = llama_model_n_ctx_train(model);
-        if (n_ctx_train > 0) {
-            model_max_ctx_ = static_cast<size_t>(n_ctx_train);
-            spdlog::info("Model max context size: {}", model_max_ctx_);
+    if (!capability.empty() && !desc->capabilities.empty()) {
+        if (std::find(desc->capabilities.begin(), desc->capabilities.end(), capability) == desc->capabilities.end()) {
+            result.error_message = "Model does not support capability: " + capability;
+            result.error_code = EngineErrorCode::kUnsupported;
+            return result;
         }
     }
 
-    result.success = true;
+    if (!desc->architectures.empty() && engines_ &&
+        !engines_->supportsArchitecture(desc->runtime, desc->architectures)) {
+        result.error_code = EngineErrorCode::kUnsupported;
+        result.error_message = "Model architecture is not supported by any engine";
+        return result;
+    }
+
+    std::string resolve_error;
+    Engine* engine = engines_ ? engines_->resolve(*desc, capability, &resolve_error) : nullptr;
+    if (!engine) {
+        result.error_message = !resolve_error.empty()
+                                   ? resolve_error
+                                   : "No engine registered for runtime: " + desc->runtime;
+        result.error_code = EngineErrorCode::kUnsupported;
+        return result;
+    }
+    const std::string engine_id = engines_ ? engines_->engineIdFor(engine) : "";
+
+    if (resource_usage_provider_) {
+        const auto usage = resource_usage_provider_();
+        const uint64_t required = engine->getModelVramBytes(*desc);
+        uint64_t vram_total_bytes = usage.vram_total_bytes;
+        uint64_t vram_available_bytes =
+            usage.vram_total_bytes > usage.vram_used_bytes
+                ? usage.vram_total_bytes - usage.vram_used_bytes
+                : 0;
+
+#ifndef LLM_NODE_TESTING
+        if (required > 0) {
+            GpuDetector detector;
+            const auto devices = detector.detect();
+            uint64_t max_total = 0;
+            uint64_t max_free = 0;
+            for (const auto& device : devices) {
+                if (!device.is_available) continue;
+                max_total = std::max<uint64_t>(max_total, device.memory_bytes);
+                max_free = std::max<uint64_t>(max_free, device.free_memory_bytes);
+            }
+            if (max_total > 0) {
+                vram_total_bytes = max_total;
+            }
+            if (max_free > 0) {
+                vram_available_bytes = max_free;
+            }
+        }
+#endif
+
+        if (vram_total_bytes > 0 && required > 0 && !engine_id.empty()) {
+            const size_t engine_count = engines_ ? engines_->engineIdCount() : 0;
+            if (engine_count > 0) {
+                const uint64_t budget = vram_total_bytes / engine_count;
+                if (budget > 0 && required > budget) {
+                    spdlog::warn(
+                        "VRAM budget exceeded for engine {} (required={} budget={})",
+                        engine_id,
+                        required,
+                        budget);
+                    result.error_code = EngineErrorCode::kOomVram;
+                    result.error_message = "Insufficient VRAM budget available";
+                    return result;
+                }
+            }
+        }
+        if (vram_total_bytes > 0 && required > 0) {
+            if (required > vram_available_bytes) {
+                result.error_code = EngineErrorCode::kOomVram;
+                result.error_message = "Insufficient VRAM available";
+                return result;
+            }
+        }
+    }
+
+    result = engine->loadModel(*desc);
+    if (result.success) {
+        result.error_code = EngineErrorCode::kOk;
+        model_max_ctx_ = engine->getModelMaxContext(*desc);
+    } else if (result.error_code == EngineErrorCode::kLoadFailed && result.error_message.empty()) {
+        result.error_message = "Failed to load model: " + model_name;
+    }
     return result;
 }
 
-// Embedding生成
 std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     const std::vector<std::string>& inputs,
     const std::string& model_name) const {
 
-    std::vector<std::vector<float>> results;
-
-    // 依存関係が注入されていない場合はスタブモード（ダミーembedding）
     if (!isInitialized()) {
-        spdlog::warn("InferenceEngine not initialized, returning dummy embeddings");
+        std::vector<std::vector<float>> results;
+        results.reserve(inputs.size());
         for (size_t i = 0; i < inputs.size(); ++i) {
-            results.push_back({1.0f, 0.0f, -1.0f});  // 固定のダミー値
+            results.push_back({1.0f, 0.0f, -1.0f});
         }
         return results;
     }
 
-    // 1. モデルパス解決
-    std::string gguf_path = model_storage_->resolveGguf(model_name);
-    if (gguf_path.empty()) {
-        throw std::runtime_error("Model not found: " + model_name);
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
     }
 
-    // 2. モデルロード
-    if (!manager_->loadModelIfNeeded(gguf_path)) {
-        throw std::runtime_error("Failed to load model: " + gguf_path);
+    return run_with_watchdog([&]() {
+        maybeSchedulePluginRestart();
+        auto desc = resolve_descriptor(model_storage_, model_name);
+        if (!desc) {
+            throw std::runtime_error("Model not found: " + model_name);
+        }
+
+        Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
+        if (!engine) {
+            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+        }
+
+        try {
+            return engine->generateEmbeddings(inputs, *desc);
+        } catch (...) {
+            handlePluginCrash();
+            throw;
+        }
+    });
+}
+
+#ifdef LLM_NODE_TESTING
+void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
+    engines_ = std::move(registry);
+}
+
+void InferenceEngine::setResourceUsageProviderForTest(std::function<ResourceUsage()> provider) {
+    resource_usage_provider_ = std::move(provider);
+}
+
+void InferenceEngine::setWatchdogTimeoutForTest(std::chrono::milliseconds timeout) {
+    g_watchdog_timeout_ms.store(timeout.count());
+}
+
+void InferenceEngine::setWatchdogTerminateHookForTest(std::function<void()> hook) {
+    std::lock_guard<std::mutex> lock(g_watchdog_mutex);
+    g_watchdog_terminate = std::move(hook);
+}
+
+void InferenceEngine::setTokenMetricsHookForTest(std::function<void(const TokenMetrics&)> hook) {
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    g_token_metrics_hook = std::move(hook);
+}
+
+void InferenceEngine::setTokenMetricsClockForTest(std::function<uint64_t()> clock) {
+    std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
+    g_token_metrics_clock = std::move(clock);
+}
+
+void InferenceEngine::setPluginRestartHookForTest(std::function<bool(std::string&)> hook) {
+    std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
+    g_plugin_restart_hook = std::move(hook);
+}
+
+void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& directory) {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    engine_plugins_dir_ = directory;
+}
+
+bool InferenceEngine::isPluginRestartPendingForTest() const {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    return plugin_restart_pending_;
+}
+#endif
+
+bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
+    Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;
+    if (!engine) return false;
+    if (!engine->supportsTextGeneration()) return false;
+
+    if (descriptor.runtime == "gptoss_cpp") {
+        namespace fs = std::filesystem;
+        fs::path model_dir = descriptor.model_dir.empty()
+                                 ? fs::path(descriptor.primary_path).parent_path()
+                                 : fs::path(descriptor.model_dir);
+        if (model_dir.empty()) return false;
+#if defined(_WIN32)
+        if (fs::exists(model_dir / "model.directml.bin")) return true;
+        if (fs::exists(model_dir / "model.dml.bin")) return true;
+        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
+        return false;
+#elif defined(__APPLE__)
+        if (fs::exists(model_dir / "model.metal.bin")) return true;
+        if (fs::exists(model_dir / "metal" / "model.bin")) return true;
+        if (fs::exists(model_dir / "model.bin")) return true;
+        return false;
+#else
+        return false;
+#endif
     }
 
-    // 3. コンテキストとモデル取得
-    llama_context* ctx = manager_->getContext(gguf_path);
-    llama_model* model = manager_->getModel(gguf_path);
-
-    if (!ctx || !model) {
-        throw std::runtime_error("Failed to get context/model for: " + gguf_path);
+    if (descriptor.runtime == "nemotron_cpp") {
+#if defined(_WIN32) && defined(USE_GPTOSS)
+        namespace fs = std::filesystem;
+        fs::path model_dir = descriptor.model_dir.empty()
+                                 ? fs::path(descriptor.primary_path).parent_path()
+                                 : fs::path(descriptor.model_dir);
+        if (model_dir.empty()) return false;
+        if (fs::exists(model_dir / "model.directml.bin")) return true;
+        if (fs::exists(model_dir / "model.dml.bin")) return true;
+        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
+        return false;
+#elif defined(USE_CUDA)
+        return true;
+#else
+        return false;
+#endif
     }
 
-    // 4. embeddingモードを有効化
-    llama_set_embeddings(ctx, true);
-
-    // 5. vocab取得
-    const llama_vocab* vocab = llama_model_get_vocab(model);
-    if (!vocab) {
-        throw std::runtime_error("Failed to get vocab from model");
-    }
-
-    // 6. embedding次元を取得
-    const int32_t n_embd = llama_model_n_embd(model);
-
-    // 7. 各入力に対してembeddingを生成
-    for (const auto& input : inputs) {
-        // トークン化
-        std::vector<llama_token> tokens(input.size() + 128);
-        int32_t n_tokens = llama_tokenize(
-            vocab,
-            input.c_str(),
-            static_cast<int32_t>(input.size()),
-            tokens.data(),
-            static_cast<int32_t>(tokens.size()),
-            true,   // add_special (BOS)
-            false   // parse_special
-        );
-
-        if (n_tokens < 0) {
-            tokens.resize(static_cast<size_t>(-n_tokens));
-            n_tokens = llama_tokenize(
-                vocab,
-                input.c_str(),
-                static_cast<int32_t>(input.size()),
-                tokens.data(),
-                static_cast<int32_t>(tokens.size()),
-                true,
-                false
-            );
-        }
-
-        if (n_tokens <= 0) {
-            throw std::runtime_error("Failed to tokenize input for embedding");
-        }
-
-        tokens.resize(static_cast<size_t>(n_tokens));
-
-        // メモリをクリア（新しい入力をエンコードする前に）
-        llama_memory_t mem = llama_get_memory(ctx);
-        if (mem) {
-            llama_memory_clear(mem, false);
-        }
-
-        // バッチを作成（全トークンのembeddingを出力）
-        llama_batch batch = llama_batch_init(static_cast<int32_t>(tokens.size()), 0, 1);
-        for (int32_t i = 0; i < n_tokens; ++i) {
-            batch.token[i] = tokens[static_cast<size_t>(i)];
-            batch.pos[i] = i;
-            batch.n_seq_id[i] = 1;
-            batch.seq_id[i][0] = 0;
-            batch.logits[i] = (i == n_tokens - 1) ? 1 : 0;  // 最後のトークンのみ出力
-        }
-        batch.n_tokens = n_tokens;
-
-        // エンコード（embedding生成）
-        int32_t encode_result = llama_encode(ctx, batch);
-        if (encode_result != 0) {
-            llama_batch_free(batch);
-            // llama_encodeが失敗した場合、llama_decodeを試す（一部モデル用）
-            spdlog::debug("llama_encode failed, trying llama_decode for embeddings");
-            llama_batch batch2 = llama_batch_get_one(tokens.data(), n_tokens);
-            if (llama_decode(ctx, batch2) != 0) {
-                throw std::runtime_error("Failed to encode/decode for embeddings");
-            }
-        } else {
-            llama_batch_free(batch);
-        }
-
-        // embeddingを取得（最後のトークンのembedding）
-        const float* embd = llama_get_embeddings_ith(ctx, -1);
-        if (embd == nullptr) {
-            // pooling_typeがnone以外の場合はseqから取得
-            embd = llama_get_embeddings_seq(ctx, 0);
-        }
-
-        if (embd == nullptr) {
-            spdlog::error("Failed to get embeddings for input");
-            // ダミーembeddingを返す
-            results.push_back(std::vector<float>(static_cast<size_t>(n_embd), 0.0f));
-            continue;
-        }
-
-        // embeddingをコピーして正規化
-        std::vector<float> embedding(embd, embd + n_embd);
-
-        // L2正規化
-        float norm = 0.0f;
-        for (float v : embedding) {
-            norm += v * v;
-        }
-        norm = std::sqrt(norm);
-        if (norm > 0.0f) {
-            for (float& v : embedding) {
-                v /= norm;
-            }
-        }
-
-        results.push_back(std::move(embedding));
-    }
-
-    // embeddingモードを無効化（通常のテキスト生成に戻す）
-    llama_set_embeddings(ctx, false);
-
-    return results;
+    return true;
 }
 
 }  // namespace llm_node

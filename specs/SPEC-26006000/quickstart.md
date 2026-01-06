@@ -7,6 +7,9 @@
 - llm-router が起動していること
 - 音声対応ノードが登録されていること
 - 認証トークンを取得済みであること
+- VibeVoice ランナー利用時は以下を設定していること
+  - `LLM_NODE_VIBEVOICE_MODEL=microsoft/VibeVoice-1.5B`
+  - `LLM_NODE_VIBEVOICE_VOICE_PROMPT=<音声プロンプトWAVのパス>`
 
 ## 音声認識 (ASR)
 
@@ -14,7 +17,7 @@
 
 ```bash
 # WAVファイルをテキストに変換
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@audio.wav" \
   -F "model=whisper-large-v3"
@@ -32,7 +35,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # 日本語を明示的に指定
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@meeting.mp3" \
   -F "model=whisper-large-v3" \
@@ -43,7 +46,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # verbose_json形式でタイムスタンプを取得
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@podcast.mp3" \
   -F "model=whisper-large-v3" \
@@ -78,7 +81,7 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # SRT形式で字幕ファイルを生成
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:32768/v1/audio/transcriptions \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@video.mp3" \
   -F "model=whisper-large-v3" \
@@ -92,29 +95,31 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
 
 ```bash
 # テキストを音声に変換
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "vibevoice-v1",
-    "input": "こんにちは、今日はいい天気ですね。"
+    "input": "こんにちは、今日はいい天気ですね。",
+    "response_format": "wav"
   }' \
-  --output speech.mp3
+  --output speech.wav
 ```
 
 ### 音声タイプを指定
 
 ```bash
 # 女性音声で生成
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "vibevoice-v1",
     "input": "お知らせです。",
-    "voice": "nova"
+    "voice": "nova",
+    "response_format": "wav"
   }' \
-  --output announcement.mp3
+  --output announcement.wav
 ```
 
 利用可能なvoice:
@@ -130,7 +135,7 @@ curl -X POST http://localhost:8080/v1/audio/speech \
 
 ```bash
 # WAV形式で出力
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -141,19 +146,24 @@ curl -X POST http://localhost:8080/v1/audio/speech \
   --output speech.wav
 ```
 
+> VibeVoice ランナーは現状 WAV 出力のみです。
+> `response_format` に mp3/opus/flac を指定しても WAV で返るため、
+> 必要なら別途変換してください。
+
 ### 読み上げ速度を調整
 
 ```bash
 # 1.5倍速で読み上げ
-curl -X POST http://localhost:8080/v1/audio/speech \
+curl -X POST http://localhost:32768/v1/audio/speech \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "vibevoice-v1",
     "input": "早口で読み上げます。",
-    "speed": 1.5
+    "speed": 1.5,
+    "response_format": "wav"
   }' \
-  --output fast_speech.mp3
+  --output fast_speech.wav
 ```
 
 ## Python SDKでの使用
@@ -162,7 +172,7 @@ curl -X POST http://localhost:8080/v1/audio/speech \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:32768/v1",
     api_key="your-token"
 )
 
@@ -179,9 +189,10 @@ print(transcript.text)
 response = client.audio.speech.create(
     model="vibevoice-v1",
     input="こんにちは",
-    voice="nova"
+    voice="nova",
+    response_format="wav"
 )
-response.stream_to_file("output.mp3")
+response.stream_to_file("output.wav")
 ```
 
 ## エラーハンドリング

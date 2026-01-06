@@ -103,6 +103,21 @@ pub struct Node {
     /// 起動済みモデル数/総数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready_models: Option<(u8, u8)>,
+    /// モデル同期状態
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_state: Option<SyncState>,
+    /// モデル同期の進捗
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_progress: Option<SyncProgress>,
+    /// 同期状態の最終更新時刻
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_updated_at: Option<DateTime<Utc>>,
+    /// このノードで実行可能なモデルID一覧（ノードの/v1/modelsから取得）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executable_models: Vec<String>,
+    /// 推論失敗等で一時的に除外されたモデルID一覧
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_models: Vec<String>,
 }
 
 /// ノード状態
@@ -117,6 +132,33 @@ pub enum NodeStatus {
     Registering,
     /// オフライン
     Offline,
+}
+
+/// モデル同期状態
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncState {
+    /// 同期待機
+    Idle,
+    /// 同期中
+    Running,
+    /// 同期成功
+    Success,
+    /// 同期失敗
+    Failed,
+}
+
+/// モデル同期の進捗情報
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncProgress {
+    /// 対象モデルID
+    pub model_id: String,
+    /// 対象ファイル名
+    pub file: String,
+    /// ダウンロード済みバイト数
+    pub downloaded_bytes: u64,
+    /// 総バイト数
+    pub total_bytes: u64,
 }
 
 /// モデルタイプ
@@ -146,6 +188,11 @@ pub enum RuntimeType {
     /// llama.cpp (テキスト生成、Embedding)
     #[default]
     LlamaCpp,
+    /// safetensors-cpp ベースの Nemotron 直接ロード
+    NemotronCpp,
+    /// OpenAI gpt-oss 公式ランタイム（Metal/CUDA などの最適化アーティファクト）
+    #[serde(rename = "gptoss_cpp")]
+    GptOssCpp,
     /// whisper.cpp (音声認識)
     WhisperCpp,
     /// ONNX Runtime (TTS、汎用推論)
@@ -210,6 +257,9 @@ pub struct ModelCapabilities {
     pub speech_to_text: bool,
     /// 画像生成対応 (/v1/images/generations)
     pub image_generation: bool,
+    /// 画像理解対応 (/v1/chat/completions with images)
+    #[serde(default)]
+    pub image_understanding: bool,
 }
 
 impl From<&[ModelCapability]> for ModelCapabilities {
@@ -222,6 +272,7 @@ impl From<&[ModelCapability]> for ModelCapabilities {
             text_to_speech: caps.contains(&ModelCapability::TextToSpeech),
             speech_to_text: caps.contains(&ModelCapability::SpeechToText),
             image_generation: caps.contains(&ModelCapability::ImageGeneration),
+            image_understanding: caps.contains(&ModelCapability::Vision),
             fine_tune: false, // 未対応
         }
     }
@@ -248,6 +299,89 @@ pub enum AudioFormat {
     Ogg,
     /// Opus
     Opus,
+}
+
+/// 画像MIMEタイプ
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ImageContentType {
+    /// image/jpeg
+    #[serde(rename = "image/jpeg")]
+    Jpeg,
+    /// image/png
+    #[serde(rename = "image/png")]
+    Png,
+    /// image/gif
+    #[serde(rename = "image/gif")]
+    Gif,
+    /// image/webp
+    #[serde(rename = "image/webp")]
+    Webp,
+}
+
+impl ImageContentType {
+    /// MIME文字列を返す
+    pub fn as_mime(&self) -> &'static str {
+        match self {
+            ImageContentType::Jpeg => "image/jpeg",
+            ImageContentType::Png => "image/png",
+            ImageContentType::Gif => "image/gif",
+            ImageContentType::Webp => "image/webp",
+        }
+    }
+}
+
+/// 画像データ（URLまたはBase64）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ImageContent {
+    /// URL参照
+    Url {
+        /// 画像URL
+        url: String,
+        /// MIMEタイプ
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mime_type: Option<ImageContentType>,
+        /// サイズ（バイト）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        size_bytes: Option<u64>,
+    },
+    /// Base64エンコード
+    Base64 {
+        /// Base64文字列
+        data: String,
+        /// MIMEタイプ
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mime_type: Option<ImageContentType>,
+        /// サイズ（バイト）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        size_bytes: Option<u64>,
+    },
+}
+
+/// Vision対応能力
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VisionCapability {
+    /// 対応画像形式
+    pub supported_formats: Vec<ImageContentType>,
+    /// 画像サイズ上限（バイト）
+    pub max_image_size_bytes: u64,
+    /// 画像枚数上限（1リクエストあたり）
+    pub max_image_count: u8,
+}
+
+impl Default for VisionCapability {
+    fn default() -> Self {
+        Self {
+            supported_formats: vec![
+                ImageContentType::Jpeg,
+                ImageContentType::Png,
+                ImageContentType::Gif,
+                ImageContentType::Webp,
+            ],
+            max_image_size_bytes: 10 * 1024 * 1024,
+            max_image_count: 10,
+        }
+    }
 }
 
 /// 画像サイズ
@@ -412,7 +546,7 @@ mod tests {
             machine_name: "test-machine".to_string(),
             ip_address: "192.168.1.100".parse().unwrap(),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             status: NodeStatus::Online,
             registered_at: Utc::now(),
             last_seen: Utc::now(),
@@ -436,9 +570,14 @@ mod tests {
             gpu_model_name: Some("NVIDIA GeForce RTX 4090".to_string()),
             gpu_compute_capability: Some("8.9".to_string()),
             gpu_capability_score: Some(9850),
-            node_api_port: Some(11435),
+            node_api_port: Some(32769),
             initializing: false,
             ready_models: Some((1, 1)),
+            sync_state: None,
+            sync_progress: None,
+            sync_updated_at: None,
+            executable_models: vec!["gpt-oss-20b".to_string(), "nemotron-340b".to_string()],
+            excluded_models: vec!["broken-model".to_string()],
         };
 
         let json = serde_json::to_string(&node).unwrap();
@@ -454,7 +593,7 @@ mod tests {
             "machine_name": "machine",
             "ip_address": "127.0.0.1",
             "runtime_version": "0.1.0",
-            "runtime_port": 11434,
+            "runtime_port": 32768,
             "status": "online",
             "registered_at": "2025-10-31T00:00:00Z",
             "last_seen": "2025-10-31T00:00:00Z",
@@ -475,6 +614,11 @@ mod tests {
         assert!(node.gpu_compute_capability.is_none());
         assert!(node.gpu_capability_score.is_none());
         assert!(node.online_since.is_none());
+        assert!(node.sync_state.is_none());
+        assert!(node.sync_progress.is_none());
+        assert!(node.sync_updated_at.is_none());
+        assert!(node.executable_models.is_empty());
+        assert!(node.excluded_models.is_empty());
     }
 
     #[test]
@@ -484,7 +628,7 @@ mod tests {
             "machine_name": "machine",
             "ip_address": "127.0.0.1",
             "runtime_version": "0.1.0",
-            "runtime_port": 11434,
+            "runtime_port": 32768,
             "status": "online",
             "registered_at": "2025-10-31T00:00:00Z",
             "last_seen": "2025-10-31T00:00:00Z",
@@ -493,7 +637,7 @@ mod tests {
 
         let node: Node = serde_json::from_str(json).unwrap();
         assert_eq!(node.runtime_version, "0.1.0");
-        assert_eq!(node.runtime_port, 11434);
+        assert_eq!(node.runtime_port, 32768);
     }
 
     #[test]
@@ -653,6 +797,14 @@ mod tests {
             "\"llama_cpp\""
         );
         assert_eq!(
+            serde_json::to_string(&RuntimeType::NemotronCpp).unwrap(),
+            "\"nemotron_cpp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RuntimeType::GptOssCpp).unwrap(),
+            "\"gptoss_cpp\""
+        );
+        assert_eq!(
             serde_json::to_string(&RuntimeType::WhisperCpp).unwrap(),
             "\"whisper_cpp\""
         );
@@ -672,6 +824,12 @@ mod tests {
     fn test_runtime_type_deserialization() {
         let llama: RuntimeType = serde_json::from_str("\"llama_cpp\"").unwrap();
         assert_eq!(llama, RuntimeType::LlamaCpp);
+
+        let nemotron: RuntimeType = serde_json::from_str("\"nemotron_cpp\"").unwrap();
+        assert_eq!(nemotron, RuntimeType::NemotronCpp);
+
+        let gptoss: RuntimeType = serde_json::from_str("\"gptoss_cpp\"").unwrap();
+        assert_eq!(gptoss, RuntimeType::GptOssCpp);
 
         let whisper: RuntimeType = serde_json::from_str("\"whisper_cpp\"").unwrap();
         assert_eq!(whisper, RuntimeType::WhisperCpp);
@@ -909,6 +1067,7 @@ mod tests {
         assert!(!caps.text_to_speech);
         assert!(!caps.speech_to_text);
         assert!(!caps.image_generation);
+        assert!(!caps.image_understanding);
         assert!(!caps.fine_tune);
 
         // Embedding capabilities
@@ -918,6 +1077,7 @@ mod tests {
         assert!(!caps.completion);
         assert!(caps.embeddings);
         assert!(caps.inference);
+        assert!(!caps.image_understanding);
 
         // TTS capabilities
         let tts_caps = vec![ModelCapability::TextToSpeech];
@@ -925,6 +1085,7 @@ mod tests {
         assert!(caps.text_to_speech);
         assert!(!caps.speech_to_text);
         assert!(caps.inference);
+        assert!(!caps.image_understanding);
 
         // ASR capabilities
         let stt_caps = vec![ModelCapability::SpeechToText];
@@ -932,11 +1093,19 @@ mod tests {
         assert!(caps.speech_to_text);
         assert!(!caps.text_to_speech);
         assert!(caps.inference);
+        assert!(!caps.image_understanding);
 
         // Image generation capabilities
         let img_caps = vec![ModelCapability::ImageGeneration];
         let caps: ModelCapabilities = img_caps.into();
         assert!(caps.image_generation);
+        assert!(caps.inference);
+        assert!(!caps.image_understanding);
+
+        // Vision capabilities
+        let vision_caps = vec![ModelCapability::Vision];
+        let caps: ModelCapabilities = vision_caps.into();
+        assert!(caps.image_understanding);
         assert!(caps.inference);
     }
 
@@ -951,6 +1120,7 @@ mod tests {
             text_to_speech: false,
             speech_to_text: false,
             image_generation: false,
+            image_understanding: false,
         };
 
         let json = serde_json::to_string(&caps).unwrap();
@@ -958,6 +1128,7 @@ mod tests {
         assert!(json.contains("\"completion\":true"));
         assert!(json.contains("\"embeddings\":false"));
         assert!(json.contains("\"inference\":true"));
+        assert!(json.contains("\"image_understanding\":false"));
 
         // Deserialization
         let deserialized: ModelCapabilities = serde_json::from_str(&json).unwrap();

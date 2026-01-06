@@ -12,7 +12,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapability, Node, RuntimeType},
+    types::{Node, RuntimeType},
 };
 use serde_json::json;
 use std::time::Instant;
@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        models::list_registered_models,
+        model_name::parse_quantized_model_name,
         nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
     },
@@ -118,20 +118,9 @@ pub async fn generations(
         return openai_error("n must be between 1 and 10", StatusCode::BAD_REQUEST);
     }
 
-    // モデルの ImageGeneration capability を検証
-    let models = list_registered_models();
-    if let Some(model_info) = models.iter().find(|m| m.name == payload.model) {
-        if !model_info.has_capability(ModelCapability::ImageGeneration) {
-            return openai_error(
-                format!(
-                    "Model '{}' does not support image generation",
-                    payload.model
-                ),
-                StatusCode::BAD_REQUEST,
-            );
-        }
-    }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    let _parsed = parse_quantized_model_name(&payload.model).map_err(AppError::from)?;
+
+    // NOTE: 機能チェックはノード側で行う（SPEC-93536000）
 
     info!(
         request_id = %request_id,

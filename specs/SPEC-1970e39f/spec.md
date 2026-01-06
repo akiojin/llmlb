@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-1970e39f`
 **作成日**: 2025-12-18
-**ステータス**: 作成中
+**ステータス**: ✅ 実装完了
 **入力**: ユーザー説明: "ルーターとノードのHTTPリクエスト/レスポンスを構造化ログとして
 出力し、デバッグと監視を容易にする。既存のtracing(Rust)/spdlog(C++)を活用する"
 
@@ -151,12 +151,16 @@
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- ルーターのOpenAI互換API機能（`router/src/api/openai.rs`）
-- ノードの推論エンジン（`node/src/core/inference_engine.cpp`）
-- 既存のロギングインフラ（`router/src/logging.rs`, `node/src/utils/logger.cpp`）
-- リクエスト履歴機能（SPEC-fbc50d97）
+- ルーターのOpenAI互換API機能（`router/src/api/openai.rs`）✅ 実装済み
+- ノードの推論エンジン（`node/src/core/inference_engine.cpp`）✅ 実装済み
+- 既存のロギングインフラ（`router/src/logging.rs`, `node/src/utils/logger.cpp`）✅ 実装済み
+- **SPEC-fbc50d97**: リクエスト履歴保存 🔴 未完了（6タスク残）
+
+### 依存元（このSPECに依存するもの）
+
+- なし
 
 ---
 
@@ -169,6 +173,33 @@
 3. ログの構造がjq等のツールで解析可能なJSON形式である
 4. ログ出力によるレスポンスタイムへの影響が1ms以下である
 5. 既存のテストが全て合格する
+
+---
+
+## Clarifications
+
+### Session 2025-12-24
+
+仕様を精査した結果、重大な曖昧さは検出されませんでした。
+
+**確認済み事項**:
+
+- ログ形式: JSON構造化ログ（FR-007で明記）
+- ログレベル: trace/debug/info/warn/error（主要エンティティで明記）
+- 共通フィールド: timestamp, level, message, request_id, component（主要エンティティで明記）
+- タイムスタンプ形式: ISO 8601形式（主要エンティティで明記）
+- ログローテーション: 日次、7日以上で自動削除（FR-008, FR-009で明記）
+- パフォーマンス: レイテンシ増加1ms以下、非同期出力（NFR-001, NFR-002で明記）
+
+**エッジケースの確認**:
+
+- ストリーミング: 開始時と完了時の2回出力
+- 機密情報: APIキーはマスク、プロンプトはdebugレベルのみ
+
+**技術スタックの確認**:
+
+- Rust側: tracing + tracing-subscriber（既存活用）
+- C++側: spdlog（既存活用）
 
 ---
 

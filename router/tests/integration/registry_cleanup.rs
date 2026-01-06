@@ -34,7 +34,7 @@ fn create_gpu_node(machine_name: &str) -> Node {
         machine_name: machine_name.to_string(),
         ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: 32768,
         status: NodeStatus::Online,
         registered_at: now,
         last_seen: now,
@@ -58,9 +58,14 @@ fn create_gpu_node(machine_name: &str) -> Node {
         gpu_model_name: Some("GeForce RTX 4090".to_string()),
         gpu_compute_capability: Some("8.9".to_string()),
         gpu_capability_score: Some(89),
-        node_api_port: Some(11435),
+        node_api_port: Some(32769),
         initializing: false,
         ready_models: None,
+        sync_state: None,
+        sync_progress: None,
+        sync_updated_at: None,
+        executable_models: Vec::new(),
+        excluded_models: Vec::new(),
     }
 }
 
@@ -72,7 +77,7 @@ fn create_no_gpu_node(machine_name: &str) -> Node {
         machine_name: machine_name.to_string(),
         ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
         runtime_version: "0.1.0".to_string(),
-        runtime_port: 11434,
+        runtime_port: 32768,
         status: NodeStatus::Online,
         registered_at: now,
         last_seen: now,
@@ -92,9 +97,14 @@ fn create_no_gpu_node(machine_name: &str) -> Node {
         gpu_model_name: None,
         gpu_compute_capability: None,
         gpu_capability_score: None,
-        node_api_port: Some(11435),
+        node_api_port: Some(32769),
         initializing: false,
         ready_models: None,
+        sync_state: None,
+        sync_progress: None,
+        sync_updated_at: None,
+        executable_models: Vec::new(),
+        excluded_models: Vec::new(),
     }
 }
 

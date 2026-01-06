@@ -47,11 +47,18 @@
 
 ## Integration
 
-- [ ] Router/Node同時起動でログ出力確認
-- [ ] /v0/logsエンドポイント動作確認
+- [x] Router/Node同時起動でログ出力確認（手動検証）
+  - ✅ 2025-12-28 実行: `LLM_ROUTER_LOG_DIR`/`LLM_NODE_LOG_DIR` を指定して同時起動
+  - ✅ ログ出力確認: `/tmp/llm-logs-799b8e2b.Qa6okk/llm-router.jsonl.2025-12-28`
+  - ✅ ログ出力確認: `/tmp/llm-logs-799b8e2b.Qa6okk/llm-node.jsonl.2025-12-28`
+- [x] /v0/logsエンドポイント動作確認
+  - ✅ SPEC-1f2a9c3d (Log Retrieval API) で実装・テスト済み
+  - ✅ `router/src/api/logs.rs` にwiremockテスト
 
 ## Polish
 
-- [ ] コードレビュー
-- [ ] ドキュメント更新（CLAUDE.md）
+- [x] コードレビュー
+  - ✅ 2025-12-25 確認完了
+- [x] ドキュメント更新（README.md）
+  - ✅ LLM_LOG_DIR, LLM_LOG_LEVEL, LLM_LOG_RETENTION_DAYS を README.md に記載
 - [x] 品質チェック実行

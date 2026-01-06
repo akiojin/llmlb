@@ -1,0 +1,288 @@
+openapi: 3.0.3
+info:
+  title: LLM Router Cloud Routing API
+  description: |
+    クラウドモデルプレフィックスルーティングのAPI仕様。
+
+    既存の `/v1/chat/completions` エンドポイントを拡張し、
+    モデル名にクラウドプロバイダープレフィックス（`openai:`, `google:`, `anthropic:`）
+    を付与することで、対応するクラウドAPIへプロキシする。
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: ローカル開発サーバー
+
+paths:
+  /v1/chat/completions:
+    post:
+      summary: チャット補完（クラウドルーティング対応）
+      description: |
+        モデル名のプレフィックスに応じてルーティング先を決定します。
+
+        - `openai:gpt-4.1` → OpenAI API
+        - `google:gemini-1.5-pro` → Google AI API
+        - `anthropic:claude-3-opus` → Anthropic API
+        - `llama-3.2-1b`（プレフィックスなし） → ローカルノード
+      operationId: createChatCompletion
+      tags:
+        - Chat
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+            examples:
+              openai:
+                summary: OpenAI経由のリクエスト
+                value:
+                  model: "openai:gpt-4.1"
+                  messages:
+                    - role: user
+                      content: "Hello, how are you?"
+              google:
+                summary: Google AI経由のリクエスト
+                value:
+                  model: "google:gemini-1.5-pro"
+                  messages:
+                    - role: user
+                      content: "Explain quantum computing."
+              anthropic:
+                summary: Anthropic経由のリクエスト
+                value:
+                  model: "anthropic:claude-3-opus"
+                  messages:
+                    - role: user
+                      content: "Write a haiku."
+              local:
+                summary: ローカルモデルへのリクエスト
+                value:
+                  model: "llama-3.2-1b"
+                  messages:
+                    - role: user
+                      content: "Hello!"
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+        '400':
+          description: 不正なリクエスト（不明なプレフィックス等）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                unknownPrefix:
+                  summary: 不明なプレフィックス
+                  value:
+                    error:
+                      message: "Unknown cloud provider prefix: unknown:"
+                      type: "invalid_request_error"
+                      code: "unknown_prefix"
+        '401':
+          description: 認証エラー（APIキー未設定）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                apiKeyMissing:
+                  summary: APIキー未設定
+                  value:
+                    error:
+                      message: "OpenAI API key not configured"
+                      type: "authentication_error"
+                      code: "api_key_missing"
+        '429':
+          description: レート制限
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: リトライまでの秒数
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                rateLimited:
+                  summary: レート制限
+                  value:
+                    error:
+                      message: "Rate limit exceeded. Please retry after 60 seconds."
+                      type: "rate_limit_error"
+                      code: "rate_limited"
+        '502':
+          description: クラウドプロバイダーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: タイムアウト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/status:
+    get:
+      summary: ステータス取得（クラウドプロバイダー情報含む）
+      description: ルーターのステータスとクラウドプロバイダーの設定状態を取得します。
+      operationId: getStatus
+      tags:
+        - Status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ステータス情報
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    ChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: |
+            モデル名。クラウドプロバイダーを使用する場合はプレフィックスを付与:
+            - `openai:gpt-4.1`
+            - `google:gemini-1.5-pro`
+            - `anthropic:claude-3-opus`
+          example: "openai:gpt-4.1"
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        stream:
+          type: boolean
+          default: false
+          description: ストリーミングレスポンスを有効にする
+        max_tokens:
+          type: integer
+          description: 最大トークン数
+        temperature:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 2
+          description: 温度パラメータ
+
+    Message:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: '#/components/schemas/Message'
+              finish_reason:
+                type: string
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        version:
+          type: string
+        cloud_providers:
+          type: object
+          properties:
+            openai:
+              $ref: '#/components/schemas/ProviderStatus'
+            google:
+              $ref: '#/components/schemas/ProviderStatus'
+            anthropic:
+              $ref: '#/components/schemas/ProviderStatus'
+
+    ProviderStatus:
+      type: object
+      properties:
+        configured:
+          type: boolean
+          description: APIキーが設定されているか
+        base_url:
+          type: string
+          description: 設定されているベースURL（設定済みの場合のみ）
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+              enum:
+                - invalid_request_error
+                - authentication_error
+                - rate_limit_error
+                - provider_error
+                - timeout_error
+            code:
+              type: string
+            provider:
+              type: string
+              description: エラーが発生したプロバイダー名

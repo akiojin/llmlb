@@ -2,14 +2,14 @@
  * API Helper Functions for E2E Tests
  *
  * Provides utilities for:
- * - State verification (models, convert tasks)
+ * - State verification (models, lifecycle status)
  * - Test setup/cleanup
  * - Workflow helpers (register, wait for completion)
  */
 
 import type { APIRequestContext, Page } from '@playwright/test';
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = 'http://localhost:32768';
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 // ============================================================================
@@ -18,9 +18,16 @@ const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 /**
  * Lifecycle status of a registered model
- * Values from /v1/models: pending, caching, registered, error
+ * Values from /v1/models: pending, caching, registered, error, downloading, ready, cached
  */
-export type LifecycleStatus = 'pending' | 'caching' | 'registered' | 'error';
+export type LifecycleStatus =
+  | 'pending'
+  | 'caching'
+  | 'registered'
+  | 'error'
+  | 'downloading'
+  | 'ready'
+  | 'cached';
 
 /**
  * Download progress information
@@ -36,11 +43,12 @@ export interface RegisteredModel {
   name: string;
   repo?: string;
   source?: string;
-  path?: string;
-  size_gb?: number;
-  required_memory_gb?: number;
+  filename?: string;
+  size_bytes?: number;
+  required_memory_bytes?: number;
   lifecycle_status: LifecycleStatus;
   download_progress?: DownloadProgress;
+  ready?: boolean;
 }
 
 // Legacy alias for backward compatibility
@@ -61,11 +69,24 @@ export async function getModels(request: APIRequestContext): Promise<RegisteredM
   // /v1/models returns { object: "list", data: [...] } format
   // Map 'id' to 'name' for backward compatibility with E2E tests
   const models = data.data || [];
-  return models.map((m: { id: string; lifecycle_status?: string; download_progress?: DownloadProgress; path?: string }) => ({
+  return models.map((m: {
+    id: string;
+    lifecycle_status?: string;
+    download_progress?: DownloadProgress;
+    repo?: string;
+    filename?: string;
+    size_bytes?: number;
+    required_memory_bytes?: number;
+    ready?: boolean;
+  }) => ({
     name: m.id,
     lifecycle_status: m.lifecycle_status || 'registered',
     download_progress: m.download_progress,
-    path: m.path,
+    repo: m.repo,
+    filename: m.filename,
+    size_bytes: m.size_bytes,
+    required_memory_bytes: m.required_memory_bytes,
+    ready: m.ready,
   }));
 }
 
@@ -100,13 +121,48 @@ export async function clearAllModels(request: APIRequestContext): Promise<void> 
   }
 }
 
+// ============================================================================
+// Model Hub API Helpers
+// ============================================================================
+
 /**
- * Register a model via API
- *
- * Response codes:
- * - 201: Model registered directly (cached/already downloaded)
- * - 202: ConvertTask created for download/conversion
- * - 400: Validation error (model already registered, file not found, etc.)
+ * Supported model from Model Hub
+ */
+export interface HubModel {
+  id: string;
+  name: string;
+  description: string;
+  repo: string;
+  recommended_filename: string;
+  size_bytes: number;
+  required_memory_bytes: number;
+  tags: string[];
+  capabilities: string[];
+  quantization?: string;
+  parameter_count?: string;
+  hf_info?: {
+    downloads?: number;
+    likes?: number;
+  };
+  status: 'available' | 'downloading' | 'downloaded';
+  lifecycle_status?: LifecycleStatus;
+}
+
+/**
+ * Get list of supported models from Model Hub
+ */
+export async function getHubModels(request: APIRequestContext): Promise<HubModel[]> {
+  const response = await request.get(`${API_BASE}/v0/models/hub`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  return response.json();
+}
+
+/**
+ * Register a model via API (HF registration flow)
  */
 export async function registerModel(
   request: APIRequestContext,
@@ -119,38 +175,23 @@ export async function registerModel(
   status: number;
   registered?: boolean;
 }> {
+  const payload: Record<string, unknown> = { repo };
+  if (filename) payload.filename = filename;
+
   const response = await request.post(`${API_BASE}/v0/models/register`, {
     headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
-    data: { repo, filename },
+    data: payload,
   });
-
   const status = response.status();
 
   try {
     const body = await response.json();
-
-    // 201: Direct registration (model was cached)
-    if (status === 201) {
-      return {
-        modelName: body.name,
-        status,
-        registered: true,
-      };
-    }
-
-    // 202: ConvertTask created
-    if (status === 202) {
-      return {
-        taskId: body.task_id,
-        status,
-        registered: false,
-      };
-    }
-
-    // Error response
     return {
-      error: body.error || body.message,
+      taskId: body.task_id,
+      modelName: body.name || body.model_name,
+      registered: status === 201 || status === 200,
       status,
+      error: body.error || body.message,
     };
   } catch {
     return { error: await response.text(), status };
@@ -166,7 +207,7 @@ export async function registerModel(
  */
 export async function getDownloadingModels(request: APIRequestContext): Promise<RegisteredModel[]> {
   const models = await getModels(request);
-  return models.filter((m) => m.lifecycle_status === 'downloading' || m.lifecycle_status === 'pending');
+  return models.filter((m) => m.lifecycle_status === 'pending');
 }
 
 /**
@@ -205,7 +246,7 @@ export async function waitForModelReady(
       throw new Error(`Model ${modelName} not found`);
     }
 
-    if (model.lifecycle_status === 'ready' || model.lifecycle_status === 'cached') {
+    if (model.lifecycle_status === 'registered' || model.ready) {
       return model;
     }
 
@@ -221,7 +262,6 @@ export async function waitForModelReady(
 
 // ============================================================================
 // Deprecated Convert Task API Helpers (for backward compatibility)
-// NOTE: /v0/models/convert endpoint has been removed
 // ============================================================================
 
 /**
@@ -275,7 +315,7 @@ export async function getOnlineNodeCount(request: APIRequestContext): Promise<nu
 // ============================================================================
 
 /**
- * Register a model via the Dashboard UI
+ * Register a model via UI (Hugging Face registration flow)
  */
 export async function registerModelViaUI(
   page: Page,
@@ -283,22 +323,26 @@ export async function registerModelViaUI(
   filename?: string
 ): Promise<void> {
   // Click Register button
-  await page.click('button:not([role="tab"]):has-text("Register")');
+  await page.click('#register-model');
 
   // Wait for modal
-  await page.waitForSelector('#convert-modal', { state: 'visible' });
+  await page.waitForSelector('#register-modal', { state: 'visible' });
+
+  // Select format (required by current UI)
+  await page.click('#convert-format');
+  await page.click('[data-value="gguf"]');
 
   // Fill form
-  await page.fill('#convert-repo', repo);
+  await page.fill('#register-repo', repo);
   if (filename) {
-    await page.fill('#convert-filename', filename);
+    await page.fill('#register-filename', filename);
   }
 
   // Submit
-  await page.click('#convert-submit');
+  await page.click('#register-submit');
 
   // Wait for modal to close or response
-  await page.waitForSelector('#convert-modal', { state: 'hidden', timeout: 10000 }).catch(() => {
+  await page.waitForSelector('#register-modal', { state: 'hidden', timeout: 10000 }).catch(() => {
     // Modal may stay open with error, that's ok
   });
 }

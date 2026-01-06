@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 #include <filesystem>
+#include <vector>
 
 namespace llm_node {
 
@@ -20,15 +21,19 @@ DownloadConfig loadDownloadConfig();
 std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog();
 
 struct NodeConfig {
-    std::string router_url{"http://127.0.0.1:8080"};
-    std::string router_api_key;  // API key for router operations (node:register scope)
+    std::string router_url{"http://127.0.0.1:32768"};
+    std::string router_api_key;  // API key for router operations (node scope)
     std::string models_dir;
-    int node_port{11435};
+    std::string engine_plugins_dir;
+    std::vector<std::string> origin_allowlist;
+    int node_port{32769};
     int heartbeat_interval_sec{10};
     bool require_gpu{true};
     std::string bind_address{"0.0.0.0"};
     std::string ip_address;  // Empty means auto-detect
     std::string default_embedding_model{"nomic-embed-text-v1.5"};
+    int plugin_restart_interval_sec{0};
+    uint64_t plugin_restart_request_limit{0};
 };
 
 NodeConfig loadNodeConfig();

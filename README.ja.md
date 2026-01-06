@@ -4,8 +4,36 @@
 
 ## 概要
 
-LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を統合し、単一の OpenAI 互換 API
-（`/v1/*`）を提供する Rust ルーターです。
+LLM Router は、複数マシンに配置した推論ノードを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ルーターです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
+
+### ビジョン
+
+LLM Router は以下の3つの主要なユースケースに対応します：
+
+1. **プライベート LLM サーバー** - 個人やチームが、データとモデルを完全にコントロールしながら独自の LLM インフラを運用
+2. **エンタープライズゲートウェイ** - 企業内での一元管理、アクセス制御、部門横断的な LLM リソースの監視
+3. **クラウドプロバイダー統合** - OpenAI、Google、Anthropic の API を同一エンドポイント経由でシームレスにルーティング
+
+### マルチエンジンアーキテクチャ
+
+LLM Router はプラグイン可能なマルチエンジン構成をサポートします：
+
+| エンジン | ステータス | モデル | ハードウェア |
+|---------|-----------|--------|------------|
+| **llama.cpp** | 本番稼働 | GGUF形式（LLaMA、Mistral等） | CPU、CUDA、Metal |
+| **GPT-OSS** | 本番稼働（Metal）/ DirectMLは進行中 | Safetensors（公式GPUアーティファクト） | Apple Silicon、Windows |
+| **Whisper** | 本番稼働 | 音声認識（ASR） | CPU、CUDA、Metal |
+| **Stable Diffusion** | 本番稼働 | 画像生成 | CUDA、Metal |
+| **Nemotron** | 検証中 | Safetensors形式 | CUDA |
+
+### マルチモーダル対応
+
+テキスト生成に加え、OpenAI 互換 API で以下の機能を提供：
+
+- **音声合成（TTS）**: `/v1/audio/speech` - テキストから自然な音声を生成
+- **音声認識（ASR）**: `/v1/audio/transcriptions` - 音声をテキストに変換
+- **画像生成**: `/v1/images/generations` - テキストプロンプトから画像を生成
+- **画像認識**: `/v1/chat/completions` - image_url を含むVisionリクエスト
 
 ## 主な特徴
 
@@ -13,8 +41,8 @@ LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を�
 - ロードバランシング: 利用可能なノードへ自動ルーティング
 - ダッシュボード: `/dashboard` でノード、リクエスト履歴、ログ、モデルを管理
 - ノード自己登録: ノードは起動時にルーターへ登録し、ハートビートを送信
-- ノード主導モデル同期: ノードはルーターの `/v0/models` と `/v0/models/blob/:model_name` を参照して
-  必要なモデルを取得（ルーターからの push 配布なし）
+- ノード主導モデル同期: ノードは `/v0/models` + マニフェストを参照し、
+  HFから直接ダウンロードして同期（ルーターからの push 配布なし）
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
 ## ダッシュボード
@@ -22,7 +50,7 @@ LLM Router は、複数マシンに配置した C++ ノード（llama.cpp）を�
 ルーターが `/dashboard` で提供します。
 
 ```
-http://localhost:8080/dashboard
+http://localhost:32768/dashboard
 ```
 
 ## LLM アシスタント向け MCP サーバー
@@ -47,7 +75,7 @@ npx @llm-router/mcp-server
       "command": "npx",
       "args": ["-y", "@llm-router/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:8080",
+        "LLM_ROUTER_URL": "http://localhost:32768",
         "LLM_ROUTER_API_KEY": "sk_your_api_key"
       }
     }
@@ -60,10 +88,64 @@ npx @llm-router/mcp-server
 ## インストールと起動
 
 ### 前提条件
+
 - Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
 - Rust toolchain (nightly不要) と cargo
 - Docker (任意、コンテナ利用時)
-- CUDAドライバ (GPU使用時。NVIDIAのみ)
+- CUDAドライバ (GPU使用時) - [CUDAセットアップ](#cudaセットアップnvidia-gpu)参照
+
+### CUDAセットアップ（NVIDIA GPU）
+
+NVIDIA GPU を使用する場合に必要なコンポーネント：
+
+| コンポーネント | ビルド環境 | 実行環境 |
+|--------------|-----------|---------|
+| **CUDAドライバ** | 必須 | 必須 |
+| **CUDA Toolkit** | 必須（`nvcc`用） | 不要 |
+
+#### CUDAドライバのインストール
+
+CUDAドライバは通常、NVIDIAグラフィックスドライバに含まれています。
+
+```bash
+# ドライバのインストール確認
+nvidia-smi
+```
+
+`nvidia-smi` でGPU情報が表示されれば、ドライバはインストール済みです。
+
+#### CUDA Toolkitのインストール（ビルド環境のみ）
+
+CUDA対応ノードのビルド（`BUILD_WITH_CUDA=ON`）にのみ必要です。
+
+**Windows:**
+
+1. [CUDA Toolkit Downloads](https://developer.nvidia.com/cuda-downloads) からダウンロード
+2. Windows → x86_64 → 11 → exe (local) を選択
+3. インストーラーを実行（Express インストール推奨）
+4. 新しいターミナルで確認: `nvcc --version`
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+# NVIDIAパッケージリポジトリを追加
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# CUDA Toolkitをインストール
+sudo apt install cuda-toolkit-12-4
+
+# PATHに追加（~/.bashrc に追記）
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# 確認
+nvcc --version
+```
+
+**注意:** ビルド済みバイナリを実行するだけの環境（実行環境）では、CUDAドライバのみで
+CUDA Toolkitは不要です。
 
 ### 1) Rustソースからビルド（推奨）
 ```bash
@@ -77,7 +159,7 @@ cargo build -p llm-router --release
 ### 2) Docker で起動
 ```bash
 docker build -t llm-router:latest .
-docker run --rm -p 8080:8080 --gpus all \
+docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
   llm-router:latest
 ```
@@ -87,6 +169,9 @@ GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""
 
 ```bash
 npm run build:node
+
+# Linux / CUDA の場合
+npm run build:node:cuda
 
 # 手動でビルドする場合:
 cd node
@@ -103,7 +188,7 @@ cmake --build build --config Release
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
 | `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
-| `LLM_ROUTER_PORT` | `8080` | リッスンポート |
+| `LLM_ROUTER_PORT` | `32768` | リッスンポート |
 | `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
 | `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
@@ -112,6 +197,7 @@ cmake --build build --config Release
 | `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
 | `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+| `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
 
 クラウドAPI:
 
@@ -121,10 +207,12 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:11434` | ルーターURL |
-| `LLM_NODE_API_KEY` | - | ノード登録用APIキー（スコープ: `node:register`） |
-| `LLM_NODE_PORT` | `11435` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.runtime/models` | モデルディレクトリ |
+| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | ルーターURL |
+| `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
+| `LLM_NODE_PORT` | `32769` | HTTPサーバーポート |
+| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
+| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
+| `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
@@ -143,9 +231,9 @@ LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
 ```
 
 ### 6) 動作確認
-- ダッシュボード: `http://localhost:8080/dashboard`
-- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:8080/v0/health`
-- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:8080/v1/models`
+- ダッシュボード: `http://localhost:32768/dashboard`
+- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:32768/v0/health`
+- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:32768/v1/models`
 
 ## 利用方法（OpenAI互換エンドポイント）
 
@@ -154,6 +242,39 @@ LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
 - `POST /v1/completions`
 - `POST /v1/embeddings`
 
+### 画像生成例
+```bash
+curl http://localhost:32768/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_api_key" \
+  -d '{
+    "model": "stable-diffusion/v1-5-pruned-emaonly.safetensors",
+    "prompt": "A white cat sitting on a windowsill",
+    "size": "512x512",
+    "n": 1,
+    "response_format": "b64_json"
+  }'
+```
+
+### 画像認識例
+```bash
+curl http://localhost:32768/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk_api_key" \
+  -d '{
+    "model": "llava-v1.5-7b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "この画像には何が写っていますか？"},
+          {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+        ]
+      }
+    ],
+    "max_tokens": 300
+  }'
+```
 ### クラウドモデルプレフィックス
 - 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
 - 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`
@@ -198,11 +319,11 @@ Router (OpenAI-compatible)
 
 ### モデル同期（push配布なし）
 
-- ルーターは、登録・変換・キャッシュされたモデルだけを `/v1/models` に掲載します。
-- ノードは `/v1/models` を参照してモデル一覧を取得します。
-  - `path` が共有ストレージ等で参照可能なら、そのパスを直接使用します。
-  - 参照できない場合は `/v0/models/blob/:model_name` からダウンロードしてローカルに保存します。
 - ルーターからノードへの push 配布は行いません。
+- ノードはモデルをオンデマンドで次の順に解決します。
+  - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
+  - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_NODE_ORIGIN_ALLOWLIST`）
+  - ルーターのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
 - ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。
@@ -242,15 +363,34 @@ Router (OpenAI-compatible)
 - 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
 - ノードのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
-## モデル管理（Hugging Face, GGUF-first）
+## モデル管理（Hugging Face, safetensors / GGUF）
 
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
-  - Hugging Face repo（例: `TheBloke/Llama-2-7B-GGUF`）と、任意で filename を入力します。
-  - `/v1/models` は、ルーターのファイルシステム上にキャッシュ済みのモデルだけを返します。
-
-モデル ID はファイル名ベース形式に正規化されます（例: `llama-2-7b`, `gpt-oss-20b`）。
+  - `format` を選択します: `safetensors`（ネイティブエンジン） または `gguf`（llama.cpp フォールバック）
+    - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
+    - safetensors のテキスト生成はネイティブエンジンがある場合のみ対応します
+      （gpt-ossはMetal対応済み、DirectMLは進行中）。GGUFのみのモデルは `gguf` を選択してください。
+  - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）またはファイルURLを入力します。
+  - `format=gguf` の場合:
+    - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
+  - `format=safetensors` の場合:
+    - HFスナップショットに `config.json` と `tokenizer.json` が必要です。
+    - シャーディングされている場合は `.index.json` が必要です。
+    - gpt-oss は公式GPUアーティファクトを優先します:
+      `model.metal.bin`（Metal）/ `model.directml.bin` または `model.dml.bin`（DirectML）。
+    - Windows?DirectML?? `gptoss_directml.dll`?Nemotron? `nemotron_directml.dll`????????
+      - Windows?????????DLL???????????: `<model_dir>/gptoss_directml.dll`?????
+      - `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???????????????
+  - ルーターは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
+  - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
+  - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
+  - ノードはモデルをプッシュ配布されず、オンデマンドで取得します:
+  - `GET /v0/models/registry/:model_name/manifest.json`
+- API:
+  - `POST /v0/models/register` (`repo` と任意の `filename`)
+- `/v1/models` は登録済みモデルを返し、`ready` はノード同期に基づきます。
 
 ## API 仕様
 
@@ -267,12 +407,12 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node:register` | ノード登録 + ヘルスチェック + モデル配布（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/blob/*`） |
-| `api:inference` | OpenAI 互換推論 API（`/v1/*`） |
-| `admin:*` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`） |
+| `api` | OpenAI 互換推論 API（`/v1/*`） |
+| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
 **補足**:
-- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node:register`）+ `X-Node-Token` 必須。
+- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node`）+ `X-Node-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
 ### ルーター（Router）
@@ -287,21 +427,20 @@ Router (OpenAI-compatible)
 
 #### ノード管理
 
-- POST `/v0/nodes`（登録、APIキー: `node:register`）
+- POST `/v0/nodes`（登録、APIキー: `node`）
 - GET `/v0/nodes`（一覧、admin権限）
 - DELETE `/v0/nodes/:node_id`（admin権限）
 - POST `/v0/nodes/:node_id/disconnect`（admin権限）
 - PUT `/v0/nodes/:node_id/settings`（admin権限）
-- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node:register` + `X-Node-Token`）
+- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node` + `X-Node-Token`）
 - GET `/v0/nodes/:node_id/logs`（admin権限）
 
 #### モデル管理
 
-- GET `/v0/models`（登録済みモデル一覧、APIキー: `node:register`）
+- GET `/v0/models`（登録済みモデル一覧、APIキー: `node` または `admin`）
 - POST `/v0/models/register`（admin権限）
 - DELETE `/v0/models/*model_name`（admin権限）
-- POST `/v0/models/discover-gguf`（admin権限）
-- GET `/v0/models/blob/:model_name`（APIキー: `node:register`）
+- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node`）
 
 #### ダッシュボード/監視
 
@@ -342,6 +481,17 @@ Router (OpenAI-compatible)
 ```bash
 make quality-checks
 ```
+
+### PoC
+
+- gpt-oss（自動）: `make poc-gptoss`
+- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
+- gpt-oss (Linux / CUDA, GGUF・実験扱い): `make poc-gptoss-cuda`
+  - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
+
+補足:
+- gpt-oss-20b は safetensors（index + shards + config/tokenizer）を正本とします。
+- GPU必須（macOS=Metal / Windows=DirectML）。Linux/CUDAは実験扱いです。
 
 Dashboard を更新する場合:
 

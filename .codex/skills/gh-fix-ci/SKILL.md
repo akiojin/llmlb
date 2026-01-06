@@ -1,71 +1,245 @@
 ---
 name: gh-fix-ci
-description: Inspect GitHub PR checks with gh, pull failing GitHub Actions logs, summarize failure context, then create a fix plan and implement after user approval. Use when a user asks to debug or fix failing PR CI/CD checks on GitHub Actions and wants a plan + code changes; for external checks (e.g., Buildkite), only report the details URL and mark them out of scope.
+description: Inspect GitHub PR for CI failures, merge conflicts, change requests, and unresolved review threads. Create fix plans and implement after user approval. Resolve review threads and notify reviewers after fixes.
 metadata:
-  short-description: Fix failing Github CI actions
+  short-description: Fix failing GitHub PRs comprehensively
 ---
 
-# Gh Pr Checks Plan Fix
+# Gh PR Checks Plan Fix
 
 ## Overview
 
-Use gh to locate failing PR checks, fetch GitHub Actions logs for actionable failures, summarize the failure snippet, then propose a fix plan and implement after explicit approval.
+Use gh to inspect PRs for:
+
+- Failing CI checks (GitHub Actions)
+- Merge conflicts
+- Change Requests from reviewers
+- Unresolved review threads
+
+Then propose a fix plan, implement after explicit approval, and optionally resolve threads and notify reviewers.
+
 - Depends on the `plan` skill for drafting and approving the fix plan.
 
-Prereq: ensure `gh` is authenticated (for example, run `gh auth login` once), then run `gh auth status` with escalated permissions (include workflow/repo scopes) so `gh` commands succeed. If sandboxing blocks `gh auth status`, rerun it with `sandbox_permissions=require_escalated`.
+Prereq: ensure `gh` is authenticated (for example, run `gh auth login` once), then run `gh auth status` with escalated permissions (include workflow/repo scopes) so `gh` commands succeed.
 
 ## Inputs
 
 - `repo`: path inside the repo (default `.`)
 - `pr`: PR number or URL (optional; defaults to current branch PR)
+- `mode`: inspection mode (`checks`, `conflicts`, `reviews`, `all`)
 - `gh` authentication for the repo host
 
 ## Quick start
 
-- `python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number-or-url>"`
-- Add `--json` if you want machine-friendly output for summarization.
+```bash
+# Inspect all (CI, conflicts, reviews) - default mode
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>"
+
+# CI checks only
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --mode checks
+
+# Conflicts only
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --mode conflicts
+
+# Reviews only (Change Requests + Unresolved Threads)
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --mode reviews
+
+# JSON output
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --json
+
+# Resolve all unresolved threads after fixing
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --resolve-threads
+
+# Add a comment to notify reviewers
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --add-comment "Fixed all issues. Please re-review."
+```
 
 ## Workflow
 
-1. Verify gh authentication.
-   - Run `gh auth status` in the repo with escalated scopes (workflow/repo) after running `gh auth login`.
-   - If sandboxed auth status fails, rerun the command with `sandbox_permissions=require_escalated` to allow network/keyring access.
+1. **Verify gh authentication.**
+   - Run `gh auth status` in the repo with escalated scopes (workflow/repo).
    - If unauthenticated, ask the user to log in before proceeding.
-2. Resolve the PR.
+
+2. **Resolve the PR.**
    - Prefer the current branch PR: `gh pr view --json number,url`.
    - If the user provides a PR number or URL, use that directly.
-3. Inspect failing checks (GitHub Actions only).
-   - Preferred: run the bundled script (handles gh field drift and job-log fallbacks):
-     - `python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number-or-url>"`
-     - Add `--json` for machine-friendly output.
-   - Manual fallback:
-     - `gh pr checks <pr> --json name,state,bucket,link,startedAt,completedAt,workflow`
-       - If a field is rejected, rerun with the available fields reported by `gh`.
-     - For each failing check, extract the run id from `detailsUrl` and run:
-       - `gh run view <run_id> --json name,workflowName,conclusion,status,url,event,headBranch,headSha`
-       - `gh run view <run_id> --log`
-     - If the run log says it is still in progress, fetch job logs directly:
-       - `gh api "/repos/<owner>/<repo>/actions/jobs/<job_id>/logs" > "<path>"`
-4. Scope non-GitHub Actions checks.
-   - If `detailsUrl` is not a GitHub Actions run, label it as external and only report the URL.
-   - Do not attempt Buildkite or other providers; keep the workflow lean.
-5. Summarize failures for the user.
-   - Provide the failing check name, run URL (if any), and a concise log snippet.
-   - Call out missing logs explicitly.
-6. Create a plan.
-   - Use the `plan` skill to draft a concise plan and request approval.
-7. Implement after approval.
-   - Apply the approved plan, summarize diffs/tests, and ask about opening a PR.
-8. Recheck status.
-   - After changes, suggest re-running the relevant tests and `gh pr checks` to confirm.
+
+3. **Inspect based on mode:**
+
+   **Conflicts Mode (`--mode conflicts`):**
+   - Check `mergeable` and `mergeStateStatus` fields.
+   - If `CONFLICTING` or `DIRTY`, report conflict details.
+   - Suggest resolution steps: fetch base branch, merge/rebase, resolve conflicts.
+
+   **Reviews Mode (`--mode reviews`):**
+   - Fetch reviews with `CHANGES_REQUESTED` state.
+   - Fetch unresolved review threads using GraphQL.
+   - Display reviewer, comment body, file path, and line number.
+
+   **Checks Mode (`--mode checks`):**
+   - Run bundled script to inspect failing CI checks.
+   - Fetch GitHub Actions logs and extract failure snippets.
+   - For external checks (Buildkite, etc.), report URL only.
+
+   **All Mode (`--mode all`):**
+   - Run all inspections above.
+
+4. **Summarize issues for the user.**
+   - Provide clear summary of all detected issues.
+   - Call out conflicts, change requests, unresolved threads, and CI failures.
+
+5. **Create a plan.**
+   - Use the `plan` skill to draft a fix plan and request approval.
+
+6. **Implement after approval.**
+   - Apply the approved plan, summarize diffs/tests.
+
+7. **Resolve review threads (optional).**
+   - With `--resolve-threads`, resolve all unresolved threads via GraphQL mutation.
+   - Requires `Repository Permissions > Contents: Read and Write`.
+
+8. **Notify reviewers (optional).**
+   - With `--add-comment "message"`, post a comment to the PR.
+   - Useful for notifying reviewers that issues have been addressed.
+
+9. **Recheck status.**
+   - After changes, suggest re-running `gh pr checks` to confirm.
 
 ## Bundled Resources
 
 ### scripts/inspect_pr_checks.py
 
-Fetch failing PR checks, pull GitHub Actions logs, and extract a failure snippet. Exits non-zero when failures remain so it can be used in automation.
+Comprehensive PR inspection tool. Exits non-zero when issues remain.
 
-Usage examples:
-- `python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "123"`
-- `python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "https://github.com/org/repo/pull/123" --json`
-- `python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --max-lines 200 --context 40`
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--repo` | `.` | Path inside the target Git repository |
+| `--pr` | (current) | PR number or URL |
+| `--mode` | `all` | Inspection mode: `checks`, `conflicts`, `reviews`, `all` |
+| `--max-lines` | 160 | Max lines for log snippets |
+| `--context` | 30 | Context lines around failure markers |
+| `--json` | false | Emit JSON output |
+| `--resolve-threads` | false | Resolve unresolved review threads |
+| `--add-comment` | (none) | Add a comment to the PR |
+
+**Exit codes:**
+
+- `0`: No issues found
+- `1`: Issues detected or error occurred
+
+## New Features
+
+### Conflict Detection
+
+Detects merge conflicts via `mergeable` and `mergeStateStatus` fields.
+
+- `CONFLICTING` / `DIRTY`: Conflict detected
+- `MERGEABLE` / `CLEAN`: No conflicts
+
+### Change Request Handling
+
+Fetches reviews with `state == "CHANGES_REQUESTED"` and displays:
+
+- Reviewer name
+- Review body
+- Submission timestamp
+
+### Unresolved Review Threads
+
+Uses GraphQL to fetch threads where `isResolved == false`:
+
+- File path and line number
+- Thread ID (for resolution)
+- Comment author and body
+- Outdated status
+
+### Resolve Conversation
+
+Use `--resolve-threads` to mark threads as resolved via GraphQL mutation `resolveReviewThread`.
+
+**Required permissions:**
+
+- Fine-grained PAT: `Pull requests` + `Contents: Read and Write`
+- Classic PAT: `repo` scope
+
+### Reviewer Notification
+
+Use `--add-comment "message"` to post a summary comment to the PR after fixes.
+
+## Output Examples
+
+### Text Output
+
+```text
+PR #123: Comprehensive Check Results
+============================================================
+
+MERGE CONFLICTS
+------------------------------------------------------------
+Status: CONFLICTING
+Merge State: DIRTY
+Base: main <- Head: feature/my-branch
+Action Required: Resolve conflicts before merging
+
+CHANGE REQUESTS
+------------------------------------------------------------
+From @reviewer1 (2025-01-15):
+  "Please fix these issues..."
+
+UNRESOLVED REVIEW THREADS
+------------------------------------------------------------
+[1] src/main.ts:42
+    Thread ID: PRRT_xxx123
+    @reviewer1: This needs refactoring...
+
+CI FAILURES
+------------------------------------------------------------
+Check: build
+Details: https://github.com/...
+Failure snippet:
+  Error: TypeScript compilation failed
+  ...
+============================================================
+```
+
+### JSON Output
+
+```json
+{
+  "pr": "123",
+  "conflicts": {
+    "hasConflicts": true,
+    "mergeable": "CONFLICTING",
+    "mergeStateStatus": "DIRTY",
+    "baseRefName": "main",
+    "headRefName": "feature/my-branch"
+  },
+  "changeRequests": [
+    {
+      "id": 123456,
+      "reviewer": "reviewer1",
+      "body": "Please fix these issues...",
+      "submittedAt": "2025-01-15T12:00:00Z"
+    }
+  ],
+  "unresolvedThreads": [
+    {
+      "id": "PRRT_xxx123",
+      "path": "src/main.ts",
+      "line": 42,
+      "comments": [
+        {"author": "reviewer1", "body": "This needs refactoring"}
+      ]
+    }
+  ],
+  "ciFailures": [
+    {
+      "name": "build",
+      "status": "ok",
+      "logSnippet": "..."
+    }
+  ]
+}
+```

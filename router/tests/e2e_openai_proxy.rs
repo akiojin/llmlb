@@ -359,7 +359,8 @@ async fn openai_v1_models_get_specific() {
 
     let client = Client::new();
 
-    // GET /v1/models/gpt-oss-20b （プリセット廃止のため未登録扱い）
+    // SPEC-93536000: gpt-oss-20bはノードのexecutable_modelsに含まれているので200を返す
+    // ノード登録時に/v1/modelsから取得したモデルがexecutable_modelsに設定される
     let model_response = client
         .get(format!("http://{}/v1/models/gpt-oss-20b", router.addr()))
         .header("authorization", format!("Bearer {}", api_key))
@@ -367,7 +368,9 @@ async fn openai_v1_models_get_specific() {
         .await
         .expect("model request should succeed");
 
-    assert_eq!(model_response.status(), reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(model_response.status(), reqwest::StatusCode::OK);
+    let body: Value = model_response.json().await.expect("should be json");
+    assert_eq!(body["id"], "gpt-oss-20b");
 
     router.stop().await;
     node_stub.stop().await;

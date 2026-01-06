@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LogEntry",
+  "description": "構造化ログエントリのJSON Schema",
+  "type": "object",
+  "required": ["timestamp", "level", "target", "message", "component"],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601形式のタイムスタンプ",
+      "example": "2025-01-02T10:30:00.123Z"
+    },
+    "level": {
+      "type": "string",
+      "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"],
+      "description": "ログレベル"
+    },
+    "target": {
+      "type": "string",
+      "description": "ログ出力元モジュール",
+      "example": "llm_router::api::openai"
+    },
+    "message": {
+      "type": "string",
+      "description": "人間可読なメッセージ",
+      "example": "Request received"
+    },
+    "component": {
+      "type": "string",
+      "enum": ["router", "node"],
+      "description": "コンポーネント識別子"
+    },
+    "request_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "リクエスト追跡用ID"
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "APIエンドポイント（リクエスト受信時）",
+      "example": "/v1/chat/completions"
+    },
+    "model": {
+      "type": "string",
+      "description": "モデル名"
+    },
+    "client_ip": {
+      "type": "string",
+      "description": "クライアントIPアドレス"
+    },
+    "node_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "ノードID"
+    },
+    "node_ip": {
+      "type": "string",
+      "description": "ノードIPアドレス"
+    },
+    "error": {
+      "type": "string",
+      "description": "エラー種別"
+    },
+    "prompt_tokens": {
+      "type": "integer",
+      "description": "入力トークン数"
+    },
+    "generated_tokens": {
+      "type": "integer",
+      "description": "生成トークン数"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "description": "処理時間（ミリ秒）"
+    }
+  }
+}

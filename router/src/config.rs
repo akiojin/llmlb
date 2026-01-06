@@ -3,6 +3,8 @@
 //! Provides helper functions for reading environment variables with fallback
 //! to deprecated variable names with warning logs.
 
+use std::time::Duration;
+
 /// Get an environment variable with fallback to a deprecated name
 ///
 /// If the new variable name is set, returns its value.
@@ -73,6 +75,33 @@ pub fn get_env_with_fallback_parse<T: std::str::FromStr>(
         .unwrap_or(default)
 }
 
+/// Queueing configuration (request wait queue)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueConfig {
+    /// Maximum number of requests allowed to wait in the queue.
+    pub max_waiters: usize,
+    /// Maximum time a request may wait in the queue before timing out.
+    pub timeout: Duration,
+}
+
+impl QueueConfig {
+    /// Load queue configuration from environment variables.
+    pub fn from_env() -> Self {
+        let max_waiters =
+            get_env_with_fallback_parse("LLM_ROUTER_QUEUE_MAX", "QUEUE_MAX", 100usize);
+        let timeout_secs = get_env_with_fallback_parse(
+            "LLM_ROUTER_QUEUE_TIMEOUT_SECS",
+            "QUEUE_TIMEOUT_SECS",
+            60u64,
+        );
+
+        Self {
+            max_waiters,
+            timeout: Duration::from_secs(timeout_secs),
+        }
+    }
+}
+
 /// デフォルトembeddingモデルを取得
 ///
 /// 環境変数 `LLM_DEFAULT_EMBEDDING_MODEL` から取得し、
@@ -80,6 +109,20 @@ pub fn get_env_with_fallback_parse<T: std::str::FromStr>(
 pub fn get_default_embedding_model() -> String {
     std::env::var("LLM_DEFAULT_EMBEDDING_MODEL")
         .unwrap_or_else(|_| "nomic-embed-text-v1.5".to_string())
+}
+
+/// 認証無効化モードの有効/無効を取得
+///
+/// 環境変数 `AUTH_DISABLED` が `true/1/yes/on` のときに有効化する。
+pub fn is_auth_disabled() -> bool {
+    std::env::var("AUTH_DISABLED")
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -147,11 +190,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_env_with_fallback_parse() {
-        std::env::set_var("TEST_NEW_VAR6", "8080");
+        std::env::set_var("TEST_NEW_VAR6", "32768");
         std::env::remove_var("TEST_OLD_VAR6");
 
         let result: u16 = get_env_with_fallback_parse("TEST_NEW_VAR6", "TEST_OLD_VAR6", 3000);
-        assert_eq!(result, 8080);
+        assert_eq!(result, 32768);
 
         std::env::remove_var("TEST_NEW_VAR6");
     }

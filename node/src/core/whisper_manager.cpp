@@ -1,9 +1,13 @@
 #include "core/whisper_manager.h"
 
 #include <spdlog/spdlog.h>
+
+#ifdef USE_WHISPER
+
 #include <whisper.h>
-#include <filesystem>
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 
 namespace llm_node {
 
@@ -63,6 +67,13 @@ bool WhisperManager::loadModel(const std::string& model_path) {
 
     whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = true;  // GPUが利用可能なら使用
+    const bool enable_flash_attn = shouldUseFlashAttention();
+    cparams.flash_attn = enable_flash_attn;
+    if (enable_flash_attn) {
+        spdlog::info("Whisper flash-attn enabled via LLM_NODE_WHISPER_FLASH_ATTN");
+    } else {
+        spdlog::debug("Whisper flash-attn disabled for Metal compatibility");
+    }
 
     whisper_context* ctx = whisper_init_from_file_with_params(
         canonical_path.c_str(), cparams);
@@ -93,6 +104,11 @@ whisper_context* WhisperManager::getContext(const std::string& model_path) const
         return it->second;
     }
     return nullptr;
+}
+
+bool WhisperManager::shouldUseFlashAttention() {
+    const char* flash_attn_env = std::getenv("LLM_NODE_WHISPER_FLASH_ATTN");
+    return flash_attn_env && std::string(flash_attn_env) == "1";
 }
 
 whisper_full_params WhisperManager::createParams(const TranscriptionParams& params) const {
@@ -151,6 +167,18 @@ TranscriptionResult WhisperManager::transcribe(
     }
 
     whisper_full_params wparams = createParams(params);
+    if (!whisper_is_multilingual(ctx)) {
+        if (params.language.empty() || params.language == "auto") {
+            spdlog::info("Whisper model is English-only; forcing language to 'en'");
+            wparams.language = "en";
+            wparams.detect_language = false;
+        } else if (params.language != "en") {
+            spdlog::warn("Whisper model is English-only; overriding language '{}' to 'en'",
+                         params.language);
+            wparams.language = "en";
+            wparams.detect_language = false;
+        }
+    }
 
     spdlog::debug("Running whisper transcription on {} samples", audio_data.size());
 
@@ -306,3 +334,50 @@ WhisperManager::getLastAccessTime(const std::string& model_path) const {
 }
 
 }  // namespace llm_node
+
+#else
+
+namespace llm_node {
+
+WhisperManager::WhisperManager(std::string models_dir) : models_dir_(std::move(models_dir)) {
+    spdlog::warn("WhisperManager: whisper.cpp support is disabled (BUILD_WITH_WHISPER=OFF)");
+}
+
+WhisperManager::~WhisperManager() = default;
+
+bool WhisperManager::loadModel(const std::string&) { return false; }
+bool WhisperManager::isLoaded(const std::string&) const { return false; }
+whisper_context* WhisperManager::getContext(const std::string&) const { return nullptr; }
+
+TranscriptionResult WhisperManager::transcribe(
+    const std::string&,
+    const std::vector<float>&,
+    int,
+    const TranscriptionParams&) {
+    TranscriptionResult r;
+    r.success = false;
+    r.error = "whisper.cpp support is disabled";
+    return r;
+}
+
+size_t WhisperManager::loadedCount() const { return 0; }
+bool WhisperManager::unloadModel(const std::string&) { return false; }
+std::vector<std::string> WhisperManager::getLoadedModels() const { return {}; }
+bool WhisperManager::loadModelIfNeeded(const std::string&) { return false; }
+
+void WhisperManager::setIdleTimeout(std::chrono::milliseconds timeout) { idle_timeout_ = timeout; }
+std::chrono::milliseconds WhisperManager::getIdleTimeout() const { return idle_timeout_; }
+size_t WhisperManager::unloadIdleModels() { return 0; }
+
+void WhisperManager::setMaxLoadedModels(size_t max_models) { max_loaded_models_ = max_models; }
+size_t WhisperManager::getMaxLoadedModels() const { return max_loaded_models_; }
+bool WhisperManager::canLoadMore() const { return false; }
+
+std::optional<std::chrono::steady_clock::time_point> WhisperManager::getLastAccessTime(
+    const std::string&) const {
+    return std::nullopt;
+}
+
+}  // namespace llm_node
+
+#endif

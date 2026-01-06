@@ -1,0 +1,237 @@
+openapi: 3.0.3
+info:
+  title: Image Generation API
+  version: 1.0.0
+  description: OpenAI Images API互換の画像生成API
+
+paths:
+  /v1/images/generations:
+    post:
+      summary: テキストから画像生成
+      operationId: createImage
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+      responses:
+        '200':
+          description: 生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/images/edits:
+    post:
+      summary: 画像編集（Inpainting）
+      operationId: createImageEdit
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ImageEditRequest'
+      responses:
+        '200':
+          description: 編集成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /v1/images/variations:
+    post:
+      summary: 画像バリエーション生成
+      operationId: createImageVariation
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ImageVariationRequest'
+      responses:
+        '200':
+          description: 生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    ImageGenerationRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          maxLength: 4000
+          description: 画像生成プロンプト
+        model:
+          type: string
+          description: 使用モデル
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+          description: 生成枚数
+        quality:
+          type: string
+          enum: [standard, hd]
+          default: standard
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          default: url
+        size:
+          type: string
+          enum: [256x256, 512x512, 1024x1024, 1792x1024, 1024x1792]
+          default: 1024x1024
+        style:
+          type: string
+          enum: [vivid, natural]
+          default: vivid
+        user:
+          type: string
+          description: ユーザー識別子
+
+    ImageEditRequest:
+      type: object
+      required:
+        - image
+        - prompt
+      properties:
+        image:
+          type: string
+          format: binary
+          description: 編集対象画像（PNG、最大4MB）
+        prompt:
+          type: string
+          maxLength: 4000
+        mask:
+          type: string
+          format: binary
+          description: マスク画像（PNG）
+        model:
+          type: string
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+        size:
+          type: string
+          enum: [256x256, 512x512, 1024x1024]
+          default: 1024x1024
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          default: url
+
+    ImageVariationRequest:
+      type: object
+      required:
+        - image
+      properties:
+        image:
+          type: string
+          format: binary
+          description: 元画像（PNG、最大4MB）
+        model:
+          type: string
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          default: url
+        size:
+          type: string
+          enum: [256x256, 512x512, 1024x1024]
+          default: 1024x1024
+
+    ImageResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+          format: int64
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageData'
+
+    ImageData:
+      type: object
+      properties:
+        b64_json:
+          type: string
+          description: Base64エンコード画像
+        url:
+          type: string
+          format: uri
+          description: 画像URL
+        revised_prompt:
+          type: string
+          description: 改訂されたプロンプト
+
+  responses:
+    BadRequest:
+      description: 不正なリクエスト
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  type:
+                    type: string
+                  code:
+                    type: string
+
+    Unauthorized:
+      description: 認証エラー
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Invalid or missing API key"
+                  type:
+                    type: string
+                    enum: [unauthorized]

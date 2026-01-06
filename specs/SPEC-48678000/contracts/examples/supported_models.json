@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "id": "llama-3.2-1b",
+      "name": "Llama 3.2 1B",
+      "source": "hf_gguf",
+      "repo_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
+      "required_vram_mb": 2048,
+      "tags": ["chat", "instruct"],
+      "is_local": true
+    },
+    {
+      "id": "mistral-7b",
+      "name": "Mistral 7B",
+      "source": "hf_gguf",
+      "repo_id": "TheBloke/Mistral-7B-Instruct-v0.1-GGUF",
+      "required_vram_mb": 8192,
+      "tags": ["chat", "instruct"],
+      "is_local": false
+    }
+  ]
+}

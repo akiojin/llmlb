@@ -409,6 +409,11 @@ impl NodeStorage {
             node_api_port: row.node_api_port.map(|p| p as u16),
             initializing: row.initializing != 0,
             ready_models,
+            sync_state: None,
+            sync_progress: None,
+            sync_updated_at: None,
+            executable_models: Vec::new(),
+            excluded_models: Vec::new(),
         })
     }
 
@@ -504,6 +509,8 @@ fn parse_node_status(s: &str) -> NodeStatus {
 fn parse_runtime_type(s: &str) -> RuntimeType {
     match s.to_lowercase().as_str() {
         "llamacpp" | "llama_cpp" => RuntimeType::LlamaCpp,
+        "nemotroncpp" | "nemotron_cpp" => RuntimeType::NemotronCpp,
+        "gptosscpp" | "gptoss_cpp" => RuntimeType::GptOssCpp,
         "whispercpp" | "whisper_cpp" => RuntimeType::WhisperCpp,
         "onnxruntime" | "onnx_runtime" => RuntimeType::OnnxRuntime,
         "stablediffusion" | "stable_diffusion" => RuntimeType::StableDiffusion,
@@ -537,7 +544,7 @@ mod tests {
             machine_name: "test-node".to_string(),
             ip_address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)),
             runtime_version: "0.1.0".to_string(),
-            runtime_port: 11434,
+            runtime_port: 32768,
             status: NodeStatus::Online,
             registered_at: now,
             last_seen: now,
@@ -561,9 +568,14 @@ mod tests {
             gpu_model_name: Some("GeForce RTX 4090".to_string()),
             gpu_compute_capability: Some("8.9".to_string()),
             gpu_capability_score: Some(8900),
-            node_api_port: Some(11435),
+            node_api_port: Some(32769),
             initializing: false,
             ready_models: Some((4, 4)),
+            sync_state: None,
+            sync_progress: None,
+            sync_updated_at: None,
+            executable_models: vec!["llama-3.1-8b".to_string()],
+            excluded_models: Vec::new(),
         }
     }
 

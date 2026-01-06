@@ -1,5 +1,6 @@
 #include "core/llama_manager.h"
 #include "include/llama.h"
+#include "system/gpu_detector.h"
 
 #include <spdlog/spdlog.h>
 #include <filesystem>
@@ -26,7 +27,8 @@ LlamaContext::LlamaContext(LlamaContext&& other) noexcept
     : model_path(std::move(other.model_path))
     , model(other.model)
     , ctx(other.ctx)
-    , gpu_layers(other.gpu_layers) {
+    , gpu_layers(other.gpu_layers)
+    , gpu_id(other.gpu_id) {
     other.model = nullptr;
     other.ctx = nullptr;
 }
@@ -42,6 +44,7 @@ LlamaContext& LlamaContext::operator=(LlamaContext&& other) noexcept {
         model = other.model;
         ctx = other.ctx;
         gpu_layers = other.gpu_layers;
+        gpu_id = other.gpu_id;
 
         other.model = nullptr;
         other.ctx = nullptr;
@@ -126,6 +129,24 @@ bool LlamaManager::loadModel(const std::string& model_path) {
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = static_cast<int32_t>(gpu_layers_);
 
+    std::optional<int> selected_gpu;
+    {
+        auto it = model_gpu_ids_.find(canonical);
+        if (it != model_gpu_ids_.end()) {
+            selected_gpu = it->second;
+        }
+    }
+    if (!selected_gpu.has_value()) {
+        GpuDetector detector;
+        detector.detect();
+        selected_gpu = detector.selectGpu(std::nullopt);
+    }
+    if (selected_gpu.has_value()) {
+        model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+        model_params.main_gpu = selected_gpu.value();
+        spdlog::info("Selected GPU {} for model {}", selected_gpu.value(), canonical);
+    }
+
     // モデルロード
     llama_model* model = llama_model_load_from_file(canonical.c_str(), model_params);
     if (!model) {
@@ -152,6 +173,9 @@ bool LlamaManager::loadModel(const std::string& model_path) {
     llama_ctx->model = model;
     llama_ctx->ctx = ctx;
     llama_ctx->gpu_layers = gpu_layers_;
+    if (selected_gpu.has_value()) {
+        llama_ctx->gpu_id = selected_gpu.value();
+    }
 
     // 実メモリ使用量を取得
     uint64_t model_size = llama_model_size(model);
@@ -160,6 +184,9 @@ bool LlamaManager::loadModel(const std::string& model_path) {
     spdlog::info("Model loaded successfully: {} ({} bytes)", canonical, model_size);
 
     loaded_models_[canonical] = std::move(llama_ctx);
+    if (selected_gpu.has_value()) {
+        model_gpu_ids_[canonical] = selected_gpu.value();
+    }
     return true;
 }
 
@@ -244,6 +271,7 @@ bool LlamaManager::unloadModel(const std::string& model_path) {
 
     spdlog::info("Unloading model: {}", canonical);
     loaded_models_.erase(it);
+    model_gpu_ids_.erase(canonical);
     return true;
 }
 

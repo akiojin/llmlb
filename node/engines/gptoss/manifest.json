@@ -9,6 +9,6 @@
   "license": "Apache-2.0",
   "supports_vision": false,
   "capabilities": ["text"],
-  "gpu_targets": ["metal", "directml"],
+  "gpu_targets": ["metal", "cuda", "directml"],
   "library": "llm_engine_gptoss"
 }

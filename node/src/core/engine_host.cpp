@@ -158,7 +158,7 @@ std::vector<std::string> supportedGpuTargets() {
 #ifdef USE_METAL
     targets.push_back("metal");
 #endif
-#ifdef _WIN32
+#if defined(_WIN32) && defined(USE_DIRECTML)
     targets.push_back("directml");
 #endif
 #ifdef USE_CUDA

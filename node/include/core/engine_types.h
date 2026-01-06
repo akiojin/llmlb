@@ -49,6 +49,13 @@ struct InferenceParams {
     /// T182: Abort callback for inter-token timeout
     AbortCallback abort_callback{nullptr};
     void* abort_callback_ctx{nullptr};
+
+    // OpenAI互換パラメータ
+    float presence_penalty{0.0f};   // -2.0 ~ 2.0
+    float frequency_penalty{0.0f};  // -2.0 ~ 2.0
+    int n{1};                       // 1 ~ 8 (生成する候補数)
+    bool logprobs{false};           // logprobs を返すか
+    int top_logprobs{0};            // 0 ~ 20 (上位候補数)
 };
 
 inline size_t resolve_effective_max_tokens(size_t requested,

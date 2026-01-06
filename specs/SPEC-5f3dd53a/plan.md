@@ -36,6 +36,7 @@ specs/SPEC-5f3dd53a/
 - gptoss_* C API のCUDA実装提供有無と配布元を確認
 - DLLのライセンス/配布条件の整理
 - CUDAアーティファクト命名の既存慣例を確認
+- PoC (`poc/nemotron-cuda-cpp`) を DLL 化できるか評価
 
 ## Phase 1: Design
 - DLL探索順序 (env -> model dir -> default) の確定
@@ -56,3 +57,4 @@ specs/SPEC-5f3dd53a/
 ## リスク/未確定事項
 - CUDA DLLの提供元/ビルド手順が未確定
 - CUDAアーティファクトの生成/配布経路が未確定
+- gptoss_* API 互換の CUDA 実装が未整備

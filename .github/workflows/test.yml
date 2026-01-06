@@ -77,6 +77,10 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Bootstrap pest_generator
+        run: cargo build --package pest_bootstrap
+        shell: bash
+
       - name: Run Rust tests
         run: |
           echo "🧪 Running Rust tests on ${{ matrix.os }}..."
@@ -100,6 +104,9 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+
+      - name: Bootstrap pest_generator
+        run: cargo build --package pest_bootstrap
 
       - name: Run OpenAI proxy tests
         run: |

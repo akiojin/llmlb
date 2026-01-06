@@ -243,29 +243,28 @@
 
 ## Phase 9: 追加アーキテクチャ
 
-- [ ] 41. nemotronアーキテクチャテスト (依存: 29)
-- [ ] 42. nemotronアーキテクチャ実装 (依存: 41)
-  - src/arch/nemotron.cpp
+- [x] 41. ~~nemotronアーキテクチャテスト~~ (スコープ外: gpt-oss/nemotronエンジン削除により不要)
+- [x] 42. ~~nemotronアーキテクチャ実装~~ (スコープ外: gpt-oss/nemotronエンジン削除により不要)
 
 ## Phase 10: 高度な機能
 
-- [ ] 43. Rope Scalingテスト (依存: 29)
-- [ ] 44. Rope Scaling実装 (依存: 43)
+- [x] 43. Rope Scalingテスト (依存: 29)
+- [x] 44. Rope Scaling実装 (依存: 43)
   - Linear/NTKスケーリング
 
-- [ ] 45. Sliding Window Attentionテスト (依存: 29)
-- [ ] 46. Sliding Window Attention実装 (依存: 45)
+- [x] 45. Sliding Window Attentionテスト (依存: 29)
+- [x] 46. Sliding Window Attention実装 (依存: 45)
 
-- [ ] 47. GQA/MQAテスト (依存: 29)
-- [ ] 48. GQA/MQA実装 (依存: 47)
+- [x] 47. GQA/MQAテスト (依存: 29)
+- [x] 48. GQA/MQA実装 (依存: 47)
 
 ## Phase 11: マルチGPU
 
-- [ ] 49. マルチGPUテスト (依存: 29)
+- [x] 49. マルチGPUテスト (依存: 29)
   - Pipeline Parallelismテスト
   - デバイス間通信テスト
 
-- [ ] 50. マルチGPU実装 (依存: 49)
+- [x] 50. マルチGPU実装 (依存: 49)
   - レイヤー分割
   - デバイス間同期
 
@@ -273,12 +272,13 @@
 
 ### Integration Tests
 
-- [ ] 51. E2Eテスト: gpt-oss-20b (依存: 29)
+- [x] 51. E2Eテスト: safetensorsモデル (依存: 29)
   - 完全なモデルロード→推論→結果検証
+  - HuggingFace Tinyモデル（例: TinyLlama）使用
 
-- [ ] 52. E2Eテスト: ストリーミング (依存: 51)
+- [x] 52. E2Eテスト: ストリーミング (依存: 51)
 
-- [ ] 53. E2Eテスト: continuous batching (依存: 36, 51)
+- [x] 53. E2Eテスト: continuous batching (依存: 36, 51)
 
 ### Documentation
 
@@ -324,11 +324,18 @@
 - [x] Phase 1: 基盤構築 (1-10)
 - [x] Phase 2: safetensorsローダー (11-17)
 - [x] Phase 3: トークナイザー (18-22)
-- [x] Phase 4: 推論エンジン (23-30) ※Task 27（gpt-ossアーキテクチャ）は後続フェーズで実装
-- [ ] E2Eテスト: gpt-oss-20b (51)
-- [ ] E2Eテスト: ストリーミング (52)
+- [x] Phase 4: 推論エンジン (23-30)
+- [x] Phase 5: KVキャッシュ (31-34)
+- [x] Phase 6: バッチ処理 (35-36)
+- [x] Phase 7: 埋め込み (37-38)
+- [x] Phase 8: LoRA (39-40)
+- [x] Phase 9: 追加アーキテクチャ (41-42) ※gpt-oss/nemotronエンジン削除によりスコープ外
+- [x] Phase 10: 高度な機能 (43-48)
+- [x] Phase 11: マルチGPU (49-50)
+- [x] E2Eテスト: safetensorsモデル (51)
+- [x] E2Eテスト: ストリーミング (52)
+- [x] E2Eテスト: continuous batching (53)
 
-MVP = 単一GPUでのgpt-oss-20b推論 + ストリーミング出力
+MVP = 単一GPUでのsafetensorsモデル推論 + ストリーミング出力
 
-Note: Task 27（gpt-ossアーキテクチャ実装）はggml計算グラフの統合が必要なため、
-E2Eテスト実装時に完成させる。基盤となるAPI/構造体/テストは完了済み。
+Note: gpt-oss/nemotronエンジンは`refactor!: remove gptoss/nemotron engines for safetensors.cpp migration`で削除済み。safetensors.cppはggmlバックエンドを直接使用するアーキテクチャ非依存の設計。

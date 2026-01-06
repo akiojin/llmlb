@@ -48,6 +48,10 @@ add_executable(stcpp_unit_tests
     unit/batch_test.cpp
     unit/embeddings_test.cpp
     unit/lora_test.cpp
+    unit/rope_scaling_test.cpp
+    unit/sliding_window_attention_test.cpp
+    unit/gqa_mqa_test.cpp
+    unit/multi_gpu_test.cpp
 )
 target_link_libraries(stcpp_unit_tests
     PRIVATE
@@ -60,7 +64,23 @@ target_include_directories(stcpp_unit_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
+# Integration/E2E tests
+add_executable(stcpp_integration_tests
+    integration/e2e_test.cpp
+)
+target_link_libraries(stcpp_integration_tests
+    PRIVATE
+        safetensors_cpp
+        GTest::gtest_main
+)
+target_include_directories(stcpp_integration_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
 # Register tests with CTest
 include(GoogleTest)
 gtest_discover_tests(stcpp_contract_tests)
 gtest_discover_tests(stcpp_unit_tests)
+gtest_discover_tests(stcpp_integration_tests)

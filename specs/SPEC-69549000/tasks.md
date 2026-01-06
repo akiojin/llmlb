@@ -172,24 +172,24 @@
 
 ### Tests First (RED)
 
-- [ ] 31. KVキャッシュテスト (依存: 29)
+- [x] 31. KVキャッシュテスト (依存: 29)
   - キャッシュ割り当てテスト
   - キャッシュクリアテスト
   - 量子化テスト（INT8/FP8）
 
-- [ ] 32. プロンプトキャッシュテスト (依存: 29)
+- [x] 32. プロンプトキャッシュテスト (依存: 29)
   - キャッシュ保存テスト
   - キャッシュ読み込みテスト
   - 再利用効果測定
 
 ### Implementation (GREEN)
 
-- [ ] 33. kv-cache.cpp実装 (依存: 31)
+- [x] 33. kv-cache.cpp実装 (依存: 31)
   - KVキャッシュ管理
   - INT8/FP8量子化
   - llama.cppのKVキャッシュ参考
 
-- [ ] 34. プロンプトキャッシュ実装 (依存: 32, 33)
+- [x] 34. プロンプトキャッシュ実装 (依存: 32, 33)
   - stcpp_prompt_cache_save()
   - stcpp_prompt_cache_load()
 
@@ -197,14 +197,14 @@
 
 ### Tests First (RED)
 
-- [ ] 35. バッチ処理テスト (依存: 29)
+- [x] 35. バッチ処理テスト (依存: 29)
   - 複数リクエスト追加テスト
   - バッチデコードテスト
   - リクエストキャンセルテスト
 
 ### Implementation (GREEN)
 
-- [ ] 36. batch.cpp実装 (依存: 35)
+- [x] 36. batch.cpp実装 (依存: 35)
   - stcpp_batch_new()
   - stcpp_batch_add()
   - stcpp_batch_decode()
@@ -214,14 +214,14 @@
 
 ### Tests First (RED)
 
-- [ ] 37. 埋め込みテスト (依存: 29)
+- [x] 37. 埋め込みテスト (依存: 29)
   - 埋め込み生成テスト
   - 次元数確認テスト
   - バッチ埋め込みテスト
 
 ### Implementation (GREEN)
 
-- [ ] 38. 埋め込み実装 (依存: 37)
+- [x] 38. 埋め込み実装 (依存: 37)
   - stcpp_embeddings()
   - stcpp_embeddings_dims()
 
@@ -229,14 +229,14 @@
 
 ### Tests First (RED)
 
-- [ ] 39. LoRAテスト (依存: 29)
+- [x] 39. LoRAテスト (依存: 29)
   - LoRAロードテスト
   - LoRA適用テスト
   - ホットリロードテスト
 
 ### Implementation (GREEN)
 
-- [ ] 40. lora.cpp実装 (依存: 39)
+- [x] 40. lora.cpp実装 (依存: 39)
   - stcpp_lora_load()
   - stcpp_lora_apply()
   - stcpp_lora_remove()

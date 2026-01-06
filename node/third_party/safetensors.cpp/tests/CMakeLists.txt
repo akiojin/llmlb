@@ -43,6 +43,11 @@ add_executable(stcpp_unit_tests
     unit/model_load_test.cpp
     unit/generation_test.cpp
     unit/cancel_test.cpp
+    unit/kv_cache_test.cpp
+    unit/prompt_cache_test.cpp
+    unit/batch_test.cpp
+    unit/embeddings_test.cpp
+    unit/lora_test.cpp
 )
 target_link_libraries(stcpp_unit_tests
     PRIVATE

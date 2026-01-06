@@ -115,6 +115,43 @@ struct stcpp_generate_result {
     const char* error;
 };
 
+/* KV cache structure */
+struct KVCache {
+    int32_t n_ctx = 0;       // Maximum context size
+    int32_t n_used = 0;      // Currently used tokens
+    int32_t n_layers = 0;    // Number of layers
+    int32_t n_heads = 0;     // Number of attention heads
+    int32_t head_dim = 0;    // Dimension per head
+    bool quantized = false;  // Whether using INT8/FP8 quantization
+
+    std::vector<float> k_data;  // Key cache data
+    std::vector<float> v_data;  // Value cache data
+};
+
+/* Prompt cache metadata */
+struct PromptCacheMetadata {
+    uint64_t model_hash = 0;   // Hash of model for validation
+    int32_t n_ctx = 0;         // Context size when cached
+    int32_t n_tokens = 0;      // Number of cached tokens
+    bool valid = false;        // Whether cache is valid
+};
+
+/* KV cache functions */
+bool kv_cache_alloc(
+    KVCache& cache,
+    int32_t n_ctx,
+    int32_t n_layers,
+    int32_t n_heads,
+    int32_t head_dim,
+    bool quantized
+);
+
+void kv_cache_clear(KVCache& cache);
+void kv_cache_defrag(KVCache& cache);
+
+/* Prompt cache functions */
+uint64_t compute_prompt_hash(const std::string& prompt);
+
 /* Utility functions */
 
 // Convert dtype string to enum

@@ -1282,6 +1282,10 @@ std::vector<std::string> InferenceEngine::generateChatStream(
 
             report_token_metrics(metrics, desc->name, "stream");
             return output;
+        } catch (const TokenTimeoutError&) {
+            // タイムアウトはクラッシュではないので再スローのみ
+            inter_token_watchdog.disarm();
+            throw;
         } catch (...) {
             inter_token_watchdog.disarm();
             handlePluginCrash();

@@ -1,10 +1,8 @@
 #include "core/inference_engine.h"
 
 #include "core/engine_registry.h"
-#include "core/gptoss_engine.h"
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
-#include "core/nemotron_engine.h"
 #include "core/request_watchdog.h"
 #include "core/token_watchdog.h"
 #include "core/vision_processor.h"
@@ -391,201 +389,11 @@ static std::string stripControlTokens(std::string text) {
     return text.substr(l, r - l + 1);
 }
 
-// gpt-ossテンプレート（モデル側にテンプレが無い場合のフォールバック）。ユーザー入力は改変しない。
-static const char* GPT_OSS_TEMPLATE = R"tmpl({% for message in messages %}
-{% if message['role'] == 'system' %}
-<|start|>system<|message|>{{ message['content'] }}<|end|>
-{% elif message['role'] == 'user' %}
-<|start|>user<|message|>{{ message['content'] }}<|end|>
-{% elif message['role'] == 'assistant' %}
-<|start|>assistant<|channel|>final<|message|>{{ message['content'] }}<|end|>
-{% endif %}
-{% endfor %}
-<|start|>assistant<|channel|>final<|message|>
-)tmpl";
-
-// gpt-oss: finalチャンネルだけを抽出して制御トークンを除去
-static std::string extractGptOssFinalMessage(const std::string& output) {
-    const std::string marker = "<|channel|>final<|message|>";
-    const std::string end = "<|end|>";
-
-    size_t mpos = output.rfind(marker);
-    if (mpos == std::string::npos) return output;
-    size_t start = mpos + marker.size();
-    size_t endpos = output.find(end, start);
-    std::string seg = endpos == std::string::npos ? output.substr(start) : output.substr(start, endpos - start);
-    return stripControlTokens(seg);
-}
-
-// gpt-oss形式でプロンプトを構築する関数
-// gpt-oss固有トークン: <|start|>, <|message|>, <|end|>, <|channel|>
-// 応答形式: <|start|>assistant<|channel|>final<|message|>content<|end|>
-// Reasoning: none を設定して推論チャンネルを無効化
-static std::string buildGptOssPrompt(const std::vector<ChatMessage>& messages) {
-    std::ostringstream oss;
-
-    // システムメッセージの有無をチェック
-    bool hasSystemMessage = false;
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-            hasSystemMessage = true;
-            break;
-        }
-    }
-
-    // システムメッセージがない場合、推論無効のシステムプロンプトを追加
-    if (!hasSystemMessage) {
-        oss << "<|start|>system<|message|>You are a helpful assistant.\n\nReasoning: none<|end|>";
-    }
-
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-            // システムメッセージに推論設定を追加
-            oss << "<|start|>system<|message|>" << msg.content << "\n\nReasoning: none<|end|>";
-        } else {
-            oss << "<|start|>" << msg.role << "<|message|>" << msg.content << "<|end|>";
-        }
-    }
-
-    // アシスタント応答の開始（final チャンネルでコンテンツを直接生成）
-    oss << "<|start|>assistant<|channel|>final<|message|>";
-    return oss.str();
-}
-
-// gpt-ossモデルの出力から特殊トークンを除去する後処理関数
-static std::string cleanGptOssOutput(const std::string& output) {
-    const std::string marker = "<|channel|>final<|message|>";
-    if (output.find(marker) != std::string::npos) {
-        return extractGptOssFinalMessage(output);
-    }
-
-    std::string result = output;
-
-    // gpt-ossおよびChatMLの特殊トークンリスト
-    const std::vector<std::string> tokens_to_remove = {
-        // gpt-oss tokens
-        "<|start|>", "<|end|>", "<|message|>", "<|channel|>",
-        "<|startoftext|>", "<|endoftext|>", "<|return|>", "<|call|>",
-        "<|constrain|>", "<|endofprompt|>",
-        // ChatML tokens
-        "<|im_start|>", "<|im_end|>", "<|assistant>", "<|user>", "<|system>",
-        // Common control tokens
-        "<|eot_id|>", "</s>", "<s>", "<|begin_of_text|>", "<|end_of_text|>"
-    };
-
-    // 特殊トークンを除去
-    for (const auto& token : tokens_to_remove) {
-        size_t pos = 0;
-        while ((pos = result.find(token, pos)) != std::string::npos) {
-            result.erase(pos, token.length());
-        }
-    }
-
-    // "to=" パターンを全て除去（例: "to=assistant", "to=You", "to=user"）
-    // 正規表現的に "to=" + 英数字列 を除去
-    {
-        size_t pos = 0;
-        while ((pos = result.find("to=", pos)) != std::string::npos) {
-            size_t end_pos = pos + 3;  // "to=" の後ろ
-            // 英数字とアンダースコアが続く間は除去対象
-            while (end_pos < result.size() &&
-                   (std::isalnum(static_cast<unsigned char>(result[end_pos])) ||
-                    result[end_pos] == '_')) {
-                end_pos++;
-            }
-            result.erase(pos, end_pos - pos);
-        }
-    }
-
-    // チャンネル名やロール名を含むパターンを除去
-    // 例: "assistantanalysis:", "analysis:", "final:", "assistantfinal:", etc.
-    const std::vector<std::string> channel_patterns = {
-        // 連結パターン（優先度高）
-        "assistantanalysis:", "assistantfinal:", "assistantcommentary:",
-        "useranalysis:", "userfinal:", "usercommentary:",
-        "systemanalysis:", "systemfinal:", "systemcommentary:",
-        // 単独パターン
-        "analysis:", "final:", "commentary:",
-        "assistant:", "user:", "system:", "developer:",
-        // "=name" パターン
-        "=assistant", "=analysis", "=final", "=commentary",
-        "=user", "=system", "=developer"
-    };
-    for (const auto& pattern : channel_patterns) {
-        size_t pos = 0;
-        while ((pos = result.find(pattern, pos)) != std::string::npos) {
-            result.erase(pos, pattern.length());
-        }
-    }
-
-    // 行頭のチャンネル名（コロンなし）を除去
-    const std::vector<std::string> channel_names = {
-        "assistant", "analysis", "final", "commentary", "user", "system", "developer"
-    };
-    for (const auto& name : channel_names) {
-        // 行頭の "name\n" パターン
-        std::string line_pattern = "\n" + name + "\n";
-        size_t pos = 0;
-        while ((pos = result.find(line_pattern, pos)) != std::string::npos) {
-            result.erase(pos + 1, name.length() + 1);  // 最初の\nは残す
-        }
-        // 文字列先頭の場合
-        if (result.find(name + "\n") == 0) {
-            result.erase(0, name.length() + 1);
-        }
-    }
-
-    // 先頭と末尾の空白を除去
-    size_t start = result.find_first_not_of(" \t\n\r");
-    if (start == std::string::npos) {
-        return "";
-    }
-    size_t end = result.find_last_not_of(" \t\n\r");
-    return result.substr(start, end - start + 1);
-}
-
-// モデルがgpt-oss形式かどうかを判定
-// モデルのテンプレートやアーキテクチャから判定する
-static bool isGptOssModel(llama_model* model) {
-    // 1. アーキテクチャ名で判定（最も確実）
-    char arch_buf[64] = {0};
-    int arch_len = llama_model_meta_val_str(model, "general.architecture", arch_buf, sizeof(arch_buf));
-    spdlog::info("isGptOssModel: arch_len={}, arch_buf='{}'", arch_len, arch_buf);
-    if (arch_len > 0) {
-        std::string arch(arch_buf);
-        spdlog::info("isGptOssModel: checking architecture '{}'", arch);
-        if (arch == "gpt-oss") {
-            spdlog::info("Detected gpt-oss model by architecture: {}", arch);
-            return true;
-        }
-    }
-
-    // 2. チャットテンプレートにgpt-oss固有トークンが含まれているかチェック
-    const char* tmpl = llama_model_chat_template(model, nullptr);
-    spdlog::info("isGptOssModel: chat_template={}", tmpl != nullptr ? tmpl : "(null)");
-    if (tmpl != nullptr && tmpl[0] != '\0') {
-        std::string template_str(tmpl);
-        if (template_str.find("<|start|>") != std::string::npos ||
-            template_str.find("<|message|>") != std::string::npos) {
-            spdlog::info("Detected gpt-oss model by chat template tokens");
-            return true;
-        }
-    }
-
-    spdlog::info("isGptOssModel: not detected as gpt-oss");
-    return false;
-}
 
 // モデル固有のチャットテンプレートを適用してプロンプトを構築
 static std::string applyModelChatTemplate(
     llama_model* model,
     const std::vector<ChatMessage>& messages) {
-
-    // gpt-ossモデルの場合はgpt-oss専用形式を使用
-    if (isGptOssModel(model)) {
-        spdlog::info("Detected gpt-oss model, using gpt-oss chat format");
-        return buildGptOssPrompt(messages);
-    }
 
     // llama_chat_message 配列を構築
     std::vector<llama_chat_message> llama_messages;
@@ -597,15 +405,10 @@ static std::string applyModelChatTemplate(
     // モデルからチャットテンプレートを取得
     const char* tmpl = llama_model_chat_template(model, nullptr);
 
-    // テンプレートがない場合はgpt-oss用テンプレかChatMLにフォールバック
+    // テンプレートがない場合はChatMLにフォールバック
     if (tmpl == nullptr || tmpl[0] == '\0') {
-        if (isGptOssModel(model)) {
-            spdlog::info("Model has no chat template, using built-in gpt-oss template");
-            tmpl = GPT_OSS_TEMPLATE;
-        } else {
-            spdlog::info("Model has no chat template, using ChatML format");
-            return buildChatMLPrompt(messages);
-        }
+        spdlog::info("Model has no chat template, using ChatML format");
+        return buildChatMLPrompt(messages);
     }
 
     spdlog::debug("Model chat template found: {}", tmpl);
@@ -664,41 +467,6 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     llama_reg.capabilities = {"text", "embeddings"};
     engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
 
-    EngineRegistration gptoss_reg;
-    gptoss_reg.engine_id = "builtin_gptoss_cpp";
-    gptoss_reg.engine_version = "builtin";
-    gptoss_reg.formats = {"safetensors"};
-    gptoss_reg.architectures = {"gpt_oss"};
-    gptoss_reg.capabilities = {"text"};
-    bool enable_gptoss = false;
-#if defined(USE_GPTOSS)
-#if defined(_WIN32)
-#ifdef USE_DIRECTML
-    enable_gptoss = true;
-#endif
-#else
-    enable_gptoss = true;
-#endif
-#endif
-    if (enable_gptoss) {
-        engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
-    }
-
-    EngineRegistration nemotron_reg;
-    nemotron_reg.engine_id = "builtin_nemotron_cpp";
-    nemotron_reg.engine_version = "builtin";
-    nemotron_reg.formats = {"safetensors"};
-    nemotron_reg.architectures = {"nemotron"};
-    nemotron_reg.capabilities = {"text"};
-    bool enable_nemotron = false;
-#if defined(USE_CUDA)
-    enable_nemotron = true;
-#elif defined(_WIN32) && defined(USE_GPTOSS) && defined(USE_DIRECTML)
-    enable_nemotron = true;
-#endif
-    if (enable_nemotron) {
-        engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
-    }
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
     plugin_restart_last_ = std::chrono::steady_clock::now();
 }
@@ -1070,14 +838,10 @@ std::string InferenceEngine::generateChatWithImages(
         std::string prompt = applyModelChatTemplate(model, messages);
         spdlog::debug("Vision prompt: {}", prompt);
 
-        bool is_gptoss = isGptOssModel(model);
-        bool add_special = !is_gptoss;
-        bool parse_special = is_gptoss;
-
         mtmd_input_text text;
         text.text = prompt.c_str();
-        text.add_special = add_special;
-        text.parse_special = parse_special;
+        text.add_special = true;
+        text.parse_special = false;
 
         mtmd::input_chunks chunks(mtmd_input_chunks_init());
         auto bitmaps_c_ptr = bitmaps.c_ptr();
@@ -1202,12 +966,6 @@ std::string InferenceEngine::generateChatWithImages(
         }
 
         apply_stop_sequences_suffix(output, stop_sequences);
-
-        if (isGptOssModel(model)) {
-            spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
-            output = cleanGptOssOutput(output);
-            spdlog::info("Vision: After cleanup: {} chars", output.size());
-        }
 
         spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
         report_token_metrics(metrics, model_name, "vision");
@@ -1592,57 +1350,6 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
     Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;
     if (!engine) return false;
     if (!engine->supportsTextGeneration()) return false;
-
-    if (descriptor.runtime == "gptoss_cpp") {
-        namespace fs = std::filesystem;
-        fs::path model_dir = descriptor.model_dir.empty()
-                                 ? fs::path(descriptor.primary_path).parent_path()
-                                 : fs::path(descriptor.model_dir);
-        if (model_dir.empty()) return false;
-#if defined(_WIN32)
-#if defined(USE_DIRECTML)
-        if (fs::exists(model_dir / "model.directml.bin")) return true;
-        if (fs::exists(model_dir / "model.dml.bin")) return true;
-#elif defined(USE_CUDA)
-        if (fs::exists(model_dir / "model.cuda.bin")) return true;
-        if (fs::exists(model_dir / "cuda" / "model.bin")) return true;
-        if (fs::exists(model_dir / "model.bin")) return true;
-#endif
-        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
-        return false;
-#elif defined(__APPLE__)
-        if (fs::exists(model_dir / "model.metal.bin")) return true;
-        if (fs::exists(model_dir / "metal" / "model.bin")) return true;
-        if (fs::exists(model_dir / "model.bin")) return true;
-        return false;
-#else
-        return false;
-#endif
-    }
-
-    if (descriptor.runtime == "nemotron_cpp") {
-#if defined(_WIN32) && defined(USE_GPTOSS)
-        namespace fs = std::filesystem;
-        fs::path model_dir = descriptor.model_dir.empty()
-                                 ? fs::path(descriptor.primary_path).parent_path()
-                                 : fs::path(descriptor.model_dir);
-        if (model_dir.empty()) return false;
-#if defined(USE_DIRECTML)
-        if (fs::exists(model_dir / "model.directml.bin")) return true;
-        if (fs::exists(model_dir / "model.dml.bin")) return true;
-#elif defined(USE_CUDA)
-        if (fs::exists(model_dir / "model.cuda.bin")) return true;
-        if (fs::exists(model_dir / "cuda" / "model.bin")) return true;
-        if (fs::exists(model_dir / "model.bin")) return true;
-#endif
-        if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
-        return false;
-#elif defined(USE_CUDA)
-        return true;
-#else
-        return false;
-#endif
-    }
 
     return true;
 }

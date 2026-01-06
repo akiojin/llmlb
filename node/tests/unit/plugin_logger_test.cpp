@@ -33,13 +33,13 @@ protected:
 
 // T190-1: プラグインIDプレフィックス付与
 TEST_F(PluginLoggerTest, AddsPluginIdPrefix) {
-    PluginLogger logger("gptoss", test_logger_);
+    PluginLogger logger("plugin_a", test_logger_);
 
     logger.log(LogLevel::kInfo, "Test message");
     test_logger_->flush();
 
     std::string output = log_stream_.str();
-    EXPECT_TRUE(output.find("[gptoss]") != std::string::npos)
+    EXPECT_TRUE(output.find("[plugin_a]") != std::string::npos)
         << "Output: " << output;
     EXPECT_TRUE(output.find("Test message") != std::string::npos);
 }
@@ -77,7 +77,7 @@ TEST_F(PluginLoggerTest, SupportsAllLogLevels) {
 
 // T190-4: タイムスタンプ付与
 TEST_F(PluginLoggerTest, AddsTimestamp) {
-    PluginLogger logger("nemotron", test_logger_);
+    PluginLogger logger("plugin_b", test_logger_);
 
     logger.log(LogLevel::kInfo, "Timestamped");
     test_logger_->flush();

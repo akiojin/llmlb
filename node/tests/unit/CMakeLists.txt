@@ -7,10 +7,8 @@ set(UNIT_TEST_SOURCES
     model_storage_test.cpp
     inference_engine_test.cpp
     llama_engine_kv_cache_test.cpp
-    gptoss_engine_test.cpp
     engine_registry_test.cpp
     engine_host_test.cpp
-    nemotron_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp
@@ -45,8 +43,6 @@ set(UNIT_TEST_SOURCES
     ../../src/core/engine_host.cpp
     ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
-    ../../src/core/gptoss_engine.cpp
-    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
@@ -120,17 +116,6 @@ if(APPLE)
         target_compile_definitions(llm-node-unit-tests PRIVATE USE_METAL=1)
     endif()
 
-    if(BUILD_WITH_GPTOSS)
-        target_link_libraries(llm-node-unit-tests PRIVATE gptoss_metal)
-        add_dependencies(llm-node-unit-tests gptoss_build_metallib)
-        target_link_options(llm-node-unit-tests PRIVATE
-            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
-        )
-        target_include_directories(llm-node-unit-tests PRIVATE
-            ${GPTOSS_METAL_DIR}/include
-            ${GPTOSS_METAL_DIR}/source/include
-        )
-    endif()
 endif()
 
 target_include_directories(llm-node-unit-tests

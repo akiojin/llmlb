@@ -26,12 +26,8 @@ namespace fs = std::filesystem;
 
 // テスト専用ヘルパー（inference_engine.cppで定義）
 namespace llm_node {
-std::string extractGptOssFinalMessageForTest(const std::string& output);
-std::string cleanGptOssOutputForTest(const std::string& output);
-std::string postProcessGeneratedTextForTest(const std::string& output, bool is_gptoss);
+std::string postProcessGeneratedTextForTest(const std::string& output);
 }
-using llm_node::extractGptOssFinalMessageForTest;
-using llm_node::cleanGptOssOutputForTest;
 using llm_node::postProcessGeneratedTextForTest;
 
 class TempDir {
@@ -560,10 +556,10 @@ TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
 
 TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     TempDir tmp;
-    const std::string model_name = "openai/gpt-oss-20b";
+    const std::string model_name = "test/unsupported-model";
     const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
     fs::create_directories(model_dir);
-    std::ofstream(model_dir / "config.json") << R"({"architectures":["GptOssForCausalLM"]})";
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["UnknownForCausalLM"]})";
     std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
     std::ofstream(model_dir / "model.safetensors") << "dummy";
 
@@ -579,7 +575,7 @@ TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     reg.architectures = {"llama"};
     reg.capabilities = {"text"};
     ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RecordingEngine>("gptoss_cpp", "text", nullptr, true, false),
+        std::make_unique<RecordingEngine>("test_cpp", "text", nullptr, true, false),
         reg,
         nullptr));
 
@@ -897,112 +893,6 @@ TEST(InferenceEngineTest, EvictsInferenceCacheWhenOverLimit) {
 
     (void)engine.generateCompletion("a", model_name, params);
     EXPECT_EQ(engine_raw->completionCalls(), 3);
-}
-
-TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {
-    const std::string raw =
-        "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
-        "<|start|>assistant<|channel|>final<|message|>the answer<|end|>";
-
-    auto extracted = extractGptOssFinalMessageForTest(raw);
-    EXPECT_EQ(extracted, "the answer");
-}
-
-TEST(InferenceEngineTest, CleansGptOssOutputByExtractingFinalChannel) {
-    const std::string raw =
-        "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
-        "<|start|>assistant<|channel|>final<|message|>the answer<|end|>";
-
-    auto cleaned = cleanGptOssOutputForTest(raw);
-    EXPECT_EQ(cleaned, "the answer");
-}
-
-TEST(InferenceEngineTest, PostProcessGptOssDoesNotTruncateStartTokenOnlyOutput) {
-    // When gpt-oss emits a header but no <|end|>, we should not truncate to empty.
-    const std::string raw = "<|start|>assistant<|channel|>final<|message|>Hello world";
-
-    auto processed = postProcessGeneratedTextForTest(raw, /*is_gptoss=*/true);
-    EXPECT_EQ(processed, "Hello world");
-}
-
-TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
-#if !defined(__APPLE__)
-    GTEST_SKIP() << "Metal backend is only supported on macOS";
-#else
-    TempDir tmp;
-    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
-    fs::create_directories(model_dir);
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    ModelDescriptor desc;
-    desc.name = "openai/gpt-oss-20b";
-    desc.runtime = "gptoss_cpp";
-    desc.format = "safetensors";
-    desc.model_dir = model_dir.string();
-    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
-
-    EXPECT_FALSE(engine.isModelSupported(desc));
-
-    std::ofstream(model_dir / "model.metal.bin") << "cache";
-#ifdef USE_GPTOSS
-    EXPECT_TRUE(engine.isModelSupported(desc));
-#else
-    EXPECT_FALSE(engine.isModelSupported(desc));
-#endif
-#endif
-}
-
-TEST(InferenceEngineTest, GptOssSupportsSafetensorsOnDirectml) {
-#if !defined(_WIN32)
-    GTEST_SKIP() << "DirectML backend is only supported on Windows";
-#elif !defined(USE_GPTOSS)
-    GTEST_SKIP() << "gpt-oss DirectML engine not enabled";
-#elif !defined(USE_DIRECTML)
-    GTEST_SKIP() << "DirectML support is frozen";
-#else
-    TempDir tmp;
-    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
-    fs::create_directories(model_dir);
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    ModelDescriptor desc;
-    desc.name = "openai/gpt-oss-20b";
-    desc.runtime = "gptoss_cpp";
-    desc.format = "safetensors";
-    desc.model_dir = model_dir.string();
-    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
-
-    EXPECT_FALSE(engine.isModelSupported(desc));
-
-    std::ofstream(model_dir / "model.safetensors.index.json") << R"({"weight_map":{}})";
-    EXPECT_TRUE(engine.isModelSupported(desc));
-#endif
-}
-
-TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {
-    TempDir tmp;
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    ModelDescriptor desc;
-    desc.name = "nvidia/nemotron-test";
-    desc.runtime = "nemotron_cpp";
-    desc.format = "safetensors";
-    desc.model_dir = tmp.path.string();
-    desc.primary_path = (tmp.path / "model.safetensors.index.json").string();
-
-#ifdef USE_CUDA
-    EXPECT_TRUE(engine.isModelSupported(desc));
-#else
-    EXPECT_FALSE(engine.isModelSupported(desc));
-#endif
 }
 
 TEST(InferenceParamsTest, ResolvesEffectiveMaxTokensFromContext) {

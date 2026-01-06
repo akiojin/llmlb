@@ -109,11 +109,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
-        std::vector<std::string> supported_runtimes{"llama_cpp", "nemotron_cpp"};
-
-#ifdef USE_GPTOSS
-        supported_runtimes.push_back("gptoss_cpp");
-#endif
+        std::vector<std::string> supported_runtimes{"llama_cpp"};
 
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR

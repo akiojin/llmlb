@@ -6,7 +6,6 @@ set(INTEGRATION_TEST_SOURCES
     main_test.cpp
     model_sync_download_test.cpp
     model_lifecycle_test.cpp
-    gptoss_safetensors_test.cpp
     ../../src/main.cpp
     ../../src/runtime/state.cpp
     ../../src/api/http_server.cpp
@@ -22,8 +21,6 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/core/engine_registry.cpp
     ../../src/core/engine_host.cpp
     ../../src/core/llama_engine.cpp
-    ../../src/core/gptoss_engine.cpp
-    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
@@ -65,13 +62,6 @@ if(APPLE)
         target_compile_definitions(llm-node-integration-tests PRIVATE USE_METAL=1)
     endif()
 
-    if(BUILD_WITH_GPTOSS)
-        target_link_libraries(llm-node-integration-tests PRIVATE gptoss_metal)
-        add_dependencies(llm-node-integration-tests gptoss_build_metallib)
-        target_link_options(llm-node-integration-tests PRIVATE
-            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
-        )
-    endif()
 endif()
 
 target_include_directories(llm-node-integration-tests

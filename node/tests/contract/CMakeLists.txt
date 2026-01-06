@@ -13,8 +13,6 @@ set(CONTRACT_TEST_SOURCES
     ../../src/core/engine_registry.cpp
     ../../src/core/engine_host.cpp
     ../../src/core/llama_engine.cpp
-    ../../src/core/gptoss_engine.cpp
-    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
@@ -54,21 +52,13 @@ target_include_directories(llm-node-contract-tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
-# Link Metal frameworks / gpt-oss metal library on macOS
+# Link Metal frameworks on macOS
 if(APPLE)
     find_library(METAL_FRAMEWORK Metal)
     find_library(FOUNDATION_FRAMEWORK Foundation)
     if(METAL_FRAMEWORK AND FOUNDATION_FRAMEWORK)
         target_link_libraries(llm-node-contract-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
         target_compile_definitions(llm-node-contract-tests PRIVATE USE_METAL=1)
-    endif()
-
-    if(BUILD_WITH_GPTOSS)
-        target_link_libraries(llm-node-contract-tests PRIVATE gptoss_metal)
-        add_dependencies(llm-node-contract-tests gptoss_build_metallib)
-        target_link_options(llm-node-contract-tests PRIVATE
-            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
-        )
     endif()
 endif()
 

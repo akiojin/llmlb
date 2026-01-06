@@ -354,10 +354,10 @@ TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
     llm_node::set_ready(true);
 
     TempDir tmp;
-    const std::string model_id = "openai/gpt-oss-20b";
+    const std::string model_id = "test/llama-7b";
     auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_id);
     fs::create_directories(model_dir);
-    write_text(model_dir / "config.json", R"({"architectures":["GptOssForCausalLM"]})");
+    write_text(model_dir / "config.json", R"({"architectures":["LlamaForCausalLM"]})");
     write_text(model_dir / "tokenizer.json", R"({"dummy":true})");
     write_text(model_dir / "model.safetensors", "dummy");
 

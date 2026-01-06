@@ -270,11 +270,11 @@ TEST(ModelResolverTest, MetalArtifactIsOptional) {
     TempModelDirs tmp;
     RegistryServer server;
     server.setFiles({
-        {"config.json", R"({"architectures":["GptOssForCausalLM"]})"},
+        {"config.json", R"({"architectures":["LlamaForCausalLM"]})"},
         {"tokenizer.json", "{}"},
         {"model.safetensors", "safetensors"}
     });
-    server.start(20005, "gptoss-safetensors");
+    server.start(20005, "llama-safetensors");
     nlohmann::json manifest = {
         {"files", {
             {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
@@ -286,7 +286,7 @@ TEST(ModelResolverTest, MetalArtifactIsOptional) {
 
     ModelResolver resolver(tmp.local.string(), server.baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
-    auto result = resolver.resolve("gptoss-safetensors");
+    auto result = resolver.resolve("llama-safetensors");
 
     server.stop();
 

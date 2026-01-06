@@ -229,7 +229,7 @@ TEST(EngineRegistryTest, RejectsUnsupportedArchitecture) {
     EngineRegistration reg;
     reg.engine_id = "engine_arch";
     reg.engine_version = "0.1.0";
-    reg.architectures = {"nemotron", "mamba"};
+    reg.architectures = {"custom_arch", "mamba"};
     ASSERT_TRUE(registry.registerEngine(std::move(engine), reg, nullptr));
 
     ModelDescriptor desc;
@@ -239,7 +239,7 @@ TEST(EngineRegistryTest, RejectsUnsupportedArchitecture) {
     std::string error;
     EXPECT_EQ(registry.resolve(desc, "", &error), nullptr);
     EXPECT_NE(error.find("architecture"), std::string::npos);
-    EXPECT_NE(error.find("nemotron"), std::string::npos);
+    EXPECT_NE(error.find("custom_arch"), std::string::npos);
 
     desc.architectures = {"mamba"};
     error.clear();

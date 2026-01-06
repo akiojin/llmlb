@@ -466,8 +466,8 @@ elseif(WIN32 AND BUILD_WITH_GPTOSS)
     set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
 endif()
 
-# Engine plugin: nemotron (DirectML on Windows)
-if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_DIRECTML)
+# Engine plugin: nemotron (Windows, DirectML frozen / CUDA primary)
+if(WIN32 AND BUILD_WITH_GPTOSS AND (BUILD_WITH_DIRECTML OR BUILD_WITH_CUDA))
     add_library(llm_engine_nemotron SHARED
         ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/nemotron_engine_plugin.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/nemotron_engine.cpp

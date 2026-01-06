@@ -80,7 +80,7 @@ fn bench_select_node_by_metrics(c: &mut Criterion) {
             node_count,
             |b, _| {
                 b.to_async(&rt).iter(|| async {
-                    black_box(manager.select_node_by_metrics().await.unwrap());
+                    black_box(manager.select_node_by_metrics(None).await.unwrap());
                 });
             },
         );

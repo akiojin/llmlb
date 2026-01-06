@@ -49,7 +49,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Bootstrap pest_generator
-        run: cargo build --package pest_bootstrap
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
 
       - name: Run cargo fmt
         run: |

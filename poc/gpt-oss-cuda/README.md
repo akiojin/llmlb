@@ -1,7 +1,7 @@
 # PoC: gpt-oss-20b (CUDA / llama.cpp GGUF)
 
 > **注意**: このPoCは参考用であり、仕様・実装の正ではありません。\
-> CUDA DLL（`gptoss_cuda.dll` / `nemotron_cuda.dll`）の管理ソースは `node/src/cuda/` に移行中です。
+> CUDA DLL（`gptoss_cuda.dll` / `nemotron_cuda.dll`）の管理ソースは `node/engines/gptoss/cuda/` と `node/engines/nemotron/cuda/` に移行中です。
 
 このPoCは、`gpt-oss-20b` を **llm-router + llm-node (CUDA / llama.cpp)** でロードして `chat/completions` が返ることを確認します。
 

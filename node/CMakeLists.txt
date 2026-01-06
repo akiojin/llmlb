@@ -381,7 +381,7 @@ endif()
 # OpenAI gpt-oss CUDA runtime (Windows, built in-tree)
 if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_CUDA)
     add_library(gptoss_cuda SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/cuda_runtime_stub.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/cuda/gptoss_cuda_runtime.cpp
     )
     target_include_directories(gptoss_cuda
         PRIVATE
@@ -389,11 +389,10 @@ if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_CUDA)
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
     )
     target_compile_definitions(gptoss_cuda PRIVATE GPTOSS_ABI=__declspec(dllexport))
-    target_compile_definitions(gptoss_cuda PRIVATE CUDA_RUNTIME_NAME=\"gptoss_cuda\")
     set_target_properties(gptoss_cuda PROPERTIES OUTPUT_NAME "gptoss_cuda")
 
     add_library(nemotron_cuda SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/cuda_runtime_stub.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/cuda/nemotron_cuda_runtime.cpp
     )
     target_include_directories(nemotron_cuda
         PRIVATE
@@ -401,7 +400,6 @@ if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_CUDA)
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
     )
     target_compile_definitions(nemotron_cuda PRIVATE GPTOSS_ABI=__declspec(dllexport))
-    target_compile_definitions(nemotron_cuda PRIVATE CUDA_RUNTIME_NAME=\"nemotron_cuda\")
     set_target_properties(nemotron_cuda PROPERTIES OUTPUT_NAME "nemotron_cuda")
 endif()
 
@@ -520,7 +518,6 @@ file(GLOB_RECURSE SOURCES
 )
 # Exclude DirectML files (Windows-only, built separately)
 list(FILTER SOURCES EXCLUDE REGEX ".*/directml/.*")
-list(FILTER SOURCES EXCLUDE REGEX ".*/cuda/.*")
 
 # Include Objective-C++ files on Apple platforms
 if(APPLE)

@@ -1,5 +1,8 @@
 # Nemotron CUDA PoC
 
+> **注意**: このPoCは参考用であり、仕様・実装の正ではありません。\
+> CUDA DLL（`gptoss_cuda.dll` / `nemotron_cuda.dll`）の管理ソースは `node/src/cuda/` に移行中です。
+
 safetensors形式のNemotronモデルをllama.cppに依存せずにCUDAで直接ロード・推論するPoC。
 
 ## 概要

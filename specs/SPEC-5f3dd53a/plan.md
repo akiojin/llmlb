@@ -46,6 +46,7 @@ specs/SPEC-5f3dd53a/
 ## Phase 2: Task planning (方針)
 - Node: CUDA DLL解決/ロード処理
 - Node: CUDAアーティファクト解決ロジック
+- Node: `node/src/cuda/` に CUDA DLL のソースを配置し、CMake で `gptoss_cuda.dll` / `nemotron_cuda.dll` を生成
 - テスト: DLL未配置/アーティファクト欠落のエラー検証
 - ドキュメント: 配置例/環境変数/運用手順
 

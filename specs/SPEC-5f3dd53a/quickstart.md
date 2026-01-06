@@ -3,6 +3,7 @@
 ## 配置
 - DLL: gptoss_cuda.dll / nemotron_cuda.dll
 - CUDAアーティファクト: model.cuda.bin もしくは cuda/model.bin
+- DLL の管理ソースは `node/src/cuda/` に配置する
 
 ## 環境変数 (任意)
 - LLM_NODE_GPTOSS_CUDA_LIB=/path/to/gptoss_cuda.dll

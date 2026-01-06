@@ -481,6 +481,8 @@ endif()
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
+# Exclude DirectML files (Windows-only, built separately)
+list(FILTER SOURCES EXCLUDE REGEX ".*/directml/.*")
 
 # Include Objective-C++ files on Apple platforms
 if(APPLE)

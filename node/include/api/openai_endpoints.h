@@ -3,10 +3,40 @@
 #include <httplib.h>
 #include <string>
 #include <memory>
+#include <vector>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include "utils/config.h"
 
 namespace llm_node {
+
+// OpenAI互換APIのトークン使用量
+struct TokenUsage {
+    int prompt_tokens{0};
+    int completion_tokens{0};
+    int total_tokens{0};
+};
+
+// 上位候補トークンの確率情報
+struct TopLogprob {
+    std::string token;
+    float logprob{0.0f};
+    std::vector<uint8_t> bytes;
+};
+
+// トークンの確率情報
+struct LogprobInfo {
+    std::string token;
+    float logprob{0.0f};
+    std::vector<uint8_t> bytes;
+    std::vector<TopLogprob> top_logprobs;
+};
+
+// 一意のレスポンスIDを生成
+std::string generate_response_id(const std::string& prefix);
+
+// 現在のUNIXタイムスタンプを取得
+int64_t get_current_timestamp();
 
 class ModelRegistry;
 class InferenceEngine;

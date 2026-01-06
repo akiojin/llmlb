@@ -67,14 +67,14 @@ uint64_t read_u64_le(const uint8_t* data) {
 namespace json_parser {
 
 // Skip whitespace
-static void skip_ws(const char*& p, const char* end) {
+void skip_ws(const char*& p, const char* end) {
     while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) {
         ++p;
     }
 }
 
 // Parse string (returns empty on error)
-static std::string parse_string(const char*& p, const char* end) {
+std::string parse_string(const char*& p, const char* end) {
     skip_ws(p, end);
     if (p >= end || *p != '"') return "";
     ++p;  // skip opening quote
@@ -101,7 +101,7 @@ static std::string parse_string(const char*& p, const char* end) {
 }
 
 // Parse number (integer)
-static int64_t parse_int(const char*& p, const char* end) {
+int64_t parse_int(const char*& p, const char* end) {
     skip_ws(p, end);
     bool negative = false;
     if (p < end && *p == '-') {
@@ -117,7 +117,7 @@ static int64_t parse_int(const char*& p, const char* end) {
 }
 
 // Skip to next field
-static void skip_value(const char*& p, const char* end) {
+void skip_value(const char*& p, const char* end) {
     skip_ws(p, end);
     if (p >= end) return;
 

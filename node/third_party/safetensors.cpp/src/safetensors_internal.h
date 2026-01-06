@@ -93,6 +93,20 @@ struct TokenizerImpl {
     std::vector<std::pair<std::string, std::string>> merges;
 };
 
+/* Chat message for template application */
+struct ChatMessage {
+    std::string role;
+    std::string content;
+};
+
+/* Parsed chat template (Jinja2 subset) */
+struct ChatTemplate {
+    std::string raw_template;
+    // Parsed template nodes will be stored here
+    // For MVP, we support a limited Jinja2 subset
+    bool valid = false;
+};
+
 /* Utility functions */
 
 // Convert dtype string to enum
@@ -131,6 +145,39 @@ bool load_tokenizer(
     const std::string& model_dir,
     TokenizerImpl& tokenizer,
     std::string& error
+);
+
+// Tokenize text into token IDs
+bool tokenize(
+    const TokenizerImpl& tokenizer,
+    const std::string& text,
+    std::vector<int32_t>& tokens,
+    bool add_bos,
+    std::string& error
+);
+
+// Detokenize token IDs back to text
+bool detokenize(
+    const TokenizerImpl& tokenizer,
+    const std::vector<int32_t>& tokens,
+    std::string& result,
+    std::string& error
+);
+
+// Parse a Jinja2 chat template
+bool parse_chat_template(
+    const std::string& template_str,
+    ChatTemplate& tmpl,
+    std::string& error
+);
+
+// Apply chat template to messages
+bool apply_chat_template(
+    const ChatTemplate& tmpl,
+    const std::vector<ChatMessage>& messages,
+    std::string& result,
+    std::string& error,
+    bool add_generation_prompt = true
 );
 
 }  // namespace stcpp

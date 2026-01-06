@@ -37,6 +37,9 @@ add_executable(stcpp_unit_tests
     unit/safetensors_parser_test.cpp
     unit/tensor_conversion_test.cpp
     unit/split_loader_test.cpp
+    unit/tokenizer_json_test.cpp
+    unit/tokenization_test.cpp
+    unit/chat_template_test.cpp
 )
 target_link_libraries(stcpp_unit_tests
     PRIVATE
@@ -46,6 +49,7 @@ target_link_libraries(stcpp_unit_tests
 target_include_directories(stcpp_unit_tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
 # Register tests with CTest

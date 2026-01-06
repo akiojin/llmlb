@@ -48,6 +48,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Bootstrap pest_generator
+        run: cargo build --package pest_bootstrap
+
       - name: Run cargo fmt
         run: |
           echo "🎨 Checking Rust formatting..."

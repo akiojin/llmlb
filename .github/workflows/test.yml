@@ -78,7 +78,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
 
       - name: Bootstrap pest_generator
-        run: cargo build --package pest_bootstrap
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
         shell: bash
 
       - name: Run Rust tests
@@ -106,7 +106,7 @@ jobs:
           toolchain: stable
 
       - name: Bootstrap pest_generator
-        run: cargo build --package pest_bootstrap
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
 
       - name: Run OpenAI proxy tests
         run: |

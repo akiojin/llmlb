@@ -68,7 +68,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - name: Bootstrap pest_generator
-        run: cargo build --package pest_bootstrap
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
         shell: bash
       - name: Cargo fmt
         run: cargo fmt --all -- --check
@@ -150,7 +150,7 @@ jobs:
         with:
           toolchain: stable
       - name: Bootstrap pest_generator
-        run: cargo build --package pest_bootstrap
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
       - name: Install cargo-llvm-cov
         run: |
           rustup component add llvm-tools-preview

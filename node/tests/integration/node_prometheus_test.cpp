@@ -14,7 +14,7 @@ TEST(NodePrometheusTest, MetricsEndpointReturnsText) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
     NodeEndpoints node;
     HttpServer server(18090, openai, node);
     server.start();

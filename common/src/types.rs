@@ -112,6 +112,12 @@ pub struct Node {
     /// 同期状態の最終更新時刻
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_updated_at: Option<DateTime<Utc>>,
+    /// このノードで実行可能なモデルID一覧（ノードの/v1/modelsから取得）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executable_models: Vec<String>,
+    /// 推論失敗等で一時的に除外されたモデルID一覧
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_models: Vec<String>,
 }
 
 /// ノード状態
@@ -570,6 +576,8 @@ mod tests {
             sync_state: None,
             sync_progress: None,
             sync_updated_at: None,
+            executable_models: vec!["gpt-oss-20b".to_string(), "nemotron-340b".to_string()],
+            excluded_models: vec!["broken-model".to_string()],
         };
 
         let json = serde_json::to_string(&node).unwrap();
@@ -609,6 +617,8 @@ mod tests {
         assert!(node.sync_state.is_none());
         assert!(node.sync_progress.is_none());
         assert!(node.sync_updated_at.is_none());
+        assert!(node.executable_models.is_empty());
+        assert!(node.excluded_models.is_empty());
     }
 
     #[test]

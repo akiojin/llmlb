@@ -6,6 +6,7 @@
 #include "core/llama_manager.h"
 #include "core/nemotron_engine.h"
 #include "core/request_watchdog.h"
+#include "core/token_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"
 #include "models/model_descriptor.h"
@@ -669,7 +670,19 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     gptoss_reg.formats = {"safetensors"};
     gptoss_reg.architectures = {"gpt_oss"};
     gptoss_reg.capabilities = {"text"};
-    engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
+    bool enable_gptoss = false;
+#if defined(USE_GPTOSS)
+#if defined(_WIN32)
+#ifdef USE_DIRECTML
+    enable_gptoss = true;
+#endif
+#else
+    enable_gptoss = true;
+#endif
+#endif
+    if (enable_gptoss) {
+        engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
+    }
 
     EngineRegistration nemotron_reg;
     nemotron_reg.engine_id = "builtin_nemotron_cpp";
@@ -677,7 +690,15 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     nemotron_reg.formats = {"safetensors"};
     nemotron_reg.architectures = {"nemotron"};
     nemotron_reg.capabilities = {"text"};
-    engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
+    bool enable_nemotron = false;
+#if defined(USE_CUDA)
+    enable_nemotron = true;
+#elif defined(_WIN32) && defined(USE_GPTOSS) && defined(USE_DIRECTML)
+    enable_nemotron = true;
+#endif
+    if (enable_nemotron) {
+        engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
+    }
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
     plugin_restart_last_ = std::chrono::steady_clock::now();
 }
@@ -907,6 +928,14 @@ std::string InferenceEngine::generateChat(
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
@@ -933,17 +962,42 @@ std::string InferenceEngine::generateChat(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
-        try {
-            auto output = engine->generateChat(messages, *desc, params_with_metrics);
-            report_token_metrics(metrics, desc->name, "chat");
-            if (cache_enabled && inference_cache_) {
-                inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+
+        // T136/T137: Exponential backoff retry on crash
+        // T138: Do not retry on cancellation - rethrow immediately
+        constexpr int kMaxRetries = 4;
+        constexpr int kInitialDelayMs = 100;
+        std::exception_ptr last_exception;
+
+        for (int attempt = 0; attempt <= kMaxRetries; ++attempt) {
+            if (attempt > 0) {
+                // Exponential backoff: 100ms, 200ms, 400ms, 800ms
+                int delay_ms = kInitialDelayMs * (1 << (attempt - 1));
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+                spdlog::debug("Retry attempt {} after {}ms delay", attempt, delay_ms);
             }
-            return output;
-        } catch (...) {
-            handlePluginCrash();
-            throw;
+
+            try {
+                auto output = engine->generateChat(messages, *desc, params_with_metrics);
+                report_token_metrics(metrics, desc->name, "chat");
+                if (cache_enabled && inference_cache_) {
+                    inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
+                }
+                return output;
+            } catch (const GenerationCancelledException&) {
+                // T138: Cancellation is not a crash - do not retry, rethrow immediately
+                throw;
+            } catch (...) {
+                last_exception = std::current_exception();
+                if (attempt < kMaxRetries) {
+                    spdlog::warn("Engine crashed on attempt {}, will retry", attempt + 1);
+                }
+            }
         }
+
+        // All retries exhausted
+        handlePluginCrash();
+        std::rethrow_exception(last_exception);
     });
 }
 
@@ -961,6 +1015,14 @@ std::string InferenceEngine::generateChatWithImages(
         spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
         if (messages.empty()) return "";
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
+    }
+
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
     }
 
     return run_with_watchdog([&]() {
@@ -1161,6 +1223,14 @@ std::string InferenceEngine::generateCompletion(
         return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
@@ -1218,6 +1288,14 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
@@ -1235,11 +1313,31 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
+
+        // Token-to-token timeout watchdog
+        std::atomic<bool> token_timeout{false};
+        TokenWatchdog token_watchdog(TokenWatchdog::defaultTimeout(), [&token_timeout]() {
+            token_timeout.store(true);
+        });
+
+        // Wrap on_token callback to kick the watchdog on each token
+        auto wrapped_on_token = [&](const std::string& token) {
+            if (token_timeout.load()) {
+                throw std::runtime_error("Token generation timeout: no token received within timeout period");
+            }
+            token_watchdog.kick();
+            if (on_token) {
+                on_token(token);
+            }
+        };
+
         try {
-            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, on_token);
+            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, wrapped_on_token);
+            token_watchdog.stop();
             report_token_metrics(metrics, desc->name, "stream");
             return output;
         } catch (...) {
+            token_watchdog.stop();
             handlePluginCrash();
             throw;
         }
@@ -1417,6 +1515,14 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
         return results;
     }
 
+    // T181: Reject requests while plugin restart is pending
+    {
+        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+        if (plugin_restart_pending_) {
+            throw std::runtime_error("Engine service unavailable: plugin restart pending");
+        }
+    }
+
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model_name);
@@ -1475,6 +1581,11 @@ void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& di
     std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
     engine_plugins_dir_ = directory;
 }
+
+bool InferenceEngine::isPluginRestartPendingForTest() const {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    return plugin_restart_pending_;
+}
 #endif
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
@@ -1489,8 +1600,14 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
                                  : fs::path(descriptor.model_dir);
         if (model_dir.empty()) return false;
 #if defined(_WIN32)
+#if defined(USE_DIRECTML)
         if (fs::exists(model_dir / "model.directml.bin")) return true;
         if (fs::exists(model_dir / "model.dml.bin")) return true;
+#elif defined(USE_CUDA)
+        if (fs::exists(model_dir / "model.cuda.bin")) return true;
+        if (fs::exists(model_dir / "cuda" / "model.bin")) return true;
+        if (fs::exists(model_dir / "model.bin")) return true;
+#endif
         if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
         return false;
 #elif defined(__APPLE__)
@@ -1510,8 +1627,14 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
                                  ? fs::path(descriptor.primary_path).parent_path()
                                  : fs::path(descriptor.model_dir);
         if (model_dir.empty()) return false;
+#if defined(USE_DIRECTML)
         if (fs::exists(model_dir / "model.directml.bin")) return true;
         if (fs::exists(model_dir / "model.dml.bin")) return true;
+#elif defined(USE_CUDA)
+        if (fs::exists(model_dir / "model.cuda.bin")) return true;
+        if (fs::exists(model_dir / "cuda" / "model.bin")) return true;
+        if (fs::exists(model_dir / "model.bin")) return true;
+#endif
         if (!descriptor.primary_path.empty() && fs::exists(descriptor.primary_path)) return true;
         return false;
 #elif defined(USE_CUDA)

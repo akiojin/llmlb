@@ -83,6 +83,9 @@ TEST(GptOssEngineTest, SafetensorsRequiresMetadataFiles) {
 #ifndef USE_GPTOSS
     GTEST_SKIP() << "USE_GPTOSS not enabled";
 #else
+#if defined(_WIN32) && !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
+#endif
     TempDir tmp;
     auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
     fs::create_directories(model_dir);
@@ -111,6 +114,9 @@ TEST(GptOssEngineTest, SafetensorsIndexRequiresAllShards) {
 #ifndef USE_GPTOSS
     GTEST_SKIP() << "USE_GPTOSS not enabled";
 #else
+#if defined(_WIN32) && !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
+#endif
     TempDir tmp;
     auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
     fs::create_directories(model_dir);
@@ -138,6 +144,9 @@ TEST(GptOssEngineTest, GeneratesTextWhenGpuArtifactsPresent) {
 #ifndef USE_GPTOSS
     GTEST_SKIP() << "USE_GPTOSS not enabled";
 #else
+#if defined(_WIN32) && !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
+#endif
     std::string error;
     auto desc_opt = build_gptoss_descriptor_from_env(error);
     if (!desc_opt) {
@@ -201,6 +210,8 @@ TEST(GptOssEngineTest, DirectmlRuntimeMissingReportsError) {
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
     GTEST_SKIP() << "USE_GPTOSS not enabled";
+#elif !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
 #else
     TempDir tmp;
     auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
@@ -243,6 +254,6 @@ TEST(GptOssEngineTest, DirectmlRuntimeMissingReportsError) {
     GptOssEngine engine;
     auto res = engine.loadModel(desc);
     EXPECT_FALSE(res.success);
-    EXPECT_NE(res.error_message.find("DirectML runtime"), std::string::npos);
+    EXPECT_NE(res.error_message.find("runtime library"), std::string::npos);
 #endif
 }

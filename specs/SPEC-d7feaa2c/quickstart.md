@@ -1,28 +1,24 @@
-# クイックスタート: Nodeエンジンローダー抽象化
-
+# クイチE��スターチE Nodeエンジンローダー抽象匁E
 ## 前提条件
 
-| 項目 | 要件 |
+| 頁E�� | 要件 |
 |------|------|
-Windows (CUDA)
-| GPU | Apple Silicon または DirectX 12対応GPU |
+| OS | Windows (CUDA) |
+| GPU | NVIDIA CUDA-capable GPU |
 | プラグイン | `engines/` 配下に配置済み |
 
-## 基本的な使用例
-
-### プラグインディレクトリ構成
+## 基本皁E��使用侁E
+### プラグインチE��レクトリ構�E
 
 ```bash
-# macOS (Metal) の場合
-ls engines/llama_cpp/metal/
+# macOS (Metal) の場吁Els engines/llama_cpp/metal/
 
-# 出力例:
+# 出力侁E
 # manifest.json
 # libllama_engine.dylib
 ```
 
-### manifest.json の確認
-
+### manifest.json の確誁E
 ```bash
 cat engines/llama_cpp/metal/manifest.json
 ```
@@ -39,23 +35,18 @@ cat engines/llama_cpp/metal/manifest.json
 }
 ```
 
-### ノードの起動
-
+### ノ�Eド�E起勁E
 ```bash
-# Metal環境で起動
-./llm-node --engines-dir ./engines
+# Metal環墁E��起勁E./llm-node --engines-dir ./engines
 
-# カスタムVRAM上限を指定
-./llm-node --engines-dir ./engines --vram-limit 8G
+# カスタムVRAM上限を指宁E./llm-node --engines-dir ./engines --vram-limit 8G
 ```
 
-### プラグイン一覧の確認
-
+### プラグイン一覧の確誁E
 ```bash
-# Node API経由でロード済みエンジンを確認
-curl http://localhost:3000/api/engines
+# Node API経由でロード済みエンジンを確誁Ecurl http://localhost:3000/api/engines
 
-# レスポンス例:
+# レスポンス侁E
 {
   "engines": [
     {
@@ -69,11 +60,9 @@ curl http://localhost:3000/api/engines
 }
 ```
 
-### モデルのロード
-
+### モチE��のローチE
 ```bash
-# 指定アーキテクチャのモデルをロード
-curl -X POST http://localhost:3000/api/models/load \
+# 持E��アーキチE��チャのモチE��をローチEcurl -X POST http://localhost:3000/api/models/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_id": "llama-3.2-1b",
@@ -81,10 +70,9 @@ curl -X POST http://localhost:3000/api/models/load \
   }'
 ```
 
-### 推論の実行
-
+### 推論�E実衁E
 ```bash
-# ストリーミング生成
+# ストリーミング生�E
 curl -X POST http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -96,8 +84,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## プラグイン開発
 
-### 最小限のプラグイン実装
-
+### 最小限のプラグイン実裁E
 ```c
 // my_engine.c
 #include "engine_api.h"
@@ -113,35 +100,30 @@ ENGINE_API EngineInfo* engine_get_info(void) {
 }
 
 ENGINE_API int engine_init(EngineConfig* config) {
-    // 初期化処理
-    return ERR_OK;
+    // 初期化�E琁E    return ERR_OK;
 }
 
 ENGINE_API int engine_load_model(const char* model_path) {
-    // モデルロード処理
-    return ERR_OK;
+    // モチE��ロード�E琁E    return ERR_OK;
 }
 
 ENGINE_API int engine_generate(
     const char* prompt,
     TokenResult** results
 ) {
-    // 推論処理
-    return ERR_OK;
+    // 推論�E琁E    return ERR_OK;
 }
 
 ENGINE_API void engine_shutdown(void) {
-    // クリーンアップ処理
-}
+    // クリーンアチE�E処琁E}
 ```
 
-### ビルド（macOS）
-
+### ビルド！EacOS�E�E
 ```bash
 clang -shared -fPIC -o libmy_engine.dylib my_engine.c
 ```
 
-### manifest.json の作成
+### manifest.json の作�E
 
 ```json
 {
@@ -168,7 +150,7 @@ mv manifest.json engines/my_engine/metal/
 ### ABI不一致
 
 ```bash
-# プラグインのABIバージョンがホストと不一致
+# プラグインのABIバ�Eジョンが�Eストと不一致
 {
   "error": {
     "message": "ABI version mismatch: expected 1, got 2",
@@ -178,11 +160,10 @@ mv manifest.json engines/my_engine/metal/
 }
 ```
 
-### アーキテクチャ不一致
+### アーキチE��チャ不一致
 
 ```bash
-# モデルアーキテクチャがプラグインで未対応
-{
+# モチE��アーキチE��チャが�Eラグインで未対忁E{
   "error": {
     "message": "Architecture 'nemotron' not supported by plugin 'llama_cpp'",
     "type": "unsupported_error",
@@ -194,7 +175,7 @@ mv manifest.json engines/my_engine/metal/
 ### VRAM不足
 
 ```bash
-# モデルロード時のVRAM不足
+# モチE��ロード時のVRAM不足
 {
   "error": {
     "message": "Insufficient VRAM: required 16GB, available 8GB",
@@ -204,29 +185,27 @@ mv manifest.json engines/my_engine/metal/
 }
 ```
 
-## 制限事項
-
-| 項目 | 制限 |
+## 制限事頁E
+| 頁E�� | 制陁E|
 |------|------|
-| ABI互換 | 同一ABIバージョンのみ |
-| GPU必須 | CPUフォールバック非対応 |
-| プラグイン競合 | 同一IDは先着優先 |
+| ABI互換 | 同一ABIバ�Eジョンのみ |
+| GPU忁E��E| CPUフォールバック非対忁E|
+| プラグイン競吁E| 同一IDは先着優允E|
 | ネットワーク | プラグインからの外部通信禁止 |
-| サンドボックス | なし（信頼前提） |
+| サンド�EチE��ス | なし（信頼前提�E�E|
 
 ## 設定オプション
 
-### 環境変数
+### 環墁E��数
 
 ```bash
-# プラグインディレクトリ
+# プラグインチE��レクトリ
 export LLM_NODE_ENGINES_DIR=/custom/path/engines
 
 # VRAM使用上限
 export LLM_NODE_VRAM_LIMIT=8589934592  # 8GB in bytes
 
-# リソース監視間隔
-export LLM_NODE_MONITOR_INTERVAL_MS=1000
+# リソース監視間隁Eexport LLM_NODE_MONITOR_INTERVAL_MS=1000
 ```
 
 ### コマンドラインオプション
@@ -238,34 +217,27 @@ llm-node \
   --monitor-interval 1000
 ```
 
-## トラブルシューティング
+## トラブルシューチE��ング
 
-### プラグインが検出されない
-
+### プラグインが検�EされなぁE
 ```bash
-# ディレクトリ構成を確認
-ls -R engines/
+# チE��レクトリ構�Eを確誁Els -R engines/
 
-# manifest.jsonの構文を確認
-cat engines/llama_cpp/metal/manifest.json | jq .
+# manifest.jsonの構文を確誁Ecat engines/llama_cpp/metal/manifest.json | jq .
 ```
 
 ### ABIエラー
 
 ```bash
-# ホストのABIバージョンを確認
-./llm-node --version
+# ホスト�EABIバ�Eジョンを確誁E./llm-node --version
 
-# プラグインのABIバージョンを確認
-cat engines/llama_cpp/metal/manifest.json | jq .abi_version
+# プラグインのABIバ�Eジョンを確誁Ecat engines/llama_cpp/metal/manifest.json | jq .abi_version
 ```
 
-### GPU検出失敗
-
+### GPU検�E失敁E
 ```bash
-# macOS: Metal対応を確認
-system_profiler SPDisplaysDataType
+# macOS: Metal対応を確誁Esystem_profiler SPDisplaysDataType
 
-# Windows: DirectX 12対応を確認
-dxdiag
+# Windows: DirectX 12対応を確誁Edxdiag
 ```
+

@@ -18,6 +18,9 @@ public:
     std::string runtime() const override { return "gptoss_cpp"; }
     bool supportsTextGeneration() const override {
 #ifdef USE_GPTOSS
+#if defined(_WIN32) && !defined(USE_DIRECTML) && !defined(USE_CUDA)
+        return false;
+#endif
         return true;
 #else
         return false;

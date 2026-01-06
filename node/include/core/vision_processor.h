@@ -45,4 +45,9 @@ private:
     static bool fetchHttpUrl(const std::string& url, std::vector<uint8_t>& out, std::string& error);
 };
 
+/// モデルディレクトリ内のmmprojファイルを自動検出
+/// @param model_dir モデルディレクトリのパス
+/// @return 見つかったmmprojファイルのパス（見つからない場合はnullopt）
+std::optional<std::string> findMmprojInDirectory(const std::string& model_dir);
+
 }  // namespace llm_node

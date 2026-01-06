@@ -19,7 +19,7 @@ public:
 
     std::string runtime() const override { return "nemotron_cpp"; }
     bool supportsTextGeneration() const override {
-#if defined(_WIN32) && defined(USE_GPTOSS)
+#if defined(_WIN32) && defined(USE_GPTOSS) && (defined(USE_DIRECTML) || defined(USE_CUDA))
         return true;
 #elif defined(USE_CUDA)
         return true;

@@ -185,12 +185,30 @@ fs::path resolve_nemotron_directml_model_bin(const fs::path& model_dir) {
     return {};
 }
 
+fs::path resolve_nemotron_cuda_model_bin(const fs::path& model_dir) {
+    const fs::path p1 = model_dir / "model.cuda.bin";
+    if (fs::exists(p1)) return p1;
+    const fs::path p2 = model_dir / "cuda" / "model.bin";
+    if (fs::exists(p2)) return p2;
+    const fs::path p3 = model_dir / "model.bin";
+    if (fs::exists(p3)) return p3;
+    return {};
+}
+
 fs::path resolve_nemotron_directml_model_file(const ModelDescriptor& descriptor) {
     fs::path model_dir = descriptor.model_dir.empty()
                              ? fs::path(descriptor.primary_path).parent_path()
                              : fs::path(descriptor.model_dir);
     if (model_dir.empty()) return {};
     return resolve_nemotron_directml_model_bin(model_dir);
+}
+
+fs::path resolve_nemotron_cuda_model_file(const ModelDescriptor& descriptor) {
+    fs::path model_dir = descriptor.model_dir.empty()
+                             ? fs::path(descriptor.primary_path).parent_path()
+                             : fs::path(descriptor.model_dir);
+    if (model_dir.empty()) return {};
+    return resolve_nemotron_cuda_model_bin(model_dir);
 }
 
 struct NemotronApi {
@@ -253,7 +271,7 @@ bool load_nemotron_symbol(HMODULE handle, const char* name, Fn& out, std::string
 std::shared_ptr<NemotronApi> load_nemotron_api_from_library(const fs::path& path, std::string& error) {
     HMODULE handle = LoadLibraryA(path.string().c_str());
     if (!handle) {
-        error = "nemotron DirectML runtime library load failed: " + path.string();
+        error = "nemotron runtime library load failed: " + path.string();
         return nullptr;
     }
 
@@ -293,11 +311,20 @@ std::shared_ptr<NemotronApi> resolve_nemotron_api(const fs::path& model_dir, std
     }
 
 #ifdef _WIN32
-    const char* override_path = std::getenv("LLM_NODE_NEMOTRON_DML_LIB");
+    const char* override_path = nullptr;
+    fs::path default_name;
+#if defined(USE_DIRECTML)
+    override_path = std::getenv("LLM_NODE_NEMOTRON_DML_LIB");
+    default_name = "nemotron_directml.dll";
+#elif defined(USE_CUDA)
+    override_path = std::getenv("LLM_NODE_NEMOTRON_CUDA_LIB");
+    default_name = "nemotron_cuda.dll";
+#endif
+
     if (override_path && *override_path) {
         fs::path path(override_path);
         if (!fs::exists(path)) {
-            error = "nemotron DirectML runtime library not found: " + path.string();
+            error = "nemotron runtime library not found: " + path.string();
             return nullptr;
         }
         auto api = load_nemotron_api_from_library(path, error);
@@ -307,24 +334,35 @@ std::shared_ptr<NemotronApi> resolve_nemotron_api(const fs::path& model_dir, std
         return api;
     }
 
-    const fs::path model_lib = model_dir.empty() ? fs::path() : (model_dir / "nemotron_directml.dll");
-    if (!model_lib.empty() && fs::exists(model_lib)) {
-        auto api = load_nemotron_api_from_library(model_lib, error);
-        if (api) {
-            cached = api;
+    if (!default_name.empty()) {
+        const fs::path model_lib = model_dir.empty() ? fs::path() : (model_dir / default_name);
+        if (!model_lib.empty() && fs::exists(model_lib)) {
+            auto api = load_nemotron_api_from_library(model_lib, error);
+            if (api) {
+                cached = api;
+            }
+            return api;
         }
+
+        auto api = load_nemotron_api_from_library(default_name, error);
+        if (!api) {
+#if defined(USE_DIRECTML)
+            error = "nemotron DirectML runtime library not found (set LLM_NODE_NEMOTRON_DML_LIB)";
+#elif defined(USE_CUDA)
+            error = "nemotron CUDA runtime library not found (set LLM_NODE_NEMOTRON_CUDA_LIB)";
+#else
+            error = "nemotron runtime library not found";
+#endif
+            return nullptr;
+        }
+        cached = api;
         return api;
     }
 
-    auto api = load_nemotron_api_from_library("nemotron_directml.dll", error);
-    if (!api) {
-        error = "nemotron DirectML runtime library not found (set LLM_NODE_NEMOTRON_DML_LIB)";
-        return nullptr;
-    }
-    cached = api;
-    return api;
+    error = "nemotron runtime library is disabled";
+    return nullptr;
 #else
-    error = "nemotron DirectML runtime is only supported on Windows";
+    error = "nemotron runtime is only supported on Windows";
     return nullptr;
 #endif
 }
@@ -547,9 +585,9 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
         }
     }
 
-#if !defined(_WIN32) || !defined(USE_GPTOSS)
+#if !defined(_WIN32) || !defined(USE_GPTOSS) || (!defined(USE_DIRECTML) && !defined(USE_CUDA))
     result.success = false;
-    result.error_message = "Nemotron DirectML engine requires Windows build with USE_GPTOSS";
+    result.error_message = "Nemotron Windows runtime is not enabled (build with CUDA or DirectML)";
     result.error_code = EngineErrorCode::kUnsupported;
     return nullptr;
 #else
@@ -608,11 +646,24 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
         }
     }
 
-    const fs::path model_file = resolve_nemotron_directml_model_file(descriptor);
+    const fs::path model_file =
+#if defined(USE_DIRECTML)
+        resolve_nemotron_directml_model_file(descriptor);
+#elif defined(USE_CUDA)
+        resolve_nemotron_cuda_model_file(descriptor);
+#else
+        fs::path{};
+#endif
     if (model_file.empty()) {
         result.success = false;
         result.error_message =
+#if defined(USE_DIRECTML)
             "nemotron DirectML model artifact not found (expected model.directml.bin or model.dml.bin)";
+#elif defined(USE_CUDA)
+            "nemotron CUDA model artifact not found (expected model.cuda.bin or cuda/model.bin)";
+#else
+            "nemotron Windows runtime not enabled";
+#endif
         result.error_code = EngineErrorCode::kLoadFailed;
         return nullptr;
     }
@@ -621,7 +672,7 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
     if (!api) {
         result.success = false;
         if (result.error_message.empty()) {
-            result.error_message = "nemotron DirectML runtime library not available";
+            result.error_message = "nemotron runtime library not available";
         }
         result.error_code = EngineErrorCode::kUnsupported;
         return nullptr;
@@ -633,7 +684,7 @@ std::shared_ptr<NemotronEngine::LoadedModel> NemotronEngine::ensureLoaded(
         result.success = false;
         result.error_message = "nemotron model_create_from_file failed: status=" + std::to_string(status);
         if (status == gptoss_status_unsupported_argument) {
-            result.error_message += " (unsupported DirectML artifact/layout)";
+            result.error_message += " (unsupported GPU artifact/layout)";
             result.error_code = EngineErrorCode::kUnsupported;
         } else {
             result.error_code = EngineErrorCode::kLoadFailed;
@@ -710,7 +761,7 @@ NemotronEngine::~NemotronEngine() {
 
 ModelLoadResult NemotronEngine::loadModel(const ModelDescriptor& descriptor) {
     ModelLoadResult result;
-#if defined(_WIN32) && defined(USE_GPTOSS)
+#if defined(_WIN32) && defined(USE_GPTOSS) && (defined(USE_DIRECTML) || defined(USE_CUDA))
     (void)ensureLoaded(descriptor, result);
     return result;
 #else
@@ -842,7 +893,7 @@ std::string NemotronEngine::generateCompletionInternal(
     const InferenceParams& params,
     const std::vector<ChatMessage>* chat_messages,
     const std::function<void(const std::string&)>& on_token) const {
-#if !defined(_WIN32) || !defined(USE_GPTOSS)
+#if !defined(_WIN32) || !defined(USE_GPTOSS) || (!defined(USE_DIRECTML) && !defined(USE_CUDA))
     (void)prompt;
     (void)descriptor;
     (void)params;
@@ -1057,7 +1108,14 @@ uint64_t NemotronEngine::getModelVramBytes(const ModelDescriptor& descriptor) co
         return 0;
     }
     const fs::path model_dir(descriptor.model_dir);
-    const fs::path model_file = resolve_nemotron_directml_model_file(descriptor);
+    const fs::path model_file =
+#if defined(USE_DIRECTML)
+        resolve_nemotron_directml_model_file(descriptor);
+#elif defined(USE_CUDA)
+        resolve_nemotron_cuda_model_file(descriptor);
+#else
+        fs::path{};
+#endif
     if (model_file.empty()) {
         return 0;
     }

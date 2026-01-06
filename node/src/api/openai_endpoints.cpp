@@ -386,15 +386,16 @@ bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& e
     return true;
 }
 
-OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
-    : registry_(registry), engine_(engine), config_(config) {}
+OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config, GpuBackend backend)
+    : registry_(registry), engine_(engine), config_(config), backend_(backend) {}
 
 void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
+    // SPEC-93536000: GPU互換モデルのみを返す
     server.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
         json body;
         body["object"] = "list";
         body["data"] = json::array();
-        for (const auto& id : registry_.listModels()) {
+        for (const auto& id : registry_.listExecutableModels(backend_)) {
             body["data"].push_back({{"id", id}, {"object", "model"}});
         }
         setJson(res, body);

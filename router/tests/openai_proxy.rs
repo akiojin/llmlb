@@ -55,29 +55,35 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
 
     // ノードをready状態にしておく（初期化待ちやモデル未ロードで404/503にならないように）
     let node_id = register_response.node_id;
-    state.registry.approve(node_id).await.unwrap();
 
     // レジストリにロード済みモデル・初期化解除を反映
+    // SPEC-93536000: executable_modelsを追加し、ready_modelsを設定してからapprove
+    let models = vec![
+        "gpt-oss-20b".to_string(),
+        "gpt-oss-120b".to_string(),
+        "test-model".to_string(),
+        "test-embed".to_string(), // embeddings test用
+    ];
     state
         .registry
         .update_last_seen(
             node_id,
-            Some(vec![
-                "gpt-oss-20b".to_string(),
-                "gpt-oss-120b".to_string(),
-                "test-model".to_string(),
-            ]),
+            Some(models.clone()),
             None, // loaded_embedding_models
             None,
             None,
             None,
             Some(false),
-            Some((4, 4)),
+            Some((5, 5)), // ready_models: 5/5 = ready
             None,
             None,
+            Some(models), // executable_models
         )
         .await
         .ok();
+
+    // ready_modelsが設定された後にapproveを呼ぶことで、Online状態になる
+    state.registry.approve(node_id).await.unwrap();
 
     state
         .load_manager
@@ -96,7 +102,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
             active_requests: 0,
             average_response_time_ms: Some(1.0),
             initializing: false,
-            ready_models: Some((4, 4)),
+            ready_models: Some((5, 5)),
         })
         .await
         .unwrap();
@@ -473,8 +479,8 @@ async fn test_openai_models_list_success() {
     )
     .unwrap();
 
+    // SPEC-93536000: /v1/modelsはオンラインノードのexecutable_modelsを集約する
     // ローカルモデルのみをフィルタ（クラウドプロバイダープレフィックスを除外）
-    // SPEC-82491000でクラウドモデルが追加されたため、ローカルモデルのみを検証
     let cloud_prefixes = ["openai:", "google:", "anthropic:"];
     let local_models: Vec<&serde_json::Value> = value["data"]
         .as_array()
@@ -488,9 +494,25 @@ async fn test_openai_models_list_success() {
         })
         .unwrap_or_default();
 
+    // SPEC-93536000: ノードのexecutable_modelsからモデルが返される
+    // build_state_with_mockで設定した4モデルが返されるべき
     assert!(
-        local_models.is_empty(),
-        "/v1/models should have no local models when no downloaded models exist"
+        !local_models.is_empty(),
+        "/v1/models should return models from online nodes' executable_models"
+    );
+
+    // 期待されるモデルIDが含まれていることを確認
+    let model_ids: Vec<&str> = local_models
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()))
+        .collect();
+    assert!(
+        model_ids.contains(&"gpt-oss-20b"),
+        "gpt-oss-20b should be in response"
+    );
+    assert!(
+        model_ids.contains(&"test-model"),
+        "test-model should be in response"
     );
 }
 
@@ -523,5 +545,14 @@ async fn test_openai_model_detail_success() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    // SPEC-93536000: gpt-oss-20bはexecutable_modelsに含まれているので200を返す
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["id"], "gpt-oss-20b");
+    assert_eq!(value["object"], "model");
 }

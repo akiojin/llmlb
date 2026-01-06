@@ -64,6 +64,8 @@ fn create_gpu_node(machine_name: &str) -> Node {
         sync_state: None,
         sync_progress: None,
         sync_updated_at: None,
+        executable_models: Vec::new(),
+        excluded_models: Vec::new(),
     }
 }
 
@@ -101,6 +103,8 @@ fn create_no_gpu_node(machine_name: &str) -> Node {
         sync_state: None,
         sync_progress: None,
         sync_updated_at: None,
+        executable_models: Vec::new(),
+        excluded_models: Vec::new(),
     }
 }
 

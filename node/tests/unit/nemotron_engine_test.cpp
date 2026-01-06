@@ -89,7 +89,7 @@ TEST(NemotronEngineTest, LoadsIndexAndValidatesShard) {
 
 TEST(NemotronEngineTest, SupportsTextGenerationDependsOnCuda) {
     llm_node::NemotronEngine engine;
-#if defined(_WIN32) && defined(USE_GPTOSS)
+#if defined(_WIN32) && defined(USE_GPTOSS) && defined(USE_DIRECTML)
     EXPECT_TRUE(engine.supportsTextGeneration());
 #elif defined(USE_CUDA)
     EXPECT_TRUE(engine.supportsTextGeneration());
@@ -122,6 +122,8 @@ TEST(NemotronEngineTest, DirectmlRuntimeMissingReportsError) {
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
     GTEST_SKIP() << "USE_GPTOSS not enabled";
+#elif !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
 #else
     TempDir tmp;
     auto model_dir = tmp.base / "nvidia" / "nemotron";
@@ -163,7 +165,7 @@ TEST(NemotronEngineTest, DirectmlRuntimeMissingReportsError) {
     llm_node::NemotronEngine engine;
     auto result = engine.loadModel(desc);
     EXPECT_FALSE(result.success);
-    EXPECT_NE(result.error_message.find("DirectML runtime"), std::string::npos);
+    EXPECT_NE(result.error_message.find("runtime library"), std::string::npos);
 #endif
 }
 
@@ -172,6 +174,8 @@ TEST(NemotronEngineTest, MissingPrimaryPathReportsError) {
     GTEST_SKIP() << "DirectML backend is only supported on Windows";
 #elif !defined(USE_GPTOSS)
     GTEST_SKIP() << "USE_GPTOSS not enabled";
+#elif !defined(USE_DIRECTML)
+    GTEST_SKIP() << "DirectML support is frozen";
 #else
     TempDir tmp;
     auto model_dir = tmp.base / "nvidia" / "nemotron";

@@ -1,8 +1,8 @@
 # 機能仕様一覧
 
-> 最終更新: 2026-01-02 (廃止SPEC整理)
+> 最終更新: 2026-01-06 (SPEC-5f3dd53a追加)
 >
-> 総SPEC数: **45** | 廃止: 4 | plan.md欠損: 0 | 依存関係完全化済み
+> 総SPEC数: **47** | 廃止: 4 | plan.md欠損: 0 | 依存関係完全化済み
 
 **凡例:**
 
@@ -25,6 +25,7 @@
 | `SPEC-1f2a9c3d` | SPEC-799b8e2b | ログAPI |
 | `SPEC-26006000` | SPEC-dcaeaec4 | 音声対応 |
 | `SPEC-2c0e5a9b` | SPEC-3fc2c1e4, SPEC-d7feaa2c, SPEC-08d2b908, SPEC-11106000 | gpt-oss実行 |
+| `SPEC-5f3dd53a` | SPEC-d7feaa2c, SPEC-2c0e5a9b, SPEC-3fc2c1e4 | CUDA DLL (gpt-oss/nemotron) |
 | `SPEC-32637000` | SPEC-6c2d9f1e | ルーティング |
 | `SPEC-32e2b31a` | - | アーカイブ |
 | `SPEC-35375000` | - | 基盤機能 |
@@ -61,6 +62,7 @@
 | `SPEC-efff1da7` | - | PoC |
 | `SPEC-fbc50d97` | SPEC-63acef08 | 履歴保存 |
 | `SPEC-8ae67d67` | - | 🗑️ 廃止 |
+| `SPEC-93536000` | SPEC-dcaeaec4, SPEC-05098000 | モデル対応ルーティング |
 
 ### 基盤SPEC（依存なし・他が依存）
 
@@ -113,6 +115,7 @@
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
+| `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | ✅ | P1 | ✅ |
 
 ## 🛤️ ルーティング
 
@@ -164,7 +167,7 @@
 
 ## 優先度サマリー
 
-### P1（最優先）- 20件
+### P1（最優先）- 21件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
@@ -189,6 +192,7 @@
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
+| `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | 完了 |
 
 ### P2（重要）- 18件
 

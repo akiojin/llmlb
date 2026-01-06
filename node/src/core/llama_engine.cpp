@@ -562,6 +562,12 @@ std::string LlamaEngine::generateChat(
     }
 
     for (size_t i = 0; i < effective_max_tokens; i++) {
+        // T182: アボートチェック（トークン間タイムアウト等）
+        if (params.abort_callback && params.abort_callback(params.abort_callback_ctx)) {
+            spdlog::warn("Generation aborted by abort_callback at token {}", i);
+            break;
+        }
+
         // トークンサンプリング
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
@@ -753,6 +759,12 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     }
 
     for (size_t i = 0; i < effective_max_tokens && !stop_stream.stopped(); i++) {
+        // T182: アボートチェック（トークン間タイムアウト等）
+        if (params.abort_callback && params.abort_callback(params.abort_callback_ctx)) {
+            spdlog::warn("Generation aborted by abort_callback at token {}", i);
+            break;
+        }
+
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
         if (llama_vocab_is_eog(vocab, new_token)) {

@@ -441,4 +441,130 @@ std::optional<std::string> LlamaManager::getLeastRecentlyUsedModel() const {
     return oldest_model;
 }
 
+// =============================================================================
+// T141: 並行ロード用メソッド
+// =============================================================================
+
+void LlamaManager::setMaxVramBytes(size_t max_bytes) {
+    max_vram_bytes_ = max_bytes;
+}
+
+size_t LlamaManager::getMaxVramBytes() const {
+    return max_vram_bytes_;
+}
+
+size_t LlamaManager::estimateVramRequired(const std::string& model_path) const {
+    std::string canonical = canonicalizePath(model_path);
+
+    // ファイル存在チェック
+    if (!fs::exists(canonical)) {
+        return 0;
+    }
+
+    // ファイルサイズをVRAM必要量として推定
+    // GGUFモデルは量子化されているため、ファイルサイズ ≈ VRAM使用量
+    // 若干のオーバーヘッド（KVキャッシュ等）を考慮して1.2倍
+    try {
+        size_t file_size = fs::file_size(canonical);
+        return static_cast<size_t>(file_size * 1.2);
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+bool LlamaManager::canLoadConcurrently(const std::string& model_path, size_t required_vram) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // VRAM制限が設定されていない場合は常に許可
+    if (max_vram_bytes_ == 0) {
+        return true;
+    }
+
+    // 現在使用中のVRAM（ロード済み + ロード中）
+    size_t current_usage = memory_bytes_;
+    for (const auto& pair : loading_models_) {
+        current_usage += pair.second;
+    }
+
+    // 新しいモデルを追加しても上限を超えないか確認
+    return (current_usage + required_vram) <= max_vram_bytes_;
+}
+
+bool LlamaManager::isLoading(const std::string& model_path) const {
+    std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    return loading_models_.count(canonical) > 0;
+}
+
+void LlamaManager::markAsLoading(const std::string& model_path, size_t estimated_vram) {
+    std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    loading_models_[canonical] = estimated_vram;
+    spdlog::debug("Model marked as loading: {} (estimated {}B)", canonical, estimated_vram);
+}
+
+void LlamaManager::markAsLoaded(const std::string& model_path) {
+    std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    loading_models_.erase(canonical);
+    spdlog::debug("Model marked as loaded: {}", canonical);
+}
+
+// =============================================================================
+// T179: VRAM部分ロード障害対応
+// =============================================================================
+
+void LlamaManager::handleLoadFailure(const std::string& model_path, bool evict_lru) {
+    std::string canonical = canonicalizePath(model_path);
+
+    // loading状態をクリア
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        loading_models_.erase(canonical);
+    }
+
+    spdlog::warn("Load failed for model: {}", canonical);
+
+    // evict_lru=trueの場合、VRAM確保のためLRUモデルをアンロード
+    if (evict_lru) {
+        auto lru = getLeastRecentlyUsedModel();
+        if (lru.has_value() && lru.value() != canonical) {
+            spdlog::info("Evicting LRU model after load failure: {}", lru.value());
+            unloadModel(lru.value());
+        }
+    }
+}
+
+size_t LlamaManager::evictForVram(size_t required_vram) {
+    size_t freed = 0;
+
+    while (freed < required_vram) {
+        auto lru = getLeastRecentlyUsedModel();
+        if (!lru.has_value()) {
+            break;  // アンロード可能なモデルがない
+        }
+
+        // モデルサイズを取得
+        size_t model_size = 0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = loaded_models_.find(lru.value());
+            if (it != loaded_models_.end() && it->second->model) {
+                model_size = llama_model_size(it->second->model);
+            }
+        }
+
+        spdlog::info("Evicting model for VRAM recovery: {} ({}B)", lru.value(), model_size);
+
+        if (unloadModel(lru.value())) {
+            freed += model_size;
+        } else {
+            break;  // アンロード失敗
+        }
+    }
+
+    spdlog::info("VRAM recovery: freed {}B (requested {}B)", freed, required_vram);
+    return freed;
+}
+
 }  // namespace llm_node

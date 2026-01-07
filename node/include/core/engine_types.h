@@ -35,6 +35,13 @@ using OnTokenCallback = void (*)(void* ctx, uint32_t token_id, uint64_t timestam
 /// T182: Callback to check if generation should abort (returns true to abort)
 using AbortCallback = bool (*)(void* ctx);
 
+/// Token-level log probability information for OpenAI API compatibility
+struct TokenLogprob {
+    std::string token;                                      // The generated token
+    double logprob{0.0};                                   // Log probability of the token
+    std::vector<std::pair<std::string, double>> top_logprobs;  // Top alternative tokens with logprobs
+};
+
 struct InferenceParams {
     size_t max_tokens{0};
     float temperature{0.8f};
@@ -56,6 +63,9 @@ struct InferenceParams {
     int n{1};                       // 1 ~ 8 (生成する候補数)
     bool logprobs{false};           // logprobs を返すか
     int top_logprobs{0};            // 0 ~ 20 (上位候補数)
+
+    // Output: if non-null and logprobs=true, filled with actual logprob data
+    std::vector<TokenLogprob>* out_logprobs{nullptr};
 };
 
 inline size_t resolve_effective_max_tokens(size_t requested,

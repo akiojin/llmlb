@@ -65,6 +65,81 @@ void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
     if (!params.on_token_callback) return;
     params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
 }
+
+// T049: Compute log-sum-exp for numerical stability
+double logsumexp(const float* logits, int n_vocab) {
+    // Find max for numerical stability
+    float max_logit = logits[0];
+    for (int i = 1; i < n_vocab; ++i) {
+        if (logits[i] > max_logit) {
+            max_logit = logits[i];
+        }
+    }
+    // Compute log(sum(exp(logit - max)))
+    double sum_exp = 0.0;
+    for (int i = 0; i < n_vocab; ++i) {
+        sum_exp += std::exp(static_cast<double>(logits[i]) - max_logit);
+    }
+    return max_logit + std::log(sum_exp);
+}
+
+// T049: Capture token logprobs from llama context
+void capture_token_logprob(
+    llama_context* ctx,
+    const llama_vocab* vocab,
+    llama_token sampled_token,
+    int top_k,
+    std::vector<TokenLogprob>* out_logprobs
+) {
+    if (!out_logprobs) return;
+
+    const float* logits = llama_get_logits_ith(ctx, -1);
+    if (!logits) {
+        spdlog::warn("Failed to get logits for logprob calculation");
+        return;
+    }
+
+    const int n_vocab = llama_vocab_n_tokens(vocab);
+    const double lse = logsumexp(logits, n_vocab);
+
+    TokenLogprob entry;
+
+    // Get token string
+    char buf[256];
+    int32_t len = llama_token_to_piece(vocab, sampled_token, buf, sizeof(buf), 0, false);
+    if (len > 0) {
+        entry.token = std::string(buf, static_cast<size_t>(len));
+    }
+
+    // Compute logprob for sampled token: logprob = logit - logsumexp
+    entry.logprob = static_cast<double>(logits[sampled_token]) - lse;
+
+    // Get top-k alternatives if requested
+    if (top_k > 0) {
+        // Create sorted list of (logprob, token_id)
+        std::vector<std::pair<double, llama_token>> candidates;
+        candidates.reserve(static_cast<size_t>(n_vocab));
+        for (int i = 0; i < n_vocab; ++i) {
+            double lp = static_cast<double>(logits[i]) - lse;
+            candidates.emplace_back(lp, static_cast<llama_token>(i));
+        }
+        // Partial sort to get top-k
+        int k = std::min(top_k, n_vocab);
+        std::partial_sort(candidates.begin(), candidates.begin() + k, candidates.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+
+        for (int i = 0; i < k; ++i) {
+            char alt_buf[256];
+            int32_t alt_len = llama_token_to_piece(vocab, candidates[i].second, alt_buf, sizeof(alt_buf), 0, false);
+            if (alt_len > 0) {
+                std::string alt_token(alt_buf, static_cast<size_t>(alt_len));
+                entry.top_logprobs.emplace_back(alt_token, candidates[i].first);
+            }
+        }
+    }
+
+    out_logprobs->push_back(std::move(entry));
+}
 }  // namespace
 
 static const std::vector<std::string> kDefaultStopSequences = {
@@ -354,6 +429,11 @@ std::string LlamaEngine::generateChat(
         // トークンサンプリング
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
 
+        // T049: Capture logprobs if requested (must be done before EOG check while logits are available)
+        if (params.logprobs && params.out_logprobs) {
+            capture_token_logprob(ctx, vocab, new_token, params.top_logprobs, params.out_logprobs);
+        }
+
         // EOG（End of Generation）チェック
         if (llama_vocab_is_eog(vocab, new_token)) {
             spdlog::debug("EOG token received at position {}", i);
@@ -539,6 +619,11 @@ std::vector<std::string> LlamaEngine::generateChatStream(
         }
 
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+        // T049: Capture logprobs if requested (for streaming, typically disabled at API level)
+        if (params.logprobs && params.out_logprobs) {
+            capture_token_logprob(ctx, vocab, new_token, params.top_logprobs, params.out_logprobs);
+        }
 
         if (llama_vocab_is_eog(vocab, new_token)) {
             break;

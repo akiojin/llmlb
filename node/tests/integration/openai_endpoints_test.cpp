@@ -390,7 +390,7 @@ TEST(OpenAIEndpointsTest, UsageMatchesActualTokenCount) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18110, openai, node);
     server.start();
@@ -428,7 +428,7 @@ TEST(OpenAIEndpointsTest, LogprobsMatchesModelOutput) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18111, openai, node);
     server.start();

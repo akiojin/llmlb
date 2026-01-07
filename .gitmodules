@@ -16,3 +16,6 @@
 [submodule "vendor/pest_generator"]
 	path = vendor/pest_generator
 	url = https://github.com/pest-parser/pest.git
+[submodule "node/third_party/safetensors.cpp/ggml"]
+	path = node/third_party/safetensors.cpp/ggml
+	url = https://github.com/ggml-org/ggml

@@ -19,10 +19,10 @@
   - `node/third_party/safetensors.cpp/` 配下に構造を作成
   - `include/`, `src/`, `examples/`, `tests/` ディレクトリ
 
-- [ ] 2. ggmlサブモジュール追加 `[P]` (Worktree環境のため手動実行が必要)
+- [x] 2. ggmlサブモジュール追加 `[P]`
   - `git submodule add https://github.com/ggml-org/ggml ggml`
   - `.gitmodules` 更新
-  - Note: CMakeLists.txtは親プロジェクトのggmlを利用する設定で対応済み
+  - ggml v0.9.5 を追加
 
 - [x] 3. CMakeLists.txt作成 (依存: 1, 2)
   - ggmlサブディレクトリ追加

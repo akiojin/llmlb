@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <sstream>
 #include <algorithm>
+#include <cstring>
 #include <regex>
 
 namespace stcpp {

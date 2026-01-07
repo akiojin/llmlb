@@ -2,10 +2,8 @@
 
 #include "core/engine_host.h"
 #include "core/engine_registry.h"
-#include "core/gptoss_engine.h"
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
-#include "core/nemotron_engine.h"
 #include "core/request_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"

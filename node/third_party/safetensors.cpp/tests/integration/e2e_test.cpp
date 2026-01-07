@@ -99,7 +99,7 @@ TEST_F(E2ETest, FullModelLoadingWorkflow) {
 
     // Model load attempt (will fail without full implementation)
     // This test verifies the workflow structure
-    stcpp_model* model = stcpp_model_load(model_dir.c_str());
+    stcpp_model* model = stcpp_model_load(model_dir.c_str(), nullptr, nullptr);
 
     // Currently returns nullptr as implementation is stub
     // When fully implemented, this should succeed
@@ -216,11 +216,13 @@ TEST_F(E2ETest, ErrorHandlingWorkflow) {
     // Test various error conditions
 
     // Non-existent model
-    stcpp_model* model = stcpp_model_load("/nonexistent/path/model");
+    stcpp_model* model = stcpp_model_load("/nonexistent/path/model", nullptr, nullptr);
     EXPECT_EQ(model, nullptr);
 
     // Null context operations
-    stcpp_error result = stcpp_generate(nullptr, "Test", nullptr, 10);
+    stcpp_sampling_params params = stcpp_sampling_default_params();
+    char output[256] = {0};
+    stcpp_error result = stcpp_generate(nullptr, "Test", params, 10, output, sizeof(output));
     EXPECT_NE(result, STCPP_OK);
 }
 

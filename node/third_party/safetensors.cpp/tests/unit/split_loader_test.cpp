@@ -18,6 +18,12 @@
 #include <filesystem>
 #include <string>
 
+// C++17 compatible ends_with helper
+inline bool str_ends_with(const std::string& str, const std::string& suffix) {
+    if (suffix.size() > str.size()) return false;
+    return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 class SplitLoaderTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -182,7 +188,7 @@ TEST_F(SplitLoaderTest, ShardFilePatternRecognition) {
     EXPECT_NE(pattern3.find("-00003-of-"), std::string::npos);
 
     // Verify extension
-    EXPECT_TRUE(pattern1.ends_with(".safetensors"));
+    EXPECT_TRUE(str_ends_with(pattern1, ".safetensors"));
 }
 
 // Test: Verify unique shard extraction from weight_map
@@ -215,7 +221,7 @@ TEST_F(SplitLoaderTest, IndexJsonNamingConventions) {
     };
 
     for (const auto& name : valid_names) {
-        EXPECT_TRUE(name.ends_with(".index.json"))
+        EXPECT_TRUE(str_ends_with(name, ".index.json"))
             << "Name should end with .index.json: " << name;
     }
 }

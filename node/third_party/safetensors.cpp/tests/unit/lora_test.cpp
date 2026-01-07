@@ -9,6 +9,12 @@
 
 namespace fs = std::filesystem;
 
+// C++17 compatible ends_with helper
+inline bool str_ends_with(const std::string& str, const std::string& suffix) {
+    if (suffix.size() > str.size()) return false;
+    return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 class LoRATest : public ::testing::Test {
 protected:
     fs::path temp_dir;
@@ -176,8 +182,8 @@ TEST_F(LoRATest, LoRAFileFormatDetection) {
     std::string safetensors_path = "adapter.safetensors";
     std::string bin_path = "adapter.bin";
 
-    bool is_safetensors = safetensors_path.ends_with(".safetensors");
-    bool is_bin = bin_path.ends_with(".bin");
+    bool is_safetensors = str_ends_with(safetensors_path, ".safetensors");
+    bool is_bin = str_ends_with(bin_path, ".bin");
 
     EXPECT_TRUE(is_safetensors);
     EXPECT_TRUE(is_bin);

@@ -148,10 +148,10 @@
   - ModelConfig構造体パース
   - アーキテクチャ検出
 
-- [ ] 27. gpt-ossアーキテクチャ実装 (依存: 26)
-  - src/arch/gptoss.cpp
-  - 計算グラフ構築
-  - ggmlテンソル操作
+- [x] 27. ggml compute graph実装 (依存: 26)
+  - src/ggml_model.h, src/ggml_model.cpp - ggmlモデル構造体
+  - src/transformer.cpp - Transformerレイヤー・計算グラフ構築
+  - ggmlテンソル操作・KVキャッシュ
 
 - [x] 28. sampling.cpp実装 (依存: 24, 14)
   - temperature, top_p, top_k

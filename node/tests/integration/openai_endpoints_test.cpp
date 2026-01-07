@@ -48,7 +48,7 @@ TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18087, openai, node);
     server.start();
@@ -74,7 +74,7 @@ TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18092, openai, node);
     server.start();
@@ -95,7 +95,7 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTemperature) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18101, openai, node);
     server.start();
@@ -116,7 +116,7 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTopP) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18102, openai, node);
     server.start();
@@ -137,7 +137,7 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTopK) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18103, openai, node);
     server.start();
@@ -158,7 +158,7 @@ TEST(OpenAIEndpointsTest, Returns400OnEmptyPrompt) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18104, openai, node);
     server.start();
@@ -179,7 +179,7 @@ TEST(OpenAIEndpointsTest, AppliesStopSequencesToCompletions) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18105, openai, node);
     server.start();
@@ -200,7 +200,7 @@ TEST(OpenAIEndpointsTest, ReturnsLogprobsForCompletions) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18106, openai, node);
     server.start();
@@ -241,7 +241,7 @@ TEST(OpenAIEndpointsTest, Returns503WhenNotReady) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18093, openai, node);
     server.start();
@@ -265,7 +265,7 @@ TEST(OpenAIEndpointsTest, CompletionsReturns503WhenNotReady) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18094, openai, node);
     server.start();
@@ -289,7 +289,7 @@ TEST(OpenAIEndpointsTest, EmbeddingsReturns503WhenNotReady) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18095, openai, node);
     server.start();
@@ -313,7 +313,7 @@ TEST(OpenAIEndpointsTest, ReturnsErrorOnInvalidJSON) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18096, openai, node);
     server.start();
@@ -335,7 +335,7 @@ TEST(OpenAIEndpointsTest, ReturnsErrorOnMissingModel) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18097, openai, node);
     server.start();
@@ -367,7 +367,7 @@ TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
     ModelRegistry registry;
     registry.setModels({model_id});
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18098, openai, node);
     server.start();

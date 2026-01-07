@@ -15,7 +15,7 @@ TEST(NodeEndpointsTest, PullAndHealth) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18088, openai, node);
     server.start();
@@ -33,7 +33,7 @@ TEST(NodeEndpointsTest, LogLevelGetAndSet) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18087, openai, node);
     server.start();
@@ -56,7 +56,7 @@ TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18091, openai, node);
     server.start();
@@ -78,7 +78,7 @@ TEST(NodeEndpointsTest, MetricsReportsUptimeAndCounts) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18089, openai, node);
     server.start();
@@ -99,7 +99,7 @@ TEST(HttpServerTest, RequestIdGeneratedAndEchoed) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18092, openai, node);
     server.start();
@@ -123,7 +123,7 @@ TEST(HttpServerTest, TraceparentPropagatesTraceId) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18093, openai, node);
     server.start();

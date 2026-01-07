@@ -619,6 +619,8 @@ mod tests {
         assert!(node.sync_state.is_none());
         assert!(node.sync_progress.is_none());
         assert!(node.sync_updated_at.is_none());
+        assert!(node.executable_models.is_empty());
+        assert!(node.excluded_models.is_empty());
     }
 
     #[test]

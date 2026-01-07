@@ -12,18 +12,21 @@ set(UNIT_TEST_SOURCES
     model_storage_test.cpp
     inference_engine_test.cpp
     llama_engine_kv_cache_test.cpp
-    gptoss_engine_test.cpp
     engine_registry_test.cpp
     engine_host_test.cpp
-    nemotron_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp
     model_pool_test.cpp
     model_loader_test.cpp
-    whisper_manager_test.cpp
+    prefix_cache_test.cpp
+    vision_processor_test.cpp
+    replica_manager_test.cpp
+    function_calling_test.cpp
+    partial_load_guard_test.cpp
+    plugin_logger_test.cpp
     onnx_tts_manager_test.cpp
-    sd_manager_test.cpp
+    model_registry_test.cpp
     watchdog_test.cpp
     utils_config_test.cpp
     utils_misc_test.cpp
@@ -40,18 +43,23 @@ set(UNIT_TEST_SOURCES
     ../../src/models/model_resolver.cpp
     ../../src/core/llama_manager.cpp
     ../../src/core/model_pool.cpp
+    ../../src/core/prefix_cache.cpp
     ../../src/core/engine_registry.cpp
     ../../src/core/engine_host.cpp
     ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
-    ../../src/core/gptoss_engine.cpp
-    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/inference_cache.cpp
     ../../src/core/prefix_cache.cpp
     ../../src/core/replica_manager.cpp
     ../../src/core/request_watchdog.cpp
+    ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp
+    ../../src/core/replica_manager.cpp
+    ../../src/core/function_calling.cpp
+    ../../src/core/partial_load_guard.cpp
+    ../../src/core/plugin_logger.cpp
+    ../../src/core/chat_template_renderer.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp
     ../../src/api/http_server.cpp
@@ -62,6 +70,15 @@ set(UNIT_TEST_SOURCES
     ../../src/core/sd_manager.cpp
     ../../src/runtime/state.cpp
 )
+
+# Add whisper tests only when whisper is enabled
+if(BUILD_WITH_WHISPER)
+    list(APPEND UNIT_TEST_SOURCES whisper_manager_test.cpp)
+endif()
+# Add sd tests only when sd is enabled
+if(BUILD_WITH_SD)
+    list(APPEND UNIT_TEST_SOURCES sd_manager_test.cpp)
+endif()
 
 # Use platform-specific gpu_detector source
 if(APPLE)
@@ -81,8 +98,6 @@ target_link_libraries(llm-node-unit-tests
         test_common
         llama
         mtmd
-        whisper
-        stable-diffusion
         common
         nlohmann_json::nlohmann_json
         utils_lib
@@ -90,6 +105,12 @@ target_link_libraries(llm-node-unit-tests
         OpenSSL::Crypto
 )
 
+if(BUILD_WITH_WHISPER)
+    target_link_libraries(llm-node-unit-tests PRIVATE whisper)
+endif()
+if(BUILD_WITH_SD)
+    target_link_libraries(llm-node-unit-tests PRIVATE stable-diffusion)
+endif()
 if(BUILD_WITH_ONNX)
     target_link_libraries(llm-node-unit-tests PRIVATE onnxruntime::onnxruntime)
 endif()
@@ -103,17 +124,6 @@ if(APPLE)
         target_compile_definitions(llm-node-unit-tests PRIVATE USE_METAL=1)
     endif()
 
-    if(BUILD_WITH_GPTOSS)
-        target_link_libraries(llm-node-unit-tests PRIVATE gptoss_metal)
-        add_dependencies(llm-node-unit-tests gptoss_build_metallib)
-        target_link_options(llm-node-unit-tests PRIVATE
-            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
-        )
-        target_include_directories(llm-node-unit-tests PRIVATE
-            ${GPTOSS_METAL_DIR}/include
-            ${GPTOSS_METAL_DIR}/source/include
-        )
-    endif()
 endif()
 
 target_include_directories(llm-node-unit-tests

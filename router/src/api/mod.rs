@@ -170,6 +170,7 @@ pub fn create_router(state: AppState) -> Router {
                 crate::auth::middleware::api_key_auth_middleware,
             ))
     };
+
     // モデル一覧API (Admin OR Node スコープで利用可能)
     // /v0/models はノード同期用の登録済みモデル一覧
     // /v0/models/hub はダッシュボード向けの対応モデル一覧 + ステータス

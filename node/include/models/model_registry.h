@@ -3,44 +3,32 @@
 #include <vector>
 #include <string>
 #include <mutex>
+#include <unordered_map>
+
 #include "system/gpu_detector.h"
 
 namespace llm_node {
 
-/**
- * @class ModelRegistry
- * @brief モデル登録・管理クラス
- *
- * SPEC-93536000: GPUバックエンド互換性チェック機能を追加
- */
 class ModelRegistry {
 public:
+    struct SupportedModel {
+        std::string id;
+        std::vector<std::string> platforms;
+    };
+
     void setModels(std::vector<std::string> models);
     std::vector<std::string> listModels() const;
+    std::vector<std::string> listExecutableModels() const;
     bool hasModel(const std::string& id) const;
-
-    /**
-     * @brief 指定GPUバックエンドで実行可能なモデル一覧を取得
-     * @param backend GPUバックエンド
-     * @return 実行可能なモデルID一覧
-     *
-     * SPEC-93536000 T2.3: 現時点ではロード済みモデルは全て互換性ありと仮定
-     */
-    std::vector<std::string> listExecutableModels(GpuBackend backend) const;
-
-    /**
-     * @brief モデルが指定GPUバックエンドと互換性があるか確認
-     * @param model_id モデルID
-     * @param backend GPUバックエンド
-     * @return 互換性がある場合true
-     *
-     * SPEC-93536000 T2.4: ロード済みモデルは互換性あり、未登録は非互換
-     */
-    bool isCompatible(const std::string& model_id, GpuBackend backend) const;
+    void setGpuBackend(GpuBackend backend);
 
 private:
+    static const std::unordered_map<std::string, SupportedModel>& supportedModelMap();
+    bool isCompatible(const SupportedModel& model, GpuBackend backend) const;
+
     mutable std::mutex mutex_;
     std::vector<std::string> models_;
+    GpuBackend backend_{GpuBackend::Cpu};
 };
 
 }  // namespace llm_node

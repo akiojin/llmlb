@@ -74,17 +74,14 @@ async fn build_app() -> (Router, String) {
 #[serial]
 async fn register_gpu_node_success() {
     // モックサーバーを起動してヘルスチェックに応答
-    // SPEC-93536000: ノード登録時に/v1/modelsを取得し、空のリストは登録拒否される
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": [{
-                "id": "test-model",
-                "object": "model",
-                "owned_by": "runtime"
-            }]
+            "data": [
+                {"id": "test-model", "object": "model"}
+            ]
         })))
         .mount(&mock_server)
         .await;

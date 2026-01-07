@@ -95,6 +95,27 @@ double GpuDetector::getCapabilityScore() const {
     return score;
 }
 
+GpuBackend GpuDetector::getGpuBackend() const {
+    for (const auto& dev : detected_devices_) {
+        if (!dev.is_available) {
+            continue;
+        }
+        if (dev.vendor == "apple") {
+            return GpuBackend::Metal;
+        }
+        if (dev.vendor == "nvidia") {
+            return GpuBackend::Cuda;
+        }
+        if (dev.vendor == "amd") {
+            return GpuBackend::Rocm;
+        }
+        if (dev.vendor == "directml") {
+            return GpuBackend::DirectML;
+        }
+    }
+    return GpuBackend::Cpu;
+}
+
 std::optional<int> GpuDetector::selectGpu(std::optional<int> prefer_loaded_gpu) const {
     const GpuDevice* preferred = nullptr;
     if (prefer_loaded_gpu.has_value()) {

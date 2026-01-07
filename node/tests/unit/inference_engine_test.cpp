@@ -26,8 +26,12 @@ namespace fs = std::filesystem;
 
 // テスト専用ヘルパー（inference_engine.cppで定義）
 namespace llm_node {
-std::string postProcessGeneratedTextForTest(const std::string& output);
+std::string extractGptOssFinalMessageForTest(const std::string& output);
+std::string cleanGptOssOutputForTest(const std::string& output);
+std::string postProcessGeneratedTextForTest(const std::string& output, bool is_gptoss);
 }
+using llm_node::extractGptOssFinalMessageForTest;
+using llm_node::cleanGptOssOutputForTest;
 using llm_node::postProcessGeneratedTextForTest;
 
 class TempDir {
@@ -111,109 +115,6 @@ private:
     std::vector<std::string>* calls_{nullptr};
     bool supports_text_{false};
     bool supports_embeddings_{false};
-};
-
-class CountingEngine final : public Engine {
-public:
-    explicit CountingEngine(std::string output_prefix = "out")
-        : output_prefix_(std::move(output_prefix)) {}
-
-    std::string runtime() const override { return "llama_cpp"; }
-    bool supportsTextGeneration() const override { return true; }
-    bool supportsEmbeddings() const override { return false; }
-
-    ModelLoadResult loadModel(const ModelDescriptor&) override {
-        ModelLoadResult result;
-        result.success = true;
-        result.error_code = EngineErrorCode::kOk;
-        return result;
-    }
-
-    std::string generateChat(const std::vector<ChatMessage>&,
-                             const ModelDescriptor&,
-                             const InferenceParams&) const override {
-        return "ok";
-    }
-
-    std::string generateCompletion(const std::string&,
-                                   const ModelDescriptor&,
-                                   const InferenceParams&) const override {
-        const int call_index = completion_calls_.fetch_add(1) + 1;
-        return output_prefix_ + std::to_string(call_index);
-    }
-
-    std::vector<std::string> generateChatStream(
-        const std::vector<ChatMessage>&,
-        const ModelDescriptor&,
-        const InferenceParams&,
-        const std::function<void(const std::string&)>&) const override {
-        return {};
-    }
-
-    std::vector<std::vector<float>> generateEmbeddings(
-        const std::vector<std::string>&,
-        const ModelDescriptor&) const override {
-        return {{1.0f, 0.0f}};
-    }
-
-    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
-
-    int completionCalls() const { return completion_calls_.load(); }
-
-private:
-    std::string output_prefix_;
-    mutable std::atomic<int> completion_calls_{0};
-};
-
-class SizedEngine final : public Engine {
-public:
-    explicit SizedEngine(size_t output_size) : output_size_(output_size) {}
-
-    std::string runtime() const override { return "llama_cpp"; }
-    bool supportsTextGeneration() const override { return true; }
-    bool supportsEmbeddings() const override { return false; }
-
-    ModelLoadResult loadModel(const ModelDescriptor&) override {
-        ModelLoadResult result;
-        result.success = true;
-        result.error_code = EngineErrorCode::kOk;
-        return result;
-    }
-
-    std::string generateChat(const std::vector<ChatMessage>&,
-                             const ModelDescriptor&,
-                             const InferenceParams&) const override {
-        return "ok";
-    }
-
-    std::string generateCompletion(const std::string&,
-                                   const ModelDescriptor&,
-                                   const InferenceParams&) const override {
-        completion_calls_.fetch_add(1);
-        return std::string(output_size_, 'x');
-    }
-
-    std::vector<std::string> generateChatStream(
-        const std::vector<ChatMessage>&,
-        const ModelDescriptor&,
-        const InferenceParams&,
-        const std::function<void(const std::string&)>&) const override {
-        return {};
-    }
-
-    std::vector<std::vector<float>> generateEmbeddings(
-        const std::vector<std::string>&,
-        const ModelDescriptor&) const override {
-        return {{1.0f, 0.0f}};
-    }
-
-    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
-
-    int completionCalls() const { return completion_calls_.load(); }
-
-private:
-    size_t output_size_{0};
-    mutable std::atomic<int> completion_calls_{0};
 };
 
 class VramEngine final : public Engine {
@@ -556,10 +457,10 @@ TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
 
 TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     TempDir tmp;
-    const std::string model_name = "test/unsupported-model";
+    const std::string model_name = "openai/gpt-oss-20b";
     const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
     fs::create_directories(model_dir);
-    std::ofstream(model_dir / "config.json") << R"({"architectures":["UnknownForCausalLM"]})";
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["GptOssForCausalLM"]})";
     std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
     std::ofstream(model_dir / "model.safetensors") << "dummy";
 
@@ -575,7 +476,7 @@ TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     reg.architectures = {"llama"};
     reg.capabilities = {"text"};
     ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RecordingEngine>("test_cpp", "text", nullptr, true, false),
+        std::make_unique<RecordingEngine>("gptoss_cpp", "text", nullptr, true, false),
         reg,
         nullptr));
 
@@ -692,7 +593,7 @@ TEST(InferenceEngineTest, OpenAIResponds503WhenVramInsufficient) {
     ModelRegistry api_registry;
     api_registry.setModels({model_name});
     NodeConfig config;
-    OpenAIEndpoints openai(api_registry, engine, config, GpuBackend::kCpu);
+    OpenAIEndpoints openai(api_registry, engine, config);
     NodeEndpoints node;
     HttpServer server(18094, openai, node);
     server.start();
@@ -815,84 +716,108 @@ TEST(InferenceEngineTest, GenerateEmbeddingsUsesEmbeddingEngine) {
     EXPECT_EQ(calls[0], "embeddings:embed");
 }
 
-TEST(InferenceEngineTest, CachesCompletionWhenTemperatureZero) {
-    TempDir tmp;
-    const std::string model_name = "example/cache";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
+TEST(InferenceEngineTest, ExtractsFinalChannelFromGptOssOutput) {
+    const std::string raw =
+        "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
+        "<|start|>assistant<|channel|>final<|message|>the answer<|end|>";
 
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-    engine.setResourceUsageProviderForTest([]() {
-        return ResourceUsage{0, 10000, 0, 0};
-    });
-
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "cache_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    auto engine_impl = std::make_unique<CountingEngine>("out-");
-    auto* engine_raw = engine_impl.get();
-    ASSERT_TRUE(registry->registerEngine(std::move(engine_impl), reg, nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    InferenceParams cached_params;
-    cached_params.temperature = 0.0f;
-
-    auto first = engine.generateCompletion("hello", model_name, cached_params);
-    auto second = engine.generateCompletion("hello", model_name, cached_params);
-    EXPECT_EQ(engine_raw->completionCalls(), 1);
-    EXPECT_EQ(first, second);
-
-    auto third = engine.generateCompletion("different", model_name, cached_params);
-    EXPECT_EQ(engine_raw->completionCalls(), 2);
-    EXPECT_NE(third, second);
-
-    InferenceParams uncached_params;
-    uncached_params.temperature = 0.7f;
-    (void)engine.generateCompletion("hello", model_name, uncached_params);
-    (void)engine.generateCompletion("hello", model_name, uncached_params);
-    EXPECT_EQ(engine_raw->completionCalls(), 4);
+    auto extracted = extractGptOssFinalMessageForTest(raw);
+    EXPECT_EQ(extracted, "the answer");
 }
 
-TEST(InferenceEngineTest, EvictsInferenceCacheWhenOverLimit) {
+TEST(InferenceEngineTest, CleansGptOssOutputByExtractingFinalChannel) {
+    const std::string raw =
+        "<|start|>assistant<|channel|>analysis<|message|>think here<|end|>"
+        "<|start|>assistant<|channel|>final<|message|>the answer<|end|>";
+
+    auto cleaned = cleanGptOssOutputForTest(raw);
+    EXPECT_EQ(cleaned, "the answer");
+}
+
+TEST(InferenceEngineTest, PostProcessGptOssDoesNotTruncateStartTokenOnlyOutput) {
+    // When gpt-oss emits a header but no <|end|>, we should not truncate to empty.
+    const std::string raw = "<|start|>assistant<|channel|>final<|message|>Hello world";
+
+    auto processed = postProcessGeneratedTextForTest(raw, /*is_gptoss=*/true);
+    EXPECT_EQ(processed, "Hello world");
+}
+
+TEST(InferenceEngineTest, GptOssRequiresMetalArtifactToBeSupported) {
+#if !defined(__APPLE__)
+    GTEST_SKIP() << "Metal backend is only supported on macOS";
+#else
     TempDir tmp;
-    const std::string model_name = "example/cache-evict";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
     fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
 
     LlamaManager llama(tmp.path.string());
     ModelStorage storage(tmp.path.string());
     InferenceEngine engine(llama, storage);
-    engine.setResourceUsageProviderForTest([]() {
-        return ResourceUsage{0, 10000, 0, 0};
-    });
 
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "cache_eviction_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    auto engine_impl = std::make_unique<SizedEngine>(300);
-    auto* engine_raw = engine_impl.get();
-    ASSERT_TRUE(registry->registerEngine(std::move(engine_impl), reg, nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
+    ModelDescriptor desc;
+    desc.name = "openai/gpt-oss-20b";
+    desc.runtime = "gptoss_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
 
-    InferenceParams params;
-    params.temperature = 0.0f;
+    EXPECT_FALSE(engine.isModelSupported(desc));
 
-    (void)engine.generateCompletion("a", model_name, params);
-    (void)engine.generateCompletion("b", model_name, params);
-    EXPECT_EQ(engine_raw->completionCalls(), 2);
+    std::ofstream(model_dir / "model.metal.bin") << "cache";
+#ifdef USE_GPTOSS
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#else
+    EXPECT_FALSE(engine.isModelSupported(desc));
+#endif
+#endif
+}
 
-    (void)engine.generateCompletion("a", model_name, params);
-    EXPECT_EQ(engine_raw->completionCalls(), 3);
+TEST(InferenceEngineTest, GptOssRequiresDirectmlArtifactToBeSupported) {
+#if !defined(_WIN32)
+    GTEST_SKIP() << "DirectML backend is only supported on Windows";
+#elif !defined(USE_GPTOSS)
+    GTEST_SKIP() << "gpt-oss DirectML engine not enabled";
+#else
+    TempDir tmp;
+    auto model_dir = tmp.path / "openai" / "gpt-oss-20b";
+    fs::create_directories(model_dir);
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    ModelDescriptor desc;
+    desc.name = "openai/gpt-oss-20b";
+    desc.runtime = "gptoss_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = model_dir.string();
+    desc.primary_path = (model_dir / "model.safetensors.index.json").string();
+
+    EXPECT_FALSE(engine.isModelSupported(desc));
+
+    std::ofstream(model_dir / "model.directml.bin") << "cache";
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#endif
+}
+
+TEST(InferenceEngineTest, NemotronRequiresCudaToBeSupported) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    ModelDescriptor desc;
+    desc.name = "nvidia/nemotron-test";
+    desc.runtime = "nemotron_cpp";
+    desc.format = "safetensors";
+    desc.model_dir = tmp.path.string();
+    desc.primary_path = (tmp.path / "model.safetensors.index.json").string();
+
+#ifdef USE_CUDA
+    EXPECT_TRUE(engine.isModelSupported(desc));
+#else
+    EXPECT_FALSE(engine.isModelSupported(desc));
+#endif
 }
 
 TEST(InferenceParamsTest, ResolvesEffectiveMaxTokensFromContext) {
@@ -1033,691 +958,249 @@ TEST(InferenceEngineTest, RestartsPluginAfterCrash) {
     InferenceEngine::setPluginRestartHookForTest({});
 }
 
-// T181: クラッシュ後即時503返却
-TEST(InferenceEngineTest, RejectsNewRequestsWhilePluginRestartPending) {
-    TempDir tmp;
-    const std::string model_name = "example/crash503";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
+// T177: ChatML template rendering tests
+TEST(ChatTemplateTest, BuildsChatMLPromptWithSingleMessage) {
+    std::vector<ChatMessage> messages = {{"user", "Hello"}};
+    std::string result = buildChatMLPrompt(messages);
 
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "crash503_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<ThrowingEngine>(),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    // Hook to capture restart calls but NOT actually restart
-    std::atomic<int> restart_calls{0};
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        restart_calls.fetch_add(1);
-        return true;  // Restart staged but pending
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "boom"}};
-
-    // First request crashes the engine
-    EXPECT_THROW((void)engine.generateChat(messages, model_name, {}), std::runtime_error);
-    EXPECT_EQ(restart_calls.load(), 1);
-
-    // Verify restart is pending
-    EXPECT_TRUE(engine.isPluginRestartPendingForTest());
-
-    // Second request should be immediately rejected with ServiceUnavailable
-    try {
-        (void)engine.generateChat(messages, model_name, {});
-        FAIL() << "Expected exception for service unavailable";
-    } catch (const std::exception& e) {
-        EXPECT_NE(std::string(e.what()).find("service unavailable"), std::string::npos);
-    }
-
-    InferenceEngine::setPluginRestartHookForTest({});
+    EXPECT_TRUE(result.find("<|im_start|>user\nHello<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>assistant\n") != std::string::npos);
 }
 
-TEST(InferenceEngineTest, RejectsStreamRequestsWhilePluginRestartPending) {
-    TempDir tmp;
-    const std::string model_name = "example/crash503stream";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "crash503stream_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<ThrowingEngine>(),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        return true;
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "boom"}};
-
-    // First request crashes the engine
-    EXPECT_THROW(
-        (void)engine.generateChatStream(messages, model_name, {}, [](const std::string&){}),
-        std::runtime_error);
-
-    // Stream request should also be rejected
-    try {
-        (void)engine.generateChatStream(messages, model_name, {}, [](const std::string&){});
-        FAIL() << "Expected exception for service unavailable";
-    } catch (const std::exception& e) {
-        EXPECT_NE(std::string(e.what()).find("service unavailable"), std::string::npos);
-    }
-
-    InferenceEngine::setPluginRestartHookForTest({});
-}
-
-// T136/T137: 指数バックオフリトライ
-// クラッシュ後に透過的リトライを行い、成功時はクライアントに見えない形で結果を返す
-class RetryCountingEngine final : public Engine {
-public:
-    RetryCountingEngine(std::atomic<int>* counter, int fail_count)
-        : call_counter_(counter), fail_until_(fail_count) {}
-
-    std::string runtime() const override { return "llama_cpp"; }
-    bool supportsTextGeneration() const override { return true; }
-    bool supportsEmbeddings() const override { return false; }
-
-    ModelLoadResult loadModel(const ModelDescriptor&) override {
-        ModelLoadResult result;
-        result.success = true;
-        result.error_code = EngineErrorCode::kOk;
-        return result;
-    }
-
-    std::string generateChat(const std::vector<ChatMessage>&,
-                             const ModelDescriptor&,
-                             const InferenceParams&) const override {
-        int count = call_counter_->fetch_add(1);
-        if (count < fail_until_) {
-            throw std::runtime_error("Engine crash (attempt " + std::to_string(count + 1) + ")");
-        }
-        return "Success after " + std::to_string(count + 1) + " attempts";
-    }
-
-    std::string generateCompletion(const std::string&,
-                                   const ModelDescriptor&,
-                                   const InferenceParams&) const override {
-        return "ok";
-    }
-
-    std::vector<std::string> generateChatStream(
-        const std::vector<ChatMessage>&,
-        const ModelDescriptor&,
-        const InferenceParams&,
-        const std::function<void(const std::string&)>&) const override {
-        return {};
-    }
-
-    std::vector<std::vector<float>> generateEmbeddings(
-        const std::vector<std::string>&,
-        const ModelDescriptor&) const override {
-        return {};
-    }
-
-    size_t getModelMaxContext(const ModelDescriptor&) const override {
-        return 4096;
-    }
-
-private:
-    mutable std::atomic<int>* call_counter_;
-    int fail_until_;
-};
-
-TEST(InferenceEngineTest, RetriesWithExponentialBackoffOnCrash) {
-    TempDir tmp;
-    std::string model_name = "example/retry-test";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    std::atomic<int> call_counter{0};
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "retry_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RetryCountingEngine>(&call_counter, 2),  // Fail first 2 attempts
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    std::atomic<int> restart_calls{0};
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        restart_calls.fetch_add(1);
-        return true;
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "test"}};
-
-    // Should succeed after transparent retry
-    auto start = std::chrono::steady_clock::now();
-    std::string result = engine.generateChat(messages, model_name, {});
-    auto elapsed = std::chrono::steady_clock::now() - start;
-
-    // Verify retry occurred (3 total calls: 2 failures + 1 success)
-    EXPECT_EQ(call_counter.load(), 3);
-    EXPECT_EQ(result, "Success after 3 attempts");
-
-    // Verify exponential backoff delay (100ms + 200ms = 300ms minimum)
-    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 200);
-
-    InferenceEngine::setPluginRestartHookForTest({});
-}
-
-TEST(InferenceEngineTest, RetriesUpToMaximumAttempts) {
-    TempDir tmp;
-    std::string model_name = "example/retry-max";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    std::atomic<int> call_counter{0};
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "retry_max_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RetryCountingEngine>(&call_counter, 100),  // Always fail
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        return true;
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "test"}};
-
-    // Should fail after max retries (4 retries = 5 total attempts: 1 initial + 4 retries)
-    EXPECT_THROW((void)engine.generateChat(messages, model_name, {}), std::runtime_error);
-
-    // Verify max retry attempts (1 initial + 4 retries = 5)
-    EXPECT_EQ(call_counter.load(), 5);
-
-    InferenceEngine::setPluginRestartHookForTest({});
-}
-
-TEST(InferenceEngineTest, TransparentRetryDoesNotExposeIntermediateErrors) {
-    TempDir tmp;
-    std::string model_name = "example/retry-transparent";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    std::atomic<int> call_counter{0};
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "retry_transparent_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RetryCountingEngine>(&call_counter, 1),  // Fail first attempt only
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        return true;
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "test"}};
-
-    // Should return successful result without any indication of intermediate failure
-    std::string result = engine.generateChat(messages, model_name, {});
-    EXPECT_FALSE(result.empty());
-    EXPECT_EQ(result.find("error"), std::string::npos);
-    EXPECT_EQ(result.find("crash"), std::string::npos);
-
-    InferenceEngine::setPluginRestartHookForTest({});
-}
-
-// T138-T140: Cancellation processing tests
-
-// CancellableEngine: simulates a slow generation that can be cancelled
-class CancellableEngine final : public Engine {
-public:
-    CancellableEngine(std::atomic<int>* token_count, std::atomic<bool>* started)
-        : token_count_(token_count), started_(started) {}
-
-    std::string runtime() const override { return "llama_cpp"; }
-    bool supportsTextGeneration() const override { return true; }
-    bool supportsEmbeddings() const override { return false; }
-
-    ModelLoadResult loadModel(const ModelDescriptor&) override {
-        ModelLoadResult result;
-        result.success = true;
-        result.error_code = EngineErrorCode::kOk;
-        return result;
-    }
-
-    std::string generateChat(const std::vector<ChatMessage>&,
-                             const ModelDescriptor&,
-                             const InferenceParams& params) const override {
-        if (started_) started_->store(true);
-        std::string output;
-        // Simulate token generation loop
-        for (int i = 0; i < 100; ++i) {
-            // T138: Check cancellation token before generating each token
-            if (params.cancellation_token && params.cancellation_token->load()) {
-                throw GenerationCancelledException("Generation cancelled");
-            }
-            if (token_count_) token_count_->fetch_add(1);
-            output += "token" + std::to_string(i) + " ";
-            // Small delay to simulate real generation
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        return output;
-    }
-
-    std::string generateCompletion(const std::string&,
-                                   const ModelDescriptor&,
-                                   const InferenceParams& params) const override {
-        return generateChat({}, {}, params);
-    }
-
-    std::vector<std::string> generateChatStream(
-        const std::vector<ChatMessage>&,
-        const ModelDescriptor&,
-        const InferenceParams& params,
-        const std::function<void(const std::string&)>& on_token) const override {
-        std::vector<std::string> tokens;
-        for (int i = 0; i < 100; ++i) {
-            // T138: Check cancellation token before generating each token
-            if (params.cancellation_token && params.cancellation_token->load()) {
-                throw GenerationCancelledException("Generation cancelled");
-            }
-            std::string token = "token" + std::to_string(i);
-            tokens.push_back(token);
-            if (on_token) on_token(token);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        return tokens;
-    }
-
-    std::vector<std::vector<float>> generateEmbeddings(
-        const std::vector<std::string>&,
-        const ModelDescriptor&) const override {
-        return {};
-    }
-
-    size_t getModelMaxContext(const ModelDescriptor&) const override {
-        return 4096;
-    }
-
-private:
-    mutable std::atomic<int>* token_count_;
-    mutable std::atomic<bool>* started_;
-};
-
-// T138: Cancellation flag check mechanism
-TEST(InferenceEngineTest, CancellationTokenStopsGeneration) {
-    TempDir tmp;
-    std::string model_name = "example/cancellation-test";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    std::atomic<int> token_count{0};
-    std::atomic<bool> started{false};
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "cancellable_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<CancellableEngine>(&token_count, &started),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    std::atomic<bool> cancel_token{false};
-    InferenceParams params;
-    params.cancellation_token = &cancel_token;
-
-    std::vector<ChatMessage> messages = {{"user", "test"}};
-
-    // Start generation in background thread
-    std::thread gen_thread([&]() {
-        try {
-            engine.generateChat(messages, model_name, params);
-        } catch (const GenerationCancelledException& e) {
-            // Expected: generation cancelled
-            EXPECT_NE(std::string(e.what()).find("cancelled"), std::string::npos);
-        }
-    });
-
-    // Wait for generation to start
-    while (!started.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-    // Cancel after some tokens have been generated
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    cancel_token.store(true);
-
-    gen_thread.join();
-
-    // Verify generation was stopped before completion
-    // (100 tokens would take at least 1000ms, we cancelled after ~50ms)
-    EXPECT_LT(token_count.load(), 50);  // Should be far less than 100
-    EXPECT_GT(token_count.load(), 0);   // Should have generated some tokens
-}
-
-// T139: Immediate cancellation response
-TEST(InferenceEngineTest, CancellationRespondsImmediately) {
-    TempDir tmp;
-    std::string model_name = "example/cancel-immediate";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    std::atomic<int> token_count{0};
-    std::atomic<bool> started{false};
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "cancel_immediate_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<CancellableEngine>(&token_count, &started),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    // Pre-set cancellation token before generation
-    std::atomic<bool> cancel_token{true};
-    InferenceParams params;
-    params.cancellation_token = &cancel_token;
-
-    std::vector<ChatMessage> messages = {{"user", "test"}};
-
-    auto start_time = std::chrono::steady_clock::now();
-
-    // Should throw immediately since cancellation is pre-set
-    EXPECT_THROW({
-        engine.generateChat(messages, model_name, params);
-    }, GenerationCancelledException);
-
-    auto elapsed = std::chrono::steady_clock::now() - start_time;
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-
-    // Should respond within a short time (well under 100ms, definitely not waiting for 100 tokens)
-    EXPECT_LT(elapsed_ms, 100);
-    // Only 0 or 1 token should have been attempted before checking cancellation
-    EXPECT_LE(token_count.load(), 1);
-}
-
-// T140: Cancellation does not affect other requests in batch
-TEST(InferenceEngineTest, CancellationDoesNotAffectOtherRequests) {
-    TempDir tmp;
-    std::string model_name = "example/cancel-batch";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    std::atomic<int> token_count1{0};
-    std::atomic<int> token_count2{0};
-    std::atomic<bool> started1{false};
-    std::atomic<bool> started2{false};
-
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "cancel_batch_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    // Use a single engine instance that will handle both requests
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<CancellableEngine>(&token_count1, &started1),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    std::atomic<bool> cancel_token1{false};
-    std::atomic<bool> cancel_token2{false};
-
-    InferenceParams params1;
-    params1.cancellation_token = &cancel_token1;
-
-    InferenceParams params2;
-    params2.cancellation_token = &cancel_token2;
-
-    std::vector<ChatMessage> messages = {{"user", "test"}};
-
-    std::atomic<bool> request1_cancelled{false};
-    std::atomic<bool> request2_completed{false};
-
-    // Start two concurrent requests
-    std::thread thread1([&]() {
-        try {
-            engine.generateChat(messages, model_name, params1);
-        } catch (...) {
-            request1_cancelled.store(true);
-        }
-    });
-
-    // Wait for first request to start
-    while (!started1.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    // Cancel first request
-    cancel_token1.store(true);
-    thread1.join();
-
-    // Verify first request was cancelled
-    EXPECT_TRUE(request1_cancelled.load());
-
-    // Reset engine registry for second request
-    auto registry2 = std::make_unique<EngineRegistry>();
-    EngineRegistration reg2;
-    reg2.engine_id = "cancel_batch_engine2";
-    reg2.engine_version = "test";
-    reg2.formats = {"gguf"};
-    reg2.capabilities = {"text"};
-    ASSERT_TRUE(registry2->registerEngine(
-        std::make_unique<CancellableEngine>(&token_count2, &started2),
-        reg2,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry2));
-
-    // Second request should complete normally (not cancelled)
-    std::thread thread2([&]() {
-        try {
-            std::string result = engine.generateChat(messages, model_name, params2);
-            if (!result.empty()) {
-                request2_completed.store(true);
-            }
-        } catch (...) {
-            // Should not throw
-        }
-    });
-
-    thread2.join();
-
-    // Second request should complete (token2 never cancelled)
-    EXPECT_TRUE(request2_completed.load());
-    EXPECT_EQ(token_count2.load(), 100);  // All 100 tokens generated
-}
-
-// ============================================================================
-// T166/T167: chat_template (minja) tests
-// ============================================================================
-
-#include "core/chat_template_renderer.h"
-
-TEST(ChatTemplateRendererTest, FromStringBasic) {
-    // ChatML format template
-    const std::string chatml_template = R"(
-{%- for message in messages %}
-<|im_start|>{{ message.role }}
-{{ message.content }}<|im_end|>
-{% endfor %}
-{%- if add_generation_prompt %}
-<|im_start|>assistant
-{%- endif %})";
-
-    auto renderer = ChatTemplateRenderer::fromString(chatml_template);
-
+TEST(ChatTemplateTest, BuildsChatMLPromptWithMultipleMessages) {
     std::vector<ChatMessage> messages = {
         {"system", "You are a helpful assistant."},
-        {"user", "Hello!"}
+        {"user", "What is 2+2?"},
+        {"assistant", "4"},
+        {"user", "What is 3+3?"}
     };
+    std::string result = buildChatMLPrompt(messages);
 
-    std::string result = renderer.render(messages, true);
-
-    // Should contain system message
-    EXPECT_TRUE(result.find("system") != std::string::npos);
-    EXPECT_TRUE(result.find("You are a helpful assistant.") != std::string::npos);
-
-    // Should contain user message
-    EXPECT_TRUE(result.find("user") != std::string::npos);
-    EXPECT_TRUE(result.find("Hello!") != std::string::npos);
-
-    // Should end with assistant prompt
-    EXPECT_TRUE(result.find("assistant") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>system\nYou are a helpful assistant.<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>user\nWhat is 2+2?<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>assistant\n4<|im_end|>") != std::string::npos);
+    EXPECT_TRUE(result.find("<|im_start|>user\nWhat is 3+3?<|im_end|>") != std::string::npos);
+    // Ends with assistant prompt (the final segment of the prompt)
+    EXPECT_TRUE(result.find("<|im_start|>assistant\n") != std::string::npos);
+    // Verify it ends with the assistant prompt marker
+    const std::string assistant_marker = "<|im_start|>assistant\n";
+    EXPECT_EQ(result.substr(result.size() - assistant_marker.size()), assistant_marker);
 }
 
-TEST(ChatTemplateRendererTest, FromConfigJsonNotFound) {
-    TempDir temp;
+TEST(ChatTemplateTest, BuildsChatMLPromptWithEmptyContent) {
+    std::vector<ChatMessage> messages = {{"user", ""}};
+    std::string result = buildChatMLPrompt(messages);
 
-    // Create a config.json without chat_template
-    auto config_path = temp.path / "config.json";
-    std::ofstream(config_path) << R"({"model_type": "llama"})";
-
-    auto renderer = ChatTemplateRenderer::fromConfigJson(temp.path);
-    EXPECT_FALSE(renderer.has_value());
+    EXPECT_TRUE(result.find("<|im_start|>user\n<|im_end|>") != std::string::npos);
 }
 
-TEST(ChatTemplateRendererTest, FromConfigJsonWithChatTemplate) {
-    TempDir temp;
+TEST(ChatTemplateTest, BuildsChatMLPromptWithMultilineContent) {
+    std::vector<ChatMessage> messages = {{"user", "Line1\nLine2\nLine3"}};
+    std::string result = buildChatMLPrompt(messages);
 
-    // Create a config.json with chat_template
-    auto config_path = temp.path / "config.json";
-    std::ofstream(config_path) << R"({
-        "model_type": "llama",
-        "chat_template": "{% for m in messages %}[{{ m.role }}]: {{ m.content }}\n{% endfor %}",
-        "bos_token": "<s>",
-        "eos_token": "</s>"
-    })";
+    EXPECT_TRUE(result.find("<|im_start|>user\nLine1\nLine2\nLine3<|im_end|>") != std::string::npos);
+}
 
-    auto renderer = ChatTemplateRenderer::fromConfigJson(temp.path);
-    ASSERT_TRUE(renderer.has_value());
-
+TEST(ChatTemplateTest, BuildsChatMLPromptPreservesMessageOrder) {
     std::vector<ChatMessage> messages = {
-        {"user", "Test message"}
+        {"user", "First"},
+        {"assistant", "Second"},
+        {"user", "Third"}
     };
+    std::string result = buildChatMLPrompt(messages);
 
-    std::string result = renderer->render(messages, false);
-    EXPECT_TRUE(result.find("[user]: Test message") != std::string::npos);
+    size_t pos_first = result.find("First");
+    size_t pos_second = result.find("Second");
+    size_t pos_third = result.find("Third");
+
+    EXPECT_LT(pos_first, pos_second);
+    EXPECT_LT(pos_second, pos_third);
 }
 
-TEST(ChatTemplateRendererTest, BosEosTokens) {
-    auto renderer = ChatTemplateRenderer::fromString(
-        "{{ bos_token }}Hello{{ eos_token }}",
-        "<BOS>",
-        "<EOS>"
+// =============================================================================
+// T144: 指数バックオフリトライテスト
+// =============================================================================
+
+TEST(RetryTest, SucceedsOnFirstAttempt) {
+    RetryConfig config;
+    config.max_retries = 4;
+    config.initial_delay = std::chrono::milliseconds(1);
+
+    int attempt_count = 0;
+    auto result = with_retry(
+        [&]() {
+            ++attempt_count;
+            return 42;
+        },
+        config
     );
 
-    std::vector<ChatMessage> messages = {};
-    std::string result = renderer.render(messages, false);
-
-    EXPECT_TRUE(result.find("<BOS>") != std::string::npos);
-    EXPECT_TRUE(result.find("<EOS>") != std::string::npos);
+    EXPECT_EQ(result, 42);
+    EXPECT_EQ(attempt_count, 1);
 }
 
-TEST(ChatTemplateRendererTest, MultiTurnConversation) {
-    const std::string template_src = R"(
-{%- for message in messages %}
-<|{{ message.role }}|>{{ message.content }}
-{% endfor %}
-{%- if add_generation_prompt %}<|assistant|>{% endif %})";
+TEST(RetryTest, RetriesOnFailureThenSucceeds) {
+    RetryConfig config;
+    config.max_retries = 4;
+    config.initial_delay = std::chrono::milliseconds(1);
 
-    auto renderer = ChatTemplateRenderer::fromString(template_src);
+    int attempt_count = 0;
+    auto result = with_retry(
+        [&]() -> int {
+            ++attempt_count;
+            if (attempt_count < 3) {
+                throw std::runtime_error("temporary error");
+            }
+            return 42;
+        },
+        config
+    );
 
-    std::vector<ChatMessage> messages = {
-        {"system", "You are an AI."},
-        {"user", "Hi"},
-        {"assistant", "Hello!"},
-        {"user", "How are you?"}
-    };
+    EXPECT_EQ(result, 42);
+    EXPECT_EQ(attempt_count, 3);  // Failed twice, succeeded on third
+}
 
-    std::string result = renderer.render(messages, true);
+TEST(RetryTest, ThrowsAfterMaxRetries) {
+    RetryConfig config;
+    config.max_retries = 2;
+    config.initial_delay = std::chrono::milliseconds(1);
 
-    // All messages should be present
-    EXPECT_TRUE(result.find("<|system|>You are an AI.") != std::string::npos);
-    EXPECT_TRUE(result.find("<|user|>Hi") != std::string::npos);
-    EXPECT_TRUE(result.find("<|assistant|>Hello!") != std::string::npos);
-    EXPECT_TRUE(result.find("<|user|>How are you?") != std::string::npos);
+    int attempt_count = 0;
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("persistent error");
+            },
+            config
+        );
+    }, std::runtime_error);
 
-    // Generation prompt should be at the end
-    size_t last_assistant_pos = result.rfind("<|assistant|>");
-    EXPECT_TRUE(last_assistant_pos != std::string::npos);
+    EXPECT_EQ(attempt_count, 3);  // Initial + 2 retries
+}
+
+TEST(RetryTest, CallsOnCrashCallback) {
+    RetryConfig config;
+    config.max_retries = 3;
+    config.initial_delay = std::chrono::milliseconds(1);
+
+    int attempt_count = 0;
+    int crash_callback_count = 0;
+
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("crash");
+            },
+            config,
+            [&]() { ++crash_callback_count; }
+        );
+    }, std::runtime_error);
+
+    EXPECT_EQ(attempt_count, 4);  // Initial + 3 retries
+    EXPECT_EQ(crash_callback_count, 3);  // Called after each failed retry (except last)
+}
+
+TEST(RetryTest, ExponentialBackoffDelays) {
+    RetryConfig config;
+    config.max_retries = 3;
+    config.initial_delay = std::chrono::milliseconds(10);
+    config.max_total = std::chrono::milliseconds(1000);
+
+    int attempt_count = 0;
+    auto start = std::chrono::steady_clock::now();
+
+    // This test will fail after max_retries, but we measure the delay
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("fail");
+            },
+            config
+        );
+    }, std::runtime_error);
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    // Minimum delay: 10ms + 20ms + 40ms = 70ms
+    // Allow some margin for execution time
+    EXPECT_GE(elapsed.count(), 60);
+    EXPECT_EQ(attempt_count, 4);
+}
+
+TEST(RetryTest, StopsWhenMaxTotalExceeded) {
+    RetryConfig config;
+    config.max_retries = 100;  // High number
+    config.initial_delay = std::chrono::milliseconds(50);
+    config.max_total = std::chrono::milliseconds(100);  // Low total limit
+
+    int attempt_count = 0;
+    auto start = std::chrono::steady_clock::now();
+
+    EXPECT_THROW({
+        with_retry(
+            [&]() -> int {
+                ++attempt_count;
+                throw std::runtime_error("fail");
+            },
+            config
+        );
+    }, std::runtime_error);
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    // Should stop due to max_total limit, not max_retries
+    EXPECT_LT(attempt_count, 10);
+    // Total time should be less than 2x the max_total
+    EXPECT_LT(elapsed.count(), 300);
+}
+
+// =============================================================================
+// T181, T188: クラッシュ後503即時返却テスト
+// =============================================================================
+
+TEST(ServiceUnavailableTest, ThrowsCorrectException) {
+    ServiceUnavailableError error("test message");
+    EXPECT_STREQ(error.what(), "test message");
+}
+
+TEST(ServiceUnavailableTest, IsRecoveryModeReturnsFalseByDefault) {
+    InferenceEngine engine;  // スタブモード
+    EXPECT_FALSE(engine.isInRecoveryMode());
+}
+
+TEST(ServiceUnavailableTest, ClearRecoveryModeNoOpWhenNotInRecovery) {
+    InferenceEngine engine;  // スタブモード
+    // clearRecoveryMode should not crash when not in recovery mode
+    engine.clearRecoveryMode();
+    EXPECT_FALSE(engine.isInRecoveryMode());
+}
+
+// =============================================================================
+// T182, T189: トークン間タイムアウトテスト
+// =============================================================================
+
+TEST(TokenTimeoutTest, TokenTimeoutErrorHasCorrectMessage) {
+    TokenTimeoutError error("inter-token timeout: 5000ms");
+    EXPECT_STREQ(error.what(), "inter-token timeout: 5000ms");
+}
+
+TEST(TokenTimeoutTest, TokenTimeoutErrorInheritsFromRuntimeError) {
+    TokenTimeoutError error("test");
+    // Verify it can be caught as std::runtime_error
+    try {
+        throw error;
+    } catch (const std::runtime_error& e) {
+        EXPECT_STREQ(e.what(), "test");
+    }
+}
+
+TEST(TokenTimeoutTest, AbortCallbackInInferenceParamsDefaultsToNull) {
+    InferenceParams params;
+    EXPECT_EQ(params.abort_callback, nullptr);
+    EXPECT_EQ(params.abort_callback_ctx, nullptr);
 }

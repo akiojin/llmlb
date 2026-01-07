@@ -1,10 +1,12 @@
 #include "core/inference_engine.h"
 
+#include "core/engine_host.h"
 #include "core/engine_registry.h"
+#include "core/gptoss_engine.h"
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
+#include "core/nemotron_engine.h"
 #include "core/request_watchdog.h"
-#include "core/token_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"
 #include "models/model_descriptor.h"
@@ -26,68 +28,98 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
-#include <list>
 #include <mutex>
-#include <optional>
 #include <sstream>
 #include <thread>
 #include <type_traits>
-#include <unordered_map>
 
 namespace llm_node {
 
-class InferenceCache {
+namespace {
+
+// T182: トークン間タイムアウトのデフォルト値（5秒）
+constexpr auto kDefaultInterTokenTimeout = std::chrono::milliseconds(5000);
+
+#ifdef LLM_NODE_TESTING
+std::mutex g_inter_token_timeout_mutex;
+std::chrono::milliseconds g_inter_token_timeout_override{0};
+#endif
+
+std::chrono::milliseconds get_inter_token_timeout() {
+#ifdef LLM_NODE_TESTING
+    std::lock_guard<std::mutex> lock(g_inter_token_timeout_mutex);
+    if (g_inter_token_timeout_override.count() > 0) {
+        return g_inter_token_timeout_override;
+    }
+#endif
+    return kDefaultInterTokenTimeout;
+}
+
+// T182: トークン間タイムアウト監視クラス
+class InterTokenWatchdog {
 public:
-    std::optional<std::string> get(const std::string& key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto it = entries_.find(key);
-        if (it == entries_.end()) return std::nullopt;
-        lru_.splice(lru_.begin(), lru_, it->second);
-        return it->second->value;
+    explicit InterTokenWatchdog(std::chrono::milliseconds timeout)
+        : timeout_(timeout)
+        , last_reset_(std::chrono::steady_clock::now()) {
+        if (timeout_.count() <= 0) {
+            active_ = false;
+            return;
+        }
+        thread_ = std::thread([this]() { run(); });
     }
 
-    void put(const std::string& key, const std::string& value, size_t max_bytes) {
-        if (max_bytes == 0) return;
-        const size_t entry_bytes = key.size() + value.size();
-        if (entry_bytes > max_bytes) return;
+    InterTokenWatchdog(const InterTokenWatchdog&) = delete;
+    InterTokenWatchdog& operator=(const InterTokenWatchdog&) = delete;
 
+    ~InterTokenWatchdog() {
+        disarm();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    void reset() {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto it = entries_.find(key);
-        if (it != entries_.end()) {
-            current_bytes_ -= it->second->bytes;
-            it->second->value = value;
-            it->second->bytes = entry_bytes;
-            lru_.splice(lru_.begin(), lru_, it->second);
-            current_bytes_ += entry_bytes;
-        } else {
-            lru_.push_front(Entry{key, value, entry_bytes});
-            entries_[key] = lru_.begin();
-            current_bytes_ += entry_bytes;
-        }
+        last_reset_ = std::chrono::steady_clock::now();
+    }
 
-        while (current_bytes_ > max_bytes && !lru_.empty()) {
-            auto last_it = std::prev(lru_.end());
-            current_bytes_ -= last_it->bytes;
-            entries_.erase(last_it->key);
-            lru_.pop_back();
+    bool hasTimedOut() const {
+        return timed_out_.load(std::memory_order_acquire);
+    }
+
+    void disarm() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!active_) return;
+            active_ = false;
         }
+        cv_.notify_all();
     }
 
 private:
-    struct Entry {
-        std::string key;
-        std::string value;
-        size_t bytes{0};
-    };
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (active_) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_reset_);
+            if (elapsed >= timeout_) {
+                timed_out_.store(true, std::memory_order_release);
+                spdlog::warn("Inter-token timeout: {}ms since last token", elapsed.count());
+                return;
+            }
+            auto remaining = timeout_ - elapsed;
+            cv_.wait_for(lock, remaining, [this]() { return !active_; });
+        }
+    }
 
-    std::list<Entry> lru_;
-    std::unordered_map<std::string, std::list<Entry>::iterator> entries_;
-    size_t current_bytes_{0};
+    std::chrono::milliseconds timeout_;
+    std::chrono::steady_clock::time_point last_reset_;
+    std::thread thread_;
     std::mutex mutex_;
+    std::condition_variable cv_;
+    bool active_{true};
+    std::atomic<bool> timed_out_{false};
 };
-
-namespace {
-constexpr double kInferenceCacheRamRatio = 0.05;
 
 struct TokenMetricsState {
     uint64_t start_ns{0};
@@ -95,6 +127,38 @@ struct TokenMetricsState {
     uint64_t last_token_ns{0};
     size_t token_count{0};
 };
+
+// T182: InterTokenWatchdog用のコンテキスト
+struct InterTokenWatchdogContext {
+    InterTokenWatchdog* watchdog{nullptr};
+    TokenMetricsState* metrics{nullptr};
+};
+
+// T182: トークン生成時にウォッチドッグをリセットするコールバック
+void inter_token_watchdog_callback(void* ctx, uint32_t token_id, uint64_t timestamp_ns) {
+    (void)token_id;  // unused
+    auto* context = static_cast<InterTokenWatchdogContext*>(ctx);
+    if (!context) return;
+    // ウォッチドッグをリセット
+    if (context->watchdog) {
+        context->watchdog->reset();
+    }
+    // メトリクスも更新
+    if (context->metrics) {
+        context->metrics->token_count += 1;
+        if (context->metrics->first_token_ns == 0) {
+            context->metrics->first_token_ns = timestamp_ns;
+        }
+        context->metrics->last_token_ns = timestamp_ns;
+    }
+}
+
+// T182: アボートチェック用コールバック
+bool inter_token_abort_check(void* ctx) {
+    auto* context = static_cast<InterTokenWatchdogContext*>(ctx);
+    if (!context || !context->watchdog) return false;
+    return context->watchdog->hasTimedOut();
+}
 
 uint64_t steady_now_ns() {
     return static_cast<uint64_t>(
@@ -119,6 +183,8 @@ uint64_t token_metrics_now_ns() {
 #endif
     return steady_now_ns();
 }
+
+// T136-T137: with_retry() and RetryConfig are now defined in inference_engine.h
 
 void token_metrics_callback(void* ctx, uint32_t, uint64_t timestamp_ns) {
     auto* state = static_cast<TokenMetricsState*>(ctx);
@@ -147,68 +213,6 @@ TokenMetrics build_token_metrics(const TokenMetricsState& state) {
         ? static_cast<double>(state.token_count) / duration_s
         : 0.0;
     return metrics;
-}
-
-void append_with_length(std::string& out, const std::string& value) {
-    out.append(std::to_string(value.size()));
-    out.push_back(':');
-    out.append(value);
-    out.push_back('|');
-}
-
-std::string build_cache_key_base(const std::string& model, const InferenceParams& params) {
-    std::string key;
-    key.reserve(model.size() + 128);
-    key.append("model=");
-    append_with_length(key, model);
-    key.append("max_tokens=").append(std::to_string(params.max_tokens)).append("|");
-    key.append("temperature=").append(std::to_string(params.temperature)).append("|");
-    key.append("top_p=").append(std::to_string(params.top_p)).append("|");
-    key.append("top_k=").append(std::to_string(params.top_k)).append("|");
-    key.append("repeat_penalty=").append(std::to_string(params.repeat_penalty)).append("|");
-    key.append("seed=").append(std::to_string(params.seed)).append("|");
-    key.append("stop_count=").append(std::to_string(params.stop_sequences.size())).append("|");
-    for (const auto& stop : params.stop_sequences) {
-        append_with_length(key, stop);
-    }
-    return key;
-}
-
-std::string build_completion_cache_key(const std::string& prompt,
-                                       const std::string& model,
-                                       const InferenceParams& params) {
-    std::string key = build_cache_key_base(model, params);
-    key.append("prompt=");
-    append_with_length(key, prompt);
-    return key;
-}
-
-std::string build_chat_cache_key(const std::vector<ChatMessage>& messages,
-                                 const std::string& model,
-                                 const InferenceParams& params) {
-    std::string key = build_cache_key_base(model, params);
-    key.append("messages=").append(std::to_string(messages.size())).append("|");
-    for (const auto& message : messages) {
-        append_with_length(key, message.role);
-        append_with_length(key, message.content);
-    }
-    return key;
-}
-
-size_t inference_cache_limit_bytes(const std::function<ResourceUsage()>& provider) {
-    if (!provider) return 0;
-    try {
-        const auto usage = provider();
-        if (usage.mem_total_bytes == 0 || usage.mem_used_bytes >= usage.mem_total_bytes) {
-            return 0;
-        }
-        const uint64_t available = usage.mem_total_bytes - usage.mem_used_bytes;
-        const auto limit = static_cast<long double>(available) * kInferenceCacheRamRatio;
-        if (limit <= 0.0L) return 0;
-        return static_cast<size_t>(limit);
-    } catch (...) {
-        return 0;
-    }
 }
 
 void report_token_metrics(const TokenMetricsState& state, const std::string& model, const char* kind) {
@@ -360,8 +364,10 @@ std::optional<ModelDescriptor> resolve_descriptor(
     return std::nullopt;
 }
 
-// ChatML形式でプロンプトを構築するフォールバック関数
-static std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
+}  // namespace
+
+// ChatML形式でプロンプトを構築するフォールバック関数（ヘッダーからエクスポート）
+std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
     std::ostringstream oss;
     for (const auto& msg : messages) {
         oss << "<|im_start|>" << msg.role << "\n" << msg.content << "<|im_end|>\n";
@@ -370,6 +376,8 @@ static std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
     oss << "<|im_start|>assistant\n";
     return oss.str();
 }
+
+namespace {
 
 // 制御トークンを除去してトリム
 static std::string stripControlTokens(std::string text) {
@@ -389,11 +397,201 @@ static std::string stripControlTokens(std::string text) {
     return text.substr(l, r - l + 1);
 }
 
+// gpt-ossテンプレート（モデル側にテンプレが無い場合のフォールバック）。ユーザー入力は改変しない。
+static const char* GPT_OSS_TEMPLATE = R"tmpl({% for message in messages %}
+{% if message['role'] == 'system' %}
+<|start|>system<|message|>{{ message['content'] }}<|end|>
+{% elif message['role'] == 'user' %}
+<|start|>user<|message|>{{ message['content'] }}<|end|>
+{% elif message['role'] == 'assistant' %}
+<|start|>assistant<|channel|>final<|message|>{{ message['content'] }}<|end|>
+{% endif %}
+{% endfor %}
+<|start|>assistant<|channel|>final<|message|>
+)tmpl";
+
+// gpt-oss: finalチャンネルだけを抽出して制御トークンを除去
+static std::string extractGptOssFinalMessage(const std::string& output) {
+    const std::string marker = "<|channel|>final<|message|>";
+    const std::string end = "<|end|>";
+
+    size_t mpos = output.rfind(marker);
+    if (mpos == std::string::npos) return output;
+    size_t start = mpos + marker.size();
+    size_t endpos = output.find(end, start);
+    std::string seg = endpos == std::string::npos ? output.substr(start) : output.substr(start, endpos - start);
+    return stripControlTokens(seg);
+}
+
+// gpt-oss形式でプロンプトを構築する関数
+// gpt-oss固有トークン: <|start|>, <|message|>, <|end|>, <|channel|>
+// 応答形式: <|start|>assistant<|channel|>final<|message|>content<|end|>
+// Reasoning: none を設定して推論チャンネルを無効化
+static std::string buildGptOssPrompt(const std::vector<ChatMessage>& messages) {
+    std::ostringstream oss;
+
+    // システムメッセージの有無をチェック
+    bool hasSystemMessage = false;
+    for (const auto& msg : messages) {
+        if (msg.role == "system") {
+            hasSystemMessage = true;
+            break;
+        }
+    }
+
+    // システムメッセージがない場合、推論無効のシステムプロンプトを追加
+    if (!hasSystemMessage) {
+        oss << "<|start|>system<|message|>You are a helpful assistant.\n\nReasoning: none<|end|>";
+    }
+
+    for (const auto& msg : messages) {
+        if (msg.role == "system") {
+            // システムメッセージに推論設定を追加
+            oss << "<|start|>system<|message|>" << msg.content << "\n\nReasoning: none<|end|>";
+        } else {
+            oss << "<|start|>" << msg.role << "<|message|>" << msg.content << "<|end|>";
+        }
+    }
+
+    // アシスタント応答の開始（final チャンネルでコンテンツを直接生成）
+    oss << "<|start|>assistant<|channel|>final<|message|>";
+    return oss.str();
+}
+
+// gpt-ossモデルの出力から特殊トークンを除去する後処理関数
+static std::string cleanGptOssOutput(const std::string& output) {
+    const std::string marker = "<|channel|>final<|message|>";
+    if (output.find(marker) != std::string::npos) {
+        return extractGptOssFinalMessage(output);
+    }
+
+    std::string result = output;
+
+    // gpt-ossおよびChatMLの特殊トークンリスト
+    const std::vector<std::string> tokens_to_remove = {
+        // gpt-oss tokens
+        "<|start|>", "<|end|>", "<|message|>", "<|channel|>",
+        "<|startoftext|>", "<|endoftext|>", "<|return|>", "<|call|>",
+        "<|constrain|>", "<|endofprompt|>",
+        // ChatML tokens
+        "<|im_start|>", "<|im_end|>", "<|assistant>", "<|user>", "<|system>",
+        // Common control tokens
+        "<|eot_id|>", "</s>", "<s>", "<|begin_of_text|>", "<|end_of_text|>"
+    };
+
+    // 特殊トークンを除去
+    for (const auto& token : tokens_to_remove) {
+        size_t pos = 0;
+        while ((pos = result.find(token, pos)) != std::string::npos) {
+            result.erase(pos, token.length());
+        }
+    }
+
+    // "to=" パターンを全て除去（例: "to=assistant", "to=You", "to=user"）
+    // 正規表現的に "to=" + 英数字列 を除去
+    {
+        size_t pos = 0;
+        while ((pos = result.find("to=", pos)) != std::string::npos) {
+            size_t end_pos = pos + 3;  // "to=" の後ろ
+            // 英数字とアンダースコアが続く間は除去対象
+            while (end_pos < result.size() &&
+                   (std::isalnum(static_cast<unsigned char>(result[end_pos])) ||
+                    result[end_pos] == '_')) {
+                end_pos++;
+            }
+            result.erase(pos, end_pos - pos);
+        }
+    }
+
+    // チャンネル名やロール名を含むパターンを除去
+    // 例: "assistantanalysis:", "analysis:", "final:", "assistantfinal:", etc.
+    const std::vector<std::string> channel_patterns = {
+        // 連結パターン（優先度高）
+        "assistantanalysis:", "assistantfinal:", "assistantcommentary:",
+        "useranalysis:", "userfinal:", "usercommentary:",
+        "systemanalysis:", "systemfinal:", "systemcommentary:",
+        // 単独パターン
+        "analysis:", "final:", "commentary:",
+        "assistant:", "user:", "system:", "developer:",
+        // "=name" パターン
+        "=assistant", "=analysis", "=final", "=commentary",
+        "=user", "=system", "=developer"
+    };
+    for (const auto& pattern : channel_patterns) {
+        size_t pos = 0;
+        while ((pos = result.find(pattern, pos)) != std::string::npos) {
+            result.erase(pos, pattern.length());
+        }
+    }
+
+    // 行頭のチャンネル名（コロンなし）を除去
+    const std::vector<std::string> channel_names = {
+        "assistant", "analysis", "final", "commentary", "user", "system", "developer"
+    };
+    for (const auto& name : channel_names) {
+        // 行頭の "name\n" パターン
+        std::string line_pattern = "\n" + name + "\n";
+        size_t pos = 0;
+        while ((pos = result.find(line_pattern, pos)) != std::string::npos) {
+            result.erase(pos + 1, name.length() + 1);  // 最初の\nは残す
+        }
+        // 文字列先頭の場合
+        if (result.find(name + "\n") == 0) {
+            result.erase(0, name.length() + 1);
+        }
+    }
+
+    // 先頭と末尾の空白を除去
+    size_t start = result.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) {
+        return "";
+    }
+    size_t end = result.find_last_not_of(" \t\n\r");
+    return result.substr(start, end - start + 1);
+}
+
+// モデルがgpt-oss形式かどうかを判定
+// モデルのテンプレートやアーキテクチャから判定する
+static bool isGptOssModel(llama_model* model) {
+    // 1. アーキテクチャ名で判定（最も確実）
+    char arch_buf[64] = {0};
+    int arch_len = llama_model_meta_val_str(model, "general.architecture", arch_buf, sizeof(arch_buf));
+    spdlog::info("isGptOssModel: arch_len={}, arch_buf='{}'", arch_len, arch_buf);
+    if (arch_len > 0) {
+        std::string arch(arch_buf);
+        spdlog::info("isGptOssModel: checking architecture '{}'", arch);
+        if (arch == "gpt-oss") {
+            spdlog::info("Detected gpt-oss model by architecture: {}", arch);
+            return true;
+        }
+    }
+
+    // 2. チャットテンプレートにgpt-oss固有トークンが含まれているかチェック
+    const char* tmpl = llama_model_chat_template(model, nullptr);
+    spdlog::info("isGptOssModel: chat_template={}", tmpl != nullptr ? tmpl : "(null)");
+    if (tmpl != nullptr && tmpl[0] != '\0') {
+        std::string template_str(tmpl);
+        if (template_str.find("<|start|>") != std::string::npos ||
+            template_str.find("<|message|>") != std::string::npos) {
+            spdlog::info("Detected gpt-oss model by chat template tokens");
+            return true;
+        }
+    }
+
+    spdlog::info("isGptOssModel: not detected as gpt-oss");
+    return false;
+}
 
 // モデル固有のチャットテンプレートを適用してプロンプトを構築
 static std::string applyModelChatTemplate(
     llama_model* model,
     const std::vector<ChatMessage>& messages) {
+
+    // gpt-ossモデルの場合はgpt-oss専用形式を使用
+    if (isGptOssModel(model)) {
+        spdlog::info("Detected gpt-oss model, using gpt-oss chat format");
+        return buildGptOssPrompt(messages);
+    }
 
     // llama_chat_message 配列を構築
     std::vector<llama_chat_message> llama_messages;
@@ -405,10 +603,15 @@ static std::string applyModelChatTemplate(
     // モデルからチャットテンプレートを取得
     const char* tmpl = llama_model_chat_template(model, nullptr);
 
-    // テンプレートがない場合はChatMLにフォールバック
+    // テンプレートがない場合はgpt-oss用テンプレかChatMLにフォールバック
     if (tmpl == nullptr || tmpl[0] == '\0') {
-        spdlog::info("Model has no chat template, using ChatML format");
-        return buildChatMLPrompt(messages);
+        if (isGptOssModel(model)) {
+            spdlog::info("Model has no chat template, using built-in gpt-oss template");
+            tmpl = GPT_OSS_TEMPLATE;
+        } else {
+            spdlog::info("Model has no chat template, using ChatML format");
+            return buildChatMLPrompt(messages);
+        }
     }
 
     spdlog::debug("Model chat template found: {}", tmpl);
@@ -457,7 +660,6 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     , model_sync_(model_sync)
     , model_resolver_(model_resolver)
     , resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
-    inference_cache_ = std::make_unique<InferenceCache>();
     engines_ = std::make_unique<EngineRegistry>();
     EngineRegistration llama_reg;
     llama_reg.engine_id = "builtin_llama_cpp";
@@ -467,14 +669,26 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     llama_reg.capabilities = {"text", "embeddings"};
     engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
 
+    EngineRegistration gptoss_reg;
+    gptoss_reg.engine_id = "builtin_gptoss_cpp";
+    gptoss_reg.engine_version = "builtin";
+    gptoss_reg.formats = {"safetensors"};
+    gptoss_reg.architectures = {"gpt_oss"};
+    gptoss_reg.capabilities = {"text"};
+    engines_->registerEngine(std::make_unique<GptOssEngine>(), gptoss_reg, nullptr);
+
+    EngineRegistration nemotron_reg;
+    nemotron_reg.engine_id = "builtin_nemotron_cpp";
+    nemotron_reg.engine_version = "builtin";
+    nemotron_reg.formats = {"safetensors"};
+    nemotron_reg.architectures = {"nemotron"};
+    nemotron_reg.capabilities = {"text"};
+    engines_->registerEngine(std::make_unique<NemotronEngine>(), nemotron_reg, nullptr);
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
     plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
-InferenceEngine::InferenceEngine()
-    : resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
-    inference_cache_ = std::make_unique<InferenceCache>();
-}
+InferenceEngine::InferenceEngine() = default;
 
 InferenceEngine::~InferenceEngine() = default;
 
@@ -489,6 +703,8 @@ bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, 
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
+    context.log_callback = defaultPluginLogHandler;
+    context.log_callback_ctx = nullptr;
 
     return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
 }
@@ -504,6 +720,8 @@ bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
+    context.log_callback = defaultPluginLogHandler;
+    context.log_callback_ctx = nullptr;
 
     if (!engine_host_.stagePluginsFromDir(directory, context, error)) {
         return false;
@@ -658,6 +876,21 @@ void InferenceEngine::handlePluginCrash() const {
     applyPendingEnginePluginsIfIdle();
 }
 
+// =============================================================================
+// T181: クラッシュ後503即時返却
+// =============================================================================
+
+bool InferenceEngine::isInRecoveryMode() const {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    return plugin_restart_pending_;
+}
+
+void InferenceEngine::clearRecoveryMode() {
+    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
+    plugin_restart_pending_ = false;
+    spdlog::info("Recovery mode cleared");
+}
+
 bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
     error.clear();
 #ifdef LLM_NODE_TESTING
@@ -677,6 +910,8 @@ bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error)
     context.abi_version = EngineHost::kAbiVersion;
     context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
     context.llama_manager = manager_;
+    context.log_callback = defaultPluginLogHandler;
+    context.log_callback_ctx = nullptr;
 
     if (!engine_host_.stagePluginsFromDir(engine_plugins_dir_, context, error)) {
         return false;
@@ -690,18 +925,15 @@ std::string InferenceEngine::generateChat(
     const std::string& model,
     const InferenceParams& params) const {
 
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
+
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode");
         if (messages.empty()) return "";
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
-    }
-
-    // T181: Reject requests while plugin restart is pending
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) {
-            throw std::runtime_error("Engine service unavailable: plugin restart pending");
-        }
     }
 
     return run_with_watchdog([&]() {
@@ -716,56 +948,23 @@ std::string InferenceEngine::generateChat(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        const bool cache_enabled = params.temperature <= 0.0f;
-        std::string cache_key;
-        if (cache_enabled && inference_cache_) {
-            cache_key = build_chat_cache_key(messages, model, params);
-            if (auto cached = inference_cache_->get(cache_key)) {
-                return *cached;
-            }
-        }
-
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
 
-        // T136/T137: Exponential backoff retry on crash
-        // T138: Do not retry on cancellation - rethrow immediately
-        constexpr int kMaxRetries = 4;
-        constexpr int kInitialDelayMs = 100;
-        std::exception_ptr last_exception;
-
-        for (int attempt = 0; attempt <= kMaxRetries; ++attempt) {
-            if (attempt > 0) {
-                // Exponential backoff: 100ms, 200ms, 400ms, 800ms
-                int delay_ms = kInitialDelayMs * (1 << (attempt - 1));
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                spdlog::debug("Retry attempt {} after {}ms delay", attempt, delay_ms);
-            }
-
-            try {
-                auto output = engine->generateChat(messages, *desc, params_with_metrics);
-                report_token_metrics(metrics, desc->name, "chat");
-                if (cache_enabled && inference_cache_) {
-                    inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
-                }
-                return output;
-            } catch (const GenerationCancelledException&) {
-                // T138: Cancellation is not a crash - do not retry, rethrow immediately
-                throw;
-            } catch (...) {
-                last_exception = std::current_exception();
-                if (attempt < kMaxRetries) {
-                    spdlog::warn("Engine crashed on attempt {}, will retry", attempt + 1);
-                }
-            }
-        }
-
-        // All retries exhausted
-        handlePluginCrash();
-        std::rethrow_exception(last_exception);
+        // T136-T137: Retry with exponential backoff, transparent to client
+        RetryConfig retry_config;
+        auto output = with_retry(
+            [&]() {
+                return engine->generateChat(messages, *desc, params_with_metrics);
+            },
+            retry_config,
+            [this]() { handlePluginCrash(); }
+        );
+        report_token_metrics(metrics, desc->name, "chat");
+        return output;
     });
 }
 
@@ -783,14 +982,6 @@ std::string InferenceEngine::generateChatWithImages(
         spdlog::warn("InferenceEngine not initialized, using stub mode for vision");
         if (messages.empty()) return "";
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
-    }
-
-    // T181: Reject requests while plugin restart is pending
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) {
-            throw std::runtime_error("Engine service unavailable: plugin restart pending");
-        }
     }
 
     return run_with_watchdog([&]() {
@@ -838,10 +1029,14 @@ std::string InferenceEngine::generateChatWithImages(
         std::string prompt = applyModelChatTemplate(model, messages);
         spdlog::debug("Vision prompt: {}", prompt);
 
+        bool is_gptoss = isGptOssModel(model);
+        bool add_special = !is_gptoss;
+        bool parse_special = is_gptoss;
+
         mtmd_input_text text;
         text.text = prompt.c_str();
-        text.add_special = true;
-        text.parse_special = false;
+        text.add_special = add_special;
+        text.parse_special = parse_special;
 
         mtmd::input_chunks chunks(mtmd_input_chunks_init());
         auto bitmaps_c_ptr = bitmaps.c_ptr();
@@ -882,11 +1077,12 @@ std::string InferenceEngine::generateChatWithImages(
         llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
         llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));
         llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
+        // T028-T029: OpenAI互換のpresence_penalty/frequency_penaltyを適用
         llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-            64,
-            params.repeat_penalty,
-            0.0f,
-            0.0f
+            64,                        // last_n: 直近64トークンを考慮
+            params.repeat_penalty,     // repeat_penalty
+            params.frequency_penalty,  // frequency_penalty: OpenAI互換
+            params.presence_penalty    // presence_penalty: OpenAI互換
         ));
 
         uint32_t seed = params.seed;
@@ -967,6 +1163,12 @@ std::string InferenceEngine::generateChatWithImages(
 
         apply_stop_sequences_suffix(output, stop_sequences);
 
+        if (isGptOssModel(model)) {
+            spdlog::info("Vision: Applying gpt-oss output cleanup, before: {} chars", output.size());
+            output = cleanGptOssOutput(output);
+            spdlog::info("Vision: After cleanup: {} chars", output.size());
+        }
+
         spdlog::info("Vision: Generated {} bytes for model {}", output.size(), model_name);
         report_token_metrics(metrics, model_name, "vision");
         return output;
@@ -977,16 +1179,13 @@ std::string InferenceEngine::generateCompletion(
     const std::string& prompt,
     const std::string& model,
     const InferenceParams& params) const {
-    if (!isInitialized()) {
-        return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
     }
 
-    // T181: Reject requests while plugin restart is pending
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) {
-            throw std::runtime_error("Engine service unavailable: plugin restart pending");
-        }
+    if (!isInitialized()) {
+        return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
 
     return run_with_watchdog([&]() {
@@ -1001,31 +1200,23 @@ std::string InferenceEngine::generateCompletion(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        const bool cache_enabled = params.temperature <= 0.0f;
-        std::string cache_key;
-        if (cache_enabled && inference_cache_) {
-            cache_key = build_completion_cache_key(prompt, model, params);
-            if (auto cached = inference_cache_->get(cache_key)) {
-                return *cached;
-            }
-        }
-
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
-        try {
-            auto output = engine->generateCompletion(prompt, *desc, params_with_metrics);
-            report_token_metrics(metrics, desc->name, "completion");
-            if (cache_enabled && inference_cache_) {
-                inference_cache_->put(cache_key, output, inference_cache_limit_bytes(resource_usage_provider_));
-            }
-            return output;
-        } catch (...) {
-            handlePluginCrash();
-            throw;
-        }
+
+        // T136-T137: Retry with exponential backoff, transparent to client
+        RetryConfig retry_config;
+        auto output = with_retry(
+            [&]() {
+                return engine->generateCompletion(prompt, *desc, params_with_metrics);
+            },
+            retry_config,
+            [this]() { handlePluginCrash(); }
+        );
+        report_token_metrics(metrics, desc->name, "completion");
+        return output;
     });
 }
 
@@ -1034,6 +1225,11 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     const std::string& model,
     const InferenceParams& params,
     const std::function<void(const std::string&)>& on_token) const {
+
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
 
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode for streaming");
@@ -1046,14 +1242,6 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         return tokens;
     }
 
-    // T181: Reject requests while plugin restart is pending
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) {
-            throw std::runtime_error("Engine service unavailable: plugin restart pending");
-        }
-    }
-
     return run_with_watchdog([&]() {
         maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
@@ -1066,36 +1254,41 @@ std::vector<std::string> InferenceEngine::generateChatStream(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
+        // T182: トークン間タイムアウト監視を設定
+        auto inter_token_timeout = get_inter_token_timeout();
+        InterTokenWatchdog inter_token_watchdog(inter_token_timeout);
+
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
-        InferenceParams params_with_metrics = params;
-        params_with_metrics.on_token_callback = &token_metrics_callback;
-        params_with_metrics.on_token_callback_ctx = &metrics;
 
-        // Token-to-token timeout watchdog
-        std::atomic<bool> token_timeout{false};
-        TokenWatchdog token_watchdog(TokenWatchdog::defaultTimeout(), [&token_timeout]() {
-            token_timeout.store(true);
-        });
+        InterTokenWatchdogContext watchdog_context;
+        watchdog_context.watchdog = &inter_token_watchdog;
+        watchdog_context.metrics = &metrics;
 
-        // Wrap on_token callback to kick the watchdog on each token
-        auto wrapped_on_token = [&](const std::string& token) {
-            if (token_timeout.load()) {
-                throw std::runtime_error("Token generation timeout: no token received within timeout period");
-            }
-            token_watchdog.kick();
-            if (on_token) {
-                on_token(token);
-            }
-        };
+        InferenceParams params_with_watchdog = params;
+        params_with_watchdog.on_token_callback = &inter_token_watchdog_callback;
+        params_with_watchdog.on_token_callback_ctx = &watchdog_context;
+        params_with_watchdog.abort_callback = &inter_token_abort_check;
+        params_with_watchdog.abort_callback_ctx = &watchdog_context;
 
         try {
-            auto output = engine->generateChatStream(messages, *desc, params_with_metrics, wrapped_on_token);
-            token_watchdog.stop();
+            auto output = engine->generateChatStream(messages, *desc, params_with_watchdog, on_token);
+            inter_token_watchdog.disarm();
+
+            // T182: タイムアウトが発生していた場合はエラーを投げる
+            if (inter_token_watchdog.hasTimedOut()) {
+                throw TokenTimeoutError("Inter-token timeout: no token generated within " +
+                    std::to_string(inter_token_timeout.count()) + "ms");
+            }
+
             report_token_metrics(metrics, desc->name, "stream");
             return output;
+        } catch (const TokenTimeoutError&) {
+            // タイムアウトはクラッシュではないので再スローのみ
+            inter_token_watchdog.disarm();
+            throw;
         } catch (...) {
-            token_watchdog.stop();
+            inter_token_watchdog.disarm();
             handlePluginCrash();
             throw;
         }
@@ -1264,6 +1457,11 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     const std::vector<std::string>& inputs,
     const std::string& model_name) const {
 
+    // T181: リカバリモード中は503を返却
+    if (isInRecoveryMode()) {
+        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
+    }
+
     if (!isInitialized()) {
         std::vector<std::vector<float>> results;
         results.reserve(inputs.size());
@@ -1271,14 +1469,6 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
             results.push_back({1.0f, 0.0f, -1.0f});
         }
         return results;
-    }
-
-    // T181: Reject requests while plugin restart is pending
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) {
-            throw std::runtime_error("Engine service unavailable: plugin restart pending");
-        }
     }
 
     return run_with_watchdog([&]() {
@@ -1293,12 +1483,15 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
             throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
         }
 
-        try {
-            return engine->generateEmbeddings(inputs, *desc);
-        } catch (...) {
-            handlePluginCrash();
-            throw;
-        }
+        // T136-T137: Retry with exponential backoff, transparent to client
+        RetryConfig retry_config;
+        return with_retry(
+            [&]() {
+                return engine->generateEmbeddings(inputs, *desc);
+            },
+            retry_config,
+            [this]() { handlePluginCrash(); }
+        );
     });
 }
 
@@ -1340,9 +1533,9 @@ void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& di
     engine_plugins_dir_ = directory;
 }
 
-bool InferenceEngine::isPluginRestartPendingForTest() const {
-    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-    return plugin_restart_pending_;
+void InferenceEngine::setInterTokenTimeoutForTest(std::chrono::milliseconds timeout) {
+    std::lock_guard<std::mutex> lock(g_inter_token_timeout_mutex);
+    g_inter_token_timeout_override = timeout;
 }
 #endif
 
@@ -1351,7 +1544,133 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
     if (!engine) return false;
     if (!engine->supportsTextGeneration()) return false;
 
+    if (descriptor.runtime == "gptoss_cpp") {
+        namespace fs = std::filesystem;
+        fs::path model_dir = descriptor.model_dir.empty()
+                                 ? fs::path(descriptor.primary_path).parent_path()
+                                 : fs::path(descriptor.model_dir);
+        if (model_dir.empty()) return false;
+#if defined(_WIN32)
+        if (fs::exists(model_dir / "model.directml.bin")) return true;
+        if (fs::exists(model_dir / "model.dml.bin")) return true;
+        return false;
+#elif defined(__APPLE__)
+        if (fs::exists(model_dir / "model.metal.bin")) return true;
+        if (fs::exists(model_dir / "metal" / "model.bin")) return true;
+        if (fs::exists(model_dir / "model.bin")) return true;
+        return false;
+#else
+        return false;
+#endif
+    }
+
+    if (descriptor.runtime == "nemotron_cpp") {
+#ifndef USE_CUDA
+        return false;
+#else
+        return true;
+#endif
+    }
+
     return true;
+}
+
+// T168: Format tool definitions for prompt embedding
+std::string formatToolsForPrompt(const std::vector<ToolDefinition>& tools) {
+    if (tools.empty()) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << "\n\nYou have access to the following tools:\n\n";
+
+    for (const auto& tool : tools) {
+        oss << "### " << tool.name << "\n";
+        if (!tool.description.empty()) {
+            oss << tool.description << "\n";
+        }
+        if (!tool.parameters_json.empty()) {
+            oss << "Parameters: " << tool.parameters_json << "\n";
+        }
+        oss << "\n";
+    }
+
+    oss << "To use a tool, respond with a JSON object in this format:\n";
+    oss << R"({"name": "tool_name", "arguments": {...}})";
+    oss << "\n\nRespond with regular text if no tool is needed.\n";
+
+    return oss.str();
+}
+
+// T168: Detect tool calls from model output
+std::vector<ToolCall> detectToolCalls(const std::string& output) {
+    std::vector<ToolCall> calls;
+
+    // Look for JSON objects that might be tool calls
+    // Pattern: {"name": "...", "arguments": {...}}
+    size_t pos = 0;
+    while (pos < output.size()) {
+        // Find start of potential JSON object
+        size_t start = output.find('{', pos);
+        if (start == std::string::npos) break;
+
+        // Try to find matching closing brace
+        int depth = 1;
+        size_t end = start + 1;
+        bool in_string = false;
+        char prev_char = 0;
+
+        while (end < output.size() && depth > 0) {
+            char c = output[end];
+            if (c == '"' && prev_char != '\\') {
+                in_string = !in_string;
+            } else if (!in_string) {
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+            }
+            prev_char = c;
+            end++;
+        }
+
+        if (depth != 0) {
+            pos = start + 1;
+            continue;
+        }
+
+        std::string json_str = output.substr(start, end - start);
+
+        // Try to parse as JSON
+        try {
+            auto j = nlohmann::json::parse(json_str);
+
+            // Check if it looks like a tool call
+            if (j.contains("name") && j["name"].is_string()) {
+                ToolCall call;
+                call.function_name = j["name"].get<std::string>();
+
+                if (j.contains("arguments")) {
+                    if (j["arguments"].is_object()) {
+                        call.arguments_json = j["arguments"].dump();
+                    } else if (j["arguments"].is_string()) {
+                        call.arguments_json = j["arguments"].get<std::string>();
+                    }
+                }
+
+                // Generate a unique call ID
+                static std::atomic<uint64_t> call_counter{0};
+                call.id = "call_" + std::to_string(call_counter.fetch_add(1));
+
+                calls.push_back(std::move(call));
+                spdlog::debug("Detected tool call: {}", call.function_name);
+            }
+        } catch (const std::exception&) {
+            // Not valid JSON, continue searching
+        }
+
+        pos = end;
+    }
+
+    return calls;
 }
 
 }  // namespace llm_node

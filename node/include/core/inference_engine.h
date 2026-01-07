@@ -16,6 +16,20 @@
 
 namespace llm_node {
 
+// T181: クラッシュ後503エラー
+class ServiceUnavailableError : public std::runtime_error {
+public:
+    explicit ServiceUnavailableError(const std::string& message)
+        : std::runtime_error(message) {}
+};
+
+// T182: トークン間タイムアウトエラー
+class TokenTimeoutError : public std::runtime_error {
+public:
+    explicit TokenTimeoutError(const std::string& message)
+        : std::runtime_error(message) {}
+};
+
 // 前方宣言
 class LlamaManager;
 class ModelStorage;
@@ -23,7 +37,6 @@ class ModelSync;
 class ModelResolver;
 class VisionProcessor;
 struct ModelDescriptor;
-class InferenceCache;
 
 struct TokenMetrics {
     double ttft_ms{0.0};
@@ -117,6 +130,11 @@ public:
     /// プラグイン再起動ポリシーを設定
     void setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit);
 
+    /// T181: プラグインがリカバリモード中かどうかを返す
+    bool isInRecoveryMode() const;
+    /// T181: リカバリモードを解除
+    void clearRecoveryMode();
+
 #ifdef LLM_NODE_TESTING
     /// テスト専用: EngineRegistry を差し替える
     void setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry);
@@ -134,8 +152,8 @@ public:
     static void setPluginRestartHookForTest(std::function<bool(std::string&)> hook);
     /// テスト専用: プラグインディレクトリを指定する
     void setEnginePluginsDirForTest(const std::filesystem::path& directory);
-    /// テスト専用: プラグイン再起動待ち状態を取得する
-    bool isPluginRestartPendingForTest() const;
+    /// T182: テスト専用: トークン間タイムアウトを差し替える
+    static void setInterTokenTimeoutForTest(std::chrono::milliseconds timeout);
 #endif
 
 private:
@@ -147,7 +165,6 @@ private:
     mutable std::unique_ptr<EngineRegistry> engines_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
     mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
-    mutable std::unique_ptr<InferenceCache> inference_cache_{nullptr};
     std::function<ResourceUsage()> resource_usage_provider_{};
     std::filesystem::path engine_plugins_dir_;
     mutable std::chrono::steady_clock::time_point plugin_restart_last_{};
@@ -166,5 +183,68 @@ private:
     void handlePluginCrash() const;
     bool stagePluginRestart(const char* reason, std::string& error) const;
 };
+
+/// ChatML形式でプロンプトを構築（テンプレートなしモデル用フォールバック）
+std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages);
+
+/// ツール定義をプロンプトに埋め込む形式で変換
+std::string formatToolsForPrompt(const std::vector<ToolDefinition>& tools);
+
+/// 出力からツール呼び出しJSONを検出
+/// Returns: 検出されたToolCall（複数可）、未検出時は空配列
+std::vector<ToolCall> detectToolCalls(const std::string& output);
+
+/// T136: リトライ設定
+struct RetryConfig {
+    int max_retries{4};
+    std::chrono::milliseconds initial_delay{std::chrono::milliseconds(100)};
+    std::chrono::milliseconds max_total{std::chrono::milliseconds(30000)};
+};
+
+/// T136: 指数バックオフリトライヘルパー
+/// T137: クラッシュ後の透過的リトライ
+template <typename Fn>
+auto with_retry(Fn&& fn, const RetryConfig& config,
+                std::function<void()> on_crash = nullptr) -> decltype(fn()) {
+    std::exception_ptr last_exception;
+    auto total_start = std::chrono::steady_clock::now();
+    auto delay = config.initial_delay;
+
+    for (int attempt = 0; attempt <= config.max_retries; ++attempt) {
+        try {
+            return fn();
+        } catch (...) {
+            last_exception = std::current_exception();
+
+            // Check total time limit
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - total_start);
+            if (elapsed >= config.max_total) {
+                break;
+            }
+
+            // Don't retry on last attempt
+            if (attempt >= config.max_retries) {
+                break;
+            }
+
+            // Notify crash handler for transparent recovery
+            if (on_crash) {
+                on_crash();
+            }
+
+            std::this_thread::sleep_for(delay);
+
+            // Exponential backoff: 100ms -> 200ms -> 400ms -> 800ms
+            delay = std::min(delay * 2, config.max_total - elapsed);
+        }
+    }
+
+    if (last_exception) {
+        std::rethrow_exception(last_exception);
+    }
+    // Should not reach here, but satisfy compiler
+    throw std::runtime_error("Retry failed with no exception captured");
+}
 
 }  // namespace llm_node

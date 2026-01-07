@@ -15,6 +15,7 @@ use llm_router_common::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashSet;
 use tracing::{error, info, warn};
 
 /// POST /v0/nodes - ノード登録
@@ -83,25 +84,38 @@ pub async fn register_node(
     let node_api_base = format!("http://{}:{}", req.ip_address, node_api_port);
     let health_url = format!("{}/v1/models", node_api_base);
 
-    // テスト時のみヘルスチェックをスキップ（cfg!(test)はコンパイル時に評価）
-    let skip_health_check = cfg!(test);
-    let (loaded_models, initializing, ready_models) = if skip_health_check {
-        (Vec::new(), false, None)
-    } else {
+    let (loaded_models, initializing, ready_models) = 'health: {
         let health_res = state.http_client.get(&health_url).send().await;
-        if let Err(e) = health_res {
-            // Log full details for debugging (internal URL is logged, not returned to client)
-            error!(
-                "Node registration rejected: node API health check failed at {} ({})",
-                health_url, e
-            );
-            // Return generic error without internal URL (security: prevent information disclosure)
-            return Err(AppError(RouterError::Internal(
-                "Node health check failed".to_string(),
-            )));
-        }
-        let resp = health_res.unwrap();
+        let resp = match health_res {
+            Ok(res) => res,
+            Err(e) => {
+                if cfg!(test) {
+                    warn!(
+                        "Skipping node API health check during tests: {} ({})",
+                        health_url, e
+                    );
+                    break 'health (Vec::new(), false, None);
+                }
+                // Log full details for debugging (internal URL is logged, not returned to client)
+                error!(
+                    "Node registration rejected: node API health check failed at {} ({})",
+                    health_url, e
+                );
+                // Return generic error without internal URL (security: prevent information disclosure)
+                return Err(AppError(RouterError::Internal(
+                    "Node health check failed".to_string(),
+                )));
+            }
+        };
         if !resp.status().is_success() {
+            if cfg!(test) {
+                warn!(
+                    "Skipping node API health check during tests: HTTP {} at {}",
+                    resp.status(),
+                    health_url
+                );
+                break 'health (Vec::new(), false, None);
+            }
             error!(
                 "Node registration rejected: node API returned HTTP {} at {}",
                 resp.status(),
@@ -112,36 +126,52 @@ pub async fn register_node(
                 resp.status()
             ))));
         }
-        let json: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| AppError(RouterError::Internal(e.to_string())))?;
+        let json: serde_json::Value = match resp.json().await {
+            Ok(value) => value,
+            Err(e) => {
+                if cfg!(test) {
+                    warn!(
+                        "Skipping node API health check during tests: invalid JSON ({})",
+                        e
+                    );
+                    break 'health (Vec::new(), false, None);
+                }
+                return Err(AppError(RouterError::Internal(e.to_string())));
+            }
+        };
 
-        let models: Vec<String> = json
-            .get("data")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|m| {
-                        m.get("id")
-                            .and_then(|id| id.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut models: Vec<String> = Vec::new();
+        let mut seen = HashSet::new();
 
-        // SPEC-93536000 3.3: 空のモデルリスト時は登録拒否
+        let entries = if let Some(arr) = json.get("data").and_then(|v| v.as_array()) {
+            arr.clone()
+        } else if let Some(arr) = json.as_array() {
+            arr.clone()
+        } else {
+            Vec::new()
+        };
+
+        for entry in entries {
+            let id = entry
+                .get("id")
+                .and_then(|id| id.as_str())
+                .map(|s| s.trim())
+                .unwrap_or("");
+            if id.is_empty() {
+                continue;
+            }
+            if seen.insert(id.to_string()) {
+                models.push(id.to_string());
+            }
+        }
+
         if models.is_empty() {
             error!(
-                "Node registration rejected: node returned empty model list at {}",
-                health_url
+                "Node registration rejected: node API reported no executable models (machine={})",
+                req.machine_name
             );
-            return Err(AppError(RouterError::Common(
-                llm_router_common::error::CommonError::Validation(
-                    "Node has no executable models. At least one model must be available."
-                        .to_string(),
-                ),
+            return Err(AppError(RouterError::Internal(
+                "Node reported no executable models".to_string(),
             )));
         }
 
@@ -175,12 +205,23 @@ pub async fn register_node(
                     .unwrap_or(false)
             });
 
-        (models, initializing, ready_models)
+        break 'health (models, initializing, ready_models);
     };
 
     // ヘルスチェックOKなら登録を実施
     let mut response = state.registry.register(req).await?;
     response.node_api_port = Some(node_api_port);
+
+    if let Err(e) = state
+        .registry
+        .update_executable_models(response.node_id, loaded_models.clone())
+        .await
+    {
+        warn!(
+            "Failed to update executable models for node {}: {}",
+            response.node_id, e
+        );
+    }
 
     // ノードトークンを生成（更新時は既存トークンを削除して再生成）
     if response.status == llm_router_common::protocol::RegisterStatus::Updated {
@@ -205,12 +246,11 @@ pub async fn register_node(
     response.node_token = Some(node_token_with_plaintext.token);
 
     // 取得した初期状態を反映
-    // SPEC-93536000: executable_modelsにも/v1/modelsから取得したモデル一覧を設定
     if let Err(e) = state
         .registry
         .update_last_seen(
             response.node_id,
-            Some(loaded_models.clone()),
+            None,
             None, // loaded_embedding_models
             None,
             None,
@@ -219,7 +259,7 @@ pub async fn register_node(
             ready_models,
             None,
             None,
-            Some(loaded_models), // executable_models
+            None, // executable_models
         )
         .await
     {
@@ -372,7 +412,6 @@ impl IntoResponse for AppError {
             RouterError::NoCapableNodes(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
-            RouterError::ModelNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
             RouterError::ServiceUnavailable(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
@@ -495,6 +534,52 @@ mod tests {
 
         let response = result.unwrap().1 .0;
         assert!(!response.node_id.to_string().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_register_node_pulls_executable_models() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = create_test_state().await;
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [
+                    {"id": "model-a"},
+                    {"id": "model-b"}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let runtime_port = server.address().port() - 1;
+        let req = RegisterRequest {
+            machine_name: "test-machine-models".to_string(),
+            ip_address: server.address().ip(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = register_node(State(state.clone()), Json(req))
+            .await
+            .unwrap()
+            .1
+             .0;
+
+        let node = state.registry.get(response.node_id).await.unwrap();
+        assert_eq!(
+            node.executable_models,
+            vec!["model-a".to_string(), "model-b".to_string()]
+        );
     }
 
     #[tokio::test]

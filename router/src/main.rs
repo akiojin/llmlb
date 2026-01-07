@@ -153,8 +153,6 @@ async fn run_server(config: ServerConfig) {
     let registry = registry::NodeRegistry::with_storage(db_pool.clone())
         .await
         .expect("Failed to initialize node registry");
-    // NOTE: SPEC-93536000 により REGISTERED_MODELS は廃止されました。
-    // モデル管理はノード側で行います。
 
     let load_manager = balancer::LoadManager::new(registry.clone());
     info!("Storage initialized successfully");
@@ -208,8 +206,6 @@ async fn run_server(config: ServerConfig) {
         .tcp_keepalive(std::time::Duration::from_secs(30))
         .build()
         .expect("Failed to create HTTP client");
-
-    // NOTE: SPEC-93536000 により start_periodic_sync は廃止されました。
 
     let state = AppState {
         registry: registry.clone(),

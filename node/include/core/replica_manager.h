@@ -1,7 +1,6 @@
 #pragma once
 
 #include <mutex>
-#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -9,62 +8,46 @@
 
 namespace llm_node {
 
-/// レプリカの状態
-enum class ReplicaStatus {
-    Available,  // 利用可能
-    Busy,       // 処理中
-    Failed      // 障害
-};
-
-/// 同一モデルの複数GPUレプリカを管理するクラス
-/// T164: レプリカ配置の実装
-/// T165: ラウンドロビン負荷分散の実装
+/// T164-T165: Replica placement and round-robin load balancing
 class ReplicaManager {
 public:
-    ReplicaManager() = default;
+    /// Register a replica (GPU ID) for a model
+    void registerReplica(const std::string& model_name, int gpu_id);
 
-    /// モデルにレプリカを追加
-    /// @param model_name モデル名
-    /// @param gpu_id GPU ID
-    /// @return 追加成功した場合true（既存の場合false）
-    bool addReplica(const std::string& model_name, int gpu_id);
+    /// Unregister a replica
+    void unregisterReplica(const std::string& model_name, int gpu_id);
 
-    /// モデルからレプリカを削除
-    /// @param model_name モデル名
-    /// @param gpu_id GPU ID
-    /// @return 削除成功した場合true
-    bool removeReplica(const std::string& model_name, int gpu_id);
-
-    /// モデルのレプリカ数を取得
+    /// Get the number of replicas for a model
     size_t replicaCount(const std::string& model_name) const;
 
-    /// レプリカの状態を取得
-    std::optional<ReplicaStatus> getReplicaStatus(const std::string& model_name, int gpu_id) const;
+    /// Get all replica GPU IDs for a model
+    std::vector<int> getReplicas(const std::string& model_name) const;
 
-    /// レプリカの状態を設定
-    void setReplicaStatus(const std::string& model_name, int gpu_id, ReplicaStatus status);
+    /// Select next replica using round-robin, skipping failed replicas
+    /// Returns -1 if no healthy replicas available
+    int selectReplica(const std::string& model_name);
 
-    /// ラウンドロビンで次のレプリカを選択
-    /// 障害/ビジー状態のレプリカはスキップ
-    /// @return 選択されたGPU ID（利用可能なレプリカがない場合はnullopt）
-    std::optional<int> selectNextReplica(const std::string& model_name);
+    /// Mark a replica as failed (will be skipped in selection)
+    void markReplicaFailed(const std::string& model_name, int gpu_id);
 
-    /// 利用可能なGPU一覧を取得（Available状態のレプリカのみ）
-    std::set<int> getAvailableGpus(const std::string& model_name) const;
+    /// Mark a replica as healthy (will be included in selection)
+    void markReplicaHealthy(const std::string& model_name, int gpu_id);
+
+    /// Check if a replica is healthy
+    bool isReplicaHealthy(const std::string& model_name, int gpu_id) const;
 
 private:
-    struct Replica {
-        int gpu_id;
-        ReplicaStatus status{ReplicaStatus::Available};
-    };
-
     struct ModelReplicas {
-        std::vector<Replica> replicas;
-        size_t next_index{0};  // ラウンドロビン用インデックス
+        std::set<int> gpu_ids;         // All registered GPU IDs
+        std::set<int> failed_gpus;     // Failed GPU IDs
+        size_t next_index{0};          // Round-robin index
     };
 
     mutable std::mutex mutex_;
     std::unordered_map<std::string, ModelReplicas> models_;
+
+    /// Get healthy replicas sorted by GPU ID
+    std::vector<int> getHealthyReplicas(const ModelReplicas& replicas) const;
 };
 
 }  // namespace llm_node

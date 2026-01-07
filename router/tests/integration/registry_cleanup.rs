@@ -7,6 +7,7 @@ use llm_router::db::nodes::NodeStorage;
 use llm_router::registry::NodeRegistry;
 use llm_router_common::types::{GpuDeviceInfo, Node, NodeStatus};
 use sqlx::sqlite::SqlitePoolOptions;
+use std::collections::HashSet;
 use std::net::IpAddr;
 use uuid::Uuid;
 
@@ -46,6 +47,8 @@ fn create_gpu_node(machine_name: &str) -> Node {
         loaded_embedding_models: Vec::new(),
         loaded_asr_models: Vec::new(),
         loaded_tts_models: Vec::new(),
+        executable_models: Vec::new(),
+        excluded_models: HashSet::new(),
         supported_runtimes: Vec::new(),
         gpu_devices: vec![GpuDeviceInfo {
             model: "NVIDIA RTX 4090".to_string(),
@@ -64,8 +67,6 @@ fn create_gpu_node(machine_name: &str) -> Node {
         sync_state: None,
         sync_progress: None,
         sync_updated_at: None,
-        executable_models: Vec::new(),
-        excluded_models: Vec::new(),
     }
 }
 
@@ -89,6 +90,8 @@ fn create_no_gpu_node(machine_name: &str) -> Node {
         loaded_embedding_models: Vec::new(),
         loaded_asr_models: Vec::new(),
         loaded_tts_models: Vec::new(),
+        executable_models: Vec::new(),
+        excluded_models: HashSet::new(),
         supported_runtimes: Vec::new(),
         gpu_devices: Vec::new(),
         gpu_available: false,
@@ -103,8 +106,6 @@ fn create_no_gpu_node(machine_name: &str) -> Node {
         sync_state: None,
         sync_progress: None,
         sync_updated_at: None,
-        executable_models: Vec::new(),
-        excluded_models: Vec::new(),
     }
 }
 

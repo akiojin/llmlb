@@ -1,237 +1,124 @@
-// T168/T169/T178: Function Calling検出テスト
+// SPEC-d7feaa2c: T168-T169, T178 Function Calling tests
 #include <gtest/gtest.h>
 
-#include "core/function_calling.h"
+#include "core/inference_engine.h"
+#include "core/engine_types.h"
 
-using namespace llm_node;
+namespace llm_node {
+namespace {
 
-class FunctionCallingDetectorTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        // Sample tool definitions for testing
-        ToolDefinition weather_tool;
-        weather_tool.name = "get_weather";
-        weather_tool.description = "Get the current weather in a location";
-        weather_tool.parameters = R"({
-            "type": "object",
-            "properties": {
-                "location": {"type": "string", "description": "City name"},
-                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
-            },
-            "required": ["location"]
-        })";
-
-        ToolDefinition search_tool;
-        search_tool.name = "search";
-        search_tool.description = "Search the web";
-        search_tool.parameters = R"({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"}
-            },
-            "required": ["query"]
-        })";
-
-        tools_ = {weather_tool, search_tool};
-    }
-
-    std::vector<ToolDefinition> tools_;
-};
-
-// T168: ツール定義のプロンプト埋め込み
-
-TEST_F(FunctionCallingDetectorTest, FormatToolsAsPromptContainsToolNames) {
-    FunctionCallingDetector detector(tools_);
-    std::string prompt = detector.formatToolsAsPrompt();
-
-    EXPECT_TRUE(prompt.find("get_weather") != std::string::npos);
-    EXPECT_TRUE(prompt.find("search") != std::string::npos);
+// T168: Tool prompt formatting tests
+TEST(FunctionCallingTest, FormatToolsForPromptEmpty) {
+    std::vector<ToolDefinition> tools;
+    std::string result = formatToolsForPrompt(tools);
+    EXPECT_TRUE(result.empty());
 }
 
-TEST_F(FunctionCallingDetectorTest, FormatToolsAsPromptContainsDescriptions) {
-    FunctionCallingDetector detector(tools_);
-    std::string prompt = detector.formatToolsAsPrompt();
+TEST(FunctionCallingTest, FormatToolsForPromptSingleTool) {
+    std::vector<ToolDefinition> tools = {{
+        "get_weather",
+        "Get the current weather in a location",
+        R"({"type":"object","properties":{"location":{"type":"string"}}})"
+    }};
 
-    EXPECT_TRUE(prompt.find("Get the current weather") != std::string::npos);
-    EXPECT_TRUE(prompt.find("Search the web") != std::string::npos);
+    std::string result = formatToolsForPrompt(tools);
+
+    EXPECT_TRUE(result.find("get_weather") != std::string::npos);
+    EXPECT_TRUE(result.find("Get the current weather") != std::string::npos);
+    EXPECT_TRUE(result.find("location") != std::string::npos);
+    EXPECT_TRUE(result.find("JSON") != std::string::npos);
 }
 
-TEST_F(FunctionCallingDetectorTest, FormatToolsAsPromptContainsParameters) {
-    FunctionCallingDetector detector(tools_);
-    std::string prompt = detector.formatToolsAsPrompt();
+TEST(FunctionCallingTest, FormatToolsForPromptMultipleTools) {
+    std::vector<ToolDefinition> tools = {
+        {"tool_a", "Description A", "{}"},
+        {"tool_b", "Description B", "{}"},
+        {"tool_c", "Description C", "{}"}
+    };
 
-    EXPECT_TRUE(prompt.find("location") != std::string::npos);
-    EXPECT_TRUE(prompt.find("query") != std::string::npos);
+    std::string result = formatToolsForPrompt(tools);
+
+    EXPECT_TRUE(result.find("tool_a") != std::string::npos);
+    EXPECT_TRUE(result.find("tool_b") != std::string::npos);
+    EXPECT_TRUE(result.find("tool_c") != std::string::npos);
 }
 
-TEST_F(FunctionCallingDetectorTest, EmptyToolsReturnsEmptyPrompt) {
-    FunctionCallingDetector detector({});
-    std::string prompt = detector.formatToolsAsPrompt();
-
-    EXPECT_TRUE(prompt.empty());
+// T168: Tool call detection tests
+TEST(FunctionCallingTest, DetectToolCallsEmpty) {
+    std::string output = "Hello, how can I help you?";
+    auto calls = detectToolCalls(output);
+    EXPECT_TRUE(calls.empty());
 }
 
-// T168: 出力からのJSON検出
+TEST(FunctionCallingTest, DetectToolCallsSimple) {
+    std::string output = R"(I'll get the weather for you.
+{"name": "get_weather", "arguments": {"location": "Tokyo"}})";
 
-TEST_F(FunctionCallingDetectorTest, DetectToolCallFromJsonOutput) {
-    FunctionCallingDetector detector(tools_);
+    auto calls = detectToolCalls(output);
 
-    std::string output = R"(I will help you check the weather.
-
-{"name": "get_weather", "arguments": {"location": "Tokyo", "unit": "celsius"}}
-)";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->function_name, "get_weather");
-    EXPECT_TRUE(result->arguments.find("Tokyo") != std::string::npos);
+    ASSERT_EQ(calls.size(), 1u);
+    EXPECT_EQ(calls[0].function_name, "get_weather");
+    EXPECT_TRUE(calls[0].arguments_json.find("Tokyo") != std::string::npos);
+    EXPECT_FALSE(calls[0].id.empty());
 }
 
-TEST_F(FunctionCallingDetectorTest, DetectToolCallWithCodeBlock) {
-    FunctionCallingDetector detector(tools_);
+TEST(FunctionCallingTest, DetectToolCallsNestedJson) {
+    std::string output = R"({"name": "search", "arguments": {"query": "test", "options": {"limit": 10}}})";
 
-    std::string output = R"(Let me search for that.
+    auto calls = detectToolCalls(output);
 
-```json
-{"name": "search", "arguments": {"query": "weather forecast"}}
-```
-)";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->function_name, "search");
-    EXPECT_TRUE(result->arguments.find("weather forecast") != std::string::npos);
+    ASSERT_EQ(calls.size(), 1u);
+    EXPECT_EQ(calls[0].function_name, "search");
+    EXPECT_TRUE(calls[0].arguments_json.find("limit") != std::string::npos);
 }
 
-TEST_F(FunctionCallingDetectorTest, DetectToolCallWithActionFormat) {
-    // Some models use <tool_call> tags
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"(<tool_call>
-{"name": "get_weather", "arguments": {"location": "New York"}}
-</tool_call>)";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->function_name, "get_weather");
-}
-
-TEST_F(FunctionCallingDetectorTest, NoToolCallReturnsNullopt) {
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = "The weather in Tokyo is sunny with a high of 25°C.";
-
-    auto result = detector.detectToolCall(output);
-
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST_F(FunctionCallingDetectorTest, InvalidJsonReturnsNullopt) {
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"({"name": "get_weather", "arguments": {"location": })";
-
-    auto result = detector.detectToolCall(output);
-
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST_F(FunctionCallingDetectorTest, UnknownToolNameReturnsNullopt) {
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"({"name": "unknown_tool", "arguments": {}})";
-
-    auto result = detector.detectToolCall(output);
-
-    EXPECT_FALSE(result.has_value());
-}
-
-// T169: finish_reason="tool_calls"対応
-
-TEST_F(FunctionCallingDetectorTest, DetectedToolCallHasGeneratedId) {
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"({"name": "get_weather", "arguments": {"location": "Tokyo"}})";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_FALSE(result->id.empty());
-    EXPECT_TRUE(result->id.find("call_") == 0);  // ID starts with "call_"
-}
-
-TEST_F(FunctionCallingDetectorTest, ToolCallTypeIsFunction) {
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"({"name": "get_weather", "arguments": {"location": "Tokyo"}})";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->type, "function");
-}
-
-TEST_F(FunctionCallingDetectorTest, DetectToolCallPreservesArguments) {
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"({"name": "get_weather", "arguments": {"location": "San Francisco", "unit": "fahrenheit"}})";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    // Arguments should be preserved as JSON string
-    EXPECT_TRUE(result->arguments.find("San Francisco") != std::string::npos);
-    EXPECT_TRUE(result->arguments.find("fahrenheit") != std::string::npos);
-}
-
-// ツール有効化チェック
-
-TEST_F(FunctionCallingDetectorTest, HasToolsReturnsTrueWhenToolsDefined) {
-    FunctionCallingDetector detector(tools_);
-    EXPECT_TRUE(detector.hasTools());
-}
-
-TEST_F(FunctionCallingDetectorTest, HasToolsReturnsFalseWhenEmpty) {
-    FunctionCallingDetector detector({});
-    EXPECT_FALSE(detector.hasTools());
-}
-
-// OpenAI互換のfunction呼び出しフォーマット
-
-TEST_F(FunctionCallingDetectorTest, DetectOpenAIFunctionCallFormat) {
-    // OpenAI models might output in this format
-    FunctionCallingDetector detector(tools_);
-
-    std::string output = R"({
-        "function_call": {
-            "name": "get_weather",
-            "arguments": "{\"location\": \"Tokyo\"}"
-        }
-    })";
-
-    auto result = detector.detectToolCall(output);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->function_name, "get_weather");
-}
-
-// 複数のツール呼び出し（将来拡張用の基礎テスト）
-
-TEST_F(FunctionCallingDetectorTest, DetectFirstToolCallWhenMultiple) {
-    FunctionCallingDetector detector(tools_);
-
-    // When output contains multiple tool calls, detect the first one
+TEST(FunctionCallingTest, DetectToolCallsMultiple) {
     std::string output = R"(
-{"name": "get_weather", "arguments": {"location": "Tokyo"}}
-{"name": "search", "arguments": {"query": "restaurants"}}
+{"name": "tool_a", "arguments": {}}
+Some text
+{"name": "tool_b", "arguments": {"x": 1}}
 )";
 
-    auto result = detector.detectToolCall(output);
+    auto calls = detectToolCalls(output);
 
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->function_name, "get_weather");
+    ASSERT_EQ(calls.size(), 2u);
+    EXPECT_EQ(calls[0].function_name, "tool_a");
+    EXPECT_EQ(calls[1].function_name, "tool_b");
 }
 
+TEST(FunctionCallingTest, DetectToolCallsIgnoresRegularJson) {
+    // JSON without "name" field should not be detected as tool call
+    std::string output = R"({"city": "Tokyo", "temperature": 25})";
+
+    auto calls = detectToolCalls(output);
+    EXPECT_TRUE(calls.empty());
+}
+
+TEST(FunctionCallingTest, DetectToolCallsHandlesMalformedJson) {
+    std::string output = R"({"name": "test" incomplete json)";
+
+    auto calls = detectToolCalls(output);
+    EXPECT_TRUE(calls.empty());
+}
+
+TEST(FunctionCallingTest, DetectToolCallsGeneratesUniqueIds) {
+    std::string output = R"({"name": "a", "arguments": {}}{"name": "b", "arguments": {}})";
+
+    auto calls = detectToolCalls(output);
+
+    ASSERT_EQ(calls.size(), 2u);
+    EXPECT_NE(calls[0].id, calls[1].id);
+}
+
+// T169: Tool calls in InferenceParams
+TEST(FunctionCallingTest, InferenceParamsHasTools) {
+    InferenceParams params;
+    EXPECT_TRUE(params.tools.empty());
+
+    params.tools.push_back({"test_tool", "A test tool", "{}"});
+    EXPECT_EQ(params.tools.size(), 1u);
+    EXPECT_EQ(params.tools[0].name, "test_tool");
+}
+
+}  // namespace
+}  // namespace llm_node

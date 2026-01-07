@@ -299,6 +299,74 @@ void stcpp_context_kv_cache_clear(stcpp_context* ctx) {
     }
 }
 
+/* VRAM monitoring (Task 59) */
+
+stcpp_vram_usage stcpp_context_vram_usage(const stcpp_context* ctx) {
+    stcpp_vram_usage usage = {};
+
+    if (!ctx) return usage;
+
+    auto* impl = reinterpret_cast<const stcpp_context_impl*>(ctx);
+    if (!impl->ggml_ctx || !impl->model) return usage;
+
+    auto* ggml_ctx = impl->ggml_ctx.get();
+    auto* ggml_model = impl->model->ggml_model.get();
+
+    // Calculate weights memory
+    if (ggml_model->buffer) {
+        usage.weights_bytes = ggml_backend_buffer_get_size(ggml_model->buffer);
+    }
+
+    // Calculate KV cache memory
+    // KV cache size = 2 * n_layers * n_ctx * n_embd * dtype_size
+    size_t kv_elem_size = 2;  // FP16 default
+    if (ggml_ctx->params.kv_cache_quant) {
+        kv_elem_size = 1;  // INT8 or FP8
+    }
+    usage.kv_cache_bytes = 2 * ggml_model->hparams.n_layer *
+                           ggml_ctx->kv_size *
+                           ggml_model->hparams.n_embd *
+                           kv_elem_size;
+
+    // Estimate compute buffer
+    usage.compute_bytes = stcpp::estimate_compute_buffer_size(
+        ggml_model->hparams,
+        ggml_ctx->params.n_ctx,
+        ggml_ctx->params.n_batch
+    );
+
+    // Total
+    usage.total_bytes = usage.weights_bytes + usage.kv_cache_bytes + usage.compute_bytes;
+    usage.peak_bytes = usage.total_bytes;  // Track peak in actual usage
+
+    // KV cache ratio
+    if (usage.total_bytes > 0) {
+        usage.kv_cache_ratio = static_cast<float>(usage.kv_cache_bytes) /
+                               static_cast<float>(usage.total_bytes);
+    }
+
+    return usage;
+}
+
+size_t stcpp_context_kv_cache_size(const stcpp_context* ctx) {
+    if (!ctx) return 0;
+
+    auto* impl = reinterpret_cast<const stcpp_context_impl*>(ctx);
+    if (!impl->ggml_ctx) return 0;
+
+    return static_cast<size_t>(impl->ggml_ctx->kv_size);
+}
+
+float stcpp_context_kv_cache_utilization(const stcpp_context* ctx) {
+    if (!ctx) return 0.0f;
+
+    auto* impl = reinterpret_cast<const stcpp_context_impl*>(ctx);
+    if (!impl->ggml_ctx || impl->ggml_ctx->kv_size <= 0) return 0.0f;
+
+    return static_cast<float>(impl->ggml_ctx->kv_used) /
+           static_cast<float>(impl->ggml_ctx->kv_size);
+}
+
 /* Tokenizer implementations */
 
 stcpp_tokenizer* stcpp_model_get_tokenizer(stcpp_model* model) {

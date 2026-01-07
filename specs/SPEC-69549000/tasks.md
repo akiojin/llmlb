@@ -293,7 +293,12 @@
   - `benchmarks/hf_benchmark.py` - HuggingFace transformersベンチマーク
   - `benchmarks/compare.py` - 結果比較ツール
   - `examples/benchmark.cpp` - JSON出力機能追加
-- [ ] 59. VRAM使用量最適化 (依存: 58)
+- [x] 59. VRAM使用量最適化 (依存: 58)
+  - `stcpp_vram_usage` 詳細構造体追加
+  - `stcpp_kv_quant_type` KVキャッシュ量子化タイプ追加
+  - `stcpp_context_vram_usage()` VRAM使用状況API追加
+  - `stcpp_context_kv_cache_size()` KVキャッシュサイズAPI追加
+  - `stcpp_context_kv_cache_utilization()` KVキャッシュ使用率API追加
 
 ### CI/CD
 

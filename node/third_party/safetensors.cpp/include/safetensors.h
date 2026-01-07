@@ -59,6 +59,13 @@ typedef enum {
     STCPP_ERROR_VRAM_INSUFFICIENT = -8,
 } stcpp_error;
 
+/* KV cache quantization type (Task 59 - VRAM optimization) */
+typedef enum {
+    STCPP_KV_QUANT_NONE = 0,    /* No quantization (FP16/FP32) */
+    STCPP_KV_QUANT_INT8 = 1,    /* INT8 quantization (~50% VRAM) */
+    STCPP_KV_QUANT_FP8  = 2,    /* FP8 quantization (~50% VRAM) */
+} stcpp_kv_quant_type;
+
 /* Structs */
 typedef struct {
     int32_t n_ctx;              /* Context size (default: 4096) */
@@ -66,9 +73,10 @@ typedef struct {
     int32_t n_threads;          /* CPU threads (0: auto) */
     int32_t n_gpu_layers;       /* GPU layers (-1: all) */
     int32_t device_id;          /* GPU device ID (default: 0) */
-    bool    use_mmap;           /* Use mmap (default: false) */
+    bool    use_mmap;           /* Use mmap (default: true) */
     bool    use_mlock;          /* Use mlock (default: false) */
     bool    kv_cache_quant;     /* KV cache quantization (default: false) */
+    stcpp_kv_quant_type kv_quant_type; /* KV quantization type (Task 59) */
     stcpp_backend_type backend; /* Backend type */
 } stcpp_context_params;
 
@@ -88,6 +96,16 @@ typedef struct {
     size_t vram_available;      /* Available VRAM (bytes) */
     bool   can_load;            /* Whether model can be loaded */
 } stcpp_vram_estimate;
+
+/* Detailed VRAM usage breakdown (Task 59) */
+typedef struct {
+    size_t weights_bytes;       /* Model weights memory */
+    size_t kv_cache_bytes;      /* KV cache memory */
+    size_t compute_bytes;       /* Compute buffer memory */
+    size_t total_bytes;         /* Total VRAM usage */
+    size_t peak_bytes;          /* Peak VRAM usage */
+    float  kv_cache_ratio;      /* KV cache as percentage (0.0-1.0) */
+} stcpp_vram_usage;
 
 /* Callbacks */
 typedef void (*stcpp_log_callback)(
@@ -144,6 +162,11 @@ stcpp_context* stcpp_context_new(
 );
 void stcpp_context_free(stcpp_context* ctx);
 void stcpp_context_kv_cache_clear(stcpp_context* ctx);
+
+/* VRAM monitoring (Task 59) */
+stcpp_vram_usage stcpp_context_vram_usage(const stcpp_context* ctx);
+size_t stcpp_context_kv_cache_size(const stcpp_context* ctx);
+float stcpp_context_kv_cache_utilization(const stcpp_context* ctx);
 
 /* Tokenizer */
 stcpp_tokenizer* stcpp_model_get_tokenizer(stcpp_model* model);

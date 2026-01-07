@@ -259,6 +259,7 @@ pub async fn register_node(
             ready_models,
             None,
             None,
+            None, // executable_models
         )
         .await
     {

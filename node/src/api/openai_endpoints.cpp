@@ -516,8 +516,8 @@ bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& e
     return true;
 }
 
-OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config)
-    : registry_(registry), engine_(engine), config_(config) {}
+OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config, GpuBackend backend)
+    : registry_(registry), engine_(engine), config_(config), backend_(backend) {}
 
 void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
     server.Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {

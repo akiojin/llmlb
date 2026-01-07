@@ -90,6 +90,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
             Some((4, 4)),
             None,
             None,
+            None, // executable_models
         )
         .await
         .ok();

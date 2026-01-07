@@ -52,9 +52,9 @@ Nemotron 3 Nano 30B A3B(BF16) はGGUF変換が失敗するため、safetensors�
 - Nodeにエンジン抽象化レイヤーが導入され、llama.cpp 等の複数エンジンを選択できる
 - エンジンは **動的プラグイン** として追加・更新できる
 - `metadata.json` のような llm-router 独自メタデータファイルに依存せず、エンジン選択が実装される
-- **対応OS/GPUの前提が明確**（macOS: Metal、Windows: DirectML、Linux: 非対応/CUDAは実験）
+Windows: CUDA
 
-## アーキテクチャ（Nodeエンジン層）
+## アーキテクチャ（Nodeエンジン層・詳細）
 
 ### 目的
 - **モデル形式や実行方式が増えても**、Node側のモデル検出・ロード・推論の責務が破綻しない構造にする。
@@ -101,12 +101,59 @@ register(format=...)  ───────▶    ModelStorage
 
 ### OS/GPU前提（本仕様の前提）
 - macOS: Apple Silicon + Metal
-- Windows: DirectML（D3D12）
+Windows: CUDA
 - Linux: 当面は非対応（CUDAは実験扱い）
+
+### Windows CUDA（Nemotron）実装前提
+- **DLL/API??**: gpt-oss CUDA DLL (TBD) ???? C API?`gptoss_*` ????????????
+- **DLL?**: Windows???? `gptoss_directml.dll` / `nemotron_directml.dll` ?????????????????? `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???DLL?????
+- **???????????**: safetensors??????????????`model.directml.bin` / `model.dml.bin` ?????????????
+- **safetensors ??**: `config.json` / `tokenizer.json` / index+shards ?????DirectML ? safetensors ?????????`model.directml.bin` / `model.dml.bin` ?????????
 
 ### 現状の実運用確認（safetensors系LLM）
 - 安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。
-- DirectMLは限定的、NemotronはTBD（後回し）。
+- Windows CUDAが主経路、DirectMLは限定的、NemotronはTBD（後回し）。
+
+## アーキテクチャ（Nodeエンジン層）
+
+### 目的
+- **モデル形式や実行方式が増えても**、Node側のモデル検出・ロード・推論の責務が破綻しない構造にする。
+- **“正（登録で確定したアーティファクト）” と “実行（Engine）”** を分離し、拡張を容易にする。
+
+### コンポーネント分解（概念）
+
+```
+Router（登録・配布）                Node（取得・検証・実行）
+───────────────────               ─────────────────────────
+register(format=...)  ───────▶    ModelStorage
+  ├─ 形式確定                           ├─ ローカル配置検出
+  ├─ 必須ファイル検証                    ├─ HF由来メタデータ検証
+  └─ マニフェスト確定                    └─ ModelDescriptor生成
+                                           │
+                                           ▼
+                                    EngineRegistry
+                                      └─ runtime → Engine を解決
+                                           │
+                                           ▼
+                                    InferenceEngine
+                                      └─ Engineへ推論を委譲
+                                           │
+                                           ▼
+                                        Engine（複数）
+                                      ├─ llama.cpp（GGUF）
+                                      └─ safetensors系（将来拡張）
+```
+
+### Key concepts
+- **ModelDescriptor**: Nodeが推論を開始するために必要な最小情報（例: `format`, `runtime`, `model_dir`, `primary` など）。
+- **runtime**: “どのEngineで実行すべきか” を表す識別子（例: `llama_cpp` など）。
+- **Engine**: 推論の実体（GPU実行・サンプリング・ストリーミングなど）を担う差し替え可能ユニット。
+
+### エンジン選択の入力（Single source of truth）
+- **登録時に確定したアーティファクト（format/必要ファイル）**
+- **Hugging Face 由来のメタデータ（`config.json` 等）**
+
+※ Nodeローカルに複数形式が同居していることを理由に自動フォールバックは行わない（登録で確定させる）。
 
 ## 非ゴール
 - Nemotron向けの新エンジン（推論エンジン）の仕様策定・実装（後回し / TBDとして別途扱う）
@@ -119,7 +166,7 @@ register(format=...)  ───────▶    ModelStorage
 - 開発者として、モデル形式が増えてもNodeのエンジン選択が壊れない構造にしたい
 
 ## 保留事項（TBD）
-- Nemotron向けの新エンジン（推論エンジン）は別SPECとして後日仕様化する（後回し / TBD。Metal/DirectML対応方針、CUDA実験扱い、chat_template互換、dtype戦略など）。
+- Nemotron向けの新エンジン（推論エンジン）は別SPECとして後日仕様化する（後回し / TBD。Metal/CUDA対応方針、CUDA実験扱い、chat_template互換、dtype戦略など）。
 
 ## 受け入れ条件
 - Nodeが登録時の選択（safetensors/GGUF）と `config.json` に従ってエンジンを選択する

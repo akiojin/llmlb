@@ -20,8 +20,6 @@ std::string normalize_architecture_name(const std::string& value) {
             compact.push_back(c);
         }
     }
-    if (compact.find("gptoss") != std::string::npos) return "gptoss";
-    if (compact.find("nemotron") != std::string::npos) return "nemotron";
     if (compact.find("mistral") != std::string::npos) return "mistral";
     if (compact.find("gemma") != std::string::npos) return "gemma";
     if (compact.find("llama") != std::string::npos) return "llama";

@@ -347,10 +347,25 @@ std::string normalize_architecture_name(const std::string& value) {
         }
     }
 
+    // Normalize architecture family names
+    if (compact.find("qwen") != std::string::npos) return "qwen";
+    if (compact.find("llama") != std::string::npos) return "llama";
     if (compact.find("mistral") != std::string::npos) return "mistral";
     if (compact.find("gemma") != std::string::npos) return "gemma";
-    if (compact.find("llama") != std::string::npos) return "llama";
-    if (compact.find("qwen") != std::string::npos) return "qwen";
+    if (compact.find("phi") != std::string::npos) return "phi";
+    if (compact.find("nemotron") != std::string::npos) return "nemotron";
+    if (compact.find("deepseek") != std::string::npos) return "deepseek";
+    if (compact.find("gptoss") != std::string::npos) return "gptoss";
+    if (compact.find("granite") != std::string::npos) return "granite";
+    if (compact.find("smollm") != std::string::npos) return "smollm";
+    if (compact.find("kimi") != std::string::npos) return "kimi";
+    if (compact.find("moondream") != std::string::npos) return "moondream";
+    if (compact.find("snowflake") != std::string::npos) return "snowflake";
+    if (compact.find("nomic") != std::string::npos) return "nomic";
+    if (compact.find("mxbai") != std::string::npos) return "mxbai";
+    if (compact.find("minilm") != std::string::npos) return "minilm";
+    if (compact.find("devstral") != std::string::npos) return "devstral";
+    if (compact.find("magistral") != std::string::npos) return "magistral";
 
     return compact.empty() ? lower : compact;
 }

@@ -109,7 +109,7 @@ ENGINE_API void engine_shutdown(void);
 
 ### 理由
 
-- 同一エンジンでもMetal/DirectML/CUDAで異なるバイナリが必要
+- 同一エンジンでもMetal/CUDA/CUDAで異なるバイナリが必要
 - ディレクトリ分離で明確な管理
 - manifest.jsonでgpu_backendを宣言
 

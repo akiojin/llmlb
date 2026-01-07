@@ -1,4 +1,5 @@
 #include "core/request_watchdog.h"
+#include "core/token_watchdog.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -55,6 +56,101 @@ TEST(RequestWatchdogTest, TimeoutTriggersInTestMode) {
     }
 
     EXPECT_TRUE(RequestWatchdog::wasTimeoutTriggered());
+}
+
+// T182: TokenWatchdog（トークン間タイムアウト）テスト
+class TokenWatchdogTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        TokenWatchdog::resetTestState();
+    }
+};
+
+TEST_F(TokenWatchdogTest, TimeoutTriggersWhenNoKick) {
+    // kickなしで待機すると、タイムアウトがトリガーされる
+    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+
+    bool timeout_called = false;
+    {
+        TokenWatchdog watchdog(std::chrono::milliseconds(20), [&timeout_called]() {
+            timeout_called = true;
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_TRUE(timeout_called);
+    EXPECT_TRUE(TokenWatchdog::wasTimeoutTriggered());
+}
+
+TEST_F(TokenWatchdogTest, KickResetsTimeout) {
+    // kickするとタイムアウトがリセットされる
+    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+
+    bool timeout_called = false;
+    {
+        TokenWatchdog watchdog(std::chrono::milliseconds(30), [&timeout_called]() {
+            timeout_called = true;
+        });
+        // 20ms毎にkickして、30msのタイムアウトを回避
+        for (int i = 0; i < 5; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            watchdog.kick();
+        }
+    }
+
+    EXPECT_FALSE(timeout_called);
+    EXPECT_FALSE(TokenWatchdog::wasTimeoutTriggered());
+}
+
+TEST_F(TokenWatchdogTest, TimeoutTriggersAfterKickStops) {
+    // kickが止まるとタイムアウトがトリガーされる
+    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+
+    bool timeout_called = false;
+    {
+        TokenWatchdog watchdog(std::chrono::milliseconds(20), [&timeout_called]() {
+            timeout_called = true;
+        });
+        // 数回kickした後、停止
+        for (int i = 0; i < 3; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            watchdog.kick();
+        }
+        // kickなしで待機
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_TRUE(timeout_called);
+    EXPECT_TRUE(TokenWatchdog::wasTimeoutTriggered());
+}
+
+TEST_F(TokenWatchdogTest, DefaultTimeoutIs5Seconds) {
+    // デフォルトタイムアウトは5秒
+    EXPECT_EQ(TokenWatchdog::defaultTimeout(), std::chrono::seconds(5));
+}
+
+TEST_F(TokenWatchdogTest, TimeoutCanBeConfiguredViaEnv) {
+    // 環境変数でタイムアウトを設定可能
+    EnvGuard timeout_ms("LLM_NODE_TOKEN_WATCHDOG_TIMEOUT_MS", "100");
+    EXPECT_EQ(TokenWatchdog::defaultTimeout(), std::chrono::milliseconds(100));
+}
+
+TEST_F(TokenWatchdogTest, StopPreventsTimeout) {
+    // stop()を呼ぶとタイムアウトが発生しない
+    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+
+    bool timeout_called = false;
+    {
+        TokenWatchdog watchdog(std::chrono::milliseconds(20), [&timeout_called]() {
+            timeout_called = true;
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        watchdog.stop();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_FALSE(timeout_called);
+    EXPECT_FALSE(TokenWatchdog::wasTimeoutTriggered());
 }
 
 }  // namespace

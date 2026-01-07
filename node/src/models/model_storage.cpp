@@ -346,8 +346,6 @@ std::string normalize_architecture_name(const std::string& value) {
         }
     }
 
-    if (compact.find("gptoss") != std::string::npos) return "gptoss";
-    if (compact.find("nemotron") != std::string::npos) return "nemotron";
     if (compact.find("mistral") != std::string::npos) return "mistral";
     if (compact.find("gemma") != std::string::npos) return "gemma";
     if (compact.find("llama") != std::string::npos) return "llama";
@@ -383,27 +381,6 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir,
         if (j.contains("architectures") && j["architectures"].is_array()) {
             if (architectures) {
                 *architectures = extract_architectures_from_config(j);
-            }
-            for (const auto& a : j["architectures"]) {
-                if (!a.is_string()) continue;
-                const auto s = a.get<std::string>();
-                if (s.find("GptOss") != std::string::npos || s.find("GPTOSS") != std::string::npos) {
-                    return std::string("gptoss_cpp");
-                }
-                if (s.find("Nemotron") != std::string::npos) {
-                    return std::string("nemotron_cpp");
-                }
-            }
-        }
-
-        if (j.contains("model_type") && j["model_type"].is_string()) {
-            auto mt = j["model_type"].get<std::string>();
-            std::transform(mt.begin(), mt.end(), mt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (mt.find("gpt_oss") != std::string::npos || mt.find("gptoss") != std::string::npos) {
-                return std::string("gptoss_cpp");
-            }
-            if (mt.find("nemotron") != std::string::npos) {
-                return std::string("nemotron_cpp");
             }
         }
     } catch (...) {
@@ -487,9 +464,6 @@ std::vector<std::string> load_architectures_from_config(const fs::path& model_di
 std::vector<std::string> capabilities_for_runtime(const std::string& runtime) {
     if (runtime == "llama_cpp") {
         return {"text", "embeddings"};
-    }
-    if (runtime == "gptoss_cpp" || runtime == "nemotron_cpp") {
-        return {"text"};
     }
     if (runtime == "whisper_cpp") {
         return {"asr"};

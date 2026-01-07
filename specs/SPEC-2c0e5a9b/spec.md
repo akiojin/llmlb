@@ -1,4 +1,4 @@
-# SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML）
+# SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/CUDA）
 
 ## 背景 / 問題
 
@@ -6,7 +6,7 @@
 - 一部のモデルは、特定GPU向けに“公式の実行用アーティファクト”（例: Apple Silicon/Metal向けの事前変換済みファイル）を別途提供する場合がある。
 - llm-router の Node は現状 GGUF（llama.cpp）を主前提としており、safetensors を正本として GPU で実行する“推論エンジン（線）”が不足している。
 - 運用方針として safetensors を正本とし、GGUF は「GGUFしか存在しないモデル」のみで選択する（gpt-oss-20b は GGUF 前提にしない）。
-- 実行環境は GPU 前提（Apple Silicon/Metal、Windows/DirectML）。GPU 非搭載ノードは対象外。
+- 実行環境は GPU 前提（Apple Silicon/Metal、Windows/CUDA）。GPU 非搭載ノードは対象外。
 
 ## 目的
 
@@ -21,7 +21,7 @@
 - gpt-oss-20b のテキスト生成（通常応答 / ストリーミング）
 - safetensors のシャーディング（`.safetensors.index.json` + shards）を 1 つのモデルとして扱うこと
 - 登録時の選択（`format=safetensors`）を正として Node がロード可能であること
-- Apple Silicon (Metal) / Windows DirectML の GPU 実行を前提とした設計
+- Apple Silicon (Metal) / Windows CUDA の GPU 実行を前提とした設計
 - safetensors を正本（監査・説明責任の基準）としつつ、公式のGPU最適化アーティファクトが提供されている場合はそれを優先して実行できること
 
 ### スコープ外
@@ -35,15 +35,16 @@
 - **実行最適化は別レイヤ**: 公式GPU最適化アーティファクトは「実行キャッシュ」として扱い、登録形式の決定を置き換えない。
 - **Python依存なし**: Node は Python 依存を導入しない。
 - **GPU前提**: GPU非搭載ノードは対象外。
-- **対応OS/GPU**: macOS=Metal、Windows=DirectML。Linuxは当面非対応（CUDAは実験扱い）。
-- **現状の実運用確認**: safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。DirectMLは限定的、NemotronはTBD。
+- **対応OS/GPU**: macOS=Metal、Windows=CUDA。Linuxは当面非対応。DirectMLは実験扱い。
+- **移行理由**: WindowsはCUDAが再現性と安定性で優位なため主経路とし、DirectMLはアーティファクト不足とドライバ差分の影響が大きいため凍結する。
+- **現状の実運用確認**: safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。Windows CUDAが主経路、DirectMLは限定的、NemotronはTBD。
 - **chat_template**: 無い場合はデフォルトテンプレートを利用する。
 - **プラグイン形式**: gpt-oss 実行エンジンは Node のプラグインとして提供する。
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
 ### ユーザーストーリー1 - gpt-oss-20b を safetensors で登録し、GPUで推論したい (P1)
-運用管理者として、`openai/gpt-oss-20b` を safetensors として登録し、Apple Silicon（Metal）または Windows（DirectML）のノードで推論できることを期待する。
+運用管理者として、`openai/gpt-oss-20b` を safetensors として登録し、Apple Silicon（Metal）または Windows（CUDA）のノードで推論できることを期待する。
 
 **独立テスト**:
 1. **前提** 対象ノードが GPU を検出済みで online、**実行** `openai/gpt-oss-20b` を `format=safetensors` で登録、**結果** `/v1/models` に当該モデルが ready として現れる。
@@ -81,13 +82,13 @@ Node
   └─ Engine Host (Plugin Loader)
        └─ gpt-oss plugin: GPUで推論（通常/ストリーミング）
             ├─ 優先1: 公式GPU最適化アーティファクト（Metal向け、allowlist対象）
-            └─ 優先2: safetensors（index + shards, DirectML/Metal共通）
+            └─ 優先2: safetensors（index + shards, CUDA/Metal共通）
 ```
 
 ### 役割の分離
 - **safetensors（正本）**: 監査・説明責任の基準。常に保持し、必要なメタデータ（`config.json`, `tokenizer.json`）で一貫性を担保する。
 - **公式GPU最適化アーティファクト（実行キャッシュ）**: GPU実行のために“公式が提供する最適化済みアーティファクト”。存在し、かつ許可リスト内なら実行で優先できる。
-- **Engine**: gpt-oss の “線（推論ロジック）” を実装する実行単位。Metal/DirectML を内包し、OpenAI互換の生成結果を返す。
+- **Engine**: gpt-oss の “線（推論ロジック）” を実装する実行単位。Metal/CUDA を内包し、OpenAI互換の生成結果を返す。
 - **Engine Plugin**: 共有ライブラリ + manifest.json で提供される gpt-oss 実行単位。
 
 ### 機能要件
@@ -101,7 +102,7 @@ Node
 - **FR-008**: 公式のGPU最適化アーティファクトが利用可能な場合はそれを優先し、利用できない場合は safetensors を用いて実行する。
 - **FR-009**: 公式のGPU最適化アーティファクトは「同一 publisher org（例: `openai`, `nvidia`）配下の別リポジトリ」から取得できる。取得可否は許可リストで管理する（初期値: `openai/*`, `nvidia/*`）。
 - **FR-010**: 公式GPU最適化アーティファクトは登録形式を置き換えない（登録は常に `format=safetensors` のまま）。
-- **注記（初期実装）**: DirectML はまず **最適化アーティファクト必須** とし、safetensors からの直接推論は後続タスクで対応する。
+- **注記（初期実装）**: DirectML は実験扱いで **最適化アーティファクト必須** とし、safetensors からの直接推論は後続タスクで対応する。
 - **FR-011**: gpt-oss 実行エンジンはプラグインとしてロードされ、ABI 互換が一致する場合のみ有効化される。
 
 ### 非機能要件
@@ -109,7 +110,8 @@ Node
 - **NFR-002**: Node は Python 依存なしで動作する（必須）。
 - **NFR-003**: 失敗時のエラーメッセージは運用者が対処できる粒度（不足ファイル、未対応環境、等）である。
 - **NFR-004**: DirectML の最小バージョンは固定しない（実行時検出で可否を判断）。
-- **NFR-005**: DirectML ランタイム（`gptoss_directml.dll`）は本リポジトリの GitHub Releases から配布する。
+- **NFR-005**: DirectML ??????`gptoss_directml.dll`?? Windows?????????????????????? `LLM_NODE_GPTOSS_DML_LIB` ???DLL?????
+- **????????**: DirectML ? safetensors ??????????????`model.directml.bin` / `model.dml.bin` ???????????????
 
 ## 依存関係
 - `SPEC-3fc2c1e4`（実行エンジン統合）

@@ -30,7 +30,7 @@ protected:
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai{registry, engine, config, GpuBackend::kCpu};
+    OpenAIEndpoints openai{registry, engine, config, GpuBackend::Cpu};
     NodeEndpoints node;
     std::unique_ptr<HttpServer> server;
 };

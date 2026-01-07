@@ -181,10 +181,10 @@ TEST(GpuDetectorTest, SelectGpuIgnoresPreferredIfUnavailable) {
 
 TEST(GpuBackendTest, GpuBackendToStringReturnsCorrectValue) {
     using llm_node::GpuBackend;
-    EXPECT_EQ(gpuBackendToString(GpuBackend::kMetal), "metal");
-    EXPECT_EQ(gpuBackendToString(GpuBackend::kCuda), "cuda");
-    EXPECT_EQ(gpuBackendToString(GpuBackend::kRocm), "rocm");
-    EXPECT_EQ(gpuBackendToString(GpuBackend::kCpu), "cpu");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::Metal), "metal");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::Cuda), "cuda");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::Rocm), "rocm");
+    EXPECT_EQ(gpuBackendToString(GpuBackend::Cpu), "cpu");
 }
 
 // T2.2: getGpuBackend テスト
@@ -194,7 +194,7 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsCpuWhenNoGpu) {
     GpuDetector detector;
     detector.setDetectedDevicesForTest({});
 
-    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kCpu);
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::Cpu);
 }
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsCudaForNvidia) {
@@ -205,7 +205,7 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsCudaForNvidia) {
     };
     detector.setDetectedDevicesForTest(devices);
 
-    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kCuda);
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::Cuda);
 }
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsMetalForApple) {
@@ -216,7 +216,7 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsMetalForApple) {
     };
     detector.setDetectedDevicesForTest(devices);
 
-    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kMetal);
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::Metal);
 }
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsRocmForAmd) {
@@ -227,7 +227,7 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsRocmForAmd) {
     };
     detector.setDetectedDevicesForTest(devices);
 
-    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kRocm);
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::Rocm);
 }
 
 TEST(GpuDetectorTest, GetGpuBackendPrioritizesFirstAvailableGpu) {
@@ -240,7 +240,7 @@ TEST(GpuDetectorTest, GetGpuBackendPrioritizesFirstAvailableGpu) {
     };
     detector.setDetectedDevicesForTest(devices);
 
-    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::kRocm);
+    EXPECT_EQ(detector.getGpuBackend(), GpuBackend::Rocm);
 }
 
 }  // namespace

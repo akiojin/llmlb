@@ -19,21 +19,21 @@ TEST(ModelRegistryTest, ListExecutableModelsReturnsAllModelsForCompatibleBackend
     registry.setModels({"qwen-7b", "llama-3.1-8b", "mistral-7b"});
 
     // Metal バックエンドでも全モデルを返す（ロード可能なモデルは互換性あり）
-    auto models = registry.listExecutableModels(GpuBackend::kMetal);
+    auto models = registry.listExecutableModels(GpuBackend::Metal);
     ASSERT_EQ(models.size(), 3);
     EXPECT_EQ(models[0], "qwen-7b");
     EXPECT_EQ(models[1], "llama-3.1-8b");
     EXPECT_EQ(models[2], "mistral-7b");
 
     // CUDA バックエンドでも同様
-    models = registry.listExecutableModels(GpuBackend::kCuda);
+    models = registry.listExecutableModels(GpuBackend::Cuda);
     ASSERT_EQ(models.size(), 3);
 }
 
 TEST(ModelRegistryTest, ListExecutableModelsReturnsEmptyWhenNoModels) {
     ModelRegistry registry;
 
-    auto models = registry.listExecutableModels(GpuBackend::kCpu);
+    auto models = registry.listExecutableModels(GpuBackend::Cpu);
     EXPECT_TRUE(models.empty());
 }
 
@@ -44,10 +44,10 @@ TEST(ModelRegistryTest, IsCompatibleReturnsTrueForLoadedModels) {
     registry.setModels({"qwen-7b", "llama-3.1-8b"});
 
     // 登録済みモデルは現在のバックエンドと互換性あり
-    EXPECT_TRUE(registry.isCompatible("qwen-7b", GpuBackend::kMetal));
-    EXPECT_TRUE(registry.isCompatible("llama-3.1-8b", GpuBackend::kCuda));
-    EXPECT_TRUE(registry.isCompatible("qwen-7b", GpuBackend::kRocm));
-    EXPECT_TRUE(registry.isCompatible("qwen-7b", GpuBackend::kCpu));
+    EXPECT_TRUE(registry.isCompatible("qwen-7b", GpuBackend::Metal));
+    EXPECT_TRUE(registry.isCompatible("llama-3.1-8b", GpuBackend::Cuda));
+    EXPECT_TRUE(registry.isCompatible("qwen-7b", GpuBackend::Rocm));
+    EXPECT_TRUE(registry.isCompatible("qwen-7b", GpuBackend::Cpu));
 }
 
 TEST(ModelRegistryTest, IsCompatibleReturnsFalseForUnknownModels) {
@@ -55,8 +55,8 @@ TEST(ModelRegistryTest, IsCompatibleReturnsFalseForUnknownModels) {
     registry.setModels({"qwen-7b"});
 
     // 未登録モデルは非互換
-    EXPECT_FALSE(registry.isCompatible("unknown-model", GpuBackend::kMetal));
-    EXPECT_FALSE(registry.isCompatible("not-loaded", GpuBackend::kCuda));
+    EXPECT_FALSE(registry.isCompatible("unknown-model", GpuBackend::Metal));
+    EXPECT_FALSE(registry.isCompatible("not-loaded", GpuBackend::Cuda));
 }
 
 // 既存機能テスト

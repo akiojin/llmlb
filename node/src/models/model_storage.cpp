@@ -385,8 +385,10 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir,
         }
     } catch (...) {
         // ignore parse errors
+        return std::nullopt;
     }
-    return std::nullopt;
+    // SPEC-69549000: safetensors format models use safetensors_cpp engine
+    return "safetensors_cpp";
 }
 
 std::string to_lower_ascii(std::string value) {
@@ -464,6 +466,12 @@ std::vector<std::string> load_architectures_from_config(const fs::path& model_di
 std::vector<std::string> capabilities_for_runtime(const std::string& runtime) {
     if (runtime == "llama_cpp") {
         return {"text", "embeddings"};
+    }
+    // SPEC-69549000: safetensors.cpp engine capabilities
+    // Note: safetensors models are primarily for text generation (LlamaForCausalLM, etc.)
+    // Embeddings require specific embedding models, not generic text models
+    if (runtime == "safetensors_cpp") {
+        return {"text"};
     }
     if (runtime == "whisper_cpp") {
         return {"asr"};

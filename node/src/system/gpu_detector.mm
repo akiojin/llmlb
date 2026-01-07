@@ -142,22 +142,6 @@ std::optional<int> GpuDetector::selectGpu(std::optional<int> prefer_loaded_gpu) 
     return std::nullopt;
 }
 
-GpuBackend GpuDetector::getGpuBackend() const {
-    // Find the first available GPU and return its backend
-    for (const auto& dev : detected_devices_) {
-        if (!dev.is_available) continue;
-
-        if (dev.vendor == "nvidia") {
-            return GpuBackend::kCuda;
-        } else if (dev.vendor == "apple") {
-            return GpuBackend::kMetal;
-        } else if (dev.vendor == "amd") {
-            return GpuBackend::kRocm;
-        }
-    }
-    return GpuBackend::kCpu;
-}
-
 std::vector<GpuDevice> GpuDetector::detectCuda() {
     // CUDA is not available on macOS
     return std::vector<GpuDevice>();

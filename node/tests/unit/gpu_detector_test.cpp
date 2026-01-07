@@ -7,6 +7,18 @@ namespace {
 
 using llm_node::GpuDetector;
 
+// Helper function for testing GpuBackend enum
+std::string gpuBackendToString(llm_node::GpuBackend backend) {
+    switch (backend) {
+        case llm_node::GpuBackend::Metal: return "metal";
+        case llm_node::GpuBackend::Cuda: return "cuda";
+        case llm_node::GpuBackend::Rocm: return "rocm";
+        case llm_node::GpuBackend::DirectML: return "directml";
+        case llm_node::GpuBackend::Cpu: return "cpu";
+        default: return "unknown";
+    }
+}
+
 TEST(GpuDetectorSmokeTest, DefaultsAreEmpty) {
     GpuDetector detector;
 

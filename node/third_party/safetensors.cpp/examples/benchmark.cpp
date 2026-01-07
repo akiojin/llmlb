@@ -11,18 +11,21 @@
  *   --iterations N       Number of iterations (default: 10)
  *   --gpu-layers N       Layers to offload to GPU (default: all)
  *   --warmup N           Warmup iterations (default: 2)
+ *   --output FILE        Output JSON file for comparison with HuggingFace
  */
 
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 #include "safetensors.h"
 
 struct BenchmarkConfig {
     std::string model_path;
+    std::string output_path;  // JSON output file
     int prompt_tokens = 128;
     int gen_tokens = 128;
     int batch_size = 1;
@@ -36,6 +39,7 @@ struct BenchmarkResults {
     double gen_tokens_per_sec = 0.0;
     double total_time_ms = 0.0;
     double first_token_ms = 0.0;
+    double load_time_ms = 0.0;
     int64_t vram_used_mb = 0;
 };
 
@@ -48,6 +52,7 @@ void print_usage(const char* prog) {
     fprintf(stderr, "  --iterations N       Number of iterations (default: 10)\n");
     fprintf(stderr, "  --gpu-layers N       Layers to offload to GPU (default: all)\n");
     fprintf(stderr, "  --warmup N           Warmup iterations (default: 2)\n");
+    fprintf(stderr, "  --output FILE        Output JSON file for HuggingFace comparison\n");
 }
 
 BenchmarkConfig parse_args(int argc, char** argv) {
@@ -73,6 +78,8 @@ BenchmarkConfig parse_args(int argc, char** argv) {
             config.gpu_layers = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < argc) {
             config.warmup = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
+            config.output_path = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             exit(0);
@@ -121,6 +128,7 @@ void print_results(const BenchmarkConfig& config, const BenchmarkResults& result
     printf("Token generation:     %8.2f tokens/sec\n", results.gen_tokens_per_sec);
     printf("Time to first token:  %8.2f ms\n", results.first_token_ms);
     printf("Total time:           %8.2f ms\n", results.total_time_ms);
+    printf("Model load time:      %8.2f ms\n", results.load_time_ms);
     printf("\n");
     print_separator();
     printf("                        MEMORY\n");
@@ -131,6 +139,50 @@ void print_results(const BenchmarkConfig& config, const BenchmarkResults& result
     print_separator();
 }
 
+bool save_results_json(
+    const std::string& path,
+    const BenchmarkConfig& config,
+    const BenchmarkResults& results
+) {
+    std::ofstream file(path);
+    if (!file.is_open()) {
+        fprintf(stderr, "Failed to open output file: %s\n", path.c_str());
+        return false;
+    }
+
+    // Detect device
+    std::string device = "cpu";
+#ifdef STCPP_USE_METAL
+    device = "metal";
+#elif defined(STCPP_USE_CUDA)
+    device = "cuda";
+#elif defined(STCPP_USE_ROCM)
+    device = "rocm";
+#elif defined(STCPP_USE_VULKAN)
+    device = "vulkan";
+#endif
+
+    file << "{\n";
+    file << "  \"model_path\": \"" << config.model_path << "\",\n";
+    file << "  \"backend\": \"safetensors.cpp\",\n";
+    file << "  \"prompt_tokens\": " << config.prompt_tokens << ",\n";
+    file << "  \"gen_tokens\": " << config.gen_tokens << ",\n";
+    file << "  \"batch_size\": " << config.batch_size << ",\n";
+    file << "  \"iterations\": " << config.iterations << ",\n";
+    file << "  \"prompt_tokens_per_sec\": " << results.prompt_tokens_per_sec << ",\n";
+    file << "  \"gen_tokens_per_sec\": " << results.gen_tokens_per_sec << ",\n";
+    file << "  \"total_time_ms\": " << results.total_time_ms << ",\n";
+    file << "  \"first_token_ms\": " << results.first_token_ms << ",\n";
+    file << "  \"load_time_ms\": " << results.load_time_ms << ",\n";
+    file << "  \"vram_used_mb\": " << results.vram_used_mb << ",\n";
+    file << "  \"device\": \"" << device << "\"\n";
+    file << "}\n";
+
+    file.close();
+    printf("\nResults saved to: %s\n", path.c_str());
+    return true;
+}
+
 int main(int argc, char** argv) {
     BenchmarkConfig config = parse_args(argc, argv);
 
@@ -139,15 +191,12 @@ int main(int argc, char** argv) {
     printf("\n");
 
     // Initialize library
-    if (stcpp_init() != STCPP_OK) {
-        fprintf(stderr, "Failed to initialize library\n");
-        return 1;
-    }
+    stcpp_init();
 
     printf("Loading model: %s\n", config.model_path.c_str());
     auto load_start = std::chrono::high_resolution_clock::now();
 
-    stcpp_model* model = stcpp_model_load(config.model_path.c_str());
+    stcpp_model* model = stcpp_model_load(config.model_path.c_str(), nullptr, nullptr);
     if (!model) {
         fprintf(stderr, "Failed to load model\n");
         stcpp_free();
@@ -162,7 +211,7 @@ int main(int argc, char** argv) {
     stcpp_context_params ctx_params = stcpp_context_default_params();
     ctx_params.n_ctx = config.prompt_tokens + config.gen_tokens + 256;
     if (config.gpu_layers >= 0) {
-        ctx_params.gpu_layers = config.gpu_layers;
+        ctx_params.n_gpu_layers = config.gpu_layers;
     }
 
     stcpp_context* ctx = stcpp_context_new(model, ctx_params);
@@ -178,10 +227,12 @@ int main(int argc, char** argv) {
 
     // Warmup
     printf("Running %d warmup iterations...\n", config.warmup);
+    stcpp_sampling_params samp_params = stcpp_sampling_default_params();
     for (int i = 0; i < config.warmup; i++) {
         std::vector<char> output(config.gen_tokens * 8);
-        stcpp_generate(ctx, prompt.c_str(), output.data(), config.gen_tokens);
-        stcpp_kv_cache_clear(ctx);
+        stcpp_generate(ctx, prompt.c_str(), samp_params, config.gen_tokens,
+                       output.data(), static_cast<int32_t>(output.size()));
+        stcpp_context_kv_cache_clear(ctx);
     }
 
     // Benchmark
@@ -192,7 +243,7 @@ int main(int argc, char** argv) {
     std::vector<double> first_token_times;
 
     for (int iter = 0; iter < config.iterations; iter++) {
-        stcpp_kv_cache_clear(ctx);
+        stcpp_context_kv_cache_clear(ctx);
 
         double first_token_time = 0.0;
         int tokens_generated = 0;
@@ -215,7 +266,8 @@ int main(int argc, char** argv) {
 
         // For now, use blocking generate (streaming would be better)
         std::vector<char> output(config.gen_tokens * 8);
-        stcpp_generate(ctx, prompt.c_str(), output.data(), config.gen_tokens);
+        stcpp_generate(ctx, prompt.c_str(), samp_params, config.gen_tokens,
+                       output.data(), static_cast<int32_t>(output.size()));
 
         auto gen_end = std::chrono::high_resolution_clock::now();
 
@@ -253,9 +305,20 @@ int main(int argc, char** argv) {
     results.gen_tokens_per_sec = (config.gen_tokens * 1000.0) / avg_gen_ms;
     results.first_token_ms = avg_first_token_ms;
     results.total_time_ms = avg_prompt_ms + avg_gen_ms;
-    results.vram_used_mb = stcpp_model_vram_estimate(model) / (1024 * 1024);
+    results.load_time_ms = load_time_ms;
+
+    // Estimate VRAM usage
+    stcpp_backend_type backend = ctx_params.backend;
+    stcpp_vram_estimate vram = stcpp_model_estimate_vram(
+        config.model_path.c_str(), backend, 0);
+    results.vram_used_mb = static_cast<int64_t>(vram.vram_required / (1024 * 1024));
 
     print_results(config, results);
+
+    // Save JSON output if requested
+    if (!config.output_path.empty()) {
+        save_results_json(config.output_path, config, results);
+    }
 
     // Cleanup
     stcpp_context_free(ctx);

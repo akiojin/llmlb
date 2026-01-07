@@ -289,7 +289,10 @@
 ### Performance
 
 - [x] 57. ベンチマークツール作成 (依存: 51)
-- [ ] 58. HuggingFace transformers比較ベンチマーク (依存: 57)
+- [x] 58. HuggingFace transformers比較ベンチマーク (依存: 57)
+  - `benchmarks/hf_benchmark.py` - HuggingFace transformersベンチマーク
+  - `benchmarks/compare.py` - 結果比較ツール
+  - `examples/benchmark.cpp` - JSON出力機能追加
 - [ ] 59. VRAM使用量最適化 (依存: 58)
 
 ### CI/CD

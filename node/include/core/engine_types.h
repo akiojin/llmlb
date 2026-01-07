@@ -35,6 +35,13 @@ using OnTokenCallback = void (*)(void* ctx, uint32_t token_id, uint64_t timestam
 /// T182: Callback to check if generation should abort (returns true to abort)
 using AbortCallback = bool (*)(void* ctx);
 
+/// Token-level log probability information for OpenAI API compatibility
+struct TokenLogprob {
+    std::string token;                                      // The generated token
+    double logprob{0.0};                                   // Log probability of the token
+    std::vector<std::pair<std::string, double>> top_logprobs;  // Top alternative tokens with logprobs
+};
+
 struct InferenceParams {
     size_t max_tokens{0};
     float temperature{0.8f};
@@ -74,13 +81,6 @@ inline size_t resolve_effective_max_tokens(size_t requested,
     if (requested == 0) return available;
     return std::min(requested, available);
 }
-
-/// Token-level log probability information for OpenAI API compatibility
-struct TokenLogprob {
-    std::string token;                                      // The generated token
-    double logprob{0.0};                                   // Log probability of the token
-    std::vector<std::pair<std::string, double>> top_logprobs;  // Top alternative tokens with logprobs
-};
 
 struct ModelLoadResult {
     bool success{false};

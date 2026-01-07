@@ -129,22 +129,29 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
         return result;
     }
 
-    // Determine model path
-    std::string model_path = descriptor.primary_path;
-    if (model_path.empty()) {
-        model_path = models_dir_ + "/" + descriptor.name + "/model.safetensors";
+    // Determine model directory (stcpp_model_load expects model directory, not file path)
+    std::string model_dir = descriptor.model_dir;
+    if (model_dir.empty()) {
+        // Fall back to extracting directory from primary_path
+        if (!descriptor.primary_path.empty()) {
+            model_dir = std::filesystem::path(descriptor.primary_path).parent_path().string();
+        } else {
+            model_dir = models_dir_ + "/" + descriptor.name;
+        }
     }
 
-    if (!std::filesystem::exists(model_path)) {
+    // Verify config.json exists in model directory
+    const auto config_path = std::filesystem::path(model_dir) / "config.json";
+    if (!std::filesystem::exists(config_path)) {
         result.success = false;
         result.error_code = EngineErrorCode::kLoadFailed;
-        result.error_message = "Model file not found: " + model_path;
+        result.error_message = "config.json not found in: " + model_dir;
         return result;
     }
 
-    // Load model
+    // Load model (pass model directory, not file path)
     ErrorContext error_ctx;
-    stcpp_model* model = stcpp_model_load(model_path.c_str(), errorCallback, &error_ctx);
+    stcpp_model* model = stcpp_model_load(model_dir.c_str(), errorCallback, &error_ctx);
     if (!model) {
         result.success = false;
         result.error_code = EngineErrorCode::kLoadFailed;

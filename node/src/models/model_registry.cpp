@@ -18,31 +18,12 @@ std::vector<std::string> ModelRegistry::listModels() const {
 }
 
 std::vector<std::string> ModelRegistry::listExecutableModels() const {
-#ifdef LLM_NODE_TESTING
+    // Return all models that were added via setModels().
+    // The filtering by engine.isModelSupported() already happens in main.cpp
+    // when models are scanned, so no additional filtering is needed here.
+    // The supportedModelMap is used for UI display purposes only.
     std::lock_guard<std::mutex> lock(mutex_);
     return models_;
-#else
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto& supported = supportedModelMap();
-    std::vector<std::string> executable;
-    executable.reserve(models_.size());
-    std::unordered_set<std::string> seen;
-
-    for (const auto& id : models_) {
-        const auto it = supported.find(id);
-        if (it == supported.end()) {
-            continue;
-        }
-        if (!isCompatible(it->second, backend_)) {
-            continue;
-        }
-        if (seen.insert(id).second) {
-            executable.push_back(id);
-        }
-    }
-
-    return executable;
-#endif
 }
 
 bool ModelRegistry::hasModel(const std::string& id) const {

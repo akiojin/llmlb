@@ -218,6 +218,22 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         }
         spdlog::info("InferenceEngine initialized with llama.cpp support");
 
+        // Scan local models BEFORE starting server (router checks /v1/models during registration)
+        {
+            auto local_descriptors = model_storage.listAvailableDescriptors();
+            std::vector<std::string> initial_models;
+            initial_models.reserve(local_descriptors.size());
+            for (const auto& desc : local_descriptors) {
+                if (!engine.isModelSupported(desc)) {
+                    continue;
+                }
+                initial_models.push_back(desc.name);
+            }
+            registry.setModels(initial_models);
+            spdlog::info("Model scan: found {} supported models out of {} total",
+                         initial_models.size(), local_descriptors.size());
+        }
+
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
         llm_node::OpenAIEndpoints openai(registry, engine, cfg, gpu_detector.getGpuBackend());
         llm_node::NodeEndpoints node_endpoints;
@@ -251,10 +267,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 // Sync with router
                 auto sync_result = model_sync->sync();
 
-                // Delete models not in router
-                for (const auto& model_id : sync_result.to_delete) {
-                    spdlog::info("Deleting model not in router: {}", model_id);
-                    model_storage.deleteModel(model_id);
+                // Skip model deletion - router catalog may not include all local models
+                if (!sync_result.to_delete.empty()) {
+                    spdlog::info("Skipping deletion of {} models not in router (local models preserved)",
+                                 sync_result.to_delete.size());
                 }
 
                 // Update registry with current local models
@@ -366,14 +382,11 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             sync_result = model_sync->sync();
         }
 
-        // Delete models not in router (router is source of truth)
-        for (const auto& model_id : sync_result.to_delete) {
-            std::cout << "Deleting model not in router: " << model_id << std::endl;
-            if (model_storage.deleteModel(model_id)) {
-                std::cout << "  Deleted: " << model_id << std::endl;
-            } else {
-                std::cerr << "  Failed to delete: " << model_id << std::endl;
-            }
+        // Skip model deletion for now - router catalog may not include all local models
+        // In future, consider a config flag to control this behavior
+        if (!sync_result.to_delete.empty()) {
+            spdlog::info("Skipping deletion of {} models not in router (local models preserved)",
+                         sync_result.to_delete.size());
         }
 
         // Update registry with local models (models actually available on this node)

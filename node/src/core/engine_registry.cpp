@@ -84,6 +84,13 @@ std::string normalize_architecture(std::string value) {
             out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
         }
     }
+    // Normalize architecture family names (e.g., qwen2 -> qwen, llama3 -> llama)
+    if (out.find("qwen") != std::string::npos) return "qwen";
+    if (out.find("llama") != std::string::npos) return "llama";
+    if (out.find("mistral") != std::string::npos) return "mistral";
+    if (out.find("gemma") != std::string::npos) return "gemma";
+    if (out.find("phi") != std::string::npos) return "phi";
+    if (out.find("nemotron") != std::string::npos) return "nemotron";
     return out;
 }
 

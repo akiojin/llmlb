@@ -83,7 +83,8 @@ std::vector<fs::path> list_gguf_files(const fs::path& model_dir) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
         if (ec) break;
-        if (!entry.is_regular_file()) continue;
+        // シンボリックリンクもサポート（HuggingFaceキャッシュからのリンク対応）
+        if (!is_regular_or_symlink_file(entry.path())) continue;
         const auto filename = entry.path().filename().string();
         if (!is_gguf_filename(filename)) continue;
         if (!is_valid_file(entry.path())) continue;
@@ -384,7 +385,6 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir,
             }
         }
     } catch (...) {
-        // ignore parse errors
         return std::nullopt;
     }
     // SPEC-69549000: safetensors format models use safetensors_cpp engine
@@ -494,7 +494,8 @@ std::optional<fs::path> resolve_safetensors_primary_in_dir(const fs::path& model
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
         if (ec) break;
-        if (!entry.is_regular_file()) continue;
+        // SPEC-69549000: シンボリックリンクもサポート（HuggingFaceキャッシュからのリンク対応）
+        if (!is_regular_or_symlink_file(entry.path())) continue;
 
         const auto filename = entry.path().filename().string();
         const auto lower = [&]() {
@@ -731,7 +732,9 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
         if (info.format == "safetensors") {
             std::vector<std::string> architectures;
             auto rt = detect_runtime_from_config(fs::path(desc.model_dir), &architectures);
-            if (!rt) continue;
+            if (!rt) {
+                continue;
+            }
             desc.runtime = *rt;
             desc.architectures = std::move(architectures);
             desc.capabilities = capabilities_for_runtime(desc.runtime);

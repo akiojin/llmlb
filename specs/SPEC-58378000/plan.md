@@ -202,7 +202,7 @@ node/
 - [x] Phase 0: Research完了
 - [x] Phase 1: Design完了
 - [x] Phase 2: Task planning完了 (アプローチのみ記述)
-- [ ] Phase 3: Tasks生成済み (/speckit.tasks コマンド)
+- [x] Phase 3: Tasks生成済み (/speckit.tasks コマンド) - 49タスク
 - [ ] Phase 4: 実装完了
 - [ ] Phase 5: 検証合格
 

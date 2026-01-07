@@ -1,6 +1,11 @@
 set(UNIT_TEST_SOURCES
     continuous_batch_scheduler_test.cpp
     gpu_detector_test.cpp
+    vision_processor_test.cpp
+    inference_cache_test.cpp
+    prefix_cache_test.cpp
+    replica_manager_test.cpp
+    function_calling_test.cpp
     router_client_test.cpp
     model_sync_test.cpp
     model_downloader_test.cpp
@@ -44,6 +49,9 @@ set(UNIT_TEST_SOURCES
     ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/inference_cache.cpp
+    ../../src/core/prefix_cache.cpp
+    ../../src/core/replica_manager.cpp
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp

@@ -4,6 +4,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::net::IpAddr;
 use uuid::Uuid;
 
@@ -71,6 +72,12 @@ pub struct Node {
     /// ロード済みTTSモデル一覧 (音声合成)
     #[serde(default)]
     pub loaded_tts_models: Vec<String>,
+    /// 実行可能モデル一覧（ノードが報告した対応モデル）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executable_models: Vec<String>,
+    /// 推論失敗により一時除外中のモデル一覧（メモリのみ）
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub excluded_models: HashSet<String>,
     /// サポートするランタイム一覧
     #[serde(default)]
     pub supported_runtimes: Vec<RuntimeType>,
@@ -112,12 +119,6 @@ pub struct Node {
     /// 同期状態の最終更新時刻
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_updated_at: Option<DateTime<Utc>>,
-    /// このノードで実行可能なモデルID一覧（ノードの/v1/modelsから取得）
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub executable_models: Vec<String>,
-    /// 推論失敗等で一時的に除外されたモデルID一覧
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub excluded_models: Vec<String>,
 }
 
 /// ノード状態
@@ -538,6 +539,7 @@ pub struct NodeMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_node_serialization() {
@@ -558,6 +560,8 @@ mod tests {
             loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
             loaded_asr_models: vec!["whisper-large-v3".to_string()],
             loaded_tts_models: vec!["vibevoice-v1".to_string()],
+            executable_models: vec!["gpt-oss-20b".to_string()],
+            excluded_models: HashSet::new(),
             supported_runtimes: vec![RuntimeType::LlamaCpp, RuntimeType::WhisperCpp],
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),
@@ -576,8 +580,6 @@ mod tests {
             sync_state: None,
             sync_progress: None,
             sync_updated_at: None,
-            executable_models: vec!["gpt-oss-20b".to_string(), "nemotron-340b".to_string()],
-            excluded_models: vec!["broken-model".to_string()],
         };
 
         let json = serde_json::to_string(&node).unwrap();

@@ -2,20 +2,20 @@
 
 **機能ID**: `SPEC-93536000`
 **作成日**: 2026-01-03
-**更新日**: 2026-01-03
+**更新日**: 2026-01-04
 
 ## Phase 1: データモデル（基盤）
 
 ### Setup
 
 - [x] [P] 1.1 `Node` 構造体に `executable_models: Vec<String>` を追加
-- [x] [P] 1.2 `Node` 構造体に `excluded_models: Vec<String>` を追加（一貫性のためVecを使用）
+- [x] [P] 1.2 `Node` 構造体に `excluded_models: HashSet<String>` を追加
 
 ## Phase 2: Node側実装
 
 ### Core
 
-- [x] 2.1 `GpuBackend` 列挙型を `node/include/system/gpu_detector.h` に追加
+- [x] 2.1 `GpuBackend` 列挙型を `node/src/system/gpu_detector.hpp` に追加
 - [x] 2.2 `GpuDetector::getGpuBackend()` 関数を実装
 - [x] 2.3 `ModelRegistry::listExecutableModels(GpuBackend)` を実装
 - [x] 2.4 `ModelRegistry::isCompatible(ModelInfo, GpuBackend)` を実装
@@ -42,7 +42,7 @@
 ### Integration
 
 - [x] 4.1 `/v1/models` APIをノードベース集約に変更
-- [x] 4.2 `NoCapableNodes` エラー型を追加 (`common/src/error.rs`)
+- [x] 4.2 `NoCapableNodes` エラー型を追加 (`router/src/error.rs`)
 - [x] 4.3 404 Model Not Found エラーハンドリングを実装
 
 ## Phase 5: 廃止対応
@@ -58,13 +58,13 @@
 
 - [x] [P] 6.1 Unit Test: `get_nodes_for_model()` フィルタリング
 - [x] [P] 6.2 Unit Test: `exclude_model_from_node()` 動作確認
-- [x] [P] 6.3 Integration Test: ノード登録時の/v1/models取得
-- [x] 6.4 Integration Test: モデル対応ノードへのルーティング (TDD RED)
-- [x] 6.5 Integration Test: 非対応モデルへの503エラー (TDD RED)
+- [x] [P] 6.3 Unit Test: ノード登録時の/v1/models取得
+- [x] 6.4 Integration Test: モデル対応ノードへのルーティング
+- [x] 6.5 Integration Test: 非対応モデルへの503エラー
 - [x] 6.6 Integration Test: 存在しないモデルへの404エラー
-- [x] 6.7 Integration Test: 推論失敗後のモデル除外 (TDD RED)
-- [x] 6.8 Integration Test: ノード再起動後のモデル復帰 (TDD RED)
-- [x] 6.9 E2E Test: Metal専用モデルがCUDAノードにルーティングされないこと (TDD RED)
+- [x] 6.7 Integration Test: 推論失敗後のモデル除外
+- [x] 6.8 Integration Test: ノード再起動後のモデル復帰
+- [x] 6.9 E2E Test: Metal専用モデルがCUDAノードにルーティングされないこと
 
 ## 凡例
 

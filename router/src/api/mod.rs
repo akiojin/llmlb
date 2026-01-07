@@ -118,9 +118,22 @@ pub fn create_router(state: AppState) -> Router {
             "/dashboard/request-responses/export",
             get(dashboard::export_request_responses),
         )
+        // トークン統計API
+        .route("/dashboard/stats/tokens", get(dashboard::get_token_stats))
+        .route(
+            "/dashboard/stats/tokens/daily",
+            get(dashboard::get_daily_token_stats),
+        )
+        .route(
+            "/dashboard/stats/tokens/monthly",
+            get(dashboard::get_monthly_token_stats),
+        )
         .route("/dashboard/logs/router", get(logs::get_router_logs))
         // ノードログ取得（router→node proxy）
         .route("/nodes/:node_id/logs", get(logs::get_node_logs))
+        // モデル管理API (Admin のみ: register/delete)
+        .route("/models/register", post(models::register_model))
+        .route("/models/*model_name", delete(models::delete_model))
         // Prometheus metrics（cloud prefix含む独自メトリクス）
         .route("/metrics/cloud", get(cloud_metrics::export_metrics));
 
@@ -136,7 +149,13 @@ pub fn create_router(state: AppState) -> Router {
     };
 
     // ノード登録（Nodeスコープが必要）
-    let node_register_routes = Router::new().route("/nodes", post(nodes::register_node));
+    let node_register_routes = Router::new()
+        .route("/nodes", post(nodes::register_node))
+        // モデル配布レジストリ（複数ファイル: safetensors 等）
+        .route(
+            "/models/registry/:model_name/manifest.json",
+            get(models::get_model_registry_manifest),
+        );
 
     let node_register_routes = if auth_disabled {
         node_register_routes
@@ -151,6 +170,18 @@ pub fn create_router(state: AppState) -> Router {
                 crate::auth::middleware::api_key_auth_middleware,
             ))
     };
+
+    // モデル一覧API (Admin OR Node スコープで利用可能)
+    // /v0/models はノード同期用の登録済みモデル一覧
+    // /v0/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
+    let models_list_routes = Router::new()
+        .route("/models", get(models::list_models))
+        .route("/models/hub", get(models::list_models_with_status))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::admin_or_node_middleware,
+        ));
+
     // ノードトークン + APIキー認証が必要なルート
     let node_protected_routes = Router::new().route("/health", post(health::health_check));
 
@@ -227,7 +258,8 @@ pub fn create_router(state: AppState) -> Router {
                 .merge(auth_routes)
                 .merge(admin_routes)
                 .merge(node_register_routes)
-                .merge(node_protected_routes),
+                .merge(node_protected_routes)
+                .merge(models_list_routes),
         )
         // OpenAI互換API
         .merge(api_key_protected_routes)

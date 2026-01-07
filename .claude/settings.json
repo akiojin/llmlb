@@ -14,6 +14,15 @@
             "command": ".claude/hooks/block-cd-command.sh"
           }
         ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-quality-checks-in-task.sh"
+          }
+        ]
       }
     ]
   },
@@ -31,6 +40,8 @@
     "pr-review-toolkit@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "clangd-lsp@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "drawio@akiojin-skills": true,
+    "ralph-wiggum@claude-plugins-official": true
   }
 }

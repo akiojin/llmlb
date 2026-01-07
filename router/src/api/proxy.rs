@@ -12,21 +12,19 @@ use std::{io, sync::Arc, time::Instant};
 
 use crate::balancer::WaitResult;
 
-/// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
 pub(crate) async fn select_available_node(
     state: &AppState,
-    model_id: Option<&str>,
 ) -> Result<llm_router_common::types::Node, RouterError> {
     let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     match mode.as_str() {
         "metrics" => {
             // メトリクスベース選択（T014-T015で実装）
-            state.load_manager.select_node_by_metrics(model_id).await
+            state.load_manager.select_node_by_metrics().await
         }
         _ => {
             // デフォルト: 既存の高度なロードバランシング
-            let node = state.load_manager.select_node(model_id).await?;
+            let node = state.load_manager.select_node().await?;
             if node.initializing {
                 return Err(RouterError::ServiceUnavailable(
                     "All nodes are warming up models".into(),
@@ -48,13 +46,16 @@ pub(crate) enum QueueSelection {
     },
 }
 
-/// SPEC-93536000: model_idを指定すると、そのモデルを実行可能なノードのみを候補とする
-pub(crate) async fn select_available_node_with_queue(
+pub(crate) async fn select_available_node_with_queue_for_model(
     state: &AppState,
     queue_config: QueueConfig,
-    model_id: Option<&str>,
+    model_id: &str,
 ) -> Result<QueueSelection, RouterError> {
-    match state.load_manager.select_idle_node(model_id).await? {
+    match state
+        .load_manager
+        .select_idle_node_for_model(model_id)
+        .await?
+    {
         Some(node) => Ok(QueueSelection::Ready {
             node: Box::new(node),
             queued_wait_ms: None,
@@ -63,14 +64,22 @@ pub(crate) async fn select_available_node_with_queue(
             let wait_start = Instant::now();
             match state
                 .load_manager
-                .wait_for_idle_node_with_timeout(queue_config.max_waiters, queue_config.timeout)
+                .wait_for_idle_node_with_timeout_for_model(
+                    model_id,
+                    queue_config.max_waiters,
+                    queue_config.timeout,
+                )
                 .await
             {
                 WaitResult::CapacityExceeded => Ok(QueueSelection::CapacityExceeded),
                 WaitResult::Timeout => Ok(QueueSelection::Timeout {
                     waited_ms: wait_start.elapsed().as_millis(),
                 }),
-                WaitResult::Ready => match state.load_manager.select_idle_node(model_id).await? {
+                WaitResult::Ready => match state
+                    .load_manager
+                    .select_idle_node_for_model(model_id)
+                    .await?
+                {
                     Some(node) => Ok(QueueSelection::Ready {
                         node: Box::new(node),
                         queued_wait_ms: Some(wait_start.elapsed().as_millis()),
@@ -212,7 +221,7 @@ mod tests {
     #[tokio::test]
     async fn test_select_available_node_no_nodes() {
         let state = create_test_state().await;
-        let result = select_available_node(&state, None).await;
+        let result = select_available_node(&state).await;
         assert!(matches!(result, Err(RouterError::NoNodesAvailable)));
     }
 
@@ -242,7 +251,7 @@ mod tests {
         // mark as ready so load balancer can pick
         mark_ready(&state, response.node_id).await;
 
-        let result = select_available_node(&state, None).await;
+        let result = select_available_node(&state).await;
         assert!(result.is_ok());
 
         let node = result.unwrap();
@@ -301,7 +310,7 @@ mod tests {
         // mark second node ready
         mark_ready(&state, response2.node_id).await;
 
-        let result = select_available_node(&state, None).await;
+        let result = select_available_node(&state).await;
         assert!(result.is_ok());
 
         let node = result.unwrap();

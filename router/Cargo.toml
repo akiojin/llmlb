@@ -59,6 +59,9 @@ clap = { version = "4", features = ["derive", "env"] }
 # Progress parsing
 regex = "1.10"
 
+# Token counting
+tiktoken-rs = "0.9.1"
+
 [build-dependencies]
 winresource = "0.1.27"
 

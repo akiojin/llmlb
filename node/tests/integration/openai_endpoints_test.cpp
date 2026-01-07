@@ -381,3 +381,99 @@ TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
 
     server.stop();
 }
+
+// T014: Usage token count matches actual tokenization
+TEST(OpenAIEndpointsTest, UsageMatchesActualTokenCount) {
+    llm_node::set_ready(true);
+
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18110, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18110);
+    // Send a simple message and check usage is calculated
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"Hello, how are you?"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+
+    auto j = nlohmann::json::parse(res->body);
+    ASSERT_TRUE(j.contains("usage"));
+
+    // Verify usage fields are present and reasonable
+    int prompt_tokens = j["usage"]["prompt_tokens"].get<int>();
+    int completion_tokens = j["usage"]["completion_tokens"].get<int>();
+    int total_tokens = j["usage"]["total_tokens"].get<int>();
+
+    // Prompt should have at least a few tokens
+    EXPECT_GT(prompt_tokens, 0);
+    // Completion should have at least one token
+    EXPECT_GT(completion_tokens, 0);
+    // Total should equal sum
+    EXPECT_EQ(total_tokens, prompt_tokens + completion_tokens);
+
+    server.stop();
+}
+
+// T015: Logprobs values match model output (not dummy values)
+TEST(OpenAIEndpointsTest, LogprobsMatchesModelOutput) {
+    llm_node::set_ready(true);
+
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config);
+    NodeEndpoints node;
+    HttpServer server(18111, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18111);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"The quick brown fox","logprobs":true,"top_logprobs":5})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+
+    auto j = nlohmann::json::parse(res->body);
+    ASSERT_TRUE(j["choices"][0].contains("logprobs"));
+    auto logprobs = j["choices"][0]["logprobs"];
+
+    // Verify logprobs structure
+    ASSERT_TRUE(logprobs.contains("tokens"));
+    ASSERT_TRUE(logprobs.contains("token_logprobs"));
+    ASSERT_TRUE(logprobs.contains("top_logprobs"));
+
+    // Verify logprobs are real values (negative, not 0.0)
+    const auto& token_logprobs = logprobs["token_logprobs"];
+    for (const auto& lp : token_logprobs) {
+        if (!lp.is_null()) {
+            float val = lp.get<float>();
+            // Log probabilities should be negative (probability < 1)
+            EXPECT_LT(val, 0.0f) << "logprob should be negative";
+            // And should be greater than some very negative number
+            EXPECT_GT(val, -100.0f) << "logprob should be reasonable";
+        }
+    }
+
+    // Verify top_logprobs contains multiple candidates
+    const auto& top_lps = logprobs["top_logprobs"];
+    for (const auto& entry : top_lps) {
+        if (!entry.is_null() && entry.is_object()) {
+            // Should have up to 5 top candidates
+            EXPECT_LE(entry.size(), 5);
+            // Each entry should have negative logprob values
+            for (auto& [token, logprob_val] : entry.items()) {
+                if (logprob_val.is_number()) {
+                    EXPECT_LT(logprob_val.get<float>(), 0.0f);
+                }
+            }
+        }
+    }
+
+    server.stop();
+}

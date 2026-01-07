@@ -77,11 +77,15 @@ async fn image_gen_handler(Json(_payload): Json<serde_json::Value>) -> impl Into
         .into_response()
 }
 
-// SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
 async fn models_handler() -> impl IntoResponse {
     (
         StatusCode::OK,
-        Json(json!({ "data": [{"id": "test-model", "object": "model"}] })),
+        Json(json!({
+            "object": "list",
+            "data": [
+                {"id": "test-model", "object": "model"}
+            ]
+        })),
     )
         .into_response()
 }

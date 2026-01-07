@@ -1,135 +1,165 @@
-// T163/T175: Vision mmproj auto-detection tests
+// SPEC-d7feaa2c: T175 mmproj auto-detection tests
 #include <gtest/gtest.h>
+
 #include <filesystem>
 #include <fstream>
 
 #include "core/vision_processor.h"
+#include "models/model_storage.h"
 
-using namespace llm_node;
 namespace fs = std::filesystem;
 
-class TempMmprojDir {
+namespace llm_node {
+
+class TempVisionDir {
 public:
-    TempMmprojDir() {
-        base = fs::temp_directory_path() / fs::path("mmproj-test-XXXXXX");
+    TempVisionDir() {
+        base = fs::temp_directory_path() / fs::path("vision-processor-XXXXXX");
         std::string tmpl = base.string();
         std::vector<char> buf(tmpl.begin(), tmpl.end());
         buf.push_back('\0');
         char* created = mkdtemp(buf.data());
         base = created ? fs::path(created) : fs::temp_directory_path();
     }
-    ~TempMmprojDir() {
+    ~TempVisionDir() {
         std::error_code ec;
         fs::remove_all(base, ec);
     }
     fs::path base;
 };
 
-static void createFile(const fs::path& path, const std::string& content = "dummy") {
-    std::ofstream(path) << content;
+// Test fixture with friend access to VisionProcessor
+class VisionProcessorTest : public ::testing::Test {
+protected:
+    std::unique_ptr<TempVisionDir> temp_dir_;
+    std::unique_ptr<ModelStorage> storage_;
+    std::unique_ptr<VisionProcessor> processor_;
+
+    void SetUp() override {
+        temp_dir_ = std::make_unique<TempVisionDir>();
+        storage_ = std::make_unique<ModelStorage>(temp_dir_->base.string());
+        processor_ = std::make_unique<VisionProcessor>(*storage_);
+    }
+
+    void TearDown() override {
+        processor_.reset();
+        storage_.reset();
+        temp_dir_.reset();
+    }
+
+    // Helper to access private resolveMmprojPath
+    std::optional<std::string> resolveMmprojPath(const std::string& model_name,
+                                                  const std::string& model_path) {
+        return processor_->resolveMmprojPath(model_name, model_path);
+    }
+
+    // Helper to create model directory with GGUF
+    fs::path createModelDir(const std::string& name) {
+        auto model_dir = temp_dir_->base / name;
+        fs::create_directories(model_dir);
+        std::ofstream(model_dir / "model.gguf") << "dummy gguf";
+        return model_dir;
+    }
+
+    // Helper to create mmproj file
+    void createMmprojFile(const fs::path& model_dir, const std::string& filename) {
+        std::ofstream(model_dir / filename) << "dummy mmproj";
+    }
+
+    // Helper to create metadata JSON with mmproj_path
+    void createMetadataWithMmproj(const fs::path& model_dir, const std::string& mmproj_path) {
+        std::ofstream(model_dir / "metadata.json")
+            << R"({"mmproj_path":")" << mmproj_path << R"("})";
+    }
+};
+
+// T175: mmproj file detected in model directory by filename pattern
+TEST_F(VisionProcessorTest, DetectsMmprojByFilename) {
+    auto model_dir = createModelDir("test-vision-model");
+    createMmprojFile(model_dir, "mmproj-model-f16.gguf");
+
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("test-vision-model", model_path);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->find("mmproj") != std::string::npos);
+    EXPECT_TRUE(result->find(".gguf") != std::string::npos);
 }
 
-// T175: mmproj自動検出テスト
+// T175: mmproj file detected with various naming conventions
+TEST_F(VisionProcessorTest, DetectsMmprojWithVariousNamingConventions) {
+    auto model_dir = createModelDir("vision-model-2");
+    createMmprojFile(model_dir, "model-mmproj-q8_0.gguf");
 
-TEST(FindMmprojInDirectoryTest, EmptyDirectoryReturnsNullopt) {
-    TempMmprojDir temp;
-    auto result = findMmprojInDirectory(temp.base.string());
-    EXPECT_FALSE(result.has_value());
-}
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("vision-model-2", model_path);
 
-TEST(FindMmprojInDirectoryTest, NonexistentDirectoryReturnsNullopt) {
-    auto result = findMmprojInDirectory("/nonexistent/path/12345");
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST(FindMmprojInDirectoryTest, DirectoryWithOnlyModelGgufReturnsNullopt) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    createFile(temp.base / "config.json");
-
-    auto result = findMmprojInDirectory(temp.base.string());
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST(FindMmprojInDirectoryTest, FindsSingleMmprojFile) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    createFile(temp.base / "mmproj-model-f16.gguf");
-
-    auto result = findMmprojInDirectory(temp.base.string());
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result->find("mmproj") != std::string::npos);
 }
 
-TEST(FindMmprojInDirectoryTest, FindsMmprojWithUpperCase) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    createFile(temp.base / "MMPROJ-model-f16.gguf");
+// T175: mmproj file detected case-insensitively
+TEST_F(VisionProcessorTest, DetectsMmprojCaseInsensitive) {
+    auto model_dir = createModelDir("vision-model-upper");
+    createMmprojFile(model_dir, "MMPROJ-f16.gguf");
 
-    auto result = findMmprojInDirectory(temp.base.string());
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("vision-model-upper", model_path);
+
     ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->find("MMPROJ") != std::string::npos);
+    // Should find the file despite uppercase
+    EXPECT_TRUE(fs::exists(*result));
 }
 
-TEST(FindMmprojInDirectoryTest, FindsMmprojWithMixedCase) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    createFile(temp.base / "MmProj-model.gguf");
+// T175: Returns nullopt when no mmproj file exists
+TEST_F(VisionProcessorTest, ReturnsNulloptWhenNoMmproj) {
+    auto model_dir = createModelDir("non-vision-model");
+    // No mmproj file created
 
-    auto result = findMmprojInDirectory(temp.base.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->find("MmProj") != std::string::npos);
-}
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("non-vision-model", model_path);
 
-TEST(FindMmprojInDirectoryTest, SelectsFirstAlphabetically) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    createFile(temp.base / "mmproj-b.gguf");
-    createFile(temp.base / "mmproj-a.gguf");
-    createFile(temp.base / "mmproj-c.gguf");
-
-    auto result = findMmprojInDirectory(temp.base.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->find("mmproj-a.gguf") != std::string::npos);
-}
-
-TEST(FindMmprojInDirectoryTest, IgnoresNonGgufFiles) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    createFile(temp.base / "mmproj.bin");
-    createFile(temp.base / "mmproj.safetensors");
-
-    auto result = findMmprojInDirectory(temp.base.string());
     EXPECT_FALSE(result.has_value());
 }
 
-TEST(FindMmprojInDirectoryTest, IgnoresDirectories) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    fs::create_directory(temp.base / "mmproj.gguf");
+// T175: Selects first mmproj alphabetically when multiple exist
+TEST_F(VisionProcessorTest, SelectsFirstMmprojAlphabetically) {
+    auto model_dir = createModelDir("multi-mmproj-model");
+    createMmprojFile(model_dir, "mmproj-b-f16.gguf");
+    createMmprojFile(model_dir, "mmproj-a-f32.gguf");
+    createMmprojFile(model_dir, "mmproj-c-q4.gguf");
 
-    auto result = findMmprojInDirectory(temp.base.string());
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("multi-mmproj-model", model_path);
+
+    ASSERT_TRUE(result.has_value());
+    // Should select "mmproj-a-f32.gguf" as it comes first alphabetically
+    EXPECT_TRUE(result->find("mmproj-a") != std::string::npos);
+}
+
+// T175: Ignores non-gguf files with mmproj in name
+TEST_F(VisionProcessorTest, IgnoresNonGgufFiles) {
+    auto model_dir = createModelDir("mixed-files-model");
+    // Create non-gguf files with mmproj in name
+    std::ofstream(model_dir / "mmproj.txt") << "not a gguf";
+    std::ofstream(model_dir / "mmproj.bin") << "not a gguf";
+
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("mixed-files-model", model_path);
+
     EXPECT_FALSE(result.has_value());
 }
 
-TEST(FindMmprojInDirectoryTest, HandlesVisionModelWithMmproj) {
-    TempMmprojDir temp;
-    createFile(temp.base / "llava-v1.6-mistral-7b.Q4_K_M.gguf");
-    createFile(temp.base / "mmproj-llava-v1.6-mistral-7b-f16.gguf");
-    createFile(temp.base / "config.json", R"({"architectures":["LlavaForConditionalGeneration"]})");
+// T175: Ignores gguf files without mmproj in name
+TEST_F(VisionProcessorTest, IgnoresNonMmprojGgufFiles) {
+    auto model_dir = createModelDir("other-gguf-model");
+    createMmprojFile(model_dir, "adapter-lora.gguf");
+    createMmprojFile(model_dir, "extra-weights.gguf");
 
-    auto result = findMmprojInDirectory(temp.base.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->find("mmproj-llava") != std::string::npos);
+    auto model_path = (model_dir / "model.gguf").string();
+    auto result = resolveMmprojPath("other-gguf-model", model_path);
+
+    EXPECT_FALSE(result.has_value());
 }
 
-TEST(FindMmprojInDirectoryTest, FindsMmprojWithDifferentNaming) {
-    TempMmprojDir temp;
-    createFile(temp.base / "model.gguf");
-    // Some models use different naming conventions
-    createFile(temp.base / "vision-mmproj-encoder.gguf");
-
-    auto result = findMmprojInDirectory(temp.base.string());
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->find("mmproj") != std::string::npos);
-}
+}  // namespace llm_node

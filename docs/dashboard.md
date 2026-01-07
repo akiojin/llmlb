@@ -19,6 +19,9 @@ The authoritative API list and setup instructions live in `README.md` / `README.
 - `GET /v0/dashboard/request-responses/export`
 - `GET /v0/dashboard/logs/router`
 - `GET /v0/nodes/:node_id/logs`
+- `GET /v0/dashboard/stats/tokens`
+- `GET /v0/dashboard/stats/tokens/daily`
+- `GET /v0/dashboard/stats/tokens/monthly`
 
 ## Build (regenerate embedded assets)
 

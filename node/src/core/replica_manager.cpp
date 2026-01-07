@@ -1,49 +1,31 @@
+// SPEC-d7feaa2c: T164-T165 Replica placement and round-robin load balancing
 #include "core/replica_manager.h"
 
-#include <algorithm>
+#include <spdlog/spdlog.h>
 
 namespace llm_node {
 
-bool ReplicaManager::addReplica(const std::string& model_name, int gpu_id) {
+void ReplicaManager::registerReplica(const std::string& model_name, int gpu_id) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto& model = models_[model_name];
+    model.gpu_ids.insert(gpu_id);
 
-    // 既存のレプリカをチェック
-    for (const auto& replica : model.replicas) {
-        if (replica.gpu_id == gpu_id) {
-            return false;  // 既に存在
-        }
-    }
-
-    model.replicas.push_back({gpu_id, ReplicaStatus::Available});
-    return true;
+    spdlog::debug("Registered replica for {} on GPU {}", model_name, gpu_id);
 }
 
-bool ReplicaManager::removeReplica(const std::string& model_name, int gpu_id) {
+void ReplicaManager::unregisterReplica(const std::string& model_name, int gpu_id) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = models_.find(model_name);
     if (it == models_.end()) {
-        return false;
+        return;
     }
 
-    auto& replicas = it->second.replicas;
-    auto replica_it = std::find_if(replicas.begin(), replicas.end(),
-                                   [gpu_id](const Replica& r) { return r.gpu_id == gpu_id; });
+    it->second.gpu_ids.erase(gpu_id);
+    it->second.failed_gpus.erase(gpu_id);
 
-    if (replica_it == replicas.end()) {
-        return false;
-    }
-
-    replicas.erase(replica_it);
-
-    // インデックスを調整
-    if (it->second.next_index >= replicas.size()) {
-        it->second.next_index = 0;
-    }
-
-    return true;
+    spdlog::debug("Unregistered replica for {} on GPU {}", model_name, gpu_id);
 }
 
 size_t ReplicaManager::replicaCount(const std::string& model_name) const {
@@ -53,28 +35,55 @@ size_t ReplicaManager::replicaCount(const std::string& model_name) const {
     if (it == models_.end()) {
         return 0;
     }
-    return it->second.replicas.size();
+    return it->second.gpu_ids.size();
 }
 
-std::optional<ReplicaStatus> ReplicaManager::getReplicaStatus(const std::string& model_name,
-                                                               int gpu_id) const {
+std::vector<int> ReplicaManager::getReplicas(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = models_.find(model_name);
     if (it == models_.end()) {
-        return std::nullopt;
+        return {};
     }
 
-    for (const auto& replica : it->second.replicas) {
-        if (replica.gpu_id == gpu_id) {
-            return replica.status;
-        }
-    }
-    return std::nullopt;
+    return std::vector<int>(it->second.gpu_ids.begin(), it->second.gpu_ids.end());
 }
 
-void ReplicaManager::setReplicaStatus(const std::string& model_name, int gpu_id,
-                                       ReplicaStatus status) {
+std::vector<int> ReplicaManager::getHealthyReplicas(const ModelReplicas& replicas) const {
+    std::vector<int> healthy;
+    for (int gpu : replicas.gpu_ids) {
+        if (replicas.failed_gpus.find(gpu) == replicas.failed_gpus.end()) {
+            healthy.push_back(gpu);
+        }
+    }
+    return healthy;
+}
+
+int ReplicaManager::selectReplica(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = models_.find(model_name);
+    if (it == models_.end()) {
+        return -1;
+    }
+
+    auto healthy = getHealthyReplicas(it->second);
+    if (healthy.empty()) {
+        spdlog::warn("No healthy replicas for {}", model_name);
+        return -1;
+    }
+
+    // Round-robin selection
+    size_t index = it->second.next_index % healthy.size();
+    it->second.next_index = index + 1;
+
+    int selected = healthy[index];
+    spdlog::debug("Selected replica GPU {} for {} (round-robin)", selected, model_name);
+
+    return selected;
+}
+
+void ReplicaManager::markReplicaFailed(const std::string& model_name, int gpu_id) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = models_.find(model_name);
@@ -82,54 +91,31 @@ void ReplicaManager::setReplicaStatus(const std::string& model_name, int gpu_id,
         return;
     }
 
-    for (auto& replica : it->second.replicas) {
-        if (replica.gpu_id == gpu_id) {
-            replica.status = status;
-            return;
-        }
-    }
+    it->second.failed_gpus.insert(gpu_id);
+    spdlog::warn("Replica for {} on GPU {} marked as failed", model_name, gpu_id);
 }
 
-std::optional<int> ReplicaManager::selectNextReplica(const std::string& model_name) {
+void ReplicaManager::markReplicaHealthy(const std::string& model_name, int gpu_id) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    auto it = models_.find(model_name);
-    if (it == models_.end() || it->second.replicas.empty()) {
-        return std::nullopt;
-    }
-
-    auto& model = it->second;
-    const size_t count = model.replicas.size();
-
-    // 利用可能なレプリカを探す（ラウンドロビン）
-    for (size_t attempts = 0; attempts < count; ++attempts) {
-        const size_t index = (model.next_index + attempts) % count;
-        const auto& replica = model.replicas[index];
-
-        if (replica.status == ReplicaStatus::Available) {
-            model.next_index = (index + 1) % count;
-            return replica.gpu_id;
-        }
-    }
-
-    return std::nullopt;  // 利用可能なレプリカなし
-}
-
-std::set<int> ReplicaManager::getAvailableGpus(const std::string& model_name) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    std::set<int> result;
     auto it = models_.find(model_name);
     if (it == models_.end()) {
-        return result;
+        return;
     }
 
-    for (const auto& replica : it->second.replicas) {
-        if (replica.status == ReplicaStatus::Available) {
-            result.insert(replica.gpu_id);
-        }
+    it->second.failed_gpus.erase(gpu_id);
+    spdlog::info("Replica for {} on GPU {} marked as healthy", model_name, gpu_id);
+}
+
+bool ReplicaManager::isReplicaHealthy(const std::string& model_name, int gpu_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = models_.find(model_name);
+    if (it == models_.end()) {
+        return false;
     }
-    return result;
+
+    return it->second.failed_gpus.find(gpu_id) == it->second.failed_gpus.end();
 }
 
 }  // namespace llm_node

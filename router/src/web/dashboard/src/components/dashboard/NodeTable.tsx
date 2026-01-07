@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { type DashboardNode } from '@/lib/api'
-import { formatUptime, formatPercentage, formatRelativeTime, formatBytes, cn } from '@/lib/utils'
+import { formatUptime, formatPercentage, formatRelativeTime, formatBytes, formatNumber, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,7 +40,7 @@ interface NodeTableProps {
   isLoading: boolean
 }
 
-type SortField = 'machine_name' | 'status' | 'uptime_seconds' | 'total_requests' | 'gpu_usage'
+type SortField = 'machine_name' | 'status' | 'uptime_seconds' | 'total_requests' | 'total_tokens' | 'gpu_usage'
 type SortDirection = 'asc' | 'desc'
 
 const PAGE_SIZE = 10
@@ -152,7 +152,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
       selectedNodes.size > 0
         ? filteredAndSortedNodes.filter((n) => selectedNodes.has(n.node_id))
         : filteredAndSortedNodes
-    const headers = ['node_id', 'machine_name', 'ip_address', 'port', 'status', 'gpu_model', 'gpu_usage', 'uptime_seconds', 'total_requests']
+    const headers = ['node_id', 'machine_name', 'ip_address', 'port', 'status', 'gpu_model', 'gpu_usage', 'uptime_seconds', 'total_requests', 'total_input_tokens', 'total_output_tokens', 'total_tokens']
     const rows = dataToExport.map((node) =>
       headers.map((h) => {
         const value = node[h as keyof DashboardNode]
@@ -354,13 +354,22 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       <SortIcon field="total_requests" />
                     </div>
                   </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleSort('total_tokens')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Tokens
+                      <SortIcon field="total_tokens" />
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody id="nodes-body">
                 {paginatedNodes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
+                    <TableCell colSpan={11} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <Server className="h-8 w-8" />
                         <p>No nodes found</p>
@@ -481,6 +490,11 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       </TableCell>
                       <TableCell>{formatUptime(node.uptime_seconds)}</TableCell>
                       <TableCell>{node.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <div className="text-sm" title={`In: ${formatNumber(node.total_input_tokens)} / Out: ${formatNumber(node.total_output_tokens)}`}>
+                          {formatNumber(node.total_tokens)}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"

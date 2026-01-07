@@ -11,11 +11,11 @@ use chrono::Utc;
 use llm_router_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::VisionCapability,
+    types::{ModelCapabilities, ModelCapability, VisionCapability},
 };
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::IpAddr, time::Instant};
+use std::{collections::HashMap, net::IpAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -23,15 +23,17 @@ use crate::models::image;
 use crate::{
     api::{
         model_name::{parse_quantized_model_name, ParsedModelName},
-        models::LifecycleStatus,
+        models::{list_registered_models, load_registered_model, LifecycleStatus},
         nodes::AppError,
         proxy::{
             forward_streaming_response, save_request_record, select_available_node,
-            select_available_node_with_queue, QueueSelection,
+            select_available_node_with_queue_for_model, QueueSelection,
         },
     },
     balancer::RequestOutcome,
-    cloud_metrics, AppState,
+    cloud_metrics,
+    token::extract_usage_from_response,
+    AppState,
 };
 
 fn map_reqwest_error(err: reqwest::Error) -> AppError {
@@ -166,6 +168,18 @@ fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Resp
     (status, Json(payload)).into_response()
 }
 
+fn model_unavailable_response(message: impl Into<String>, code: &str) -> Response {
+    let payload = json!({
+        "error": {
+            "message": message.into(),
+            "type": "service_unavailable",
+            "code": code,
+        }
+    });
+
+    (StatusCode::SERVICE_UNAVAILABLE, Json(payload)).into_response()
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 pub async fn chat_completions(
     State(state): State<AppState>,
@@ -182,7 +196,19 @@ pub async fn chat_completions(
         parse_quantized_model_name(&model).map_err(AppError::from)?
     };
 
-    // NOTE: 機能チェックはノード側で行う（SPEC-93536000）
+    // モデルの TextGeneration capability を検証
+    let models = list_registered_models(&state.db_pool).await?;
+    if let Some(model_info) = models.iter().find(|m| m.name == model) {
+        if !model_info.has_capability(ModelCapability::TextGeneration) {
+            return Err(AppError::from(RouterError::Common(
+                CommonError::Validation(format!(
+                    "Model '{}' does not support text generation",
+                    parsed.raw
+                )),
+            )));
+        }
+    }
+    // 登録されていないモデルはノード側で処理（クラウドモデル等）
 
     let payload = match prepare_vision_payload(&state, payload, &parsed).await {
         Ok(payload) => payload,
@@ -246,53 +272,61 @@ pub async fn embeddings(
 ///
 /// OpenAI API 互換形式に Azure OpenAI 形式の capabilities と
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
-///
-/// SPEC-93536000: オンラインノードの executable_models を集約して返す
+/// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    // SPEC-93536000: オンラインノードから実行可能なモデル一覧を集約
-    let nodes = state.registry.list().await;
-    let online_nodes: Vec<_> = nodes
+    // オンラインノードの実行可能モデルを取得
+    let mut available_models: Vec<String> = state
+        .registry
+        .list_executable_models_online()
+        .await
         .into_iter()
-        .filter(|n| n.status == llm_router_common::types::NodeStatus::Online)
         .collect();
+    available_models.sort();
 
-    // 実行可能モデル（excluded_modelsを除外）をユニークに集約
-    let mut executable_model_ids: HashSet<String> = HashSet::new();
-    let mut loaded_model_ids: HashSet<String> = HashSet::new();
-
-    for node in &online_nodes {
-        let excluded: HashSet<_> = node.excluded_models.iter().cloned().collect();
-        for model_id in &node.executable_models {
-            if !excluded.contains(model_id) {
-                executable_model_ids.insert(model_id.clone());
-            }
-        }
-        for model_id in &node.loaded_models {
-            loaded_model_ids.insert(model_id.clone());
-        }
+    // 登録済みモデルのメタデータを取得（存在する場合のみ利用）
+    let mut registered_map: std::collections::HashMap<String, crate::registry::models::ModelInfo> =
+        HashMap::new();
+    for model in list_registered_models(&state.db_pool).await? {
+        registered_map.insert(model.name.clone(), model);
     }
 
-    // OpenAI互換レスポンス形式（executable_models からモデル一覧を生成）
+    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
     let mut data: Vec<Value> = Vec::new();
 
-    for model_id in &executable_model_ids {
-        let ready = loaded_model_ids.contains(model_id);
-        let lifecycle_status = if ready {
-            LifecycleStatus::Registered
+    for model_id in available_models {
+        if let Some(m) = registered_map.get(&model_id) {
+            let caps: ModelCapabilities = m.get_capabilities().into();
+            let obj = json!({
+                "id": m.name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router",
+                "capabilities": caps,
+                "lifecycle_status": LifecycleStatus::Registered,
+                "download_progress": null,
+                "ready": true,
+                "repo": m.repo,
+                "filename": m.filename,
+                "size_bytes": m.size,
+                "required_memory_bytes": m.required_memory,
+                "source": m.source,
+                "tags": m.tags,
+                "description": m.description,
+                "chat_template": m.chat_template,
+            });
+            data.push(obj);
         } else {
-            LifecycleStatus::Pending
-        };
-
-        let obj = json!({
-            "id": model_id,
-            "object": "model",
-            "created": 0,
-            "owned_by": "node",
-            "lifecycle_status": lifecycle_status,
-            "download_progress": null,
-            "ready": ready,
-        });
-        data.push(obj);
+            let obj = json!({
+                "id": model_id,
+                "object": "model",
+                "created": 0,
+                "owned_by": "router",
+                "lifecycle_status": LifecycleStatus::Registered,
+                "download_progress": null,
+                "ready": true,
+            });
+            data.push(obj);
+        }
     }
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
@@ -323,34 +357,19 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 // /v1/models に Azure OpenAI 形式の capabilities とダッシュボード拡張が統合されています。
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
-///
-/// SPEC-93536000: ノードのexecutable_modelsからモデルの存在を確認
 pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
-    // SPEC-93536000: オンラインノードからモデルの実行可能性を確認
-    let nodes = state.registry.list().await;
-    let online_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| n.status == llm_router_common::types::NodeStatus::Online)
-        .collect();
-
-    // モデルが実行可能かチェック
-    let mut is_executable = false;
-    let mut is_loaded = false;
-
-    for node in &online_nodes {
-        let excluded: HashSet<_> = node.excluded_models.iter().cloned().collect();
-        if node.executable_models.contains(&model_id) && !excluded.contains(&model_id) {
-            is_executable = true;
-        }
-        if node.loaded_models.contains(&model_id) {
-            is_loaded = true;
-        }
+    let available_models = state.registry.list_executable_models_online().await;
+    let mut registered_map: HashMap<String, crate::registry::models::ModelInfo> = HashMap::new();
+    for model in list_registered_models(&state.db_pool).await? {
+        registered_map.insert(model.name.clone(), model);
     }
 
-    if !is_executable {
+    let model = registered_map.remove(&model_id);
+
+    if model.is_none() && !available_models.contains(&model_id) {
         // 404 を OpenAI 換算で返す
         let body = json!({
             "error": {
@@ -363,21 +382,48 @@ pub async fn get_model(
         return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
     }
 
-    let lifecycle_status = if is_loaded {
-        LifecycleStatus::Registered
-    } else {
-        LifecycleStatus::Pending
-    };
+    if let Some(model) = model {
+        // Azure OpenAI 形式の capabilities (boolean object)
+        let caps: ModelCapabilities = model.get_capabilities().into();
+        let ready = available_models.contains(&model_id);
+        let lifecycle_status = if ready {
+            LifecycleStatus::Registered
+        } else {
+            LifecycleStatus::Pending
+        };
 
-    // OpenAI互換レスポンス（SPEC-93536000 でメタデータはノード側に委譲）
+        let body = json!({
+            "id": model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "router",
+            "capabilities": caps,
+            // ダッシュボード用拡張フィールド
+            "lifecycle_status": lifecycle_status,
+            "ready": ready,
+            // 追加メタデータ（ダッシュボード向け）
+            "repo": model.repo,
+            "filename": model.filename,
+            "size_bytes": model.size,
+            "required_memory_bytes": model.required_memory,
+            "source": model.source,
+            "tags": model.tags,
+            "description": model.description,
+            "chat_template": model.chat_template,
+        });
+
+        return Ok((StatusCode::OK, Json(body)).into_response());
+    }
+
     let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
-        "owned_by": "node",
-        "lifecycle_status": lifecycle_status,
-        "ready": is_loaded,
+        "owned_by": "router",
+        "lifecycle_status": LifecycleStatus::Registered,
+        "ready": true,
     });
+
     Ok((StatusCode::OK, Json(body)).into_response())
 }
 
@@ -487,7 +533,7 @@ fn replace_image_urls(payload: &mut Value, replacements: &[String]) -> Result<()
 async fn prepare_vision_payload(
     state: &AppState,
     mut payload: Value,
-    _model: &ParsedModelName,
+    model: &ParsedModelName,
 ) -> Result<Value, Response> {
     let image_urls = collect_image_urls(&payload)
         .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
@@ -495,7 +541,20 @@ async fn prepare_vision_payload(
         return Ok(payload);
     }
 
-    // NOTE: Vision capability チェックはノード側で行う（SPEC-93536000）
+    let models = list_registered_models(&state.db_pool)
+        .await
+        .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+    let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
+        // 未登録モデル（クラウド等）はルーター側の検証をスキップ
+        return Ok(payload);
+    };
+    if !model_info.has_capability(ModelCapability::Vision) {
+        return Err(openai_error_response(
+            format!("Model '{}' does not support image understanding", model.raw),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let vision_limits = VisionCapability::default();
     if image_urls.len() > vision_limits.max_image_count as usize {
         return Err(openai_error_response(
@@ -1024,6 +1083,9 @@ async fn proxy_openai_cloud_post(
                         message: format!("{e:?}"),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Err(e);
@@ -1064,6 +1126,9 @@ async fn proxy_openai_cloud_post(
             duration_ms: duration.as_millis() as u64,
             status: status_record,
             completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
         },
     );
 
@@ -1084,6 +1149,14 @@ async fn proxy_openai_post(
             .await;
     }
 
+    if !state.registry.has_model_reported(&model).await {
+        let is_registered = load_registered_model(&state.db_pool, &model).await?;
+        if is_registered.is_none() {
+            let message = format!("The model '{}' does not exist", model);
+            return Ok(openai_error_response(message, StatusCode::NOT_FOUND));
+        }
+    }
+
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
@@ -1091,8 +1164,7 @@ async fn proxy_openai_post(
     let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: ノード選択失敗時もリクエスト履歴に記録する
-    // SPEC-93536000: モデル対応ノードを選択
-    let node = match select_available_node_with_queue(state, queue_config, Some(&model)).await {
+    let node = match select_available_node_with_queue_for_model(state, queue_config, &model).await {
         Ok(QueueSelection::Ready {
             node,
             queued_wait_ms: wait_ms,
@@ -1120,6 +1192,9 @@ async fn proxy_openai_post(
                         message: message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             let retry_after = queue_config.timeout.as_secs().max(1);
@@ -1150,6 +1225,9 @@ async fn proxy_openai_post(
                         message: message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
             return Ok(queue_error_response(
@@ -1160,6 +1238,11 @@ async fn proxy_openai_post(
             ));
         }
         Err(e) => {
+            let error_message = if matches!(e, RouterError::NoCapableNodes(_)) {
+                format!("No available nodes support model: {}", model)
+            } else {
+                format!("Node selection failed: {}", e)
+            };
             error!(
                 endpoint = %target_path,
                 model = %model,
@@ -1181,11 +1264,20 @@ async fn proxy_openai_post(
                     response_body: None,
                     duration_ms: queued_wait_ms.unwrap_or(0) as u64,
                     status: RecordStatus::Error {
-                        message: format!("Node selection failed: {}", e),
+                        message: error_message.clone(),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
+            if matches!(e, RouterError::NoCapableNodes(_)) {
+                return Ok(model_unavailable_response(
+                    error_message,
+                    "no_capable_nodes",
+                ));
+            }
             return Err(e.into());
         }
     };
@@ -1217,6 +1309,19 @@ async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
 
+            if let Err(err) = state
+                .registry
+                .exclude_model_from_node(node_id, &model)
+                .await
+            {
+                warn!(
+                    node_id = %node_id,
+                    model = %model,
+                    error = %err,
+                    "Failed to exclude model after proxy request failure"
+                );
+            }
+
             save_request_record(
                 state.request_history.clone(),
                 RequestResponseRecord {
@@ -1235,22 +1340,11 @@ async fn proxy_openai_post(
                         message: format!("Failed to proxy OpenAI request: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
-
-            // SPEC-93536000: 推論失敗時にモデルを除外
-            if let Err(exclude_err) = state
-                .registry
-                .exclude_model_from_node(node_id, &model)
-                .await
-            {
-                tracing::warn!(
-                    node_id = %node_id,
-                    model = %model,
-                    error = %exclude_err,
-                    "Failed to exclude model from node after inference failure"
-                );
-            }
 
             return Err(RouterError::Http(format!("Failed to proxy OpenAI request: {}", e)).into());
         }
@@ -1281,6 +1375,9 @@ async fn proxy_openai_post(
                 duration_ms: duration.as_millis() as u64,
                 status: RecordStatus::Success,
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1298,6 +1395,19 @@ async fn proxy_openai_post(
             .finish_request(node_id, RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
+
+        if let Err(err) = state
+            .registry
+            .exclude_model_from_node(node_id, &model)
+            .await
+        {
+            warn!(
+                node_id = %node_id,
+                model = %model,
+                error = %err,
+                "Failed to exclude model after non-success response"
+            );
+        }
 
         let status = response.status();
         let status_code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -1326,25 +1436,11 @@ async fn proxy_openai_post(
                     message: message.clone(),
                 },
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
-
-        // SPEC-93536000: サーバーエラー（5xx）の場合はモデルを除外
-        // クライアントエラー（4xx）は除外しない（リクエストの問題であるため）
-        if status_code.is_server_error() {
-            if let Err(exclude_err) = state
-                .registry
-                .exclude_model_from_node(node_id, &model)
-                .await
-            {
-                tracing::warn!(
-                    node_id = %node_id,
-                    model = %model,
-                    error = %exclude_err,
-                    "Failed to exclude model from node after inference failure"
-                );
-            }
-        }
 
         let payload = json!({
             "error": {
@@ -1385,6 +1481,9 @@ async fn proxy_openai_post(
                 duration_ms: duration.as_millis() as u64,
                 status: RecordStatus::Success,
                 completed_at: Utc::now(),
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
             },
         );
 
@@ -1400,11 +1499,25 @@ async fn proxy_openai_post(
 
     match parsed {
         Ok(body) => {
+            // レスポンスからトークン使用量を抽出
+            let token_usage = extract_usage_from_response(&body);
+
             state
                 .load_manager
-                .finish_request(node_id, RequestOutcome::Success, duration)
+                .finish_request_with_tokens(
+                    node_id,
+                    RequestOutcome::Success,
+                    duration,
+                    token_usage.clone(),
+                )
                 .await
                 .map_err(AppError::from)?;
+
+            // RequestResponseRecordにトークン情報を保存
+            let (input_tokens, output_tokens, total_tokens) = token_usage
+                .as_ref()
+                .map(|u| (u.input_tokens, u.output_tokens, u.total_tokens))
+                .unwrap_or((None, None, None));
 
             save_request_record(
                 state.request_history.clone(),
@@ -1422,6 +1535,9 @@ async fn proxy_openai_post(
                     duration_ms: duration.as_millis() as u64,
                     status: RecordStatus::Success,
                     completed_at: Utc::now(),
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
                 },
             );
 
@@ -1437,6 +1553,19 @@ async fn proxy_openai_post(
                 .finish_request(node_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+
+            if let Err(err) = state
+                .registry
+                .exclude_model_from_node(node_id, &model)
+                .await
+            {
+                warn!(
+                    node_id = %node_id,
+                    model = %model,
+                    error = %err,
+                    "Failed to exclude model after response parse error"
+                );
+            }
 
             save_request_record(
                 state.request_history.clone(),
@@ -1456,6 +1585,9 @@ async fn proxy_openai_post(
                         message: format!("Failed to parse OpenAI response: {}", e),
                     },
                     completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
                 },
             );
 
@@ -1466,8 +1598,7 @@ async fn proxy_openai_post(
 
 #[allow(dead_code)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
-    // NOTE: GETリクエストはモデル指定なしで任意のノードを選択
-    let node = select_available_node(state, None).await?;
+    let node = select_available_node(state).await?;
     let node_id = node.id;
 
     state
@@ -1996,18 +2127,12 @@ mod tests {
             RequestType::Chat,
         )
         .await;
-        let err = res.unwrap_err();
-        let msg = format!("{:?}", err);
-        // SPEC-93536000: NoCapableNodes/ModelNotFound も許容（モデル指定時のエラー）
-        assert!(
-            msg.contains("NoNodesAvailable")
-                || msg.contains("No available nodes")
-                || msg.contains("NoCapableNodes")
-                || msg.contains("No capable nodes")
-                || msg.contains("ModelNotFound")
-                || msg.contains("Model not found"),
-            "expected local-path node error, got {}",
-            msg
+        // モデルが登録されておらず、どのノードも報告していない場合は404
+        let response = res.expect("expected 404 response, not Err");
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::NOT_FOUND,
+            "expected NOT_FOUND for unregistered model"
         );
     }
     #[tokio::test]

@@ -8,6 +8,7 @@ use llm_router_common::{
     types::{GpuDeviceInfo, Node, NodeStatus, RuntimeType},
 };
 use sqlx::SqlitePool;
+use std::collections::HashSet;
 use std::net::IpAddr;
 use uuid::Uuid;
 
@@ -398,6 +399,8 @@ impl NodeStorage {
             loaded_embedding_models,
             loaded_asr_models,
             loaded_tts_models,
+            executable_models: Vec::new(),
+            excluded_models: HashSet::new(),
             supported_runtimes,
             gpu_devices,
             gpu_available: row.gpu_available != 0,
@@ -412,8 +415,6 @@ impl NodeStorage {
             sync_state: None,
             sync_progress: None,
             sync_updated_at: None,
-            executable_models: Vec::new(),
-            excluded_models: Vec::new(),
         })
     }
 
@@ -522,6 +523,7 @@ fn parse_runtime_type(s: &str) -> RuntimeType {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use std::collections::HashSet;
     use std::net::Ipv4Addr;
 
     async fn create_test_pool() -> SqlitePool {
@@ -556,6 +558,8 @@ mod tests {
             loaded_embedding_models: vec!["bge-small".to_string()],
             loaded_asr_models: vec!["whisper-large".to_string()],
             loaded_tts_models: vec!["vibevoice".to_string()],
+            executable_models: vec!["llama-3.1-8b".to_string()],
+            excluded_models: HashSet::new(),
             supported_runtimes: vec![RuntimeType::LlamaCpp, RuntimeType::WhisperCpp],
             gpu_devices: vec![GpuDeviceInfo {
                 model: "NVIDIA RTX 4090".to_string(),
@@ -574,8 +578,6 @@ mod tests {
             sync_state: None,
             sync_progress: None,
             sync_updated_at: None,
-            executable_models: vec!["llama-3.1-8b".to_string()],
-            excluded_models: Vec::new(),
         }
     }
 

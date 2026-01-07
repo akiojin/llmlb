@@ -76,6 +76,9 @@ target_include_directories(safetensors_cpp PUBLIC
 )
 target_link_libraries(safetensors_cpp PUBLIC ${STCPP_GGML_TARGET})
 
+# Enable PIC for linking into shared libraries (required on Linux)
+set_target_properties(safetensors_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # Compiler definitions based on backend
 if(STCPP_METAL)
     target_compile_definitions(safetensors_cpp PUBLIC STCPP_USE_METAL)

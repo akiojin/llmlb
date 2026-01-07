@@ -206,8 +206,6 @@ TEST(ModelStorageTest, ResolveDescriptorFallsBackToGguf) {
 }
 
 TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
-    // TODO: Re-enable when safetensors.cpp engine is fully implemented (SPEC-69549000)
-    GTEST_SKIP() << "safetensors engine not yet implemented";
     TempModelDir tmp;
     create_safetensors_model_with_index(tmp.base, "llama-30b-safetensors");
 
@@ -215,14 +213,12 @@ TEST(ModelStorageTest, ResolveDescriptorFindsSafetensorsIndex) {
     auto desc = storage.resolveDescriptor("llama-30b-safetensors");
 
     ASSERT_TRUE(desc.has_value());
-    EXPECT_EQ(desc->runtime, "llama_cpp");
+    EXPECT_EQ(desc->runtime, "safetensors_cpp");
     EXPECT_EQ(desc->format, "safetensors");
     EXPECT_EQ(fs::path(desc->primary_path).filename(), "model.safetensors.index.json");
 }
 
 TEST(ModelStorageTest, ManifestFormatPrefersSafetensorsOverGguf) {
-    // TODO: Re-enable when safetensors.cpp engine is fully implemented (SPEC-69549000)
-    GTEST_SKIP() << "safetensors engine not yet implemented";
     TempModelDir tmp;
     const std::string model_name = "llama-20b";
     create_model(tmp.base, model_name);
@@ -234,7 +230,7 @@ TEST(ModelStorageTest, ManifestFormatPrefersSafetensorsOverGguf) {
 
     ASSERT_TRUE(desc.has_value());
     EXPECT_EQ(desc->format, "safetensors");
-    EXPECT_EQ(desc->runtime, "llama_cpp");
+    EXPECT_EQ(desc->runtime, "safetensors_cpp");
 
     auto list = storage.listAvailable();
     auto it = std::find_if(list.begin(), list.end(), [&](const ModelInfo& info) {
@@ -267,8 +263,6 @@ TEST(ModelStorageTest, ManifestFormatPrefersGgufOverSafetensors) {
 }
 
 TEST(ModelStorageTest, ManifestFormatsPrefersFirstEntrySafetensors) {
-    // TODO: Re-enable when safetensors.cpp engine is fully implemented (SPEC-69549000)
-    GTEST_SKIP() << "safetensors engine not yet implemented";
     TempModelDir tmp;
     const std::string model_name = "llama-20b";
     create_model(tmp.base, model_name);
@@ -280,7 +274,7 @@ TEST(ModelStorageTest, ManifestFormatsPrefersFirstEntrySafetensors) {
 
     ASSERT_TRUE(desc.has_value());
     EXPECT_EQ(desc->format, "safetensors");
-    EXPECT_EQ(desc->runtime, "llama_cpp");
+    EXPECT_EQ(desc->runtime, "safetensors_cpp");
     auto list = storage.listAvailable();
     auto it = std::find_if(list.begin(), list.end(), [&](const ModelInfo& info) {
         return info.name == model_name;
@@ -388,8 +382,6 @@ TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGguf) {
 }
 
 TEST(ModelStorageTest, ResolveDescriptorIncludesSafetensorsShardMetadata) {
-    // TODO: Re-enable when safetensors.cpp engine is fully implemented (SPEC-69549000)
-    GTEST_SKIP() << "safetensors engine not yet implemented";
     TempModelDir tmp;
     create_safetensors_model_with_shards(tmp.base, "llama-20b-sharded");
 
@@ -431,8 +423,6 @@ TEST(ModelStorageTest, ResolveDescriptorRejectsMissingShards) {
 }
 
 TEST(ModelStorageTest, ListAvailableDescriptorsIncludesGgufAndSafetensors) {
-    // TODO: Re-enable when safetensors.cpp engine is fully implemented (SPEC-69549000)
-    GTEST_SKIP() << "safetensors engine not yet implemented";
     TempModelDir tmp;
     create_model(tmp.base, "llama-20b");
     create_safetensors_model_with_index(tmp.base, "mistral-30b");

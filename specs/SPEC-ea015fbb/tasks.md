@@ -11,18 +11,19 @@
 ## Phase 3.1: 検証
 
 - [x] T001 spec.mdの画面一覧が実装ファイルと一致することを確認
-  - ✅ login.html, register.html, index.html, playground.html 存在確認済み
+  - 実装確認: `router/src/web/static/` に `index.html`, `login.html`, `register.html`, `playground.html` が存在
 - [x] T002 [P] 各画面IDと関連SPECのリンクが正しいことを確認
-  - ✅ 全関連SPEC（d4eb8796, 712c20cf, fbc50d97, 5fc9fe92, 11106000, 1f2a9c3d, 026b2cde, 4b6e9f2a）存在確認済み
+  - 確認: 認証系は SPEC-d4eb8796、ダッシュボード/Playground は SPEC-712c20cf/SPEC-5fc9fe92 ほかに紐付け
 - [x] T003 [P] 画面遷移図が実装のルーティングと一致することを確認
-  - ✅ /dashboard, /playground ルーティング (api/mod.rs:209-215) 確認済み
+  - 確認: `/dashboard/login.html` ↔ `/dashboard/register.html` の相互リンク、ログイン後 `/dashboard/` へ遷移
+  - Playground は `/playground` ルートで提供（ヘッダーからは `/dashboard/playground.html` を開く実装）
 
 ## Phase 3.2: 整合性チェック
 
 - [x] T004 specs.mdにSPEC-ea015fbbが登録されていることを確認
-  - ✅ specs.md:106 に登録済み
+  - 確認: `specs/specs.md` にSPEC-ea015fbbが登録済み
 - [x] T005 依存関係マトリクスにSPEC-ea015fbbが含まれていることを確認
-  - ✅ specs.md:26 に追加済み
+  - 確認: `specs/specs.md` の依存関係マトリクスにSPEC-ea015fbbが含まれる
 
 ## 依存関係
 

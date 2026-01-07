@@ -16,7 +16,7 @@ TEST(HttpServerTest, ServesHealthAndMetrics) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18086, openai, node);
     server.start();
@@ -38,7 +38,7 @@ TEST(HttpServerTest, HandlesCorsPreflightAndHeaders) {
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18089, openai, node);
     server.start();
@@ -62,7 +62,7 @@ TEST(HttpServerTest, ReturnsJsonErrorsWithHandlers) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18090, openai, node);
     server.start();
@@ -88,7 +88,7 @@ TEST(HttpServerTest, MiddlewareCanShortCircuitRequests) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18091, openai, node);
     server.addMiddleware([](const httplib::Request& req, httplib::Response& res) {
@@ -119,7 +119,7 @@ TEST(HttpServerTest, LoggerReceivesRequests) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai(registry, engine, config);
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
     NodeEndpoints node;
     HttpServer server(18092, openai, node);
     std::atomic<bool> logged{false};

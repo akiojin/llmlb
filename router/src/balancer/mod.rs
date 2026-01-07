@@ -2098,6 +2098,7 @@ impl LoadManager {
                     ready_models,
                     None,
                     None,
+                    None, // executable_models
                 )
                 .await
             {

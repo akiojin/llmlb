@@ -33,6 +33,7 @@ pub async fn health_check(
             req.ready_models,
             req.sync_state,
             req.sync_progress,
+            None, // executable_models (heartbeatでは更新しない)
         )
         .await?;
 

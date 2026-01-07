@@ -190,6 +190,7 @@ mod tests {
                 Some((4, 4)),
                 None,
                 None,
+                None, // executable_models
             )
             .await
             .ok();

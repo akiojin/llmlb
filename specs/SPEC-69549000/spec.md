@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-69549000`
 **作成日**: 2026-01-06
-**ステータス**: 下書き
+**ステータス**: 実装完了
 **入力**: ユーザー説明: "safetensors.cpp: llama.cpp/stable-diffusion.cpp/whisper.cppと同様の独立C++プロジェクト。ggmlバックエンドを利用し、safetensors形式のLLMをMetal/CUDA/ROCm/Vulkanで推論可能にする。"
 
 ## ユーザーシナリオ＆テスト

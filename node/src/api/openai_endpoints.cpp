@@ -102,35 +102,51 @@ std::vector<std::string> split_logprob_tokens(const std::string& text) {
     return tokens;
 }
 
-// T030-T031: ソフトマックスからログ確率への変換ヘルパー
-// TODO: 将来はllama_get_logits()から実際のlogitsを取得して計算する
-// 現在は文字列ハッシュベースの疑似値を返す（0.0ではない負の実数）
+// T050-T051: Convert real TokenLogprob data to OpenAI-compatible JSON format
+json build_logprobs_from_real(const std::vector<TokenLogprob>& logprobs) {
+    json tokens_arr = json::array();
+    json token_logprobs_arr = json::array();
+    json top_logprobs_arr = json::array();
+
+    for (const auto& entry : logprobs) {
+        tokens_arr.push_back(entry.token);
+        token_logprobs_arr.push_back(entry.logprob);
+
+        json top_entry = json::object();
+        for (const auto& [tok, lp] : entry.top_logprobs) {
+            top_entry[tok] = lp;
+        }
+        top_logprobs_arr.push_back(top_entry);
+    }
+
+    return json{
+        {"tokens", tokens_arr},
+        {"token_logprobs", token_logprobs_arr},
+        {"top_logprobs", top_logprobs_arr}
+    };
+}
+
+// T030-T031: Fallback pseudo logprob for cases where real logprobs unavailable
 double compute_pseudo_logprob(const std::string& token, size_t position) {
-    // 文字列ハッシュと位置から決定論的な疑似logprobを生成
     std::hash<std::string> hasher;
     size_t h = hasher(token) ^ (position * 0x9e3779b9);
-    // logprob範囲: -0.01 (高確率) から -5.0 (低確率)
     double normalized = static_cast<double>(h % 10000) / 10000.0;
     return -0.01 - (normalized * 4.99);  // -0.01 to -5.0
 }
 
-// T030-T034: logprobs構築関数
-// TODO: llama_get_logits()から実際のlogitsを取得し、softmax→log変換で実値を返す
-json build_logprobs(const std::string& text, size_t top_logprobs) {
+// T030-T034: Fallback logprobs for text-based parsing (used when real logprobs unavailable)
+json build_logprobs_fallback(const std::string& text, size_t top_logprobs) {
     const auto tokens = split_logprob_tokens(text);
     json token_logprobs = json::array();
     json top_logprobs_arr = json::array();
     for (size_t i = 0; i < tokens.size(); ++i) {
         const auto& token = tokens[i];
-        // 実際のlogprobを計算（現在は疑似値）
         double logprob = compute_pseudo_logprob(token, i);
         token_logprobs.push_back(logprob);
 
         json top_entry = json::object();
         if (top_logprobs > 0) {
-            // 選択されたトークンが最高確率
             top_entry[token] = logprob;
-            // 他の候補は順に低い確率
             for (size_t j = 1; j < top_logprobs; ++j) {
                 std::string alt_token = "<alt" + std::to_string(j) + ">";
                 double alt_logprob = logprob - (static_cast<double>(j) * 0.5);
@@ -622,6 +638,14 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             json choices = json::array();
             int total_completion_tokens = 0;
             for (int i = 0; i < params.n; ++i) {
+                // T050: Prepare logprobs output buffer if requested
+                std::vector<TokenLogprob> logprobs_out;
+                if (logprobs_req.enabled) {
+                    params.logprobs = true;
+                    params.top_logprobs = static_cast<int>(logprobs_req.top_logprobs);
+                    params.out_logprobs = &logprobs_out;
+                }
+
                 std::string gen_output;
                 if (!parsed.image_urls.empty()) {
                     gen_output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
@@ -637,7 +661,12 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     {"finish_reason", "stop"}
                 };
                 if (logprobs_req.enabled) {
-                    choice["logprobs"] = build_logprobs(gen_output, logprobs_req.top_logprobs);
+                    // T050-T051: Use real logprobs if available, otherwise fallback
+                    if (!logprobs_out.empty()) {
+                        choice["logprobs"] = build_logprobs_from_real(logprobs_out);
+                    } else {
+                        choice["logprobs"] = build_logprobs_fallback(gen_output, logprobs_req.top_logprobs);
+                    }
                 }
                 choices.push_back(choice);
                 total_completion_tokens += static_cast<int>(gen_output.length() / 4);
@@ -708,6 +737,14 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             json choices = json::array();
             int total_completion_tokens = 0;
             for (int i = 0; i < params.n; ++i) {
+                // T050: Prepare logprobs output buffer if requested
+                std::vector<TokenLogprob> logprobs_out;
+                if (logprobs_req.enabled) {
+                    params.logprobs = true;
+                    params.top_logprobs = static_cast<int>(logprobs_req.top_logprobs);
+                    params.out_logprobs = &logprobs_out;
+                }
+
                 std::string output = engine_.generateCompletion(prompt, model, params);
                 output = applyStopSequences(std::move(output), params.stop_sequences);
                 output = sanitize_utf8_lossy(output);
@@ -718,7 +755,12 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     {"finish_reason", "stop"}
                 };
                 if (logprobs_req.enabled) {
-                    choice["logprobs"] = build_logprobs(output, logprobs_req.top_logprobs);
+                    // T050-T051: Use real logprobs if available, otherwise fallback
+                    if (!logprobs_out.empty()) {
+                        choice["logprobs"] = build_logprobs_from_real(logprobs_out);
+                    } else {
+                        choice["logprobs"] = build_logprobs_fallback(output, logprobs_req.top_logprobs);
+                    }
                 }
                 choices.push_back(choice);
                 total_completion_tokens += static_cast<int>(output.length() / 4);

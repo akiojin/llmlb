@@ -32,16 +32,16 @@
 
 **重要: これらのテストは記述され、実装前に失敗する必要がある**
 
-### Contract Tests (CLIコマンド仕様)
+### Contract Tests (CLIコマンド仕様) ✅ RED phase完了
 
-- [ ] T004 [P] `node/tests/contract/cli_serve_test.cpp` に `node serve` の contract test
-- [ ] T005 [P] `node/tests/contract/cli_run_test.cpp` に `node run` の contract test
-- [ ] T006 [P] `node/tests/contract/cli_pull_test.cpp` に `node pull` の contract test
-- [ ] T007 [P] `node/tests/contract/cli_list_test.cpp` に `node list` の contract test
-- [ ] T008 [P] `node/tests/contract/cli_show_test.cpp` に `node show` の contract test
-- [ ] T009 [P] `node/tests/contract/cli_rm_test.cpp` に `node rm` の contract test
-- [ ] T010 [P] `node/tests/contract/cli_stop_test.cpp` に `node stop` の contract test
-- [ ] T011 [P] `node/tests/contract/cli_ps_test.cpp` に `node ps` の contract test
+- [x] T004 [P] `node/tests/contract/cli_serve_test.cpp` に `node serve` の contract test
+- [x] T005 [P] `node/tests/contract/cli_run_test.cpp` に `node run` の contract test
+- [x] T006 [P] `node/tests/contract/cli_pull_test.cpp` に `node pull` の contract test
+- [x] T007 [P] `node/tests/contract/cli_list_test.cpp` に `node list` の contract test
+- [x] T008 [P] `node/tests/contract/cli_show_test.cpp` に `node show` の contract test
+- [x] T009 [P] `node/tests/contract/cli_rm_test.cpp` に `node rm` の contract test
+- [x] T010 [P] `node/tests/contract/cli_stop_test.cpp` に `node stop` の contract test
+- [x] T011 [P] `node/tests/contract/cli_ps_test.cpp` に `node ps` の contract test
 
 ### Integration Tests (ユーザーストーリー)
 

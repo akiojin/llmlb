@@ -62,8 +62,8 @@
 
 ### コアコンポーネント
 
-- [ ] T021 `node/src/utils/cli.cpp` にサブコマンドパーサー実装
-- [ ] T022 `node/src/main.cpp` にサブコマンド分岐ロジック追加
+- [x] T021 `node/src/utils/cli.cpp` にサブコマンドパーサー実装
+- [x] T022 `node/src/main.cpp` にサブコマンド分岐ロジック追加
 - [ ] T023 [P] `node/include/cli/cli_client.h` + `node/src/cli/cli_client.cpp` にCLIClient
 - [ ] T024 [P] `node/include/cli/repl_session.h` + `node/src/cli/repl_session.cpp` にREPLSession
 - [ ] T025 [P] `node/include/cli/progress_renderer.h` + `node/src/cli/progress_renderer.cpp` にProgressRenderer

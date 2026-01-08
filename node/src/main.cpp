@@ -484,9 +484,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Register with router (retry) - skip in standalone mode
-        if (!cfg.standalone) {
-            std::cout << "Registering with router..." << std::endl;
+        // Try to register with router (fallback to standalone if unavailable)
+        std::cout << "Registering with router..." << std::endl;
+        {
             llm_node::RouterClient router(router_url);
             if (!cfg.router_api_key.empty()) {
                 router.setApiKey(cfg.router_api_key);
@@ -634,8 +634,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                     }
                 });
             }
-        } else {
-            spdlog::info("Running in standalone mode (LLM_NODE_STANDALONE=1)");
         }
 
         // Update registry with local models (models actually available on this node)

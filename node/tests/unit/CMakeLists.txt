@@ -14,6 +14,7 @@ set(UNIT_TEST_SOURCES
     llama_engine_kv_cache_test.cpp
     engine_registry_test.cpp
     engine_host_test.cpp
+    safetensors_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp

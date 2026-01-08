@@ -327,6 +327,15 @@ if(BUILD_WITH_SAFETENSORS)
             spdlog::spdlog_header_only
     )
     set_target_properties(llm_engine_safetensors PROPERTIES OUTPUT_NAME "llm_engine_safetensors")
+
+    # Copy plugin files to build/engines/safetensors/ for runtime loading
+    set(SAFETENSORS_PLUGIN_DIR ${CMAKE_BINARY_DIR}/engines/safetensors)
+    add_custom_command(TARGET llm_engine_safetensors POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${SAFETENSORS_PLUGIN_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:llm_engine_safetensors> ${SAFETENSORS_PLUGIN_DIR}/
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/manifest.json ${SAFETENSORS_PLUGIN_DIR}/
+        COMMENT "Copying safetensors plugin to ${SAFETENSORS_PLUGIN_DIR}"
+    )
 endif()
 
 # Collect source files

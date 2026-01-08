@@ -26,6 +26,7 @@
 #include "utils/version.h"
 #include "runtime/state.h"
 #include "utils/logger.h"
+#include "cli/commands.h"
 
 #ifdef USE_WHISPER
 #include "core/whisper_manager.h"
@@ -540,10 +541,58 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+    // Branch based on subcommand
+    switch (cli_result.subcommand) {
+        case llm_node::Subcommand::NodeServe: {
+            std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+            auto cfg = llm_node::loadNodeConfig();
+            // Override config with CLI options if specified
+            if (cli_result.serve_options.port != 0) {
+                cfg.node_port = cli_result.serve_options.port;
+            }
+            if (!cli_result.serve_options.host.empty()) {
+                cfg.bind_address = cli_result.serve_options.host;
+            }
+            return run_node(cfg, /*single_iteration=*/false);
+        }
 
-    auto cfg = llm_node::loadNodeConfig();
-    return run_node(cfg, /*single_iteration=*/false);
+        case llm_node::Subcommand::NodeRun:
+            return llm_node::cli::commands::run(cli_result.run_options);
+
+        case llm_node::Subcommand::NodePull:
+            return llm_node::cli::commands::pull(cli_result.pull_options);
+
+        case llm_node::Subcommand::NodeList:
+            return llm_node::cli::commands::list(cli_result.model_options);
+
+        case llm_node::Subcommand::NodeShow:
+            return llm_node::cli::commands::show(cli_result.show_options);
+
+        case llm_node::Subcommand::NodeRm:
+            return llm_node::cli::commands::rm(cli_result.model_options);
+
+        case llm_node::Subcommand::NodeStop:
+            return llm_node::cli::commands::stop(cli_result.model_options);
+
+        case llm_node::Subcommand::NodePs:
+            return llm_node::cli::commands::ps();
+
+        case llm_node::Subcommand::RouterNodes:
+            return llm_node::cli::commands::router_nodes();
+
+        case llm_node::Subcommand::RouterModels:
+            return llm_node::cli::commands::router_models();
+
+        case llm_node::Subcommand::RouterStatus:
+            return llm_node::cli::commands::router_status();
+
+        case llm_node::Subcommand::None:
+        default:
+            // Default to serve (legacy behavior for backward compatibility)
+            std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+            auto cfg = llm_node::loadNodeConfig();
+            return run_node(cfg, /*single_iteration=*/false);
+    }
 }
 #endif
 

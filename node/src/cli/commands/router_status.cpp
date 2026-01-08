@@ -10,7 +10,7 @@ namespace commands {
 
 /// Execute the 'router status' command
 /// @return Exit code (0=success, 1=error, 2=connection error)
-int routerStatus() {
+int router_status() {
     // TODO: Implement router status
     // - Show cluster health
     // - Node status summary

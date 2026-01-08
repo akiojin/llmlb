@@ -14,8 +14,9 @@ namespace cli {
 namespace commands {
 
 /// Execute the 'node list' command
+/// @param options Model options (unused for list)
 /// @return Exit code (0=success, 1=error, 2=connection error)
-int list() {
+int list(const ModelOptions& /* options */) {
     // Create CLI client
     auto client = std::make_shared<CliClient>();
 

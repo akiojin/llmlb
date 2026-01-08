@@ -10,7 +10,7 @@ namespace commands {
 
 /// Execute the 'router models' command
 /// @return Exit code (0=success, 1=error, 2=connection error)
-int routerModels() {
+int router_models() {
     // TODO: Implement router models management
     // - List deployed models across cluster
     // - Deploy model to nodes

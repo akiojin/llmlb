@@ -10,7 +10,7 @@ namespace commands {
 
 /// Execute the 'router nodes' command
 /// @return Exit code (0=success, 1=error, 2=connection error)
-int routerNodes() {
+int router_nodes() {
     // TODO: Implement router nodes management
     // - List registered nodes
     // - Register new node

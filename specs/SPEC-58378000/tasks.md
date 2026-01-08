@@ -22,11 +22,11 @@
 - **[P]**: 並列実行可能 (異なるファイル、依存関係なし)
 - 説明には正確なファイルパスを含める
 
-## Phase 3.1: セットアップ
+## Phase 3.1: セットアップ ✅
 
-- [ ] T001 `node/src/cli/` ディレクトリ構造を作成 (commands/, headers)
-- [ ] T002 `node/CMakeLists.txt` にcli/ソースファイルを追加
-- [ ] T003 [P] `node/include/utils/cli.h` にサブコマンド定義を追加
+- [x] T001 `node/src/cli/` ディレクトリ構造を作成 (commands/, headers)
+- [x] T002 `node/CMakeLists.txt` にcli/ソースファイルを追加
+- [x] T003 [P] `node/include/utils/cli.h` にサブコマンド定義を追加
 
 ## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
 

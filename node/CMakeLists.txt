@@ -229,6 +229,33 @@ add_library(utils_lib STATIC
 target_include_directories(utils_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
 
+# CLI library (SPEC-58378000: CLI commands)
+add_library(cli_lib STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cli_client.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/repl_session.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/progress_renderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/ollama_compat.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/serve.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/run.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/pull.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/list.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/show.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/rm.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/stop.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/ps.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_nodes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_models.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_status.cpp
+)
+target_include_directories(cli_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(cli_lib PUBLIC
+    utils_lib
+    spdlog::spdlog_header_only
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+target_compile_definitions(cli_lib PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+
 # Engine plugin: llama.cpp
 set(LLAMA_ENGINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/engines/llama_cpp/llama_engine_plugin.cpp

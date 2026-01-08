@@ -127,8 +127,8 @@ void skip_value(const char*& p, const char* end) {
         int depth = 1;
         ++p;
         while (p < end && depth > 0) {
-            if (*p == '[') ++depth;
-            else if (*p == ']') --depth;
+            if (*p == '[') { ++depth; ++p; }
+            else if (*p == ']') { --depth; ++p; }
             else if (*p == '"') parse_string(p, end);
             else ++p;
         }
@@ -136,8 +136,8 @@ void skip_value(const char*& p, const char* end) {
         int depth = 1;
         ++p;
         while (p < end && depth > 0) {
-            if (*p == '{') ++depth;
-            else if (*p == '}') --depth;
+            if (*p == '{') { ++depth; ++p; }
+            else if (*p == '}') { --depth; ++p; }
             else if (*p == '"') parse_string(p, end);
             else ++p;
         }
@@ -203,6 +203,10 @@ bool parse_safetensors_header(
     const char* p = header_buf.data();
     const char* end = p + header_size;
 
+    fprintf(stderr, "[DEBUG] parse_safetensors_header: header_size=%zu, first 100 chars: %.100s\n",
+            header_size, header_buf.data());
+    fflush(stderr);
+
     json_parser::skip_ws(p, end);
     if (p >= end || *p != '{') {
         error = "Invalid JSON header (expected '{')";
@@ -210,12 +214,15 @@ bool parse_safetensors_header(
     }
     ++p;
 
+    int tensor_count = 0;
     while (p < end) {
         json_parser::skip_ws(p, end);
         if (p >= end || *p == '}') break;
 
         // Parse key
         std::string key = json_parser::parse_string(p, end);
+        fprintf(stderr, "[DEBUG] parse_safetensors_header: parsed key='%s'\n", key.c_str());
+        fflush(stderr);
         if (key.empty()) {
             error = "Invalid JSON: expected key";
             return false;
@@ -292,12 +299,18 @@ bool parse_safetensors_header(
             if (p < end) ++p;  // skip '}'
 
             header.tensors.push_back(info);
+            tensor_count++;
+            fprintf(stderr, "[DEBUG] parse_safetensors_header: added tensor #%d '%s' dtype=%d shape_dims=%zu\n",
+                    tensor_count, info.name.c_str(), static_cast<int>(info.dtype), info.shape.size());
+            fflush(stderr);
         }
 
         json_parser::skip_ws(p, end);
         if (p < end && *p == ',') ++p;
     }
 
+    fprintf(stderr, "[DEBUG] parse_safetensors_header: finished, total tensors=%zu\n", header.tensors.size());
+    fflush(stderr);
     return true;
 }
 

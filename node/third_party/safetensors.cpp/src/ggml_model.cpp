@@ -288,6 +288,37 @@ bool load_hparams(
     // Detect architecture
     hparams.arch = detect_architecture(model_dir, error);
 
+    // Parse torch_dtype for weight data type
+    auto find_string_value = [&](const std::string& key) -> std::string {
+        std::string search = "\"" + key + "\"";
+        size_t pos = content.find(search);
+        if (pos == std::string::npos) return "";
+
+        pos = content.find(':', pos);
+        if (pos == std::string::npos) return "";
+
+        pos = content.find('"', pos);
+        if (pos == std::string::npos) return "";
+
+        pos++;
+        size_t end_pos = content.find('"', pos);
+        if (end_pos == std::string::npos) return "";
+
+        return content.substr(pos, end_pos - pos);
+    };
+
+    std::string torch_dtype = find_string_value("torch_dtype");
+    if (torch_dtype == "bfloat16") {
+        hparams.weight_type = GGML_TYPE_BF16;
+    } else if (torch_dtype == "float16") {
+        hparams.weight_type = GGML_TYPE_F16;
+    } else if (torch_dtype == "float32") {
+        hparams.weight_type = GGML_TYPE_F32;
+    } else {
+        // Default to F16 for unknown types
+        hparams.weight_type = GGML_TYPE_F16;
+    }
+
     // Validate
     if (hparams.n_vocab == 0 || hparams.n_embd == 0 ||
         hparams.n_head == 0 || hparams.n_layer == 0) {
@@ -424,48 +455,49 @@ static bool create_layer_tensors(
     const int32_t n_head_kv = hparams.n_head_kv;
     const int32_t head_dim = n_embd / n_head;
     const int32_t n_ff = hparams.n_ff;
+    const enum ggml_type wtype = hparams.weight_type;
 
     char name[128];
 
-    // Attention norm
+    // Attention norm (use weight_type from config to match safetensors)
     snprintf(name, sizeof(name), "blk.%d.attn_norm.weight", layer_idx);
-    layer.attn_norm = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
+    layer.attn_norm = ggml_new_tensor_1d(ctx, wtype, n_embd);
     ggml_set_name(layer.attn_norm, name);
 
-    // Q, K, V projections
+    // Q, K, V projections (use weight_type from config)
     snprintf(name, sizeof(name), "blk.%d.attn_q.weight", layer_idx);
-    layer.wq = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_embd, n_head * head_dim);
+    layer.wq = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head * head_dim);
     ggml_set_name(layer.wq, name);
 
     snprintf(name, sizeof(name), "blk.%d.attn_k.weight", layer_idx);
-    layer.wk = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_embd, n_head_kv * head_dim);
+    layer.wk = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head_kv * head_dim);
     ggml_set_name(layer.wk, name);
 
     snprintf(name, sizeof(name), "blk.%d.attn_v.weight", layer_idx);
-    layer.wv = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_embd, n_head_kv * head_dim);
+    layer.wv = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head_kv * head_dim);
     ggml_set_name(layer.wv, name);
 
     // Output projection
     snprintf(name, sizeof(name), "blk.%d.attn_output.weight", layer_idx);
-    layer.wo = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_head * head_dim, n_embd);
+    layer.wo = ggml_new_tensor_2d(ctx, wtype, n_head * head_dim, n_embd);
     ggml_set_name(layer.wo, name);
 
-    // FFN norm
+    // FFN norm (use weight_type from config to match safetensors)
     snprintf(name, sizeof(name), "blk.%d.ffn_norm.weight", layer_idx);
-    layer.ffn_norm = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
+    layer.ffn_norm = ggml_new_tensor_1d(ctx, wtype, n_embd);
     ggml_set_name(layer.ffn_norm, name);
 
-    // FFN layers (SwiGLU: gate, up, down)
+    // FFN layers (SwiGLU: gate, up, down) - use weight_type from config
     snprintf(name, sizeof(name), "blk.%d.ffn_gate.weight", layer_idx);
-    layer.ffn_gate = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_embd, n_ff);
+    layer.ffn_gate = ggml_new_tensor_2d(ctx, wtype, n_embd, n_ff);
     ggml_set_name(layer.ffn_gate, name);
 
     snprintf(name, sizeof(name), "blk.%d.ffn_up.weight", layer_idx);
-    layer.ffn_up = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_embd, n_ff);
+    layer.ffn_up = ggml_new_tensor_2d(ctx, wtype, n_embd, n_ff);
     ggml_set_name(layer.ffn_up, name);
 
     snprintf(name, sizeof(name), "blk.%d.ffn_down.weight", layer_idx);
-    layer.ffn_down = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, n_ff, n_embd);
+    layer.ffn_down = ggml_new_tensor_2d(ctx, wtype, n_ff, n_embd);
     ggml_set_name(layer.ffn_down, name);
 
     return true;
@@ -475,8 +507,11 @@ static bool create_layer_tensors(
 static size_t estimate_weight_memory(const ModelHParams& hparams) {
     size_t mem = 0;
 
-    // Token embeddings: vocab_size * n_embd * F16
-    mem += (size_t)hparams.n_vocab * hparams.n_embd * sizeof(ggml_fp16_t);
+    // Get weight type size (2 bytes for F16/BF16, 4 bytes for F32)
+    const size_t wtype_size = ggml_type_size(hparams.weight_type);
+
+    // Token embeddings
+    mem += (size_t)hparams.n_vocab * hparams.n_embd * wtype_size;
 
     // Per layer
     const int32_t n_embd = hparams.n_embd;
@@ -486,29 +521,29 @@ static size_t estimate_weight_memory(const ModelHParams& hparams) {
     const int32_t n_ff = hparams.n_ff;
 
     for (int i = 0; i < hparams.n_layer; ++i) {
-        // Attention norm
+        // Attention norm (always F32)
         mem += n_embd * sizeof(float);
 
-        // Q, K, V, O
-        mem += (size_t)n_embd * n_head * head_dim * sizeof(ggml_fp16_t);      // Q
-        mem += (size_t)n_embd * n_head_kv * head_dim * sizeof(ggml_fp16_t);   // K
-        mem += (size_t)n_embd * n_head_kv * head_dim * sizeof(ggml_fp16_t);   // V
-        mem += (size_t)n_head * head_dim * n_embd * sizeof(ggml_fp16_t);      // O
+        // Q, K, V, O (use weight_type)
+        mem += (size_t)n_embd * n_head * head_dim * wtype_size;      // Q
+        mem += (size_t)n_embd * n_head_kv * head_dim * wtype_size;   // K
+        mem += (size_t)n_embd * n_head_kv * head_dim * wtype_size;   // V
+        mem += (size_t)n_head * head_dim * n_embd * wtype_size;      // O
 
-        // FFN norm
+        // FFN norm (always F32)
         mem += n_embd * sizeof(float);
 
-        // FFN
-        mem += (size_t)n_embd * n_ff * sizeof(ggml_fp16_t);  // gate
-        mem += (size_t)n_embd * n_ff * sizeof(ggml_fp16_t);  // up
-        mem += (size_t)n_ff * n_embd * sizeof(ggml_fp16_t);  // down
+        // FFN (use weight_type)
+        mem += (size_t)n_embd * n_ff * wtype_size;  // gate
+        mem += (size_t)n_embd * n_ff * wtype_size;  // up
+        mem += (size_t)n_ff * n_embd * wtype_size;  // down
     }
 
-    // Output norm
+    // Output norm (always F32)
     mem += n_embd * sizeof(float);
 
-    // LM head (may be tied to embeddings)
-    mem += (size_t)n_embd * hparams.n_vocab * sizeof(ggml_fp16_t);
+    // LM head (use weight_type)
+    mem += (size_t)n_embd * hparams.n_vocab * wtype_size;
 
     return mem;
 }
@@ -522,23 +557,56 @@ GgmlModel* load_ggml_model(
 ) {
     namespace fs = std::filesystem;
 
+    fprintf(stderr, "[DEBUG] load_ggml_model: starting for %s\n", model_dir.c_str());
+    fflush(stderr);
+
     // Create model
     auto model = std::make_unique<GgmlModel>();
     model->model_path = model_dir;
 
+    fprintf(stderr, "[DEBUG] load_ggml_model: loading hparams\n");
+    fflush(stderr);
+
     // Load hyperparameters
     if (!load_hparams(model_dir, model->hparams, error)) {
+        fprintf(stderr, "[DEBUG] load_ggml_model: hparams failed: %s\n", error.c_str());
+        fflush(stderr);
         return nullptr;
     }
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: hparams loaded, weight_type=%d, n_layer=%d, n_embd=%d\n",
+            model->hparams.weight_type, model->hparams.n_layer, model->hparams.n_embd);
+    fflush(stderr);
+
+    // CPU backend doesn't support bf16 operations, convert to f32
+    if (backend_type == STCPP_BACKEND_CPU && model->hparams.weight_type == GGML_TYPE_BF16) {
+        fprintf(stderr, "[DEBUG] load_ggml_model: CPU backend - converting bf16 to f32\n");
+        fflush(stderr);
+        model->hparams.weight_type = GGML_TYPE_F32;
+    }
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: creating backend (type=%d)\n", backend_type);
+    fflush(stderr);
 
     // Create backend
     model->backend = create_backend(backend_type, device_id, error);
     if (!model->backend) {
+        fprintf(stderr, "[DEBUG] load_ggml_model: backend failed: %s\n", error.c_str());
+        fflush(stderr);
         return nullptr;
     }
 
+    fprintf(stderr, "[DEBUG] load_ggml_model: backend created\n");
+    fflush(stderr);
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: estimating memory\n");
+    fflush(stderr);
+
     // Estimate memory needed
     size_t weight_mem = estimate_weight_memory(model->hparams);
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: weight_mem=%zu, creating ggml context\n", weight_mem);
+    fflush(stderr);
 
     // Create ggml context for weights
     struct ggml_init_params ctx_params = {
@@ -550,48 +618,76 @@ GgmlModel* load_ggml_model(
     model->ctx_weights = ggml_init(ctx_params);
     if (!model->ctx_weights) {
         error = "Failed to create ggml context";
+        fprintf(stderr, "[DEBUG] load_ggml_model: ggml_init failed\n");
+        fflush(stderr);
         return nullptr;
     }
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: ggml context created, creating tensors\n");
+    fflush(stderr);
 
     // Create tensors
     ModelTensors& tensors = model->tensors;
     const ModelHParams& hparams = model->hparams;
+    const enum ggml_type wtype = hparams.weight_type;
 
-    // Token embeddings
+    fprintf(stderr, "[DEBUG] load_ggml_model: creating tok_embd tensor (wtype=%d)\n", wtype);
+    fflush(stderr);
+
+    // Token embeddings (use weight_type from config)
     tensors.tok_embd = ggml_new_tensor_2d(
-        model->ctx_weights, GGML_TYPE_F16,
+        model->ctx_weights, wtype,
         hparams.n_embd, hparams.n_vocab
     );
     ggml_set_name(tensors.tok_embd, "token_embd.weight");
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: creating layer tensors\n");
+    fflush(stderr);
 
     // Layer tensors
     tensors.layers.resize(hparams.n_layer);
     for (int i = 0; i < hparams.n_layer; ++i) {
         if (!create_layer_tensors(model->ctx_weights, tensors.layers[i], hparams, i)) {
             error = "Failed to create layer tensors";
+            fprintf(stderr, "[DEBUG] load_ggml_model: create_layer_tensors failed at layer %d\n", i);
+            fflush(stderr);
             return nullptr;
         }
     }
 
-    // Output norm
+    fprintf(stderr, "[DEBUG] load_ggml_model: layer tensors created, creating output tensors\n");
+    fflush(stderr);
+
+    // Output norm (use weight_type from config to match safetensors)
     tensors.output_norm = ggml_new_tensor_1d(
-        model->ctx_weights, GGML_TYPE_F32, hparams.n_embd
+        model->ctx_weights, wtype, hparams.n_embd
     );
     ggml_set_name(tensors.output_norm, "output_norm.weight");
 
-    // LM head
+    // LM head (use weight_type from config)
     tensors.output = ggml_new_tensor_2d(
-        model->ctx_weights, GGML_TYPE_F16,
+        model->ctx_weights, wtype,
         hparams.n_embd, hparams.n_vocab
     );
     ggml_set_name(tensors.output, "output.weight");
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: allocating backend buffer\n");
+    fflush(stderr);
 
     // Allocate backend buffer
     model->buffer = ggml_backend_alloc_ctx_tensors(model->ctx_weights, model->backend);
     if (!model->buffer) {
         error = "Failed to allocate backend buffer";
+        fprintf(stderr, "[DEBUG] load_ggml_model: ggml_backend_alloc_ctx_tensors failed\n");
+        fflush(stderr);
         return nullptr;
     }
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: backend buffer allocated\n");
+    fflush(stderr);
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: finding safetensors files\n");
+    fflush(stderr);
 
     // Find and load safetensors files
     std::vector<std::string> safetensors_files;
@@ -599,6 +695,8 @@ GgmlModel* load_ggml_model(
 
     if (fs::exists(index_path)) {
         // Sharded model
+        fprintf(stderr, "[DEBUG] load_ggml_model: parsing index.json\n");
+        fflush(stderr);
         std::unordered_map<std::string, std::string> tensor_to_shard;
         if (!parse_index_json(index_path.string(), safetensors_files, tensor_to_shard, error)) {
             return nullptr;
@@ -610,6 +708,8 @@ GgmlModel* load_ggml_model(
     } else {
         // Single file model
         fs::path single_path = fs::path(model_dir) / "model.safetensors";
+        fprintf(stderr, "[DEBUG] load_ggml_model: checking for %s\n", single_path.string().c_str());
+        fflush(stderr);
         if (!fs::exists(single_path)) {
             error = "No safetensors file found in " + model_dir;
             return nullptr;
@@ -618,56 +718,229 @@ GgmlModel* load_ggml_model(
     }
 
     model->shard_paths = safetensors_files;
+    fprintf(stderr, "[DEBUG] load_ggml_model: found %zu safetensors files\n", safetensors_files.size());
+    fflush(stderr);
 
     // Load tensor data from safetensors files
     // For MVP: we parse headers and memory-map files
     // Full implementation would copy data to GPU
 
     for (const auto& shard_path : safetensors_files) {
+        fprintf(stderr, "[DEBUG] load_ggml_model: parsing header for %s\n", shard_path.c_str());
+        fflush(stderr);
+
         SafetensorsHeader header;
         if (!parse_safetensors_header(shard_path, header, error)) {
+            fprintf(stderr, "[DEBUG] load_ggml_model: parse_safetensors_header failed: %s\n", error.c_str());
+            fflush(stderr);
             return nullptr;
         }
         model->mmap_sizes.push_back(0);  // Will be set by mmap
 
+        fprintf(stderr, "[DEBUG] load_ggml_model: header parsed, %zu tensors, data_offset=%zu\n",
+                header.tensors.size(), header.data_offset);
+        fflush(stderr);
+
         size_t file_size = 0;
         void* file_data = mmap_file(shard_path, file_size, error);
         if (!file_data) {
+            fprintf(stderr, "[DEBUG] load_ggml_model: mmap_file failed: %s\n", error.c_str());
+            fflush(stderr);
             return nullptr;
         }
         model->mmap_ptrs.push_back(file_data);
         model->mmap_sizes.back() = file_size;
 
+        fprintf(stderr, "[DEBUG] load_ggml_model: file mapped, size=%zu\n", file_size);
+        fflush(stderr);
+
         // Map tensor data to ggml tensors
         const uint8_t* data_base = static_cast<const uint8_t*>(file_data) + header.data_offset;
 
         for (const auto& tensor_info : header.tensors) {
+            // Skip bias tensors - our model structure doesn't use biases
+            if (tensor_info.name.find(".bias") != std::string::npos ||
+                tensor_info.name.find("_bias") != std::string::npos) {
+                continue;
+            }
+
             // Find corresponding ggml tensor
             std::string norm_name = TensorNameMap::normalize_name(tensor_info.name, hparams.arch);
 
             struct ggml_tensor* ggml_tensor = nullptr;
 
-            // Match by name pattern
-            // This is simplified - full implementation would have comprehensive mapping
+            // Match by name pattern for global tensors
             if (norm_name.find("embed_tokens") != std::string::npos ||
                 norm_name.find("tok_embd") != std::string::npos ||
                 norm_name.find("wte") != std::string::npos) {
                 ggml_tensor = tensors.tok_embd;
             } else if (norm_name.find("lm_head") != std::string::npos ||
-                       norm_name.find("output.weight") != std::string::npos) {
+                       (norm_name.find("output") != std::string::npos &&
+                        norm_name.find("blk") == std::string::npos &&
+                        norm_name.find("norm") == std::string::npos)) {
                 ggml_tensor = tensors.output;
-            } else if (norm_name.find("norm") != std::string::npos &&
-                       norm_name.find("blk") == std::string::npos) {
+            } else if ((norm_name.find("norm") != std::string::npos ||
+                        norm_name.find("ln_f") != std::string::npos) &&
+                       norm_name.find("blk") == std::string::npos &&
+                       norm_name.find("attn") == std::string::npos &&
+                       norm_name.find("ffn") == std::string::npos) {
                 ggml_tensor = tensors.output_norm;
             }
-            // Layer tensors would be matched here...
+
+            // Match layer tensors: extract layer index from "blk.{i}." pattern
+            if (!ggml_tensor && norm_name.find("blk.") != std::string::npos) {
+                // Extract layer index
+                size_t blk_pos = norm_name.find("blk.");
+                if (blk_pos != std::string::npos) {
+                    size_t idx_start = blk_pos + 4;
+                    size_t idx_end = norm_name.find('.', idx_start);
+                    if (idx_end != std::string::npos) {
+                        std::string idx_str = norm_name.substr(idx_start, idx_end - idx_start);
+                        int layer_idx = std::stoi(idx_str);
+
+                        if (layer_idx >= 0 && layer_idx < hparams.n_layer) {
+                            LayerTensors& layer = tensors.layers[layer_idx];
+                            std::string layer_part = norm_name.substr(idx_end + 1);
+
+                            // Attention norm
+                            if (layer_part.find("attn_norm") != std::string::npos ||
+                                layer_part.find("input_layernorm") != std::string::npos) {
+                                ggml_tensor = layer.attn_norm;
+                            }
+                            // Q projection
+                            else if (layer_part.find("attn_q") != std::string::npos ||
+                                     layer_part.find("q_proj") != std::string::npos ||
+                                     layer_part.find("self_attn.q") != std::string::npos) {
+                                ggml_tensor = layer.wq;
+                            }
+                            // K projection
+                            else if (layer_part.find("attn_k") != std::string::npos ||
+                                     layer_part.find("k_proj") != std::string::npos ||
+                                     layer_part.find("self_attn.k") != std::string::npos) {
+                                ggml_tensor = layer.wk;
+                            }
+                            // V projection
+                            else if (layer_part.find("attn_v") != std::string::npos ||
+                                     layer_part.find("v_proj") != std::string::npos ||
+                                     layer_part.find("self_attn.v") != std::string::npos) {
+                                ggml_tensor = layer.wv;
+                            }
+                            // O projection
+                            else if (layer_part.find("attn_output") != std::string::npos ||
+                                     layer_part.find("o_proj") != std::string::npos ||
+                                     layer_part.find("self_attn.o") != std::string::npos) {
+                                ggml_tensor = layer.wo;
+                            }
+                            // FFN norm
+                            else if (layer_part.find("ffn_norm") != std::string::npos ||
+                                     layer_part.find("post_attention_layernorm") != std::string::npos) {
+                                ggml_tensor = layer.ffn_norm;
+                            }
+                            // FFN gate (SwiGLU)
+                            else if (layer_part.find("ffn_gate") != std::string::npos ||
+                                     layer_part.find("gate_proj") != std::string::npos ||
+                                     layer_part.find("mlp.gate") != std::string::npos) {
+                                ggml_tensor = layer.ffn_gate;
+                            }
+                            // FFN up
+                            else if (layer_part.find("ffn_up") != std::string::npos ||
+                                     layer_part.find("up_proj") != std::string::npos ||
+                                     layer_part.find("mlp.up") != std::string::npos) {
+                                ggml_tensor = layer.ffn_up;
+                            }
+                            // FFN down
+                            else if (layer_part.find("ffn_down") != std::string::npos ||
+                                     layer_part.find("down_proj") != std::string::npos ||
+                                     layer_part.find("mlp.down") != std::string::npos) {
+                                ggml_tensor = layer.ffn_down;
+                            }
+                        }
+                    }
+                }
+            }
 
             if (ggml_tensor) {
-                // Copy data to backend buffer
+                // Validate size before copying
+                size_t ggml_size = ggml_nbytes(ggml_tensor);
                 const void* src_data = data_base + tensor_info.data_offset;
-                ggml_backend_tensor_set(ggml_tensor, src_data, 0, tensor_info.data_size);
+
+                if (ggml_size == tensor_info.data_size) {
+                    // Direct copy - sizes match
+                    fprintf(stderr, "[DEBUG] copying tensor %s, size=%zu\n", tensor_info.name.c_str(), tensor_info.data_size);
+                    fflush(stderr);
+                    ggml_backend_tensor_set(ggml_tensor, src_data, 0, tensor_info.data_size);
+                } else if (ggml_tensor->type == GGML_TYPE_F32 && tensor_info.dtype == DType::BF16 &&
+                           ggml_size == tensor_info.data_size * 2) {
+                    // Convert bf16 to f32
+                    size_t n_elements = ggml_nelements(ggml_tensor);
+                    std::vector<float> f32_data(n_elements);
+                    const uint16_t* bf16_src = static_cast<const uint16_t*>(src_data);
+
+                    for (size_t i = 0; i < n_elements; ++i) {
+                        // BF16 to F32: shift left by 16 bits
+                        uint32_t bits = static_cast<uint32_t>(bf16_src[i]) << 16;
+                        float val;
+                        memcpy(&val, &bits, sizeof(float));
+                        f32_data[i] = val;
+                    }
+
+                    fprintf(stderr, "[DEBUG] converting tensor %s bf16->f32, n_elements=%zu\n",
+                            tensor_info.name.c_str(), n_elements);
+                    fflush(stderr);
+                    ggml_backend_tensor_set(ggml_tensor, f32_data.data(), 0, ggml_size);
+                } else {
+                    fprintf(stderr, "[DEBUG] size mismatch for %s: ggml=%zu, safetensors=%zu\n",
+                            tensor_info.name.c_str(), ggml_size, tensor_info.data_size);
+                    fflush(stderr);
+                }
             }
         }
+    }
+
+    fprintf(stderr, "[DEBUG] load_ggml_model: all tensors loaded successfully\n");
+    fflush(stderr);
+
+    // Debug: verify tok_embd has non-zero values
+    if (model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+        std::vector<float> test_data(5);
+        ggml_backend_tensor_get(model->tensors.tok_embd, test_data.data(), 0, 5 * sizeof(float));
+        fprintf(stderr, "[DEBUG] load_ggml_model: tok_embd first 5 values: %.6f %.6f %.6f %.6f %.6f\n",
+                test_data[0], test_data[1], test_data[2], test_data[3], test_data[4]);
+        fflush(stderr);
+    }
+
+    // Check if output (lm_head) was loaded - if not, use tied embeddings
+    if (model->tensors.output && model->tensors.output->buffer) {
+        std::vector<float> test_data(5);
+        ggml_backend_tensor_get(model->tensors.output, test_data.data(), 0, 5 * sizeof(float));
+
+        // Check if output is all zeros (lm_head not found in safetensors)
+        bool all_zeros = true;
+        for (int i = 0; i < 5; ++i) {
+            if (test_data[i] != 0.0f) {
+                all_zeros = false;
+                break;
+            }
+        }
+
+        if (all_zeros && model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+            // Tied embeddings: copy tok_embd data to output (lm_head)
+            size_t tensor_size = ggml_nbytes(model->tensors.output);
+            std::vector<char> buffer(tensor_size);
+            ggml_backend_tensor_get(model->tensors.tok_embd, buffer.data(), 0, tensor_size);
+            ggml_backend_tensor_set(model->tensors.output, buffer.data(), 0, tensor_size);
+
+            fprintf(stderr, "[DEBUG] load_ggml_model: tied embeddings - copied tok_embd to output (lm_head), size=%zu\n",
+                    tensor_size);
+            fflush(stderr);
+
+            // Verify the copy
+            ggml_backend_tensor_get(model->tensors.output, test_data.data(), 0, 5 * sizeof(float));
+        }
+
+        fprintf(stderr, "[DEBUG] load_ggml_model: output (lm_head) first 5 values: %.6f %.6f %.6f %.6f %.6f\n",
+                test_data[0], test_data[1], test_data[2], test_data[3], test_data[4]);
+        fflush(stderr);
     }
 
     return model.release();
@@ -759,24 +1032,36 @@ size_t estimate_compute_buffer_size(
     int32_t n_batch
 ) {
     // Rough estimate for compute buffer
-    // Actual size depends on the compute graph
+    // Need to account for all intermediate tensors + graph overhead
 
     const size_t n_embd = hparams.n_embd;
     const size_t n_ff = hparams.n_ff;
+    const size_t n_layer = hparams.n_layer;
+    const size_t n_head = hparams.n_head;
 
-    // Intermediate tensors during forward pass
     size_t mem = 0;
 
     // Input embeddings
     mem += n_batch * n_embd * sizeof(float);
 
-    // Per layer intermediates
-    mem += 2 * n_batch * n_embd * sizeof(float);        // Residual
-    mem += n_batch * n_ctx * hparams.n_head * sizeof(float);  // Attention scores
-    mem += n_batch * n_ff * sizeof(float);              // FFN intermediate
+    // Per layer costs (accumulated across all layers)
+    size_t per_layer = 0;
+    per_layer += 4 * n_batch * n_embd * sizeof(float);  // Residual, Q, K, V projections
+    per_layer += n_batch * n_ctx * n_head * sizeof(float);  // Attention scores [n_ctx, n_batch, n_head]
+    per_layer += n_batch * n_embd * sizeof(float);  // Attention output
+    per_layer += 3 * n_batch * n_ff * sizeof(float);  // FFN gate, up, down intermediates
+    per_layer += 2 * n_batch * n_embd * sizeof(float);  // RMSNorm intermediates
 
-    // Add margin
-    mem = mem * 2 + 64 * 1024 * 1024;  // 64MB extra
+    mem += per_layer * n_layer;
+
+    // Graph overhead (ggml_tensor objects, view tensors, permute results)
+    // Each layer creates many intermediate tensors with overhead
+    const size_t tensor_overhead = 512;  // bytes per tensor object
+    const size_t tensors_per_layer = 30;  // approximate number of tensors per layer
+    mem += n_layer * tensors_per_layer * tensor_overhead;
+
+    // Extra margin for safety (2x multiplier + 128MB base)
+    mem = mem * 2 + 128 * 1024 * 1024;
 
     return mem;
 }

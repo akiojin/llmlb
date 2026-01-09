@@ -23,6 +23,19 @@ using llm_node::EnginePluginManifest;
 using llm_node::EngineRegistry;
 using json = nlohmann::json;
 
+// Platform-specific library extension
+#if defined(__APPLE__)
+constexpr const char* kLibraryExtension = ".dylib";
+#elif defined(_WIN32)
+constexpr const char* kLibraryExtension = ".dll";
+#else
+constexpr const char* kLibraryExtension = ".so";
+#endif
+
+inline std::string getPluginLibraryName() {
+    return std::string("libllm_engine_safetensors") + kLibraryExtension;
+}
+
 // =============================================================================
 // SafetensorsEngine Plugin Manifest Tests
 // =============================================================================
@@ -151,14 +164,15 @@ TEST(SafetensorsEngineTest, ManifestHasGpuTargets) {
 
 TEST(SafetensorsEngineTest, PluginLibraryBuilt) {
     // Check if the plugin library was built
+    const std::string lib_name = getPluginLibraryName();
     const auto build_path = fs::path(__FILE__)
         .parent_path().parent_path().parent_path()
-        / "build" / "engines" / "safetensors" / "libllm_engine_safetensors.dylib";
+        / "build" / "engines" / "safetensors" / lib_name;
 
     // Also check alternative location
     const auto alt_build_path = fs::path(__FILE__)
         .parent_path().parent_path().parent_path()
-        / "build" / "libllm_engine_safetensors.dylib";
+        / "build" / lib_name;
 
     bool exists = fs::exists(build_path) || fs::exists(alt_build_path);
     EXPECT_TRUE(exists) << "Plugin library not found at build/engines/safetensors/ or build/";
@@ -171,7 +185,7 @@ TEST(SafetensorsEngineTest, PluginCanBeLoadedFromBuildDir) {
         / "build" / "engines" / "safetensors";
 
     const auto manifest_path = plugin_dir / "manifest.json";
-    const auto library_path = plugin_dir / "libllm_engine_safetensors.dylib";
+    const auto library_path = plugin_dir / getPluginLibraryName();
 
     if (!fs::exists(manifest_path) || !fs::exists(library_path)) {
         GTEST_SKIP() << "Plugin files not found in build directory";

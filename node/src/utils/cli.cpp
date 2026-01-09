@@ -557,6 +557,17 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         return parseRouterSubcommand(argc, argv, 2);
     }
 
+    // Check for unknown flags (starting with - or --)
+    if (command[0] == '-') {
+        result.should_exit = true;
+        result.exit_code = 1;
+        std::ostringstream oss;
+        oss << "Unknown option: " << command << "\n\n";
+        oss << getHelpMessage();
+        result.output = oss.str();
+        return result;
+    }
+
     // Legacy mode: no command means start server (backward compatibility)
     // This allows running just "llm-node" or "llm-router" to start the server
     result.should_exit = false;

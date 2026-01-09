@@ -106,7 +106,8 @@ TEST_F(CliModelLifecycleTest, ShowHandlesNonExistentModel) {
 
 /// Test: rm command deletes model
 /// Scenario: Delete model and verify it's gone
-TEST_F(CliModelLifecycleTest, RmDeletesModel) {
+/// DISABLED: Destructive test that requires pulling a test model first. Run manually.
+TEST_F(CliModelLifecycleTest, DISABLED_RmDeletesModel) {
     auto client = std::make_shared<CliClient>();
 
     // Skip if server is not running
@@ -120,10 +121,6 @@ TEST_F(CliModelLifecycleTest, RmDeletesModel) {
     if (!initial_list.ok()) {
         GTEST_SKIP() << "Cannot list models";
     }
-
-    // This is a destructive test - skip if no test models available
-    // In CI, we would pull a test model first
-    GTEST_SKIP() << "Skipping destructive rm test in automated testing";
 
     // The actual test would be:
     // 1. Pull a test model
@@ -152,7 +149,8 @@ TEST_F(CliModelLifecycleTest, RmHandlesNonExistentModel) {
 
 /// Test: stop command unloads running model
 /// Scenario: Stop loaded model and verify status
-TEST_F(CliModelLifecycleTest, StopUnloadsRunningModel) {
+/// DISABLED: Requires a running model. Run manually after loading a model.
+TEST_F(CliModelLifecycleTest, DISABLED_StopUnloadsRunningModel) {
     auto client = std::make_shared<CliClient>();
 
     // Skip if server is not running

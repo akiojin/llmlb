@@ -874,6 +874,13 @@ void InferenceEngine::clearRecoveryMode() {
     spdlog::info("Recovery mode cleared");
 }
 
+std::vector<std::string> InferenceEngine::getRegisteredRuntimes() const {
+    if (!engines_) {
+        return {};
+    }
+    return engines_->getRegisteredRuntimes();
+}
+
 bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
     error.clear();
 #ifdef LLM_NODE_TESTING

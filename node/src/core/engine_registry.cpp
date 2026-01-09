@@ -402,4 +402,13 @@ std::string EngineRegistry::engineIdFor(const Engine* engine) const {
     return "";
 }
 
+std::vector<std::string> EngineRegistry::getRegisteredRuntimes() const {
+    std::vector<std::string> runtimes;
+    runtimes.reserve(engines_.size());
+    for (const auto& pair : engines_) {
+        runtimes.push_back(pair.first);
+    }
+    return runtimes;
+}
+
 }  // namespace llm_node

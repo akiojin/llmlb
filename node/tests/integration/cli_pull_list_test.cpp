@@ -48,7 +48,8 @@ protected:
 
 /// Test: pull -> list shows newly downloaded model
 /// Scenario: Download a model and verify it appears in list
-TEST_F(CliPullListTest, PullThenListShowsModel) {
+/// DISABLED: Requires network access and HF_TOKEN. Run manually with LLM_ENABLE_NETWORK_TESTS=1
+TEST_F(CliPullListTest, DISABLED_PullThenListShowsModel) {
     auto client = std::make_shared<CliClient>();
 
     // Skip if server is not running

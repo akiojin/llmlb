@@ -261,6 +261,46 @@ if(APPLE)
 endif()
 set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
 
+# ============================================================================
+# safetensors.cpp integration (SPEC-69549000)
+# ============================================================================
+option(BUILD_WITH_SAFETENSORS "Build with safetensors.cpp support" ON)
+if(BUILD_WITH_SAFETENSORS)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors.cpp/CMakeLists.txt")
+        message(WARNING "third_party/safetensors.cpp not found; disabling BUILD_WITH_SAFETENSORS")
+        set(BUILD_WITH_SAFETENSORS OFF)
+    endif()
+endif()
+
+if(BUILD_WITH_SAFETENSORS)
+    # Configure safetensors.cpp options
+    set(STCPP_METAL ${BUILD_WITH_METAL} CACHE BOOL "" FORCE)
+    set(STCPP_CUDA ${BUILD_WITH_CUDA} CACHE BOOL "" FORCE)
+    set(STCPP_ROCM ${BUILD_WITH_ROCM} CACHE BOOL "" FORCE)
+    set(STCPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(STCPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/safetensors.cpp)
+
+    # Engine plugin: safetensors.cpp
+    set(SAFETENSORS_ENGINE_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine_plugin.cpp
+    )
+    add_library(llm_engine_safetensors SHARED ${SAFETENSORS_ENGINE_SOURCES})
+    target_include_directories(llm_engine_safetensors
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors.cpp/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
+    )
+    target_link_libraries(llm_engine_safetensors
+        PRIVATE
+            safetensors_cpp
+            spdlog::spdlog_header_only
+    )
+    set_target_properties(llm_engine_safetensors PROPERTIES OUTPUT_NAME "llm_engine_safetensors")
+endif()
 
 # Collect source files
 file(GLOB_RECURSE SOURCES
@@ -372,6 +412,7 @@ message(STATUS "  Metal support:     ${BUILD_WITH_METAL}")
 message(STATUS "  ROCm support:      ${BUILD_WITH_ROCM}")
 message(STATUS "  Whisper support:   ${BUILD_WITH_WHISPER}")
 message(STATUS "  SD support:        ${BUILD_WITH_SD}")
+message(STATUS "  safetensors.cpp:   ${BUILD_WITH_SAFETENSORS}")
 message(STATUS "  ONNX support:      ${BUILD_WITH_ONNX}")
 message(STATUS "  Static build:      ${STATIC_BUILD}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")

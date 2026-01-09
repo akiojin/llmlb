@@ -447,8 +447,6 @@ TEST(InferenceEngineTest, LoadModelReturnsUnsupportedForCapability) {
 }
 
 TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
-    // TODO: Re-enable when safetensors.cpp engine is fully implemented (SPEC-69549000)
-    GTEST_SKIP() << "safetensors engine not yet implemented";
     TempDir tmp;
     const std::string model_name = "openai/gpt-oss-20b";
     const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
@@ -469,7 +467,7 @@ TEST(InferenceEngineTest, LoadModelRejectsUnsupportedArchitecture) {
     reg.architectures = {"llama"};
     reg.capabilities = {"text"};
     ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RecordingEngine>("gptoss_cpp", "text", nullptr, true, false),
+        std::make_unique<RecordingEngine>("safetensors_cpp", "text", nullptr, true, false),
         reg,
         nullptr));
 

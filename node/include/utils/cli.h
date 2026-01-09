@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
 
 namespace llm_node {
 

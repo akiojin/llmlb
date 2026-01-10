@@ -276,6 +276,39 @@ bool apply_chat_template(
 
     result.clear();
 
+    // ChatML format detection: if template contains <|im_start|>, use ChatML
+    // This handles complex Qwen/Llama templates that our parser can't process
+    if (tmpl.raw_template.find("<|im_start|>") != std::string::npos) {
+        fprintf(stderr, "[DEBUG] apply_chat_template: ChatML format detected, using fallback\n");
+        fflush(stderr);
+        std::stringstream ss;
+
+        // Check if first message is system, otherwise use default
+        bool has_system = !messages.empty() && messages[0].role == "system";
+        size_t start_idx = 0;
+
+        if (has_system) {
+            ss << "<|im_start|>system\n" << messages[0].content << "<|im_end|>\n";
+            start_idx = 1;
+        } else {
+            ss << "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n";
+        }
+
+        for (size_t i = start_idx; i < messages.size(); i++) {
+            ss << "<|im_start|>" << messages[i].role << "\n";
+            ss << messages[i].content << "<|im_end|>\n";
+        }
+
+        if (add_generation_prompt) {
+            ss << "<|im_start|>assistant\n";
+        }
+
+        result = ss.str();
+        fprintf(stderr, "[DEBUG] apply_chat_template: ChatML result_len=%zu\n", result.size());
+        fflush(stderr);
+        return true;
+    }
+
     // Use cached nodes if available
     std::vector<TemplateNode> nodes;
     if (g_cached_template == tmpl.raw_template && !g_cached_nodes.empty()) {
@@ -451,6 +484,12 @@ bool apply_chat_template(
     result = ss.str();
 
     fprintf(stderr, "[DEBUG] apply_chat_template: returning, result_len=%zu\n", result.size());
+    // Print first 100 bytes as hex
+    fprintf(stderr, "[DEBUG] apply_chat_template: first 50 bytes hex: ");
+    for (size_t i = 0; i < std::min((size_t)50, result.size()); i++) {
+        fprintf(stderr, "%02x ", (unsigned char)result[i]);
+    }
+    fprintf(stderr, "\n");
     fflush(stderr);
 
     return true;

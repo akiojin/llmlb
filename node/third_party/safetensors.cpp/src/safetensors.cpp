@@ -622,11 +622,12 @@ stcpp_error stcpp_generate(
     }
 
     // Tokenize prompt
+    // Note: add_bos=false because chat template already starts with <|im_start|>
     fprintf(stderr, "[DEBUG] stcpp_generate: tokenizing prompt...\n");
     fflush(stderr);
     std::vector<int32_t> tokens;
     std::string error;
-    if (!stcpp::tokenize(*tokenizer, prompt, tokens, true, error)) {
+    if (!stcpp::tokenize(*tokenizer, prompt, tokens, false, error)) {
         fprintf(stderr, "[DEBUG] stcpp_generate: tokenization failed: %s\n", error.c_str());
         fflush(stderr);
         return STCPP_ERROR_INVALID_MODEL;

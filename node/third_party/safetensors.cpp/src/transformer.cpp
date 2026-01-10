@@ -45,6 +45,17 @@ static PositionsStorage& get_positions_storage() {
     return storage;
 }
 
+/* Thread-local storage for KV cache copy tensors (must be added to graph explicitly) */
+struct CopyTensorsStorage {
+    struct ggml_tensor* tensors[256];  // Max 128 layers * 2 (k, v)
+    int count;
+};
+
+static CopyTensorsStorage& get_copy_storage() {
+    static thread_local CopyTensorsStorage storage = {{}, 0};
+    return storage;
+}
+
 /* Apply RoPE to Q and K tensors - creates positions tensor without setting data */
 static void apply_rope(
     struct ggml_context* ctx,
@@ -186,11 +197,18 @@ static struct ggml_tensor* multi_head_attention(
         fflush(stderr);
     }
 
-    // Copy current K, V to cache (tensors are added to graph later)
+    // Copy current K, V to cache
+    // IMPORTANT: These copy operations must be added to the graph explicitly
+    // since the subsequent K and V views are created from k_cache/v_cache directly
     struct ggml_tensor* k_cpy = ggml_cpy(ctx, k, k_cache_layer);
     struct ggml_tensor* v_cpy = ggml_cpy(ctx, v, v_cache_layer);
-    (void)k_cpy;
-    (void)v_cpy;
+
+    // Track copy tensors so they can be added to the graph
+    auto& copy_storage = get_copy_storage();
+    if (copy_storage.count + 2 <= 256) {
+        copy_storage.tensors[copy_storage.count++] = k_cpy;
+        copy_storage.tensors[copy_storage.count++] = v_cpy;
+    }
 
     if (layer_idx == 0) {
         fprintf(stderr, "[DEBUG] MHA[0]: K,V copied, getting full cache view\n");
@@ -497,6 +515,9 @@ struct ggml_cgraph* build_compute_graph(
     // Clear positions tensors list for this graph build
     get_positions_storage().count = 0;
 
+    // Clear copy tensors list for this graph build
+    get_copy_storage().count = 0;
+
     struct ggml_context* ctx_graph = ggml_init(graph_params);
     if (!ctx_graph) {
         fprintf(stderr, "[DEBUG] build_compute_graph: ggml_init failed\n");
@@ -558,6 +579,18 @@ struct ggml_cgraph* build_compute_graph(
     // Build graph
     struct ggml_cgraph* graph = ggml_new_graph(ctx_graph);
     ggml_build_forward_expand(graph, cur);
+
+    // CRITICAL: Add KV cache copy operations to the graph explicitly
+    // These copies are NOT in the dependency chain of cur (logits) because
+    // K and V are views of k_cache/v_cache, not of k_cpy/v_cpy.
+    // Without this, the copies won't be executed and KV cache won't be populated.
+    auto& copy_storage = get_copy_storage();
+    fprintf(stderr, "[DEBUG] build_compute_graph: adding %d KV cache copy operations to graph\n",
+            copy_storage.count);
+    fflush(stderr);
+    for (int i = 0; i < copy_storage.count; ++i) {
+        ggml_build_forward_expand(graph, copy_storage.tensors[i]);
+    }
 
     fprintf(stderr, "[DEBUG] build_compute_graph: graph built, returning\n");
     fflush(stderr);

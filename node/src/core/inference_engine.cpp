@@ -874,6 +874,13 @@ void InferenceEngine::clearRecoveryMode() {
     spdlog::info("Recovery mode cleared");
 }
 
+std::vector<std::string> InferenceEngine::getRegisteredRuntimes() const {
+    if (!engines_) {
+        return {};
+    }
+    return engines_->getRegisteredRuntimes();
+}
+
 bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
     error.clear();
 #ifdef LLM_NODE_TESTING
@@ -1312,18 +1319,6 @@ std::string InferenceEngine::sampleNextToken(const std::vector<std::string>& tok
     return tokens.back();
 }
 
-namespace {
-std::string join_architectures(const std::vector<std::string>& architectures) {
-    if (architectures.empty()) return "";
-    std::ostringstream oss;
-    for (size_t i = 0; i < architectures.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << architectures[i];
-    }
-    return oss.str();
-}
-}  // namespace
-
 ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const std::string& capability) {
     ModelLoadResult result;
 
@@ -1524,7 +1519,9 @@ void InferenceEngine::setInterTokenTimeoutForTest(std::chrono::milliseconds time
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
     Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;
-    if (!engine) return false;
+    if (!engine) {
+        return false;
+    }
     if (!engine->supportsTextGeneration()) return false;
 
     if (descriptor.runtime == "gptoss_cpp") {

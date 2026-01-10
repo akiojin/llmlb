@@ -1354,4 +1354,91 @@ mod tests {
             .unwrap();
         assert!(registry.model_exists_in_any_node("gpt-4").await);
     }
+
+    /// T009: Offline状態のノードがハートビートで復帰するとRegistering状態になることを検証
+    #[tokio::test]
+    async fn test_offline_node_returns_to_registering_on_heartbeat() {
+        let registry = NodeRegistry::new();
+
+        // ノードを登録
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "offline-test-node".into(),
+                ip_address: "127.0.0.7".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // 登録時は ready_models = (0, 0) で承認すると即 Online になるため、
+        // 承認前に ready_models を (0, 1) に設定してモデル同期中の状態をシミュレート
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                Some((0, 1)), // 0/1 = まだ同期中
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // 承認してRegistering状態に遷移（ready < total なので Online にはならない）
+        registry.approve(node_id).await.unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Registering);
+
+        // ready_modelsでモデル同期完了を通知してOnlineに遷移
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)), // 1/1 = 同期完了
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Online);
+
+        // ノードをオフラインに設定
+        registry.mark_offline(node_id).await.unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Offline);
+
+        // ハートビート（update_last_seen）を受信
+        // Offline状態からの復帰はRegisteringに遷移すべき（直接Onlineではない）
+        registry
+            .update_last_seen(
+                node_id, None, None, None, None, None, None, None, None, None, None,
+            )
+            .await
+            .unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(
+            node.status,
+            NodeStatus::Registering,
+            "Offline状態からの復帰はRegistering状態であるべき（直接Onlineではない）"
+        );
+    }
 }

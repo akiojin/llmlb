@@ -135,6 +135,9 @@ public:
     /// T181: リカバリモードを解除
     void clearRecoveryMode();
 
+    /// 登録済みのランタイム一覧を取得（プラグインからロードしたものを含む）
+    std::vector<std::string> getRegisteredRuntimes() const;
+
 #ifdef LLM_NODE_TESTING
     /// テスト専用: EngineRegistry を差し替える
     void setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry);

@@ -194,6 +194,8 @@ pub enum RuntimeType {
     /// OpenAI gpt-oss 公式ランタイム（Metal/CUDA などの最適化アーティファクト）
     #[serde(rename = "gptoss_cpp")]
     GptOssCpp,
+    /// safetensors.cpp (safetensors形式モデルの直接ロード)
+    SafetensorsCpp,
     /// whisper.cpp (音声認識)
     WhisperCpp,
     /// ONNX Runtime (TTS、汎用推論)
@@ -807,6 +809,10 @@ mod tests {
             "\"gptoss_cpp\""
         );
         assert_eq!(
+            serde_json::to_string(&RuntimeType::SafetensorsCpp).unwrap(),
+            "\"safetensors_cpp\""
+        );
+        assert_eq!(
             serde_json::to_string(&RuntimeType::WhisperCpp).unwrap(),
             "\"whisper_cpp\""
         );
@@ -832,6 +838,9 @@ mod tests {
 
         let gptoss: RuntimeType = serde_json::from_str("\"gptoss_cpp\"").unwrap();
         assert_eq!(gptoss, RuntimeType::GptOssCpp);
+
+        let safetensors: RuntimeType = serde_json::from_str("\"safetensors_cpp\"").unwrap();
+        assert_eq!(safetensors, RuntimeType::SafetensorsCpp);
 
         let whisper: RuntimeType = serde_json::from_str("\"whisper_cpp\"").unwrap();
         assert_eq!(whisper, RuntimeType::WhisperCpp);

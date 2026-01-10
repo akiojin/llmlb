@@ -155,9 +155,8 @@
 - **FR-005**: CUDA（NVIDIA）でGPU推論を実行できる
 - **FR-006**: ROCm/HIP（AMD）でGPU推論を実行できる
 - **FR-007**: Vulkan（クロスベンダー）でGPU推論を実行できる
-- **FR-008**: gpt-oss-20bモデルアーキテクチャに対応する
-- **FR-009**: nemotronモデルアーキテクチャに対応する
-- **FR-010**: アーキテクチャをプラグイン形式で拡張できる
+- **FR-008**: 初期対応アーキテクチャ（下記参照）をサポートする
+- **FR-009**: アーキテクチャをプラグイン形式で拡張できる
 - **FR-011**: FP16/BF16モデルをロードできる
 - **FR-012**: ggml量子化形式（Q4_K_M等）をランタイムで適用できる
 - **FR-013**: 事前量子化モデル（GPTQ/AWQ）を読み込める
@@ -191,6 +190,36 @@
 - **FR-041**: プロンプトキャッシュ（システムプロンプト/RAG等のKV再利用）をサポートする
 - **FR-042**: モデルのプリフィル（プロンプト処理）を最適化してTTFTを短縮する
 - **FR-043**: Visionモデル（LLaVA、Qwen-VL等）の画像入力をサポートする（将来対応）
+
+### 初期対応アーキテクチャ
+
+Docker Hub Models カタログを参考に、以下のアーキテクチャを初期対応とする。
+
+| アーキテクチャ | 対応モデル例 | 備考 |
+|--------------|-------------|------|
+| **llama** | Llama 3.1, Llama 3.2, Llama 3.3, DeepSeek-R1-Distill-Llama | Meta Llama系 |
+| **mistral** | Mistral, Mistral-Nemo | Mistral AI系 |
+| **gemma** | Gemma3, Gemma3n, Gemma3-QAT, FunctionGemma, EmbeddingGemma | Google Gemma系 |
+| **qwen** | Qwen2.5, Qwen3, QwQ, Qwen3-VL, Qwen3-Coder, Qwen3-Embedding, Qwen3-Reranker | Alibaba Qwen系 |
+| **phi** | Phi-4 | Microsoft Phi系 |
+| **nemotron** | Nemotron | NVIDIA Nemotron系 |
+| **deepseek** | DeepSeek-V3.2, DeepCoder-Preview | DeepSeek系 |
+| **gptoss** | GPT-OSS, GPT-OSS-Safeguard | OpenAI GPT-OSS系 |
+| **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite系 |
+| **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM系 |
+| **kimi** | Kimi-K2 | Moonshot Kimi系 |
+| **moondream** | Moondream2 | Moondream系（Vision） |
+| **devstral** | Devstral-Small | Mistral派生（コーディング特化） |
+| **magistral** | Magistral-Small-3.2 | Mistral派生（マルチモーダル） |
+
+**Embeddingモデル:**
+
+| アーキテクチャ | 対応モデル例 | 備考 |
+|--------------|-------------|------|
+| **snowflake** | Snowflake-Arctic-Embed-L-V2 | Snowflake埋め込み |
+| **nomic** | Nomic-Embed-Text-V1.5 | Nomic埋め込み |
+| **mxbai** | MxBai-Embed-Large | MixedBread埋め込み |
+| **minilm** | All-MiniLM-L6-V2 | Sentence Transformers |
 
 ### 主要エンティティ
 

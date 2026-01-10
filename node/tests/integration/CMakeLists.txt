@@ -6,6 +6,10 @@ set(INTEGRATION_TEST_SOURCES
     main_test.cpp
     model_sync_download_test.cpp
     model_lifecycle_test.cpp
+    cli_pull_list_test.cpp
+    cli_repl_test.cpp
+    cli_model_lifecycle_test.cpp
+    cli_server_test.cpp
     ../../src/main.cpp
     ../../src/runtime/state.cpp
     ../../src/api/http_server.cpp
@@ -49,6 +53,7 @@ target_link_libraries(llm-node-integration-tests
         common
         nlohmann_json::nlohmann_json
         utils_lib
+        cli_lib
         OpenSSL::SSL
         OpenSSL::Crypto
 )

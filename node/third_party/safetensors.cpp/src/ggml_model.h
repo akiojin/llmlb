@@ -45,6 +45,7 @@ struct ModelHParams {
     float norm_eps = 1e-5f;
     bool use_gqa = false;      // Grouped Query Attention
     ArchType arch = ArchType::LLAMA;
+    enum ggml_type weight_type = GGML_TYPE_F16;  // Weight data type (from torch_dtype)
 };
 
 /* Layer tensors for transformer layer */

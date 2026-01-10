@@ -38,6 +38,7 @@ typedef enum {
     STCPP_BACKEND_CUDA   = 1,
     STCPP_BACKEND_ROCM   = 2,
     STCPP_BACKEND_VULKAN = 3,
+    STCPP_BACKEND_CPU    = 4,  // CPU fallback
 } stcpp_backend_type;
 
 typedef enum {

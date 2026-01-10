@@ -1825,6 +1825,98 @@ mod tests {
             "ノードはオフライン状態であるべき"
         );
     }
+
+    /// T007: Pending状態のノードがルーティングから除外されることを検証
+    #[tokio::test]
+    async fn test_pending_node_excluded_from_routing() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // ノードを登録（Pending状態のまま）
+        let _pending_node = registry
+            .register(RegisterRequest {
+                machine_name: "pending-node".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 70)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // 承認せずにノード選択を試みる
+        // Pending状態のノードはルーティング対象外なので、選択できないはず
+        let result = manager.select_node().await;
+        assert!(
+            result.is_err(),
+            "Pending状態のノードはルーティングから除外されるべき"
+        );
+    }
+
+    /// T008: Registering状態のノードがルーティングから除外されることを検証
+    #[tokio::test]
+    async fn test_registering_node_excluded_from_routing() {
+        let registry = NodeRegistry::new();
+        let manager = LoadManager::new(registry.clone());
+
+        // ノードを登録
+        let node = registry
+            .register(RegisterRequest {
+                machine_name: "registering-node".to_string(),
+                ip_address: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 71)),
+                runtime_version: "0.1.0".to_string(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // 登録時は ready_models = (0, 0) で、承認すると即 Online になるため、
+        // 承認前に ready_models を (0, 1) に設定してモデル同期中の状態をシミュレート
+        manager
+            .record_metrics(MetricsUpdate {
+                node_id: node.node_id,
+                cpu_usage: 10.0,
+                memory_usage: 20.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                average_response_time_ms: None,
+                initializing: true,
+                ready_models: Some((0, 1)), // 0/1 モデル準備完了 = まだ同期中
+            })
+            .await
+            .unwrap();
+
+        // 承認してRegistering状態に遷移（ready < total なので Online にはならない）
+        let approved_node = registry.approve(node.node_id).await.unwrap();
+        assert_eq!(
+            approved_node.status,
+            llm_router_common::types::NodeStatus::Registering,
+            "ready_models=(0,1)の場合、承認後はRegistering状態であるべき"
+        );
+
+        // Registering状態（モデル同期中）のノードはルーティング対象外なので、選択できないはず
+        let result = manager.select_node().await;
+        assert!(
+            result.is_err(),
+            "Registering状態のノードはルーティングから除外されるべき"
+        );
+    }
 }
 
 /// ノードの最新ロード状態

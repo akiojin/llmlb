@@ -83,7 +83,8 @@ std::vector<fs::path> list_gguf_files(const fs::path& model_dir) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
         if (ec) break;
-        if (!entry.is_regular_file()) continue;
+        // シンボリックリンクもサポート（HuggingFaceキャッシュからのリンク対応）
+        if (!is_regular_or_symlink_file(entry.path())) continue;
         const auto filename = entry.path().filename().string();
         if (!is_gguf_filename(filename)) continue;
         if (!is_valid_file(entry.path())) continue;
@@ -346,10 +347,25 @@ std::string normalize_architecture_name(const std::string& value) {
         }
     }
 
+    // Normalize architecture family names
+    if (compact.find("qwen") != std::string::npos) return "qwen";
+    if (compact.find("llama") != std::string::npos) return "llama";
     if (compact.find("mistral") != std::string::npos) return "mistral";
     if (compact.find("gemma") != std::string::npos) return "gemma";
-    if (compact.find("llama") != std::string::npos) return "llama";
-    if (compact.find("qwen") != std::string::npos) return "qwen";
+    if (compact.find("phi") != std::string::npos) return "phi";
+    if (compact.find("nemotron") != std::string::npos) return "nemotron";
+    if (compact.find("deepseek") != std::string::npos) return "deepseek";
+    if (compact.find("gptoss") != std::string::npos) return "gptoss";
+    if (compact.find("granite") != std::string::npos) return "granite";
+    if (compact.find("smollm") != std::string::npos) return "smollm";
+    if (compact.find("kimi") != std::string::npos) return "kimi";
+    if (compact.find("moondream") != std::string::npos) return "moondream";
+    if (compact.find("snowflake") != std::string::npos) return "snowflake";
+    if (compact.find("nomic") != std::string::npos) return "nomic";
+    if (compact.find("mxbai") != std::string::npos) return "mxbai";
+    if (compact.find("minilm") != std::string::npos) return "minilm";
+    if (compact.find("devstral") != std::string::npos) return "devstral";
+    if (compact.find("magistral") != std::string::npos) return "magistral";
 
     return compact.empty() ? lower : compact;
 }
@@ -384,7 +400,6 @@ std::optional<std::string> detect_runtime_from_config(const fs::path& model_dir,
             }
         }
     } catch (...) {
-        // ignore parse errors
         return std::nullopt;
     }
     // SPEC-69549000: safetensors format models use safetensors_cpp engine
@@ -494,7 +509,8 @@ std::optional<fs::path> resolve_safetensors_primary_in_dir(const fs::path& model
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(model_dir, ec)) {
         if (ec) break;
-        if (!entry.is_regular_file()) continue;
+        // SPEC-69549000: シンボリックリンクもサポート（HuggingFaceキャッシュからのリンク対応）
+        if (!is_regular_or_symlink_file(entry.path())) continue;
 
         const auto filename = entry.path().filename().string();
         const auto lower = [&]() {
@@ -731,7 +747,9 @@ std::vector<ModelDescriptor> ModelStorage::listAvailableDescriptors() const {
         if (info.format == "safetensors") {
             std::vector<std::string> architectures;
             auto rt = detect_runtime_from_config(fs::path(desc.model_dir), &architectures);
-            if (!rt) continue;
+            if (!rt) {
+                continue;
+            }
             desc.runtime = *rt;
             desc.architectures = std::move(architectures);
             desc.capabilities = capabilities_for_runtime(desc.runtime);

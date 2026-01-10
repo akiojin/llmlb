@@ -353,11 +353,13 @@ pub async fn metrics_summary(State(state): State<AppState>) -> Json<SystemSummar
     Json(summary)
 }
 
-/// DELETE /v0/nodes/:id - ノードを削除
+/// DELETE /v0/nodes/:id - ノードを削除（Admin権限必須）
 pub async fn delete_node(
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<StatusCode, AppError> {
+    ensure_admin(&claims)?;
     state.registry.delete(node_id).await?;
 
     // Publish dashboard event for real-time updates
@@ -933,6 +935,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_approve_non_pending_node_fails() {
+        use axum::Extension;
+        use llm_router_common::auth::{Claims, UserRole};
+
+        let state = create_test_state().await;
+        let req = RegisterRequest {
+            machine_name: "approve-online-node".to_string(),
+            ip_address: "192.168.1.130".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = register_node(State(state.clone()), Json(req))
+            .await
+            .unwrap()
+            .1
+             .0;
+
+        // まず承認してOnlineにする
+        let claims = Claims {
+            sub: "admin".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+        };
+        let _ = approve_node(
+            Extension(claims.clone()),
+            State(state.clone()),
+            axum::extract::Path(response.node_id),
+        )
+        .await
+        .unwrap();
+
+        // すでにOnlineのノードを再度承認しようとするとエラー
+        let result = approve_node(
+            Extension(claims),
+            State(state),
+            axum::extract::Path(response.node_id),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_response = result.err().unwrap().into_response();
+        assert_eq!(err_response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn test_approve_node_endpoint_requires_admin() {
         use axum::Extension;
         use llm_router_common::auth::{Claims, UserRole};
@@ -1020,6 +1073,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_node_endpoint() {
+        use axum::Extension;
+        use llm_router_common::auth::{Claims, UserRole};
+
         let state = create_test_state().await;
         let response = register_node(
             State(state.clone()),
@@ -1040,13 +1096,83 @@ mod tests {
         .1
          .0;
 
-        let status = delete_node(State(state.clone()), axum::extract::Path(response.node_id))
-            .await
-            .unwrap();
+        let claims = Claims {
+            sub: "admin".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+        };
+
+        let status = delete_node(
+            Extension(claims),
+            State(state.clone()),
+            axum::extract::Path(response.node_id),
+        )
+        .await
+        .unwrap();
         assert_eq!(status, StatusCode::NO_CONTENT);
 
         let nodes = list_nodes(State(state)).await.0;
         assert!(nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_node_requires_admin() {
+        use axum::Extension;
+        use llm_router_common::auth::{Claims, UserRole};
+
+        let state = create_test_state().await;
+        let response = register_node(
+            State(state.clone()),
+            Json(RegisterRequest {
+                machine_name: "delete-admin-required".into(),
+                ip_address: "10.0.0.9".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".to_string()),
+                supported_runtimes: Vec::new(),
+            }),
+        )
+        .await
+        .unwrap()
+        .1
+         .0;
+
+        // 非Admin（Viewer）での削除は失敗すべき
+        let viewer_claims = Claims {
+            sub: "viewer".to_string(),
+            role: UserRole::Viewer,
+            exp: 0,
+        };
+
+        let result = delete_node(
+            Extension(viewer_claims),
+            State(state.clone()),
+            axum::extract::Path(response.node_id),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_response = result.err().unwrap().into_response();
+        assert_eq!(err_response.status(), StatusCode::FORBIDDEN);
+
+        // Admin での削除は成功すべき
+        let admin_claims = Claims {
+            sub: "admin".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+        };
+
+        let result = delete_node(
+            Extension(admin_claims),
+            State(state),
+            axum::extract::Path(response.node_id),
+        )
+        .await;
+
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

@@ -1,6 +1,14 @@
 set(CONTRACT_TEST_SOURCES
     openai_api_test.cpp
     router_api_test.cpp
+    cli_serve_test.cpp
+    cli_run_test.cpp
+    cli_pull_test.cpp
+    cli_list_test.cpp
+    cli_show_test.cpp
+    cli_rm_test.cpp
+    cli_stop_test.cpp
+    cli_ps_test.cpp
     ../../src/api/http_server.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp
@@ -41,6 +49,7 @@ target_link_libraries(llm-node-contract-tests
         common
         nlohmann_json::nlohmann_json
         utils_lib
+        cli_lib
         OpenSSL::SSL
         OpenSSL::Crypto
 )

@@ -51,6 +51,7 @@ public:
     bool supportsArchitecture(const std::string& runtime, const std::vector<std::string>& architectures) const;
     size_t engineIdCount() const;
     std::string engineIdFor(const Engine* engine) const;
+    std::vector<std::string> getRegisteredRuntimes() const;
 
 private:
     struct EngineEntry {

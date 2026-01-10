@@ -14,6 +14,7 @@ set(UNIT_TEST_SOURCES
     llama_engine_kv_cache_test.cpp
     engine_registry_test.cpp
     engine_host_test.cpp
+    safetensors_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp
@@ -34,6 +35,9 @@ set(UNIT_TEST_SOURCES
     request_guard_test.cpp
     resource_monitor_test.cpp
     cli_test.cpp
+    progress_renderer_test.cpp
+    ollama_compat_test.cpp
+    repl_session_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp
     ../../src/models/model_sync.cpp
@@ -69,6 +73,10 @@ set(UNIT_TEST_SOURCES
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp
     ../../src/runtime/state.cpp
+    ../../src/cli/cli_client.cpp
+    ../../src/cli/progress_renderer.cpp
+    ../../src/cli/ollama_compat.cpp
+    ../../src/cli/repl_session.cpp
 )
 
 # Add whisper tests only when whisper is enabled

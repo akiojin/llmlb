@@ -90,7 +90,8 @@ stcpp_context_params stcpp_context_default_params(void) {
     params.use_mlock = false;
     params.kv_cache_quant = false;
 #if defined(STCPP_USE_METAL)
-    params.backend = STCPP_BACKEND_METAL;
+    // Metal backend currently has kernel compilation issues - use CPU until fixed
+    params.backend = STCPP_BACKEND_CPU;
 #elif defined(STCPP_USE_CUDA)
     params.backend = STCPP_BACKEND_CUDA;
 #elif defined(STCPP_USE_ROCM)
@@ -484,9 +485,37 @@ static int32_t sample_token(
     int32_t n_vocab,
     stcpp_sampling_params params
 ) {
+    // Debug: Check logits state
+    float max_logit = *std::max_element(logits, logits + n_vocab);
+    int32_t max_idx = static_cast<int32_t>(std::max_element(logits, logits + n_vocab) - logits);
+    float min_logit = *std::min_element(logits, logits + n_vocab);
+
+    // Check for NaN/Inf
+    int nan_count = 0, inf_count = 0;
+    for (int32_t i = 0; i < std::min(n_vocab, 1000); ++i) {
+        if (std::isnan(logits[i])) nan_count++;
+        if (std::isinf(logits[i])) inf_count++;
+    }
+
+    fprintf(stderr, "[DEBUG] sample_token: n_vocab=%d, max_logit=%.6f@%d, min_logit=%.6f, nan=%d, inf=%d\n",
+            n_vocab, max_logit, max_idx, min_logit, nan_count, inf_count);
+
+    // Print top 5 logits
+    std::vector<std::pair<float, int32_t>> top_logits(n_vocab);
+    for (int32_t i = 0; i < n_vocab; ++i) {
+        top_logits[i] = {logits[i], i};
+    }
+    std::partial_sort(top_logits.begin(), top_logits.begin() + 5, top_logits.end(),
+                     std::greater<std::pair<float, int32_t>>());
+    fprintf(stderr, "[DEBUG] sample_token: top5 logits: ");
+    for (int i = 0; i < 5; ++i) {
+        fprintf(stderr, "[%d]=%.4f ", top_logits[i].second, top_logits[i].first);
+    }
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
     // Apply temperature
     std::vector<float> probs(n_vocab);
-    float max_logit = *std::max_element(logits, logits + n_vocab);
 
     float sum = 0.0f;
     for (int32_t i = 0; i < n_vocab; ++i) {
@@ -563,6 +592,10 @@ stcpp_error stcpp_generate(
     char* output,
     int32_t max_output_length
 ) {
+    fprintf(stderr, "[DEBUG] stcpp_generate: entered, prompt='%.50s...', max_tokens=%d\n",
+            prompt ? prompt : "NULL", max_tokens);
+    fflush(stderr);
+
     // Validate input
     if (ctx == nullptr) {
         return STCPP_ERROR_INVALID_MODEL;
@@ -580,19 +613,32 @@ stcpp_error stcpp_generate(
     stcpp::GgmlModel* model = ctx_impl->model->ggml_model.get();
     stcpp::TokenizerImpl* tokenizer = ctx_impl->model->tokenizer.get();
 
+    fprintf(stderr, "[DEBUG] stcpp_generate: contexts retrieved, model=%p, tokenizer=%p\n",
+            (void*)model, (void*)tokenizer);
+    fflush(stderr);
+
     if (!model || !tokenizer) {
         return STCPP_ERROR_INVALID_MODEL;
     }
 
     // Tokenize prompt
+    fprintf(stderr, "[DEBUG] stcpp_generate: tokenizing prompt...\n");
+    fflush(stderr);
     std::vector<int32_t> tokens;
     std::string error;
     if (!stcpp::tokenize(*tokenizer, prompt, tokens, true, error)) {
+        fprintf(stderr, "[DEBUG] stcpp_generate: tokenization failed: %s\n", error.c_str());
+        fflush(stderr);
         return STCPP_ERROR_INVALID_MODEL;
     }
+    fprintf(stderr, "[DEBUG] stcpp_generate: tokenized, n_tokens=%zu\n", tokens.size());
+    fflush(stderr);
 
     // Check context size
     if (static_cast<int32_t>(tokens.size()) + max_tokens > ggml_ctx->kv_size) {
+        fprintf(stderr, "[DEBUG] stcpp_generate: context overflow, tokens=%zu + max=%d > kv_size=%d\n",
+                tokens.size(), max_tokens, ggml_ctx->kv_size);
+        fflush(stderr);
         return STCPP_ERROR_OUT_OF_MEMORY;
     }
 
@@ -605,6 +651,9 @@ stcpp_error stcpp_generate(
     int32_t n_past = 0;
 
     // Process prompt
+    fprintf(stderr, "[DEBUG] stcpp_generate: calling forward_pass with n_tokens=%zu, n_past=%d\n",
+            tokens.size(), n_past);
+    fflush(stderr);
     if (!stcpp::forward_pass(ggml_ctx, tokens.data(), static_cast<int32_t>(tokens.size()),
                              n_past, logits.data(), error)) {
         if (ggml_ctx->cancel_flag.load(std::memory_order_acquire)) {
@@ -615,6 +664,9 @@ stcpp_error stcpp_generate(
     n_past = static_cast<int32_t>(tokens.size());
 
     // Generate tokens
+    fprintf(stderr, "[DEBUG] stcpp_generate: starting generation loop, max_tokens=%d, eos_id=%d\n",
+            max_tokens, tokenizer->eos_token_id);
+    fflush(stderr);
     for (int32_t i = 0; i < max_tokens; ++i) {
         // Check cancel
         if (ggml_ctx->cancel_flag.load(std::memory_order_acquire)) {
@@ -625,8 +677,13 @@ stcpp_error stcpp_generate(
         int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params);
         generated_tokens.push_back(next_token);
 
+        fprintf(stderr, "[DEBUG] stcpp_generate: i=%d, next_token=%d\n", i, next_token);
+        fflush(stderr);
+
         // Check for EOS
         if (next_token == tokenizer->eos_token_id) {
+            fprintf(stderr, "[DEBUG] stcpp_generate: EOS detected, breaking\n");
+            fflush(stderr);
             break;
         }
 
@@ -641,10 +698,17 @@ stcpp_error stcpp_generate(
     }
 
     // Detokenize
+    fprintf(stderr, "[DEBUG] stcpp_generate: detokenizing %zu tokens\n", generated_tokens.size());
+    fflush(stderr);
     std::string result;
     if (!stcpp::detokenize(*tokenizer, generated_tokens, result, error)) {
+        fprintf(stderr, "[DEBUG] stcpp_generate: detokenization failed: %s\n", error.c_str());
+        fflush(stderr);
         return STCPP_ERROR_UNKNOWN;
     }
+
+    fprintf(stderr, "[DEBUG] stcpp_generate: result='%s', len=%zu\n", result.c_str(), result.size());
+    fflush(stderr);
 
     // Copy to output
     int32_t len = std::min(static_cast<int32_t>(result.size()), max_output_length - 1);

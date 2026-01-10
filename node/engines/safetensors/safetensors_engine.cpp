@@ -129,22 +129,32 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
         return result;
     }
 
-    // Determine model path
-    std::string model_path = descriptor.primary_path;
-    if (model_path.empty()) {
-        model_path = models_dir_ + "/" + descriptor.name + "/model.safetensors";
+    // Determine model directory (stcpp_model_load expects model directory, not file path)
+    std::string model_dir = descriptor.model_dir;
+    if (model_dir.empty()) {
+        // Fall back to extracting directory from primary_path
+        if (!descriptor.primary_path.empty()) {
+            model_dir = std::filesystem::path(descriptor.primary_path).parent_path().string();
+        } else {
+            model_dir = models_dir_ + "/" + descriptor.name;
+        }
     }
 
-    if (!std::filesystem::exists(model_path)) {
+    // Verify config.json exists in model directory
+    const auto config_path = std::filesystem::path(model_dir) / "config.json";
+    if (!std::filesystem::exists(config_path)) {
         result.success = false;
         result.error_code = EngineErrorCode::kLoadFailed;
-        result.error_message = "Model file not found: " + model_path;
+        result.error_message = "config.json not found in: " + model_dir;
         return result;
     }
 
-    // Load model
+    // Load model (pass model directory, not file path)
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: loading model from %s\n", model_dir.c_str());
+    fflush(stderr);
+
     ErrorContext error_ctx;
-    stcpp_model* model = stcpp_model_load(model_path.c_str(), errorCallback, &error_ctx);
+    stcpp_model* model = stcpp_model_load(model_dir.c_str(), errorCallback, &error_ctx);
     if (!model) {
         result.success = false;
         result.error_code = EngineErrorCode::kLoadFailed;
@@ -152,12 +162,22 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
         return result;
     }
 
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: model loaded, creating context\n");
+    fflush(stderr);
+
     // Create context
     stcpp_context_params ctx_params = stcpp_context_default_params();
     ctx_params.backend = detectBackend();
     ctx_params.n_gpu_layers = -1;  // All layers on GPU
 
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: calling stcpp_context_new\n");
+    fflush(stderr);
+
     stcpp_context* ctx = stcpp_context_new(model, ctx_params);
+
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: stcpp_context_new returned ctx=%p\n", (void*)ctx);
+    fflush(stderr);
+
     if (!ctx) {
         stcpp_model_free(model);
         result.success = false;
@@ -181,6 +201,9 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
     loaded->vram_bytes = vram.total_bytes;
 
     loaded_models_[descriptor.name] = std::move(loaded);
+
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: model stored, returning success\n");
+    fflush(stderr);
 
     result.success = true;
     result.error_code = EngineErrorCode::kOk;
@@ -245,33 +268,59 @@ void SafetensorsEngine::convertSamplingParams(const InferenceParams& params,
 std::string SafetensorsEngine::generateChat(const std::vector<ChatMessage>& messages,
                                             const ModelDescriptor& descriptor,
                                             const InferenceParams& params) const {
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateChat: entered for model %s\n", descriptor.name.c_str());
+    fflush(stderr);
+
     auto* loaded = getOrLoadModel(descriptor);
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateChat: getOrLoadModel returned %p\n", (void*)loaded);
+    fflush(stderr);
     if (!loaded) {
         return "";
     }
 
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateChat: calling buildChatPrompt\n");
+    fflush(stderr);
+
     std::string prompt = buildChatPrompt(messages, loaded->tokenizer);
+
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateChat: prompt built (len=%zu), calling generateCompletion\n", prompt.length());
+    fflush(stderr);
+
     return generateCompletion(prompt, descriptor, params);
 }
 
 std::string SafetensorsEngine::generateCompletion(const std::string& prompt,
                                                   const ModelDescriptor& descriptor,
                                                   const InferenceParams& params) const {
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateCompletion: entered\n");
+    fflush(stderr);
+
     auto* loaded = getOrLoadModel(descriptor);
     if (!loaded) {
+        fprintf(stderr, "[DEBUG] SafetensorsEngine::generateCompletion: model not loaded\n");
+        fflush(stderr);
         return "";
     }
+
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateCompletion: model loaded, ctx=%p\n", (void*)loaded->ctx);
+    fflush(stderr);
 
     stcpp_sampling_params sp;
     convertSamplingParams(params, &sp);
 
     size_t max_tokens = params.max_tokens > 0 ? params.max_tokens : kDefaultMaxTokens;
 
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateCompletion: calling stcpp_generate with max_tokens=%zu\n", max_tokens);
+    fflush(stderr);
+
     std::vector<char> output(kMaxOutputLength);
     stcpp_error err = stcpp_generate(
         loaded->ctx, prompt.c_str(), sp,
         static_cast<int32_t>(max_tokens),
         output.data(), static_cast<int32_t>(output.size()));
+
+    fprintf(stderr, "[DEBUG] SafetensorsEngine::generateCompletion: stcpp_generate returned %d\n", err);
+    fflush(stderr);
 
     if (err != STCPP_OK) {
         return "";

@@ -512,6 +512,7 @@ fn parse_runtime_type(s: &str) -> RuntimeType {
         "llamacpp" | "llama_cpp" => RuntimeType::LlamaCpp,
         "nemotroncpp" | "nemotron_cpp" => RuntimeType::NemotronCpp,
         "gptosscpp" | "gptoss_cpp" => RuntimeType::GptOssCpp,
+        "safetensorscpp" | "safetensors_cpp" => RuntimeType::SafetensorsCpp,
         "whispercpp" | "whisper_cpp" => RuntimeType::WhisperCpp,
         "onnxruntime" | "onnx_runtime" => RuntimeType::OnnxRuntime,
         "stablediffusion" | "stable_diffusion" => RuntimeType::StableDiffusion,

@@ -162,11 +162,14 @@ static bool parse_added_tokens(
 
             // Identify special tokens by content
             if (is_special && id >= 0) {
+                fprintf(stderr, "[DEBUG] Special token found: '%s' id=%d\n", content.c_str(), id);
+                fflush(stderr);
                 if (content == "<s>" || content == "<|begin_of_text|>" ||
                     content == "[CLS]" || content == "<bos>") {
                     tokenizer.bos_token_id = id;
                 } else if (content == "</s>" || content == "<|end_of_text|>" ||
-                           content == "[SEP]" || content == "<eos>") {
+                           content == "[SEP]" || content == "<eos>" ||
+                           content == "<|endoftext|>" || content == "<|im_end|>") {
                     tokenizer.eos_token_id = id;
                 } else if (content == "<pad>" || content == "[PAD]" ||
                            content == "<|pad|>") {
@@ -261,6 +264,10 @@ bool load_tokenizer(
         if (p < end && *p == ',') ++p;
     }
 
+    fprintf(stderr, "[DEBUG] load_tokenizer: vocab loaded, vocab_size=%zu, merges=%zu\n",
+            tokenizer.vocab.size(), tokenizer.merges.size());
+    fflush(stderr);
+
     // Load tokenizer_config.json for additional settings
     std::filesystem::path config_path = std::filesystem::path(model_dir) / "tokenizer_config.json";
     std::ifstream config_file(config_path);
@@ -313,7 +320,54 @@ bool load_tokenizer(
         }
     }
 
+    // Debug: Print tokenizer info
+    fprintf(stderr, "[DEBUG] load_tokenizer: vocab_size=%zu, bos_id=%d, eos_id=%d, pad_id=%d\n",
+            tokenizer.vocab.size(), tokenizer.bos_token_id, tokenizer.eos_token_id, tokenizer.pad_token_id);
+    fflush(stderr);
+
     return true;
+}
+
+/* GPT-2 byte encoder table - maps bytes to Unicode characters */
+static std::string byte_to_unicode(unsigned char b) {
+    // GPT-2 uses a specific mapping for bytes to Unicode
+    // Printable ASCII characters (except space) map to themselves
+    // Other bytes map to Unicode characters starting at U+0100
+    if (b >= 33 && b <= 126) {
+        // Printable ASCII (! to ~)
+        return std::string(1, static_cast<char>(b));
+    }
+    // Map other bytes to Unicode code points
+    // The GPT-2 encoding uses:
+    // 0x00-0x20 -> U+0100-U+0120
+    // 0x7F-0xFF -> after that
+    int codepoint;
+    if (b <= 32) {
+        codepoint = 0x0100 + b;  // 0x00->U+0100, 0x20(space)->U+0120='Ġ'
+    } else if (b == 127) {
+        codepoint = 0x0100 + 33;  // DEL
+    } else {
+        // 0x80-0xFF -> continue sequence
+        codepoint = 0x0100 + 34 + (b - 128);  // 0x80->U+0122, etc.
+    }
+    // Encode as UTF-8
+    std::string result;
+    if (codepoint <= 0x7F) {
+        result += static_cast<char>(codepoint);
+    } else if (codepoint <= 0x7FF) {
+        result += static_cast<char>(0xC0 | (codepoint >> 6));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+    return result;
+}
+
+/* Convert text to GPT-2 byte-level encoding */
+static std::string text_to_gpt2_bytes(const std::string& text) {
+    std::string result;
+    for (unsigned char c : text) {
+        result += byte_to_unicode(c);
+    }
+    return result;
 }
 
 /* Simple BPE tokenization */
@@ -324,35 +378,49 @@ bool tokenize(
     bool add_bos,
     std::string& error
 ) {
+    fprintf(stderr, "[DEBUG] tokenize: entered, text_len=%zu, vocab_size=%zu, merges=%zu\n",
+            text.size(), tokenizer.vocab.size(), tokenizer.merges.size());
+    fflush(stderr);
+
     tokens.clear();
 
     // Add BOS token if requested
     if (add_bos && tokenizer.bos_token_id >= 0) {
         tokens.push_back(tokenizer.bos_token_id);
+        fprintf(stderr, "[DEBUG] tokenize: added BOS token %d\n", tokenizer.bos_token_id);
+        fflush(stderr);
     }
 
     if (text.empty()) {
+        fprintf(stderr, "[DEBUG] tokenize: empty text, returning\n");
+        fflush(stderr);
         return true;
     }
 
-    // Simple character-level fallback with BPE merge
-    // In a full implementation, this would use proper BPE algorithm
+    // Convert text to GPT-2 byte encoding
+    std::string encoded = text_to_gpt2_bytes(text);
+    fprintf(stderr, "[DEBUG] tokenize: GPT-2 encoded len=%zu (first 50 chars: '%.50s')\n",
+            encoded.size(), encoded.c_str());
+    fflush(stderr);
 
-    // First, split text into characters (UTF-8 aware)
+    // Split into individual byte-encoded characters (UTF-8 aware)
     std::vector<std::string> chars;
     size_t i = 0;
-    while (i < text.size()) {
+    while (i < encoded.size()) {
         size_t char_len = 1;
-        unsigned char c = text[i];
+        unsigned char c = encoded[i];
         if ((c & 0xE0) == 0xC0) char_len = 2;
         else if ((c & 0xF0) == 0xE0) char_len = 3;
         else if ((c & 0xF8) == 0xF0) char_len = 4;
 
-        if (i + char_len <= text.size()) {
-            chars.push_back(text.substr(i, char_len));
+        if (i + char_len <= encoded.size()) {
+            chars.push_back(encoded.substr(i, char_len));
         }
         i += char_len;
     }
+
+    fprintf(stderr, "[DEBUG] tokenize: split into %zu chars\n", chars.size());
+    fflush(stderr);
 
     // Apply BPE merges iteratively
     for (const auto& merge : tokenizer.merges) {
@@ -372,12 +440,18 @@ bool tokenize(
         chars = std::move(new_chars);
     }
 
+    fprintf(stderr, "[DEBUG] tokenize: after BPE, %zu pieces\n", chars.size());
+    fflush(stderr);
+
     // Look up token IDs
+    int found = 0, not_found = 0, byte_fallback = 0;
     for (const auto& tok : chars) {
         auto it = tokenizer.vocab_to_id.find(tok);
         if (it != tokenizer.vocab_to_id.end()) {
             tokens.push_back(it->second);
+            found++;
         } else {
+            not_found++;
             // Try byte fallback (common in modern tokenizers)
             for (unsigned char byte : tok) {
                 std::string byte_token = "<0x" +
@@ -386,11 +460,16 @@ bool tokenize(
                 auto byte_it = tokenizer.vocab_to_id.find(byte_token);
                 if (byte_it != tokenizer.vocab_to_id.end()) {
                     tokens.push_back(byte_it->second);
+                    byte_fallback++;
                 }
                 // If byte fallback also fails, skip (could add UNK token)
             }
         }
     }
+
+    fprintf(stderr, "[DEBUG] tokenize: found=%d, not_found=%d, byte_fallback=%d, final_tokens=%zu\n",
+            found, not_found, byte_fallback, tokens.size());
+    fflush(stderr);
 
     return true;
 }
@@ -404,12 +483,20 @@ bool detokenize(
 ) {
     result.clear();
 
+    fprintf(stderr, "[DEBUG] detokenize: %zu tokens, vocab_size=%zu\n", tokens.size(), tokenizer.vocab.size());
+    fflush(stderr);
+
     for (int32_t id : tokens) {
         if (id < 0) {
+            fprintf(stderr, "[DEBUG] detokenize: skipping negative token id=%d\n", id);
+            fflush(stderr);
             continue;  // Skip invalid tokens
         }
         if (id >= static_cast<int32_t>(tokenizer.vocab.size())) {
             // Invalid token ID - skip or error
+            fprintf(stderr, "[DEBUG] detokenize: skipping out-of-range token id=%d (vocab_size=%zu)\n",
+                    id, tokenizer.vocab.size());
+            fflush(stderr);
             continue;
         }
 

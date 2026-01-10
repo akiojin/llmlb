@@ -18,7 +18,7 @@ test:
 	cargo test -- --test-threads=1
 
 markdownlint:
-	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md"
+	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build"
 
 specify-tasks:
 	@for file in $(TASKS); do \

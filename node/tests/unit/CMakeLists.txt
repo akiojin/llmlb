@@ -1,16 +1,20 @@
 set(UNIT_TEST_SOURCES
     continuous_batch_scheduler_test.cpp
     gpu_detector_test.cpp
+    vision_processor_test.cpp
+    inference_cache_test.cpp
+    prefix_cache_test.cpp
+    replica_manager_test.cpp
+    function_calling_test.cpp
     router_client_test.cpp
     model_sync_test.cpp
     model_downloader_test.cpp
     model_storage_test.cpp
     inference_engine_test.cpp
     llama_engine_kv_cache_test.cpp
-    gptoss_engine_test.cpp
     engine_registry_test.cpp
     engine_host_test.cpp
-    nemotron_engine_test.cpp
+    safetensors_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp
@@ -31,6 +35,9 @@ set(UNIT_TEST_SOURCES
     request_guard_test.cpp
     resource_monitor_test.cpp
     cli_test.cpp
+    progress_renderer_test.cpp
+    ollama_compat_test.cpp
+    repl_session_test.cpp
     ../../src/utils/cli.cpp
     ../../src/api/router_client.cpp
     ../../src/models/model_sync.cpp
@@ -45,9 +52,10 @@ set(UNIT_TEST_SOURCES
     ../../src/core/engine_host.cpp
     ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
-    ../../src/core/gptoss_engine.cpp
-    ../../src/core/nemotron_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/inference_cache.cpp
+    ../../src/core/prefix_cache.cpp
+    ../../src/core/replica_manager.cpp
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp
@@ -65,6 +73,10 @@ set(UNIT_TEST_SOURCES
     ../../src/core/onnx_tts_manager.cpp
     ../../src/core/sd_manager.cpp
     ../../src/runtime/state.cpp
+    ../../src/cli/cli_client.cpp
+    ../../src/cli/progress_renderer.cpp
+    ../../src/cli/ollama_compat.cpp
+    ../../src/cli/repl_session.cpp
 )
 
 # Add whisper tests only when whisper is enabled
@@ -120,17 +132,6 @@ if(APPLE)
         target_compile_definitions(llm-node-unit-tests PRIVATE USE_METAL=1)
     endif()
 
-    if(BUILD_WITH_GPTOSS)
-        target_link_libraries(llm-node-unit-tests PRIVATE gptoss_metal)
-        add_dependencies(llm-node-unit-tests gptoss_build_metallib)
-        target_link_options(llm-node-unit-tests PRIVATE
-            LINKER:-sectcreate,__METAL,__shaders,${CMAKE_BINARY_DIR}/${GPTOSS_METAL_LIB}
-        )
-        target_include_directories(llm-node-unit-tests PRIVATE
-            ${GPTOSS_METAL_DIR}/include
-            ${GPTOSS_METAL_DIR}/source/include
-        )
-    endif()
 endif()
 
 target_include_directories(llm-node-unit-tests

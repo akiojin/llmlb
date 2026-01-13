@@ -271,6 +271,15 @@ pub struct RequestResponseRecord {
     pub status: RecordStatus,
     /// レスポンス完了時刻
     pub completed_at: DateTime<Utc>,
+    /// 入力トークン数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<u32>,
+    /// 出力トークン数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<u32>,
+    /// 総トークン数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<u32>,
 }
 
 /// リクエストタイプ
@@ -908,5 +917,71 @@ mod tests {
 
         let deserialized: ImageResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.data.len(), 1);
+    }
+
+    #[test]
+    fn test_request_response_record_token_fields_serialization() {
+        // T-1: RequestResponseRecordのトークンフィールドシリアライズテスト
+        let record = RequestResponseRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type: RequestType::Chat,
+            model: "gpt-3.5-turbo".to_string(),
+            node_id: Uuid::new_v4(),
+            node_machine_name: "test-node".to_string(),
+            node_ip: "127.0.0.1".parse().unwrap(),
+            client_ip: Some("192.168.1.1".parse().unwrap()),
+            request_body: serde_json::json!({"messages": []}),
+            response_body: Some(serde_json::json!({"choices": []})),
+            duration_ms: 100,
+            status: RecordStatus::Success,
+            completed_at: Utc::now(),
+            input_tokens: Some(150),
+            output_tokens: Some(50),
+            total_tokens: Some(200),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+
+        // トークンフィールドがシリアライズされていることを確認
+        assert!(json.contains("\"input_tokens\":150"));
+        assert!(json.contains("\"output_tokens\":50"));
+        assert!(json.contains("\"total_tokens\":200"));
+
+        // デシリアライズして値を確認
+        let deserialized: RequestResponseRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.input_tokens, Some(150));
+        assert_eq!(deserialized.output_tokens, Some(50));
+        assert_eq!(deserialized.total_tokens, Some(200));
+    }
+
+    #[test]
+    fn test_request_response_record_token_fields_none() {
+        // トークンフィールドがNoneの場合のテスト
+        let record = RequestResponseRecord {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type: RequestType::Chat,
+            model: "gpt-3.5-turbo".to_string(),
+            node_id: Uuid::new_v4(),
+            node_machine_name: "test-node".to_string(),
+            node_ip: "127.0.0.1".parse().unwrap(),
+            client_ip: None,
+            request_body: serde_json::json!({}),
+            response_body: None,
+            duration_ms: 50,
+            status: RecordStatus::Success,
+            completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        let deserialized: RequestResponseRecord = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.input_tokens, None);
+        assert_eq!(deserialized.output_tokens, None);
+        assert_eq!(deserialized.total_tokens, None);
     }
 }

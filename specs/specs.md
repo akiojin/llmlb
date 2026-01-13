@@ -1,6 +1,6 @@
 # 機能仕様一覧
 
-> 最終更新: 2026-01-06 (SPEC-5f3dd53a追加)
+> 最終更新: 2026-01-07 (SPEC-69549000追加)
 >
 > 総SPEC数: **47** | 廃止: 4 | plan.md欠損: 0 | 依存関係完全化済み
 
@@ -12,7 +12,7 @@
 
 ## 依存関係マトリクス
 
-> 45件中、明示的な依存関係があるSPEC: 29件 | 基盤SPEC（依存なし）: 12件 | 廃止: 4件
+> 47件中、明示的な依存関係があるSPEC: 31件 | 基盤SPEC（依存なし）: 12件 | 廃止: 4件
 
 | SPEC ID | 依存先 | 備考 |
 |---------|--------|------|
@@ -25,7 +25,6 @@
 | `SPEC-1f2a9c3d` | SPEC-799b8e2b | ログAPI |
 | `SPEC-26006000` | SPEC-dcaeaec4 | 音声対応 |
 | `SPEC-2c0e5a9b` | SPEC-3fc2c1e4, SPEC-d7feaa2c, SPEC-08d2b908, SPEC-11106000 | gpt-oss実行 |
-| `SPEC-5f3dd53a` | SPEC-d7feaa2c, SPEC-2c0e5a9b, SPEC-3fc2c1e4 | CUDA DLL (gpt-oss/nemotron) |
 | `SPEC-32637000` | SPEC-6c2d9f1e | ルーティング |
 | `SPEC-32e2b31a` | - | アーカイブ |
 | `SPEC-35375000` | - | 基盤機能 |
@@ -40,6 +39,7 @@
 | `SPEC-5cd7b614` | - | 基盤機能 |
 | `SPEC-5fc9fe92` | SPEC-712c20cf | Playground |
 | `SPEC-63acef08` | SPEC-94621a1f | 統一APIプロキシ |
+| `SPEC-69549000` | SPEC-d7feaa2c | safetensors.cpp |
 | `SPEC-6c2d9f1e` | SPEC-11106000, SPEC-26006000, SPEC-32637000 | モデル登録 |
 | `SPEC-6cd7f960` | SPEC-11106000, SPEC-dcaeaec4, SPEC-d4eb8796, SPEC-94621a1f | モデルリスト |
 | `SPEC-712c20cf` | SPEC-94621a1f, SPEC-63acef08, SPEC-443acc8c, SPEC-d4eb8796 | ダッシュボード |
@@ -48,6 +48,7 @@
 | `SPEC-82491000` | SPEC-4b6e9f2a | クラウド統合 |
 | `SPEC-83825900` | SPEC-efff1da7, SPEC-d7feaa2c | PoC |
 | `SPEC-8a2d1d43` | - | 基盤機能 |
+| `SPEC-93536000` | SPEC-dcaeaec4, SPEC-05098000 | ノードベースモデル管理 |
 | `SPEC-94621a1f` | - | **基盤**: ノード登録 |
 | `SPEC-a61b24f2` | - | 🗑️ 廃止（統合仕様へ移行） |
 | `SPEC-a7e6d40a` | - | CLI |
@@ -62,7 +63,6 @@
 | `SPEC-efff1da7` | - | PoC |
 | `SPEC-fbc50d97` | SPEC-63acef08 | 履歴保存 |
 | `SPEC-8ae67d67` | - | 🗑️ 廃止 |
-| `SPEC-93536000` | SPEC-dcaeaec4, SPEC-05098000 | モデル対応ルーティング |
 
 ### 基盤SPEC（依存なし・他が依存）
 
@@ -108,6 +108,8 @@
 | `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | ✅ |
+| `SPEC-69549000` | safetensors.cpp - safetensors直接推論ライブラリ | ✅ | P1 | ✅ |
+| `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | ✅ | P1 | ✅ |
 | `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | ✅ |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ | P2 | ✅ |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | ✅ |
@@ -115,7 +117,6 @@
 | `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
-| `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | ✅ | P1 | ✅ |
 
 ## 🛤️ ルーティング
 
@@ -167,7 +168,7 @@
 
 ## 優先度サマリー
 
-### P1（最優先）- 21件
+### P1（最優先）- 22件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
@@ -184,6 +185,8 @@
 | `SPEC-63acef08` | 統一APIプロキシ | 完了 |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | 完了 |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | 完了 |
+| `SPEC-69549000` | safetensors.cpp - safetensors直接推論ライブラリ | 完了 |
+| `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | 完了 |
 | `SPEC-799b8e2b` | 共通ログシステム | 完了 |
 | `SPEC-7c0a37e0` | APIキースコープシステム | 完了 |
 | `SPEC-94621a1f` | ノード自己登録システム | 完了 |
@@ -192,7 +195,6 @@
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
-| `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | 完了 |
 
 ### P2（重要）- 18件
 

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <httplib.h>
+#include <spdlog/spdlog.h>
 #include <memory>
 #include <regex>
 #include <thread>
@@ -290,20 +291,28 @@ ModelDownloader::ModelDownloader(std::string registry_base, std::string models_d
 
 std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     HttpUrl base = parseUrl(registry_base_);
-    if (base.scheme.empty() || base.host.empty()) return "";
+    if (base.scheme.empty() || base.host.empty()) {
+        spdlog::warn("ModelDownloader: invalid registry base URL '{}'", registry_base_);
+        return "";
+    }
 
     auto client = makeClient(base, timeout_);
-    if (!client) return "";
+    if (!client) {
+        spdlog::warn("ModelDownloader: failed to create HTTP client for '{}'", registry_base_);
+        return "";
+    }
 
     std::string path = base.path;
     if (path.empty()) path = "/";
     if (path.back() != '/') path.push_back('/');
     path += urlEncodePathSegment(model_id) + "/manifest.json";
 
+    spdlog::info("ModelDownloader: fetching manifest url='{}{}'", registry_base_, path);
+
     const auto local_dir = llm_node::ModelStorage::modelNameToDir(model_id);
     std::string out_path = models_dir_ + "/" + local_dir + "/manifest.json";
     fs::create_directories(models_dir_ + "/" + local_dir);
-    FileLock lock(out_path);
+    FileLock lock(out_path + ".lock");
     // ロック取得できなくてもベストエフォートで進める
     httplib::Result res;
     for (int attempt = 0; attempt <= max_retries_; ++attempt) {
@@ -316,9 +325,31 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
         if (res && res->status >= 200 && res->status < 300) break;
         if (attempt < max_retries_) std::this_thread::sleep_for(backoff_);
     }
-    if (!res || res->status < 200 || res->status >= 300) return "";
+    if (!res) {
+        spdlog::warn("ModelDownloader: manifest request failed (no response) url='{}{}'",
+                     registry_base_, path);
+        return "";
+    }
+    if (res->status < 200 || res->status >= 300) {
+        spdlog::warn("ModelDownloader: manifest request failed status={} url='{}{}'",
+                     res->status, registry_base_, path);
+        return "";
+    }
+    spdlog::info("ModelDownloader: manifest response status={} bytes={}", res->status, res->body.size());
+    if (res->body.empty()) {
+        spdlog::warn("ModelDownloader: manifest response body empty url='{}{}'", registry_base_, path);
+    }
     std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
+    if (!ofs.is_open()) {
+        spdlog::warn("ModelDownloader: failed to open manifest file for write path='{}'", out_path);
+        return "";
+    }
     ofs << res->body;
+    ofs.flush();
+    if (!ofs.good()) {
+        spdlog::warn("ModelDownloader: failed to write manifest to path='{}'", out_path);
+        return "";
+    }
     // log applied config for diagnostics (opt-in)
     if (const char* logenv = std::getenv("LLM_DL_LOG_CONFIG")) {
         if (std::string(logenv) == "1" || std::string(logenv) == "true") {
@@ -362,6 +393,8 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
 
     auto client = makeClient(url, timeout_);
     if (!client) {
+        spdlog::warn("ModelDownloader: failed to create HTTP client for url='{}{}'",
+                     url.scheme + "://" + url.host, url.path);
         return "";
     }
 
@@ -380,7 +413,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
     fs::create_directories(out_path.parent_path());
 
     // Prevent concurrent writers for the same blob (best-effort)
-    FileLock blob_lock(out_path);
+    FileLock blob_lock(out_path.string() + ".lock");
 
     const size_t original_offset = [&]() {
         if (!fs::exists(out_path)) return static_cast<size_t>(0);

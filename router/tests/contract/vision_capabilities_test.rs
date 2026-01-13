@@ -2,10 +2,6 @@
 //!
 //! TDD RED: These tests define the capability reporting for vision models.
 //! All tests should FAIL until the vision feature is implemented.
-//!
-//! NOTE: SPEC-93536000 により、ルーター側のモデルレジストリは廃止されました。
-//! モデル情報はノードの executable_models から取得します。
-//! これらのテストはノードがモデルを登録している前提で動作します。
 
 use axum::{
     body::{to_bytes, Body},
@@ -17,12 +13,16 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
+    use llm_router::db::models::ModelStorage;
+    use llm_router::registry::models::ModelInfo;
     use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
+    use sqlx::SqlitePool;
 
     pub struct TestApp {
         pub app: Router,
         pub api_key: String,
+        pub db_pool: sqlx::SqlitePool,
     }
 
     pub async fn build_app() -> TestApp {
@@ -33,8 +33,6 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
-        llm_router::api::models::clear_registered_models();
-
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
@@ -44,6 +42,9 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        llm_router::api::models::clear_registered_models(&db_pool)
+            .await
+            .expect("clear registered models");
         let request_history = std::sync::Arc::new(
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
@@ -76,28 +77,49 @@ mod common {
         .key;
 
         let app = api::create_router(state);
-        TestApp { app, api_key }
+        TestApp {
+            app,
+            api_key,
+            db_pool,
+        }
     }
 
-    // NOTE: SPEC-93536000 により、ルーター側のモデルレジストリは廃止されました。
-    // モデル情報はノードの executable_models から取得します。
+    /// テスト用のVision対応モデルを登録する
+    /// TDD RED: capabilities.image_understanding が実装されていないため、
+    /// この関数が呼ばれても実際には capabilities は設定されない
+    pub async fn register_vision_model(db_pool: &SqlitePool, name: &str) {
+        let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
+        // TODO: Vision capability を設定する必要がある
+        // model.capabilities.push(ModelCapability::ImageUnderstanding);
+        let storage = ModelStorage::new(db_pool.clone());
+        storage.save_model(&model).await.unwrap();
+    }
+
+    /// テスト用のテキストのみ対応モデルを登録する
+    pub async fn register_text_only_model(db_pool: &SqlitePool, name: &str) {
+        let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
+        // Vision capability なし
+        let storage = ModelStorage::new(db_pool.clone());
+        storage.save_model(&model).await.unwrap();
+    }
 }
 
-use common::build_app;
+use common::{build_app, register_text_only_model, register_vision_model};
 
 /// FR-006: /v1/models レスポンスに image_understanding capability を含める
 /// TDD RED: capabilities フィールドが未実装のため失敗する
-///
-/// NOTE: SPEC-93536000 により、モデル情報はノードから取得します。
-/// このテストが動作するにはノードがVision対応モデルを登録している必要があります。
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image_understanding capability not yet implemented - requires node with vision model"]
+#[ignore = "TDD RED: Vision image_understanding capability not yet implemented"]
 async fn test_vision_model_has_image_understanding_capability() {
-    let common::TestApp { app, api_key } = build_app().await;
+    let common::TestApp {
+        app,
+        api_key,
+        db_pool,
+    } = build_app().await;
 
-    // NOTE: ノードがない状態では /v1/models は空の配列を返す
-    // このテストはノードがVision対応モデルを登録している前提で動作する
+    // Vision対応モデルを登録
+    register_vision_model(&db_pool, "llava-v1.5-7b").await;
 
     let response = app
         .oneshot(
@@ -117,33 +139,34 @@ async fn test_vision_model_has_image_understanding_capability() {
     let body: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
     let models = body["data"].as_array().expect("data should be an array");
+    let vision_model = models
+        .iter()
+        .find(|m| m["id"] == "llava-v1.5-7b")
+        .expect("llava-v1.5-7b should be in the list");
 
-    // ノードがない場合、モデルリストは空になる可能性がある
-    if models.is_empty() {
-        // Skip: ノードが登録されていない
-        return;
-    }
-
-    let vision_model = models.iter().find(|m| m["id"] == "llava-v1.5-7b");
-
-    if let Some(vision_model) = vision_model {
-        // TDD RED: capabilities.image_understanding が true である必要がある
-        assert_eq!(
-            vision_model["capabilities"]["image_understanding"],
-            json!(true),
-            "Vision model should have image_understanding capability: {:?}",
-            vision_model
-        );
-    }
+    // TDD RED: capabilities.image_understanding が true である必要がある
+    assert_eq!(
+        vision_model["capabilities"]["image_understanding"],
+        json!(true),
+        "Vision model should have image_understanding capability: {:?}",
+        vision_model
+    );
 }
 
 /// FR-006: テキストのみ対応モデルは image_understanding が false
 /// TDD RED: capabilities フィールドが未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image_understanding capability not yet implemented - requires node with text model"]
+#[ignore = "TDD RED: Vision image_understanding capability not yet implemented"]
 async fn test_text_model_has_no_image_understanding_capability() {
-    let common::TestApp { app, api_key } = build_app().await;
+    let common::TestApp {
+        app,
+        api_key,
+        db_pool,
+    } = build_app().await;
+
+    // テキストのみ対応モデルを登録
+    register_text_only_model(&db_pool, "llama-3.1-8b").await;
 
     let response = app
         .oneshot(
@@ -163,34 +186,39 @@ async fn test_text_model_has_no_image_understanding_capability() {
     let body: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
     let models = body["data"].as_array().expect("data should be an array");
+    let text_model = models
+        .iter()
+        .find(|m| m["id"] == "llama-3.1-8b")
+        .expect("llama-3.1-8b should be in the list");
 
-    // ノードがない場合、モデルリストは空になる可能性がある
-    if models.is_empty() {
-        return;
-    }
-
-    let text_model = models.iter().find(|m| m["id"] == "llama-3.1-8b");
-
-    if let Some(text_model) = text_model {
-        // TDD RED: capabilities.image_understanding が false または存在しない
-        let has_vision = text_model["capabilities"]["image_understanding"]
-            .as_bool()
-            .unwrap_or(false);
-        assert!(
-            !has_vision,
-            "Text-only model should NOT have image_understanding capability: {:?}",
-            text_model
-        );
-    }
+    // TDD RED: capabilities.image_understanding が false または存在しない
+    let has_vision = text_model["capabilities"]["image_understanding"]
+        .as_bool()
+        .unwrap_or(false);
+    assert!(
+        !has_vision,
+        "Text-only model should NOT have image_understanding capability: {:?}",
+        text_model
+    );
 }
 
 /// FR-006: 複数モデルの capabilities が正しく区別される
 /// TDD RED: capabilities フィールドが未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image_understanding capability not yet implemented - requires node with multiple models"]
+#[ignore = "TDD RED: Vision image_understanding capability not yet implemented"]
 async fn test_mixed_models_capabilities() {
-    let common::TestApp { app, api_key } = build_app().await;
+    let common::TestApp {
+        app,
+        api_key,
+        db_pool,
+    } = build_app().await;
+
+    // 両方のモデルを登録
+    register_vision_model(&db_pool, "llava-v1.5-7b").await;
+    register_vision_model(&db_pool, "qwen-vl-7b").await;
+    register_text_only_model(&db_pool, "llama-3.1-8b").await;
+    register_text_only_model(&db_pool, "mistral-7b").await;
 
     let response = app
         .oneshot(
@@ -211,35 +239,36 @@ async fn test_mixed_models_capabilities() {
 
     let models = body["data"].as_array().expect("data should be an array");
 
-    // ノードがない場合、モデルリストは空になる可能性がある
-    if models.is_empty() {
-        return;
-    }
-
     // Visionモデルをチェック
     for vision_name in ["llava-v1.5-7b", "qwen-vl-7b"] {
-        if let Some(vision_model) = models.iter().find(|m| m["id"] == vision_name) {
-            assert_eq!(
-                vision_model["capabilities"]["image_understanding"],
-                json!(true),
-                "{} should have image_understanding capability",
-                vision_name
-            );
-        }
+        let vision_model = models
+            .iter()
+            .find(|m| m["id"] == vision_name)
+            .unwrap_or_else(|| panic!("{} should be in the list", vision_name));
+
+        assert_eq!(
+            vision_model["capabilities"]["image_understanding"],
+            json!(true),
+            "{} should have image_understanding capability",
+            vision_name
+        );
     }
 
     // テキストモデルをチェック
     for text_name in ["llama-3.1-8b", "mistral-7b"] {
-        if let Some(text_model) = models.iter().find(|m| m["id"] == text_name) {
-            let has_vision = text_model["capabilities"]["image_understanding"]
-                .as_bool()
-                .unwrap_or(false);
-            assert!(
-                !has_vision,
-                "{} should NOT have image_understanding capability",
-                text_name
-            );
-        }
+        let text_model = models
+            .iter()
+            .find(|m| m["id"] == text_name)
+            .unwrap_or_else(|| panic!("{} should be in the list", text_name));
+
+        let has_vision = text_model["capabilities"]["image_understanding"]
+            .as_bool()
+            .unwrap_or(false);
+        assert!(
+            !has_vision,
+            "{} should NOT have image_understanding capability",
+            text_name
+        );
     }
 }
 
@@ -247,9 +276,15 @@ async fn test_mixed_models_capabilities() {
 /// TDD RED: capabilities フィールド自体が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision capabilities field not yet implemented - requires node with model"]
+#[ignore = "TDD RED: Vision capabilities field not yet implemented"]
 async fn test_models_response_includes_capabilities_field() {
-    let common::TestApp { app, api_key } = build_app().await;
+    let common::TestApp {
+        app,
+        api_key,
+        db_pool,
+    } = build_app().await;
+
+    register_vision_model(&db_pool, "test-model").await;
 
     let response = app
         .oneshot(
@@ -269,16 +304,15 @@ async fn test_models_response_includes_capabilities_field() {
     let body: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
     let models = body["data"].as_array().expect("data should be an array");
+    let model = models
+        .iter()
+        .find(|m| m["id"] == "test-model")
+        .expect("test-model should be in the list");
 
-    // ノードがない場合、モデルリストは空になる可能性がある
-    if models.is_empty() {
-        return;
-    }
-
-    // 少なくとも1つのモデルが capabilities フィールドを持つことを確認
-    let has_capabilities = models.iter().any(|m| m["capabilities"].is_object());
+    // TDD RED: capabilities フィールドがオブジェクトとして存在する必要がある
     assert!(
-        has_capabilities,
-        "At least one model should have a 'capabilities' object"
+        model["capabilities"].is_object(),
+        "Model should have a 'capabilities' object: {:?}",
+        model
     );
 }

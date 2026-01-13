@@ -109,7 +109,27 @@ TEST(MainTest, FailsWhenRouterRegistrationFails) {
     setenv("LLM_NODE_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
-    std::thread node_thread([&]() { exit_code = llm_node_run_for_test(); });
+    std::atomic<bool> node_exited{false};
+    std::thread node_thread([&]() {
+        exit_code = llm_node_run_for_test();
+        node_exited = true;
+    });
+
+    // Wait up to 10 seconds for node to exit on registration failure
+    for (int i = 0; i < 100 && !node_exited; ++i) {
+        std::this_thread::sleep_for(100ms);
+    }
+
+    // If node didn't exit, force shutdown and fail
+    if (!node_exited) {
+        llm_node::request_shutdown();
+        node_thread.join();
+        router.stop();
+        if (router_thread.joinable()) router_thread.join();
+        FAIL() << "Node did not exit on registration failure within 10 seconds";
+        return;
+    }
+
     node_thread.join();
 
     router.stop();

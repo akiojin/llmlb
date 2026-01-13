@@ -30,7 +30,7 @@ protected:
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
-    OpenAIEndpoints openai{registry, engine, config, GpuBackend::kCpu};
+    OpenAIEndpoints openai{registry, engine, config, GpuBackend::Cpu};
     NodeEndpoints node;
     std::unique_ptr<HttpServer> server;
 };
@@ -184,4 +184,196 @@ TEST_F(OpenAIContractFixture, CompletionsAppliesStopSequenceArray) {
     auto j = json::parse(res->body);
     std::string text = j["choices"][0]["text"];
     EXPECT_EQ(text, "Response to: hello ");
+}
+
+// T003: ChatCompletions returns usage field with valid token counts
+TEST_F(OpenAIContractFixture, ChatCompletionsReturnsUsage) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    ASSERT_TRUE(j.contains("usage"));
+    EXPECT_GT(j["usage"]["prompt_tokens"].get<int>(), 0);
+    EXPECT_GT(j["usage"]["completion_tokens"].get<int>(), 0);
+    EXPECT_EQ(j["usage"]["total_tokens"].get<int>(),
+              j["usage"]["prompt_tokens"].get<int>() + j["usage"]["completion_tokens"].get<int>());
+}
+
+// T004: Completions returns usage field with valid token counts
+TEST_F(OpenAIContractFixture, CompletionsReturnsUsage) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello world"})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    ASSERT_TRUE(j.contains("usage"));
+    EXPECT_GT(j["usage"]["prompt_tokens"].get<int>(), 0);
+    EXPECT_GT(j["usage"]["completion_tokens"].get<int>(), 0);
+    EXPECT_EQ(j["usage"]["total_tokens"].get<int>(),
+              j["usage"]["prompt_tokens"].get<int>() + j["usage"]["completion_tokens"].get<int>());
+}
+
+// T005: Response ID is unique across requests
+TEST_F(OpenAIContractFixture, ResponseIdIsUnique) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}]})";
+
+    auto res1 = cli.Post("/v1/chat/completions", body, "application/json");
+    auto res2 = cli.Post("/v1/chat/completions", body, "application/json");
+
+    ASSERT_TRUE(res1);
+    ASSERT_TRUE(res2);
+    EXPECT_EQ(res1->status, 200);
+    EXPECT_EQ(res2->status, 200);
+
+    auto j1 = json::parse(res1->body);
+    auto j2 = json::parse(res2->body);
+
+    std::string id1 = j1["id"];
+    std::string id2 = j2["id"];
+
+    EXPECT_NE(id1, id2);
+    EXPECT_TRUE(id1.find("chatcmpl-") == 0);
+    EXPECT_TRUE(id2.find("chatcmpl-") == 0);
+}
+
+// T006: Created timestamp is a valid Unix timestamp
+TEST_F(OpenAIContractFixture, CreatedTimestampIsValid) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+
+    ASSERT_TRUE(j.contains("created"));
+    int64_t created = j["created"].get<int64_t>();
+    // Should be a reasonable Unix timestamp (after 2020-01-01)
+    EXPECT_GT(created, 1577836800);
+    // Should not be in the far future (before 2100-01-01)
+    EXPECT_LT(created, 4102444800);
+}
+
+// T007: presence_penalty is accepted
+TEST_F(OpenAIContractFixture, PresencePenaltyAccepted) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"presence_penalty":0.5})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+}
+
+// T008: frequency_penalty is accepted
+TEST_F(OpenAIContractFixture, FrequencyPenaltyAccepted) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"frequency_penalty":0.5})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+}
+
+// T009: Penalty out of range returns 400
+TEST_F(OpenAIContractFixture, PenaltyOutOfRangeReturns400) {
+    httplib::Client cli("127.0.0.1", 18090);
+
+    // presence_penalty too low
+    std::string body1 = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"presence_penalty":-2.5})";
+    auto res1 = cli.Post("/v1/chat/completions", body1, "application/json");
+    ASSERT_TRUE(res1);
+    EXPECT_EQ(res1->status, 400);
+
+    // presence_penalty too high
+    std::string body2 = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"presence_penalty":2.5})";
+    auto res2 = cli.Post("/v1/chat/completions", body2, "application/json");
+    ASSERT_TRUE(res2);
+    EXPECT_EQ(res2->status, 400);
+
+    // frequency_penalty too low
+    std::string body3 = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"frequency_penalty":-2.5})";
+    auto res3 = cli.Post("/v1/chat/completions", body3, "application/json");
+    ASSERT_TRUE(res3);
+    EXPECT_EQ(res3->status, 400);
+
+    // frequency_penalty too high
+    std::string body4 = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"frequency_penalty":2.5})";
+    auto res4 = cli.Post("/v1/chat/completions", body4, "application/json");
+    ASSERT_TRUE(res4);
+    EXPECT_EQ(res4->status, 400);
+}
+
+// T010: Logprobs returns real values (not just 0.0)
+TEST_F(OpenAIContractFixture, LogprobsReturnsRealValues) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello world","logprobs":true})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    ASSERT_TRUE(j["choices"][0].contains("logprobs"));
+    auto logprobs = j["choices"][0]["logprobs"];
+    ASSERT_TRUE(logprobs["token_logprobs"].is_array());
+    EXPECT_FALSE(logprobs["token_logprobs"].empty());
+    // Check that logprobs are real values (negative numbers, not 0.0)
+    for (const auto& lp : logprobs["token_logprobs"]) {
+        if (!lp.is_null()) {
+            float val = lp.get<float>();
+            EXPECT_LT(val, 0.0f) << "logprob should be negative";
+        }
+    }
+}
+
+// T011: top_logprobs returns N items
+TEST_F(OpenAIContractFixture, TopLogprobsReturnsNItems) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","prompt":"hello world","logprobs":true,"top_logprobs":3})";
+    auto res = cli.Post("/v1/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    ASSERT_TRUE(j["choices"][0].contains("logprobs"));
+    auto logprobs = j["choices"][0]["logprobs"];
+    ASSERT_TRUE(logprobs["top_logprobs"].is_array());
+    EXPECT_FALSE(logprobs["top_logprobs"].empty());
+    // Each entry should have up to 3 items
+    for (const auto& top : logprobs["top_logprobs"]) {
+        if (!top.is_null() && top.is_object()) {
+            EXPECT_LE(top.size(), 3);
+        }
+    }
+}
+
+// T012: n parameter returns multiple choices
+TEST_F(OpenAIContractFixture, NParameterReturnsMultipleChoices) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"n":3})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    ASSERT_TRUE(j.contains("choices"));
+    EXPECT_EQ(j["choices"].size(), 3);
+    // Each choice should have a different index
+    EXPECT_EQ(j["choices"][0]["index"].get<int>(), 0);
+    EXPECT_EQ(j["choices"][1]["index"].get<int>(), 1);
+    EXPECT_EQ(j["choices"][2]["index"].get<int>(), 2);
+}
+
+// T013: n parameter out of range returns 400
+TEST_F(OpenAIContractFixture, NParameterOutOfRangeReturns400) {
+    httplib::Client cli("127.0.0.1", 18090);
+
+    // n too low
+    std::string body1 = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"n":0})";
+    auto res1 = cli.Post("/v1/chat/completions", body1, "application/json");
+    ASSERT_TRUE(res1);
+    EXPECT_EQ(res1->status, 400);
+
+    // n too high
+    std::string body2 = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"test"}],"n":10})";
+    auto res2 = cli.Post("/v1/chat/completions", body2, "application/json");
+    ASSERT_TRUE(res2);
+    EXPECT_EQ(res2->status, 400);
 }

@@ -20,8 +20,6 @@ std::string normalize_architecture_name(const std::string& value) {
             compact.push_back(c);
         }
     }
-    if (compact.find("gptoss") != std::string::npos) return "gptoss";
-    if (compact.find("nemotron") != std::string::npos) return "nemotron";
     if (compact.find("mistral") != std::string::npos) return "mistral";
     if (compact.find("gemma") != std::string::npos) return "gemma";
     if (compact.find("llama") != std::string::npos) return "llama";
@@ -86,6 +84,25 @@ std::string normalize_architecture(std::string value) {
             out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
         }
     }
+    // Normalize architecture family names (e.g., qwen2 -> qwen, llama3 -> llama)
+    if (out.find("qwen") != std::string::npos) return "qwen";
+    if (out.find("llama") != std::string::npos) return "llama";
+    if (out.find("mistral") != std::string::npos) return "mistral";
+    if (out.find("gemma") != std::string::npos) return "gemma";
+    if (out.find("phi") != std::string::npos) return "phi";
+    if (out.find("nemotron") != std::string::npos) return "nemotron";
+    if (out.find("deepseek") != std::string::npos) return "deepseek";
+    if (out.find("gptoss") != std::string::npos) return "gptoss";
+    if (out.find("granite") != std::string::npos) return "granite";
+    if (out.find("smollm") != std::string::npos) return "smollm";
+    if (out.find("kimi") != std::string::npos) return "kimi";
+    if (out.find("moondream") != std::string::npos) return "moondream";
+    if (out.find("snowflake") != std::string::npos) return "snowflake";
+    if (out.find("nomic") != std::string::npos) return "nomic";
+    if (out.find("mxbai") != std::string::npos) return "mxbai";
+    if (out.find("minilm") != std::string::npos) return "minilm";
+    if (out.find("devstral") != std::string::npos) return "devstral";
+    if (out.find("magistral") != std::string::npos) return "magistral";
     return out;
 }
 
@@ -383,6 +400,15 @@ std::string EngineRegistry::engineIdFor(const Engine* engine) const {
         }
     }
     return "";
+}
+
+std::vector<std::string> EngineRegistry::getRegisteredRuntimes() const {
+    std::vector<std::string> runtimes;
+    runtimes.reserve(engines_.size());
+    for (const auto& pair : engines_) {
+        runtimes.push_back(pair.first);
+    }
+    return runtimes;
 }
 
 }  // namespace llm_node

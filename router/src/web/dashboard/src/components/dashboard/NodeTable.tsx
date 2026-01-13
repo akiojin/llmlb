@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
-import { type DashboardNode } from '@/lib/api'
-import { formatUptime, formatPercentage, formatRelativeTime, formatBytes, cn } from '@/lib/utils'
+import { useQueryClient } from '@tanstack/react-query'
+import { type DashboardNode, nodesApi } from '@/lib/api'
+import { formatUptime, formatPercentage, formatRelativeTime, formatBytes, formatNumber, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +21,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { NodeDetailModal } from './NodeDetailModal'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -33,6 +44,8 @@ import {
   Download,
   FileJson,
   FileSpreadsheet,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react'
 
 interface NodeTableProps {
@@ -40,12 +53,13 @@ interface NodeTableProps {
   isLoading: boolean
 }
 
-type SortField = 'machine_name' | 'status' | 'uptime_seconds' | 'total_requests' | 'gpu_usage'
+type SortField = 'machine_name' | 'status' | 'uptime_seconds' | 'total_requests' | 'total_tokens' | 'gpu_usage'
 type SortDirection = 'asc' | 'desc'
 
 const PAGE_SIZE = 10
 
 export function NodeTable({ nodes, isLoading }: NodeTableProps) {
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'online' | 'pending' | 'registering' | 'offline'
@@ -55,6 +69,35 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedNode, setSelectedNode] = useState<DashboardNode | null>(null)
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
+  const [rejectingNode, setRejectingNode] = useState<DashboardNode | null>(null)
+  const [isApproving, setIsApproving] = useState<string | null>(null)
+  const [isRejecting, setIsRejecting] = useState(false)
+
+  const handleApprove = async (node: DashboardNode) => {
+    setIsApproving(node.node_id)
+    try {
+      await nodesApi.approve(node.node_id)
+      await queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+    } catch (error) {
+      console.error('Failed to approve node:', error)
+    } finally {
+      setIsApproving(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!rejectingNode) return
+    setIsRejecting(true)
+    try {
+      await nodesApi.delete(rejectingNode.node_id)
+      await queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+    } catch (error) {
+      console.error('Failed to reject node:', error)
+    } finally {
+      setIsRejecting(false)
+      setRejectingNode(null)
+    }
+  }
 
   const filteredAndSortedNodes = useMemo(() => {
     let result = [...nodes]
@@ -152,7 +195,7 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
       selectedNodes.size > 0
         ? filteredAndSortedNodes.filter((n) => selectedNodes.has(n.node_id))
         : filteredAndSortedNodes
-    const headers = ['node_id', 'machine_name', 'ip_address', 'port', 'status', 'gpu_model', 'gpu_usage', 'uptime_seconds', 'total_requests']
+    const headers = ['node_id', 'machine_name', 'ip_address', 'port', 'status', 'gpu_model', 'gpu_usage', 'uptime_seconds', 'total_requests', 'total_input_tokens', 'total_output_tokens', 'total_tokens']
     const rows = dataToExport.map((node) =>
       headers.map((h) => {
         const value = node[h as keyof DashboardNode]
@@ -354,13 +397,22 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       <SortIcon field="total_requests" />
                     </div>
                   </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleSort('total_tokens')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Tokens
+                      <SortIcon field="total_tokens" />
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody id="nodes-body">
                 {paginatedNodes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
+                    <TableCell colSpan={11} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <Server className="h-8 w-8" />
                         <p>No nodes found</p>
@@ -481,17 +533,55 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
                       </TableCell>
                       <TableCell>{formatUptime(node.uptime_seconds)}</TableCell>
                       <TableCell>{node.total_requests.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <div className="text-sm" title={`In: ${formatNumber(node.total_input_tokens)} / Out: ${formatNumber(node.total_output_tokens)}`}>
+                          {formatNumber(node.total_tokens)}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedNode(node)
-                          }}
-                        >
-                          <Info className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {node.status === 'pending' && (
+                            <>
+                              <Button
+                                id={`approve-${node.node_id}`}
+                                variant="ghost"
+                                size="sm"
+                                className="text-success hover:text-success hover:bg-success/10"
+                                disabled={isApproving === node.node_id}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleApprove(node)
+                                }}
+                                title="Approve node"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                id={`reject-${node.node_id}`}
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setRejectingNode(node)
+                                }}
+                                title="Reject node"
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedNode(node)
+                            }}
+                          >
+                            <Info className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -542,6 +632,29 @@ export function NodeTable({ nodes, isLoading }: NodeTableProps) {
         open={!!selectedNode}
         onOpenChange={(open) => !open && setSelectedNode(null)}
       />
+
+      {/* Reject Confirmation Dialog */}
+      <AlertDialog open={!!rejectingNode} onOpenChange={(open) => !open && setRejectingNode(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Node</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to reject node "{rejectingNode?.custom_name || rejectingNode?.machine_name}"?
+              This action cannot be undone and will permanently remove the node from the registry.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRejecting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReject}
+              disabled={isRejecting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isRejecting ? 'Rejecting...' : 'Reject'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

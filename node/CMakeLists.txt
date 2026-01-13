@@ -55,13 +55,6 @@ else()
     option(BUILD_WITH_METAL "Build with Metal support (macOS)" OFF)
     option(BUILD_WITH_SD_METAL "Build stable-diffusion with Metal backend (macOS)" OFF)
 endif()
-if(APPLE AND BUILD_WITH_METAL)
-    option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" ON)
-elseif(WIN32)
-    option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" ON)
-else()
-    option(BUILD_WITH_GPTOSS "Build with OpenAI gpt-oss engine" OFF)
-endif()
 option(BUILD_WITH_ROCM "Build with ROCm support" OFF)
 option(STATIC_BUILD "Build statically linked executable" OFF)
 
@@ -173,22 +166,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/vendor  # T166: minja Jinja2 parser
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors-cpp
 )
-
-# OpenAI gpt-oss headers
-if(BUILD_WITH_GPTOSS)
-    if(APPLE AND BUILD_WITH_METAL)
-        include_directories(
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
-        )
-    elseif(WIN32)
-        include_directories(
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
-        )
-    endif()
-endif()
 
 # whisper.cpp include directories
 if(BUILD_WITH_WHISPER)
@@ -218,41 +196,9 @@ if(APPLE AND BUILD_WITH_METAL)
     if(METAL_FRAMEWORK AND METALKIT_FRAMEWORK AND FOUNDATION_FRAMEWORK)
         add_definitions(-DUSE_METAL)
         link_libraries(${METAL_FRAMEWORK} ${METALKIT_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
-
-        if(BUILD_WITH_GPTOSS)
-            execute_process(
-                COMMAND xcrun -sdk macosx -find metal
-                OUTPUT_VARIABLE GPTOSS_METAL_COMPILER
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET
-                RESULT_VARIABLE GPTOSS_METAL_COMPILER_RESULT
-            )
-            execute_process(
-                COMMAND xcrun -sdk macosx -find metallib
-                OUTPUT_VARIABLE GPTOSS_METALLIB
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET
-                RESULT_VARIABLE GPTOSS_METALLIB_RESULT
-            )
-
-            if(NOT GPTOSS_METAL_COMPILER_RESULT EQUAL 0 OR NOT GPTOSS_METALLIB_RESULT EQUAL 0)
-                message(WARNING "xcrun metal/metallib not found; disabling BUILD_WITH_GPTOSS. Install Xcode Command Line Tools (xcode-select --install) to enable.")
-                set(BUILD_WITH_GPTOSS OFF CACHE BOOL "" FORCE)
-            else()
-                add_definitions(-DUSE_GPTOSS)
-            endif()
-        endif()
     else()
         message(WARNING "Metal frameworks not found, disabling Metal support")
         set(BUILD_WITH_METAL OFF)
-    endif()
-endif()
-
-# DirectML support (Windows)
-if(WIN32 AND BUILD_WITH_GPTOSS)
-    add_definitions(-DUSE_GPTOSS)
-    if(BUILD_WITH_DIRECTML)
-        add_definitions(-DUSE_DIRECTML)
     endif()
 endif()
 
@@ -269,139 +215,6 @@ if(BUILD_WITH_ROCM)
     endif()
 endif()
 
-# OpenAI gpt-oss Metal library (macOS only)
-if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
-    set(GPTOSS_METAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/metal)
-    if(NOT EXISTS "${GPTOSS_METAL_DIR}/source")
-        set(GPTOSS_METAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal)
-    endif()
-    if(NOT EXISTS "${GPTOSS_METAL_DIR}/source")
-        message(FATAL_ERROR "gpt-oss Metal sources not found: ${GPTOSS_METAL_DIR}/source")
-    endif()
-    set(GPTOSS_METAL_LIB default.metallib)
-
-    add_custom_command(
-        OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/convert.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/embeddings.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/embeddings.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/expert_routing_metadata.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/expert_routing_metadata.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/matmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/matmul.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/moematmul.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/moematmul.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/gather_and_accumulate.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/gather_and_accumulate.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/random.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/random.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rmsnorm.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rmsnorm.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/rope.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rope.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sample.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sample.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/scatter.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/scatter.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/sdpa.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sdpa.air"
-        COMMAND xcrun -sdk macosx metal -g "-I${GPTOSS_METAL_DIR}/include" -g "-I${GPTOSS_METAL_DIR}/source/include" -c "${GPTOSS_METAL_DIR}/source/topk.metal" -o "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/topk.air"
-        COMMAND xcrun -sdk macosx metallib
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/accumulate.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/convert.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/embeddings.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/expert_routing_metadata.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/gather_and_accumulate.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/matmul.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/moematmul.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/random.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rmsnorm.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/rope.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sample.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/scatter.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/sdpa.air"
-                "${CMAKE_CURRENT_BINARY_DIR}/gptoss_metal/topk.air"
-                -o "${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}"
-        DEPENDS
-            "${GPTOSS_METAL_DIR}/source/accumulate.metal"
-            "${GPTOSS_METAL_DIR}/source/convert.metal"
-            "${GPTOSS_METAL_DIR}/source/embeddings.metal"
-            "${GPTOSS_METAL_DIR}/source/expert_routing_metadata.metal"
-            "${GPTOSS_METAL_DIR}/source/gather_and_accumulate.metal"
-            "${GPTOSS_METAL_DIR}/source/matmul.metal"
-            "${GPTOSS_METAL_DIR}/source/moematmul.metal"
-            "${GPTOSS_METAL_DIR}/source/random.metal"
-            "${GPTOSS_METAL_DIR}/source/rmsnorm.metal"
-            "${GPTOSS_METAL_DIR}/source/rope.metal"
-            "${GPTOSS_METAL_DIR}/source/sample.metal"
-            "${GPTOSS_METAL_DIR}/source/scatter.metal"
-            "${GPTOSS_METAL_DIR}/source/sdpa.metal"
-            "${GPTOSS_METAL_DIR}/source/topk.metal"
-        COMMENT "Compiling gpt-oss Metal kernels"
-    )
-    add_custom_target(gptoss_build_metallib DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB})
-
-    add_library(gptoss_log OBJECT ${GPTOSS_METAL_DIR}/source/log.c)
-
-    add_library(gptoss_metal_kernels STATIC ${GPTOSS_METAL_DIR}/source/metal.m ${GPTOSS_METAL_DIR}/source/metal-kernels.c)
-    target_link_libraries(gptoss_metal_kernels PRIVATE gptoss_log)
-    target_include_directories(gptoss_metal_kernels PRIVATE ${GPTOSS_METAL_DIR}/include ${GPTOSS_METAL_DIR}/source/include)
-    add_dependencies(gptoss_metal_kernels gptoss_build_metallib)
-    if(IOKIT_FRAMEWORK)
-        target_link_libraries(gptoss_metal_kernels PRIVATE ${IOKIT_FRAMEWORK})
-    endif()
-
-    add_library(gptoss_metal STATIC
-        ${GPTOSS_METAL_DIR}/source/model.c
-        ${GPTOSS_METAL_DIR}/source/tokenizer.c
-        ${GPTOSS_METAL_DIR}/source/context.c
-    )
-    target_include_directories(gptoss_metal PRIVATE ${GPTOSS_METAL_DIR}/include ${GPTOSS_METAL_DIR}/source/include)
-    target_link_libraries(gptoss_metal PRIVATE gptoss_log gptoss_metal_kernels)
-endif()
-
-# OpenAI gpt-oss DirectML runtime (Windows, built in-tree)
-if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_DIRECTML)
-    add_library(gptoss_directml SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
-    )
-    target_include_directories(gptoss_directml
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
-    )
-    target_link_libraries(gptoss_directml PRIVATE d3d12 dxgi dxguid)
-    target_compile_definitions(gptoss_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
-    set_target_properties(gptoss_directml PROPERTIES OUTPUT_NAME "gptoss_directml")
-
-    add_library(nemotron_directml SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/directml/gptoss_directml.cpp
-    )
-    target_include_directories(nemotron_directml
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
-    )
-    target_link_libraries(nemotron_directml PRIVATE d3d12 dxgi dxguid)
-    target_compile_definitions(nemotron_directml PRIVATE GPTOSS_ABI=__declspec(dllexport))
-    set_target_properties(nemotron_directml PROPERTIES OUTPUT_NAME "nemotron_directml")
-endif()
-
-# OpenAI gpt-oss CUDA runtime (Windows, built in-tree)
-if(WIN32 AND BUILD_WITH_GPTOSS AND BUILD_WITH_CUDA)
-    add_library(gptoss_cuda SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/cuda/gptoss_cuda_runtime.cpp
-    )
-    target_include_directories(gptoss_cuda
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
-    )
-    target_compile_definitions(gptoss_cuda PRIVATE GPTOSS_ABI=__declspec(dllexport))
-    set_target_properties(gptoss_cuda PROPERTIES OUTPUT_NAME "gptoss_cuda")
-
-    add_library(nemotron_cuda SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/cuda/nemotron_cuda_runtime.cpp
-    )
-    target_include_directories(nemotron_cuda
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/openai-gpt-oss/gpt_oss/metal/source/include
-    )
-    target_compile_definitions(nemotron_cuda PRIVATE GPTOSS_ABI=__declspec(dllexport))
-    set_target_properties(nemotron_cuda PROPERTIES OUTPUT_NAME "nemotron_cuda")
-endif()
 
 # Utils library (config etc.)
 add_library(utils_lib STATIC
@@ -415,6 +228,33 @@ add_library(utils_lib STATIC
 )
 target_include_directories(utils_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(utils_lib PUBLIC spdlog::spdlog_header_only)
+
+# CLI library (SPEC-58378000: CLI commands)
+add_library(cli_lib STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cli_client.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/repl_session.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/progress_renderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/ollama_compat.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/serve.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/run.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/pull.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/list.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/show.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/rm.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/stop.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/ps.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_nodes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_models.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_status.cpp
+)
+target_include_directories(cli_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(cli_lib PUBLIC
+    utils_lib
+    spdlog::spdlog_header_only
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+target_compile_definitions(cli_lib PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # Engine plugin: llama.cpp
 set(LLAMA_ENGINE_SOURCES
@@ -448,68 +288,57 @@ if(APPLE)
 endif()
 set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
 
-# Engine plugin: gpt-oss
-if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
-    add_library(llm_engine_gptoss SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
-    )
-    target_include_directories(llm_engine_gptoss
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${GPTOSS_METAL_DIR}/include
-            ${GPTOSS_METAL_DIR}/source/include
-    )
-    target_link_libraries(llm_engine_gptoss
-        PRIVATE
-            gptoss_metal
-            spdlog::spdlog_header_only
-    )
-    add_dependencies(llm_engine_gptoss gptoss_build_metallib)
-    target_link_options(llm_engine_gptoss PRIVATE
-        LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
-    )
-    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
-elseif(WIN32 AND BUILD_WITH_GPTOSS)
-    add_library(llm_engine_gptoss SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/gptoss/gptoss_engine_plugin.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/gptoss_engine.cpp
-    )
-    target_include_directories(llm_engine_gptoss
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    target_link_libraries(llm_engine_gptoss
-        PRIVATE
-            spdlog::spdlog_header_only
-    )
-    if(BUILD_WITH_CUDA)
-        target_compile_definitions(llm_engine_gptoss PRIVATE USE_CUDA)
+# ============================================================================
+# safetensors.cpp integration (SPEC-69549000)
+# ============================================================================
+option(BUILD_WITH_SAFETENSORS "Build with safetensors.cpp support" ON)
+if(BUILD_WITH_SAFETENSORS)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors.cpp/CMakeLists.txt")
+        message(WARNING "third_party/safetensors.cpp not found; disabling BUILD_WITH_SAFETENSORS")
+        set(BUILD_WITH_SAFETENSORS OFF)
     endif()
-    set_target_properties(llm_engine_gptoss PROPERTIES OUTPUT_NAME "llm_engine_gptoss")
 endif()
 
-# Engine plugin: nemotron (Windows, DirectML frozen / CUDA primary)
-if(WIN32 AND BUILD_WITH_GPTOSS AND (BUILD_WITH_DIRECTML OR BUILD_WITH_CUDA))
-    add_library(llm_engine_nemotron SHARED
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/nemotron/nemotron_engine_plugin.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/nemotron_engine.cpp
+if(BUILD_WITH_SAFETENSORS)
+    # Configure safetensors.cpp options
+    set(STCPP_METAL ${BUILD_WITH_METAL} CACHE BOOL "" FORCE)
+    set(STCPP_CUDA ${BUILD_WITH_CUDA} CACHE BOOL "" FORCE)
+    set(STCPP_ROCM ${BUILD_WITH_ROCM} CACHE BOOL "" FORCE)
+    set(STCPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(STCPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/safetensors.cpp)
+
+    # Engine plugin: safetensors.cpp
+    set(SAFETENSORS_ENGINE_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine_plugin.cpp
     )
-    target_include_directories(llm_engine_nemotron
+    add_library(llm_engine_safetensors SHARED ${SAFETENSORS_ENGINE_SOURCES})
+    if (WIN32)
+        set_target_properties(llm_engine_safetensors PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    endif()
+    target_include_directories(llm_engine_safetensors
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors.cpp/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
     )
-    target_link_libraries(llm_engine_nemotron
+    target_link_libraries(llm_engine_safetensors
         PRIVATE
+            safetensors_cpp
             spdlog::spdlog_header_only
     )
-    if(BUILD_WITH_CUDA)
-        target_compile_definitions(llm_engine_nemotron PRIVATE USE_CUDA)
-    endif()
-    set_target_properties(llm_engine_nemotron PROPERTIES OUTPUT_NAME "llm_engine_nemotron")
+    set_target_properties(llm_engine_safetensors PROPERTIES OUTPUT_NAME "llm_engine_safetensors")
+
+    # Copy plugin files to build/engines/safetensors/ for runtime loading
+    set(SAFETENSORS_PLUGIN_DIR ${CMAKE_BINARY_DIR}/engines/safetensors)
+    add_custom_command(TARGET llm_engine_safetensors POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${SAFETENSORS_PLUGIN_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:llm_engine_safetensors> ${SAFETENSORS_PLUGIN_DIR}/
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/manifest.json ${SAFETENSORS_PLUGIN_DIR}/
+        COMMENT "Copying safetensors plugin to ${SAFETENSORS_PLUGIN_DIR}"
+    )
 endif()
 
 # Collect source files
@@ -555,15 +384,6 @@ if(BUILD_WITH_CUDA AND CUDAToolkit_FOUND)
             target_link_libraries(llm-node PRIVATE ${NVML_LIBRARY})
         endif()
     endif()
-endif()
-
-# gpt-oss Metal backend (macOS)
-if(APPLE AND BUILD_WITH_METAL AND BUILD_WITH_GPTOSS)
-    target_link_libraries(llm-node PRIVATE gptoss_metal)
-    add_dependencies(llm-node gptoss_build_metallib)
-    target_link_options(llm-node PRIVATE
-        LINKER:-sectcreate,__METAL,__shaders,${CMAKE_CURRENT_BINARY_DIR}/${GPTOSS_METAL_LIB}
-    )
 endif()
 
 # whisper.cpp support
@@ -631,6 +451,7 @@ message(STATUS "  Metal support:     ${BUILD_WITH_METAL}")
 message(STATUS "  ROCm support:      ${BUILD_WITH_ROCM}")
 message(STATUS "  Whisper support:   ${BUILD_WITH_WHISPER}")
 message(STATUS "  SD support:        ${BUILD_WITH_SD}")
+message(STATUS "  safetensors.cpp:   ${BUILD_WITH_SAFETENSORS}")
 message(STATUS "  ONNX support:      ${BUILD_WITH_ONNX}")
 message(STATUS "  Static build:      ${STATIC_BUILD}")
 message(STATUS "  Build tests:       ${BUILD_TESTS}")

@@ -195,6 +195,8 @@ impl NodeRegistry {
             node.sync_state = None;
             node.sync_progress = None;
             node.sync_updated_at = None;
+            node.executable_models.clear();
+            node.excluded_models.clear();
             (id, RegisterStatus::Updated, node.clone())
         } else {
             // 新規ノードを登録
@@ -218,6 +220,8 @@ impl NodeRegistry {
                 loaded_embedding_models: Vec::new(),
                 loaded_asr_models: Vec::new(),
                 loaded_tts_models: Vec::new(),
+                executable_models: Vec::new(),
+                excluded_models: HashSet::new(),
                 supported_runtimes: req.supported_runtimes,
                 gpu_devices: req.gpu_devices,
                 gpu_available: req.gpu_available,
@@ -232,8 +236,6 @@ impl NodeRegistry {
                 sync_state: None,
                 sync_progress: None,
                 sync_updated_at: None,
-                executable_models: Vec::new(),
-                excluded_models: Vec::new(),
             };
             nodes.insert(node_id, node.clone());
             (node_id, RegisterStatus::Registered, node)
@@ -383,6 +385,48 @@ impl NodeRegistry {
         Ok(())
     }
 
+    /// ノードが実行可能なモデル一覧を更新（再登録時のリセット含む）
+    pub async fn update_executable_models(
+        &self,
+        node_id: Uuid,
+        models: Vec<String>,
+    ) -> RouterResult<()> {
+        let normalized = normalize_models(models);
+        let mut nodes = self.nodes.write().await;
+        let node = nodes
+            .get_mut(&node_id)
+            .ok_or(RouterError::NodeNotFound(node_id))?;
+        node.executable_models = normalized;
+        node.excluded_models.clear();
+        Ok(())
+    }
+
+    /// 指定モデルを報告済みのノードが存在するか（オンライン/オフライン問わず）
+    pub async fn has_model_reported(&self, model_id: &str) -> bool {
+        let nodes = self.nodes.read().await;
+        nodes
+            .values()
+            .any(|node| node.executable_models.iter().any(|m| m == model_id))
+    }
+
+    /// オンラインノードの実行可能モデル一覧を取得（除外モデルは除く）
+    pub async fn list_executable_models_online(&self) -> HashSet<String> {
+        let nodes = self.nodes.read().await;
+        let mut models = HashSet::new();
+        for node in nodes.values() {
+            if node.status != NodeStatus::Online {
+                continue;
+            }
+            for model in &node.executable_models {
+                if node.excluded_models.contains(model) {
+                    continue;
+                }
+                models.insert(model.clone());
+            }
+        }
+        models
+    }
+
     /// モデルを「インストール済み」としてマーク
     pub async fn mark_model_loaded(&self, node_id: Uuid, model_name: &str) -> RouterResult<()> {
         let normalized = normalize_models(vec![model_name.to_string()]);
@@ -421,6 +465,7 @@ impl NodeRegistry {
                 .ok_or(RouterError::NodeNotFound(node_id))?;
             node.status = NodeStatus::Offline;
             node.online_since = None;
+            node.excluded_models.clear();
             node.clone()
         };
 
@@ -437,10 +482,8 @@ impl NodeRegistry {
             let node = nodes
                 .get_mut(&node_id)
                 .ok_or(RouterError::NodeNotFound(node_id))?;
-            // 重複追加を避ける
-            if !node.excluded_models.contains(&model_id.to_string()) {
-                node.excluded_models.push(model_id.to_string());
-            }
+            // HashSetなので重複は自動的に回避される
+            node.excluded_models.insert(model_id.to_string());
             node.clone()
         };
 
@@ -676,6 +719,78 @@ mod tests {
 
         let node = registry.get(first_response.node_id).await.unwrap();
         assert!(node.loaded_models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_nodes_for_model_filters_excluded() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "model-node".to_string(),
+            ip_address: "192.168.1.120".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = registry.register(req).await.unwrap();
+        registry.mark_online(response.node_id).await.unwrap();
+        registry
+            .update_executable_models(
+                response.node_id,
+                vec!["model-a".to_string(), "model-b".to_string()],
+            )
+            .await
+            .unwrap();
+
+        let nodes = registry.get_nodes_for_model("model-a").await;
+        assert_eq!(nodes.len(), 1);
+
+        registry
+            .exclude_model_from_node(response.node_id, "model-a")
+            .await
+            .unwrap();
+
+        let nodes = registry.get_nodes_for_model("model-a").await;
+        assert!(nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_update_executable_models_clears_excluded() {
+        let registry = NodeRegistry::new();
+        let req = RegisterRequest {
+            machine_name: "reset-node".to_string(),
+            ip_address: "192.168.1.121".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let response = registry.register(req).await.unwrap();
+        registry.mark_online(response.node_id).await.unwrap();
+        registry
+            .update_executable_models(response.node_id, vec!["model-x".to_string()])
+            .await
+            .unwrap();
+        registry
+            .exclude_model_from_node(response.node_id, "model-x")
+            .await
+            .unwrap();
+
+        registry
+            .update_executable_models(response.node_id, vec!["model-x".to_string()])
+            .await
+            .unwrap();
+
+        let nodes = registry.get_nodes_for_model("model-x").await;
+        assert_eq!(nodes.len(), 1);
     }
 
     #[tokio::test]
@@ -1132,7 +1247,8 @@ mod tests {
             .unwrap();
 
         let node = registry.get(node_id).await.unwrap();
-        assert_eq!(node.excluded_models, vec!["failing-model"]);
+        assert!(node.excluded_models.contains("failing-model"));
+        assert_eq!(node.excluded_models.len(), 1);
     }
 
     #[tokio::test]
@@ -1166,9 +1282,9 @@ mod tests {
             .unwrap();
 
         let node = registry.get(node_id).await.unwrap();
-        // 重複は追加されない
+        // 重複は追加されない（HashSetなので自動的に重複回避）
         assert_eq!(node.excluded_models.len(), 1);
-        assert_eq!(node.excluded_models[0], "dup-model");
+        assert!(node.excluded_models.contains("dup-model"));
     }
 
     #[tokio::test]
@@ -1237,5 +1353,92 @@ mod tests {
             .await
             .unwrap();
         assert!(registry.model_exists_in_any_node("gpt-4").await);
+    }
+
+    /// T009: Offline状態のノードがハートビートで復帰するとRegistering状態になることを検証
+    #[tokio::test]
+    async fn test_offline_node_returns_to_registering_on_heartbeat() {
+        let registry = NodeRegistry::new();
+
+        // ノードを登録
+        let node_id = registry
+            .register(RegisterRequest {
+                machine_name: "offline-test-node".into(),
+                ip_address: "127.0.0.7".parse().unwrap(),
+                runtime_version: "0.1.0".into(),
+                runtime_port: 32768,
+                gpu_available: true,
+                gpu_devices: sample_gpu_devices(),
+                gpu_count: Some(1),
+                gpu_model: Some("Test GPU".into()),
+                supported_runtimes: Vec::new(),
+            })
+            .await
+            .unwrap()
+            .node_id;
+
+        // 登録時は ready_models = (0, 0) で承認すると即 Online になるため、
+        // 承認前に ready_models を (0, 1) に設定してモデル同期中の状態をシミュレート
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                Some((0, 1)), // 0/1 = まだ同期中
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // 承認してRegistering状態に遷移（ready < total なので Online にはならない）
+        registry.approve(node_id).await.unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Registering);
+
+        // ready_modelsでモデル同期完了を通知してOnlineに遷移
+        registry
+            .update_last_seen(
+                node_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                Some((1, 1)), // 1/1 = 同期完了
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Online);
+
+        // ノードをオフラインに設定
+        registry.mark_offline(node_id).await.unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(node.status, NodeStatus::Offline);
+
+        // ハートビート（update_last_seen）を受信
+        // Offline状態からの復帰はRegisteringに遷移すべき（直接Onlineではない）
+        registry
+            .update_last_seen(
+                node_id, None, None, None, None, None, None, None, None, None, None,
+            )
+            .await
+            .unwrap();
+        let node = registry.get(node_id).await.unwrap();
+        assert_eq!(
+            node.status,
+            NodeStatus::Registering,
+            "Offline状態からの復帰はRegistering状態であるべき（直接Onlineではない）"
+        );
     }
 }

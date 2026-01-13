@@ -23,10 +23,15 @@ LLM Router supports a pluggable multi-engine architecture:
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
 | **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
-| **GPT-OSS** | Production (Metal), WIP (DirectML) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
+| **GPT-OSS** | Production (Metal/CUDA) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
+
+**Engine Selection Policy**:
+
+- **Models with GGUF available** → Use llama.cpp (Metal/CUDA ready)
+- **Models with safetensors only** → Implement built-in engine (Metal/CUDA support required)
 
 ### Multimodal Support
 
@@ -428,8 +433,8 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - Dashboard → **Models** → **Register**
   - Choose `format`: `safetensors` (native engines) or `gguf` (llama.cpp fallback).
     - If the repo contains both `safetensors` and `.gguf`, `format` is required.
-    - Safetensors text generation is available only when a native engine exists
-      (gpt-oss on Metal, DirectML is in progress). Use `gguf` for GGUF-only models.
+    - Safetensors text generation is available only when the safetensors.cpp engine is enabled
+      (Metal/CUDA). Use `gguf` for GGUF-only models.
   - Enter a Hugging Face repo or file URL (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
   - For `format=gguf`:
     - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
@@ -437,11 +442,9 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - For `format=safetensors`:
     - The HF snapshot must include `config.json` and `tokenizer.json`.
     - Sharded weights must include an `.index.json`.
-    - gpt-oss prefers official GPU artifacts when present:
-      `model.metal.bin` (Metal) / `model.directml.bin` or `model.dml.bin` (DirectML).
-    - Windows (DirectML) uses `gptoss_directml.dll` (and `nemotron_directml.dll` for Nemotron).
-      - Built as part of the Windows build; place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
-      - set `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` to an absolute path.
+    - If official GPU artifacts are provided (for example `model.metal.bin`), they may be used as
+      execution cache when supported. Otherwise, safetensors are used directly.
+    - Windows requires CUDA builds (`BUILD_WITH_CUDA=ON`). DirectML is not supported.
   - Router stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
@@ -742,7 +745,7 @@ make openai-tests
 
 Notes:
 - gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
-- GPU is required. Supported backends: macOS (Metal) and Windows (DirectML). Linux/CUDA is experimental.
+- GPU is required. Supported backends: macOS (Metal) and Windows (CUDA). Linux/CUDA is experimental.
 
 ### Spec-Driven Development
 

@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-#include <unistd.h>
 
 #include "system/gpu_detector.h"
 #include "system/resource_monitor.h"
@@ -26,6 +25,8 @@
 #include "utils/version.h"
 #include "runtime/state.h"
 #include "utils/logger.h"
+#include "cli/commands.h"
+#include "cli/ollama_compat.h"
 
 #ifdef USE_WHISPER
 #include "core/whisper_manager.h"
@@ -99,6 +100,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         // Initialize model registry (empty for now, will sync after registration)
         llm_node::ModelRegistry registry;
+        registry.setGpuBackend(gpu_detector.getGpuBackend());
 
         // Determine models directory
         std::string models_dir = cfg.models_dir.empty()
@@ -109,11 +111,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager llama_manager(models_dir);
         llm_node::ModelStorage model_storage(models_dir);
 
-        std::vector<std::string> supported_runtimes{"llama_cpp", "nemotron_cpp"};
-
-#ifdef USE_GPTOSS
-        supported_runtimes.push_back("gptoss_cpp");
-#endif
+        std::vector<std::string> supported_runtimes{"llama_cpp"};
 
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR
@@ -143,6 +141,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             spdlog::info("GPU offloading enabled with {} layers", 99);
         }
 
+        fprintf(stderr, "[DEBUG] main: starting on-demand config...\n");
+        fflush(stderr);
+
         // Configure on-demand model loading settings from environment variables
         if (const char* idle_timeout_env = std::getenv("LLM_MODEL_IDLE_TIMEOUT")) {
             int timeout_secs = std::atoi(idle_timeout_env);
@@ -166,6 +167,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
+        fprintf(stderr, "[DEBUG] main: creating ResourceMonitor...\n");
+        fflush(stderr);
+
         // Resource monitoring (VRAM/RAM watermark + LRU unload)
         llm_node::ResourceMonitor resource_monitor([&llama_manager]() {
             if (llm_node::active_request_count() > 0) {
@@ -180,6 +184,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             return llama_manager.unloadModel(lru.value());
         });
         resource_monitor.start();
+
+        fprintf(stderr, "[DEBUG] main: ResourceMonitor started, creating ModelSync...\n");
+        fflush(stderr);
 
         // Create model_sync early for remote path resolution & initial sync
         auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
@@ -200,14 +207,32 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         }
         model_resolver->setSyncReporter(model_sync.get());
 
+        fprintf(stderr, "[DEBUG] main: ModelResolver configured, creating InferenceEngine...\n");
+        fflush(stderr);
+
         // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
         llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
+
+        fprintf(stderr, "[DEBUG] main: InferenceEngine created, checking plugins...\n");
+        fflush(stderr);
+
         if (!cfg.engine_plugins_dir.empty() && std::filesystem::exists(cfg.engine_plugins_dir)) {
+            fprintf(stderr, "[DEBUG] main: loading plugins from %s...\n", cfg.engine_plugins_dir.c_str());
+            fflush(stderr);
             std::string plugin_error;
             if (!engine.loadEnginePlugins(cfg.engine_plugins_dir, plugin_error)) {
                 spdlog::warn("Engine plugins load failed: {}", plugin_error);
             } else {
                 spdlog::info("Engine plugins loaded from {}", cfg.engine_plugins_dir);
+                // Add plugin runtimes to supported_runtimes
+                for (const auto& rt : engine.getRegisteredRuntimes()) {
+                    if (std::find(supported_runtimes.begin(), supported_runtimes.end(), rt) == supported_runtimes.end()) {
+                        supported_runtimes.push_back(rt);
+                        spdlog::info("Added plugin runtime: {}", rt);
+                    }
+                }
+                // Update model_sync with expanded supported_runtimes
+                model_sync->setSupportedRuntimes(supported_runtimes);
             }
         }
         engine.setPluginRestartPolicy(
@@ -220,6 +245,22 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 cfg.plugin_restart_request_limit);
         }
         spdlog::info("InferenceEngine initialized with llama.cpp support");
+
+        // Scan local models BEFORE starting server (router checks /v1/models during registration)
+        {
+            auto local_descriptors = model_storage.listAvailableDescriptors();
+            std::vector<std::string> initial_models;
+            initial_models.reserve(local_descriptors.size());
+            for (const auto& desc : local_descriptors) {
+                if (!engine.isModelSupported(desc)) {
+                    continue;
+                }
+                initial_models.push_back(desc.name);
+            }
+            registry.setModels(initial_models);
+            spdlog::info("Model scan: found {} supported models out of {} total",
+                         initial_models.size(), local_descriptors.size());
+        }
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
         llm_node::OpenAIEndpoints openai(registry, engine, cfg, gpu_detector.getGpuBackend());
@@ -254,10 +295,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                 // Sync with router
                 auto sync_result = model_sync->sync();
 
-                // Delete models not in router
-                for (const auto& model_id : sync_result.to_delete) {
-                    spdlog::info("Deleting model not in router: {}", model_id);
-                    model_storage.deleteModel(model_id);
+                // Skip model deletion - router catalog may not include all local models
+                if (!sync_result.to_delete.empty()) {
+                    spdlog::info("Skipping deletion of {} models not in router (local models preserved)",
+                                 sync_result.to_delete.size());
                 }
 
                 // Update registry with current local models
@@ -282,6 +323,146 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         });
         spdlog::info("Model pull endpoint registered: POST /api/models/pull");
 
+        // Initialize OllamaCompat for reading ~/.ollama/models/
+        llm_node::cli::OllamaCompat ollama_compat;
+
+        // Ollama-compatible API: GET /api/tags - list all available models
+        server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine](const httplib::Request&, httplib::Response& res) {
+            nlohmann::json models_array = nlohmann::json::array();
+
+            // List llm-router models
+            auto descriptors = model_storage.listAvailableDescriptors();
+            for (const auto& desc : descriptors) {
+                if (!engine.isModelSupported(desc)) {
+                    continue;
+                }
+                nlohmann::json model_obj;
+                model_obj["name"] = desc.name;
+                model_obj["model"] = desc.name;
+                model_obj["modified_at"] = "";  // Could add file modification time
+                model_obj["size"] = 0;  // Could add file size
+                model_obj["digest"] = "";
+                model_obj["details"] = nlohmann::json::object();
+                model_obj["details"]["format"] = desc.format;
+                model_obj["details"]["family"] = "";
+                model_obj["details"]["parameter_size"] = "";
+                model_obj["details"]["quantization_level"] = "";
+                models_array.push_back(model_obj);
+            }
+
+            // List ollama models (read-only)
+            if (ollama_compat.isAvailable()) {
+                auto ollama_models = ollama_compat.listModels();
+                for (const auto& info : ollama_models) {
+                    nlohmann::json model_obj;
+                    model_obj["name"] = "ollama:" + info.name;
+                    model_obj["model"] = "ollama:" + info.name;
+                    model_obj["modified_at"] = "(readonly)";
+                    model_obj["size"] = static_cast<int64_t>(info.size_bytes);
+                    model_obj["digest"] = info.blob_digest;
+                    model_obj["details"] = nlohmann::json::object();
+                    model_obj["details"]["format"] = "gguf";
+                    model_obj["details"]["family"] = "";
+                    model_obj["details"]["parameter_size"] = "";
+                    model_obj["details"]["quantization_level"] = "";
+                    models_array.push_back(model_obj);
+                }
+            }
+
+            nlohmann::json response;
+            response["models"] = models_array;
+            res.set_content(response.dump(), "application/json");
+        });
+        spdlog::info("Ollama-compatible endpoint registered: GET /api/tags");
+
+        // Ollama-compatible API: GET /api/ps - list running models
+        server.getServer().Get("/api/ps", [&llama_manager](const httplib::Request&, httplib::Response& res) {
+            nlohmann::json models_array = nlohmann::json::array();
+
+            auto loaded_models = llama_manager.getLoadedModels();
+            for (const auto& model_path : loaded_models) {
+                // Extract model name from path
+                std::filesystem::path p(model_path);
+                std::string model_name = p.parent_path().filename().string();
+                if (model_name.empty()) {
+                    model_name = p.stem().string();
+                }
+
+                nlohmann::json model_obj;
+                model_obj["name"] = model_name;
+                model_obj["model"] = model_name;
+                model_obj["size"] = 0;  // Could calculate actual size
+                model_obj["digest"] = "";
+                model_obj["details"] = nlohmann::json::object();
+                model_obj["expires_at"] = "";  // Could add expiry based on idle timeout
+                model_obj["size_vram"] = static_cast<int64_t>(llama_manager.memoryUsageBytes());
+                models_array.push_back(model_obj);
+            }
+
+            nlohmann::json response;
+            response["models"] = models_array;
+            res.set_content(response.dump(), "application/json");
+        });
+        spdlog::info("Ollama-compatible endpoint registered: GET /api/ps");
+
+        // Ollama-compatible API: POST /api/show - show model information
+        server.getServer().Post("/api/show", [&model_storage, &ollama_compat](const httplib::Request& req, httplib::Response& res) {
+            auto body = nlohmann::json::parse(req.body, nullptr, false);
+            if (body.is_discarded() || !body.contains("name")) {
+                res.status = 400;
+                res.set_content(R"({"error":"name required"})", "application/json");
+                return;
+            }
+
+            std::string model_name = body["name"].get<std::string>();
+            nlohmann::json response;
+
+            // Check if it's an ollama model
+            if (llm_node::cli::OllamaCompat::hasOllamaPrefix(model_name)) {
+                std::string ollama_name = llm_node::cli::OllamaCompat::stripOllamaPrefix(model_name);
+                auto info = ollama_compat.getModel(ollama_name);
+                if (info) {
+                    response["modelfile"] = "";
+                    response["parameters"] = "";
+                    response["template"] = "";
+                    response["details"] = nlohmann::json::object();
+                    response["details"]["format"] = "gguf";
+                    response["details"]["family"] = "";
+                    response["details"]["parameter_size"] = "";
+                    response["details"]["quantization_level"] = "";
+                    response["model_info"] = nlohmann::json::object();
+                    response["model_info"]["source"] = "ollama (read-only)";
+                    response["model_info"]["blob_path"] = info->blob_path;
+                    response["model_info"]["size_bytes"] = static_cast<int64_t>(info->size_bytes);
+                    res.set_content(response.dump(), "application/json");
+                    return;
+                }
+            }
+
+            // Check llm-router models
+            auto descriptor = model_storage.resolveDescriptor(model_name);
+            if (descriptor) {
+                response["modelfile"] = "";
+                response["parameters"] = "";
+                response["template"] = "";
+                response["details"] = nlohmann::json::object();
+                response["details"]["format"] = descriptor->format;
+                response["details"]["family"] = "";
+                response["details"]["parameter_size"] = "";
+                response["details"]["quantization_level"] = "";
+                response["model_info"] = nlohmann::json::object();
+                response["model_info"]["name"] = descriptor->name;
+                response["model_info"]["path"] = descriptor->primary_path;
+                response["model_info"]["runtime"] = descriptor->runtime;
+                res.set_content(response.dump(), "application/json");
+                return;
+            }
+
+            res.status = 404;
+            res.set_content(R"({"error":"model not found"})", "application/json");
+        });
+        spdlog::info("Ollama-compatible endpoint registered: POST /api/show");
+
         std::cout << "Starting HTTP server on port " << node_port << "..." << std::endl;
         server.start();
         server_started = true;
@@ -302,80 +483,155 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Register with router (retry)
+        // Try to register with router (fallback to standalone if unavailable)
         std::cout << "Registering with router..." << std::endl;
-        llm_node::RouterClient router(router_url);
-        if (!cfg.router_api_key.empty()) {
-            router.setApiKey(cfg.router_api_key);
-        }
-        llm_node::NodeInfo info;
-        info.machine_name = hostname_buf;
-        // Use configured IP, or extract host from router URL, or fallback to hostname
-        if (!cfg.ip_address.empty()) {
-            info.ip_address = cfg.ip_address;
-        } else {
-            // Extract host from router_url (e.g., "http://192.168.1.100:8081" -> "192.168.1.100")
-            std::string host = router_url;
-            auto proto_end = host.find("://");
-            if (proto_end != std::string::npos) {
-                host = host.substr(proto_end + 3);
+        {
+            llm_node::RouterClient router(router_url);
+            if (!cfg.router_api_key.empty()) {
+                router.setApiKey(cfg.router_api_key);
             }
-            auto port_pos = host.find(':');
-            if (port_pos != std::string::npos) {
-                host = host.substr(0, port_pos);
-            }
-            auto path_pos = host.find('/');
-            if (path_pos != std::string::npos) {
-                host = host.substr(0, path_pos);
-            }
-            // If router is on localhost, use 127.0.0.1; otherwise use router's host
-            if (host == "localhost") {
-                info.ip_address = "127.0.0.1";
+            llm_node::NodeInfo info;
+            info.machine_name = hostname_buf;
+            // Use configured IP, or extract host from router URL, or fallback to hostname
+            if (!cfg.ip_address.empty()) {
+                info.ip_address = cfg.ip_address;
             } else {
-                info.ip_address = host;
+                // Extract host from router_url (e.g., "http://192.168.1.100:8081" -> "192.168.1.100")
+                std::string host = router_url;
+                auto proto_end = host.find("://");
+                if (proto_end != std::string::npos) {
+                    host = host.substr(proto_end + 3);
+                }
+                auto port_pos = host.find(':');
+                if (port_pos != std::string::npos) {
+                    host = host.substr(0, port_pos);
+                }
+                auto path_pos = host.find('/');
+                if (path_pos != std::string::npos) {
+                    host = host.substr(0, path_pos);
+                }
+                // If router is on localhost, use 127.0.0.1; otherwise use router's host
+                if (host == "localhost") {
+                    info.ip_address = "127.0.0.1";
+                } else {
+                    info.ip_address = host;
+                }
             }
-        }
-        spdlog::info("Node IP address: {}", info.ip_address);
-        info.runtime_version = "1.0.0";  // llm-node runtime version
-        // Router calculates API port as runtime_port + 1, so report node_port - 1
-        info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 32768);
-        info.gpu_available = !gpu_devices.empty();
-        info.gpu_devices = gpu_devices;
-        if (!gpu_devices.empty()) {
-            info.gpu_count = static_cast<uint32_t>(gpu_devices.size());
-            info.gpu_model = gpu_devices[0].model;
-        }
-        info.supported_runtimes = supported_runtimes;
-        llm_node::NodeRegistrationResult reg;
-        const int reg_max = 3;
-        for (int attempt = 0; attempt < reg_max; ++attempt) {
-            reg = router.registerNode(info);
-            if (reg.success) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(200 * (attempt + 1)));
-        }
-        if (!reg.success) {
-            std::cerr << "Router registration failed after retries: " << reg.error << std::endl;
-            server.stop();
-            return 1;
-        }
-
-        // Sync models from router (model_sync already created earlier for remote path resolution & initial sync)
-        std::cout << "Syncing models from router..." << std::endl;
-        model_sync->setNodeToken(reg.node_token);
-        auto sync_result = model_sync->sync();
-        if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
-            // If nothing synced and no local models, treat as recoverable error and retry once
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            sync_result = model_sync->sync();
-        }
-
-        // Delete models not in router (router is source of truth)
-        for (const auto& model_id : sync_result.to_delete) {
-            std::cout << "Deleting model not in router: " << model_id << std::endl;
-            if (model_storage.deleteModel(model_id)) {
-                std::cout << "  Deleted: " << model_id << std::endl;
+            spdlog::info("Node IP address: {}", info.ip_address);
+            info.runtime_version = "1.0.0";  // llm-node runtime version
+            // Router calculates API port as runtime_port + 1, so report node_port - 1
+            info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 32768);
+            info.gpu_available = !gpu_devices.empty();
+            info.gpu_devices = gpu_devices;
+            if (!gpu_devices.empty()) {
+                info.gpu_count = static_cast<uint32_t>(gpu_devices.size());
+                info.gpu_model = gpu_devices[0].model;
+            }
+            info.supported_runtimes = supported_runtimes;
+            llm_node::NodeRegistrationResult reg;
+            const int reg_max = 3;
+            for (int attempt = 0; attempt < reg_max; ++attempt) {
+                reg = router.registerNode(info);
+                if (reg.success) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(200 * (attempt + 1)));
+            }
+            if (!reg.success) {
+                // Fallback to standalone mode when router is unavailable
+                spdlog::warn("Router registration failed: {} - continuing in standalone mode", reg.error);
+                std::cout << "Router unavailable, running in standalone mode..." << std::endl;
             } else {
-                std::cerr << "  Failed to delete: " << model_id << std::endl;
+                // Successfully registered with router - sync models and start heartbeat
+
+                // Sync models from router (model_sync already created earlier for remote path resolution & initial sync)
+                std::cout << "Syncing models from router..." << std::endl;
+                model_sync->setNodeToken(reg.node_token);
+                auto sync_result = model_sync->sync();
+                if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
+                    // If nothing synced and no local models, treat as recoverable error and retry once
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    sync_result = model_sync->sync();
+                }
+
+                // Skip model deletion for now - router catalog may not include all local models
+                // In future, consider a config flag to control this behavior
+                if (!sync_result.to_delete.empty()) {
+                    spdlog::info("Skipping deletion of {} models not in router (local models preserved)",
+                                 sync_result.to_delete.size());
+                }
+
+                // Heartbeat thread (only when connected to router)
+                std::cout << "Starting heartbeat thread..." << std::endl;
+                std::string node_token = reg.node_token;
+                heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg,
+                                                model_sync,
+                                                supported_runtimes
+#ifdef USE_WHISPER
+                                                , &whisper_manager
+#endif
+#ifdef USE_ONNX_RUNTIME
+                                                , &tts_manager
+#endif
+                                                , &resource_monitor
+                                                ]() {
+                    while (llm_node::is_running()) {
+                        // 現在ロードされているモデルを取得
+                        auto loaded_models = llama_manager.getLoadedModels();
+                        // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
+                        std::vector<std::string> loaded_embedding_models;
+                        std::vector<std::string> loaded_asr_models;
+                        std::vector<std::string> loaded_tts_models;
+#ifdef USE_WHISPER
+                        loaded_asr_models = whisper_manager.getLoadedModels();
+#endif
+#ifdef USE_ONNX_RUNTIME
+                        loaded_tts_models = tts_manager.getLoadedModels();
+#endif
+                        std::optional<llm_node::SyncStatusForRouter> sync_payload;
+                        if (model_sync) {
+                            const auto status = model_sync->getStatus();
+                            auto state_to_string = [](llm_node::SyncState state) {
+                                switch (state) {
+                                    case llm_node::SyncState::Idle:
+                                        return std::string("idle");
+                                    case llm_node::SyncState::Running:
+                                        return std::string("running");
+                                    case llm_node::SyncState::Success:
+                                        return std::string("success");
+                                    case llm_node::SyncState::Failed:
+                                        return std::string("failed");
+                                }
+                                return std::string("idle");
+                            };
+                            llm_node::SyncStatusForRouter payload;
+                            payload.state = state_to_string(status.state);
+                            if (status.current_download.has_value()) {
+                                payload.progress = llm_node::SyncProgressForRouter{
+                                    status.current_download->model_id,
+                                    status.current_download->file,
+                                    static_cast<uint64_t>(status.current_download->downloaded_bytes),
+                                    static_cast<uint64_t>(status.current_download->total_bytes),
+                                };
+                            }
+                            sync_payload = payload;
+                        }
+                        std::optional<llm_node::HeartbeatMetrics> metrics;
+                        const auto usage = resource_monitor.latestUsage();
+                        if (usage.mem_total_bytes > 0 || usage.vram_total_bytes > 0) {
+                            llm_node::HeartbeatMetrics data;
+                            data.mem_used_bytes = usage.mem_used_bytes;
+                            data.mem_total_bytes = usage.mem_total_bytes;
+                            if (usage.vram_total_bytes > 0) {
+                                data.gpu_utilization = usage.vramUsageRatio() * 100.0;
+                            }
+                            metrics = data;
+                        }
+                        router.sendHeartbeat(node_id, node_token, std::nullopt, metrics,
+                                             loaded_models, loaded_embedding_models,
+                                             loaded_asr_models, loaded_tts_models,
+                                             supported_runtimes, sync_payload);
+                        std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
+                    }
+                });
             }
         }
 
@@ -393,80 +649,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Registered {} local models", local_model_names.size());
 
         llm_node::set_ready(true);
-
-        // Heartbeat thread
-        std::cout << "Starting heartbeat thread..." << std::endl;
-        std::string node_token = reg.node_token;
-        heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg,
-                                        model_sync,
-                                        supported_runtimes
-#ifdef USE_WHISPER
-                                        , &whisper_manager
-#endif
-#ifdef USE_ONNX_RUNTIME
-                                        , &tts_manager
-#endif
-                                        , &resource_monitor
-                                        ]() {
-            while (llm_node::is_running()) {
-                // 現在ロードされているモデルを取得
-                auto loaded_models = llama_manager.getLoadedModels();
-                // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
-                std::vector<std::string> loaded_embedding_models;
-                std::vector<std::string> loaded_asr_models;
-                std::vector<std::string> loaded_tts_models;
-#ifdef USE_WHISPER
-                loaded_asr_models = whisper_manager.getLoadedModels();
-#endif
-#ifdef USE_ONNX_RUNTIME
-                loaded_tts_models = tts_manager.getLoadedModels();
-#endif
-                std::optional<llm_node::SyncStatusForRouter> sync_payload;
-                if (model_sync) {
-                    const auto status = model_sync->getStatus();
-                    auto state_to_string = [](llm_node::SyncState state) {
-                        switch (state) {
-                            case llm_node::SyncState::Idle:
-                                return std::string("idle");
-                            case llm_node::SyncState::Running:
-                                return std::string("running");
-                            case llm_node::SyncState::Success:
-                                return std::string("success");
-                            case llm_node::SyncState::Failed:
-                                return std::string("failed");
-                        }
-                        return std::string("idle");
-                    };
-                    llm_node::SyncStatusForRouter payload;
-                    payload.state = state_to_string(status.state);
-                    if (status.current_download.has_value()) {
-                        payload.progress = llm_node::SyncProgressForRouter{
-                            status.current_download->model_id,
-                            status.current_download->file,
-                            static_cast<uint64_t>(status.current_download->downloaded_bytes),
-                            static_cast<uint64_t>(status.current_download->total_bytes),
-                        };
-                    }
-                    sync_payload = payload;
-                }
-                std::optional<llm_node::HeartbeatMetrics> metrics;
-                const auto usage = resource_monitor.latestUsage();
-                if (usage.mem_total_bytes > 0 || usage.vram_total_bytes > 0) {
-                    llm_node::HeartbeatMetrics data;
-                    data.mem_used_bytes = usage.mem_used_bytes;
-                    data.mem_total_bytes = usage.mem_total_bytes;
-                    if (usage.vram_total_bytes > 0) {
-                        data.gpu_utilization = usage.vramUsageRatio() * 100.0;
-                    }
-                    metrics = data;
-                }
-                router.sendHeartbeat(node_id, node_token, std::nullopt, metrics,
-                                     loaded_models, loaded_embedding_models,
-                                     loaded_asr_models, loaded_tts_models,
-                                     supported_runtimes, sync_payload);
-                std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
-            }
-        });
 
         std::cout << "Node initialized successfully, ready to serve requests" << std::endl;
 
@@ -530,10 +712,58 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+    // Branch based on subcommand
+    switch (cli_result.subcommand) {
+        case llm_node::Subcommand::NodeServe: {
+            std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+            auto cfg = llm_node::loadNodeConfig();
+            // Override config with CLI options if specified
+            if (cli_result.serve_options.port != 0) {
+                cfg.node_port = cli_result.serve_options.port;
+            }
+            if (!cli_result.serve_options.host.empty()) {
+                cfg.bind_address = cli_result.serve_options.host;
+            }
+            return run_node(cfg, /*single_iteration=*/false);
+        }
 
-    auto cfg = llm_node::loadNodeConfig();
-    return run_node(cfg, /*single_iteration=*/false);
+        case llm_node::Subcommand::NodeRun:
+            return llm_node::cli::commands::run(cli_result.run_options);
+
+        case llm_node::Subcommand::NodePull:
+            return llm_node::cli::commands::pull(cli_result.pull_options);
+
+        case llm_node::Subcommand::NodeList:
+            return llm_node::cli::commands::list(cli_result.model_options);
+
+        case llm_node::Subcommand::NodeShow:
+            return llm_node::cli::commands::show(cli_result.show_options);
+
+        case llm_node::Subcommand::NodeRm:
+            return llm_node::cli::commands::rm(cli_result.model_options);
+
+        case llm_node::Subcommand::NodeStop:
+            return llm_node::cli::commands::stop(cli_result.model_options);
+
+        case llm_node::Subcommand::NodePs:
+            return llm_node::cli::commands::ps();
+
+        case llm_node::Subcommand::RouterNodes:
+            return llm_node::cli::commands::router_nodes();
+
+        case llm_node::Subcommand::RouterModels:
+            return llm_node::cli::commands::router_models();
+
+        case llm_node::Subcommand::RouterStatus:
+            return llm_node::cli::commands::router_status();
+
+        case llm_node::Subcommand::None:
+        default:
+            // Default to serve (legacy behavior for backward compatibility)
+            std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+            auto cfg = llm_node::loadNodeConfig();
+            return run_node(cfg, /*single_iteration=*/false);
+    }
 }
 #endif
 

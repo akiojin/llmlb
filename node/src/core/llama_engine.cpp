@@ -65,6 +65,81 @@ void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
     if (!params.on_token_callback) return;
     params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
 }
+
+// T049: Compute log-sum-exp for numerical stability
+double logsumexp(const float* logits, int n_vocab) {
+    // Find max for numerical stability
+    float max_logit = logits[0];
+    for (int i = 1; i < n_vocab; ++i) {
+        if (logits[i] > max_logit) {
+            max_logit = logits[i];
+        }
+    }
+    // Compute log(sum(exp(logit - max)))
+    double sum_exp = 0.0;
+    for (int i = 0; i < n_vocab; ++i) {
+        sum_exp += std::exp(static_cast<double>(logits[i]) - max_logit);
+    }
+    return max_logit + std::log(sum_exp);
+}
+
+// T049: Capture token logprobs from llama context
+void capture_token_logprob(
+    llama_context* ctx,
+    const llama_vocab* vocab,
+    llama_token sampled_token,
+    int top_k,
+    std::vector<TokenLogprob>* out_logprobs
+) {
+    if (!out_logprobs) return;
+
+    const float* logits = llama_get_logits_ith(ctx, -1);
+    if (!logits) {
+        spdlog::warn("Failed to get logits for logprob calculation");
+        return;
+    }
+
+    const int n_vocab = llama_vocab_n_tokens(vocab);
+    const double lse = logsumexp(logits, n_vocab);
+
+    TokenLogprob entry;
+
+    // Get token string
+    char buf[256];
+    int32_t len = llama_token_to_piece(vocab, sampled_token, buf, sizeof(buf), 0, false);
+    if (len > 0) {
+        entry.token = std::string(buf, static_cast<size_t>(len));
+    }
+
+    // Compute logprob for sampled token: logprob = logit - logsumexp
+    entry.logprob = static_cast<double>(logits[sampled_token]) - lse;
+
+    // Get top-k alternatives if requested
+    if (top_k > 0) {
+        // Create sorted list of (logprob, token_id)
+        std::vector<std::pair<double, llama_token>> candidates;
+        candidates.reserve(static_cast<size_t>(n_vocab));
+        for (int i = 0; i < n_vocab; ++i) {
+            double lp = static_cast<double>(logits[i]) - lse;
+            candidates.emplace_back(lp, static_cast<llama_token>(i));
+        }
+        // Partial sort to get top-k
+        int k = std::min(top_k, n_vocab);
+        std::partial_sort(candidates.begin(), candidates.begin() + k, candidates.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+
+        for (int i = 0; i < k; ++i) {
+            char alt_buf[256];
+            int32_t alt_len = llama_token_to_piece(vocab, candidates[i].second, alt_buf, sizeof(alt_buf), 0, false);
+            if (alt_len > 0) {
+                std::string alt_token(alt_buf, static_cast<size_t>(alt_len));
+                entry.top_logprobs.emplace_back(alt_token, candidates[i].first);
+            }
+        }
+    }
+
+    out_logprobs->push_back(std::move(entry));
+}
 }  // namespace
 
 static const std::vector<std::string> kDefaultStopSequences = {
@@ -78,9 +153,6 @@ static const std::vector<std::string> kDefaultStopSequences = {
 
 // 前方宣言
 static std::string stripControlTokens(std::string text);
-static std::string extractGptOssFinalMessage(const std::string& output);
-static std::string cleanGptOssOutput(const std::string& output);
-std::string extractGptOssFinalMessageForTest(const std::string& output);
 
 // コンストラクタ
 LlamaEngine::LlamaEngine(LlamaManager& manager)
@@ -146,227 +218,21 @@ static std::string stripControlTokens(std::string text) {
     return text.substr(l, r - l + 1);
 }
 
-// gpt-ossテンプレート（モデル側にテンプレが無い場合のフォールバック）。ユーザー入力は改変しない。
-static const char * GPT_OSS_TEMPLATE = R"tmpl({% for message in messages %}
-{% if message['role'] == 'system' %}
-<|start|>system<|message|>{{ message['content'] }}<|end|>
-{% elif message['role'] == 'user' %}
-<|start|>user<|message|>{{ message['content'] }}<|end|>
-{% elif message['role'] == 'assistant' %}
-<|start|>assistant<|channel|>final<|message|>{{ message['content'] }}<|end|>
-{% endif %}
-{% endfor %}
-<|start|>assistant<|channel|>final<|message|>
-)tmpl";
-
-// gpt-oss: finalチャンネルだけを抽出して制御トークンを除去
-static std::string extractGptOssFinalMessage(const std::string& output) {
-    const std::string marker = "<|channel|>final<|message|>";
-    const std::string end = "<|end|>";
-
-    size_t mpos = output.rfind(marker);
-    if (mpos == std::string::npos) return output;
-    size_t start = mpos + marker.size();
-    size_t endpos = output.find(end, start);
-    std::string seg = endpos == std::string::npos ? output.substr(start) : output.substr(start, endpos - start);
-    return stripControlTokens(seg);
-}
-
-// テスト用に公開する薄いラッパー（本番コードには影響なし）
-std::string extractGptOssFinalMessageForTest(const std::string& output) {
-    return extractGptOssFinalMessage(output);
-}
-
-std::string cleanGptOssOutputForTest(const std::string& output) {
-    return cleanGptOssOutput(output);
-}
-
-std::string postProcessGeneratedTextForTest(const std::string& output, bool is_gptoss) {
+// テスト用の後処理関数
+std::string postProcessGeneratedTextForTest(const std::string& output) {
     std::string processed = output;
 
     // Keep in sync with LlamaEngine::generateChat() post-processing.
     auto stop_sequences = merge_stop_sequences(kDefaultStopSequences, {});
     apply_stop_sequences_suffix(processed, stop_sequences);
 
-    if (is_gptoss) {
-        processed = cleanGptOssOutput(processed);
-    }
-
     return processed;
-}
-
-// gpt-oss形式でプロンプトを構築する関数
-// gpt-oss固有トークン: <|start|>, <|message|>, <|end|>, <|channel|>
-// 応答形式: <|start|>assistant<|channel|>final<|message|>content<|end|>
-// Reasoning: none を設定して推論チャンネルを無効化
-static std::string buildGptOssPrompt(const std::vector<ChatMessage>& messages) {
-    std::ostringstream oss;
-
-    // システムメッセージの有無をチェック
-    bool hasSystemMessage = false;
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-            hasSystemMessage = true;
-            break;
-        }
-    }
-
-    // システムメッセージがない場合、推論無効のシステムプロンプトを追加
-    if (!hasSystemMessage) {
-        oss << "<|start|>system<|message|>You are a helpful assistant.\n\nReasoning: none<|end|>";
-    }
-
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-            // システムメッセージに推論設定を追加
-            oss << "<|start|>system<|message|>" << msg.content << "\n\nReasoning: none<|end|>";
-        } else {
-            oss << "<|start|>" << msg.role << "<|message|>" << msg.content << "<|end|>";
-        }
-    }
-
-    // アシスタント応答の開始（final チャンネルでコンテンツを直接生成）
-    oss << "<|start|>assistant<|channel|>final<|message|>";
-    return oss.str();
-}
-
-// gpt-ossモデルの出力から特殊トークンを除去する後処理関数
-static std::string cleanGptOssOutput(const std::string& output) {
-    // gpt-ossがanalysis/finalチャンネルを含む場合は、finalのみを抽出して返す。
-    // 文字列置換ベースの除去だけだと "assistantfinal..." のようなゴミが残り得るため、
-    // まずはチャンネルマーカーでパースする。
-    const std::string marker = "<|channel|>final<|message|>";
-    if (output.find(marker) != std::string::npos) {
-        return extractGptOssFinalMessage(output);
-    }
-
-    std::string result = output;
-
-    // gpt-ossおよびChatMLの特殊トークンリスト
-    const std::vector<std::string> tokens_to_remove = {
-        // gpt-oss tokens
-        "<|start|>", "<|end|>", "<|message|>", "<|channel|>",
-        "<|startoftext|>", "<|endoftext|>", "<|return|>", "<|call|>",
-        "<|constrain|>", "<|endofprompt|>",
-        // ChatML tokens
-        "<|im_start|>", "<|im_end|>", "<|assistant>", "<|user>", "<|system>",
-        // Common control tokens
-        "<|eot_id|>", "</s>", "<s>", "<|begin_of_text|>", "<|end_of_text|>"
-    };
-
-    // 特殊トークンを除去
-    for (const auto& token : tokens_to_remove) {
-        size_t pos = 0;
-        while ((pos = result.find(token, pos)) != std::string::npos) {
-            result.erase(pos, token.length());
-        }
-    }
-
-    // "to=" パターンを全て除去（例: "to=assistant", "to=You", "to=user"）
-    // 正規表現的に "to=" + 英数字列 を除去
-    {
-        size_t pos = 0;
-        while ((pos = result.find("to=", pos)) != std::string::npos) {
-            size_t end_pos = pos + 3;  // "to=" の後ろ
-            // 英数字とアンダースコアが続く間は除去対象
-            while (end_pos < result.size() &&
-                   (std::isalnum(static_cast<unsigned char>(result[end_pos])) ||
-                    result[end_pos] == '_')) {
-                end_pos++;
-            }
-            result.erase(pos, end_pos - pos);
-        }
-    }
-
-    // チャンネル名やロール名を含むパターンを除去
-    // 例: "assistantanalysis:", "analysis:", "final:", "assistantfinal:", etc.
-    const std::vector<std::string> channel_patterns = {
-        // 連結パターン（優先度高）
-        "assistantanalysis:", "assistantfinal:", "assistantcommentary:",
-        "useranalysis:", "userfinal:", "usercommentary:",
-        "systemanalysis:", "systemfinal:", "systemcommentary:",
-        // 単独パターン
-        "analysis:", "final:", "commentary:",
-        "assistant:", "user:", "system:", "developer:",
-        // "=name" パターン
-        "=assistant", "=analysis", "=final", "=commentary",
-        "=user", "=system", "=developer"
-    };
-    for (const auto& pattern : channel_patterns) {
-        size_t pos = 0;
-        while ((pos = result.find(pattern, pos)) != std::string::npos) {
-            result.erase(pos, pattern.length());
-        }
-    }
-
-    // 行頭のチャンネル名（コロンなし）を除去
-    const std::vector<std::string> channel_names = {
-        "assistant", "analysis", "final", "commentary", "user", "system", "developer"
-    };
-    for (const auto& name : channel_names) {
-        // 行頭の "name\n" パターン
-        std::string line_pattern = "\n" + name + "\n";
-        size_t pos = 0;
-        while ((pos = result.find(line_pattern, pos)) != std::string::npos) {
-            result.erase(pos + 1, name.length() + 1);  // 最初の\nは残す
-        }
-        // 文字列先頭の場合
-        if (result.find(name + "\n") == 0) {
-            result.erase(0, name.length() + 1);
-        }
-    }
-
-    // 先頭と末尾の空白を除去
-    size_t start = result.find_first_not_of(" \t\n\r");
-    if (start == std::string::npos) {
-        return "";
-    }
-    size_t end = result.find_last_not_of(" \t\n\r");
-    return result.substr(start, end - start + 1);
-}
-
-// モデルがgpt-oss形式かどうかを判定
-// モデルのテンプレートやアーキテクチャから判定する
-static bool isGptOssModel(llama_model* model) {
-    // 1. アーキテクチャ名で判定（最も確実）
-    char arch_buf[64] = {0};
-    int arch_len = llama_model_meta_val_str(model, "general.architecture", arch_buf, sizeof(arch_buf));
-    spdlog::info("isGptOssModel: arch_len={}, arch_buf='{}'", arch_len, arch_buf);
-    if (arch_len > 0) {
-        std::string arch(arch_buf);
-        spdlog::info("isGptOssModel: checking architecture '{}'", arch);
-        if (arch == "gpt-oss") {
-            spdlog::info("Detected gpt-oss model by architecture: {}", arch);
-            return true;
-        }
-    }
-
-    // 2. チャットテンプレートにgpt-oss固有トークンが含まれているかチェック
-    const char* tmpl = llama_model_chat_template(model, nullptr);
-    spdlog::info("isGptOssModel: chat_template={}", tmpl != nullptr ? tmpl : "(null)");
-    if (tmpl != nullptr && tmpl[0] != '\0') {
-        std::string template_str(tmpl);
-        if (template_str.find("<|start|>") != std::string::npos ||
-            template_str.find("<|message|>") != std::string::npos) {
-            spdlog::info("Detected gpt-oss model by chat template tokens");
-            return true;
-        }
-    }
-
-    spdlog::info("isGptOssModel: not detected as gpt-oss");
-    return false;
 }
 
 // モデル固有のチャットテンプレートを適用してプロンプトを構築
 static std::string applyModelChatTemplate(
     llama_model* model,
     const std::vector<ChatMessage>& messages) {
-
-    // gpt-ossモデルの場合はgpt-oss専用形式を使用
-    if (isGptOssModel(model)) {
-        spdlog::info("Detected gpt-oss model, using gpt-oss chat format");
-        return buildGptOssPrompt(messages);
-    }
 
     // llama_chat_message 配列を構築
     std::vector<llama_chat_message> llama_messages;
@@ -378,15 +244,10 @@ static std::string applyModelChatTemplate(
     // モデルからチャットテンプレートを取得
     const char* tmpl = llama_model_chat_template(model, nullptr);
 
-    // テンプレートがない場合はgpt-oss用テンプレかChatMLにフォールバック
+    // テンプレートがない場合はChatMLにフォールバック
     if (tmpl == nullptr || tmpl[0] == '\0') {
-        if (isGptOssModel(model)) {
-            spdlog::info("Model has no chat template, using built-in gpt-oss template");
-            tmpl = GPT_OSS_TEMPLATE;
-        } else {
-            spdlog::info("Model has no chat template, using ChatML format");
-            return buildChatMLPrompt(messages);
-        }
+        spdlog::info("Model has no chat template, using ChatML format");
+        return buildChatMLPrompt(messages);
     }
 
     spdlog::debug("Model chat template found: {}", tmpl);
@@ -461,12 +322,8 @@ std::string LlamaEngine::generateChat(
     }
 
     // 6. トークン化
-    // gpt-ossモデルはadd_bos_token=falseを指定しているため、
-    // add_special=falseに設定。parse_special=trueで特殊トークンを認識させる。
-    bool is_gptoss = isGptOssModel(model);
-    bool add_special = !is_gptoss;  // gpt-oss以外はBOS追加
-    bool parse_special = is_gptoss; // gpt-ossは特殊トークンをパース
-
+    // add_special=true: BOSトークンを追加
+    // parse_special=true: 特殊トークンをパース
     std::vector<llama_token> tokens(prompt.size() + 128);
     int32_t n_tokens = llama_tokenize(
         vocab,
@@ -474,8 +331,8 @@ std::string LlamaEngine::generateChat(
         static_cast<int32_t>(prompt.size()),
         tokens.data(),
         static_cast<int32_t>(tokens.size()),
-        add_special,
-        parse_special
+        true,   // add_special
+        true    // parse_special
     );
 
     if (n_tokens < 0) {
@@ -487,8 +344,8 @@ std::string LlamaEngine::generateChat(
             static_cast<int32_t>(prompt.size()),
             tokens.data(),
             static_cast<int32_t>(tokens.size()),
-            add_special,
-            parse_special
+            true,   // add_special
+            true    // parse_special
         );
     }
 
@@ -526,11 +383,12 @@ std::string LlamaEngine::generateChat(
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
 
     // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
+    // T028-T029: OpenAI互換のpresence_penalty/frequency_penaltyを適用
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,                      // last_n: 直近64トークンを考慮
-        params.repeat_penalty,   // repeat_penalty: 1.1
-        0.0f,                    // frequency_penalty
-        0.0f                     // presence_penalty
+        64,                        // last_n: 直近64トークンを考慮
+        params.repeat_penalty,     // repeat_penalty: 1.1
+        params.frequency_penalty,  // frequency_penalty: OpenAI互換
+        params.presence_penalty    // presence_penalty: OpenAI互換
     ));
 
     // シード設定
@@ -562,8 +420,19 @@ std::string LlamaEngine::generateChat(
     }
 
     for (size_t i = 0; i < effective_max_tokens; i++) {
+        // T182: アボートチェック（トークン間タイムアウト等）
+        if (params.abort_callback && params.abort_callback(params.abort_callback_ctx)) {
+            spdlog::warn("Generation aborted by abort_callback at token {}", i);
+            break;
+        }
+
         // トークンサンプリング
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+        // T049: Capture logprobs if requested (must be done before EOG check while logits are available)
+        if (params.logprobs && params.out_logprobs) {
+            capture_token_logprob(ctx, vocab, new_token, params.top_logprobs, params.out_logprobs);
+        }
 
         // EOG（End of Generation）チェック
         if (llama_vocab_is_eog(vocab, new_token)) {
@@ -607,13 +476,6 @@ std::string LlamaEngine::generateChat(
 
     // 10. クリーンアップ
     llama_sampler_free(sampler);
-
-    // 11. gpt-ossモデルの場合は特殊トークンを除去する後処理を適用
-    if (is_gptoss) {
-        spdlog::info("Applying gpt-oss output cleanup, before: {} chars", output.size());
-        output = cleanGptOssOutput(output);
-        spdlog::info("After cleanup: {} chars", output.size());
-    }
 
     // Debug: log final output hex dump (first 100 bytes)
     std::string hex_output;
@@ -667,22 +529,18 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     const llama_vocab* vocab = llama_model_get_vocab(model);
     std::string prompt = applyModelChatTemplate(model, messages);
 
-    // gpt-ossモデルはadd_bos_token=falseを指定しているため、
-    // add_special=falseに設定。parse_special=trueで特殊トークンを認識させる。
-    bool is_gptoss = isGptOssModel(model);
-    bool add_special = !is_gptoss;  // gpt-oss以外はBOS追加
-    bool parse_special = is_gptoss; // gpt-ossは特殊トークンをパース
-
+    // add_special=true: BOSトークンを追加
+    // parse_special=true: 特殊トークンをパース
     std::vector<llama_token> tokens(prompt.size() + 128);
     int32_t n_tokens = llama_tokenize(
         vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-        tokens.data(), static_cast<int32_t>(tokens.size()), add_special, parse_special);
+        tokens.data(), static_cast<int32_t>(tokens.size()), true, true);
 
     if (n_tokens < 0) {
         tokens.resize(static_cast<size_t>(-n_tokens));
         n_tokens = llama_tokenize(
             vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-            tokens.data(), static_cast<int32_t>(tokens.size()), add_special, parse_special);
+            tokens.data(), static_cast<int32_t>(tokens.size()), true, true);
     }
 
     tokens.resize(static_cast<size_t>(n_tokens));
@@ -712,11 +570,12 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temperature));
 
     // 繰り返し抑制ペナルティを追加（重要：反復出力を防ぐ）
+    // T028-T029: OpenAI互換のpresence_penalty/frequency_penaltyを適用
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
-        64,                      // last_n: 直近64トークンを考慮
-        params.repeat_penalty,   // repeat_penalty: 1.1
-        0.0f,                    // frequency_penalty
-        0.0f                     // presence_penalty
+        64,                        // last_n: 直近64トークンを考慮
+        params.repeat_penalty,     // repeat_penalty: 1.1
+        params.frequency_penalty,  // frequency_penalty: OpenAI互換
+        params.presence_penalty    // presence_penalty: OpenAI互換
     ));
 
     uint32_t seed = params.seed;
@@ -753,7 +612,18 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     }
 
     for (size_t i = 0; i < effective_max_tokens && !stop_stream.stopped(); i++) {
+        // T182: アボートチェック（トークン間タイムアウト等）
+        if (params.abort_callback && params.abort_callback(params.abort_callback_ctx)) {
+            spdlog::warn("Generation aborted by abort_callback at token {}", i);
+            break;
+        }
+
         llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+
+        // T049: Capture logprobs if requested (for streaming, typically disabled at API level)
+        if (params.logprobs && params.out_logprobs) {
+            capture_token_logprob(ctx, vocab, new_token, params.top_logprobs, params.out_logprobs);
+        }
 
         if (llama_vocab_is_eog(vocab, new_token)) {
             break;

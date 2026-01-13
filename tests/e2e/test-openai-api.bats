@@ -49,7 +49,14 @@ check_router() {
 }
 
 # Helper to get first available model
+# Prefers LLM_TEST_MODEL env var, then local models, then any model
 get_model() {
+    # Use explicit model if specified
+    if [[ -n "${LLM_TEST_MODEL:-}" ]]; then
+        echo "$LLM_TEST_MODEL"
+        return
+    fi
+    # Otherwise get first model from list
     api_request "/v1/models" | jq -r '.data[0].id // empty'
 }
 

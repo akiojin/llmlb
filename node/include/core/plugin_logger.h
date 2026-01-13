@@ -32,7 +32,7 @@ enum class LogLevel {
  *
  * 使用例:
  * @code
- * PluginLogger logger("gptoss");
+ * PluginLogger logger("my_plugin");
  * logger.info("Model loaded: {}", model_name);
  * logger.warn("Low VRAM: {} MB remaining", vram_mb);
  * @endcode

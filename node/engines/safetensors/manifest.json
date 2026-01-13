@@ -1,0 +1,19 @@
+{
+  "engine_id": "safetensors_cpp",
+  "engine_version": "0.1.0",
+  "abi_version": 2,
+  "runtimes": ["safetensors_cpp"],
+  "formats": ["safetensors"],
+  "architectures": [
+    "llama", "mistral", "gemma", "qwen", "phi",
+    "nemotron", "deepseek", "gptoss", "granite", "smollm",
+    "kimi", "moondream", "devstral", "magistral",
+    "snowflake", "nomic", "mxbai", "minilm"
+  ],
+  "modalities": ["completion", "embedding"],
+  "license": "MIT",
+  "supports_vision": false,
+  "capabilities": ["text", "embeddings"],
+  "gpu_targets": ["metal", "cuda", "rocm", "vulkan"],
+  "library": "llm_engine_safetensors"
+}

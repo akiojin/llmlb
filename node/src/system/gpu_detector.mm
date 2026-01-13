@@ -95,6 +95,27 @@ double GpuDetector::getCapabilityScore() const {
     return score;
 }
 
+GpuBackend GpuDetector::getGpuBackend() const {
+    for (const auto& dev : detected_devices_) {
+        if (!dev.is_available) {
+            continue;
+        }
+        if (dev.vendor == "apple") {
+            return GpuBackend::Metal;
+        }
+        if (dev.vendor == "nvidia") {
+            return GpuBackend::Cuda;
+        }
+        if (dev.vendor == "amd") {
+            return GpuBackend::Rocm;
+        }
+        if (dev.vendor == "directml") {
+            return GpuBackend::DirectML;
+        }
+    }
+    return GpuBackend::Cpu;
+}
+
 std::optional<int> GpuDetector::selectGpu(std::optional<int> prefer_loaded_gpu) const {
     const GpuDevice* preferred = nullptr;
     if (prefer_loaded_gpu.has_value()) {
@@ -119,22 +140,6 @@ std::optional<int> GpuDetector::selectGpu(std::optional<int> prefer_loaded_gpu) 
     }
     if (best) return best->id;
     return std::nullopt;
-}
-
-GpuBackend GpuDetector::getGpuBackend() const {
-    // Find the first available GPU and return its backend
-    for (const auto& dev : detected_devices_) {
-        if (!dev.is_available) continue;
-
-        if (dev.vendor == "nvidia") {
-            return GpuBackend::kCuda;
-        } else if (dev.vendor == "apple") {
-            return GpuBackend::kMetal;
-        } else if (dev.vendor == "amd") {
-            return GpuBackend::kRocm;
-        }
-    }
-    return GpuBackend::kCpu;
 }
 
 std::vector<GpuDevice> GpuDetector::detectCuda() {

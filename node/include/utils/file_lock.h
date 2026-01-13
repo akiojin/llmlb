@@ -58,7 +58,7 @@ inline void FileLock::acquire() {
     }
 #elif defined(_WIN32)
     handle_ = CreateFileA(target_.string().c_str(), GENERIC_READ | GENERIC_WRITE,
-                          0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                          FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle_ != INVALID_HANDLE_VALUE && handle_ != nullptr) {
         OVERLAPPED ov = {};
         if (LockFileEx(handle_, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0,

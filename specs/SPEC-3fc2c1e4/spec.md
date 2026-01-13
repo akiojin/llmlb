@@ -94,7 +94,7 @@ Engine Host (Plugin Loader)
 - **manifest.json**
   - engine_id / engine_version / abi_version
   - runtimes / formats / architectures / capabilities / modalities
-  - gpu_targets（metal / cuda / rocm / vulkan）
+- gpu_targets（metal / cuda / rocm / vulkan）
   - library（共有ライブラリ名）
 - **互換性**: ABI 互換を破る変更は `abi_version` を更新する。
 

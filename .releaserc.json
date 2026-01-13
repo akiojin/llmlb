@@ -1,5 +1,11 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "main",
+    {
+      "name": "develop",
+      "prerelease": "alpha"
+    }
+  ],
   "repositoryUrl": "https://github.com/akiojin/llm-router",
   "tagFormat": "v${version}",
   "npmPublish": false,

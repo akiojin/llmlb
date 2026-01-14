@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <cstdint>
 #include <atomic>
@@ -92,6 +93,9 @@ struct TokenizerImpl {
 
     // BPE merge rules
     std::vector<std::pair<std::string, std::string>> merges;
+
+    // Special tokens (e.g., <|im_start|>, <|im_end|>, etc.)
+    std::unordered_set<std::string> special_tokens;
 };
 
 /* Chat message for template application */

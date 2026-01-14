@@ -1233,7 +1233,9 @@ pub async fn get_model_registry_manifest(
 
     let runtime_hint = match selection.format {
         ArtifactFormat::Gguf => Some(vec!["llama_cpp".to_string()]),
-        ArtifactFormat::Safetensors => Some(vec!["safetensors_cpp".to_string()]),
+        ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo)
+            .await
+            .or_else(|| Some(vec!["safetensors_cpp".to_string()])),
     };
     let manifest_quantization = match selection.format {
         ArtifactFormat::Gguf => infer_quantization_from_filename(&selection.filename),

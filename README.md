@@ -65,6 +65,8 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
 MCP server. This is the recommended approach over using Bash with curl commands
 directly.
+The MCP server is installed and run with npm/npx; the repository root uses pnpm
+for workspace tasks.
 
 ### Why MCP Server over Bash + curl?
 

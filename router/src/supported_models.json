@@ -1,0 +1,13 @@
+[
+  {
+    "id": "qwen/qwen2.5-0.5b-instruct-gguf",
+    "name": "Qwen2.5 0.5B Instruct",
+    "description": "Qwen2.5 0.5B Instruct GGUF (sample)",
+    "repo": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+    "recommended_filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "size_bytes": 1000000000,
+    "required_memory_bytes": 1500000000,
+    "tags": ["gguf", "chat"],
+    "capabilities": ["TextGeneration"]
+  }
+]

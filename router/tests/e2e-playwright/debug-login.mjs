@@ -14,7 +14,8 @@ page.on('pageerror', err => {
 });
 
 console.log('Navigating to login page...');
-await page.goto('http://localhost:32768/dashboard/login.html', { waitUntil: 'networkidle', timeout: 30000 });
+const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:32768';
+await page.goto(`${baseUrl}/dashboard/login.html`, { waitUntil: 'networkidle', timeout: 30000 });
 
 // Wait a bit for any lazy loading
 await page.waitForTimeout(3000);

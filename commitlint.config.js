@@ -1,10 +1,13 @@
+const getFirstLine = (message) =>
+  message.split('\n')[0].replace(/^\uFEFF/, '').trimStart();
+
 module.exports = {
   extends: ['@commitlint/config-conventional'],
   ignores: [
-    // Merge commits
-    (message) => message.startsWith('Merge '),
+    // Merge commits (handle BOM/leading whitespace)
+    (message) => getFirstLine(message).startsWith('Merge '),
     // GitHub squash merge commits (e.g., "feature/branch-name (#123)")
-    (message) => /\(#\d+\)$/.test(message.split('\n')[0]),
+    (message) => /\(#\d+\)$/.test(getFirstLine(message)),
   ],
   rules: {
     'header-max-length': [2, 'always', 72],

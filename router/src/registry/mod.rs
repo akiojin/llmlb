@@ -166,16 +166,18 @@ impl NodeRegistry {
     pub async fn register(&self, req: RegisterRequest) -> RouterResult<RegisterResponse> {
         let mut nodes = self.nodes.write().await;
 
-        // 同じマシン名のノードが既に存在するか確認
+        // 同じIPアドレス+ポートのノードが既に存在するか確認
+        // （同じ端末でも異なるポートで動作するノード/Ollamaは別々に登録可能）
         let existing = nodes
             .values()
-            .find(|n| n.machine_name == req.machine_name && n.runtime_port == req.runtime_port)
+            .find(|n| n.ip_address == req.ip_address && n.runtime_port == req.runtime_port)
             .map(|n| n.id);
 
         let (node_id, status, node) = if let Some(id) = existing {
             // 既存ノードを更新
             let node = nodes.get_mut(&id).unwrap();
             let now = Utc::now();
+            node.machine_name = req.machine_name.clone();
             node.ip_address = req.ip_address;
             node.runtime_version = req.runtime_version.clone();
             node.runtime_port = req.runtime_port;
@@ -1440,5 +1442,131 @@ mod tests {
             NodeStatus::Registering,
             "Offline状態からの復帰はRegistering状態であるべき（直接Onlineではない）"
         );
+    }
+
+    /// 同じIP+ポートで異なるmachine_nameでも既存ノードとして更新されることを検証
+    #[tokio::test]
+    async fn test_register_same_ip_port_different_machine_name_updates() {
+        let registry = NodeRegistry::new();
+
+        let req1 = RegisterRequest {
+            machine_name: "machine-a".to_string(),
+            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let first_response = registry.register(req1).await.unwrap();
+        assert_eq!(first_response.status, RegisterStatus::Registered);
+
+        // 同じIP+ポートだが異なるmachine_nameで登録
+        let req2 = RegisterRequest {
+            machine_name: "machine-b".to_string(), // 異なるmachine_name
+            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.2.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+
+        let second_response = registry.register(req2).await.unwrap();
+        // 同じIP+ポートなのでUpdatedになる（重複登録防止）
+        assert_eq!(second_response.status, RegisterStatus::Updated);
+        assert_eq!(first_response.node_id, second_response.node_id);
+
+        // machine_nameも更新される
+        let node = registry.get(first_response.node_id).await.unwrap();
+        assert_eq!(node.machine_name, "machine-b");
+        assert_eq!(node.runtime_version, "0.2.0");
+    }
+
+    /// 同じIPで異なるポートは別ノードとして登録されることを検証
+    #[tokio::test]
+    async fn test_register_same_ip_different_port_creates_multiple_nodes() {
+        let registry = NodeRegistry::new();
+
+        let req1 = RegisterRequest {
+            machine_name: "shared-machine".to_string(),
+            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+        let res1 = registry.register(req1).await.unwrap();
+        assert_eq!(res1.status, RegisterStatus::Registered);
+
+        // 同じIPだが異なるポート（例：Ollama）
+        let req2 = RegisterRequest {
+            machine_name: "shared-machine-ollama".to_string(),
+            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 11434, // Ollamaのデフォルトポート
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+        let res2 = registry.register(req2).await.unwrap();
+        // 異なるポートなので新規登録
+        assert_eq!(res2.status, RegisterStatus::Registered);
+        assert_ne!(res1.node_id, res2.node_id);
+
+        // 2つのノードが存在する
+        let nodes = registry.list().await;
+        assert_eq!(nodes.len(), 2);
+    }
+
+    /// 異なるIPで同じポートは別ノードとして登録されることを検証
+    #[tokio::test]
+    async fn test_register_different_ip_same_port_creates_multiple_nodes() {
+        let registry = NodeRegistry::new();
+
+        let req1 = RegisterRequest {
+            machine_name: "machine-1".to_string(),
+            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768,
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+        let res1 = registry.register(req1).await.unwrap();
+        assert_eq!(res1.status, RegisterStatus::Registered);
+
+        // 異なるIPで同じポート
+        let req2 = RegisterRequest {
+            machine_name: "machine-2".to_string(),
+            ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(), // 異なるIP
+            runtime_version: "0.1.0".to_string(),
+            runtime_port: 32768, // 同じポート
+            gpu_available: true,
+            gpu_devices: sample_gpu_devices(),
+            gpu_count: Some(1),
+            gpu_model: Some("Test GPU".to_string()),
+            supported_runtimes: Vec::new(),
+        };
+        let res2 = registry.register(req2).await.unwrap();
+        // 異なるIPなので新規登録
+        assert_eq!(res2.status, RegisterStatus::Registered);
+        assert_ne!(res1.node_id, res2.node_id);
+
+        // 2つのノードが存在する
+        let nodes = registry.list().await;
+        assert_eq!(nodes.len(), 2);
     }
 }

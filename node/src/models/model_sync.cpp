@@ -552,15 +552,11 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                 downloader.setChunkSize(applied_chunk);
                 downloader.setMaxBytesPerSec(applied_bps);
 
-                if (const char* logenv = std::getenv("LLM_DL_LOG_CONFIG")) {
-                    if (std::string(logenv) == "1" || std::string(logenv) == "true") {
-                        const char* source = "default";
-                        if (file_chunk > 0 || file_bps > 0) source = "manifest";
-                        else if (model_cfg.chunk_size > 0 || model_cfg.max_bps > 0) source = "model_override";
-                        spdlog::info("ModelSync: download config file={} chunk={} max_bps={} source={}",
-                                     name, applied_chunk, applied_bps, source);
-                    }
-                }
+                const char* source = "default";
+                if (file_chunk > 0 || file_bps > 0) source = "manifest";
+                else if (model_cfg.chunk_size > 0 || model_cfg.max_bps > 0) source = "model_override";
+                spdlog::info("ModelSync: download config file={} chunk={} max_bps={} source={}",
+                             name, applied_chunk, applied_bps, source);
 
                 auto progress_cb = [this, model_id, name, cb](size_t downloaded, size_t total) {
                     {

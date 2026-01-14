@@ -215,6 +215,12 @@ int32_t stcpp_model_max_context(const stcpp_model* model) {
     return impl->ggml_model ? impl->ggml_model->hparams.n_ctx_train : 0;
 }
 
+bool stcpp_model_has_trained_chat_tokens(const stcpp_model* model) {
+    if (!model) return true;  // Safe default: assume trained
+    auto* impl = reinterpret_cast<const stcpp_model_impl*>(model);
+    return impl->ggml_model ? impl->ggml_model->has_trained_chat_tokens : true;
+}
+
 stcpp_vram_estimate stcpp_model_estimate_vram(
     const char* path,
     stcpp_backend_type backend,
@@ -502,15 +508,35 @@ int32_t stcpp_token_pad(const stcpp_tokenizer* tokenizer) {
 static int32_t sample_token(
     const float* logits,
     int32_t n_vocab,
-    stcpp_sampling_params params
+    stcpp_sampling_params params,
+    const std::vector<int32_t>& prev_tokens = {}
 ) {
-    float max_logit = *std::max_element(logits, logits + n_vocab);
+    // Copy logits to apply penalties
+    std::vector<float> working(logits, logits + n_vocab);
+
+    // Apply repeat penalty to recently generated tokens
+    float repeat_penalty = (params.repeat_penalty > 0.0f) ? params.repeat_penalty : 1.2f;
+    if (repeat_penalty != 1.0f && !prev_tokens.empty()) {
+        size_t window = std::min(prev_tokens.size(), static_cast<size_t>(64));
+        for (size_t i = prev_tokens.size() - window; i < prev_tokens.size(); ++i) {
+            int32_t token = prev_tokens[i];
+            if (token >= 0 && token < n_vocab) {
+                if (working[token] > 0) {
+                    working[token] /= repeat_penalty;
+                } else {
+                    working[token] *= repeat_penalty;
+                }
+            }
+        }
+    }
+
+    float max_logit = *std::max_element(working.begin(), working.end());
 
     // Apply temperature and compute probabilities
     std::vector<float> probs(n_vocab);
     float sum = 0.0f;
     for (int32_t i = 0; i < n_vocab; ++i) {
-        float p = std::exp((logits[i] - max_logit) / std::max(params.temperature, 0.01f));
+        float p = std::exp((working[i] - max_logit) / std::max(params.temperature, 0.01f));
         probs[i] = p;
         sum += p;
     }
@@ -619,6 +645,15 @@ stcpp_error stcpp_generate(
         return STCPP_ERROR_INVALID_MODEL;
     }
 
+    // DEBUG: Print prompt and tokens
+    fprintf(stderr, "[DEBUG] stcpp_generate: prompt='%.200s...'\n", prompt);
+    fprintf(stderr, "[DEBUG] stcpp_generate: n_tokens=%zu, tokens[0:10]=", tokens.size());
+    for (size_t i = 0; i < std::min(tokens.size(), (size_t)10); i++) {
+        fprintf(stderr, "%d ", tokens[i]);
+    }
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
     // Check context size
     if (static_cast<int32_t>(tokens.size()) + max_tokens > ggml_ctx->kv_size) {
         return STCPP_ERROR_OUT_OF_MEMORY;
@@ -645,6 +680,18 @@ stcpp_error stcpp_generate(
     }
     n_past = static_cast<int32_t>(tokens.size());
 
+    // CRITICAL DEBUG: Check logits immediately after forward_pass returns
+    fprintf(stderr, "[DEBUG] stcpp_generate: RIGHT AFTER forward_pass, logits ptr=%p\n", (void*)logits.data());
+    fprintf(stderr, "[DEBUG] stcpp_generate: RIGHT AFTER forward_pass, logits[0:5]=%.4f %.4f %.4f %.4f %.4f\n",
+            logits[0], logits[1], logits[2], logits[3], logits[4]);
+    fprintf(stderr, "[DEBUG] stcpp_generate: RIGHT AFTER forward_pass, logits[198]=%.4f\n", logits[198]);
+    // Find argmax
+    auto caller_max_it = std::max_element(logits.data(), logits.data() + model->hparams.n_vocab);
+    int32_t caller_argmax = static_cast<int32_t>(caller_max_it - logits.data());
+    fprintf(stderr, "[DEBUG] stcpp_generate: RIGHT AFTER forward_pass, argmax=%d, max_val=%.4f\n",
+            caller_argmax, *caller_max_it);
+    fflush(stderr);
+
     // Generate tokens
     for (int32_t i = 0; i < max_tokens; ++i) {
         // Check cancel
@@ -652,12 +699,37 @@ stcpp_error stcpp_generate(
             return STCPP_ERROR_CANCELLED;
         }
 
-        // Sample next token
-        int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params);
+        // Debug: print logits stats before first sampling
+        if (i == 0) {
+            auto max_it = std::max_element(logits.data(), logits.data() + model->hparams.n_vocab);
+            int32_t argmax = static_cast<int32_t>(max_it - logits.data());
+            fprintf(stderr, "[DEBUG] before sample_token: n_vocab=%d, argmax=%d, logits[argmax]=%.4f\n",
+                    model->hparams.n_vocab, argmax, *max_it);
+            fprintf(stderr, "[DEBUG] before sample_token: logits[198]=%.4f, logits[65161]=%.4f\n",
+                    logits[198], logits[65161]);
+            fflush(stderr);
+        }
+
+        // Sample next token (with repeat penalty based on previously generated tokens)
+        int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params, generated_tokens);
         generated_tokens.push_back(next_token);
 
-        // Check for EOS
-        if (next_token == tokenizer->eos_token_id) {
+        // DEBUG: Show sampled token and decoded text
+        {
+            std::vector<int32_t> single_tok = {next_token};
+            std::string decoded;
+            std::string dec_err;
+            if (stcpp::detokenize(*tokenizer, single_tok, decoded, dec_err)) {
+                fprintf(stderr, "[DEBUG] stcpp_generate[%d]: sampled token=%d -> '%s'\n", i, next_token, decoded.c_str());
+            } else {
+                fprintf(stderr, "[DEBUG] stcpp_generate[%d]: sampled token=%d -> [decode failed]\n", i, next_token);
+            }
+            fflush(stderr);
+        }
+
+        // Check for stop tokens (EOS, <|im_start|>, <|im_end|>, etc.)
+        if (next_token == tokenizer->eos_token_id ||
+            tokenizer->stop_token_ids.count(next_token) > 0) {
             break;
         }
 
@@ -717,7 +789,8 @@ stcpp_error stcpp_generate_stream(
     // Tokenize prompt
     std::vector<int32_t> tokens;
     std::string error;
-    if (!stcpp::tokenize(*tokenizer, prompt, tokens, true, error)) {
+    // Note: add_bos=false because chat template already starts with <|im_start|>
+    if (!stcpp::tokenize(*tokenizer, prompt, tokens, false, error)) {
         return STCPP_ERROR_INVALID_MODEL;
     }
 
@@ -733,6 +806,7 @@ stcpp_error stcpp_generate_stream(
     stcpp::clear_kv_cache(ggml_ctx);
 
     // Generation loop
+    std::vector<int32_t> generated_tokens;  // Track tokens for repeat penalty
     std::vector<float> logits(model->hparams.n_vocab);
     int32_t n_past = 0;
 
@@ -753,11 +827,13 @@ stcpp_error stcpp_generate_stream(
             return STCPP_ERROR_CANCELLED;
         }
 
-        // Sample next token
-        int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params);
+        // Sample next token (with repeat penalty based on previously generated tokens)
+        int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params, generated_tokens);
+        generated_tokens.push_back(next_token);
 
-        // Check for EOS
-        if (next_token == tokenizer->eos_token_id) {
+        // Check for stop tokens (EOS, <|im_start|>, <|im_end|>, etc.)
+        if (next_token == tokenizer->eos_token_id ||
+            tokenizer->stop_token_ids.count(next_token) > 0) {
             break;
         }
 

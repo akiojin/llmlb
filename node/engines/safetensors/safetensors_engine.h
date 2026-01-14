@@ -79,6 +79,7 @@ private:
         stcpp_tokenizer* tokenizer{nullptr};
         size_t max_context{0};
         uint64_t vram_bytes{0};
+        bool has_trained_chat_tokens{true};  // False for base models (not instruct)
     };
 
     /**
@@ -91,11 +92,12 @@ private:
     /**
      * @brief Build a chat prompt from messages using the model's chat template
      * @param messages Chat messages
-     * @param tokenizer Tokenizer to use
+     * @param loaded Loaded model containing tokenizer and flags
      * @return Formatted prompt string
+     * @note For base models (has_trained_chat_tokens=false), uses simple format
      */
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages,
-                                stcpp_tokenizer* tokenizer) const;
+                                const LoadedModel* loaded) const;
 
     /**
      * @brief Convert InferenceParams to stcpp_sampling_params

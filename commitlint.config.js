@@ -1,6 +1,12 @@
 const getFirstLine = (message) =>
   message.split('\n')[0].replace(/^\uFEFF/, '').trimStart();
 
+const legacyMessages = new Set([
+  'Use config-based runtime hint for safetensors',
+  'Update specs for Windows CUDA primary',
+  'Fix Nemotron VRAM size compilation error',
+]);
+
 module.exports = {
   extends: ['@commitlint/config-conventional'],
   ignores: [
@@ -8,6 +14,8 @@ module.exports = {
     (message) => getFirstLine(message).startsWith('Merge '),
     // GitHub squash merge commits (e.g., "feature/branch-name (#123)")
     (message) => /\(#\d+\)$/.test(getFirstLine(message)),
+    // Legacy non-conventional commits already in history
+    (message) => legacyMessages.has(getFirstLine(message)),
   ],
   rules: {
     'header-max-length': [2, 'always', 72],

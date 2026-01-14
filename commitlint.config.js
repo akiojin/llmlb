@@ -1,5 +1,5 @@
 const getFirstLine = (message) =>
-  message.split('\n')[0].replace(/^\uFEFF/, '').trimStart();
+  message.split('\n')[0].replace(/^\uFEFF/, '').trim();
 
 const legacyMessages = new Set([
   'Use config-based runtime hint for safetensors',

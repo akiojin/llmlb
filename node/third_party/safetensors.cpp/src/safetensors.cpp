@@ -727,9 +727,8 @@ stcpp_error stcpp_generate(
             fflush(stderr);
         }
 
-        // Check for stop tokens (EOS, <|im_start|>, <|im_end|>, etc.)
-        if (next_token == tokenizer->eos_token_id ||
-            tokenizer->stop_token_ids.count(next_token) > 0) {
+        // Check for stop tokens (EOS)
+        if (next_token == tokenizer->eos_token_id) {
             break;
         }
 
@@ -831,9 +830,8 @@ stcpp_error stcpp_generate_stream(
         int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params, generated_tokens);
         generated_tokens.push_back(next_token);
 
-        // Check for stop tokens (EOS, <|im_start|>, <|im_end|>, etc.)
-        if (next_token == tokenizer->eos_token_id ||
-            tokenizer->stop_token_ids.count(next_token) > 0) {
+        // Check for stop tokens (EOS)
+        if (next_token == tokenizer->eos_token_id) {
             break;
         }
 

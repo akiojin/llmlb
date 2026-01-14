@@ -557,10 +557,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                         const char* source = "default";
                         if (file_chunk > 0 || file_bps > 0) source = "manifest";
                         else if (model_cfg.chunk_size > 0 || model_cfg.max_bps > 0) source = "model_override";
-                        std::cerr << "[downloadModel] file=" << name
-                                  << " chunk=" << applied_chunk
-                                  << " max_bps=" << applied_bps
-                                  << " source=" << source << std::endl;
+                        spdlog::info("ModelSync: download config file={} chunk={} max_bps={} source={}",
+                                     name, applied_chunk, applied_bps, source);
                     }
                 }
 

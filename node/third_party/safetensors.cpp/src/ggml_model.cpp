@@ -548,6 +548,7 @@ static size_t estimate_weight_memory(const ModelHParams& hparams) {
         mem += (size_t)n_head_kv * head_dim * sizeof(float);         // bk
         mem += (size_t)n_head_kv * head_dim * sizeof(float);         // bv
 
+
         // FFN norm (always F32)
         mem += n_embd * sizeof(float);
 
@@ -1031,6 +1032,49 @@ GgmlModel* load_ggml_model(
                 fflush(stderr);
             }
         }
+    }
+
+    // Debug: verify tok_embd has non-zero values
+    if (model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+        std::vector<float> test_data(5);
+        ggml_backend_tensor_get(model->tensors.tok_embd, test_data.data(), 0, 5 * sizeof(float));
+        fprintf(stderr, "[DEBUG] load_ggml_model: tok_embd first 5 values: %.6f %.6f %.6f %.6f %.6f\n",
+                test_data[0], test_data[1], test_data[2], test_data[3], test_data[4]);
+        fflush(stderr);
+    }
+
+    // Check if output (lm_head) was loaded - if not, use tied embeddings
+    if (model->tensors.output && model->tensors.output->buffer) {
+        std::vector<float> test_data(5);
+        ggml_backend_tensor_get(model->tensors.output, test_data.data(), 0, 5 * sizeof(float));
+
+        // Check if output is all zeros (lm_head not found in safetensors)
+        bool all_zeros = true;
+        for (int i = 0; i < 5; ++i) {
+            if (test_data[i] != 0.0f) {
+                all_zeros = false;
+                break;
+            }
+        }
+
+        if (all_zeros && model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+            // Tied embeddings: copy tok_embd data to output (lm_head)
+            size_t tensor_size = ggml_nbytes(model->tensors.output);
+            std::vector<char> buffer(tensor_size);
+            ggml_backend_tensor_get(model->tensors.tok_embd, buffer.data(), 0, tensor_size);
+            ggml_backend_tensor_set(model->tensors.output, buffer.data(), 0, tensor_size);
+
+            fprintf(stderr, "[DEBUG] load_ggml_model: tied embeddings - copied tok_embd to output (lm_head), size=%zu\n",
+                    tensor_size);
+            fflush(stderr);
+
+            // Verify the copy
+            ggml_backend_tensor_get(model->tensors.output, test_data.data(), 0, 5 * sizeof(float));
+        }
+
+        fprintf(stderr, "[DEBUG] load_ggml_model: output (lm_head) first 5 values: %.6f %.6f %.6f %.6f %.6f\n",
+                test_data[0], test_data[1], test_data[2], test_data[3], test_data[4]);
+        fflush(stderr);
     }
 
     return model.release();

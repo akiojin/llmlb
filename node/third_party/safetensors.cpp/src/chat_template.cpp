@@ -309,6 +309,7 @@ bool apply_chat_template(
         return true;
     }
 
+
     // Use cached nodes if available
     std::vector<TemplateNode> nodes;
     if (g_cached_template == tmpl.raw_template && !g_cached_nodes.empty()) {

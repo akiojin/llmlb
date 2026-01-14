@@ -420,6 +420,11 @@ static struct ggml_tensor* multi_head_attention(
         fflush(stderr);
     }
 
+    if (layer_idx == 0) {
+        fprintf(stderr, "[DEBUG] MHA[0]: K,V copied, getting full cache view\n");
+        fflush(stderr);
+    }
+
     // Get full K, V from cache (including past)
     const int32_t n_kv = n_past + n_tokens;
 
@@ -512,6 +517,15 @@ static struct ggml_tensor* multi_head_attention(
     if (layer_idx == 0) {
         ggml_set_name(V, "layer0_v_after_gqa");
         ggml_set_output(V);
+    }
+
+    if (layer_idx == 0) {
+        fprintf(stderr, "[DEBUG] MHA[0]: computing attention scores\n");
+        fprintf(stderr, "[DEBUG] MHA[0]: q shape=[%lld,%lld,%lld,%lld]\n",
+                (long long)q->ne[0], (long long)q->ne[1], (long long)q->ne[2], (long long)q->ne[3]);
+        fprintf(stderr, "[DEBUG] MHA[0]: K shape=[%lld,%lld,%lld,%lld]\n",
+                (long long)K->ne[0], (long long)K->ne[1], (long long)K->ne[2], (long long)K->ne[3]);
+        fflush(stderr);
     }
 
     if (layer_idx == 0) {
@@ -800,10 +814,20 @@ static struct ggml_tensor* build_layer(
         fflush(stderr);
     }
 
+    if (layer_idx == 0) {
+        fprintf(stderr, "[DEBUG] build_layer[0]: calling rms_norm (attn)\n");
+        fflush(stderr);
+    }
+
     // Pre-attention RMSNorm
     cur = rms_norm(ctx, cur, layer.attn_norm, hparams.norm_eps);
     if (layer_idx == 0) {
         ggml_set_name(cur, "layer0_attn_norm");
+    }
+
+    if (layer_idx == 0) {
+        fprintf(stderr, "[DEBUG] build_layer[0]: calling multi_head_attention\n");
+        fflush(stderr);
     }
 
     if (layer_idx == 0) {
@@ -865,10 +889,20 @@ static struct ggml_tensor* build_layer(
         fflush(stderr);
     }
 
+    if (layer_idx == 0) {
+        fprintf(stderr, "[DEBUG] build_layer[0]: calling rms_norm (ffn)\n");
+        fflush(stderr);
+    }
+
     // Pre-FFN RMSNorm
     cur = rms_norm(ctx, cur, layer.ffn_norm, hparams.norm_eps);
     if (layer_idx == 0) {
         ggml_set_name(cur, "layer0_ffn_norm");
+    }
+
+    if (layer_idx == 0) {
+        fprintf(stderr, "[DEBUG] build_layer[0]: calling swiglu_ffn\n");
+        fflush(stderr);
     }
 
     if (layer_idx == 0) {

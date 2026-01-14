@@ -616,6 +616,10 @@ stcpp_error stcpp_generate(
     char* output,
     int32_t max_output_length
 ) {
+    fprintf(stderr, "[DEBUG] stcpp_generate: entered, prompt='%.50s...', max_tokens=%d\n",
+            prompt ? prompt : "NULL", max_tokens);
+    fflush(stderr);
+
     // Validate input
     if (ctx == nullptr) {
         return STCPP_ERROR_INVALID_MODEL;
@@ -633,6 +637,10 @@ stcpp_error stcpp_generate(
     stcpp::GgmlModel* model = ctx_impl->model->ggml_model.get();
     stcpp::TokenizerImpl* tokenizer = ctx_impl->model->tokenizer.get();
 
+    fprintf(stderr, "[DEBUG] stcpp_generate: contexts retrieved, model=%p, tokenizer=%p\n",
+            (void*)model, (void*)tokenizer);
+    fflush(stderr);
+
     if (!model || !tokenizer) {
         return STCPP_ERROR_INVALID_MODEL;
     }
@@ -644,6 +652,8 @@ stcpp_error stcpp_generate(
     if (!stcpp::tokenize(*tokenizer, prompt, tokens, false, error)) {
         return STCPP_ERROR_INVALID_MODEL;
     }
+    fprintf(stderr, "[DEBUG] stcpp_generate: tokenized, n_tokens=%zu\n", tokens.size());
+    fflush(stderr);
 
     // DEBUG: Print prompt and tokens
     fprintf(stderr, "[DEBUG] stcpp_generate: prompt='%.200s...'\n", prompt);
@@ -656,6 +666,9 @@ stcpp_error stcpp_generate(
 
     // Check context size
     if (static_cast<int32_t>(tokens.size()) + max_tokens > ggml_ctx->kv_size) {
+        fprintf(stderr, "[DEBUG] stcpp_generate: context overflow, tokens=%zu + max=%d > kv_size=%d\n",
+                tokens.size(), max_tokens, ggml_ctx->kv_size);
+        fflush(stderr);
         return STCPP_ERROR_OUT_OF_MEMORY;
     }
 
@@ -671,6 +684,9 @@ stcpp_error stcpp_generate(
     int32_t n_past = 0;
 
     // Process prompt
+    fprintf(stderr, "[DEBUG] stcpp_generate: calling forward_pass with n_tokens=%zu, n_past=%d\n",
+            tokens.size(), n_past);
+    fflush(stderr);
     if (!stcpp::forward_pass(ggml_ctx, tokens.data(), static_cast<int32_t>(tokens.size()),
                              n_past, logits.data(), error)) {
         if (ggml_ctx->cancel_flag.load(std::memory_order_acquire)) {
@@ -693,6 +709,9 @@ stcpp_error stcpp_generate(
     fflush(stderr);
 
     // Generate tokens
+    fprintf(stderr, "[DEBUG] stcpp_generate: starting generation loop, max_tokens=%d, eos_id=%d\n",
+            max_tokens, tokenizer->eos_token_id);
+    fflush(stderr);
     for (int32_t i = 0; i < max_tokens; ++i) {
         // Check cancel
         if (ggml_ctx->cancel_flag.load(std::memory_order_acquire)) {
@@ -729,6 +748,8 @@ stcpp_error stcpp_generate(
 
         // Check for stop tokens (EOS)
         if (next_token == tokenizer->eos_token_id) {
+            fprintf(stderr, "[DEBUG] stcpp_generate: EOS detected, breaking\n");
+            fflush(stderr);
             break;
         }
 
@@ -743,10 +764,17 @@ stcpp_error stcpp_generate(
     }
 
     // Detokenize
+    fprintf(stderr, "[DEBUG] stcpp_generate: detokenizing %zu tokens\n", generated_tokens.size());
+    fflush(stderr);
     std::string result;
     if (!stcpp::detokenize(*tokenizer, generated_tokens, result, error)) {
+        fprintf(stderr, "[DEBUG] stcpp_generate: detokenization failed: %s\n", error.c_str());
+        fflush(stderr);
         return STCPP_ERROR_UNKNOWN;
     }
+
+    fprintf(stderr, "[DEBUG] stcpp_generate: result='%s', len=%zu\n", result.c_str(), result.size());
+    fflush(stderr);
 
     // Copy to output
     int32_t len = std::min(static_cast<int32_t>(result.size()), max_output_length - 1);

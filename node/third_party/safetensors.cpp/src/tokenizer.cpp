@@ -497,6 +497,9 @@ static void bpe_tokenize_segment(
         i += char_len;
     }
 
+    fprintf(stderr, "[DEBUG] tokenize: split into %zu chars\n", chars.size());
+    fflush(stderr);
+
     // Apply BPE merges iteratively
     for (const auto& merge : tokenizer.merges) {
         std::vector<std::string> new_chars;
@@ -515,11 +518,16 @@ static void bpe_tokenize_segment(
         chars = std::move(new_chars);
     }
 
+    fprintf(stderr, "[DEBUG] tokenize: after BPE, %zu pieces\n", chars.size());
+    fflush(stderr);
+
     // Look up token IDs
+    int found = 0, not_found = 0, byte_fallback = 0;
     for (const auto& tok : chars) {
         auto it = tokenizer.vocab_to_id.find(tok);
         if (it != tokenizer.vocab_to_id.end()) {
             tokens.push_back(it->second);
+            found++;
         } else {
             // Try byte fallback
             for (unsigned char byte : tok) {
@@ -529,6 +537,7 @@ static void bpe_tokenize_segment(
                 auto byte_it = tokenizer.vocab_to_id.find(byte_token);
                 if (byte_it != tokenizer.vocab_to_id.end()) {
                     tokens.push_back(byte_it->second);
+                    byte_fallback++;
                 }
             }
         }
@@ -685,6 +694,9 @@ bool detokenize(
     int skipped_oob = 0;
     int skipped_special = 0;
     int processed = 0;
+
+    fprintf(stderr, "[DEBUG] detokenize: %zu tokens, vocab_size=%zu\n", tokens.size(), tokenizer.vocab.size());
+    fflush(stderr);
 
     for (int32_t id : tokens) {
         if (id < 0) {

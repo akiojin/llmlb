@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
 .PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -38,6 +38,8 @@ specify-commits:
 specify-checks: specify-tasks specify-tests specify-compile specify-commits
 
 quality-checks: fmt clippy test specify-checks markdownlint openai-tests test-hooks
+
+quality-checks-pre-commit: fmt clippy
 
 openai-tests:
 	cargo test -p llm-router --test openai_proxy

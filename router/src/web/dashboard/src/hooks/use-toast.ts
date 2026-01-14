@@ -5,11 +5,17 @@ import type { ToastActionElement, ToastProps } from '@/components/ui/toast'
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
 
+// Duration settings based on notification type
+// Error and warning notifications should persist until dismissed
+const TOAST_DURATION_DEFAULT = 5000 // 5 seconds for success/info
+const TOAST_DURATION_PERSISTENT = Infinity // No auto-dismiss for error/warning
+
 type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  duration?: number
 }
 
 const actionTypes = {
@@ -134,6 +140,18 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, 'id'>
 
+/**
+ * Determines the toast duration based on variant.
+ * Error (destructive) and warning notifications persist until user dismisses.
+ * Success and info notifications auto-dismiss after 5 seconds.
+ */
+function getDurationForVariant(variant?: ToastProps['variant']): number {
+  if (variant === 'destructive') {
+    return TOAST_DURATION_PERSISTENT
+  }
+  return TOAST_DURATION_DEFAULT
+}
+
 function toast({ ...props }: Toast) {
   const id = genId()
 
@@ -144,11 +162,15 @@ function toast({ ...props }: Toast) {
     })
   const dismiss = () => dispatch({ type: 'DISMISS_TOAST', toastId: id })
 
+  // Set duration based on variant if not explicitly provided
+  const duration = props.duration ?? getDurationForVariant(props.variant)
+
   dispatch({
     type: 'ADD_TOAST',
     toast: {
       ...props,
       id,
+      duration,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss()

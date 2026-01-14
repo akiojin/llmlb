@@ -6,7 +6,7 @@ SHELL := /bin/sh
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 .PHONY: poc-gptoss poc-gptoss-metal poc-gptoss-cuda
 
-TASKS ?= $(shell find specs -name tasks.md)
+FIND ?= /usr/bin/find
 
 fmt:
 	cargo fmt --check
@@ -21,10 +21,14 @@ markdownlint:
 	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build"
 
 specify-tasks:
-	@for file in $(TASKS); do \
+	@bash -lc 'TASKS_LIST="$${TASKS:-}"; \
+	if [ -z "$$TASKS_LIST" ]; then \
+		TASKS_LIST="$$( $(FIND) specs -name tasks.md 2>/dev/null )"; \
+	fi; \
+	for file in $$TASKS_LIST; do \
 		echo "🔍 Checking tasks in $$file"; \
 		bash .specify/scripts/checks/check-tasks.sh $$file; \
-	done
+	done'
 
 specify-tests:
 	bash .specify/scripts/checks/check-tests.sh

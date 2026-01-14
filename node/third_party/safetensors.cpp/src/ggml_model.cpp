@@ -1021,7 +1021,10 @@ bool allocate_kv_cache(
 void clear_kv_cache(GgmlContext* ctx) {
     if (ctx) {
         ctx->kv_used = 0;
-        // Optionally zero out the cache memory
+        // Zero out the cache memory to prevent stale data issues
+        if (ctx->kv_cache_buffer) {
+            ggml_backend_buffer_clear(ctx->kv_cache_buffer, 0);
+        }
     }
 }
 

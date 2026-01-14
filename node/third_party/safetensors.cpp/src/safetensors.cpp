@@ -6,6 +6,7 @@
 #include "safetensors.h"
 #include "safetensors_internal.h"
 #include "ggml_model.h"
+#include <nlohmann/json.hpp>
 #include <cstring>
 #include <atomic>
 #include <memory>
@@ -13,6 +14,7 @@
 #include <cmath>
 #include <random>
 #include <algorithm>
+#include <chrono>
 
 /* Internal state */
 static std::atomic<bool> g_initialized{false};
@@ -445,9 +447,26 @@ int32_t stcpp_apply_chat_template(
         return -1;
     }
 
-    // Parse messages JSON (simplified)
+    // Parse messages JSON
     std::vector<stcpp::ChatMessage> messages;
-    // TODO: Parse messages_json into messages vector
+    try {
+        nlohmann::json json = nlohmann::json::parse(messages_json);
+        if (json.is_array()) {
+            for (const auto& msg : json) {
+                stcpp::ChatMessage cm;
+                if (msg.contains("role") && msg["role"].is_string()) {
+                    cm.role = msg["role"].get<std::string>();
+                }
+                if (msg.contains("content") && msg["content"].is_string()) {
+                    cm.content = msg["content"].get<std::string>();
+                }
+                messages.push_back(cm);
+            }
+        }
+    } catch (const std::exception& e) {
+        // JSON parsing failed
+        return -1;
+    }
 
     std::string result;
     if (!stcpp::apply_chat_template(tmpl, messages, result, error, add_generation_prompt)) {
@@ -485,38 +504,10 @@ static int32_t sample_token(
     int32_t n_vocab,
     stcpp_sampling_params params
 ) {
-    // Debug: Check logits state
     float max_logit = *std::max_element(logits, logits + n_vocab);
-    int32_t max_idx = static_cast<int32_t>(std::max_element(logits, logits + n_vocab) - logits);
-    float min_logit = *std::min_element(logits, logits + n_vocab);
 
-    // Check for NaN/Inf
-    int nan_count = 0, inf_count = 0;
-    for (int32_t i = 0; i < std::min(n_vocab, 1000); ++i) {
-        if (std::isnan(logits[i])) nan_count++;
-        if (std::isinf(logits[i])) inf_count++;
-    }
-
-    fprintf(stderr, "[DEBUG] sample_token: n_vocab=%d, max_logit=%.6f@%d, min_logit=%.6f, nan=%d, inf=%d\n",
-            n_vocab, max_logit, max_idx, min_logit, nan_count, inf_count);
-
-    // Print top 5 logits
-    std::vector<std::pair<float, int32_t>> top_logits(n_vocab);
-    for (int32_t i = 0; i < n_vocab; ++i) {
-        top_logits[i] = {logits[i], i};
-    }
-    std::partial_sort(top_logits.begin(), top_logits.begin() + 5, top_logits.end(),
-                     std::greater<std::pair<float, int32_t>>());
-    fprintf(stderr, "[DEBUG] sample_token: top5 logits: ");
-    for (int i = 0; i < 5; ++i) {
-        fprintf(stderr, "[%d]=%.4f ", top_logits[i].second, top_logits[i].first);
-    }
-    fprintf(stderr, "\n");
-    fflush(stderr);
-
-    // Apply temperature
+    // Apply temperature and compute probabilities
     std::vector<float> probs(n_vocab);
-
     float sum = 0.0f;
     for (int32_t i = 0; i < n_vocab; ++i) {
         float p = std::exp((logits[i] - max_logit) / std::max(params.temperature, 0.01f));
@@ -575,8 +566,15 @@ static int32_t sample_token(
     }
 
     // Sample from distribution
-    std::random_device rd;
-    std::mt19937 gen(params.seed >= 0 ? static_cast<unsigned int>(params.seed) : rd());
+    // seed=0 or seed<0 means use random seed (consistent with llama_engine.cpp)
+    uint32_t actual_seed;
+    if (params.seed <= 0) {
+        actual_seed = static_cast<uint32_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFFFF);
+    } else {
+        actual_seed = static_cast<uint32_t>(params.seed);
+    }
+    std::mt19937 gen(actual_seed);
     std::discrete_distribution<int32_t> dist(probs.begin(), probs.end());
 
     return dist(gen);
@@ -592,10 +590,6 @@ stcpp_error stcpp_generate(
     char* output,
     int32_t max_output_length
 ) {
-    fprintf(stderr, "[DEBUG] stcpp_generate: entered, prompt='%.50s...', max_tokens=%d\n",
-            prompt ? prompt : "NULL", max_tokens);
-    fflush(stderr);
-
     // Validate input
     if (ctx == nullptr) {
         return STCPP_ERROR_INVALID_MODEL;
@@ -613,38 +607,28 @@ stcpp_error stcpp_generate(
     stcpp::GgmlModel* model = ctx_impl->model->ggml_model.get();
     stcpp::TokenizerImpl* tokenizer = ctx_impl->model->tokenizer.get();
 
-    fprintf(stderr, "[DEBUG] stcpp_generate: contexts retrieved, model=%p, tokenizer=%p\n",
-            (void*)model, (void*)tokenizer);
-    fflush(stderr);
-
     if (!model || !tokenizer) {
         return STCPP_ERROR_INVALID_MODEL;
     }
 
     // Tokenize prompt
     // Note: add_bos=false because chat template already starts with <|im_start|>
-    fprintf(stderr, "[DEBUG] stcpp_generate: tokenizing prompt...\n");
-    fflush(stderr);
     std::vector<int32_t> tokens;
     std::string error;
     if (!stcpp::tokenize(*tokenizer, prompt, tokens, false, error)) {
-        fprintf(stderr, "[DEBUG] stcpp_generate: tokenization failed: %s\n", error.c_str());
-        fflush(stderr);
         return STCPP_ERROR_INVALID_MODEL;
     }
-    fprintf(stderr, "[DEBUG] stcpp_generate: tokenized, n_tokens=%zu\n", tokens.size());
-    fflush(stderr);
 
     // Check context size
     if (static_cast<int32_t>(tokens.size()) + max_tokens > ggml_ctx->kv_size) {
-        fprintf(stderr, "[DEBUG] stcpp_generate: context overflow, tokens=%zu + max=%d > kv_size=%d\n",
-                tokens.size(), max_tokens, ggml_ctx->kv_size);
-        fflush(stderr);
         return STCPP_ERROR_OUT_OF_MEMORY;
     }
 
     // Reset cancel flag
     ggml_ctx->cancel_flag.store(false, std::memory_order_release);
+
+    // Clear KV cache for new request (fixes garbage output issue #291)
+    stcpp::clear_kv_cache(ggml_ctx);
 
     // Generation loop
     std::vector<int32_t> generated_tokens;
@@ -652,9 +636,6 @@ stcpp_error stcpp_generate(
     int32_t n_past = 0;
 
     // Process prompt
-    fprintf(stderr, "[DEBUG] stcpp_generate: calling forward_pass with n_tokens=%zu, n_past=%d\n",
-            tokens.size(), n_past);
-    fflush(stderr);
     if (!stcpp::forward_pass(ggml_ctx, tokens.data(), static_cast<int32_t>(tokens.size()),
                              n_past, logits.data(), error)) {
         if (ggml_ctx->cancel_flag.load(std::memory_order_acquire)) {
@@ -665,9 +646,6 @@ stcpp_error stcpp_generate(
     n_past = static_cast<int32_t>(tokens.size());
 
     // Generate tokens
-    fprintf(stderr, "[DEBUG] stcpp_generate: starting generation loop, max_tokens=%d, eos_id=%d\n",
-            max_tokens, tokenizer->eos_token_id);
-    fflush(stderr);
     for (int32_t i = 0; i < max_tokens; ++i) {
         // Check cancel
         if (ggml_ctx->cancel_flag.load(std::memory_order_acquire)) {
@@ -678,13 +656,8 @@ stcpp_error stcpp_generate(
         int32_t next_token = sample_token(logits.data(), model->hparams.n_vocab, params);
         generated_tokens.push_back(next_token);
 
-        fprintf(stderr, "[DEBUG] stcpp_generate: i=%d, next_token=%d\n", i, next_token);
-        fflush(stderr);
-
         // Check for EOS
         if (next_token == tokenizer->eos_token_id) {
-            fprintf(stderr, "[DEBUG] stcpp_generate: EOS detected, breaking\n");
-            fflush(stderr);
             break;
         }
 
@@ -699,17 +672,10 @@ stcpp_error stcpp_generate(
     }
 
     // Detokenize
-    fprintf(stderr, "[DEBUG] stcpp_generate: detokenizing %zu tokens\n", generated_tokens.size());
-    fflush(stderr);
     std::string result;
     if (!stcpp::detokenize(*tokenizer, generated_tokens, result, error)) {
-        fprintf(stderr, "[DEBUG] stcpp_generate: detokenization failed: %s\n", error.c_str());
-        fflush(stderr);
         return STCPP_ERROR_UNKNOWN;
     }
-
-    fprintf(stderr, "[DEBUG] stcpp_generate: result='%s', len=%zu\n", result.c_str(), result.size());
-    fflush(stderr);
 
     // Copy to output
     int32_t len = std::min(static_cast<int32_t>(result.size()), max_output_length - 1);
@@ -762,6 +728,9 @@ stcpp_error stcpp_generate_stream(
 
     // Reset cancel flag
     ggml_ctx->cancel_flag.store(false, std::memory_order_release);
+
+    // Clear KV cache for new request (fixes garbage output issue #291)
+    stcpp::clear_kv_cache(ggml_ctx);
 
     // Generation loop
     std::vector<float> logits(model->hparams.n_vocab);
@@ -846,6 +815,9 @@ stcpp_error stcpp_embeddings(
     stcpp::GgmlContext* ggml_ctx = ctx_impl->ggml_ctx.get();
     stcpp::GgmlModel* model = ctx_impl->model->ggml_model.get();
     stcpp::TokenizerImpl* tokenizer = ctx_impl->model->tokenizer.get();
+
+    // ggml_ctx will be used for actual embedding computation (TODO)
+    (void)ggml_ctx;
 
     if (!model || !tokenizer) {
         return STCPP_ERROR_INVALID_MODEL;

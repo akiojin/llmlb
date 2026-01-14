@@ -119,7 +119,8 @@ TEST_F(CliPullListTest, DISABLED_PullThenListShowsModel) {
 
 /// Test: list includes ollama models with prefix
 /// Scenario: List shows ollama:prefix for ollama models
-TEST_F(CliPullListTest, ListIncludesOllamaModelsWithPrefix) {
+/// DISABLED: This test hangs in CI due to network/socket issues
+TEST_F(CliPullListTest, DISABLED_ListIncludesOllamaModelsWithPrefix) {
     auto client = std::make_shared<CliClient>();
 
     // Skip if server is not running

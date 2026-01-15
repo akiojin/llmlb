@@ -137,8 +137,23 @@ pub fn create_router(state: AppState) -> Router {
         .route("/models/register", post(models::register_model))
         .route("/models/*model_name", delete(models::delete_model))
         // Prometheus metrics（cloud prefix含む独自メトリクス）
-        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
-        // エンドポイント管理API（SPEC-66555000）
+        .route("/metrics/cloud", get(cloud_metrics::export_metrics));
+
+    let admin_routes = if auth_disabled {
+        admin_routes.layer(middleware::from_fn(
+            crate::auth::middleware::inject_dummy_admin_claims,
+        ))
+    } else {
+        admin_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::admin_or_api_key_middleware,
+        ))
+    };
+
+    // エンドポイント管理API（SPEC-66555000）
+    // すべてのエンドポイントルートを単一のRouterに統合
+    // 書き込み操作はハンドラー内でensure_adminで権限チェック
+    let endpoint_routes = Router::new()
         .route(
             "/endpoints",
             get(endpoints::list_endpoints).post(endpoints::create_endpoint),
@@ -156,14 +171,14 @@ pub fn create_router(state: AppState) -> Router {
             get(endpoints::list_endpoint_models),
         );
 
-    let admin_routes = if auth_disabled {
-        admin_routes.layer(middleware::from_fn(
+    let endpoint_routes = if auth_disabled {
+        endpoint_routes.layer(middleware::from_fn(
             crate::auth::middleware::inject_dummy_admin_claims,
         ))
     } else {
-        admin_routes.layer(middleware::from_fn_with_state(
+        endpoint_routes.layer(middleware::from_fn_with_state(
             state.clone(),
-            crate::auth::middleware::admin_or_api_key_middleware,
+            crate::auth::middleware::authenticated_middleware,
         ))
     };
 
@@ -276,6 +291,7 @@ pub fn create_router(state: AppState) -> Router {
                 .route("/auth/register", post(auth::register))
                 .merge(auth_routes)
                 .merge(admin_routes)
+                .merge(endpoint_routes)
                 .merge(node_register_routes)
                 .merge(node_protected_routes)
                 .merge(models_list_routes),

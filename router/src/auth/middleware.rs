@@ -296,6 +296,75 @@ pub async fn admin_or_api_key_middleware(
     Ok(next.run(request).await)
 }
 
+/// 認証済みユーザー向けミドルウェア（viewerも許可）
+///
+/// GET操作など、viewerロールでもアクセス可能なエンドポイント向け。
+/// 認証は必須だが、Admin権限は不要。
+///
+/// 許可される認証:
+/// - JWT (任意のrole)
+/// - APIキー (AdminまたはApiスコープ)
+pub async fn authenticated_middleware(
+    State(app_state): State<crate::AppState>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // JWTがあれば優先
+    if let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if token_looks_like_jwt(token) {
+                let claims =
+                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
+                        tracing::warn!("JWT verification failed: {}", e);
+                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+                    })?;
+                // 任意のロールを許可
+                request.extensions_mut().insert(claims);
+                return Ok(next.run(request).await);
+            }
+        }
+    }
+
+    // JWTがない/無効ならAPIキーで認証
+    let api_key = extract_api_key(&request)?;
+    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
+
+    // AdminまたはApiスコープを許可
+    if !has_scope(&auth_context.scopes, ApiKeyScope::Admin)
+        && !has_scope(&auth_context.scopes, ApiKeyScope::Api)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Admin or Api scope required".to_string(),
+        )
+            .into_response());
+    }
+
+    // APIキーの発行者の情報でClaimsを構築
+    // スコープからロールを推測
+    let role = if has_scope(&auth_context.scopes, ApiKeyScope::Admin) {
+        UserRole::Admin
+    } else {
+        UserRole::Viewer
+    };
+    let exp = auth_context
+        .expires_at
+        .map(|dt| dt.timestamp() as usize)
+        .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
+    let claims = Claims {
+        sub: auth_context.created_by.to_string(),
+        role,
+        exp,
+    };
+    request.extensions_mut().insert(claims);
+
+    Ok(next.run(request).await)
+}
+
 /// 管理者またはノード権限ミドルウェア
 ///
 /// `/v0/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ノード(Node APIキー)」の両方から

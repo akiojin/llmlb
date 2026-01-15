@@ -6,14 +6,27 @@ use crate::db::endpoints as db;
 use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus};
 use crate::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
+use llm_router_common::auth::{Claims, UserRole};
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
+
+/// Option<Option<T>>のデシリアライズヘルパー
+/// - フィールドなし → None
+/// - フィールドがnull → Some(None)
+/// - フィールドに値あり → Some(Some(value))
+fn deserialize_optional_field<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(deserializer)?))
+}
 
 /// エンドポイント登録リクエスト
 #[derive(Debug, Deserialize)]
@@ -62,9 +75,9 @@ pub struct UpdateEndpointRequest {
     /// 推論タイムアウト（秒）
     #[serde(default)]
     pub inference_timeout_secs: Option<u32>,
-    /// メモ
-    #[serde(default)]
-    pub notes: Option<String>,
+    /// メモ（None=未指定, Some(None)=削除, Some(Some(v))=設定）
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
+    pub notes: Option<Option<String>>,
 }
 
 /// エンドポイントレスポンス
@@ -94,6 +107,12 @@ pub struct EndpointResponse {
     pub registered_at: String,
     /// メモ
     pub notes: Option<String>,
+    /// モデル数（一覧取得時）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_count: Option<usize>,
+    /// 関連モデル一覧（詳細取得時のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<EndpointModelResponse>>,
 }
 
 impl From<Endpoint> for EndpointResponse {
@@ -111,6 +130,8 @@ impl From<Endpoint> for EndpointResponse {
             error_count: ep.error_count,
             registered_at: ep.registered_at.to_rfc3339(),
             notes: ep.notes,
+            model_count: None,
+            models: None,
         }
     }
 }
@@ -124,6 +145,14 @@ pub struct ListEndpointsResponse {
     pub total: usize,
 }
 
+/// エンドポイント一覧クエリパラメータ
+#[derive(Debug, Deserialize)]
+pub struct ListEndpointsQuery {
+    /// ステータスでフィルタ（pending, online, offline, error）
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
 /// モデル一覧レスポンス
 #[derive(Debug, Serialize)]
 pub struct EndpointModelsResponse {
@@ -131,6 +160,19 @@ pub struct EndpointModelsResponse {
     pub endpoint_id: Uuid,
     /// モデル一覧
     pub models: Vec<EndpointModelResponse>,
+}
+
+/// モデル同期レスポンス
+#[derive(Debug, Serialize)]
+pub struct SyncModelsResponse {
+    /// 同期されたモデル一覧
+    pub synced_models: Vec<EndpointModelResponse>,
+    /// 追加されたモデル数
+    pub added: usize,
+    /// 削除されたモデル数
+    pub removed: usize,
+    /// 更新されたモデル数
+    pub updated: usize,
 }
 
 /// モデルレスポンス
@@ -154,6 +196,13 @@ impl From<EndpointModel> for EndpointModelResponse {
     }
 }
 
+/// 接続テストのエンドポイント情報
+#[derive(Debug, Serialize)]
+pub struct EndpointTestInfo {
+    /// 発見されたモデル数
+    pub model_count: usize,
+}
+
 /// 接続テスト結果
 #[derive(Debug, Serialize)]
 pub struct TestConnectionResponse {
@@ -165,6 +214,9 @@ pub struct TestConnectionResponse {
     pub error: Option<String>,
     /// 発見されたモデル一覧
     pub models_found: Option<Vec<String>>,
+    /// エンドポイント情報（成功時のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_info: Option<EndpointTestInfo>,
 }
 
 /// エラーレスポンス
@@ -176,13 +228,33 @@ pub struct ErrorResponse {
     pub code: String,
 }
 
+/// Admin権限を確認
+fn ensure_admin(claims: &Claims) -> Result<(), impl IntoResponse> {
+    if claims.role != UserRole::Admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Admin permission required".to_string(),
+                code: "FORBIDDEN".to_string(),
+            }),
+        ));
+    }
+    Ok(())
+}
+
 // --- Handlers ---
 
 /// POST /v0/endpoints - エンドポイント登録
 pub async fn create_endpoint(
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     Json(req): Json<CreateEndpointRequest>,
 ) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
     // バリデーション
     if req.name.trim().is_empty() {
         return (
@@ -213,6 +285,18 @@ pub async fn create_endpoint(
             Json(ErrorResponse {
                 error: "Invalid URL format".to_string(),
                 code: "INVALID_URL_FORMAT".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // ヘルスチェック間隔のバリデーション（10-300秒）
+    if req.health_check_interval_secs < 10 || req.health_check_interval_secs > 300 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Health check interval must be between 10 and 300 seconds".to_string(),
+                code: "INVALID_HEALTH_CHECK_INTERVAL".to_string(),
             }),
         )
             .into_response();
@@ -279,12 +363,41 @@ pub async fn create_endpoint(
 }
 
 /// GET /v0/endpoints - エンドポイント一覧
-pub async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_endpoints(
+    State(state): State<AppState>,
+    Query(query): Query<ListEndpointsQuery>,
+) -> impl IntoResponse {
     match db::list_endpoints(&state.db_pool).await {
         Ok(endpoints) => {
-            let total = endpoints.len();
+            // ステータスでフィルタ
+            let filtered_endpoints: Vec<Endpoint> = if let Some(ref status) = query.status {
+                endpoints
+                    .into_iter()
+                    .filter(|ep| ep.status.as_str() == status)
+                    .collect()
+            } else {
+                endpoints
+            };
+
+            let total = filtered_endpoints.len();
+            let mut response_endpoints = Vec::with_capacity(total);
+
+            for ep in filtered_endpoints {
+                let ep_id = ep.id;
+                let mut response = EndpointResponse::from(ep);
+
+                // モデル数を取得
+                if let Ok(models) = db::list_endpoint_models(&state.db_pool, ep_id).await {
+                    response.model_count = Some(models.len());
+                } else {
+                    response.model_count = Some(0);
+                }
+
+                response_endpoints.push(response);
+            }
+
             let response = ListEndpointsResponse {
-                endpoints: endpoints.into_iter().map(EndpointResponse::from).collect(),
+                endpoints: response_endpoints,
                 total,
             };
             (StatusCode::OK, Json(response)).into_response()
@@ -310,7 +423,14 @@ pub async fn get_endpoint(
 ) -> impl IntoResponse {
     match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(endpoint)) => {
-            (StatusCode::OK, Json(EndpointResponse::from(endpoint))).into_response()
+            // モデル一覧も取得して詳細レスポンスに含める
+            let models = match db::list_endpoint_models(&state.db_pool, id).await {
+                Ok(m) => Some(m.into_iter().map(EndpointModelResponse::from).collect()),
+                Err(_) => None,
+            };
+            let mut response = EndpointResponse::from(endpoint);
+            response.models = models;
+            (StatusCode::OK, Json(response)).into_response()
         }
         Ok(None) => (
             StatusCode::NOT_FOUND,
@@ -336,10 +456,16 @@ pub async fn get_endpoint(
 
 /// PUT /v0/endpoints/:id - エンドポイント更新
 pub async fn update_endpoint(
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateEndpointRequest>,
 ) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
     // 既存のエンドポイントを取得
     let existing = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
@@ -365,6 +491,20 @@ pub async fn update_endpoint(
                 .into_response();
         }
     };
+
+    // 名前のバリデーション（空文字列は不許可）
+    if let Some(ref name) = req.name {
+        if name.trim().is_empty() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Name cannot be empty".to_string(),
+                    code: "INVALID_NAME".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    }
 
     // URL形式チェック
     if let Some(ref url) = req.base_url {
@@ -427,8 +567,9 @@ pub async fn update_endpoint(
     if let Some(timeout) = req.inference_timeout_secs {
         updated.inference_timeout_secs = timeout;
     }
-    if let Some(notes) = req.notes {
-        updated.notes = Some(notes);
+    // notes: None=未指定(そのまま), Some(None)=削除, Some(Some(v))=設定
+    if let Some(notes_value) = req.notes {
+        updated.notes = notes_value;
     }
 
     match db::update_endpoint(&state.db_pool, &updated).await {
@@ -469,9 +610,15 @@ pub async fn update_endpoint(
 
 /// DELETE /v0/endpoints/:id - エンドポイント削除
 pub async fn delete_endpoint(
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
     match db::delete_endpoint(&state.db_pool, id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
@@ -498,9 +645,15 @@ pub async fn delete_endpoint(
 
 /// POST /v0/endpoints/:id/test - 接続テスト
 pub async fn test_endpoint(
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
@@ -549,7 +702,10 @@ pub async fn test_endpoint(
         Ok(response) => {
             if response.status().is_success() {
                 // モデル一覧を取得
-                let models_found = match response.json::<serde_json::Value>().await {
+                let models_found: Option<Vec<String>> = match response
+                    .json::<serde_json::Value>()
+                    .await
+                {
                     Ok(json) => json["data"]
                         .as_array()
                         .map(|arr| {
@@ -579,6 +735,9 @@ pub async fn test_endpoint(
                 )
                 .await;
 
+                // モデル数を計算
+                let model_count = models_found.as_ref().map(|m| m.len()).unwrap_or(0);
+
                 (
                     StatusCode::OK,
                     Json(TestConnectionResponse {
@@ -586,6 +745,7 @@ pub async fn test_endpoint(
                         latency_ms: Some(latency_ms),
                         error: None,
                         models_found,
+                        endpoint_info: Some(EndpointTestInfo { model_count }),
                     }),
                 )
                     .into_response()
@@ -607,6 +767,7 @@ pub async fn test_endpoint(
                         latency_ms: Some(latency_ms),
                         error: Some(error_msg),
                         models_found: None,
+                        endpoint_info: None,
                     }),
                 )
                     .into_response()
@@ -630,6 +791,7 @@ pub async fn test_endpoint(
                     latency_ms: None,
                     error: Some(error_msg),
                     models_found: None,
+                    endpoint_info: None,
                 }),
             )
                 .into_response()
@@ -639,9 +801,17 @@ pub async fn test_endpoint(
 
 /// POST /v0/endpoints/:id/sync - モデル一覧同期
 pub async fn sync_endpoint_models(
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
+    use std::collections::HashSet;
+
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
@@ -666,6 +836,13 @@ pub async fn sync_endpoint_models(
             )
                 .into_response();
         }
+    };
+
+    // 既存モデルを取得して比較用にIDセットを作成
+    let existing_models: HashSet<String> = match db::list_endpoint_models(&state.db_pool, id).await
+    {
+        Ok(models) => models.into_iter().map(|m| m.model_id).collect(),
+        Err(_) => HashSet::new(),
     };
 
     // GET /v1/models でモデル一覧を取得
@@ -716,11 +893,13 @@ pub async fn sync_endpoint_models(
             // 新しいモデルを追加
             let now = chrono::Utc::now();
             let mut synced_models = Vec::new();
+            let mut new_model_ids: HashSet<String> = HashSet::new();
 
             // OpenAI形式: { "data": [{ "id": "model-name", ... }] }
             if let Some(data) = json["data"].as_array() {
                 for model in data {
                     if let Some(model_id) = model["id"].as_str() {
+                        new_model_ids.insert(model_id.to_string());
                         let ep_model = EndpointModel {
                             endpoint_id: id,
                             model_id: model_id.to_string(),
@@ -740,6 +919,7 @@ pub async fn sync_endpoint_models(
                         .or(model["model"].as_str())
                         .unwrap_or_default();
                     if !model_id.is_empty() {
+                        new_model_ids.insert(model_id.to_string());
                         let ep_model = EndpointModel {
                             endpoint_id: id,
                             model_id: model_id.to_string(),
@@ -752,17 +932,24 @@ pub async fn sync_endpoint_models(
                 }
             }
 
+            // 変更カウントを計算
+            let added = new_model_ids.difference(&existing_models).count();
+            let removed = existing_models.difference(&new_model_ids).count();
+            let updated = new_model_ids.intersection(&existing_models).count();
+
             (
                 StatusCode::OK,
-                Json(EndpointModelsResponse {
-                    endpoint_id: id,
-                    models: synced_models,
+                Json(SyncModelsResponse {
+                    synced_models,
+                    added,
+                    removed,
+                    updated,
                 }),
             )
                 .into_response()
         }
         Err(e) => (
-            StatusCode::BAD_GATEWAY,
+            StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
                 error: format!("Failed to connect: {}", e),
                 code: "CONNECTION_ERROR".to_string(),

@@ -157,7 +157,6 @@ async fn test_delete_endpoint() {
 
 /// US5-シナリオ4: notesの追加・更新・削除
 #[tokio::test]
-#[ignore = "TDD RED: notes null削除未実装"]
 async fn test_manage_endpoint_notes() {
     let server = spawn_test_router().await;
     let client = Client::new();

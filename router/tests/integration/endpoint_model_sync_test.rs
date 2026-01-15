@@ -13,7 +13,6 @@ use crate::support::router::spawn_test_router;
 
 /// US3-シナリオ1: Ollamaエンドポイントからモデル同期
 #[tokio::test]
-#[ignore = "TDD RED: モデル同期機能未実装"]
 async fn test_sync_models_from_ollama() {
     let mock = MockServer::start().await;
 
@@ -80,7 +79,6 @@ async fn test_sync_models_from_ollama() {
 
 /// US3-シナリオ2: vLLMエンドポイントからモデル同期
 #[tokio::test]
-#[ignore = "TDD RED: モデル同期機能未実装"]
 async fn test_sync_models_from_vllm() {
     let mock = MockServer::start().await;
 
@@ -132,7 +130,6 @@ async fn test_sync_models_from_vllm() {
 
 /// US3-シナリオ3: 同期後にエンドポイント詳細でモデルが表示される
 #[tokio::test]
-#[ignore = "TDD RED: モデル同期機能未実装"]
 async fn test_synced_models_appear_in_endpoint_detail() {
     let mock = MockServer::start().await;
 
@@ -197,7 +194,6 @@ async fn test_synced_models_appear_in_endpoint_detail() {
 
 /// US3-シナリオ4: 同期時に追加/削除/更新のカウントが返される
 #[tokio::test]
-#[ignore = "TDD RED: 変更カウント機能未実装"]
 async fn test_sync_returns_change_counts() {
     let mock = MockServer::start().await;
 

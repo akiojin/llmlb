@@ -193,7 +193,6 @@ async fn test_update_endpoint_health_check_interval() {
 /// PUT /v0/endpoints/:id - 正常系: notesの更新（nullで削除）
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: notes null削除未実装"]
 async fn test_update_endpoint_notes() {
     let TestApp { app, admin_key } = build_app().await;
 
@@ -276,7 +275,6 @@ async fn test_update_endpoint_not_found() {
 /// PUT /v0/endpoints/:id - 異常系: バリデーションエラー（空の名前）
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: 名前バリデーション未実装"]
 async fn test_update_endpoint_validation_error() {
     let TestApp { app, admin_key } = build_app().await;
 

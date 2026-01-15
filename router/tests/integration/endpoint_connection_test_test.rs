@@ -13,7 +13,6 @@ use crate::support::router::spawn_test_router;
 
 /// US4-シナリオ1: 正しいURLで接続テスト成功
 #[tokio::test]
-#[ignore = "TDD RED: 接続テスト機能未実装"]
 async fn test_connection_test_success() {
     let mock = MockServer::start().await;
 
@@ -166,7 +165,6 @@ async fn test_connection_test_auth_error() {
 
 /// US4-シナリオ4: 接続テストでモデル数が取得される
 #[tokio::test]
-#[ignore = "TDD RED: model_count未実装"]
 async fn test_connection_test_returns_model_count() {
     let mock = MockServer::start().await;
 

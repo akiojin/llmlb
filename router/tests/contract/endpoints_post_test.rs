@@ -288,7 +288,6 @@ async fn test_create_endpoint_unauthorized() {
 /// POST /v0/endpoints - 異常系: ヘルスチェック間隔の範囲外
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: ヘルスチェック間隔バリデーション未実装"]
 async fn test_create_endpoint_invalid_health_check_interval() {
     let TestApp { app, admin_key } = build_app().await;
 

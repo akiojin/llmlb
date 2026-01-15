@@ -105,7 +105,6 @@ async fn test_list_endpoints_empty() {
 /// GET /v0/endpoints - 正常系: 複数エンドポイントの一覧
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: model_countフィールド未実装"]
 async fn test_list_endpoints_multiple() {
     let TestApp { app, admin_key } = build_app().await;
 
@@ -168,7 +167,6 @@ async fn test_list_endpoints_multiple() {
 /// GET /v0/endpoints - 正常系: ステータスフィルタ
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: ステータスフィルタ未実装"]
 async fn test_list_endpoints_filter_by_status() {
     let TestApp { app, admin_key } = build_app().await;
 

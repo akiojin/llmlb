@@ -81,7 +81,6 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 /// POST /v0/endpoints/:id/sync - 正常系: モデル同期成功
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: モデル同期機能未実装"]
 async fn test_endpoint_sync_success() {
     let mock = MockServer::start().await;
 
@@ -183,7 +182,6 @@ async fn test_endpoint_sync_not_found() {
 /// POST /v0/endpoints/:id/sync - 異常系: エンドポイントがオフライン
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: オフラインエラーレスポンス未実装"]
 async fn test_endpoint_sync_offline() {
     let TestApp { app, admin_key } = build_app().await;
 
@@ -251,7 +249,6 @@ async fn test_endpoint_sync_unauthorized() {
 /// POST /v0/endpoints/:id/sync - 正常系: 空のモデル一覧
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: 空モデル同期未実装"]
 async fn test_endpoint_sync_empty_models() {
     let mock = MockServer::start().await;
 

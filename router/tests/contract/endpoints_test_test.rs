@@ -81,7 +81,6 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 /// POST /v0/endpoints/:id/test - 正常系: 接続成功
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: 接続テスト機能未実装"]
 async fn test_endpoint_connection_success() {
     let mock = MockServer::start().await;
 

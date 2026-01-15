@@ -11,7 +11,6 @@ use crate::support::router::spawn_test_router_with_db;
 
 /// viewerロールでエンドポイント一覧を取得可能
 #[tokio::test]
-#[ignore = "TDD RED: viewerロール認可未実装"]
 async fn test_viewer_can_list_endpoints() {
     let (server, db_pool) = spawn_test_router_with_db().await;
     let client = Client::new();
@@ -63,7 +62,6 @@ async fn test_viewer_can_list_endpoints() {
 
 /// viewerロールでエンドポイント詳細を取得可能
 #[tokio::test]
-#[ignore = "TDD RED: viewerロール認可未実装"]
 async fn test_viewer_can_get_endpoint_detail() {
     let (server, db_pool) = spawn_test_router_with_db().await;
     let client = Client::new();

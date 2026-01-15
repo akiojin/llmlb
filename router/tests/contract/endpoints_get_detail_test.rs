@@ -79,7 +79,6 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 /// GET /v0/endpoints/:id - 正常系: エンドポイント詳細取得
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: modelsフィールド未実装"]
 async fn test_get_endpoint_detail_success() {
     let TestApp { app, admin_key } = build_app().await;
 

@@ -84,10 +84,10 @@
 
 ### ヘルスチェッカー
 
-- [ ] T028 `router/src/health/endpoint_checker.rs` にプル型ヘルスチェッカー実装（レイテンシ計測、履歴保存）
-- [ ] T029 `router/src/health/mod.rs` にEndpointHealthCheckerをエクスポート
-- [ ] T030 `router/src/main.rs` または `router/src/server.rs` にヘルスチェッカー起動処理追加
-- [ ] T030a `router/src/health/startup.rs` にルーター起動時の全エンドポイント並列チェック実装
+- [x] T028 `router/src/health/endpoint_checker.rs` にプル型ヘルスチェッカー実装（レイテンシ計測、履歴保存）
+- [x] T029 `router/src/health/mod.rs` にEndpointHealthCheckerをエクスポート
+- [x] T030 `router/src/main.rs` または `router/src/server.rs` にヘルスチェッカー起動処理追加
+- [x] T030a `router/src/health/startup.rs` にルーター起動時の全エンドポイント並列チェック実装
 
 ### モデル同期
 

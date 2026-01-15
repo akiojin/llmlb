@@ -334,6 +334,11 @@ impl EndpointRegistry {
     pub async fn count(&self) -> usize {
         self.endpoints.read().await.len()
     }
+
+    /// DBプールへの参照を取得
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
 }
 
 /// モデル同期結果

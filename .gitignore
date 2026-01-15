@@ -99,6 +99,7 @@ coverage/
 **/playwright-report/
 **/reports/
 **/.playwright/
+.playwright-mcp/
 router/tests/e2e-playwright/bun.lock
 
 # ESLint cache

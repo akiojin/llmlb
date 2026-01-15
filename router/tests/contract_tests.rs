@@ -9,6 +9,28 @@ mod test_node_register_gpu;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 
+// SPEC-66555000: エンドポイント管理API契約テスト
+#[path = "contract/endpoints_post_test.rs"]
+mod endpoints_post_test;
+
+#[path = "contract/endpoints_get_list_test.rs"]
+mod endpoints_get_list_test;
+
+#[path = "contract/endpoints_get_detail_test.rs"]
+mod endpoints_get_detail_test;
+
+#[path = "contract/endpoints_put_test.rs"]
+mod endpoints_put_test;
+
+#[path = "contract/endpoints_delete_test.rs"]
+mod endpoints_delete_test;
+
+#[path = "contract/endpoints_test_test.rs"]
+mod endpoints_test_test;
+
+#[path = "contract/endpoints_sync_test.rs"]
+mod endpoints_sync_test;
+
 #[path = "contract/models_api_test.rs"]
 mod models_api_test;
 

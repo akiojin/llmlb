@@ -22,5 +22,33 @@ mod vision_api_test;
 #[path = "integration/test_dashboard.rs"]
 mod test_dashboard;
 
+// SPEC-66555000: エンドポイント管理統合テスト
+#[path = "integration/endpoint_registration_test.rs"]
+mod endpoint_registration_test;
+
+#[path = "integration/endpoint_health_check_test.rs"]
+mod endpoint_health_check_test;
+
+#[path = "integration/endpoint_model_sync_test.rs"]
+mod endpoint_model_sync_test;
+
+#[path = "integration/endpoint_connection_test_test.rs"]
+mod endpoint_connection_test_test;
+
+#[path = "integration/endpoint_management_test.rs"]
+mod endpoint_management_test;
+
+#[path = "integration/endpoint_name_uniqueness_test.rs"]
+mod endpoint_name_uniqueness_test;
+
+#[path = "integration/endpoint_latency_routing_test.rs"]
+mod endpoint_latency_routing_test;
+
+#[path = "integration/endpoint_auto_recovery_test.rs"]
+mod endpoint_auto_recovery_test;
+
+#[path = "integration/endpoint_viewer_access_test.rs"]
+mod endpoint_viewer_access_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

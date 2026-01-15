@@ -23,6 +23,9 @@ pub mod invitations;
 /// データベースマイグレーション
 pub mod migrations;
 
+/// エンドポイント管理
+pub mod endpoints;
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use once_cell::sync::Lazy;

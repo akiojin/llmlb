@@ -8,6 +8,8 @@ pub mod auth;
 pub mod cloud_models;
 pub mod dashboard;
 pub mod dashboard_ws;
+/// エンドポイント管理API
+pub mod endpoints;
 pub mod health;
 pub mod images;
 pub mod invitations;
@@ -135,7 +137,24 @@ pub fn create_router(state: AppState) -> Router {
         .route("/models/register", post(models::register_model))
         .route("/models/*model_name", delete(models::delete_model))
         // Prometheus metrics（cloud prefix含む独自メトリクス）
-        .route("/metrics/cloud", get(cloud_metrics::export_metrics));
+        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
+        // エンドポイント管理API（SPEC-66555000）
+        .route(
+            "/endpoints",
+            get(endpoints::list_endpoints).post(endpoints::create_endpoint),
+        )
+        .route(
+            "/endpoints/:id",
+            get(endpoints::get_endpoint)
+                .put(endpoints::update_endpoint)
+                .delete(endpoints::delete_endpoint),
+        )
+        .route("/endpoints/:id/test", post(endpoints::test_endpoint))
+        .route("/endpoints/:id/sync", post(endpoints::sync_endpoint_models))
+        .route(
+            "/endpoints/:id/models",
+            get(endpoints::list_endpoint_models),
+        );
 
     let admin_routes = if auth_disabled {
         admin_routes.layer(middleware::from_fn(

@@ -53,6 +53,9 @@ pub mod events;
 /// トークン抽出・推定
 pub mod token;
 
+/// 型定義
+pub mod types;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {

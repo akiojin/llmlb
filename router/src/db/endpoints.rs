@@ -226,6 +226,33 @@ pub async fn add_endpoint_model(
     Ok(())
 }
 
+/// エンドポイントのモデル情報を更新
+pub async fn update_endpoint_model(
+    pool: &SqlitePool,
+    model: &EndpointModel,
+) -> Result<bool, sqlx::Error> {
+    let capabilities_json = model
+        .capabilities
+        .as_ref()
+        .map(|c| serde_json::to_string(c).unwrap_or_default());
+
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoint_models
+        SET capabilities = ?, last_checked = ?
+        WHERE endpoint_id = ? AND model_id = ?
+        "#,
+    )
+    .bind(&capabilities_json)
+    .bind(model.last_checked.map(|dt| dt.to_rfc3339()))
+    .bind(model.endpoint_id.to_string())
+    .bind(&model.model_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// エンドポイントのモデル一覧を取得
 pub async fn list_endpoint_models(
     pool: &SqlitePool,

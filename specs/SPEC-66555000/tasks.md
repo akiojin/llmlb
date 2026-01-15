@@ -91,10 +91,10 @@
 
 ### モデル同期
 
-- [ ] T031 `router/src/sync/mod.rs` にモデル同期ロジック実装（GET /v1/models）
-- [ ] T031a `router/src/sync/parser.rs` にOpenAI/Ollama両形式のレスポンスパーサー実装
-- [ ] T031b `router/src/sync/capabilities.rs` にモデル名プレフィックスからのcapabilities自動判定実装
-- [ ] T031c `router/src/sync/mod.rs` にモデル削除同期（差分計算）を追加
+- [x] T031 `router/src/sync/mod.rs` にモデル同期ロジック実装（GET /v1/models）
+- [x] T031a `router/src/sync/parser.rs` にOpenAI/Ollama両形式のレスポンスパーサー実装
+- [x] T031b `router/src/sync/capabilities.rs` にモデル名プレフィックスからのcapabilities自動判定実装
+- [x] T031c `router/src/sync/mod.rs` にモデル削除同期（差分計算）を追加
 
 ### ルーティング統合
 

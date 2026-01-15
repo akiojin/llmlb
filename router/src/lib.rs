@@ -56,6 +56,9 @@ pub mod token;
 /// 型定義
 pub mod types;
 
+/// モデル同期
+pub mod sync;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {

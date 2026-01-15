@@ -54,31 +54,31 @@
 - [x] T016c [P] `router/tests/integration/endpoint_auto_recovery_test.rs` に自動復旧のintegration test
 - [x] T016d [P] `router/tests/integration/endpoint_viewer_access_test.rs` にviewerロール制限のintegration test
 
-## Phase 3.3: コア実装（テストが失敗した後のみ）
+## Phase 3.3: コア実装（テストが失敗した後のみ） ✅ GREEN完了
 
 ### DB層
 
-- [ ] T017 `router/src/db/endpoints.rs` にEndpointStorage CRUD実装（name UNIQUE制約、latency_ms含む）
-- [ ] T018 `router/src/db/endpoint_models.rs` にEndpointModelStorage CRUD実装
-- [ ] T018a `router/src/db/endpoint_health_checks.rs` にEndpointHealthCheckStorage実装（履歴保存・30日クリーンアップ）
+- [x] T017 `router/src/db/endpoints.rs` にEndpointStorage CRUD実装（name UNIQUE制約、latency_ms含む）
+- [x] T018 `router/src/db/endpoints.rs` にEndpointModelStorage CRUD実装（endpoints.rsに統合）
+- [x] T018a `router/src/db/endpoints.rs` にEndpointHealthCheckStorage実装（履歴保存・30日クリーンアップ、endpoints.rsに統合）
 
 ### レジストリ層
 
-- [ ] T019 `router/src/registry/endpoints.rs` にEndpointRegistry実装（インメモリキャッシュ）
+- [x] T019 `router/src/registry/endpoints.rs` にEndpointRegistry実装（インメモリキャッシュ）
 
 ### APIハンドラー
 
-- [ ] T020 `router/src/api/endpoints.rs` にPOST /v0/endpoints ハンドラー
-- [ ] T021 `router/src/api/endpoints.rs` にGET /v0/endpoints ハンドラー
-- [ ] T022 `router/src/api/endpoints.rs` にGET /v0/endpoints/:id ハンドラー
-- [ ] T023 `router/src/api/endpoints.rs` にPUT /v0/endpoints/:id ハンドラー
-- [ ] T024 `router/src/api/endpoints.rs` にDELETE /v0/endpoints/:id ハンドラー
-- [ ] T025 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/test ハンドラー
-- [ ] T026 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/sync ハンドラー
+- [x] T020 `router/src/api/endpoints.rs` にPOST /v0/endpoints ハンドラー
+- [x] T021 `router/src/api/endpoints.rs` にGET /v0/endpoints ハンドラー
+- [x] T022 `router/src/api/endpoints.rs` にGET /v0/endpoints/:id ハンドラー
+- [x] T023 `router/src/api/endpoints.rs` にPUT /v0/endpoints/:id ハンドラー
+- [x] T024 `router/src/api/endpoints.rs` にDELETE /v0/endpoints/:id ハンドラー
+- [x] T025 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/test ハンドラー
+- [x] T026 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/sync ハンドラー
 
 ### APIルーティング
 
-- [ ] T027 `router/src/api/mod.rs` にエンドポイントAPIルートを追加
+- [x] T027 `router/src/api/mod.rs` にエンドポイントAPIルートを追加
 
 ## Phase 3.4: 統合
 
@@ -104,7 +104,7 @@
 
 ### 認可
 
-- [ ] T033a `router/src/auth/middleware.rs` にviewerロールのGET制限を追加
+- [x] T033a `router/src/auth/middleware.rs` および `router/src/api/endpoints.rs` にviewerロール制限を実装（authenticated_middleware + ensure_admin）
 
 ## Phase 3.5: 仕上げ
 

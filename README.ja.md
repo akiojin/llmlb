@@ -483,26 +483,11 @@ Router (OpenAI-compatible)
 
 ## 開発
 
+詳細な開発ガイドライン、テスト手順、貢献フローについては [CLAUDE.md](./CLAUDE.md) を参照。
+
 ```bash
+# 品質チェック一式
 make quality-checks
-```
-
-### PoC
-
-- gpt-oss（自動）: `make poc-gptoss`
-- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
-- gpt-oss (Linux / CUDA, GGUF・実験扱い): `make poc-gptoss-cuda`
-  - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
-
-補足:
-- gpt-oss-20b は safetensors（index + shards + config/tokenizer）を正本とします。
-- GPU必須（macOS=Metal / Windows=DirectML）。Linux/CUDAは実験扱いです。
-
-Dashboard を更新する場合:
-
-```bash
-pnpm install
-pnpm --filter @llm-router/dashboard build
 ```
 
 ## ライセンス

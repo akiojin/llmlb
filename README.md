@@ -716,96 +716,13 @@ Cloud / external services:
 
 ## Development
 
-### Commit Hooks
-
-Install the JavaScript tooling once per clone to enable Husky-managed commit hooks:
-
-```bash
-pnpm install
-```
-
-- Runs the `prepare` script and configures Husky's Git hook directory.
-- Adds a `commit-msg` hook that executes `commitlint --edit "$1"` so invalid messages fail locally instead of in CI.
-- Use `pnpm run lint:commits` to lint a range manually (defaults to `origin/main..HEAD`).
-
-### Running Tests
+For detailed development guidelines, testing procedures, and contribution workflow, see
+[CLAUDE.md](./CLAUDE.md).
 
 ```bash
-# Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint, OpenAI proxy)
+# Full quality gate
 make quality-checks
-
-# (Optional) Run only the OpenAI-compatible proxy regression suite
-make openai-tests
 ```
-
-### PoCs
-
-- gpt-oss (auto): `make poc-gptoss`
-- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
-- gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
-  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
-
-Notes:
-- gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
-- GPU is required. Supported backends: macOS (Metal) and Windows (DirectML). Linux/CUDA is experimental.
-
-### Spec-Driven Development
-
-This project follows Spec-Driven Development:
-
-1. `/speckit.specify` - Create feature specification
-2. `/speckit.plan` - Create implementation plan
-3. `/speckit.tasks` - Break down into tasks
-4. Execute tasks (strict TDD cycle)
-
-See [CLAUDE.md](./CLAUDE.md) for details.
-
-### Claude Code Worktree Hooks
-
-This project uses Claude Code PreToolUse Hooks to enforce Worktree environment
-boundaries and prevent accidental operations that could disrupt the development workflow.
-
-**Features:**
-
-- **Git Branch Protection**: Blocks `git checkout`, `git switch`, `git worktree`
-commands to prevent branch switching
-- **Directory Navigation Control**: Blocks `cd` commands that would move outside
-the Worktree boundary
-- **Smart Allow Lists**: Permits read-only operations like `git branch --list`
-- **Fast Execution**: Average response time < 50ms (target: < 100ms)
-
-**Installation & Configuration:**
-
-For detailed setup instructions, manual testing examples, and troubleshooting, see:
-
-- [Quickstart Guide](./specs/SPEC-dc648675/quickstart.md) - Step-by-step setup
-and verification
-- [Feature Specification](./specs/SPEC-dc648675/spec.md) - Requirements and
-acceptance criteria
-- [Implementation Plan](./specs/SPEC-dc648675/plan.md) - Technical design and
-architecture
-- [Performance Report](./specs/SPEC-dc648675/performance.md) - Benchmark results
-
-**Running Hook Tests:**
-
-```bash
-# Run all Hook contract tests (13 test cases)
-make test-hooks
-
-# Or run manually with Bats
-npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats
-
-# Run performance benchmark
-tests/hooks/benchmark-hooks.sh
-```
-
-**Automated Testing:**
-
-Hook tests are automatically executed in CI/CD:
-
-- GitHub Actions: `.github/workflows/test-hooks.yml` (standalone)
-- Quality Checks: `.github/workflows/quality-checks.yml` (integrated)
-- Makefile: `make quality-checks` includes `test-hooks` target
 
 ## Request History
 

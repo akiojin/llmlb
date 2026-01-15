@@ -78,6 +78,8 @@ pub struct AppState {
     pub queue_config: config::QueueConfig,
     /// ダッシュボードイベントバス
     pub event_bus: events::SharedEventBus,
+    /// エンドポイントレジストリ（新エンドポイント管理システム）
+    pub endpoint_registry: Option<registry::endpoints::EndpointRegistry>,
 }
 
 #[cfg(test)]

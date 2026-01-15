@@ -26,8 +26,9 @@ use crate::{
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         nodes::AppError,
         proxy::{
-            forward_streaming_response, save_request_record, select_available_node,
-            select_available_node_with_queue_for_model, QueueSelection,
+            forward_streaming_response, forward_to_endpoint, save_request_record,
+            select_available_node, select_available_node_with_queue_for_model,
+            select_endpoint_for_model, EndpointSelection, QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -1149,6 +1150,129 @@ async fn proxy_openai_post(
             .await;
     }
 
+    // Endpoint-based routing: check if model exists in EndpointRegistry
+    if let Ok(EndpointSelection::Found(endpoint)) = select_endpoint_for_model(state, &model).await {
+        let record_id = Uuid::new_v4();
+        let timestamp = Utc::now();
+        let request_body = sanitize_openai_payload_for_history(&payload);
+        let body_bytes = serde_json::to_vec(&payload).map_err(|e| {
+            AppError::from(RouterError::Http(format!(
+                "Failed to serialize payload: {}",
+                e
+            )))
+        })?;
+        let start = Instant::now();
+
+        let response = match forward_to_endpoint(
+            &state.http_client,
+            &endpoint,
+            target_path,
+            body_bytes,
+            stream,
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                let duration = start.elapsed();
+                save_request_record(
+                    state.request_history.clone(),
+                    RequestResponseRecord {
+                        id: record_id,
+                        timestamp,
+                        request_type,
+                        model: model.clone(),
+                        node_id: endpoint.id,
+                        node_machine_name: endpoint.name.clone(),
+                        node_ip: "0.0.0.0".parse().unwrap(),
+                        client_ip: None,
+                        request_body,
+                        response_body: None,
+                        duration_ms: duration.as_millis() as u64,
+                        status: RecordStatus::Error {
+                            message: format!("Endpoint request failed: {}", e),
+                        },
+                        completed_at: Utc::now(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        total_tokens: None,
+                    },
+                );
+                return Err(e.into());
+            }
+        };
+
+        let duration = start.elapsed();
+
+        if stream {
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: endpoint.id,
+                    node_machine_name: endpoint.name.clone(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: duration.as_millis() as u64,
+                    status: RecordStatus::Success,
+                    completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
+                },
+            );
+            return forward_streaming_response(response).map_err(AppError::from);
+        }
+
+        // Non-streaming: read response body
+        let status = response.status();
+        let body_bytes = response.bytes().await.map_err(map_reqwest_error)?;
+        let response_body_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
+        let token_usage = response_body_value
+            .as_ref()
+            .and_then(extract_usage_from_response);
+
+        save_request_record(
+            state.request_history.clone(),
+            RequestResponseRecord {
+                id: record_id,
+                timestamp,
+                request_type,
+                model: model.clone(),
+                node_id: endpoint.id,
+                node_machine_name: endpoint.name.clone(),
+                node_ip: "0.0.0.0".parse().unwrap(),
+                client_ip: None,
+                request_body,
+                response_body: response_body_value,
+                duration_ms: duration.as_millis() as u64,
+                status: if status.is_success() {
+                    RecordStatus::Success
+                } else {
+                    RecordStatus::Error {
+                        message: format!("Endpoint returned {}", status),
+                    }
+                },
+                completed_at: Utc::now(),
+                input_tokens: token_usage.as_ref().and_then(|u| u.input_tokens),
+                output_tokens: token_usage.as_ref().and_then(|u| u.output_tokens),
+                total_tokens: token_usage.as_ref().and_then(|u| u.total_tokens),
+            },
+        );
+
+        return Ok(Response::builder()
+            .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(body_bytes))
+            .unwrap());
+    }
+
+    // Fall back to node-based routing
     if !state.registry.has_model_reported(&model).await {
         let is_registered = load_registered_model(&state.db_pool, &model).await?;
         if is_registered.is_none() {
@@ -1710,6 +1834,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         }
     }
 

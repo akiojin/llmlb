@@ -222,6 +222,22 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
+    // エンドポイントレジストリを初期化
+    let endpoint_registry =
+        match llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone()).await {
+            Ok(reg) => {
+                info!(
+                    "Endpoint registry initialized with {} endpoints",
+                    reg.count().await
+                );
+                Some(reg)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to initialize endpoint registry: {}", e);
+                None
+            }
+        };
+
     let state = AppState {
         registry: registry.clone(),
         load_manager,
@@ -231,6 +247,7 @@ async fn run_server(config: ServerConfig) {
         http_client,
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry,
     };
 
     let router = api::create_router(state);

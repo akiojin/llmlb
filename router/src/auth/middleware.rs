@@ -631,6 +631,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         };
 
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
@@ -671,6 +672,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         };
 
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(

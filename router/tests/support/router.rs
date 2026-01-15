@@ -53,6 +53,7 @@ pub async fn spawn_test_router() -> TestServer {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: None,
     };
 
     let router = api::create_router(state);
@@ -221,6 +222,7 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: None,
     };
 
     let router = api::create_router(state);

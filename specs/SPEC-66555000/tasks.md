@@ -23,36 +23,36 @@
 
 ## Phase 3.1: セットアップ
 
-- [ ] T001 `router/migrations/` に `YYYYMMDDHHMMSS_add_endpoints.sql` マイグレーション追加（endpoints, endpoint_models, endpoint_health_checks）
-- [ ] T002 [P] `router/src/types/endpoint.rs` に型定義を作成（Endpoint, EndpointStatus, EndpointModel, EndpointHealthCheck）
-- [ ] T003 [P] `router/src/db/mod.rs` に `endpoints` モジュールを追加
-- [ ] T004 [P] `router/src/api/mod.rs` に `endpoints` モジュールを追加
+- [x] T001 `router/migrations/` に `YYYYMMDDHHMMSS_add_endpoints.sql` マイグレーション追加（endpoints, endpoint_models, endpoint_health_checks）
+- [x] T002 [P] `router/src/types/endpoint.rs` に型定義を作成（Endpoint, EndpointStatus, EndpointModel, EndpointHealthCheck）
+- [x] T003 [P] `router/src/db/mod.rs` に `endpoints` モジュールを追加
+- [x] T004 [P] `router/src/api/mod.rs` に `endpoints` モジュールを追加
 
 ## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
 
 **重要: これらのテストは記述され、実装前に失敗する必要がある**
 
-### Contract Tests（API契約検証）
+### Contract Tests（API契約検証）✅ RED完了
 
-- [ ] T005 [P] `router/tests/contract/endpoints_post_test.rs` に POST /v0/endpoints の contract test
-- [ ] T006 [P] `router/tests/contract/endpoints_get_list_test.rs` に GET /v0/endpoints の contract test
-- [ ] T007 [P] `router/tests/contract/endpoints_get_detail_test.rs` に GET /v0/endpoints/:id の contract test
-- [ ] T008 [P] `router/tests/contract/endpoints_put_test.rs` に PUT /v0/endpoints/:id の contract test
-- [ ] T009 [P] `router/tests/contract/endpoints_delete_test.rs` に DELETE /v0/endpoints/:id の contract test
-- [ ] T010 [P] `router/tests/contract/endpoints_test_test.rs` に POST /v0/endpoints/:id/test の contract test
-- [ ] T011 [P] `router/tests/contract/endpoints_sync_test.rs` に POST /v0/endpoints/:id/sync の contract test
+- [x] T005 [P] `router/tests/contract/endpoints_post_test.rs` に POST /v0/endpoints の contract test
+- [x] T006 [P] `router/tests/contract/endpoints_get_list_test.rs` に GET /v0/endpoints の contract test
+- [x] T007 [P] `router/tests/contract/endpoints_get_detail_test.rs` に GET /v0/endpoints/:id の contract test
+- [x] T008 [P] `router/tests/contract/endpoints_put_test.rs` に PUT /v0/endpoints/:id の contract test
+- [x] T009 [P] `router/tests/contract/endpoints_delete_test.rs` に DELETE /v0/endpoints/:id の contract test
+- [x] T010 [P] `router/tests/contract/endpoints_test_test.rs` に POST /v0/endpoints/:id/test の contract test
+- [x] T011 [P] `router/tests/contract/endpoints_sync_test.rs` に POST /v0/endpoints/:id/sync の contract test
 
-### Integration Tests（ユーザーストーリー検証）
+### Integration Tests（ユーザーストーリー検証）✅ RED完了
 
-- [ ] T012 [P] `router/tests/integration/endpoint_registration_test.rs` にUS1: エンドポイント登録のintegration test
-- [ ] T013 [P] `router/tests/integration/endpoint_health_check_test.rs` にUS2: 稼働状況監視のintegration test
-- [ ] T014 [P] `router/tests/integration/endpoint_model_sync_test.rs` にUS3: モデル同期のintegration test
-- [ ] T015 [P] `router/tests/integration/endpoint_connection_test_test.rs` にUS4: 接続テストのintegration test
-- [ ] T016 [P] `router/tests/integration/endpoint_management_test.rs` にUS5: 管理操作のintegration test
-- [ ] T016a [P] `router/tests/integration/endpoint_name_uniqueness_test.rs` に名前重複検証のintegration test
-- [ ] T016b [P] `router/tests/integration/endpoint_latency_routing_test.rs` にレイテンシベースルーティングのintegration test
-- [ ] T016c [P] `router/tests/integration/endpoint_auto_recovery_test.rs` に自動復旧のintegration test
-- [ ] T016d [P] `router/tests/integration/endpoint_viewer_access_test.rs` にviewerロール制限のintegration test
+- [x] T012 [P] `router/tests/integration/endpoint_registration_test.rs` にUS1: エンドポイント登録のintegration test
+- [x] T013 [P] `router/tests/integration/endpoint_health_check_test.rs` にUS2: 稼働状況監視のintegration test
+- [x] T014 [P] `router/tests/integration/endpoint_model_sync_test.rs` にUS3: モデル同期のintegration test
+- [x] T015 [P] `router/tests/integration/endpoint_connection_test_test.rs` にUS4: 接続テストのintegration test
+- [x] T016 [P] `router/tests/integration/endpoint_management_test.rs` にUS5: 管理操作のintegration test
+- [x] T016a [P] `router/tests/integration/endpoint_name_uniqueness_test.rs` に名前重複検証のintegration test
+- [x] T016b [P] `router/tests/integration/endpoint_latency_routing_test.rs` にレイテンシベースルーティングのintegration test
+- [x] T016c [P] `router/tests/integration/endpoint_auto_recovery_test.rs` に自動復旧のintegration test
+- [x] T016d [P] `router/tests/integration/endpoint_viewer_access_test.rs` にviewerロール制限のintegration test
 
 ## Phase 3.3: コア実装（テストが失敗した後のみ）
 

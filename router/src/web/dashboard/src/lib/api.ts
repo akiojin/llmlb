@@ -525,7 +525,7 @@ export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
     // /v1/models - OpenAI互換モデル一覧（lifecycle_status含む）
     // APIキー認証が必要なため、ローカルストレージのAPIキーを使用
-    const apiKey = localStorage.getItem('playground_api_key') || 'sk_debug'
+    const apiKey = localStorage.getItem('llm-router-api-key') || 'sk_debug'
     const response = await fetch('/v1/models', {
       headers: {
         Authorization: `Bearer ${apiKey}`,

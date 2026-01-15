@@ -477,6 +477,19 @@ static bool create_layer_tensors(
     layer.wv = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head_kv * head_dim);
     ggml_set_name(layer.wv, name);
 
+    // Q, K, V biases (optional, used by Qwen2 - always F32)
+    snprintf(name, sizeof(name), "blk.%d.attn_q.bias", layer_idx);
+    layer.bq = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_head * head_dim);
+    ggml_set_name(layer.bq, name);
+
+    snprintf(name, sizeof(name), "blk.%d.attn_k.bias", layer_idx);
+    layer.bk = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_head_kv * head_dim);
+    ggml_set_name(layer.bk, name);
+
+    snprintf(name, sizeof(name), "blk.%d.attn_v.bias", layer_idx);
+    layer.bv = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_head_kv * head_dim);
+    ggml_set_name(layer.bv, name);
+
     // Output projection
     snprintf(name, sizeof(name), "blk.%d.attn_output.weight", layer_idx);
     layer.wo = ggml_new_tensor_2d(ctx, wtype, n_head * head_dim, n_embd);
@@ -524,11 +537,17 @@ static size_t estimate_weight_memory(const ModelHParams& hparams) {
         // Attention norm (always F32)
         mem += n_embd * sizeof(float);
 
-        // Q, K, V, O (use weight_type)
+        // Q, K, V, O weights (use weight_type)
         mem += (size_t)n_embd * n_head * head_dim * wtype_size;      // Q
         mem += (size_t)n_embd * n_head_kv * head_dim * wtype_size;   // K
         mem += (size_t)n_embd * n_head_kv * head_dim * wtype_size;   // V
         mem += (size_t)n_head * head_dim * n_embd * wtype_size;      // O
+
+        // Q, K, V biases (always F32, optional but allocated)
+        mem += (size_t)n_head * head_dim * sizeof(float);            // bq
+        mem += (size_t)n_head_kv * head_dim * sizeof(float);         // bk
+        mem += (size_t)n_head_kv * head_dim * sizeof(float);         // bv
+
 
         // FFN norm (always F32)
         mem += n_embd * sizeof(float);
@@ -758,9 +777,16 @@ GgmlModel* load_ggml_model(
         const uint8_t* data_base = static_cast<const uint8_t*>(file_data) + header.data_offset;
 
         for (const auto& tensor_info : header.tensors) {
-            // Skip bias tensors - our model structure doesn't use biases
-            if (tensor_info.name.find(".bias") != std::string::npos ||
-                tensor_info.name.find("_bias") != std::string::npos) {
+            // Skip most bias tensors except QKV biases (used by Qwen2)
+            bool is_bias = (tensor_info.name.find(".bias") != std::string::npos ||
+                            tensor_info.name.find("_bias") != std::string::npos);
+            bool is_qkv_bias = (tensor_info.name.find("q_proj.bias") != std::string::npos ||
+                                tensor_info.name.find("k_proj.bias") != std::string::npos ||
+                                tensor_info.name.find("v_proj.bias") != std::string::npos ||
+                                tensor_info.name.find("attn_q.bias") != std::string::npos ||
+                                tensor_info.name.find("attn_k.bias") != std::string::npos ||
+                                tensor_info.name.find("attn_v.bias") != std::string::npos);
+            if (is_bias && !is_qkv_bias) {
                 continue;
             }
 
@@ -807,19 +833,37 @@ GgmlModel* load_ggml_model(
                                 layer_part.find("input_layernorm") != std::string::npos) {
                                 ggml_tensor = layer.attn_norm;
                             }
-                            // Q projection
+                            // Q projection (check bias first)
+                            else if ((layer_part.find("q_proj.bias") != std::string::npos ||
+                                      layer_part.find("attn_q.bias") != std::string::npos ||
+                                      (layer_part.find("self_attn.q") != std::string::npos && layer_part.find(".bias") != std::string::npos))) {
+                                ggml_tensor = layer.bq;
+                                layer.has_bq = true;
+                            }
                             else if (layer_part.find("attn_q") != std::string::npos ||
                                      layer_part.find("q_proj") != std::string::npos ||
                                      layer_part.find("self_attn.q") != std::string::npos) {
                                 ggml_tensor = layer.wq;
                             }
-                            // K projection
+                            // K projection (check bias first)
+                            else if ((layer_part.find("k_proj.bias") != std::string::npos ||
+                                      layer_part.find("attn_k.bias") != std::string::npos ||
+                                      (layer_part.find("self_attn.k") != std::string::npos && layer_part.find(".bias") != std::string::npos))) {
+                                ggml_tensor = layer.bk;
+                                layer.has_bk = true;
+                            }
                             else if (layer_part.find("attn_k") != std::string::npos ||
                                      layer_part.find("k_proj") != std::string::npos ||
                                      layer_part.find("self_attn.k") != std::string::npos) {
                                 ggml_tensor = layer.wk;
                             }
-                            // V projection
+                            // V projection (check bias first)
+                            else if ((layer_part.find("v_proj.bias") != std::string::npos ||
+                                      layer_part.find("attn_v.bias") != std::string::npos ||
+                                      (layer_part.find("self_attn.v") != std::string::npos && layer_part.find(".bias") != std::string::npos))) {
+                                ggml_tensor = layer.bv;
+                                layer.has_bv = true;
+                            }
                             else if (layer_part.find("attn_v") != std::string::npos ||
                                      layer_part.find("v_proj") != std::string::npos ||
                                      layer_part.find("self_attn.v") != std::string::npos) {
@@ -943,6 +987,96 @@ GgmlModel* load_ggml_model(
         fflush(stderr);
     }
 
+    // Check if chat special tokens have distinct embeddings
+    // If tokens 151644 (<|im_start|>) and 151645 (<|im_end|>) have identical embeddings,
+    // this is likely a base model without properly trained chat tokens
+    if (model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+        const size_t n_embd = model->hparams.n_embd;
+        const size_t emb_byte_size = n_embd * sizeof(float);
+
+        // Check if vocab is large enough for chat tokens
+        if (model->hparams.n_vocab >= 151646) {
+            std::vector<float> emb_im_start(n_embd);
+            std::vector<float> emb_im_end(n_embd);
+
+            // Token 151644 = <|im_start|>, Token 151645 = <|im_end|>
+            size_t offset_im_start = 151644 * model->tensors.tok_embd->nb[1];
+            size_t offset_im_end = 151645 * model->tensors.tok_embd->nb[1];
+
+            ggml_backend_tensor_get(model->tensors.tok_embd, emb_im_start.data(), offset_im_start, emb_byte_size);
+            ggml_backend_tensor_get(model->tensors.tok_embd, emb_im_end.data(), offset_im_end, emb_byte_size);
+
+            // Compare embeddings using epsilon for floating point comparison
+            // BF16 -> F32 conversion can introduce tiny differences (~1e-5)
+            // If max absolute difference is very small, consider them identical
+            const float epsilon = 1e-4f;  // Tolerance for base model detection
+            float max_diff = 0.0f;
+            for (size_t i = 0; i < n_embd; ++i) {
+                float diff = std::fabs(emb_im_start[i] - emb_im_end[i]);
+                if (diff > max_diff) {
+                    max_diff = diff;
+                }
+            }
+
+            bool identical = (max_diff < epsilon);
+
+            if (identical) {
+                model->has_trained_chat_tokens = false;
+                fprintf(stderr, "[WARNING] load_ggml_model: Chat tokens <|im_start|> and <|im_end|> have identical embeddings.\n");
+                fprintf(stderr, "[WARNING] This appears to be a BASE model, not an INSTRUCT model.\n");
+                fprintf(stderr, "[WARNING] Chat completions may produce garbage output.\n");
+                fprintf(stderr, "[WARNING] Consider using the Instruct version (e.g., Qwen2.5-0.5B-Instruct).\n");
+                fflush(stderr);
+            } else {
+                fprintf(stderr, "[DEBUG] load_ggml_model: Chat tokens have distinct embeddings (Instruct model)\n");
+                fflush(stderr);
+            }
+        }
+    }
+
+    // Debug: verify tok_embd has non-zero values
+    if (model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+        std::vector<float> test_data(5);
+        ggml_backend_tensor_get(model->tensors.tok_embd, test_data.data(), 0, 5 * sizeof(float));
+        fprintf(stderr, "[DEBUG] load_ggml_model: tok_embd first 5 values: %.6f %.6f %.6f %.6f %.6f\n",
+                test_data[0], test_data[1], test_data[2], test_data[3], test_data[4]);
+        fflush(stderr);
+    }
+
+    // Check if output (lm_head) was loaded - if not, use tied embeddings
+    if (model->tensors.output && model->tensors.output->buffer) {
+        std::vector<float> test_data(5);
+        ggml_backend_tensor_get(model->tensors.output, test_data.data(), 0, 5 * sizeof(float));
+
+        // Check if output is all zeros (lm_head not found in safetensors)
+        bool all_zeros = true;
+        for (int i = 0; i < 5; ++i) {
+            if (test_data[i] != 0.0f) {
+                all_zeros = false;
+                break;
+            }
+        }
+
+        if (all_zeros && model->tensors.tok_embd && model->tensors.tok_embd->buffer) {
+            // Tied embeddings: copy tok_embd data to output (lm_head)
+            size_t tensor_size = ggml_nbytes(model->tensors.output);
+            std::vector<char> buffer(tensor_size);
+            ggml_backend_tensor_get(model->tensors.tok_embd, buffer.data(), 0, tensor_size);
+            ggml_backend_tensor_set(model->tensors.output, buffer.data(), 0, tensor_size);
+
+            fprintf(stderr, "[DEBUG] load_ggml_model: tied embeddings - copied tok_embd to output (lm_head), size=%zu\n",
+                    tensor_size);
+            fflush(stderr);
+
+            // Verify the copy
+            ggml_backend_tensor_get(model->tensors.output, test_data.data(), 0, 5 * sizeof(float));
+        }
+
+        fprintf(stderr, "[DEBUG] load_ggml_model: output (lm_head) first 5 values: %.6f %.6f %.6f %.6f %.6f\n",
+                test_data[0], test_data[1], test_data[2], test_data[3], test_data[4]);
+        fflush(stderr);
+    }
+
     return model.release();
 }
 
@@ -1021,7 +1155,10 @@ bool allocate_kv_cache(
 void clear_kv_cache(GgmlContext* ctx) {
     if (ctx) {
         ctx->kv_used = 0;
-        // Optionally zero out the cache memory
+        // Zero out the cache memory to prevent stale data issues
+        if (ctx->kv_cache_buffer) {
+            ggml_backend_buffer_clear(ctx->kv_cache_buffer, 0);
+        }
     }
 }
 

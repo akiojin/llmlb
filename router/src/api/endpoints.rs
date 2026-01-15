@@ -218,6 +218,32 @@ pub async fn create_endpoint(
             .into_response();
     }
 
+    // 名前の重複チェック
+    match db::find_by_name(&state.db_pool, &req.name).await {
+        Ok(Some(_)) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Endpoint with name '{}' already exists", req.name),
+                    code: "DUPLICATE_NAME".to_string(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to check name uniqueness: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to check name uniqueness".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Ok(None) => {} // OK - 名前は一意
+    }
+
     let mut endpoint = Endpoint::new(req.name, req.base_url);
     endpoint.api_key = req.api_key;
     endpoint.health_check_interval_secs = req.health_check_interval_secs;
@@ -351,6 +377,36 @@ pub async fn update_endpoint(
                 }),
             )
                 .into_response();
+        }
+    }
+
+    // 名前変更時の重複チェック（他のエンドポイントと重複していないか）
+    if let Some(ref new_name) = req.name {
+        if new_name != &existing.name {
+            match db::find_by_name(&state.db_pool, new_name).await {
+                Ok(Some(_)) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: format!("Endpoint with name '{}' already exists", new_name),
+                            code: "DUPLICATE_NAME".to_string(),
+                        }),
+                    )
+                        .into_response()
+                }
+                Err(e) => {
+                    tracing::error!("Failed to check name uniqueness: {}", e);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: "Failed to check name uniqueness".to_string(),
+                            code: "DB_ERROR".to_string(),
+                        }),
+                    )
+                        .into_response();
+                }
+                Ok(None) => {} // OK - 名前は一意
+            }
         }
     }
 

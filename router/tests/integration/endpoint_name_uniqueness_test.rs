@@ -11,7 +11,6 @@ use crate::support::router::spawn_test_router;
 
 /// 同じ名前のエンドポイントを登録しようとすると400エラー
 #[tokio::test]
-#[ignore = "TDD RED: 名前重複チェック未実装"]
 async fn test_duplicate_name_rejected() {
     let server = spawn_test_router().await;
     let client = Client::new();
@@ -130,7 +129,6 @@ async fn test_name_reusable_after_deletion() {
 
 /// 更新時に他のエンドポイントの名前と重複を防止
 #[tokio::test]
-#[ignore = "TDD RED: 名前重複チェック未実装"]
 async fn test_update_name_uniqueness() {
     let server = spawn_test_router().await;
     let client = Client::new();

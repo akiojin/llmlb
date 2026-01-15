@@ -123,6 +123,25 @@ pub async fn delete_endpoint(pool: &SqlitePool, id: Uuid) -> Result<bool, sqlx::
     Ok(result.rows_affected() > 0)
 }
 
+/// 名前でエンドポイントを検索
+pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoint>, sqlx::Error> {
+    let row = sqlx::query_as::<_, EndpointRow>(
+        r#"
+        SELECT id, name, base_url, api_key_encrypted, status,
+               health_check_interval_secs, inference_timeout_secs,
+               latency_ms, last_seen, last_error, error_count,
+               registered_at, notes
+        FROM endpoints
+        WHERE name = ?
+        "#,
+    )
+    .bind(name)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| r.into()))
+}
+
 /// ステータスでフィルタしてエンドポイント一覧を取得
 pub async fn list_endpoints_by_status(
     pool: &SqlitePool,

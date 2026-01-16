@@ -10,6 +10,8 @@ pub mod dashboard;
 pub mod dashboard_ws;
 /// エンドポイント管理API
 pub mod endpoints;
+/// APIエラーレスポンス型
+pub mod error;
 pub mod health;
 pub mod images;
 pub mod invitations;
@@ -182,7 +184,9 @@ pub fn create_router(state: AppState) -> Router {
         ))
     };
 
-    // ノード登録（Nodeスコープが必要）
+    // ノード登録 + モデル配布レジストリ（Nodeスコープが必要）
+    // DEPRECATED: POST /v0/nodes（ノード自己登録）は SPEC-66555000 により非推奨
+    // 新しい実装は POST /v0/endpoints を使用してください
     let node_register_routes = Router::new()
         .route("/nodes", post(nodes::register_node))
         // モデル配布レジストリ（複数ファイル: safetensors 等）
@@ -217,6 +221,8 @@ pub fn create_router(state: AppState) -> Router {
         ));
 
     // ノードトークン + APIキー認証が必要なルート
+    // DEPRECATED: POST /v0/health（プッシュ型ヘルスチェック）は SPEC-66555000 により非推奨
+    // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用
     let node_protected_routes = Router::new().route("/health", post(health::health_check));
 
     let node_protected_routes = if auth_disabled {

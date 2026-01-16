@@ -21,9 +21,9 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        error::AppError,
         model_name::parse_quantized_model_name,
         models::load_registered_model,
-        nodes::AppError,
         proxy::{forward_streaming_response, save_request_record},
     },
     AppState,

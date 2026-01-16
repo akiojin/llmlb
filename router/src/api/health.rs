@@ -1,6 +1,6 @@
 //! ヘルスチェックAPIハンドラー
 
-use crate::{api::nodes::AppError, balancer::MetricsUpdate, AppState};
+use crate::{api::error::AppError, balancer::MetricsUpdate, AppState};
 use axum::{extract::State, Json};
 use llm_router_common::protocol::HealthCheckRequest;
 

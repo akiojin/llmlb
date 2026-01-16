@@ -2,7 +2,7 @@
 //!
 //! `/v0/dashboard/logs/*` エンドポイントを提供する。
 
-use super::nodes::AppError;
+use super::error::AppError;
 use crate::{logging, AppState};
 use axum::{
     extract::{Path, Query, State},

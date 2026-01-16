@@ -3,7 +3,7 @@
 //! `/v0/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
 //! システム統計を返却する。
 
-use super::nodes::AppError;
+use super::error::AppError;
 use crate::{
     balancer::{NodeLoadSnapshot, RequestHistoryPoint},
     AppState,

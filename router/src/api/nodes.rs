@@ -19,10 +19,17 @@ use std::collections::HashSet;
 use tracing::{error, info, warn};
 
 /// POST /v0/nodes - ノード登録
+///
+/// DEPRECATED: この API は SPEC-66555000 により非推奨です。
+/// 新しい実装は POST /v0/endpoints を使用してください。
 pub async fn register_node(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<RegisterResponse>), AppError> {
+    warn!(
+        "DEPRECATED: POST /v0/nodes is deprecated. Use POST /v0/endpoints instead. \
+         This API will be removed in a future version."
+    );
     info!(
         "Node registration request: machine={}, ip={}, gpu_available={}",
         req.machine_name, req.ip_address, req.gpu_available

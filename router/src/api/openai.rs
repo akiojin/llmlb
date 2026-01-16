@@ -22,9 +22,9 @@ use uuid::Uuid;
 use crate::models::image;
 use crate::{
     api::{
+        error::AppError,
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
-        nodes::AppError,
         proxy::{
             forward_streaming_response, forward_to_endpoint, save_request_record,
             select_available_node, select_available_node_with_queue_for_model,

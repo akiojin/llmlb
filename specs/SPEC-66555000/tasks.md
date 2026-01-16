@@ -112,17 +112,33 @@
 
 - [x] T034 [P] `router/tests/unit/endpoint_status_test.rs` にEndpointStatus遷移のunit test（pending→offline即時遷移含む）
 - [x] T035 [P] `router/tests/unit/endpoint_validation_test.rs` にエンドポイントバリデーションのunit test（name UNIQUE含む）
-- [ ] T035a [P] `router/tests/unit/capabilities_detection_test.rs` にcapabilities自動判定のunit test
-- [ ] T035b [P] `router/tests/unit/response_parser_test.rs` にOpenAI/Ollamaレスポンスパーサーのunit test
+- [x] T035a [P] capabilities自動判定のunit test（`router/src/sync/capabilities.rs`内のinline testsで対応）
+- [x] T035b [P] OpenAI/Ollamaレスポンスパーサーのunit test（`router/src/sync/parser.rs`内のinline testsで対応）
 - [x] T035c [P] `router/tests/unit/latency_routing_test.rs` にレイテンシベースルーティング選択のunit test
 
 ### 旧コード削除
+
+**注意**: T036-T040の完全削除にはダッシュボードの移行が必要。
+現在ダッシュボードが `/v0/nodes/*` APIを使用しているため、
+以下は段階的に実行する:
+
+**Phase A: 廃止APIの削除（SPEC-94621a1f, SPEC-443acc8c対応）**
+
+- [x] T036a `api/error.rs` を作成しAppErrorを移動（nodes.rsから分離）
+- [x] T036b POST /v0/nodes ルートを削除（ノード自己登録廃止）
+- [x] T036c POST /v0/health ルートを削除（プッシュ型ヘルスチェック廃止）
+
+**Phase B: 完全削除（ダッシュボード移行後）**
+
+以下はダッシュボードがEndpoints APIに移行した後に実行:
 
 - [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）
 - [ ] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
 - [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除
 - [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）
 - [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除
+
+**ブロッカー**: ダッシュボードの `/v0/endpoints` API移行（別タスク）
 
 ### ドキュメント・検証
 

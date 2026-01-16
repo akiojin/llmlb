@@ -45,20 +45,16 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
-- **Automatic Load Balancing**: Intelligently distribute requests across available nodes
-- **Automatic Failure Detection**: Detect offline nodes and exclude them from routing
-- **Real-time Monitoring**: Comprehensive visualization of node states and performance metrics via web dashboard
+- **Automatic Load Balancing**: Latency-based request distribution across available endpoints
+- **Endpoint Management**: Centralized management of Ollama, vLLM, aLLM and other OpenAI-compatible servers
+- **Model Sync**: Automatic model discovery via `GET /v1/models` from registered endpoints
+- **Automatic Failure Detection**: Detect offline endpoints and exclude them from routing
+- **Real-time Monitoring**: Comprehensive visualization of endpoint states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
-- **Self-registering Nodes**: Nodes automatically register with the Router
-- **Node-driven Model Sync**: Nodes pull metadata via `/v0/models` + manifest and download directly from Hugging Face
-- **WebUI Management**: Manage node settings, monitoring, and control through
-  browser-based dashboard
+- **WebUI Management**: Manage endpoints, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
-- **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities
-  and availability
-- **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the
-  model name to proxy to the corresponding cloud provider while keeping the
-  same OpenAI-compatible endpoint.
+- **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
+- **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
 
 ## MCP Server for LLM Assistants
 
@@ -413,7 +409,7 @@ llm-router/
 ## Dashboard
 
 The dashboard is served by the router at `/dashboard`.
-Use it to monitor nodes, view request history, inspect logs, and manage models.
+Use it to monitor endpoints, view request history, inspect logs, and manage models.
 
 ### Quick usage
 
@@ -422,9 +418,56 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
    cargo run -p llm-router
    ```
 2. Open:
-   ```
+   ```text
    http://localhost:32768/dashboard
    ```
+
+## Endpoint Management
+
+The router centrally manages external inference servers (Ollama, vLLM, aLLM, etc.) as "endpoints".
+
+### Supported Endpoints
+
+| Type | Description | Health Check |
+|------|-------------|--------------|
+| **aLLM** | In-house inference server (llama.cpp/whisper.cpp) | `GET /v1/models` |
+| **Ollama** | Ollama server | `GET /v1/models` |
+| **vLLM** | vLLM inference server | `GET /v1/models` |
+| **OpenAI-compatible** | Other OpenAI-compatible APIs | `GET /v1/models` |
+
+### Registration via Dashboard
+
+1. Dashboard → Sidebar "Endpoints"
+2. Click "New Endpoint"
+3. Enter name and base URL (e.g., `http://192.168.1.100:11434`)
+4. "Connection Test" → "Save"
+
+### Registration via REST API
+
+```bash
+# Register endpoint
+curl -X POST http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Ollama Server A", "base_url": "http://192.168.1.100:11434"}'
+
+# List endpoints
+curl http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key"
+
+# Sync models
+curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
+  -H "Authorization: Bearer sk_your_api_key"
+```
+
+### Status Transitions
+
+- **pending**: Just registered (awaiting health check)
+- **online**: Health check successful
+- **offline**: Health check failed
+- **error**: Connection error
+
+For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md).
 
 ## Hugging Face registration (safetensors / GGUF)
 
@@ -799,9 +842,10 @@ to `.migrated`.
 
 | Scope | Grants |
 |-------|--------|
-| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) |
+| `endpoints` | Endpoint management (`/v0/endpoints/*`) |
+| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) - Legacy |
 | `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
-| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
+| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
 Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
@@ -823,7 +867,19 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin or API key (admin) |
 | DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin or API key (admin) |
 
-#### Node Management Endpoints
+#### Endpoint Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v0/endpoints` | Register endpoint | JWT+Admin or API key (admin) |
+| GET | `/v0/endpoints` | List endpoints | JWT+Admin/Viewer or API key (admin/endpoints) |
+| GET | `/v0/endpoints/:id` | Get endpoint details | JWT+Admin/Viewer or API key (admin/endpoints) |
+| PUT | `/v0/endpoints/:id` | Update endpoint | JWT+Admin or API key (admin) |
+| DELETE | `/v0/endpoints/:id` | Delete endpoint | JWT+Admin or API key (admin) |
+| POST | `/v0/endpoints/:id/test` | Connection test | JWT+Admin or API key (admin) |
+| POST | `/v0/endpoints/:id/sync` | Sync models | JWT+Admin or API key (admin) |
+
+#### Node Management Endpoints (Legacy)
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|

@@ -98,9 +98,9 @@
 
 ### ルーティング統合
 
-- [ ] T032 `router/src/api/openai.rs` にEndpointRegistryを利用したルーティング変更
-- [ ] T032a `router/src/api/openai.rs` にレイテンシベースのエンドポイント選択実装
-- [ ] T033 `router/src/api/proxy.rs` にエンドポイントへのプロキシ処理追加
+- [x] T032 `router/src/api/openai.rs` にEndpointRegistryを利用したルーティング変更
+- [x] T032a `router/src/api/openai.rs` にレイテンシベースのエンドポイント選択実装
+- [x] T033 `router/src/api/proxy.rs` にエンドポイントへのプロキシ処理追加
 
 ### 認可
 
@@ -110,11 +110,11 @@
 
 ### Unit Tests
 
-- [ ] T034 [P] `router/tests/unit/endpoint_status_test.rs` にEndpointStatus遷移のunit test（pending→offline即時遷移含む）
-- [ ] T035 [P] `router/tests/unit/endpoint_validation_test.rs` にエンドポイントバリデーションのunit test（name UNIQUE含む）
+- [x] T034 [P] `router/tests/unit/endpoint_status_test.rs` にEndpointStatus遷移のunit test（pending→offline即時遷移含む）
+- [x] T035 [P] `router/tests/unit/endpoint_validation_test.rs` にエンドポイントバリデーションのunit test（name UNIQUE含む）
 - [ ] T035a [P] `router/tests/unit/capabilities_detection_test.rs` にcapabilities自動判定のunit test
 - [ ] T035b [P] `router/tests/unit/response_parser_test.rs` にOpenAI/Ollamaレスポンスパーサーのunit test
-- [ ] T035c [P] `router/tests/unit/latency_routing_test.rs` にレイテンシベースルーティング選択のunit test
+- [x] T035c [P] `router/tests/unit/latency_routing_test.rs` にレイテンシベースルーティング選択のunit test
 
 ### 旧コード削除
 
@@ -126,8 +126,8 @@
 
 ### ドキュメント・検証
 
-- [ ] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行
-- [ ] T042 `README.md` または `README.ja.md` にエンドポイント管理の説明追加
+- [x] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行
+- [x] T042 `README.md` または `README.ja.md` にエンドポイント管理の説明追加
 
 ## 依存関係
 

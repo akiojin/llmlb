@@ -43,20 +43,66 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 ## 主な特徴
 
 - OpenAI 互換 API: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-- ロードバランシング: 利用可能なノードへ自動ルーティング
-- ダッシュボード: `/dashboard` でノード、リクエスト履歴、ログ、モデルを管理
-- ノード自己登録: ノードは起動時にルーターへ登録し、ハートビートを送信
-- ノード主導モデル同期: ノードは `/v0/models` + マニフェストを参照し、
-  HFから直接ダウンロードして同期（ルーターからの push 配布なし）
+- ロードバランシング: 利用可能なエンドポイントへレイテンシベースで自動ルーティング
+- ダッシュボード: `/dashboard` でエンドポイント、リクエスト履歴、ログ、モデルを管理
+- エンドポイント管理: Ollama、vLLM、aLLM等の外部推論サーバーをルーターから一元管理
+- モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
 ## ダッシュボード
 
 ルーターが `/dashboard` で提供します。
 
-```
+```text
 http://localhost:32768/dashboard
 ```
+
+## エンドポイント管理
+
+ルーターは外部の推論サーバー（Ollama、vLLM、aLLM等）を「エンドポイント」として一元管理します。
+
+### 対応エンドポイント
+
+| タイプ | 説明 | ヘルスチェック |
+|-------|------|---------------|
+| **aLLM** | 自社推論サーバー（llama.cpp/whisper.cpp等） | `GET /v1/models` |
+| **Ollama** | Ollamaサーバー | `GET /v1/models` |
+| **vLLM** | vLLM推論サーバー | `GET /v1/models` |
+| **OpenAI互換** | その他のOpenAI互換API | `GET /v1/models` |
+
+### ダッシュボードからの登録
+
+1. ダッシュボード → サイドメニュー「エンドポイント」
+2. 「新規エンドポイント」をクリック
+3. 名前とベースURLを入力（例: `http://192.168.1.100:11434`）
+4. 「接続テスト」で疎通確認 → 「保存」
+
+### REST APIからの登録
+
+```bash
+# エンドポイント登録
+curl -X POST http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "OllamaサーバーA", "base_url": "http://192.168.1.100:11434"}'
+
+# エンドポイント一覧
+curl http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key"
+
+# モデル同期
+curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
+  -H "Authorization: Bearer sk_your_api_key"
+```
+
+### ステータス遷移
+
+- **pending**: 登録直後（ヘルスチェック待ち）
+- **online**: ヘルスチェック成功
+- **offline**: ヘルスチェック失敗
+- **error**: 接続エラー
+
+詳細は [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md) を参照。
 
 ## LLM アシスタント向け MCP サーバー
 
@@ -412,9 +458,10 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`） |
+| `endpoints` | エンドポイント管理（`/v0/endpoints/*`） |
+| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`）※レガシー |
 | `api` | OpenAI 互換推論 API（`/v1/*`） |
-| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
 **補足**:
 - `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node`）+ `X-Node-Token` 必須。
@@ -430,7 +477,17 @@ Router (OpenAI-compatible)
 - GET `/v1/models`（API キーまたは `X-Node-Token`）
 - GET `/v1/models/:model_id`（API キーまたは `X-Node-Token`）
 
-#### ノード管理
+#### エンドポイント管理
+
+- POST `/v0/endpoints`（登録、admin権限）
+- GET `/v0/endpoints`（一覧、admin/viewer権限）
+- GET `/v0/endpoints/:id`（詳細、admin/viewer権限）
+- PUT `/v0/endpoints/:id`（更新、admin権限）
+- DELETE `/v0/endpoints/:id`（削除、admin権限）
+- POST `/v0/endpoints/:id/test`（接続テスト、admin権限）
+- POST `/v0/endpoints/:id/sync`（モデル同期、admin権限）
+
+#### ノード管理（レガシー）
 
 - POST `/v0/nodes`（登録、APIキー: `node`）
 - GET `/v0/nodes`（一覧、admin権限）

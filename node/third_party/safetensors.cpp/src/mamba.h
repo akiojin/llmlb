@@ -1,7 +1,9 @@
 #pragma once
 
 #include <ggml.h>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace safetensors {

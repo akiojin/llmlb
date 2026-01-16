@@ -163,9 +163,19 @@ ArchType detect_architecture(const std::string& model_dir, std::string& error) {
         content.find("\"GemmaForCausalLM\"") != std::string::npos) {
         return ArchType::GEMMA;
     }
+    if (content.find("\"NemotronHForCausalLM\"") != std::string::npos) {
+        return ArchType::NEMOTRON;
+    }
+    if (content.find("\"glm4_moe\"") != std::string::npos ||
+        content.find("\"Glm4MoeForCausalLM\"") != std::string::npos) {
+        return ArchType::GLM;
+    }
+    if (content.find("\"gpt_oss\"") != std::string::npos) {
+        return ArchType::GPT_OSS;
+    }
 
-    // Default to Llama-like architecture
-    return ArchType::LLAMA;
+    // Default to UNKNOWN (don't assume Llama)
+    return ArchType::UNKNOWN;
 }
 
 /* Load hyperparameters from config.json */

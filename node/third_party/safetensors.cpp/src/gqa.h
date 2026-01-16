@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ggml/include/ggml.h"
+#include <ggml.h>
 #include <vector>
 
 namespace safetensors {

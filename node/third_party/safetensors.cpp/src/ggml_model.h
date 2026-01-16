@@ -27,6 +27,9 @@ enum class ArchType {
     QWEN,       // Qwen, Qwen2
     PHI,        // Phi-2, Phi-3
     GEMMA,      // Gemma
+    NEMOTRON,   // Nemotron-3 (Hybrid Mamba-Transformer MoE)
+    GPT_OSS,    // gpt-oss
+    GLM,        // GLM-4 MoE
     UNKNOWN
 };
 

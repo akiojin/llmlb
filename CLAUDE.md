@@ -39,13 +39,17 @@
 
 ### エンジン選択方針（プロジェクトルール）
 
-| モデル形式 | 使用エンジン | GPU対応 |
-|-----------|-------------|---------|
-| GGUF | llama.cpp | Metal/CUDA対応済み |
-| safetensorsのみ | 内蔵エンジン（gpt-oss/nemotron等） | Metal/CUDA実装が必要 |
+| モデル正本 | safetensors.cpp | llama.cpp（GGUF） |
+|-----------|-----------------|-------------------|
+| safetensors（OpenAI, NVIDIA公式） | 必須（テスト必須） | 追加サポート（サードパーティGGUF版） |
+| GGUF（Meta公式等） | 不要 | 必須 |
 
-- **GGUFが用意されているモデル**: llama.cppで対応（Metal/CUDA対応済み）
-- **GGUFがないモデル（safetensorsのみ）**: 内蔵エンジンを実装し、Metal/CUDA対応が必須
+- **正本がsafetensorsのモデル**（gpt-oss, Nemotron 3等）:
+  - safetensors.cppで動作必須（Metal/CUDA対応必須）
+  - GGUF版も動作可能（llama.cpp、サードパーティ変換版）
+- **正本がGGUFのモデル**（Llama, Mistral等）:
+  - llama.cppで対応（Metal/CUDA対応済み）
+  - safetensors.cppでの対応は不要
 
 ### 動作モード
 

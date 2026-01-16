@@ -1,304 +1,25 @@
-//! ノード登録APIハンドラー
+//! ノード管理APIハンドラー
+//!
+//! SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました。
+//! エンドポイント管理は POST /v0/endpoints を使用してください。
 
+use super::error::AppError;
 use crate::{
     balancer::{NodeLoadSnapshot, SystemSummary},
     events::DashboardEvent,
     registry::NodeSettingsUpdate,
     AppState,
 };
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use llm_router_common::{
     auth::{Claims, UserRole},
     error::RouterError,
-    protocol::{RegisterRequest, RegisterResponse},
     types::Node,
 };
 use serde::Deserialize;
-use serde_json::json;
-use std::collections::HashSet;
-use tracing::{error, info, warn};
 
-/// POST /v0/nodes - ノード登録
-///
-/// DEPRECATED: この API は SPEC-66555000 により非推奨です。
-/// 新しい実装は POST /v0/endpoints を使用してください。
-pub async fn register_node(
-    State(state): State<AppState>,
-    Json(req): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<RegisterResponse>), AppError> {
-    warn!(
-        "DEPRECATED: POST /v0/nodes is deprecated. Use POST /v0/endpoints instead. \
-         This API will be removed in a future version."
-    );
-    info!(
-        "Node registration request: machine={}, ip={}, gpu_available={}",
-        req.machine_name, req.ip_address, req.gpu_available
-    );
-
-    // GPU必須要件の検証（詳細なエラーメッセージ）
-    if !req.gpu_available {
-        error!(
-            "Node registration rejected: GPU not available (machine={})",
-            req.machine_name
-        );
-        return Err(AppError(RouterError::Common(
-            llm_router_common::error::CommonError::Validation(
-                "GPU hardware is required for node registration. gpu_available must be true."
-                    .to_string(),
-            ),
-        )));
-    }
-
-    if req.gpu_devices.is_empty() {
-        error!(
-            "Node registration rejected: No GPU devices (machine={})",
-            req.machine_name
-        );
-        return Err(AppError(RouterError::Common(
-            llm_router_common::error::CommonError::Validation(
-                "GPU hardware is required for node registration. No GPU devices detected in gpu_devices array."
-                    .to_string(),
-            ),
-        )));
-    }
-
-    if !req.gpu_devices.iter().all(|device| device.is_valid()) {
-        error!(
-            "Node registration rejected: Invalid GPU device info (machine={})",
-            req.machine_name
-        );
-        return Err(AppError(RouterError::Common(
-            llm_router_common::error::CommonError::Validation(
-                "GPU hardware is required for node registration. Invalid GPU device information (empty model or zero count)."
-                    .to_string(),
-            ),
-        )));
-    }
-
-    let mut req = req;
-
-    if req.gpu_count.is_none() {
-        let total_count = req.gpu_devices.iter().map(|device| device.count).sum();
-        req.gpu_count = Some(total_count);
-    }
-
-    if req.gpu_model.is_none() {
-        req.gpu_model = req.gpu_devices.first().map(|device| device.model.clone());
-    }
-
-    // ヘルスチェックはノードのOpenAI互換API経由で実施
-    let node_api_port = req.runtime_port + 1;
-    let node_api_base = format!("http://{}:{}", req.ip_address, node_api_port);
-    let health_url = format!("{}/v1/models", node_api_base);
-
-    let (loaded_models, initializing, ready_models) = 'health: {
-        let health_res = state.http_client.get(&health_url).send().await;
-        let resp = match health_res {
-            Ok(res) => res,
-            Err(e) => {
-                if cfg!(test) {
-                    warn!(
-                        "Skipping node API health check during tests: {} ({})",
-                        health_url, e
-                    );
-                    break 'health (Vec::new(), false, None);
-                }
-                // Log full details for debugging (internal URL is logged, not returned to client)
-                error!(
-                    "Node registration rejected: node API health check failed at {} ({})",
-                    health_url, e
-                );
-                // Return generic error without internal URL (security: prevent information disclosure)
-                return Err(AppError(RouterError::Internal(
-                    "Node health check failed".to_string(),
-                )));
-            }
-        };
-        if !resp.status().is_success() {
-            if cfg!(test) {
-                warn!(
-                    "Skipping node API health check during tests: HTTP {} at {}",
-                    resp.status(),
-                    health_url
-                );
-                break 'health (Vec::new(), false, None);
-            }
-            error!(
-                "Node registration rejected: node API returned HTTP {} at {}",
-                resp.status(),
-                health_url
-            );
-            return Err(AppError(RouterError::Internal(format!(
-                "Node API health check failed with HTTP {}",
-                resp.status()
-            ))));
-        }
-        let json: serde_json::Value = match resp.json().await {
-            Ok(value) => value,
-            Err(e) => {
-                if cfg!(test) {
-                    warn!(
-                        "Skipping node API health check during tests: invalid JSON ({})",
-                        e
-                    );
-                    break 'health (Vec::new(), false, None);
-                }
-                return Err(AppError(RouterError::Internal(e.to_string())));
-            }
-        };
-
-        let mut models: Vec<String> = Vec::new();
-        let mut seen = HashSet::new();
-
-        let entries = if let Some(arr) = json.get("data").and_then(|v| v.as_array()) {
-            arr.clone()
-        } else if let Some(arr) = json.as_array() {
-            arr.clone()
-        } else {
-            Vec::new()
-        };
-
-        for entry in entries {
-            let id = entry
-                .get("id")
-                .and_then(|id| id.as_str())
-                .map(|s| s.trim())
-                .unwrap_or("");
-            if id.is_empty() {
-                continue;
-            }
-            if seen.insert(id.to_string()) {
-                models.push(id.to_string());
-            }
-        }
-
-        if models.is_empty() {
-            error!(
-                "Node registration rejected: node API reported no executable models (machine={})",
-                req.machine_name
-            );
-            return Err(AppError(RouterError::Internal(
-                "Node reported no executable models".to_string(),
-            )));
-        }
-
-        let models_count = models.len().min(u8::MAX as usize) as u8;
-
-        let ready_models = json
-            .get("ready_models")
-            .and_then(|v| {
-                v.as_array().and_then(|arr| {
-                    if arr.len() == 2 {
-                        let a = arr[0].as_u64().unwrap_or(0) as u8;
-                        let b = arr[1].as_u64().unwrap_or(0) as u8;
-                        Some((a, b))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .or(if models_count > 0 {
-                Some((models_count, models_count))
-            } else {
-                None
-            });
-
-        let initializing = json
-            .get("initializing")
-            .and_then(|v| v.as_bool())
-            .unwrap_or_else(|| {
-                ready_models
-                    .map(|(ready, total)| ready < total)
-                    .unwrap_or(false)
-            });
-
-        break 'health (models, initializing, ready_models);
-    };
-
-    // ヘルスチェックOKなら登録を実施
-    let mut response = state.registry.register(req).await?;
-    response.node_api_port = Some(node_api_port);
-
-    if let Err(e) = state
-        .registry
-        .update_executable_models(response.node_id, loaded_models.clone())
-        .await
-    {
-        warn!(
-            "Failed to update executable models for node {}: {}",
-            response.node_id, e
-        );
-    }
-
-    // ノードトークンを生成（更新時は既存トークンを削除して再生成）
-    if response.status == llm_router_common::protocol::RegisterStatus::Updated {
-        // 既存トークンを削除
-        if let Err(e) = crate::db::node_tokens::delete(&state.db_pool, response.node_id).await {
-            warn!(
-                "Failed to delete existing node token for node {}: {}",
-                response.node_id, e
-            );
-        }
-    }
-    let node_token_with_plaintext =
-        crate::db::node_tokens::create(&state.db_pool, response.node_id)
-            .await
-            .map_err(|e| {
-                error!("Failed to create node token: {}", e);
-                AppError(RouterError::Internal(format!(
-                    "Failed to create node token: {}",
-                    e
-                )))
-            })?;
-    response.node_token = Some(node_token_with_plaintext.token);
-
-    // 取得した初期状態を反映
-    if let Err(e) = state
-        .registry
-        .update_last_seen(
-            response.node_id,
-            None,
-            None, // loaded_embedding_models
-            None,
-            None,
-            None,
-            Some(initializing),
-            ready_models,
-            None,
-            None,
-            None, // executable_models
-        )
-        .await
-    {
-        warn!(
-            "Failed to update initial state for node {}: {}",
-            response.node_id, e
-        );
-    }
-
-    state
-        .load_manager
-        .upsert_initial_state(response.node_id, initializing, ready_models)
-        .await;
-
-    // HTTPステータスコードを決定（新規登録=201, 更新=200）
-    let status_code = match response.status {
-        llm_router_common::protocol::RegisterStatus::Registered => StatusCode::CREATED,
-        llm_router_common::protocol::RegisterStatus::Updated => StatusCode::OK,
-    };
-
-    // Publish dashboard event for real-time updates
-    if let Ok(node) = state.registry.get(response.node_id).await {
-        state.event_bus.publish(DashboardEvent::NodeRegistered {
-            node_id: response.node_id,
-            machine_name: node.machine_name.clone(),
-            ip_address: node.ip_address.to_string(),
-            status: node.status,
-        });
-    }
-
-    Ok((status_code, Json(response)))
-}
+// SPEC-66555000: register_node 関数は廃止されました
+// 新しい実装は POST /v0/endpoints を使用してください
 
 /// GET /v0/nodes - ノード一覧取得
 pub async fn list_nodes(State(state): State<AppState>) -> Json<Vec<Node>> {
@@ -399,74 +120,8 @@ pub async fn disconnect_node(
     Ok(StatusCode::ACCEPTED)
 }
 
-/// Axum用のエラーレスポンス型
-#[derive(Debug)]
-pub struct AppError(RouterError);
-
-impl From<RouterError> for AppError {
-    fn from(err: RouterError) -> Self {
-        AppError(err)
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        // Use external_message() to avoid exposing internal details (IP addresses, ports, etc.)
-        // Full error details are logged separately for debugging
-        let (status, message) = match &self.0 {
-            RouterError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
-            RouterError::NoNodesAvailable => {
-                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
-            }
-            RouterError::NoCapableNodes(_) => {
-                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
-            }
-            RouterError::ServiceUnavailable(_) => {
-                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
-            }
-            RouterError::NodeOffline(_) => {
-                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
-            }
-            RouterError::InvalidModelName(_) => {
-                (StatusCode::BAD_REQUEST, self.0.external_message())
-            }
-            RouterError::InsufficientStorage(_) => {
-                (StatusCode::INSUFFICIENT_STORAGE, self.0.external_message())
-            }
-            RouterError::Database(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message())
-            }
-            RouterError::Http(_) => (StatusCode::BAD_GATEWAY, self.0.external_message()),
-            RouterError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.0.external_message()),
-            RouterError::Internal(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message())
-            }
-            RouterError::PasswordHash(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message())
-            }
-            RouterError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.external_message()),
-            RouterError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.external_message()),
-            RouterError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.external_message()),
-            RouterError::Common(err) => {
-                // GPU必須エラーの場合は403 Forbiddenを返す
-                let internal_message = err.to_string();
-                if internal_message.contains("GPU is required")
-                    || internal_message.contains("GPU hardware is required")
-                {
-                    (StatusCode::FORBIDDEN, self.0.external_message())
-                } else {
-                    (StatusCode::BAD_REQUEST, self.0.external_message())
-                }
-            }
-        };
-
-        let payload = json!({
-            "error": message
-        });
-
-        (status, Json(payload)).into_response()
-    }
-}
+// SPEC-66555000: AppError は super::error::AppError を使用
+// 重複定義を削除しました
 
 fn ensure_admin(claims: &Claims) -> Result<(), AppError> {
     if claims.role != UserRole::Admin {
@@ -477,6 +132,36 @@ fn ensure_admin(claims: &Claims) -> Result<(), AppError> {
     Ok(())
 }
 
+/// SPEC-66555000: テスト用ノード登録エンドポイント（デバッグビルドのみ）
+///
+/// E2Eテストで使用するため、POST /v0/nodes の代替として提供。
+/// リリースビルドでは無効化される。
+#[cfg(debug_assertions)]
+pub async fn test_register_node(
+    State(state): State<AppState>,
+    Json(payload): Json<llm_router_common::protocol::RegisterRequest>,
+) -> Result<
+    (
+        StatusCode,
+        Json<llm_router_common::protocol::RegisterResponse>,
+    ),
+    AppError,
+> {
+    use llm_router_common::error::CommonError;
+
+    // GPU必須チェック（旧APIと同じ検証）
+    if payload.gpu_devices.is_empty() {
+        return Err(AppError(RouterError::Common(CommonError::Validation(
+            "GPU hardware is required for node registration. Please ensure gpu_devices is populated."
+                .to_string(),
+        ))));
+    }
+
+    let response = state.registry.register(payload).await?;
+    // 旧APIとの互換性のため201 CREATEDを返す
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,8 +169,8 @@ mod tests {
         balancer::{LoadManager, MetricsUpdate, RequestOutcome},
         registry::NodeRegistry,
     };
-    use axum::body::to_bytes;
-    use llm_router_common::types::GpuDeviceInfo;
+    use axum::response::IntoResponse;
+    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use std::net::IpAddr;
     use std::time::Duration;
 
@@ -524,12 +209,15 @@ mod tests {
         }]
     }
 
-    #[tokio::test]
-    async fn test_register_node_success() {
-        let state = create_test_state().await;
+    /// テスト用ノードを直接レジストリに登録するヘルパー
+    async fn register_test_node(
+        state: &AppState,
+        machine_name: &str,
+        ip_address: &str,
+    ) -> uuid::Uuid {
         let req = RegisterRequest {
-            machine_name: "test-machine".to_string(),
-            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            machine_name: machine_name.to_string(),
+            ip_address: ip_address.parse::<IpAddr>().unwrap(),
             runtime_version: "0.1.0".to_string(),
             runtime_port: 32768,
             gpu_available: true,
@@ -538,59 +226,12 @@ mod tests {
             gpu_model: Some("Test GPU".to_string()),
             supported_runtimes: Vec::new(),
         };
-
-        let result = register_node(State(state), Json(req)).await;
-        assert!(result.is_ok());
-
-        let response = result.unwrap().1 .0;
-        assert!(!response.node_id.to_string().is_empty());
+        let response = state.registry.register(req).await.unwrap();
+        response.node_id
     }
 
-    #[tokio::test]
-    async fn test_register_node_pulls_executable_models() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let state = create_test_state().await;
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/v1/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "object": "list",
-                "data": [
-                    {"id": "model-a"},
-                    {"id": "model-b"}
-                ]
-            })))
-            .mount(&server)
-            .await;
-
-        let runtime_port = server.address().port() - 1;
-        let req = RegisterRequest {
-            machine_name: "test-machine-models".to_string(),
-            ip_address: server.address().ip(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state.clone()), Json(req))
-            .await
-            .unwrap()
-            .1
-             .0;
-
-        let node = state.registry.get(response.node_id).await.unwrap();
-        assert_eq!(
-            node.executable_models,
-            vec!["model-a".to_string(), "model-b".to_string()]
-        );
-    }
+    // SPEC-66555000: register_node関連のテストは削除されました
+    // POST /v0/nodes ルートが廃止されたため
 
     #[tokio::test]
     async fn test_list_nodes_empty() {
@@ -603,135 +244,12 @@ mod tests {
     async fn test_list_nodes_with_nodes() {
         let state = create_test_state().await;
 
-        // ノードを2つ登録
-        let req1 = RegisterRequest {
-            machine_name: "machine1".to_string(),
-            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let _ = register_node(State(state.clone()), Json(req1))
-            .await
-            .unwrap();
-
-        let req2 = RegisterRequest {
-            machine_name: "machine2".to_string(),
-            ip_address: "192.168.1.101".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let _ = register_node(State(state.clone()), Json(req2))
-            .await
-            .unwrap();
+        // ノードを2つ登録（registry.register() を直接使用）
+        let _ = register_test_node(&state, "machine1", "192.168.1.100").await;
+        let _ = register_test_node(&state, "machine2", "192.168.1.101").await;
 
         let result = list_nodes(State(state)).await;
         assert_eq!(result.0.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_register_node_gpu_required_error_is_json() {
-        let state = create_test_state().await;
-        let req = RegisterRequest {
-            machine_name: "gpu-required-test".to_string(),
-            ip_address: "192.168.1.101".parse().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: false,
-            gpu_devices: Vec::new(),
-            gpu_count: None,
-            gpu_model: None,
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state), Json(req))
-            .await
-            .unwrap_err()
-            .into_response();
-
-        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        // Security: external_message() returns generic error to prevent information disclosure
-        let expected = "Request error";
-        assert_eq!(body["error"], expected);
-    }
-
-    #[tokio::test]
-    async fn test_register_node_missing_gpu_devices_rejected() {
-        let state = create_test_state().await;
-        let req = RegisterRequest {
-            machine_name: "missing-gpu-devices".to_string(),
-            ip_address: "192.168.1.102".parse().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: Vec::new(),
-            gpu_count: None,
-            gpu_model: None,
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state), Json(req))
-            .await
-            .unwrap_err()
-            .into_response();
-
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        // Security: external_message() returns generic error to prevent information disclosure
-        assert_eq!(body["error"], "Request error");
-    }
-
-    #[tokio::test]
-    async fn test_register_same_machine_different_port_creates_multiple_nodes() {
-        let state = create_test_state().await;
-
-        let req1 = RegisterRequest {
-            machine_name: "shared-machine".to_string(),
-            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let _res1 = register_node(State(state.clone()), Json(req1))
-            .await
-            .unwrap()
-            .1
-             .0;
-
-        let req2 = RegisterRequest {
-            machine_name: "shared-machine".to_string(),
-            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 12434,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let _res2 = register_node(State(state.clone()), Json(req2))
-            .await
-            .unwrap()
-            .1
-             .0;
-
-        let nodes = list_nodes(State(state)).await.0;
-        assert_eq!(nodes.len(), 2);
     }
 
     #[tokio::test]
@@ -739,29 +257,13 @@ mod tests {
         let state = create_test_state().await;
 
         // ノードを登録
-        let req = RegisterRequest {
-            machine_name: "metrics-machine".to_string(),
-            ip_address: "192.168.1.150".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state.clone()), Json(req))
-            .await
-            .unwrap()
-            .1
-             .0;
+        let node_id = register_test_node(&state, "metrics-machine", "192.168.1.150").await;
 
         // メトリクスを記録
         state
             .load_manager
             .record_metrics(MetricsUpdate {
-                node_id: response.node_id,
+                node_id,
                 cpu_usage: 42.0,
                 memory_usage: 33.0,
                 gpu_usage: Some(55.0),
@@ -784,7 +286,7 @@ mod tests {
         assert_eq!(metrics.0.len(), 1);
 
         let snapshot = &metrics.0[0];
-        assert_eq!(snapshot.node_id, response.node_id);
+        assert_eq!(snapshot.node_id, node_id);
         assert_eq!(snapshot.cpu_usage.unwrap(), 42.0);
         assert_eq!(snapshot.memory_usage.unwrap(), 33.0);
         assert_eq!(snapshot.gpu_usage, Some(55.0));
@@ -812,30 +314,15 @@ mod tests {
     async fn test_metrics_summary_counts_requests() {
         let state = create_test_state().await;
 
-        // ノードを登録
-        let register_req = RegisterRequest {
-            machine_name: "stats-machine".to_string(),
-            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let response = register_node(State(state.clone()), Json(register_req))
-            .await
-            .unwrap()
-            .1
-             .0;
-        state.registry.approve(response.node_id).await.unwrap();
+        // ノードを登録・承認
+        let node_id = register_test_node(&state, "stats-machine", "192.168.1.200").await;
+        state.registry.approve(node_id).await.unwrap();
 
         // ハートビートでメトリクス更新
         state
             .load_manager
             .record_metrics(MetricsUpdate {
-                node_id: response.node_id,
+                node_id,
                 cpu_usage: 55.0,
                 memory_usage: 44.0,
                 gpu_usage: Some(60.0),
@@ -855,33 +342,17 @@ mod tests {
             .unwrap();
 
         // リクエストを成功・失敗で記録
+        state.load_manager.begin_request(node_id).await.unwrap();
         state
             .load_manager
-            .begin_request(response.node_id)
-            .await
-            .unwrap();
-        state
-            .load_manager
-            .finish_request(
-                response.node_id,
-                RequestOutcome::Success,
-                Duration::from_millis(120),
-            )
+            .finish_request(node_id, RequestOutcome::Success, Duration::from_millis(120))
             .await
             .unwrap();
 
+        state.load_manager.begin_request(node_id).await.unwrap();
         state
             .load_manager
-            .begin_request(response.node_id)
-            .await
-            .unwrap();
-        state
-            .load_manager
-            .finish_request(
-                response.node_id,
-                RequestOutcome::Error,
-                Duration::from_millis(200),
-            )
+            .finish_request(node_id, RequestOutcome::Error, Duration::from_millis(200))
             .await
             .unwrap();
 
@@ -906,23 +377,7 @@ mod tests {
         use llm_router_common::auth::{Claims, UserRole};
 
         let state = create_test_state().await;
-        let req = RegisterRequest {
-            machine_name: "approve-node".to_string(),
-            ip_address: "192.168.1.120".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state.clone()), Json(req))
-            .await
-            .unwrap()
-            .1
-             .0;
+        let node_id = register_test_node(&state, "approve-node", "192.168.1.120").await;
 
         let claims = Claims {
             sub: "admin".to_string(),
@@ -933,12 +388,12 @@ mod tests {
         let result = approve_node(
             Extension(claims),
             State(state.clone()),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await;
         assert!(result.is_ok());
 
-        let node = state.registry.get(response.node_id).await.unwrap();
+        let node = state.registry.get(node_id).await.unwrap();
         assert_eq!(node.status, llm_router_common::types::NodeStatus::Online);
     }
 
@@ -948,23 +403,7 @@ mod tests {
         use llm_router_common::auth::{Claims, UserRole};
 
         let state = create_test_state().await;
-        let req = RegisterRequest {
-            machine_name: "approve-online-node".to_string(),
-            ip_address: "192.168.1.130".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state.clone()), Json(req))
-            .await
-            .unwrap()
-            .1
-             .0;
+        let node_id = register_test_node(&state, "approve-online-node", "192.168.1.130").await;
 
         // まず承認してOnlineにする
         let claims = Claims {
@@ -975,7 +414,7 @@ mod tests {
         let _ = approve_node(
             Extension(claims.clone()),
             State(state.clone()),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await
         .unwrap();
@@ -984,7 +423,7 @@ mod tests {
         let result = approve_node(
             Extension(claims),
             State(state),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await;
 
@@ -999,23 +438,7 @@ mod tests {
         use llm_router_common::auth::{Claims, UserRole};
 
         let state = create_test_state().await;
-        let req = RegisterRequest {
-            machine_name: "approve-node-viewer".to_string(),
-            ip_address: "192.168.1.121".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-
-        let response = register_node(State(state.clone()), Json(req))
-            .await
-            .unwrap()
-            .1
-             .0;
+        let node_id = register_test_node(&state, "approve-node-viewer", "192.168.1.121").await;
 
         let claims = Claims {
             sub: "viewer".to_string(),
@@ -1026,7 +449,7 @@ mod tests {
         let result = approve_node(
             Extension(claims),
             State(state),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await;
 
@@ -1038,26 +461,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_node_settings_endpoint() {
         let state = create_test_state().await;
-
-        let node_id = register_node(
-            State(state.clone()),
-            Json(RegisterRequest {
-                machine_name: "node-settings".into(),
-                ip_address: "10.0.0.5".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            }),
-        )
-        .await
-        .unwrap()
-        .1
-         .0
-        .node_id;
+        let node_id = register_test_node(&state, "node-settings", "10.0.0.5").await;
 
         let payload = UpdateNodeSettingsPayload {
             custom_name: Some(Some("Primary".into())),
@@ -1085,24 +489,7 @@ mod tests {
         use llm_router_common::auth::{Claims, UserRole};
 
         let state = create_test_state().await;
-        let response = register_node(
-            State(state.clone()),
-            Json(RegisterRequest {
-                machine_name: "delete-node".into(),
-                ip_address: "10.0.0.7".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            }),
-        )
-        .await
-        .unwrap()
-        .1
-         .0;
+        let node_id = register_test_node(&state, "delete-node", "10.0.0.7").await;
 
         let claims = Claims {
             sub: "admin".to_string(),
@@ -1113,7 +500,7 @@ mod tests {
         let status = delete_node(
             Extension(claims),
             State(state.clone()),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await
         .unwrap();
@@ -1129,24 +516,7 @@ mod tests {
         use llm_router_common::auth::{Claims, UserRole};
 
         let state = create_test_state().await;
-        let response = register_node(
-            State(state.clone()),
-            Json(RegisterRequest {
-                machine_name: "delete-admin-required".into(),
-                ip_address: "10.0.0.9".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            }),
-        )
-        .await
-        .unwrap()
-        .1
-         .0;
+        let node_id = register_test_node(&state, "delete-admin-required", "10.0.0.9").await;
 
         // 非Admin（Viewer）での削除は失敗すべき
         let viewer_claims = Claims {
@@ -1158,7 +528,7 @@ mod tests {
         let result = delete_node(
             Extension(viewer_claims),
             State(state.clone()),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await;
 
@@ -1176,7 +546,7 @@ mod tests {
         let result = delete_node(
             Extension(admin_claims),
             State(state),
-            axum::extract::Path(response.node_id),
+            axum::extract::Path(node_id),
         )
         .await;
 
@@ -1186,54 +556,12 @@ mod tests {
     #[tokio::test]
     async fn test_disconnect_node_endpoint_marks_offline() {
         let state = create_test_state().await;
-        let node_id = register_node(
-            State(state.clone()),
-            Json(RegisterRequest {
-                machine_name: "disconnect-node".into(),
-                ip_address: "10.0.0.8".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            }),
-        )
-        .await
-        .unwrap()
-        .1
-         .0
-        .node_id;
+        let node_id = register_test_node(&state, "disconnect-node", "10.0.0.8").await;
 
         let _status = disconnect_node(State(state.clone()), axum::extract::Path(node_id))
             .await
             .unwrap();
 
         let _node = state.registry.get(node_id).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_register_node_without_gpu_rejected() {
-        let state = create_test_state().await;
-        let req = RegisterRequest {
-            machine_name: "no-gpu-machine".to_string(),
-            ip_address: "192.168.1.200".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: false,
-            gpu_devices: Vec::new(),
-            gpu_count: None,
-            gpu_model: None,
-            supported_runtimes: Vec::new(),
-        };
-
-        let result = register_node(State(state), Json(req)).await;
-        assert!(result.is_err());
-
-        // エラーがValidationエラーであることを確認
-        let err = result.unwrap_err();
-        let err_msg = format!("{:?}", err);
-        assert!(err_msg.contains("Validation") || err_msg.contains("GPU"));
     }
 }

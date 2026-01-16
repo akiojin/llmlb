@@ -187,21 +187,20 @@ pub fn create_router(state: AppState) -> Router {
         ))
     };
 
-    // ノード登録 + モデル配布レジストリ（Nodeスコープが必要）
-    // DEPRECATED: POST /v0/nodes（ノード自己登録）は SPEC-66555000 により非推奨
+    // モデル配布レジストリ（Nodeスコープが必要）
+    // SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました
     // 新しい実装は POST /v0/endpoints を使用してください
-    let node_register_routes = Router::new()
-        .route("/nodes", post(nodes::register_node))
+    let model_registry_routes = Router::new()
         // モデル配布レジストリ（複数ファイル: safetensors 等）
         .route(
             "/models/registry/:model_name/manifest.json",
             get(models::get_model_registry_manifest),
         );
 
-    let node_register_routes = if auth_disabled {
-        node_register_routes
+    let model_registry_routes = if auth_disabled {
+        model_registry_routes
     } else {
-        node_register_routes
+        model_registry_routes
             .layer(middleware::from_fn_with_state(
                 ApiKeyScope::Node,
                 crate::auth::middleware::require_api_key_scope_middleware,
@@ -223,28 +222,8 @@ pub fn create_router(state: AppState) -> Router {
             crate::auth::middleware::admin_or_node_middleware,
         ));
 
-    // ノードトークン + APIキー認証が必要なルート
-    // DEPRECATED: POST /v0/health（プッシュ型ヘルスチェック）は SPEC-66555000 により非推奨
+    // SPEC-66555000: POST /v0/health（プッシュ型ヘルスチェック）は廃止されました
     // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用
-    let node_protected_routes = Router::new().route("/health", post(health::health_check));
-
-    let node_protected_routes = if auth_disabled {
-        node_protected_routes
-    } else {
-        node_protected_routes
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::node_token_auth_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                ApiKeyScope::Node,
-                crate::auth::middleware::require_api_key_scope_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::api_key_auth_middleware,
-            ))
-    };
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
     let api_key_routes = Router::new()
@@ -275,7 +254,8 @@ pub fn create_router(state: AppState) -> Router {
             ))
     };
 
-    // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
+    // `/v1/models*` は外部クライアント(APIキー)からのみ参照される
+    // SPEC-66555000: ノードトークン認証は廃止されました
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model));
@@ -283,14 +263,29 @@ pub fn create_router(state: AppState) -> Router {
     let models_protected_routes = if auth_disabled {
         models_routes
     } else {
-        models_routes.layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_or_node_token_auth_middleware,
-        ))
+        models_routes
+            .layer(middleware::from_fn_with_state(
+                ApiKeyScope::Api,
+                crate::auth::middleware::require_api_key_scope_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::api_key_auth_middleware,
+            ))
     };
 
     // NOTE: /v0/models (GET) は Admin/Node スコープ共用。
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
+
+    // SPEC-66555000: テスト用内部エンドポイント（デバッグビルドのみ）
+    // E2Eテストでノード登録をシミュレートするために使用
+    #[cfg(debug_assertions)]
+    let test_routes = Router::new().route(
+        "/internal/test/register-node",
+        post(nodes::test_register_node),
+    );
+    #[cfg(not(debug_assertions))]
+    let test_routes = Router::new();
 
     Router::new()
         // `/v0/*`: llm-router独自API（互換不要・versioned）
@@ -303,9 +298,10 @@ pub fn create_router(state: AppState) -> Router {
                 .merge(auth_routes)
                 .merge(admin_routes)
                 .merge(endpoint_routes)
-                .merge(node_register_routes)
-                .merge(node_protected_routes)
-                .merge(models_list_routes),
+                .merge(model_registry_routes)
+                .merge(models_list_routes)
+                // デバッグ用テストエンドポイント
+                .merge(test_routes),
         )
         // OpenAI互換API
         .merge(api_key_protected_routes)

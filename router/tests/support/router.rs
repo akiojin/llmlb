@@ -78,39 +78,38 @@ pub async fn register_node(
     Ok(response)
 }
 
+/// SPEC-66555000: POST /v0/nodes は廃止されました。
+/// このヘルパー関数は後方互換性のために残されていますが、
+/// 新しいテストは Endpoints API を使用してください。
+///
 /// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
+/// レスポンスのボディには {"node_id": "...", "token": "..."} 形式が含まれます
 pub async fn register_node_with_runtimes(
     router_addr: SocketAddr,
     node_addr: SocketAddr,
-    _supported_runtimes: Vec<&str>,
+    supported_runtimes: Vec<&str>,
 ) -> reqwest::Result<Response> {
+    use serde_json::json;
+
+    // 1. 内部APIを使ってノードを登録するための仮想レスポンスを作成
+    // POST /v0/nodes が廃止されたため、内部 /v0/internal/test/register-node を使用
     let payload = json!({
         "machine_name": "stub-node",
         "ip_address": node_addr.ip().to_string(),
         "runtime_version": "0.0.0-test",
-        // テストスタブはHTTPポートで直接実行される。
-        // ルーターのヘルスチェックは runtime_port + 1 でアクセスするため、
-        // テストスタブのポートに対して -1 を計算して渡す。
-        // (例：スタブが port 12345 で実行 → runtime_port: 12344 を登録
-        //      → ルーターが 12344 + 1 = 12345 でヘルスチェック)
         "runtime_port": node_addr.port().saturating_sub(1),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
-        ]
+        ],
+        "supported_runtimes": supported_runtimes
     });
 
-    // supported_runtimesが指定されている場合はペイロードに追加
-    let payload = if !_supported_runtimes.is_empty() {
-        let mut p = payload;
-        p["supported_runtimes"] = json!(_supported_runtimes);
-        p
-    } else {
-        payload
-    };
-
+    // テスト専用の内部エンドポイントを使用
     Client::new()
-        .post(format!("http://{router_addr}/v0/nodes"))
+        .post(format!(
+            "http://{router_addr}/v0/internal/test/register-node"
+        ))
         .header("authorization", "Bearer sk_debug")
         .json(&payload)
         .send()

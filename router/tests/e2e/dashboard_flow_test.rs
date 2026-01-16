@@ -1,6 +1,9 @@
 //! ダッシュボードフローE2Eテスト
 //!
 //! ダッシュボードAPI（/v0/dashboard/*）のE2Eテスト
+//!
+//! SPEC-66555000: POST /v0/nodes は廃止され、/v0/internal/test/register-node に置き換えられました。
+//! このテストはデバッグビルドでのみ有効な内部テストエンドポイントを使用します。
 
 use axum::{
     body::Body,
@@ -223,12 +226,13 @@ async fn test_dashboard_nodes_with_registered_node() {
         supported_runtimes: Vec::new(),
     };
 
+    // SPEC-66555000: POST /v0/nodes は廃止され、デバッグ用内部エンドポイントを使用
     let _register_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))

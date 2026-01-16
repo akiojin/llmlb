@@ -95,7 +95,11 @@ async fn test_available_models_endpoint_is_removed() {
 }
 
 /// T019: ノードが報告したロード済みモデルが /v0/nodes に反映される
+///
+/// SPEC-66555000: このテストは廃止された機能（node_tokenとPOST /v0/health）に依存しています。
+/// 新しいEndpoints API（SPEC-24157000）ではモデル同期が自動的に行われます。
 #[tokio::test]
+#[ignore = "SPEC-66555000: node_token and POST /v0/health are deprecated"]
 async fn test_list_installed_models_on_node() {
     // モックサーバーを起動
     let mock_server = MockServer::start().await;
@@ -137,7 +141,7 @@ async fn test_list_installed_models_on_node() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))
@@ -275,7 +279,7 @@ async fn test_model_matrix_view_multiple_nodes() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v0/nodes")
+                    .uri("/v0/internal/test/register-node")
                     .header("authorization", format!("Bearer {}", admin_key))
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&register_request).unwrap()))

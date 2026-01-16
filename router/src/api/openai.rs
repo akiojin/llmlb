@@ -419,19 +419,46 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 // /v1/models に Azure OpenAI 形式の capabilities とダッシュボード拡張が統合されています。
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
+///
+/// SPEC-24157000: Endpoints APIで登録されたモデルも検索対象に含める
 pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
+    use crate::types::endpoint::SupportedAPI;
+    use std::collections::HashSet;
+
     let available_models = state.registry.list_executable_models_online().await;
     let mut registered_map: HashMap<String, crate::registry::models::ModelInfo> = HashMap::new();
     for model in list_registered_models(&state.db_pool).await? {
         registered_map.insert(model.name.clone(), model);
     }
 
-    let model = registered_map.remove(&model_id);
+    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    if let Some(ref registry) = state.endpoint_registry {
+        let online_endpoints = registry.list_online().await;
+        for ep in online_endpoints {
+            if let Ok(models) = registry.list_models(ep.id).await {
+                for model in models {
+                    let apis = endpoint_model_apis
+                        .entry(model.model_id.clone())
+                        .or_default();
+                    for api in model.supported_apis {
+                        apis.insert(api);
+                    }
+                    if ep.supports_responses_api {
+                        apis.insert(SupportedAPI::Responses);
+                    }
+                }
+            }
+        }
+    }
 
-    if model.is_none() && !available_models.contains(&model_id) {
+    let model = registered_map.remove(&model_id);
+    let is_endpoint_model = endpoint_model_apis.contains_key(&model_id);
+
+    if model.is_none() && !available_models.contains(&model_id) && !is_endpoint_model {
         // 404 を OpenAI 換算で返す
         let body = json!({
             "error": {
@@ -444,10 +471,16 @@ pub async fn get_model(
         return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
     }
 
+    // supported_apisを取得（デフォルトはchat_completions）
+    let supported_apis: Vec<String> = endpoint_model_apis
+        .get(&model_id)
+        .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+        .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+
     if let Some(model) = model {
         // Azure OpenAI 形式の capabilities (boolean object)
         let caps: ModelCapabilities = model.get_capabilities().into();
-        let ready = available_models.contains(&model_id);
+        let ready = available_models.contains(&model_id) || is_endpoint_model;
         let lifecycle_status = if ready {
             LifecycleStatus::Registered
         } else {
@@ -472,18 +505,27 @@ pub async fn get_model(
             "tags": model.tags,
             "description": model.description,
             "chat_template": model.chat_template,
+            "supported_apis": supported_apis,
         });
 
         return Ok((StatusCode::OK, Json(body)).into_response());
     }
 
+    // エンドポイント専用モデルまたはノードのモデル（メタデータなし）
+    let owned_by = if is_endpoint_model {
+        "endpoint"
+    } else {
+        "router"
+    };
+
     let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
-        "owned_by": "router",
+        "owned_by": owned_by,
         "lifecycle_status": LifecycleStatus::Registered,
         "ready": true,
+        "supported_apis": supported_apis,
     });
 
     Ok((StatusCode::OK, Json(body)).into_response())

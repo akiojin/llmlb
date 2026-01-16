@@ -135,7 +135,7 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -202,7 +202,7 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -274,7 +274,7 @@ async fn test_multi_runtime_node_handles_both_asr_and_tts() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -358,7 +358,7 @@ async fn test_no_capable_node_returns_503() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),

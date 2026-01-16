@@ -1,6 +1,8 @@
 //! Integration Test: ダッシュボードAPIでのGPU情報表示
 //!
 //! ダッシュボードエンドポイントがノードのGPU情報（モデル名・枚数）を返すことを検証する。
+//!
+//! SPEC-66555000: POST /v0/nodes は廃止され、/v0/internal/test/register-node に置き換えられました。
 
 use axum::{
     body::{to_bytes, Body},
@@ -105,7 +107,7 @@ async fn dashboard_nodes_include_gpu_devices() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_request).unwrap()))

@@ -14,8 +14,6 @@ pub mod users;
 pub mod api_keys;
 
 pub mod models;
-/// ノードトークン管理
-pub mod node_tokens;
 
 /// 招待コード管理
 pub mod invitations;

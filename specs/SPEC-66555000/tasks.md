@@ -140,13 +140,13 @@
 
 以下はPhase B-0完了後に実行:
 
-- [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）
-- [ ] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
-- [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除
-- [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）
-- [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除
+- [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）⚠️ NodeRegistryがまだ使用中
+- [x] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
+- [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ⚠️ LoadManager, HealthChecker等が依存
+- [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）⚠️ admin APIとして使用中
+- [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除 ⚠️ NodeRegistryが使用中
 
-**ブロッカー**: ダッシュボードの `/v0/endpoints` API移行（別タスク）
+**ブロッカー**: NodeRegistryの完全廃止にはEndpointRegistryへの完全移行が必要（LoadManager, HealthChecker, proxy, openaiルーティング等）
 
 ### ドキュメント・検証
 

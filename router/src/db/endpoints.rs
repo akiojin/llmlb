@@ -2,7 +2,9 @@
 //!
 //! SPEC-66555000: ルーター主導エンドポイント登録システム
 
-use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus};
+use crate::types::endpoint::{
+    Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus, SupportedAPI,
+};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -49,7 +51,7 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes
+               registered_at, notes, supports_responses_api
         FROM endpoints
         ORDER BY registered_at DESC
         "#,
@@ -67,7 +69,7 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes
+               registered_at, notes, supports_responses_api
         FROM endpoints
         WHERE id = ?
         "#,
@@ -130,7 +132,7 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes
+               registered_at, notes, supports_responses_api
         FROM endpoints
         WHERE name = ?
         "#,
@@ -152,7 +154,7 @@ pub async fn list_endpoints_by_status(
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes
+               registered_at, notes, supports_responses_api
         FROM endpoints
         WHERE status = ?
         ORDER BY registered_at DESC
@@ -190,6 +192,28 @@ pub async fn update_endpoint_status(
     .bind(&now)
     .bind(last_error)
     .bind(status.as_str())
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// エンドポイントのResponses API対応フラグを更新
+/// （SPEC-24157000: Open Responses API対応）
+pub async fn update_endpoint_responses_api_support(
+    pool: &SqlitePool,
+    id: Uuid,
+    supports_responses_api: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoints SET
+            supports_responses_api = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(supports_responses_api as i32)
     .bind(id.to_string())
     .execute(pool)
     .await?;
@@ -260,7 +284,7 @@ pub async fn list_endpoint_models(
 ) -> Result<Vec<EndpointModel>, sqlx::Error> {
     let rows = sqlx::query_as::<_, EndpointModelRow>(
         r#"
-        SELECT endpoint_id, model_id, capabilities, last_checked
+        SELECT endpoint_id, model_id, capabilities, last_checked, supported_apis
         FROM endpoint_models
         WHERE endpoint_id = ?
         "#,
@@ -387,6 +411,7 @@ struct EndpointRow {
     error_count: i32,
     registered_at: String,
     notes: Option<String>,
+    supports_responses_api: i32,
 }
 
 impl From<EndpointRow> for Endpoint {
@@ -410,6 +435,7 @@ impl From<EndpointRow> for Endpoint {
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),
             notes: row.notes,
+            supports_responses_api: row.supports_responses_api != 0,
         }
     }
 }
@@ -420,6 +446,7 @@ struct EndpointModelRow {
     model_id: String,
     capabilities: Option<String>,
     last_checked: Option<String>,
+    supported_apis: Option<String>,
 }
 
 impl From<EndpointModelRow> for EndpointModel {
@@ -432,6 +459,10 @@ impl From<EndpointModelRow> for EndpointModel {
                 .last_checked
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc)),
+            supported_apis: row
+                .supported_apis
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| vec![SupportedAPI::ChatCompletions]),
         }
     }
 }
@@ -539,6 +570,7 @@ mod tests {
             model_id: "llama3:8b".to_string(),
             capabilities: Some(vec!["chat".to_string(), "embeddings".to_string()]),
             last_checked: Some(chrono::Utc::now()),
+            supported_apis: vec![SupportedAPI::ChatCompletions],
         };
         add_endpoint_model(&pool, &model).await.unwrap();
 

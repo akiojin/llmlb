@@ -7,6 +7,35 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
+/// モデルがサポートするAPI種別（SPEC-24157000）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportedAPI {
+    /// Chat Completions API（/v1/chat/completions）
+    ChatCompletions,
+    /// Responses API（/v1/responses）
+    Responses,
+    /// Embeddings API（/v1/embeddings）
+    Embeddings,
+}
+
+impl SupportedAPI {
+    /// SupportedAPIを文字列に変換
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat_completions",
+            Self::Responses => "responses",
+            Self::Embeddings => "embeddings",
+        }
+    }
+}
+
+impl std::fmt::Display for SupportedAPI {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// エンドポイントの状態
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -86,6 +115,9 @@ pub struct Endpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
+    /// Responses API対応フラグ（SPEC-24157000）
+    #[serde(default)]
+    pub supports_responses_api: bool,
 }
 
 impl Endpoint {
@@ -105,6 +137,7 @@ impl Endpoint {
             error_count: 0,
             registered_at: Utc::now(),
             notes: None,
+            supports_responses_api: false,
         }
     }
 }
@@ -120,6 +153,16 @@ pub struct EndpointModel {
     pub capabilities: Option<Vec<String>>,
     /// 最終確認時刻
     pub last_checked: Option<DateTime<Utc>>,
+    /// サポートするAPI一覧（SPEC-24157000）
+    #[serde(default = "EndpointModel::default_supported_apis")]
+    pub supported_apis: Vec<SupportedAPI>,
+}
+
+impl EndpointModel {
+    /// デフォルトのサポートAPI（Chat Completionsのみ）
+    fn default_supported_apis() -> Vec<SupportedAPI> {
+        vec![SupportedAPI::ChatCompletions]
+    }
 }
 
 /// ヘルスチェック履歴
@@ -200,6 +243,40 @@ mod tests {
         assert_eq!(endpoint.health_check_interval_secs, 30);
         assert_eq!(endpoint.inference_timeout_secs, 120);
         assert_eq!(endpoint.error_count, 0);
+        assert!(!endpoint.supports_responses_api);
+    }
+
+    #[test]
+    fn test_supported_api_serialization() {
+        // SupportedAPI列挙型のシリアライズテスト (SPEC-24157000)
+        assert_eq!(
+            serde_json::to_string(&SupportedAPI::ChatCompletions).unwrap(),
+            "\"chat_completions\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SupportedAPI::Responses).unwrap(),
+            "\"responses\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SupportedAPI::Embeddings).unwrap(),
+            "\"embeddings\""
+        );
+    }
+
+    #[test]
+    fn test_supported_api_as_str() {
+        assert_eq!(SupportedAPI::ChatCompletions.as_str(), "chat_completions");
+        assert_eq!(SupportedAPI::Responses.as_str(), "responses");
+        assert_eq!(SupportedAPI::Embeddings.as_str(), "embeddings");
+    }
+
+    #[test]
+    fn test_endpoint_model_default_supported_apis() {
+        // EndpointModelのデフォルトサポートAPI (SPEC-24157000)
+        let json = r#"{"endpoint_id":"00000000-0000-0000-0000-000000000000","model_id":"test"}"#;
+        let model: EndpointModel = serde_json::from_str(json).unwrap();
+        assert_eq!(model.supported_apis.len(), 1);
+        assert_eq!(model.supported_apis[0], SupportedAPI::ChatCompletions);
     }
 
     #[test]

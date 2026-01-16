@@ -5,4 +5,4 @@
 /// エンドポイント関連の型定義
 pub mod endpoint;
 
-pub use endpoint::{Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus};
+pub use endpoint::{Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus, SupportedAPI};

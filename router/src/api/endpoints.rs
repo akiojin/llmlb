@@ -3,7 +3,7 @@
 //! SPEC-66555000: ルーター主導エンドポイント登録システム
 
 use crate::db::endpoints as db;
-use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus};
+use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -107,6 +107,8 @@ pub struct EndpointResponse {
     pub registered_at: String,
     /// メモ
     pub notes: Option<String>,
+    /// Responses API対応フラグ（SPEC-24157000）
+    pub supports_responses_api: bool,
     /// モデル数（一覧取得時）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_count: Option<usize>,
@@ -130,6 +132,7 @@ impl From<Endpoint> for EndpointResponse {
             error_count: ep.error_count,
             registered_at: ep.registered_at.to_rfc3339(),
             notes: ep.notes,
+            supports_responses_api: ep.supports_responses_api,
             model_count: None,
             models: None,
         }
@@ -335,7 +338,13 @@ pub async fn create_endpoint(
     endpoint.notes = req.notes;
 
     match db::create_endpoint(&state.db_pool, &endpoint).await {
-        Ok(()) => (StatusCode::CREATED, Json(EndpointResponse::from(endpoint))).into_response(),
+        Ok(()) => {
+            // EndpointRegistryキャッシュも更新（DBは既に保存済みなのでキャッシュのみ）
+            if let Some(ref registry) = state.endpoint_registry {
+                registry.add_to_cache(endpoint.clone()).await;
+            }
+            (StatusCode::CREATED, Json(EndpointResponse::from(endpoint))).into_response()
+        }
         Err(e) => {
             let error_str = e.to_string();
             if error_str.contains("UNIQUE constraint failed") {
@@ -725,7 +734,7 @@ pub async fn test_endpoint(
                     Err(_) => None,
                 };
 
-                // ステータスを更新
+                // ステータスを更新（DB）
                 let _ = db::update_endpoint_status(
                     &state.db_pool,
                     id,
@@ -734,6 +743,53 @@ pub async fn test_endpoint(
                     None,
                 )
                 .await;
+
+                // EndpointRegistryキャッシュも更新
+                if let Some(ref registry) = state.endpoint_registry {
+                    let _ = registry
+                        .update_status(id, EndpointStatus::Online, Some(latency_ms), None)
+                        .await;
+                }
+
+                // SPEC-24157000: Responses API対応を検出
+                // /health エンドポイントで supports_responses_api フラグを確認
+                let health_url = format!("{}/health", endpoint.base_url.trim_end_matches('/'));
+                let mut health_request = state.http_client.get(&health_url);
+                if let Some(ref api_key) = endpoint.api_key {
+                    health_request =
+                        health_request.header("Authorization", format!("Bearer {}", api_key));
+                }
+
+                if let Ok(health_response) = health_request
+                    .timeout(std::time::Duration::from_secs(10))
+                    .send()
+                    .await
+                {
+                    if let Ok(health_json) = health_response.json::<serde_json::Value>().await {
+                        let supports_responses_api = health_json["supports_responses_api"]
+                            .as_bool()
+                            .unwrap_or(false);
+                        // EndpointRegistryがある場合はキャッシュも更新
+                        if let Some(ref registry) = state.endpoint_registry {
+                            let _ = registry
+                                .update_responses_api_support(id, supports_responses_api)
+                                .await;
+                        } else {
+                            // Registryがない場合はDBのみ更新
+                            let _ = db::update_endpoint_responses_api_support(
+                                &state.db_pool,
+                                id,
+                                supports_responses_api,
+                            )
+                            .await;
+                        }
+                        tracing::debug!(
+                            endpoint_id = %id,
+                            supports_responses_api = supports_responses_api,
+                            "Detected Responses API support"
+                        );
+                    }
+                }
 
                 // モデル数を計算
                 let model_count = models_found.as_ref().map(|m| m.len()).unwrap_or(0);
@@ -905,6 +961,7 @@ pub async fn sync_endpoint_models(
                             model_id: model_id.to_string(),
                             capabilities: None,
                             last_checked: Some(now),
+                            supported_apis: vec![SupportedAPI::ChatCompletions],
                         };
                         let _ = db::add_endpoint_model(&state.db_pool, &ep_model).await;
                         synced_models.push(EndpointModelResponse::from(ep_model));
@@ -925,11 +982,17 @@ pub async fn sync_endpoint_models(
                             model_id: model_id.to_string(),
                             capabilities: None,
                             last_checked: Some(now),
+                            supported_apis: vec![SupportedAPI::ChatCompletions],
                         };
                         let _ = db::add_endpoint_model(&state.db_pool, &ep_model).await;
                         synced_models.push(EndpointModelResponse::from(ep_model));
                     }
                 }
+            }
+
+            // EndpointRegistryキャッシュをリロードしてモデルマッピングを更新
+            if let Some(ref registry) = state.endpoint_registry {
+                let _ = registry.reload().await;
             }
 
             // 変更カウントを計算

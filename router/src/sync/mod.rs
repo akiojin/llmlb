@@ -11,7 +11,7 @@ pub use capabilities::{
 pub use parser::{parse_models_response, ParsedModel, ResponseFormat};
 
 use crate::db::endpoints as db;
-use crate::types::endpoint::EndpointModel;
+use crate::types::endpoint::{EndpointModel, SupportedAPI};
 use chrono::Utc;
 use reqwest::Client;
 use sqlx::SqlitePool;
@@ -143,6 +143,7 @@ pub async fn sync_models(
             model_id: (*model_id).clone(),
             capabilities: caps_vec,
             last_checked: Some(now),
+            supported_apis: vec![SupportedAPI::ChatCompletions],
         };
 
         let _ = db::add_endpoint_model(pool, &model).await;
@@ -159,6 +160,7 @@ pub async fn sync_models(
             model_id: (*model_id).clone(),
             capabilities: caps_vec,
             last_checked: Some(now),
+            supported_apis: vec![SupportedAPI::ChatCompletions],
         };
 
         let _ = db::update_endpoint_model(pool, &model).await;

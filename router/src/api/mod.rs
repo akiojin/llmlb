@@ -22,6 +22,8 @@ pub mod models;
 pub mod nodes;
 pub mod openai;
 pub mod proxy;
+/// Open Responses API (SPEC-24157000)
+pub mod responses;
 pub mod users;
 
 use crate::cloud_metrics;
@@ -248,6 +250,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
+        // Open Responses API（SPEC-24157000）
+        .route("/v1/responses", post(responses::post_responses))
         // 音声API（OpenAI Audio API互換）
         .route("/v1/audio/transcriptions", post(audio::transcriptions))
         .route("/v1/audio/speech", post(audio::speech))

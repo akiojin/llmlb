@@ -147,6 +147,13 @@ impl EndpointRegistry {
         Ok(())
     }
 
+    /// エンドポイントをキャッシュのみに追加（DBは更新しない）
+    ///
+    /// 外部でDB保存が完了した後にキャッシュを同期するために使用する。
+    pub async fn add_to_cache(&self, endpoint: Endpoint) {
+        self.endpoints.write().await.insert(endpoint.id, endpoint);
+    }
+
     /// エンドポイントを更新（DBとキャッシュ両方）
     pub async fn update(&self, endpoint: Endpoint) -> Result<bool, sqlx::Error> {
         // DBを更新
@@ -184,6 +191,29 @@ impl EndpointRegistry {
                     endpoint.error_count = 0;
                 }
                 endpoint.last_seen = Some(chrono::Utc::now());
+            }
+        }
+
+        Ok(updated)
+    }
+
+    /// エンドポイントのResponses API対応フラグを更新（DBとキャッシュ両方）
+    /// （SPEC-24157000: Open Responses API対応）
+    pub async fn update_responses_api_support(
+        &self,
+        id: Uuid,
+        supports_responses_api: bool,
+    ) -> Result<bool, sqlx::Error> {
+        // DBを更新
+        let updated =
+            db::update_endpoint_responses_api_support(&self.pool, id, supports_responses_api)
+                .await?;
+
+        if updated {
+            // キャッシュを更新
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(endpoint) = endpoints.get_mut(&id) {
+                endpoint.supports_responses_api = supports_responses_api;
             }
         }
 
@@ -356,6 +386,7 @@ pub struct SyncResult {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
+    use crate::types::endpoint::SupportedAPI;
 
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:")
@@ -419,6 +450,7 @@ mod tests {
             model_id: "llama3:8b".to_string(),
             capabilities: Some(vec!["chat".to_string()]),
             last_checked: Some(chrono::Utc::now()),
+            supported_apis: vec![SupportedAPI::ChatCompletions],
         };
 
         registry.add_model(&model).await.unwrap();

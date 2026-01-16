@@ -1,6 +1,9 @@
 use std::net::SocketAddr;
 
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{
+    api, balancer::LoadManager, registry::endpoints::EndpointRegistry, registry::NodeRegistry,
+    AppState,
+};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -44,6 +47,11 @@ pub async fn spawn_test_router() -> TestServer {
     );
     let jwt_secret = test_jwt_secret();
 
+    // EndpointRegistryを初期化
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+
     let state = AppState {
         registry,
         load_manager,
@@ -53,7 +61,7 @@ pub async fn spawn_test_router() -> TestServer {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry: Some(endpoint_registry),
     };
 
     let router = api::create_router(state);
@@ -107,6 +115,80 @@ pub async fn register_node_with_runtimes(
         .json(&payload)
         .send()
         .await
+}
+
+/// Responses API対応エンドポイントを登録し、指定のモデルで利用可能にする
+/// （SPEC-24157000: Open Responses API対応テスト用）
+#[allow(dead_code)]
+pub async fn register_responses_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+    model_id: &str,
+) -> reqwest::Result<String> {
+    let client = Client::new();
+
+    // 1. エンドポイントを登録
+    let create_response = client
+        .post(format!("http://{}/v0/endpoints", router_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": format!("Responses API Test Endpoint - {}", model_id),
+            "base_url": format!("http://{}", stub_addr),
+            "health_check_interval_secs": 30
+        }))
+        .send()
+        .await?;
+
+    let create_status = create_response.status();
+    let create_body: Value = create_response.json().await.unwrap_or_default();
+    let endpoint_id = create_body["id"].as_str().unwrap_or_default().to_string();
+
+    if !create_status.is_success() || endpoint_id.is_empty() {
+        eprintln!(
+            "Failed to create endpoint: status={}, body={}",
+            create_status, create_body
+        );
+    }
+
+    // 2. エンドポイントをOnline状態にする（接続テストを実行）
+    let test_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            router_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    let test_status = test_response.status();
+    let test_body: Value = test_response.json().await.unwrap_or_default();
+    if !test_status.is_success() {
+        eprintln!(
+            "Failed to test endpoint: status={}, body={}",
+            test_status, test_body
+        );
+    }
+
+    // 3. モデルを同期
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            router_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    let sync_status = sync_response.status();
+    let sync_body: Value = sync_response.json().await.unwrap_or_default();
+    if !sync_status.is_success() {
+        eprintln!(
+            "Failed to sync endpoint: status={}, body={}",
+            sync_status, sync_body
+        );
+    }
+
+    Ok(endpoint_id)
 }
 
 /// 指定したノードを管理者として承認する
@@ -213,6 +295,11 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     );
     let jwt_secret = test_jwt_secret();
 
+    // EndpointRegistryを初期化
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+
     let state = AppState {
         registry,
         load_manager,
@@ -222,7 +309,7 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry: Some(endpoint_registry),
     };
 
     let router = api::create_router(state);

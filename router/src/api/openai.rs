@@ -275,6 +275,9 @@ pub async fn embeddings(
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    use crate::types::endpoint::SupportedAPI;
+    use std::collections::HashSet;
+
     // オンラインノードの実行可能モデルを取得
     let mut available_models: Vec<String> = state
         .registry
@@ -291,11 +294,45 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         registered_map.insert(model.name.clone(), model);
     }
 
+    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    if let Some(ref registry) = state.endpoint_registry {
+        let online_endpoints = registry.list_online().await;
+        for ep in online_endpoints {
+            if let Ok(models) = registry.list_models(ep.id).await {
+                for model in models {
+                    let apis = endpoint_model_apis
+                        .entry(model.model_id.clone())
+                        .or_default();
+                    for api in model.supported_apis {
+                        apis.insert(api);
+                    }
+                    // Responses API対応エンドポイントの場合は追加
+                    if ep.supports_responses_api {
+                        apis.insert(SupportedAPI::Responses);
+                    }
+                }
+            }
+        }
+    }
+
+    // 追跡用：モデルID一覧
+    let mut seen_models: HashSet<String> = HashSet::new();
+
     // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
     let mut data: Vec<Value> = Vec::new();
 
-    for model_id in available_models {
-        if let Some(m) = registered_map.get(&model_id) {
+    // ノードのモデルを追加
+    for model_id in &available_models {
+        seen_models.insert(model_id.clone());
+
+        // supported_apisを取得（デフォルトはchat_completions）
+        let supported_apis: Vec<String> = endpoint_model_apis
+            .get(model_id)
+            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+
+        if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
             let obj = json!({
                 "id": m.name,
@@ -314,6 +351,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "tags": m.tags,
                 "description": m.description,
                 "chat_template": m.chat_template,
+                "supported_apis": supported_apis,
             });
             data.push(obj);
         } else {
@@ -325,9 +363,31 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "lifecycle_status": LifecycleStatus::Registered,
                 "download_progress": null,
                 "ready": true,
+                "supported_apis": supported_apis,
             });
             data.push(obj);
         }
+    }
+
+    // SPEC-24157000: エンドポイント専用モデルを追加（ノードにないモデル）
+    for (model_id, apis) in &endpoint_model_apis {
+        if seen_models.contains(model_id) {
+            continue;
+        }
+        seen_models.insert(model_id.clone());
+
+        let supported_apis: Vec<String> = apis.iter().map(|a| a.as_str().to_string()).collect();
+        let obj = json!({
+            "id": model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "endpoint",
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": true,
+            "supported_apis": supported_apis,
+        });
+        data.push(obj);
     }
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
@@ -342,6 +402,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "lifecycle_status": LifecycleStatus::Registered,
             "download_progress": null,
             "ready": true,
+            "supported_apis": vec!["chat_completions"],
         });
         data.push(obj);
     }

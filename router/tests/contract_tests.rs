@@ -70,5 +70,9 @@ mod vision_error_test;
 #[path = "contract/vision_capabilities_test.rs"]
 mod vision_capabilities_test;
 
+// SPEC-24157000: Open Responses API契約テスト
+#[path = "contract/responses_api_test.rs"]
+mod responses_api_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

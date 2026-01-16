@@ -50,5 +50,15 @@ mod endpoint_auto_recovery_test;
 #[path = "integration/endpoint_viewer_access_test.rs"]
 mod endpoint_viewer_access_test;
 
+// SPEC-24157000: Open Responses API統合テスト
+#[path = "integration/responses_api_test.rs"]
+mod responses_api_test;
+
+#[path = "integration/responses_streaming_test.rs"]
+mod responses_streaming_test;
+
+#[path = "integration/models_api_test.rs"]
+mod models_api_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

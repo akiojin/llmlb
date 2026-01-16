@@ -107,7 +107,7 @@ TEST_F(SafetensorsParserTest, LoadInvalidFormatReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        invalid_path.c_str(),
+        invalid_path.string().c_str(),
         callback,
         &data
     );
@@ -134,7 +134,7 @@ TEST_F(SafetensorsParserTest, LoadTruncatedFileReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        truncated_path.c_str(),
+        truncated_path.string().c_str(),
         callback,
         &data
     );
@@ -164,7 +164,7 @@ TEST_F(SafetensorsParserTest, HeaderSizeLargerThanFileReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        bad_path.c_str(),
+        bad_path.string().c_str(),
         callback,
         &data
     );
@@ -193,7 +193,7 @@ TEST_F(SafetensorsParserTest, InvalidJsonHeaderReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        bad_json_path.c_str(),
+        bad_json_path.string().c_str(),
         callback,
         &data
     );
@@ -217,7 +217,7 @@ TEST_F(SafetensorsParserTest, EmptyFileReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        empty_path.c_str(),
+        empty_path.string().c_str(),
         callback,
         &data
     );
@@ -237,7 +237,7 @@ TEST_F(SafetensorsParserTest, DirectoryPathReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        test_dir_.c_str(),
+        test_dir_.string().c_str(),
         callback,
         &data
     );

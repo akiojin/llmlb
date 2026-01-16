@@ -6,6 +6,7 @@
 use super::error::AppError;
 use crate::{
     balancer::{NodeLoadSnapshot, RequestHistoryPoint},
+    types::endpoint::EndpointStatus,
     AppState,
 };
 use axum::{
@@ -113,6 +114,41 @@ pub struct DashboardNode {
     pub total_tokens: u64,
 }
 
+/// エンドポイントのダッシュボード表示用サマリー
+///
+/// SPEC-66555000: ルーター主導エンドポイント登録システム
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct DashboardEndpoint {
+    /// エンドポイントID
+    pub id: Uuid,
+    /// 表示名
+    pub name: String,
+    /// ベースURL
+    pub base_url: String,
+    /// 現在の状態
+    pub status: EndpointStatus,
+    /// ヘルスチェック間隔（秒）
+    pub health_check_interval_secs: u32,
+    /// 推論タイムアウト（秒）
+    pub inference_timeout_secs: u32,
+    /// レイテンシ（ミリ秒）
+    pub latency_ms: Option<u32>,
+    /// 最終確認時刻
+    pub last_seen: Option<DateTime<Utc>>,
+    /// 最後のエラーメッセージ
+    pub last_error: Option<String>,
+    /// 連続エラー回数
+    pub error_count: u32,
+    /// 登録日時
+    pub registered_at: DateTime<Utc>,
+    /// メモ
+    pub notes: Option<String>,
+    /// Responses API対応フラグ
+    pub supports_responses_api: bool,
+    /// 利用可能なモデル数
+    pub model_count: usize,
+}
+
 /// システム統計レスポンス
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardStats {
@@ -180,6 +216,13 @@ pub struct DashboardOverview {
 /// GET /v0/dashboard/nodes
 pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardNode>> {
     Json(collect_nodes(&state).await)
+}
+
+/// GET /v0/dashboard/endpoints
+///
+/// SPEC-66555000: ルーター主導エンドポイント登録システム
+pub async fn get_endpoints(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
+    Json(collect_endpoints(&state).await)
 }
 
 /// GET /v0/dashboard/stats
@@ -432,6 +475,44 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
             }
         })
         .collect::<Vec<DashboardNode>>()
+}
+
+/// エンドポイント一覧を収集
+///
+/// SPEC-66555000: ルーター主導エンドポイント登録システム
+async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
+    let Some(endpoint_registry) = &state.endpoint_registry else {
+        return Vec::new();
+    };
+
+    let endpoints = endpoint_registry.list().await;
+
+    let mut result = Vec::with_capacity(endpoints.len());
+    for endpoint in endpoints {
+        let model_count = endpoint_registry
+            .list_models(endpoint.id)
+            .await
+            .map(|models| models.len())
+            .unwrap_or(0);
+        result.push(DashboardEndpoint {
+            id: endpoint.id,
+            name: endpoint.name,
+            base_url: endpoint.base_url,
+            status: endpoint.status,
+            health_check_interval_secs: endpoint.health_check_interval_secs,
+            inference_timeout_secs: endpoint.inference_timeout_secs,
+            latency_ms: endpoint.latency_ms,
+            last_seen: endpoint.last_seen,
+            last_error: endpoint.last_error,
+            error_count: endpoint.error_count,
+            registered_at: endpoint.registered_at,
+            notes: endpoint.notes,
+            supports_responses_api: endpoint.supports_responses_api,
+            model_count,
+        });
+    }
+
+    result
 }
 
 async fn collect_stats(state: &AppState) -> DashboardStats {

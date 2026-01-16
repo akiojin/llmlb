@@ -128,9 +128,17 @@
 - [x] T036b POST /v0/nodes ルートを削除（ノード自己登録廃止）
 - [x] T036c POST /v0/health ルートを削除（プッシュ型ヘルスチェック廃止）
 
+**Phase B-0: ダッシュボードのEndpoints API移行**
+
+- [x] T035d `router/src/api/dashboard.rs` に DashboardEndpoint 型と collect_endpoints 関数を追加
+- [x] T035e `router/src/web/dashboard/src/lib/api.ts` に endpointsApi を追加し nodesApi を deprecate
+- [x] T035f `router/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` を新規作成
+- [x] T035g `router/src/web/dashboard/src/components/dashboard/EndpointDetailModal.tsx` を新規作成
+- [x] T035h `router/src/web/dashboard/src/components/dashboard/LogViewer.tsx` を endpoints対応に更新（ルーターログのみに簡素化）
+
 **Phase B: 完全削除（ダッシュボード移行後）**
 
-以下はダッシュボードがEndpoints APIに移行した後に実行:
+以下はPhase B-0完了後に実行:
 
 - [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）
 - [ ] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）

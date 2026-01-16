@@ -102,6 +102,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/metrics/summary", get(nodes::metrics_summary))
         // ダッシュボードAPI
         .route("/dashboard/nodes", get(dashboard::get_nodes))
+        .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(
             "/dashboard/request-history",

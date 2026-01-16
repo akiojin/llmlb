@@ -28,11 +28,8 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 
 **エンジン選択方針**:
 
-- **GGUF版が存在するモデル** → llama.cppで対応（Metal/CUDA対応済み）
-  - 例: gpt-oss, Nemotron 3 Nano（HuggingFaceにGGUF版が存在）
-- **GGUF版が存在しないモデル** → safetensors.cppで実装（Metal/CUDA対応が必須）
-  - HuggingFaceでGGUF版の有無を確認して判断
-- **判断基準**: HuggingFaceで `<model-name>-GGUF` リポジトリが存在するかどうか
+- **GGUFが用意されているモデル** → llama.cppで対応（Metal/CUDA対応済み）
+- **GGUFがないモデル（safetensorsのみ）** → 内蔵エンジンを実装（Metal/CUDA対応が必須）
 
 ### マルチモーダル対応
 

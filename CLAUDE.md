@@ -41,14 +41,11 @@
 
 | モデル形式 | 使用エンジン | GPU対応 |
 |-----------|-------------|---------|
-| GGUF版が存在する | llama.cpp | Metal/CUDA対応済み |
-| GGUF版が存在しない（safetensorsのみ） | safetensors.cpp | Metal/CUDA実装が必要 |
+| GGUF | llama.cpp | Metal/CUDA対応済み |
+| safetensorsのみ | 内蔵エンジン（gpt-oss/nemotron等） | Metal/CUDA実装が必要 |
 
-- **GGUF版が存在するモデル**: llama.cppで対応（Metal/CUDA対応済み）
-  - 例: gpt-oss, Nemotron 3 Nano（HuggingFaceにGGUF版が存在）
-- **GGUF版が存在しないモデル**: safetensors.cppで実装し、Metal/CUDA対応が必須
-  - HuggingFaceでGGUF版の有無を確認して判断
-- **判断基準**: HuggingFaceで `<model-name>-GGUF` リポジトリが存在するかどうか
+- **GGUFが用意されているモデル**: llama.cppで対応（Metal/CUDA対応済み）
+- **GGUFがないモデル（safetensorsのみ）**: 内蔵エンジンを実装し、Metal/CUDA対応が必須
 
 ### 動作モード
 

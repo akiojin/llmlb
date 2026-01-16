@@ -41,23 +41,69 @@ MoERoutingResult select_top_k_experts(
     struct ggml_tensor* routing_logits,
     int top_k) {
 
-    // This function would need to access the routing_logits data
-    // For now, we provide a stub that would be implemented with
-    // ggml_top_k operation if available, or custom kernel
+    if (!routing_logits) {
+        throw std::runtime_error("select_top_k_experts: null routing_logits");
+    }
 
     MoERoutingResult result;
 
-    // TODO: Implement actual Top-K selection
-    // This requires:
-    // 1. Get routing_logits data pointer
-    // 2. Find top_k indices with highest values
-    // 3. Apply softmax to selected routing weights
-    // 4. Return indices and weights
+    // Get number of experts
+    int n_experts = routing_logits->ne[0];
 
-    // Stub implementation
+    if (top_k > n_experts) {
+        top_k = n_experts;
+    }
+
+    // Access routing logits data (assumes data is available - requires graph execution)
+    float* logits_data = reinterpret_cast<float*>(routing_logits->data);
+
+    if (!logits_data) {
+        // Fallback: return first top_k experts with uniform weights
+        for (int i = 0; i < top_k; ++i) {
+            result.expert_indices.push_back(i);
+            result.expert_weights.push_back(1.0f / top_k);
+        }
+        return result;
+    }
+
+    // Create vector of (index, logit) pairs
+    std::vector<std::pair<int, float>> expert_logits;
+    expert_logits.reserve(n_experts);
+
+    for (int i = 0; i < n_experts; ++i) {
+        expert_logits.emplace_back(i, logits_data[i]);
+    }
+
+    // Partial sort to get top-k experts (highest logits first)
+    std::partial_sort(expert_logits.begin(),
+                      expert_logits.begin() + top_k,
+                      expert_logits.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.second > b.second;  // Descending order
+                      });
+
+    // Extract top-k indices and compute softmax weights
+    result.expert_indices.reserve(top_k);
+    result.expert_weights.reserve(top_k);
+
+    // Find max logit for numerical stability
+    float max_logit = expert_logits[0].second;
+
+    // Compute exp(logit - max) and sum
+    float sum_exp = 0.0f;
+    std::vector<float> exp_logits;
+    exp_logits.reserve(top_k);
+
     for (int i = 0; i < top_k; ++i) {
-        result.expert_indices.push_back(i);
-        result.expert_weights.push_back(1.0f / top_k);  // Uniform weights for now
+        float exp_val = std::exp(expert_logits[i].second - max_logit);
+        exp_logits.push_back(exp_val);
+        sum_exp += exp_val;
+    }
+
+    // Normalize to get softmax weights
+    for (int i = 0; i < top_k; ++i) {
+        result.expert_indices.push_back(expert_logits[i].first);
+        result.expert_weights.push_back(exp_logits[i] / sum_exp);
     }
 
     return result;

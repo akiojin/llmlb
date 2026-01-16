@@ -282,18 +282,28 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         .into_iter()
         .collect();
     available_models.sort();
+    let available_set: std::collections::HashSet<String> =
+        available_models.iter().cloned().collect();
 
-    // 登録済みモデルのメタデータを取得（存在する場合のみ利用）
+    // Load registered models from the database.
     let mut registered_map: std::collections::HashMap<String, crate::registry::models::ModelInfo> =
         HashMap::new();
     for model in list_registered_models(&state.db_pool).await? {
         registered_map.insert(model.name.clone(), model);
     }
 
-    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
+    let mut model_ids: std::collections::HashSet<String> = available_set.iter().cloned().collect();
+    for model_id in registered_map.keys() {
+        model_ids.insert(model_id.clone());
+    }
+    let mut model_ids: Vec<String> = model_ids.into_iter().collect();
+    model_ids.sort();
+
+    // OpenAI list models + Azure capabilities + registry metadata.
     let mut data: Vec<Value> = Vec::new();
 
-    for model_id in available_models {
+    for model_id in model_ids {
+        let ready = available_set.contains(&model_id);
         if let Some(m) = registered_map.get(&model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
             let obj = json!({
@@ -304,7 +314,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "capabilities": caps,
                 "lifecycle_status": LifecycleStatus::Registered,
                 "download_progress": null,
-                "ready": true,
+                "ready": ready,
                 "repo": m.repo,
                 "filename": m.filename,
                 "size_bytes": m.size,
@@ -323,13 +333,12 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "owned_by": "router",
                 "lifecycle_status": LifecycleStatus::Registered,
                 "download_progress": null,
-                "ready": true,
+                "ready": ready,
             });
             data.push(obj);
         }
     }
 
-    // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
     let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
     for cm in cloud_models {
         let obj = json!({

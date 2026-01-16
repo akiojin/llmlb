@@ -12,6 +12,16 @@ extern "C" int llm_node_run_for_test();
 
 using namespace std::chrono_literals;
 
+static void wait_for_server(httplib::Server& server, std::chrono::milliseconds timeout) {
+    const auto start = std::chrono::steady_clock::now();
+    while (!server.is_running()) {
+        if (std::chrono::steady_clock::now() - start > timeout) {
+            FAIL() << "Server failed to start within timeout";
+        }
+        std::this_thread::sleep_for(10ms);
+    }
+}
+
 class TempDir {
 public:
     TempDir() {
@@ -59,7 +69,7 @@ TEST(MainTest, DISABLED_RunsWithStubRouterAndShutsDownOnFlag) {
     });
 
     std::thread router_thread([&]() { router.listen("127.0.0.1", router_port); });
-    while (!router.is_running()) std::this_thread::sleep_for(10ms);
+    wait_for_server(router, 5s);
 
     TempDir models;
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
@@ -103,7 +113,7 @@ TEST(MainTest, DISABLED_FailsWhenRouterRegistrationFails) {
         res.set_content("error", "text/plain");
     });
     std::thread router_thread([&]() { router.listen("127.0.0.1", router_port); });
-    while (!router.is_running()) std::this_thread::sleep_for(10ms);
+    wait_for_server(router, 5s);
 
     TempDir models;
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);

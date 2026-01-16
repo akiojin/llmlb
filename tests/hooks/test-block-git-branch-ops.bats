@@ -22,8 +22,9 @@ run_hook() {
 get_decision() {
     local json_block
     json_block=$(echo "$output" | sed -n '/{/,/^}/p')
-    if command -v python3 >/dev/null 2>&1; then
-        JSON_INPUT="$json_block" python3 - <<'PY' 2>/dev/null
+    # Windows環境でpython3エイリアスが動作しない場合があるため、pythonを先に試す
+    if command -v python >/dev/null 2>&1; then
+        JSON_INPUT="$json_block" python - <<'PY' 2>/dev/null
 import json
 import os
 
@@ -39,8 +40,8 @@ print("" if value is None else value)
 PY
         return
     fi
-    if command -v python >/dev/null 2>&1; then
-        JSON_INPUT="$json_block" python - <<'PY' 2>/dev/null
+    if command -v python3 >/dev/null 2>&1; then
+        JSON_INPUT="$json_block" python3 - <<'PY' 2>/dev/null
 import json
 import os
 

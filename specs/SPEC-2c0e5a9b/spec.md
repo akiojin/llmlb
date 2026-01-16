@@ -102,16 +102,14 @@ Node
 - **FR-008**: 公式のGPU最適化アーティファクトが利用可能な場合はそれを優先し、利用できない場合は safetensors を用いて実行する。
 - **FR-009**: 公式のGPU最適化アーティファクトは「同一 publisher org（例: `openai`, `nvidia`）配下の別リポジトリ」から取得できる。取得可否は許可リストで管理する（初期値: `openai/*`, `nvidia/*`）。
 - **FR-010**: 公式GPU最適化アーティファクトは登録形式を置き換えない（登録は常に `format=safetensors` のまま）。
-- **注記（初期実装）**: DirectML は実験扱いで **最適化アーティファクト必須** とし、safetensors からの直接推論は後続タスクで対応する。
+- **注記（初期実装）**: DirectML は凍結。Windows は CUDA 主経路とする。
 - **FR-011**: gpt-oss 実行エンジンはプラグインとしてロードされ、ABI 互換が一致する場合のみ有効化される。
 
 ### 非機能要件
 - **NFR-001**: GPU 非搭載ノードを登録対象にしない（既存方針と整合）。
 - **NFR-002**: Node は Python 依存なしで動作する（必須）。
 - **NFR-003**: 失敗時のエラーメッセージは運用者が対処できる粒度（不足ファイル、未対応環境、等）である。
-- **NFR-004**: DirectML の最小バージョンは固定しない（実行時検出で可否を判断）。
-- **NFR-005**: DirectML ??????`gptoss_directml.dll`?? Windows?????????????????????? `LLM_NODE_GPTOSS_DML_LIB` ???DLL?????
-- **????????**: DirectML ? safetensors ??????????????`model.directml.bin` / `model.dml.bin` ???????????????
+- **NFR-004**: DirectML は凍結のため対象外。
 
 ## 依存関係
 - `SPEC-3fc2c1e4`（実行エンジン統合）

@@ -23,6 +23,35 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
+const SUPPORTED_MODELS_JSON: &str = include_str!("../supported_models.json");
+
+#[derive(Debug, Clone, Deserialize)]
+struct SupportedModel {
+    id: String,
+    name: String,
+    description: String,
+    repo: String,
+    recommended_filename: String,
+    size_bytes: u64,
+    required_memory_bytes: u64,
+    tags: Vec<String>,
+    capabilities: Vec<String>,
+    #[serde(default)]
+    quantization: Option<String>,
+    #[serde(default)]
+    parameter_count: Option<String>,
+}
+
+fn load_supported_models() -> Vec<SupportedModel> {
+    match serde_json::from_str::<Vec<SupportedModel>>(SUPPORTED_MODELS_JSON) {
+        Ok(models) => models,
+        Err(err) => {
+            tracing::warn!("Failed to parse supported_models.json: {}", err);
+            Vec::new()
+        }
+    }
+}
+
 /// モデル名の妥当性を検証
 ///
 /// 有効なモデル名の形式:
@@ -303,8 +332,8 @@ pub async fn list_models_with_status(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ModelWithStatus>>, AppError> {
     let registered = list_registered_models(&state.db_pool).await?;
-
-    // ノードが報告しているreadyモデル名のセット
+    let supported = load_supported_models();
+    // Build ready model names from registry.
     let ready_names: std::collections::HashSet<String> = state
         .registry
         .list()
@@ -313,13 +342,30 @@ pub async fn list_models_with_status(
         .flat_map(|node| node.loaded_models)
         .collect();
 
-    // HF情報を並列取得（タイムアウト付き）
-    let hf_info_futures: Vec<_> = registered
-        .iter()
-        .filter_map(|model| {
-            let repo = model.repo.clone()?;
+    let mut registered_by_repo: HashMap<String, ModelInfo> = HashMap::new();
+    let mut registered_by_name: HashMap<String, ModelInfo> = HashMap::new();
+    for model in registered {
+        if let Some(repo) = model.repo.clone() {
+            registered_by_repo.insert(repo, model.clone());
+        }
+        registered_by_name.insert(model.name.clone(), model);
+    }
+
+    let mut hf_repos: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for model in &supported {
+        hf_repos.insert(model.repo.clone());
+    }
+    for model in registered_by_name.values() {
+        if let Some(repo) = model.repo.clone() {
+            hf_repos.insert(repo);
+        }
+    }
+    // Collect Hugging Face info for each repo.
+    let hf_info_futures: Vec<_> = hf_repos
+        .into_iter()
+        .map(|repo| {
             let client = state.http_client.clone();
-            Some(async move { (repo.clone(), fetch_hf_info(&client, &repo).await) })
+            async move { (repo.clone(), fetch_hf_info(&client, &repo).await) }
         })
         .collect();
 
@@ -328,10 +374,52 @@ pub async fn list_models_with_status(
         .into_iter()
         .collect();
 
-    let mut result: Vec<ModelWithStatus> = Vec::with_capacity(registered.len());
+    let mut result: Vec<ModelWithStatus> =
+        Vec::with_capacity(supported.len() + registered_by_name.len());
+    let mut matched_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for model in registered {
-        let mut with_status = ModelWithStatus::from_registered(&model);
+    for model in supported {
+        let mut with_status = ModelWithStatus {
+            id: model.id.clone(),
+            name: model.name.clone(),
+            description: model.description.clone(),
+            repo: model.repo.clone(),
+            recommended_filename: model.recommended_filename.clone(),
+            size_bytes: model.size_bytes,
+            required_memory_bytes: model.required_memory_bytes,
+            tags: model.tags.clone(),
+            capabilities: model.capabilities.clone(),
+            quantization: model.quantization.clone(),
+            parameter_count: model.parameter_count.clone(),
+            status: ModelStatus::Available,
+            lifecycle_status: None,
+            download_progress: None,
+            hf_info: None,
+        };
+
+        if let Some(Some(info)) = hf_infos.get(&model.repo) {
+            with_status.hf_info = Some(info.clone());
+        }
+
+        if let Some(registered_model) = registered_by_repo
+            .get(&model.repo)
+            .or_else(|| registered_by_name.get(&model.id))
+        {
+            matched_names.insert(registered_model.name.clone());
+            with_status.lifecycle_status = Some(LifecycleStatus::Registered);
+            if ready_names.contains(&registered_model.name) {
+                with_status.status = ModelStatus::Downloaded;
+            }
+        }
+
+        result.push(with_status);
+    }
+
+    for model in registered_by_name.values() {
+        if matched_names.contains(&model.name) {
+            continue;
+        }
+        let mut with_status = ModelWithStatus::from_registered(model);
         if ready_names.contains(&model.name) {
             with_status.status = ModelStatus::Downloaded;
         }
@@ -1233,7 +1321,9 @@ pub async fn get_model_registry_manifest(
 
     let runtime_hint = match selection.format {
         ArtifactFormat::Gguf => Some(vec!["llama_cpp".to_string()]),
-        ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo).await,
+        ArtifactFormat::Safetensors => infer_runtime_hint(&state.http_client, &repo)
+            .await
+            .or_else(|| Some(vec!["safetensors_cpp".to_string()])),
     };
     let manifest_quantization = match selection.format {
         ArtifactFormat::Gguf => infer_quantization_from_filename(&selection.filename),

@@ -70,14 +70,16 @@ bool streamCallback(const char* token_text, int32_t /*token_id*/, void* user_dat
 
 // Detect GPU backend from system
 stcpp_backend_type detectBackend() {
-#if defined(__APPLE__)
+#if defined(STCPP_USE_METAL)
     return STCPP_BACKEND_METAL;
-#elif defined(STCPP_CUDA)
+#elif defined(STCPP_USE_CUDA)
     return STCPP_BACKEND_CUDA;
-#elif defined(STCPP_ROCM)
+#elif defined(STCPP_USE_ROCM)
     return STCPP_BACKEND_ROCM;
+#elif defined(STCPP_USE_VULKAN)
+    return STCPP_BACKEND_VULKAN;
 #else
-    return STCPP_BACKEND_METAL;  // Default to Metal for this project
+    return STCPP_BACKEND_CPU;
 #endif
 }
 
@@ -168,6 +170,12 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
     // Create context
     stcpp_context_params ctx_params = stcpp_context_default_params();
     ctx_params.backend = detectBackend();
+    if (ctx_params.backend == STCPP_BACKEND_CPU) {
+        result.success = false;
+        result.error_code = EngineErrorCode::kUnsupported;
+        result.error_message = "GPU backend not available (build without Metal/CUDA/ROCm/Vulkan)";
+        return result;
+    }
     ctx_params.n_gpu_layers = -1;  // All layers on GPU
 
     fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: calling stcpp_context_new\n");

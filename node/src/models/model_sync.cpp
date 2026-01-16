@@ -156,10 +156,20 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
         res = cli.Get("/v0/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
+        if (!res) {
+            spdlog::warn("ModelSync: /v0/models request failed (no response) base_url={}", base_url_);
+        } else {
+            spdlog::warn("ModelSync: /v0/models request failed status={} base_url={}", res->status, base_url_);
+        }
         // fallback for auth-disabled routers (legacy /v1/models)
         res = cli.Get("/v1/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
+        if (!res) {
+            spdlog::warn("ModelSync: /v1/models request failed (no response) base_url={}", base_url_);
+        } else {
+            spdlog::warn("ModelSync: /v1/models request failed status={} base_url={}", res->status, base_url_);
+        }
         return {};
     }
 
@@ -174,6 +184,8 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
             models_array = &body;
         } else if (body.contains("data") && body["data"].is_array()) {
             models_array = &body["data"];
+        } else if (body.contains("value") && body["value"].is_array()) {
+            models_array = &body["value"];
         }
 
         if (models_array) {
@@ -202,8 +214,12 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
                 remote.push_back(std::move(rm));
             }
         }
+        if (remote.empty()) {
+            spdlog::warn("ModelSync: no remote models parsed from router base_url={}", base_url_);
+        }
         return remote;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        spdlog::warn("ModelSync: failed to parse models response from router base_url={} error={}", base_url_, e.what());
         return {};
     }
 }
@@ -229,6 +245,7 @@ ModelSyncResult ModelSync::sync() {
         }
 
         auto remote_models = fetchRemoteModels();
+        spdlog::info("ModelSync: fetched {} remote models", remote_models.size());
         auto local = listLocalModels();
 
         // Persist ETag cache for next run (best-effort)
@@ -421,6 +438,7 @@ void ModelSync::setModelOverrides(std::unordered_map<std::string, ModelOverrides
 bool ModelSync::downloadModel(ModelDownloader& downloader,
                               const std::string& model_id,
                               ProgressCallback cb) const {
+    spdlog::info("ModelSync: downloading model {}", model_id);
     ModelOverrides model_cfg;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
@@ -435,14 +453,26 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         supported_runtimes = supported_runtimes_;
         origin_allowlist = origin_allowlist_;
     }
+    {
+        std::string rt_list;
+        for (size_t i = 0; i < supported_runtimes.size(); ++i) {
+            if (i > 0) rt_list.append(",");
+            rt_list.append(supported_runtimes[i]);
+        }
+        spdlog::info("ModelSync: supported runtimes [{}]", rt_list);
+    }
 
     auto manifest_path = downloader.fetchManifest(model_id);
-    if (manifest_path.empty()) return false;
+    if (manifest_path.empty()) {
+        spdlog::warn("ModelSync: failed to fetch manifest for model {}", model_id);
+        return false;
+    }
 
     try {
         std::ifstream ifs(manifest_path);
         auto j = json::parse(ifs);
         if (!j.contains("files") || !j["files"].is_array()) {
+            spdlog::warn("ModelSync: manifest missing files array for model {}", model_id);
             return false;
         }
 
@@ -472,6 +502,7 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                     }
                 }
                 if (!matched) {
+                    spdlog::warn("ModelSync: skipping file {} due to runtime mismatch", name);
                     continue;
                 }
             }
@@ -521,17 +552,11 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                 downloader.setChunkSize(applied_chunk);
                 downloader.setMaxBytesPerSec(applied_bps);
 
-                if (const char* logenv = std::getenv("LLM_DL_LOG_CONFIG")) {
-                    if (std::string(logenv) == "1" || std::string(logenv) == "true") {
-                        const char* source = "default";
-                        if (file_chunk > 0 || file_bps > 0) source = "manifest";
-                        else if (model_cfg.chunk_size > 0 || model_cfg.max_bps > 0) source = "model_override";
-                        std::cerr << "[downloadModel] file=" << name
-                                  << " chunk=" << applied_chunk
-                                  << " max_bps=" << applied_bps
-                                  << " source=" << source << std::endl;
-                    }
-                }
+                const char* source = "default";
+                if (file_chunk > 0 || file_bps > 0) source = "manifest";
+                else if (model_cfg.chunk_size > 0 || model_cfg.max_bps > 0) source = "model_override";
+                spdlog::info("ModelSync: download config file={} chunk={} max_bps={} source={}",
+                             name, applied_chunk, applied_bps, source);
 
                 auto progress_cb = [this, model_id, name, cb](size_t downloaded, size_t total) {
                     {
@@ -554,6 +579,9 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);
+                if (out.empty()) {
+                    spdlog::warn("ModelSync: download failed for model {} file {} url={}", model_id, name, url);
+                }
                 if (out.empty() && optional) {
                     return true;
                 }
@@ -571,6 +599,7 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         if (hi_tasks.empty() && lo_tasks.empty()) {
             return true;
         }
+        spdlog::info("ModelSync: download tasks hi={} lo={}", hi_tasks.size(), lo_tasks.size());
 
         auto run_tasks = [](std::vector<DlTask>& list, size_t conc) {
             if (list.empty()) return true;
@@ -624,7 +653,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             ok = run_tasks(lo_tasks, lo_conc);
         }
         return ok;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        spdlog::warn("ModelSync: failed to parse manifest for model {} error={}", model_id, e.what());
         return false;
     }
 }

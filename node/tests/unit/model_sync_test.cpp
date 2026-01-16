@@ -11,6 +11,16 @@
 using namespace llm_node;
 namespace fs = std::filesystem;
 
+static void wait_for_server(httplib::Server& server, std::chrono::milliseconds timeout) {
+    const auto start = std::chrono::steady_clock::now();
+    while (!server.is_running()) {
+        if (std::chrono::steady_clock::now() - start > timeout) {
+            FAIL() << "Server failed to start within timeout";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
 class ModelServer {
 public:
     void setServeV0(bool enable) { serve_v0_ = enable; }
@@ -38,9 +48,7 @@ public:
             res.set_content(v1_response_body, "application/json");
         });
         thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
-        while (!server_.is_running()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        wait_for_server(server_, std::chrono::seconds(5));
     }
 
     void stop() {
@@ -159,7 +167,7 @@ TEST(ModelSyncTest, ReportsDownloadProgressSnapshot) {
                });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard dir;
     ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
@@ -210,7 +218,7 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard dir;
     ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
@@ -251,7 +259,7 @@ TEST(ModelSyncTest, ParsesV1ModelsArrayFormat) {
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard guard;
     ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
@@ -285,7 +293,7 @@ TEST(ModelSyncTest, CaseInsensitiveModelNameComparison) {
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard guard;
     // Create local directory with UPPERCASE name (simulating HuggingFace original name)
@@ -324,7 +332,7 @@ TEST(ModelSyncTest, SupportsNameAndIdFields) {
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard guard;
     ModelSync sync("http://127.0.0.1:" + std::to_string(port), guard.path.string());
@@ -381,7 +389,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     server.Get("/lo2.bin", slow_handler(lo_current, lo_max, nullptr));
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard dir;
     ModelDownloader dl("http://127.0.0.1:18110", dir.path.string());
@@ -430,7 +438,7 @@ TEST(ModelSyncTest, OptionalManifestFilesDoNotFailDownload) {
     });
 
     std::thread th([&]() { server.listen("127.0.0.1", port); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard dir;
     ModelDownloader dl("http://127.0.0.1:18111", dir.path.string());

@@ -166,13 +166,10 @@ pub async fn register_node(
         }
 
         if models.is_empty() {
-            error!(
-                "Node registration rejected: node API reported no executable models (machine={})",
+            warn!(
+                "Node reported no executable models during registration (machine={})",
                 req.machine_name
             );
-            return Err(AppError(RouterError::Internal(
-                "Node reported no executable models".to_string(),
-            )));
         }
 
         let models_count = models.len().min(u8::MAX as usize) as u8;

@@ -9,7 +9,7 @@
 
 import type { APIRequestContext, Page } from '@playwright/test';
 
-const API_BASE = 'http://localhost:32768';
+const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 // ============================================================================

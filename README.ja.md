@@ -21,7 +21,7 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 | エンジン | ステータス | モデル | ハードウェア |
 |---------|-----------|--------|------------|
 | **llama.cpp** | 本番稼働 | GGUF形式（LLaMA、Mistral等） | CPU、CUDA、Metal |
-| **GPT-OSS** | 本番稼働（Metal）/ DirectMLは進行中 | Safetensors（公式GPUアーティファクト） | Apple Silicon、Windows |
+| **GPT-OSS** | 本番稼働（Metal/CUDA） | Safetensors（公式GPUアーティファクト） | Apple Silicon、Windows |
 | **Whisper** | 本番稼働 | 音声認識（ASR） | CPU、CUDA、Metal |
 | **Stable Diffusion** | 本番稼働 | 画像生成 | CUDA、Metal |
 | **Nemotron** | 検証中 | Safetensors形式 | CUDA |
@@ -61,6 +61,8 @@ http://localhost:32768/dashboard
 ## LLM アシスタント向け MCP サーバー
 
 LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Router と連携できます。
+
+MCP ????? npm/npx ??????????????????????? pnpm ??????
 
 ### インストール
 
@@ -376,7 +378,7 @@ Router (OpenAI-compatible)
   - `format` を選択します: `safetensors`（ネイティブエンジン） または `gguf`（llama.cpp フォールバック）
     - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
     - safetensors のテキスト生成はネイティブエンジンがある場合のみ対応します
-      （gpt-ossはMetal対応済み、DirectMLは進行中）。GGUFのみのモデルは `gguf` を選択してください。
+      （safetensors.cppはMetal/CUDA対応）。GGUFのみのモデルは `gguf` を選択してください。
   - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）またはファイルURLを入力します。
   - `format=gguf` の場合:
     - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
@@ -384,10 +386,8 @@ Router (OpenAI-compatible)
     - HFスナップショットに `config.json` と `tokenizer.json` が必要です。
     - シャーディングされている場合は `.index.json` が必要です。
     - gpt-oss は公式GPUアーティファクトを優先します:
-      `model.metal.bin`（Metal）/ `model.directml.bin` または `model.dml.bin`（DirectML）。
-    - Windows?DirectML?? `gptoss_directml.dll`?Nemotron? `nemotron_directml.dll`????????
-      - Windows?????????DLL???????????: `<model_dir>/gptoss_directml.dll`?????
-      - `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???????????????
+      `model.metal.bin` などが提供されている場合は、対応バックエンドで実行キャッシュとして利用します。
+    - Windows は CUDA ビルド（`BUILD_WITH_CUDA=ON`）が必須です。DirectML は非対応です。
   - ルーターは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
@@ -496,7 +496,7 @@ make quality-checks
 
 補足:
 - gpt-oss-20b は safetensors（index + shards + config/tokenizer）を正本とします。
-- GPU必須（macOS=Metal / Windows=DirectML）。Linux/CUDAは実験扱いです。
+- GPU必須（macOS=Metal / Windows=CUDA）。Linux/CUDAは実験扱いです。
 
 Dashboard を更新する場合:
 

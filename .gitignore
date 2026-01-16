@@ -101,6 +101,7 @@ coverage/
 **/.playwright/
 .playwright-mcp/
 router/tests/e2e-playwright/bun.lock
+router/tests/e2e-playwright/.llm-router/
 
 # ESLint cache
 .eslintcache

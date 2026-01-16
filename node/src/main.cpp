@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-#include <unistd.h>
 
 #include "system/gpu_detector.h"
 #include "system/resource_monitor.h"

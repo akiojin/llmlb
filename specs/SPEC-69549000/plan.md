@@ -230,8 +230,8 @@ node/third_party/safetensors.cpp/
 3. **Phase 3: トークナイザー** - tokenizer.json解析、BPE
 4. **Phase 4: 推論MVP** - GPUバックエンド、生成パイプライン
 5. **Phase 5-8: 拡張** - KVキャッシュ、batching、埋め込み、LoRA
-9. **Phase 9: Nemotron 3** - Mamba SSM、MoE、ハイブリッドアーキテクチャ
-10. **Phase 10-12: 仕上げ** - 高度な機能、マルチGPU、E2E、ドキュメント
+6. **Phase 9: Nemotron 3** - Mamba SSM、MoE、ハイブリッドアーキテクチャ
+7. **Phase 10-12: 仕上げ** - 高度な機能、マルチGPU、E2E、ドキュメント
 
 **推定タスク数**: 64個（Phase 9追加により6タスク増加）
 

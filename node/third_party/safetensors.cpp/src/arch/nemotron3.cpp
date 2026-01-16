@@ -156,10 +156,23 @@ struct ggml_tensor* nemotron3_layer_forward(
         }
 
         case LayerType::GQA: {
-            // GQA (Grouped Query Attention) is not yet implemented
-            // For now, return input unchanged (skip connection)
-            // TODO: Implement GQA layer
-            return input;
+            // Find GQA layer index in gqa_layers vector
+            auto it = std::find(config.gqa_layer_indices.begin(), config.gqa_layer_indices.end(), layer_idx);
+            if (it == config.gqa_layer_indices.end()) {
+                throw std::runtime_error("GQA layer index not found");
+            }
+            int gqa_idx = std::distance(config.gqa_layer_indices.begin(), it);
+
+            GQALayerConfig gqa_config{};
+            gqa_config.d_model = config.d_model;
+            gqa_config.n_heads = config.n_heads;
+            gqa_config.n_kv_groups = 2;  // Nemotron 3 uses 2 KV groups
+            gqa_config.head_dim = config.d_model / config.n_heads;
+            gqa_config.max_seq_len = config.max_seq_len;
+
+            // Note: KV cache management would be added for autoregressive generation
+            // For now, pass nullptr for kv_cache
+            return gqa_layer_forward(ctx, input, weights.gqa_layers[gqa_idx], nullptr, gqa_config, 0);
         }
 
         default:

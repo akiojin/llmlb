@@ -3,6 +3,7 @@
 #include <ggml.h>
 #include "../mamba.h"
 #include "../moe.h"
+#include "../gqa.h"
 #include <memory>
 #include <vector>
 #include <map>
@@ -46,7 +47,7 @@ struct Nemotron3LayerConfig {
     union {
         MoELayerConfig moe;
         MambaLayerConfig mamba;
-        // GQA config would be added here
+        GQALayerConfig gqa;
     };
 };
 
@@ -95,7 +96,7 @@ struct Nemotron3Weights {
     // Layer weights (indexed by layer_idx)
     std::vector<MoELayerWeights> moe_layers;
     std::vector<MambaLayerWeights> mamba_layers;
-    // GQA layer weights would be added here
+    std::vector<GQALayerWeights> gqa_layers;
 
     // Output
     struct ggml_tensor* output_norm_weight;

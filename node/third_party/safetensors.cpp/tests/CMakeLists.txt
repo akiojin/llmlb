@@ -52,6 +52,8 @@ add_executable(stcpp_unit_tests
     unit/sliding_window_attention_test.cpp
     unit/gqa_mqa_test.cpp
     unit/mamba_ssm_test.cpp
+    unit/mamba_transformer_hybrid_test.cpp
+    unit/moe_test.cpp
     unit/multi_gpu_test.cpp
 )
 target_link_libraries(stcpp_unit_tests

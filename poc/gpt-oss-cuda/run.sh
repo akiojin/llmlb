@@ -14,7 +14,7 @@ Env vars:
   ROUTER_PORT           (default: 18080)
   NODE_PORT             (default: 32769)   # runtime_port = NODE_PORT - 1
   ROUTER_BIN            (default: target/debug/llm-router)
-  NODE_BIN              (default: node/build/llm-node)
+  NODE_BIN              (default: allm/build/allm)
 
 Request shaping:
   USER_MESSAGE          (default: Say hello in one short sentence.)
@@ -65,7 +65,7 @@ SYSTEM_MESSAGE="${SYSTEM_MESSAGE:-}"
 KEEP_RUNNING="${KEEP_RUNNING:-0}"
 
 ROUTER_BIN="${ROUTER_BIN:-"$REPO_ROOT/target/debug/llm-router"}"
-NODE_BIN="${NODE_BIN:-"$REPO_ROOT/node/build/llm-node"}"
+NODE_BIN="${NODE_BIN:-"$REPO_ROOT/allm/build/allm"}"
 
 MODEL_REPO="${MODEL_REPO:-ggml-org/gpt-oss-20b-GGUF}"
 MODEL_FILENAME="${MODEL_FILENAME:-gpt-oss-20b-mxfp4.gguf}"

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(llm-node VERSION 1.0.0 LANGUAGES CXX C)
+project(allm VERSION 1.0.0 LANGUAGES CXX C)
 
 # Enable Objective-C/C++ on Apple platforms for Metal support
 if(APPLE)
@@ -67,7 +67,7 @@ if(BUILD_WITH_CUDA)
         find_package(CUDAToolkit QUIET)
         if(CUDAToolkit_FOUND)
             # Build llama.cpp / ggml with CUDA backend.
-            # (This is separate from our own USE_CUDA which is applied to llm-node target later.)
+            # (This is separate from our own USE_CUDA which is applied to allm target later.)
             set(GGML_CUDA ON CACHE BOOL "" FORCE)
         else()
             message(WARNING "CUDA toolkit not found, disabling CUDA support")
@@ -354,10 +354,10 @@ if(APPLE)
 endif()
 
 # Create executable
-add_executable(llm-node ${SOURCES})
+add_executable(allm ${SOURCES})
 
 # Link libraries
-target_link_libraries(llm-node PRIVATE
+target_link_libraries(allm PRIVATE
     llama
     common
     mtmd
@@ -367,50 +367,50 @@ target_link_libraries(llm-node PRIVATE
     OpenSSL::Crypto
 )
 
-target_compile_definitions(llm-node PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+target_compile_definitions(allm PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
-# CUDA support (llm-node)
+# CUDA support (allm)
 if(BUILD_WITH_CUDA AND CUDAToolkit_FOUND)
-    target_compile_definitions(llm-node PRIVATE USE_CUDA)
-    target_link_libraries(llm-node PRIVATE CUDA::cudart)
+    target_compile_definitions(allm PRIVATE USE_CUDA)
+    target_link_libraries(allm PRIVATE CUDA::cudart)
     if(TARGET CUDA::nvml)
-        target_link_libraries(llm-node PRIVATE CUDA::nvml)
+        target_link_libraries(allm PRIVATE CUDA::nvml)
     else()
         find_library(NVML_LIBRARY nvidia-ml)
         if(NVML_LIBRARY)
-            target_link_libraries(llm-node PRIVATE ${NVML_LIBRARY})
+            target_link_libraries(allm PRIVATE ${NVML_LIBRARY})
         endif()
     endif()
 endif()
 
 # whisper.cpp support
 if(BUILD_WITH_WHISPER)
-    target_link_libraries(llm-node PRIVATE whisper)
-    target_compile_definitions(llm-node PRIVATE USE_WHISPER)
+    target_link_libraries(allm PRIVATE whisper)
+    target_compile_definitions(allm PRIVATE USE_WHISPER)
 endif()
 
 # stable-diffusion.cpp support
 if(BUILD_WITH_SD)
-    target_link_libraries(llm-node PRIVATE stable-diffusion)
-    target_compile_definitions(llm-node PRIVATE USE_SD)
+    target_link_libraries(allm PRIVATE stable-diffusion)
+    target_compile_definitions(allm PRIVATE USE_SD)
 endif()
 
 # ONNX Runtime support
 if(BUILD_WITH_ONNX)
-    target_link_libraries(llm-node PRIVATE onnxruntime::onnxruntime)
+    target_link_libraries(allm PRIVATE onnxruntime::onnxruntime)
 endif()
 
 # Static linking if requested
 if(STATIC_BUILD)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        set_target_properties(llm-node PROPERTIES
+        set_target_properties(allm PROPERTIES
             LINK_FLAGS "-static"
         )
     endif()
 endif()
 
 # Installation
-install(TARGETS llm-node
+install(TARGETS allm
     RUNTIME DESTINATION bin
 )
 
@@ -421,7 +421,7 @@ if(BUILD_TESTS)
 endif()
 
 # Packaging (DEB/RPM via CPack) - only if LICENSE file exists
-set(CPACK_PACKAGE_NAME "llm-node")
+set(CPACK_PACKAGE_NAME "allm")
 set(CPACK_PACKAGE_VENDOR "llm-router")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "LLM inference node with llama.cpp")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
@@ -439,7 +439,7 @@ endif()
 
 # Print configuration summary
 message(STATUS "")
-message(STATUS "llm-node configuration summary:")
+message(STATUS "allm configuration summary:")
 message(STATUS "  Build type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard:      ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler:          ${CMAKE_CXX_COMPILER_ID}")

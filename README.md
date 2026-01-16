@@ -176,7 +176,7 @@ npm run start:node
 # cd node && cmake -B build -S . && cmake --build build --config Release
 # # Linux / CUDA:
 # # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:32768 ./node/build/llm-node
+# LLM_ROUTER_URL=http://localhost:32768 ./allm/build/allm
 ```
 
 **Environment Variables:**
@@ -197,12 +197,12 @@ npm run start:node
 
 ```bash
 # Build
-docker build --build-arg CUDA=cpu -t llm-node:latest node/
+docker build --build-arg CUDA=cpu -t allm:latest allm/
 
 # Run
 docker run --rm -p 32769:32769 \
   -e LLM_ROUTER_URL=http://host.docker.internal:32768 \
-  llm-node:latest
+  allm:latest
 ```
 
 ## Load Balancing
@@ -405,7 +405,7 @@ curl http://router:32768/v1/chat/completions -d '...'
 llm-router/
 ├── common/              # Shared library (types, protocol, errors)
 ├── router/              # Rust router (HTTP APIs, dashboard, proxy)
-├── node/                # C++ node (llama.cpp, OpenAI-compatible /v1/*)
+├── allm/                # C++ aLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
@@ -562,13 +562,13 @@ See [Node (C++)](#node-c) section in Quick Start.
    LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
-   ./node/build/llm-node
+   ./allm/build/allm
 
    # Machine 2
    LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
    LLM_NODE_API_KEY=sk_your_node_register_key \
-   ./node/build/llm-node
+   ./allm/build/allm
    ```
 
 3. **Send Inference Requests to Router (OpenAI-compatible)**

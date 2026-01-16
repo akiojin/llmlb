@@ -3,7 +3,7 @@
 > **注意**: このPoCは参考用であり、仕様・実装の正ではありません。\
 > CUDA DLL（`gptoss_cuda.dll` / `nemotron_cuda.dll`）の管理ソースは `node/engines/gptoss/cuda/` と `node/engines/nemotron/cuda/` に移行中です。
 
-このPoCは、`gpt-oss-20b` を **llm-router + llm-node (CUDA / llama.cpp)** でロードして `chat/completions` が返ることを確認します。
+このPoCは、`gpt-oss-20b` を **llm-router + allm (CUDA / llama.cpp)** でロードして `chat/completions` が返ることを確認します。
 
 このPoCは **safetensors を直接ロードしません**。CUDA向けの公式safetensors実行エンジンは未対応のため、Hugging Face の **GGUF版**（例: `ggml-org/gpt-oss-20b-GGUF`）を利用します。
 

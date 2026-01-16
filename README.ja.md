@@ -184,7 +184,7 @@ cmake -B build -S .
 cmake --build build --config Release
 ```
 
-生成物: `node/build/llm-node`
+生成物: `allm/build/allm`
 
 ### 4) 基本設定
 
@@ -232,7 +232,7 @@ cmake --build build --config Release
 cargo run -p llm-router
 
 # ノード (別シェル)
-LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
+LLM_NODE_API_KEY=sk_node_register_key ./allm/build/allm
 ```
 
 ### 6) 動作確認

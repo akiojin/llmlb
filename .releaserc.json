@@ -24,24 +24,24 @@
       {
         "assets": [
           {
-            "path": "dist/llm-node-linux-amd64.tar.gz",
-            "label": "llm-node-linux-amd64"
+            "path": "dist/allm-linux-amd64.tar.gz",
+            "label": "allm-linux-amd64"
           },
           {
-            "path": "dist/llm-node-macos-arm64.tar.gz",
-            "label": "llm-node-macos-arm64"
+            "path": "dist/allm-macos-arm64.tar.gz",
+            "label": "allm-macos-arm64"
           },
           {
-            "path": "dist/llm-node-macos-x64.tar.gz",
-            "label": "llm-node-macos-x64"
+            "path": "dist/allm-macos-x64.tar.gz",
+            "label": "allm-macos-x64"
           },
           {
-            "path": "dist/llm-node-windows-x64.zip",
-            "label": "llm-node-windows-x64"
+            "path": "dist/allm-windows-x64.zip",
+            "label": "allm-windows-x64"
           },
           {
-            "path": "dist/llm-node-linux-cuda.tar.gz",
-            "label": "llm-node-linux-cuda"
+            "path": "dist/allm-linux-cuda.tar.gz",
+            "label": "allm-linux-cuda"
           }
         ]
       }

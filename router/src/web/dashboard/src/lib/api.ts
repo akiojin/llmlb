@@ -370,35 +370,6 @@ export const dashboardApi = {
 }
 
 /**
- * Nodes API
- * @deprecated SPEC-66555000により廃止予定。endpointsApiを使用してください。
- */
-export const nodesApi = {
-  list: () => fetchWithAuth<DashboardNode[]>('/v0/nodes'),
-
-  approve: (nodeId: string) =>
-    fetchWithAuth<DashboardNode>(`/v0/nodes/${nodeId}/approve`, { method: 'POST' }),
-
-  delete: (nodeId: string) =>
-    fetchWithAuth<void>(`/v0/nodes/${nodeId}`, { method: 'DELETE' }),
-
-  disconnect: (nodeId: string) =>
-    fetchWithAuth<void>(`/v0/nodes/${nodeId}/disconnect`, { method: 'POST' }),
-
-  updateSettings: (
-    nodeId: string,
-    settings: { custom_name?: string; tags?: string[]; notes?: string }
-  ) =>
-    fetchWithAuth<void>(`/v0/nodes/${nodeId}/settings`, {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    }),
-
-  getLogs: (nodeId: string, params?: { limit?: number }) =>
-    fetchWithAuth<LogResponse>(`/v0/nodes/${nodeId}/logs`, { params }),
-}
-
-/**
  * Endpoints API
  * SPEC-66555000: ルーター主導エンドポイント登録システム
  * 外部推論サービス（Ollama, vLLM, aLLM等）の管理API

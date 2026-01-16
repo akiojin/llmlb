@@ -11,14 +11,13 @@ import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
-import { NodeTable } from '@/components/dashboard/NodeTable'
 import { EndpointTable } from '@/components/dashboard/EndpointTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { ModelsSection } from '@/components/models/ModelsSection'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Server, Globe, History, FileText, Box, BarChart3 } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, Box, BarChart3 } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -123,14 +122,10 @@ export default function Dashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="endpoints" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="endpoints" className="gap-2">
               <Globe className="h-4 w-4" />
               <span className="hidden sm:inline">Endpoints</span>
-            </TabsTrigger>
-            <TabsTrigger value="nodes" className="gap-2">
-              <Server className="h-4 w-4" />
-              <span className="hidden sm:inline">Nodes</span>
             </TabsTrigger>
             <TabsTrigger value="models" className="gap-2">
               <Box className="h-4 w-4" />
@@ -154,10 +149,6 @@ export default function Dashboard() {
             <EndpointTable endpoints={endpointsData || []} isLoading={isLoadingEndpoints} />
           </TabsContent>
 
-          <TabsContent value="nodes" className="animate-fade-in">
-            <NodeTable nodes={data?.nodes || []} isLoading={isLoading} />
-          </TabsContent>
-
           <TabsContent value="models" className="animate-fade-in">
             <ModelsSection />
           </TabsContent>
@@ -174,7 +165,7 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="logs" className="animate-fade-in">
-            <LogViewer nodes={data?.nodes || []} />
+            <LogViewer />
           </TabsContent>
         </Tabs>
       </main>

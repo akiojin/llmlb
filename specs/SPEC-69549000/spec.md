@@ -2,8 +2,8 @@
 
 **機能ID**: `SPEC-69549000`
 **作成日**: 2026-01-06
-**ステータス**: 実装完了
-**入力**: ユーザー説明: "safetensors.cpp: llama.cpp/stable-diffusion.cpp/whisper.cppと同様の独立C++プロジェクト。ggmlバックエンドを利用し、safetensors形式のLLMをMetal/CUDA/ROCm/Vulkanで推論可能にする。"
+**ステータス**: 実装中（Phase 9: Nemotron 3アーキテクチャ追加）
+**入力**: ユーザー説明: "safetensors.cpp: llama.cpp/stable-diffusion.cpp/whisper.cppと同様の独立C++プロジェクト。ggmlバックエンドを利用し、safetensors形式のLLM（gpt-oss、Nemotron 3含む）をMetal/CUDA/ROCm/Vulkanで推論可能にする。"
 
 ## ユーザーシナリオ＆テスト
 

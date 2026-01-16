@@ -55,6 +55,12 @@ struct LayerTensors {
     struct ggml_tensor* wk = nullptr;      // Key projection
     struct ggml_tensor* wv = nullptr;      // Value projection
     struct ggml_tensor* wo = nullptr;      // Output projection
+    struct ggml_tensor* bq = nullptr;      // Query bias (optional, used by Qwen2)
+    struct ggml_tensor* bk = nullptr;      // Key bias (optional, used by Qwen2)
+    struct ggml_tensor* bv = nullptr;      // Value bias (optional, used by Qwen2)
+    bool has_bq = false;                   // True if bq was loaded from model
+    bool has_bk = false;                   // True if bk was loaded from model
+    bool has_bv = false;                   // True if bv was loaded from model
 
     // Attention norm (pre-attention)
     struct ggml_tensor* attn_norm = nullptr;
@@ -100,6 +106,10 @@ struct GgmlModel {
     std::string model_path;
     std::vector<std::string> shard_paths;
 
+    // Chat token support flag
+    // If false, chat special tokens have identical embeddings (base model, not instruct)
+    bool has_trained_chat_tokens = true;
+
     // Memory mapped files
     std::vector<void*> mmap_ptrs;
     std::vector<size_t> mmap_sizes;
@@ -118,6 +128,7 @@ struct GgmlContext {
     // KV cache
     struct ggml_tensor* k_cache = nullptr;
     struct ggml_tensor* v_cache = nullptr;
+    ggml_backend_buffer_t kv_cache_buffer = nullptr;  // Backend buffer for KV cache
     int32_t kv_used = 0;     // Number of KV cache slots used
     int32_t kv_size = 0;     // Total KV cache size
 

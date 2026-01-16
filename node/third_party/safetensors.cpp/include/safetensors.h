@@ -149,6 +149,16 @@ int32_t stcpp_model_n_heads(const stcpp_model* model);
 int32_t stcpp_model_hidden_size(const stcpp_model* model);
 int32_t stcpp_model_vocab_size(const stcpp_model* model);
 int32_t stcpp_model_max_context(const stcpp_model* model);
+
+/**
+ * @brief Check if model has trained chat tokens (instruct model vs base model)
+ * @param model Model handle
+ * @return true if model has distinct embeddings for chat tokens (instruct model),
+ *         false if chat tokens have identical embeddings (base model)
+ * @note Base models should not use chat templates as they produce garbage output
+ */
+bool stcpp_model_has_trained_chat_tokens(const stcpp_model* model);
+
 stcpp_vram_estimate stcpp_model_estimate_vram(
     const char* path,
     stcpp_backend_type backend,

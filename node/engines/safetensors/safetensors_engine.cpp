@@ -203,6 +203,7 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
     loaded->ctx = ctx;
     loaded->tokenizer = tokenizer;
     loaded->max_context = static_cast<size_t>(stcpp_model_max_context(model));
+    loaded->has_trained_chat_tokens = stcpp_model_has_trained_chat_tokens(model);
 
     // Get VRAM usage
     stcpp_vram_usage vram = stcpp_context_vram_usage(ctx);
@@ -233,7 +234,30 @@ SafetensorsEngine::LoadedModel* SafetensorsEngine::getOrLoadModel(
 
 std::string SafetensorsEngine::buildChatPrompt(
     const std::vector<ChatMessage>& messages,
-    stcpp_tokenizer* tokenizer) const {
+    const LoadedModel* loaded) const {
+    // For base models (no trained chat tokens), use simple prompt format
+    // Chat templates use special tokens that have identical embeddings in base models,
+    // causing garbage output
+    if (!loaded->has_trained_chat_tokens) {
+        // Build simple prompt: concatenate messages without special tokens
+        std::ostringstream oss;
+        for (const auto& msg : messages) {
+            if (msg.role == "system") {
+                oss << msg.content << "\n\n";
+            } else if (msg.role == "user") {
+                oss << "User: " << msg.content << "\n";
+            } else if (msg.role == "assistant") {
+                oss << "Assistant: " << msg.content << "\n";
+            } else {
+                oss << msg.role << ": " << msg.content << "\n";
+            }
+        }
+        // Add generation prompt for assistant response
+        oss << "Assistant:";
+        return oss.str();
+    }
+
+    // For instruct models, use the chat template
     // Build JSON array of messages
     nlohmann::json messages_json = nlohmann::json::array();
     for (const auto& msg : messages) {
@@ -245,14 +269,18 @@ std::string SafetensorsEngine::buildChatPrompt(
     // Apply chat template
     std::vector<char> output(kMaxPromptLength);
     int32_t len = stcpp_apply_chat_template(
-        tokenizer, json_str.c_str(), output.data(),
+        loaded->tokenizer, json_str.c_str(), output.data(),
         static_cast<int32_t>(output.size()), true);
 
     if (len > 0) {
         return std::string(output.data(), static_cast<size_t>(len));
     }
 
-    // Fallback: simple concatenation
+    // Fallback: simple concatenation (in case template fails)
+    fprintf(stderr, "[WARNING] SafetensorsEngine::buildChatPrompt: Chat template failed, "
+            "using fallback format\n");
+    fflush(stderr);
+
     std::ostringstream oss;
     for (const auto& msg : messages) {
         oss << msg.role << ": " << msg.content << "\n";
@@ -289,7 +317,7 @@ std::string SafetensorsEngine::generateChat(const std::vector<ChatMessage>& mess
     fprintf(stderr, "[DEBUG] SafetensorsEngine::generateChat: calling buildChatPrompt\n");
     fflush(stderr);
 
-    std::string prompt = buildChatPrompt(messages, loaded->tokenizer);
+    std::string prompt = buildChatPrompt(messages, loaded);
 
     fprintf(stderr, "[DEBUG] SafetensorsEngine::generateChat: prompt built (len=%zu), calling generateCompletion\n", prompt.length());
     fflush(stderr);
@@ -347,7 +375,7 @@ std::vector<std::string> SafetensorsEngine::generateChatStream(
         return {};
     }
 
-    std::string prompt = buildChatPrompt(messages, loaded->tokenizer);
+    std::string prompt = buildChatPrompt(messages, loaded);
 
     stcpp_sampling_params sp;
     convertSamplingParams(params, &sp);

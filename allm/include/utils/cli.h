@@ -10,40 +10,40 @@ namespace llm_node {
 /// Subcommand types for llm-router CLI
 enum class Subcommand {
     None,           // No subcommand (legacy server mode)
-    // Node subcommands
-    NodeServe,      // node serve
-    NodeRun,        // node run <model>
-    NodePull,       // node pull <model>
-    NodeList,       // node list
-    NodeShow,       // node show <model>
-    NodeRm,         // node rm <model>
-    NodeStop,       // node stop <model>
-    NodePs,         // node ps
+    // Direct commands (formerly node subcommands)
+    Serve,          // serve
+    Run,            // run <model>
+    Pull,           // pull <model>
+    List,           // list
+    Show,           // show <model>
+    Rm,             // rm <model>
+    Stop,           // stop <model>
+    Ps,             // ps
     // Router subcommands
-    RouterNodes,    // router nodes
-    RouterModels,   // router models
-    RouterStatus,   // router status
+    RouterEndpoints,  // router endpoints
+    RouterModels,     // router models
+    RouterStatus,     // router status
 };
 
-/// Options for node serve command
+/// Options for serve command
 struct ServeOptions {
     uint16_t port{32769};
     std::string host{"0.0.0.0"};
 };
 
-/// Options for node run command
+/// Options for run command
 struct RunOptions {
     std::string model;
     bool show_thinking{false};
     bool hide_thinking{true};
 };
 
-/// Options for node pull command
+/// Options for pull command
 struct PullOptions {
     std::string model;
 };
 
-/// Options for node show command
+/// Options for show command
 struct ShowOptions {
     std::string model;
     bool license_only{false};
@@ -104,9 +104,6 @@ std::string getHelpMessage();
 ///
 /// @return Version message string
 std::string getVersionMessage();
-
-/// Get help message for node subcommands
-std::string getNodeHelpMessage();
 
 /// Get help message for router subcommands
 std::string getRouterHelpMessage();

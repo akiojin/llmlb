@@ -74,7 +74,7 @@ async fn select_endpoint_for_responses_api(
     // Responses API対応エンドポイントのみをフィルタリング
     for endpoint in endpoints {
         if endpoint.supports_responses_api {
-            return Ok(EndpointSelection::Found(endpoint));
+            return Ok(EndpointSelection::Found(Box::new(endpoint)));
         }
     }
 

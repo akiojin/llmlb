@@ -714,8 +714,8 @@ int main(int argc, char* argv[]) {
 
     // Branch based on subcommand
     switch (cli_result.subcommand) {
-        case llm_node::Subcommand::NodeServe: {
-            std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+        case llm_node::Subcommand::Serve: {
+            std::cout << "allm v" << LLM_NODE_VERSION << " starting..." << std::endl;
             auto cfg = llm_node::loadNodeConfig();
             // Override config with CLI options if specified
             if (cli_result.serve_options.port != 0) {
@@ -727,29 +727,29 @@ int main(int argc, char* argv[]) {
             return run_node(cfg, /*single_iteration=*/false);
         }
 
-        case llm_node::Subcommand::NodeRun:
+        case llm_node::Subcommand::Run:
             return llm_node::cli::commands::run(cli_result.run_options);
 
-        case llm_node::Subcommand::NodePull:
+        case llm_node::Subcommand::Pull:
             return llm_node::cli::commands::pull(cli_result.pull_options);
 
-        case llm_node::Subcommand::NodeList:
+        case llm_node::Subcommand::List:
             return llm_node::cli::commands::list(cli_result.model_options);
 
-        case llm_node::Subcommand::NodeShow:
+        case llm_node::Subcommand::Show:
             return llm_node::cli::commands::show(cli_result.show_options);
 
-        case llm_node::Subcommand::NodeRm:
+        case llm_node::Subcommand::Rm:
             return llm_node::cli::commands::rm(cli_result.model_options);
 
-        case llm_node::Subcommand::NodeStop:
+        case llm_node::Subcommand::Stop:
             return llm_node::cli::commands::stop(cli_result.model_options);
 
-        case llm_node::Subcommand::NodePs:
+        case llm_node::Subcommand::Ps:
             return llm_node::cli::commands::ps();
 
-        case llm_node::Subcommand::RouterNodes:
-            return llm_node::cli::commands::router_nodes();
+        case llm_node::Subcommand::RouterEndpoints:
+            return llm_node::cli::commands::router_endpoints();
 
         case llm_node::Subcommand::RouterModels:
             return llm_node::cli::commands::router_models();
@@ -760,7 +760,7 @@ int main(int argc, char* argv[]) {
         case llm_node::Subcommand::None:
         default:
             // Default to serve (legacy behavior for backward compatibility)
-            std::cout << "llm-node v" << LLM_NODE_VERSION << " starting..." << std::endl;
+            std::cout << "allm v" << LLM_NODE_VERSION << " starting..." << std::endl;
             auto cfg = llm_node::loadNodeConfig();
             return run_node(cfg, /*single_iteration=*/false);
     }

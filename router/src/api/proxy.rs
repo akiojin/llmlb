@@ -140,8 +140,8 @@ pub(crate) fn save_request_record(
 
 /// エンドポイント選択結果
 pub(crate) enum EndpointSelection {
-    /// エンドポイントが見つかった
-    Found(crate::types::endpoint::Endpoint),
+    /// エンドポイントが見つかった（Boxでヒープ割り当て、enum sizeの最適化）
+    Found(Box<crate::types::endpoint::Endpoint>),
     /// モデルをサポートするエンドポイントがない
     NotFound,
 }
@@ -162,7 +162,7 @@ pub(crate) async fn select_endpoint_for_model(
     let endpoints = registry.find_by_model_sorted_by_latency(model_id).await;
 
     match endpoints.into_iter().next() {
-        Some(endpoint) => Ok(EndpointSelection::Found(endpoint)),
+        Some(endpoint) => Ok(EndpointSelection::Found(Box::new(endpoint))),
         None => Ok(EndpointSelection::NotFound),
     }
 }

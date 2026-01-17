@@ -8,7 +8,6 @@
 namespace llm_node {
 
 // Forward declarations for help messages
-std::string getNodeHelpMessage();
 std::string getRouterHelpMessage();
 std::string getServeHelpMessage();
 std::string getRunHelpMessage();
@@ -21,31 +20,12 @@ std::string getPsHelpMessage();
 
 std::string getHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router " << LLM_NODE_VERSION << " - LLM inference router and node\n";
+    oss << "allm " << LLM_NODE_VERSION << " - LLM inference engine\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router <COMMAND>\n";
+    oss << "    allm <COMMAND>\n";
     oss << "\n";
     oss << "COMMANDS:\n";
-    oss << "    node       Node commands (serve, run, pull, list, show, rm, stop, ps)\n";
-    oss << "    router     Router commands (nodes, models, status)\n";
-    oss << "\n";
-    oss << "OPTIONS:\n";
-    oss << "    -h, --help       Print help information\n";
-    oss << "    -V, --version    Print version information\n";
-    oss << "\n";
-    oss << "Run 'llm-router node --help' or 'llm-router router --help' for more info.\n";
-    return oss.str();
-}
-
-std::string getNodeHelpMessage() {
-    std::ostringstream oss;
-    oss << "llm-router node - Node subcommands\n";
-    oss << "\n";
-    oss << "USAGE:\n";
-    oss << "    llm-router node <SUBCOMMAND>\n";
-    oss << "\n";
-    oss << "SUBCOMMANDS:\n";
     oss << "    serve      Start the server (foreground)\n";
     oss << "    run        Chat with a model (REPL)\n";
     oss << "    pull       Download a model from HuggingFace\n";
@@ -54,11 +34,32 @@ std::string getNodeHelpMessage() {
     oss << "    rm         Delete a model\n";
     oss << "    stop       Unload a running model\n";
     oss << "    ps         List running models\n";
+    oss << "    router     Router commands (endpoints, models, status)\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    -h, --help       Print help information\n";
+    oss << "    -V, --version    Print version information\n";
+    oss << "\n";
+    oss << "Run 'allm <COMMAND> --help' for more info.\n";
+    return oss.str();
+}
+
+std::string getServeHelpMessage() {
+    std::ostringstream oss;
+    oss << "allm serve - Start the server\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    allm serve [OPTIONS]\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --port <PORT>    Server port (default: 32769, or LLM_NODE_PORT)\n";
+    oss << "    --host <HOST>    Bind address (default: 0.0.0.0)\n";
+    oss << "    -h, --help       Print help\n";
     oss << "\n";
     oss << "ENVIRONMENT VARIABLES:\n";
     oss << "    LLM_NODE_PORT                HTTP server port (default: 32769)\n";
     oss << "    LLM_NODE_MODELS_DIR          Model files directory\n";
-    oss << "    LLM_ROUTER_HOST              Server host for client commands\n";
+    oss << "    LLM_ROUTER_HOST              Router URL for registration\n";
     oss << "    LLM_ROUTER_DEBUG             Enable debug logging\n";
     oss << "    HF_TOKEN                     HuggingFace API token (for gated models)\n";
     return oss.str();
@@ -66,38 +67,26 @@ std::string getNodeHelpMessage() {
 
 std::string getRouterHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router router - Router subcommands\n";
+    oss << "allm router - Router subcommands\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router router <SUBCOMMAND>\n";
+    oss << "    allm router <SUBCOMMAND>\n";
     oss << "\n";
     oss << "SUBCOMMANDS:\n";
-    oss << "    nodes      Manage cluster nodes\n";
+    oss << "    endpoints  Manage cluster endpoints\n";
     oss << "    models     Manage cluster models\n";
     oss << "    status     Show cluster status\n";
     return oss.str();
 }
 
-std::string getServeHelpMessage() {
-    std::ostringstream oss;
-    oss << "llm-router node serve - Start the server\n";
-    oss << "\n";
-    oss << "USAGE:\n";
-    oss << "    llm-router node serve [OPTIONS]\n";
-    oss << "\n";
-    oss << "OPTIONS:\n";
-    oss << "    --port <PORT>    Server port (default: 32769, or LLM_NODE_PORT)\n";
-    oss << "    --host <HOST>    Bind address (default: 0.0.0.0)\n";
-    oss << "    -h, --help       Print help\n";
-    return oss.str();
-}
+
 
 std::string getRunHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node run - Chat with a model\n";
+    oss << "allm run - Chat with a model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node run <MODEL> [OPTIONS]\n";
+    oss << "    allm run <MODEL> [OPTIONS]\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name (e.g., llama3.2, ollama:mistral)\n";
@@ -115,10 +104,10 @@ std::string getRunHelpMessage() {
 
 std::string getPullHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node pull - Download a model\n";
+    oss << "allm pull - Download a model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node pull <MODEL>\n";
+    oss << "    allm pull <MODEL>\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name or HuggingFace URL\n";
@@ -135,26 +124,26 @@ std::string getPullHelpMessage() {
 
 std::string getListHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node list - List local models\n";
+    oss << "allm list - List local models\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node list\n";
+    oss << "    allm list\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    -h, --help       Print help\n";
     oss << "\n";
     oss << "Shows models from:\n";
-    oss << "    - llm-router models directory\n";
+    oss << "    - allm models directory\n";
     oss << "    - ollama models (~/.ollama/models/) with 'ollama:' prefix\n";
     return oss.str();
 }
 
 std::string getShowHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node show - Show model metadata\n";
+    oss << "allm show - Show model metadata\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node show <MODEL> [OPTIONS]\n";
+    oss << "    allm show <MODEL> [OPTIONS]\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name\n";
@@ -171,10 +160,10 @@ std::string getShowHelpMessage() {
 
 std::string getRmHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node rm - Delete a model\n";
+    oss << "allm rm - Delete a model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node rm <MODEL>\n";
+    oss << "    allm rm <MODEL>\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name to delete\n";
@@ -188,10 +177,10 @@ std::string getRmHelpMessage() {
 
 std::string getStopHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node stop - Unload a running model\n";
+    oss << "allm stop - Unload a running model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node stop <MODEL>\n";
+    oss << "    allm stop <MODEL>\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name to stop\n";
@@ -203,10 +192,10 @@ std::string getStopHelpMessage() {
 
 std::string getPsHelpMessage() {
     std::ostringstream oss;
-    oss << "llm-router node ps - List running models\n";
+    oss << "allm ps - List running models\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    llm-router node ps\n";
+    oss << "    allm ps\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    -h, --help       Print help\n";
@@ -218,7 +207,7 @@ std::string getPsHelpMessage() {
 
 std::string getVersionMessage() {
     std::ostringstream oss;
-    oss << "llm-router " << LLM_NODE_VERSION << "\n";
+    oss << "allm " << LLM_NODE_VERSION << "\n";
     return oss.str();
 }
 
@@ -232,248 +221,7 @@ bool hasHelpFlag(int argc, char* argv[], int start) {
     return false;
 }
 
-// Parse node subcommands
-CliResult parseNodeSubcommand(int argc, char* argv[], int argIndex) {
-    CliResult result;
 
-    if (argIndex >= argc) {
-        result.should_exit = true;
-        result.exit_code = 0;
-        result.output = getNodeHelpMessage();
-        return result;
-    }
-
-    const char* subcommand = argv[argIndex];
-
-    // Check for help
-    if (std::strcmp(subcommand, "-h") == 0 || std::strcmp(subcommand, "--help") == 0) {
-        result.should_exit = true;
-        result.exit_code = 0;
-        result.output = getNodeHelpMessage();
-        return result;
-    }
-
-    // Parse subcommand
-    if (std::strcmp(subcommand, "serve") == 0) {
-        result.subcommand = Subcommand::NodeServe;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getServeHelpMessage();
-            return result;
-        }
-
-        // Parse serve options
-        for (int i = argIndex + 1; i < argc; ++i) {
-            if (std::strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
-                result.serve_options.port = static_cast<uint16_t>(std::stoi(argv[++i]));
-            } else if (std::strcmp(argv[i], "--host") == 0 && i + 1 < argc) {
-                result.serve_options.host = argv[++i];
-            }
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "run") == 0) {
-        result.subcommand = Subcommand::NodeRun;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getRunHelpMessage();
-            return result;
-        }
-
-        // Parse run options
-        bool model_found = false;
-        for (int i = argIndex + 1; i < argc; ++i) {
-            if (std::strcmp(argv[i], "--think") == 0) {
-                result.run_options.show_thinking = true;
-                result.run_options.hide_thinking = false;
-            } else if (std::strcmp(argv[i], "--hide-think") == 0) {
-                result.run_options.hide_thinking = true;
-                result.run_options.show_thinking = false;
-            } else if (argv[i][0] != '-' && !model_found) {
-                result.run_options.model = argv[i];
-                model_found = true;
-            }
-        }
-
-        // Model name is required
-        if (!model_found) {
-            result.should_exit = true;
-            result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: llm-router node run <MODEL>\n";
-            return result;
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "pull") == 0) {
-        result.subcommand = Subcommand::NodePull;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getPullHelpMessage();
-            return result;
-        }
-
-        // Parse pull options - model name
-        for (int i = argIndex + 1; i < argc; ++i) {
-            if (argv[i][0] != '-') {
-                result.pull_options.model = argv[i];
-                break;
-            }
-        }
-
-        // Model name is required
-        if (result.pull_options.model.empty()) {
-            result.should_exit = true;
-            result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: llm-router node pull <MODEL>\n";
-            return result;
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "list") == 0) {
-        result.subcommand = Subcommand::NodeList;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getListHelpMessage();
-            return result;
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "show") == 0) {
-        result.subcommand = Subcommand::NodeShow;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getShowHelpMessage();
-            return result;
-        }
-
-        // Parse show options
-        bool model_found = false;
-        for (int i = argIndex + 1; i < argc; ++i) {
-            if (std::strcmp(argv[i], "--license") == 0) {
-                result.show_options.license_only = true;
-            } else if (std::strcmp(argv[i], "--modelfile") == 0) {
-                result.show_options.modelfile_only = true;
-            } else if (std::strcmp(argv[i], "--parameters") == 0) {
-                result.show_options.parameters_only = true;
-            } else if (std::strcmp(argv[i], "--template") == 0) {
-                result.show_options.template_only = true;
-            } else if (std::strcmp(argv[i], "--system") == 0) {
-                result.show_options.system_only = true;
-            } else if (argv[i][0] != '-' && !model_found) {
-                result.show_options.model = argv[i];
-                model_found = true;
-            }
-        }
-
-        // Model name is required
-        if (!model_found) {
-            result.should_exit = true;
-            result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: llm-router node show <MODEL>\n";
-            return result;
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "rm") == 0) {
-        result.subcommand = Subcommand::NodeRm;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getRmHelpMessage();
-            return result;
-        }
-
-        // Parse model name
-        for (int i = argIndex + 1; i < argc; ++i) {
-            if (argv[i][0] != '-') {
-                result.model_options.model = argv[i];
-                break;
-            }
-        }
-
-        // Model name is required
-        if (result.model_options.model.empty()) {
-            result.should_exit = true;
-            result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: llm-router node rm <MODEL>\n";
-            return result;
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "stop") == 0) {
-        result.subcommand = Subcommand::NodeStop;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getStopHelpMessage();
-            return result;
-        }
-
-        // Parse model name
-        for (int i = argIndex + 1; i < argc; ++i) {
-            if (argv[i][0] != '-') {
-                result.model_options.model = argv[i];
-                break;
-            }
-        }
-
-        // Model name is required
-        if (result.model_options.model.empty()) {
-            result.should_exit = true;
-            result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: llm-router node stop <MODEL>\n";
-            return result;
-        }
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "ps") == 0) {
-        result.subcommand = Subcommand::NodePs;
-
-        // Check for --help
-        if (hasHelpFlag(argc, argv, argIndex + 1)) {
-            result.should_exit = true;
-            result.exit_code = 0;
-            result.output = getPsHelpMessage();
-            return result;
-        }
-        return result;
-    }
-
-    // Unknown subcommand
-    result.should_exit = true;
-    result.exit_code = 1;
-    std::ostringstream oss;
-    oss << "Error: Unknown node subcommand '" << subcommand << "'\n\n";
-    oss << getNodeHelpMessage();
-    result.output = oss.str();
-    return result;
-}
 
 // Parse router subcommands
 CliResult parseRouterSubcommand(int argc, char* argv[], int argIndex) {
@@ -496,8 +244,8 @@ CliResult parseRouterSubcommand(int argc, char* argv[], int argIndex) {
         return result;
     }
 
-    if (std::strcmp(subcommand, "nodes") == 0) {
-        result.subcommand = Subcommand::RouterNodes;
+    if (std::strcmp(subcommand, "endpoints") == 0) {
+        result.subcommand = Subcommand::RouterEndpoints;
         return result;
     }
 
@@ -548,11 +296,219 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         return result;
     }
 
-    // Main commands
-    if (std::strcmp(command, "node") == 0) {
-        return parseNodeSubcommand(argc, argv, 2);
+    // Direct commands (formerly node subcommands)
+    if (std::strcmp(command, "serve") == 0) {
+        result.subcommand = Subcommand::Serve;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getServeHelpMessage();
+            return result;
+        }
+
+        // Parse serve options
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
+                result.serve_options.port = static_cast<uint16_t>(std::stoi(argv[++i]));
+            } else if (std::strcmp(argv[i], "--host") == 0 && i + 1 < argc) {
+                result.serve_options.host = argv[++i];
+            }
+        }
+        return result;
     }
 
+    if (std::strcmp(command, "run") == 0) {
+        result.subcommand = Subcommand::Run;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getRunHelpMessage();
+            return result;
+        }
+
+        // Parse run options
+        bool model_found = false;
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--think") == 0) {
+                result.run_options.show_thinking = true;
+                result.run_options.hide_thinking = false;
+            } else if (std::strcmp(argv[i], "--hide-think") == 0) {
+                result.run_options.hide_thinking = true;
+                result.run_options.show_thinking = false;
+            } else if (argv[i][0] != '-' && !model_found) {
+                result.run_options.model = argv[i];
+                model_found = true;
+            }
+        }
+
+        // Model name is required
+        if (!model_found) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: allm run <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "pull") == 0) {
+        result.subcommand = Subcommand::Pull;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getPullHelpMessage();
+            return result;
+        }
+
+        // Parse pull options - model name
+        for (int i = 2; i < argc; ++i) {
+            if (argv[i][0] != '-') {
+                result.pull_options.model = argv[i];
+                break;
+            }
+        }
+
+        // Model name is required
+        if (result.pull_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: allm pull <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "list") == 0) {
+        result.subcommand = Subcommand::List;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getListHelpMessage();
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "show") == 0) {
+        result.subcommand = Subcommand::Show;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getShowHelpMessage();
+            return result;
+        }
+
+        // Parse show options
+        bool model_found = false;
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--license") == 0) {
+                result.show_options.license_only = true;
+            } else if (std::strcmp(argv[i], "--modelfile") == 0) {
+                result.show_options.modelfile_only = true;
+            } else if (std::strcmp(argv[i], "--parameters") == 0) {
+                result.show_options.parameters_only = true;
+            } else if (std::strcmp(argv[i], "--template") == 0) {
+                result.show_options.template_only = true;
+            } else if (std::strcmp(argv[i], "--system") == 0) {
+                result.show_options.system_only = true;
+            } else if (argv[i][0] != '-' && !model_found) {
+                result.show_options.model = argv[i];
+                model_found = true;
+            }
+        }
+
+        // Model name is required
+        if (!model_found) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: allm show <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "rm") == 0) {
+        result.subcommand = Subcommand::Rm;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getRmHelpMessage();
+            return result;
+        }
+
+        // Parse model name
+        for (int i = 2; i < argc; ++i) {
+            if (argv[i][0] != '-') {
+                result.model_options.model = argv[i];
+                break;
+            }
+        }
+
+        // Model name is required
+        if (result.model_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: allm rm <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "stop") == 0) {
+        result.subcommand = Subcommand::Stop;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getStopHelpMessage();
+            return result;
+        }
+
+        // Parse model name
+        for (int i = 2; i < argc; ++i) {
+            if (argv[i][0] != '-') {
+                result.model_options.model = argv[i];
+                break;
+            }
+        }
+
+        // Model name is required
+        if (result.model_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: allm stop <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "ps") == 0) {
+        result.subcommand = Subcommand::Ps;
+
+        // Check for --help
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getPsHelpMessage();
+            return result;
+        }
+        return result;
+    }
+
+    // Router subcommands
     if (std::strcmp(command, "router") == 0) {
         return parseRouterSubcommand(argc, argv, 2);
     }
@@ -568,25 +524,28 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         return result;
     }
 
-    // Legacy mode: no command means start server (backward compatibility)
-    // This allows running just "llm-node" or "llm-router" to start the server
-    result.should_exit = false;
-    result.subcommand = Subcommand::None;
+    // Unknown command
+    result.should_exit = true;
+    result.exit_code = 1;
+    std::ostringstream oss;
+    oss << "Unknown command: " << command << "\n\n";
+    oss << getHelpMessage();
+    result.output = oss.str();
     return result;
 }
 
 std::string subcommandToString(Subcommand subcommand) {
     switch (subcommand) {
         case Subcommand::None: return "none";
-        case Subcommand::NodeServe: return "node serve";
-        case Subcommand::NodeRun: return "node run";
-        case Subcommand::NodePull: return "node pull";
-        case Subcommand::NodeList: return "node list";
-        case Subcommand::NodeShow: return "node show";
-        case Subcommand::NodeRm: return "node rm";
-        case Subcommand::NodeStop: return "node stop";
-        case Subcommand::NodePs: return "node ps";
-        case Subcommand::RouterNodes: return "router nodes";
+        case Subcommand::Serve: return "serve";
+        case Subcommand::Run: return "run";
+        case Subcommand::Pull: return "pull";
+        case Subcommand::List: return "list";
+        case Subcommand::Show: return "show";
+        case Subcommand::Rm: return "rm";
+        case Subcommand::Stop: return "stop";
+        case Subcommand::Ps: return "ps";
+        case Subcommand::RouterEndpoints: return "router endpoints";
         case Subcommand::RouterModels: return "router models";
         case Subcommand::RouterStatus: return "router status";
         default: return "unknown";

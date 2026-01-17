@@ -83,6 +83,43 @@ impl std::fmt::Display for EndpointStatus {
     }
 }
 
+/// エンドポイントの機能タイプ
+///
+/// NodeのRuntimeTypeに相当する機能分類（SPEC-66555000移行用）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointCapability {
+    /// チャット補完（LLM推論）
+    ChatCompletion,
+    /// 埋め込みベクトル生成
+    Embeddings,
+    /// 画像生成（StableDiffusion等）
+    ImageGeneration,
+    /// 音声認識（Whisper等）
+    AudioTranscription,
+    /// 音声合成（TTS）
+    AudioSpeech,
+}
+
+impl EndpointCapability {
+    /// 文字列に変換
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ChatCompletion => "chat_completion",
+            Self::Embeddings => "embeddings",
+            Self::ImageGeneration => "image_generation",
+            Self::AudioTranscription => "audio_transcription",
+            Self::AudioSpeech => "audio_speech",
+        }
+    }
+}
+
+impl std::fmt::Display for EndpointCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// エンドポイント
 ///
 /// 推論サービスの接続先を表すエンティティ
@@ -118,6 +155,10 @@ pub struct Endpoint {
     /// Responses API対応フラグ（SPEC-24157000）
     #[serde(default)]
     pub supports_responses_api: bool,
+    /// エンドポイントの機能一覧（SPEC-66555000移行用）
+    /// 画像生成、音声認識等の特殊機能をサポートするかを示す
+    #[serde(default)]
+    pub capabilities: Vec<EndpointCapability>,
 }
 
 impl Endpoint {
@@ -138,7 +179,13 @@ impl Endpoint {
             registered_at: Utc::now(),
             notes: None,
             supports_responses_api: false,
+            capabilities: vec![EndpointCapability::ChatCompletion], // デフォルトはチャット機能
         }
+    }
+
+    /// 指定した機能をサポートしているか確認
+    pub fn has_capability(&self, cap: EndpointCapability) -> bool {
+        self.capabilities.contains(&cap)
     }
 }
 
@@ -244,6 +291,25 @@ mod tests {
         assert_eq!(endpoint.inference_timeout_secs, 120);
         assert_eq!(endpoint.error_count, 0);
         assert!(!endpoint.supports_responses_api);
+        // デフォルトでChatCompletion機能を持つ
+        assert!(endpoint.has_capability(EndpointCapability::ChatCompletion));
+        assert!(!endpoint.has_capability(EndpointCapability::ImageGeneration));
+    }
+
+    #[test]
+    fn test_endpoint_capability_serialization() {
+        assert_eq!(
+            serde_json::to_string(&EndpointCapability::ChatCompletion).unwrap(),
+            "\"chat_completion\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointCapability::ImageGeneration).unwrap(),
+            "\"image_generation\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointCapability::AudioTranscription).unwrap(),
+            "\"audio_transcription\""
+        );
     }
 
     #[test]

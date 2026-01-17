@@ -14,6 +14,7 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     let status = endpoint.status.as_str();
     let registered_at = endpoint.registered_at.to_rfc3339();
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
+    let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
 
     sqlx::query(
         r#"
@@ -21,8 +22,8 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
             id, name, base_url, api_key_encrypted, status,
             health_check_interval_secs, inference_timeout_secs,
             latency_ms, last_seen, last_error, error_count,
-            registered_at, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            registered_at, notes, capabilities
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -38,6 +39,7 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     .bind(endpoint.error_count as i32)
     .bind(&registered_at)
     .bind(&endpoint.notes)
+    .bind(&capabilities)
     .execute(pool)
     .await?;
 
@@ -51,7 +53,7 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api
+               registered_at, notes, supports_responses_api, capabilities
         FROM endpoints
         ORDER BY registered_at DESC
         "#,
@@ -69,7 +71,7 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api
+               registered_at, notes, supports_responses_api, capabilities
         FROM endpoints
         WHERE id = ?
         "#,
@@ -86,6 +88,7 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     let id = endpoint.id.to_string();
     let status = endpoint.status.as_str();
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
+    let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
 
     let result = sqlx::query(
         r#"
@@ -93,7 +96,7 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
             name = ?, base_url = ?, api_key_encrypted = ?, status = ?,
             health_check_interval_secs = ?, inference_timeout_secs = ?,
             latency_ms = ?, last_seen = ?, last_error = ?, error_count = ?,
-            notes = ?
+            notes = ?, capabilities = ?
         WHERE id = ?
         "#,
     )
@@ -108,6 +111,7 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     .bind(&endpoint.last_error)
     .bind(endpoint.error_count as i32)
     .bind(&endpoint.notes)
+    .bind(&capabilities)
     .bind(&id)
     .execute(pool)
     .await?;
@@ -132,7 +136,7 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api
+               registered_at, notes, supports_responses_api, capabilities
         FROM endpoints
         WHERE name = ?
         "#,
@@ -154,7 +158,7 @@ pub async fn list_endpoints_by_status(
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api
+               registered_at, notes, supports_responses_api, capabilities
         FROM endpoints
         WHERE status = ?
         ORDER BY registered_at DESC
@@ -412,10 +416,14 @@ struct EndpointRow {
     registered_at: String,
     notes: Option<String>,
     supports_responses_api: i32,
+    /// SPEC-66555000移行用: エンドポイントの機能一覧（JSON形式）
+    capabilities: Option<String>,
 }
 
 impl From<EndpointRow> for Endpoint {
     fn from(row: EndpointRow) -> Self {
+        use crate::types::endpoint::EndpointCapability;
+
         Endpoint {
             id: Uuid::parse_str(&row.id).unwrap_or_default(),
             name: row.name,
@@ -436,6 +444,10 @@ impl From<EndpointRow> for Endpoint {
                 .unwrap_or_else(|_| chrono::Utc::now()),
             notes: row.notes,
             supports_responses_api: row.supports_responses_api != 0,
+            capabilities: row
+                .capabilities
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| vec![EndpointCapability::ChatCompletion]),
         }
     }
 }

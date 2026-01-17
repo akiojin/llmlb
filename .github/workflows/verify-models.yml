@@ -61,7 +61,7 @@ jobs:
       MODEL_PLATFORM: ${{ inputs.platform }}
       MODEL_CAPABILITY: ${{ inputs.capability }}
       MODEL_DIR: ./models
-      BUILD_DIR: ./node/build
+      BUILD_DIR: ./allm/build
 
     steps:
       - name: Checkout
@@ -85,7 +85,7 @@ jobs:
           elif [[ "$MODEL_PLATFORM" == "linux-cuda" ]]; then
             CMAKE_ARGS="-DBUILD_WITH_CUDA=ON"
           fi
-          cmake -S node -B "$BUILD_DIR" $CMAKE_ARGS -DBUILD_TESTS=OFF
+          cmake -S allm -B "$BUILD_DIR" $CMAKE_ARGS -DBUILD_TESTS=OFF
           cmake --build "$BUILD_DIR" --config Release
 
       - name: Download model

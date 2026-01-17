@@ -9,6 +9,16 @@
 using namespace llm_node;
 namespace fs = std::filesystem;
 
+static void wait_for_servers(httplib::Server& router, httplib::Server& registry, std::chrono::milliseconds timeout) {
+    const auto start = std::chrono::steady_clock::now();
+    while (!router.is_running() || !registry.is_running()) {
+        if (std::chrono::steady_clock::now() - start > timeout) {
+            FAIL() << "Servers failed to start within timeout";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
 class TempDirGuard {
 public:
     TempDirGuard() {
@@ -68,9 +78,7 @@ public:
         router_thread_ = std::thread([this, router_port]() { router_.listen("127.0.0.1", router_port); });
         registry_thread_ = std::thread([this, registry_port]() { registry_.listen("127.0.0.1", registry_port); });
 
-        while (!router_.is_running() || !registry_.is_running()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        wait_for_servers(router_, registry_, std::chrono::seconds(5));
     }
 
     void stop() {

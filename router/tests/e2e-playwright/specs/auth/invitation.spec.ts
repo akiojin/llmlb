@@ -2,7 +2,7 @@ import { test, expect, APIRequestContext } from '@playwright/test';
 import { LoginPage } from '../../pages/auth.page';
 import { DashboardPage } from '../../pages/dashboard.page';
 
-const API_BASE = process.env.BASE_URL || 'http://localhost:32768';
+const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
 
 /**
  * Helper to get JWT token for admin user

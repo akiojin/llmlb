@@ -22,7 +22,18 @@ export class LoginPage {
   }
 
   async goto() {
-    await this.page.goto('/dashboard/login.html');
+    const url = '/dashboard/login.html';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+        return;
+      } catch (error) {
+        if (attempt === 1) {
+          throw error;
+        }
+        await this.page.waitForTimeout(500);
+      }
+    }
   }
 
   async login(username: string, password: string) {
@@ -64,7 +75,18 @@ export class RegisterPage {
   }
 
   async goto() {
-    await this.page.goto('/dashboard/register.html');
+    const url = '/dashboard/register.html';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+        return;
+      } catch (error) {
+        if (attempt === 1) {
+          throw error;
+        }
+        await this.page.waitForTimeout(500);
+      }
+    }
   }
 
   async register(invitationCode: string, username: string, password: string) {

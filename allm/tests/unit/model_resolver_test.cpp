@@ -16,6 +16,16 @@
 using namespace llm_node;
 namespace fs = std::filesystem;
 
+static void wait_for_server(httplib::Server& server, std::chrono::milliseconds timeout) {
+    const auto start = std::chrono::steady_clock::now();
+    while (!server.is_running()) {
+        if (std::chrono::steady_clock::now() - start > timeout) {
+            FAIL() << "Server failed to start within timeout";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
 class TempModelDirs {
 public:
     TempModelDirs() {
@@ -81,9 +91,7 @@ public:
         }
 
         thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
-        while (!server_.is_running()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        wait_for_server(server_, std::chrono::seconds(5));
     }
 
     void stop() {

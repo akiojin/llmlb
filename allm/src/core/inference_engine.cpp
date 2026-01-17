@@ -1524,6 +1524,14 @@ bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const 
     }
     if (!engine->supportsTextGeneration()) return false;
 
+    if (descriptor.runtime == "safetensors_cpp") {
+#if defined(USE_METAL) || defined(USE_CUDA) || defined(USE_ROCM) || defined(USE_VULKAN)
+        return true;
+#else
+        return false;
+#endif
+    }
+
     if (descriptor.runtime == "gptoss_cpp") {
         namespace fs = std::filesystem;
         fs::path model_dir = descriptor.model_dir.empty()

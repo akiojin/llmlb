@@ -7,7 +7,8 @@ Steps for working on this repository locally.
 - Rust toolchain (stable)
 - CMake + C++20 compiler for C++ node
 - Docker (optional)
-- pnpm (for markdownlint)
+- pnpm (for workspace tooling such as markdownlint)
+- npm (for mcp-server)
 
 ## Setup
 ```bash

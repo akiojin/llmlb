@@ -214,13 +214,19 @@ pub fn create_router(state: AppState) -> Router {
     // モデル一覧API (Admin OR Node スコープで利用可能)
     // /v0/models はノード同期用の登録済みモデル一覧
     // /v0/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
-    let models_list_routes = Router::new()
-        .route("/models", get(models::list_models))
-        .route("/models/hub", get(models::list_models_with_status))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::admin_or_node_middleware,
-        ));
+    let models_list_routes = if auth_disabled {
+        Router::new()
+            .route("/models", get(models::list_models))
+            .route("/models/hub", get(models::list_models_with_status))
+    } else {
+        Router::new()
+            .route("/models", get(models::list_models))
+            .route("/models/hub", get(models::list_models_with_status))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::admin_or_node_middleware,
+            ))
+    };
 
     // SPEC-66555000: POST /v0/health（プッシュ型ヘルスチェック）は廃止されました
     // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用

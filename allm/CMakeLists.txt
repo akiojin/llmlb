@@ -314,6 +314,9 @@ if(BUILD_WITH_SAFETENSORS)
         ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine_plugin.cpp
     )
     add_library(llm_engine_safetensors SHARED ${SAFETENSORS_ENGINE_SOURCES})
+    if (WIN32)
+        set_target_properties(llm_engine_safetensors PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    endif()
     target_include_directories(llm_engine_safetensors
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include

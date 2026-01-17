@@ -23,7 +23,7 @@ LLM Router supports a pluggable multi-engine architecture:
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
 | **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
-| **GPT-OSS** | Production (Metal), WIP (DirectML) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
+| **GPT-OSS** | Production (Metal/CUDA) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
@@ -61,6 +61,8 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
 MCP server. This is the recommended approach over using Bash with curl commands
 directly.
+The MCP server is installed and run with npm/npx; the repository root uses pnpm
+for workspace tasks.
 
 ### Why MCP Server over Bash + curl?
 
@@ -476,8 +478,8 @@ For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quick
   - Dashboard → **Models** → **Register**
   - Choose `format`: `safetensors` (native engines) or `gguf` (llama.cpp fallback).
     - If the repo contains both `safetensors` and `.gguf`, `format` is required.
-    - Safetensors text generation is available only when a native engine exists
-      (gpt-oss on Metal, DirectML is in progress). Use `gguf` for GGUF-only models.
+    - Safetensors text generation is available only when the safetensors.cpp engine is enabled
+      (Metal/CUDA). Use `gguf` for GGUF-only models.
   - Enter a Hugging Face repo or file URL (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
   - For `format=gguf`:
     - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
@@ -485,11 +487,9 @@ For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quick
   - For `format=safetensors`:
     - The HF snapshot must include `config.json` and `tokenizer.json`.
     - Sharded weights must include an `.index.json`.
-    - gpt-oss prefers official GPU artifacts when present:
-      `model.metal.bin` (Metal) / `model.directml.bin` or `model.dml.bin` (DirectML).
-    - Windows (DirectML) uses `gptoss_directml.dll` (and `nemotron_directml.dll` for Nemotron).
-      - Built as part of the Windows build; place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
-      - set `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` to an absolute path.
+    - If official GPU artifacts are provided (for example `model.metal.bin`), they may be used as
+      execution cache when supported. Otherwise, safetensors are used directly.
+    - Windows requires CUDA builds (`BUILD_WITH_CUDA=ON`). DirectML is not supported.
   - Router stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
@@ -766,6 +766,75 @@ For detailed development guidelines, testing procedures, and contribution workfl
 # Full quality gate
 make quality-checks
 ```
+
+### PoCs
+
+- gpt-oss (auto): `make poc-gptoss`
+- gpt-oss (macOS / Metal): `make poc-gptoss-metal`
+- gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
+  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
+
+Notes:
+- gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
+- GPU is required. Supported backends: macOS (Metal) and Windows (CUDA). Linux/CUDA is experimental.
+
+### Spec-Driven Development
+
+This project follows Spec-Driven Development:
+
+1. `/speckit.specify` - Create feature specification
+2. `/speckit.plan` - Create implementation plan
+3. `/speckit.tasks` - Break down into tasks
+4. Execute tasks (strict TDD cycle)
+
+See [CLAUDE.md](./CLAUDE.md) for details.
+
+### Claude Code Worktree Hooks
+
+This project uses Claude Code PreToolUse Hooks to enforce Worktree environment
+boundaries and prevent accidental operations that could disrupt the development workflow.
+
+**Features:**
+
+- **Git Branch Protection**: Blocks `git checkout`, `git switch`, `git worktree`
+commands to prevent branch switching
+- **Directory Navigation Control**: Blocks `cd` commands that would move outside
+the Worktree boundary
+- **Smart Allow Lists**: Permits read-only operations like `git branch --list`
+- **Fast Execution**: Average response time < 50ms (target: < 100ms)
+
+**Installation & Configuration:**
+
+For detailed setup instructions, manual testing examples, and troubleshooting, see:
+
+- [Quickstart Guide](./specs/SPEC-dc648675/quickstart.md) - Step-by-step setup
+and verification
+- [Feature Specification](./specs/SPEC-dc648675/spec.md) - Requirements and
+acceptance criteria
+- [Implementation Plan](./specs/SPEC-dc648675/plan.md) - Technical design and
+architecture
+- [Performance Report](./specs/SPEC-dc648675/performance.md) - Benchmark results
+
+**Running Hook Tests:**
+
+```bash
+# Run all Hook contract tests (13 test cases)
+make test-hooks
+
+# Or run manually with Bats
+npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats
+
+# Run performance benchmark
+tests/hooks/benchmark-hooks.sh
+```
+
+**Automated Testing:**
+
+Hook tests are automatically executed in CI/CD:
+
+- GitHub Actions: `.github/workflows/test-hooks.yml` (standalone)
+- Quality Checks: `.github/workflows/quality-checks.yml` (integrated)
+- Makefile: `make quality-checks` includes `test-hooks` target
 
 ## Request History
 

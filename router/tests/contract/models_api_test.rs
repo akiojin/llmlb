@@ -339,8 +339,8 @@ async fn test_register_model_contract() {
         .as_array()
         .expect("'data' must be an array on /v1/models");
     assert!(
-        data.iter().all(|m| m["id"] != "test/repo"),
-        "/v1/models should not include registered model without online nodes"
+        data.iter().any(|m| m["id"] == "test/repo"),
+        "/v1/models should include registered model without online nodes"
     );
 
     // 重複登録は400
@@ -594,9 +594,9 @@ async fn test_delete_model_removes_from_list() {
     assert!(
         body["data"]
             .as_array()
-            .map(|arr| arr.iter().all(|m| m["id"] != model_name))
+            .map(|arr| arr.iter().any(|m| m["id"] == model_name))
             .unwrap_or(false),
-        "model should not appear in /v1/models without online nodes"
+        "model should appear in /v1/models even without online nodes"
     );
 
     let delete_res = app

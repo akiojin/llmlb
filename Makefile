@@ -1,12 +1,12 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
 .PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 .PHONY: poc-gptoss poc-gptoss-metal poc-gptoss-cuda
 
-TASKS ?= $(shell find specs -name tasks.md)
+FIND ?= /usr/bin/find
 
 fmt:
 	cargo fmt --check
@@ -21,10 +21,14 @@ markdownlint:
 	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!allm/third_party" "!node/third_party"
 
 specify-tasks:
-	@for file in $(TASKS); do \
+	@bash -lc 'TASKS_LIST="$${TASKS:-}"; \
+	if [ -z "$$TASKS_LIST" ]; then \
+		TASKS_LIST="$$( $(FIND) specs -name tasks.md 2>/dev/null )"; \
+	fi; \
+	for file in $$TASKS_LIST; do \
 		echo "🔍 Checking tasks in $$file"; \
 		bash .specify/scripts/checks/check-tasks.sh $$file; \
-	done
+	done'
 
 specify-tests:
 	bash .specify/scripts/checks/check-tests.sh
@@ -38,6 +42,8 @@ specify-commits:
 specify-checks: specify-tasks specify-tests specify-compile specify-commits
 
 quality-checks: fmt clippy test specify-checks markdownlint openai-tests test-hooks
+
+quality-checks-pre-commit: fmt clippy
 
 openai-tests:
 	cargo test -p llm-router --test openai_proxy

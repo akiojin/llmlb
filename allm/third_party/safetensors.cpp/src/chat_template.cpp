@@ -11,6 +11,7 @@
  */
 
 #include "safetensors_internal.h"
+#include <functional>
 #include <sstream>
 #include <regex>
 

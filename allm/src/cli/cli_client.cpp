@@ -130,7 +130,7 @@ CliResponse<void> CliClient::pullModel(const std::string& model_name, ProgressCa
 
     // Use Post with ContentReceiver for streaming progress
     auto res = client.Post(
-        "/api/pull",
+        "/api/models/pull",
         httplib::Headers{},
         body.dump(),
         "application/json",

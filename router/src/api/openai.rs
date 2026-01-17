@@ -286,8 +286,10 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         .into_iter()
         .collect();
     available_models.sort();
+    let available_set: std::collections::HashSet<String> =
+        available_models.iter().cloned().collect();
 
-    // 登録済みモデルのメタデータを取得（存在する場合のみ利用）
+    // Load registered models from the database.
     let mut registered_map: std::collections::HashMap<String, crate::registry::models::ModelInfo> =
         HashMap::new();
     for model in list_registered_models(&state.db_pool).await? {
@@ -325,6 +327,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     // ノードのモデルを追加
     for model_id in &available_models {
         seen_models.insert(model_id.clone());
+        let ready = available_set.contains(model_id);
 
         // supported_apisを取得（デフォルトはchat_completions）
         let supported_apis: Vec<String> = endpoint_model_apis
@@ -342,7 +345,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "capabilities": caps,
                 "lifecycle_status": LifecycleStatus::Registered,
                 "download_progress": null,
-                "ready": true,
+                "ready": ready,
                 "repo": m.repo,
                 "filename": m.filename,
                 "size_bytes": m.size,
@@ -362,7 +365,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "owned_by": "router",
                 "lifecycle_status": LifecycleStatus::Registered,
                 "download_progress": null,
-                "ready": true,
+                "ready": ready,
                 "supported_apis": supported_apis,
             });
             data.push(obj);
@@ -390,7 +393,43 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         data.push(obj);
     }
 
+    // 登録されたモデルを追加（オンラインノードがなくても表示）
+    for (model_id, m) in &registered_map {
+        if seen_models.contains(model_id) {
+            continue;
+        }
+        seen_models.insert(model_id.clone());
+
+        let ready = available_set.contains(model_id);
+        let supported_apis: Vec<String> = endpoint_model_apis
+            .get(model_id)
+            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+        let caps: ModelCapabilities = m.get_capabilities().into();
+        let obj = json!({
+            "id": m.name,
+            "object": "model",
+            "created": 0,
+            "owned_by": "router",
+            "capabilities": caps,
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": ready,
+            "repo": m.repo,
+            "filename": m.filename,
+            "size_bytes": m.size,
+            "required_memory_bytes": m.required_memory,
+            "source": m.source,
+            "tags": m.tags,
+            "description": m.description,
+            "chat_template": m.chat_template,
+            "supported_apis": supported_apis,
+        });
+        data.push(obj);
+    }
+
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
+
     let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
     for cm in cloud_models {
         let obj = json!({

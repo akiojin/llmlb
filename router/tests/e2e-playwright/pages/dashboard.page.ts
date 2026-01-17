@@ -85,12 +85,29 @@ export class DashboardPage {
     await this.page.waitForLoadState('load');
     // Wait a moment for any JavaScript redirects
     await this.page.waitForTimeout(500);
-    // Handle login if redirected to login page
-    if (this.page.url().includes('login')) {
-      await this.login();
+    // Handle login if redirected to login page or login form appears after redirect
+    const loginForm = this.page
+      .locator('form')
+      .filter({ hasText: 'Sign in' });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const isLoginUrl = this.page.url().includes('login');
+      const hasLoginForm = await loginForm
+        .isVisible({ timeout: 2000 })
+        .catch(() => false);
+      if (isLoginUrl || hasLoginForm) {
+        await this.login();
+      }
+      try {
+        // Wait for dashboard content to be visible
+        await this.page.waitForSelector('#theme-toggle', { timeout: 10000 });
+        return;
+      } catch (error) {
+        if (attempt === 0) {
+          continue;
+        }
+        throw error;
+      }
     }
-    // Wait for dashboard content to be visible
-    await this.page.waitForSelector('#theme-toggle', { timeout: 10000 });
   }
 
   async gotoModels() {

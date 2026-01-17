@@ -112,6 +112,7 @@ llm-router/
 - テスト＆CIワークフロー: `.specify/scripts/checks/`, `make quality-checks`, `make openai-tests`
 
 ## よくあるNG（必ず回避）
+- サブモジュールの修正は基本的にNG（必要時は事前に明示的な承認を取る）
 
 - Ollama を再導入する変更
 - ブランチ／worktree操作・`cd` での作業ディレクトリ移動

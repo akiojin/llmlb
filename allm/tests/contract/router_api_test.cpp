@@ -6,6 +6,16 @@
 
 using namespace llm_node;
 
+static void wait_for_server(httplib::Server& server, std::chrono::milliseconds timeout) {
+    const auto start = std::chrono::steady_clock::now();
+    while (!server.is_running()) {
+        if (std::chrono::steady_clock::now() - start > timeout) {
+            FAIL() << "Server failed to start within timeout";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
 class RouterContractFixture : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -23,7 +33,7 @@ protected:
             res.set_content("ok", "text/plain");
         });
         thread = std::thread([this]() { server.listen("127.0.0.1", 18091); });
-        while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        wait_for_server(server, std::chrono::seconds(5));
     }
 
     void TearDown() override {

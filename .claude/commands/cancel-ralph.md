@@ -15,6 +15,7 @@ This command cancels any active Ralph Wiggum autonomous execution loop.
 ### Response
 
 Acknowledge the cancellation and provide a summary of:
+
 - Tasks completed
 - Current task that was interrupted (if any)
 - Remaining tasks in the queue

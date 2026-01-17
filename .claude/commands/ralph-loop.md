@@ -32,6 +32,7 @@ This command starts an autonomous execution loop using the "Ralph Wiggum techniq
 ### Starting the Loop
 
 Begin by:
+
 1. Reading any relevant spec files (if a SPEC ID was provided)
 2. Understanding the current project state
 3. Creating a detailed todo list

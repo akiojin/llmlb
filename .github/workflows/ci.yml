@@ -26,7 +26,7 @@ jobs:
         with:
           filters: |
             cpp:
-              - 'node/**'
+              - 'allm/**'
               - 'package.json'
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/ci.yml'
@@ -111,12 +111,12 @@ jobs:
         run: npm run test:node
       - name: clang-tidy (sources only)
         run: |
-          cd node
+          cd allm
           FILES=$(find src include -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' \))
           run-clang-tidy -p build $FILES -quiet || (cat /tmp/run-clang-tidy.log || true; exit 1)
       - name: cppcheck (warnings)
         run: |
-          cd node
+          cd allm
           cppcheck --enable=warning --inline-suppr --std=c++20 \
             -I include -I third_party/nlohmann-json/include -I third_party/cpp-httplib \
             --suppress=missingIncludeSystem \
@@ -134,7 +134,7 @@ jobs:
         with:
           version: 10.20.0
       - name: Run markdownlint
-        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!node/third_party" "!node/build"
+        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!allm/third_party" "!allm/build"
 
   coverage-rust:
     name: Coverage (Rust)
@@ -221,9 +221,9 @@ jobs:
       - name: gcovr lcov report
         run: |
           mkdir -p coverage-cpp
-          gcovr -r node \
-            --exclude 'node/third_party' \
-            --exclude 'node/build/third_party' \
+          gcovr -r allm \
+            --exclude 'allm/third_party' \
+            --exclude 'allm/build/third_party' \
             --gcov-ignore-parse-errors \
             -x coverage-cpp/coverage.xml -s
       - name: Upload coverage artifact

@@ -140,25 +140,25 @@
 
 以下はPhase B-0完了後に実行:
 
-- [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）⚠️ NodeRegistryがまだ使用中
+- [~] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）⚠️ **BLOCKED**: 将来SPECで対応
 - [x] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
-- [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ⚠️ LoadManager, HealthChecker等が依存
-- [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）⚠️ admin APIとして使用中
-- [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除 ⚠️ NodeRegistryが使用中
+- [~] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ⚠️ **BLOCKED**: 将来SPECで対応
+- [~] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）⚠️ **BLOCKED**: aLLM admin APIとして必要
+- [~] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除 ⚠️ **BLOCKED**: 将来SPECで対応
 
-**ブロッカー**: NodeRegistryの完全廃止にはEndpointRegistryへの完全移行が必要（LoadManager, HealthChecker, proxy, openaiルーティング等）
+**ブロッカー（2026-01-18確定）**: NodeRegistryの完全廃止には新規SPECによる「aLLMのEndpoint化」設計が必要
 
 **依存関係分析（2026-01-18更新）**:
-- `api/images.rs`, `api/audio.rs`: EndpointCapability優先のフォールバック構造に移行済み
-- `api/logs.rs`: aLLMノード固有のログ取得機能、Endpoint化対象外
-- `api/nodes.rs`: aLLMノード管理API（list/settings/approve）、削除不可
-- `api/models.rs`: GPU警告計算（compute_gpu_warnings）、NodeRegistry依存
-- `api/dashboard.rs`: ノード一覧表示、NodeRegistry依存
-- `health/mod.rs`: HealthChecker、NodeRegistry依存
-- `balancer/mod.rs`: LoadManager、NodeRegistry依存
-- `main.rs`, `lib.rs`: AppState初期化、NodeRegistry必須
+- `api/images.rs`, `api/audio.rs`: ✅ EndpointCapability優先のフォールバック構造に移行完了
+- `api/logs.rs`: ⏸️ aLLMノード固有のログ取得機能、Endpoint化対象外（現状維持）
+- `api/nodes.rs`: ⏸️ aLLMノード管理API（list/settings/approve）、削除不可（現状維持）
+- `api/models.rs`: ⏸️ GPU警告計算（compute_gpu_warnings）、NodeRegistry依存（現状維持）
+- `api/dashboard.rs`: ⏸️ ノード一覧表示、NodeRegistry依存（現状維持）
+- `health/mod.rs`: ⏸️ HealthChecker、NodeRegistry依存（現状維持）
+- `balancer/mod.rs`: ⏸️ LoadManager、NodeRegistry依存（現状維持）
+- `main.rs`, `lib.rs`: ⏸️ AppState初期化、NodeRegistry必須（現状維持）
 
-**結論**: aLLMがEndpointとして登録される仕組みが整うまで、T036-T040は保留
+**結論**: T036, T038, T039, T040は「aLLMがEndpointとして登録される仕組み」の設計・実装（新規SPEC）が完了するまでBLOCKED。本SPECの範囲外として凍結。
 
 ### ドキュメント・検証
 

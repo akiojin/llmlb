@@ -2,6 +2,7 @@
 //!
 //! ノードの状態をメモリ内で管理し、SQLiteと同期
 
+pub mod endpoints;
 pub mod models;
 
 use crate::db::nodes::NodeStorage;

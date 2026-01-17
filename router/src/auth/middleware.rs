@@ -296,6 +296,75 @@ pub async fn admin_or_api_key_middleware(
     Ok(next.run(request).await)
 }
 
+/// 認証済みユーザー向けミドルウェア（viewerも許可）
+///
+/// GET操作など、viewerロールでもアクセス可能なエンドポイント向け。
+/// 認証は必須だが、Admin権限は不要。
+///
+/// 許可される認証:
+/// - JWT (任意のrole)
+/// - APIキー (AdminまたはApiスコープ)
+pub async fn authenticated_middleware(
+    State(app_state): State<crate::AppState>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // JWTがあれば優先
+    if let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if token_looks_like_jwt(token) {
+                let claims =
+                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
+                        tracing::warn!("JWT verification failed: {}", e);
+                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+                    })?;
+                // 任意のロールを許可
+                request.extensions_mut().insert(claims);
+                return Ok(next.run(request).await);
+            }
+        }
+    }
+
+    // JWTがない/無効ならAPIキーで認証
+    let api_key = extract_api_key(&request)?;
+    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
+
+    // AdminまたはApiスコープを許可
+    if !has_scope(&auth_context.scopes, ApiKeyScope::Admin)
+        && !has_scope(&auth_context.scopes, ApiKeyScope::Api)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Admin or Api scope required".to_string(),
+        )
+            .into_response());
+    }
+
+    // APIキーの発行者の情報でClaimsを構築
+    // スコープからロールを推測
+    let role = if has_scope(&auth_context.scopes, ApiKeyScope::Admin) {
+        UserRole::Admin
+    } else {
+        UserRole::Viewer
+    };
+    let exp = auth_context
+        .expires_at
+        .map(|dt| dt.timestamp() as usize)
+        .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
+    let claims = Claims {
+        sub: auth_context.created_by.to_string(),
+        role,
+        exp,
+    };
+    request.extensions_mut().insert(claims);
+
+    Ok(next.run(request).await)
+}
+
 /// 管理者またはノード権限ミドルウェア
 ///
 /// `/v0/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ノード(Node APIキー)」の両方から
@@ -372,111 +441,9 @@ pub async fn admin_or_node_middleware(
     Ok(next.run(request).await)
 }
 
-/// APIキー or ノードトークン認証ミドルウェア
-///
-/// `/v1/models*` のように「外部クライアント(APIキー)」と「ノード(ノードトークン)」の両方から
-/// アクセスされるエンドポイント向け。
-///
-/// 優先順位:
-/// 1. `X-Node-Token` が存在する場合はノードトークンで認証
-/// 2. それ以外は APIキー（`X-API-Key` または `Authorization: Bearer`）で認証
-pub async fn api_key_or_node_token_auth_middleware(
-    State(pool): State<sqlx::SqlitePool>,
-    mut request: Request,
-    next: Next,
-) -> Result<Response, Response> {
-    // まず X-Node-Token があればノード認証を優先
-    if let Some(node_token) = request
-        .headers()
-        .get("X-Node-Token")
-        .and_then(|h| h.to_str().ok())
-    {
-        let token_hash = hash_with_sha256(node_token);
-        let node_token_record = crate::db::node_tokens::find_by_hash(&pool, &token_hash)
-            .await
-            .map_err(|e| {
-                tracing::warn!("Node token verification failed: {}", e);
-                (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
-            })?
-            .ok_or_else(|| {
-                (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
-            })?;
-
-        request.extensions_mut().insert(node_token_record.node_id);
-        return Ok(next.run(request).await);
-    }
-
-    // 次に APIキーで認証
-    let api_key = extract_api_key(&request).map_err(|_| {
-        (
-            StatusCode::UNAUTHORIZED,
-            "Missing X-Node-Token header or API key".to_string(),
-        )
-            .into_response()
-    })?;
-    let auth_context = authenticate_api_key(&pool, &api_key).await?;
-
-    if !has_scope(&auth_context.scopes, ApiKeyScope::Api) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Insufficient API key scope".to_string(),
-        )
-            .into_response());
-    }
-
-    request.extensions_mut().insert(auth_context);
-    Ok(next.run(request).await)
-}
-
-/// ノードトークン認証ミドルウェア
-///
-/// X-Node-Tokenヘッダーからトークンを抽出してSHA-256で検証を行う
-///
-/// # Arguments
-/// * `State(pool)` - データベース接続プール
-/// * `request` - HTTPリクエスト
-/// * `next` - 次のミドルウェア/ハンドラー
-///
-/// # Returns
-/// * `Ok(Response)` - 認証成功
-/// * `Err(Response)` - 認証失敗、401 Unauthorized
-pub async fn node_token_auth_middleware(
-    State(pool): State<sqlx::SqlitePool>,
-    mut request: Request,
-    next: Next,
-) -> Result<Response, Response> {
-    // X-Node-Tokenヘッダーを取得
-    let node_token = request
-        .headers()
-        .get("X-Node-Token")
-        .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                "Missing X-Node-Token header".to_string(),
-            )
-                .into_response()
-        })?;
-
-    // SHA-256ハッシュ化
-    let token_hash = hash_with_sha256(node_token);
-
-    // データベースでノードトークンを検証
-    let node_token_record = crate::db::node_tokens::find_by_hash(&pool, &token_hash)
-        .await
-        .map_err(|e| {
-            tracing::warn!("Node token verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
-        })?
-        .ok_or_else(|| {
-            (StatusCode::UNAUTHORIZED, "Invalid node token".to_string()).into_response()
-        })?;
-
-    // ノードIDをrequestの拡張データに格納
-    request.extensions_mut().insert(node_token_record.node_id);
-
-    Ok(next.run(request).await)
-}
+// SPEC-66555000: APIキー or ノードトークン認証ミドルウェアは廃止されました
+// api_key_or_node_token_auth_middleware と node_token_auth_middleware は削除されました
+// 新しい実装は POST /v0/endpoints を使用してください
 
 /// SHA-256ハッシュ化ヘルパー関数
 ///
@@ -562,6 +529,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         };
 
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
@@ -602,6 +570,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         };
 
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(

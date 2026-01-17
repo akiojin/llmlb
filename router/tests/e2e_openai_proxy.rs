@@ -285,8 +285,11 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     node_stub.stop().await;
 }
 
+/// SPEC-66555000: Endpoints APIを使用してモデルを登録しテストする
 #[tokio::test]
 async fn openai_v1_models_list_with_registered_node() {
+    use support::router::register_responses_endpoint;
+
     let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
@@ -300,7 +303,8 @@ async fn openai_v1_models_list_with_registered_node() {
 
     let (router, db_pool) = spawn_test_router_with_db().await;
 
-    register_and_approve(&router, &node_stub).await;
+    // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
+    let _ = register_responses_endpoint(router.addr(), node_stub.addr(), "gpt-oss-20b").await;
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;
@@ -337,8 +341,11 @@ async fn openai_v1_models_list_with_registered_node() {
     node_stub.stop().await;
 }
 
+/// SPEC-66555000: Endpoints APIを使用してモデルを登録しテストする
 #[tokio::test]
 async fn openai_v1_models_get_specific() {
+    use support::router::register_responses_endpoint;
+
     let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
@@ -352,14 +359,21 @@ async fn openai_v1_models_get_specific() {
 
     let (router, db_pool) = spawn_test_router_with_db().await;
 
-    register_and_approve(&router, &node_stub).await;
+    // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
+    let endpoint_id =
+        register_responses_endpoint(router.addr(), node_stub.addr(), "gpt-oss-20b").await;
+    assert!(
+        endpoint_id.is_ok(),
+        "Endpoint registration should succeed: {:?}",
+        endpoint_id
+    );
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;
 
     let client = Client::new();
 
-    // GET /v1/models/gpt-oss-20b - ノードが/v1/modelsで報告しているモデルは発見される
+    // GET /v1/models/gpt-oss-20b - エンドポイントがモデルを報告しているので発見される
     let model_response = client
         .get(format!("http://{}/v1/models/gpt-oss-20b", router.addr()))
         .header("authorization", format!("Bearer {}", api_key))
@@ -367,15 +381,18 @@ async fn openai_v1_models_get_specific() {
         .await
         .expect("model request should succeed");
 
-    // ノードスタブがこのモデルを報告しているため、200が返る
+    // エンドポイントがこのモデルを報告しているため、200が返る
     assert_eq!(model_response.status(), reqwest::StatusCode::OK);
 
     router.stop().await;
     node_stub.stop().await;
 }
 
+/// SPEC-66555000: Endpoints APIを使用してモデルを登録しテストする
 #[tokio::test]
 async fn openai_v1_models_not_found() {
+    use support::router::register_responses_endpoint;
+
     let node_stub = spawn_node_stub(NodeStubState {
         chat_response: json!({
             "message": {"role": "assistant", "content": "Hello"},
@@ -389,7 +406,8 @@ async fn openai_v1_models_not_found() {
 
     let (router, db_pool) = spawn_test_router_with_db().await;
 
-    register_and_approve(&router, &node_stub).await;
+    // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
+    let _ = register_responses_endpoint(router.addr(), node_stub.addr(), "gpt-oss-20b").await;
 
     // APIキーを取得
     let api_key = create_test_api_key(router.addr(), &db_pool).await;

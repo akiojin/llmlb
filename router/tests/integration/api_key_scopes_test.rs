@@ -107,7 +107,7 @@ async fn v0_nodes_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -122,7 +122,7 @@ async fn v0_nodes_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", api_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -137,7 +137,7 @@ async fn v0_nodes_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -234,7 +234,7 @@ async fn v0_health_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))

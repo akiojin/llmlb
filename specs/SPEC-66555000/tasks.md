@@ -23,111 +23,135 @@
 
 ## Phase 3.1: セットアップ
 
-- [ ] T001 `router/migrations/` に `YYYYMMDDHHMMSS_add_endpoints.sql` マイグレーション追加（endpoints, endpoint_models, endpoint_health_checks）
-- [ ] T002 [P] `router/src/types/endpoint.rs` に型定義を作成（Endpoint, EndpointStatus, EndpointModel, EndpointHealthCheck）
-- [ ] T003 [P] `router/src/db/mod.rs` に `endpoints` モジュールを追加
-- [ ] T004 [P] `router/src/api/mod.rs` に `endpoints` モジュールを追加
+- [x] T001 `router/migrations/` に `YYYYMMDDHHMMSS_add_endpoints.sql` マイグレーション追加（endpoints, endpoint_models, endpoint_health_checks）
+- [x] T002 [P] `router/src/types/endpoint.rs` に型定義を作成（Endpoint, EndpointStatus, EndpointModel, EndpointHealthCheck）
+- [x] T003 [P] `router/src/db/mod.rs` に `endpoints` モジュールを追加
+- [x] T004 [P] `router/src/api/mod.rs` に `endpoints` モジュールを追加
 
 ## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
 
 **重要: これらのテストは記述され、実装前に失敗する必要がある**
 
-### Contract Tests（API契約検証）
+### Contract Tests（API契約検証）✅ RED完了
 
-- [ ] T005 [P] `router/tests/contract/endpoints_post_test.rs` に POST /v0/endpoints の contract test
-- [ ] T006 [P] `router/tests/contract/endpoints_get_list_test.rs` に GET /v0/endpoints の contract test
-- [ ] T007 [P] `router/tests/contract/endpoints_get_detail_test.rs` に GET /v0/endpoints/:id の contract test
-- [ ] T008 [P] `router/tests/contract/endpoints_put_test.rs` に PUT /v0/endpoints/:id の contract test
-- [ ] T009 [P] `router/tests/contract/endpoints_delete_test.rs` に DELETE /v0/endpoints/:id の contract test
-- [ ] T010 [P] `router/tests/contract/endpoints_test_test.rs` に POST /v0/endpoints/:id/test の contract test
-- [ ] T011 [P] `router/tests/contract/endpoints_sync_test.rs` に POST /v0/endpoints/:id/sync の contract test
+- [x] T005 [P] `router/tests/contract/endpoints_post_test.rs` に POST /v0/endpoints の contract test
+- [x] T006 [P] `router/tests/contract/endpoints_get_list_test.rs` に GET /v0/endpoints の contract test
+- [x] T007 [P] `router/tests/contract/endpoints_get_detail_test.rs` に GET /v0/endpoints/:id の contract test
+- [x] T008 [P] `router/tests/contract/endpoints_put_test.rs` に PUT /v0/endpoints/:id の contract test
+- [x] T009 [P] `router/tests/contract/endpoints_delete_test.rs` に DELETE /v0/endpoints/:id の contract test
+- [x] T010 [P] `router/tests/contract/endpoints_test_test.rs` に POST /v0/endpoints/:id/test の contract test
+- [x] T011 [P] `router/tests/contract/endpoints_sync_test.rs` に POST /v0/endpoints/:id/sync の contract test
 
-### Integration Tests（ユーザーストーリー検証）
+### Integration Tests（ユーザーストーリー検証）✅ RED完了
 
-- [ ] T012 [P] `router/tests/integration/endpoint_registration_test.rs` にUS1: エンドポイント登録のintegration test
-- [ ] T013 [P] `router/tests/integration/endpoint_health_check_test.rs` にUS2: 稼働状況監視のintegration test
-- [ ] T014 [P] `router/tests/integration/endpoint_model_sync_test.rs` にUS3: モデル同期のintegration test
-- [ ] T015 [P] `router/tests/integration/endpoint_connection_test_test.rs` にUS4: 接続テストのintegration test
-- [ ] T016 [P] `router/tests/integration/endpoint_management_test.rs` にUS5: 管理操作のintegration test
-- [ ] T016a [P] `router/tests/integration/endpoint_name_uniqueness_test.rs` に名前重複検証のintegration test
-- [ ] T016b [P] `router/tests/integration/endpoint_latency_routing_test.rs` にレイテンシベースルーティングのintegration test
-- [ ] T016c [P] `router/tests/integration/endpoint_auto_recovery_test.rs` に自動復旧のintegration test
-- [ ] T016d [P] `router/tests/integration/endpoint_viewer_access_test.rs` にviewerロール制限のintegration test
+- [x] T012 [P] `router/tests/integration/endpoint_registration_test.rs` にUS1: エンドポイント登録のintegration test
+- [x] T013 [P] `router/tests/integration/endpoint_health_check_test.rs` にUS2: 稼働状況監視のintegration test
+- [x] T014 [P] `router/tests/integration/endpoint_model_sync_test.rs` にUS3: モデル同期のintegration test
+- [x] T015 [P] `router/tests/integration/endpoint_connection_test_test.rs` にUS4: 接続テストのintegration test
+- [x] T016 [P] `router/tests/integration/endpoint_management_test.rs` にUS5: 管理操作のintegration test
+- [x] T016a [P] `router/tests/integration/endpoint_name_uniqueness_test.rs` に名前重複検証のintegration test
+- [x] T016b [P] `router/tests/integration/endpoint_latency_routing_test.rs` にレイテンシベースルーティングのintegration test
+- [x] T016c [P] `router/tests/integration/endpoint_auto_recovery_test.rs` に自動復旧のintegration test
+- [x] T016d [P] `router/tests/integration/endpoint_viewer_access_test.rs` にviewerロール制限のintegration test
 
-## Phase 3.3: コア実装（テストが失敗した後のみ）
+## Phase 3.3: コア実装（テストが失敗した後のみ） ✅ GREEN完了
 
 ### DB層
 
-- [ ] T017 `router/src/db/endpoints.rs` にEndpointStorage CRUD実装（name UNIQUE制約、latency_ms含む）
-- [ ] T018 `router/src/db/endpoint_models.rs` にEndpointModelStorage CRUD実装
-- [ ] T018a `router/src/db/endpoint_health_checks.rs` にEndpointHealthCheckStorage実装（履歴保存・30日クリーンアップ）
+- [x] T017 `router/src/db/endpoints.rs` にEndpointStorage CRUD実装（name UNIQUE制約、latency_ms含む）
+- [x] T018 `router/src/db/endpoints.rs` にEndpointModelStorage CRUD実装（endpoints.rsに統合）
+- [x] T018a `router/src/db/endpoints.rs` にEndpointHealthCheckStorage実装（履歴保存・30日クリーンアップ、endpoints.rsに統合）
 
 ### レジストリ層
 
-- [ ] T019 `router/src/registry/endpoints.rs` にEndpointRegistry実装（インメモリキャッシュ）
+- [x] T019 `router/src/registry/endpoints.rs` にEndpointRegistry実装（インメモリキャッシュ）
 
 ### APIハンドラー
 
-- [ ] T020 `router/src/api/endpoints.rs` にPOST /v0/endpoints ハンドラー
-- [ ] T021 `router/src/api/endpoints.rs` にGET /v0/endpoints ハンドラー
-- [ ] T022 `router/src/api/endpoints.rs` にGET /v0/endpoints/:id ハンドラー
-- [ ] T023 `router/src/api/endpoints.rs` にPUT /v0/endpoints/:id ハンドラー
-- [ ] T024 `router/src/api/endpoints.rs` にDELETE /v0/endpoints/:id ハンドラー
-- [ ] T025 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/test ハンドラー
-- [ ] T026 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/sync ハンドラー
+- [x] T020 `router/src/api/endpoints.rs` にPOST /v0/endpoints ハンドラー
+- [x] T021 `router/src/api/endpoints.rs` にGET /v0/endpoints ハンドラー
+- [x] T022 `router/src/api/endpoints.rs` にGET /v0/endpoints/:id ハンドラー
+- [x] T023 `router/src/api/endpoints.rs` にPUT /v0/endpoints/:id ハンドラー
+- [x] T024 `router/src/api/endpoints.rs` にDELETE /v0/endpoints/:id ハンドラー
+- [x] T025 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/test ハンドラー
+- [x] T026 `router/src/api/endpoints.rs` にPOST /v0/endpoints/:id/sync ハンドラー
 
 ### APIルーティング
 
-- [ ] T027 `router/src/api/mod.rs` にエンドポイントAPIルートを追加
+- [x] T027 `router/src/api/mod.rs` にエンドポイントAPIルートを追加
 
 ## Phase 3.4: 統合
 
 ### ヘルスチェッカー
 
-- [ ] T028 `router/src/health/endpoint_checker.rs` にプル型ヘルスチェッカー実装（レイテンシ計測、履歴保存）
-- [ ] T029 `router/src/health/mod.rs` にEndpointHealthCheckerをエクスポート
-- [ ] T030 `router/src/main.rs` または `router/src/server.rs` にヘルスチェッカー起動処理追加
-- [ ] T030a `router/src/health/startup.rs` にルーター起動時の全エンドポイント並列チェック実装
+- [x] T028 `router/src/health/endpoint_checker.rs` にプル型ヘルスチェッカー実装（レイテンシ計測、履歴保存）
+- [x] T029 `router/src/health/mod.rs` にEndpointHealthCheckerをエクスポート
+- [x] T030 `router/src/main.rs` または `router/src/server.rs` にヘルスチェッカー起動処理追加
+- [x] T030a `router/src/health/startup.rs` にルーター起動時の全エンドポイント並列チェック実装
 
 ### モデル同期
 
-- [ ] T031 `router/src/sync/mod.rs` にモデル同期ロジック実装（GET /v1/models）
-- [ ] T031a `router/src/sync/parser.rs` にOpenAI/Ollama両形式のレスポンスパーサー実装
-- [ ] T031b `router/src/sync/capabilities.rs` にモデル名プレフィックスからのcapabilities自動判定実装
-- [ ] T031c `router/src/sync/mod.rs` にモデル削除同期（差分計算）を追加
+- [x] T031 `router/src/sync/mod.rs` にモデル同期ロジック実装（GET /v1/models）
+- [x] T031a `router/src/sync/parser.rs` にOpenAI/Ollama両形式のレスポンスパーサー実装
+- [x] T031b `router/src/sync/capabilities.rs` にモデル名プレフィックスからのcapabilities自動判定実装
+- [x] T031c `router/src/sync/mod.rs` にモデル削除同期（差分計算）を追加
 
 ### ルーティング統合
 
-- [ ] T032 `router/src/api/openai.rs` にEndpointRegistryを利用したルーティング変更
-- [ ] T032a `router/src/api/openai.rs` にレイテンシベースのエンドポイント選択実装
-- [ ] T033 `router/src/api/proxy.rs` にエンドポイントへのプロキシ処理追加
+- [x] T032 `router/src/api/openai.rs` にEndpointRegistryを利用したルーティング変更
+- [x] T032a `router/src/api/openai.rs` にレイテンシベースのエンドポイント選択実装
+- [x] T033 `router/src/api/proxy.rs` にエンドポイントへのプロキシ処理追加
 
 ### 認可
 
-- [ ] T033a `router/src/auth/middleware.rs` にviewerロールのGET制限を追加
+- [x] T033a `router/src/auth/middleware.rs` および `router/src/api/endpoints.rs` にviewerロール制限を実装（authenticated_middleware + ensure_admin）
 
 ## Phase 3.5: 仕上げ
 
 ### Unit Tests
 
-- [ ] T034 [P] `router/tests/unit/endpoint_status_test.rs` にEndpointStatus遷移のunit test（pending→offline即時遷移含む）
-- [ ] T035 [P] `router/tests/unit/endpoint_validation_test.rs` にエンドポイントバリデーションのunit test（name UNIQUE含む）
-- [ ] T035a [P] `router/tests/unit/capabilities_detection_test.rs` にcapabilities自動判定のunit test
-- [ ] T035b [P] `router/tests/unit/response_parser_test.rs` にOpenAI/Ollamaレスポンスパーサーのunit test
-- [ ] T035c [P] `router/tests/unit/latency_routing_test.rs` にレイテンシベースルーティング選択のunit test
+- [x] T034 [P] `router/tests/unit/endpoint_status_test.rs` にEndpointStatus遷移のunit test（pending→offline即時遷移含む）
+- [x] T035 [P] `router/tests/unit/endpoint_validation_test.rs` にエンドポイントバリデーションのunit test（name UNIQUE含む）
+- [x] T035a [P] capabilities自動判定のunit test（`router/src/sync/capabilities.rs`内のinline testsで対応）
+- [x] T035b [P] OpenAI/Ollamaレスポンスパーサーのunit test（`router/src/sync/parser.rs`内のinline testsで対応）
+- [x] T035c [P] `router/tests/unit/latency_routing_test.rs` にレイテンシベースルーティング選択のunit test
 
 ### 旧コード削除
 
-- [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）
-- [ ] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
-- [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除
-- [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）
-- [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除
+**注意**: T036-T040の完全削除にはダッシュボードの移行が必要。
+現在ダッシュボードが `/v0/nodes/*` APIを使用しているため、
+以下は段階的に実行する:
+
+**Phase A: 廃止APIの削除（SPEC-94621a1f, SPEC-443acc8c対応）**
+
+- [x] T036a `api/error.rs` を作成しAppErrorを移動（nodes.rsから分離）
+- [x] T036b POST /v0/nodes ルートを削除（ノード自己登録廃止）
+- [x] T036c POST /v0/health ルートを削除（プッシュ型ヘルスチェック廃止）
+
+**Phase B-0: ダッシュボードのEndpoints API移行**
+
+- [x] T035d `router/src/api/dashboard.rs` に DashboardEndpoint 型と collect_endpoints 関数を追加
+- [x] T035e `router/src/web/dashboard/src/lib/api.ts` に endpointsApi を追加し nodesApi を deprecate
+- [x] T035f `router/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` を新規作成
+- [x] T035g `router/src/web/dashboard/src/components/dashboard/EndpointDetailModal.tsx` を新規作成
+- [x] T035h `router/src/web/dashboard/src/components/dashboard/LogViewer.tsx` を endpoints対応に更新（ルーターログのみに簡素化）
+
+**Phase B: 完全削除（ダッシュボード移行後）**
+
+以下はPhase B-0完了後に実行:
+
+- [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）⚠️ NodeRegistryがまだ使用中
+- [x] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
+- [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ⚠️ LoadManager, HealthChecker等が依存
+- [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）⚠️ admin APIとして使用中
+- [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除 ⚠️ NodeRegistryが使用中
+
+**ブロッカー**: NodeRegistryの完全廃止にはEndpointRegistryへの完全移行が必要（LoadManager, HealthChecker, proxy, openaiルーティング等）
 
 ### ドキュメント・検証
 
-- [ ] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行
-- [ ] T042 `README.md` または `README.ja.md` にエンドポイント管理の説明追加
+- [x] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行
+- [x] T042 `README.md` または `README.ja.md` にエンドポイント管理の説明追加
 
 ## 依存関係
 

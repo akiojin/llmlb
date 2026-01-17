@@ -1,66 +1,70 @@
-# 実装計画: OpenAI互換API完全準拠
+# 実装計画: OpenAI互換API完全準拠（Open Responses API対応）
 
-**機能ID**: `SPEC-24157000` | **日付**: 2026-01-05 | **仕様**: [spec.md](./spec.md)
+**機能ID**: `SPEC-24157000` | **日付**: 2026-01-16 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-24157000/spec.md`の機能仕様
 
 ## 概要
 
-内蔵エンジン（llama.cppベースノード）のOpenAI互換APIを100%準拠にする。
-主要な改善項目:
+OpenAI互換APIを100%準拠にする。主な追加機能:
 
-1. **usage計算**: llama_tokenize APIを使用した正確なトークン数計算
-2. **レスポンスID**: UUID/タイムスタンプベースの一意ID生成
-3. **ペナルティパラメータ**: presence_penalty/frequency_penalty対応
-4. **logprobs**: llama_get_logits APIを使用した実確率値計算
-5. **nパラメータ**: 複数候補生成対応
+- Open Responses API（/v1/responses）のパススルー対応
+- バックエンド対応状況の自動検出
+- /v1/modelsへの対応API情報追加
+- 非対応バックエンドへの501 Not Implemented返却
+
+**ルーターの役割**: llm-routerはロードバランサー/ゲートウェイとして機能し、
+API変換は行わない（パススルーのみ）。
 
 ## 技術コンテキスト
 
-**言語/バージョン**: C++17 (node), Rust 1.75+ (router)
-**主要依存関係**: llama.cpp (トークナイザー、サンプリング、logits取得)
-**ストレージ**: N/A
-**テスト**: Google Test (node), cargo test (router)
-**対象プラットフォーム**: Linux, macOS, Windows
-**プロジェクトタイプ**: single (既存node/router構造を維持)
-**パフォーマンス目標**: 既存のレイテンシを維持（トークン計算オーバーヘッド < 1ms）
-**制約**: llama.cpp API依存、後方互換性維持
-**スケール/スコープ**: 既存APIの拡張（破壊的変更なし）
+**言語/バージョン**: Rust 1.75+
+**主要依存関係**: axum, reqwest, serde_json, tokio
+**ストレージ**: SQLite（既存エンドポイントテーブル拡張）
+**テスト**: cargo test + make openai-tests
+**対象プラットフォーム**: Linux/macOS サーバー
+**プロジェクトタイプ**: single（routerクレート内で完結）
+**パフォーマンス目標**: 既存Chat Completions APIと同等
+**制約**: パススルーのみ（変換なし）、<100ms オーバーヘッド
+**スケール/スコープ**: 既存エンドポイント管理システムを拡張
 
 ## 憲章チェック
 
+*ゲート: Phase 0 research前に合格必須。Phase 1 design後に再チェック。*
+
 **シンプルさ**:
 
-- プロジェクト数: 2 (node, router) ✅
-- フレームワークを直接使用? ✅ llama.cpp APIを直接使用
-- 単一データモデル? ✅ OpenAI互換JSON形式
-- パターン回避? ✅ 追加パターンなし
+- プロジェクト数: 1（router）
+- フレームワークを直接使用? ✅ axumを直接使用（ラッパーなし）
+- 単一データモデル? ✅ Endpoint構造体を拡張
+- パターン回避? ✅ 特別なパターンなし（既存proxy.rs再利用）
 
 **アーキテクチャ**:
 
-- すべての機能をライブラリとして? ✅ node/src/api/内
-- ライブラリリスト: openai_endpoints.cpp (OpenAI互換API実装)
-- ライブラリごとのCLI: N/A (APIサーバー)
-- ライブラリドキュメント: N/A
+- すべての機能をライブラリとして? ✅ router crateに統合
+- ライブラリリスト: router（既存）
+- ライブラリごとのCLI: 既存CLIを維持
+- ライブラリドキュメント: N/A（内部API追加のみ）
 
 **テスト (妥協不可)**:
 
 - RED-GREEN-Refactorサイクルを強制? ✅
 - Gitコミットはテストが実装より先に表示? ✅
 - 順序: Contract→Integration→E2E→Unitを厳密に遵守? ✅
-- 実依存関係を使用? ✅ 実llama.cppモデル
-- Integration testの対象: 新パラメータ、usage計算、logprobs
+- 実依存関係を使用? ✅ 実SQLite使用
+- Integration testの対象: /v1/responsesエンドポイント、ヘルスチェック拡張
 - 禁止: テスト前の実装、REDフェーズのスキップ ✅
 
 **可観測性**:
 
-- 構造化ロギング含む? ✅ 既存のログ機構を使用
-- エラーコンテキスト十分? ✅ OpenAI互換エラー形式
+- 構造化ロギング含む? ✅ tracing使用
+- フロントエンドログ → バックエンド? N/A（APIのみ）
+- エラーコンテキスト十分? ✅ 501エラーに理由を含める
 
 **バージョニング**:
 
-- バージョン番号割り当て済み? ✅ semantic-release
-- 変更ごとにBUILDインクリメント? ✅ 自動
-- 破壊的変更を処理? ✅ 後方互換性維持
+- バージョン番号割り当て済み? N/A（内部機能）
+- 変更ごとにBUILDインクリメント? N/A
+- 破壊的変更を処理? N/A（後方互換）
 
 ## プロジェクト構造
 
@@ -68,7 +72,6 @@
 
 ```text
 specs/SPEC-24157000/
-├── spec.md              # 機能仕様
 ├── plan.md              # このファイル
 ├── research.md          # Phase 0 出力
 ├── data-model.md        # Phase 1 出力
@@ -77,161 +80,162 @@ specs/SPEC-24157000/
 └── tasks.md             # Phase 2 出力 (/speckit.tasks)
 ```
 
-### ソースコード (変更対象)
+### ソースコード変更対象
 
 ```text
-node/
-├── src/api/
-│   └── openai_endpoints.cpp    # 主要変更対象
-├── src/inference/
-│   ├── inference_params.h      # ペナルティパラメータ追加
-│   └── llama_engine.cpp        # logits取得、トークン計算
-├── include/api/
-│   └── openai_endpoints.h      # 新関数宣言
-└── tests/
-    ├── contract/
-    │   └── openai_api_test.cpp # 契約テスト追加
-    └── integration/
-        └── openai_endpoints_test.cpp # 統合テスト追加
+router/src/api/
+├── mod.rs              # /v1/responsesルート追加
+├── responses.rs        # 【新規】Responses APIハンドラー
+├── proxy.rs            # 既存パススルー関数再利用
+└── openai.rs           # /v1/modelsレスポンス拡張
+
+router/src/types/
+└── endpoint.rs         # supports_responses_apiフラグ追加
+
+router/src/sync/
+└── capabilities.rs     # Responses API検出ロジック追加
+
+router/src/registry/
+└── endpoint_registry.rs # フィルタリング拡張
 ```
+
+**構造決定**: オプション1（単一プロジェクト）
 
 ## Phase 0: アウトライン＆リサーチ
 
-### リサーチタスク
+### 技術リサーチ完了
 
-1. **llama_tokenize API調査**: トークン数計算の精度と性能
-2. **llama_get_logits API調査**: logprobs計算に必要なAPI
-3. **UUID生成ライブラリ調査**: C++での一意ID生成方法
-4. **OpenAI API仕様確認**: 各パラメータの正確な範囲と動作
+インタビューで以下の決定が完了:
 
-### 技術的発見
+| 項目 | 決定 |
+|------|------|
+| エラーハンドリング | パススルー（バックエンドエラーはそのまま返却） |
+| 認証方式 | 既存APIキー認証を共用 |
+| メトリクス | Chat APIと同等の粒度 |
+| API優先度 | 両方対等に維持 |
+| クライアント移行 | クライアントに任せる |
+| Capability通知 | /v1/modelsに追加 |
+| ストリーミング | 完全パススルー |
+| 非対応バックエンド | 501 Not Implemented返却 |
+| MVPスコープ | モデルAPI拡張含む |
 
-**llama.cpp トークナイザーAPI**:
+### 参照実装の調査
 
-```cpp
-// トークン化（計数用）
-int32_t llama_tokenize(
-    const struct llama_model * model,
-    const char * text,
-    int32_t text_len,
-    llama_token * tokens,
-    int32_t n_max_tokens,
-    bool add_bos,
-    bool special
-);
-```
+| プロバイダー | Responses API | 確認方法 |
+|-------------|---------------|----------|
+| Ollama v0.13.3+ | ✅ 対応 | `/v1/responses` エンドポイント |
+| vLLM | ✅ 対応 | `/v1/responses` エンドポイント |
+| OpenRouter | ✅ 対応 | `/v1/responses` エンドポイント |
+| aLLM | 計画中 | 別SPEC |
 
-**llama.cpp logits API**:
-
-```cpp
-// 全語彙に対するlogitsを取得
-float * llama_get_logits(struct llama_context * ctx);
-float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
-```
-
-**出力**: [research.md](./research.md)
+**出力**: research.md（上記決定事項を文書化）
 
 ## Phase 1: 設計＆契約
 
-### 1. データモデル拡張
+*前提条件: research.md完了*
 
-**InferenceParams拡張**:
+### 1. データモデル
 
-```cpp
-struct InferenceParams {
+**Endpoint構造体拡張**:
+
+```rust
+pub struct Endpoint {
     // 既存フィールド...
-    float presence_penalty = 0.0f;   // -2.0 ~ 2.0
-    float frequency_penalty = 0.0f;  // -2.0 ~ 2.0
-    int n = 1;                       // 1 ~ 8 (上限)
-};
-```
 
-**TokenUsage構造体**:
-
-```cpp
-struct TokenUsage {
-    int prompt_tokens;
-    int completion_tokens;
-    int total_tokens;
-};
-```
-
-**LogprobInfo構造体**:
-
-```cpp
-struct LogprobInfo {
-    std::string token;
-    float logprob;
-    std::vector<std::pair<std::string, float>> top_logprobs;
-};
-```
-
-### 2. API契約変更
-
-**レスポンス形式拡張**:
-
-```json
-{
-  "id": "chatcmpl-{uuid}",
-  "created": 1704067200,
-  "choices": [...],
-  "usage": {
-    "prompt_tokens": 10,
-    "completion_tokens": 20,
-    "total_tokens": 30
-  }
+    /// Responses API対応フラグ
+    pub supports_responses_api: bool,
 }
 ```
 
-### 3. 新関数
+**SupportedAPIs型**:
 
-```cpp
-// トークン計数
-int count_tokens(const llama_model* model, const std::string& text);
-
-// 一意ID生成
-std::string generate_response_id(const std::string& prefix);
-
-// logprobs計算
-std::vector<LogprobInfo> compute_logprobs(
-    llama_context* ctx,
-    const std::vector<llama_token>& tokens,
-    int top_logprobs
-);
-
-// ペナルティ適用
-void apply_penalties(
-    llama_context* ctx,
-    float presence_penalty,
-    float frequency_penalty,
-    const std::vector<llama_token>& generated_tokens
-);
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SupportedAPI {
+    ChatCompletions,
+    Responses,
+    Embeddings,
+}
 ```
 
-**出力**: [data-model.md](./data-model.md), [contracts/](./contracts/)
+### 2. API契約
+
+**POST /v1/responses**:
+
+- リクエスト: Open Responses API仕様準拠（パススルー）
+- レスポンス: バックエンドからの生レスポンス
+- エラー: 501（非対応バックエンド）、502（バックエンドエラー転送）
+- 認証: 既存APIキー認証
+
+**GET /v1/models 拡張**:
+
+```json
+{
+  "data": [
+    {
+      "id": "model-name",
+      "object": "model",
+      "supported_apis": ["chat_completions", "responses"]
+    }
+  ]
+}
+```
+
+### 3. 契約テスト
+
+- `/v1/responses` 基本リクエスト
+- `/v1/responses` ストリーミング
+- 非対応バックエンドへの501応答
+- `/v1/models` supported_apis フィールド
+
+### 4. テストシナリオ
+
+| シナリオ | テスト内容 |
+|----------|----------|
+| US6: 基本リクエスト | Responses API対応バックエンドへのパススルー |
+| US7: ストリーミング | stream=trueでのイベント転送 |
+| US8: 非対応処理 | 501エラー返却 |
+| US9: 対応確認 | /v1/modelsにsupported_apis |
+| US10: 自動検出 | ヘルスチェックでの検出 |
+
+**出力**: data-model.md, contracts/, 失敗するテスト, quickstart.md
 
 ## Phase 2: タスク計画アプローチ
 
+*このセクションは/speckit.tasksコマンドが実行することを記述*
+
 **タスク生成戦略**:
 
-- P1項目（usage, ID）を最優先
-- P2項目（penalty, logprobs）を次に
-- P3項目（n パラメータ）を最後に
-- 各項目: テスト作成 → 実装 → 検証の順
+- TDD順序: テストが実装より先
+- 依存関係順序: データモデル → ヘルスチェック → エンドポイント → モデルAPI
+- 並列実行: [P] マーク付きタスクは独立
 
-**順序戦略**:
+**タスク概要**:
 
-1. 契約テスト作成（全項目）[P]
-2. usage計算実装
-3. ID生成実装
-4. penalty パラメータ実装
-5. logprobs実装
-6. n パラメータ実装
-7. 統合テスト・検証
+1. **Setup**: マイグレーション（supports_responses_api列追加）
+2. **Contract Tests**: /v1/responsesの契約テスト作成
+3. **Core Implementation**:
+   - responses.rsハンドラー作成
+   - proxy.rs拡張（必要に応じて）
+   - endpoint.rs拡張
+4. **Integration**: ヘルスチェック拡張、モデルAPI拡張
+5. **Polish**: ドキュメント更新
 
-**推定タスク数**: 20-25個
+**推定出力**: tasks.mdに15-20個の番号付きタスク
+
+**重要**: このフェーズは/speckit.tasksコマンドで実行
+
+## Phase 3+: 今後の実装
+
+*これらのフェーズは/planコマンドのスコープ外*
+
+**Phase 3**: タスク実行 (/speckit.tasks)
+**Phase 4**: 実装（TDDサイクル厳守）
+**Phase 5**: 検証（make quality-checks, make openai-tests）
 
 ## 複雑さトラッキング
+
+*憲章チェックに正当化が必要な違反がある場合のみ記入*
 
 | 違反 | 必要な理由 | より単純な代替案が却下された理由 |
 |------|-----------|--------------------------------|
@@ -244,7 +248,7 @@ void apply_penalties(
 - [x] Phase 0: Research完了
 - [x] Phase 1: Design完了
 - [x] Phase 2: Task planning完了（アプローチ記述）
-- [ ] Phase 3: Tasks生成済み (/speckit.tasks)
+- [x] Phase 3: Tasks生成済み（T054-T078）
 - [ ] Phase 4: 実装完了
 - [ ] Phase 5: 検証合格
 
@@ -253,7 +257,8 @@ void apply_penalties(
 - [x] 初期憲章チェック: 合格
 - [x] 設計後憲章チェック: 合格
 - [x] すべての要明確化解決済み
-- [x] 複雑さの逸脱を文書化済み（なし）
+- [x] 複雑さの逸脱を文書化済み
 
 ---
-*憲章 v2.0.0 に基づく - `.specify/memory/constitution.md` 参照*
+
+*憲章 v2.1.1 に基づく - `/memory/constitution.md` 参照*

@@ -60,6 +60,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: None,
     };
 
     let router = api::create_router(state.clone());

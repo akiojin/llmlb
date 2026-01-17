@@ -1,6 +1,9 @@
 use std::net::SocketAddr;
 
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{
+    api, balancer::LoadManager, registry::endpoints::EndpointRegistry, registry::NodeRegistry,
+    AppState,
+};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -44,6 +47,11 @@ pub async fn spawn_test_router() -> TestServer {
     );
     let jwt_secret = test_jwt_secret();
 
+    // EndpointRegistryを初期化
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+
     let state = AppState {
         registry,
         load_manager,
@@ -53,6 +61,7 @@ pub async fn spawn_test_router() -> TestServer {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: Some(endpoint_registry),
     };
 
     let router = api::create_router(state);
@@ -69,43 +78,116 @@ pub async fn register_node(
     Ok(response)
 }
 
+/// SPEC-66555000: POST /v0/nodes は廃止されました。
+/// このヘルパー関数は後方互換性のために残されていますが、
+/// 新しいテストは Endpoints API を使用してください。
+///
 /// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
+/// レスポンスのボディには {"node_id": "...", "token": "..."} 形式が含まれます
 pub async fn register_node_with_runtimes(
     router_addr: SocketAddr,
     node_addr: SocketAddr,
-    _supported_runtimes: Vec<&str>,
+    supported_runtimes: Vec<&str>,
 ) -> reqwest::Result<Response> {
+    use serde_json::json;
+
+    // 1. 内部APIを使ってノードを登録するための仮想レスポンスを作成
+    // POST /v0/nodes が廃止されたため、内部 /v0/internal/test/register-node を使用
     let payload = json!({
         "machine_name": "stub-node",
         "ip_address": node_addr.ip().to_string(),
         "runtime_version": "0.0.0-test",
-        // テストスタブはHTTPポートで直接実行される。
-        // ルーターのヘルスチェックは runtime_port + 1 でアクセスするため、
-        // テストスタブのポートに対して -1 を計算して渡す。
-        // (例：スタブが port 12345 で実行 → runtime_port: 12344 を登録
-        //      → ルーターが 12344 + 1 = 12345 でヘルスチェック)
         "runtime_port": node_addr.port().saturating_sub(1),
         "gpu_available": true,
         "gpu_devices": [
             {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
-        ]
+        ],
+        "supported_runtimes": supported_runtimes
     });
 
-    // supported_runtimesが指定されている場合はペイロードに追加
-    let payload = if !_supported_runtimes.is_empty() {
-        let mut p = payload;
-        p["supported_runtimes"] = json!(_supported_runtimes);
-        p
-    } else {
-        payload
-    };
-
+    // テスト専用の内部エンドポイントを使用
     Client::new()
-        .post(format!("http://{router_addr}/v0/nodes"))
+        .post(format!(
+            "http://{router_addr}/v0/internal/test/register-node"
+        ))
         .header("authorization", "Bearer sk_debug")
         .json(&payload)
         .send()
         .await
+}
+
+/// Responses API対応エンドポイントを登録し、指定のモデルで利用可能にする
+/// （SPEC-24157000: Open Responses API対応テスト用）
+#[allow(dead_code)]
+pub async fn register_responses_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+    model_id: &str,
+) -> reqwest::Result<String> {
+    let client = Client::new();
+
+    // 1. エンドポイントを登録
+    let create_response = client
+        .post(format!("http://{}/v0/endpoints", router_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": format!("Responses API Test Endpoint - {}", model_id),
+            "base_url": format!("http://{}", stub_addr),
+            "health_check_interval_secs": 30
+        }))
+        .send()
+        .await?;
+
+    let create_status = create_response.status();
+    let create_body: Value = create_response.json().await.unwrap_or_default();
+    let endpoint_id = create_body["id"].as_str().unwrap_or_default().to_string();
+
+    if !create_status.is_success() || endpoint_id.is_empty() {
+        eprintln!(
+            "Failed to create endpoint: status={}, body={}",
+            create_status, create_body
+        );
+    }
+
+    // 2. エンドポイントをOnline状態にする（接続テストを実行）
+    let test_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            router_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    let test_status = test_response.status();
+    let test_body: Value = test_response.json().await.unwrap_or_default();
+    if !test_status.is_success() {
+        eprintln!(
+            "Failed to test endpoint: status={}, body={}",
+            test_status, test_body
+        );
+    }
+
+    // 3. モデルを同期
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            router_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    let sync_status = sync_response.status();
+    let sync_body: Value = sync_response.json().await.unwrap_or_default();
+    if !sync_status.is_success() {
+        eprintln!(
+            "Failed to sync endpoint: status={}, body={}",
+            sync_status, sync_body
+        );
+    }
+
+    Ok(endpoint_id)
 }
 
 /// 指定したノードを管理者として承認する
@@ -212,6 +294,11 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     );
     let jwt_secret = test_jwt_secret();
 
+    // EndpointRegistryを初期化
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+
     let state = AppState {
         registry,
         load_manager,
@@ -221,6 +308,7 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: Some(endpoint_registry),
     };
 
     let router = api::create_router(state);

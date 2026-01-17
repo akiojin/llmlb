@@ -22,12 +22,13 @@ use uuid::Uuid;
 use crate::models::image;
 use crate::{
     api::{
+        error::AppError,
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
-        nodes::AppError,
         proxy::{
-            forward_streaming_response, save_request_record, select_available_node,
-            select_available_node_with_queue_for_model, QueueSelection,
+            forward_streaming_response, forward_to_endpoint, save_request_record,
+            select_available_node, select_available_node_with_queue_for_model,
+            select_endpoint_for_model, EndpointSelection, QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -274,6 +275,9 @@ pub async fn embeddings(
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    use crate::types::endpoint::SupportedAPI;
+    use std::collections::HashSet;
+
     // オンラインノードの実行可能モデルを取得
     let mut available_models: Vec<String> = state
         .registry
@@ -292,19 +296,46 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         registered_map.insert(model.name.clone(), model);
     }
 
-    let mut model_ids: std::collections::HashSet<String> = available_set.iter().cloned().collect();
-    for model_id in registered_map.keys() {
-        model_ids.insert(model_id.clone());
+    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    if let Some(ref registry) = state.endpoint_registry {
+        let online_endpoints = registry.list_online().await;
+        for ep in online_endpoints {
+            if let Ok(models) = registry.list_models(ep.id).await {
+                for model in models {
+                    let apis = endpoint_model_apis
+                        .entry(model.model_id.clone())
+                        .or_default();
+                    for api in model.supported_apis {
+                        apis.insert(api);
+                    }
+                    // Responses API対応エンドポイントの場合は追加
+                    if ep.supports_responses_api {
+                        apis.insert(SupportedAPI::Responses);
+                    }
+                }
+            }
+        }
     }
-    let mut model_ids: Vec<String> = model_ids.into_iter().collect();
-    model_ids.sort();
 
-    // OpenAI list models + Azure capabilities + registry metadata.
+    // 追跡用：モデルID一覧
+    let mut seen_models: HashSet<String> = HashSet::new();
+
+    // OpenAI互換レスポンス形式 + Azure capabilities + ダッシュボード拡張
     let mut data: Vec<Value> = Vec::new();
 
-    for model_id in model_ids {
-        let ready = available_set.contains(&model_id);
-        if let Some(m) = registered_map.get(&model_id) {
+    // ノードのモデルを追加
+    for model_id in &available_models {
+        seen_models.insert(model_id.clone());
+        let ready = available_set.contains(model_id);
+
+        // supported_apisを取得（デフォルトはchat_completions）
+        let supported_apis: Vec<String> = endpoint_model_apis
+            .get(model_id)
+            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+
+        if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
             let obj = json!({
                 "id": m.name,
@@ -323,6 +354,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "tags": m.tags,
                 "description": m.description,
                 "chat_template": m.chat_template,
+                "supported_apis": supported_apis,
             });
             data.push(obj);
         } else {
@@ -334,10 +366,69 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "lifecycle_status": LifecycleStatus::Registered,
                 "download_progress": null,
                 "ready": ready,
+                "supported_apis": supported_apis,
             });
             data.push(obj);
         }
     }
+
+    // SPEC-24157000: エンドポイント専用モデルを追加（ノードにないモデル）
+    for (model_id, apis) in &endpoint_model_apis {
+        if seen_models.contains(model_id) {
+            continue;
+        }
+        seen_models.insert(model_id.clone());
+
+        let supported_apis: Vec<String> = apis.iter().map(|a| a.as_str().to_string()).collect();
+        let obj = json!({
+            "id": model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "endpoint",
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": true,
+            "supported_apis": supported_apis,
+        });
+        data.push(obj);
+    }
+
+    // 登録されたモデルを追加（オンラインノードがなくても表示）
+    for (model_id, m) in &registered_map {
+        if seen_models.contains(model_id) {
+            continue;
+        }
+        seen_models.insert(model_id.clone());
+
+        let ready = available_set.contains(model_id);
+        let supported_apis: Vec<String> = endpoint_model_apis
+            .get(model_id)
+            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+        let caps: ModelCapabilities = m.get_capabilities().into();
+        let obj = json!({
+            "id": m.name,
+            "object": "model",
+            "created": 0,
+            "owned_by": "router",
+            "capabilities": caps,
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": ready,
+            "repo": m.repo,
+            "filename": m.filename,
+            "size_bytes": m.size,
+            "required_memory_bytes": m.required_memory,
+            "source": m.source,
+            "tags": m.tags,
+            "description": m.description,
+            "chat_template": m.chat_template,
+            "supported_apis": supported_apis,
+        });
+        data.push(obj);
+    }
+
+    // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
 
     let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
     for cm in cloud_models {
@@ -350,6 +441,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "lifecycle_status": LifecycleStatus::Registered,
             "download_progress": null,
             "ready": true,
+            "supported_apis": vec!["chat_completions"],
         });
         data.push(obj);
     }
@@ -366,19 +458,46 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 // /v1/models に Azure OpenAI 形式の capabilities とダッシュボード拡張が統合されています。
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
+///
+/// SPEC-24157000: Endpoints APIで登録されたモデルも検索対象に含める
 pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> Result<Response, AppError> {
+    use crate::types::endpoint::SupportedAPI;
+    use std::collections::HashSet;
+
     let available_models = state.registry.list_executable_models_online().await;
     let mut registered_map: HashMap<String, crate::registry::models::ModelInfo> = HashMap::new();
     for model in list_registered_models(&state.db_pool).await? {
         registered_map.insert(model.name.clone(), model);
     }
 
-    let model = registered_map.remove(&model_id);
+    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    if let Some(ref registry) = state.endpoint_registry {
+        let online_endpoints = registry.list_online().await;
+        for ep in online_endpoints {
+            if let Ok(models) = registry.list_models(ep.id).await {
+                for model in models {
+                    let apis = endpoint_model_apis
+                        .entry(model.model_id.clone())
+                        .or_default();
+                    for api in model.supported_apis {
+                        apis.insert(api);
+                    }
+                    if ep.supports_responses_api {
+                        apis.insert(SupportedAPI::Responses);
+                    }
+                }
+            }
+        }
+    }
 
-    if model.is_none() && !available_models.contains(&model_id) {
+    let model = registered_map.remove(&model_id);
+    let is_endpoint_model = endpoint_model_apis.contains_key(&model_id);
+
+    if model.is_none() && !available_models.contains(&model_id) && !is_endpoint_model {
         // 404 を OpenAI 換算で返す
         let body = json!({
             "error": {
@@ -391,10 +510,16 @@ pub async fn get_model(
         return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
     }
 
+    // supported_apisを取得（デフォルトはchat_completions）
+    let supported_apis: Vec<String> = endpoint_model_apis
+        .get(&model_id)
+        .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+        .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+
     if let Some(model) = model {
         // Azure OpenAI 形式の capabilities (boolean object)
         let caps: ModelCapabilities = model.get_capabilities().into();
-        let ready = available_models.contains(&model_id);
+        let ready = available_models.contains(&model_id) || is_endpoint_model;
         let lifecycle_status = if ready {
             LifecycleStatus::Registered
         } else {
@@ -419,18 +544,27 @@ pub async fn get_model(
             "tags": model.tags,
             "description": model.description,
             "chat_template": model.chat_template,
+            "supported_apis": supported_apis,
         });
 
         return Ok((StatusCode::OK, Json(body)).into_response());
     }
 
+    // エンドポイント専用モデルまたはノードのモデル（メタデータなし）
+    let owned_by = if is_endpoint_model {
+        "endpoint"
+    } else {
+        "router"
+    };
+
     let body = json!({
         "id": model_id,
         "object": "model",
         "created": 0,
-        "owned_by": "router",
+        "owned_by": owned_by,
         "lifecycle_status": LifecycleStatus::Registered,
         "ready": true,
+        "supported_apis": supported_apis,
     });
 
     Ok((StatusCode::OK, Json(body)).into_response())
@@ -1158,6 +1292,129 @@ async fn proxy_openai_post(
             .await;
     }
 
+    // Endpoint-based routing: check if model exists in EndpointRegistry
+    if let Ok(EndpointSelection::Found(endpoint)) = select_endpoint_for_model(state, &model).await {
+        let record_id = Uuid::new_v4();
+        let timestamp = Utc::now();
+        let request_body = sanitize_openai_payload_for_history(&payload);
+        let body_bytes = serde_json::to_vec(&payload).map_err(|e| {
+            AppError::from(RouterError::Http(format!(
+                "Failed to serialize payload: {}",
+                e
+            )))
+        })?;
+        let start = Instant::now();
+
+        let response = match forward_to_endpoint(
+            &state.http_client,
+            &endpoint,
+            target_path,
+            body_bytes,
+            stream,
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                let duration = start.elapsed();
+                save_request_record(
+                    state.request_history.clone(),
+                    RequestResponseRecord {
+                        id: record_id,
+                        timestamp,
+                        request_type,
+                        model: model.clone(),
+                        node_id: endpoint.id,
+                        node_machine_name: endpoint.name.clone(),
+                        node_ip: "0.0.0.0".parse().unwrap(),
+                        client_ip: None,
+                        request_body,
+                        response_body: None,
+                        duration_ms: duration.as_millis() as u64,
+                        status: RecordStatus::Error {
+                            message: format!("Endpoint request failed: {}", e),
+                        },
+                        completed_at: Utc::now(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        total_tokens: None,
+                    },
+                );
+                return Err(e.into());
+            }
+        };
+
+        let duration = start.elapsed();
+
+        if stream {
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord {
+                    id: record_id,
+                    timestamp,
+                    request_type,
+                    model: model.clone(),
+                    node_id: endpoint.id,
+                    node_machine_name: endpoint.name.clone(),
+                    node_ip: "0.0.0.0".parse().unwrap(),
+                    client_ip: None,
+                    request_body,
+                    response_body: None,
+                    duration_ms: duration.as_millis() as u64,
+                    status: RecordStatus::Success,
+                    completed_at: Utc::now(),
+                    input_tokens: None,
+                    output_tokens: None,
+                    total_tokens: None,
+                },
+            );
+            return forward_streaming_response(response).map_err(AppError::from);
+        }
+
+        // Non-streaming: read response body
+        let status = response.status();
+        let body_bytes = response.bytes().await.map_err(map_reqwest_error)?;
+        let response_body_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
+        let token_usage = response_body_value
+            .as_ref()
+            .and_then(extract_usage_from_response);
+
+        save_request_record(
+            state.request_history.clone(),
+            RequestResponseRecord {
+                id: record_id,
+                timestamp,
+                request_type,
+                model: model.clone(),
+                node_id: endpoint.id,
+                node_machine_name: endpoint.name.clone(),
+                node_ip: "0.0.0.0".parse().unwrap(),
+                client_ip: None,
+                request_body,
+                response_body: response_body_value,
+                duration_ms: duration.as_millis() as u64,
+                status: if status.is_success() {
+                    RecordStatus::Success
+                } else {
+                    RecordStatus::Error {
+                        message: format!("Endpoint returned {}", status),
+                    }
+                },
+                completed_at: Utc::now(),
+                input_tokens: token_usage.as_ref().and_then(|u| u.input_tokens),
+                output_tokens: token_usage.as_ref().and_then(|u| u.output_tokens),
+                total_tokens: token_usage.as_ref().and_then(|u| u.total_tokens),
+            },
+        );
+
+        return Ok(Response::builder()
+            .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(body_bytes))
+            .unwrap());
+    }
+
+    // Fall back to node-based routing
     if !state.registry.has_model_reported(&model).await {
         let is_registered = load_registered_model(&state.db_pool, &model).await?;
         if is_registered.is_none() {
@@ -1719,6 +1976,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         }
     }
 

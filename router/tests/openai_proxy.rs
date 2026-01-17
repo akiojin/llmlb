@@ -29,6 +29,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: None,
     };
 
     // 登録済みノードを追加

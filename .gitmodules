@@ -1,21 +1,21 @@
 [submodule "node/third_party/whisper.cpp"]
-	path = node/third_party/whisper.cpp
+	path = allm/third_party/whisper.cpp
 	url = https://github.com/ggerganov/whisper.cpp.git
 [submodule "node/third_party/stable-diffusion.cpp"]
-	path = node/third_party/stable-diffusion.cpp
+	path = allm/third_party/stable-diffusion.cpp
 	url = https://github.com/leejet/stable-diffusion.cpp.git
 [submodule "node/third_party/llama.cpp"]
-	path = node/third_party/llama.cpp
+	path = allm/third_party/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp.git
 [submodule "node/third_party/cpp-httplib"]
-	path = node/third_party/cpp-httplib
+	path = allm/third_party/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git
 [submodule "node/third_party/nlohmann-json"]
-	path = node/third_party/nlohmann-json
+	path = allm/third_party/nlohmann-json
 	url = https://github.com/nlohmann/json.git
 [submodule "vendor/pest_generator"]
 	path = vendor/pest_generator
 	url = https://github.com/pest-parser/pest.git
 [submodule "node/third_party/safetensors.cpp/ggml"]
-	path = node/third_party/safetensors.cpp/ggml
+	path = allm/third_party/safetensors.cpp/ggml
 	url = https://github.com/ggml-org/ggml

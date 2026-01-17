@@ -53,6 +53,12 @@ pub mod events;
 /// トークン抽出・推定
 pub mod token;
 
+/// 型定義
+pub mod types;
+
+/// モデル同期
+pub mod sync;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {
@@ -72,6 +78,8 @@ pub struct AppState {
     pub queue_config: config::QueueConfig,
     /// ダッシュボードイベントバス
     pub event_bus: events::SharedEventBus,
+    /// エンドポイントレジストリ（新エンドポイント管理システム）
+    pub endpoint_registry: Option<registry::endpoints::EndpointRegistry>,
 }
 
 #[cfg(test)]

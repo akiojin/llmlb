@@ -148,6 +148,18 @@
 
 **ブロッカー**: NodeRegistryの完全廃止にはEndpointRegistryへの完全移行が必要（LoadManager, HealthChecker, proxy, openaiルーティング等）
 
+**依存関係分析（2026-01-18更新）**:
+- `api/images.rs`, `api/audio.rs`: EndpointCapability優先のフォールバック構造に移行済み
+- `api/logs.rs`: aLLMノード固有のログ取得機能、Endpoint化対象外
+- `api/nodes.rs`: aLLMノード管理API（list/settings/approve）、削除不可
+- `api/models.rs`: GPU警告計算（compute_gpu_warnings）、NodeRegistry依存
+- `api/dashboard.rs`: ノード一覧表示、NodeRegistry依存
+- `health/mod.rs`: HealthChecker、NodeRegistry依存
+- `balancer/mod.rs`: LoadManager、NodeRegistry依存
+- `main.rs`, `lib.rs`: AppState初期化、NodeRegistry必須
+
+**結論**: aLLMがEndpointとして登録される仕組みが整うまで、T036-T040は保留
+
 ### ドキュメント・検証
 
 - [x] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行

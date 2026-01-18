@@ -3,7 +3,7 @@
 //! ノードに関する最新メトリクスとリクエスト統計を集約し、
 //! 高度なロードバランシング戦略を提供する。
 
-use crate::registry::NodeRegistry;
+use crate::registry::{endpoints::EndpointRegistry, NodeRegistry};
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
 use llm_router_common::{
     error::{RouterError, RouterResult},
@@ -2097,6 +2097,9 @@ pub struct SystemSummary {
 #[derive(Clone)]
 pub struct LoadManager {
     registry: NodeRegistry,
+    /// EndpointRegistry（NodeRegistry廃止移行用）
+    #[allow(dead_code)]
+    endpoint_registry: Option<Arc<EndpointRegistry>>,
     state: Arc<RwLock<HashMap<Uuid, NodeLoadState>>>,
     round_robin: Arc<AtomicUsize>,
     history: Arc<RwLock<VecDeque<RequestHistoryPoint>>>,
@@ -2153,6 +2156,7 @@ impl LoadManager {
     pub fn new(registry: NodeRegistry) -> Self {
         Self {
             registry,
+            endpoint_registry: None,
             state: Arc::new(RwLock::new(HashMap::new())),
             round_robin: Arc::new(AtomicUsize::new(0)),
             history: Arc::new(RwLock::new(VecDeque::new())),
@@ -2162,6 +2166,15 @@ impl LoadManager {
             queue_notify: Arc::new(Notify::new()),
             queue_waiters: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    /// EndpointRegistryを設定する
+    ///
+    /// NodeRegistry廃止移行のためのメソッド。
+    /// 将来的にLoadManagerはEndpointRegistryのみを使用するようになる。
+    pub fn with_endpoint_registry(mut self, endpoint_registry: Arc<EndpointRegistry>) -> Self {
+        self.endpoint_registry = Some(endpoint_registry);
+        self
     }
 
     /// ヘルスメトリクスを記録

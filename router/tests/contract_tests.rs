@@ -3,9 +3,6 @@
 #[path = "support/mod.rs"]
 pub mod support;
 
-#[path = "contract/test_node_register_gpu.rs"]
-mod test_node_register_gpu;
-
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 

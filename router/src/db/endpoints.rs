@@ -448,6 +448,12 @@ impl From<EndpointRow> for Endpoint {
                 .capabilities
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_else(|| vec![EndpointCapability::ChatCompletion]),
+            // GPU情報（/v0/healthから取得、DBには未保存）
+            gpu_device_count: None,
+            gpu_total_memory_bytes: None,
+            gpu_used_memory_bytes: None,
+            gpu_capability_score: None,
+            active_requests: None,
         }
     }
 }

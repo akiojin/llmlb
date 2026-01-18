@@ -237,6 +237,32 @@ impl EndpointRegistry {
         Ok(updated)
     }
 
+    /// エンドポイントのGPU情報を更新（キャッシュのみ、DBには保存しない）
+    ///
+    /// `/v0/health`から取得したGPU情報をキャッシュに反映する。
+    /// GPU情報は頻繁に変化するため、DBには保存せずメモリ上でのみ管理する。
+    pub async fn update_gpu_info(
+        &self,
+        id: Uuid,
+        gpu_device_count: Option<u32>,
+        gpu_total_memory_bytes: Option<u64>,
+        gpu_used_memory_bytes: Option<u64>,
+        gpu_capability_score: Option<f32>,
+        active_requests: Option<u32>,
+    ) -> bool {
+        let mut endpoints = self.endpoints.write().await;
+        if let Some(endpoint) = endpoints.get_mut(&id) {
+            endpoint.gpu_device_count = gpu_device_count;
+            endpoint.gpu_total_memory_bytes = gpu_total_memory_bytes;
+            endpoint.gpu_used_memory_bytes = gpu_used_memory_bytes;
+            endpoint.gpu_capability_score = gpu_capability_score;
+            endpoint.active_requests = active_requests;
+            true
+        } else {
+            false
+        }
+    }
+
     /// エンドポイントのResponses API対応フラグを更新（DBとキャッシュ両方）
     /// （SPEC-24157000: Open Responses API対応）
     pub async fn update_responses_api_support(

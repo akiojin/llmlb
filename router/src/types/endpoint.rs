@@ -159,6 +159,21 @@ pub struct Endpoint {
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
+    /// GPU情報（/v0/healthから取得、Phase 1.4）
+    #[serde(default)]
+    pub gpu_device_count: Option<u32>,
+    /// GPU総メモリ（バイト）
+    #[serde(default)]
+    pub gpu_total_memory_bytes: Option<u64>,
+    /// GPU使用中メモリ（バイト）
+    #[serde(default)]
+    pub gpu_used_memory_bytes: Option<u64>,
+    /// GPU能力スコア
+    #[serde(default)]
+    pub gpu_capability_score: Option<f32>,
+    /// 現在のアクティブリクエスト数
+    #[serde(default)]
+    pub active_requests: Option<u32>,
 }
 
 impl Endpoint {
@@ -180,6 +195,11 @@ impl Endpoint {
             notes: None,
             supports_responses_api: false,
             capabilities: vec![EndpointCapability::ChatCompletion], // デフォルトはチャット機能
+            gpu_device_count: None,
+            gpu_total_memory_bytes: None,
+            gpu_used_memory_bytes: None,
+            gpu_capability_score: None,
+            active_requests: None,
         }
     }
 

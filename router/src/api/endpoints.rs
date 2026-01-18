@@ -3,7 +3,9 @@
 //! SPEC-66555000: ルーター主導エンドポイント登録システム
 
 use crate::db::endpoints as db;
-use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+use crate::types::endpoint::{
+    Endpoint, EndpointCapability, EndpointModel, EndpointStatus, SupportedAPI,
+};
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -47,6 +49,9 @@ pub struct CreateEndpointRequest {
     /// メモ
     #[serde(default)]
     pub notes: Option<String>,
+    /// エンドポイントの機能一覧（画像生成、音声認識等）
+    #[serde(default)]
+    pub capabilities: Vec<EndpointCapability>,
 }
 
 fn default_health_check_interval() -> u32 {
@@ -336,6 +341,9 @@ pub async fn create_endpoint(
     endpoint.health_check_interval_secs = req.health_check_interval_secs;
     endpoint.inference_timeout_secs = req.inference_timeout_secs;
     endpoint.notes = req.notes;
+    if !req.capabilities.is_empty() {
+        endpoint.capabilities = req.capabilities;
+    }
 
     match db::create_endpoint(&state.db_pool, &endpoint).await {
         Ok(()) => {

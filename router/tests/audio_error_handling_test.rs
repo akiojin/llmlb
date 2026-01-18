@@ -18,7 +18,7 @@ use serial_test::serial;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
+    router::spawn_test_router,
 };
 
 #[derive(Clone)]
@@ -80,15 +80,39 @@ async fn transcriptions_invalid_format_returns_400() {
 
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), asr_stub.addr(), vec!["whisper_cpp"])
-            .await
-            .expect("register node should succeed");
+    // EndpointRegistry経由でエンドポイントを登録
+    let client = Client::new();
 
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // 1. エンドポイントを作成（audio_transcription capability付き）
+    let create_response = client
+        .post(format!("http://{}/v0/endpoints", router.addr()))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": "ASR Test Endpoint",
+            "base_url": format!("http://{}", asr_stub.addr()),
+            "health_check_interval_secs": 30,
+            "capabilities": ["audio_transcription"]
+        }))
+        .send()
         .await
-        .expect("approve node should succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("create endpoint should succeed");
+
+    assert!(create_response.status().is_success());
+    let create_body: Value = create_response.json().await.unwrap();
+    let endpoint_id = create_body["id"].as_str().unwrap();
+
+    // 2. エンドポイントをOnline状態にする
+    let test_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            router.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("test endpoint should succeed");
+    assert!(test_response.status().is_success());
 
     let form = multipart::Form::new()
         .part(

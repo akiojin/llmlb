@@ -116,6 +116,94 @@ pub async fn register_node_with_runtimes(
         .await
 }
 
+/// 音声認識（ASR）対応エンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_audio_transcription_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+) -> reqwest::Result<String> {
+    register_endpoint_with_capabilities(
+        router_addr,
+        stub_addr,
+        "Audio Transcription Endpoint",
+        &["audio_transcription"],
+    )
+    .await
+}
+
+/// 音声合成（TTS）対応エンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_audio_speech_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+) -> reqwest::Result<String> {
+    register_endpoint_with_capabilities(
+        router_addr,
+        stub_addr,
+        "Audio Speech Endpoint",
+        &["audio_speech"],
+    )
+    .await
+}
+
+/// 画像生成対応エンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_image_generation_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+) -> reqwest::Result<String> {
+    register_endpoint_with_capabilities(
+        router_addr,
+        stub_addr,
+        "Image Generation Endpoint",
+        &["image_generation"],
+    )
+    .await
+}
+
+/// 指定したcapabilitiesでエンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_endpoint_with_capabilities(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+    name: &str,
+    capabilities: &[&str],
+) -> reqwest::Result<String> {
+    let client = Client::new();
+
+    // 1. エンドポイントを作成
+    let create_response = client
+        .post(format!("http://{}/v0/endpoints", router_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": format!("{} - {}", name, stub_addr),
+            "base_url": format!("http://{}", stub_addr),
+            "health_check_interval_secs": 30,
+            "capabilities": capabilities
+        }))
+        .send()
+        .await?;
+
+    let create_body: Value = create_response.json().await.unwrap_or_default();
+    let endpoint_id = create_body["id"].as_str().unwrap_or_default().to_string();
+
+    // 2. エンドポイントをOnline状態にする
+    let _ = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            router_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    Ok(endpoint_id)
+}
+
 /// Responses API対応エンドポイントを登録し、指定のモデルで利用可能にする
 /// （SPEC-24157000: Open Responses API対応テスト用）
 #[allow(dead_code)]

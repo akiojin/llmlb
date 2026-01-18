@@ -112,7 +112,9 @@ fn build_transcription_multipart(boundary: &str) -> Vec<u8> {
 /// T013: ASRノード選択テスト
 ///
 /// RuntimeType.Whisperを持つノードが/v1/audio/transcriptionsにルーティングされる
+/// NOTE: NodeRegistry廃止に伴い無効化。EndpointRegistry経由のテストはcontract_testsでカバー。
 #[tokio::test]
+#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行済み (contract_tests参照)"]
 async fn test_asr_node_routing_selects_whisper_runtime() {
     let app = build_app().await;
     let stub = spawn_audio_stub().await;
@@ -179,7 +181,9 @@ async fn test_asr_node_routing_selects_whisper_runtime() {
 /// T014: TTSノード選択テスト
 ///
 /// RuntimeType.OnnxTtsを持つノードが/v1/audio/speechにルーティングされる
+/// NOTE: NodeRegistry廃止に伴い無効化。EndpointRegistry経由のテストはcontract_testsでカバー。
 #[tokio::test]
+#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行済み (contract_tests参照)"]
 async fn test_tts_node_routing_selects_onnx_runtime() {
     let app = build_app().await;
     let stub = spawn_audio_stub().await;
@@ -251,7 +255,9 @@ async fn test_tts_node_routing_selects_onnx_runtime() {
 /// T015: 複合ノード選択テスト
 ///
 /// 複数のRuntimeTypeを持つノードが適切に処理される
+/// NOTE: NodeRegistry廃止に伴い無効化。EndpointRegistry経由のテストはcontract_testsでカバー。
 #[tokio::test]
+#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行済み (contract_tests参照)"]
 async fn test_multi_runtime_node_handles_both_asr_and_tts() {
     let app = build_app().await;
     let stub = spawn_audio_stub().await;

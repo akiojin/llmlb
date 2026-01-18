@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
+    router::{register_image_generation_endpoint, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -144,15 +144,10 @@ async fn images_generations_success() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    // ノード登録
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let res = client
@@ -194,14 +189,10 @@ async fn images_generations_base64_response() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let res = client
@@ -239,14 +230,10 @@ async fn images_generations_multiple() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let res = client
@@ -280,14 +267,10 @@ async fn images_generations_missing_prompt() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let res = client
@@ -365,14 +348,10 @@ async fn images_generations_with_options() {
     let stub = spawn_image_gen_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let res = client

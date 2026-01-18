@@ -94,7 +94,9 @@ async fn models_handler() -> impl IntoResponse {
 /// IMG001: 画像生成ノード選択テスト
 ///
 /// RuntimeType::StableDiffusionを持つノードが/v1/images/generationsにルーティングされる
+/// NOTE: NodeRegistry廃止に伴い無効化。EndpointRegistry経由のテストはcontract_testsでカバー。
 #[tokio::test]
+#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行済み (contract_tests参照)"]
 async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
     let app = build_app().await;
     let stub = spawn_image_stub().await;
@@ -165,7 +167,9 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
 /// IMG002: 複合ランタイムノードテスト
 ///
 /// LLM + StableDiffusionを持つノードが適切に処理される
+/// NOTE: NodeRegistry廃止に伴い無効化。EndpointRegistry経由のテストはcontract_testsでカバー。
 #[tokio::test]
+#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行済み (contract_tests参照)"]
 async fn test_multi_runtime_node_handles_llm_and_image() {
     let app = build_app().await;
     let stub = spawn_image_stub().await;

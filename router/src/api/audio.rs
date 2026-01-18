@@ -13,7 +13,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::{ModelCapability, Node, RuntimeType},
+    types::ModelCapability,
 };
 use serde_json::json;
 use std::time::Instant;
@@ -60,145 +60,81 @@ fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response,
     Ok(error_response(RouterError::Http(msg.into()), status))
 }
 
-/// 音声処理対応バックエンドの共通インターフェース
-/// NodeとEndpointを統一的に扱うためのenum
-enum AudioBackend {
-    /// レガシー: aLLMノード（NodeRegistry経由）
-    Node(Box<Node>),
-    /// 新方式: エンドポイント（EndpointRegistry経由）
-    Endpoint(Endpoint),
-}
+/// 音声処理対応バックエンド
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
+struct AudioBackend(Endpoint);
 
 impl AudioBackend {
     /// リクエスト送信用のURLを取得
     fn url(&self, path: &str) -> String {
-        match self {
-            AudioBackend::Node(node) => {
-                let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-                format!("http://{}:{}{}", node.ip_address, api_port, path)
-            }
-            AudioBackend::Endpoint(endpoint) => {
-                format!("{}{}", endpoint.base_url.trim_end_matches('/'), path)
-            }
-        }
+        format!("{}{}", self.0.base_url.trim_end_matches('/'), path)
     }
 
     /// リクエスト履歴用のID
     fn id(&self) -> Uuid {
-        match self {
-            AudioBackend::Node(node) => node.id,
-            AudioBackend::Endpoint(endpoint) => endpoint.id,
-        }
+        self.0.id
     }
 
     /// リクエスト履歴用の名前
     fn name(&self) -> String {
-        match self {
-            AudioBackend::Node(node) => node.machine_name.clone(),
-            AudioBackend::Endpoint(endpoint) => endpoint.name.clone(),
-        }
+        self.0.name.clone()
     }
 
     /// リクエスト履歴用のIPアドレス
     fn ip(&self) -> IpAddr {
-        match self {
-            AudioBackend::Node(node) => node.ip_address,
-            AudioBackend::Endpoint(endpoint) => {
-                // base_urlからホスト部分を抽出してパース
-                // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
-                let host = endpoint
-                    .base_url
-                    .trim_start_matches("http://")
-                    .trim_start_matches("https://")
-                    .split(':')
-                    .next()
-                    .unwrap_or("127.0.0.1");
-                host.parse::<IpAddr>()
-                    .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
-            }
-        }
+        // base_urlからホスト部分を抽出してパース
+        // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
+        let host = self
+            .0
+            .base_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(':')
+            .next()
+            .unwrap_or("127.0.0.1");
+        host.parse::<IpAddr>()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
     }
 }
 
 /// 音声認識対応バックエンドを選択
-/// EndpointRegistryを優先し、フォールバックとしてNodeRegistryを使用
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
 async fn select_transcription_backend(state: &AppState) -> Result<AudioBackend, RouterError> {
-    // 1. EndpointRegistry経由で検索（SPEC-66555000: 新方式優先）
-    if let Some(ref endpoint_registry) = state.endpoint_registry {
-        let endpoints = endpoint_registry
-            .list_online_by_capability(EndpointCapability::AudioTranscription)
-            .await;
-        if let Some(endpoint) = endpoints.into_iter().next() {
-            return Ok(AudioBackend::Endpoint(endpoint));
-        }
-    }
+    let endpoint_registry = state.endpoint_registry.as_ref().ok_or_else(|| {
+        RouterError::ServiceUnavailable("EndpointRegistry is not configured".to_string())
+    })?;
 
-    // 2. フォールバック: NodeRegistry経由で検索（レガシー）
-    select_node_by_runtime_legacy(state, RuntimeType::WhisperCpp)
-        .await
-        .map(|node| AudioBackend::Node(Box::new(node)))
+    let endpoints = endpoint_registry
+        .list_online_by_capability(EndpointCapability::AudioTranscription)
+        .await;
+
+    let endpoint = endpoints.into_iter().next().ok_or_else(|| {
+        RouterError::ServiceUnavailable(
+            "No endpoints available with audio transcription capability".to_string(),
+        )
+    })?;
+
+    Ok(AudioBackend(endpoint))
 }
 
 /// 音声合成対応バックエンドを選択
-/// EndpointRegistryを優先し、フォールバックとしてNodeRegistryを使用
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
 async fn select_speech_backend(state: &AppState) -> Result<AudioBackend, RouterError> {
-    // 1. EndpointRegistry経由で検索（SPEC-66555000: 新方式優先）
-    if let Some(ref endpoint_registry) = state.endpoint_registry {
-        let endpoints = endpoint_registry
-            .list_online_by_capability(EndpointCapability::AudioSpeech)
-            .await;
-        if let Some(endpoint) = endpoints.into_iter().next() {
-            return Ok(AudioBackend::Endpoint(endpoint));
-        }
-    }
+    let endpoint_registry = state.endpoint_registry.as_ref().ok_or_else(|| {
+        RouterError::ServiceUnavailable("EndpointRegistry is not configured".to_string())
+    })?;
 
-    // 2. フォールバック: NodeRegistry経由で検索（レガシー）
-    select_node_by_runtime_legacy(state, RuntimeType::OnnxRuntime)
-        .await
-        .map(|node| AudioBackend::Node(Box::new(node)))
-}
+    let endpoints = endpoint_registry
+        .list_online_by_capability(EndpointCapability::AudioSpeech)
+        .await;
 
-/// RuntimeType に基づいてノードを選択（レガシー）
-async fn select_node_by_runtime_legacy(
-    state: &AppState,
-    runtime_type: RuntimeType,
-) -> Result<Node, RouterError> {
-    let nodes = state.registry.list().await;
+    let endpoint = endpoints.into_iter().next().ok_or_else(|| {
+        RouterError::ServiceUnavailable(
+            "No endpoints available with audio speech capability".to_string(),
+        )
+    })?;
 
-    // 対応するRuntimeTypeを持つオンラインノードを探す
-    let capable_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| {
-            // テスト時はRegisteringステータスのノードも選択可能にする
-            let status_ok = matches!(
-                n.status,
-                llm_router_common::types::NodeStatus::Online
-                    | llm_router_common::types::NodeStatus::Registering
-            );
-            // テスト時は supported_runtimes の確認をスキップ
-            let runtime_ok = if cfg!(test) {
-                n.supported_runtimes.is_empty() || n.supported_runtimes.contains(&runtime_type)
-            } else {
-                n.supported_runtimes.contains(&runtime_type)
-            };
-            status_ok && runtime_ok
-        })
-        .collect();
-
-    if capable_nodes.is_empty() {
-        let runtime_name = match runtime_type {
-            RuntimeType::WhisperCpp => "ASR (whisper.cpp)",
-            RuntimeType::OnnxRuntime => "TTS (ONNX Runtime)",
-            _ => "required runtime",
-        };
-        return Err(RouterError::ServiceUnavailable(format!(
-            "No nodes available with {} capability",
-            runtime_name
-        )));
-    }
-
-    // 最初の利用可能なノードを返す（将来的にはロードバランシングを追加）
-    Ok(capable_nodes.into_iter().next().unwrap())
+    Ok(AudioBackend(endpoint))
 }
 
 /// POST /v1/audio/transcriptions - 音声認識（ASR）

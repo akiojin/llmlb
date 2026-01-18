@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
+    router::{register_audio_transcription_endpoint, spawn_test_router},
 };
 use axum::{
     extract::State,
@@ -99,20 +99,10 @@ async fn transcriptions_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(coordinator.addr(), asr_stub.addr(), vec!["whisper_cpp"])
-            .await
-            .expect("register agent must succeed");
-
-    let (status, body) = approve_node_from_register_response(coordinator.addr(), register_response)
+    // EndpointRegistry経由でASRエンドポイントを登録
+    let _endpoint_id = register_audio_transcription_endpoint(coordinator.addr(), asr_stub.addr())
         .await
-        .expect("approve node must succeed");
-
-    // Debug: エラーの場合は詳細を確認
-    if status != ReqStatusCode::CREATED {
-        eprintln!("Registration failed with status {}: {:#?}", status, body);
-    }
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     // WAV形式のダミー音声データ（最小限のヘッダ）
     let dummy_wav = vec![
@@ -178,15 +168,10 @@ async fn transcriptions_unsupported_format_returns_400() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(coordinator.addr(), asr_stub.addr(), vec!["whisper_cpp"])
-            .await
-            .expect("register agent must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(coordinator.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+    // EndpointRegistry経由でASRエンドポイントを登録
+    let _endpoint_id = register_audio_transcription_endpoint(coordinator.addr(), asr_stub.addr())
+        .await
+        .expect("register endpoint must succeed");
 
     // 不正なファイルデータ
     let invalid_data = vec![0x00, 0x01, 0x02, 0x03];

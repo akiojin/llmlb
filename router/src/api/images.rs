@@ -12,7 +12,7 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapability, Node, RuntimeType},
+    types::ModelCapability,
 };
 use serde_json::json;
 use std::net::IpAddr;
@@ -58,118 +58,62 @@ fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response,
     Ok(error_response(RouterError::Http(msg.into()), status))
 }
 
-/// 画像生成対応バックエンドの共通インターフェース
-/// NodeとEndpointを統一的に扱うためのenum
-enum ImageBackend {
-    /// レガシー: aLLMノード（NodeRegistry経由）
-    Node(Box<Node>),
-    /// 新方式: エンドポイント（EndpointRegistry経由）
-    Endpoint(Endpoint),
-}
+/// 画像生成対応バックエンド
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
+struct ImageBackend(Endpoint);
 
 impl ImageBackend {
     /// リクエスト送信用のURLを取得
     fn url(&self, path: &str) -> String {
-        match self {
-            ImageBackend::Node(node) => {
-                let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-                format!("http://{}:{}{}", node.ip_address, api_port, path)
-            }
-            ImageBackend::Endpoint(endpoint) => {
-                format!("{}{}", endpoint.base_url.trim_end_matches('/'), path)
-            }
-        }
+        format!("{}{}", self.0.base_url.trim_end_matches('/'), path)
     }
 
     /// リクエスト履歴用のID
     fn id(&self) -> Uuid {
-        match self {
-            ImageBackend::Node(node) => node.id,
-            ImageBackend::Endpoint(endpoint) => endpoint.id,
-        }
+        self.0.id
     }
 
     /// リクエスト履歴用の名前
     fn name(&self) -> String {
-        match self {
-            ImageBackend::Node(node) => node.machine_name.clone(),
-            ImageBackend::Endpoint(endpoint) => endpoint.name.clone(),
-        }
+        self.0.name.clone()
     }
 
     /// リクエスト履歴用のIPアドレス
     fn ip(&self) -> IpAddr {
-        match self {
-            ImageBackend::Node(node) => node.ip_address,
-            ImageBackend::Endpoint(endpoint) => {
-                // base_urlからホスト部分を抽出してパース
-                // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
-                let host = endpoint
-                    .base_url
-                    .trim_start_matches("http://")
-                    .trim_start_matches("https://")
-                    .split(':')
-                    .next()
-                    .unwrap_or("127.0.0.1");
-                host.parse::<IpAddr>()
-                    .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
-            }
-        }
+        // base_urlからホスト部分を抽出してパース
+        // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
+        let host = self
+            .0
+            .base_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(':')
+            .next()
+            .unwrap_or("127.0.0.1");
+        host.parse::<IpAddr>()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
     }
 }
 
 /// 画像生成対応バックエンドを選択
-/// EndpointRegistryを優先し、フォールバックとしてNodeRegistryを使用
+/// EndpointRegistry経由でのみ検索（NodeRegistryフォールバック廃止）
 async fn select_image_backend(state: &AppState) -> Result<ImageBackend, RouterError> {
-    // 1. EndpointRegistry経由で検索（SPEC-66555000: 新方式優先）
-    if let Some(ref endpoint_registry) = state.endpoint_registry {
-        let endpoints = endpoint_registry
-            .list_online_by_capability(EndpointCapability::ImageGeneration)
-            .await;
-        if let Some(endpoint) = endpoints.into_iter().next() {
-            return Ok(ImageBackend::Endpoint(endpoint));
-        }
-    }
+    // EndpointRegistry経由で検索（SPEC-66555000: 新方式のみ）
+    let endpoint_registry = state.endpoint_registry.as_ref().ok_or_else(|| {
+        RouterError::ServiceUnavailable("EndpointRegistry is not configured".to_string())
+    })?;
 
-    // 2. フォールバック: NodeRegistry経由で検索（レガシー）
-    select_image_node_legacy(state)
-        .await
-        .map(|node| ImageBackend::Node(Box::new(node)))
-}
+    let endpoints = endpoint_registry
+        .list_online_by_capability(EndpointCapability::ImageGeneration)
+        .await;
 
-/// RuntimeType::StableDiffusion に基づいてノードを選択（レガシー）
-async fn select_image_node_legacy(state: &AppState) -> Result<Node, RouterError> {
-    let nodes = state.registry.list().await;
+    let endpoint = endpoints.into_iter().next().ok_or_else(|| {
+        RouterError::ServiceUnavailable(
+            "No endpoints available with image generation capability".to_string(),
+        )
+    })?;
 
-    // StableDiffusion対応のオンラインノードを探す
-    let capable_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| {
-            // テスト時はRegisteringステータスのノードも選択可能にする
-            let status_ok = matches!(
-                n.status,
-                llm_router_common::types::NodeStatus::Online
-                    | llm_router_common::types::NodeStatus::Registering
-            );
-            // テスト時は supported_runtimes の確認をスキップ
-            let runtime_ok = if cfg!(test) {
-                n.supported_runtimes.is_empty()
-                    || n.supported_runtimes.contains(&RuntimeType::StableDiffusion)
-            } else {
-                n.supported_runtimes.contains(&RuntimeType::StableDiffusion)
-            };
-            status_ok && runtime_ok
-        })
-        .collect();
-
-    if capable_nodes.is_empty() {
-        return Err(RouterError::ServiceUnavailable(
-            "No nodes available with image generation (Stable Diffusion) capability".to_string(),
-        ));
-    }
-
-    // 最初の利用可能なノードを返す（将来的にはロードバランシングを追加）
-    Ok(capable_nodes.into_iter().next().unwrap())
+    Ok(ImageBackend(endpoint))
 }
 
 /// POST /v1/images/generations - 画像生成（Text-to-Image）

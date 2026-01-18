@@ -165,12 +165,17 @@ async fn run_server(config: ServerConfig) {
     let node_timeout_secs: u64 =
         get_env_with_fallback_parse("LLM_ROUTER_NODE_TIMEOUT", "NODE_TIMEOUT", 60);
 
-    let health_monitor = health::HealthMonitor::new(
-        registry.clone(),
-        health_check_interval_secs,
-        node_timeout_secs,
-    );
-    health_monitor.start();
+    // HealthMonitorはNodeRegistryベースの廃止予定モジュール
+    // EndpointHealthCheckerに完全移行後に削除予定
+    #[allow(deprecated)]
+    {
+        let health_monitor = health::HealthMonitor::new(
+            registry.clone(),
+            health_check_interval_secs,
+            node_timeout_secs,
+        );
+        health_monitor.start();
+    }
 
     // エンドポイントレジストリを初期化
     let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())

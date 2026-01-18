@@ -15,12 +15,23 @@ use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 /// ヘルスモニター
+///
+/// # 廃止予定
+///
+/// このモニターはNodeRegistryベースのPUSH型ヘルスチェックを提供しますが、
+/// EndpointHealthCheckerによるPULL型ヘルスチェックに移行されました。
+/// NodeRegistry廃止後に完全削除予定です。
+#[deprecated(
+    note = "Use EndpointHealthChecker for PULL-based health checks. NodeRegistry is being migrated to EndpointRegistry."
+)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub struct HealthMonitor {
     registry: NodeRegistry,
     check_interval_secs: u64,
     timeout_secs: u64,
 }
 
+#[allow(deprecated)] // NodeRegistry migration in progress
 impl HealthMonitor {
     /// 新しいヘルスモニターを作成
     pub fn new(registry: NodeRegistry, check_interval_secs: u64, timeout_secs: u64) -> Self {
@@ -89,6 +100,7 @@ impl HealthMonitor {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 mod tests {
     use super::*;
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};

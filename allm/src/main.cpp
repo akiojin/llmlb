@@ -10,7 +10,6 @@
 
 #include "system/gpu_detector.h"
 #include "system/resource_monitor.h"
-#include "api/router_client.h"
 #include "models/model_sync.h"
 #include "models/model_resolver.h"
 #include "models/model_registry.h"
@@ -47,12 +46,10 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
     bool server_started = false;
     bool llama_backend_initialized = false;
-    std::thread heartbeat_thread;
 
     try {
         llm_node::logger::init_from_env();
         llm_node::set_ready(false);
-        std::string router_url = cfg.router_url;
         int node_port = cfg.node_port;
 
         // Initialize llama.cpp backend
@@ -60,12 +57,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::LlamaManager::initBackend();
         llama_backend_initialized = true;
 
-        spdlog::info("Router URL: {}", router_url);
-        if (cfg.router_api_key.empty()) {
-            spdlog::warn("Router API key not set; node registration will fail if router requires API key");
-        } else {
-            spdlog::info("Router API key configured");
-        }
         spdlog::info("Node port: {}", node_port);
 
         // GPU detection
@@ -79,22 +70,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         size_t total_mem = gpu_detector.getTotalMemory();
         double capability = gpu_detector.getCapabilityScore();
         std::cout << "GPU detected: devices=" << gpus.size() << " total_mem=" << total_mem << " bytes" << std::endl;
-
-        // Build GPU device info for router
-        std::vector<llm_node::GpuDeviceInfoForRouter> gpu_devices;
-        for (const auto& gpu : gpus) {
-            if (gpu.is_available) {
-                llm_node::GpuDeviceInfoForRouter device;
-                device.model = gpu.name;
-                device.count = 1;
-                device.memory = gpu.memory_bytes;
-                gpu_devices.push_back(device);
-            }
-        }
-
-        // Get machine name from hostname
-        char hostname_buf[256] = "localhost";
-        gethostname(hostname_buf, sizeof(hostname_buf));
 
         std::string bind_address = cfg.bind_address.empty() ? std::string("0.0.0.0") : cfg.bind_address;
 
@@ -135,7 +110,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 #endif
 
         // Set GPU layers based on detection (use all layers on GPU if available)
-        if (!gpu_devices.empty()) {
+        if (!gpus.empty()) {
             // Use 99 layers for GPU offloading (most models have fewer layers)
             llama_manager.setGpuLayerSplit(99);
             spdlog::info("GPU offloading enabled with {} layers", 99);
@@ -188,11 +163,8 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         fprintf(stderr, "[DEBUG] main: ResourceMonitor started, creating ModelSync...\n");
         fflush(stderr);
 
-        // Create model_sync early for remote path resolution & initial sync
-        auto model_sync = std::make_shared<llm_node::ModelSync>(router_url, models_dir);
-        if (!cfg.router_api_key.empty()) {
-            model_sync->setApiKey(cfg.router_api_key);
-        }
+        // Create model_sync for local model management (standalone mode - no router)
+        auto model_sync = std::make_shared<llm_node::ModelSync>("", models_dir);
         model_sync->setSupportedRuntimes(supported_runtimes);
         if (!cfg.origin_allowlist.empty()) {
             model_sync->setOriginAllowlist(cfg.origin_allowlist);
@@ -200,8 +172,8 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
         auto model_resolver = std::make_shared<llm_node::ModelResolver>(
             cfg.models_dir,
-            router_url,
-            cfg.router_api_key);
+            "",  // No router URL in standalone mode
+            ""); // No API key needed
         if (!cfg.origin_allowlist.empty()) {
             model_resolver->setOriginAllowlist(cfg.origin_allowlist);
         }
@@ -266,6 +238,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         llm_node::OpenAIEndpoints openai(registry, engine, cfg, gpu_detector.getGpuBackend());
         llm_node::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
+        node_endpoints.setGpuDevices(gpus);
         llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
 
 #ifdef USE_WHISPER
@@ -483,157 +456,9 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // Try to register with router (fallback to standalone if unavailable)
-        std::cout << "Registering with router..." << std::endl;
-        {
-            llm_node::RouterClient router(router_url);
-            if (!cfg.router_api_key.empty()) {
-                router.setApiKey(cfg.router_api_key);
-            }
-            llm_node::NodeInfo info;
-            info.machine_name = hostname_buf;
-            // Use configured IP, or extract host from router URL, or fallback to hostname
-            if (!cfg.ip_address.empty()) {
-                info.ip_address = cfg.ip_address;
-            } else {
-                // Extract host from router_url (e.g., "http://192.168.1.100:8081" -> "192.168.1.100")
-                std::string host = router_url;
-                auto proto_end = host.find("://");
-                if (proto_end != std::string::npos) {
-                    host = host.substr(proto_end + 3);
-                }
-                auto port_pos = host.find(':');
-                if (port_pos != std::string::npos) {
-                    host = host.substr(0, port_pos);
-                }
-                auto path_pos = host.find('/');
-                if (path_pos != std::string::npos) {
-                    host = host.substr(0, path_pos);
-                }
-                // If router is on localhost, use 127.0.0.1; otherwise use router's host
-                if (host == "localhost") {
-                    info.ip_address = "127.0.0.1";
-                } else {
-                    info.ip_address = host;
-                }
-            }
-            spdlog::info("Node IP address: {}", info.ip_address);
-            info.runtime_version = "1.0.0";  // llm-node runtime version
-            // Router calculates API port as runtime_port + 1, so report node_port - 1
-            info.runtime_port = static_cast<uint16_t>(node_port > 0 ? node_port - 1 : 32768);
-            info.gpu_available = !gpu_devices.empty();
-            info.gpu_devices = gpu_devices;
-            if (!gpu_devices.empty()) {
-                info.gpu_count = static_cast<uint32_t>(gpu_devices.size());
-                info.gpu_model = gpu_devices[0].model;
-            }
-            info.supported_runtimes = supported_runtimes;
-            llm_node::NodeRegistrationResult reg;
-            const int reg_max = 3;
-            for (int attempt = 0; attempt < reg_max; ++attempt) {
-                reg = router.registerNode(info);
-                if (reg.success) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(200 * (attempt + 1)));
-            }
-            if (!reg.success) {
-                // Fallback to standalone mode when router is unavailable
-                spdlog::warn("Router registration failed: {} - continuing in standalone mode", reg.error);
-                std::cout << "Router unavailable, running in standalone mode..." << std::endl;
-            } else {
-                // Successfully registered with router - sync models and start heartbeat
-
-                // Sync models from router (model_sync already created earlier for remote path resolution & initial sync)
-                std::cout << "Syncing models from router..." << std::endl;
-                model_sync->setNodeToken(reg.node_token);
-                auto sync_result = model_sync->sync();
-                if (sync_result.to_download.empty() && sync_result.to_delete.empty() && model_sync->listLocalModels().empty()) {
-                    // If nothing synced and no local models, treat as recoverable error and retry once
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                    sync_result = model_sync->sync();
-                }
-
-                // Skip model deletion for now - router catalog may not include all local models
-                // In future, consider a config flag to control this behavior
-                if (!sync_result.to_delete.empty()) {
-                    spdlog::info("Skipping deletion of {} models not in router (local models preserved)",
-                                 sync_result.to_delete.size());
-                }
-
-                // Heartbeat thread (only when connected to router)
-                std::cout << "Starting heartbeat thread..." << std::endl;
-                std::string node_token = reg.node_token;
-                heartbeat_thread = std::thread([&router, &llama_manager, node_id = reg.node_id, node_token, &cfg,
-                                                model_sync,
-                                                supported_runtimes
-#ifdef USE_WHISPER
-                                                , &whisper_manager
-#endif
-#ifdef USE_ONNX_RUNTIME
-                                                , &tts_manager
-#endif
-                                                , &resource_monitor
-                                                ]() {
-                    while (llm_node::is_running()) {
-                        // 現在ロードされているモデルを取得
-                        auto loaded_models = llama_manager.getLoadedModels();
-                        // TODO: Phase 4でモデルタイプ識別を実装後、loaded_embedding_modelsを分離
-                        std::vector<std::string> loaded_embedding_models;
-                        std::vector<std::string> loaded_asr_models;
-                        std::vector<std::string> loaded_tts_models;
-#ifdef USE_WHISPER
-                        loaded_asr_models = whisper_manager.getLoadedModels();
-#endif
-#ifdef USE_ONNX_RUNTIME
-                        loaded_tts_models = tts_manager.getLoadedModels();
-#endif
-                        std::optional<llm_node::SyncStatusForRouter> sync_payload;
-                        if (model_sync) {
-                            const auto status = model_sync->getStatus();
-                            auto state_to_string = [](llm_node::SyncState state) {
-                                switch (state) {
-                                    case llm_node::SyncState::Idle:
-                                        return std::string("idle");
-                                    case llm_node::SyncState::Running:
-                                        return std::string("running");
-                                    case llm_node::SyncState::Success:
-                                        return std::string("success");
-                                    case llm_node::SyncState::Failed:
-                                        return std::string("failed");
-                                }
-                                return std::string("idle");
-                            };
-                            llm_node::SyncStatusForRouter payload;
-                            payload.state = state_to_string(status.state);
-                            if (status.current_download.has_value()) {
-                                payload.progress = llm_node::SyncProgressForRouter{
-                                    status.current_download->model_id,
-                                    status.current_download->file,
-                                    static_cast<uint64_t>(status.current_download->downloaded_bytes),
-                                    static_cast<uint64_t>(status.current_download->total_bytes),
-                                };
-                            }
-                            sync_payload = payload;
-                        }
-                        std::optional<llm_node::HeartbeatMetrics> metrics;
-                        const auto usage = resource_monitor.latestUsage();
-                        if (usage.mem_total_bytes > 0 || usage.vram_total_bytes > 0) {
-                            llm_node::HeartbeatMetrics data;
-                            data.mem_used_bytes = usage.mem_used_bytes;
-                            data.mem_total_bytes = usage.mem_total_bytes;
-                            if (usage.vram_total_bytes > 0) {
-                                data.gpu_utilization = usage.vramUsageRatio() * 100.0;
-                            }
-                            metrics = data;
-                        }
-                        router.sendHeartbeat(node_id, node_token, std::nullopt, metrics,
-                                             loaded_models, loaded_embedding_models,
-                                             loaded_asr_models, loaded_tts_models,
-                                             supported_runtimes, sync_payload);
-                        std::this_thread::sleep_for(std::chrono::seconds(cfg.heartbeat_interval_sec));
-                    }
-                });
-            }
-        }
+        // aLLM now operates in standalone mode only (NodeRegistry abolished)
+        // Models are scanned from local storage without router registration
+        spdlog::info("Running in standalone mode (aLLM OpenAI-compatible endpoint)");
 
         // Update registry with local models (models actually available on this node)
         auto local_descriptors = model_storage.listAvailableDescriptors();
@@ -665,9 +490,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         std::cout << "Shutting down..." << std::endl;
         server.stop();
         resource_monitor.stop();
-        if (heartbeat_thread.joinable()) {
-            heartbeat_thread.join();
-        }
 
         // Free llama.cpp backend
         if (llama_backend_initialized) {
@@ -677,10 +499,6 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
-        if (heartbeat_thread.joinable()) {
-            llm_node::request_shutdown();
-            heartbeat_thread.join();
-        }
         if (llama_backend_initialized) {
             llm_node::LlamaManager::freeBackend();
         }
@@ -770,8 +588,6 @@ int main(int argc, char* argv[]) {
 #ifdef LLM_NODE_TESTING
 extern "C" int llm_node_run_for_test() {
     auto cfg = llm_node::loadNodeConfig();
-    // short intervals for tests
-    cfg.heartbeat_interval_sec = 1;
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);
 }

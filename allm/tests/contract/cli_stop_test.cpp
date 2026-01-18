@@ -13,30 +13,30 @@ protected:
     }
 };
 
-// Contract: node stop requires a model name
+// Contract: stop requires a model name
 TEST_F(CliStopTest, RequiresModelName) {
-    const char* argv[] = {"llm-router", "node", "stop"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "stop"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 1);
     EXPECT_NE(result.output.find("model"), std::string::npos);
 }
 
-// Contract: node stop parses model name
+// Contract: stop parses model name
 TEST_F(CliStopTest, ParseModelName) {
-    const char* argv[] = {"llm-router", "node", "stop", "llama3.2"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "stop", "llama3.2"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeStop);
+    EXPECT_EQ(result.subcommand, Subcommand::Stop);
     EXPECT_EQ(result.model_options.model, "llama3.2");
 }
 
-// Contract: node stop --help shows usage
+// Contract: stop --help shows usage
 TEST_F(CliStopTest, ShowHelp) {
-    const char* argv[] = {"llm-router", "node", "stop", "--help"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "stop", "--help"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);

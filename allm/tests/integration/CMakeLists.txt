@@ -15,7 +15,6 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/api/http_server.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp
-    ../../src/api/router_client.cpp
     ../../src/models/model_registry.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp

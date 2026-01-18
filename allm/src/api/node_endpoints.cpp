@@ -5,11 +5,16 @@
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include "runtime/state.h"
+#include "system/resource_monitor.h"
 #include "utils/logger.h"
 
 namespace llm_node {
 
 NodeEndpoints::NodeEndpoints() : health_status_("ok") {}
+
+void NodeEndpoints::setGpuDevices(std::vector<GpuDevice> devices) {
+    gpu_devices_ = std::move(devices);
+}
 
 void NodeEndpoints::registerRoutes(httplib::Server& server) {
     start_time_ = std::chrono::steady_clock::now();
@@ -109,6 +114,60 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
     });
 
+    // Phase 1.2: GET /v0/health - Extended health endpoint with GPU and load info
+    server.Get("/v0/health", [this](const httplib::Request&, httplib::Response& res) {
+        // Determine status based on readiness and active requests
+        std::string status;
+        unsigned int active_reqs = active_request_count();
+        if (!is_ready()) {
+            status = "offline";
+        } else if (active_reqs >= 1) {
+            status = "busy";
+        } else {
+            status = "online";
+        }
+
+        // Get current resource usage for VRAM info
+        auto usage = ResourceMonitor::sampleSystemUsage();
+
+        // Build GPU devices array
+        nlohmann::json gpu_devices_json = nlohmann::json::array();
+        for (const auto& dev : gpu_devices_) {
+            gpu_devices_json.push_back({
+                {"id", dev.id},
+                {"name", dev.name},
+                {"vendor", dev.vendor},
+                {"memory_bytes", dev.memory_bytes},
+                {"free_memory_bytes", dev.free_memory_bytes},
+                {"is_available", dev.is_available}
+            });
+        }
+
+        nlohmann::json body = {
+            {"status", status},
+            {"gpu", {
+                {"device_count", gpu_devices_.size()},
+                {"total_memory_bytes", gpu_total_mem_},
+                {"used_memory_bytes", usage.vram_used_bytes},
+                {"free_memory_bytes", usage.vram_total_bytes > usage.vram_used_bytes
+                    ? usage.vram_total_bytes - usage.vram_used_bytes : 0},
+                {"capability_score", gpu_capability_},
+                {"devices", gpu_devices_json}
+            }},
+            {"load", {
+                {"active_requests", active_reqs},
+                {"max_concurrent_requests", 1}
+            }},
+            {"memory", {
+                {"ram_used_bytes", usage.mem_used_bytes},
+                {"ram_total_bytes", usage.mem_total_bytes},
+                {"vram_used_bytes", usage.vram_used_bytes},
+                {"vram_total_bytes", usage.vram_total_bytes}
+            }}
+        };
+        res.set_content(body.dump(), "application/json");
+    });
+
     server.Get("/startup", [](const httplib::Request&, httplib::Response& res) {
         if (llm_node::is_ready()) {
             res.set_content(R"({"status":"ready"})", "application/json");
@@ -123,7 +182,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             std::chrono::steady_clock::now() - start_time_).count();
         nlohmann::json body = {
             {"uptime_seconds", uptime},
-            {"gpu_devices", gpu_devices_},
+            {"gpu_devices", gpu_devices_count_},
             {"gpu_memory_bytes", gpu_total_mem_},
             {"gpu_capability", gpu_capability_}
         };
@@ -134,7 +193,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time_).count();
         exporter_.set_gauge("llm_node_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
-        exporter_.set_gauge("llm_node_gpu_devices", static_cast<double>(gpu_devices_), "Detected GPU devices");
+        exporter_.set_gauge("llm_node_gpu_devices", static_cast<double>(gpu_devices_count_), "Detected GPU devices");
         exporter_.set_gauge("llm_node_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
         exporter_.set_gauge("llm_node_gpu_capability", gpu_capability_, "Aggregated GPU capability score");
         res.set_content(exporter_.render(), "text/plain");

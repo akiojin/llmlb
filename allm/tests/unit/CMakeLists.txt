@@ -6,7 +6,6 @@ set(UNIT_TEST_SOURCES
     prefix_cache_test.cpp
     replica_manager_test.cpp
     function_calling_test.cpp
-    router_client_test.cpp
     model_sync_test.cpp
     model_downloader_test.cpp
     model_storage_test.cpp
@@ -39,7 +38,6 @@ set(UNIT_TEST_SOURCES
     ollama_compat_test.cpp
     repl_session_test.cpp
     ../../src/utils/cli.cpp
-    ../../src/api/router_client.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
     ../../src/models/model_storage.cpp

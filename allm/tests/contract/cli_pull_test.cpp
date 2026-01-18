@@ -1,4 +1,4 @@
-// SPEC-58378000: Contract tests for 'node pull' command
+// SPEC-58378000: Contract tests for 'pull' command
 // TDD RED phase - these tests MUST fail until implementation is complete
 
 #include <gtest/gtest.h>
@@ -14,40 +14,40 @@ protected:
     }
 };
 
-// Contract: node pull requires a model name
+// Contract: pull requires a model name
 TEST_F(CliPullTest, RequiresModelName) {
-    const char* argv[] = {"llm-router", "node", "pull"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "pull"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 1);
     EXPECT_NE(result.output.find("model"), std::string::npos);
 }
 
-// Contract: node pull parses model name
+// Contract: pull parses model name
 TEST_F(CliPullTest, ParseModelName) {
-    const char* argv[] = {"llm-router", "node", "pull", "Qwen/Qwen2.5-0.5B-GGUF"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "pull", "Qwen/Qwen2.5-0.5B-GGUF"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodePull);
+    EXPECT_EQ(result.subcommand, Subcommand::Pull);
     EXPECT_EQ(result.pull_options.model, "Qwen/Qwen2.5-0.5B-GGUF");
 }
 
-// Contract: node pull accepts HuggingFace URL
+// Contract: pull accepts HuggingFace URL
 TEST_F(CliPullTest, ParseHuggingFaceUrl) {
-    const char* argv[] = {"llm-router", "node", "pull", "https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "pull", "https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodePull);
+    EXPECT_EQ(result.subcommand, Subcommand::Pull);
     EXPECT_EQ(result.pull_options.model, "https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF");
 }
 
-// Contract: node pull --help shows usage
+// Contract: pull --help shows usage
 TEST_F(CliPullTest, ShowHelp) {
-    const char* argv[] = {"llm-router", "node", "pull", "--help"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "pull", "--help"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);

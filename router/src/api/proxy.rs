@@ -1,4 +1,10 @@
 //! LLM runtimeプロキシ APIハンドラー
+//!
+//! # 移行中
+//!
+//! このモジュールは現在、Node型からEndpoint型への移行期間中です。
+
+#![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
 
 use crate::{config::QueueConfig, AppState};
 use axum::{

@@ -1,6 +1,12 @@
 //! モデル管理API
 //!
 //! モデル一覧取得、登録、マニフェスト配信のエンドポイント
+//!
+//! # 移行中
+//!
+//! このモジュールは現在、Node型からEndpoint型への移行期間中です。
+
+#![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
 
 use crate::{
     db::models::ModelStorage,

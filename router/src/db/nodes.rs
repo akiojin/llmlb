@@ -1,6 +1,19 @@
 //! ノード管理のストレージ層
 //!
+//! # 廃止予定
+//!
+//! このモジュールは廃止予定です。新しい実装では `db::endpoints` を使用してください。
+//!
+//! ## 移行ガイド
+//!
+//! | 廃止予定 | 移行先 |
+//! |----------|--------|
+//! | `NodeStorage` | `EndpointStorage` |
+//! | `save_node()` | `save_endpoint()` |
+//! | `load_nodes()` | `list_endpoints()` |
+//!
 //! SQLiteベースでノード情報を永続化（router.dbと統合）
+#![allow(deprecated)] // Module uses deprecated Node type during migration
 
 use chrono::{DateTime, Utc};
 use llm_router_common::{
@@ -13,6 +26,11 @@ use std::net::IpAddr;
 use uuid::Uuid;
 
 /// ノードストレージ（SQLite版）
+///
+/// # 廃止予定
+///
+/// このストレージは廃止予定です。代わりに `EndpointStorage` を使用してください。
+#[deprecated(note = "Use EndpointStorage instead")]
 #[derive(Clone)]
 pub struct NodeStorage {
     pool: SqlitePool,

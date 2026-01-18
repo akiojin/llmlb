@@ -1,6 +1,13 @@
 //! 通信プロトコル定義
 //!
 //! Node↔Router間の通信メッセージ
+//!
+//! # 廃止予定
+//!
+//! このモジュール内のノード自己登録関連の型（`RegisterRequest`, `RegisterResponse`）は
+//! 廃止予定です。エンドポイント登録はダッシュボード経由で行います。
+
+#![allow(deprecated)] // Module contains deprecated RegisterRequest/RegisterResponse
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -12,6 +19,14 @@ use crate::types::{
 };
 
 /// ノード登録リクエスト
+///
+/// # 廃止予定
+///
+/// このリクエストは廃止予定です。ノード自己登録フローは廃止され、
+/// 管理者がダッシュボードからエンドポイントを登録する方式に移行しました。
+#[deprecated(
+    note = "Node self-registration is deprecated. Use endpoint registration via dashboard."
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RegisterRequest {
     /// マシン名
@@ -57,6 +72,13 @@ impl Default for RegisterRequest {
 }
 
 /// ノード登録レスポンス
+///
+/// # 廃止予定
+///
+/// このレスポンスは廃止予定です。ノード自己登録フローは廃止されました。
+#[deprecated(
+    note = "Node self-registration is deprecated. Use endpoint registration via dashboard."
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RegisterResponse {
     /// ノードID
@@ -515,6 +537,7 @@ pub enum ImageData {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Testing deprecated RegisterRequest/RegisterResponse during migration
 mod tests {
     use super::*;
 

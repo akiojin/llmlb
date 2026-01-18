@@ -2,6 +2,14 @@
 //!
 //! ノードに関する最新メトリクスとリクエスト統計を集約し、
 //! 高度なロードバランシング戦略を提供する。
+//!
+//! # 移行中
+//!
+//! このモジュールは現在、Node型からEndpoint型への移行期間中です。
+//! 内部では廃止予定のNode型を使用していますが、EndpointRegistryから
+//! 取得したEndpointを`to_legacy_node()`で変換して処理しています。
+
+#![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
 
 use crate::registry::{endpoints::EndpointRegistry, NodeRegistry};
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};

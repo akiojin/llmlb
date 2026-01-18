@@ -195,6 +195,7 @@ impl Endpoint {
     #[deprecated(
         note = "This is a temporary bridge for NodeRegistry migration. Will be removed after full EndpointRegistry migration."
     )]
+    #[allow(deprecated)] // Uses deprecated Node type for migration bridge
     pub fn to_legacy_node(&self, models: Vec<String>) -> llm_router_common::types::Node {
         use llm_router_common::types::{Node, NodeStatus};
         use std::collections::HashSet;

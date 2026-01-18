@@ -1,6 +1,12 @@
 //! ノード登録管理
 //!
 //! ノードの状態をメモリ内で管理し、SQLiteと同期
+//!
+//! # 廃止予定
+//!
+//! `NodeRegistry`は廃止予定です。代わりに`EndpointRegistry`を使用してください。
+
+#![allow(deprecated)] // Module uses deprecated Node types during migration
 
 pub mod endpoints;
 pub mod models;

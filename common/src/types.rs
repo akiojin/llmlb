@@ -1,6 +1,12 @@
 //! 共通型定義
 //!
 //! Node, HealthMetrics, Request等のコアデータ型
+//!
+//! # 移行中
+//!
+//! `Node`型と`NodeMetrics`型は廃止予定です。新しい実装では`Endpoint`型を使用してください。
+
+#![allow(deprecated)] // Module contains deprecated Node and NodeMetrics types
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -28,6 +34,12 @@ impl GpuDeviceInfo {
 }
 
 /// ノード
+///
+/// # 廃止予定
+///
+/// この型は廃止予定です。新しい実装では `Endpoint` 型を使用してください。
+/// ノードベースのアーキテクチャからエンドポイントベースのアーキテクチャに移行中です。
+#[deprecated(note = "Use Endpoint type instead. Node-based architecture is deprecated.")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Node {
     /// 一意識別子
@@ -521,7 +533,12 @@ pub enum RequestStatus {
 
 /// ノードメトリクス
 ///
+/// # 廃止予定
+///
+/// この型は廃止予定です。エンドポイントベースのメトリクス収集に移行中です。
+///
 /// ノードから定期的に送信される負荷情報
+#[deprecated(note = "Use endpoint-based metrics instead.")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetrics {
     /// ノードID
@@ -539,6 +556,7 @@ pub struct NodeMetrics {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Testing deprecated Node and NodeMetrics types during migration
 mod tests {
     use super::*;
     use std::collections::HashSet;

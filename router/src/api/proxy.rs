@@ -20,11 +20,11 @@ pub(crate) async fn select_available_node(
     match mode.as_str() {
         "metrics" => {
             // メトリクスベース選択（T014-T015で実装）
-            state.load_manager.select_node_by_metrics().await
+            state.load_manager.select_endpoint_by_metrics().await
         }
         _ => {
             // デフォルト: 既存の高度なロードバランシング
-            let node = state.load_manager.select_node().await?;
+            let node = state.load_manager.select_endpoint().await?;
             if node.initializing {
                 return Err(RouterError::ServiceUnavailable(
                     "All nodes are warming up models".into(),

@@ -2860,16 +2860,28 @@ impl LoadManager {
         Ok(spec_sorted[0].clone())
     }
 
-    /// 適切なノードを選択
-    pub async fn select_node(&self) -> RouterResult<Node> {
+    /// 適切なエンドポイントを選択
+    pub async fn select_endpoint(&self) -> RouterResult<Node> {
         let online_nodes = self.collect_online_nodes(None).await?;
         self.select_node_from_candidates(online_nodes).await
     }
 
-    /// 指定モデルに対応するノードを選択
-    pub async fn select_node_for_model(&self, model_id: &str) -> RouterResult<Node> {
+    /// select_endpoint のエイリアス（後方互換）
+    #[deprecated(note = "Use select_endpoint instead")]
+    pub async fn select_node(&self) -> RouterResult<Node> {
+        self.select_endpoint().await
+    }
+
+    /// 指定モデルに対応するエンドポイントを選択
+    pub async fn select_endpoint_for_model(&self, model_id: &str) -> RouterResult<Node> {
         let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
         self.select_node_from_candidates(online_nodes).await
+    }
+
+    /// select_endpoint_for_model のエイリアス（後方互換）
+    #[deprecated(note = "Use select_endpoint_for_model instead")]
+    pub async fn select_node_for_model(&self, model_id: &str) -> RouterResult<Node> {
+        self.select_endpoint_for_model(model_id).await
     }
 
     /// 指定されたノードのロードスナップショットを取得
@@ -3257,18 +3269,30 @@ impl LoadManager {
         Ok(best_nodes[0].clone())
     }
 
-    /// メトリクスベースでノードを選択（モデル指定なし）
-    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
+    /// メトリクスベースでエンドポイントを選択（モデル指定なし）
+    pub async fn select_endpoint_by_metrics(&self) -> RouterResult<Node> {
         let online_nodes = self.collect_online_nodes(None).await?;
         self.select_node_by_metrics_from_candidates(online_nodes)
             .await
     }
 
-    /// 指定モデルに対応するノードをメトリクスベースで選択
-    pub async fn select_node_by_metrics_for_model(&self, model_id: &str) -> RouterResult<Node> {
+    /// select_endpoint_by_metrics のエイリアス（後方互換）
+    #[deprecated(note = "Use select_endpoint_by_metrics instead")]
+    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
+        self.select_endpoint_by_metrics().await
+    }
+
+    /// 指定モデルに対応するエンドポイントをメトリクスベースで選択
+    pub async fn select_endpoint_by_metrics_for_model(&self, model_id: &str) -> RouterResult<Node> {
         let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
         self.select_node_by_metrics_from_candidates(online_nodes)
             .await
+    }
+
+    /// select_endpoint_by_metrics_for_model のエイリアス（後方互換）
+    #[deprecated(note = "Use select_endpoint_by_metrics_for_model instead")]
+    pub async fn select_node_by_metrics_for_model(&self, model_id: &str) -> RouterResult<Node> {
+        self.select_endpoint_by_metrics_for_model(model_id).await
     }
 }
 

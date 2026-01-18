@@ -1,8 +1,11 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: Phase 3.2実装中（17個のテストが`#[ignore]`状態）
+**ステータス**: 実装完了（テスト有効化待ち: 17個の`#[ignore]`テストがE2E環境を必要とする）
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
+
+**注記**: 実装は完了しているが、テストの有効化にはVisionモデル（LLaVA等）が
+登録されたノード環境が必要。aLLMはllama.cppのmultimodal supportをラップして使用。
 
 ## 技術スタック
 

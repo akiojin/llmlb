@@ -2,13 +2,16 @@
 
 **機能ID**: `SPEC-e03a404c`
 **作成日**: 2025-12-24
-**ステータス**: 実装中（17個のテストが`#[ignore]`状態）
+**ステータス**: 実装完了（テスト有効化待ち: E2E環境が必要）
 **入力**: ユーザー説明: "画像認識モデル対応（Image Understanding）- llm-routerにVisionモデル対応を追加し、画像を含むチャットリクエストを処理できるようにする。OpenAI Vision API互換のエンドポイント（/v1/chat/completions with images）を実装する。"
 
 ## 決定事項（共有用サマリ）
+
 - 画像認識は **safetensors正本** を前提に実行する
 - GGUFは **safetensorsが存在しない場合のみ** フォールバックとして許可する
 - Node実行時はPython依存を導入しない
+- aLLMは **llama.cppのmultimodal supportをラップ** して使用（独自実装なし）
+- GPU対応は **ggmlバックエンド経由** で自動的に対応（Metal/CUDA）
 
 ## ユーザーシナリオ＆テスト *(必須)*
 

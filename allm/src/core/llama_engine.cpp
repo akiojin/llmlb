@@ -12,17 +12,17 @@
 #include <functional>
 #include <utility>
 
-namespace llm_node {
+namespace allm {
 
 namespace fs = std::filesystem;
 
 namespace {
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 std::function<void(const char*)> kv_cache_reset_hook;
 #endif
 
 void notify_kv_cache_reset(const char* reason) {
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     if (kv_cache_reset_hook) {
         kv_cache_reset_hook(reason);
     }
@@ -158,7 +158,7 @@ static std::string stripControlTokens(std::string text);
 LlamaEngine::LlamaEngine(LlamaManager& manager)
     : manager_(manager) {}
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 void LlamaEngine::setKvCacheResetHookForTest(KvCacheResetHook hook) {
     kv_cache_reset_hook = std::move(hook);
 }
@@ -862,4 +862,4 @@ std::vector<std::vector<float>> LlamaEngine::generateEmbeddings(
     return results;
 }
 
-}  // namespace llm_node
+}  // namespace allm

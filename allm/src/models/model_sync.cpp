@@ -18,7 +18,7 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-namespace llm_node {
+namespace allm {
 namespace {
 bool isMetalArtifactName(const std::string& name) {
     const auto lower = toLowerAscii(name);
@@ -659,4 +659,4 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
     }
 }
 
-}  // namespace llm_node
+}  // namespace allm

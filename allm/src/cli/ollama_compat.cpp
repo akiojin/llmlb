@@ -6,7 +6,7 @@
 
 namespace fs = std::filesystem;
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 OllamaCompat::OllamaCompat(const std::string& ollama_dir) {
@@ -194,4 +194,4 @@ std::string OllamaCompat::getDefaultOllamaDir() {
 }
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

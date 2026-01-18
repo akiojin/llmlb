@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-namespace llm_node {
+namespace allm {
 
 /// TokenWatchdog: トークン間タイムアウト監視
 /// ストリーミング生成中に、一定時間トークンが生成されない場合にタイムアウトをトリガーする。
@@ -36,7 +36,7 @@ public:
     /// デフォルトタイムアウト（5秒、環境変数で上書き可能）
     static std::chrono::milliseconds defaultTimeout();
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     static void resetTestState();
     static bool wasTimeoutTriggered();
 #endif
@@ -54,4 +54,4 @@ private:
     bool kicked_{false};
 };
 
-}  // namespace llm_node
+}  // namespace allm

@@ -7,7 +7,7 @@
 
 #include "core/engine_types.h"
 
-namespace llm_node {
+namespace allm {
 
 // T166/T167: chat_template rendering via minja (Jinja2 for C++)
 class ChatTemplateRenderer {
@@ -46,4 +46,4 @@ private:
     std::string eos_token_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

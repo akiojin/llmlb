@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include "utils/cli.h"
 
-using namespace llm_node;
+using namespace allm;
 
 class CliPsTest : public ::testing::Test {
 protected:

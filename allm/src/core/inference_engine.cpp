@@ -31,20 +31,20 @@
 #include <thread>
 #include <type_traits>
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
 // T182: トークン間タイムアウトのデフォルト値（5秒）
 constexpr auto kDefaultInterTokenTimeout = std::chrono::milliseconds(5000);
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 std::mutex g_inter_token_timeout_mutex;
 std::chrono::milliseconds g_inter_token_timeout_override{0};
 #endif
 
 std::chrono::milliseconds get_inter_token_timeout() {
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     std::lock_guard<std::mutex> lock(g_inter_token_timeout_mutex);
     if (g_inter_token_timeout_override.count() > 0) {
         return g_inter_token_timeout_override;
@@ -164,7 +164,7 @@ uint64_t steady_now_ns() {
             std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 std::mutex g_token_metrics_mutex;
 std::function<void(const TokenMetrics&)> g_token_metrics_hook;
 std::function<uint64_t()> g_token_metrics_clock;
@@ -173,7 +173,7 @@ std::function<bool(std::string&)> g_plugin_restart_hook;
 #endif
 
 uint64_t token_metrics_now_ns() {
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
     if (g_token_metrics_clock) {
         return g_token_metrics_clock();
@@ -222,7 +222,7 @@ void report_token_metrics(const TokenMetricsState& state, const std::string& mod
         metrics.ttft_ms,
         metrics.token_count,
         metrics.tokens_per_second);
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     std::function<void(const TokenMetrics&)> hook;
     {
         std::lock_guard<std::mutex> lock(g_token_metrics_mutex);
@@ -883,7 +883,7 @@ std::vector<std::string> InferenceEngine::getRegisteredRuntimes() const {
 
 bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
     error.clear();
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     {
         std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
         if (g_plugin_restart_hook) {
@@ -1376,7 +1376,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
                 ? usage.vram_total_bytes - usage.vram_used_bytes
                 : 0;
 
-#ifndef LLM_NODE_TESTING
+#ifndef ALLM_TESTING
         if (required > 0) {
             GpuDetector detector;
             const auto devices = detector.detect();
@@ -1473,7 +1473,7 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     });
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
     engines_ = std::move(registry);
 }
@@ -1661,4 +1661,4 @@ std::vector<ToolCall> detectToolCalls(const std::string& output) {
     return calls;
 }
 
-}  // namespace llm_node
+}  // namespace allm

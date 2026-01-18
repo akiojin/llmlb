@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 inline std::vector<std::string> normalize_stop_sequences(std::vector<std::string> sequences) {
     std::vector<std::string> out;
@@ -132,4 +132,4 @@ private:
     bool stopped_{false};
 };
 
-}  // namespace llm_node
+}  // namespace allm

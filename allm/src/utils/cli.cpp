@@ -5,7 +5,7 @@
 #include <cstring>
 #include <cstdlib>
 
-namespace llm_node {
+namespace allm {
 
 // Forward declarations for help messages
 std::string getRouterHelpMessage();
@@ -20,7 +20,7 @@ std::string getPsHelpMessage();
 
 std::string getHelpMessage() {
     std::ostringstream oss;
-    oss << "allm " << LLM_NODE_VERSION << " - LLM inference engine\n";
+    oss << "allm " << ALLM_VERSION << " - LLM inference engine\n";
     oss << "\n";
     oss << "USAGE:\n";
     oss << "    allm <COMMAND>\n";
@@ -52,13 +52,13 @@ std::string getServeHelpMessage() {
     oss << "    allm serve [OPTIONS]\n";
     oss << "\n";
     oss << "OPTIONS:\n";
-    oss << "    --port <PORT>    Server port (default: 32769, or LLM_NODE_PORT)\n";
+    oss << "    --port <PORT>    Server port (default: 32769, or ALLM_PORT)\n";
     oss << "    --host <HOST>    Bind address (default: 0.0.0.0)\n";
     oss << "    -h, --help       Print help\n";
     oss << "\n";
     oss << "ENVIRONMENT VARIABLES:\n";
-    oss << "    LLM_NODE_PORT                HTTP server port (default: 32769)\n";
-    oss << "    LLM_NODE_MODELS_DIR          Model files directory\n";
+    oss << "    ALLM_PORT                HTTP server port (default: 32769)\n";
+    oss << "    ALLM_MODELS_DIR          Model files directory\n";
     oss << "    LLM_ROUTER_HOST              Router URL for registration\n";
     oss << "    LLM_ROUTER_DEBUG             Enable debug logging\n";
     oss << "    HF_TOKEN                     HuggingFace API token (for gated models)\n";
@@ -207,7 +207,7 @@ std::string getPsHelpMessage() {
 
 std::string getVersionMessage() {
     std::ostringstream oss;
-    oss << "allm " << LLM_NODE_VERSION << "\n";
+    oss << "allm " << ALLM_VERSION << "\n";
     return oss.str();
 }
 
@@ -552,4 +552,4 @@ std::string subcommandToString(Subcommand subcommand) {
     }
 }
 
-}  // namespace llm_node
+}  // namespace allm

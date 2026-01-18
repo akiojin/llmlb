@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 /// T168: ツール定義（OpenAI互換）
 struct ToolDefinition {
@@ -50,4 +50,4 @@ private:
     static std::string generateToolCallId();
 };
 
-}  // namespace llm_node
+}  // namespace allm

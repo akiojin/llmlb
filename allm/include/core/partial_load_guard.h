@@ -14,7 +14,7 @@
 #include <vector>
 #include <cstddef>
 
-namespace llm_node {
+namespace allm {
 
 /**
  * @class PartialLoadGuard
@@ -112,4 +112,4 @@ private:
     void releaseAll();
 };
 
-}  // namespace llm_node
+}  // namespace allm

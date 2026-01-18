@@ -7,7 +7,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 std::optional<long long> parse_positive_integer(const char* value) {
@@ -32,11 +32,11 @@ std::optional<std::chrono::milliseconds> parse_timeout(const char* value, long l
 }
 
 bool is_test_mode() {
-    const char* env = std::getenv("LLM_NODE_WATCHDOG_TEST_MODE");
+    const char* env = std::getenv("ALLM_WATCHDOG_TEST_MODE");
     return env && env[0] != '\0' && env[0] != '0';
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 std::atomic<bool> g_timeout_triggered{false};
 #endif
 }  // namespace
@@ -66,10 +66,10 @@ RequestWatchdog::~RequestWatchdog() {
 }
 
 std::chrono::milliseconds RequestWatchdog::defaultTimeout() {
-    if (auto ms = parse_timeout(std::getenv("LLM_NODE_WATCHDOG_TIMEOUT_MS"), 1)) {
+    if (auto ms = parse_timeout(std::getenv("ALLM_WATCHDOG_TIMEOUT_MS"), 1)) {
         return *ms;
     }
-    if (auto secs = parse_timeout(std::getenv("LLM_NODE_WATCHDOG_TIMEOUT_SECS"), 1000)) {
+    if (auto secs = parse_timeout(std::getenv("ALLM_WATCHDOG_TIMEOUT_SECS"), 1000)) {
         return *secs;
     }
     return std::chrono::seconds(30);
@@ -85,7 +85,7 @@ void RequestWatchdog::run() {
 }
 
 void RequestWatchdog::triggerTimeout() {
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     if (is_test_mode()) {
         g_timeout_triggered.store(true);
         return;
@@ -101,7 +101,7 @@ void RequestWatchdog::triggerTimeout() {
     std::_Exit(124);
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 void RequestWatchdog::resetTestState() {
     g_timeout_triggered.store(false);
 }
@@ -111,4 +111,4 @@ bool RequestWatchdog::wasTimeoutTriggered() {
 }
 #endif
 
-}  // namespace llm_node
+}  // namespace allm

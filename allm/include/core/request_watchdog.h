@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-namespace llm_node {
+namespace allm {
 
 class RequestWatchdog {
 public:
@@ -22,7 +22,7 @@ public:
 
     static std::chrono::milliseconds defaultTimeout();
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     static void resetTestState();
     static bool wasTimeoutTriggered();
 #endif
@@ -39,4 +39,4 @@ private:
     bool stop_{false};
 };
 
-}  // namespace llm_node
+}  // namespace allm

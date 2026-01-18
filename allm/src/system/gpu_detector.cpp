@@ -15,7 +15,7 @@
 // Metal implementation is in gpu_detector.mm for macOS
 #ifndef __APPLE__
 
-namespace llm_node {
+namespace allm {
 
 GpuDetector::GpuDetector() {
     // Constructor
@@ -309,12 +309,12 @@ std::vector<GpuDevice> GpuDetector::detectRocm() {
     return devices;
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 void GpuDetector::setDetectedDevicesForTest(std::vector<GpuDevice> devices) {
     detected_devices_ = std::move(devices);
 }
 #endif
 
-} // namespace llm_node
+} // namespace allm
 
 #endif // !__APPLE__

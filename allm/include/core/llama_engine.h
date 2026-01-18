@@ -6,7 +6,7 @@
 
 #include "core/engine.h"
 
-namespace llm_node {
+namespace allm {
 
 class LlamaManager;
 class LlamaEngine : public Engine {
@@ -40,7 +40,7 @@ public:
     size_t getModelMaxContext(const ModelDescriptor& descriptor) const override;
     uint64_t getModelVramBytes(const ModelDescriptor& descriptor) const override;
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     using KvCacheResetHook = std::function<void(const char*)>;
     static void setKvCacheResetHookForTest(KvCacheResetHook hook);
     static void runKvCacheScopeForTest();
@@ -53,4 +53,4 @@ private:
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;
 };
 
-}  // namespace llm_node
+}  // namespace allm

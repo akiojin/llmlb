@@ -9,7 +9,7 @@
 #include <sstream>
 #include <memory>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace {
 
@@ -19,13 +19,13 @@ protected:
     void SetUp() override {
         // Save original environment
         const char* host = std::getenv("LLM_ROUTER_HOST");
-        const char* port = std::getenv("LLM_NODE_PORT");
+        const char* port = std::getenv("ALLM_PORT");
         original_host_ = host ? host : "";
         original_port_ = port ? port : "";
 
         // Set test environment
         setenv("LLM_ROUTER_HOST", "127.0.0.1", 1);
-        setenv("LLM_NODE_PORT", "11435", 1);
+        setenv("ALLM_PORT", "11435", 1);
     }
 
     void TearDown() override {
@@ -36,9 +36,9 @@ protected:
             setenv("LLM_ROUTER_HOST", original_host_.c_str(), 1);
         }
         if (original_port_.empty()) {
-            unsetenv("LLM_NODE_PORT");
+            unsetenv("ALLM_PORT");
         } else {
-            setenv("LLM_NODE_PORT", original_port_.c_str(), 1);
+            setenv("ALLM_PORT", original_port_.c_str(), 1);
         }
     }
 
@@ -139,7 +139,7 @@ TEST_F(CliReplTest, SessionMaintainsContext) {
 /// DISABLED: This test hangs in CI due to socket timeout on invalid port
 TEST_F(CliReplTest, DISABLED_HandlesConnectionError) {
     // Use invalid port to simulate connection failure
-    setenv("LLM_NODE_PORT", "59999", 1);
+    setenv("ALLM_PORT", "59999", 1);
 
     auto client = std::make_shared<CliClient>();
 
@@ -251,4 +251,4 @@ TEST_F(CliReplTest, DISABLED_ActualServerInteraction) {
 
 }  // namespace
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

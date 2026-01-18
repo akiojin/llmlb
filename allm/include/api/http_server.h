@@ -6,7 +6,7 @@
 #include <vector>
 #include <functional>
 
-namespace llm_node {
+namespace allm {
 
 class OpenAIEndpoints;
 class NodeEndpoints;
@@ -52,4 +52,4 @@ private:
     Logger logger_{};
 };
 
-}  // namespace llm_node
+}  // namespace allm

@@ -4,7 +4,7 @@
 #include <sstream>
 #include <fstream>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 ReplSession::ReplSession(
@@ -280,4 +280,4 @@ void ReplSession::handleStreamChunk(const std::string& chunk) {
 }
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

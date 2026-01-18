@@ -9,8 +9,8 @@
 
 namespace {
 
-using llm_node::ModelRegistry;
-using llm_node::GpuBackend;
+using allm::ModelRegistry;
+using allm::GpuBackend;
 
 // T2.3: listExecutableModels テスト
 

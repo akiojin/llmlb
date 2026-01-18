@@ -4,7 +4,7 @@
 #include "utils/cli.h"
 #include <iostream>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -27,4 +27,4 @@ int serve(const ServeOptions& options) {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

@@ -7,7 +7,7 @@
 #include <mutex>
 #include <thread>
 
-namespace llm_node {
+namespace allm {
 
 inline double usage_ratio(uint64_t used, uint64_t total) {
     if (total == 0) return 0.0;
@@ -61,4 +61,4 @@ private:
     std::thread worker_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

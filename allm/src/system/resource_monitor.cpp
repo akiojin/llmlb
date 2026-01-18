@@ -23,7 +23,7 @@
 #include <rocm_smi/rocm_smi.h>
 #endif
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 struct UsagePair {
@@ -203,6 +203,6 @@ void ResourceMonitor::handleThreshold(ResourceUsage& usage) {
     }
 }
 
-}  // namespace llm_node
+}  // namespace allm
 
 #endif  // __APPLE__

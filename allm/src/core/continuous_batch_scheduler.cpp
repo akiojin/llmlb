@@ -1,6 +1,6 @@
 #include "core/continuous_batch_scheduler.h"
 
-namespace llm_node {
+namespace allm {
 
 void ContinuousBatchScheduler::enqueue(Request request) {
     prefill_queue_.push_back(std::move(request));
@@ -134,4 +134,4 @@ size_t ContinuousBatchScheduler::cancelledCount() const {
     return count;
 }
 
-}  // namespace llm_node
+}  // namespace allm

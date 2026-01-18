@@ -7,7 +7,7 @@
 #include <optional>
 #include <cstdint>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace models {
 
@@ -72,4 +72,4 @@ struct DownloadProgress {
 
 }  // namespace models
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace llm_node {
+namespace allm {
 
 inline std::string urlEncodePathSegment(const std::string& input) {
     static const char* kHex = "0123456789ABCDEF";
@@ -25,5 +25,5 @@ inline std::string urlEncodePathSegment(const std::string& input) {
     return out;
 }
 
-}  // namespace llm_node
+}  // namespace allm
 

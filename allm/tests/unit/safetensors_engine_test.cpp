@@ -17,10 +17,10 @@
 #include "core/engine_plugin_api.h"
 
 namespace fs = std::filesystem;
-using llm_node::EngineHost;
-using llm_node::EngineHostContext;
-using llm_node::EnginePluginManifest;
-using llm_node::EngineRegistry;
+using allm::EngineHost;
+using allm::EngineHostContext;
+using allm::EnginePluginManifest;
+using allm::EngineRegistry;
 using json = nlohmann::json;
 
 // Platform-specific library extension

@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 /// T164-T165: Replica placement and round-robin load balancing
 class ReplicaManager {
@@ -50,4 +50,4 @@ private:
     std::vector<int> getHealthyReplicas(const ModelReplicas& replicas) const;
 };
 
-}  // namespace llm_node
+}  // namespace allm

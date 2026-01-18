@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 inline std::string toLowerAscii(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
@@ -167,4 +167,4 @@ inline bool isUrlAllowedByAllowlist(const std::string& url, const std::vector<st
     return false;
 }
 
-}  // namespace llm_node
+}  // namespace allm

@@ -9,7 +9,7 @@
 
 #include "models/model_downloader.h"
 
-namespace llm_node {
+namespace allm {
 
 enum class SyncState {
     Idle,
@@ -131,4 +131,4 @@ private:
     mutable SyncStatusInfo status_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

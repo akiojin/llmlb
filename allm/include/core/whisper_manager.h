@@ -12,7 +12,7 @@
 struct whisper_context;
 struct whisper_full_params;
 
-namespace llm_node {
+namespace allm {
 
 /// 音声認識結果
 struct TranscriptionResult {
@@ -108,4 +108,4 @@ private:
     whisper_full_params createParams(const TranscriptionParams& params) const;
 };
 
-}  // namespace llm_node
+}  // namespace allm

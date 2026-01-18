@@ -5,7 +5,7 @@
 #include <regex>
 #include <sstream>
 
-namespace llm_node {
+namespace allm {
 
 FunctionCallingDetector::FunctionCallingDetector(const std::vector<ToolDefinition>& tools)
     : tools_(tools) {}
@@ -168,4 +168,4 @@ std::string FunctionCallingDetector::generateToolCallId() {
     return id;
 }
 
-}  // namespace llm_node
+}  // namespace allm

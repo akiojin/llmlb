@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 struct DownloadConfig {
     int max_retries{2};
@@ -35,4 +35,4 @@ struct NodeConfig {
 NodeConfig loadNodeConfig();
 std::pair<NodeConfig, std::string> loadNodeConfigWithLog();
 
-}  // namespace llm_node
+}  // namespace allm

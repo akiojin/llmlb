@@ -4,7 +4,7 @@
 #include "cli/progress_renderer.h"
 #include <sstream>
 
-using namespace llm_node::cli;
+using namespace allm::cli;
 
 // Test basic progress rendering
 TEST(ProgressRendererTest, ConstructorWithTotal) {

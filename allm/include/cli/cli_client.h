@@ -6,7 +6,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 /// Callback for streaming responses
@@ -110,4 +110,4 @@ private:
 };
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

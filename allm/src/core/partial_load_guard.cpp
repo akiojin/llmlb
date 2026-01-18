@@ -8,7 +8,7 @@
 #include "core/partial_load_guard.h"
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 PartialLoadGuard::~PartialLoadGuard() {
     if (!committed_ && !resources_.empty()) {
@@ -93,4 +93,4 @@ void PartialLoadGuard::releaseAll() {
     total_vram_bytes_ = 0;
 }
 
-}  // namespace llm_node
+}  // namespace allm

@@ -7,7 +7,7 @@
 #include "metrics/prometheus_exporter.h"
 #include "system/gpu_detector.h"
 
-namespace llm_node {
+namespace allm {
 
 class NodeEndpoints {
 public:
@@ -26,4 +26,4 @@ private:
     std::vector<GpuDevice> gpu_devices_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

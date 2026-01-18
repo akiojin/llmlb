@@ -15,7 +15,7 @@
 #define MA_NO_THREADING
 #include "vendor/miniaudio/miniaudio.h"
 
-namespace llm_node {
+namespace allm {
 
 AudioEndpoints::AudioEndpoints(WhisperManager& whisper_manager)
     : whisper_manager_(whisper_manager), tts_manager_(nullptr) {
@@ -375,4 +375,4 @@ int AudioEndpoints::decodeAudioToFloat(const std::string& audio_data,
     return static_cast<int>(sample_rate);
 }
 
-}  // namespace llm_node
+}  // namespace allm

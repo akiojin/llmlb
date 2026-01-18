@@ -4,7 +4,7 @@
 #include <functional>
 #include <chrono>
 
-namespace llm_node {
+namespace allm {
 
 using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
 
@@ -44,4 +44,4 @@ private:
     std::string log_source_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

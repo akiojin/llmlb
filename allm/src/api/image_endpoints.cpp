@@ -8,7 +8,7 @@
 #include <chrono>
 #include <regex>
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
@@ -492,4 +492,4 @@ void ImageEndpoints::handleVariations(const httplib::Request& req,
     spdlog::info("Generated {} image variations", data_array.size());
 }
 
-}  // namespace llm_node
+}  // namespace allm

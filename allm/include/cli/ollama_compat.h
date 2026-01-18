@@ -5,7 +5,7 @@
 #include <optional>
 #include <cstdint>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 /// Information about an ollama model from manifest
@@ -78,4 +78,4 @@ private:
 };
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

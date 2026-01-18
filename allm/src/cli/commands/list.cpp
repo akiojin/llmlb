@@ -9,7 +9,7 @@
 #include <vector>
 #include <string>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -97,4 +97,4 @@ int list(const ModelOptions& /* options */) {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

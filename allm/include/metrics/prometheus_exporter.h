@@ -5,7 +5,7 @@
 #include <vector>
 #include <mutex>
 
-namespace llm_node::metrics {
+namespace allm::metrics {
 
 struct Gauge {
     std::string name;
@@ -31,4 +31,4 @@ class PrometheusExporter {
     std::vector<Counter> counters_;
 };
 
-}  // namespace llm_node::metrics
+}  // namespace allm::metrics

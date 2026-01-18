@@ -9,7 +9,7 @@
 
 namespace fs = std::filesystem;
 
-namespace llm_node {
+namespace allm {
 
 class TempVisionDir {
 public:
@@ -162,4 +162,4 @@ TEST_F(VisionProcessorTest, IgnoresNonMmprojGgufFiles) {
     EXPECT_FALSE(result.has_value());
 }
 
-}  // namespace llm_node
+}  // namespace allm

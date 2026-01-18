@@ -6,7 +6,7 @@
 
 #include "utils/config.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 class EnvGuard {
@@ -32,8 +32,8 @@ private:
 };
 
 TEST(UtilsConfigTest, LoadsNodeConfigFromFileWithLock) {
-    EnvGuard guard({"LLM_NODE_CONFIG", "LLM_MODELS_DIR",
-                    "LLM_NODE_PORT", "LLM_NODE_ENGINE_PLUGINS_DIR"});
+    EnvGuard guard({"ALLM_CONFIG", "LLM_MODELS_DIR",
+                    "ALLM_PORT", "ALLM_ENGINE_PLUGINS_DIR"});
 
     fs::path tmp = fs::temp_directory_path() / "nodecfg.json";
     std::ofstream(tmp) << R"({
@@ -42,7 +42,7 @@ TEST(UtilsConfigTest, LoadsNodeConfigFromFileWithLock) {
         "engine_plugins_dir": "/tmp/engines",
         "require_gpu": false
     })";
-    setenv("LLM_NODE_CONFIG", tmp.string().c_str(), 1);
+    setenv("ALLM_CONFIG", tmp.string().c_str(), 1);
 
     auto info = loadNodeConfigWithLog();
     auto cfg = info.first;
@@ -57,14 +57,14 @@ TEST(UtilsConfigTest, LoadsNodeConfigFromFileWithLock) {
 }
 
 TEST(UtilsConfigTest, EnvOverridesNodeConfig) {
-    EnvGuard guard({"LLM_MODELS_DIR", "LLM_NODE_PORT", "LLM_NODE_CONFIG",
-                    "LLM_NODE_MODELS_DIR", "LLM_NODE_ENGINE_PLUGINS_DIR"});
+    EnvGuard guard({"LLM_MODELS_DIR", "ALLM_PORT", "ALLM_CONFIG",
+                    "ALLM_MODELS_DIR", "ALLM_ENGINE_PLUGINS_DIR"});
 
-    unsetenv("LLM_NODE_CONFIG");
+    unsetenv("ALLM_CONFIG");
     // Test with deprecated env var names (fallback)
     setenv("LLM_MODELS_DIR", "/env/models", 1);
-    setenv("LLM_NODE_PORT", "19000", 1);
-    setenv("LLM_NODE_ENGINE_PLUGINS_DIR", "/env/engines", 1);
+    setenv("ALLM_PORT", "19000", 1);
+    setenv("ALLM_ENGINE_PLUGINS_DIR", "/env/engines", 1);
     auto cfg = loadNodeConfig();
     EXPECT_EQ(cfg.models_dir, "/env/models");
     EXPECT_EQ(cfg.engine_plugins_dir, "/env/engines");
@@ -73,14 +73,14 @@ TEST(UtilsConfigTest, EnvOverridesNodeConfig) {
 }
 
 TEST(UtilsConfigTest, NewEnvVarsTakePriorityOverDeprecated) {
-    EnvGuard guard({"LLM_NODE_MODELS_DIR", "LLM_MODELS_DIR",
-                    "LLM_NODE_PORT", "LLM_NODE_CONFIG",
-                    "LLM_NODE_ENGINE_PLUGINS_DIR"});
+    EnvGuard guard({"ALLM_MODELS_DIR", "LLM_MODELS_DIR",
+                    "ALLM_PORT", "ALLM_CONFIG",
+                    "ALLM_ENGINE_PLUGINS_DIR"});
 
-    unsetenv("LLM_NODE_CONFIG");
+    unsetenv("ALLM_CONFIG");
 
     // Set both new and deprecated env vars
-    setenv("LLM_NODE_MODELS_DIR", "/new/models", 1);
+    setenv("ALLM_MODELS_DIR", "/new/models", 1);
     setenv("LLM_MODELS_DIR", "/old/models", 1);  // Should be ignored
     auto cfg = loadNodeConfig();
     EXPECT_EQ(cfg.models_dir, "/new/models");

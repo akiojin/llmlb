@@ -8,7 +8,7 @@
 #include "core/plugin_logger.h"
 #include <sstream>
 
-namespace llm_node {
+namespace allm {
 
 PluginLogger::PluginLogger(const std::string& plugin_id,
                            std::shared_ptr<spdlog::logger> logger)
@@ -127,4 +127,4 @@ std::string PluginLogger::levelToString(LogLevel level) {
     }
 }
 
-}  // namespace llm_node
+}  // namespace allm

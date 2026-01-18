@@ -41,27 +41,27 @@
 #include "api/image_endpoints.h"
 #endif
 
-int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
-    llm_node::g_running_flag.store(true);
+int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
+    allm::g_running_flag.store(true);
 
     bool server_started = false;
     bool llama_backend_initialized = false;
 
     try {
-        llm_node::logger::init_from_env();
-        llm_node::set_ready(false);
+        allm::logger::init_from_env();
+        allm::set_ready(false);
         int node_port = cfg.node_port;
 
         // Initialize llama.cpp backend
         spdlog::info("Initializing llama.cpp backend...");
-        llm_node::LlamaManager::initBackend();
+        allm::LlamaManager::initBackend();
         llama_backend_initialized = true;
 
         spdlog::info("Node port: {}", node_port);
 
         // GPU detection
         std::cout << "Detecting GPUs..." << std::endl;
-        llm_node::GpuDetector gpu_detector;
+        allm::GpuDetector gpu_detector;
         auto gpus = gpu_detector.detect();
         if (cfg.require_gpu && !gpu_detector.hasGpu()) {
             std::cerr << "Error: No GPU detected. GPU is required for node operation." << std::endl;
@@ -74,7 +74,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         std::string bind_address = cfg.bind_address.empty() ? std::string("0.0.0.0") : cfg.bind_address;
 
         // Initialize model registry (empty for now, will sync after registration)
-        llm_node::ModelRegistry registry;
+        allm::ModelRegistry registry;
         registry.setGpuBackend(gpu_detector.getGpuBackend());
 
         // Determine models directory
@@ -83,28 +83,28 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
                                      : cfg.models_dir;
 
         // Initialize LlamaManager and ModelStorage for inference engine
-        llm_node::LlamaManager llama_manager(models_dir);
-        llm_node::ModelStorage model_storage(models_dir);
+        allm::LlamaManager llama_manager(models_dir);
+        allm::ModelStorage model_storage(models_dir);
 
         std::vector<std::string> supported_runtimes{"llama_cpp"};
 
 #ifdef USE_WHISPER
         // Initialize WhisperManager for ASR
-        llm_node::WhisperManager whisper_manager(models_dir);
+        allm::WhisperManager whisper_manager(models_dir);
         spdlog::info("WhisperManager initialized for ASR support");
         supported_runtimes.push_back("whisper_cpp");
 #endif
 
 #ifdef USE_ONNX_RUNTIME
         // Initialize OnnxTtsManager for TTS
-        llm_node::OnnxTtsManager tts_manager(models_dir);
+        allm::OnnxTtsManager tts_manager(models_dir);
         spdlog::info("OnnxTtsManager initialized for TTS support");
         supported_runtimes.push_back("onnx_runtime");
 #endif
 
 #ifdef USE_SD
         // Initialize SDManager for image generation
-        llm_node::SDManager sd_manager(models_dir);
+        allm::SDManager sd_manager(models_dir);
         spdlog::info("SDManager initialized for image generation support");
         supported_runtimes.push_back("stable_diffusion");
 #endif
@@ -146,8 +146,8 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         fflush(stderr);
 
         // Resource monitoring (VRAM/RAM watermark + LRU unload)
-        llm_node::ResourceMonitor resource_monitor([&llama_manager]() {
-            if (llm_node::active_request_count() > 0) {
+        allm::ResourceMonitor resource_monitor([&llama_manager]() {
+            if (allm::active_request_count() > 0) {
                 spdlog::info("Resource monitor: active requests in flight; skipping LRU unload");
                 return false;
             }
@@ -164,13 +164,13 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         fflush(stderr);
 
         // Create model_sync for local model management (standalone mode - no router)
-        auto model_sync = std::make_shared<llm_node::ModelSync>("", models_dir);
+        auto model_sync = std::make_shared<allm::ModelSync>("", models_dir);
         model_sync->setSupportedRuntimes(supported_runtimes);
         if (!cfg.origin_allowlist.empty()) {
             model_sync->setOriginAllowlist(cfg.origin_allowlist);
         }
 
-        auto model_resolver = std::make_shared<llm_node::ModelResolver>(
+        auto model_resolver = std::make_shared<allm::ModelResolver>(
             cfg.models_dir,
             "",  // No router URL in standalone mode
             ""); // No API key needed
@@ -183,7 +183,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         fflush(stderr);
 
         // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
-        llm_node::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
+        allm::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
 
         fprintf(stderr, "[DEBUG] main: InferenceEngine created, checking plugins...\n");
         fflush(stderr);
@@ -235,19 +235,19 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         }
 
         // Start HTTP server BEFORE registration (router checks /v1/models endpoint)
-        llm_node::OpenAIEndpoints openai(registry, engine, cfg, gpu_detector.getGpuBackend());
-        llm_node::NodeEndpoints node_endpoints;
+        allm::OpenAIEndpoints openai(registry, engine, cfg, gpu_detector.getGpuBackend());
+        allm::NodeEndpoints node_endpoints;
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
         node_endpoints.setGpuDevices(gpus);
-        llm_node::HttpServer server(node_port, openai, node_endpoints, bind_address);
+        allm::HttpServer server(node_port, openai, node_endpoints, bind_address);
 
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
 #ifdef USE_ONNX_RUNTIME
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager, tts_manager);
+        allm::AudioEndpoints audio_endpoints(whisper_manager, tts_manager);
         spdlog::info("Audio endpoints registered for ASR + TTS");
 #else
-        llm_node::AudioEndpoints audio_endpoints(whisper_manager);
+        allm::AudioEndpoints audio_endpoints(whisper_manager);
         spdlog::info("Audio endpoints registered for ASR");
 #endif
         audio_endpoints.registerRoutes(server.getServer());
@@ -255,7 +255,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
 #ifdef USE_SD
         // Register image endpoints for image generation
-        llm_node::ImageEndpoints image_endpoints(sd_manager);
+        allm::ImageEndpoints image_endpoints(sd_manager);
         image_endpoints.registerRoutes(server.getServer());
         spdlog::info("Image endpoints registered for image generation");
 #endif
@@ -297,7 +297,7 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Model pull endpoint registered: POST /api/models/pull");
 
         // Initialize OllamaCompat for reading ~/.ollama/models/
-        llm_node::cli::OllamaCompat ollama_compat;
+        allm::cli::OllamaCompat ollama_compat;
 
         // Ollama-compatible API: GET /api/tags - list all available models
         server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine](const httplib::Request&, httplib::Response& res) {
@@ -391,8 +391,8 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
             nlohmann::json response;
 
             // Check if it's an ollama model
-            if (llm_node::cli::OllamaCompat::hasOllamaPrefix(model_name)) {
-                std::string ollama_name = llm_node::cli::OllamaCompat::stripOllamaPrefix(model_name);
+            if (allm::cli::OllamaCompat::hasOllamaPrefix(model_name)) {
+                std::string ollama_name = allm::cli::OllamaCompat::stripOllamaPrefix(model_name);
                 auto info = ollama_compat.getModel(ollama_name);
                 if (info) {
                     response["modelfile"] = "";
@@ -473,16 +473,16 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         registry.setModels(local_model_names);
         spdlog::info("Registered {} local models", local_model_names.size());
 
-        llm_node::set_ready(true);
+        allm::set_ready(true);
 
         std::cout << "Node initialized successfully, ready to serve requests" << std::endl;
 
         // Main loop
         if (single_iteration) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            llm_node::request_shutdown();
+            allm::request_shutdown();
         }
-        while (llm_node::is_running()) {
+        while (allm::is_running()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
@@ -494,13 +494,13 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
         // Free llama.cpp backend
         if (llama_backend_initialized) {
             spdlog::info("Freeing llama.cpp backend...");
-            llm_node::LlamaManager::freeBackend();
+            allm::LlamaManager::freeBackend();
         }
 
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
         if (llama_backend_initialized) {
-            llm_node::LlamaManager::freeBackend();
+            allm::LlamaManager::freeBackend();
         }
         if (server_started) {
             // best-effort stop
@@ -514,13 +514,13 @@ int run_node(const llm_node::NodeConfig& cfg, bool single_iteration) {
 
 void signalHandler(int signal) {
     std::cout << "Received signal " << signal << ", shutting down..." << std::endl;
-    llm_node::request_shutdown();
+    allm::request_shutdown();
 }
 
-#ifndef LLM_NODE_TESTING
+#ifndef ALLM_TESTING
 int main(int argc, char* argv[]) {
     // Parse CLI arguments first
-    auto cli_result = llm_node::parseCliArgs(argc, argv);
+    auto cli_result = allm::parseCliArgs(argc, argv);
     if (cli_result.should_exit) {
         std::cout << cli_result.output;
         return cli_result.exit_code;
@@ -532,9 +532,9 @@ int main(int argc, char* argv[]) {
 
     // Branch based on subcommand
     switch (cli_result.subcommand) {
-        case llm_node::Subcommand::Serve: {
-            std::cout << "allm v" << LLM_NODE_VERSION << " starting..." << std::endl;
-            auto cfg = llm_node::loadNodeConfig();
+        case allm::Subcommand::Serve: {
+            std::cout << "allm v" << ALLM_VERSION << " starting..." << std::endl;
+            auto cfg = allm::loadNodeConfig();
             // Override config with CLI options if specified
             if (cli_result.serve_options.port != 0) {
                 cfg.node_port = cli_result.serve_options.port;
@@ -545,49 +545,49 @@ int main(int argc, char* argv[]) {
             return run_node(cfg, /*single_iteration=*/false);
         }
 
-        case llm_node::Subcommand::Run:
-            return llm_node::cli::commands::run(cli_result.run_options);
+        case allm::Subcommand::Run:
+            return allm::cli::commands::run(cli_result.run_options);
 
-        case llm_node::Subcommand::Pull:
-            return llm_node::cli::commands::pull(cli_result.pull_options);
+        case allm::Subcommand::Pull:
+            return allm::cli::commands::pull(cli_result.pull_options);
 
-        case llm_node::Subcommand::List:
-            return llm_node::cli::commands::list(cli_result.model_options);
+        case allm::Subcommand::List:
+            return allm::cli::commands::list(cli_result.model_options);
 
-        case llm_node::Subcommand::Show:
-            return llm_node::cli::commands::show(cli_result.show_options);
+        case allm::Subcommand::Show:
+            return allm::cli::commands::show(cli_result.show_options);
 
-        case llm_node::Subcommand::Rm:
-            return llm_node::cli::commands::rm(cli_result.model_options);
+        case allm::Subcommand::Rm:
+            return allm::cli::commands::rm(cli_result.model_options);
 
-        case llm_node::Subcommand::Stop:
-            return llm_node::cli::commands::stop(cli_result.model_options);
+        case allm::Subcommand::Stop:
+            return allm::cli::commands::stop(cli_result.model_options);
 
-        case llm_node::Subcommand::Ps:
-            return llm_node::cli::commands::ps();
+        case allm::Subcommand::Ps:
+            return allm::cli::commands::ps();
 
-        case llm_node::Subcommand::RouterEndpoints:
-            return llm_node::cli::commands::router_endpoints();
+        case allm::Subcommand::RouterEndpoints:
+            return allm::cli::commands::router_endpoints();
 
-        case llm_node::Subcommand::RouterModels:
-            return llm_node::cli::commands::router_models();
+        case allm::Subcommand::RouterModels:
+            return allm::cli::commands::router_models();
 
-        case llm_node::Subcommand::RouterStatus:
-            return llm_node::cli::commands::router_status();
+        case allm::Subcommand::RouterStatus:
+            return allm::cli::commands::router_status();
 
-        case llm_node::Subcommand::None:
+        case allm::Subcommand::None:
         default:
             // Default to serve (legacy behavior for backward compatibility)
-            std::cout << "allm v" << LLM_NODE_VERSION << " starting..." << std::endl;
-            auto cfg = llm_node::loadNodeConfig();
+            std::cout << "allm v" << ALLM_VERSION << " starting..." << std::endl;
+            auto cfg = allm::loadNodeConfig();
             return run_node(cfg, /*single_iteration=*/false);
     }
 }
 #endif
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 extern "C" int llm_node_run_for_test() {
-    auto cfg = llm_node::loadNodeConfig();
+    auto cfg = allm::loadNodeConfig();
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);
 }

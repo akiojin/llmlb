@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 TEST(SDManagerTest, ToMaskChannelConvertsRgbToGray) {
     const int width = 2;
@@ -51,4 +51,4 @@ TEST(SDManagerTest, MakeSolidMaskReturnsEmptyForInvalidDimensions) {
     EXPECT_TRUE(SDManager::makeSolidMask(-1, 1, 42).empty());
 }
 
-}  // namespace llm_node
+}  // namespace allm

@@ -5,7 +5,7 @@
 
 #include "system/resource_monitor.h"
 
-namespace llm_node {
+namespace allm {
 
 InferenceCache::InferenceCache(size_t max_bytes)
     : max_bytes_(max_bytes) {
@@ -158,4 +158,4 @@ size_t InferenceCache::estimateEntryBytes(const CacheEntry& entry) {
            64;  // overhead for map/list node
 }
 
-}  // namespace llm_node
+}  // namespace allm

@@ -8,10 +8,10 @@
 #include "core/engine_registry.h"
 #include "core/engine_plugin_api.h"
 
-using llm_node::EngineHost;
-using llm_node::EngineHostContext;
-using llm_node::EngineRegistry;
-using llm_node::EnginePluginManifest;
+using allm::EngineHost;
+using allm::EngineHostContext;
+using allm::EngineRegistry;
+using allm::EnginePluginManifest;
 namespace fs = std::filesystem;
 
 TEST(EngineHostTest, RejectsMissingEngineId) {
@@ -216,10 +216,10 @@ TEST(EngineHostTest, SkipsPluginWithUnsupportedGpuTarget) {
 // T183, T190: プラグインログ統合テスト
 // =============================================================================
 
-using llm_node::PluginLogLevel;
-using llm_node::PluginLogCallback;
-using llm_node::pluginLogLevelToString;
-using llm_node::defaultPluginLogHandler;
+using allm::PluginLogLevel;
+using allm::PluginLogCallback;
+using allm::pluginLogLevelToString;
+using allm::defaultPluginLogHandler;
 
 TEST(PluginLogTest, EngineHostContextHasLogCallbackField) {
     EngineHostContext context;

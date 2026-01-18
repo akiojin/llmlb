@@ -8,7 +8,7 @@
 #include "utils/cli.h"
 #include "utils/version.h"
 
-using namespace llm_node;
+using namespace allm;
 
 // Test --help flag
 TEST(CliTest, HelpFlagShowsHelpMessage) {
@@ -49,7 +49,7 @@ TEST(CliTest, VersionFlagShowsVersion) {
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);
-    EXPECT_TRUE(result.output.find(LLM_NODE_VERSION) != std::string::npos);
+    EXPECT_TRUE(result.output.find(ALLM_VERSION) != std::string::npos);
 }
 
 TEST(CliTest, ShortVersionFlagShowsVersion) {
@@ -62,7 +62,7 @@ TEST(CliTest, ShortVersionFlagShowsVersion) {
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);
-    EXPECT_TRUE(result.output.find(LLM_NODE_VERSION) != std::string::npos);
+    EXPECT_TRUE(result.output.find(ALLM_VERSION) != std::string::npos);
 }
 
 // Test no arguments (should continue to server mode)
@@ -104,6 +104,6 @@ TEST(CliTest, NodeHelpMessageContainsEnvironmentVariables) {
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);
-    EXPECT_TRUE(result.output.find("LLM_NODE_MODELS_DIR") != std::string::npos);
-    EXPECT_TRUE(result.output.find("LLM_NODE_PORT") != std::string::npos);
+    EXPECT_TRUE(result.output.find("ALLM_MODELS_DIR") != std::string::npos);
+    EXPECT_TRUE(result.output.find("ALLM_PORT") != std::string::npos);
 }

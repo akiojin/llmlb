@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 /// T161: Prefix Cache entry storing KV cache state for a prompt prefix
 struct PrefixCacheEntry {
@@ -62,4 +62,4 @@ private:
     void evictIfNeeded();
 };
 
-}  // namespace llm_node
+}  // namespace allm

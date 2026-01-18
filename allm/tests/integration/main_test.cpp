@@ -73,10 +73,10 @@ TEST(MainTest, DISABLED_RunsWithStubRouterAndShutsDownOnFlag) {
 
     TempDir models;
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
-    setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
+    setenv("ALLM_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
-    setenv("LLM_NODE_API_KEY", "sk_test_node", 1);
+    setenv("ALLM_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
     std::thread node_thread([&]() { exit_code = llm_node_run_for_test(); });
@@ -92,7 +92,7 @@ TEST(MainTest, DISABLED_RunsWithStubRouterAndShutsDownOnFlag) {
         }
     }
 
-    llm_node::request_shutdown();
+    allm::request_shutdown();
     node_thread.join();
 
     router.stop();
@@ -117,10 +117,10 @@ TEST(MainTest, DISABLED_FailsWhenRouterRegistrationFails) {
 
     TempDir models;
     setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
-    setenv("LLM_NODE_PORT", std::to_string(node_port).c_str(), 1);
+    setenv("ALLM_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
-    setenv("LLM_NODE_API_KEY", "sk_test_node", 1);
+    setenv("ALLM_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
     std::atomic<bool> node_exited{false};
@@ -136,7 +136,7 @@ TEST(MainTest, DISABLED_FailsWhenRouterRegistrationFails) {
 
     // If node didn't exit, force shutdown and fail
     if (!node_exited) {
-        llm_node::request_shutdown();
+        allm::request_shutdown();
         node_thread.join();
         router.stop();
         if (router_thread.joinable()) router_thread.join();

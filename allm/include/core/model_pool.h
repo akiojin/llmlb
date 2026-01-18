@@ -12,7 +12,7 @@
 
 #include "core/llama_manager.h"
 
-namespace llm_node {
+namespace allm {
 
 class ModelPool {
 public:
@@ -62,4 +62,4 @@ private:
     size_t reserved_memory_{0};  // ロード中モデルの予約メモリ
 };
 
-}  // namespace llm_node
+}  // namespace allm

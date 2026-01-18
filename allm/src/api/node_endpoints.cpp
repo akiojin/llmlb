@@ -8,7 +8,7 @@
 #include "system/resource_monitor.h"
 #include "utils/logger.h"
 
-namespace llm_node {
+namespace allm {
 
 NodeEndpoints::NodeEndpoints() : health_status_("ok") {}
 
@@ -169,7 +169,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Get("/startup", [](const httplib::Request&, httplib::Response& res) {
-        if (llm_node::is_ready()) {
+        if (allm::is_ready()) {
             res.set_content(R"({"status":"ready"})", "application/json");
         } else {
             res.status = 503;
@@ -222,4 +222,4 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
     });
 }
 
-}  // namespace llm_node
+}  // namespace allm

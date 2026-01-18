@@ -8,7 +8,7 @@
 #import <Metal/Metal.h>
 #endif
 
-namespace llm_node {
+namespace allm {
 
 GpuDetector::GpuDetector() {
     // Constructor
@@ -200,12 +200,12 @@ std::vector<GpuDevice> GpuDetector::detectRocm() {
     return std::vector<GpuDevice>();
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 void GpuDetector::setDetectedDevicesForTest(std::vector<GpuDevice> devices) {
     detected_devices_ = std::move(devices);
 }
 #endif
 
-} // namespace llm_node
+} // namespace allm
 
 #endif // __APPLE__

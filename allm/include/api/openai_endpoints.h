@@ -9,7 +9,7 @@
 #include "utils/config.h"
 #include "system/gpu_detector.h"
 
-namespace llm_node {
+namespace allm {
 
 // OpenAI互換APIのトークン使用量
 struct TokenUsage {
@@ -59,4 +59,4 @@ private:
     bool validateModel(const std::string& model, const std::string& capability, httplib::Response& res);
 };
 
-}  // namespace llm_node
+}  // namespace allm

@@ -10,7 +10,7 @@
 
 #include "models/model_descriptor.h"
 
-namespace llm_node {
+namespace allm {
 
 struct ModelInfo {
     std::string name;          // Model name (e.g., "gpt-oss-20b")
@@ -63,4 +63,4 @@ private:
 };
 
 
-}  // namespace llm_node
+}  // namespace allm

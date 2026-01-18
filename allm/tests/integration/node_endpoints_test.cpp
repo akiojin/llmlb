@@ -9,7 +9,7 @@
 #include "runtime/state.h"
 #include "utils/config.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(NodeEndpointsTest, PullAndHealth) {
     ModelRegistry registry;
@@ -52,7 +52,7 @@ TEST(NodeEndpointsTest, LogLevelGetAndSet) {
 }
 
 TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
-    llm_node::set_ready(false);
+    allm::set_ready(false);
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
@@ -66,7 +66,7 @@ TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
     ASSERT_TRUE(not_ready);
     EXPECT_EQ(not_ready->status, 503);
 
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     auto ready = cli.Get("/startup");
     ASSERT_TRUE(ready);
     EXPECT_EQ(ready->status, 200);
@@ -142,7 +142,7 @@ TEST(HttpServerTest, TraceparentPropagatesTraceId) {
 
 // Phase 1.2: GET /v0/health endpoint test
 TEST(NodeEndpointsTest, V0HealthReturnsGpuAndLoadInfo) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
@@ -176,7 +176,7 @@ TEST(NodeEndpointsTest, V0HealthReturnsGpuAndLoadInfo) {
 }
 
 TEST(NodeEndpointsTest, V0HealthReturnsOfflineWhenNotReady) {
-    llm_node::set_ready(false);
+    allm::set_ready(false);
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
@@ -191,6 +191,6 @@ TEST(NodeEndpointsTest, V0HealthReturnsOfflineWhenNotReady) {
     EXPECT_EQ(resp->status, 200);
     EXPECT_NE(resp->body.find("\"offline\""), std::string::npos);
 
-    llm_node::set_ready(true);  // Reset for other tests
+    allm::set_ready(true);  // Reset for other tests
     server.stop();
 }

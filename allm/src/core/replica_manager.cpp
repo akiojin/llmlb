@@ -3,7 +3,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 void ReplicaManager::registerReplica(const std::string& model_name, int gpu_id) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -118,4 +118,4 @@ bool ReplicaManager::isReplicaHealthy(const std::string& model_name, int gpu_id)
     return it->second.failed_gpus.find(gpu_id) == it->second.failed_gpus.end();
 }
 
-}  // namespace llm_node
+}  // namespace allm

@@ -5,16 +5,16 @@
 
 namespace {
 
-using llm_node::GpuDetector;
+using allm::GpuDetector;
 
 // Helper function for testing GpuBackend enum
-std::string gpuBackendToString(llm_node::GpuBackend backend) {
+std::string gpuBackendToString(allm::GpuBackend backend) {
     switch (backend) {
-        case llm_node::GpuBackend::Metal: return "metal";
-        case llm_node::GpuBackend::Cuda: return "cuda";
-        case llm_node::GpuBackend::Rocm: return "rocm";
-        case llm_node::GpuBackend::DirectML: return "directml";
-        case llm_node::GpuBackend::Cpu: return "cpu";
+        case allm::GpuBackend::Metal: return "metal";
+        case allm::GpuBackend::Cuda: return "cuda";
+        case allm::GpuBackend::Rocm: return "rocm";
+        case allm::GpuBackend::DirectML: return "directml";
+        case allm::GpuBackend::Cpu: return "cpu";
         default: return "unknown";
     }
 }
@@ -31,7 +31,7 @@ TEST(GpuDetectorSmokeTest, DefaultsAreEmpty) {
 TEST(GpuDetectorTest, TotalMemorySumsAvailableDevicesOnly) {
     GpuDetector detector;
 
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "NVIDIA A100", 40ull * 1024 * 1024 * 1024, 30ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {1, "AMD Test", 16ull * 1024 * 1024 * 1024, 8ull * 1024 * 1024 * 1024, "gfx1100", "amd", false},
         {2, "Apple M3", 8ull * 1024 * 1024 * 1024, 7ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
@@ -47,7 +47,7 @@ TEST(GpuDetectorTest, TotalMemorySumsAvailableDevicesOnly) {
 TEST(GpuDetectorTest, CapabilityScoreWeightsByVendorAndComputeCapability) {
     GpuDetector detector;
 
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "NVIDIA 8GB", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.6", "nvidia", true},
         {1, "AMD 16GB", 16ull * 1024 * 1024 * 1024, 12ull * 1024 * 1024 * 1024, "gfx1100", "amd", true},
         {2, "Apple 4GB", 4ull * 1024 * 1024 * 1024, 3ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
@@ -72,7 +72,7 @@ TEST(GpuDetectorTest, RequireGpuReflectsAvailability) {
     detector.setDetectedDevicesForTest({});
     EXPECT_FALSE(detector.requireGpu());
 
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {1, "Disabled", 4ull * 1024 * 1024 * 1024, 1ull * 1024 * 1024 * 1024, "5.0", "nvidia", false},
     };
@@ -82,7 +82,7 @@ TEST(GpuDetectorTest, RequireGpuReflectsAvailability) {
 
 TEST(GpuDetectorTest, SelectGpuPrefersLoadedDevice) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, 2ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {1, "NVIDIA", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
     };
@@ -95,7 +95,7 @@ TEST(GpuDetectorTest, SelectGpuPrefersLoadedDevice) {
 
 TEST(GpuDetectorTest, SelectGpuChoosesMostFreeMemory) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 8ull * 1024 * 1024 * 1024, 1ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {1, "GPU1", 8ull * 1024 * 1024 * 1024, 5ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {2, "GPU2", 8ull * 1024 * 1024 * 1024, 3ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
@@ -109,7 +109,7 @@ TEST(GpuDetectorTest, SelectGpuChoosesMostFreeMemory) {
 
 TEST(GpuDetectorTest, SelectGpuSkipsUnavailableDevices) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 8ull * 1024 * 1024 * 1024, 7ull * 1024 * 1024 * 1024, "8.0", "nvidia", false},
         {1, "GPU1", 8ull * 1024 * 1024 * 1024, 4ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
     };
@@ -124,7 +124,7 @@ TEST(GpuDetectorTest, SelectGpuSkipsUnavailableDevices) {
 
 TEST(GpuDetectorTest, SelectGpuReturnsNulloptWhenAllUnavailable) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", false},
         {1, "GPU1", 8ull * 1024 * 1024 * 1024, 4ull * 1024 * 1024 * 1024, "8.0", "nvidia", false},
     };
@@ -136,7 +136,7 @@ TEST(GpuDetectorTest, SelectGpuReturnsNulloptWhenAllUnavailable) {
 
 TEST(GpuDetectorTest, SelectGpuWorksWithSingleGpu) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 16ull * 1024 * 1024 * 1024, 10ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
     };
     detector.setDetectedDevicesForTest(devices);
@@ -148,7 +148,7 @@ TEST(GpuDetectorTest, SelectGpuWorksWithSingleGpu) {
 
 TEST(GpuDetectorTest, SelectGpuTieBreaksById) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 8ull * 1024 * 1024 * 1024, 5ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {1, "GPU1", 8ull * 1024 * 1024 * 1024, 5ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {2, "GPU2", 8ull * 1024 * 1024 * 1024, 5ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
@@ -163,7 +163,7 @@ TEST(GpuDetectorTest, SelectGpuTieBreaksById) {
 
 TEST(GpuDetectorTest, SelectGpuWithPreferredGpuOverridesMemoryCheck) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 8ull * 1024 * 1024 * 1024, 1ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
         {1, "GPU1", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
     };
@@ -177,7 +177,7 @@ TEST(GpuDetectorTest, SelectGpuWithPreferredGpuOverridesMemoryCheck) {
 
 TEST(GpuDetectorTest, SelectGpuIgnoresPreferredIfUnavailable) {
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "GPU0", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", false},
         {1, "GPU1", 8ull * 1024 * 1024 * 1024, 4ull * 1024 * 1024 * 1024, "8.0", "nvidia", true},
     };
@@ -192,7 +192,7 @@ TEST(GpuDetectorTest, SelectGpuIgnoresPreferredIfUnavailable) {
 // T2.1: GpuBackend 列挙型テスト
 
 TEST(GpuBackendTest, GpuBackendToStringReturnsCorrectValue) {
-    using llm_node::GpuBackend;
+    using allm::GpuBackend;
     EXPECT_EQ(gpuBackendToString(GpuBackend::Metal), "metal");
     EXPECT_EQ(gpuBackendToString(GpuBackend::Cuda), "cuda");
     EXPECT_EQ(gpuBackendToString(GpuBackend::Rocm), "rocm");
@@ -202,7 +202,7 @@ TEST(GpuBackendTest, GpuBackendToStringReturnsCorrectValue) {
 // T2.2: getGpuBackend テスト
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsCpuWhenNoGpu) {
-    using llm_node::GpuBackend;
+    using allm::GpuBackend;
     GpuDetector detector;
     detector.setDetectedDevicesForTest({});
 
@@ -210,9 +210,9 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsCpuWhenNoGpu) {
 }
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsCudaForNvidia) {
-    using llm_node::GpuBackend;
+    using allm::GpuBackend;
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "NVIDIA RTX 4090", 24ull * 1024 * 1024 * 1024, 20ull * 1024 * 1024 * 1024, "8.9", "nvidia", true},
     };
     detector.setDetectedDevicesForTest(devices);
@@ -221,9 +221,9 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsCudaForNvidia) {
 }
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsMetalForApple) {
-    using llm_node::GpuBackend;
+    using allm::GpuBackend;
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "Apple M3 Max", 48ull * 1024 * 1024 * 1024, 40ull * 1024 * 1024 * 1024, "Metal3", "apple", true},
     };
     detector.setDetectedDevicesForTest(devices);
@@ -232,9 +232,9 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsMetalForApple) {
 }
 
 TEST(GpuDetectorTest, GetGpuBackendReturnsRocmForAmd) {
-    using llm_node::GpuBackend;
+    using allm::GpuBackend;
     GpuDetector detector;
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "AMD Radeon RX 7900 XTX", 24ull * 1024 * 1024 * 1024, 20ull * 1024 * 1024 * 1024, "gfx1100", "amd", true},
     };
     detector.setDetectedDevicesForTest(devices);
@@ -243,10 +243,10 @@ TEST(GpuDetectorTest, GetGpuBackendReturnsRocmForAmd) {
 }
 
 TEST(GpuDetectorTest, GetGpuBackendPrioritizesFirstAvailableGpu) {
-    using llm_node::GpuBackend;
+    using allm::GpuBackend;
     GpuDetector detector;
     // 複数ベンダーのGPUがある場合、最初の利用可能なGPUのバックエンドを返す
-    std::vector<llm_node::GpuDevice> devices = {
+    std::vector<allm::GpuDevice> devices = {
         {0, "NVIDIA", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "8.0", "nvidia", false}, // unavailable
         {1, "AMD", 8ull * 1024 * 1024 * 1024, 6ull * 1024 * 1024 * 1024, "gfx1100", "amd", true}, // available
     };

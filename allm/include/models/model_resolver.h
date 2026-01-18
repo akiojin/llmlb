@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 class ModelSync;
 
@@ -74,4 +74,4 @@ private:
     std::string downloadFromRegistry(const std::string& model_name);
 };
 
-}  // namespace llm_node
+}  // namespace allm

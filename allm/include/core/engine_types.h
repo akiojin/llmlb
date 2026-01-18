@@ -8,7 +8,7 @@
 
 #include "core/engine_error.h"
 
-namespace llm_node {
+namespace allm {
 
 constexpr size_t kDefaultMaxTokens = 2048;
 
@@ -88,4 +88,4 @@ struct ModelLoadResult {
     std::string error_message;
 };
 
-}  // namespace llm_node
+}  // namespace allm

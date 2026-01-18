@@ -9,7 +9,7 @@
 #include "core/inference_engine.h"
 #include "utils/config.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(HttpServerTest, ServesHealthAndMetrics) {
     ModelRegistry registry;

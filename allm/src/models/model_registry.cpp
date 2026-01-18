@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 void ModelRegistry::setModels(std::vector<std::string> models) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -102,4 +102,4 @@ bool ModelRegistry::isCompatible(const SupportedModel& model, GpuBackend backend
     return false;
 }
 
-}  // namespace llm_node
+}  // namespace allm

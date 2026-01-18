@@ -8,7 +8,7 @@
 
 namespace {
 
-class FakeEngine : public llm_node::Engine {
+class FakeEngine : public allm::Engine {
 public:
     explicit FakeEngine(std::string label) : label_(std::move(label)) {}
 
@@ -18,40 +18,40 @@ public:
 
     const std::string& label() const { return label_; }
 
-    llm_node::ModelLoadResult loadModel(const llm_node::ModelDescriptor&) override {
-        llm_node::ModelLoadResult result;
+    allm::ModelLoadResult loadModel(const allm::ModelDescriptor&) override {
+        allm::ModelLoadResult result;
         result.success = true;
-        result.error_code = llm_node::EngineErrorCode::kOk;
+        result.error_code = allm::EngineErrorCode::kOk;
         return result;
     }
 
-    std::string generateChat(const std::vector<llm_node::ChatMessage>&,
-                             const llm_node::ModelDescriptor&,
-                             const llm_node::InferenceParams&) const override {
+    std::string generateChat(const std::vector<allm::ChatMessage>&,
+                             const allm::ModelDescriptor&,
+                             const allm::InferenceParams&) const override {
         return "ok";
     }
 
     std::string generateCompletion(const std::string&,
-                                   const llm_node::ModelDescriptor&,
-                                   const llm_node::InferenceParams&) const override {
+                                   const allm::ModelDescriptor&,
+                                   const allm::InferenceParams&) const override {
         return "ok";
     }
 
     std::vector<std::string> generateChatStream(
-        const std::vector<llm_node::ChatMessage>&,
-        const llm_node::ModelDescriptor&,
-        const llm_node::InferenceParams&,
+        const std::vector<allm::ChatMessage>&,
+        const allm::ModelDescriptor&,
+        const allm::InferenceParams&,
         const std::function<void(const std::string&)>&) const override {
         return {};
     }
 
     std::vector<std::vector<float>> generateEmbeddings(
         const std::vector<std::string>&,
-        const llm_node::ModelDescriptor&) const override {
+        const allm::ModelDescriptor&) const override {
         return {};
     }
 
-    size_t getModelMaxContext(const llm_node::ModelDescriptor&) const override {
+    size_t getModelMaxContext(const allm::ModelDescriptor&) const override {
         return 0;
     }
 
@@ -61,9 +61,9 @@ private:
 
 }  // namespace
 
-using llm_node::EngineRegistry;
-using llm_node::EngineRegistration;
-using llm_node::ModelDescriptor;
+using allm::EngineRegistry;
+using allm::EngineRegistration;
+using allm::ModelDescriptor;
 
 TEST(EngineRegistryTest, ResolvesByRuntime) {
     EngineRegistry registry;

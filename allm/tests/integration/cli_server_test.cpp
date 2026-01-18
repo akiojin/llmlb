@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace {
 
@@ -23,14 +23,14 @@ protected:
     void SetUp() override {
         // Save original environment
         const char* host = std::getenv("LLM_ROUTER_HOST");
-        const char* port = std::getenv("LLM_NODE_PORT");
+        const char* port = std::getenv("ALLM_PORT");
         original_host_ = host ? host : "";
         original_port_ = port ? port : "";
 
         // Use different port for test server
         test_port_ = 11499;
         setenv("LLM_ROUTER_HOST", "127.0.0.1", 1);
-        setenv("LLM_NODE_PORT", std::to_string(test_port_).c_str(), 1);
+        setenv("ALLM_PORT", std::to_string(test_port_).c_str(), 1);
     }
 
     void TearDown() override {
@@ -41,9 +41,9 @@ protected:
             setenv("LLM_ROUTER_HOST", original_host_.c_str(), 1);
         }
         if (original_port_.empty()) {
-            unsetenv("LLM_NODE_PORT");
+            unsetenv("ALLM_PORT");
         } else {
-            setenv("LLM_NODE_PORT", original_port_.c_str(), 1);
+            setenv("ALLM_PORT", original_port_.c_str(), 1);
         }
     }
 
@@ -85,10 +85,10 @@ TEST_F(CliServerTest, ServeWithCustomHost) {
 }
 
 /// Test: serve respects environment variables
-/// Scenario: LLM_ROUTER_HOST and LLM_NODE_PORT are used as defaults
+/// Scenario: LLM_ROUTER_HOST and ALLM_PORT are used as defaults
 TEST_F(CliServerTest, ServeRespectsEnvironment) {
     setenv("LLM_ROUTER_HOST", "192.168.1.100", 1);
-    setenv("LLM_NODE_PORT", "12345", 1);
+    setenv("ALLM_PORT", "12345", 1);
 
     const char* argv[] = {"allm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
@@ -101,9 +101,9 @@ TEST_F(CliServerTest, ServeRespectsEnvironment) {
 }
 
 /// Test: CLI flag overrides environment
-/// Scenario: --port overrides LLM_NODE_PORT
+/// Scenario: --port overrides ALLM_PORT
 TEST_F(CliServerTest, CliFlagOverridesEnvironment) {
-    setenv("LLM_NODE_PORT", "12345", 1);
+    setenv("ALLM_PORT", "12345", 1);
 
     const char* argv[] = {"allm", "serve", "--port", "54321"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
@@ -272,4 +272,4 @@ TEST_F(CliServerTest, DebugModeConfiguration) {
 
 }  // namespace
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

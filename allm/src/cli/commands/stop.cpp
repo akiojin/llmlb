@@ -5,7 +5,7 @@
 #include "cli/cli_client.h"
 #include <iostream>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -41,4 +41,4 @@ int stop(const ModelOptions& options) {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

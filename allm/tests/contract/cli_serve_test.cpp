@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include "utils/cli.h"
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 // Forward declaration for serve command
@@ -13,15 +13,15 @@ int serve(const ServeOptions& options);
 }
 }
 
-using namespace llm_node;
-using namespace llm_node::cli;
+using namespace allm;
+using namespace allm::cli;
 
 class CliServeTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset environment variables
         unsetenv("LLM_ROUTER_HOST");
-        unsetenv("LLM_NODE_PORT");
+        unsetenv("ALLM_PORT");
     }
 };
 
@@ -56,9 +56,9 @@ TEST_F(CliServeTest, ParseCustomHost) {
     EXPECT_EQ(result.serve_options.host, "127.0.0.1");
 }
 
-// Contract: serve should respect LLM_NODE_PORT environment variable
+// Contract: serve should respect ALLM_PORT environment variable
 TEST_F(CliServeTest, RespectPortEnvironmentVariable) {
-    setenv("LLM_NODE_PORT", "9999", 1);
+    setenv("ALLM_PORT", "9999", 1);
 
     const char* argv[] = {"allm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));

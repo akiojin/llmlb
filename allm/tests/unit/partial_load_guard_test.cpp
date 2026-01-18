@@ -11,7 +11,7 @@
 #include <vector>
 #include <string>
 
-using namespace llm_node;
+using namespace allm;
 
 class PartialLoadGuardTest : public ::testing::Test {
 protected:

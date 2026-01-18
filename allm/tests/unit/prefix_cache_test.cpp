@@ -3,7 +3,7 @@
 
 #include "core/prefix_cache.h"
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 // T161: Basic prefix cache operations
@@ -156,4 +156,4 @@ TEST(PrefixCacheTest, ReportsEntryCount) {
 }
 
 }  // namespace
-}  // namespace llm_node
+}  // namespace allm

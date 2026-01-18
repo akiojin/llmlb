@@ -4,7 +4,7 @@
 #include <chrono>
 #include <cstdint>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 /// Progress renderer for download operations (ollama-style)
@@ -67,4 +67,4 @@ private:
 };
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

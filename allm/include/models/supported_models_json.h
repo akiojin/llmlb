@@ -1,6 +1,6 @@
 #pragma once
 
-namespace llm_node {
+namespace allm {
 
 constexpr const char kSupportedModelsJson[] = R"json(
 [
@@ -391,4 +391,4 @@ constexpr const char kSupportedModelsJson[] = R"json(
 ]
 )json";
 
-}  // namespace llm_node
+}  // namespace allm

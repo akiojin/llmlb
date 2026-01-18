@@ -14,7 +14,7 @@
 #include "core/engine_registry.h"
 #include "system/resource_monitor.h"
 
-namespace llm_node {
+namespace allm {
 
 // T181: クラッシュ後503エラー
 class ServiceUnavailableError : public std::runtime_error {
@@ -138,7 +138,7 @@ public:
     /// 登録済みのランタイム一覧を取得（プラグインからロードしたものを含む）
     std::vector<std::string> getRegisteredRuntimes() const;
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     /// テスト専用: EngineRegistry を差し替える
     void setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry);
     /// テスト専用: リソース使用量のプロバイダを差し替える
@@ -250,4 +250,4 @@ auto with_retry(Fn&& fn, const RetryConfig& config,
     throw std::runtime_error("Retry failed with no exception captured");
 }
 
-}  // namespace llm_node
+}  // namespace allm

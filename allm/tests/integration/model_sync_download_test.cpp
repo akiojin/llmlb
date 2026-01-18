@@ -6,7 +6,7 @@
 #include "models/model_sync.h"
 #include "models/model_downloader.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 static void wait_for_servers(httplib::Server& router, httplib::Server& registry, std::chrono::milliseconds timeout) {

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 /// Subcommand types for llm-router CLI
 enum class Subcommand {
@@ -111,4 +111,4 @@ std::string getRouterHelpMessage();
 /// Convert subcommand enum to string
 std::string subcommandToString(Subcommand cmd);
 
-}  // namespace llm_node
+}  // namespace allm

@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -100,4 +100,4 @@ int ps() {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

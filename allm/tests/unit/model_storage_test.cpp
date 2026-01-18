@@ -7,7 +7,7 @@
 
 #include "models/model_storage.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 class TempModelDir {

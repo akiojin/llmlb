@@ -11,7 +11,7 @@
 #include "utils/file_lock.h"
 #include "utils/allowlist.h"
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
@@ -204,7 +204,7 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
 
     // file
     std::filesystem::path cfg_path;
-    if (const char* env = std::getenv("LLM_NODE_CONFIG")) {
+    if (const char* env = std::getenv("ALLM_CONFIG")) {
         cfg_path = env;
     } else {
         cfg_path = defaultConfigPath();
@@ -220,47 +220,47 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     }
 
     // env overrides with fallback to deprecated names
-    // New names: LLM_NODE_*
+    // New names: ALLM_*
     // Deprecated: LLM_* without NODE prefix
 
-    if (auto v = getEnvWithFallback("LLM_NODE_MODELS_DIR", "LLM_MODELS_DIR")) {
+    if (auto v = getEnvWithFallback("ALLM_MODELS_DIR", "LLM_MODELS_DIR")) {
         cfg.models_dir = *v;
         log << "env:MODELS_DIR=" << *v << " ";
         used_env = true;
     }
-    if (const char* v = std::getenv("LLM_NODE_ENGINE_PLUGINS_DIR")) {
+    if (const char* v = std::getenv("ALLM_ENGINE_PLUGINS_DIR")) {
         cfg.engine_plugins_dir = v;
         log << "env:ENGINE_PLUGINS_DIR=" << cfg.engine_plugins_dir << " ";
         used_env = true;
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
+    if (auto v = getEnvWithFallback("ALLM_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
         try {
             cfg.plugin_restart_interval_sec = std::stoi(*v);
             log << "env:PLUGIN_RESTART_SECS=" << cfg.plugin_restart_interval_sec << " ";
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
+    if (auto v = getEnvWithFallback("ALLM_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
         try {
             cfg.plugin_restart_request_limit = static_cast<uint64_t>(std::stoll(*v));
             log << "env:PLUGIN_RESTART_REQUESTS=" << cfg.plugin_restart_request_limit << " ";
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_PORT", "LLM_NODE_PORT")) {
-        // LLM_NODE_PORT is already the correct name
+    if (auto v = getEnvWithFallback("ALLM_PORT", "ALLM_PORT")) {
+        // ALLM_PORT is already the correct name
         try {
             cfg.node_port = std::stoi(*v);
             log << "env:NODE_PORT=" << cfg.node_port << " ";
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_BIND_ADDRESS", "LLM_BIND_ADDRESS")) {
+    if (auto v = getEnvWithFallback("ALLM_BIND_ADDRESS", "LLM_BIND_ADDRESS")) {
         cfg.bind_address = *v;
         log << "env:BIND_ADDRESS=" << *v << " ";
         used_env = true;
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_ORIGIN_ALLOWLIST", "LLM_ORIGIN_ALLOWLIST")) {
+    if (auto v = getEnvWithFallback("ALLM_ORIGIN_ALLOWLIST", "LLM_ORIGIN_ALLOWLIST")) {
         auto list = splitAllowlistCsv(*v);
         if (!list.empty()) {
             cfg.origin_allowlist = std::move(list);
@@ -295,4 +295,4 @@ NodeConfig loadNodeConfig() {
     return info.first;
 }
 
-}  // namespace llm_node
+}  // namespace allm

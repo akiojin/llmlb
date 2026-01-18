@@ -7,7 +7,7 @@
 #include <iostream>
 #include <cstdlib>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -66,4 +66,4 @@ int pull(const PullOptions& options) {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

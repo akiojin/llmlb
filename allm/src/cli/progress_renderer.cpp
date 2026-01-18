@@ -4,7 +4,7 @@
 #include <sstream>
 #include <cmath>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 ProgressRenderer::ProgressRenderer(uint64_t total_bytes)
@@ -206,4 +206,4 @@ void ProgressRenderer::clearAndPrint(const std::string& content) {
 }
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

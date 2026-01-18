@@ -7,7 +7,7 @@
 #include <string>
 
 
-namespace llm_node {
+namespace allm {
 
 class SDManager;
 
@@ -45,4 +45,4 @@ private:
     static int64_t getCurrentTimestamp();
 };
 
-}  // namespace llm_node
+}  // namespace allm

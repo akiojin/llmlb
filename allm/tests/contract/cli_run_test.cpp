@@ -4,13 +4,13 @@
 #include <gtest/gtest.h>
 #include "utils/cli.h"
 
-using namespace llm_node;
+using namespace allm;
 
 class CliRunTest : public ::testing::Test {
 protected:
     void SetUp() override {
         unsetenv("LLM_ROUTER_HOST");
-        unsetenv("LLM_NODE_PORT");
+        unsetenv("ALLM_PORT");
     }
 };
 

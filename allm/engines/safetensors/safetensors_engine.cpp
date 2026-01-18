@@ -15,7 +15,7 @@
 #include <nlohmann/json.hpp>
 #include <safetensors.h>
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
@@ -444,4 +444,4 @@ uint64_t SafetensorsEngine::getModelVramBytes(const ModelDescriptor& descriptor)
     return loaded->vram_bytes;
 }
 
-}  // namespace llm_node
+}  // namespace allm

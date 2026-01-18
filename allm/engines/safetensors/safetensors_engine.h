@@ -24,7 +24,7 @@ struct stcpp_context;
 struct stcpp_tokenizer;
 }
 
-namespace llm_node {
+namespace allm {
 
 /**
  * @class SafetensorsEngine
@@ -112,4 +112,4 @@ private:
     mutable std::unordered_map<std::string, std::unique_ptr<LoadedModel>> loaded_models_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

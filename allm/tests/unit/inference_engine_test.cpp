@@ -21,7 +21,7 @@
 #include "system/resource_monitor.h"
 #include "runtime/state.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 
@@ -555,7 +555,7 @@ TEST(InferenceEngineTest, LoadModelRejectsWhenVramBudgetExceeded) {
 }
 
 TEST(InferenceEngineTest, OpenAIResponds503WhenVramInsufficient) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     TempDir tmp;
     const std::string model_name = "example/model";
     const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);

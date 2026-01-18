@@ -7,7 +7,7 @@
 #include <iostream>
 #include <memory>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -42,4 +42,4 @@ int run(const RunOptions& options) {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

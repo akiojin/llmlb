@@ -37,80 +37,80 @@ private:
 
 TEST(OnnxTtsManagerTest, RuntimeAvailabilityReflectsCompileConfig) {
 #ifdef USE_ONNX_RUNTIME
-    EXPECT_TRUE(llm_node::OnnxTtsManager::isRuntimeAvailable());
+    EXPECT_TRUE(allm::OnnxTtsManager::isRuntimeAvailable());
 #else
-    EXPECT_FALSE(llm_node::OnnxTtsManager::isRuntimeAvailable());
+    EXPECT_FALSE(allm::OnnxTtsManager::isRuntimeAvailable());
 #endif
 }
 
 TEST(OnnxTtsManagerTest, DefaultIdleTimeoutIs30Minutes) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     auto timeout = manager.getIdleTimeout();
     EXPECT_EQ(timeout, std::chrono::minutes(30));
 }
 
 TEST(OnnxTtsManagerTest, MaxLoadedModelsDefaultsToUnlimited) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     EXPECT_EQ(manager.getMaxLoadedModels(), 0u);
 }
 
 TEST(OnnxTtsManagerTest, LoadedCountIsZeroOnInit) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     EXPECT_EQ(manager.loadedCount(), 0u);
 }
 
 TEST(OnnxTtsManagerTest, GetLoadedModelsReturnsEmptyOnInit) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     EXPECT_TRUE(manager.getLoadedModels().empty());
 }
 
 TEST(OnnxTtsManagerTest, IsLoadedReturnsFalseForUnloadedModel) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     EXPECT_FALSE(manager.isLoaded("nonexistent_model.onnx"));
 }
 
 TEST(OnnxTtsManagerTest, SetIdleTimeoutUpdatesValue) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     manager.setIdleTimeout(std::chrono::minutes(60));
     EXPECT_EQ(manager.getIdleTimeout(), std::chrono::minutes(60));
 }
 
 TEST(OnnxTtsManagerTest, SetMaxLoadedModelsUpdatesValue) {
-    llm_node::OnnxTtsManager manager("/tmp/models");
+    allm::OnnxTtsManager manager("/tmp/models");
     manager.setMaxLoadedModels(5);
     EXPECT_EQ(manager.getMaxLoadedModels(), 5u);
 }
 
 TEST(OnnxTtsManagerTest, VibeVoiceModelIsAlwaysLoaded) {
-    llm_node::OnnxTtsManager manager("/tmp");
+    allm::OnnxTtsManager manager("/tmp");
     EXPECT_TRUE(manager.loadModel("vibevoice"));
     EXPECT_TRUE(manager.isLoaded("vibevoice"));
     EXPECT_EQ(manager.loadedCount(), 0u);
 }
 
 TEST(OnnxTtsManagerTest, SynthesizeRejectsEmptyText) {
-    llm_node::OnnxTtsManager manager("/tmp");
+    allm::OnnxTtsManager manager("/tmp");
     auto result = manager.synthesize("vibevoice", "", {});
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.error, "Empty text input");
 }
 
 TEST(OnnxTtsManagerTest, VibeVoiceRequiresRunnerEnv) {
-    EnvGuard guard({"LLM_NODE_VIBEVOICE_RUNNER"});
-    unsetenv("LLM_NODE_VIBEVOICE_RUNNER");
+    EnvGuard guard({"ALLM_VIBEVOICE_RUNNER"});
+    unsetenv("ALLM_VIBEVOICE_RUNNER");
 
-    llm_node::OnnxTtsManager manager("/tmp");
+    allm::OnnxTtsManager manager("/tmp");
     auto result = manager.synthesize("vibevoice", "hello", {});
     EXPECT_FALSE(result.success);
 #if defined(__APPLE__)
-    EXPECT_EQ(result.error, "LLM_NODE_VIBEVOICE_RUNNER environment variable not set");
+    EXPECT_EQ(result.error, "ALLM_VIBEVOICE_RUNNER environment variable not set");
 #else
     EXPECT_EQ(result.error, "VibeVoice is only supported on macOS");
 #endif
 }
 
 TEST(OnnxTtsManagerTest, SupportedVoicesContainsDefaults) {
-    llm_node::OnnxTtsManager manager("/tmp");
+    allm::OnnxTtsManager manager("/tmp");
     auto voices = manager.getSupportedVoices("vibevoice");
     EXPECT_FALSE(voices.empty());
     EXPECT_NE(std::find(voices.begin(), voices.end(), "nova"), voices.end());

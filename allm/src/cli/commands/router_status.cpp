@@ -4,7 +4,7 @@
 #include "utils/cli.h"
 #include <iostream>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -23,4 +23,4 @@ int router_status() {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

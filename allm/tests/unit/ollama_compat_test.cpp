@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <fstream>
 
-using namespace llm_node::cli;
+using namespace allm::cli;
 namespace fs = std::filesystem;
 
 class OllamaCompatTest : public ::testing::Test {

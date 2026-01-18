@@ -62,14 +62,6 @@ pub mod sync;
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {
-    /// ノードレジストリ（レガシー）
-    ///
-    /// # 廃止予定
-    ///
-    /// このフィールドは廃止予定です。新しい実装では `endpoint_registry` を使用してください。
-    /// `NodeRegistry` は `EndpointRegistry` への移行期間中のみ維持されます。
-    #[deprecated(note = "Use endpoint_registry instead")]
-    pub registry: registry::NodeRegistry,
     /// ロードマネージャー
     pub load_manager: balancer::LoadManager,
     /// リクエスト履歴ストレージ
@@ -85,8 +77,6 @@ pub struct AppState {
     /// ダッシュボードイベントバス
     pub event_bus: events::SharedEventBus,
     /// エンドポイントレジストリ
-    ///
-    /// エンドポイント管理の主要なレジストリ。`NodeRegistry`（旧）から移行。
     pub endpoint_registry: registry::endpoints::EndpointRegistry,
 }
 

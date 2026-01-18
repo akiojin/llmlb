@@ -487,8 +487,9 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, registry::NodeRegistry};
+    use crate::balancer::LoadManager;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
+    use std::sync::Arc;
     use tower::ServiceExt;
 
     #[test]
@@ -511,10 +512,7 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[tokio::test]
-    #[allow(deprecated)]
     async fn admin_middleware_allows_bearer_api_key() {
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("create sqlite pool");
@@ -528,8 +526,9 @@ mod tests {
         let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
             .await
             .expect("Failed to create endpoint registry");
+        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
+        let load_manager = LoadManager::new(endpoint_registry_arc);
         let state = crate::AppState {
-            registry,
             load_manager,
             request_history,
             db_pool,
@@ -560,10 +559,7 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[tokio::test]
-    #[allow(deprecated)]
     async fn admin_middleware_rejects_invalid_jwt_even_with_api_key() {
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("create sqlite pool");
@@ -577,8 +573,9 @@ mod tests {
         let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
             .await
             .expect("Failed to create endpoint registry");
+        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
+        let load_manager = LoadManager::new(endpoint_registry_arc);
         let state = crate::AppState {
-            registry,
             load_manager,
             request_history,
             db_pool,

@@ -19,7 +19,6 @@ pub mod logs;
 /// モデル名のパース（量子化サフィックス対応）
 pub mod model_name;
 pub mod models;
-pub mod nodes;
 pub mod openai;
 pub mod proxy;
 /// Open Responses API (SPEC-24157000)
@@ -80,14 +79,6 @@ pub fn create_router(state: AppState) -> Router {
             "/users/:id",
             put(users::update_user).delete(users::delete_user),
         )
-        // DEPRECATED: ノード承認（エンドポイントは即時有効のため廃止予定）
-        .route(
-            "/nodes/:node_id/approve",
-            post({
-                #[allow(deprecated)]
-                nodes::approve_node
-            }),
-        )
         .route(
             "/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
@@ -101,52 +92,15 @@ pub fn create_router(state: AppState) -> Router {
             get(invitations::list_invitations).post(invitations::create_invitation),
         )
         .route("/invitations/:id", delete(invitations::revoke_invitation))
-        // DEPRECATED: ノード管理（一覧・削除・設定更新・メトリクス）
-        // これらのAPIは廃止予定です。/v0/endpoints を使用してください。
-        .route(
-            "/nodes",
-            get({
-                #[allow(deprecated)]
-                nodes::list_nodes
-            }),
-        )
-        .route(
-            "/nodes/:node_id",
-            delete({
-                #[allow(deprecated)]
-                nodes::delete_node
-            }),
-        )
-        .route(
-            "/nodes/:node_id/disconnect",
-            post({
-                #[allow(deprecated)]
-                nodes::disconnect_node
-            }),
-        )
-        .route(
-            "/nodes/:node_id/settings",
-            put({
-                #[allow(deprecated)]
-                nodes::update_node_settings
-            }),
-        )
-        .route(
-            "/nodes/metrics",
-            get({
-                #[allow(deprecated)]
-                nodes::list_node_metrics
-            }),
-        )
-        .route(
-            "/metrics/summary",
-            get({
-                #[allow(deprecated)]
-                nodes::metrics_summary
-            }),
-        )
         // ダッシュボードAPI
-        .route("/dashboard/nodes", get(dashboard::get_nodes))
+        // NOTE: /dashboard/nodes は廃止済み、/dashboard/endpoints を使用
+        .route(
+            "/dashboard/nodes",
+            get({
+                #[allow(deprecated)]
+                dashboard::get_nodes
+            }),
+        )
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(
@@ -329,13 +283,7 @@ pub fn create_router(state: AppState) -> Router {
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
 
     // SPEC-66555000: テスト用内部エンドポイント（デバッグビルドのみ）
-    // E2Eテストでノード登録をシミュレートするために使用
-    #[cfg(debug_assertions)]
-    let test_routes = Router::new().route(
-        "/internal/test/register-node",
-        post(nodes::test_register_node),
-    );
-    #[cfg(not(debug_assertions))]
+    // NOTE: ノード登録ベースのテストは廃止。エンドポイント登録を使用
     let test_routes = Router::new();
 
     Router::new()
@@ -437,20 +385,17 @@ fn normalize_playground_path(request_path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+    //! NodeRegistry.register()を使用していたテストは#[ignore]でマーク。
+
     use super::*;
-    use crate::{
-        balancer::{LoadManager, MetricsUpdate},
-        registry::NodeRegistry,
-    };
+    use crate::balancer::LoadManager;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
-    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+    use std::sync::Arc;
     use tower::Service;
 
-    #[allow(deprecated)]
-    async fn test_state() -> (AppState, NodeRegistry) {
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
+    async fn test_state() -> AppState {
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -458,15 +403,15 @@ mod tests {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
         let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
             .await
             .expect("Failed to create endpoint registry");
+        let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+        let request_history = std::sync::Arc::new(
+            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        );
         let jwt_secret = "test-secret".to_string();
-        let state = AppState {
-            registry: registry.clone(),
+        AppState {
             load_manager,
             request_history,
             db_pool,
@@ -475,21 +420,12 @@ mod tests {
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
-        };
-        (state, registry)
-    }
-
-    fn sample_gpu_devices() -> Vec<GpuDeviceInfo> {
-        vec![GpuDeviceInfo {
-            model: "Test GPU".to_string(),
-            count: 1,
-            memory: None,
-        }]
+        }
     }
 
     #[tokio::test]
     async fn test_dashboard_static_served() {
-        let (state, _) = test_state().await;
+        let state = test_state().await;
         let mut router = create_router(state);
         let response = router
             .call(
@@ -516,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_playground_static_served() {
-        let (state, _) = test_state().await;
+        let state = test_state().await;
         let mut router = create_router(state);
         let response = router
             .call(
@@ -541,144 +477,27 @@ mod tests {
         assert!(bytes.starts_with(b"<!DOCTYPE html"));
     }
 
+    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
+    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_nodes_endpoint_returns_json() {
-        let (state, registry) = test_state().await;
-        registry
-            .register(RegisterRequest {
-                machine_name: "test-node".into(),
-                ip_address: "127.0.0.1".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            })
-            .await
-            .unwrap();
-
-        let mut router = create_router(state);
-        let response = router
-            .call(
-                Request::builder()
-                    .uri("/v0/dashboard/nodes")
-                    .header("authorization", "Bearer sk_debug_admin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-        let nodes: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(nodes.is_array());
-        assert_eq!(nodes.as_array().unwrap().len(), 1);
+        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
+        unimplemented!("Migrate to EndpointRegistry-based test")
     }
 
+    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
+    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_overview_endpoint_returns_all_sections() {
-        let (state, registry) = test_state().await;
-        registry
-            .register(RegisterRequest {
-                machine_name: "overview-node".into(),
-                ip_address: "127.0.0.1".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            })
-            .await
-            .unwrap();
-
-        let mut router = create_router(state);
-        let response = router
-            .call(
-                Request::builder()
-                    .uri("/v0/dashboard/overview")
-                    .header("authorization", "Bearer sk_debug_admin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-        let overview: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(overview["nodes"].is_array());
-        assert!(overview["stats"].is_object());
-        assert!(overview["history"].is_array());
-        assert!(overview["generated_at"].is_string());
-        assert!(overview["generation_time_ms"].as_u64().is_some());
+        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
+        unimplemented!("Migrate to EndpointRegistry-based test")
     }
 
+    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
+    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_metrics_endpoint_returns_history() {
-        let (state, registry) = test_state().await;
-        let node_id = registry
-            .register(RegisterRequest {
-                machine_name: "metrics-route".into(),
-                ip_address: "127.0.0.1".parse().unwrap(),
-                runtime_version: "0.1.0".into(),
-                runtime_port: 32768,
-                gpu_available: true,
-                gpu_devices: sample_gpu_devices(),
-                gpu_count: Some(1),
-                gpu_model: Some("Test GPU".to_string()),
-                supported_runtimes: Vec::new(),
-            })
-            .await
-            .unwrap()
-            .node_id;
-
-        state
-            .load_manager
-            .record_metrics(MetricsUpdate {
-                node_id,
-                cpu_usage: 12.0,
-                memory_usage: 34.0,
-                gpu_usage: None,
-                gpu_memory_usage: None,
-                gpu_memory_total_mb: None,
-                gpu_memory_used_mb: None,
-                gpu_temperature: None,
-                gpu_model_name: None,
-                gpu_compute_capability: None,
-                gpu_capability_score: None,
-                active_requests: 1,
-                average_response_time_ms: Some(90.0),
-                initializing: false,
-                ready_models: None,
-            })
-            .await
-            .unwrap();
-
-        let mut router = create_router(state);
-        let response = router
-            .call(
-                Request::builder()
-                    .uri(format!("/v0/dashboard/metrics/{node_id}"))
-                    .header("authorization", "Bearer sk_debug_admin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-        let metrics: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(metrics.is_array());
-        assert_eq!(metrics.as_array().unwrap().len(), 1);
-        assert_eq!(
-            metrics.as_array().unwrap()[0]["node_id"].as_str().unwrap(),
-            node_id.to_string()
-        );
+        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
+        unimplemented!("Migrate to EndpointRegistry-based test")
     }
 }

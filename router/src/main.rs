@@ -3,7 +3,7 @@
 use clap::Parser;
 use llm_router::cli::Cli;
 use llm_router::config::{get_env_with_fallback_or, get_env_with_fallback_parse};
-use llm_router::{api, auth, balancer, health, logging, registry, AppState};
+use llm_router::{api, auth, balancer, health, logging, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -157,17 +157,8 @@ async fn run_server(config: ServerConfig) {
         .expect("Failed to initialize endpoint registry");
     let endpoint_registry_arc = std::sync::Arc::new(endpoint_registry.clone());
 
-    // NodeRegistryは廃止予定、EndpointRegistryに完全移行中
-    #[allow(deprecated)]
-    let registry = registry::NodeRegistry::with_storage(db_pool.clone())
-        .await
-        .expect("Failed to initialize node registry");
-
-    // LoadManagerはNodeRegistryを必要とするが、EndpointRegistryも設定
-    // NodeRegistry完全削除後はEndpointRegistryのみを使用するように移行予定
-    #[allow(deprecated)]
-    let load_manager = balancer::LoadManager::new(registry.clone())
-        .with_endpoint_registry(endpoint_registry_arc.clone());
+    // LoadManagerをEndpointRegistryで初期化
+    let load_manager = balancer::LoadManager::new(endpoint_registry_arc.clone());
     info!("Storage initialized successfully");
 
     let health_check_interval_secs: u64 = get_env_with_fallback_parse(
@@ -175,20 +166,6 @@ async fn run_server(config: ServerConfig) {
         "HEALTH_CHECK_INTERVAL",
         30,
     );
-    let node_timeout_secs: u64 =
-        get_env_with_fallback_parse("LLM_ROUTER_NODE_TIMEOUT", "NODE_TIMEOUT", 60);
-
-    // HealthMonitorはNodeRegistryベースの廃止予定モジュール
-    // EndpointHealthCheckerに完全移行後に削除予定
-    #[allow(deprecated)]
-    {
-        let health_monitor = health::HealthMonitor::new(
-            registry.clone(),
-            health_check_interval_secs,
-            node_timeout_secs,
-        );
-        health_monitor.start();
-    }
 
     // 起動時にエンドポイントのヘルスチェックを実行
     if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {
@@ -244,9 +221,7 @@ async fn run_server(config: ServerConfig) {
         endpoint_registry.count().await
     );
 
-    #[allow(deprecated)] // NodeRegistry migration in progress
     let state = AppState {
-        registry: registry.clone(),
         load_manager,
         request_history,
         db_pool,

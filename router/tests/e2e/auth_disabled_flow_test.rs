@@ -1,16 +1,17 @@
-#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
-
 //! 認証無効化モードのE2Eテスト
 //!
 //! AUTH_DISABLED=true のときに認証なしでアクセスできることを確認する
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serial_test::serial;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::support;
@@ -39,20 +40,17 @@ impl Drop for EnvGuard {
 }
 
 async fn build_app() -> Router {
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = support::router::create_test_db_pool().await;
-    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = support::router::test_jwt_secret();
 
-    #[allow(deprecated)]
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool,
@@ -66,18 +64,21 @@ async fn build_app() -> Router {
     api::create_router(state)
 }
 
+/// SPEC-66555000: /v0/nodes は廃止されたため、/v0/endpoints を使用
+/// このテストはAUTH_DISABLEDモードの動作確認に焦点を当てる
 #[tokio::test]
 #[serial]
-async fn auth_disabled_allows_dashboard_and_nodes() {
+async fn auth_disabled_allows_dashboard_and_endpoints() {
     let _guard = EnvGuard::set("AUTH_DISABLED", "true");
     let app = build_app().await;
 
-    let nodes_response = app
+    // /v0/endpoints エンドポイントをテスト（/v0/nodesは廃止）
+    let endpoints_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/v0/nodes")
+                .uri("/v0/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -85,9 +86,9 @@ async fn auth_disabled_allows_dashboard_and_nodes() {
         .unwrap();
 
     assert_eq!(
-        nodes_response.status(),
+        endpoints_response.status(),
         StatusCode::OK,
-        "AUTH_DISABLED should allow /v0/nodes without auth"
+        "AUTH_DISABLED should allow /v0/endpoints without auth"
     );
 
     let me_response = app

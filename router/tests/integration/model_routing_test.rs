@@ -1,8 +1,9 @@
-#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
-
 //! Integration Tests: モデル対応ルーティング
 //!
 //! SPEC-93536000 Phase 6 (6.4-6.9)
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! 廃止されたPUSH型登録フロー（/v0/nodes, /v0/health）を使用するテストは#[ignore]。
 
 use axum::{
     body::{to_bytes, Body},
@@ -10,10 +11,11 @@ use axum::{
     response::Response,
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llm_router_common::protocol::RegisterResponse;
 use serial_test::serial;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -47,8 +49,6 @@ async fn build_test_router() -> (AppState, Router, TestEnvGuard) {
         keys: vec!["LLM_ROUTER_DATA_DIR", "AUTH_DISABLED", "LLM_CONVERT_FAKE"],
     };
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -56,6 +56,10 @@ async fn build_test_router() -> (AppState, Router, TestEnvGuard) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     llm_router::api::models::clear_registered_models(&db_pool)
         .await
         .expect("clear registered models");
@@ -66,7 +70,6 @@ async fn build_test_router() -> (AppState, Router, TestEnvGuard) {
     let jwt_secret = "test-secret".to_string();
 
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool,
@@ -74,6 +77,7 @@ async fn build_test_router() -> (AppState, Router, TestEnvGuard) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry,
     };
 
     let router = api::create_router(state.clone());
@@ -186,6 +190,7 @@ fn chat_payload(model: &str, content: &str) -> Value {
 
 #[tokio::test]
 #[serial]
+#[ignore = "NodeRegistry廃止: /v0/nodes, /v0/healthエンドポイントが削除されたため (SPEC-66555000)"]
 async fn test_routes_request_to_capable_node() {
     let (_state, router, _guard) = build_test_router().await;
 
@@ -225,6 +230,7 @@ async fn test_routes_request_to_capable_node() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "NodeRegistry廃止: /v0/nodes, /v0/healthエンドポイントが削除されたため (SPEC-66555000)"]
 async fn test_request_for_known_model_without_node_returns_503() {
     let (state, router, _guard) = build_test_router().await;
 
@@ -258,6 +264,7 @@ async fn test_request_for_known_model_without_node_returns_503() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "NodeRegistry廃止: /v0/nodes, /v0/healthエンドポイントが削除されたため (SPEC-66555000)"]
 async fn test_request_for_unknown_model_returns_404() {
     let (_state, router, _guard) = build_test_router().await;
 
@@ -281,6 +288,7 @@ async fn test_request_for_unknown_model_returns_404() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "NodeRegistry廃止: state.registryへのアクセスが削除されたため (SPEC-66555000)"]
 async fn test_excludes_model_after_inference_failure() {
     let (state, router, _guard) = build_test_router().await;
 
@@ -345,6 +353,7 @@ async fn test_excludes_model_after_inference_failure() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "NodeRegistry廃止: state.registryへのアクセスが削除されたため (SPEC-66555000)"]
 async fn test_model_restored_after_node_reregistration() {
     let (state, router, _guard) = build_test_router().await;
 
@@ -433,6 +442,7 @@ async fn test_model_restored_after_node_reregistration() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "NodeRegistry廃止: /v0/nodes, /v0/healthエンドポイントが削除されたため (SPEC-66555000)"]
 async fn test_metal_model_not_routed_to_cuda_node() {
     let (_state, router, _guard) = build_test_router().await;
 

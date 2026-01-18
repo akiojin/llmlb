@@ -1,9 +1,9 @@
-#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
-
 //! Contract Test: Vision Capabilities in /v1/models (SPEC-e03a404c)
 //!
 //! TDD RED: These tests define the capability reporting for vision models.
 //! All tests should FAIL until the vision feature is implemented.
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},
@@ -17,9 +17,10 @@ mod common {
     use axum::Router;
     use llm_router::db::models::ModelStorage;
     use llm_router::registry::models::ModelInfo;
-    use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+    use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
     use sqlx::SqlitePool;
+    use std::sync::Arc;
 
     pub struct TestApp {
         pub app: Router,
@@ -35,8 +36,6 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -44,10 +43,10 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
-        let endpoint_registry =
-            llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-                .await
-                .expect("Failed to create endpoint registry");
+        let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
         llm_router::api::models::clear_registered_models(&db_pool)
             .await
             .expect("clear registered models");
@@ -55,9 +54,7 @@ mod common {
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
         let jwt_secret = "test-secret".to_string();
-        #[allow(deprecated)]
         let state = AppState {
-            registry,
             load_manager,
             request_history,
             db_pool: db_pool.clone(),

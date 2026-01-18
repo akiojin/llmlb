@@ -1,8 +1,8 @@
-#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
-
 //! 画像API統合テスト
 //!
 //! TDD RED: 画像生成（StableDiffusion）のノード選択とプロキシテスト
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},
@@ -11,9 +11,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::json;
 use serial_test::serial;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::support::{
@@ -25,8 +26,6 @@ async fn build_app() -> Router {
     // Ensure AUTH_DISABLED is not set (may be polluted by parallel tests)
     std::env::remove_var("AUTH_DISABLED");
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -34,16 +33,15 @@ async fn build_app() -> Router {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
-    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
-    #[allow(deprecated)]
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool,
@@ -277,7 +275,9 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
 /// IMG003: 画像生成対応ノードなしテスト
 ///
 /// StableDiffusion対応ノードがない場合、503を返す
+/// NOTE: NodeRegistry廃止に伴い無効化。EndpointRegistry経由のテストはcontract_testsでカバー。
 #[tokio::test]
+#[ignore = "NodeRegistry廃止: /v0/internal/test/register-nodeエンドポイントが削除されたため (SPEC-66555000)"]
 async fn test_no_image_capable_node_returns_503() {
     let app = build_app().await;
     let stub = spawn_image_stub().await;

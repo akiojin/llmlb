@@ -1,28 +1,28 @@
-#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
-
 //! APIキーフローE2Eテスト
 //!
 //! T092: 完全なAPIキーフロー（発行 → 使用 → 削除）
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use serde_json::json;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::support;
 
 async fn build_app() -> (Router, sqlx::SqlitePool) {
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = support::router::create_test_db_pool().await;
-    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
@@ -34,9 +34,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         .await
         .ok();
 
-    #[allow(deprecated)]
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
@@ -144,13 +142,13 @@ async fn test_complete_api_key_flow() {
 
     // 認証は成功している（401/403以外が返れば認証OK）
     // - 404: モデルが登録されていない
-    // - 503: ノードが登録されていない
+    // - 503: エンドポイントが登録されていない
     // - 200: 成功
     assert!(
         use_key_response.status() == StatusCode::NOT_FOUND
             || use_key_response.status() == StatusCode::SERVICE_UNAVAILABLE
             || use_key_response.status() == StatusCode::OK,
-        "API key should authenticate successfully (404 = model not found, 503 = no nodes, OK = success), got: {}",
+        "API key should authenticate successfully (404 = model not found, 503 = no endpoints, OK = success), got: {}",
         use_key_response.status()
     );
 

@@ -1,17 +1,52 @@
-#![allow(deprecated)] // NodeRegistry migration in progress
-
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use llm_router::{
-    api, balancer::LoadManager, registry::endpoints::EndpointRegistry, registry::NodeRegistry,
-    AppState,
-};
+use axum::Router;
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
 use super::http::{spawn_router, TestServer};
+
+/// テスト用のRouterを作成する（.oneshot()スタイルのテスト用）
+#[allow(dead_code)]
+pub async fn create_test_router() -> (Router, SqlitePool) {
+    // テスト用に一時ディレクトリを設定
+    let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
+
+    let db_pool = create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let jwt_secret = test_jwt_secret();
+
+    // EndpointRegistryを初期化
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+
+    // LoadManagerはEndpointRegistryを使用
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+
+    let state = AppState {
+        load_manager,
+        request_history,
+        db_pool: db_pool.clone(),
+        jwt_secret,
+        http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry,
+    };
+
+    let router = api::create_router(state);
+    (router, db_pool)
+}
 
 /// テスト用のSQLiteデータベースプールを作成する
 pub async fn create_test_db_pool() -> SqlitePool {
@@ -41,8 +76,6 @@ pub async fn spawn_test_router() -> TestServer {
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
     std::env::set_var("LLM_CONVERT_FAKE", "1");
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
@@ -54,8 +87,10 @@ pub async fn spawn_test_router() -> TestServer {
         .await
         .expect("Failed to create endpoint registry");
 
+    // LoadManagerはEndpointRegistryを使用
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool,
@@ -376,8 +411,6 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
@@ -389,8 +422,10 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         .await
         .expect("Failed to create endpoint registry");
 
+    // LoadManagerはEndpointRegistryを使用
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool: db_pool.clone(),

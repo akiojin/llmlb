@@ -2,16 +2,11 @@
 //!
 //! モデル一覧取得、登録、マニフェスト配信のエンドポイント
 //!
-//! # 移行中
-//!
-//! このモジュールは現在、Node型からEndpoint型への移行期間中です。
-
-#![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
+//! このモジュールはEndpointRegistry/Endpoint型を使用しています。
 
 use crate::{
     db::models::ModelStorage,
     registry::models::{extract_repo_id, generate_model_id, ModelInfo},
-    registry::NodeRegistry,
     AppState,
 };
 use axum::{
@@ -340,14 +335,19 @@ pub async fn list_models_with_status(
 ) -> Result<Json<Vec<ModelWithStatus>>, AppError> {
     let registered = list_registered_models(&state.db_pool).await?;
     let supported = load_supported_models();
-    // Build ready model names from registry.
-    let ready_names: std::collections::HashSet<String> = state
-        .registry
-        .list()
-        .await
-        .into_iter()
-        .flat_map(|node| node.loaded_models)
-        .collect();
+    // Build ready model names from endpoint models
+    let ready_names: std::collections::HashSet<String> = {
+        let endpoints = state.endpoint_registry.list().await;
+        let mut names = std::collections::HashSet::new();
+        for endpoint in &endpoints {
+            if let Ok(models) = state.endpoint_registry.list_models(endpoint.id).await {
+                for model in models {
+                    names.insert(model.model_id.clone());
+                }
+            }
+        }
+        names
+    };
 
     let mut registered_by_repo: HashMap<String, ModelInfo> = HashMap::new();
     let mut registered_by_name: HashMap<String, ModelInfo> = HashMap::new();
@@ -1079,31 +1079,32 @@ pub struct RegisterModelRequest {
     pub chat_template: Option<String>,
 }
 
-async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> Vec<String> {
+async fn compute_gpu_warnings(
+    registry: &crate::registry::endpoints::EndpointRegistry,
+    required_memory: u64,
+) -> Vec<String> {
     let mut warnings = Vec::new();
     if required_memory == 0 {
         return warnings;
     }
 
-    let nodes = registry.list().await;
+    let endpoints = registry.list().await;
     let mut memories: Vec<u64> = Vec::new();
-    for node in nodes {
-        for device in node.gpu_devices {
-            if let Some(mem) = device.memory {
-                memories.push(mem);
-            }
+    for endpoint in endpoints {
+        if let Some(mem) = endpoint.gpu_total_memory_bytes {
+            memories.push(mem);
         }
     }
 
     if memories.is_empty() {
-        warnings.push("No GPU memory info available from registered nodes".into());
+        warnings.push("No GPU memory info available from registered endpoints".into());
         return warnings;
     }
 
     let max_mem = *memories.iter().max().unwrap();
     if required_memory > max_mem {
         warnings.push(format!(
-            "Model requires {:.1}GB but max node GPU memory is {:.1}GB",
+            "Model requires {:.1}GB but max endpoint GPU memory is {:.1}GB",
             required_memory as f64 / (1024.0 * 1024.0 * 1024.0),
             max_mem as f64 / (1024.0 * 1024.0 * 1024.0),
         ));
@@ -1185,7 +1186,7 @@ pub async fn register_model(
                 (total, required)
             }
         };
-        let warnings = compute_gpu_warnings(&state.registry, required).await;
+        let warnings = compute_gpu_warnings(&state.endpoint_registry, required).await;
         (size, required, warnings)
     };
 

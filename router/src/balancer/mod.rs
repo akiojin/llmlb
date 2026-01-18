@@ -2742,6 +2742,14 @@ impl LoadManager {
     }
 
     async fn collect_online_nodes(&self, model_id: Option<&str>) -> RouterResult<Vec<Node>> {
+        // EndpointRegistryが設定されている場合は優先使用（NodeRegistry廃止移行）
+        if let Some(endpoint_registry) = &self.endpoint_registry {
+            return self
+                .collect_online_nodes_from_endpoint_registry(endpoint_registry, model_id)
+                .await;
+        }
+
+        // 従来のNodeRegistryを使用（廃止予定）
         if let Some(model_id) = model_id {
             let nodes = self.registry.get_nodes_for_model(model_id).await;
             if nodes.is_empty() {
@@ -2761,6 +2769,40 @@ impl LoadManager {
         }
 
         Ok(online_nodes)
+    }
+
+    /// EndpointRegistryからオンラインノードを収集（NodeRegistry廃止移行用）
+    #[allow(deprecated)] // to_legacy_node is deprecated but needed for migration
+    async fn collect_online_nodes_from_endpoint_registry(
+        &self,
+        endpoint_registry: &EndpointRegistry,
+        model_id: Option<&str>,
+    ) -> RouterResult<Vec<Node>> {
+        if let Some(model_id) = model_id {
+            let endpoints = endpoint_registry.find_by_model(model_id).await;
+            if endpoints.is_empty() {
+                return Err(RouterError::NoCapableNodes(model_id.to_string()));
+            }
+            // EndpointからNodeへ変換
+            let nodes: Vec<Node> = endpoints
+                .into_iter()
+                .map(|e| e.to_legacy_node(vec![model_id.to_string()]))
+                .collect();
+            return Ok(nodes);
+        }
+
+        let endpoints = endpoint_registry.list_online().await;
+        if endpoints.is_empty() {
+            return Err(RouterError::NoNodesAvailable);
+        }
+
+        // EndpointからNodeへ変換（モデル情報は空で初期化）
+        let nodes: Vec<Node> = endpoints
+            .into_iter()
+            .map(|e| e.to_legacy_node(vec![]))
+            .collect();
+
+        Ok(nodes)
     }
 
     async fn select_node_from_candidates(&self, online_nodes: Vec<Node>) -> RouterResult<Node> {

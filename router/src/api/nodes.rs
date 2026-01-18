@@ -1,4 +1,22 @@
-//! ノード管理APIハンドラー
+//! ノード管理APIハンドラー（レガシー）
+//!
+//! # 廃止予定
+//!
+//! このモジュールのAPIは廃止予定です。新しい実装では以下を使用してください：
+//!
+//! | 廃止予定API | 移行先 |
+//! |-------------|--------|
+//! | GET /v0/nodes | GET /v0/endpoints |
+//! | GET /v0/nodes/metrics | GET /v0/dashboard/stats |
+//! | POST /v0/nodes/:id/approve | （不要・エンドポイントは即時有効） |
+//! | DELETE /v0/nodes/:id | DELETE /v0/endpoints/:id |
+//! | PUT /v0/nodes/:id/settings | PUT /v0/endpoints/:id |
+//!
+//! ## 移行スケジュール
+//!
+//! - Phase 1.3.B: deprecatedマーク追加（現在）
+//! - Phase 1.3.D: AppState/テスト修正
+//! - Phase 1.3.E: 完全削除
 //!
 //! SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました。
 //! エンドポイント管理は POST /v0/endpoints を使用してください。
@@ -22,12 +40,22 @@ use serde::Deserialize;
 // 新しい実装は POST /v0/endpoints を使用してください
 
 /// GET /v0/nodes - ノード一覧取得
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。代わりに `GET /v0/endpoints` を使用してください。
+#[deprecated(note = "Use GET /v0/endpoints instead")]
 pub async fn list_nodes(State(state): State<AppState>) -> Json<Vec<Node>> {
     let nodes = state.registry.list().await;
     Json(nodes)
 }
 
 /// PUT /v0/nodes/:id/settings - ノード設定更新
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。代わりに `PUT /v0/endpoints/:id` を使用してください。
+#[deprecated(note = "Use PUT /v0/endpoints/:id instead")]
 pub async fn update_node_settings(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -45,6 +73,12 @@ pub async fn update_node_settings(
 }
 
 /// POST /v0/nodes/:id/approve - ノードを承認する
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。エンドポイントは登録時に即時有効になるため、
+/// 承認フローは不要になりました。
+#[deprecated(note = "Endpoints are immediately active; approval flow is deprecated")]
 pub async fn approve_node(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -70,18 +104,33 @@ pub struct UpdateNodeSettingsPayload {
 }
 
 /// GET /v0/nodes/metrics - ノードメトリクス取得
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。代わりに `GET /v0/dashboard/stats` を使用してください。
+#[deprecated(note = "Use GET /v0/dashboard/stats instead")]
 pub async fn list_node_metrics(State(state): State<AppState>) -> Json<Vec<EndpointLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;
     Json(snapshots)
 }
 
 /// GET /v0/metrics/summary - システム統計
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。代わりに `GET /v0/dashboard/stats` を使用してください。
+#[deprecated(note = "Use GET /v0/dashboard/stats instead")]
 pub async fn metrics_summary(State(state): State<AppState>) -> Json<SystemSummary> {
     let summary = state.load_manager.summary().await;
     Json(summary)
 }
 
 /// DELETE /v0/nodes/:id - ノードを削除（Admin権限必須）
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。代わりに `DELETE /v0/endpoints/:id` を使用してください。
+#[deprecated(note = "Use DELETE /v0/endpoints/:id instead")]
 pub async fn delete_node(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -99,6 +148,12 @@ pub async fn delete_node(
 }
 
 /// POST /v0/nodes/:id/disconnect - ノードを強制オフラインにする
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。エンドポイントの無効化には
+/// `PUT /v0/endpoints/:id` で `enabled: false` を設定してください。
+#[deprecated(note = "Use PUT /v0/endpoints/:id with enabled: false instead")]
 pub async fn disconnect_node(
     State(state): State<AppState>,
     axum::extract::Path(node_id): axum::extract::Path<uuid::Uuid>,
@@ -163,6 +218,7 @@ pub async fn test_register_node(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // テストはレガシーAPIを検証するため、deprecated警告を抑制
 mod tests {
     use super::*;
     use crate::{

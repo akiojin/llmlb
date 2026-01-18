@@ -79,7 +79,14 @@ pub fn create_router(state: AppState) -> Router {
             "/users/:id",
             put(users::update_user).delete(users::delete_user),
         )
-        .route("/nodes/:node_id/approve", post(nodes::approve_node))
+        // DEPRECATED: ノード承認（エンドポイントは即時有効のため廃止予定）
+        .route(
+            "/nodes/:node_id/approve",
+            post({
+                #[allow(deprecated)]
+                nodes::approve_node
+            }),
+        )
         .route(
             "/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
@@ -93,13 +100,50 @@ pub fn create_router(state: AppState) -> Router {
             get(invitations::list_invitations).post(invitations::create_invitation),
         )
         .route("/invitations/:id", delete(invitations::revoke_invitation))
-        // ノード管理（一覧・削除・設定更新・メトリクス）
-        .route("/nodes", get(nodes::list_nodes))
-        .route("/nodes/:node_id", delete(nodes::delete_node))
-        .route("/nodes/:node_id/disconnect", post(nodes::disconnect_node))
-        .route("/nodes/:node_id/settings", put(nodes::update_node_settings))
-        .route("/nodes/metrics", get(nodes::list_node_metrics))
-        .route("/metrics/summary", get(nodes::metrics_summary))
+        // DEPRECATED: ノード管理（一覧・削除・設定更新・メトリクス）
+        // これらのAPIは廃止予定です。/v0/endpoints を使用してください。
+        .route(
+            "/nodes",
+            get({
+                #[allow(deprecated)]
+                nodes::list_nodes
+            }),
+        )
+        .route(
+            "/nodes/:node_id",
+            delete({
+                #[allow(deprecated)]
+                nodes::delete_node
+            }),
+        )
+        .route(
+            "/nodes/:node_id/disconnect",
+            post({
+                #[allow(deprecated)]
+                nodes::disconnect_node
+            }),
+        )
+        .route(
+            "/nodes/:node_id/settings",
+            put({
+                #[allow(deprecated)]
+                nodes::update_node_settings
+            }),
+        )
+        .route(
+            "/nodes/metrics",
+            get({
+                #[allow(deprecated)]
+                nodes::list_node_metrics
+            }),
+        )
+        .route(
+            "/metrics/summary",
+            get({
+                #[allow(deprecated)]
+                nodes::metrics_summary
+            }),
+        )
         // ダッシュボードAPI
         .route("/dashboard/nodes", get(dashboard::get_nodes))
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))

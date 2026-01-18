@@ -5,7 +5,7 @@
 
 use super::error::AppError;
 use crate::{
-    balancer::{NodeLoadSnapshot, SystemSummary},
+    balancer::{EndpointLoadSnapshot, SystemSummary},
     events::DashboardEvent,
     registry::NodeSettingsUpdate,
     AppState,
@@ -70,7 +70,7 @@ pub struct UpdateNodeSettingsPayload {
 }
 
 /// GET /v0/nodes/metrics - ノードメトリクス取得
-pub async fn list_node_metrics(State(state): State<AppState>) -> Json<Vec<NodeLoadSnapshot>> {
+pub async fn list_node_metrics(State(state): State<AppState>) -> Json<Vec<EndpointLoadSnapshot>> {
     let snapshots = state.load_manager.snapshots().await;
     Json(snapshots)
 }
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(metrics.0.len(), 1);
 
         let snapshot = &metrics.0[0];
-        assert_eq!(snapshot.node_id, node_id);
+        assert_eq!(snapshot.endpoint_id, node_id);
         assert_eq!(snapshot.cpu_usage.unwrap(), 42.0);
         assert_eq!(snapshot.memory_usage.unwrap(), 33.0);
         assert_eq!(snapshot.gpu_usage, Some(55.0));

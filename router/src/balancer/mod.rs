@@ -94,7 +94,7 @@ fn compare_average_ms(a: Option<f32>, b: Option<f32>) -> Ordering {
     compare_option_f32(a, b)
 }
 
-fn node_spec_score(node: &Node, load_state: Option<&NodeLoadState>) -> u32 {
+fn node_spec_score(node: &Node, load_state: Option<&EndpointLoadState>) -> u32 {
     node.gpu_capability_score
         .or_else(|| {
             load_state.and_then(|state| {
@@ -109,9 +109,9 @@ fn node_spec_score(node: &Node, load_state: Option<&NodeLoadState>) -> u32 {
 
 fn compare_spec_levels(
     a_node: &Node,
-    a_load: &NodeLoadState,
+    a_load: &EndpointLoadState,
     b_node: &Node,
-    b_load: &NodeLoadState,
+    b_load: &EndpointLoadState,
 ) -> Ordering {
     let a_score = node_spec_score(a_node, Some(a_load));
     let b_score = node_spec_score(b_node, Some(b_load));
@@ -121,7 +121,7 @@ fn compare_spec_levels(
 fn compare_spec_by_state(
     a_node: &Node,
     b_node: &Node,
-    state: &HashMap<Uuid, NodeLoadState>,
+    state: &HashMap<Uuid, EndpointLoadState>,
 ) -> Ordering {
     let a_score = node_spec_score(a_node, state.get(&a_node.id));
     let b_score = node_spec_score(b_node, state.get(&b_node.id));
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn effective_average_ms_prefers_metrics_value() {
         let timestamp = Utc::now();
-        let state = NodeLoadState {
+        let state = EndpointLoadState {
             success_count: 5,
             total_latency_ms: 500,
             last_metrics: Some(HealthMetrics {
@@ -1587,8 +1587,8 @@ mod tests {
 
     #[test]
     fn test_node_load_state_token_accumulation() {
-        // T-2: NodeLoadStateトークン累積テスト
-        let mut state = NodeLoadState::default();
+        // T-2: EndpointLoadStateトークン累積テスト
+        let mut state = EndpointLoadState::default();
 
         // 初期値は0
         assert_eq!(state.total_input_tokens, 0);
@@ -1617,7 +1617,7 @@ mod tests {
     #[test]
     fn test_node_load_state_average_tokens_per_request() {
         // トークン/リクエスト平均計算テスト
-        let state = NodeLoadState {
+        let state = EndpointLoadState {
             total_assigned: 10,
             total_input_tokens: 1000,
             total_output_tokens: 500,
@@ -1919,9 +1919,9 @@ mod tests {
     }
 }
 
-/// ノードの最新ロード状態
+/// エンドポイントの負荷状態
 #[derive(Debug, Clone, Default)]
-struct NodeLoadState {
+struct EndpointLoadState {
     last_metrics: Option<HealthMetrics>,
     assigned_active: u32,
     total_assigned: u64,
@@ -1939,13 +1939,12 @@ struct NodeLoadState {
     total_tokens: u64,
 }
 
-/// エンドポイントの負荷状態（NodeLoadStateのエイリアス）
-///
-/// NodeRegistry廃止移行のための後方互換エイリアス。
+/// NodeLoadState は EndpointLoadState の後方互換エイリアス
+#[deprecated(note = "Use EndpointLoadState instead")]
 #[allow(dead_code)]
-type EndpointLoadState = NodeLoadState;
+type NodeLoadState = EndpointLoadState;
 
-impl NodeLoadState {
+impl EndpointLoadState {
     fn combined_active(&self) -> u32 {
         let heartbeat_active = self
             .last_metrics
@@ -1991,11 +1990,15 @@ impl NodeLoadState {
     }
 }
 
-/// ノードのロードスナップショット
+/// エンドポイント/ノードのロードスナップショット
+///
+/// NodeRegistry廃止移行中。内部的には`endpoint_id`を使用するが、
+/// API互換性のため`node_id`としてシリアライズする。
 #[derive(Debug, Clone, Serialize)]
-pub struct NodeLoadSnapshot {
-    /// ノードID
-    pub node_id: Uuid,
+pub struct EndpointLoadSnapshot {
+    /// エンドポイントID（API互換性のためnode_idとしてシリアライズ）
+    #[serde(rename = "node_id")]
+    pub endpoint_id: Uuid,
     /// マシン名
     pub machine_name: String,
     /// ノード状態
@@ -2048,11 +2051,12 @@ pub struct NodeLoadSnapshot {
     pub total_tokens: u64,
 }
 
-/// エンドポイントのロードスナップショット（NodeLoadSnapshotのエイリアス）
+/// ノードのロードスナップショット（後方互換エイリアス）
 ///
 /// NodeRegistry廃止移行のための後方互換エイリアス。
-/// 新規コードはこのエイリアスを使用し、最終的にNodeLoadSnapshotをリネームする。
-pub type EndpointLoadSnapshot = NodeLoadSnapshot;
+/// 新規コードは`EndpointLoadSnapshot`を使用すること。
+#[deprecated(note = "Use EndpointLoadSnapshot instead")]
+pub type NodeLoadSnapshot = EndpointLoadSnapshot;
 
 /// システム全体の統計サマリー
 #[derive(Debug, Clone, Serialize, Default)]
@@ -2100,7 +2104,7 @@ pub struct LoadManager {
     /// EndpointRegistry（NodeRegistry廃止移行用）
     #[allow(dead_code)]
     endpoint_registry: Option<Arc<EndpointRegistry>>,
-    state: Arc<RwLock<HashMap<Uuid, NodeLoadState>>>,
+    state: Arc<RwLock<HashMap<Uuid, EndpointLoadState>>>,
     round_robin: Arc<AtomicUsize>,
     history: Arc<RwLock<VecDeque<RequestHistoryPoint>>>,
     /// 待機中リクエスト数（簡易カウンタ）
@@ -2753,7 +2757,7 @@ impl LoadManager {
         let state = self.state.read().await;
         let now = Utc::now();
 
-        let mut fresh_states: Vec<(Node, NodeLoadState)> = Vec::new();
+        let mut fresh_states: Vec<(Node, EndpointLoadState)> = Vec::new();
         for node in &online_nodes {
             match state.get(&node.id) {
                 Some(load_state) if !load_state.is_stale(now) => {
@@ -2766,7 +2770,7 @@ impl LoadManager {
         let have_full_fresh_metrics = fresh_states.len() == online_nodes.len();
 
         if have_full_fresh_metrics && !fresh_states.is_empty() {
-            let mut load_based_candidates: Vec<(Node, NodeLoadState)> = fresh_states
+            let mut load_based_candidates: Vec<(Node, EndpointLoadState)> = fresh_states
                 .iter()
                 .filter_map(|(node, load_state)| {
                     if let Some(metrics) = &load_state.last_metrics {
@@ -2869,7 +2873,7 @@ impl LoadManager {
     }
 
     /// 指定されたノードのロードスナップショットを取得
-    pub async fn snapshot(&self, node_id: Uuid) -> RouterResult<NodeLoadSnapshot> {
+    pub async fn snapshot(&self, node_id: Uuid) -> RouterResult<EndpointLoadSnapshot> {
         let node = self.registry.get(node_id).await?;
         let state = self.state.read().await;
         let load_state = state.get(&node_id).cloned().unwrap_or_default();
@@ -2878,7 +2882,7 @@ impl LoadManager {
     }
 
     /// すべてのノードのロードスナップショットを取得
-    pub async fn snapshots(&self) -> Vec<NodeLoadSnapshot> {
+    pub async fn snapshots(&self) -> Vec<EndpointLoadSnapshot> {
         let nodes = self.registry.list().await;
         let state = self.state.read().await;
 
@@ -3053,9 +3057,9 @@ impl LoadManager {
     fn build_snapshot(
         &self,
         node: Node,
-        load_state: NodeLoadState,
+        load_state: EndpointLoadState,
         now: DateTime<Utc>,
-    ) -> NodeLoadSnapshot {
+    ) -> EndpointLoadSnapshot {
         let cpu_usage = load_state
             .last_metrics
             .as_ref()
@@ -3098,8 +3102,8 @@ impl LoadManager {
             .and_then(|metrics| metrics.gpu_capability_score);
         let active_requests = load_state.combined_active();
 
-        NodeLoadSnapshot {
-            node_id: node.id,
+        EndpointLoadSnapshot {
+            endpoint_id: node.id,
             machine_name: node.machine_name,
             status: node.status,
             cpu_usage,
@@ -3317,7 +3321,7 @@ fn compute_round_robin_priority(nodes: &[Node], start_index: usize) -> HashMap<U
 }
 
 fn usage_snapshot(
-    load_state: &NodeLoadState,
+    load_state: &EndpointLoadState,
 ) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
     load_state
         .last_metrics
@@ -3333,7 +3337,7 @@ fn usage_snapshot(
         .unwrap_or((None, None, None, None))
 }
 
-fn compare_usage_levels(a: &NodeLoadState, b: &NodeLoadState) -> Ordering {
+fn compare_usage_levels(a: &EndpointLoadState, b: &EndpointLoadState) -> Ordering {
     let (a_cpu, a_mem, a_gpu, a_gpu_mem) = usage_snapshot(a);
     let (b_cpu, b_mem, b_gpu, b_gpu_mem) = usage_snapshot(b);
 

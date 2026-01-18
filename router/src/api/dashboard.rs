@@ -5,7 +5,7 @@
 
 use super::error::AppError;
 use crate::{
-    balancer::{NodeLoadSnapshot, RequestHistoryPoint},
+    balancer::{EndpointLoadSnapshot, RequestHistoryPoint},
     types::endpoint::EndpointStatus,
     AppState,
 };
@@ -363,8 +363,8 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
     let snapshots = load_manager.snapshots().await;
     let snapshot_map = snapshots
         .into_iter()
-        .map(|snapshot| (snapshot.node_id, snapshot))
-        .collect::<HashMap<Uuid, NodeLoadSnapshot>>();
+        .map(|snapshot| (snapshot.endpoint_id, snapshot))
+        .collect::<HashMap<Uuid, EndpointLoadSnapshot>>();
 
     let now = Utc::now();
 

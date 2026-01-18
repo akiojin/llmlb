@@ -5,6 +5,15 @@ use axum::{extract::State, Json};
 use llm_router_common::protocol::HealthCheckRequest;
 
 /// POST /v0/health - ヘルスチェック受信
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。プッシュ型ヘルスチェックはPULL型に移行されました。
+/// エンドポイントへのヘルスチェックはルーターが `GET /v0/health` をエンドポイントに
+/// リクエストすることで行われます。
+#[deprecated(
+    note = "Push-based health check is deprecated. Endpoints are now polled by the router."
+)]
 #[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn health_check(
     State(state): State<AppState>,

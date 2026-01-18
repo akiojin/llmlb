@@ -52,6 +52,7 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 ));
 
 /// APIルーターを作成
+#[allow(deprecated)] // NodeRegistry migration in progress - legacy APIs still registered
 pub fn create_router(state: AppState) -> Router {
     let auth_disabled = crate::config::is_auth_disabled();
 

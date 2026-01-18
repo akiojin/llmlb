@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! ダッシュボードフローE2Eテスト
 //!
 //! ダッシュボードAPI（/v0/dashboard/*）のE2Eテスト

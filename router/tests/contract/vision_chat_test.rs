@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract Test: Vision Chat Completions API (SPEC-e03a404c)
 //!
 //! TDD RED: These tests define the API contract for vision/image understanding.

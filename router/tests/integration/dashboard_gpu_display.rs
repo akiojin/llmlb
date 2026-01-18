@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: ダッシュボードAPIでのGPU情報表示
 //!
 //! ダッシュボードエンドポイントがノードのGPU情報（モデル名・枚数）を返すことを検証する。

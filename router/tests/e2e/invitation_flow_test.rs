@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! 招待コードフローE2Eテスト
 //!
 //! 完全な招待コードフロー（発行 → ユーザー登録 → ログイン）

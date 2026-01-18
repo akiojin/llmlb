@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 use axum::{body::to_bytes, Router};
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use tower::ServiceExt;

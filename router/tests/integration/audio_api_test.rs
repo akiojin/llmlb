@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! 音声API統合テスト
 //!
 //! TDD RED: 音声認識（ASR）と音声合成（TTS）のノード選択とプロキシテスト

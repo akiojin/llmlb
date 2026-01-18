@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract Test: DELETE /v0/endpoints/:id
 //!
 //! SPEC-66555000: エンドポイント削除API契約テスト

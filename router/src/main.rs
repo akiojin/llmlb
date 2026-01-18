@@ -150,11 +150,24 @@ async fn run_server(config: ServerConfig) {
         .expect("Failed to run database migrations");
 
     info!("Initializing storage at ~/.llm-router/");
+
+    // エンドポイントレジストリを初期化（新アーキテクチャ）
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to initialize endpoint registry");
+    let endpoint_registry_arc = std::sync::Arc::new(endpoint_registry.clone());
+
+    // NodeRegistryは廃止予定、EndpointRegistryに完全移行中
+    #[allow(deprecated)]
     let registry = registry::NodeRegistry::with_storage(db_pool.clone())
         .await
         .expect("Failed to initialize node registry");
 
-    let load_manager = balancer::LoadManager::new(registry.clone());
+    // LoadManagerはNodeRegistryを必要とするが、EndpointRegistryも設定
+    // NodeRegistry完全削除後はEndpointRegistryのみを使用するように移行予定
+    #[allow(deprecated)]
+    let load_manager = balancer::LoadManager::new(registry.clone())
+        .with_endpoint_registry(endpoint_registry_arc.clone());
     info!("Storage initialized successfully");
 
     let health_check_interval_secs: u64 = get_env_with_fallback_parse(
@@ -176,11 +189,6 @@ async fn run_server(config: ServerConfig) {
         );
         health_monitor.start();
     }
-
-    // エンドポイントレジストリを初期化
-    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-        .await
-        .expect("Failed to initialize endpoint registry");
 
     // 起動時にエンドポイントのヘルスチェックを実行
     if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {

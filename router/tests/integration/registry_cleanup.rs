@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: GPUなしノードの起動時クリーンアップ
 //!
 //! ストレージに保存されたGPU無しノードが、Router起動時に自動削除されることを確認する。

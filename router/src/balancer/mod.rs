@@ -129,6 +129,7 @@ fn compare_spec_by_state(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 mod tests {
     use super::*;
     use llm_router_common::protocol::RegisterRequest;
@@ -2098,11 +2099,17 @@ pub struct SystemSummary {
 }
 
 /// ロードマネージャー
+///
+/// # 移行中
+///
+/// 現在NodeRegistryに依存していますが、EndpointRegistryへ移行中です。
+/// `with_endpoint_registry()`でEndpointRegistryを設定し、将来的にNodeRegistry依存を削除予定。
 #[derive(Clone)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub struct LoadManager {
+    #[deprecated(note = "Use endpoint_registry instead. NodeRegistry is being phased out.")]
     registry: NodeRegistry,
     /// EndpointRegistry（NodeRegistry廃止移行用）
-    #[allow(dead_code)]
     endpoint_registry: Option<Arc<EndpointRegistry>>,
     state: Arc<RwLock<HashMap<Uuid, EndpointLoadState>>>,
     round_robin: Arc<AtomicUsize>,
@@ -2155,9 +2162,20 @@ pub struct MetricsUpdate {
     pub ready_models: Option<(u8, u8)>,
 }
 
+#[allow(deprecated)] // NodeRegistry migration in progress
 impl LoadManager {
     /// 新しいロードマネージャーを作成
+    ///
+    /// # 廃止予定
+    ///
+    /// NodeRegistryを受け取るこのコンストラクタは廃止予定です。
+    /// EndpointRegistryのみを受け取るコンストラクタに移行予定。
+    /// 移行期間中は`with_endpoint_registry()`でEndpointRegistryを設定してください。
+    #[deprecated(
+        note = "NodeRegistry-based constructor will be removed. Use with_endpoint_registry() to set EndpointRegistry."
+    )]
     pub fn new(registry: NodeRegistry) -> Self {
+        #[allow(deprecated)]
         Self {
             registry,
             endpoint_registry: None,

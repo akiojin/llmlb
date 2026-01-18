@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: APIキーのスコープ制御
 //!
 //! /v0 と /v1 の各エンドポイントでスコープが正しく強制されることを確認する。

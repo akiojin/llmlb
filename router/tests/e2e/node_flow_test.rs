@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! ノード管理E2Eテスト
 //!
 //! SPEC-66555000: POST /v0/nodes と POST /v0/health は廃止されました。

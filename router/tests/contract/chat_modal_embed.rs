@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract test: dashboard (React SPA) serves correctly
 //!
 //! The dashboard is now a React single-page application.

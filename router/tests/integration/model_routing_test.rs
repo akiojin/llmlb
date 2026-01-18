@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Tests: モデル対応ルーティング
 //!
 //! SPEC-93536000 Phase 6 (6.4-6.9)

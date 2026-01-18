@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: メトリクス収集
 //!
 //! ⚠️ このテストはTDD RED状態の統合テストです。

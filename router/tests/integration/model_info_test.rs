@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! モデル情報表示統合テスト
 //!
 //! TDD RED: モデル一覧とノード別インストール状況の表示

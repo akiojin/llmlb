@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract test: Dashboard React app initial state
 //!
 //! Verifies the React SPA shell is served correctly.

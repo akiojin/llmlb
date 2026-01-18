@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Dashboard smoke tests
 //!
 //! Axum router を直接呼び出し、ダッシュボードの主要なHTTP経路が期待通りに

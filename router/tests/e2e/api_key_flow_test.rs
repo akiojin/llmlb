@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! APIキーフローE2Eテスト
 //!
 //! T092: 完全なAPIキーフロー（発行 → 使用 → 削除）

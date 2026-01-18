@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: ロードバランシング
 //!
 //! 複数ノードへのリクエスト分散と負荷ベース選択の検証

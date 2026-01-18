@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract Test: Vision Capabilities in /v1/models (SPEC-e03a404c)
 //!
 //! TDD RED: These tests define the capability reporting for vision models.

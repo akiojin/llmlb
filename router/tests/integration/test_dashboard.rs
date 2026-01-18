@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: ダッシュボード
 //!
 //! WebSocket接続 → リアルタイム更新 → ノード状態変化の受信

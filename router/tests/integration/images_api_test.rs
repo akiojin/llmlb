@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! 画像API統合テスト
 //!
 //! TDD RED: 画像生成（StableDiffusion）のノード選択とプロキシテスト

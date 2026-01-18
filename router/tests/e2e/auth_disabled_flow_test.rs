@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! 認証無効化モードのE2Eテスト
 //!
 //! AUTH_DISABLED=true のときに認証なしでアクセスできることを確認する

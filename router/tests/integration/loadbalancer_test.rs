@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Integration Test: 負荷ベースロードバランシング
 //!
 //! ⚠️ このテストはTDD RED状態の統合テストです。

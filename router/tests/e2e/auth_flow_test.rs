@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! 認証フローE2Eテスト
 //!
 //! T091: 完全な認証フロー（ログイン → API呼び出し → ログアウト）

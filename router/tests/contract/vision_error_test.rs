@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract Test: Vision Error Handling (SPEC-e03a404c)
 //!
 //! TDD RED: These tests define error handling behavior for vision API.

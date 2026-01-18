@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! LoadManager パフォーマンスベンチマーク
 //!
 //! select_node_by_metrics() の実行時間を測定し、

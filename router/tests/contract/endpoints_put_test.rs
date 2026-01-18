@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract Test: PUT /v0/endpoints/:id
 //!
 //! SPEC-66555000: エンドポイント更新API契約テスト

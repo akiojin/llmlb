@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract Test: GPU必須ノード登録
 //!
 //! GPU情報を含むノードのみが登録され、レスポンスへGPU情報が反映されることを検証する。

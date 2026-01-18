@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 use axum::http::{header::CONTENT_TYPE, StatusCode};
 use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
 use llm_router_common::types::GpuDeviceInfo;

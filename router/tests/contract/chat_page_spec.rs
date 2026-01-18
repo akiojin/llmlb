@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! Contract test: /playground (React SPA) serves correctly
 //!
 //! The playground is now a React single-page application.

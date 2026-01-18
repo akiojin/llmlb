@@ -1,3 +1,5 @@
+#![allow(deprecated)] // NodeRegistry → EndpointRegistry migration in progress
+
 //! OpenAI request history sanitization contract test
 //!
 //! TDD RED: このテストはサニタイズ実装前に失敗する必要があります。

@@ -1,6 +1,7 @@
 //! ノード管理APIハンドラー（レガシー）
 //!
 //! # 廃止予定
+#![allow(deprecated)] // NodeRegistry migration in progress - entire module uses legacy registry
 //!
 //! このモジュールのAPIは廃止予定です。新しい実装では以下を使用してください：
 //!
@@ -230,6 +231,7 @@ mod tests {
     use std::net::IpAddr;
     use std::time::Duration;
 
+    #[allow(deprecated)]
     async fn create_test_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
@@ -243,6 +245,9 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
@@ -253,7 +258,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

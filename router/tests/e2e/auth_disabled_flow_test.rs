@@ -40,11 +40,15 @@ async fn build_app() -> Router {
     let registry = NodeRegistry::new();
     let load_manager = LoadManager::new(registry.clone());
     let db_pool = support::router::create_test_db_pool().await;
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = support::router::test_jwt_secret();
 
+    #[allow(deprecated)]
     let state = AppState {
         registry,
         load_manager,
@@ -54,7 +58,7 @@ async fn build_app() -> Router {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry,
     };
 
     api::create_router(state)

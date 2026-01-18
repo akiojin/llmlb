@@ -64,6 +64,7 @@ pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRe
 }
 
 /// GET /v0/nodes/:node_id/logs
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_node_logs(
     Path(node_id): Path<Uuid>,
     Query(query): Query<LogQuery>,
@@ -140,6 +141,7 @@ impl From<NodeLogPayload> for LogResponse {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 mod tests {
     use super::*;
     use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry};
@@ -158,6 +160,7 @@ mod tests {
         }]
     }
 
+    #[allow(deprecated)]
     async fn router_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
@@ -171,6 +174,9 @@ mod tests {
         let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
             db_pool.clone(),
         ));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
@@ -181,7 +187,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

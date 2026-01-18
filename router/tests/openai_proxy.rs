@@ -16,10 +16,14 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
+    #[allow(deprecated)]
     let state = AppState {
         registry,
         load_manager,
@@ -29,7 +33,7 @@ async fn build_state_with_mock(mock: &MockServer) -> (AppState, String) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry,
     };
 
     // 登録済みノードを追加

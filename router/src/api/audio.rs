@@ -100,11 +100,8 @@ impl AudioBackend {
 /// 音声認識対応バックエンドを選択
 /// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
 async fn select_transcription_backend(state: &AppState) -> Result<AudioBackend, RouterError> {
-    let endpoint_registry = state.endpoint_registry.as_ref().ok_or_else(|| {
-        RouterError::ServiceUnavailable("EndpointRegistry is not configured".to_string())
-    })?;
-
-    let endpoints = endpoint_registry
+    let endpoints = state
+        .endpoint_registry
         .list_online_by_capability(EndpointCapability::AudioTranscription)
         .await;
 
@@ -120,11 +117,8 @@ async fn select_transcription_backend(state: &AppState) -> Result<AudioBackend, 
 /// 音声合成対応バックエンドを選択
 /// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
 async fn select_speech_backend(state: &AppState) -> Result<AudioBackend, RouterError> {
-    let endpoint_registry = state.endpoint_registry.as_ref().ok_or_else(|| {
-        RouterError::ServiceUnavailable("EndpointRegistry is not configured".to_string())
-    })?;
-
-    let endpoints = endpoint_registry
+    let endpoints = state
+        .endpoint_registry
         .list_online_by_capability(EndpointCapability::AudioSpeech)
         .await;
 

@@ -44,6 +44,9 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
     llm_router::api::models::clear_registered_models(&db_pool)
         .await
         .expect("clear registered models");
@@ -51,6 +54,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
+    #[allow(deprecated)]
     let state = AppState {
         registry,
         load_manager,
@@ -60,7 +64,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry,
     };
 
     let router = api::create_router(state.clone());

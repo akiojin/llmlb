@@ -446,6 +446,7 @@ mod tests {
     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
     use tower::Service;
 
+    #[allow(deprecated)]
     async fn test_state() -> (AppState, NodeRegistry) {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
@@ -459,6 +460,9 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         let jwt_secret = "test-secret".to_string();
         let state = AppState {
             registry: registry.clone(),
@@ -469,7 +473,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         };
         (state, registry)
     }

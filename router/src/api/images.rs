@@ -99,11 +99,8 @@ impl ImageBackend {
 /// EndpointRegistry経由でのみ検索（NodeRegistryフォールバック廃止）
 async fn select_image_backend(state: &AppState) -> Result<ImageBackend, RouterError> {
     // EndpointRegistry経由で検索（SPEC-66555000: 新方式のみ）
-    let endpoint_registry = state.endpoint_registry.as_ref().ok_or_else(|| {
-        RouterError::ServiceUnavailable("EndpointRegistry is not configured".to_string())
-    })?;
-
-    let endpoints = endpoint_registry
+    let endpoints = state
+        .endpoint_registry
         .list_online_by_capability(EndpointCapability::ImageGeneration)
         .await;
 

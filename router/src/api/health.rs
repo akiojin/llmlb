@@ -5,6 +5,7 @@ use axum::{extract::State, Json};
 use llm_router_common::protocol::HealthCheckRequest;
 
 /// POST /v0/health - ヘルスチェック受信
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn health_check(
     State(state): State<AppState>,
     Json(req): Json<HealthCheckRequest>,
@@ -63,6 +64,7 @@ pub async fn health_check(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 mod tests {
     use super::*;
     use crate::{balancer::LoadManager, registry::NodeRegistry};
@@ -86,6 +88,9 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
@@ -96,7 +101,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

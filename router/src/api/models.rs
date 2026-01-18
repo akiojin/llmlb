@@ -328,6 +328,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<Model
 ///
 /// ダッシュボードのModel Hub用。登録済みモデルを状態付きで返す。
 /// HF動的情報（ダウンロード数、いいね数）も含む。
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn list_models_with_status(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ModelWithStatus>>, AppError> {
@@ -1112,6 +1113,7 @@ async fn compute_gpu_warnings(registry: &NodeRegistry, required_memory: u64) -> 
 /// - `filename` を指定するとそのアーティファクトを主として登録
 /// - 未指定の場合、リポジトリ内のアーティファクトが一意であれば自動選択
 /// - safetensors では `config.json` / `tokenizer.json` が必須
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn register_model(
     State(state): State<AppState>,
     Json(req): Json<RegisterModelRequest>,

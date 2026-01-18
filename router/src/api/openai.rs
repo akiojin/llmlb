@@ -182,6 +182,7 @@ fn model_unavailable_response(message: impl Into<String>, code: &str) -> Respons
 }
 
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn chat_completions(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
@@ -274,6 +275,7 @@ pub async fn embeddings(
 /// OpenAI API 互換形式に Azure OpenAI 形式の capabilities と
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
     use crate::types::endpoint::SupportedAPI;
     use std::collections::HashSet;
@@ -298,7 +300,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
-    if let Some(ref registry) = state.endpoint_registry {
+    {
+        let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
@@ -460,6 +463,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 ///
 /// SPEC-24157000: Endpoints APIで登録されたモデルも検索対象に含める
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
@@ -475,7 +479,8 @@ pub async fn get_model(
 
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
-    if let Some(ref registry) = state.endpoint_registry {
+    {
+        let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
@@ -1278,6 +1283,7 @@ async fn proxy_openai_cloud_post(
     Ok(outcome.response)
 }
 
+#[allow(deprecated)] // NodeRegistry migration in progress
 async fn proxy_openai_post(
     state: &AppState,
     payload: Value,
@@ -1956,6 +1962,7 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    #[allow(deprecated)]
     async fn create_local_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
@@ -1967,6 +1974,9 @@ mod tests {
             .await
             .expect("migrations");
         let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         AppState {
             registry,
             load_manager,
@@ -1976,7 +1986,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

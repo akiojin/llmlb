@@ -355,6 +355,7 @@ pub async fn get_monthly_token_stats(
     Ok(Json(stats))
 }
 
+#[allow(deprecated)] // NodeRegistry migration in progress
 async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
     let registry = state.registry.clone();
     let load_manager = state.load_manager.clone();
@@ -481,10 +482,7 @@ async fn collect_nodes(state: &AppState) -> Vec<DashboardNode> {
 ///
 /// SPEC-66555000: ルーター主導エンドポイント登録システム
 async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
-    let Some(endpoint_registry) = &state.endpoint_registry else {
-        return Vec::new();
-    };
-
+    let endpoint_registry = &state.endpoint_registry;
     let endpoints = endpoint_registry.list().await;
 
     let mut result = Vec::with_capacity(endpoints.len());
@@ -515,6 +513,7 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
     result
 }
 
+#[allow(deprecated)] // NodeRegistry migration in progress
 async fn collect_stats(state: &AppState) -> DashboardStats {
     let load_manager = state.load_manager.clone();
     let registry = state.registry.clone();
@@ -701,6 +700,7 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 mod tests {
     use super::*;
     use crate::{
@@ -724,6 +724,9 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
@@ -734,7 +737,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

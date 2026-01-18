@@ -43,6 +43,10 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        let endpoint_registry =
+            llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+                .await
+                .expect("Failed to create endpoint registry");
         llm_router::api::models::clear_registered_models(&db_pool)
             .await
             .expect("clear registered models");
@@ -50,6 +54,7 @@ mod common {
             llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
         let jwt_secret = "test-secret".to_string();
+        #[allow(deprecated)]
         let state = AppState {
             registry,
             load_manager,
@@ -59,7 +64,7 @@ mod common {
             http_client: reqwest::Client::new(),
             queue_config: llm_router::config::QueueConfig::from_env(),
             event_bus: llm_router::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         };
 
         let password_hash = llm_router::auth::password::hash_password("password123").unwrap();

@@ -348,9 +348,7 @@ pub async fn create_endpoint(
     match db::create_endpoint(&state.db_pool, &endpoint).await {
         Ok(()) => {
             // EndpointRegistryキャッシュも更新（DBは既に保存済みなのでキャッシュのみ）
-            if let Some(ref registry) = state.endpoint_registry {
-                registry.add_to_cache(endpoint.clone()).await;
-            }
+            state.endpoint_registry.add_to_cache(endpoint.clone()).await;
             (StatusCode::CREATED, Json(EndpointResponse::from(endpoint))).into_response()
         }
         Err(e) => {
@@ -753,11 +751,10 @@ pub async fn test_endpoint(
                 .await;
 
                 // EndpointRegistryキャッシュも更新
-                if let Some(ref registry) = state.endpoint_registry {
-                    let _ = registry
-                        .update_status(id, EndpointStatus::Online, Some(latency_ms), None)
-                        .await;
-                }
+                let _ = state
+                    .endpoint_registry
+                    .update_status(id, EndpointStatus::Online, Some(latency_ms), None)
+                    .await;
 
                 // SPEC-24157000: Responses API対応を検出
                 // /health エンドポイントで supports_responses_api フラグを確認
@@ -777,20 +774,11 @@ pub async fn test_endpoint(
                         let supports_responses_api = health_json["supports_responses_api"]
                             .as_bool()
                             .unwrap_or(false);
-                        // EndpointRegistryがある場合はキャッシュも更新
-                        if let Some(ref registry) = state.endpoint_registry {
-                            let _ = registry
-                                .update_responses_api_support(id, supports_responses_api)
-                                .await;
-                        } else {
-                            // Registryがない場合はDBのみ更新
-                            let _ = db::update_endpoint_responses_api_support(
-                                &state.db_pool,
-                                id,
-                                supports_responses_api,
-                            )
+                        // EndpointRegistryキャッシュも更新
+                        let _ = state
+                            .endpoint_registry
+                            .update_responses_api_support(id, supports_responses_api)
                             .await;
-                        }
                         tracing::debug!(
                             endpoint_id = %id,
                             supports_responses_api = supports_responses_api,
@@ -999,9 +987,7 @@ pub async fn sync_endpoint_models(
             }
 
             // EndpointRegistryキャッシュをリロードしてモデルマッピングを更新
-            if let Some(ref registry) = state.endpoint_registry {
-                let _ = registry.reload().await;
-            }
+            let _ = state.endpoint_registry.reload().await;
 
             // 変更カウントを計算
             let added = new_model_ids.difference(&existing_models).count();

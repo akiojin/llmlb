@@ -154,12 +154,10 @@ pub(crate) async fn select_endpoint_for_model(
     state: &AppState,
     model_id: &str,
 ) -> Result<EndpointSelection, RouterError> {
-    let registry = match &state.endpoint_registry {
-        Some(reg) => reg,
-        None => return Ok(EndpointSelection::NotFound),
-    };
-
-    let endpoints = registry.find_by_model_sorted_by_latency(model_id).await;
+    let endpoints = state
+        .endpoint_registry
+        .find_by_model_sorted_by_latency(model_id)
+        .await;
 
     match endpoints.into_iter().next() {
         Some(endpoint) => Ok(EndpointSelection::Found(Box::new(endpoint))),
@@ -222,6 +220,7 @@ pub(crate) async fn forward_to_endpoint(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // NodeRegistry migration in progress
 mod tests {
     use super::*;
     use crate::{
@@ -232,6 +231,7 @@ mod tests {
     use std::net::IpAddr;
     use uuid::Uuid;
 
+    #[allow(deprecated)]
     async fn create_test_state() -> AppState {
         let registry = NodeRegistry::new();
         let load_manager = LoadManager::new(registry.clone());
@@ -245,6 +245,9 @@ mod tests {
         let request_history = std::sync::Arc::new(
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
         let jwt_secret = "test-secret".to_string();
         AppState {
             registry,
@@ -255,7 +258,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

@@ -1939,6 +1939,12 @@ struct NodeLoadState {
     total_tokens: u64,
 }
 
+/// エンドポイントの負荷状態（NodeLoadStateのエイリアス）
+///
+/// NodeRegistry廃止移行のための後方互換エイリアス。
+#[allow(dead_code)]
+type EndpointLoadState = NodeLoadState;
+
 impl NodeLoadState {
     fn combined_active(&self) -> u32 {
         let heartbeat_active = self
@@ -2041,6 +2047,12 @@ pub struct NodeLoadSnapshot {
     /// 総トークン累計
     pub total_tokens: u64,
 }
+
+/// エンドポイントのロードスナップショット（NodeLoadSnapshotのエイリアス）
+///
+/// NodeRegistry廃止移行のための後方互換エイリアス。
+/// 新規コードはこのエイリアスを使用し、最終的にNodeLoadSnapshotをリネームする。
+pub type EndpointLoadSnapshot = NodeLoadSnapshot;
 
 /// システム全体の統計サマリー
 #[derive(Debug, Clone, Serialize, Default)]

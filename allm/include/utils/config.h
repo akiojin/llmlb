@@ -22,14 +22,11 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog();
 
 struct NodeConfig {
     std::string models_dir;
-    std::string engine_plugins_dir;
     std::vector<std::string> origin_allowlist;
     int node_port{32769};
     bool require_gpu{true};
     std::string bind_address{"0.0.0.0"};
     std::string default_embedding_model{"nomic-embed-text-v1.5"};
-    int plugin_restart_interval_sec{0};
-    uint64_t plugin_restart_request_limit{0};
 };
 
 NodeConfig loadNodeConfig();

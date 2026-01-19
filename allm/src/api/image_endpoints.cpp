@@ -1,6 +1,6 @@
 #include "api/image_endpoints.h"
 
-#include "core/sd_manager.h"
+#include "core/image_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -28,8 +28,8 @@ std::string extractFirstError(const std::vector<ImageGenerationResult>& results,
 
 }  // namespace
 
-ImageEndpoints::ImageEndpoints(SDManager& sd_manager)
-    : sd_manager_(sd_manager) {}
+ImageEndpoints::ImageEndpoints(ImageManager& image_manager)
+    : image_manager_(image_manager) {}
 
 void ImageEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
     res.set_content(body.dump(), "application/json");
@@ -190,14 +190,14 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
     params.steps = steps;
 
     // Load model if needed
-    if (!sd_manager_.loadModelIfNeeded(model)) {
+    if (!image_manager_.loadModelIfNeeded(model)) {
         respondError(res, 500, "model_load_failed",
                      "Failed to load model: " + model);
         return;
     }
 
     // Generate images
-    auto results = sd_manager_.generateImages(model, params);
+    auto results = image_manager_.generateImages(model, params);
 
     if (results.empty()) {
         respondError(res, 500, "generation_failed", "Image generation failed");
@@ -327,14 +327,14 @@ void ImageEndpoints::handleEdits(const httplib::Request& req,
     params.batch_count = n;
 
     // Load model if needed
-    if (!sd_manager_.loadModelIfNeeded(model)) {
+    if (!image_manager_.loadModelIfNeeded(model)) {
         respondError(res, 500, "model_load_failed",
                      "Failed to load model: " + model);
         return;
     }
 
     // Edit images
-    auto results = sd_manager_.editImages(model, params);
+    auto results = image_manager_.editImages(model, params);
 
     if (results.empty()) {
         respondError(res, 500, "edit_failed", "Image editing failed");
@@ -442,14 +442,14 @@ void ImageEndpoints::handleVariations(const httplib::Request& req,
     params.batch_count = n;
 
     // Load model if needed
-    if (!sd_manager_.loadModelIfNeeded(model)) {
+    if (!image_manager_.loadModelIfNeeded(model)) {
         respondError(res, 500, "model_load_failed",
                      "Failed to load model: " + model);
         return;
     }
 
     // Generate variations
-    auto results = sd_manager_.generateVariations(model, params);
+    auto results = image_manager_.generateVariations(model, params);
 
     if (results.empty()) {
         respondError(res, 500, "variation_failed",

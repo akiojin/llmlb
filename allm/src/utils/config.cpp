@@ -169,23 +169,21 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     bool used_file = false;
 
     // defaults: ~/.llm-router/models/
-    cfg.models_dir = defaultConfigPath().empty() ? ".llm-router/models" : (defaultConfigPath().parent_path() / "models").string();
-    cfg.engine_plugins_dir = defaultConfigPath().empty() ? ".llm-router/engines" : (defaultConfigPath().parent_path() / "engines").string();
+    cfg.models_dir = defaultConfigPath().empty()
+                         ? ".llm-router/models"
+                         : (defaultConfigPath().parent_path() / "models").string();
     cfg.origin_allowlist = splitAllowlistCsv("huggingface.co/*,cdn-lfs.huggingface.co/*");
 
     auto apply_json = [&](const nlohmann::json& j) {
-        if (j.contains("models_dir") && j["models_dir"].is_string()) cfg.models_dir = j["models_dir"].get<std::string>();
-        if (j.contains("node_port") && j["node_port"].is_number()) cfg.node_port = j["node_port"].get<int>();
-        if (j.contains("engine_plugins_dir") && j["engine_plugins_dir"].is_string()) {
-            cfg.engine_plugins_dir = j["engine_plugins_dir"].get<std::string>();
+        if (j.contains("models_dir") && j["models_dir"].is_string()) {
+            cfg.models_dir = j["models_dir"].get<std::string>();
         }
-        if (j.contains("plugin_restart_interval_sec") && j["plugin_restart_interval_sec"].is_number()) {
-            cfg.plugin_restart_interval_sec = j["plugin_restart_interval_sec"].get<int>();
+        if (j.contains("node_port") && j["node_port"].is_number()) {
+            cfg.node_port = j["node_port"].get<int>();
         }
-        if (j.contains("plugin_restart_request_limit") && j["plugin_restart_request_limit"].is_number()) {
-            cfg.plugin_restart_request_limit = j["plugin_restart_request_limit"].get<uint64_t>();
+        if (j.contains("bind_address") && j["bind_address"].is_string()) {
+            cfg.bind_address = j["bind_address"].get<std::string>();
         }
-        if (j.contains("bind_address") && j["bind_address"].is_string()) cfg.bind_address = j["bind_address"].get<std::string>();
         if (j.contains("origin_allowlist")) {
             const auto& v = j["origin_allowlist"];
             std::vector<std::string> list;
@@ -228,25 +226,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         log << "env:MODELS_DIR=" << *v << " ";
         used_env = true;
     }
-    if (const char* v = std::getenv("ALLM_ENGINE_PLUGINS_DIR")) {
-        cfg.engine_plugins_dir = v;
-        log << "env:ENGINE_PLUGINS_DIR=" << cfg.engine_plugins_dir << " ";
-        used_env = true;
-    }
-    if (auto v = getEnvWithFallback("ALLM_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
-        try {
-            cfg.plugin_restart_interval_sec = std::stoi(*v);
-            log << "env:PLUGIN_RESTART_SECS=" << cfg.plugin_restart_interval_sec << " ";
-            used_env = true;
-        } catch (...) {}
-    }
-    if (auto v = getEnvWithFallback("ALLM_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
-        try {
-            cfg.plugin_restart_request_limit = static_cast<uint64_t>(std::stoll(*v));
-            log << "env:PLUGIN_RESTART_REQUESTS=" << cfg.plugin_restart_request_limit << " ";
-            used_env = true;
-        } catch (...) {}
-    }
     if (auto v = getEnvWithFallback("ALLM_PORT", "ALLM_PORT")) {
         // ALLM_PORT is already the correct name
         try {
@@ -284,7 +263,7 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     }
     if (!used_env && !used_file) log << "default";
 
-    // GPU必須を強制（設定・環境変数では無効化できない）
+    // GPU requirement is enforced for node operation
     cfg.require_gpu = true;
 
     return {cfg, log.str()};

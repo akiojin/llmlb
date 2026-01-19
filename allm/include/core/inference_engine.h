@@ -10,13 +10,11 @@
 #include <mutex>
 
 #include "core/engine_types.h"
-#include "core/engine_host.h"
-#include "core/engine_registry.h"
+#include "core/text_manager.h"
 #include "system/resource_monitor.h"
 
 namespace allm {
 
-// T181: クラッシュ後503エラー
 class ServiceUnavailableError : public std::runtime_error {
 public:
     explicit ServiceUnavailableError(const std::string& message)
@@ -121,19 +119,6 @@ public:
     /// モデルが利用可能かを判定（エンジン/メタデータに基づく）
     bool isModelSupported(const ModelDescriptor& descriptor) const;
 
-    /// エンジンプラグインをロードする
-    bool loadEnginePlugins(const std::filesystem::path& directory, std::string& error);
-    /// エンジンプラグインをシャドウロードして差し替える
-    bool reloadEnginePlugins(const std::filesystem::path& directory, std::string& error);
-    /// リクエストがアイドルなら保留中のプラグイン差し替えを適用
-    void applyPendingEnginePluginsIfIdle(std::string* error = nullptr) const;
-    /// プラグイン再起動ポリシーを設定
-    void setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit);
-
-    /// T181: プラグインがリカバリモード中かどうかを返す
-    bool isInRecoveryMode() const;
-    /// T181: リカバリモードを解除
-    void clearRecoveryMode();
 
     /// 登録済みのランタイム一覧を取得（プラグインからロードしたものを含む）
     std::vector<std::string> getRegisteredRuntimes() const;
@@ -152,9 +137,7 @@ public:
     /// テスト専用: トークンメトリクス用の時刻取得を差し替える
     static void setTokenMetricsClockForTest(std::function<uint64_t()> clock);
     /// テスト専用: プラグイン再起動処理のフックを差し替える
-    static void setPluginRestartHookForTest(std::function<bool(std::string&)> hook);
     /// テスト専用: プラグインディレクトリを指定する
-    void setEnginePluginsDirForTest(const std::filesystem::path& directory);
     /// T182: テスト専用: トークン間タイムアウトを差し替える
     static void setInterTokenTimeoutForTest(std::chrono::milliseconds timeout);
 #endif
@@ -164,27 +147,16 @@ private:
     ModelStorage* model_storage_{nullptr};
     ModelSync* model_sync_{nullptr};
     ModelResolver* model_resolver_{nullptr};
-    mutable EngineHost engine_host_;
-    mutable std::unique_ptr<EngineRegistry> engines_;
+    mutable std::unique_ptr<TextManager> text_manager_;
     size_t model_max_ctx_{4096};  // モデルの最大コンテキストサイズ
     mutable std::unique_ptr<VisionProcessor> vision_processor_{nullptr};
     std::function<ResourceUsage()> resource_usage_provider_{};
-    std::filesystem::path engine_plugins_dir_;
-    mutable std::chrono::steady_clock::time_point plugin_restart_last_{};
-    mutable uint64_t plugin_restart_request_count_{0};
-    mutable std::chrono::seconds plugin_restart_interval_{0};
-    mutable uint64_t plugin_restart_request_limit_{0};
-    mutable bool plugin_restart_pending_{false};
-    mutable std::mutex plugin_restart_mutex_;
 
     /// チャットメッセージからプロンプト文字列を構築
     std::string buildChatPrompt(const std::vector<ChatMessage>& messages) const;
 
     /// モデルパス解決（ModelResolver優先）
     std::string resolveModelPath(const std::string& model_name, std::string* error_message = nullptr) const;
-    void maybeSchedulePluginRestart() const;
-    void handlePluginCrash() const;
-    bool stagePluginRestart(const char* reason, std::string& error) const;
 };
 
 /// ChatML形式でプロンプトを構築（テンプレートなしモデル用フォールバック）

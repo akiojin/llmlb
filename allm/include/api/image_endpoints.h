@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/image_manager.h"
 #include <httplib.h>
 
 #include <memory>
@@ -9,20 +10,18 @@
 
 namespace allm {
 
-class SDManager;
-
 /// OpenAI Images API compatible endpoints
 /// - POST /v1/images/generations (text-to-image)
 /// - POST /v1/images/edits (inpainting)
 /// - POST /v1/images/variations (image variations)
 class ImageEndpoints {
 public:
-    ImageEndpoints(SDManager& sd_manager);
+    ImageEndpoints(ImageManager& image_manager);
 
     void registerRoutes(httplib::Server& server);
 
 private:
-    SDManager& sd_manager_;
+    ImageManager& image_manager_;
     // Helper methods
     static void setJson(httplib::Response& res, const nlohmann::json& body);
     void respondError(httplib::Response& res,

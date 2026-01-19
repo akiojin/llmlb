@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/image_manager.h"
 #include <httplib.h>
 
 #include <memory>
@@ -8,8 +9,6 @@
 
 
 namespace allm {
-
-class ImageManager;
 
 /// OpenAI Images API compatible endpoints
 /// - POST /v1/images/generations (text-to-image)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/audio_manager.h"
 #include <httplib.h>
 #include <string>
 #include <memory>
@@ -7,7 +8,6 @@
 
 namespace allm {
 
-class AudioManager;
 class OnnxTtsManager;
 
 /// OpenAI Audio API互換エンドポイント

@@ -69,7 +69,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
             if (j.contains("target")) {
                 entry["target"] = j["target"];
             } else {
-                entry["target"] = "llm-node";
+                entry["target"] = "allm";
             }
 
             // fields

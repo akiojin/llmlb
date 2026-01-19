@@ -224,9 +224,9 @@ impl LogConfig {
     ├── llm-router.jsonl.2025-12-01
     ├── llm-router.jsonl.2025-12-02
     ├── llm-router.jsonl.2025-12-03
-    ├── llm-node.jsonl.2025-12-01
-    ├── llm-node.jsonl.2025-12-02
-    └── llm-node.jsonl.2025-12-03
+    ├── allm.jsonl.2025-12-01
+    ├── allm.jsonl.2025-12-02
+    └── allm.jsonl.2025-12-03
 ```
 
 ## APIレスポンス形式

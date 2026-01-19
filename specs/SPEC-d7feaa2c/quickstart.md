@@ -13,7 +13,7 @@
 ## 1. プラグインディレクトリ構成
 
 デフォルトは `~/.llm-router/engines`（Windows は `%USERPROFILE%\.llm-router\engines`）。
-変更する場合は `LLM_NODE_ENGINE_PLUGINS_DIR` を指定する。
+変更する場合は `ALLM_ENGINE_PLUGINS_DIR` を指定する。
 
 ```
 ~/.llm-router/engines/
@@ -46,7 +46,7 @@
 
 ```bash
 # 例: プラグインディレクトリを明示
-LLM_NODE_ENGINE_PLUGINS_DIR=~/.llm-router/engines \
+ALLM_ENGINE_PLUGINS_DIR=~/.llm-router/engines \
   ./llm-router-node
 ```
 

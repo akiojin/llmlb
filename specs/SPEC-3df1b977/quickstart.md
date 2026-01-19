@@ -134,7 +134,7 @@ wait
 
 ```bash
 # 修復ログを確認
-grep "auto-repair" /var/log/llm-node.log
+grep "auto-repair" /var/log/allm.log
 ```
 
 出力例:

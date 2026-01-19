@@ -231,7 +231,7 @@ export LLM_ROUTER_GPU_THRESHOLD=70
 curl http://localhost:8080/metrics | grep selection_duration
 
 # 対策: メトリクス更新間隔を確認
-# ノード側で LLM_NODE_HEARTBEAT_SECS を調整
+# ノード側で ALLM_HEARTBEAT_SECS を調整
 ```
 
 ### メトリクスが更新されない
@@ -242,7 +242,7 @@ curl http://localhost:8080/metrics | grep selection_duration
 curl http://localhost:8080/v0/nodes | jq '.nodes[].last_seen'
 
 # 対策: ノード側のログを確認
-# LLM_NODE_HEARTBEAT_SECS=30 が設定されているか
+# ALLM_HEARTBEAT_SECS=30 が設定されているか
 ```
 
 ## 制限事項

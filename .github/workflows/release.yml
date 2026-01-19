@@ -47,7 +47,7 @@ jobs:
           cmake -S allm -B allm/build -DBUILD_TESTS=OFF
           cmake --build allm/build --config Release
           mkdir -p dist
-          tar -czf dist/llm-node-linux-amd64.tar.gz -C allm/build llm-node
+          tar -czf dist/allm-linux-amd64.tar.gz -C allm/build allm
 
       - name: Build C++ binary (macOS arm64) [cross]
         if: runner.os == 'Linux'
@@ -59,7 +59,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++ \
             -DBUILD_TESTS=OFF
           cmake --build allm/build-macos --config Release
-          tar -czf dist/llm-node-macos-arm64.tar.gz -C allm/build-macos llm-node
+          tar -czf dist/allm-macos-arm64.tar.gz -C allm/build-macos allm
 
       - name: Build C++ binary (macOS x64) [cross]
         if: runner.os == 'Linux'
@@ -71,7 +71,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++ \
             -DBUILD_TESTS=OFF
           cmake --build allm/build-macos-x64 --config Release
-          tar -czf dist/llm-node-macos-x64.tar.gz -C allm/build-macos-x64 llm-node
+          tar -czf dist/allm-macos-x64.tar.gz -C allm/build-macos-x64 allm
 
       - name: Build C++ binary (Windows x64) [cross]
         if: runner.os == 'Linux'
@@ -84,8 +84,8 @@ jobs:
             -DBUILD_TESTS=OFF
           cmake --build allm/build-win --config Release
           mkdir -p dist/win
-          cp allm/build-win/llm-node.exe dist/win/
-          (cd dist && zip -r llm-node-windows-x64.zip win)
+          cp allm/build-win/allm.exe dist/win/
+          (cd dist && zip -r allm-windows-x64.zip win)
 
       - name: Build C++ binary (Linux CUDA)
         run: |
@@ -94,7 +94,7 @@ jobs:
             -DBUILD_WITH_CUDA=ON
           cmake --build allm/build-cuda --config Release
           mkdir -p dist
-          tar -czf dist/llm-node-linux-cuda.tar.gz -C allm/build-cuda llm-node
+          tar -czf dist/allm-linux-cuda.tar.gz -C allm/build-cuda allm
 
       - name: Semantic Release
         id: semantic-release

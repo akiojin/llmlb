@@ -22,7 +22,7 @@ RUN cmake -S /src -B /build \
     -DBUILD_WITH_CUDA=$([ "$CUDA" = "cuda" ] && echo ON || echo OFF) && \
     cmake --build /build --config Release && \
     cmake --install /build --prefix /usr/local && \
-    strip /usr/local/bin/llm-node || true
+    strip /usr/local/bin/allm || true
 
 # Runtime images
 FROM debian:bookworm-slim AS runtime-cpu
@@ -39,7 +39,7 @@ FROM runtime-${CUDA} AS runtime
 
 ENV LLM_MODELS_DIR=/var/lib/runtime/models
 ENV LLM_ROUTER_URL=http://router:32768
-ENV LLM_NODE_PORT=32769
+ENV ALLM_PORT=32769
 
 WORKDIR /app
 COPY --from=build /usr/local /usr/local
@@ -47,4 +47,4 @@ COPY --from=build /usr/local /usr/local
 EXPOSE 32769
 VOLUME ["/var/lib/runtime/models"]
 
-ENTRYPOINT ["/usr/local/bin/llm-node"]
+ENTRYPOINT ["/usr/local/bin/allm"]

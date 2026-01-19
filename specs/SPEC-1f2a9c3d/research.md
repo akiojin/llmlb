@@ -93,7 +93,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
   "entries": [
     {"timestamp": "...", "level": "INFO", ...}
   ],
-  "path": "/var/log/llm-node/current.log"
+  "path": "/var/log/allm/current.log"
 }
 ```
 

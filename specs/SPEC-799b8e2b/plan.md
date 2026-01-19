@@ -27,8 +27,8 @@
 └── logs/
     ├── llm-router.jsonl.2025-11-28
     ├── llm-router.jsonl.2025-11-27
-    ├── llm-node.jsonl.2025-11-28
-    └── llm-node.jsonl.2025-11-27
+    ├── allm.jsonl.2025-11-28
+    └── allm.jsonl.2025-11-27
 ```
 
 ### 環境変数（統一）
@@ -78,7 +78,7 @@ chrono = "0.4"
 
 ### 変更内容
 
-1. デフォルト出力先を `~/.llm-router/logs/llm-node.jsonl.YYYY-MM-DD` に変更
+1. デフォルト出力先を `~/.llm-router/logs/allm.jsonl.YYYY-MM-DD` に変更
 2. stdout出力を削除
 3. 日付ベースローテーション実装（spdlog::sinks::daily_file_sink）
 4. 起動時に7日超の古いファイル削除

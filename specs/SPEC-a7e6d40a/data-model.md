@@ -44,13 +44,13 @@ CliOptions parse_args(int argc, char** argv);
 | 環境変数 | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
 | `LLM_ROUTER_URL` | String | `http://127.0.0.1:8080` | ルーターURL |
-| `LLM_NODE_PORT` | u16 | 11435 | 待受ポート |
-| `LLM_NODE_IP` | String | (自動検出) | ノードIP |
-| `LLM_NODE_MODELS_DIR` | Path | ~/.runtime/models | モデル保存先 |
-| `LLM_NODE_LOG_LEVEL` | String | info | ログレベル |
-| `LLM_NODE_LOG_DIR` | Path | ~/.llm-node/logs | ログディレクトリ |
-| `LLM_NODE_HEARTBEAT_SECS` | u64 | 10 | ハートビート間隔 |
-| `LLM_NODE_BIND_ADDRESS` | String | 0.0.0.0 | バインドアドレス |
+| `ALLM_PORT` | u16 | 11435 | 待受ポート |
+| `ALLM_IP` | String | (自動検出) | ノードIP |
+| `ALLM_MODELS_DIR` | Path | ~/.runtime/models | モデル保存先 |
+| `ALLM_LOG_LEVEL` | String | info | ログレベル |
+| `ALLM_LOG_DIR` | Path | ~/.llm-router/logs | ログディレクトリ |
+| `ALLM_HEARTBEAT_SECS` | u64 | 10 | ハートビート間隔 |
+| `ALLM_BIND_ADDRESS` | String | 0.0.0.0 | バインドアドレス |
 
 ## JWT_SECRET永続化
 
@@ -123,7 +123,7 @@ Environment Variables:
 ```text
 LLM Node - Inference engine for LLM Router
 
-Usage: llm-node [OPTIONS]
+Usage: allm [OPTIONS]
 
 Options:
   -h, --help     Print help information
@@ -131,9 +131,9 @@ Options:
 
 Environment Variables:
   LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:8080)
-  LLM_NODE_PORT                Node listen port (default: 11435)
-  LLM_NODE_MODELS_DIR          Model storage directory
-  LLM_NODE_LOG_LEVEL           Log level (default: info)
+  ALLM_PORT                Node listen port (default: 11435)
+  ALLM_MODELS_DIR          Model storage directory
+  ALLM_LOG_LEVEL           Log level (default: info)
 ```
 
 ## バージョン出力形式
@@ -143,7 +143,7 @@ llm-router 2.1.0
 ```
 
 ```text
-llm-node 0.1.0
+allm 0.1.0
 ```
 
 ## 終了コード

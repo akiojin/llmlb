@@ -7,7 +7,7 @@ dist/
 bun.lock
 vendor/
 **/vendor/
-node/third_party/
-node/build/
+allm/third_party/
+allm/build/
 tmp/
 **/tmp/**

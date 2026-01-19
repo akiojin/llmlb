@@ -16,8 +16,8 @@
     "**/vendor/**",
     "tmp/**",
     "**/tmp/**",
-    "node/third_party/**",
-    "node/build/**",
-    "node/build-*/**"
+    "allm/third_party/**",
+    "allm/build/**",
+    "allm/build-*/**"
   ]
 }

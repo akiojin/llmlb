@@ -71,14 +71,14 @@ tracing_subscriber::registry()
 
 // 日付ローテーション付きファイルシンク
 auto file_sink = std::make_shared<spdlog::sinks::daily_file_sink_mt>(
-    "~/.llm-router/logs/llm-node.jsonl", 0, 0);
+    "~/.llm-router/logs/allm.jsonl", 0, 0);
 
 // コンソールシンク
 auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 
 // マルチシンクロガー
 auto logger = std::make_shared<spdlog::logger>(
-    "llm-node", spdlog::sinks_init_list{file_sink, console_sink});
+    "allm", spdlog::sinks_init_list{file_sink, console_sink});
 ```
 
 ## 2. JSONL フォーマット設計
@@ -147,7 +147,7 @@ let file_appender = RollingFileAppender::new(
 ```cpp
 // spdlog の daily_file_sink は自動で日付サフィックスを付与
 auto sink = std::make_shared<spdlog::sinks::daily_file_sink_mt>(
-    "~/.llm-router/logs/llm-node.jsonl", 0, 0);
+    "~/.llm-router/logs/allm.jsonl", 0, 0);
 ```
 
 ### 古いファイル削除
@@ -194,7 +194,7 @@ let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 // spdlog の async_logger を使用
 spdlog::init_thread_pool(8192, 1); // キューサイズ、スレッド数
 auto async_logger = std::make_shared<spdlog::async_logger>(
-    "llm-node",
+    "allm",
     sinks,
     spdlog::thread_pool(),
     spdlog::async_overflow_policy::overrun_oldest

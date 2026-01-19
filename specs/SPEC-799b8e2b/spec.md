@@ -21,7 +21,7 @@ RouterとNodeの動作状況を把握できる。
 **受け入れ条件**:
 
 - Routerのログは`llm-router.jsonl.YYYY-MM-DD`形式でファイル出力される
-- Nodeのログは`llm-node.jsonl.YYYY-MM-DD`形式でファイル出力される
+- Nodeのログは`allm.jsonl.YYYY-MM-DD`形式でファイル出力される
 - 標準出力にも人間が読みやすい形式でログが出力される
 - ファイル出力はJSONL形式で構造化されている
 
@@ -51,7 +51,7 @@ RouterとNodeの動作状況を把握できる。
 
 - ファイル出力ディレクトリ: `~/.llm-router/logs/`
 - Routerファイル名: `llm-router.jsonl.YYYY-MM-DD`
-- Nodeファイル名: `llm-node.jsonl.YYYY-MM-DD`
+- Nodeファイル名: `allm.jsonl.YYYY-MM-DD`
 - 標準出力: 人間が読みやすいテキスト形式で出力
 
 ### FR-2: ログ形式

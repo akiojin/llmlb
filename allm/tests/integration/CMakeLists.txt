@@ -40,11 +40,11 @@ else()
     list(APPEND INTEGRATION_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
-add_executable(llm-node-integration-tests
+add_executable(allm-integration-tests
     ${INTEGRATION_TEST_SOURCES}
 )
 
-target_link_libraries(llm-node-integration-tests
+target_link_libraries(allm-integration-tests
     PRIVATE
         test_common
         llama
@@ -62,25 +62,24 @@ if(APPLE)
     find_library(METAL_FRAMEWORK Metal)
     find_library(FOUNDATION_FRAMEWORK Foundation)
     if(METAL_FRAMEWORK AND FOUNDATION_FRAMEWORK)
-        target_link_libraries(llm-node-integration-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
-        target_compile_definitions(llm-node-integration-tests PRIVATE USE_METAL=1)
+        target_link_libraries(allm-integration-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
+        target_compile_definitions(allm-integration-tests PRIVATE USE_METAL=1)
     endif()
 
 endif()
 
-target_include_directories(llm-node-integration-tests
+target_include_directories(allm-integration-tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
-target_compile_definitions(llm-node-integration-tests
+target_compile_definitions(allm-integration-tests
     PRIVATE
-        LLM_NODE_TESTING=1
         ALLM_TESTING=1
 )
 
 add_test(
-    NAME llm-node-integration-tests
-    COMMAND llm-node-integration-tests
+    NAME allm-integration-tests
+    COMMAND allm-integration-tests
 )

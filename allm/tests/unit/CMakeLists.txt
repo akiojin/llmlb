@@ -95,11 +95,11 @@ else()
     list(APPEND UNIT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
-add_executable(llm-node-unit-tests
+add_executable(allm-unit-tests
     ${UNIT_TEST_SOURCES}
 )
 
-target_link_libraries(llm-node-unit-tests
+target_link_libraries(allm-unit-tests
     PRIVATE
         test_common
         llama
@@ -112,13 +112,13 @@ target_link_libraries(llm-node-unit-tests
 )
 
 if(BUILD_WITH_WHISPER)
-    target_link_libraries(llm-node-unit-tests PRIVATE whisper)
+    target_link_libraries(allm-unit-tests PRIVATE whisper)
 endif()
 if(BUILD_WITH_SD)
-    target_link_libraries(llm-node-unit-tests PRIVATE stable-diffusion)
+    target_link_libraries(allm-unit-tests PRIVATE stable-diffusion)
 endif()
 if(BUILD_WITH_ONNX)
-    target_link_libraries(llm-node-unit-tests PRIVATE onnxruntime::onnxruntime)
+    target_link_libraries(allm-unit-tests PRIVATE onnxruntime::onnxruntime)
 endif()
 
 # Link Metal frameworks on macOS
@@ -126,33 +126,32 @@ if(APPLE)
     find_library(METAL_FRAMEWORK Metal)
     find_library(FOUNDATION_FRAMEWORK Foundation)
     if(METAL_FRAMEWORK AND FOUNDATION_FRAMEWORK)
-        target_link_libraries(llm-node-unit-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
-        target_compile_definitions(llm-node-unit-tests PRIVATE USE_METAL=1)
+        target_link_libraries(allm-unit-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
+        target_compile_definitions(allm-unit-tests PRIVATE USE_METAL=1)
     endif()
 
 endif()
 
-target_include_directories(llm-node-unit-tests
+target_include_directories(allm-unit-tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
-target_compile_definitions(llm-node-unit-tests
+target_compile_definitions(allm-unit-tests
     PRIVATE
-        LLM_NODE_TESTING=1
         ALLM_TESTING=1
 )
 
 # Ensure whisper/sd manager implementations are compiled in unit tests
 if(BUILD_WITH_WHISPER)
-    target_compile_definitions(llm-node-unit-tests PRIVATE USE_WHISPER=1)
+    target_compile_definitions(allm-unit-tests PRIVATE USE_WHISPER=1)
 endif()
 if(BUILD_WITH_SD)
-    target_compile_definitions(llm-node-unit-tests PRIVATE USE_SD=1)
+    target_compile_definitions(allm-unit-tests PRIVATE USE_SD=1)
 endif()
 
 add_test(
-    NAME llm-node-unit-tests
-    COMMAND llm-node-unit-tests
+    NAME allm-unit-tests
+    COMMAND allm-unit-tests
 )

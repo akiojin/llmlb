@@ -13,7 +13,7 @@ PLATFORM="macos-metal"
 ENGINE=""
 RESULTS_DIR=""
 CHAT_TEMPLATE=""
-LLM_NODE="${SCRIPT_DIR}/../../../node/build/llm-node"
+ALLM_BIN="${SCRIPT_DIR}/../../../node/build/llm-node"
 LLAMA_CLI="${SCRIPT_DIR}/../../../node/third_party/llama.cpp/build/bin/llama-cli"
 TEST_TIMEOUT_SEC="${TEST_TIMEOUT_SEC:-900}"
 
@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
     --capability) CAPABILITY="$2"; shift 2;;
     --platform) PLATFORM="$2"; shift 2;;
     --chat-template) CHAT_TEMPLATE="$2"; shift 2;;
-    --llm-node) LLM_NODE="$2"; shift 2;;
+    --allm) ALLM_BIN="$2"; shift 2;;
     --results-dir) RESULTS_DIR="$2"; shift 2;;
     --timeout) TEST_TIMEOUT_SEC="$2"; shift 2;;
     -h|--help)
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --capability  Model capability: TextGeneration|Vision|Audio|Embedding|Reranker"
       echo "  --platform    Target platform: macos-metal|linux-cuda|windows-directml"
       echo "  --chat-template Chat prompt style for test 08: plain|chatml (optional)"
-      echo "  --llm-node    Path to llm-node binary"
+      echo "  --allm    Path to aLLM binary"
       echo "  --results-dir Directory to store results"
       echo "  --timeout    Per-test timeout seconds (default: ${TEST_TIMEOUT_SEC})"
       exit 0
@@ -62,8 +62,8 @@ if ! [[ "$TEST_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || [[ "$TEST_TIMEOUT_SEC" -le 0 ]]; t
 fi
 
 if [[ "$FORMAT" == "safetensors" ]]; then
-  if [[ ! -x "$LLM_NODE" ]]; then
-    echo "Error: llm-node not found or not executable: $LLM_NODE"
+  if [[ ! -x "$ALLM_BIN" ]]; then
+    echo "Error: aLLM not found or not executable: $ALLM_BIN"
     exit 1
   fi
 else
@@ -88,7 +88,7 @@ fi
 mkdir -p "$RESULTS_DIR"
 
 # Export for test scripts
-export MODEL FORMAT CAPABILITY PLATFORM ENGINE LLM_NODE LLAMA_CLI RESULTS_DIR SCRIPT_DIR CHAT_TEMPLATE
+export MODEL FORMAT CAPABILITY PLATFORM ENGINE ALLM_BIN LLAMA_CLI RESULTS_DIR SCRIPT_DIR CHAT_TEMPLATE
 
 echo "=============================================="
 echo "       Model Verification Suite"

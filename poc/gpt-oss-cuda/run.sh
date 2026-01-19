@@ -31,7 +31,7 @@ Generation params:
 
 Process control:
   KEEP_RUNNING          (default: 0)  # 1 to keep router/node running after completion
-  LLM_NODE_LOG_LEVEL    (default: info)
+  ALLM_LOG_LEVEL    (default: info)
   SHOW_MANIFEST         (default: 0)  # 1 to print model manifest.json for diagnostics
 
 Examples:
@@ -143,9 +143,9 @@ echo "[INFO] Starting node on :$NODE_PORT (logs: $NODE_LOG)"
 HOME="$NODE_HOME" \
   LLM_ROUTER_URL="http://127.0.0.1:$ROUTER_PORT" \
   ALLM_PORT="$NODE_PORT" \
-  LLM_NODE_MODELS_DIR="$ROUTER_MODELS_DIR" \
-  LLM_NODE_API_KEY="sk_debug_node" \
-  LLM_NODE_LOG_LEVEL="${LLM_NODE_LOG_LEVEL:-info}" \
+  ALLM_MODELS_DIR="$ROUTER_MODELS_DIR" \
+  ALLM_API_KEY="sk_debug_node" \
+  ALLM_LOG_LEVEL="${ALLM_LOG_LEVEL:-info}" \
   "$NODE_BIN" >"$NODE_LOG" 2>&1 &
 NODE_PID=$!
 

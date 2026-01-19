@@ -46,8 +46,8 @@ import {
 } from 'lucide-react'
 
 /**
- * SPEC-66555000: ルーター主導エンドポイント登録システム
- * エンドポイント一覧表示コンポーネント
+ * SPEC-66555000: Router-Driven Endpoint Registration System
+ * Endpoint List Component
  */
 
 interface EndpointTableProps {
@@ -80,13 +80,13 @@ function getStatusBadgeVariant(
 function getStatusLabel(status: DashboardEndpoint['status']): string {
   switch (status) {
     case 'online':
-      return 'オンライン'
+      return 'Online'
     case 'pending':
-      return '確認中'
+      return 'Pending'
     case 'offline':
-      return 'オフライン'
+      return 'Offline'
     case 'error':
-      return 'エラー'
+      return 'Error'
     default:
       return status
   }
@@ -212,7 +212,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            エンドポイント一覧
+            Endpoints
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -231,7 +231,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Server className="h-5 w-5" />
-              エンドポイント一覧
+              Endpoints
               <Badge variant="secondary" className="ml-2">
                 {filteredEndpoints.length}
               </Badge>
@@ -244,7 +244,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
-                placeholder="名前またはURLで検索..."
+                placeholder="Search by name or URL..."
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value)
@@ -261,14 +261,14 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               }}
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="ステータス" />
+                <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">すべて</SelectItem>
-                <SelectItem value="online">オンライン</SelectItem>
-                <SelectItem value="pending">確認中</SelectItem>
-                <SelectItem value="offline">オフライン</SelectItem>
-                <SelectItem value="error">エラー</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="online">Online</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="offline">Offline</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -282,7 +282,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort('name')}
                   >
-                    名前
+                    Name
                     <SortIcon field="name" />
                   </TableHead>
                   <TableHead>URL</TableHead>
@@ -290,25 +290,25 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort('status')}
                   >
-                    ステータス
+                    Status
                     <SortIcon field="status" />
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('latency_ms')}
                   >
-                    レイテンシ
+                    Latency
                     <SortIcon field="latency_ms" />
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('model_count')}
                   >
-                    モデル数
+                    Models
                     <SortIcon field="model_count" />
                   </TableHead>
-                  <TableHead>最終確認</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead>Last Seen</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -316,8 +316,8 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {search || statusFilter !== 'all'
-                        ? '条件に一致するエンドポイントがありません'
-                        : 'エンドポイントが登録されていません'}
+                        ? 'No endpoints match the filter criteria'
+                        : 'No endpoints registered'}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -344,7 +344,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                         </Badge>
                         {endpoint.last_error && (
                           <span className="ml-2 text-xs text-destructive">
-                            ({endpoint.error_count}回)
+                            ({endpoint.error_count} errors)
                           </span>
                         )}
                       </TableCell>
@@ -361,7 +361,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             variant="ghost"
                             size="icon"
                             onClick={() => setSelectedEndpoint(endpoint)}
-                            title="詳細"
+                            title="Details"
                           >
                             <Info className="h-4 w-4" />
                           </Button>
@@ -370,7 +370,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             size="icon"
                             onClick={() => handleTest(endpoint)}
                             disabled={isTesting === endpoint.id}
-                            title="接続テスト"
+                            title="Test Connection"
                           >
                             <Play
                               className={cn('h-4 w-4', isTesting === endpoint.id && 'animate-pulse')}
@@ -381,7 +381,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             size="icon"
                             onClick={() => handleSync(endpoint)}
                             disabled={isSyncing === endpoint.id || endpoint.status !== 'online'}
-                            title="モデル同期"
+                            title="Sync Models"
                           >
                             <RefreshCw
                               className={cn('h-4 w-4', isSyncing === endpoint.id && 'animate-spin')}
@@ -391,7 +391,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             variant="ghost"
                             size="icon"
                             onClick={() => setDeletingEndpoint(endpoint)}
-                            title="削除"
+                            title="Delete"
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -408,8 +408,8 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
               <div className="text-sm text-muted-foreground">
-                {sortedEndpoints.length} 件中 {(currentPage - 1) * PAGE_SIZE + 1} -{' '}
-                {Math.min(currentPage * PAGE_SIZE, sortedEndpoints.length)} 件を表示
+                Showing {(currentPage - 1) * PAGE_SIZE + 1} -{' '}
+                {Math.min(currentPage * PAGE_SIZE, sortedEndpoints.length)} of {sortedEndpoints.length}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -450,20 +450,20 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
       <AlertDialog open={!!deletingEndpoint} onOpenChange={(open) => !open && setDeletingEndpoint(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>エンドポイントを削除しますか？</AlertDialogTitle>
+            <AlertDialogTitle>Delete Endpoint?</AlertDialogTitle>
             <AlertDialogDescription>
-              「{deletingEndpoint?.name}」を削除します。この操作は取り消せません。
-              このエンドポイントに関連するモデルも利用できなくなります。
+              This will delete &quot;{deletingEndpoint?.name}&quot;. This action cannot be undone.
+              Models associated with this endpoint will no longer be available.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>キャンセル</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeleting ? '削除中...' : '削除'}
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

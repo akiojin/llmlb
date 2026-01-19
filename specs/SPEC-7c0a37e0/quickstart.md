@@ -8,7 +8,7 @@
   - `admin`（管理系API）
 
 ## 2. ノード登録
-- ノード起動時に `LLM_NODE_API_KEY` を指定する。
+- ノード起動時に `ALLM_API_KEY` を指定する。
 - `node` スコープのキーを利用。
 - ヘルスチェック（`/v0/health`）も同じAPIキー + `X-Node-Token` を使用する。
 

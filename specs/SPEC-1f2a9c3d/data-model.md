@@ -136,7 +136,7 @@ pub enum ProxyError {
       "model": "llama-3.1-8b"
     }
   ],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llm-router/logs/current.jsonl"
 }
 ```
 
@@ -145,7 +145,7 @@ pub enum ProxyError {
 ```json
 {
   "entries": [],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llm-router/logs/current.jsonl"
 }
 ```
 

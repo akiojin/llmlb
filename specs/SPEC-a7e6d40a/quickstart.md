@@ -62,46 +62,46 @@ llm-router
 ### ヘルプ表示
 
 ```bash
-llm-node --help
+allm --help
 # または
-llm-node -h
+allm -h
 ```
 
 ### バージョン表示
 
 ```bash
-llm-node --version
+allm --version
 # または
-llm-node -V
+allm -V
 ```
 
 出力例:
 
 ```text
-llm-node 0.1.0
+allm 0.1.0
 ```
 
 ### サーバー起動
 
 ```bash
 # 引数なしで起動
-llm-node
+allm
 ```
 
 ### 環境変数による設定
 
 ```bash
 # ルーターURLを指定
-LLM_ROUTER_URL=http://192.168.1.100:8080 llm-node
+LLM_ROUTER_URL=http://192.168.1.100:8080 allm
 
 # モデルディレクトリを指定
-LLM_NODE_MODELS_DIR=/data/models llm-node
+ALLM_MODELS_DIR=/data/models allm
 
 # 複数設定
 LLM_ROUTER_URL=http://router:8080 \
-LLM_NODE_PORT=11436 \
-LLM_NODE_LOG_LEVEL=debug \
-llm-node
+ALLM_PORT=11436 \
+ALLM_LOG_LEVEL=debug \
+allm
 ```
 
 ## JWT_SECRET の自動管理
@@ -215,7 +215,7 @@ Error: Failed to bind to 0.0.0.0:8080: Address already in use
 | 環境変数 | デフォルト | 説明 |
 |----------|-----------|------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
-| `LLM_NODE_PORT` | 11435 | 待受ポート |
-| `LLM_NODE_MODELS_DIR` | ~/.runtime/models | モデル保存先 |
-| `LLM_NODE_LOG_LEVEL` | info | ログレベル |
-| `LLM_NODE_HEARTBEAT_SECS` | 10 | ハートビート間隔 |
+| `ALLM_PORT` | 11435 | 待受ポート |
+| `ALLM_MODELS_DIR` | ~/.runtime/models | モデル保存先 |
+| `ALLM_LOG_LEVEL` | info | ログレベル |
+| `ALLM_HEARTBEAT_SECS` | 10 | ハートビート間隔 |

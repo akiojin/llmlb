@@ -1,5 +1,5 @@
 // SPEC-58378000: CLI client implementation
-// HTTP client for communicating with llm-node server
+// HTTP client for communicating with allm server
 
 #include "cli/cli_client.h"
 

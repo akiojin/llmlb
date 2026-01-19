@@ -1,5 +1,5 @@
 // SPEC-58378000: node serve command
-// Starts the llm-node server in foreground mode
+// Starts the allm server in foreground mode
 
 #include "utils/cli.h"
 #include <iostream>
@@ -17,7 +17,7 @@ int serve(const ServeOptions& options) {
     // - Start HTTP server on options.host:options.port
     // - Handle signals for graceful shutdown
 
-    std::cout << "Starting llm-node server on "
+    std::cout << "Starting allm server on "
               << options.host << ":" << options.port << std::endl;
 
     // Placeholder - actual server implementation will be added

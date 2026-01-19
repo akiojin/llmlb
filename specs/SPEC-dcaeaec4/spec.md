@@ -2,7 +2,7 @@
 
 ## 概要
 
-llm-node がモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
+allm がモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
 **モデルキャッシュはNode主導**とする。ルーターは登録情報とファイル一覧（マニフェスト）を提示し、
 Node が GPU 差分に応じて必要アーティファクトを選択・取得する。
 ルーターは**モデルバイナリをキャッシュしない**（登録メタデータのみ保持）。
@@ -35,7 +35,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 #### FR-1: モデルディレクトリ構造（ノードローカルキャッシュ）
 
 - デフォルトのモデル保存先は `~/.llm-router/models/`
-- 環境変数で上書き可能（推奨: `LLM_NODE_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
+- 環境変数で上書き可能（推奨: `ALLM_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
 - 各モデルは `<models_dir>/<model-name>/` 配下に配置し、形式に応じたアーティファクトを保持する
 
 #### FR-2: モデル名の形式
@@ -160,7 +160,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 **確認済み事項**:
 
 - デフォルトパス: ~/.llm-router/models/（FR-1で明記）
-- 環境変数: LLM_NODE_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
+- 環境変数: ALLM_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
 - モデル名形式: ファイル名ベースまたは階層形式（FR-2で明記）
 - 解決フロー: ローカル → 外部ソース（FR-3で明記）
 - API設計: 外部は `/v1/models`、Node同期は `/v0/models` と manifest API（FR-8で明記）

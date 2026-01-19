@@ -73,21 +73,21 @@ interface Message {
   attachments?: MessageAttachment[]
 }
 
-// HTTPステータスコードに基づいたエラーメッセージを生成
+// Generate error message based on HTTP status code
 function getErrorMessage(status: number): string {
   switch (status) {
     case 401:
-      return 'APIキーが無効です。設定を確認してください。'
+      return 'Invalid API key. Please check your settings.'
     case 403:
-      return 'このリソースへのアクセス権がありません。'
+      return 'Access denied to this resource.'
     case 404:
-      return 'APIエンドポイントが見つかりません。'
+      return 'API endpoint not found.'
     case 503:
-      return '利用可能なノードがありません。ノードを起動してください。'
+      return 'No available endpoints. Please start an endpoint.'
     case 504:
-      return 'リクエストがタイムアウトしました。'
+      return 'Request timed out.'
     default:
-      return `サーバーエラーが発生しました (HTTP ${status})`
+      return `Server error occurred (HTTP ${status})`
   }
 }
 
@@ -115,7 +115,7 @@ export default function Playground() {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('llm-router-api-key')
       if (stored) return stored
-      // ローカル環境ではsk_debugをデフォルトに（開発モード用）
+      // Use sk_debug as default for local environment (development mode)
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       if (isLocal) return 'sk_debug'
     }
@@ -135,30 +135,30 @@ export default function Playground() {
   const { data: models, error: modelsError } = useQuery({
     queryKey: ['registered-models'],
     queryFn: modelsApi.getRegistered,
-    retry: false, // エラー時は即座にユーザーに通知
+    retry: false, // Notify user immediately on error
   })
 
-  // モデル取得エラー時のユーザー通知
+  // Notify user on model fetch error
   useEffect(() => {
     if (modelsError) {
-      let description = 'モデル一覧の取得に失敗しました'
+      let description = 'Failed to fetch model list'
       if (modelsError instanceof ApiError) {
         switch (modelsError.status) {
           case 401:
-            description = 'APIキーが無効です。設定を確認してください。'
+            description = 'Invalid API key. Please check your settings.'
             break
           case 503:
-            description = '利用可能なノードがありません。ノードを起動してください。'
+            description = 'No available endpoints. Please start an endpoint.'
             break
           case 404:
-            description = 'APIエンドポイントが見つかりません。'
+            description = 'API endpoint not found.'
             break
           default:
             description = modelsError.message
         }
       }
       toast({
-        title: 'エラー',
+        title: 'Error',
         description,
         variant: 'destructive',
       })
@@ -500,8 +500,8 @@ export default function Playground() {
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
         toast({
-          title: 'メッセージの送信に失敗しました',
-          description: error instanceof Error ? error.message : '不明なエラー',
+          title: 'Failed to send message',
+          description: error instanceof Error ? error.message : 'Unknown error',
           variant: 'destructive',
         })
         // Remove user message on error
@@ -510,7 +510,7 @@ export default function Playground() {
     } finally {
       setIsStreaming(false)
       abortControllerRef.current = null
-      // 送信完了後に入力欄にフォーカスを戻す
+      // Return focus to input field after sending
       inputRef.current?.focus()
     }
   }
@@ -556,7 +556,7 @@ export default function Playground() {
     }
   }
 
-  // ルーターにキャッシュ完了（registered）のモデルのみを選択可能にする
+  // Only allow selecting models that are cached in the router (registered status)
   const allModels = (models as RegisteredModelView[] | undefined) || []
   const availableModels = allModels.filter(m => m.lifecycle_status === 'registered')
 

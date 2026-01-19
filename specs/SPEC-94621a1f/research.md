@@ -80,7 +80,7 @@ nodes.insert(id, node);
 
 **実装詳細**:
 - 環境変数（例）:
-  - Node: `LLM_NODE_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
+  - Node: `ALLM_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
   - Router: `LLM_ROUTER_HEALTH_CHECK_INTERVAL=30`（フォールバック: `HEALTH_CHECK_INTERVAL`）
   - Router: `LLM_ROUTER_NODE_TIMEOUT=60`（フォールバック: `NODE_TIMEOUT`）
 - ノード側: `tokio::time::interval(Duration::from_secs(30))`

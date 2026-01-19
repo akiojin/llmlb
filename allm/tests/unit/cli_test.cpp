@@ -40,7 +40,7 @@ TEST(CliTest, ShortHelpFlagShowsHelpMessage) {
 
 // Test --version flag
 TEST(CliTest, VersionFlagShowsVersion) {
-    std::vector<std::string> args = {"llm-node", "--version"};
+    std::vector<std::string> args = {"allm", "--version"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -53,7 +53,7 @@ TEST(CliTest, VersionFlagShowsVersion) {
 }
 
 TEST(CliTest, ShortVersionFlagShowsVersion) {
-    std::vector<std::string> args = {"llm-node", "-V"};
+    std::vector<std::string> args = {"allm", "-V"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -67,7 +67,7 @@ TEST(CliTest, ShortVersionFlagShowsVersion) {
 
 // Test no arguments (should continue to server mode)
 TEST(CliTest, NoArgumentsContinuesToServerMode) {
-    std::vector<std::string> args = {"llm-node"};
+    std::vector<std::string> args = {"allm"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);

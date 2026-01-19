@@ -1,4 +1,4 @@
-// prometheus_exporter.h - minimal Prometheus text exporter for llm-node
+// prometheus_exporter.h - minimal Prometheus text exporter for aLLM
 #pragma once
 
 #include <string>

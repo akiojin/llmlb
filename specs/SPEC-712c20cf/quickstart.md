@@ -53,13 +53,13 @@
    cmake --build node/build -j
 
    # ターミナル1
-   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=32769 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=32769 ./node/build/allm
 
    # ターミナル2
-   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=11436 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=11436 ./node/build/allm
 
    # ターミナル3
-   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=11437 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=11437 ./node/build/allm
    ```
 
 2. ダッシュボードでノード一覧を確認
@@ -110,7 +110,7 @@
 
 2. 新しいノードを登録
    ```bash
-   LLM_ROUTER_URL=http://localhost:32768 LLM_NODE_PORT=11438 ./node/build/llm-node
+   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=11438 ./node/build/allm
    ```
 
 3. 期待される結果:
@@ -183,7 +183,7 @@
 ### ノード一覧が空
 **原因**: ノードが登録されていない
 **解決策**:
-1. ノードを起動: `LLM_ROUTER_URL=http://localhost:32768 ./node/build/llm-node`
+1. ノードを起動: `LLM_ROUTER_URL=http://localhost:32768 ./node/build/allm`
 2. 登録APIを手動で呼び出し:
    ```bash
    curl -X POST http://localhost:32768/v0/nodes \

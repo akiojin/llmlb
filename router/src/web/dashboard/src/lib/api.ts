@@ -208,8 +208,8 @@ export interface DashboardNode {
 }
 
 /**
- * SPEC-66555000: ルーター主導エンドポイント登録システム
- * 外部推論サービス（Ollama, vLLM, aLLM等）のダッシュボード表示用情報
+ * SPEC-66555000: Router-Driven Endpoint Registration System
+ * Dashboard display info for external inference services (Ollama, vLLM, aLLM, etc.)
  */
 export interface DashboardEndpoint {
   id: string
@@ -310,7 +310,7 @@ export const dashboardApi = {
 
   getNodes: () => fetchWithAuth<DashboardNode[]>('/v0/dashboard/nodes'),
 
-  /** SPEC-66555000: エンドポイント一覧取得 */
+  /** SPEC-66555000: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
 
   getStats: () => fetchWithAuth<DashboardStats>('/v0/dashboard/stats'),
@@ -371,14 +371,14 @@ export const dashboardApi = {
 
 /**
  * Endpoints API
- * SPEC-66555000: ルーター主導エンドポイント登録システム
- * 外部推論サービス（Ollama, vLLM, aLLM等）の管理API
+ * SPEC-66555000: Router-Driven Endpoint Registration System
+ * Management API for external inference services (Ollama, vLLM, aLLM, etc.)
  */
 export const endpointsApi = {
-  /** ダッシュボード用エンドポイント一覧取得 */
+  /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
 
-  /** エンドポイント登録 */
+  /** Create endpoint */
   create: (data: {
     name: string
     base_url: string
@@ -392,10 +392,10 @@ export const endpointsApi = {
       body: JSON.stringify(data),
     }),
 
-  /** エンドポイント詳細取得 */
+  /** Get endpoint details */
   get: (id: string) => fetchWithAuth<DashboardEndpoint>(`/v0/endpoints/${id}`),
 
-  /** エンドポイント更新 */
+  /** Update endpoint */
   update: (
     id: string,
     data: {
@@ -412,18 +412,18 @@ export const endpointsApi = {
       body: JSON.stringify(data),
     }),
 
-  /** エンドポイント削除 */
+  /** Delete endpoint */
   delete: (id: string) =>
     fetchWithAuth<void>(`/v0/endpoints/${id}`, { method: 'DELETE' }),
 
-  /** 接続テスト */
+  /** Test connection */
   test: (id: string) =>
     fetchWithAuth<{ success: boolean; message?: string; latency_ms?: number }>(
       `/v0/endpoints/${id}/test`,
       { method: 'POST' }
     ),
 
-  /** モデル同期 */
+  /** Sync models */
   sync: (id: string) =>
     fetchWithAuth<{ synced_models: number }>(`/v0/endpoints/${id}/sync`, {
       method: 'POST',
@@ -459,7 +459,7 @@ export interface OpenAIModel {
   created: number
   owned_by: string
   capabilities: ModelCapabilities
-  // ダッシュボード用拡張フィールド
+  // Dashboard extended fields
   lifecycle_status: LifecycleStatus
   download_progress?: DownloadProgress | null
   ready: boolean
@@ -582,8 +582,8 @@ export interface ModelWithStatus extends SupportedModel {
 
 export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
-    // /v1/models - OpenAI互換モデル一覧（lifecycle_status含む）
-    // APIキー認証が必要なため、ローカルストレージのAPIキーを使用
+    // /v1/models - OpenAI-compatible model list (includes lifecycle_status)
+    // Requires API key auth, using API key from localStorage
     const apiKey = localStorage.getItem('llm-router-api-key') || 'sk_debug'
     const response = await fetch('/v1/models', {
       headers: {
@@ -591,13 +591,13 @@ export const modelsApi = {
       },
     })
     if (!response.ok) {
-      // エラー詳細を取得して適切なエラーをスロー
+      // Get error details and throw appropriate error
       const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }))
       const message = errorBody.error || undefined
       throw new ApiError(response.status, response.statusText, message)
     }
     const json = (await response.json()) as OpenAIModelsResponse
-    // OpenAI形式からRegisteredModelView形式に変換
+    // Convert from OpenAI format to RegisteredModelView format
     return json.data.map(toRegisteredModelView)
   },
 

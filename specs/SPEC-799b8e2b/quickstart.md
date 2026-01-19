@@ -37,10 +37,10 @@ LLM_LOG_LEVEL=debug llm-router
 
 ```bash
 # デフォルト設定で起動
-llm-node
+allm
 
 # トレースログを有効にして起動
-LLM_LOG_LEVEL=trace llm-node
+LLM_LOG_LEVEL=trace allm
 ```
 
 ## ログファイルの確認
@@ -51,8 +51,8 @@ LLM_LOG_LEVEL=trace llm-node
 ~/.llm-router/logs/
 ├── llm-router.jsonl.2025-12-01    # ルーターログ（日付別）
 ├── llm-router.jsonl.2025-12-02
-├── llm-node.jsonl.2025-12-01      # ノードログ（日付別）
-└── llm-node.jsonl.2025-12-02
+├── allm.jsonl.2025-12-01      # ノードログ（日付別）
+└── allm.jsonl.2025-12-02
 ```
 
 ### ログの閲覧

@@ -96,7 +96,7 @@
 
 - `LLM_ROUTER_HOST`: サーバー接続先
 - `LLM_ROUTER_DEBUG`: ログレベル制御
-- 既存の`LLM_NODE_*`との整合性
+- 既存の`ALLM_*`との整合性
 
 ### 8. Vision入力対応
 

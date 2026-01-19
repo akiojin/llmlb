@@ -20,8 +20,8 @@ import {
 import { Server, Clock, AlertCircle, Save, Play, RefreshCw } from 'lucide-react'
 
 /**
- * SPEC-66555000: ルーター主導エンドポイント登録システム
- * エンドポイント詳細モーダル
+ * SPEC-66555000: Router-Driven Endpoint Registration System
+ * Endpoint Detail Modal
  */
 
 interface EndpointDetailModalProps {
@@ -50,13 +50,13 @@ function getStatusBadgeVariant(
 function getStatusLabel(status: DashboardEndpoint['status']): string {
   switch (status) {
     case 'online':
-      return 'オンライン'
+      return 'Online'
     case 'pending':
-      return '確認中'
+      return 'Pending'
     case 'offline':
-      return 'オフライン'
+      return 'Offline'
     case 'error':
-      return 'エラー'
+      return 'Error'
     default:
       return status
   }
@@ -80,13 +80,13 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
       toast({
-        title: '更新完了',
-        description: 'エンドポイント設定を更新しました',
+        title: 'Update Complete',
+        description: 'Endpoint settings updated',
       })
     },
     onError: (error) => {
       toast({
-        title: '更新失敗',
+        title: 'Update Failed',
         description: String(error),
         variant: 'destructive',
       })
@@ -99,14 +99,14 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
       toast({
-        title: result.success ? '接続成功' : '接続失敗',
-        description: result.message || (result.latency_ms ? `レイテンシ: ${result.latency_ms}ms` : ''),
+        title: result.success ? 'Connection Successful' : 'Connection Failed',
+        description: result.message || (result.latency_ms ? `Latency: ${result.latency_ms}ms` : ''),
         variant: result.success ? 'default' : 'destructive',
       })
     },
     onError: (error) => {
       toast({
-        title: '接続テスト失敗',
+        title: 'Connection Test Failed',
         description: String(error),
         variant: 'destructive',
       })
@@ -119,13 +119,13 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
       toast({
-        title: '同期完了',
-        description: `${result.synced_models}件のモデルを同期しました`,
+        title: 'Sync Complete',
+        description: `Synced ${result.synced_models} models`,
       })
     },
     onError: (error) => {
       toast({
-        title: '同期失敗',
+        title: 'Sync Failed',
         description: String(error),
         variant: 'destructive',
       })
@@ -168,10 +168,10 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                 {getStatusLabel(endpoint.status)}
               </Badge>
               {endpoint.supports_responses_api && (
-                <Badge variant="outline">Responses API対応</Badge>
+                <Badge variant="outline">Responses API</Badge>
               )}
               <span className="text-sm text-muted-foreground">
-                モデル数: {endpoint.model_count}
+                Models: {endpoint.model_count}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                 disabled={testMutation.isPending}
               >
                 <Play className="h-4 w-4 mr-1" />
-                接続テスト
+                Test Connection
               </Button>
               <Button
                 variant="outline"
@@ -191,7 +191,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                 disabled={syncMutation.isPending || endpoint.status !== 'online'}
               >
                 <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-                モデル同期
+                Sync Models
               </Button>
             </div>
           </div>
@@ -201,21 +201,21 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
           {/* Info Section */}
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <span className="text-muted-foreground">レイテンシ:</span>
+              <span className="text-muted-foreground">Latency:</span>
               <span className="ml-2">{endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">登録日時:</span>
+              <span className="text-muted-foreground">Registered:</span>
               <span className="ml-2">{formatRelativeTime(endpoint.registered_at)}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">最終確認:</span>
+              <span className="text-muted-foreground">Last Seen:</span>
               <span className="ml-2">
                 {endpoint.last_seen ? formatRelativeTime(endpoint.last_seen) : '-'}
               </span>
             </div>
             <div>
-              <span className="text-muted-foreground">エラー回数:</span>
+              <span className="text-muted-foreground">Error Count:</span>
               <span className="ml-2">{endpoint.error_count}</span>
             </div>
           </div>
@@ -225,7 +225,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
             <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
               <div className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-4 w-4" />
-                <span className="font-medium">最後のエラー</span>
+                <span className="font-medium">Last Error</span>
               </div>
               <p className="text-sm text-destructive/80 mt-1">{endpoint.last_error}</p>
             </div>
@@ -236,12 +236,12 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
           {/* Edit Section */}
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">表示名</Label>
+              <Label htmlFor="name">Display Name</Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="エンドポイント名"
+                placeholder="Endpoint name"
               />
             </div>
 
@@ -249,7 +249,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <div className="space-y-2">
                 <Label htmlFor="healthCheckInterval">
                   <Clock className="h-4 w-4 inline mr-1" />
-                  ヘルスチェック間隔（秒）
+                  Health Check Interval (sec)
                 </Label>
                 <Input
                   id="healthCheckInterval"
@@ -263,7 +263,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <div className="space-y-2">
                 <Label htmlFor="inferenceTimeout">
                   <Clock className="h-4 w-4 inline mr-1" />
-                  推論タイムアウト（秒）
+                  Inference Timeout (sec)
                 </Label>
                 <Input
                   id="inferenceTimeout"
@@ -277,12 +277,12 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="notes">メモ</Label>
+              <Label htmlFor="notes">Notes</Label>
               <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="このエンドポイントに関するメモ..."
+                placeholder="Notes about this endpoint..."
                 rows={3}
               />
             </div>
@@ -291,11 +291,11 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            閉じる
+            Close
           </Button>
           <Button onClick={handleSave} disabled={updateMutation.isPending}>
             <Save className="h-4 w-4 mr-1" />
-            {updateMutation.isPending ? '保存中...' : '保存'}
+            {updateMutation.isPending ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

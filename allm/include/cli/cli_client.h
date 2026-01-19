@@ -41,7 +41,7 @@ struct CliResponse<void> {
     bool ok() const { return error == CliError::Success; }
 };
 
-/// CLI client for communicating with llm-node server
+/// CLI client for communicating with aLLM server
 class CliClient {
 public:
     /// Constructor

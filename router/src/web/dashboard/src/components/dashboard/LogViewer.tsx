@@ -19,17 +19,16 @@ import { FileText, RefreshCw, Trash2, Server, Download } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 
 /**
- * SPEC-66555000: ルーター主導エンドポイント登録システム
- * ログビューアーコンポーネント
+ * SPEC-66555000: Router-Driven Endpoint Registration System
+ * Log Viewer Component
  *
- * 注意: エンドポイントは外部サービス（Ollama、vLLM等）であり、
- * ルーターにログをプッシュしないため、現在はルーターログのみを表示します。
- * 将来的にエンドポイントがログAPIを提供する場合は拡張可能です。
+ * Note: Endpoints are external services (Ollama, vLLM, etc.) that do not push logs to the router.
+ * Currently displays router logs only. Can be extended when endpoints provide log APIs.
  */
 
 interface LogViewerProps {
   /**
-   * @deprecated SPEC-66555000によりnodesは廃止予定。現在は後方互換性のために残しています。
+   * @deprecated nodes is deprecated by SPEC-66555000. Kept for backward compatibility.
    */
   nodes?: DashboardNode[]
 }

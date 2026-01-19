@@ -44,7 +44,7 @@ export default function Dashboard() {
     refetchInterval: pollingInterval,
   })
 
-  // リクエスト履歴（個別リクエスト詳細）を取得
+  // Fetch request history (individual request details)
   const { data: requestResponsesData, isLoading: isLoadingHistory } =
     useQuery<RequestResponsesPage>({
       queryKey: ['request-responses'],
@@ -52,14 +52,14 @@ export default function Dashboard() {
       refetchInterval: pollingInterval,
     })
 
-  // SPEC-66555000: エンドポイント一覧を取得
+  // SPEC-66555000: Fetch endpoints list
   const { data: endpointsData, isLoading: isLoadingEndpoints } = useQuery<DashboardEndpoint[]>({
     queryKey: ['dashboard-endpoints'],
     queryFn: () => dashboardApi.getEndpoints(),
     refetchInterval: pollingInterval,
   })
 
-  // RequestResponseRecord を RequestHistoryItem にマッピング
+  // Map RequestResponseRecord to RequestHistoryItem
   const historyItems: RequestHistoryItem[] = useMemo(() => {
     if (!requestResponsesData?.records) return []
     return requestResponsesData.records.map((record) => ({

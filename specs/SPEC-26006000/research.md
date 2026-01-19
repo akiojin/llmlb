@@ -27,7 +27,7 @@
 ```cmake
 # node/CMakeLists.txt
 add_subdirectory(third_party/whisper.cpp)
-target_link_libraries(llm-node PRIVATE whisper)
+target_link_libraries(allm PRIVATE whisper)
 ```
 
 ## 2. 音声合成ランタイム (TTS)
@@ -55,7 +55,7 @@ target_link_libraries(llm-node PRIVATE whisper)
 ```cmake
 # node/CMakeLists.txt
 find_package(onnxruntime REQUIRED)
-target_link_libraries(llm-node PRIVATE onnxruntime)
+target_link_libraries(allm PRIVATE onnxruntime)
 ```
 
 ## 3. 音声フォーマット処理

@@ -241,7 +241,7 @@ pub fn verify_node_token(token: &str, stored_hash: &str) -> bool {
 - プレフィックスでAPIキーと区別
 
 **ノード側の実装**:
-- トークンを `~/.llm-node/token` に保存
+- トークンを `~/.llm-router/token` に保存
 - 全HTTPリクエストに `X-Node-Token: nt_...` ヘッダーを追加
 
 ## まとめ

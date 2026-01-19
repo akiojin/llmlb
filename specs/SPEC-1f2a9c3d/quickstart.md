@@ -36,7 +36,7 @@ curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
       "message": "Registered with router"
     }
   ],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llm-router/logs/current.jsonl"
 }
 ```
 
@@ -125,7 +125,7 @@ curl http://localhost:11435/v0/logs
 ```json
 {
   "entries": [],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llm-router/logs/current.jsonl"
 }
 ```
 
@@ -154,9 +154,9 @@ const { entries } = await response.json();
 
 ### ログが空で返ってくる
 
-1. ログファイルパスを確認: `~/.llm-node/logs/`
-2. ノードのログ設定を確認: `LLM_NODE_LOG_DIR`
-3. ログレベルを確認: `LLM_NODE_LOG_LEVEL`
+1. ログファイルパスを確認: `~/.llm-router/logs/`
+2. ノードのログ設定を確認: `ALLM_LOG_DIR`
+3. ログレベルを確認: `ALLM_LOG_LEVEL`
 
 ### タイムアウトが発生する
 

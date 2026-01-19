@@ -35,11 +35,11 @@ else()
     list(APPEND CONTRACT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
-add_executable(llm-node-contract-tests
+add_executable(allm-contract-tests
     ${CONTRACT_TEST_SOURCES}
 )
 
-target_link_libraries(llm-node-contract-tests
+target_link_libraries(allm-contract-tests
     PRIVATE
         test_common
         llama
@@ -52,26 +52,26 @@ target_link_libraries(llm-node-contract-tests
         OpenSSL::Crypto
 )
 
-target_include_directories(llm-node-contract-tests
+target_include_directories(allm-contract-tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
 # Enable testing mode for model registry (skip supported model filtering)
-target_compile_definitions(llm-node-contract-tests PRIVATE LLM_NODE_TESTING=1 ALLM_TESTING=1)
+target_compile_definitions(allm-contract-tests PRIVATE ALLM_TESTING=1)
 
 # Link Metal frameworks on macOS
 if(APPLE)
     find_library(METAL_FRAMEWORK Metal)
     find_library(FOUNDATION_FRAMEWORK Foundation)
     if(METAL_FRAMEWORK AND FOUNDATION_FRAMEWORK)
-        target_link_libraries(llm-node-contract-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
-        target_compile_definitions(llm-node-contract-tests PRIVATE USE_METAL=1)
+        target_link_libraries(allm-contract-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
+        target_compile_definitions(allm-contract-tests PRIVATE USE_METAL=1)
     endif()
 endif()
 
 add_test(
-    NAME llm-node-contract-tests
-    COMMAND llm-node-contract-tests
+    NAME allm-contract-tests
+    COMMAND allm-contract-tests
 )

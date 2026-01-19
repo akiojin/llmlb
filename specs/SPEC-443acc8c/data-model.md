@@ -364,7 +364,7 @@ impl TimeoutCheck {
 
 ```bash
 # ノード側設定
-LLM_NODE_HEARTBEAT_SECS=30        # ハートビート送信間隔（秒）
+ALLM_HEARTBEAT_SECS=30        # ハートビート送信間隔（秒）
 
 # ルーター側設定
 LLM_ROUTER_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）

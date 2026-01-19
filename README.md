@@ -182,12 +182,12 @@ npm run start:node
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with |
-| `LLM_NODE_PORT` | `32769` | Node listen port |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
-| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `LLM_NODE_LOG_LEVEL` | `info` | Log level |
+| `ALLM_PORT` | `32769` | Node listen port |
+| `ALLM_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
+| `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
+| `ALLM_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `ALLM_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `ALLM_LOG_LEVEL` | `info` | Log level |
 
 **Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
 
@@ -366,8 +366,8 @@ curl http://router:32768/v1/chat/completions -d '...'
 
 - The router never pushes models to nodes.
 - Nodes resolve models on-demand in this order:
-  - local cache (`LLM_NODE_MODELS_DIR`)
-  - allowlisted origin download (Hugging Face, etc.; configure via `LLM_NODE_ORIGIN_ALLOWLIST`)
+  - local cache (`ALLM_MODELS_DIR`)
+  - allowlisted origin download (Hugging Face, etc.; configure via `ALLM_ORIGIN_ALLOWLIST`)
   - manifest-based selection from the router (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
@@ -604,13 +604,13 @@ See [Node (C++)](#node-c) section in Quick Start.
    # Machine 1
    LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
-   LLM_NODE_API_KEY=sk_your_node_register_key \
+   ALLM_API_KEY=sk_your_node_register_key \
    ./allm/build/allm
 
    # Machine 2
    LLM_ROUTER_URL=http://router:32768 \
    # Replace with your actual API key (scope: node)
-   LLM_NODE_API_KEY=sk_your_node_register_key \
+   ALLM_API_KEY=sk_your_node_register_key \
    ./allm/build/allm
    ```
 
@@ -701,23 +701,23 @@ Cloud / external services:
 | `HF_TOKEN` | - | Hugging Face token for model pulls | optional |
 | `LLM_ROUTER_API_KEY` | - | API key used by e2e tests/clients | client/test use |
 
-#### Node (llm-node)
+#### aLLM
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
-| `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
-| `LLM_NODE_PORT` | `32769` | Node listen port | - |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
-| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
-| `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
-| `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
-| `LLM_NODE_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
-| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
-| `LLM_NODE_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `LLM_NODE_CONFIG` | `~/.llm-router/config.json` | Path to node config file | - |
+| `ALLM_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
+| `ALLM_PORT` | `32769` | Node listen port | - |
+| `ALLM_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
+| `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
+| `ALLM_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
+| `ALLM_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
+| `ALLM_IP` | auto-detected | Node IP reported to router | - |
+| `ALLM_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
+| `ALLM_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
+| `ALLM_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
+| `ALLM_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `ALLM_CONFIG` | `~/.llm-router/config.json` | Path to node config file | - |
 | `LLM_MODEL_IDLE_TIMEOUT` | unset | Seconds before unloading idle models | enabled when set |
 | `LLM_MAX_LOADED_MODELS` | unset | Cap on simultaneously loaded models | enabled when set |
 | `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
@@ -738,7 +738,7 @@ Cloud / external services:
 
 ### Port conflict
 - Router: Change `LLM_ROUTER_PORT` (e.g., `LLM_ROUTER_PORT=18080`)
-- Node: Change `LLM_NODE_PORT` or use `--port`
+- Node: Change `ALLM_PORT` or use `--port`
 
 ### SQLite file creation failed
 - Check write permissions for the directory in `LLM_ROUTER_DATABASE_URL` path

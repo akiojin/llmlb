@@ -259,20 +259,20 @@ cmake --build build --config Release
 
 - `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
-#### ノード（C++）環境変数
+#### aLLM環境変数
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | ルーターURL |
-| `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
-| `LLM_NODE_PORT` | `32769` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
-| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
-| `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+| `ALLM_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
+| `ALLM_PORT` | `32769` | HTTPサーバーポート |
+| `ALLM_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
+| `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
+| `ALLM_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
+| `ALLM_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
+| `ALLM_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
+| `ALLM_LOG_LEVEL` | `info` | ログレベル |
+| `ALLM_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
 
 **注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
 新しい環境変数名を使用してください。
@@ -283,7 +283,7 @@ cmake --build build --config Release
 cargo run -p llm-router
 
 # ノード (別シェル)
-LLM_NODE_API_KEY=sk_node_register_key ./allm/build/allm
+ALLM_API_KEY=sk_node_register_key ./allm/build/allm
 ```
 
 ### 6) 動作確認
@@ -377,8 +377,8 @@ Router (OpenAI-compatible)
 
 - ルーターからノードへの push 配布は行いません。
 - ノードはモデルをオンデマンドで次の順に解決します。
-  - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
-  - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_NODE_ORIGIN_ALLOWLIST`）
+  - ローカルキャッシュ（`ALLM_MODELS_DIR`）
+  - 許可リスト内の外部ダウンロード（Hugging Face など、`ALLM_ORIGIN_ALLOWLIST`）
   - ルーターのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
@@ -400,7 +400,7 @@ Router (OpenAI-compatible)
 
 ### ポート競合で起動しない
 - ルーター: `LLM_ROUTER_PORT` を変更（例: `LLM_ROUTER_PORT=18080`）
-- ノード: `LLM_NODE_PORT` または `--port` で変更
+- ノード: `ALLM_PORT` または `--port` で変更
 
 ### SQLite ファイル作成に失敗
 - `LLM_ROUTER_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認

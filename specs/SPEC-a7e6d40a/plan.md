@@ -202,7 +202,7 @@ fn get_env_with_fallback(new_name: &str, old_name: &str) -> Option<String> {
 ### CLI構造
 
 ```text
-llm-node [OPTIONS]
+allm [OPTIONS]
 
 Options:
   -h, --help     Print help information
@@ -210,9 +210,9 @@ Options:
 
 Environment Variables:
   LLM_ROUTER_URL              Router URL (default: http://127.0.0.1:32768)
-  LLM_NODE_PORT               Node listen port (default: 32769)
-  LLM_NODE_LOG_LEVEL          Log level (default: info)
-  LLM_NODE_MODELS_DIR         Model storage directory
+  ALLM_PORT               Node listen port (default: 32769)
+  ALLM_LOG_LEVEL          Log level (default: info)
+  ALLM_MODELS_DIR         Model storage directory
 ```
 
 ### 実装方針
@@ -232,12 +232,12 @@ Environment Variables:
 
 | 現在の変数名 | 新しい変数名 |
 |-------------|------------|
-| `LLM_MODELS_DIR` | `LLM_NODE_MODELS_DIR` |
-| `LLM_HEARTBEAT_SECS` | `LLM_NODE_HEARTBEAT_SECS` |
-| `LLM_BIND_ADDRESS` | `LLM_NODE_BIND_ADDRESS` |
-| `LLM_LOG_DIR` | `LLM_NODE_LOG_DIR` |
-| `LLM_LOG_LEVEL` | `LLM_NODE_LOG_LEVEL` |
-| `LLM_LOG_RETENTION_DAYS` | `LLM_NODE_LOG_RETENTION_DAYS` |
+| `LLM_MODELS_DIR` | `ALLM_MODELS_DIR` |
+| `LLM_HEARTBEAT_SECS` | `ALLM_HEARTBEAT_SECS` |
+| `LLM_BIND_ADDRESS` | `ALLM_BIND_ADDRESS` |
+| `LLM_LOG_DIR` | `ALLM_LOG_DIR` |
+| `LLM_LOG_LEVEL` | `ALLM_LOG_LEVEL` |
+| `LLM_LOG_RETENTION_DAYS` | `ALLM_LOG_RETENTION_DAYS` |
 
 ## JWT_SECRET ファイル永続化設計
 
@@ -291,7 +291,7 @@ Environment Variables:
 
 1. `--help` 表示テスト → 実装
 2. `--version` 表示テスト → 実装
-3. 環境変数名統一（LLM_NODE_*）テスト → 実装
+3. 環境変数名統一（ALLM_*）テスト → 実装
 4. 旧環境変数のフォールバック＆警告テスト → 実装
 
 **順序戦略**:

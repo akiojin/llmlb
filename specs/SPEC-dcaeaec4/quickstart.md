@@ -17,8 +17,8 @@
 ls ~/.llm-router/models/
 
 # 環境変数でカスタマイズ
-export LLM_NODE_MODELS_DIR=/path/to/custom/models
-ls $LLM_NODE_MODELS_DIR
+export ALLM_MODELS_DIR=/path/to/custom/models
+ls $ALLM_MODELS_DIR
 ```
 
 ### 手動でモデルを配置
@@ -179,7 +179,7 @@ for f in manifest["files"]:
 
 ```bash
 # モデルディレクトリ（推奨）
-export LLM_NODE_MODELS_DIR=/custom/path/models
+export ALLM_MODELS_DIR=/custom/path/models
 
 # 互換モード
 export LLM_MODELS_DIR=/custom/path/models
@@ -192,8 +192,8 @@ export HF_TOKEN=hf_xxxxxxxxxxxxx
 
 ```bash
 # カスタムモデルディレクトリを指定
-llm-node --models-dir /custom/path/models
+allm --models-dir /custom/path/models
 
 # ヘルプを表示
-llm-node --help
+allm --help
 ```

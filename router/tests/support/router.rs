@@ -69,6 +69,7 @@ pub fn test_jwt_secret() -> String {
 }
 
 /// ルーターサーバーをテスト用に起動する
+#[allow(dead_code)]
 pub async fn spawn_test_router() -> TestServer {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));

@@ -6,6 +6,8 @@
 //!
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
+#![allow(clippy::duplicate_mod)]
+
 #[path = "../support/mod.rs"]
 mod support;
 

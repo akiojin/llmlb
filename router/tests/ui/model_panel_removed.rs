@@ -3,6 +3,8 @@
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、
 //! EndpointRegistryベースのAppStateを使用するように更新。
 
+#![allow(clippy::duplicate_mod)]
+
 #[path = "../support/mod.rs"]
 mod support;
 

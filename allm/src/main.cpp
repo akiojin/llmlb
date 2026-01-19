@@ -591,10 +591,4 @@ extern "C" int allm_run_for_test() {
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);
 }
-
-// Backward compatibility for older test binaries that still reference the
-// previous symbol name.
-extern "C" int llm_node_run_for_test() {
-    return allm_run_for_test();
-}
 #endif

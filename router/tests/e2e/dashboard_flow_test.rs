@@ -66,14 +66,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     (api::create_router(state), db_pool, admin_key)
 }
 
-/// SPEC-66555000: /v0/dashboard/nodes は廃止
-#[tokio::test]
-#[ignore = "SPEC-66555000: /v0/dashboard/nodes is deprecated"]
-async fn test_dashboard_nodes_endpoint() {
-    let (_app, _db_pool, _admin_key) = build_app().await;
-    // TODO: EndpointRegistryベースのダッシュボードテストを実装
-}
-
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
     let (app, _db_pool, admin_key) = build_app().await;
@@ -171,14 +163,6 @@ async fn test_dashboard_request_history_endpoint() {
         history.is_array(),
         "Response should be an array of request history"
     );
-}
-
-/// SPEC-66555000: ノード登録テストは廃止
-#[tokio::test]
-#[ignore = "SPEC-66555000: Node registration via /v0/nodes is deprecated"]
-async fn test_dashboard_nodes_with_registered_node() {
-    let (_app, _db_pool, _admin_key) = build_app().await;
-    // TODO: EndpointRegistryベースのテストを実装
 }
 
 #[tokio::test]

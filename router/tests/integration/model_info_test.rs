@@ -88,16 +88,8 @@ async fn test_available_models_endpoint_is_removed() {
     );
 }
 
-/// T019: エンドポイントが報告したロード済みモデルの反映テスト
-///
-/// SPEC-66555000: このテストは廃止された機能（node_tokenとPOST /v0/health）に依存しています。
-/// 新しいEndpoints API（SPEC-24157000）ではモデル同期が自動的に行われます。
-#[tokio::test]
-#[ignore = "SPEC-66555000: node_token and POST /v0/health are deprecated"]
-async fn test_list_installed_models_on_endpoint() {
-    let (_app, _admin_key, _db_pool) = build_app().await;
-    // TODO: EndpointRegistryベースのテストを実装
-}
+// NOTE: T019 (test_list_installed_models_on_endpoint) はSPEC-66555000（NodeRegistry廃止）により削除。
+// EndpointRegistryベースのモデル同期テストは router/tests/contract/endpoints_sync_test.rs で実装済み。
 
 /// T020: 複数エンドポイントのロード済みモデルの反映テスト
 #[tokio::test]

@@ -89,26 +89,10 @@ async fn dashboard_static_index_is_react_app() {
     );
 }
 
-#[tokio::test]
-#[ignore = "NodeRegistry廃止に伴い、EndpointRegistryベースに書き換えが必要 (SPEC-66555000)"]
-async fn dashboard_nodes_and_stats_reflect_registry() {
-    // TODO: EndpointRegistryベースのダッシュボードテストを実装
-}
-
-#[tokio::test]
-#[ignore = "NodeRegistry廃止に伴い、EndpointRegistryベースに書き換えが必要 (SPEC-66555000)"]
-async fn dashboard_request_history_tracks_activity() {
-    // TODO: EndpointRegistryベースのリクエスト履歴テストを実装
-}
-
-#[tokio::test]
-#[ignore = "NodeRegistry廃止に伴い、EndpointRegistryベースに書き換えが必要 (SPEC-66555000)"]
-async fn dashboard_overview_returns_combined_payload() {
-    // TODO: EndpointRegistryベースのオーバービューテストを実装
-}
-
-#[tokio::test]
-#[ignore = "NodeRegistry廃止に伴い、EndpointRegistryベースに書き換えが必要 (SPEC-66555000)"]
-async fn dashboard_node_metrics_endpoint_returns_history() {
-    // TODO: EndpointRegistryベースのメトリクステストを実装
-}
+// NOTE: 以下のテストはSPEC-66555000（NodeRegistry廃止）により削除済み:
+// - dashboard_nodes_and_stats_reflect_registry
+// - dashboard_request_history_tracks_activity
+// - dashboard_overview_returns_combined_payload
+// - dashboard_node_metrics_endpoint_returns_history
+//
+// EndpointRegistryベースのテストは router/tests/e2e/dashboard_flow_test.rs で実装済み。

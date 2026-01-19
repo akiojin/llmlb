@@ -1,64 +1,48 @@
-ï»¿# ã‚¯ã‚¤ãƒƒã‚¯ã‚¹ã‚¿ãƒ¼ãƒˆ: Nodeã‚¨ãƒ³ã‚¸ãƒ³ãƒ­ãƒ¼ãƒ€ãƒ¼æŠ½è±¡åŒ–
+# ƒNƒCƒbƒNƒXƒ^[ƒg: ƒ}ƒl[ƒWƒƒ•û®iText/Audio/Imagej
 
-## å‰ææ¡ä»¶
+## ‘O’ñğŒ
 
-| é …ç›® | è¦ä»¶ |
+| €–Ú | —vŒ |
 |------|------|
 | OS | macOS (Metal) / Windows (CUDA) |
-| GPU | Metal å¯¾å¿œ / NVIDIA CUDA å¯¾å¿œ |
-| ãƒ—ãƒ©ã‚°ã‚¤ãƒ³ | `engines/` é…ä¸‹ã«é…ç½®æ¸ˆã¿ |
+| GPU | Metal ‘Î‰ / NVIDIA CUDA ‘Î‰ |
+| ƒ‚ƒfƒ‹”z’u | `~/.llm-router/models` ”z‰º‚É”z’uiGGUF / safetensorsj |
 
-> DirectML ã¯å‡çµã€‚Windows ã¯ CUDA ä¸»çµŒè·¯ã€‚
+> DirectML ‚Í“€Œ‹BWindows ‚Í CUDA åŒo˜HB
 
-## 1. ãƒ—ãƒ©ã‚°ã‚¤ãƒ³ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªæ§‹æˆ
+## 1. ƒfƒBƒŒƒNƒgƒŠ\¬
 
-ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã¯ `~/.llm-router/engines`ï¼ˆWindows ã¯ `%USERPROFILE%\.llm-router\engines`ï¼‰ã€‚
-å¤‰æ›´ã™ã‚‹å ´åˆã¯ `ALLM_ENGINE_PLUGINS_DIR` ã‚’æŒ‡å®šã™ã‚‹ã€‚
+ƒfƒtƒHƒ‹ƒg‚Í `~/.llm-router/models`iWindows ‚Í `%USERPROFILE%\.llm-router\models`jB
 
 ```
-~/.llm-router/engines/
-  gptoss/
-    manifest.json
-    llm_engine_gptoss.*
-  nemotron/
-    manifest.json
-    llm_engine_nemotron.*
+~/.llm-router/models/
+  llama-3.2-1b/
+    model.gguf
+  nemotron-3-8b/
+    config.json
+    tokenizer.json
+    model.safetensors
 ```
 
-## 2. manifest.json ã®ä¾‹
+- GGUF: `model.gguf` ‚ğ”z’u
+- safetensors: `config.json` + `tokenizer.json` + `*.safetensors` ‚ª•K{
 
-```json
-{
-  "engine_id": "gptoss_cpp",
-  "engine_version": "0.1.0",
-  "abi_version": 2,
-  "runtimes": ["gptoss_cpp"],
-  "formats": ["safetensors"],
-  "architectures": ["gpt_oss"],
-  "modalities": ["completion"],
-  "capabilities": ["text"],
-  "gpu_targets": ["cuda"],
-  "library": "llm_engine_gptoss"
-}
-```
-
-## 3. Node èµ·å‹•
+## 2. Node ‹N“®
 
 ```bash
-# ä¾‹: ãƒ—ãƒ©ã‚°ã‚¤ãƒ³ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’æ˜ç¤º
-ALLM_ENGINE_PLUGINS_DIR=~/.llm-router/engines \
+ALLM_MODELS_DIR=~/.llm-router/models \
   ./llm-router-node
 ```
 
-èµ·å‹•ãƒ­ã‚°ã« `Engine plugins loaded from ...` ãŒå‡ºã¦ã„ã‚Œã°ãƒ­ãƒ¼ãƒ‰æˆåŠŸã€‚
+## 3. Šm”F
 
-## 4. ç¢ºèª
+- `/v1/models` ‚É‘ÎÛƒ‚ƒfƒ‹‚ª `ready` ‚Å•\¦‚³‚ê‚é‚±‚ÆB
+- `/v1/responses` ‚Ü‚½‚Í `/v1/chat/completions` ‚ª¬Œ÷‚·‚é‚±‚ÆB
+- ‰¹º/‰æ‘œ‚ª—LŒø‚Èê‡‚Í `/v1/audio/transcriptions` / `/v1/images/generations` ‚ğŠm”FB
 
-- `/v1/models` ã«å¯¾è±¡ãƒ¢ãƒ‡ãƒ«ãŒ `ready` ã§è¡¨ç¤ºã•ã‚Œã‚‹ã“ã¨ã€‚
-- DLL ã‚„ã‚¢ãƒ¼ãƒ†ã‚£ãƒ•ã‚¡ã‚¯ãƒˆä¸è¶³ã®å ´åˆã¯æ˜ç¢ºãªã‚¨ãƒ©ãƒ¼ãŒè¿”ã‚‹ã“ã¨ã€‚
+## 4. ¸”s‚Ìƒ`ƒFƒbƒN
 
-## 5. å¤±æ•—æ™‚ã®ãƒã‚§ãƒƒã‚¯
-
-- `manifest.json` ã® `abi_version` ãŒ `EngineHost::kAbiVersion` ã¨ä¸€è‡´ã—ã¦ã„ã‚‹ã‹
-- `library` åã«å¯¾å¿œã™ã‚‹å…±æœ‰ãƒ©ã‚¤ãƒ–ãƒ©ãƒªãŒé…ç½®ã•ã‚Œã¦ã„ã‚‹ã‹
-- `gpu_targets` ãŒãƒ“ãƒ«ãƒ‰æ¸ˆã¿ã®ãƒãƒƒã‚¯ã‚¨ãƒ³ãƒ‰ï¼ˆMetal/CUDAï¼‰ã¨ä¸€è‡´ã—ã¦ã„ã‚‹ã‹
+- safetensors: `config.json` / `tokenizer.json` ‚Ì•s‘«
+- GGUF: `model.gguf` ‚ªŒ©‚Â‚©‚ç‚È‚¢
+- GPU ƒoƒbƒNƒGƒ“ƒh•sˆê’viCUDA/Metal ‚Ì–¢‘Î‰j
+- build flags: `BUILD_WITH_WHISPER`, `BUILD_WITH_SD` ‚Ì—LŒø‰»

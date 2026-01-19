@@ -268,7 +268,6 @@ cmake --build build --config Release
 | `ALLM_PORT` | `32769` | HTTPサーバーポート |
 | `ALLM_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
-| `ALLM_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `ALLM_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `ALLM_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `ALLM_LOG_LEVEL` | `info` | ログレベル |

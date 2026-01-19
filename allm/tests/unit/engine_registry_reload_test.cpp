@@ -55,7 +55,7 @@ TEST(EngineRegistryReloadTest, ReplaceEngineById) {
     EngineRegistry registry;
 
     EngineRegistration reg_v1;
-    reg_v1.engine_id = "plugin_engine";
+    reg_v1.engine_id = "engine_v1";
     reg_v1.engine_version = "v1";
     reg_v1.formats = {"gguf"};
     reg_v1.architectures = {"llama"};

@@ -12,8 +12,6 @@ set(UNIT_TEST_SOURCES
     inference_engine_test.cpp
     llama_engine_kv_cache_test.cpp
     engine_registry_test.cpp
-    engine_host_test.cpp
-    safetensors_engine_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
     llama_manager_test.cpp
@@ -24,7 +22,6 @@ set(UNIT_TEST_SOURCES
     replica_manager_test.cpp
     function_calling_test.cpp
     partial_load_guard_test.cpp
-    plugin_logger_test.cpp
     onnx_tts_manager_test.cpp
     model_registry_test.cpp
     watchdog_test.cpp
@@ -47,10 +44,10 @@ set(UNIT_TEST_SOURCES
     ../../src/core/model_pool.cpp
     ../../src/core/prefix_cache.cpp
     ../../src/core/engine_registry.cpp
-    ../../src/core/engine_host.cpp
     ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/text_manager.cpp
     ../../src/core/inference_cache.cpp
     ../../src/core/prefix_cache.cpp
     ../../src/core/replica_manager.cpp
@@ -60,7 +57,6 @@ set(UNIT_TEST_SOURCES
     ../../src/core/replica_manager.cpp
     ../../src/core/function_calling.cpp
     ../../src/core/partial_load_guard.cpp
-    ../../src/core/plugin_logger.cpp
     ../../src/core/chat_template_renderer.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp

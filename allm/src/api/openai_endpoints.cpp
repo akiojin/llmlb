@@ -532,7 +532,6 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        engine_.applyPendingEnginePluginsIfIdle();
         auto guard = RequestGuard::try_acquire();
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
@@ -695,7 +694,6 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        engine_.applyPendingEnginePluginsIfIdle();
         auto guard = RequestGuard::try_acquire();
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
@@ -786,7 +784,6 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        engine_.applyPendingEnginePluginsIfIdle();
         auto guard = RequestGuard::try_acquire();
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");

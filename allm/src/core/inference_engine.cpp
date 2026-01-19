@@ -1,9 +1,7 @@
 #include "core/inference_engine.h"
 
-#include "core/engine_host.h"
-#include "core/engine_registry.h"
-#include "core/llama_engine.h"
 #include "core/llama_manager.h"
+#include "core/text_manager.h"
 #include "core/request_watchdog.h"
 #include "core/vision_processor.h"
 #include "include/llama.h"
@@ -168,8 +166,6 @@ uint64_t steady_now_ns() {
 std::mutex g_token_metrics_mutex;
 std::function<void(const TokenMetrics&)> g_token_metrics_hook;
 std::function<uint64_t()> g_token_metrics_clock;
-std::mutex g_plugin_restart_hook_mutex;
-std::function<bool(std::string&)> g_plugin_restart_hook;
 #endif
 
 uint64_t token_metrics_now_ns() {
@@ -658,102 +654,17 @@ InferenceEngine::InferenceEngine(LlamaManager& manager, ModelStorage& model_stor
     , model_sync_(model_sync)
     , model_resolver_(model_resolver)
     , resource_usage_provider_(ResourceMonitor::sampleSystemUsage) {
-    engines_ = std::make_unique<EngineRegistry>();
-    EngineRegistration llama_reg;
-    llama_reg.engine_id = "builtin_llama_cpp";
-    llama_reg.engine_version = "builtin";
-    llama_reg.formats = {"gguf"};
-    llama_reg.architectures = {"llama", "mistral", "gemma", "phi"};
-    llama_reg.capabilities = {"text", "embeddings"};
-    engines_->registerEngine(std::make_unique<LlamaEngine>(manager), llama_reg, nullptr);
-
+    text_manager_ = std::make_unique<TextManager>(manager, model_storage.modelsDir());
     vision_processor_ = std::make_unique<VisionProcessor>(model_storage);
-    plugin_restart_last_ = std::chrono::steady_clock::now();
 }
 
 InferenceEngine::InferenceEngine() = default;
 
 InferenceEngine::~InferenceEngine() = default;
 
-bool InferenceEngine::loadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
-    if (!engines_) {
-        error = "EngineRegistry not initialized";
-        return false;
-    }
 
-    engine_plugins_dir_ = directory;
-    EngineHostContext context;
-    context.abi_version = EngineHost::kAbiVersion;
-    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
-    context.llama_manager = manager_;
-    context.log_callback = defaultPluginLogHandler;
-    context.log_callback_ctx = nullptr;
 
-    return engine_host_.loadPluginsFromDir(directory, *engines_, context, error);
-}
 
-bool InferenceEngine::reloadEnginePlugins(const std::filesystem::path& directory, std::string& error) {
-    if (!engines_) {
-        error = "EngineRegistry not initialized";
-        return false;
-    }
-
-    engine_plugins_dir_ = directory;
-    EngineHostContext context;
-    context.abi_version = EngineHost::kAbiVersion;
-    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
-    context.llama_manager = manager_;
-    context.log_callback = defaultPluginLogHandler;
-    context.log_callback_ctx = nullptr;
-
-    if (!engine_host_.stagePluginsFromDir(directory, context, error)) {
-        return false;
-    }
-
-    applyPendingEnginePluginsIfIdle(&error);
-    return error.empty();
-}
-
-void InferenceEngine::applyPendingEnginePluginsIfIdle(std::string* error) const {
-    if (!engines_) {
-        if (error) *error = "EngineRegistry not initialized";
-        return;
-    }
-
-    if (!engine_host_.hasPendingPlugins()) {
-        if (error) error->clear();
-        return;
-    }
-
-    if (active_request_count() > 0) {
-        if (error) error->clear();
-        return;
-    }
-
-    std::string apply_error;
-    if (!engine_host_.applyPendingPlugins(*engines_, apply_error)) {
-        if (error) {
-            *error = apply_error;
-        }
-        if (!apply_error.empty()) {
-            spdlog::warn("Engine plugin reload failed: {}", apply_error);
-        }
-    } else if (error) {
-        error->clear();
-    }
-    if (!engine_host_.hasPendingPlugins()) {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        plugin_restart_pending_ = false;
-    }
-}
-
-void InferenceEngine::setPluginRestartPolicy(std::chrono::seconds interval, uint64_t request_limit) {
-    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-    plugin_restart_interval_ = interval;
-    plugin_restart_request_limit_ = request_limit;
-    plugin_restart_request_count_ = 0;
-    plugin_restart_last_ = std::chrono::steady_clock::now();
-}
 
 std::string InferenceEngine::buildChatPrompt(const std::vector<ChatMessage>& messages) const {
     std::ostringstream oss;
@@ -803,122 +714,22 @@ std::string InferenceEngine::resolveModelPath(const std::string& model_name, std
     return "";
 }
 
-void InferenceEngine::maybeSchedulePluginRestart() const {
-    if (engine_plugins_dir_.empty()) return;
 
-    const auto now = std::chrono::steady_clock::now();
-    bool should_stage = false;
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) return;
-        if (plugin_restart_interval_.count() == 0 && plugin_restart_request_limit_ == 0) {
-            return;
-        }
 
-        plugin_restart_request_count_ += 1;
-        const bool due_by_requests = plugin_restart_request_limit_ > 0 &&
-            plugin_restart_request_count_ >= plugin_restart_request_limit_;
-        const bool due_by_time = plugin_restart_interval_.count() > 0 &&
-            (now - plugin_restart_last_) >= plugin_restart_interval_;
-        if (!due_by_requests && !due_by_time) {
-            return;
-        }
 
-        plugin_restart_pending_ = true;
-        plugin_restart_request_count_ = 0;
-        plugin_restart_last_ = now;
-        should_stage = true;
-    }
 
-    if (!should_stage) return;
-
-    std::string error;
-    if (!stagePluginRestart("periodic", error)) {
-        spdlog::warn("Engine plugin restart schedule failed: {}", error);
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        plugin_restart_pending_ = false;
-    }
-}
-
-void InferenceEngine::handlePluginCrash() const {
-    if (engine_plugins_dir_.empty()) return;
-    {
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        if (plugin_restart_pending_) return;
-        plugin_restart_pending_ = true;
-    }
-
-    std::string error;
-    if (!stagePluginRestart("crash", error)) {
-        spdlog::warn("Engine plugin restart after crash failed: {}", error);
-        std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-        plugin_restart_pending_ = false;
-        return;
-    }
-
-    applyPendingEnginePluginsIfIdle();
-}
-
-// =============================================================================
-// T181: クラッシュ後503即時返却
-// =============================================================================
-
-bool InferenceEngine::isInRecoveryMode() const {
-    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-    return plugin_restart_pending_;
-}
-
-void InferenceEngine::clearRecoveryMode() {
-    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-    plugin_restart_pending_ = false;
-    spdlog::info("Recovery mode cleared");
-}
 
 std::vector<std::string> InferenceEngine::getRegisteredRuntimes() const {
-    if (!engines_) {
+    if (!text_manager_) {
         return {};
     }
-    return engines_->getRegisteredRuntimes();
-}
-
-bool InferenceEngine::stagePluginRestart(const char* reason, std::string& error) const {
-    error.clear();
-#ifdef ALLM_TESTING
-    {
-        std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
-        if (g_plugin_restart_hook) {
-            return g_plugin_restart_hook(error);
-        }
-    }
-#endif
-    if (engine_plugins_dir_.empty()) {
-        error = "engine plugins dir not set";
-        return false;
-    }
-
-    EngineHostContext context;
-    context.abi_version = EngineHost::kAbiVersion;
-    context.models_dir = model_storage_ ? model_storage_->modelsDir().c_str() : nullptr;
-    context.llama_manager = manager_;
-    context.log_callback = defaultPluginLogHandler;
-    context.log_callback_ctx = nullptr;
-
-    if (!engine_host_.stagePluginsFromDir(engine_plugins_dir_, context, error)) {
-        return false;
-    }
-    spdlog::info("Engine plugin restart staged ({})", reason ? reason : "unknown");
-    return true;
+    return text_manager_->getRegisteredRuntimes();
 }
 
 std::string InferenceEngine::generateChat(
     const std::vector<ChatMessage>& messages,
     const std::string& model,
     const InferenceParams& params) const {
-
-    // T181: リカバリモード中は503を返却
-    if (isInRecoveryMode()) {
-        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
-    }
 
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode");
@@ -927,15 +738,17 @@ std::string InferenceEngine::generateChat(
     }
 
     return run_with_watchdog([&]() {
-        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model);
         }
 
-        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        std::string resolve_error;
+        Engine* engine = text_manager_ ? text_manager_->resolve(*desc, "text", &resolve_error) : nullptr;
         if (!engine) {
-            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+            throw std::runtime_error(resolve_error.empty()
+                                         ? "No engine registered for runtime: " + desc->runtime
+                                         : resolve_error);
         }
 
         TokenMetricsState metrics;
@@ -944,15 +757,9 @@ std::string InferenceEngine::generateChat(
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
 
-        // T136-T137: Retry with exponential backoff, transparent to client
         RetryConfig retry_config;
-        auto output = with_retry(
-            [&]() {
-                return engine->generateChat(messages, *desc, params_with_metrics);
-            },
-            retry_config,
-            [this]() { handlePluginCrash(); }
-        );
+        auto output = with_retry([&]() { return engine->generateChat(messages, *desc, params_with_metrics); },
+                                 retry_config);
         report_token_metrics(metrics, desc->name, "chat");
         return output;
     });
@@ -975,7 +782,6 @@ std::string InferenceEngine::generateChatWithImages(
     }
 
     return run_with_watchdog([&]() {
-        maybeSchedulePluginRestart();
         std::string error;
         TokenMetricsState metrics;
         metrics.start_ns = token_metrics_now_ns();
@@ -1169,25 +975,25 @@ std::string InferenceEngine::generateCompletion(
     const std::string& prompt,
     const std::string& model,
     const InferenceParams& params) const {
-    // T181: リカバリモード中は503を返却
-    if (isInRecoveryMode()) {
-        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
-    }
 
     if (!isInitialized()) {
+        spdlog::warn("InferenceEngine not initialized, using stub mode");
+        if (prompt.empty()) return "";
         return apply_stop_sequences_to_output("Response to: " + prompt, params.stop_sequences);
     }
 
     return run_with_watchdog([&]() {
-        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model);
         }
 
-        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        std::string resolve_error;
+        Engine* engine = text_manager_ ? text_manager_->resolve(*desc, "text", &resolve_error) : nullptr;
         if (!engine) {
-            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+            throw std::runtime_error(resolve_error.empty()
+                                         ? "No engine registered for runtime: " + desc->runtime
+                                         : resolve_error);
         }
 
         TokenMetricsState metrics;
@@ -1196,15 +1002,9 @@ std::string InferenceEngine::generateCompletion(
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
 
-        // T136-T137: Retry with exponential backoff, transparent to client
         RetryConfig retry_config;
-        auto output = with_retry(
-            [&]() {
-                return engine->generateCompletion(prompt, *desc, params_with_metrics);
-            },
-            retry_config,
-            [this]() { handlePluginCrash(); }
-        );
+        auto output = with_retry([&]() { return engine->generateCompletion(prompt, *desc, params_with_metrics); },
+                                 retry_config);
         report_token_metrics(metrics, desc->name, "completion");
         return output;
     });
@@ -1215,11 +1015,6 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     const std::string& model,
     const InferenceParams& params,
     const std::function<void(const std::string&)>& on_token) const {
-
-    // T181: リカバリモード中は503を返却
-    if (isInRecoveryMode()) {
-        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
-    }
 
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode for streaming");
@@ -1233,18 +1028,19 @@ std::vector<std::string> InferenceEngine::generateChatStream(
     }
 
     return run_with_watchdog([&]() {
-        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model);
         }
 
-        Engine* engine = engines_ ? engines_->resolve(*desc, "text") : nullptr;
+        std::string resolve_error;
+        Engine* engine = text_manager_ ? text_manager_->resolve(*desc, "text", &resolve_error) : nullptr;
         if (!engine) {
-            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+            throw std::runtime_error(resolve_error.empty()
+                                         ? "No engine registered for runtime: " + desc->runtime
+                                         : resolve_error);
         }
 
-        // T182: トークン間タイムアウト監視を設定
         auto inter_token_timeout = get_inter_token_timeout();
         InterTokenWatchdog inter_token_watchdog(inter_token_timeout);
 
@@ -1265,7 +1061,6 @@ std::vector<std::string> InferenceEngine::generateChatStream(
             auto output = engine->generateChatStream(messages, *desc, params_with_watchdog, on_token);
             inter_token_watchdog.disarm();
 
-            // T182: タイムアウトが発生していた場合はエラーを投げる
             if (inter_token_watchdog.hasTimedOut()) {
                 throw TokenTimeoutError("Inter-token timeout: no token generated within " +
                     std::to_string(inter_token_timeout.count()) + "ms");
@@ -1274,12 +1069,10 @@ std::vector<std::string> InferenceEngine::generateChatStream(
             report_token_metrics(metrics, desc->name, "stream");
             return output;
         } catch (const TokenTimeoutError&) {
-            // タイムアウトはクラッシュではないので再スローのみ
             inter_token_watchdog.disarm();
             throw;
         } catch (...) {
             inter_token_watchdog.disarm();
-            handlePluginCrash();
             throw;
         }
     });
@@ -1349,15 +1142,15 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         }
     }
 
-    if (!desc->architectures.empty() && engines_ &&
-        !engines_->supportsArchitecture(desc->runtime, desc->architectures)) {
+    if (!desc->architectures.empty() && text_manager_ &&
+        !text_manager_->supportsArchitecture(desc->runtime, desc->architectures)) {
         result.error_code = EngineErrorCode::kUnsupported;
         result.error_message = "Model architecture is not supported by any engine";
         return result;
     }
 
     std::string resolve_error;
-    Engine* engine = engines_ ? engines_->resolve(*desc, capability, &resolve_error) : nullptr;
+    Engine* engine = text_manager_ ? text_manager_->resolve(*desc, capability, &resolve_error) : nullptr;
     if (!engine) {
         result.error_message = !resolve_error.empty()
                                    ? resolve_error
@@ -1365,7 +1158,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
-    const std::string engine_id = engines_ ? engines_->engineIdFor(engine) : "";
+    const std::string engine_id = text_manager_ ? text_manager_->engineIdFor(engine) : "";
 
     if (resource_usage_provider_) {
         const auto usage = resource_usage_provider_();
@@ -1397,7 +1190,7 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
 #endif
 
         if (vram_total_bytes > 0 && required > 0 && !engine_id.empty()) {
-            const size_t engine_count = engines_ ? engines_->engineIdCount() : 0;
+            const size_t engine_count = text_manager_ ? text_manager_->engineIdCount() : 0;
             if (engine_count > 0) {
                 const uint64_t budget = vram_total_bytes / engine_count;
                 if (budget > 0 && required > budget) {
@@ -1435,11 +1228,6 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     const std::vector<std::string>& inputs,
     const std::string& model_name) const {
 
-    // T181: リカバリモード中は503を返却
-    if (isInRecoveryMode()) {
-        throw ServiceUnavailableError("Service temporarily unavailable: engine recovery in progress");
-    }
-
     if (!isInitialized()) {
         std::vector<std::vector<float>> results;
         results.reserve(inputs.size());
@@ -1450,32 +1238,30 @@ std::vector<std::vector<float>> InferenceEngine::generateEmbeddings(
     }
 
     return run_with_watchdog([&]() {
-        maybeSchedulePluginRestart();
         auto desc = resolve_descriptor(model_storage_, model_name);
         if (!desc) {
             throw std::runtime_error("Model not found: " + model_name);
         }
 
-        Engine* engine = engines_ ? engines_->resolve(*desc, "embeddings") : nullptr;
+        std::string resolve_error;
+        Engine* engine = text_manager_ ? text_manager_->resolve(*desc, "embeddings", &resolve_error) : nullptr;
         if (!engine) {
-            throw std::runtime_error("No engine registered for runtime: " + desc->runtime);
+            throw std::runtime_error(resolve_error.empty()
+                                         ? "No engine registered for runtime: " + desc->runtime
+                                         : resolve_error);
         }
 
-        // T136-T137: Retry with exponential backoff, transparent to client
         RetryConfig retry_config;
-        return with_retry(
-            [&]() {
-                return engine->generateEmbeddings(inputs, *desc);
-            },
-            retry_config,
-            [this]() { handlePluginCrash(); }
-        );
+        return with_retry([&]() { return engine->generateEmbeddings(inputs, *desc); }, retry_config);
     });
 }
 
 #ifdef ALLM_TESTING
 void InferenceEngine::setEngineRegistryForTest(std::unique_ptr<EngineRegistry> registry) {
-    engines_ = std::move(registry);
+    if (!text_manager_) {
+        return;
+    }
+    text_manager_->setEngineRegistryForTest(std::move(registry));
 }
 
 void InferenceEngine::setResourceUsageProviderForTest(std::function<ResourceUsage()> provider) {
@@ -1501,15 +1287,7 @@ void InferenceEngine::setTokenMetricsClockForTest(std::function<uint64_t()> cloc
     g_token_metrics_clock = std::move(clock);
 }
 
-void InferenceEngine::setPluginRestartHookForTest(std::function<bool(std::string&)> hook) {
-    std::lock_guard<std::mutex> lock(g_plugin_restart_hook_mutex);
-    g_plugin_restart_hook = std::move(hook);
-}
 
-void InferenceEngine::setEnginePluginsDirForTest(const std::filesystem::path& directory) {
-    std::lock_guard<std::mutex> lock(plugin_restart_mutex_);
-    engine_plugins_dir_ = directory;
-}
 
 void InferenceEngine::setInterTokenTimeoutForTest(std::chrono::milliseconds timeout) {
     std::lock_guard<std::mutex> lock(g_inter_token_timeout_mutex);
@@ -1518,7 +1296,7 @@ void InferenceEngine::setInterTokenTimeoutForTest(std::chrono::milliseconds time
 #endif
 
 bool InferenceEngine::isModelSupported(const ModelDescriptor& descriptor) const {
-    Engine* engine = engines_ ? engines_->resolve(descriptor) : nullptr;
+    Engine* engine = text_manager_ ? text_manager_->resolve(descriptor) : nullptr;
     if (!engine) {
         return false;
     }

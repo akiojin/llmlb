@@ -28,7 +28,7 @@
 #include "cli/ollama_compat.h"
 
 #ifdef USE_WHISPER
-#include "core/whisper_manager.h"
+#include "core/audio_manager.h"
 #include "api/audio_endpoints.h"
 #endif
 
@@ -37,7 +37,7 @@
 #endif
 
 #ifdef USE_SD
-#include "core/sd_manager.h"
+#include "core/image_manager.h"
 #include "api/image_endpoints.h"
 #endif
 
@@ -89,9 +89,9 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
         std::vector<std::string> supported_runtimes{"llama_cpp"};
 
 #ifdef USE_WHISPER
-        // Initialize WhisperManager for ASR
-        allm::WhisperManager whisper_manager(models_dir);
-        spdlog::info("WhisperManager initialized for ASR support");
+        // Initialize AudioManager for ASR
+        allm::AudioManager audio_manager(models_dir);
+        spdlog::info("AudioManager initialized for ASR support");
         supported_runtimes.push_back("whisper_cpp");
 #endif
 
@@ -103,9 +103,9 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
 #endif
 
 #ifdef USE_SD
-        // Initialize SDManager for image generation
-        allm::SDManager sd_manager(models_dir);
-        spdlog::info("SDManager initialized for image generation support");
+        // Initialize ImageManager for image generation
+        allm::ImageManager image_manager(models_dir);
+        spdlog::info("ImageManager initialized for image generation support");
         supported_runtimes.push_back("stable_diffusion");
 #endif
 
@@ -165,7 +165,6 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
 
         // Create model_sync for local model management (standalone mode - no router)
         auto model_sync = std::make_shared<allm::ModelSync>("", models_dir);
-        model_sync->setSupportedRuntimes(supported_runtimes);
         if (!cfg.origin_allowlist.empty()) {
             model_sync->setOriginAllowlist(cfg.origin_allowlist);
         }
@@ -185,38 +184,17 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
         // Initialize inference engine with dependencies (ModelResolver handles local/manifest resolution)
         allm::InferenceEngine engine(llama_manager, model_storage, model_sync.get(), model_resolver.get());
 
-        fprintf(stderr, "[DEBUG] main: InferenceEngine created, checking plugins...\n");
+        fprintf(stderr, "[DEBUG] main: InferenceEngine created, registering runtimes...\n");
         fflush(stderr);
 
-        if (!cfg.engine_plugins_dir.empty() && std::filesystem::exists(cfg.engine_plugins_dir)) {
-            fprintf(stderr, "[DEBUG] main: loading plugins from %s...\n", cfg.engine_plugins_dir.c_str());
-            fflush(stderr);
-            std::string plugin_error;
-            if (!engine.loadEnginePlugins(cfg.engine_plugins_dir, plugin_error)) {
-                spdlog::warn("Engine plugins load failed: {}", plugin_error);
-            } else {
-                spdlog::info("Engine plugins loaded from {}", cfg.engine_plugins_dir);
-                // Add plugin runtimes to supported_runtimes
-                for (const auto& rt : engine.getRegisteredRuntimes()) {
-                    if (std::find(supported_runtimes.begin(), supported_runtimes.end(), rt) == supported_runtimes.end()) {
-                        supported_runtimes.push_back(rt);
-                        spdlog::info("Added plugin runtime: {}", rt);
-                    }
-                }
-                // Update model_sync with expanded supported_runtimes
-                model_sync->setSupportedRuntimes(supported_runtimes);
+        for (const auto& rt : engine.getRegisteredRuntimes()) {
+            if (std::find(supported_runtimes.begin(), supported_runtimes.end(), rt) == supported_runtimes.end()) {
+                supported_runtimes.push_back(rt);
             }
         }
-        engine.setPluginRestartPolicy(
-            std::chrono::seconds(cfg.plugin_restart_interval_sec),
-            cfg.plugin_restart_request_limit);
-        if (cfg.plugin_restart_interval_sec > 0 || cfg.plugin_restart_request_limit > 0) {
-            spdlog::info(
-                "Engine plugin restart policy: interval={}s requests={}",
-                cfg.plugin_restart_interval_sec,
-                cfg.plugin_restart_request_limit);
-        }
-        spdlog::info("InferenceEngine initialized with llama.cpp support");
+        model_sync->setSupportedRuntimes(supported_runtimes);
+
+        spdlog::info("InferenceEngine initialized with text managers");
 
         // Scan local models BEFORE starting server (router checks /v1/models during registration)
         {
@@ -244,10 +222,10 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
 #ifdef USE_ONNX_RUNTIME
-        allm::AudioEndpoints audio_endpoints(whisper_manager, tts_manager);
+        allm::AudioEndpoints audio_endpoints(audio_manager, tts_manager);
         spdlog::info("Audio endpoints registered for ASR + TTS");
 #else
-        allm::AudioEndpoints audio_endpoints(whisper_manager);
+        allm::AudioEndpoints audio_endpoints(audio_manager);
         spdlog::info("Audio endpoints registered for ASR");
 #endif
         audio_endpoints.registerRoutes(server.getServer());
@@ -255,7 +233,7 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
 
 #ifdef USE_SD
         // Register image endpoints for image generation
-        allm::ImageEndpoints image_endpoints(sd_manager);
+        allm::ImageEndpoints image_endpoints(image_manager);
         image_endpoints.registerRoutes(server.getServer());
         spdlog::info("Image endpoints registered for image generation");
 #endif

@@ -22,9 +22,9 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/models/model_resolver.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/engine_registry.cpp
-    ../../src/core/engine_host.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/inference_engine.cpp
+    ../../src/core/text_manager.cpp
     ../../src/core/request_watchdog.cpp
     ../../src/core/token_watchdog.cpp
     ../../src/core/vision_processor.cpp

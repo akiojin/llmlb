@@ -256,38 +256,6 @@ target_link_libraries(cli_lib PUBLIC
 )
 target_compile_definitions(cli_lib PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
-# Engine plugin: llama.cpp
-set(LLAMA_ENGINE_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/engines/llama_cpp/llama_engine_plugin.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_engine.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/llama_manager.cpp
-)
-# Add platform-specific gpu_detector
-if(APPLE)
-    list(APPEND LLAMA_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/system/gpu_detector.mm)
-else()
-    list(APPEND LLAMA_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/system/gpu_detector.cpp)
-endif()
-add_library(llm_engine_llama_cpp SHARED ${LLAMA_ENGINE_SOURCES})
-target_include_directories(llm_engine_llama_cpp
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/common
-)
-target_link_libraries(llm_engine_llama_cpp
-    PRIVATE
-        llama
-        spdlog::spdlog_header_only
-)
-# Link Metal framework on Apple for gpu_detector
-if(APPLE)
-    target_link_libraries(llm_engine_llama_cpp PRIVATE "-framework Metal" "-framework Foundation")
-endif()
-set_target_properties(llm_engine_llama_cpp PROPERTIES OUTPUT_NAME "llm_engine_llama_cpp")
-
 # ============================================================================
 # safetensors.cpp integration (SPEC-69549000)
 # ============================================================================
@@ -308,43 +276,17 @@ if(BUILD_WITH_SAFETENSORS)
     set(STCPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     add_subdirectory(third_party/safetensors.cpp)
 
-    # Engine plugin: safetensors.cpp
-    set(SAFETENSORS_ENGINE_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine_plugin.cpp
-    )
-    add_library(llm_engine_safetensors SHARED ${SAFETENSORS_ENGINE_SOURCES})
-    if (WIN32)
-        set_target_properties(llm_engine_safetensors PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    endif()
-    target_include_directories(llm_engine_safetensors
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors.cpp/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
-    )
-    target_link_libraries(llm_engine_safetensors
-        PRIVATE
-            safetensors_cpp
-            spdlog::spdlog_header_only
-    )
-    set_target_properties(llm_engine_safetensors PROPERTIES OUTPUT_NAME "llm_engine_safetensors")
-
-    # Copy plugin files to build/engines/safetensors/ for runtime loading
-    set(SAFETENSORS_PLUGIN_DIR ${CMAKE_BINARY_DIR}/engines/safetensors)
-    add_custom_command(TARGET llm_engine_safetensors POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${SAFETENSORS_PLUGIN_DIR}
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:llm_engine_safetensors> ${SAFETENSORS_PLUGIN_DIR}/
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/manifest.json ${SAFETENSORS_PLUGIN_DIR}/
-        COMMENT "Copying safetensors plugin to ${SAFETENSORS_PLUGIN_DIR}"
-    )
+    # safetensors engine sources are compiled into the allm binary
 endif()
 
 # Collect source files
 file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
+# Include safetensors engine in the main binary for TextManager
+if(BUILD_WITH_SAFETENSORS)
+    list(APPEND SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors/safetensors_engine.cpp)
+endif()
 # Exclude DirectML files (Windows-only, built separately)
 list(FILTER SOURCES EXCLUDE REGEX ".*/directml/.*")
 
@@ -358,6 +300,16 @@ endif()
 
 # Create executable
 add_executable(allm ${SOURCES})
+
+if(BUILD_WITH_SAFETENSORS)
+    target_include_directories(allm PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/engines/safetensors
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/safetensors.cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json/include
+    )
+    target_link_libraries(allm PRIVATE safetensors_cpp)
+    target_compile_definitions(allm PRIVATE ALLM_WITH_SAFETENSORS)
+endif()
 
 # Link libraries
 target_link_libraries(allm PRIVATE

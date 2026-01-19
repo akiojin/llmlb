@@ -710,7 +710,6 @@ Cloud / external services:
 | `ALLM_PORT` | `32769` | Node listen port | - |
 | `ALLM_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
-| `ALLM_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `ALLM_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `ALLM_IP` | auto-detected | Node IP reported to router | - |
 | `ALLM_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |

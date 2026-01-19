@@ -7,7 +7,7 @@
 
 namespace allm {
 
-class WhisperManager;
+class AudioManager;
 class OnnxTtsManager;
 
 /// OpenAI Audio API互換エンドポイント
@@ -16,16 +16,16 @@ class OnnxTtsManager;
 class AudioEndpoints {
 public:
     /// Constructor for ASR-only mode (whisper.cpp)
-    AudioEndpoints(WhisperManager& whisper_manager);
+    AudioEndpoints(AudioManager& audio_manager);
 
     /// Constructor for ASR + TTS mode (whisper.cpp + ONNX)
-    AudioEndpoints(WhisperManager& whisper_manager,
+    AudioEndpoints(AudioManager& audio_manager,
                    OnnxTtsManager& tts_manager);
 
     void registerRoutes(httplib::Server& server);
 
 private:
-    WhisperManager& whisper_manager_;
+    AudioManager& audio_manager_;
     OnnxTtsManager* tts_manager_{nullptr};  // Optional TTS support
     // ヘルパーメソッド
     static void setJson(httplib::Response& res, const nlohmann::json& body);

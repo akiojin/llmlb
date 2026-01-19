@@ -9,7 +9,7 @@
 
 namespace allm {
 
-class SDManager;
+class ImageManager;
 
 /// OpenAI Images API compatible endpoints
 /// - POST /v1/images/generations (text-to-image)
@@ -17,12 +17,12 @@ class SDManager;
 /// - POST /v1/images/variations (image variations)
 class ImageEndpoints {
 public:
-    ImageEndpoints(SDManager& sd_manager);
+    ImageEndpoints(ImageManager& image_manager);
 
     void registerRoutes(httplib::Server& server);
 
 private:
-    SDManager& sd_manager_;
+    ImageManager& image_manager_;
     // Helper methods
     static void setJson(httplib::Response& res, const nlohmann::json& body);
     void respondError(httplib::Response& res,

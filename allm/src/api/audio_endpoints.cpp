@@ -1,5 +1,5 @@
 #include "api/audio_endpoints.h"
-#include "core/whisper_manager.h"
+#include "core/audio_manager.h"
 #include "core/onnx_tts_manager.h"
 #include "runtime/state.h"
 
@@ -17,13 +17,13 @@
 
 namespace allm {
 
-AudioEndpoints::AudioEndpoints(WhisperManager& whisper_manager)
-    : whisper_manager_(whisper_manager), tts_manager_(nullptr) {
+AudioEndpoints::AudioEndpoints(AudioManager& audio_manager)
+    : audio_manager_(audio_manager), tts_manager_(nullptr) {
 }
 
-AudioEndpoints::AudioEndpoints(WhisperManager& whisper_manager,
+AudioEndpoints::AudioEndpoints(AudioManager& audio_manager,
                                OnnxTtsManager& tts_manager)
-    : whisper_manager_(whisper_manager), tts_manager_(&tts_manager) {
+    : audio_manager_(audio_manager), tts_manager_(&tts_manager) {
 }
 
 void AudioEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
@@ -157,7 +157,7 @@ void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::
     }
 
     // モデルのオンデマンドロード
-    if (!whisper_manager_.loadModelIfNeeded(model_name)) {
+    if (!audio_manager_.loadModelIfNeeded(model_name)) {
         respondError(res, 500, "model_load_failed",
                      "Failed to load model: " + model_name);
         return;
@@ -169,7 +169,7 @@ void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::
     params.response_format = response_format;
     params.max_threads = 4;
 
-    TranscriptionResult result = whisper_manager_.transcribe(
+    TranscriptionResult result = audio_manager_.transcribe(
         model_name, audio_samples, sample_rate, params);
 
     if (!result.success) {

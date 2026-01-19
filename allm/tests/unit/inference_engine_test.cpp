@@ -767,85 +767,7 @@ TEST(InferenceEngineTest, ComputesTokenMetricsFromCallback) {
     InferenceEngine::setTokenMetricsClockForTest({});
 }
 
-TEST(InferenceEngineTest, SchedulesPluginRestartAfterRequestLimit) {
-    TempDir tmp;
-    const std::string model_name = "example/restart";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
 
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "restart_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RecordingEngine>("llama_cpp", "restart", nullptr, true, false),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-    engine.setPluginRestartPolicy(std::chrono::seconds(0), 2);
-
-    std::atomic<int> restart_calls{0};
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        restart_calls.fetch_add(1);
-        return true;
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "hello"}};
-    (void)engine.generateChat(messages, model_name, {});
-    EXPECT_EQ(restart_calls.load(), 0);
-
-    (void)engine.generateChat(messages, model_name, {});
-    EXPECT_EQ(restart_calls.load(), 1);
-
-    InferenceEngine::setPluginRestartHookForTest({});
-}
-
-TEST(InferenceEngineTest, RestartsPluginAfterCrash) {
-    TempDir tmp;
-    const std::string model_name = "example/crash";
-    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
-    fs::create_directories(model_dir);
-    std::ofstream(model_dir / "model.gguf") << "gguf";
-
-    LlamaManager llama(tmp.path.string());
-    ModelStorage storage(tmp.path.string());
-    InferenceEngine engine(llama, storage);
-
-    auto registry = std::make_unique<EngineRegistry>();
-    EngineRegistration reg;
-    reg.engine_id = "crash_engine";
-    reg.engine_version = "test";
-    reg.formats = {"gguf"};
-    reg.capabilities = {"text"};
-    ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<ThrowingEngine>(),
-        reg,
-        nullptr));
-    engine.setEngineRegistryForTest(std::move(registry));
-
-    engine.setEnginePluginsDirForTest(tmp.path);
-
-    std::atomic<int> restart_calls{0};
-    InferenceEngine::setPluginRestartHookForTest([&](std::string&) {
-        restart_calls.fetch_add(1);
-        return true;
-    });
-
-    std::vector<ChatMessage> messages = {{"user", "boom"}};
-    EXPECT_THROW((void)engine.generateChat(messages, model_name, {}), std::runtime_error);
-    EXPECT_EQ(restart_calls.load(), 1);
-
-    InferenceEngine::setPluginRestartHookForTest({});
-}
 
 // T177: ChatML template rendering tests
 TEST(ChatTemplateTest, BuildsChatMLPromptWithSingleMessage) {
@@ -1057,17 +979,7 @@ TEST(ServiceUnavailableTest, ThrowsCorrectException) {
     EXPECT_STREQ(error.what(), "test message");
 }
 
-TEST(ServiceUnavailableTest, IsRecoveryModeReturnsFalseByDefault) {
-    InferenceEngine engine;  // スタブモード
-    EXPECT_FALSE(engine.isInRecoveryMode());
-}
 
-TEST(ServiceUnavailableTest, ClearRecoveryModeNoOpWhenNotInRecovery) {
-    InferenceEngine engine;  // スタブモード
-    // clearRecoveryMode should not crash when not in recovery mode
-    engine.clearRecoveryMode();
-    EXPECT_FALSE(engine.isInRecoveryMode());
-}
 
 // =============================================================================
 // T182, T189: トークン間タイムアウトテスト

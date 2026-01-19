@@ -52,7 +52,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
 [クライアント]
      |
      v
-[ルーター] GET /v0/nodes/:node_id/logs?tail=N
+[ルーター] GET /v0/nodes/:runtime_id/logs?tail=N
      |
      v
 [ノード検索]

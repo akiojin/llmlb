@@ -192,7 +192,7 @@ pub struct RequestResponseRecord {
     pub timestamp: DateTime<Utc>,
     pub request_type: RequestType,
     pub model: String,
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub node_machine_name: String,
     pub node_ip: IpAddr,
     pub request_body: serde_json::Value,
@@ -216,7 +216,7 @@ pub enum RecordStatus {
 ```
 
 **関係性**:
-- `Node` (既存) ← (N:1) → `RequestResponseRecord` (node_id で参照)
+- `Node` (既存) ← (N:1) → `RequestResponseRecord` (runtime_id で参照)
 
 ### 2. API契約 (`contracts/`)
 
@@ -227,7 +227,7 @@ pub enum RecordStatus {
   "GET /v0/dashboard/request-responses": {
     "query_params": {
       "model": "string (optional)",
-      "node_id": "uuid (optional)",
+      "runtime_id": "uuid (optional)",
       "status": "success|error (optional)",
       "start_time": "ISO8601 (optional)",
       "end_time": "ISO8601 (optional)",

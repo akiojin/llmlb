@@ -28,7 +28,7 @@
 2. **前提** ノードが利用不可、**実行** リクエストを送信、**結果**
    ログに `error=NoNodesAvailable, request_id=uuid` が出力され、履歴にも保存
 3. **前提** ノードがエラーを返す、**実行** リクエストを送信、**結果**
-   ログに `node_id=xxx, status=500, error_message=...` が出力
+   ログに `runtime_id=xxx, status=500, error_message=...` が出力
 
 ---
 
@@ -90,9 +90,9 @@
 - **FR-001**: ルーターは全てのOpenAI互換APIリクエストの受信をINFOレベルで
   ログ出力する必要がある（request_id, endpoint, model, client_ip）
 - **FR-002**: ルーターはノード選択結果をINFOレベルでログ出力する必要がある
-  （node_id, node_ip, selection_reason）
+  （runtime_id, node_ip, selection_reason）
 - **FR-003**: ルーターはプロキシエラーをWARN/ERRORレベルでログ出力する
-  必要がある（error_type, error_message, node_id）
+  必要がある（error_type, error_message, runtime_id）
 - **FR-004**: ルーターはノード選択失敗時もリクエスト履歴に記録する必要がある
 - **FR-005**: ノードは推論リクエストの開始/完了をINFOレベルでログ出力する
   必要がある（model, prompt_tokens, generated_tokens, duration_ms）

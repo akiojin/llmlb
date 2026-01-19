@@ -72,7 +72,7 @@ ALTER TABLE request_history ADD COLUMN total_tokens INTEGER;
 
 -- 集計用インデックス
 CREATE INDEX idx_request_history_tokens ON request_history(timestamp DESC, model);
-CREATE INDEX idx_request_history_node_tokens ON request_history(node_id, timestamp DESC);
+CREATE INDEX idx_request_history_runtime_tokens ON request_history(runtime_id, timestamp DESC);
 ```
 
 ### Rust構造体

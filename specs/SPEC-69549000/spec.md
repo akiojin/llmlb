@@ -17,7 +17,7 @@
 
 **受け入れシナリオ**:
 
-1. **前提** OpenAI公式のgpt-oss-20b safetensorsモデル（openai/gpt-oss-20b）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
+1. **前提** OpenAI公式のgpt-oss-20b safetensorsモデル（openai/gpt-oss-20b, MoE + MXFP4）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
 2. **前提** NVIDIA公式のNemotron 3 safetensorsモデル（nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
 3. **前提** 分割されたsafetensors（model-00001-of-00005.safetensors等）、**実行** index.jsonを解析してロード、**結果** 全テンソルが正しく読み込まれる
 4. **前提** 不正なsafetensorsファイル、**実行** モデルをロード、**結果** 明確なエラーメッセージで失敗する
@@ -79,7 +79,7 @@
 
 **この優先度の理由**: llama.cpp、stable-diffusion.cpp、whisper.cppと同様に、コミュニティで広く利用される独立プロジェクトとして成長させるため。
 
-**独立テスト**: safetensors.cpp単体でビルド・テストが完結し、外部プロジェクト（Router/Node）への依存がないことを確認。
+**独立テスト**: safetensors.cpp単体でビルド・テストが完結し、外部プロジェクト（Router/aLLM）への依存がないことを確認。
 
 **受け入れシナリオ**:
 
@@ -167,7 +167,7 @@
 - **FR-016**: embeddings APIをサポートする
 - **FR-017**: tools/function_calling（構造化出力）をサポートする
 - **FR-018**: llama.cpp互換のC APIを提供する
-- **FR-019**: 外部プロジェクト（Router/Node）に依存せず、単体でビルド・テストできる
+- **FR-019**: 外部プロジェクト（Router/aLLM）に依存せず、単体でビルド・テストできる
 - **FR-020**: ggmlをサブモジュールとして管理し、GPUバックエンドとして利用する
 - **FR-021**: HuggingFaceのtokenizer.jsonを解析してトークナイズできる
 - **FR-022**: HuggingFaceのconfig.jsonからモデル設定を読み込める
@@ -192,36 +192,29 @@
 - **FR-041**: プロンプトキャッシュ（システムプロンプト/RAG等のKV再利用）をサポートする
 - **FR-042**: モデルのプリフィル（プロンプト処理）を最適化してTTFTを短縮する
 - **FR-043**: Visionモデル（LLaVA、Qwen-VL等）の画像入力をサポートする（将来対応）
+- **FR-044**: gpt-ossのMoEルーティング（Top-K）と専門家FFNを実装し、gpt-ossのsafetensorsを直接推論できる
+- **FR-045**: gpt-ossのMXFP4ブロック量子化（blocks + scales）をggml形式に変換し、推論に使用できる
 
-### 初期対応アーキテクチャ
+### 対応アーキテクチャ一覧（実装反映・追記式）
 
-Docker Hub Models カタログを参考に、以下のアーキテクチャを初期対応とする。
+この表が「現時点での対応状況」の唯一の正とする。新しいアーキテクチャを追加した場合は、
+必ずここに**追記**し、READMEにも反映すること。
 
-| アーキテクチャ | 対応モデル例 | 備考 |
-|--------------|-------------|------|
-| **llama** | Llama 3.1, Llama 3.2, Llama 3.3, DeepSeek-R1-Distill-Llama | Meta Llama系 |
-| **mistral** | Mistral, Mistral-Nemo | Mistral AI系 |
-| **gemma** | Gemma3, Gemma3n, Gemma3-QAT, FunctionGemma, EmbeddingGemma | Google Gemma系 |
-| **qwen** | Qwen2.5, Qwen3, QwQ, Qwen3-VL, Qwen3-Coder, Qwen3-Embedding, Qwen3-Reranker | Alibaba Qwen系 |
-| **phi** | Phi-4 | Microsoft Phi系 |
-| **nemotron** | Nemotron | NVIDIA Nemotron系 |
-| **deepseek** | DeepSeek-V3.2, DeepCoder-Preview | DeepSeek系 |
-| **gptoss** | GPT-OSS, GPT-OSS-Safeguard | OpenAI GPT-OSS系 |
-| **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite系 |
-| **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM系 |
-| **kimi** | Kimi-K2 | Moonshot Kimi系 |
-| **moondream** | Moondream2 | Moondream系（Vision） |
-| **devstral** | Devstral-Small | Mistral派生（コーディング特化） |
-| **magistral** | Magistral-Small-3.2 | Mistral派生（マルチモーダル） |
+| アーキテクチャ | 状態 | 実装根拠 | 備考 |
+|--------------|------|----------|------|
+| **gpt-oss (MoE + MXFP4)** | 実装済み | `allm/third_party/safetensors.cpp/src/ggml_model.cpp`, `allm/third_party/safetensors.cpp/src/transformer.cpp` | `mlp.router.*` / `mlp.experts.*_(blocks\|scales\|bias)` の読み込みとMoE forwardを含む |
+| **nemotron3 (Mamba-Transformer MoE)** | 実装済み（未統合） | `allm/third_party/safetensors.cpp/src/arch/nemotron3.*`, `mamba.*`, `moe.*`, `gqa.*` | forwardパスとの統合が未実施 |
 
-**Embeddingモデル:**
+**備考**:
 
-| アーキテクチャ | 対応モデル例 | 備考 |
-|--------------|-------------|------|
-| **snowflake** | Snowflake-Arctic-Embed-L-V2 | Snowflake埋め込み |
-| **nomic** | Nomic-Embed-Text-V1.5 | Nomic埋め込み |
-| **mxbai** | MxBai-Embed-Large | MixedBread埋め込み |
-| **minilm** | All-MiniLM-L6-V2 | Sentence Transformers |
+- `model_type`/`architectures` の検出は実装済みだが、専用の重みマッピングや forward パスがないアーキテクチャは**対応と見なさない**。
+- 対応対象を増やす場合は、専用のテンソル名マッピング・forwardパス・E2E検証をセットで追加する。
+
+### 将来候補（未対応）
+
+以下は将来候補としての例であり、現時点の対応を示すものではない。
+
+- llama / mistral / qwen / phi / gemma / glm など
 
 ### 主要エンティティ
 
@@ -240,7 +233,7 @@ Docker Hub Models カタログを参考に、以下のアーキテクチャを�
 - CPU推論（GPU必須。CPU対応は将来検討）
 - GGUFフォーマットへの対応（llama.cppが担当）
 - モデルの学習・ファインチューニング機能
-- Webサーバー機能（Node側で提供）
+- Webサーバー機能（aLLM側で提供）
 - モデルのダウンロード・管理機能（Router側で提供）
 - VRAM不足時のGPU/CPU自動分割オフロード
 
@@ -266,8 +259,8 @@ Docker Hub Models カタログを参考に、以下のアーキテクチャを�
 ## 依存関係
 
 - ggml（サブモジュールとして管理、GPUバックエンド提供、本家リポジトリに追従）
-- SPEC-d7feaa2c（エンジンローダー）- Node統合時にプラグインアーキテクチャに準拠
-- SPEC-3fc2c1e4（実行エンジン統合仕様）- Node統合時に参照
+- SPEC-d7feaa2c（エンジンローダー）- Runtime統合時にプラグインアーキテクチャに準拠
+- SPEC-3fc2c1e4（実行エンジン統合仕様）- Runtime統合時に参照
 
 ---
 
@@ -276,7 +269,7 @@ Docker Hub Models カタログを参考に、以下のアーキテクチャを�
 1. safetensors形式のgpt-oss-20bモデルで推論が正常に動作する
 2. safetensors形式のnemotronモデルで推論が正常に動作する
 3. Metal/CUDA/ROCm/Vulkanの4プラットフォームで同一のテストがパスする
-4. safetensors.cpp単体でビルドとテストが完結する（Router/Node依存なし）
+4. safetensors.cpp単体でビルドとテストが完結する（Router/aLLM依存なし）
 5. ggmlをサブモジュールとして正しく管理できている
 6. HuggingFace transformers（Python）と同等以上の推論速度を達成する
 7. ストリーミング出力でトークンごとにコールバックが呼ばれる
@@ -321,7 +314,7 @@ Docker Hub Models カタログを参考に、以下のアーキテクチャを�
 ### ドキュメント
 - llama.cpp級の充実したドキュメントを目指す（APIリファレンス、チュートリアル、例示コード）
 
-### Node統合
+### Runtime統合
 - 既存のエンジンプラグインアーキテクチャ（SPEC-d7feaa2c）に準拠
 
 ### リポジトリ

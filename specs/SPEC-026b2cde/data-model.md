@@ -136,7 +136,7 @@ CREATE TABLE request_history (
     timestamp TEXT NOT NULL,
     request_type TEXT NOT NULL,
     model TEXT NOT NULL,
-    node_id TEXT,
+    runtime_id TEXT,
     client_ip TEXT,
     duration_ms INTEGER NOT NULL,
     status TEXT NOT NULL

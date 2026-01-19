@@ -11,14 +11,14 @@ The authoritative API list and setup instructions live in `README.md` / `README.
 
 - `GET /v0/dashboard/overview`
 - `GET /v0/dashboard/stats`
-- `GET /v0/dashboard/nodes`
-- `GET /v0/dashboard/metrics/:node_id`
+- `GET /v0/dashboard/runtimes`
+- `GET /v0/dashboard/metrics/:runtime_id`
 - `GET /v0/dashboard/request-history`
 - `GET /v0/dashboard/request-responses`
 - `GET /v0/dashboard/request-responses/:id`
 - `GET /v0/dashboard/request-responses/export`
 - `GET /v0/dashboard/logs/router`
-- `GET /v0/nodes/:node_id/logs`
+- `GET /v0/runtimes/:runtime_id/logs`
 - `GET /v0/dashboard/stats/tokens`
 - `GET /v0/dashboard/stats/tokens/daily`
 - `GET /v0/dashboard/stats/tokens/monthly`

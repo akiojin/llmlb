@@ -63,7 +63,7 @@ async fn register_and_approve(router: &TestServer, node_stub: &TestServer) -> Va
         .json()
         .await
         .expect("register response should be json");
-    let node_id = body["node_id"].as_str().expect("node_id should exist");
+    let node_id = body["runtime_id"].as_str().expect("node_id should exist");
 
     let approve_response = approve_node(router.addr(), node_id)
         .await

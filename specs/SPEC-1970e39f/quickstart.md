@@ -100,7 +100,7 @@ cat router.log node.log | jq "select(.request_id == \"$REQUEST_ID\")" | jq -s 's
 
 ```json
 {"timestamp":"2025-01-02T10:30:00.123Z","level":"INFO","message":"Request received","request_id":"...","endpoint":"/v1/chat/completions","model":"llama-3.1-8b"}
-{"timestamp":"2025-01-02T10:30:00.125Z","level":"INFO","message":"Node selected","request_id":"...","node_id":"...","node_ip":"192.168.1.10"}
+{"timestamp":"2025-01-02T10:30:00.125Z","level":"INFO","message":"Node selected","request_id":"...","runtime_id":"...","node_ip":"192.168.1.10"}
 {"timestamp":"2025-01-02T10:30:01.500Z","level":"INFO","message":"Inference completed","request_id":"...","duration_ms":1375}
 {"timestamp":"2025-01-02T10:30:01.502Z","level":"INFO","message":"Response sent","request_id":"...","status":200}
 ```

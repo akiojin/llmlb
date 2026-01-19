@@ -78,7 +78,7 @@ pub enum Component {
   "message": "Node selected",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "component": "router",
-  "node_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "runtime_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "node_ip": "192.168.1.10"
 }
 ```
@@ -135,7 +135,7 @@ pub enum Component {
 | endpoint | string | リクエスト受信 | APIエンドポイント |
 | model | string | リクエスト受信 | モデル名 |
 | client_ip | string | リクエスト受信 | クライアントIP |
-| node_id | string (UUID) | ノード選択 | 選択されたノードID |
+| runtime_id | string (UUID) | ノード選択 | 選択されたノードID |
 | node_ip | string | ノード選択 | ノードIPアドレス |
 | error | string | エラー | エラー種別 |
 

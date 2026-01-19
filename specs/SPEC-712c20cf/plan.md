@@ -223,7 +223,7 @@ router/
 ```
 
 #### 4. ノード設定API（FR-023）
-- **エンドポイント**: `PUT /v0/nodes/:node_id/settings`
+- **エンドポイント**: `PUT /v0/nodes/:runtime_id/settings`
 - **リクエスト**: JSON
 ```json
 {
@@ -235,21 +235,21 @@ router/
 - **レスポンス**: 200 OK, 更新されたノード情報
 
 #### 5. ノード削除API（FR-024）
-- **エンドポイント**: `DELETE /v0/nodes/:node_id`
+- **エンドポイント**: `DELETE /v0/nodes/:runtime_id`
 - **レスポンス**: 204 No Content
 - **機能**: ノードを登録解除
 
 #### 6. ノード強制切断API（FR-024）
-- **エンドポイント**: `POST /v0/nodes/:node_id/disconnect`
+- **エンドポイント**: `POST /v0/nodes/:runtime_id/disconnect`
 - **レスポンス**: 202 Accepted
 - **機能**: ノードを強制的にOffline状態に
 
 #### 7. メトリクスAPI（SPEC-589f2df1実装後）
-- **エンドポイント**: `GET /v0/dashboard/metrics/:node_id`
+- **エンドポイント**: `GET /v0/dashboard/metrics/:runtime_id`
 - **レスポンス**: JSON
 ```json
 {
-  "node_id": "uuid",
+  "runtime_id": "uuid",
   "cpu_usage": 45.2,
   "memory_usage": 60.5,
   "active_requests": 3,

@@ -23,7 +23,7 @@
 // router/migrations/001_init.sql
 CREATE TABLE IF NOT EXISTS users (...);
 CREATE TABLE IF NOT EXISTS api_keys (...);
-CREATE TABLE IF NOT EXISTS node_tokens (...);
+CREATE TABLE IF NOT EXISTS runtime_tokens (...);
 
 // router/src/db/mod.rs
 pub async fn init_database() -> Result<SqlitePool> {
@@ -219,7 +219,7 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 use uuid::Uuid;
 use sha2::{Sha256, Digest};
 
-pub fn generate_node_token() -> (String, String) {
+pub fn generate_runtime_token() -> (String, String) {
     let token = format!("nt_{}", Uuid::new_v4());
     let token_hash = hash_token(&token);
     (token, token_hash)
@@ -231,7 +231,7 @@ fn hash_token(token: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn verify_node_token(token: &str, stored_hash: &str) -> bool {
+pub fn verify_runtime_token(token: &str, stored_hash: &str) -> bool {
     hash_token(token) == stored_hash
 }
 ```

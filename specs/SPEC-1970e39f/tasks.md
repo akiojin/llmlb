@@ -181,7 +181,7 @@ let node = match select_available_node(state).await {
                 timestamp,
                 request_type,
                 model: model.clone(),
-                node_id: Uuid::nil(),
+                runtime_id: Uuid::nil(),
                 node_machine_name: "N/A".to_string(),
                 node_ip: "0.0.0.0".parse().unwrap(),
                 client_ip: None,

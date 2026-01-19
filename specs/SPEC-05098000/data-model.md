@@ -104,7 +104,7 @@ pub enum QueueError {
     ClientDisconnected,
     /// ノード障害
     NodeFailure {
-        node_id: String,
+        runtime_id: String,
         reason: String,
     },
 }

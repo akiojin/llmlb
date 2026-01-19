@@ -146,7 +146,7 @@ async fn build_app() -> TestApp {
         "node-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Node],
+        vec![ApiKeyScope::Runtime],
     )
     .await
     .expect("create node api key")
@@ -213,7 +213,7 @@ async fn test_node_models_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/nodes/{}/models", Uuid::new_v4()))
+                .uri(format!("/v0/runtimes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -241,7 +241,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/nodes/{}/models/pull", Uuid::new_v4()))
+                .uri(format!("/v0/runtimes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),

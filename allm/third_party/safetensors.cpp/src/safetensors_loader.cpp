@@ -80,23 +80,44 @@ std::string parse_string(const char*& p, const char* end) {
     ++p;  // skip opening quote
 
     std::string result;
-    while (p < end && *p != '"') {
-        if (*p == '\\' && p + 1 < end) {
-            ++p;
-            switch (*p) {
-                case '"': result += '"'; break;
-                case '\\': result += '\\'; break;
-                case 'n': result += '\n'; break;
-                case 't': result += '\t'; break;
-                case 'r': result += '\r'; break;
-                default: result += *p; break;
-            }
+    const char* segment_start = p;
+    while (p < end) {
+        const char* next_quote = static_cast<const char*>(memchr(p, '"', end - p));
+        const char* next_escape = static_cast<const char*>(memchr(p, '\\', end - p));
+        const char* next = nullptr;
+        if (!next_quote && !next_escape) {
+            break;
+        } else if (!next_quote) {
+            next = next_escape;
+        } else if (!next_escape) {
+            next = next_quote;
         } else {
-            result += *p;
+            next = (next_escape < next_quote) ? next_escape : next_quote;
+        }
+
+        if (next == next_quote) {
+            result.append(segment_start, static_cast<size_t>(next_quote - segment_start));
+            p = next_quote + 1;
+            return result;
+        }
+
+        result.append(segment_start, static_cast<size_t>(next_escape - segment_start));
+        p = next_escape + 1;
+        if (p >= end) {
+            return result;
+        }
+        switch (*p) {
+            case '"': result.push_back('"'); break;
+            case '\\': result.push_back('\\'); break;
+            case 'n': result.push_back('\n'); break;
+            case 't': result.push_back('\t'); break;
+            case 'r': result.push_back('\r'); break;
+            default: result.push_back(*p); break;
         }
         ++p;
+        segment_start = p;
     }
-    if (p < end) ++p;  // skip closing quote
+    p = end;
     return result;
 }
 

@@ -186,7 +186,7 @@ pub fn create_router(state: AppState) -> Router {
         ))
     };
 
-    // モデル配布レジストリ（Nodeスコープが必要）
+    // モデル配布レジストリ（Runtimeスコープが必要）
     // SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました
     // 新しい実装は POST /v0/endpoints を使用してください
     let model_registry_routes = Router::new()
@@ -201,7 +201,7 @@ pub fn create_router(state: AppState) -> Router {
     } else {
         model_registry_routes
             .layer(middleware::from_fn_with_state(
-                ApiKeyScope::Node,
+                ApiKeyScope::Runtime,
                 crate::auth::middleware::require_api_key_scope_middleware,
             ))
             .layer(middleware::from_fn_with_state(
@@ -210,8 +210,8 @@ pub fn create_router(state: AppState) -> Router {
             ))
     };
 
-    // モデル一覧API (Admin OR Node スコープで利用可能)
-    // /v0/models はノード同期用の登録済みモデル一覧
+    // モデル一覧API (Admin OR Runtime スコープで利用可能)
+    // /v0/models はランタイム同期用の登録済みモデル一覧
     // /v0/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
     let models_list_routes = if auth_disabled {
         Router::new()
@@ -223,7 +223,7 @@ pub fn create_router(state: AppState) -> Router {
             .route("/models/hub", get(models::list_models_with_status))
             .layer(middleware::from_fn_with_state(
                 state.clone(),
-                crate::auth::middleware::admin_or_node_middleware,
+                crate::auth::middleware::admin_or_runtime_middleware,
             ))
     };
 

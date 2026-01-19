@@ -3,6 +3,8 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 namespace allm {
 namespace cli {
@@ -39,6 +41,13 @@ public:
     /// @return Progress bar string (e.g., "45% [======    ]")
     static std::string formatProgressBar(uint64_t downloaded_bytes, uint64_t total_bytes, int width = 20);
 
+    /// Get progress bar string without percent label
+    /// @param downloaded_bytes Bytes downloaded
+    /// @param total_bytes Total bytes
+    /// @param width Width of progress bar
+    /// @return Progress bar string (e.g., "[======    ]")
+    static std::string formatProgressBarBare(uint64_t downloaded_bytes, uint64_t total_bytes, int width = 20);
+
     /// Format bytes as human-readable string
     /// @param bytes Number of bytes
     /// @return Human-readable string (e.g., "6.4 GB", "128 MB")
@@ -64,6 +73,40 @@ private:
 
     /// Clear current line and print new content
     void clearAndPrint(const std::string& content);
+};
+
+class MultiProgressRenderer {
+public:
+    MultiProgressRenderer();
+
+    void onManifest(size_t total_files);
+    void onProgress(const std::string& file, uint64_t completed, uint64_t total);
+    void onComplete(const std::string& file, const std::string& status);
+    void onDone(const std::string& status);
+
+private:
+    struct FileState {
+        uint64_t completed{0};
+        uint64_t total{0};
+        std::chrono::steady_clock::time_point started;
+        std::string status{"Downloading"};
+        bool done{false};
+    };
+
+    size_t total_files_{0};
+    size_t lines_rendered_{0};
+    size_t spinner_index_{0};
+    std::chrono::steady_clock::time_point start_time_;
+    std::unordered_map<std::string, FileState> files_;
+    std::vector<std::string> order_;
+    std::string final_status_;
+
+    void render();
+    static std::string formatBytesCompact(uint64_t bytes);
+    static std::string formatDurationShort(double seconds);
+    std::string shortenFileLabel(const std::string& file) const;
+    void renderLines(const std::vector<std::string>& lines);
+    std::string spinnerFrame() const;
 };
 
 }  // namespace cli

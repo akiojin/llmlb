@@ -42,12 +42,12 @@
 
 ```rust
 // ハートビート受信時にlast_heartbeatを更新、自動的にOnlineに
-pub async fn heartbeat(&self, node_id: Uuid) -> Result<()> {
+pub async fn heartbeat(&self, runtime_id: Uuid) -> Result<()> {
     let mut nodes = self.nodes.write().await;
-    if let Some(node) = nodes.get_mut(&node_id) {
+    if let Some(node) = nodes.get_mut(&runtime_id) {
         node.last_heartbeat = Utc::now();
         node.status = NodeStatus::Online; // 自動復旧
-        tracing::info!("Node {} heartbeat received", node_id);
+        tracing::info!("Node {} heartbeat received", runtime_id);
     }
     Ok(())
 }

@@ -39,7 +39,7 @@ Router/Node の CLI インターフェースを整備するための技術調査
 | コンポーネント | プレフィックス |
 |---------------|---------------|
 | Router | `LLM_ROUTER_*` |
-| Node | `LLM_NODE_*` |
+| Node | `ALLM_*` |
 
 ### マイグレーション戦略
 
@@ -88,7 +88,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 ```cpp
 // node/include/utils/version.h
-#define LLM_NODE_VERSION "0.1.0"
+#define ALLM_VERSION "0.1.0"
 ```
 
 CMake連携でビルド時に自動設定も可能。

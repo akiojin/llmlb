@@ -259,14 +259,14 @@ bool preparePlugin(const std::filesystem::path& manifest_path,
     auto lib = openLibrary(lib_path, error);
     if (!lib) return false;
 
-    auto create_fn = reinterpret_cast<llm_node_create_engine_fn>(
-        loadSymbol(lib, "llm_node_create_engine", error));
+    auto create_fn = reinterpret_cast<allm_create_engine_fn>(
+        loadSymbol(lib, "allm_create_engine", error));
     if (!create_fn) {
         closeLibrary(lib);
         return false;
     }
-    auto destroy_fn = reinterpret_cast<llm_node_destroy_engine_fn>(
-        loadSymbol(lib, "llm_node_destroy_engine", error));
+    auto destroy_fn = reinterpret_cast<allm_destroy_engine_fn>(
+        loadSymbol(lib, "allm_destroy_engine", error));
     if (!destroy_fn) {
         closeLibrary(lib);
         return false;

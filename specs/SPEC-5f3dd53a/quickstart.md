@@ -6,8 +6,8 @@
 - DLL の管理ソースは `node/engines/gptoss/cuda/` と `node/engines/nemotron/cuda/` に配置する
 
 ## 環境変数 (任意)
-- LLM_NODE_GPTOSS_CUDA_LIB=/path/to/gptoss_cuda.dll
-- LLM_NODE_NEMOTRON_CUDA_LIB=/path/to/nemotron_cuda.dll
+- ALLM_GPTOSS_CUDA_LIB=/path/to/gptoss_cuda.dll
+- ALLM_NEMOTRON_CUDA_LIB=/path/to/nemotron_cuda.dll
 
 ## 期待挙動
 - DLLとCUDAアーティファクトが揃っていれば /v1/models が ready になる

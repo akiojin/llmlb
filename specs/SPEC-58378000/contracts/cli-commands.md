@@ -42,8 +42,8 @@ llm-router node serve [OPTIONS]
 
 | 変数 | 説明 |
 |------|------|
-| LLM_NODE_PORT | ポート番号 |
-| LLM_NODE_BIND_ADDRESS | バインドアドレス |
+| ALLM_PORT | ポート番号 |
+| ALLM_BIND_ADDRESS | バインドアドレス |
 
 ### 終了コード
 

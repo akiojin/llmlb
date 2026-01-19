@@ -124,19 +124,19 @@ pub enum ProxyError {
     {
       "timestamp": "2025-01-02T10:30:00.123Z",
       "level": "INFO",
-      "target": "llm_node::api::router_client",
+      "target": "allm::api::router_client",
       "message": "Heartbeat sent",
       "node_id": "550e8400-e29b-41d4-a716-446655440000"
     },
     {
       "timestamp": "2025-01-02T10:30:05.456Z",
       "level": "DEBUG",
-      "target": "llm_node::inference",
+      "target": "allm::inference",
       "message": "Model loaded",
       "model": "llama-3.1-8b"
     }
   ],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llm-router/logs/current.jsonl"
 }
 ```
 
@@ -145,7 +145,7 @@ pub enum ProxyError {
 ```json
 {
   "entries": [],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llm-router/logs/current.jsonl"
 }
 ```
 

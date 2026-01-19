@@ -77,7 +77,7 @@ jobs:
         run: |
           pip install huggingface_hub[cli] || true
 
-      - name: Build llm-node
+      - name: Build aLLM
         run: |
           CMAKE_ARGS=""
           if [[ "$MODEL_PLATFORM" == "macos-metal" ]]; then

@@ -22,8 +22,8 @@ export LLM_ROUTER_NODE_TIMEOUT=60           # タイムアウト（秒）
 
 ```bash
 # ハートビート設定
-export LLM_NODE_HEARTBEAT_SECS=30    # 送信間隔（秒）
-export LLM_NODE_TOKEN=<node-token>   # ノードトークン
+export ALLM_HEARTBEAT_SECS=30    # 送信間隔（秒）
+export ALLM_TOKEN=<node-token>   # ノードトークン
 export LLM_ROUTER_URL=http://localhost:8080  # ルーターURL
 ```
 
@@ -233,7 +233,7 @@ for alert in alerts:
 
 ```bash
 # 1. ノードを停止
-pkill -f llm-node
+pkill -f allm
 
 # 2. 60秒後にオフライン状態を確認
 sleep 60
@@ -245,7 +245,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 
 ```bash
 # 1. ノードを再起動
-./llm-node --router-url http://localhost:8080
+./allm --router-url http://localhost:8080
 
 # 2. 即座にオンライン状態を確認
 curl -X GET http://localhost:8080/v0/nodes \
@@ -305,7 +305,7 @@ export LLM_ROUTER_NODE_TIMEOUT=120  # 2分に延長
 ```bash
 # 原因: ハートビート間隔が長い
 # 対策: ノード側で間隔を短縮
-export LLM_NODE_HEARTBEAT_SECS=10  # 10秒に短縮
+export ALLM_HEARTBEAT_SECS=10  # 10秒に短縮
 ```
 
 ## 制限事項

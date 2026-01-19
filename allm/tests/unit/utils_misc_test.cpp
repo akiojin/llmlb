@@ -25,7 +25,7 @@ TEST(LoggerTest, InitSetsLevelAndWritesToSink) {
     // Restore default logger to avoid dangling stream sinks in later tests.
     spdlog::set_default_logger(std::move(original_logger));
     spdlog::set_level(original_level);
-    spdlog::drop("llm-node");
+    spdlog::drop("allm");
 }
 
 TEST(JsonUtilsTest, ParseJsonHandlesInvalid) {

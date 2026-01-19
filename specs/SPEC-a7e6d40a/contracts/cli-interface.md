@@ -55,7 +55,7 @@ llm-router {version}
 ### コマンド形式
 
 ```text
-llm-node [OPTIONS]
+allm [OPTIONS]
 ```
 
 ### オプション
@@ -79,7 +79,7 @@ llm-node [OPTIONS]
 ```text
 LLM Node - Inference engine for LLM Router
 
-Usage: llm-node [OPTIONS]
+Usage: allm [OPTIONS]
 
 Options:
   -h, --help     Print help information
@@ -87,15 +87,15 @@ Options:
 
 Environment Variables:
   LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:8080)
-  LLM_NODE_PORT                Node listen port (default: 11435)
-  LLM_NODE_MODELS_DIR          Model storage directory
-  LLM_NODE_LOG_LEVEL           Log level (default: info)
+  ALLM_PORT                Node listen port (default: 11435)
+  ALLM_MODELS_DIR          Model storage directory
+  ALLM_LOG_LEVEL           Log level (default: info)
 ```
 
 ### バージョン出力
 
 ```text
-llm-node {version}
+allm {version}
 ```
 
 ## 環境変数仕様
@@ -122,14 +122,14 @@ llm-node {version}
 | 変数名 | 型 | 必須 | デフォルト | 説明 |
 |--------|-----|------|-----------|------|
 | `LLM_ROUTER_URL` | String | No | `http://127.0.0.1:8080` | ルーターURL |
-| `LLM_NODE_PORT` | u16 | No | 11435 | 待受ポート |
-| `LLM_NODE_IP` | String | No | (自動検出) | ノードIP |
-| `LLM_NODE_MODELS_DIR` | Path | No | ~/.runtime/models | モデル保存先 |
-| `LLM_NODE_LOG_LEVEL` | String | No | info | ログレベル |
-| `LLM_NODE_LOG_DIR` | Path | No | ~/.llm-node/logs | ログディレクトリ |
-| `LLM_NODE_HEARTBEAT_SECS` | u64 | No | 10 | ハートビート間隔 |
-| `LLM_NODE_BIND_ADDRESS` | String | No | 0.0.0.0 | バインドアドレス |
-| `LLM_NODE_LOG_RETENTION_DAYS` | u64 | No | 7 | ログ保持日数 |
+| `ALLM_PORT` | u16 | No | 11435 | 待受ポート |
+| `ALLM_IP` | String | No | (自動検出) | ノードIP |
+| `ALLM_MODELS_DIR` | Path | No | ~/.runtime/models | モデル保存先 |
+| `ALLM_LOG_LEVEL` | String | No | info | ログレベル |
+| `ALLM_LOG_DIR` | Path | No | ~/.llm-router/logs | ログディレクトリ |
+| `ALLM_HEARTBEAT_SECS` | u64 | No | 10 | ハートビート間隔 |
+| `ALLM_BIND_ADDRESS` | String | No | 0.0.0.0 | バインドアドレス |
+| `ALLM_LOG_RETENTION_DAYS` | u64 | No | 7 | ログ保持日数 |
 
 ## JWT_SECRET ファイル仕様
 

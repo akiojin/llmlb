@@ -164,17 +164,17 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     {
       value: 'api',
       label: 'api',
-      description: 'OpenAI互換APIの推論アクセス',
+      description: 'OpenAI-compatible API inference access',
     },
     {
       value: 'node',
       label: 'node',
-      description: 'ノード登録・同期',
+      description: 'Endpoint registration and sync',
     },
     {
       value: 'admin',
       label: 'admin',
-      description: '管理者（全権限）',
+      description: 'Administrator (full access)',
     },
   ]
 

@@ -74,11 +74,11 @@
 ## Phase 3.6: Node（C++）CLI
 
 - [x] T024 [P] `node/tests/unit/cli_test.cpp` に --help テスト
-  - `llm-node --help` の出力に環境変数の説明が含まれることを確認
+  - `allm --help` の出力に環境変数の説明が含まれることを確認
 - [x] T025 [P] `node/tests/unit/cli_test.cpp` に --version テスト
-  - `llm-node --version` の出力にバージョン番号が含まれることを確認
+  - `allm --version` の出力にバージョン番号が含まれることを確認
 - [x] T026 `node/include/utils/version.h` を新規作成
-  - `LLM_NODE_VERSION` 定数
+  - `ALLM_VERSION` 定数
 - [x] T027 `node/src/main.cpp` にCLI引数処理を追加
   - `--help` / `-h` → ヘルプ表示して終了
   - `--version` / `-V` → バージョン表示して終了
@@ -87,17 +87,17 @@
 ## Phase 3.7: Node 環境変数統一
 
 - [x] T028 [P] `node/tests/unit/utils_config_test.cpp` に環境変数テスト追加
-  - `LLM_NODE_MODELS_DIR` が使用されることを確認
+  - `ALLM_MODELS_DIR` が使用されることを確認
   - 旧 `LLM_MODELS_DIR` 使用時に警告が出ることを確認
 - [x] T029 `node/src/utils/config.cpp` の環境変数を更新
-  - `LLM_MODELS_DIR` → `LLM_NODE_MODELS_DIR`（フォールバック付き）
-  - `LLM_HEARTBEAT_SECS` → `LLM_NODE_HEARTBEAT_SECS`（フォールバック付き）
-  - `LLM_ALLOW_NO_GPU` → `LLM_NODE_ALLOW_NO_GPU`（削除）
-  - `LLM_BIND_ADDRESS` → `LLM_NODE_BIND_ADDRESS`（フォールバック付き）
+  - `LLM_MODELS_DIR` → `ALLM_MODELS_DIR`（フォールバック付き）
+  - `LLM_HEARTBEAT_SECS` → `ALLM_HEARTBEAT_SECS`（フォールバック付き）
+  - `LLM_ALLOW_NO_GPU` → `ALLM_ALLOW_NO_GPU`（削除）
+  - `LLM_BIND_ADDRESS` → `ALLM_BIND_ADDRESS`（フォールバック付き）
 - [x] T030 `node/src/utils/logger.cpp` の環境変数を更新
-  - `LLM_LOG_DIR` → `LLM_NODE_LOG_DIR`（フォールバック付き）
-  - `LLM_LOG_LEVEL` → `LLM_NODE_LOG_LEVEL`（フォールバック付き）
-  - `LLM_LOG_RETENTION_DAYS` → `LLM_NODE_LOG_RETENTION_DAYS`（フォールバック付き）
+  - `LLM_LOG_DIR` → `ALLM_LOG_DIR`（フォールバック付き）
+  - `LLM_LOG_LEVEL` → `ALLM_LOG_LEVEL`（フォールバック付き）
+  - `LLM_LOG_RETENTION_DAYS` → `ALLM_LOG_RETENTION_DAYS`（フォールバック付き）
 
 ## Phase 3.8: 仕上げ
 
@@ -105,15 +105,15 @@
   - CLI user コマンドの使用例を追加
   - 環境変数 `LLM_ROUTER_ADMIN_PASSWORD` / `LLM_ROUTER_JWT_SECRET` を記載
 - [x] T032 [P] `INSTALL.md` を更新
-  - 新しい環境変数名を表形式で記載（Router: LLM_ROUTER_*, Node: LLM_NODE_*）
+  - 新しい環境変数名を表形式で記載（Router: LLM_ROUTER_*, Node: ALLM_*）
 - [x] T033 [P] `README.md` を更新
   - 環境変数セクションを更新済み
 - [x] T034 すべてのテストを実行して合格を確認
   - Router: `cargo test` (121 tests) / `cargo clippy -- -D warnings` / `cargo fmt --check` ✓
   - Node: 91 unit tests ✓
 - [x] T035 手動テスト実行
-  - `llm-node --help` → 環境変数一覧表示 ✓
-  - `llm-node --version` → "llm-node 1.0.0" ✓
+  - `allm --help` → 環境変数一覧表示 ✓
+  - `allm --version` → "allm 1.0.0" ✓
 
 ## Phase 4: CLI簡素化（2025-12-10追加）
 

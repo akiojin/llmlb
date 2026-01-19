@@ -92,7 +92,7 @@ enum ggml_type dtype_to_ggml_type(DType dtype) {
 }
 
 /* Tensor name normalization */
-std::string TensorNameMap::normalize_name(const std::string& name, ArchType arch) {
+std::string TensorNameMap::normalize_name(const std::string& name) {
     // Different models use different naming conventions
     // This function normalizes them to a common format
 
@@ -117,65 +117,69 @@ std::string TensorNameMap::normalize_name(const std::string& name, ArchType arch
         normalized.replace(pos, 7, "blk.");
     }
 
-    // Handle architecture-specific mappings
-    (void)arch;  // Reserved for future architecture-specific handling
-
     return normalized;
 }
 
 /* Detect architecture from config.json */
-ArchType detect_architecture(const std::string& model_dir, std::string& error) {
+std::string detect_architecture(const std::string& model_dir, std::string& error) {
     namespace fs = std::filesystem;
 
     fs::path config_path = fs::path(model_dir) / "config.json";
     if (!fs::exists(config_path)) {
         error = "config.json not found";
-        return ArchType::UNKNOWN;
+        return "";
     }
 
     std::ifstream file(config_path);
     if (!file.is_open()) {
         error = "Failed to open config.json";
-        return ArchType::UNKNOWN;
+        return "";
     }
 
     std::string content((std::istreambuf_iterator<char>(file)),
                          std::istreambuf_iterator<char>());
 
-    // Simple architecture detection from model_type field
-    if (content.find("\"llama\"") != std::string::npos ||
-        content.find("\"LlamaForCausalLM\"") != std::string::npos) {
-        return ArchType::LLAMA;
-    }
-    if (content.find("\"mistral\"") != std::string::npos ||
-        content.find("\"MistralForCausalLM\"") != std::string::npos) {
-        return ArchType::MISTRAL;
-    }
-    if (content.find("\"qwen\"") != std::string::npos ||
-        content.find("\"Qwen2ForCausalLM\"") != std::string::npos) {
-        return ArchType::QWEN;
-    }
-    if (content.find("\"phi\"") != std::string::npos ||
-        content.find("\"PhiForCausalLM\"") != std::string::npos) {
-        return ArchType::PHI;
-    }
-    if (content.find("\"gemma\"") != std::string::npos ||
-        content.find("\"GemmaForCausalLM\"") != std::string::npos) {
-        return ArchType::GEMMA;
-    }
-    if (content.find("\"NemotronHForCausalLM\"") != std::string::npos) {
-        return ArchType::NEMOTRON;
-    }
-    if (content.find("\"glm4_moe\"") != std::string::npos ||
-        content.find("\"Glm4MoeForCausalLM\"") != std::string::npos) {
-        return ArchType::GLM;
-    }
-    if (content.find("\"gpt_oss\"") != std::string::npos) {
-        return ArchType::GPT_OSS;
+    // Extract model_type from config.json
+    // Look for "model_type": "xxx" pattern
+    size_t pos = content.find("\"model_type\"");
+    if (pos != std::string::npos) {
+        size_t colon = content.find(':', pos);
+        if (colon != std::string::npos) {
+            size_t quote1 = content.find('"', colon);
+            if (quote1 != std::string::npos) {
+                size_t quote2 = content.find('"', quote1 + 1);
+                if (quote2 != std::string::npos) {
+                    return content.substr(quote1 + 1, quote2 - quote1 - 1);
+                }
+            }
+        }
     }
 
-    // Default to UNKNOWN (don't assume Llama)
-    return ArchType::UNKNOWN;
+    // Fallback: try to detect from architectures field
+    pos = content.find("\"architectures\"");
+    if (pos != std::string::npos) {
+        size_t bracket = content.find('[', pos);
+        if (bracket != std::string::npos) {
+            size_t quote1 = content.find('"', bracket);
+            if (quote1 != std::string::npos) {
+                size_t quote2 = content.find('"', quote1 + 1);
+                if (quote2 != std::string::npos) {
+                    std::string arch_class = content.substr(quote1 + 1, quote2 - quote1 - 1);
+                    // Convert class name to model type (e.g., "LlamaForCausalLM" -> "llama")
+                    if (arch_class.find("Llama") != std::string::npos) return "llama";
+                    if (arch_class.find("Mistral") != std::string::npos) return "mistral";
+                    if (arch_class.find("Qwen") != std::string::npos) return "qwen";
+                    if (arch_class.find("Phi") != std::string::npos) return "phi";
+                    if (arch_class.find("Gemma") != std::string::npos) return "gemma";
+                    if (arch_class.find("Nemotron") != std::string::npos) return "nemotron";
+                    if (arch_class.find("Glm") != std::string::npos) return "glm";
+                    return arch_class;  // Return as-is if not recognized
+                }
+            }
+        }
+    }
+
+    return "";  // Unknown architecture
 }
 
 /* Load hyperparameters from config.json */
@@ -296,7 +300,7 @@ bool load_hparams(
     hparams.use_gqa = (hparams.n_head_kv != hparams.n_head);
 
     // Detect architecture
-    hparams.arch = detect_architecture(model_dir, error);
+    hparams.architecture = detect_architecture(model_dir, error);
 
     // Parse torch_dtype for weight data type
     auto find_string_value = [&](const std::string& key) -> std::string {
@@ -801,7 +805,7 @@ GgmlModel* load_ggml_model(
             }
 
             // Find corresponding ggml tensor
-            std::string norm_name = TensorNameMap::normalize_name(tensor_info.name, hparams.arch);
+            std::string norm_name = TensorNameMap::normalize_name(tensor_info.name);
 
             struct ggml_tensor* ggml_tensor = nullptr;
 

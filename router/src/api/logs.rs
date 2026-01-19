@@ -2,7 +2,7 @@
 //!
 //! `/v0/dashboard/logs/*` エンドポイントを提供する。
 
-use super::nodes::AppError;
+use super::error::AppError;
 use crate::{logging, AppState};
 use axum::{
     extract::{Path, Query, State},
@@ -181,6 +181,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         }
     }
 

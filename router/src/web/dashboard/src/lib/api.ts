@@ -207,6 +207,27 @@ export interface DashboardNode {
   total_tokens: number
 }
 
+/**
+ * SPEC-66555000: ルーター主導エンドポイント登録システム
+ * 外部推論サービス（Ollama, vLLM, aLLM等）のダッシュボード表示用情報
+ */
+export interface DashboardEndpoint {
+  id: string
+  name: string
+  base_url: string
+  status: 'pending' | 'online' | 'offline' | 'error'
+  health_check_interval_secs: number
+  inference_timeout_secs: number
+  latency_ms?: number
+  last_seen?: string
+  last_error?: string
+  error_count: number
+  registered_at: string
+  notes?: string
+  supports_responses_api: boolean
+  model_count: number
+}
+
 export interface RequestHistoryItem {
   request_id: string
   timestamp: string
@@ -289,6 +310,9 @@ export const dashboardApi = {
 
   getNodes: () => fetchWithAuth<DashboardNode[]>('/v0/dashboard/nodes'),
 
+  /** SPEC-66555000: エンドポイント一覧取得 */
+  getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
+
   getStats: () => fetchWithAuth<DashboardStats>('/v0/dashboard/stats'),
 
   // Token statistics endpoints
@@ -345,30 +369,65 @@ export const dashboardApi = {
     fetchWithAuth<LogResponse>('/v0/dashboard/logs/router', { params }),
 }
 
-// Nodes API
-export const nodesApi = {
-  list: () => fetchWithAuth<DashboardNode[]>('/v0/nodes'),
+/**
+ * Endpoints API
+ * SPEC-66555000: ルーター主導エンドポイント登録システム
+ * 外部推論サービス（Ollama, vLLM, aLLM等）の管理API
+ */
+export const endpointsApi = {
+  /** ダッシュボード用エンドポイント一覧取得 */
+  list: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
 
-  approve: (nodeId: string) =>
-    fetchWithAuth<DashboardNode>(`/v0/nodes/${nodeId}/approve`, { method: 'POST' }),
-
-  delete: (nodeId: string) =>
-    fetchWithAuth<void>(`/v0/nodes/${nodeId}`, { method: 'DELETE' }),
-
-  disconnect: (nodeId: string) =>
-    fetchWithAuth<void>(`/v0/nodes/${nodeId}/disconnect`, { method: 'POST' }),
-
-  updateSettings: (
-    nodeId: string,
-    settings: { custom_name?: string; tags?: string[]; notes?: string }
-  ) =>
-    fetchWithAuth<void>(`/v0/nodes/${nodeId}/settings`, {
-      method: 'PUT',
-      body: JSON.stringify(settings),
+  /** エンドポイント登録 */
+  create: (data: {
+    name: string
+    base_url: string
+    api_key?: string
+    health_check_interval_secs?: number
+    inference_timeout_secs?: number
+    notes?: string
+  }) =>
+    fetchWithAuth<DashboardEndpoint>('/v0/endpoints', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 
-  getLogs: (nodeId: string, params?: { limit?: number }) =>
-    fetchWithAuth<LogResponse>(`/v0/nodes/${nodeId}/logs`, { params }),
+  /** エンドポイント詳細取得 */
+  get: (id: string) => fetchWithAuth<DashboardEndpoint>(`/v0/endpoints/${id}`),
+
+  /** エンドポイント更新 */
+  update: (
+    id: string,
+    data: {
+      name?: string
+      base_url?: string
+      api_key?: string
+      health_check_interval_secs?: number
+      inference_timeout_secs?: number
+      notes?: string
+    }
+  ) =>
+    fetchWithAuth<DashboardEndpoint>(`/v0/endpoints/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  /** エンドポイント削除 */
+  delete: (id: string) =>
+    fetchWithAuth<void>(`/v0/endpoints/${id}`, { method: 'DELETE' }),
+
+  /** 接続テスト */
+  test: (id: string) =>
+    fetchWithAuth<{ success: boolean; message?: string; latency_ms?: number }>(
+      `/v0/endpoints/${id}/test`,
+      { method: 'POST' }
+    ),
+
+  /** モデル同期 */
+  sync: (id: string) =>
+    fetchWithAuth<{ synced_models: number }>(`/v0/endpoints/${id}/sync`, {
+      method: 'POST',
+    }),
 }
 
 // Models API

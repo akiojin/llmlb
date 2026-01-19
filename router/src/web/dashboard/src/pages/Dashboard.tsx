@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   dashboardApi,
   type DashboardOverview,
+  type DashboardEndpoint,
   type RequestHistoryItem,
   type RequestResponsesPage,
 } from '@/lib/api'
@@ -10,13 +11,13 @@ import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
-import { NodeTable } from '@/components/dashboard/NodeTable'
+import { EndpointTable } from '@/components/dashboard/EndpointTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { ModelsSection } from '@/components/models/ModelsSection'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Server, History, FileText, Box, BarChart3 } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, Box, BarChart3 } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -50,6 +51,13 @@ export default function Dashboard() {
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
       refetchInterval: pollingInterval,
     })
+
+  // SPEC-66555000: エンドポイント一覧を取得
+  const { data: endpointsData, isLoading: isLoadingEndpoints } = useQuery<DashboardEndpoint[]>({
+    queryKey: ['dashboard-endpoints'],
+    queryFn: () => dashboardApi.getEndpoints(),
+    refetchInterval: pollingInterval,
+  })
 
   // RequestResponseRecord を RequestHistoryItem にマッピング
   const historyItems: RequestHistoryItem[] = useMemo(() => {
@@ -113,11 +121,11 @@ export default function Dashboard() {
         </section>
 
         {/* Tabs */}
-        <Tabs defaultValue="nodes" className="space-y-6">
+        <Tabs defaultValue="endpoints" className="space-y-6">
           <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
-            <TabsTrigger value="nodes" className="gap-2">
-              <Server className="h-4 w-4" />
-              <span className="hidden sm:inline">Nodes</span>
+            <TabsTrigger value="endpoints" className="gap-2">
+              <Globe className="h-4 w-4" />
+              <span className="hidden sm:inline">Endpoints</span>
             </TabsTrigger>
             <TabsTrigger value="models" className="gap-2">
               <Box className="h-4 w-4" />
@@ -137,8 +145,8 @@ export default function Dashboard() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="nodes" className="animate-fade-in">
-            <NodeTable nodes={data?.nodes || []} isLoading={isLoading} />
+          <TabsContent value="endpoints" className="animate-fade-in">
+            <EndpointTable endpoints={endpointsData || []} isLoading={isLoadingEndpoints} />
           </TabsContent>
 
           <TabsContent value="models" className="animate-fade-in">
@@ -157,7 +165,7 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="logs" className="animate-fade-in">
-            <LogViewer nodes={data?.nodes || []} />
+            <LogViewer />
           </TabsContent>
         </Tabs>
       </main>

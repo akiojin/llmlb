@@ -172,6 +172,21 @@ async fn run_server(config: ServerConfig) {
     );
     health_monitor.start();
 
+    // エンドポイントレジストリを初期化
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to initialize endpoint registry");
+
+    // 起動時にエンドポイントのヘルスチェックを実行
+    if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {
+        tracing::warn!("Startup health check failed: {}", e);
+    }
+
+    // エンドポイントヘルスチェッカーをバックグラウンドで開始
+    let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
+        .with_interval(health_check_interval_secs);
+    endpoint_health_checker.start();
+
     let load_balancer_mode = get_env_with_fallback_or(
         "LLM_ROUTER_LOAD_BALANCER_MODE",
         "LOAD_BALANCER_MODE",
@@ -207,6 +222,22 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
+    // エンドポイントレジストリを初期化
+    let endpoint_registry =
+        match llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone()).await {
+            Ok(reg) => {
+                info!(
+                    "Endpoint registry initialized with {} endpoints",
+                    reg.count().await
+                );
+                Some(reg)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to initialize endpoint registry: {}", e);
+                None
+            }
+        };
+
     let state = AppState {
         registry: registry.clone(),
         load_manager,
@@ -216,6 +247,7 @@ async fn run_server(config: ServerConfig) {
         http_client,
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry,
     };
 
     let router = api::create_router(state);

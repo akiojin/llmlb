@@ -26,7 +26,7 @@ jobs:
         with:
           filters: |
             cpp:
-              - 'node/**'
+              - 'allm/**'
               - 'package.json'
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/test.yml'
@@ -140,14 +140,14 @@ jobs:
             ${{ runner.os }}-ccache-test-
 
       - name: Configure C++ project
-        run: cmake -S node -B node/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
+        run: cmake -S allm -B allm/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
 
       - name: Build C++ project
-        run: cmake --build node/build --config Release
+        run: cmake --build allm/build --config Release
 
       - name: Show ccache stats
         run: ccache -s
 
       - name: Run C++ tests
         run: ctest --output-on-failure --timeout 300 --verbose
-        working-directory: node/build
+        working-directory: allm/build

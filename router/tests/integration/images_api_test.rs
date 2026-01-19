@@ -45,6 +45,7 @@ async fn build_app() -> Router {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: None,
     };
 
     api::create_router(state)
@@ -116,7 +117,7 @@ async fn test_image_gen_node_routing_selects_stable_diffusion_runtime() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -187,7 +188,7 @@ async fn test_multi_runtime_node_handles_llm_and_image() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),
@@ -289,7 +290,7 @@ async fn test_no_image_capable_node_returns_503() {
         .oneshot(
             node_register_request()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&register_payload).unwrap()))
                 .unwrap(),

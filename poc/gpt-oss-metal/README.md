@@ -1,6 +1,6 @@
 # PoC: openai/gpt-oss-20b (Metal / Apple Silicon)
 
-このPoCは、`openai/gpt-oss-20b` を **llm-router + llm-node (Metal)** で実際にロードして `chat/completions` が返ることを確認します。
+このPoCは、`openai/gpt-oss-20b` を **llm-router + allm (Metal)** で実際にロードして `chat/completions` が返ることを確認します。
 
 このPoCの推論は safetensors を直接ロードするのではなく、Hugging Face の `metal/model.bin`（Routerでは `model.metal.bin` としてキャッシュ）を gpt-oss Metal エンジンで実行します。
 
@@ -15,7 +15,7 @@
 まずビルド:
 
 ```bash
-cmake -S node -B node/build
+cmake -S allm -B allm/build
 cmake --build node/build -j
 
 cargo build -p llm-router

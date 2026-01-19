@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { type DashboardNode, type LogEntry, nodesApi, dashboardApi } from '@/lib/api'
+import { type DashboardNode, type LogEntry, dashboardApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,46 +18,41 @@ import { Label } from '@/components/ui/label'
 import { FileText, RefreshCw, Trash2, Server, Download } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 
+/**
+ * SPEC-66555000: ルーター主導エンドポイント登録システム
+ * ログビューアーコンポーネント
+ *
+ * 注意: エンドポイントは外部サービス（Ollama、vLLM等）であり、
+ * ルーターにログをプッシュしないため、現在はルーターログのみを表示します。
+ * 将来的にエンドポイントがログAPIを提供する場合は拡張可能です。
+ */
+
 interface LogViewerProps {
-  nodes: DashboardNode[]
+  /**
+   * @deprecated SPEC-66555000によりnodesは廃止予定。現在は後方互換性のために残しています。
+   */
+  nodes?: DashboardNode[]
 }
 
 type LogLevel = 'all' | 'error' | 'warn' | 'info' | 'debug'
-type LogSource = 'router' | string
 
-export function LogViewer({ nodes }: LogViewerProps) {
-  const [source, setSource] = useState<LogSource>('router')
+export function LogViewer({ nodes: _nodes }: LogViewerProps) {
   const [levelFilter, setLevelFilter] = useState<LogLevel>('all')
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Fetch router logs
+  // Fetch router logs only (endpoints are external services without log API)
   const {
     data: routerLogs,
     refetch: refetchRouter,
-    isRefetching: isRefetchingRouter,
+    isRefetching,
   } = useQuery({
     queryKey: ['router-logs'],
     queryFn: () => dashboardApi.getRouterLogs({ limit: 200 }),
-    enabled: source === 'router',
     refetchInterval: 5000,
   })
 
-  // Fetch node logs
-  const {
-    data: nodeLogs,
-    refetch: refetchNode,
-    isRefetching: isRefetchingNode,
-  } = useQuery({
-    queryKey: ['node-logs', source],
-    queryFn: () => nodesApi.getLogs(source, { limit: 200 }),
-    enabled: source !== 'router',
-    refetchInterval: 5000,
-  })
-
-  const logsResponse = source === 'router' ? routerLogs : nodeLogs
-  const logs = logsResponse?.entries as LogEntry[] | undefined
-  const isRefetching = source === 'router' ? isRefetchingRouter : isRefetchingNode
+  const logs = routerLogs?.entries as LogEntry[] | undefined
 
   const filteredLogs = logs?.filter((log) => {
     if (levelFilter === 'all') return true
@@ -75,11 +70,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
   }, [filteredLogs, autoScroll])
 
   const handleRefresh = () => {
-    if (source === 'router') {
-      refetchRouter()
-    } else {
-      refetchNode()
-    }
+    refetchRouter()
   }
 
   const handleClear = () => {
@@ -100,7 +91,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `logs-${source}-${new Date().toISOString().slice(0, 10)}.txt`
+    a.download = `logs-router-${new Date().toISOString().slice(0, 10)}.txt`
     a.click()
     URL.revokeObjectURL(url)
     toast({ title: 'Logs downloaded' })
@@ -130,37 +121,11 @@ export function LogViewer({ nodes }: LogViewerProps) {
           </CardTitle>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Source Select */}
-            <Select value={source} onValueChange={(v) => setSource(v as LogSource)}>
-              <SelectTrigger id="logs-node-select" className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value="router">
-                  <div className="flex items-center gap-2">
-                    <Server className="h-4 w-4" />
-                    Router
-                  </div>
-                </SelectItem>
-                {nodes.map((node) => (
-                  <SelectItem key={node.node_id} value={node.node_id}>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'h-2 w-2 rounded-full',
-                          node.status === 'online'
-                            ? 'bg-success'
-                            : node.status === 'offline'
-                            ? 'bg-destructive'
-                            : 'bg-warning'
-                        )}
-                      />
-                      {node.custom_name || node.machine_name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Source Label (router only) */}
+            <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-muted/30">
+              <Server className="h-4 w-4" />
+              <span className="text-sm font-medium">Router</span>
+            </div>
 
             {/* Level Filter */}
             <Select value={levelFilter} onValueChange={(v) => setLevelFilter(v as LogLevel)}>
@@ -195,7 +160,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
         {/* Actions */}
         <div className="mb-4 flex gap-2">
           <Button
-            id={source === 'router' ? 'logs-router-refresh' : 'logs-node-refresh'}
+            id="logs-router-refresh"
             variant="outline"
             size="sm"
             onClick={handleRefresh}
@@ -217,7 +182,7 @@ export function LogViewer({ nodes }: LogViewerProps) {
         {/* Log Content */}
         <ScrollArea className="h-96 rounded-md border bg-muted/30" ref={scrollRef}>
           <div
-            id={source === 'router' ? 'logs-router-list' : 'logs-node-list'}
+            id="logs-router-list"
             className="p-4 font-mono text-xs space-y-0.5"
           >
             {!filteredLogs || filteredLogs.length === 0 ? (

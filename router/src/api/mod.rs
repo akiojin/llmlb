@@ -8,6 +8,10 @@ pub mod auth;
 pub mod cloud_models;
 pub mod dashboard;
 pub mod dashboard_ws;
+/// エンドポイント管理API
+pub mod endpoints;
+/// APIエラーレスポンス型
+pub mod error;
 pub mod health;
 pub mod images;
 pub mod invitations;
@@ -18,6 +22,8 @@ pub mod models;
 pub mod nodes;
 pub mod openai;
 pub mod proxy;
+/// Open Responses API (SPEC-24157000)
+pub mod responses;
 pub mod users;
 
 use crate::cloud_metrics;
@@ -96,6 +102,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/metrics/summary", get(nodes::metrics_summary))
         // ダッシュボードAPI
         .route("/dashboard/nodes", get(dashboard::get_nodes))
+        .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(
             "/dashboard/request-history",
@@ -148,19 +155,52 @@ pub fn create_router(state: AppState) -> Router {
         ))
     };
 
-    // ノード登録（Nodeスコープが必要）
-    let node_register_routes = Router::new()
-        .route("/nodes", post(nodes::register_node))
+    // エンドポイント管理API（SPEC-66555000）
+    // すべてのエンドポイントルートを単一のRouterに統合
+    // 書き込み操作はハンドラー内でensure_adminで権限チェック
+    let endpoint_routes = Router::new()
+        .route(
+            "/endpoints",
+            get(endpoints::list_endpoints).post(endpoints::create_endpoint),
+        )
+        .route(
+            "/endpoints/:id",
+            get(endpoints::get_endpoint)
+                .put(endpoints::update_endpoint)
+                .delete(endpoints::delete_endpoint),
+        )
+        .route("/endpoints/:id/test", post(endpoints::test_endpoint))
+        .route("/endpoints/:id/sync", post(endpoints::sync_endpoint_models))
+        .route(
+            "/endpoints/:id/models",
+            get(endpoints::list_endpoint_models),
+        );
+
+    let endpoint_routes = if auth_disabled {
+        endpoint_routes.layer(middleware::from_fn(
+            crate::auth::middleware::inject_dummy_admin_claims,
+        ))
+    } else {
+        endpoint_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::authenticated_middleware,
+        ))
+    };
+
+    // モデル配布レジストリ（Nodeスコープが必要）
+    // SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました
+    // 新しい実装は POST /v0/endpoints を使用してください
+    let model_registry_routes = Router::new()
         // モデル配布レジストリ（複数ファイル: safetensors 等）
         .route(
             "/models/registry/:model_name/manifest.json",
             get(models::get_model_registry_manifest),
         );
 
-    let node_register_routes = if auth_disabled {
-        node_register_routes
+    let model_registry_routes = if auth_disabled {
+        model_registry_routes
     } else {
-        node_register_routes
+        model_registry_routes
             .layer(middleware::from_fn_with_state(
                 ApiKeyScope::Node,
                 crate::auth::middleware::require_api_key_scope_middleware,
@@ -188,32 +228,16 @@ pub fn create_router(state: AppState) -> Router {
             ))
     };
 
-    // ノードトークン + APIキー認証が必要なルート
-    let node_protected_routes = Router::new().route("/health", post(health::health_check));
-
-    let node_protected_routes = if auth_disabled {
-        node_protected_routes
-    } else {
-        node_protected_routes
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::node_token_auth_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                ApiKeyScope::Node,
-                crate::auth::middleware::require_api_key_scope_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::api_key_auth_middleware,
-            ))
-    };
+    // SPEC-66555000: POST /v0/health（プッシュ型ヘルスチェック）は廃止されました
+    // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
     let api_key_routes = Router::new()
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
+        // Open Responses API（SPEC-24157000）
+        .route("/v1/responses", post(responses::post_responses))
         // 音声API（OpenAI Audio API互換）
         .route("/v1/audio/transcriptions", post(audio::transcriptions))
         .route("/v1/audio/speech", post(audio::speech))
@@ -236,7 +260,8 @@ pub fn create_router(state: AppState) -> Router {
             ))
     };
 
-    // `/v1/models*` は外部クライアント(APIキー)とノード(ノードトークン)の両方から参照される
+    // `/v1/models*` は外部クライアント(APIキー)からのみ参照される
+    // SPEC-66555000: ノードトークン認証は廃止されました
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/:model_id", get(openai::get_model));
@@ -244,14 +269,29 @@ pub fn create_router(state: AppState) -> Router {
     let models_protected_routes = if auth_disabled {
         models_routes
     } else {
-        models_routes.layer(middleware::from_fn_with_state(
-            state.db_pool.clone(),
-            crate::auth::middleware::api_key_or_node_token_auth_middleware,
-        ))
+        models_routes
+            .layer(middleware::from_fn_with_state(
+                ApiKeyScope::Api,
+                crate::auth::middleware::require_api_key_scope_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.db_pool.clone(),
+                crate::auth::middleware::api_key_auth_middleware,
+            ))
     };
 
     // NOTE: /v0/models (GET) は Admin/Node スコープ共用。
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
+
+    // SPEC-66555000: テスト用内部エンドポイント（デバッグビルドのみ）
+    // E2Eテストでノード登録をシミュレートするために使用
+    #[cfg(debug_assertions)]
+    let test_routes = Router::new().route(
+        "/internal/test/register-node",
+        post(nodes::test_register_node),
+    );
+    #[cfg(not(debug_assertions))]
+    let test_routes = Router::new();
 
     Router::new()
         // `/v0/*`: llm-router独自API（互換不要・versioned）
@@ -263,9 +303,11 @@ pub fn create_router(state: AppState) -> Router {
                 .route("/auth/register", post(auth::register))
                 .merge(auth_routes)
                 .merge(admin_routes)
-                .merge(node_register_routes)
-                .merge(node_protected_routes)
-                .merge(models_list_routes),
+                .merge(endpoint_routes)
+                .merge(model_registry_routes)
+                .merge(models_list_routes)
+                // デバッグ用テストエンドポイント
+                .merge(test_routes),
         )
         // OpenAI互換API
         .merge(api_key_protected_routes)
@@ -383,6 +425,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry: None,
         };
         (state, registry)
     }

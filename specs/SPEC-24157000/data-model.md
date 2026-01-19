@@ -232,3 +232,123 @@ std::vector<LogprobInfo> compute_logprobs(
  */
 int64_t get_current_timestamp();
 ```
+
+---
+
+## Open Responses API関連（2026-01-16追加）
+
+### Endpoint（拡張）
+
+既存の`Endpoint`構造体（Rust）に以下のフィールドを追加:
+
+```rust
+pub struct Endpoint {
+    // 既存フィールド...
+    pub id: Uuid,
+    pub name: String,
+    pub base_url: String,
+    pub status: EndpointStatus,
+    // ...
+
+    // 新規追加フィールド
+    pub supports_responses_api: bool,  // Responses API対応フラグ
+}
+```
+
+**検証ルール**:
+
+- ヘルスチェック時に自動検出（OPTIONS /v1/responses → 200）
+- 手動設定も可能
+
+### SupportedAPI（新規）
+
+モデルがサポートするAPI種別を表す列挙型:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportedAPI {
+    ChatCompletions,
+    Responses,
+    Embeddings,
+}
+```
+
+### EndpointModel（拡張）
+
+既存の`EndpointModel`構造体に以下のフィールドを追加:
+
+```rust
+pub struct EndpointModel {
+    pub endpoint_id: Uuid,
+    pub model_id: String,
+    pub capabilities: Option<Vec<String>>,
+    pub last_checked: Option<DateTime<Utc>>,
+
+    // 新規追加フィールド
+    pub supported_apis: Vec<SupportedAPI>,  // サポートするAPI一覧
+}
+```
+
+### データベーススキーマ変更
+
+```sql
+-- endpoints テーブル拡張
+ALTER TABLE endpoints ADD COLUMN supports_responses_api BOOLEAN DEFAULT FALSE;
+
+-- endpoint_models テーブル拡張
+ALTER TABLE endpoint_models ADD COLUMN supported_apis TEXT DEFAULT '["chat_completions"]';
+```
+
+**注**: `supported_apis`はJSON配列として格納（SQLite互換）
+
+### /v1/models レスポンス形式
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "llama3.2",
+      "object": "model",
+      "created": 1704067200,
+      "owned_by": "ollama",
+      "supported_apis": ["chat_completions", "responses"]
+    },
+    {
+      "id": "gpt-4-turbo",
+      "object": "model",
+      "created": 1704067200,
+      "owned_by": "openrouter",
+      "supported_apis": ["chat_completions", "responses"]
+    }
+  ]
+}
+```
+
+### 関連エンティティ図
+
+```text
+┌─────────────────────────────────────┐
+│ Endpoint                            │
+├─────────────────────────────────────┤
+│ id: UUID                            │
+│ name: String                        │
+│ base_url: String                    │
+│ status: EndpointStatus              │
+│ supports_responses_api: bool  [NEW] │
+│ ...                                 │
+└─────────────────────────────────────┘
+           │
+           │ 1:N
+           ▼
+┌─────────────────────────────────────┐
+│ EndpointModel                       │
+├─────────────────────────────────────┤
+│ endpoint_id: UUID                   │
+│ model_id: String                    │
+│ capabilities: Vec<String>           │
+│ supported_apis: Vec<SupportedAPI>   │  [NEW]
+│ ...                                 │
+└─────────────────────────────────────┘
+```

@@ -1,6 +1,9 @@
 //! Contract Test: GPU必須ノード登録
 //!
 //! GPU情報を含むノードのみが登録され、レスポンスへGPU情報が反映されることを検証する。
+//!
+//! SPEC-66555000: POST /v0/nodes は廃止され、/v0/internal/test/register-node に置き換えられました。
+//! このテストはデバッグビルドでのみ有効な内部テストエンドポイントを使用します。
 
 use axum::{
     body::{to_bytes, Body},
@@ -49,6 +52,7 @@ async fn build_app() -> (Router, String) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry: None,
     };
 
     let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
@@ -103,12 +107,13 @@ async fn register_gpu_node_success() {
         ]
     });
 
+    // SPEC-66555000: POST /v0/nodes は廃止され、デバッグ用内部エンドポイントを使用
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -168,11 +173,12 @@ async fn register_gpu_node_missing_devices_is_rejected() {
         "gpu_devices": []
     });
 
+    // SPEC-66555000: POST /v0/nodes は廃止され、デバッグ用内部エンドポイントを使用
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/nodes")
+                .uri("/v0/internal/test/register-node")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))

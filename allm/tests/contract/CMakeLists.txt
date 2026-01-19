@@ -59,7 +59,7 @@ target_include_directories(llm-node-contract-tests
 )
 
 # Enable testing mode for model registry (skip supported model filtering)
-target_compile_definitions(llm-node-contract-tests PRIVATE LLM_NODE_TESTING=1)
+target_compile_definitions(llm-node-contract-tests PRIVATE LLM_NODE_TESTING=1 ALLM_TESTING=1)
 
 # Link Metal frameworks on macOS
 if(APPLE)

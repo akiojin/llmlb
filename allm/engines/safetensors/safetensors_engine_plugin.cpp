@@ -20,7 +20,7 @@ extern "C" {
  * @param context Engine host context
  * @return Pointer to the created engine, or nullptr on failure
  */
-allm::Engine* llm_node_create_engine(
+allm::Engine* allm_create_engine(
     const allm::EngineHostContext* context) {
     if (!context) {
         return nullptr;
@@ -69,7 +69,7 @@ allm::Engine* llm_node_create_engine(
  * @brief Destroy a SafetensorsEngine instance
  * @param engine Engine to destroy
  */
-void llm_node_destroy_engine(allm::Engine* engine) {
+void allm_destroy_engine(allm::Engine* engine) {
     delete engine;
 }
 

@@ -13,8 +13,8 @@ PLATFORM="macos-metal"
 ENGINE=""
 RESULTS_DIR=""
 CHAT_TEMPLATE=""
-ALLM_BIN="${SCRIPT_DIR}/../../../node/build/llm-node"
-LLAMA_CLI="${SCRIPT_DIR}/../../../node/third_party/llama.cpp/build/bin/llama-cli"
+ALLM_BIN="${SCRIPT_DIR}/../../../allm/build/allm"
+LLAMA_CLI="${SCRIPT_DIR}/../../../allm/third_party/llama.cpp/build/bin/llama-cli"
 TEST_TIMEOUT_SEC="${TEST_TIMEOUT_SEC:-900}"
 
 # Parse arguments
@@ -69,7 +69,7 @@ if [[ "$FORMAT" == "safetensors" ]]; then
 else
   if [[ ! -x "$LLAMA_CLI" ]]; then
     echo "Error: llama-cli not found or not executable: $LLAMA_CLI"
-    echo "Build it with: cmake --build node/third_party/llama.cpp/build"
+    echo "Build it with: cmake --build allm/third_party/llama.cpp/build"
     exit 1
   fi
 fi

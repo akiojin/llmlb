@@ -8,7 +8,7 @@
 
 #include "runtime/state.h"
 
-extern "C" int llm_node_run_for_test();
+extern "C" int allm_run_for_test();
 
 using namespace std::chrono_literals;
 
@@ -79,7 +79,7 @@ TEST(MainTest, DISABLED_RunsWithStubRouterAndShutsDownOnFlag) {
     setenv("ALLM_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
-    std::thread node_thread([&]() { exit_code = llm_node_run_for_test(); });
+    std::thread node_thread([&]() { exit_code = allm_run_for_test(); });
 
     // wait for node to start and accept a health check
     {
@@ -125,7 +125,7 @@ TEST(MainTest, DISABLED_FailsWhenRouterRegistrationFails) {
     std::atomic<int> exit_code{0};
     std::atomic<bool> node_exited{false};
     std::thread node_thread([&]() {
-        exit_code = llm_node_run_for_test();
+        exit_code = allm_run_for_test();
         node_exited = true;
     });
 

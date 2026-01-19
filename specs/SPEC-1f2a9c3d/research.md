@@ -81,7 +81,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
 {
   "timestamp": "2025-01-02T10:30:00.123Z",
   "level": "INFO",
-  "target": "llm_node::api",
+  "target": "allm::api",
   "message": "Request received"
 }
 ```

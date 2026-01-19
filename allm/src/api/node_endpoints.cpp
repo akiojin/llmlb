@@ -192,10 +192,10 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
     server.Get("/metrics/prom", [this](const httplib::Request&, httplib::Response& res) {
         auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time_).count();
-        exporter_.set_gauge("llm_node_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
-        exporter_.set_gauge("llm_node_gpu_devices", static_cast<double>(gpu_devices_count_), "Detected GPU devices");
-        exporter_.set_gauge("llm_node_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
-        exporter_.set_gauge("llm_node_gpu_capability", gpu_capability_, "Aggregated GPU capability score");
+        exporter_.set_gauge("allm_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
+        exporter_.set_gauge("allm_gpu_devices", static_cast<double>(gpu_devices_count_), "Detected GPU devices");
+        exporter_.set_gauge("allm_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
+        exporter_.set_gauge("allm_gpu_capability", gpu_capability_, "Aggregated GPU capability score");
         res.set_content(exporter_.render(), "text/plain");
     });
 

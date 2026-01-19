@@ -141,6 +141,7 @@ target_include_directories(llm-node-unit-tests
 target_compile_definitions(llm-node-unit-tests
     PRIVATE
         LLM_NODE_TESTING=1
+        ALLM_TESTING=1
 )
 
 # Ensure whisper/sd manager implementations are compiled in unit tests

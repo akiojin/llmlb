@@ -140,25 +140,21 @@
 
 以下はPhase B-0完了後に実行:
 
-- [~] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）⚠️ **BLOCKED**: 将来SPECで対応
+- [x] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）✅ 2026-01-19完了
 - [x] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
-- [~] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ⚠️ **BLOCKED**: 将来SPECで対応
-- [~] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）⚠️ **BLOCKED**: aLLM admin APIとして必要
-- [~] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除 ⚠️ **BLOCKED**: 将来SPECで対応
+- [x] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ✅ 2026-01-19完了
+- [x] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）✅ 2026-01-19完了
+- [x] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse/HealthCheckRequest削除 ✅ 2026-01-19完了
 
-**ブロッカー（2026-01-18確定）**: NodeRegistryの完全廃止には新規SPECによる「aLLMのEndpoint化」設計が必要
+**完了（2026-01-19）**: aLLMはOpenAI互換APIを提供するため、通常のEndpointとして登録可能。
+新規アーキテクチャは不要と判断し、NodeRegistry関連の残存コードをすべて削除完了。
 
-**依存関係分析（2026-01-18更新）**:
-- `api/images.rs`, `api/audio.rs`: ✅ EndpointCapability優先のフォールバック構造に移行完了
-- `api/logs.rs`: ⏸️ aLLMノード固有のログ取得機能、Endpoint化対象外（現状維持）
-- `api/nodes.rs`: ⏸️ aLLMノード管理API（list/settings/approve）、削除不可（現状維持）
-- `api/models.rs`: ⏸️ GPU警告計算（compute_gpu_warnings）、NodeRegistry依存（現状維持）
-- `api/dashboard.rs`: ⏸️ ノード一覧表示、NodeRegistry依存（現状維持）
-- `health/mod.rs`: ⏸️ HealthChecker、NodeRegistry依存（現状維持）
-- `balancer/mod.rs`: ⏸️ LoadManager、NodeRegistry依存（現状維持）
-- `main.rs`, `lib.rs`: ⏸️ AppState初期化、NodeRegistry必須（現状維持）
-
-**結論**: T036, T038, T039, T040は「aLLMがEndpointとして登録される仕組み」の設計・実装（新規SPEC）が完了するまでBLOCKED。本SPECの範囲外として凍結。
+**削除完了項目**:
+- `router/src/db/nodes.rs` - 削除済み（NodeStorage）
+- `router/src/api/nodes.rs` - 削除済み（旧ノードAPI）
+- `router/src/registry/nodes.rs` - 削除済み（NodeRegistry実装）
+- `common/src/protocol.rs` - RegisterRequest/RegisterResponse/RegisterStatus/HealthCheckRequest削除
+- `router/benches/loadbalancer_bench.rs` - 削除済み（NodeRegistry依存ベンチマーク）
 
 ### ドキュメント・検証
 

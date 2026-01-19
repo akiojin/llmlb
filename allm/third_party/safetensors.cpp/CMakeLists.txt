@@ -58,13 +58,19 @@ else()
 endif()
 
 # nlohmann/json dependency (header-only library)
-include(FetchContent)
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
-)
-FetchContent_MakeAvailable(nlohmann_json)
+if(TARGET nlohmann_json::nlohmann_json)
+    # Integrated build: use parent project's nlohmann_json
+    message(STATUS "safetensors.cpp: Using parent project's nlohmann_json")
+else()
+    # Standalone build or nlohmann_json not available: fetch it
+    include(FetchContent)
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 # Include directories
 include_directories(

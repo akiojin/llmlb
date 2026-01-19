@@ -10,6 +10,8 @@ safetensors形式のLLMを直接ロード・推論するライブラリを実装
 
 ggmlバックエンドを使用し、Metal/CUDA/ROCm/Vulkanで統一的にGPU推論を実行可能にする。
 
+**Phase 9でNemotron 3対応を追加**: Mamba-Transformer MoE（Mixture of Experts）ハイブリッドアーキテクチャに対応し、1M-tokenコンテキストをサポートする。
+
 ## 技術コンテキスト
 
 **言語/バージョン**: C++17
@@ -20,7 +22,7 @@ ggmlバックエンドを使用し、Metal/CUDA/ROCm/Vulkanで統一的にGPU推
 **プロジェクトタイプ**: single（独立ライブラリ）
 **パフォーマンス目標**: HuggingFace transformers以上の推論速度
 **制約**: GPU必須（CPU推論は初期スコープ外）、VRAMにモデルが収まること
-**スケール/スコープ**: gpt-oss-20b/nemotron対応、将来的に他アーキテクチャ拡張
+**スケール/スコープ**: gpt-oss-20b対応済み、Phase 9でNemotron 3（Mamba-Transformer MoE）対応追加、将来的に他アーキテクチャ拡張
 
 ## 憲章チェック
 
@@ -93,7 +95,9 @@ node/third_party/safetensors.cpp/
 │   ├── lora.cpp               # LoRA/QLoRAアダプター
 │   └── arch/                  # アーキテクチャ別実装（プラグイン）
 │       ├── gptoss.cpp         # gpt-oss-20b
-│       └── nemotron.cpp       # nemotron
+│       ├── nemotron3.cpp      # Nemotron 3 (Mamba-Transformer MoE)
+│       ├── mamba.cpp          # Mamba State Space Model
+│       └── moe.cpp            # Mixture of Experts routing
 ├── examples/
 │   └── main.cpp               # CLIサンプル
 ├── tests/
@@ -133,6 +137,15 @@ node/third_party/safetensors.cpp/
    - 理由: レイヤー単位の分割は実装が比較的シンプル
    - 代替案: Tensor Parallelism（将来検討）
 
+6. **Nemotron 3アーキテクチャ** (Phase 9):
+   - 決定: Mamba State Space Model + Transformer + MoE（Mixture of Experts）ハイブリッド実装
+   - 理由: Nemotron 3はLlamaベースではない独自アーキテクチャ（1M-tokenコンテキスト対応）
+   - 主要コンポーネント:
+     - Mamba SSM: 効率的な長コンテキスト処理
+     - Transformer: 標準的なアテンション機構
+     - MoE: Top-K Expert routing
+   - 実装参考: Mamba公式実装、MoE関連論文
+
 詳細は [research.md](./research.md) を参照。
 
 ## Phase 1: 設計
@@ -160,9 +173,10 @@ node/third_party/safetensors.cpp/
 │                          │                                  │
 │  ┌───────────────────────▼───────────────────────┐         │
 │  │           Architecture Plugins                │         │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐       │         │
-│  │  │gpt-oss  │  │nemotron │  │ (future)│       │         │
-│  │  └─────────┘  └─────────┘  └─────────┘       │         │
+│  │  ┌─────────┐  ┌──────────────┐  ┌─────────┐  │         │
+│  │  │gpt-oss  │  │Nemotron 3    │  │ (future)│  │         │
+│  │  │         │  │(Mamba+MoE)   │  │         │  │         │
+│  │  └─────────┘  └──────────────┘  └─────────┘  │         │
 │  └───────────────────────┬───────────────────────┘         │
 │                          │                                  │
 ├──────────────────────────┼──────────────────────────────────┤
@@ -213,11 +227,13 @@ node/third_party/safetensors.cpp/
 
 1. **Phase 1: 基盤** - ggmlサブモジュール、CMake、基本構造
 2. **Phase 2: ローダー** - safetensorsパーサー、テンソル変換
-3. **Phase 3: 推論** - GPUバックエンド、生成パイプライン
-4. **Phase 4: API** - C API、ストリーミング
-5. **Phase 5: 拡張** - batching、LoRA、マルチGPU
+3. **Phase 3: トークナイザー** - tokenizer.json解析、BPE
+4. **Phase 4: 推論MVP** - GPUバックエンド、生成パイプライン
+5. **Phase 5-8: 拡張** - KVキャッシュ、batching、埋め込み、LoRA
+6. **Phase 9: Nemotron 3** - Mamba SSM、MoE、ハイブリッドアーキテクチャ
+7. **Phase 10-12: 仕上げ** - 高度な機能、マルチGPU、E2E、ドキュメント
 
-**推定タスク数**: 40-50個
+**推定タスク数**: 64個（Phase 9追加により6タスク増加）
 
 **重要**: 詳細タスクは `/speckit.tasks` コマンドで生成
 
@@ -231,12 +247,14 @@ node/third_party/safetensors.cpp/
 
 **フェーズステータス**:
 
-- [x] Phase 0: Research完了
+- [x] Phase 0: Research完了（Nemotron 3追加調査含む）
 - [x] Phase 1: Design完了
 - [x] Phase 2: Task planning完了
-- [x] Phase 3: Tasks生成済み
-- [ ] Phase 4: 実装完了
-- [ ] Phase 5: 検証合格
+- [x] Phase 3: Tasks生成済み（Phase 9: Nemotron 3追加）
+- [x] Phase 4-8: 実装完了（MVP達成）
+- [ ] Phase 9: Nemotron 3実装中
+- [x] Phase 10-12: 実装完了（Nemotron 3以外）
+- [ ] Phase 全体: 検証合格（Phase 9待ち）
 
 **ゲートステータス**:
 

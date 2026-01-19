@@ -20,16 +20,6 @@
 
 namespace stcpp {
 
-/* Model architecture types */
-enum class ArchType {
-    LLAMA,      // Llama, Llama2, Llama3
-    MISTRAL,    // Mistral, Mixtral
-    QWEN,       // Qwen, Qwen2
-    PHI,        // Phi-2, Phi-3
-    GEMMA,      // Gemma
-    UNKNOWN
-};
-
 /* Model hyperparameters (from config.json) */
 struct ModelHParams {
     int32_t n_vocab = 0;
@@ -44,7 +34,7 @@ struct ModelHParams {
     float rope_freq_scale = 1.0f;
     float norm_eps = 1e-5f;
     bool use_gqa = false;      // Grouped Query Attention
-    ArchType arch = ArchType::LLAMA;
+    std::string architecture;   // Architecture name from config.json (e.g., "llama", "mistral")
     enum ggml_type weight_type = GGML_TYPE_F16;  // Weight data type (from torch_dtype)
 };
 
@@ -142,13 +132,13 @@ struct GgmlContext {
 struct TensorNameMap {
     // Common name patterns to ggml tensor pointers
     // Different models use different naming conventions
-    static std::string normalize_name(const std::string& name, ArchType arch);
+    static std::string normalize_name(const std::string& name);
 };
 
 /* Model loading functions */
 
-// Detect architecture from config.json
-ArchType detect_architecture(const std::string& model_dir, std::string& error);
+// Detect architecture from config.json (returns architecture name string)
+std::string detect_architecture(const std::string& model_dir, std::string& error);
 
 // Load model hyperparameters from config.json
 bool load_hparams(

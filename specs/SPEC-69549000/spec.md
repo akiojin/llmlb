@@ -3,7 +3,7 @@
 **機能ID**: `SPEC-69549000`
 **作成日**: 2026-01-06
 **ステータス**: 実装完了
-**入力**: ユーザー説明: "safetensors.cpp: llama.cpp/stable-diffusion.cpp/whisper.cppと同様の独立C++プロジェクト。ggmlバックエンドを利用し、safetensors形式のLLMをMetal/CUDA/ROCm/Vulkanで推論可能にする。"
+**入力**: ユーザー説明: "safetensors.cpp: llama.cpp/stable-diffusion.cpp/whisper.cppと同様の独立C++プロジェクト。ggmlバックエンドを利用し、safetensors形式のLLM（gpt-oss、Nemotron 3含む）をMetal/CUDA/ROCm/Vulkanで推論可能にする。"
 
 ## ユーザーシナリオ＆テスト
 
@@ -17,10 +17,12 @@
 
 **受け入れシナリオ**:
 
-1. **前提** gpt-oss-20bのsafetensorsモデルが用意されている、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
-2. **前提** nemotronのsafetensorsモデルが用意されている、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
+1. **前提** OpenAI公式のgpt-oss-20b safetensorsモデル（openai/gpt-oss-20b）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
+2. **前提** NVIDIA公式のNemotron 3 safetensorsモデル（nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
 3. **前提** 分割されたsafetensors（model-00001-of-00005.safetensors等）、**実行** index.jsonを解析してロード、**結果** 全テンソルが正しく読み込まれる
 4. **前提** 不正なsafetensorsファイル、**実行** モデルをロード、**結果** 明確なエラーメッセージで失敗する
+
+**重要**: テストは公式が配布するsafetensors版モデルを使用すること。サードパーティのGGUF変換版でのテストは不十分。
 
 ---
 

@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-typedef enum llm_node_error_code {
+typedef enum allm_error_code {
     ALLM_ERROR_OK = 0,
     ALLM_ERROR_OOM_VRAM = 1,
     ALLM_ERROR_OOM_RAM = 2,
@@ -15,7 +15,7 @@ typedef enum llm_node_error_code {
     ALLM_ERROR_INTERNAL = 7,
     ALLM_ERROR_ABI_MISMATCH = 8,
     ALLM_ERROR_LOAD_FAILED = 9,
-} llm_node_error_code;
+} allm_error_code;
 
 #ifdef __cplusplus
 }

@@ -36,6 +36,6 @@ struct EngineHostContext {
 }  // namespace allm
 
 extern "C" {
-    using llm_node_create_engine_fn = allm::Engine* (*)(const allm::EngineHostContext*);
-    using llm_node_destroy_engine_fn = void (*)(allm::Engine*);
+    using allm_create_engine_fn = allm::Engine* (*)(const allm::EngineHostContext*);
+    using allm_destroy_engine_fn = void (*)(allm::Engine*);
 }

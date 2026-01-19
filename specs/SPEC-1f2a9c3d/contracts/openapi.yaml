@@ -118,7 +118,7 @@ components:
         target:
           type: string
           description: ログ出力元モジュール
-          example: llm_node::api::router_client
+          example: allm::api::router_client
         message:
           type: string
           description: ログメッセージ

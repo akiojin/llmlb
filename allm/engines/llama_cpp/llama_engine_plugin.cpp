@@ -2,7 +2,7 @@
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
 
-extern "C" allm::Engine* llm_node_create_engine(const allm::EngineHostContext* context) {
+extern "C" allm::Engine* allm_create_engine(const allm::EngineHostContext* context) {
     if (!context || context->abi_version != allm::kEnginePluginAbiVersion) {
         return nullptr;
     }
@@ -12,6 +12,6 @@ extern "C" allm::Engine* llm_node_create_engine(const allm::EngineHostContext* c
     return new allm::LlamaEngine(*context->llama_manager);
 }
 
-extern "C" void llm_node_destroy_engine(allm::Engine* engine) {
+extern "C" void allm_destroy_engine(allm::Engine* engine) {
     delete engine;
 }

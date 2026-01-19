@@ -26,13 +26,13 @@ curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
     {
       "timestamp": "2025-01-02T10:30:00.123Z",
       "level": "INFO",
-      "target": "llm_node::api",
+      "target": "allm::api",
       "message": "Server started on port 11435"
     },
     {
       "timestamp": "2025-01-02T10:30:01.456Z",
       "level": "INFO",
-      "target": "llm_node::api::router_client",
+      "target": "allm::api::router_client",
       "message": "Registered with router"
     }
   ],

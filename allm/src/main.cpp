@@ -586,7 +586,7 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifdef ALLM_TESTING
-extern "C" int llm_node_run_for_test() {
+extern "C" int allm_run_for_test() {
     auto cfg = allm::loadNodeConfig();
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);
@@ -594,7 +594,7 @@ extern "C" int llm_node_run_for_test() {
 
 // Backward compatibility for older test binaries that still reference the
 // previous symbol name.
-extern "C" int ollama_node_run_for_test() {
-    return llm_node_run_for_test();
+extern "C" int llm_node_run_for_test() {
+    return allm_run_for_test();
 }
 #endif

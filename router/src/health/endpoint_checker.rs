@@ -1,12 +1,32 @@
 //! エンドポイントヘルスチェッカー
 //!
 //! プル型ヘルスチェックでエンドポイントの稼働状況を監視
+//!
+//! ## Phase 1.4: `/v0/health`対応
+//!
+//! - `/v0/health`を優先的に呼び出し、GPU情報を取得
+//! - `/v0/health`が失敗した場合は`/v1/models`にフォールバック
 
 use crate::db::endpoints as db;
 use crate::registry::endpoints::EndpointRegistry;
 use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus};
 use chrono::Utc;
 use reqwest::Client;
+
+/// `/v0/health`から取得したGPU情報
+#[derive(Debug, Clone, Default)]
+pub struct GpuInfo {
+    /// GPUデバイス数
+    pub gpu_device_count: Option<u32>,
+    /// GPU総メモリ（バイト）
+    pub gpu_total_memory_bytes: Option<u64>,
+    /// GPU使用中メモリ（バイト）
+    pub gpu_used_memory_bytes: Option<u64>,
+    /// GPU能力スコア
+    pub gpu_capability_score: Option<f32>,
+    /// 現在のアクティブリクエスト数
+    pub active_requests: Option<u32>,
+}
 use std::time::{Duration, Instant};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
@@ -166,6 +186,9 @@ impl EndpointHealthChecker {
     }
 
     /// 単一エンドポイントのヘルスチェック
+    ///
+    /// Phase 1.4: `/v0/health`を優先的に呼び出し、GPU情報を取得。
+    /// `/v0/health`が失敗した場合は`/v1/models`にフォールバック。
     pub async fn check_endpoint(
         &self,
         endpoint: &Endpoint,
@@ -173,36 +196,35 @@ impl EndpointHealthChecker {
         let status_before = endpoint.status;
         let start = Instant::now();
 
-        // GET /v1/models でヘルスチェック
-        let url = format!("{}/v1/models", endpoint.base_url.trim_end_matches('/'));
-
-        let mut request = self.client.get(&url);
-
-        // APIキーがあれば認証ヘッダーを追加
-        if let Some(ref api_key) = endpoint.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
-        }
-
-        let result = request.send().await;
+        // まず /v0/health を試行（GPU情報取得可能）
+        let health_result = self.try_v0_health(endpoint).await;
         let elapsed = start.elapsed();
         let latency_ms = elapsed.as_millis() as u32;
 
-        let (success, error_message, new_status) = match result {
-            Ok(response) if response.status().is_success() => {
-                // 成功 → online
-                (true, None, EndpointStatus::Online)
+        let (success, error_message, new_status, gpu_info) = match health_result {
+            Ok(gpu_info) => {
+                // /v0/health 成功 → online、GPU情報あり
+                (true, None, EndpointStatus::Online, Some(gpu_info))
             }
-            Ok(response) => {
-                // HTTPエラー
-                let error = format!("HTTP {}", response.status());
-                let new_status = self.determine_failure_status(endpoint, status_before);
-                (false, Some(error), new_status)
-            }
-            Err(e) => {
-                // 接続エラー
-                let error = e.to_string();
-                let new_status = self.determine_failure_status(endpoint, status_before);
-                (false, Some(error), new_status)
+            Err(_v0_error) => {
+                // /v0/health 失敗 → /v1/models にフォールバック
+                debug!(
+                    endpoint_id = %endpoint.id,
+                    endpoint_name = %endpoint.name,
+                    "/v0/health failed, falling back to /v1/models"
+                );
+                match self.try_v1_models(endpoint).await {
+                    Ok(()) => {
+                        // /v1/models 成功 → online、GPU情報なし
+                        (true, None, EndpointStatus::Online, None)
+                    }
+                    Err(e) => {
+                        // 両方失敗
+                        let error = e.to_string();
+                        let new_status = self.determine_failure_status(endpoint, status_before);
+                        (false, Some(error), new_status, None)
+                    }
+                }
             }
         };
 
@@ -215,6 +237,20 @@ impl EndpointHealthChecker {
             self.registry
                 .update_status(endpoint.id, new_status, None, error_message.as_deref())
                 .await?;
+        }
+
+        // GPU情報更新（/v0/healthから取得した場合のみ）
+        if let Some(info) = gpu_info {
+            self.registry
+                .update_gpu_info(
+                    endpoint.id,
+                    info.gpu_device_count,
+                    info.gpu_total_memory_bytes,
+                    info.gpu_used_memory_bytes,
+                    info.gpu_capability_score,
+                    info.active_requests,
+                )
+                .await;
         }
 
         // ヘルスチェック履歴を記録
@@ -256,6 +292,71 @@ impl EndpointHealthChecker {
             Err(error_message
                 .unwrap_or_else(|| "Unknown error".to_string())
                 .into())
+        }
+    }
+
+    /// `/v0/health`を呼び出してGPU情報を取得
+    async fn try_v0_health(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<GpuInfo, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/v0/health", endpoint.base_url.trim_end_matches('/'));
+
+        let mut request = self.client.get(&url);
+        if let Some(ref api_key) = endpoint.api_key {
+            request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status()).into());
+        }
+
+        let body: serde_json::Value = response.json().await?;
+
+        // GPU情報を抽出
+        let gpu = body.get("gpu");
+        let load = body.get("load");
+
+        Ok(GpuInfo {
+            gpu_device_count: gpu
+                .and_then(|g| g.get("device_count"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32),
+            gpu_total_memory_bytes: gpu
+                .and_then(|g| g.get("total_memory_bytes"))
+                .and_then(|v| v.as_u64()),
+            gpu_used_memory_bytes: gpu
+                .and_then(|g| g.get("used_memory_bytes"))
+                .and_then(|v| v.as_u64()),
+            gpu_capability_score: gpu
+                .and_then(|g| g.get("capability_score"))
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
+            active_requests: load
+                .and_then(|l| l.get("active_requests"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32),
+        })
+    }
+
+    /// `/v1/models`を呼び出してヘルスチェック（フォールバック用）
+    async fn try_v1_models(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/v1/models", endpoint.base_url.trim_end_matches('/'));
+
+        let mut request = self.client.get(&url);
+        if let Some(ref api_key) = endpoint.api_key {
+            request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = request.send().await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("HTTP {}", response.status()).into())
         }
     }
 

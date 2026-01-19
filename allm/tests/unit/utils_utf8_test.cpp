@@ -4,7 +4,7 @@
 
 #include "utils/utf8.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(Utf8UtilsTest, SanitizeUtf8LossyPassesValidUtf8Through) {
     std::string s = "hello \xE2\x98\x83";

@@ -15,7 +15,7 @@
 #include "utils/config.h"
 #include "runtime/state.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 namespace {
@@ -43,7 +43,7 @@ void write_text(const fs::path& path, const std::string& content) {
 }  // namespace
 
 TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
-    llm_node::set_ready(true);  // Ensure node is ready
+    allm::set_ready(true);  // Ensure node is ready
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -69,7 +69,7 @@ TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
 }
 
 TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
-    llm_node::set_ready(true);  // Ensure node is ready
+    allm::set_ready(true);  // Ensure node is ready
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -90,7 +90,7 @@ TEST(OpenAIEndpointsTest, Returns404WhenModelMissing) {
 }
 
 TEST(OpenAIEndpointsTest, Returns400OnInvalidTemperature) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -111,7 +111,7 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTemperature) {
 }
 
 TEST(OpenAIEndpointsTest, Returns400OnInvalidTopP) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -132,7 +132,7 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTopP) {
 }
 
 TEST(OpenAIEndpointsTest, Returns400OnInvalidTopK) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -153,7 +153,7 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTopK) {
 }
 
 TEST(OpenAIEndpointsTest, Returns400OnEmptyPrompt) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -174,7 +174,7 @@ TEST(OpenAIEndpointsTest, Returns400OnEmptyPrompt) {
 }
 
 TEST(OpenAIEndpointsTest, AppliesStopSequencesToCompletions) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -195,7 +195,7 @@ TEST(OpenAIEndpointsTest, AppliesStopSequencesToCompletions) {
 }
 
 TEST(OpenAIEndpointsTest, ReturnsLogprobsForCompletions) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
     InferenceEngine engine;
@@ -235,7 +235,7 @@ TEST(OpenAIEndpointsTest, ReturnsLogprobsForCompletions) {
 // SPEC-dcaeaec4: Node returns 503 when not ready (syncing with router)
 TEST(OpenAIEndpointsTest, Returns503WhenNotReady) {
     // Set node to not ready state
-    llm_node::set_ready(false);
+    allm::set_ready(false);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
@@ -254,12 +254,12 @@ TEST(OpenAIEndpointsTest, Returns503WhenNotReady) {
     EXPECT_NE(res->body.find("service_unavailable"), std::string::npos);
 
     server.stop();
-    llm_node::set_ready(true);  // Cleanup for other tests
+    allm::set_ready(true);  // Cleanup for other tests
 }
 
 // SPEC-dcaeaec4: Completions endpoint returns 503 when not ready
 TEST(OpenAIEndpointsTest, CompletionsReturns503WhenNotReady) {
-    llm_node::set_ready(false);
+    allm::set_ready(false);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
@@ -278,12 +278,12 @@ TEST(OpenAIEndpointsTest, CompletionsReturns503WhenNotReady) {
     EXPECT_NE(res->body.find("service_unavailable"), std::string::npos);
 
     server.stop();
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 }
 
 // SPEC-dcaeaec4: Embeddings endpoint returns 503 when not ready
 TEST(OpenAIEndpointsTest, EmbeddingsReturns503WhenNotReady) {
-    llm_node::set_ready(false);
+    allm::set_ready(false);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
@@ -302,12 +302,12 @@ TEST(OpenAIEndpointsTest, EmbeddingsReturns503WhenNotReady) {
     EXPECT_NE(res->body.find("service_unavailable"), std::string::npos);
 
     server.stop();
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 }
 
 // Invalid JSON handling
 TEST(OpenAIEndpointsTest, ReturnsErrorOnInvalidJSON) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
@@ -329,7 +329,7 @@ TEST(OpenAIEndpointsTest, ReturnsErrorOnInvalidJSON) {
 
 // Missing required field (model)
 TEST(OpenAIEndpointsTest, ReturnsErrorOnMissingModel) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
@@ -351,7 +351,7 @@ TEST(OpenAIEndpointsTest, ReturnsErrorOnMissingModel) {
 }
 
 TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 
     TempDir tmp;
     const std::string model_id = "test/llama-7b";
@@ -384,7 +384,7 @@ TEST(OpenAIEndpointsTest, EmbeddingsReturns400WhenCapabilityMissing) {
 
 // T014: Usage token count matches actual tokenization
 TEST(OpenAIEndpointsTest, UsageMatchesActualTokenCount) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});
@@ -422,7 +422,7 @@ TEST(OpenAIEndpointsTest, UsageMatchesActualTokenCount) {
 
 // T015: Logprobs values match model output (not dummy values)
 TEST(OpenAIEndpointsTest, LogprobsMatchesModelOutput) {
-    llm_node::set_ready(true);
+    allm::set_ready(true);
 
     ModelRegistry registry;
     registry.setModels({"gpt-oss-7b"});

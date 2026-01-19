@@ -20,19 +20,19 @@ extern "C" {
  * @param context Engine host context
  * @return Pointer to the created engine, or nullptr on failure
  */
-llm_node::Engine* llm_node_create_engine(
-    const llm_node::EngineHostContext* context) {
+allm::Engine* llm_node_create_engine(
+    const allm::EngineHostContext* context) {
     if (!context) {
         return nullptr;
     }
 
     // ABI version check
-    if (context->abi_version != llm_node::kEnginePluginAbiVersion) {
+    if (context->abi_version != allm::kEnginePluginAbiVersion) {
         if (context->log_callback) {
             context->log_callback(
                 context->log_callback_ctx,
                 kPluginId,
-                static_cast<int>(llm_node::PluginLogLevel::kError),
+                static_cast<int>(allm::PluginLogLevel::kError),
                 "ABI version mismatch");
         }
         return nullptr;
@@ -44,21 +44,21 @@ llm_node::Engine* llm_node_create_engine(
             context->log_callback(
                 context->log_callback_ctx,
                 kPluginId,
-                static_cast<int>(llm_node::PluginLogLevel::kError),
+                static_cast<int>(allm::PluginLogLevel::kError),
                 "models_dir is required");
         }
         return nullptr;
     }
 
     try {
-        return new llm_node::SafetensorsEngine(context->models_dir);
+        return new allm::SafetensorsEngine(context->models_dir);
     } catch (const std::exception& e) {
         if (context->log_callback) {
             std::string msg = std::string("Failed to create SafetensorsEngine: ") + e.what();
             context->log_callback(
                 context->log_callback_ctx,
                 kPluginId,
-                static_cast<int>(llm_node::PluginLogLevel::kError),
+                static_cast<int>(allm::PluginLogLevel::kError),
                 msg.c_str());
         }
         return nullptr;
@@ -69,7 +69,7 @@ llm_node::Engine* llm_node_create_engine(
  * @brief Destroy a SafetensorsEngine instance
  * @param engine Engine to destroy
  */
-void llm_node_destroy_engine(llm_node::Engine* engine) {
+void llm_node_destroy_engine(allm::Engine* engine) {
     delete engine;
 }
 

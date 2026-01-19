@@ -1,10 +1,10 @@
-// SPEC-58378000: Contract tests for 'node list' command
+// SPEC-58378000: Contract tests for 'list' command
 // TDD RED phase - these tests MUST fail until implementation is complete
 
 #include <gtest/gtest.h>
 #include "utils/cli.h"
 
-using namespace llm_node;
+using namespace allm;
 
 class CliListTest : public ::testing::Test {
 protected:
@@ -13,19 +13,19 @@ protected:
     }
 };
 
-// Contract: node list requires no arguments
+// Contract: list requires no arguments
 TEST_F(CliListTest, ParseNoArguments) {
-    const char* argv[] = {"llm-router", "node", "list"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "list"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeList);
+    EXPECT_EQ(result.subcommand, Subcommand::List);
 }
 
-// Contract: node list --help shows usage
+// Contract: list --help shows usage
 TEST_F(CliListTest, ShowHelp) {
-    const char* argv[] = {"llm-router", "node", "list", "--help"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "list", "--help"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);

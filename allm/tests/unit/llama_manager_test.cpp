@@ -4,7 +4,7 @@
 
 #include "core/llama_manager.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 class TempModelFile {

@@ -7,7 +7,7 @@
 #include <iostream>
 #include <iomanip>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 
@@ -178,4 +178,4 @@ int show(const ShowOptions& options) {
 
 }  // namespace commands
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

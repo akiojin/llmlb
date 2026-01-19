@@ -8,14 +8,14 @@
 #include "utils/logger.h"
 #include "utils/system_info.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(LoggerTest, InitSetsLevelAndWritesToSink) {
     auto original_logger = spdlog::default_logger();
     auto original_level = spdlog::get_level();
     std::stringstream ss;
     auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(ss);
-    llm_node::logger::init("debug", "%v", "", {sink});
+    allm::logger::init("debug", "%v", "", {sink});
 
     spdlog::info("hello");
     EXPECT_EQ(spdlog::default_logger()->level(), spdlog::level::debug);

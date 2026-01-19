@@ -18,7 +18,7 @@
 #endif
 #endif
 
-namespace llm_node {
+namespace allm {
 
 struct SpeechResult {
     std::vector<uint8_t> audio_data;
@@ -119,4 +119,4 @@ private:
         int bits_per_sample = 16) const;
 };
 
-}  // namespace llm_node
+}  // namespace allm

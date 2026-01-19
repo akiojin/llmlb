@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::ordered_json;
 using minja::Value;
 
-namespace llm_node {
+namespace allm {
 
 ChatTemplateRenderer::ChatTemplateRenderer(
     const std::string& template_source,
@@ -126,4 +126,4 @@ std::string ChatTemplateRenderer::render(
     }
 }
 
-}  // namespace llm_node
+}  // namespace allm

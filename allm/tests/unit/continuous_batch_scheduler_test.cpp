@@ -5,7 +5,7 @@
 
 #include "core/continuous_batch_scheduler.h"
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 ContinuousBatchScheduler::Request make_request(const std::string& name,
@@ -207,4 +207,4 @@ TEST(ContinuousBatchSchedulerTest, CancelledCountTracksState) {
 }
 
 }  // namespace
-}  // namespace llm_node
+}  // namespace allm

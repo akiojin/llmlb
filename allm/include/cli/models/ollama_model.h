@@ -6,7 +6,7 @@
 #include <string>
 #include <cstdint>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace models {
 
@@ -48,4 +48,4 @@ struct OllamaModel {
 
 }  // namespace models
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

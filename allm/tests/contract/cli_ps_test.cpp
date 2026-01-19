@@ -1,10 +1,10 @@
-// SPEC-58378000: Contract tests for 'node ps' command
+// SPEC-58378000: Contract tests for 'ps' command
 // TDD RED phase - these tests MUST fail until implementation is complete
 
 #include <gtest/gtest.h>
 #include "utils/cli.h"
 
-using namespace llm_node;
+using namespace allm;
 
 class CliPsTest : public ::testing::Test {
 protected:
@@ -13,19 +13,19 @@ protected:
     }
 };
 
-// Contract: node ps requires no arguments
+// Contract: ps requires no arguments
 TEST_F(CliPsTest, ParseNoArguments) {
-    const char* argv[] = {"llm-router", "node", "ps"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "ps"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodePs);
+    EXPECT_EQ(result.subcommand, Subcommand::Ps);
 }
 
-// Contract: node ps --help shows usage
+// Contract: ps --help shows usage
 TEST_F(CliPsTest, ShowHelp) {
-    const char* argv[] = {"llm-router", "node", "ps", "--help"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "ps", "--help"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);

@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include "utils/cli.h"
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace commands {
 // Forward declaration for serve command
@@ -13,65 +13,65 @@ int serve(const ServeOptions& options);
 }
 }
 
-using namespace llm_node;
-using namespace llm_node::cli;
+using namespace allm;
+using namespace allm::cli;
 
 class CliServeTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset environment variables
         unsetenv("LLM_ROUTER_HOST");
-        unsetenv("LLM_NODE_PORT");
+        unsetenv("ALLM_PORT");
     }
 };
 
-// Contract: node serve should parse default options correctly
+// Contract: serve should parse default options correctly
 TEST_F(CliServeTest, ParseDefaultOptions) {
-    const char* argv[] = {"llm-router", "node", "serve"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
     EXPECT_EQ(result.serve_options.port, 32769);
     EXPECT_EQ(result.serve_options.host, "0.0.0.0");
 }
 
-// Contract: node serve should accept --port option
+// Contract: serve should accept --port option
 TEST_F(CliServeTest, ParseCustomPort) {
-    const char* argv[] = {"llm-router", "node", "serve", "--port", "8080"};
-    auto result = parseCliArgs(5, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--port", "8080"};
+    auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
     EXPECT_EQ(result.serve_options.port, 8080);
 }
 
-// Contract: node serve should accept --host option
+// Contract: serve should accept --host option
 TEST_F(CliServeTest, ParseCustomHost) {
-    const char* argv[] = {"llm-router", "node", "serve", "--host", "127.0.0.1"};
-    auto result = parseCliArgs(5, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--host", "127.0.0.1"};
+    auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
     EXPECT_EQ(result.serve_options.host, "127.0.0.1");
 }
 
-// Contract: node serve should respect LLM_NODE_PORT environment variable
+// Contract: serve should respect ALLM_PORT environment variable
 TEST_F(CliServeTest, RespectPortEnvironmentVariable) {
-    setenv("LLM_NODE_PORT", "9999", 1);
+    setenv("ALLM_PORT", "9999", 1);
 
-    const char* argv[] = {"llm-router", "node", "serve"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     // Environment variable should be respected when no explicit --port
     // Note: This tests parsing; actual port binding is in serve implementation
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
 }
 
-// Contract: node serve --help should show help message
+// Contract: serve --help should show help message
 TEST_F(CliServeTest, ShowHelp) {
-    const char* argv[] = {"llm-router", "node", "serve", "--help"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--help"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);

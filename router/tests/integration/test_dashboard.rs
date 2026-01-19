@@ -1,14 +1,18 @@
 //! Integration Test: ダッシュボード
 //!
 //! WebSocket接続 → リアルタイム更新 → ノード状態変化の受信
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::Router;
 use futures::StreamExt;
 use llm_router::{
-    api, auth::jwt::create_jwt, balancer::LoadManager, registry::NodeRegistry, AppState,
+    api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
+    AppState,
 };
 use llm_router_common::auth::UserRole;
 use serial_test::serial;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -35,8 +39,6 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     std::env::set_var("AUTH_DISABLED", "true");
     let guard = AuthDisabledGuard;
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -44,6 +46,10 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     llm_router::api::models::clear_registered_models(&db_pool)
         .await
         .expect("clear registered models");
@@ -52,7 +58,6 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     );
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool,
@@ -60,7 +65,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry,
     };
 
     let router = api::create_router(state.clone());

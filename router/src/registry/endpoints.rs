@@ -3,7 +3,7 @@
 //! エンドポイントの状態をメモリ内で管理し、SQLiteと同期
 
 use crate::db::endpoints as db;
-use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus};
+use crate::types::endpoint::{Endpoint, EndpointCapability, EndpointModel, EndpointStatus};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -105,6 +105,46 @@ impl EndpointRegistry {
             .collect()
     }
 
+    /// 指定した機能を持つオンラインエンドポイントを取得（SPEC-66555000移行用）
+    ///
+    /// NodeRegistryのRuntimeTypeベースのフィルタリングを置き換える。
+    /// 例: ImageGeneration機能を持つエンドポイント → 画像生成リクエストの転送先
+    pub async fn list_online_by_capability(&self, capability: EndpointCapability) -> Vec<Endpoint> {
+        self.endpoints
+            .read()
+            .await
+            .values()
+            .filter(|e| e.status == EndpointStatus::Online && e.has_capability(capability))
+            .cloned()
+            .collect()
+    }
+
+    /// 指定した機能を持つオンラインエンドポイントをレイテンシ順で取得
+    ///
+    /// 複数エンドポイントがある場合、レイテンシが低いものを優先する。
+    pub async fn list_online_by_capability_sorted(
+        &self,
+        capability: EndpointCapability,
+    ) -> Vec<Endpoint> {
+        let mut endpoints = self.list_online_by_capability(capability).await;
+        endpoints.sort_by(|a, b| match (a.latency_ms, b.latency_ms) {
+            (Some(a_lat), Some(b_lat)) => a_lat.cmp(&b_lat),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+        endpoints
+    }
+
+    /// 指定した機能を持つオンラインエンドポイントが存在するか確認
+    pub async fn has_capability_online(&self, capability: EndpointCapability) -> bool {
+        self.endpoints
+            .read()
+            .await
+            .values()
+            .any(|e| e.status == EndpointStatus::Online && e.has_capability(capability))
+    }
+
     /// モデルIDからエンドポイントを検索
     pub async fn find_by_model(&self, model_id: &str) -> Vec<Endpoint> {
         let model_map = self.model_to_endpoints.read().await;
@@ -195,6 +235,32 @@ impl EndpointRegistry {
         }
 
         Ok(updated)
+    }
+
+    /// エンドポイントのGPU情報を更新（キャッシュのみ、DBには保存しない）
+    ///
+    /// `/v0/health`から取得したGPU情報をキャッシュに反映する。
+    /// GPU情報は頻繁に変化するため、DBには保存せずメモリ上でのみ管理する。
+    pub async fn update_gpu_info(
+        &self,
+        id: Uuid,
+        gpu_device_count: Option<u32>,
+        gpu_total_memory_bytes: Option<u64>,
+        gpu_used_memory_bytes: Option<u64>,
+        gpu_capability_score: Option<f32>,
+        active_requests: Option<u32>,
+    ) -> bool {
+        let mut endpoints = self.endpoints.write().await;
+        if let Some(endpoint) = endpoints.get_mut(&id) {
+            endpoint.gpu_device_count = gpu_device_count;
+            endpoint.gpu_total_memory_bytes = gpu_total_memory_bytes;
+            endpoint.gpu_used_memory_bytes = gpu_used_memory_bytes;
+            endpoint.gpu_capability_score = gpu_capability_score;
+            endpoint.active_requests = active_requests;
+            true
+        } else {
+            false
+        }
     }
 
     /// エンドポイントのResponses API対応フラグを更新（DBとキャッシュ両方）
@@ -386,7 +452,7 @@ pub struct SyncResult {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
-    use crate::types::endpoint::SupportedAPI;
+    use crate::types::endpoint::{EndpointCapability, SupportedAPI};
 
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:")
@@ -491,5 +557,74 @@ mod tests {
         // オンラインエンドポイントのみ取得
         let online = registry.list_online().await;
         assert_eq!(online.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_registry_capability_filter() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        // チャット機能のみのエンドポイント
+        let mut ep_chat = Endpoint::new(
+            "Chat Only".to_string(),
+            "http://localhost:11434".to_string(),
+        );
+        ep_chat.status = EndpointStatus::Online;
+        ep_chat.capabilities = vec![EndpointCapability::ChatCompletion];
+        registry.add(ep_chat).await.unwrap();
+
+        // 画像生成機能を持つエンドポイント
+        let mut ep_image =
+            Endpoint::new("Image Gen".to_string(), "http://localhost:7860".to_string());
+        ep_image.status = EndpointStatus::Online;
+        ep_image.capabilities = vec![
+            EndpointCapability::ChatCompletion,
+            EndpointCapability::ImageGeneration,
+        ];
+        ep_image.latency_ms = Some(100);
+        registry.add(ep_image).await.unwrap();
+
+        // 音声認識機能を持つエンドポイント（オフライン）
+        let mut ep_audio = Endpoint::new("ASR".to_string(), "http://localhost:8080".to_string());
+        ep_audio.status = EndpointStatus::Offline;
+        ep_audio.capabilities = vec![EndpointCapability::AudioTranscription];
+        registry.add(ep_audio).await.unwrap();
+
+        // チャット機能で検索 → 2件
+        let chat_endpoints = registry
+            .list_online_by_capability(EndpointCapability::ChatCompletion)
+            .await;
+        assert_eq!(chat_endpoints.len(), 2);
+
+        // 画像生成機能で検索 → 1件
+        let image_endpoints = registry
+            .list_online_by_capability(EndpointCapability::ImageGeneration)
+            .await;
+        assert_eq!(image_endpoints.len(), 1);
+        assert_eq!(image_endpoints[0].name, "Image Gen");
+
+        // 音声認識機能で検索 → 0件（オフラインなので）
+        let audio_endpoints = registry
+            .list_online_by_capability(EndpointCapability::AudioTranscription)
+            .await;
+        assert!(audio_endpoints.is_empty());
+
+        // 機能存在チェック
+        assert!(
+            registry
+                .has_capability_online(EndpointCapability::ImageGeneration)
+                .await
+        );
+        assert!(
+            !registry
+                .has_capability_online(EndpointCapability::AudioTranscription)
+                .await
+        );
+        assert!(
+            !registry
+                .has_capability_online(EndpointCapability::AudioSpeech)
+                .await
+        );
     }
 }

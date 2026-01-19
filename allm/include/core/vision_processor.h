@@ -10,7 +10,7 @@
 
 struct llama_model;
 
-namespace llm_node {
+namespace allm {
 
 class ModelStorage;
 
@@ -52,4 +52,4 @@ private:
 /// @return 見つかったmmprojファイルのパス（見つからない場合はnullopt）
 std::optional<std::string> findMmprojInDirectory(const std::string& model_dir);
 
-}  // namespace llm_node
+}  // namespace allm

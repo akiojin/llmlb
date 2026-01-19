@@ -16,7 +16,7 @@
 
 namespace fs = std::filesystem;
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 constexpr size_t kMaxImageBytes = 10 * 1024 * 1024;
@@ -323,4 +323,4 @@ std::optional<std::string> findMmprojInDirectory(const std::string& model_dir) {
     return candidates.front().string();
 }
 
-}  // namespace llm_node
+}  // namespace allm

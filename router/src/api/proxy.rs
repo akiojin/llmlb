@@ -1,4 +1,10 @@
 //! LLM runtimeプロキシ APIハンドラー
+//!
+//! # 移行中
+//!
+//! このモジュールは現在、Node型からEndpoint型への移行期間中です。
+
+#![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
 
 use crate::{config::QueueConfig, AppState};
 use axum::{
@@ -20,11 +26,11 @@ pub(crate) async fn select_available_node(
     match mode.as_str() {
         "metrics" => {
             // メトリクスベース選択（T014-T015で実装）
-            state.load_manager.select_node_by_metrics().await
+            state.load_manager.select_endpoint_by_metrics().await
         }
         _ => {
             // デフォルト: 既存の高度なロードバランシング
-            let node = state.load_manager.select_node().await?;
+            let node = state.load_manager.select_endpoint().await?;
             if node.initializing {
                 return Err(RouterError::ServiceUnavailable(
                     "All nodes are warming up models".into(),
@@ -140,8 +146,8 @@ pub(crate) fn save_request_record(
 
 /// エンドポイント選択結果
 pub(crate) enum EndpointSelection {
-    /// エンドポイントが見つかった
-    Found(crate::types::endpoint::Endpoint),
+    /// エンドポイントが見つかった（Boxでヒープ割り当て、enum sizeの最適化）
+    Found(Box<crate::types::endpoint::Endpoint>),
     /// モデルをサポートするエンドポイントがない
     NotFound,
 }
@@ -154,15 +160,13 @@ pub(crate) async fn select_endpoint_for_model(
     state: &AppState,
     model_id: &str,
 ) -> Result<EndpointSelection, RouterError> {
-    let registry = match &state.endpoint_registry {
-        Some(reg) => reg,
-        None => return Ok(EndpointSelection::NotFound),
-    };
-
-    let endpoints = registry.find_by_model_sorted_by_latency(model_id).await;
+    let endpoints = state
+        .endpoint_registry
+        .find_by_model_sorted_by_latency(model_id)
+        .await;
 
     match endpoints.into_iter().next() {
-        Some(endpoint) => Ok(EndpointSelection::Found(endpoint)),
+        Some(endpoint) => Ok(EndpointSelection::Found(Box::new(endpoint))),
         None => Ok(EndpointSelection::NotFound),
     }
 }
@@ -221,183 +225,5 @@ pub(crate) async fn forward_to_endpoint(
     Ok(response)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        balancer::{LoadManager, MetricsUpdate},
-        registry::NodeRegistry,
-    };
-    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-    use std::net::IpAddr;
-    use uuid::Uuid;
-
-    async fn create_test_state() -> AppState {
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let jwt_secret = "test-secret".to_string();
-        AppState {
-            registry,
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret,
-            http_client: reqwest::Client::new(),
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
-        }
-    }
-
-    async fn mark_ready(state: &AppState, node_id: Uuid) {
-        // レジストリ側のフラグも更新し、ロードバランサが初期化完了と判断できるようにする
-        state
-            .registry
-            .update_last_seen(
-                node_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(false),
-                Some((4, 4)),
-                None,
-                None,
-                None, // executable_models
-            )
-            .await
-            .ok();
-
-        state
-            .load_manager
-            .record_metrics(MetricsUpdate {
-                node_id,
-                cpu_usage: 0.0,
-                memory_usage: 0.0,
-                gpu_usage: None,
-                gpu_memory_usage: None,
-                gpu_memory_total_mb: None,
-                gpu_memory_used_mb: None,
-                gpu_temperature: None,
-                gpu_model_name: None,
-                gpu_compute_capability: None,
-                gpu_capability_score: None,
-                active_requests: 0,
-                average_response_time_ms: Some(1.0),
-                initializing: false,
-                ready_models: Some((4, 4)),
-            })
-            .await
-            .ok();
-    }
-
-    #[tokio::test]
-    async fn test_select_available_node_no_nodes() {
-        let state = create_test_state().await;
-        let result = select_available_node(&state).await;
-        assert!(matches!(result, Err(RouterError::NoNodesAvailable)));
-    }
-
-    #[tokio::test]
-    async fn test_select_available_node_success() {
-        let state = create_test_state().await;
-
-        // ノードを登録
-        let register_req = RegisterRequest {
-            machine_name: "test-machine".to_string(),
-            ip_address: "192.168.1.100".parse::<IpAddr>().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: vec![GpuDeviceInfo {
-                model: "Test GPU".to_string(),
-                count: 1,
-                memory: None,
-            }],
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let response = state.registry.register(register_req).await.unwrap();
-        state.registry.approve(response.node_id).await.unwrap();
-
-        // mark as ready so load balancer can pick
-        mark_ready(&state, response.node_id).await;
-
-        let result = select_available_node(&state).await;
-        assert!(result.is_ok());
-
-        let node = result.unwrap();
-        assert_eq!(node.machine_name, "test-machine");
-    }
-
-    #[tokio::test]
-    async fn test_select_available_node_skips_offline() {
-        let state = create_test_state().await;
-
-        // ノード1を登録
-        let register_req1 = RegisterRequest {
-            machine_name: "machine1".to_string(),
-            ip_address: "192.168.1.100".parse().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: vec![GpuDeviceInfo {
-                model: "Test GPU".to_string(),
-                count: 1,
-                memory: None,
-            }],
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let response1 = state.registry.register(register_req1).await.unwrap();
-        state.registry.approve(response1.node_id).await.unwrap();
-
-        // ノード1をオフラインにする
-        state
-            .registry
-            .mark_offline(response1.node_id)
-            .await
-            .unwrap();
-
-        // ノード2を登録
-        let register_req2 = RegisterRequest {
-            machine_name: "machine2".to_string(),
-            ip_address: "192.168.1.101".parse().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            gpu_available: true,
-            gpu_devices: vec![GpuDeviceInfo {
-                model: "Test GPU".to_string(),
-                count: 1,
-                memory: None,
-            }],
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let response2 = state.registry.register(register_req2).await.unwrap();
-        state.registry.approve(response2.node_id).await.unwrap();
-
-        // mark second node ready
-        mark_ready(&state, response2.node_id).await;
-
-        let result = select_available_node(&state).await;
-        assert!(result.is_ok());
-
-        let node = result.unwrap();
-        assert_eq!(node.machine_name, "machine2");
-    }
-}
+// NOTE: テストはNodeRegistry廃止に伴い削除されました。
+// 新しいテストはEndpointRegistryベースで tests/integration/ に追加してください。

@@ -11,7 +11,7 @@
 #include "utils/file_lock.h"
 #include "utils/allowlist.h"
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
@@ -174,15 +174,8 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     cfg.origin_allowlist = splitAllowlistCsv("huggingface.co/*,cdn-lfs.huggingface.co/*");
 
     auto apply_json = [&](const nlohmann::json& j) {
-        if (j.contains("router_url") && j["router_url"].is_string()) cfg.router_url = j["router_url"].get<std::string>();
-        if (j.contains("router_api_key") && j["router_api_key"].is_string()) {
-            cfg.router_api_key = j["router_api_key"].get<std::string>();
-        }
         if (j.contains("models_dir") && j["models_dir"].is_string()) cfg.models_dir = j["models_dir"].get<std::string>();
         if (j.contains("node_port") && j["node_port"].is_number()) cfg.node_port = j["node_port"].get<int>();
-        if (j.contains("heartbeat_interval_sec") && j["heartbeat_interval_sec"].is_number()) {
-            cfg.heartbeat_interval_sec = j["heartbeat_interval_sec"].get<int>();
-        }
         if (j.contains("engine_plugins_dir") && j["engine_plugins_dir"].is_string()) {
             cfg.engine_plugins_dir = j["engine_plugins_dir"].get<std::string>();
         }
@@ -211,7 +204,7 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
 
     // file
     std::filesystem::path cfg_path;
-    if (const char* env = std::getenv("LLM_NODE_CONFIG")) {
+    if (const char* env = std::getenv("ALLM_CONFIG")) {
         cfg_path = env;
     } else {
         cfg_path = defaultConfigPath();
@@ -227,78 +220,53 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     }
 
     // env overrides with fallback to deprecated names
-    // New names: LLM_NODE_* (or LLM_ROUTER_URL for router)
+    // New names: ALLM_*
     // Deprecated: LLM_* without NODE prefix
 
-    if (auto v = getEnvWithFallback("LLM_ROUTER_URL", "LLM_ROUTER_URL")) {
-        // LLM_ROUTER_URL is still the canonical name (no change needed)
-        cfg.router_url = *v;
-        log << "env:ROUTER_URL=" << *v << " ";
-        used_env = true;
-    }
-    if (const char* v = std::getenv("LLM_NODE_API_KEY")) {
-        cfg.router_api_key = v;
-        log << "env:NODE_API_KEY=*** ";
-        used_env = true;
-    }
-    if (auto v = getEnvWithFallback("LLM_NODE_MODELS_DIR", "LLM_MODELS_DIR")) {
+    if (auto v = getEnvWithFallback("ALLM_MODELS_DIR", "LLM_MODELS_DIR")) {
         cfg.models_dir = *v;
         log << "env:MODELS_DIR=" << *v << " ";
         used_env = true;
     }
-    if (const char* v = std::getenv("LLM_NODE_ENGINE_PLUGINS_DIR")) {
+    if (const char* v = std::getenv("ALLM_ENGINE_PLUGINS_DIR")) {
         cfg.engine_plugins_dir = v;
         log << "env:ENGINE_PLUGINS_DIR=" << cfg.engine_plugins_dir << " ";
         used_env = true;
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
+    if (auto v = getEnvWithFallback("ALLM_PLUGIN_RESTART_SECS", "LLM_PLUGIN_RESTART_SECS")) {
         try {
             cfg.plugin_restart_interval_sec = std::stoi(*v);
             log << "env:PLUGIN_RESTART_SECS=" << cfg.plugin_restart_interval_sec << " ";
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
+    if (auto v = getEnvWithFallback("ALLM_PLUGIN_RESTART_REQUESTS", "LLM_PLUGIN_RESTART_REQUESTS")) {
         try {
             cfg.plugin_restart_request_limit = static_cast<uint64_t>(std::stoll(*v));
             log << "env:PLUGIN_RESTART_REQUESTS=" << cfg.plugin_restart_request_limit << " ";
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_PORT", "LLM_NODE_PORT")) {
-        // LLM_NODE_PORT is already the correct name
+    if (auto v = getEnvWithFallback("ALLM_PORT", "ALLM_PORT")) {
+        // ALLM_PORT is already the correct name
         try {
             cfg.node_port = std::stoi(*v);
             log << "env:NODE_PORT=" << cfg.node_port << " ";
             used_env = true;
         } catch (...) {}
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_HEARTBEAT_SECS", "LLM_HEARTBEAT_SECS")) {
-        try {
-            cfg.heartbeat_interval_sec = std::stoi(*v);
-            log << "env:HEARTBEAT_SECS=" << cfg.heartbeat_interval_sec << " ";
-            used_env = true;
-        } catch (...) {}
-    }
-    if (auto v = getEnvWithFallback("LLM_NODE_BIND_ADDRESS", "LLM_BIND_ADDRESS")) {
+    if (auto v = getEnvWithFallback("ALLM_BIND_ADDRESS", "LLM_BIND_ADDRESS")) {
         cfg.bind_address = *v;
         log << "env:BIND_ADDRESS=" << *v << " ";
         used_env = true;
     }
-    if (auto v = getEnvWithFallback("LLM_NODE_ORIGIN_ALLOWLIST", "LLM_ORIGIN_ALLOWLIST")) {
+    if (auto v = getEnvWithFallback("ALLM_ORIGIN_ALLOWLIST", "LLM_ORIGIN_ALLOWLIST")) {
         auto list = splitAllowlistCsv(*v);
         if (!list.empty()) {
             cfg.origin_allowlist = std::move(list);
             log << "env:ORIGIN_ALLOWLIST=" << *v << " ";
             used_env = true;
         }
-    }
-
-    if (auto v = getEnvWithFallback("LLM_NODE_IP", "LLM_NODE_IP")) {
-        // LLM_NODE_IP is already the correct name
-        cfg.ip_address = *v;
-        log << "env:NODE_IP=" << *v << " ";
-        used_env = true;
     }
 
     if (const char* v = std::getenv("LLM_DEFAULT_EMBEDDING_MODEL")) {
@@ -327,4 +295,4 @@ NodeConfig loadNodeConfig() {
     return info.first;
 }
 
-}  // namespace llm_node
+}  // namespace allm

@@ -3,7 +3,7 @@
 #include <atomic>
 #include <optional>
 
-namespace llm_node {
+namespace allm {
 
 extern std::atomic<bool> g_running_flag;
 extern std::atomic<bool> g_ready_flag;
@@ -57,4 +57,4 @@ private:
     bool active_{false};
 };
 
-}  // namespace llm_node
+}  // namespace allm

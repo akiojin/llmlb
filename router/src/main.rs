@@ -3,7 +3,7 @@
 use clap::Parser;
 use llm_router::cli::Cli;
 use llm_router::config::{get_env_with_fallback_or, get_env_with_fallback_parse};
-use llm_router::{api, auth, balancer, health, logging, registry, AppState};
+use llm_router::{api, auth, balancer, health, logging, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -150,11 +150,15 @@ async fn run_server(config: ServerConfig) {
         .expect("Failed to run database migrations");
 
     info!("Initializing storage at ~/.llm-router/");
-    let registry = registry::NodeRegistry::with_storage(db_pool.clone())
-        .await
-        .expect("Failed to initialize node registry");
 
-    let load_manager = balancer::LoadManager::new(registry.clone());
+    // エンドポイントレジストリを初期化（新アーキテクチャ）
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to initialize endpoint registry");
+    let endpoint_registry_arc = std::sync::Arc::new(endpoint_registry.clone());
+
+    // LoadManagerをEndpointRegistryで初期化
+    let load_manager = balancer::LoadManager::new(endpoint_registry_arc.clone());
     info!("Storage initialized successfully");
 
     let health_check_interval_secs: u64 = get_env_with_fallback_parse(
@@ -162,20 +166,6 @@ async fn run_server(config: ServerConfig) {
         "HEALTH_CHECK_INTERVAL",
         30,
     );
-    let node_timeout_secs: u64 =
-        get_env_with_fallback_parse("LLM_ROUTER_NODE_TIMEOUT", "NODE_TIMEOUT", 60);
-
-    let health_monitor = health::HealthMonitor::new(
-        registry.clone(),
-        health_check_interval_secs,
-        node_timeout_secs,
-    );
-    health_monitor.start();
-
-    // エンドポイントレジストリを初期化
-    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-        .await
-        .expect("Failed to initialize endpoint registry");
 
     // 起動時にエンドポイントのヘルスチェックを実行
     if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {
@@ -223,23 +213,15 @@ async fn run_server(config: ServerConfig) {
         .expect("Failed to create HTTP client");
 
     // エンドポイントレジストリを初期化
-    let endpoint_registry =
-        match llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone()).await {
-            Ok(reg) => {
-                info!(
-                    "Endpoint registry initialized with {} endpoints",
-                    reg.count().await
-                );
-                Some(reg)
-            }
-            Err(e) => {
-                tracing::warn!("Failed to initialize endpoint registry: {}", e);
-                None
-            }
-        };
+    let endpoint_registry = llm_router::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to initialize endpoint registry");
+    info!(
+        "Endpoint registry initialized with {} endpoints",
+        endpoint_registry.count().await
+    );
 
     let state = AppState {
-        registry: registry.clone(),
         load_manager,
         request_history,
         db_pool,

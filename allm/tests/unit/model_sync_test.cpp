@@ -8,7 +8,7 @@
 
 #include "models/model_sync.h"
 
-using namespace llm_node;
+using namespace allm;
 namespace fs = std::filesystem;
 
 static void wait_for_server(httplib::Server& server, std::chrono::milliseconds timeout) {

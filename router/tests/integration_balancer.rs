@@ -1,7 +1,6 @@
 //! Router load balancing integration tests entrypoint
-
-#[path = "integration/test_load_balancing.rs"]
-mod test_load_balancing;
+//!
+//! NOTE: test_load_balancing.rs was deleted as part of NodeRegistry removal (SPEC-66555000)
 
 #[path = "integration/test_metrics.rs"]
 mod test_metrics;

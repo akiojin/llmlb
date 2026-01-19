@@ -4,9 +4,6 @@
 
 pub mod request_history;
 
-/// ノード管理
-pub mod nodes;
-
 /// ユーザー管理
 pub mod users;
 

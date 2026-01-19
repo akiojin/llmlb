@@ -7,7 +7,7 @@
 #include <httplib.h>
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 CliClient::CliClient(const std::string& host, uint16_t port) {
@@ -21,7 +21,7 @@ CliClient::CliClient(const std::string& host, uint16_t port) {
 
     // Get port from environment or use default
     if (port == 0) {
-        const char* env_port = std::getenv("LLM_NODE_PORT");
+        const char* env_port = std::getenv("ALLM_PORT");
         port_ = env_port ? static_cast<uint16_t>(std::stoi(env_port)) : 32769;
     } else {
         port_ = port;
@@ -361,4 +361,4 @@ CliResponse<std::string> CliClient::httpPostStream(
 }
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

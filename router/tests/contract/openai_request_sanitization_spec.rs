@@ -1,6 +1,8 @@
 //! OpenAI request history sanitization contract test
 //!
 //! TDD RED: このテストはサニタイズ実装前に失敗する必要があります。
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},
@@ -8,8 +10,8 @@ use axum::{
     Router,
 };
 use llm_router::{
-    api, balancer::LoadManager, db::request_history::RequestHistoryStorage, registry::NodeRegistry,
-    AppState,
+    api, balancer::LoadManager, db::request_history::RequestHistoryStorage,
+    registry::endpoints::EndpointRegistry, AppState,
 };
 use serde_json::json;
 use serial_test::serial;
@@ -43,8 +45,6 @@ async fn build_app(openai_base_url: String) -> TestApp {
     std::env::set_var("OPENAI_API_KEY", "sk-test");
     std::env::set_var("OPENAI_BASE_URL", openai_base_url);
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -52,10 +52,13 @@ async fn build_app(openai_base_url: String) -> TestApp {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
-        registry,
         load_manager,
         request_history: request_history.clone(),
         db_pool,
@@ -63,6 +66,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry,
     };
 
     TestApp {

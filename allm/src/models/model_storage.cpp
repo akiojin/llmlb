@@ -13,7 +13,7 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 std::optional<ParsedModelName> parse_model_name_with_quantization(const std::string& model_name) {
@@ -915,4 +915,4 @@ bool ModelStorage::deleteModel(const std::string& model_name) {
     return true;
 }
 
-}  // namespace llm_node
+}  // namespace allm

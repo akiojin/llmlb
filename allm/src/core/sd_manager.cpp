@@ -21,7 +21,7 @@
 #include "thirdparty/stb_image.h"
 #include "thirdparty/stb_image_write.h"
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
@@ -134,14 +134,14 @@ bool SDManager::loadModel(const std::string& model_path) {
         return false;
     }
 
-    const char* force_cpu_env = std::getenv("LLM_NODE_SD_FORCE_CPU");
+    const char* force_cpu_env = std::getenv("ALLM_SD_FORCE_CPU");
     if (force_cpu_env && std::string(force_cpu_env) != "0") {
 #ifdef _WIN32
         _putenv_s("SD_FORCE_CPU", "1");
 #else
         setenv("SD_FORCE_CPU", "1", 1);
 #endif
-        spdlog::info("SD backend forced to CPU via LLM_NODE_SD_FORCE_CPU");
+        spdlog::info("SD backend forced to CPU via ALLM_SD_FORCE_CPU");
     }
 
     spdlog::info("Loading SD model: {}", canonical_path);
@@ -597,11 +597,11 @@ std::optional<std::chrono::steady_clock::time_point> SDManager::getLastAccessTim
     return std::nullopt;
 }
 
-}  // namespace llm_node
+}  // namespace allm
 
 #else
 
-namespace llm_node {
+namespace allm {
 
 SDManager::SDManager(std::string models_dir) : models_dir_(std::move(models_dir)) {
     spdlog::warn("SDManager: stable-diffusion.cpp support is disabled (BUILD_WITH_SD=OFF)");
@@ -651,6 +651,6 @@ std::optional<std::chrono::steady_clock::time_point> SDManager::getLastAccessTim
     return std::nullopt;
 }
 
-}  // namespace llm_node
+}  // namespace allm
 
 #endif

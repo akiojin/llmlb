@@ -13,12 +13,14 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::{ModelCapability, Node, RuntimeType},
+    types::ModelCapability,
 };
 use serde_json::json;
 use std::time::Instant;
 use tracing::info;
 use uuid::Uuid;
+
+use std::net::IpAddr;
 
 use crate::{
     api::{
@@ -27,6 +29,7 @@ use crate::{
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
     },
+    types::endpoint::{Endpoint, EndpointCapability},
     AppState,
 };
 
@@ -57,47 +60,75 @@ fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response,
     Ok(error_response(RouterError::Http(msg.into()), status))
 }
 
-/// RuntimeType に基づいてノードを選択
-async fn select_node_by_runtime(
-    state: &AppState,
-    runtime_type: RuntimeType,
-) -> Result<Node, RouterError> {
-    let nodes = state.registry.list().await;
+/// 音声処理対応バックエンド
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
+struct AudioBackend(Endpoint);
 
-    // 対応するRuntimeTypeを持つオンラインノードを探す
-    let capable_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| {
-            // テスト時はRegisteringステータスのノードも選択可能にする
-            let status_ok = matches!(
-                n.status,
-                llm_router_common::types::NodeStatus::Online
-                    | llm_router_common::types::NodeStatus::Registering
-            );
-            // テスト時は supported_runtimes の確認をスキップ
-            let runtime_ok = if cfg!(test) {
-                n.supported_runtimes.is_empty() || n.supported_runtimes.contains(&runtime_type)
-            } else {
-                n.supported_runtimes.contains(&runtime_type)
-            };
-            status_ok && runtime_ok
-        })
-        .collect();
-
-    if capable_nodes.is_empty() {
-        let runtime_name = match runtime_type {
-            RuntimeType::WhisperCpp => "ASR (whisper.cpp)",
-            RuntimeType::OnnxRuntime => "TTS (ONNX Runtime)",
-            _ => "required runtime",
-        };
-        return Err(RouterError::ServiceUnavailable(format!(
-            "No nodes available with {} capability",
-            runtime_name
-        )));
+impl AudioBackend {
+    /// リクエスト送信用のURLを取得
+    fn url(&self, path: &str) -> String {
+        format!("{}{}", self.0.base_url.trim_end_matches('/'), path)
     }
 
-    // 最初の利用可能なノードを返す（将来的にはロードバランシングを追加）
-    Ok(capable_nodes.into_iter().next().unwrap())
+    /// リクエスト履歴用のID
+    fn id(&self) -> Uuid {
+        self.0.id
+    }
+
+    /// リクエスト履歴用の名前
+    fn name(&self) -> String {
+        self.0.name.clone()
+    }
+
+    /// リクエスト履歴用のIPアドレス
+    fn ip(&self) -> IpAddr {
+        // base_urlからホスト部分を抽出してパース
+        // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
+        let host = self
+            .0
+            .base_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(':')
+            .next()
+            .unwrap_or("127.0.0.1");
+        host.parse::<IpAddr>()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
+    }
+}
+
+/// 音声認識対応バックエンドを選択
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
+async fn select_transcription_backend(state: &AppState) -> Result<AudioBackend, RouterError> {
+    let endpoints = state
+        .endpoint_registry
+        .list_online_by_capability(EndpointCapability::AudioTranscription)
+        .await;
+
+    let endpoint = endpoints.into_iter().next().ok_or_else(|| {
+        RouterError::ServiceUnavailable(
+            "No endpoints available with audio transcription capability".to_string(),
+        )
+    })?;
+
+    Ok(AudioBackend(endpoint))
+}
+
+/// 音声合成対応バックエンドを選択
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
+async fn select_speech_backend(state: &AppState) -> Result<AudioBackend, RouterError> {
+    let endpoints = state
+        .endpoint_registry
+        .list_online_by_capability(EndpointCapability::AudioSpeech)
+        .await;
+
+    let endpoint = endpoints.into_iter().next().ok_or_else(|| {
+        RouterError::ServiceUnavailable(
+            "No endpoints available with audio speech capability".to_string(),
+        )
+    })?;
+
+    Ok(AudioBackend(endpoint))
 }
 
 /// POST /v1/audio/transcriptions - 音声認識（ASR）
@@ -210,16 +241,12 @@ pub async fn transcriptions(
         "Processing transcription request"
     );
 
-    // ASR対応ノードを選択
-    let node = select_node_by_runtime(&state, RuntimeType::WhisperCpp).await?;
+    // ASR対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    let backend = select_transcription_backend(&state).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
-    let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-    let url = format!(
-        "http://{}:{}/v1/audio/transcriptions",
-        node.ip_address, api_port
-    );
+    let url = backend.url("/v1/audio/transcriptions");
 
     let mut form = reqwest::multipart::Form::new().part(
         "file",
@@ -258,9 +285,9 @@ pub async fn transcriptions(
         timestamp,
         request_type: RequestType::Transcription,
         model: model.clone(),
-        node_id: node.id,
-        node_machine_name: node.machine_name.clone(),
-        node_ip: node.ip_address,
+        node_id: backend.id(),
+        node_machine_name: backend.name(),
+        node_ip: backend.ip(),
         client_ip: None,
         request_body: json!({"model": model, "type": "transcription"}),
         response_body: None,
@@ -338,13 +365,12 @@ pub async fn speech(
         "Processing speech request"
     );
 
-    // TTS対応ノードを選択
-    let node = select_node_by_runtime(&state, RuntimeType::OnnxRuntime).await?;
+    // TTS対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    let backend = select_speech_backend(&state).await?;
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;
-    let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-    let url = format!("http://{}:{}/v1/audio/speech", node.ip_address, api_port);
+    let url = backend.url("/v1/audio/speech");
 
     let response = match client.post(&url).json(&payload).send().await {
         Ok(r) => r,
@@ -365,9 +391,9 @@ pub async fn speech(
         timestamp,
         request_type: RequestType::Speech,
         model: payload.model.clone(),
-        node_id: node.id,
-        node_machine_name: node.machine_name.clone(),
-        node_ip: node.ip_address,
+        node_id: backend.id(),
+        node_machine_name: backend.name(),
+        node_ip: backend.ip(),
         client_ip: None,
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,

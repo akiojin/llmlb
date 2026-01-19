@@ -1,23 +1,28 @@
 //! 招待コードフローE2Eテスト
 //!
 //! 完全な招待コードフロー（発行 → ユーザー登録 → ログイン）
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use serde_json::json;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::support;
 
 async fn build_app() -> (Router, sqlx::SqlitePool) {
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = support::router::create_test_db_pool().await;
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
@@ -30,7 +35,6 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         .ok();
 
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
@@ -38,7 +42,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry,
     };
 
     (api::create_router(state), db_pool)

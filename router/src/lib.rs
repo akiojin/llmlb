@@ -62,8 +62,6 @@ pub mod sync;
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {
-    /// ノードレジストリ
-    pub registry: registry::NodeRegistry,
     /// ロードマネージャー
     pub load_manager: balancer::LoadManager,
     /// リクエスト履歴ストレージ
@@ -78,8 +76,8 @@ pub struct AppState {
     pub queue_config: config::QueueConfig,
     /// ダッシュボードイベントバス
     pub event_bus: events::SharedEventBus,
-    /// エンドポイントレジストリ（新エンドポイント管理システム）
-    pub endpoint_registry: Option<registry::endpoints::EndpointRegistry>,
+    /// エンドポイントレジストリ
+    pub endpoint_registry: registry::endpoints::EndpointRegistry,
 }
 
 #[cfg(test)]

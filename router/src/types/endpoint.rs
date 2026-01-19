@@ -83,6 +83,43 @@ impl std::fmt::Display for EndpointStatus {
     }
 }
 
+/// エンドポイントの機能タイプ
+///
+/// NodeのRuntimeTypeに相当する機能分類（SPEC-66555000移行用）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointCapability {
+    /// チャット補完（LLM推論）
+    ChatCompletion,
+    /// 埋め込みベクトル生成
+    Embeddings,
+    /// 画像生成（StableDiffusion等）
+    ImageGeneration,
+    /// 音声認識（Whisper等）
+    AudioTranscription,
+    /// 音声合成（TTS）
+    AudioSpeech,
+}
+
+impl EndpointCapability {
+    /// 文字列に変換
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ChatCompletion => "chat_completion",
+            Self::Embeddings => "embeddings",
+            Self::ImageGeneration => "image_generation",
+            Self::AudioTranscription => "audio_transcription",
+            Self::AudioSpeech => "audio_speech",
+        }
+    }
+}
+
+impl std::fmt::Display for EndpointCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// エンドポイント
 ///
 /// 推論サービスの接続先を表すエンティティ
@@ -118,6 +155,25 @@ pub struct Endpoint {
     /// Responses API対応フラグ（SPEC-24157000）
     #[serde(default)]
     pub supports_responses_api: bool,
+    /// エンドポイントの機能一覧（SPEC-66555000移行用）
+    /// 画像生成、音声認識等の特殊機能をサポートするかを示す
+    #[serde(default)]
+    pub capabilities: Vec<EndpointCapability>,
+    /// GPU情報（/v0/healthから取得、Phase 1.4）
+    #[serde(default)]
+    pub gpu_device_count: Option<u32>,
+    /// GPU総メモリ（バイト）
+    #[serde(default)]
+    pub gpu_total_memory_bytes: Option<u64>,
+    /// GPU使用中メモリ（バイト）
+    #[serde(default)]
+    pub gpu_used_memory_bytes: Option<u64>,
+    /// GPU能力スコア
+    #[serde(default)]
+    pub gpu_capability_score: Option<f32>,
+    /// 現在のアクティブリクエスト数
+    #[serde(default)]
+    pub active_requests: Option<u32>,
 }
 
 impl Endpoint {
@@ -138,6 +194,91 @@ impl Endpoint {
             registered_at: Utc::now(),
             notes: None,
             supports_responses_api: false,
+            capabilities: vec![EndpointCapability::ChatCompletion], // デフォルトはチャット機能
+            gpu_device_count: None,
+            gpu_total_memory_bytes: None,
+            gpu_used_memory_bytes: None,
+            gpu_capability_score: None,
+            active_requests: None,
+        }
+    }
+
+    /// 指定した機能をサポートしているか確認
+    pub fn has_capability(&self, cap: EndpointCapability) -> bool {
+        self.capabilities.contains(&cap)
+    }
+
+    /// EndpointからNodeへの変換（NodeRegistry廃止移行用）
+    ///
+    /// LoadManagerのロードバランシングロジックを再利用するための一時的な変換。
+    /// EndpointRegistry完全移行後に削除予定。
+    #[deprecated(
+        note = "This is a temporary bridge for NodeRegistry migration. Will be removed after full EndpointRegistry migration."
+    )]
+    #[allow(deprecated)] // Uses deprecated Node type for migration bridge
+    pub fn to_legacy_node(&self, models: Vec<String>) -> llm_router_common::types::Node {
+        use llm_router_common::types::{Node, NodeStatus};
+        use std::collections::HashSet;
+        use std::net::IpAddr;
+
+        // base_urlからホストとポートを抽出
+        let url = reqwest::Url::parse(&self.base_url).ok();
+        let host = url
+            .as_ref()
+            .and_then(|u| u.host_str())
+            .unwrap_or("127.0.0.1");
+        let port = url.as_ref().and_then(|u| u.port()).unwrap_or(8080);
+
+        // IPアドレスをパース（失敗時はローカルホスト）
+        let ip_address: IpAddr = host.parse().unwrap_or_else(|_| {
+            // ホスト名の場合はDNS解決が必要だが、ここでは127.0.0.1にフォールバック
+            "127.0.0.1".parse().unwrap()
+        });
+
+        // EndpointStatusからNodeStatusへ変換
+        let status = match self.status {
+            EndpointStatus::Online => NodeStatus::Online,
+            EndpointStatus::Pending => NodeStatus::Pending,
+            _ => NodeStatus::Offline,
+        };
+
+        Node {
+            id: self.id,
+            machine_name: self.name.clone(),
+            ip_address,
+            runtime_version: String::new(), // Endpointには相当フィールドなし
+            runtime_port: port.saturating_sub(1), // OpenAI APIポート-1 = runtimeポート（慣例）
+            status,
+            registered_at: self.registered_at,
+            last_seen: self.last_seen.unwrap_or(self.registered_at),
+            online_since: if self.status == EndpointStatus::Online {
+                Some(self.last_seen.unwrap_or(self.registered_at))
+            } else {
+                None
+            },
+            custom_name: Some(self.name.clone()),
+            tags: vec![],
+            notes: self.notes.clone(),
+            loaded_models: models.clone(),
+            loaded_embedding_models: vec![],
+            loaded_asr_models: vec![],
+            loaded_tts_models: vec![],
+            executable_models: models,
+            excluded_models: HashSet::new(),
+            supported_runtimes: vec![],
+            gpu_devices: vec![],
+            gpu_available: false,
+            gpu_count: None,
+            gpu_model: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
+            node_api_port: Some(port),
+            initializing: false,
+            ready_models: None,
+            sync_state: None,
+            sync_progress: None,
+            sync_updated_at: None,
         }
     }
 }
@@ -244,6 +385,25 @@ mod tests {
         assert_eq!(endpoint.inference_timeout_secs, 120);
         assert_eq!(endpoint.error_count, 0);
         assert!(!endpoint.supports_responses_api);
+        // デフォルトでChatCompletion機能を持つ
+        assert!(endpoint.has_capability(EndpointCapability::ChatCompletion));
+        assert!(!endpoint.has_capability(EndpointCapability::ImageGeneration));
+    }
+
+    #[test]
+    fn test_endpoint_capability_serialization() {
+        assert_eq!(
+            serde_json::to_string(&EndpointCapability::ChatCompletion).unwrap(),
+            "\"chat_completion\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointCapability::ImageGeneration).unwrap(),
+            "\"image_generation\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointCapability::AudioTranscription).unwrap(),
+            "\"audio_transcription\""
+        );
     }
 
     #[test]

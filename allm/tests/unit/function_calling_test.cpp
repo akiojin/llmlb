@@ -4,7 +4,7 @@
 #include "core/inference_engine.h"
 #include "core/engine_types.h"
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 // T168: Tool prompt formatting tests
@@ -121,4 +121,4 @@ TEST(FunctionCallingTest, InferenceParamsHasTools) {
 }
 
 }  // namespace
-}  // namespace llm_node
+}  // namespace allm

@@ -2,7 +2,7 @@
 
 #include "core/engine.h"
 
-namespace llm_node {
+namespace allm {
 
 class LlamaManager;
 
@@ -33,9 +33,9 @@ struct EngineHostContext {
     void* log_callback_ctx{nullptr};
 };
 
-}  // namespace llm_node
+}  // namespace allm
 
 extern "C" {
-    using llm_node_create_engine_fn = llm_node::Engine* (*)(const llm_node::EngineHostContext*);
-    using llm_node_destroy_engine_fn = void (*)(llm_node::Engine*);
+    using llm_node_create_engine_fn = allm::Engine* (*)(const allm::EngineHostContext*);
+    using llm_node_destroy_engine_fn = void (*)(allm::Engine*);
 }

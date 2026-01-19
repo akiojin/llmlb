@@ -7,10 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{
-        approve_node_from_register_response, register_node, register_node_with_runtimes,
-        spawn_test_router,
-    },
+    router::{register_audio_speech_endpoint, spawn_test_router},
 };
 use axum::{
     body::Body,
@@ -37,6 +34,7 @@ enum TtsStubResponse {
     /// 成功レスポンス（音声バイナリ）
     Success(Vec<u8>),
     /// エラーレスポンス
+    #[allow(dead_code)]
     Error(StatusCode, String),
 }
 
@@ -108,15 +106,10 @@ async fn speech_end_to_end_success() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
-            .await
-            .expect("register agent must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(coordinator.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+    // EndpointRegistry経由でTTSエンドポイントを登録
+    let _endpoint_id = register_audio_speech_endpoint(coordinator.addr(), tts_stub.addr())
+        .await
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let response = client
@@ -165,15 +158,10 @@ async fn speech_with_optional_params() {
 
     let coordinator = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(coordinator.addr(), tts_stub.addr(), vec!["onnx_runtime"])
-            .await
-            .expect("register agent must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(coordinator.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+    // EndpointRegistry経由でTTSエンドポイントを登録
+    let _endpoint_id = register_audio_speech_endpoint(coordinator.addr(), tts_stub.addr())
+        .await
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let response = client
@@ -200,26 +188,8 @@ async fn speech_with_optional_params() {
 #[tokio::test]
 #[serial]
 async fn speech_empty_input_returns_400() {
-    let tts_stub = spawn_tts_stub(TtsStubState {
-        expected_model: None,
-        response: TtsStubResponse::Error(
-            StatusCode::BAD_REQUEST,
-            r#"{"error":{"message":"Input text is required","type":"invalid_request_error"}}"#
-                .to_string(),
-        ),
-    })
-    .await;
-
+    // ノードを登録しなくても400を返すことを検証（入力検証はルーター側で行う）
     let coordinator = spawn_test_router().await;
-
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(coordinator.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
 
     let client = Client::new();
     let response = client
@@ -294,26 +264,8 @@ async fn speech_no_available_node_returns_503() {
 #[tokio::test]
 #[serial]
 async fn speech_input_too_long_returns_400() {
-    let tts_stub = spawn_tts_stub(TtsStubState {
-        expected_model: None,
-        response: TtsStubResponse::Error(
-            StatusCode::BAD_REQUEST,
-            r#"{"error":{"message":"Input text exceeds maximum length of 4096 characters","type":"invalid_request_error"}}"#
-                .to_string(),
-        ),
-    })
-    .await;
-
+    // ノードを登録しなくても400を返すことを検証（入力検証はルーター側で行う）
     let coordinator = spawn_test_router().await;
-
-    let register_response = register_node(coordinator.addr(), tts_stub.addr())
-        .await
-        .expect("register agent must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(coordinator.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
 
     // 4097文字のテキスト
     let long_input = "あ".repeat(4097);

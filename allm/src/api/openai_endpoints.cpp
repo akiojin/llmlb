@@ -15,7 +15,7 @@
 #include "runtime/state.h"
 #include "utils/utf8.h"
 
-namespace llm_node {
+namespace allm {
 
 using json = nlohmann::json;
 
@@ -883,8 +883,8 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
     auto load_result = engine_.loadModel(model, capability);
     if (!load_result.success) {
         const std::string prefix = "Model does not support capability:";
-        if (load_result.error_code == llm_node::EngineErrorCode::kOomVram ||
-            load_result.error_code == llm_node::EngineErrorCode::kOomRam) {
+        if (load_result.error_code == allm::EngineErrorCode::kOomVram ||
+            load_result.error_code == allm::EngineErrorCode::kOomRam) {
             respondError(res, 503, "resource_exhausted", load_result.error_message);
             return false;
         }
@@ -899,4 +899,4 @@ bool OpenAIEndpoints::validateModel(const std::string& model,
     return true;
 }
 
-}  // namespace llm_node
+}  // namespace allm

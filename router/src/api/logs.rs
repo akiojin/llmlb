@@ -11,7 +11,6 @@ use axum::{
 use llm_router_common::{
     error::{RouterError, RouterResult},
     log::{tail_json_logs, LogEntry},
-    types::NodeStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
@@ -64,22 +63,37 @@ pub async fn get_router_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRe
 }
 
 /// GET /v0/nodes/:node_id/logs
+///
+/// # 廃止予定
+///
+/// このAPIは廃止予定です。ノードベースのログ取得はエンドポイントベースに移行されます。
+/// エンドポイントが `/v0/logs` を提供している場合、ルーターはそこにリクエストを転送します。
+#[deprecated(note = "Use endpoint-based log fetching instead. Node-based routing is deprecated.")]
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_node_logs(
-    Path(node_id): Path<Uuid>,
+    Path(endpoint_id): Path<Uuid>,
     Query(query): Query<LogQuery>,
     State(state): State<AppState>,
 ) -> Result<Json<LogResponse>, AppError> {
-    let node = state.registry.get(node_id).await?;
-    // Pending/Registering 状態でもログ取得は許可（Offline のみ拒否）
-    if node.status == NodeStatus::Offline {
-        return Err(RouterError::NodeOffline(node_id).into());
+    use crate::types::endpoint::EndpointStatus;
+
+    let endpoint = state
+        .endpoint_registry
+        .get(endpoint_id)
+        .await
+        .ok_or(RouterError::NodeNotFound(endpoint_id))?;
+
+    // Pending/Error 状態でもログ取得は許可（Offline のみ拒否）
+    if endpoint.status == EndpointStatus::Offline {
+        return Err(RouterError::NodeOffline(endpoint_id).into());
     }
 
     let limit = clamp_limit(query.limit);
-    let node_api_port = node.runtime_port.saturating_add(1); // APIポートはLLM runtimeポート+1
+    // エンドポイントのbase_urlからログ取得
     let url = format!(
-        "http://{}:{}/v0/logs?tail={}",
-        node.ip_address, node_api_port, limit
+        "{}/v0/logs?tail={}",
+        endpoint.base_url.trim_end_matches('/'),
+        limit
     );
 
     let client = reqwest::Client::builder()
@@ -102,7 +116,7 @@ pub async fn get_node_logs(
         .into();
 
     Ok(Json(LogResponse {
-        source: format!("node:{}", node.machine_name),
+        source: format!("endpoint:{}", endpoint.name),
         entries: node_logs.entries,
         path: node_logs.path,
     }))
@@ -142,25 +156,14 @@ impl From<NodeLogPayload> for LogResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK, registry::NodeRegistry};
+    use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK};
     use axum::extract::State as AxumState;
-    use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
-    use std::{net::IpAddr, sync::Arc};
+    use std::sync::Arc;
     use tempfile::tempdir;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn sample_gpu_devices() -> Vec<GpuDeviceInfo> {
-        vec![GpuDeviceInfo {
-            model: "Test GPU".to_string(),
-            count: 1,
-            memory: Some(8_000_000_000),
-        }]
-    }
-
     async fn router_state() -> AppState {
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -171,9 +174,13 @@ mod tests {
         let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
             db_pool.clone(),
         ));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
+        let load_manager = LoadManager::new(endpoint_registry_arc);
         let jwt_secret = "test-secret".to_string();
         AppState {
-            registry,
             load_manager,
             request_history,
             db_pool,
@@ -181,7 +188,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 
@@ -226,11 +233,12 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)] // get_node_logs is deprecated
     async fn node_logs_endpoint_fetches_remote_entries() {
+        use crate::types::endpoint::{Endpoint, EndpointStatus};
+
         let _guard = TEST_LOCK.lock().await;
         let mock = MockServer::start().await;
-        let node_port = mock.address().port();
-        let node_ip: IpAddr = mock.address().ip();
 
         Mock::given(method("GET"))
             .and(path("/v0/logs"))
@@ -242,22 +250,21 @@ mod tests {
             .await;
 
         let state = router_state().await;
-        let register_req = RegisterRequest {
-            machine_name: "node-1".to_string(),
-            ip_address: node_ip,
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: node_port.saturating_sub(1),
-            gpu_available: true,
-            gpu_devices: sample_gpu_devices(),
-            gpu_count: Some(1),
-            gpu_model: Some("Test GPU".to_string()),
-            supported_runtimes: Vec::new(),
-        };
-        let register_res = state.registry.register(register_req).await.unwrap();
-        let node_id = register_res.node_id;
+
+        // EndpointRegistryにエンドポイントを追加
+        let mut endpoint = Endpoint::new("endpoint-1".to_string(), mock.uri());
+        endpoint.status = EndpointStatus::Online;
+        endpoint.gpu_device_count = Some(1);
+        endpoint.gpu_total_memory_bytes = Some(8_000_000_000);
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("Failed to add endpoint");
 
         let response = get_node_logs(
-            Path(node_id),
+            Path(endpoint_id),
             Query(LogQuery { limit: 50 }),
             AxumState(state),
         )
@@ -267,6 +274,6 @@ mod tests {
 
         assert_eq!(response.entries.len(), 1);
         assert_eq!(response.entries[0].message.as_deref(), Some("remote"));
-        assert_eq!(response.source, "node:node-1");
+        assert_eq!(response.source, "endpoint:endpoint-1");
     }
 }

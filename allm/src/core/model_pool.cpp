@@ -1,6 +1,6 @@
 #include "core/model_pool.h"
 
-namespace llm_node {
+namespace allm {
 
 ModelPool::ModelPool(std::shared_ptr<LlamaManager> manager) : manager_(std::move(manager)) {}
 
@@ -138,4 +138,4 @@ void ModelPool::gc() {
     thread_cache_.clear();
 }
 
-}  // namespace llm_node
+}  // namespace allm

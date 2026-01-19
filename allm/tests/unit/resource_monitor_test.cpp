@@ -3,7 +3,7 @@
 
 #include "system/resource_monitor.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(ResourceMonitorTest, DoesNotEvictBelowThreshold) {
     ResourceUsage usage{50, 100, 10, 100};

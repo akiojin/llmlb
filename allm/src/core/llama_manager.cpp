@@ -8,7 +8,7 @@
 
 namespace fs = std::filesystem;
 
-namespace llm_node {
+namespace allm {
 
 // LlamaContext デストラクタ: リソース解放
 LlamaContext::~LlamaContext() {
@@ -567,4 +567,4 @@ size_t LlamaManager::evictForVram(size_t required_vram) {
     return freed;
 }
 
-}  // namespace llm_node
+}  // namespace allm

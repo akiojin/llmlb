@@ -1,16 +1,19 @@
 //! Contract Test: GET /v0/endpoints
 //!
 //! SPEC-66555000: エンドポイント一覧取得API契約テスト
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llm_router_common::auth::{ApiKeyScope, UserRole};
 use serde_json::{json, Value};
 use serial_test::serial;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 struct TestApp {
@@ -27,8 +30,6 @@ async fn build_app() -> TestApp {
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");
@@ -36,12 +37,15 @@ async fn build_app() -> TestApp {
         .run(&db_pool)
         .await
         .expect("Failed to run migrations");
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
@@ -49,7 +53,7 @@ async fn build_app() -> TestApp {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: None,
+        endpoint_registry,
     };
 
     let password_hash = llm_router::auth::password::hash_password("password123").unwrap();

@@ -1,6 +1,6 @@
 #include "utils/utf8.h"
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 constexpr char kReplacement[] = "\xEF\xBF\xBD";
@@ -94,5 +94,5 @@ std::string sanitize_utf8_lossy(std::string_view input) {
     return out;
 }
 
-}  // namespace llm_node
+}  // namespace allm
 

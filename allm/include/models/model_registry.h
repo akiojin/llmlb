@@ -7,7 +7,7 @@
 
 #include "system/gpu_detector.h"
 
-namespace llm_node {
+namespace allm {
 
 class ModelRegistry {
 public:
@@ -31,4 +31,4 @@ private:
     GpuBackend backend_{GpuBackend::Cpu};
 };
 
-}  // namespace llm_node
+}  // namespace allm

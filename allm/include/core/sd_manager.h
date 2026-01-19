@@ -11,7 +11,7 @@
 // stable-diffusion.cpp forward declarations
 struct sd_ctx_t;
 
-namespace llm_node {
+namespace allm {
 
 /// Image generation result
 struct ImageGenerationResult {
@@ -154,4 +154,4 @@ private:
                           int& out_height) const;
 };
 
-}  // namespace llm_node
+}  // namespace allm

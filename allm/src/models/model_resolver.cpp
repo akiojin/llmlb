@@ -16,7 +16,7 @@
 
 namespace fs = std::filesystem;
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 bool isMetalArtifactName(const std::string& name) {
@@ -218,4 +218,4 @@ int ModelResolver::getMaxConcurrentDownloads() const {
     return max_concurrent_downloads_;
 }
 
-}  // namespace llm_node
+}  // namespace allm

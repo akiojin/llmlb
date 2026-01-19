@@ -2,6 +2,8 @@
 //!
 //! TDD RED: These tests define error handling behavior for vision API.
 //! All tests should FAIL until the vision feature is implemented.
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},
@@ -15,9 +17,10 @@ mod common {
     use axum::Router;
     use llm_router::db::models::ModelStorage;
     use llm_router::registry::models::ModelInfo;
-    use llm_router::{api, balancer::LoadManager, registry::NodeRegistry, AppState};
+    use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
     use llm_router_common::auth::{ApiKeyScope, UserRole};
     use sqlx::SqlitePool;
+    use std::sync::Arc;
 
     pub struct TestApp {
         pub app: Router,
@@ -37,8 +40,6 @@ mod common {
         std::env::set_var("HOME", &temp_dir);
         std::env::set_var("USERPROFILE", &temp_dir);
 
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -46,6 +47,10 @@ mod common {
             .run(&db_pool)
             .await
             .expect("Failed to run migrations");
+        let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
         llm_router::api::models::clear_registered_models(&db_pool)
             .await
             .expect("clear registered models");
@@ -54,7 +59,6 @@ mod common {
         );
         let jwt_secret = "test-secret".to_string();
         let state = AppState {
-            registry,
             load_manager,
             request_history,
             db_pool: db_pool.clone(),
@@ -62,7 +66,7 @@ mod common {
             http_client: reqwest::Client::new(),
             queue_config: llm_router::config::QueueConfig::from_env(),
             event_bus: llm_router::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         };
 
         let password_hash = llm_router::auth::password::hash_password("password123").unwrap();

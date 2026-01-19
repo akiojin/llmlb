@@ -5,7 +5,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 
-namespace llm_node {
+namespace allm {
 
 class WhisperManager;
 class OnnxTtsManager;
@@ -45,4 +45,4 @@ private:
                            std::vector<float>& out_samples);
 };
 
-}  // namespace llm_node
+}  // namespace allm

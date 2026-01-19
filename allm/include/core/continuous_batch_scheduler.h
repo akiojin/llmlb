@@ -6,7 +6,7 @@
 #include <functional>
 #include <vector>
 
-namespace llm_node {
+namespace allm {
 
 class ContinuousBatchScheduler {
 public:
@@ -36,4 +36,4 @@ private:
     std::vector<Request> decode_batch_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

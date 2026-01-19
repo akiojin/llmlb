@@ -217,8 +217,8 @@ std::optional<std::string> hfTokenForHost(const std::string& host) {
     const char* token = std::getenv("HF_TOKEN");
     if (!token || !*token) return std::nullopt;
 
-    const auto lower = llm_node::toLowerAscii(host);
-    if (lower == "huggingface.co" || llm_node::endsWith(lower, ".huggingface.co")) {
+    const auto lower = allm::toLowerAscii(host);
+    if (lower == "huggingface.co" || allm::endsWith(lower, ".huggingface.co")) {
         return std::string(token);
     }
 
@@ -226,7 +226,7 @@ std::optional<std::string> hfTokenForHost(const std::string& host) {
     if (base && *base) {
         HttpUrl parsed = parseUrl(base);
         if (!parsed.host.empty()) {
-            const auto base_lower = llm_node::toLowerAscii(parsed.host);
+            const auto base_lower = allm::toLowerAscii(parsed.host);
             if (lower == base_lower) {
                 return std::string(token);
             }
@@ -271,7 +271,7 @@ std::unique_ptr<httplib::Client> makeClient(const HttpUrl& url, std::chrono::mil
 
 namespace fs = std::filesystem;
 
-namespace llm_node {
+namespace allm {
 
 ModelDownloader::ModelDownloader(std::string registry_base, std::string models_dir,
                                  std::chrono::milliseconds timeout, int max_retries,
@@ -309,7 +309,7 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
 
     spdlog::info("ModelDownloader: fetching manifest url='{}{}'", registry_base_, path);
 
-    const auto local_dir = llm_node::ModelStorage::modelNameToDir(model_id);
+    const auto local_dir = allm::ModelStorage::modelNameToDir(model_id);
     std::string out_path = models_dir_ + "/" + local_dir + "/manifest.json";
     fs::create_directories(models_dir_ + "/" + local_dir);
     FileLock lock(out_path + ".lock");
@@ -580,4 +580,4 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
     return "";
 }
 
-}  // namespace llm_node
+}  // namespace allm

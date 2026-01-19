@@ -5,7 +5,7 @@
 
 #include "models/model_downloader.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(ModelDownloaderHttpTest, DownloadsAbsoluteHttpUrl) {
     // Start simple HTTP server

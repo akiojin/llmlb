@@ -9,7 +9,7 @@
 #include "runtime/state.h"
 #include "utils/config.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(NodeEndpointsTest, PullAndHealth) {
     ModelRegistry registry;
@@ -52,7 +52,7 @@ TEST(NodeEndpointsTest, LogLevelGetAndSet) {
 }
 
 TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
-    llm_node::set_ready(false);
+    allm::set_ready(false);
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
@@ -66,7 +66,7 @@ TEST(NodeEndpointsTest, StartupProbeReflectsReadyFlag) {
     ASSERT_TRUE(not_ready);
     EXPECT_EQ(not_ready->status, 503);
 
-    llm_node::set_ready(true);
+    allm::set_ready(true);
     auto ready = cli.Get("/startup");
     ASSERT_TRUE(ready);
     EXPECT_EQ(ready->status, 200);
@@ -137,5 +137,60 @@ TEST(HttpServerTest, TraceparentPropagatesTraceId) {
     EXPECT_FALSE(tp.empty());
     EXPECT_NE(tp.find("11111111111111111111111111111111"), std::string::npos);
     EXPECT_EQ(tp.size(), 55);
+    server.stop();
+}
+
+// Phase 1.2: GET /v0/health endpoint test
+TEST(NodeEndpointsTest, V0HealthReturnsGpuAndLoadInfo) {
+    allm::set_ready(true);
+    ModelRegistry registry;
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+
+    // Set GPU devices for testing
+    std::vector<GpuDevice> test_gpus = {{
+        0, "Test GPU", 1024 * 1024 * 1024, 512 * 1024 * 1024, "1.0", "test", true
+    }};
+    node.setGpuDevices(test_gpus);
+    node.setGpuInfo(1, 1024 * 1024 * 1024, 1.0);
+
+    HttpServer server(18094, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18094);
+    auto resp = cli.Get("/v0/health");
+    ASSERT_TRUE(resp);
+    EXPECT_EQ(resp->status, 200);
+    EXPECT_EQ(resp->get_header_value("Content-Type"), "application/json");
+
+    // Verify JSON structure
+    EXPECT_NE(resp->body.find("\"status\""), std::string::npos);
+    EXPECT_NE(resp->body.find("\"gpu\""), std::string::npos);
+    EXPECT_NE(resp->body.find("\"load\""), std::string::npos);
+    EXPECT_NE(resp->body.find("\"memory\""), std::string::npos);
+    EXPECT_NE(resp->body.find("\"online\""), std::string::npos);  // Status should be online
+
+    server.stop();
+}
+
+TEST(NodeEndpointsTest, V0HealthReturnsOfflineWhenNotReady) {
+    allm::set_ready(false);
+    ModelRegistry registry;
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+    HttpServer server(18095, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18095);
+    auto resp = cli.Get("/v0/health");
+    ASSERT_TRUE(resp);
+    EXPECT_EQ(resp->status, 200);
+    EXPECT_NE(resp->body.find("\"offline\""), std::string::npos);
+
+    allm::set_ready(true);  // Reset for other tests
     server.stop();
 }

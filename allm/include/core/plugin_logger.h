@@ -13,7 +13,7 @@
 #include <string>
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 /**
  * @brief ログレベル
@@ -145,4 +145,4 @@ private:
     static std::string levelToString(LogLevel level);
 };
 
-}  // namespace llm_node
+}  // namespace allm

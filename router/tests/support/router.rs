@@ -1,15 +1,52 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use llm_router::{
-    api, balancer::LoadManager, registry::endpoints::EndpointRegistry, registry::NodeRegistry,
-    AppState,
-};
+use axum::Router;
+use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llm_router_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
 use super::http::{spawn_router, TestServer};
+
+/// テスト用のRouterを作成する（.oneshot()スタイルのテスト用）
+#[allow(dead_code)]
+pub async fn create_test_router() -> (Router, SqlitePool) {
+    // テスト用に一時ディレクトリを設定
+    let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLM_CONVERT_FAKE", "1");
+
+    let db_pool = create_test_db_pool().await;
+    let request_history = std::sync::Arc::new(
+        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+    );
+    let jwt_secret = test_jwt_secret();
+
+    // EndpointRegistryを初期化
+    let endpoint_registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("Failed to create endpoint registry");
+
+    // LoadManagerはEndpointRegistryを使用
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+
+    let state = AppState {
+        load_manager,
+        request_history,
+        db_pool: db_pool.clone(),
+        jwt_secret,
+        http_client: reqwest::Client::new(),
+        queue_config: llm_router::config::QueueConfig::from_env(),
+        event_bus: llm_router::events::create_shared_event_bus(),
+        endpoint_registry,
+    };
+
+    let router = api::create_router(state);
+    (router, db_pool)
+}
 
 /// テスト用のSQLiteデータベースプールを作成する
 pub async fn create_test_db_pool() -> SqlitePool {
@@ -32,6 +69,7 @@ pub fn test_jwt_secret() -> String {
 }
 
 /// ルーターサーバーをテスト用に起動する
+#[allow(dead_code)]
 pub async fn spawn_test_router() -> TestServer {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
@@ -39,8 +77,6 @@ pub async fn spawn_test_router() -> TestServer {
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
     std::env::set_var("LLM_CONVERT_FAKE", "1");
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
@@ -52,8 +88,10 @@ pub async fn spawn_test_router() -> TestServer {
         .await
         .expect("Failed to create endpoint registry");
 
+    // LoadManagerはEndpointRegistryを使用
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool,
@@ -61,7 +99,7 @@ pub async fn spawn_test_router() -> TestServer {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: Some(endpoint_registry),
+        endpoint_registry,
     };
 
     let router = api::create_router(state);
@@ -114,6 +152,94 @@ pub async fn register_node_with_runtimes(
         .json(&payload)
         .send()
         .await
+}
+
+/// 音声認識（ASR）対応エンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_audio_transcription_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+) -> reqwest::Result<String> {
+    register_endpoint_with_capabilities(
+        router_addr,
+        stub_addr,
+        "Audio Transcription Endpoint",
+        &["audio_transcription"],
+    )
+    .await
+}
+
+/// 音声合成（TTS）対応エンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_audio_speech_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+) -> reqwest::Result<String> {
+    register_endpoint_with_capabilities(
+        router_addr,
+        stub_addr,
+        "Audio Speech Endpoint",
+        &["audio_speech"],
+    )
+    .await
+}
+
+/// 画像生成対応エンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_image_generation_endpoint(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+) -> reqwest::Result<String> {
+    register_endpoint_with_capabilities(
+        router_addr,
+        stub_addr,
+        "Image Generation Endpoint",
+        &["image_generation"],
+    )
+    .await
+}
+
+/// 指定したcapabilitiesでエンドポイントを登録する
+/// （SPEC-66555000: EndpointRegistry経由）
+#[allow(dead_code)]
+pub async fn register_endpoint_with_capabilities(
+    router_addr: SocketAddr,
+    stub_addr: SocketAddr,
+    name: &str,
+    capabilities: &[&str],
+) -> reqwest::Result<String> {
+    let client = Client::new();
+
+    // 1. エンドポイントを作成
+    let create_response = client
+        .post(format!("http://{}/v0/endpoints", router_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": format!("{} - {}", name, stub_addr),
+            "base_url": format!("http://{}", stub_addr),
+            "health_check_interval_secs": 30,
+            "capabilities": capabilities
+        }))
+        .send()
+        .await?;
+
+    let create_body: Value = create_response.json().await.unwrap_or_default();
+    let endpoint_id = create_body["id"].as_str().unwrap_or_default().to_string();
+
+    // 2. エンドポイントをOnline状態にする
+    let _ = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            router_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    Ok(endpoint_id)
 }
 
 /// Responses API対応エンドポイントを登録し、指定のモデルで利用可能にする
@@ -286,8 +412,6 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
 
-    let registry = NodeRegistry::new();
-    let load_manager = LoadManager::new(registry.clone());
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
         llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
@@ -299,8 +423,10 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         .await
         .expect("Failed to create endpoint registry");
 
+    // LoadManagerはEndpointRegistryを使用
+    let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+
     let state = AppState {
-        registry,
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
@@ -308,7 +434,7 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         http_client: reqwest::Client::new(),
         queue_config: llm_router::config::QueueConfig::from_env(),
         event_bus: llm_router::events::create_shared_event_bus(),
-        endpoint_registry: Some(endpoint_registry),
+        endpoint_registry,
     };
 
     let router = api::create_router(state);

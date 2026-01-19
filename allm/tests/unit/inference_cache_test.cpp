@@ -3,7 +3,7 @@
 
 #include "core/inference_cache.h"
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 // T133: In-memory LRU cache implementation
@@ -152,4 +152,4 @@ TEST(InferenceCacheTest, UpdatesExistingEntry) {
 }
 
 }  // namespace
-}  // namespace llm_node
+}  // namespace allm

@@ -14,7 +14,7 @@
 #include <thread>
 #include <chrono>
 
-using namespace llm_node;
+using namespace allm;
 
 class PluginLoggerTest : public ::testing::Test {
 protected:

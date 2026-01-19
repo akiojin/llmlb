@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace llm_node {
+namespace allm {
 
 /// LRU cache for inference results.
 /// Only caches results when temperature=0 (deterministic outputs).
@@ -78,4 +78,4 @@ private:
     std::unordered_map<std::string, std::list<CacheEntry>::iterator> lookup_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

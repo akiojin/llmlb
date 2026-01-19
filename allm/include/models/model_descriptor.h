@@ -5,7 +5,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
-namespace llm_node {
+namespace allm {
 
 struct ModelDescriptor {
     std::string name;
@@ -18,4 +18,4 @@ struct ModelDescriptor {
     std::vector<std::string> capabilities;
 };
 
-}  // namespace llm_node
+}  // namespace allm

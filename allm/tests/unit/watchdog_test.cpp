@@ -9,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 struct EnvGuard {
@@ -46,8 +46,8 @@ struct EnvGuard {
 };
 
 TEST(RequestWatchdogTest, TimeoutTriggersInTestMode) {
-    EnvGuard test_mode("LLM_NODE_WATCHDOG_TEST_MODE", "1");
-    EnvGuard timeout_ms("LLM_NODE_WATCHDOG_TIMEOUT_MS", "10");
+    EnvGuard test_mode("ALLM_WATCHDOG_TEST_MODE", "1");
+    EnvGuard timeout_ms("ALLM_WATCHDOG_TIMEOUT_MS", "10");
 
     RequestWatchdog::resetTestState();
     {
@@ -68,7 +68,7 @@ protected:
 
 TEST_F(TokenWatchdogTest, TimeoutTriggersWhenNoKick) {
     // kickなしで待機すると、タイムアウトがトリガーされる
-    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+    EnvGuard test_mode("ALLM_TOKEN_WATCHDOG_TEST_MODE", "1");
 
     bool timeout_called = false;
     {
@@ -84,7 +84,7 @@ TEST_F(TokenWatchdogTest, TimeoutTriggersWhenNoKick) {
 
 TEST_F(TokenWatchdogTest, KickResetsTimeout) {
     // kickするとタイムアウトがリセットされる
-    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+    EnvGuard test_mode("ALLM_TOKEN_WATCHDOG_TEST_MODE", "1");
 
     bool timeout_called = false;
     {
@@ -104,7 +104,7 @@ TEST_F(TokenWatchdogTest, KickResetsTimeout) {
 
 TEST_F(TokenWatchdogTest, TimeoutTriggersAfterKickStops) {
     // kickが止まるとタイムアウトがトリガーされる
-    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+    EnvGuard test_mode("ALLM_TOKEN_WATCHDOG_TEST_MODE", "1");
 
     bool timeout_called = false;
     {
@@ -131,13 +131,13 @@ TEST_F(TokenWatchdogTest, DefaultTimeoutIs5Seconds) {
 
 TEST_F(TokenWatchdogTest, TimeoutCanBeConfiguredViaEnv) {
     // 環境変数でタイムアウトを設定可能
-    EnvGuard timeout_ms("LLM_NODE_TOKEN_WATCHDOG_TIMEOUT_MS", "100");
+    EnvGuard timeout_ms("ALLM_TOKEN_WATCHDOG_TIMEOUT_MS", "100");
     EXPECT_EQ(TokenWatchdog::defaultTimeout(), std::chrono::milliseconds(100));
 }
 
 TEST_F(TokenWatchdogTest, StopPreventsTimeout) {
     // stop()を呼ぶとタイムアウトが発生しない
-    EnvGuard test_mode("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE", "1");
+    EnvGuard test_mode("ALLM_TOKEN_WATCHDOG_TEST_MODE", "1");
 
     bool timeout_called = false;
     {
@@ -154,4 +154,4 @@ TEST_F(TokenWatchdogTest, StopPreventsTimeout) {
 }
 
 }  // namespace
-}  // namespace llm_node
+}  // namespace allm

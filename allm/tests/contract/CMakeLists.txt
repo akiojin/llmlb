@@ -1,6 +1,5 @@
 set(CONTRACT_TEST_SOURCES
     openai_api_test.cpp
-    router_api_test.cpp
     cli_serve_test.cpp
     cli_run_test.cpp
     cli_pull_test.cpp
@@ -25,7 +24,6 @@ set(CONTRACT_TEST_SOURCES
     ../../src/core/request_watchdog.cpp
     ../../src/core/vision_processor.cpp
     ../../src/core/llama_manager.cpp
-    ../../src/api/router_client.cpp
     ../../src/runtime/state.cpp
 )
 
@@ -61,7 +59,7 @@ target_include_directories(llm-node-contract-tests
 )
 
 # Enable testing mode for model registry (skip supported model filtering)
-target_compile_definitions(llm-node-contract-tests PRIVATE LLM_NODE_TESTING=1)
+target_compile_definitions(llm-node-contract-tests PRIVATE LLM_NODE_TESTING=1 ALLM_TESTING=1)
 
 # Link Metal frameworks on macOS
 if(APPLE)

@@ -3,7 +3,7 @@
 
 #include <string>
 
-namespace llm_node {
+namespace allm {
 
 // Generate a random 16-hex-character request id.
 std::string generate_request_id();
@@ -12,4 +12,4 @@ std::string generate_request_id();
 std::string generate_trace_id();
 std::string generate_span_id();
 
-}  // namespace llm_node
+}  // namespace allm

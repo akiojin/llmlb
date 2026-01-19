@@ -4,7 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 // FNV-1a hash for prefix
 static uint64_t fnv1a_hash(const std::string& data) {
@@ -127,4 +127,4 @@ void PrefixCache::evictIfNeeded() {
     }
 }
 
-}  // namespace llm_node
+}  // namespace allm

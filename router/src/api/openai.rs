@@ -1,4 +1,6 @@
 //! OpenAI互換APIエンドポイント (/v1/*)
+//!
+//! このモジュールはEndpointRegistry/Endpoint型を使用しています。
 
 use axum::body::Body;
 use axum::{
@@ -182,6 +184,7 @@ fn model_unavailable_response(message: impl Into<String>, code: &str) -> Respons
 }
 
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn chat_completions(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
@@ -278,17 +281,6 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     use crate::types::endpoint::SupportedAPI;
     use std::collections::HashSet;
 
-    // オンラインノードの実行可能モデルを取得
-    let mut available_models: Vec<String> = state
-        .registry
-        .list_executable_models_online()
-        .await
-        .into_iter()
-        .collect();
-    available_models.sort();
-    let available_set: std::collections::HashSet<String> =
-        available_models.iter().cloned().collect();
-
     // Load registered models from the database.
     let mut registered_map: std::collections::HashMap<String, crate::registry::models::ModelInfo> =
         HashMap::new();
@@ -298,7 +290,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
-    if let Some(ref registry) = state.endpoint_registry {
+    {
+        let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
@@ -317,6 +310,12 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             }
         }
     }
+
+    // オンラインエンドポイントの実行可能モデル一覧を構築
+    let mut available_models: Vec<String> = endpoint_model_apis.keys().cloned().collect();
+    available_models.sort();
+    let available_set: std::collections::HashSet<String> =
+        available_models.iter().cloned().collect();
 
     // 追跡用：モデルID一覧
     let mut seen_models: HashSet<String> = HashSet::new();
@@ -460,6 +459,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 ///
 /// SPEC-24157000: Endpoints APIで登録されたモデルも検索対象に含める
+#[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
@@ -467,7 +467,6 @@ pub async fn get_model(
     use crate::types::endpoint::SupportedAPI;
     use std::collections::HashSet;
 
-    let available_models = state.registry.list_executable_models_online().await;
     let mut registered_map: HashMap<String, crate::registry::models::ModelInfo> = HashMap::new();
     for model in list_registered_models(&state.db_pool).await? {
         registered_map.insert(model.name.clone(), model);
@@ -475,7 +474,8 @@ pub async fn get_model(
 
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
-    if let Some(ref registry) = state.endpoint_registry {
+    {
+        let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
@@ -497,7 +497,7 @@ pub async fn get_model(
     let model = registered_map.remove(&model_id);
     let is_endpoint_model = endpoint_model_apis.contains_key(&model_id);
 
-    if model.is_none() && !available_models.contains(&model_id) && !is_endpoint_model {
+    if model.is_none() && !is_endpoint_model {
         // 404 を OpenAI 換算で返す
         let body = json!({
             "error": {
@@ -519,7 +519,7 @@ pub async fn get_model(
     if let Some(model) = model {
         // Azure OpenAI 形式の capabilities (boolean object)
         let caps: ModelCapabilities = model.get_capabilities().into();
-        let ready = available_models.contains(&model_id) || is_endpoint_model;
+        let ready = is_endpoint_model;
         let lifecycle_status = if ready {
             LifecycleStatus::Registered
         } else {
@@ -1278,6 +1278,7 @@ async fn proxy_openai_cloud_post(
     Ok(outcome.response)
 }
 
+#[allow(deprecated)] // NodeRegistry migration in progress
 async fn proxy_openai_post(
     state: &AppState,
     payload: Value,
@@ -1414,8 +1415,13 @@ async fn proxy_openai_post(
             .unwrap());
     }
 
-    // Fall back to node-based routing
-    if !state.registry.has_model_reported(&model).await {
+    // Check if any endpoint has this model
+    if state
+        .endpoint_registry
+        .find_by_model(&model)
+        .await
+        .is_empty()
+    {
         let is_registered = load_registered_model(&state.db_pool, &model).await?;
         if is_registered.is_none() {
             let message = format!("The model '{}' does not exist", model);
@@ -1575,18 +1581,8 @@ async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
 
-            if let Err(err) = state
-                .registry
-                .exclude_model_from_node(node_id, &model)
-                .await
-            {
-                warn!(
-                    node_id = %node_id,
-                    model = %model,
-                    error = %err,
-                    "Failed to exclude model after proxy request failure"
-                );
-            }
+            // Note: Model exclusion is handled by the health check system
+            // which will mark the endpoint as offline/error if requests fail repeatedly
 
             save_request_record(
                 state.request_history.clone(),
@@ -1662,18 +1658,8 @@ async fn proxy_openai_post(
             .await
             .map_err(AppError::from)?;
 
-        if let Err(err) = state
-            .registry
-            .exclude_model_from_node(node_id, &model)
-            .await
-        {
-            warn!(
-                node_id = %node_id,
-                model = %model,
-                error = %err,
-                "Failed to exclude model after non-success response"
-            );
-        }
+        // Note: Model exclusion is handled by the health check system
+        // which will mark the endpoint as offline/error if requests fail repeatedly
 
         let status = response.status();
         let status_code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -1820,18 +1806,8 @@ async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
 
-            if let Err(err) = state
-                .registry
-                .exclude_model_from_node(node_id, &model)
-                .await
-            {
-                warn!(
-                    node_id = %node_id,
-                    model = %model,
-                    error = %err,
-                    "Failed to exclude model after response parse error"
-                );
-            }
+            // Note: Model exclusion is handled by the health check system
+            // which will mark the endpoint as offline/error if requests fail repeatedly
 
             save_request_record(
                 state.request_history.clone(),
@@ -1862,7 +1838,7 @@ async fn proxy_openai_post(
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, deprecated)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
     let node = select_available_node(state).await?;
     let node_id = node.id;
@@ -1941,7 +1917,6 @@ mod tests {
     use crate::{
         balancer::LoadManager,
         db::{request_history::RequestHistoryStorage, test_utils::TEST_LOCK},
-        registry::NodeRegistry,
         AppState,
     };
     use axum::body::to_bytes;
@@ -1957,8 +1932,6 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn create_local_state() -> AppState {
-        let registry = NodeRegistry::new();
-        let load_manager = LoadManager::new(registry.clone());
         let db_pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("sqlite memory connect");
@@ -1967,8 +1940,12 @@ mod tests {
             .await
             .expect("migrations");
         let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
+        let load_manager = LoadManager::new(endpoint_registry_arc);
         AppState {
-            registry,
             load_manager,
             request_history,
             db_pool,
@@ -1976,7 +1953,7 @@ mod tests {
             http_client: reqwest::Client::new(),
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry: None,
+            endpoint_registry,
         }
     }
 

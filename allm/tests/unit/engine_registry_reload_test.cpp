@@ -3,7 +3,7 @@
 #include "core/engine_registry.h"
 #include "models/model_descriptor.h"
 
-namespace llm_node {
+namespace allm {
 
 class DummyEngine final : public Engine {
 public:
@@ -102,4 +102,4 @@ TEST(EngineRegistryReloadTest, ReplaceRegistersWhenMissing) {
     EXPECT_EQ(resolved->tag(), "v1");
 }
 
-}  // namespace llm_node
+}  // namespace allm

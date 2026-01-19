@@ -7,7 +7,7 @@
 #include <sstream>
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 std::string normalize_architecture_name(const std::string& value) {
@@ -411,4 +411,4 @@ std::vector<std::string> EngineRegistry::getRegisteredRuntimes() const {
     return runtimes;
 }
 
-}  // namespace llm_node
+}  // namespace allm

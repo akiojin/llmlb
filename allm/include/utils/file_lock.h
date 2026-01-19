@@ -11,7 +11,7 @@
 #include <windows.h>
 #endif
 
-namespace llm_node {
+namespace allm {
 
 // Simple file lock (best-effort).
 // Unix: flock, Windows: LockFileEx, fallback: lock directory creation.
@@ -102,4 +102,4 @@ inline void FileLock::release() {
     locked_ = false;
 }
 
-}  // namespace llm_node
+}  // namespace allm

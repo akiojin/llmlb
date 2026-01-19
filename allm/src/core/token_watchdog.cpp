@@ -7,7 +7,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 std::optional<long long> parse_positive_integer(const char* value) {
@@ -32,11 +32,11 @@ std::optional<std::chrono::milliseconds> parse_timeout(const char* value, long l
 }
 
 bool is_test_mode() {
-    const char* env = std::getenv("LLM_NODE_TOKEN_WATCHDOG_TEST_MODE");
+    const char* env = std::getenv("ALLM_TOKEN_WATCHDOG_TEST_MODE");
     return env && env[0] != '\0' && env[0] != '0';
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 std::atomic<bool> g_token_timeout_triggered{false};
 #endif
 }  // namespace
@@ -76,10 +76,10 @@ void TokenWatchdog::stop() {
 }
 
 std::chrono::milliseconds TokenWatchdog::defaultTimeout() {
-    if (auto ms = parse_timeout(std::getenv("LLM_NODE_TOKEN_WATCHDOG_TIMEOUT_MS"), 1)) {
+    if (auto ms = parse_timeout(std::getenv("ALLM_TOKEN_WATCHDOG_TIMEOUT_MS"), 1)) {
         return *ms;
     }
-    if (auto secs = parse_timeout(std::getenv("LLM_NODE_TOKEN_WATCHDOG_TIMEOUT_SECS"), 1000)) {
+    if (auto secs = parse_timeout(std::getenv("ALLM_TOKEN_WATCHDOG_TIMEOUT_SECS"), 1000)) {
         return *secs;
     }
     return std::chrono::seconds(5);
@@ -104,7 +104,7 @@ void TokenWatchdog::run() {
 }
 
 void TokenWatchdog::triggerTimeout() {
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
     if (is_test_mode()) {
         g_token_timeout_triggered.store(true);
         if (on_timeout_) {
@@ -125,7 +125,7 @@ void TokenWatchdog::triggerTimeout() {
     spdlog::error("Token watchdog timeout after {}ms. No token generated.", timeout_.count());
 }
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 void TokenWatchdog::resetTestState() {
     g_token_timeout_triggered.store(false);
 }
@@ -135,4 +135,4 @@ bool TokenWatchdog::wasTimeoutTriggered() {
 }
 #endif
 
-}  // namespace llm_node
+}  // namespace allm

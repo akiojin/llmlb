@@ -6,7 +6,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 
 class CliClient;
@@ -111,4 +111,4 @@ private:
 };
 
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

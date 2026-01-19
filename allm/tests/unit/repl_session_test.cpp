@@ -5,7 +5,7 @@
 #include "cli/cli_client.h"
 #include <memory>
 
-using namespace llm_node::cli;
+using namespace allm::cli;
 
 // Test SessionSettings defaults
 TEST(SessionSettingsTest, DefaultValues) {

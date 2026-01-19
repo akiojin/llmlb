@@ -9,7 +9,7 @@
 #include "core/engine_types.h"
 #include "models/model_descriptor.h"
 
-namespace llm_node {
+namespace allm {
 
 class Engine {
 public:
@@ -44,4 +44,4 @@ public:
     virtual uint64_t getModelVramBytes(const ModelDescriptor&) const { return 0; }
 };
 
-}  // namespace llm_node
+}  // namespace allm

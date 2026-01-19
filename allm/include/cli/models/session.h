@@ -8,7 +8,7 @@
 #include <optional>
 #include <chrono>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace models {
 
@@ -117,4 +117,4 @@ struct Session {
 
 }  // namespace models
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

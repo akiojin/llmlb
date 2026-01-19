@@ -7,8 +7,8 @@ mod support;
 #[path = "integration/model_info_test.rs"]
 mod model_info_test;
 
-#[path = "integration/audio_api_test.rs"]
-mod audio_api_test;
+// NOTE: audio_api_test.rs was deleted as part of NodeRegistry removal (SPEC-66555000)
+// All tests depended on deprecated /v0/internal/test/register-node endpoint
 
 #[path = "integration/images_api_test.rs"]
 mod images_api_test;

@@ -80,7 +80,3 @@ sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migra
 serial_test = "3.0"
 serde_urlencoded = "0.7"
 tokio-tungstenite = "0.24"
-
-[[bench]]
-name = "loadbalancer_bench"
-harness = false

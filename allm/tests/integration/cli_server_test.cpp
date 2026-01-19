@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace llm_node {
+namespace allm {
 namespace cli {
 namespace {
 
@@ -23,14 +23,14 @@ protected:
     void SetUp() override {
         // Save original environment
         const char* host = std::getenv("LLM_ROUTER_HOST");
-        const char* port = std::getenv("LLM_NODE_PORT");
+        const char* port = std::getenv("ALLM_PORT");
         original_host_ = host ? host : "";
         original_port_ = port ? port : "";
 
         // Use different port for test server
         test_port_ = 11499;
         setenv("LLM_ROUTER_HOST", "127.0.0.1", 1);
-        setenv("LLM_NODE_PORT", std::to_string(test_port_).c_str(), 1);
+        setenv("ALLM_PORT", std::to_string(test_port_).c_str(), 1);
     }
 
     void TearDown() override {
@@ -41,9 +41,9 @@ protected:
             setenv("LLM_ROUTER_HOST", original_host_.c_str(), 1);
         }
         if (original_port_.empty()) {
-            unsetenv("LLM_NODE_PORT");
+            unsetenv("ALLM_PORT");
         } else {
-            setenv("LLM_NODE_PORT", original_port_.c_str(), 1);
+            setenv("ALLM_PORT", original_port_.c_str(), 1);
         }
     }
 
@@ -55,58 +55,58 @@ protected:
 /// Test: serve command parses correctly
 /// Scenario: Verify CLI parsing for serve options
 TEST_F(CliServerTest, ServeCommandParsing) {
-    const char* argv[] = {"llm-router", "node", "serve"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
 }
 
 /// Test: serve with custom port
 /// Scenario: --port flag is parsed
 TEST_F(CliServerTest, ServeWithCustomPort) {
-    const char* argv[] = {"llm-router", "node", "serve", "--port", "8080"};
-    auto result = parseCliArgs(5, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--port", "8080"};
+    auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
     EXPECT_EQ(result.serve_options.port, 8080);
 }
 
 /// Test: serve with custom host
 /// Scenario: --host flag is parsed
 TEST_F(CliServerTest, ServeWithCustomHost) {
-    const char* argv[] = {"llm-router", "node", "serve", "--host", "0.0.0.0"};
-    auto result = parseCliArgs(5, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--host", "0.0.0.0"};
+    auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
     EXPECT_EQ(result.serve_options.host, "0.0.0.0");
 }
 
 /// Test: serve respects environment variables
-/// Scenario: LLM_ROUTER_HOST and LLM_NODE_PORT are used as defaults
+/// Scenario: LLM_ROUTER_HOST and ALLM_PORT are used as defaults
 TEST_F(CliServerTest, ServeRespectsEnvironment) {
     setenv("LLM_ROUTER_HOST", "192.168.1.100", 1);
-    setenv("LLM_NODE_PORT", "12345", 1);
+    setenv("ALLM_PORT", "12345", 1);
 
-    const char* argv[] = {"llm-router", "node", "serve"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
 
     // Environment variables should be picked up by the server
     // (verified through actual server startup in integration tests)
 }
 
 /// Test: CLI flag overrides environment
-/// Scenario: --port overrides LLM_NODE_PORT
+/// Scenario: --port overrides ALLM_PORT
 TEST_F(CliServerTest, CliFlagOverridesEnvironment) {
-    setenv("LLM_NODE_PORT", "12345", 1);
+    setenv("ALLM_PORT", "12345", 1);
 
-    const char* argv[] = {"llm-router", "node", "serve", "--port", "54321"};
-    auto result = parseCliArgs(5, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--port", "54321"};
+    auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
     EXPECT_EQ(result.serve_options.port, 54321);
@@ -115,8 +115,8 @@ TEST_F(CliServerTest, CliFlagOverridesEnvironment) {
 /// Test: help shows serve usage
 /// Scenario: serve --help displays usage information
 TEST_F(CliServerTest, ServeHelpShowsUsage) {
-    const char* argv[] = {"llm-router", "node", "serve", "--help"};
-    auto result = parseCliArgs(4, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve", "--help"};
+    auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);
@@ -133,7 +133,7 @@ TEST_F(CliServerTest, DISABLED_ServerRespondsToHealthCheck) {
     pid_t pid = fork();
     if (pid == 0) {
         // Child process - start server
-        const char* argv[] = {"llm-router", "node", "serve", "--port",
+        const char* argv[] = {"allm", "serve", "--port",
                               std::to_string(test_port_).c_str()};
         // This would actually run the server
         // execv("./llm-router", argv);
@@ -259,17 +259,17 @@ TEST_F(CliServerTest, DISABLED_HandlesInvalidRequests) {
 TEST_F(CliServerTest, DebugModeConfiguration) {
     setenv("LLM_ROUTER_DEBUG", "1", 1);
 
-    const char* argv[] = {"llm-router", "node", "serve"};
-    auto result = parseCliArgs(3, const_cast<char**>(argv));
+    const char* argv[] = {"allm", "serve"};
+    auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     // Debug mode is handled at runtime, not parsing
     // This just verifies parsing still works with debug env set
     EXPECT_FALSE(result.should_exit);
-    EXPECT_EQ(result.subcommand, Subcommand::NodeServe);
+    EXPECT_EQ(result.subcommand, Subcommand::Serve);
 
     unsetenv("LLM_ROUTER_DEBUG");
 }
 
 }  // namespace
 }  // namespace cli
-}  // namespace llm_node
+}  // namespace allm

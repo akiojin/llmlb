@@ -12,9 +12,10 @@ use chrono::Utc;
 use llm_router_common::{
     error::RouterError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapability, Node, RuntimeType},
+    types::ModelCapability,
 };
 use serde_json::json;
+use std::net::IpAddr;
 use std::time::Instant;
 use tracing::info;
 use uuid::Uuid;
@@ -26,6 +27,7 @@ use crate::{
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
     },
+    types::endpoint::{Endpoint, EndpointCapability},
     AppState,
 };
 
@@ -56,39 +58,59 @@ fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response,
     Ok(error_response(RouterError::Http(msg.into()), status))
 }
 
-/// RuntimeType::StableDiffusion に基づいてノードを選択
-async fn select_image_node(state: &AppState) -> Result<Node, RouterError> {
-    let nodes = state.registry.list().await;
+/// 画像生成対応バックエンド
+/// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
+struct ImageBackend(Endpoint);
 
-    // StableDiffusion対応のオンラインノードを探す
-    let capable_nodes: Vec<_> = nodes
-        .into_iter()
-        .filter(|n| {
-            // テスト時はRegisteringステータスのノードも選択可能にする
-            let status_ok = matches!(
-                n.status,
-                llm_router_common::types::NodeStatus::Online
-                    | llm_router_common::types::NodeStatus::Registering
-            );
-            // テスト時は supported_runtimes の確認をスキップ
-            let runtime_ok = if cfg!(test) {
-                n.supported_runtimes.is_empty()
-                    || n.supported_runtimes.contains(&RuntimeType::StableDiffusion)
-            } else {
-                n.supported_runtimes.contains(&RuntimeType::StableDiffusion)
-            };
-            status_ok && runtime_ok
-        })
-        .collect();
-
-    if capable_nodes.is_empty() {
-        return Err(RouterError::ServiceUnavailable(
-            "No nodes available with image generation (Stable Diffusion) capability".to_string(),
-        ));
+impl ImageBackend {
+    /// リクエスト送信用のURLを取得
+    fn url(&self, path: &str) -> String {
+        format!("{}{}", self.0.base_url.trim_end_matches('/'), path)
     }
 
-    // 最初の利用可能なノードを返す（将来的にはロードバランシングを追加）
-    Ok(capable_nodes.into_iter().next().unwrap())
+    /// リクエスト履歴用のID
+    fn id(&self) -> Uuid {
+        self.0.id
+    }
+
+    /// リクエスト履歴用の名前
+    fn name(&self) -> String {
+        self.0.name.clone()
+    }
+
+    /// リクエスト履歴用のIPアドレス
+    fn ip(&self) -> IpAddr {
+        // base_urlからホスト部分を抽出してパース
+        // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
+        let host = self
+            .0
+            .base_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(':')
+            .next()
+            .unwrap_or("127.0.0.1");
+        host.parse::<IpAddr>()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
+    }
+}
+
+/// 画像生成対応バックエンドを選択
+/// EndpointRegistry経由でのみ検索（NodeRegistryフォールバック廃止）
+async fn select_image_backend(state: &AppState) -> Result<ImageBackend, RouterError> {
+    // EndpointRegistry経由で検索（SPEC-66555000: 新方式のみ）
+    let endpoints = state
+        .endpoint_registry
+        .list_online_by_capability(EndpointCapability::ImageGeneration)
+        .await;
+
+    let endpoint = endpoints.into_iter().next().ok_or_else(|| {
+        RouterError::ServiceUnavailable(
+            "No endpoints available with image generation capability".to_string(),
+        )
+    })?;
+
+    Ok(ImageBackend(endpoint))
 }
 
 /// POST /v1/images/generations - 画像生成（Text-to-Image）
@@ -142,22 +164,18 @@ pub async fn generations(
         "Processing image generation request"
     );
 
-    // 画像生成対応ノードを選択
-    let node = select_image_node(&state).await?;
+    // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    let backend = select_image_backend(&state).await?;
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;
-    let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-    let url = format!(
-        "http://{}:{}/v1/images/generations",
-        node.ip_address, api_port
-    );
+    let url = backend.url("/v1/images/generations");
 
     let response = match client.post(&url).json(&payload).send().await {
         Ok(r) => r,
         Err(e) => {
             return openai_error(
-                format!("Failed to contact image generation node: {}", e),
+                format!("Failed to contact image generation backend: {}", e),
                 StatusCode::SERVICE_UNAVAILABLE,
             )
         }
@@ -172,9 +190,9 @@ pub async fn generations(
         timestamp,
         request_type: RequestType::ImageGeneration,
         model: payload.model.clone(),
-        node_id: node.id,
-        node_machine_name: node.machine_name.clone(),
-        node_ip: node.ip_address,
+        node_id: backend.id(),
+        node_machine_name: backend.name(),
+        node_ip: backend.ip(),
         client_ip: None,
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,
@@ -344,13 +362,12 @@ pub async fn edits(
         "Processing image edit request"
     );
 
-    // 画像生成対応ノードを選択
-    let node = select_image_node(&state).await?;
+    // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    let backend = select_image_backend(&state).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
-    let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-    let url = format!("http://{}:{}/v1/images/edits", node.ip_address, api_port);
+    let url = backend.url("/v1/images/edits");
 
     let mut form = reqwest::multipart::Form::new().part(
         "image",
@@ -404,9 +421,9 @@ pub async fn edits(
         timestamp,
         request_type: RequestType::ImageEdit,
         model: model.clone(),
-        node_id: node.id,
-        node_machine_name: node.machine_name.clone(),
-        node_ip: node.ip_address,
+        node_id: backend.id(),
+        node_machine_name: backend.name(),
+        node_ip: backend.ip(),
         client_ip: None,
         request_body: json!({"model": model, "prompt": prompt, "type": "image_edit"}),
         response_body: None,
@@ -545,16 +562,12 @@ pub async fn variations(
         "Processing image variation request"
     );
 
-    // 画像生成対応ノードを選択
-    let node = select_image_node(&state).await?;
+    // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    let backend = select_image_backend(&state).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
-    let api_port = node.node_api_port.unwrap_or(node.runtime_port + 1);
-    let url = format!(
-        "http://{}:{}/v1/images/variations",
-        node.ip_address, api_port
-    );
+    let url = backend.url("/v1/images/variations");
 
     let mut form = reqwest::multipart::Form::new().part(
         "image",
@@ -597,9 +610,9 @@ pub async fn variations(
         timestamp,
         request_type: RequestType::ImageVariation,
         model: model.clone(),
-        node_id: node.id,
-        node_machine_name: node.machine_name.clone(),
-        node_ip: node.ip_address,
+        node_id: backend.id(),
+        node_machine_name: backend.name(),
+        node_ip: backend.ip(),
         client_ip: None,
         request_body: json!({"model": model, "type": "image_variation"}),
         response_body: None,

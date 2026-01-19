@@ -15,7 +15,6 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/api/http_server.cpp
     ../../src/api/openai_endpoints.cpp
     ../../src/api/node_endpoints.cpp
-    ../../src/api/router_client.cpp
     ../../src/models/model_registry.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
@@ -78,6 +77,7 @@ target_include_directories(llm-node-integration-tests
 target_compile_definitions(llm-node-integration-tests
     PRIVATE
         LLM_NODE_TESTING=1
+        ALLM_TESTING=1
 )
 
 add_test(

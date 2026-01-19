@@ -3,7 +3,7 @@
 
 #include "core/replica_manager.h"
 
-namespace llm_node {
+namespace allm {
 namespace {
 
 // T164: Replica placement tests
@@ -145,4 +145,4 @@ TEST(ReplicaManagerTest, ReturnsReplicaStatus) {
 }
 
 }  // namespace
-}  // namespace llm_node
+}  // namespace allm

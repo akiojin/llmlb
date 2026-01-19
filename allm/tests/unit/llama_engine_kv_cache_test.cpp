@@ -5,7 +5,7 @@
 
 #include "core/llama_engine.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(LlamaEngineTest, KvCacheScopeTriggersResetHook) {
     std::vector<std::string> reasons;

@@ -63,10 +63,7 @@ async fn select_endpoint_for_responses_api(
     state: &AppState,
     model_id: &str,
 ) -> Result<EndpointSelection, RouterError> {
-    let registry = match &state.endpoint_registry {
-        Some(reg) => reg,
-        None => return Ok(EndpointSelection::NotFound),
-    };
+    let registry = &state.endpoint_registry;
 
     // モデルをサポートするオンラインエンドポイントを取得（レイテンシ順）
     let endpoints = registry.find_by_model_sorted_by_latency(model_id).await;
@@ -74,7 +71,7 @@ async fn select_endpoint_for_responses_api(
     // Responses API対応エンドポイントのみをフィルタリング
     for endpoint in endpoints {
         if endpoint.supports_responses_api {
-            return Ok(EndpointSelection::Found(endpoint));
+            return Ok(EndpointSelection::Found(Box::new(endpoint)));
         }
     }
 

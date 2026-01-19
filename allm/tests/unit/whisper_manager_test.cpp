@@ -34,37 +34,37 @@ private:
 };
 
 TEST(WhisperManagerTest, FlashAttentionIsDisabledByDefault) {
-    EnvGuard guard({"LLM_NODE_WHISPER_FLASH_ATTN"});
-    unsetenv("LLM_NODE_WHISPER_FLASH_ATTN");
-    EXPECT_FALSE(llm_node::WhisperManager::shouldUseFlashAttention());
+    EnvGuard guard({"ALLM_WHISPER_FLASH_ATTN"});
+    unsetenv("ALLM_WHISPER_FLASH_ATTN");
+    EXPECT_FALSE(allm::WhisperManager::shouldUseFlashAttention());
 }
 
 TEST(WhisperManagerTest, FlashAttentionEnabledWhenEnvSet) {
-    EnvGuard guard({"LLM_NODE_WHISPER_FLASH_ATTN"});
-    setenv("LLM_NODE_WHISPER_FLASH_ATTN", "1", 1);
-    EXPECT_TRUE(llm_node::WhisperManager::shouldUseFlashAttention());
+    EnvGuard guard({"ALLM_WHISPER_FLASH_ATTN"});
+    setenv("ALLM_WHISPER_FLASH_ATTN", "1", 1);
+    EXPECT_TRUE(allm::WhisperManager::shouldUseFlashAttention());
 
-    setenv("LLM_NODE_WHISPER_FLASH_ATTN", "0", 1);
-    EXPECT_FALSE(llm_node::WhisperManager::shouldUseFlashAttention());
+    setenv("ALLM_WHISPER_FLASH_ATTN", "0", 1);
+    EXPECT_FALSE(allm::WhisperManager::shouldUseFlashAttention());
 }
 
 TEST(WhisperManagerTest, InitialStateIsEmpty) {
-    llm_node::WhisperManager manager("/tmp");
+    allm::WhisperManager manager("/tmp");
     EXPECT_EQ(manager.loadedCount(), 0u);
     EXPECT_TRUE(manager.getLoadedModels().empty());
     EXPECT_FALSE(manager.getLastAccessTime("missing").has_value());
 }
 
 TEST(WhisperManagerTest, TranscribeRejectsEmptyAudio) {
-    llm_node::WhisperManager manager("/tmp");
-    llm_node::TranscriptionParams params;
+    allm::WhisperManager manager("/tmp");
+    allm::TranscriptionParams params;
     auto result = manager.transcribe("missing.bin", {}, 16000, params);
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.error, "Empty audio data");
 }
 
 TEST(WhisperManagerTest, TranscribeRejectsInvalidSampleRate) {
-    llm_node::WhisperManager manager("/tmp");
+    allm::WhisperManager manager("/tmp");
     std::vector<float> audio_data = {0.0f, 0.1f};
     auto result = manager.transcribe("missing.bin", audio_data, 8000);
     EXPECT_FALSE(result.success);
@@ -72,7 +72,7 @@ TEST(WhisperManagerTest, TranscribeRejectsInvalidSampleRate) {
 }
 
 TEST(WhisperManagerTest, TranscribeRejectsUnloadedModel) {
-    llm_node::WhisperManager manager("/tmp");
+    allm::WhisperManager manager("/tmp");
     std::vector<float> audio_data = {0.0f};
     auto result = manager.transcribe("missing.bin", audio_data, 16000);
     EXPECT_FALSE(result.success);

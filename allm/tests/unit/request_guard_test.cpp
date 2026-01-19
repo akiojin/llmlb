@@ -2,7 +2,7 @@
 
 #include "runtime/state.h"
 
-using namespace llm_node;
+using namespace allm;
 
 TEST(RequestGuardTest, AcquireAndRelease) {
     g_active_requests.store(0);

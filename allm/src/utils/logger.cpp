@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace llm_node::logger {
+namespace allm::logger {
 
 namespace {
     // Cross-platform localtime helper
@@ -31,10 +31,10 @@ namespace {
     constexpr const char* LOG_SUBDIR = "logs";
     constexpr int DEFAULT_RETENTION_DAYS = 7;
 
-    // New environment variable names (LLM_NODE_* prefix)
-    constexpr const char* LLM_NODE_LOG_DIR_ENV = "LLM_NODE_LOG_DIR";
-    constexpr const char* LLM_NODE_LOG_LEVEL_ENV = "LLM_NODE_LOG_LEVEL";
-    constexpr const char* LLM_NODE_LOG_RETENTION_DAYS_ENV = "LLM_NODE_LOG_RETENTION_DAYS";
+    // New environment variable names (ALLM_* prefix)
+    constexpr const char* ALLM_LOG_DIR_ENV = "ALLM_LOG_DIR";
+    constexpr const char* ALLM_LOG_LEVEL_ENV = "ALLM_LOG_LEVEL";
+    constexpr const char* ALLM_LOG_RETENTION_DAYS_ENV = "ALLM_LOG_RETENTION_DAYS";
 
     // Deprecated environment variable names (fallback)
     constexpr const char* LEGACY_LOG_DIR_ENV = "LLM_LOG_DIR";
@@ -79,7 +79,7 @@ spdlog::level::level_enum parse_level(const std::string& level_text) {
 
 std::string get_log_dir() {
     // New env var takes priority
-    if (const char* env = std::getenv(LLM_NODE_LOG_DIR_ENV)) {
+    if (const char* env = std::getenv(ALLM_LOG_DIR_ENV)) {
         return env;
     }
     // Fallback to deprecated env var
@@ -100,7 +100,7 @@ std::string get_log_file_path() {
 
 int get_retention_days() {
     // New env var takes priority
-    if (const char* env = std::getenv(LLM_NODE_LOG_RETENTION_DAYS_ENV)) {
+    if (const char* env = std::getenv(ALLM_LOG_RETENTION_DAYS_ENV)) {
         try {
             int days = std::stoi(env);
             if (days > 0 && days < 365) {
@@ -179,9 +179,9 @@ void init(const std::string& level,
 }
 
 void init_from_env() {
-    // Get log level (priority: LLM_NODE_LOG_LEVEL > LLM_LOG_LEVEL > LOG_LEVEL)
+    // Get log level (priority: ALLM_LOG_LEVEL > LLM_LOG_LEVEL > LOG_LEVEL)
     std::string level = "info";
-    if (const char* env = std::getenv(LLM_NODE_LOG_LEVEL_ENV)) {
+    if (const char* env = std::getenv(ALLM_LOG_LEVEL_ENV)) {
         level = env;
     } else if (const char* env = std::getenv(LEGACY_LOG_LEVEL_ENV)) {
         level = env;
@@ -221,4 +221,4 @@ void init_from_env() {
     spdlog::info("Node logs initialized: {}", log_path);
 }
 
-}  // namespace llm_node::logger
+}  // namespace allm::logger

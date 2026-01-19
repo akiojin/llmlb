@@ -18,7 +18,7 @@ test:
 	cargo test -- --test-threads=1
 
 markdownlint:
-	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!allm/third_party" "!node/third_party"
+	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!**/build/**" "!allm/third_party" "!node/third_party"
 
 specify-tasks:
 	@bash -lc 'TASKS_LIST="$${TASKS:-}"; \
@@ -45,8 +45,10 @@ quality-checks: fmt clippy test specify-checks markdownlint openai-tests test-ho
 
 quality-checks-pre-commit: fmt clippy
 
+# NOTE: openai_proxy.rs was removed in SPEC-66555000 (NodeRegistry removal)
+# OpenAI API tests are now covered by e2e_openai_proxy
 openai-tests:
-	cargo test -p llm-router --test openai_proxy
+	cargo test -p llm-router --test e2e_openai_proxy
 
 test-hooks:
 	@npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \

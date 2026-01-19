@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 
-namespace llm_node {
+namespace allm {
 
 WhisperManager::WhisperManager(std::string models_dir)
     : models_dir_(std::move(models_dir)) {
@@ -70,7 +70,7 @@ bool WhisperManager::loadModel(const std::string& model_path) {
     const bool enable_flash_attn = shouldUseFlashAttention();
     cparams.flash_attn = enable_flash_attn;
     if (enable_flash_attn) {
-        spdlog::info("Whisper flash-attn enabled via LLM_NODE_WHISPER_FLASH_ATTN");
+        spdlog::info("Whisper flash-attn enabled via ALLM_WHISPER_FLASH_ATTN");
     } else {
         spdlog::debug("Whisper flash-attn disabled for Metal compatibility");
     }
@@ -107,7 +107,7 @@ whisper_context* WhisperManager::getContext(const std::string& model_path) const
 }
 
 bool WhisperManager::shouldUseFlashAttention() {
-    const char* flash_attn_env = std::getenv("LLM_NODE_WHISPER_FLASH_ATTN");
+    const char* flash_attn_env = std::getenv("ALLM_WHISPER_FLASH_ATTN");
     return flash_attn_env && std::string(flash_attn_env) == "1";
 }
 
@@ -333,11 +333,11 @@ WhisperManager::getLastAccessTime(const std::string& model_path) const {
     return std::nullopt;
 }
 
-}  // namespace llm_node
+}  // namespace allm
 
 #else
 
-namespace llm_node {
+namespace allm {
 
 WhisperManager::WhisperManager(std::string models_dir) : models_dir_(std::move(models_dir)) {
     spdlog::warn("WhisperManager: whisper.cpp support is disabled (BUILD_WITH_WHISPER=OFF)");
@@ -378,6 +378,6 @@ std::optional<std::chrono::steady_clock::time_point> WhisperManager::getLastAcce
     return std::nullopt;
 }
 
-}  // namespace llm_node
+}  // namespace allm
 
 #endif

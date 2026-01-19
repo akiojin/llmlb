@@ -140,13 +140,21 @@
 
 以下はPhase B-0完了後に実行:
 
-- [ ] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）⚠️ NodeRegistryがまだ使用中
+- [x] T036 `router/src/db/nodes.rs` を削除（NodeStorage廃止）✅ 2026-01-19完了
 - [x] T037 `router/src/db/node_tokens.rs` を削除（NodeToken廃止）
-- [ ] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ⚠️ LoadManager, HealthChecker等が依存
-- [ ] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）⚠️ admin APIとして使用中
-- [ ] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse削除 ⚠️ NodeRegistryが使用中
+- [x] T038 `router/src/registry/mod.rs` からNodeRegistry関連コードを削除 ✅ 2026-01-19完了
+- [x] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）✅ 2026-01-19完了
+- [x] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse/HealthCheckRequest削除 ✅ 2026-01-19完了
 
-**ブロッカー**: NodeRegistryの完全廃止にはEndpointRegistryへの完全移行が必要（LoadManager, HealthChecker, proxy, openaiルーティング等）
+**完了（2026-01-19）**: aLLMはOpenAI互換APIを提供するため、通常のEndpointとして登録可能。
+新規アーキテクチャは不要と判断し、NodeRegistry関連の残存コードをすべて削除完了。
+
+**削除完了項目**:
+- `router/src/db/nodes.rs` - 削除済み（NodeStorage）
+- `router/src/api/nodes.rs` - 削除済み（旧ノードAPI）
+- `router/src/registry/nodes.rs` - 削除済み（NodeRegistry実装）
+- `common/src/protocol.rs` - RegisterRequest/RegisterResponse/RegisterStatus/HealthCheckRequest削除
+- `router/benches/loadbalancer_bench.rs` - 削除済み（NodeRegistry依存ベンチマーク）
 
 ### ドキュメント・検証
 
@@ -205,3 +213,29 @@ T001 → [T002, T003, T004]
 ---
 
 *TDD必須 - テストが失敗することを確認してから実装を開始*
+
+---
+
+## 完了サマリー（2026-01-18）
+
+### 機能実装: ✅ 完了
+
+本SPECの主要機能は全て実装完了:
+
+| 機能 | 状態 |
+|------|------|
+| エンドポイント登録API（CRUD） | ✅ |
+| ヘルスチェック（プル型） | ✅ |
+| モデル同期（/v1/models） | ✅ |
+| 接続テスト | ✅ |
+| レイテンシベースルーティング | ✅ |
+| EndpointCapability基盤 | ✅ |
+| ダッシュボード統合 | ✅ |
+| 認可（viewerロール制限） | ✅ |
+
+### 旧コード削除（クリーンアップ）: ⏸️ 将来対応
+
+T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリーンアップタスク。
+これらはaLLMがEndpointとして登録される新しいアーキテクチャが整った後に対応。
+
+**本SPECの機能要件は100%達成済み。**

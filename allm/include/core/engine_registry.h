@@ -7,7 +7,7 @@
 
 #include "core/engine.h"
 
-namespace llm_node {
+namespace allm {
 
 struct EngineRegistration {
     std::string engine_id;
@@ -71,4 +71,4 @@ private:
     std::unordered_map<std::string, std::string> engine_ids_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

@@ -15,7 +15,7 @@
 #include <dlfcn.h>
 #endif
 
-namespace llm_node {
+namespace allm {
 
 // T183: プラグインログレベルを文字列に変換
 const char* pluginLogLevelToString(PluginLogLevel level) {
@@ -700,4 +700,4 @@ bool EngineHost::applyPendingPlugins(EngineRegistry& registry, std::string& erro
     return ok;
 }
 
-}  // namespace llm_node
+}  // namespace allm

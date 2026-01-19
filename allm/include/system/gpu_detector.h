@@ -5,7 +5,7 @@
 #include <string>
 #include <memory>
 
-namespace llm_node {
+namespace allm {
 
 enum class GpuBackend {
     Metal,
@@ -62,11 +62,11 @@ private:
     std::vector<GpuDevice> detectMetal();
     std::vector<GpuDevice> detectRocm();
 
-#ifdef LLM_NODE_TESTING
+#ifdef ALLM_TESTING
 public:
     // テスト専用: 検出結果を直接セットして計算ロジックを検証する
     void setDetectedDevicesForTest(std::vector<GpuDevice> devices);
 #endif
 };
 
-} // namespace llm_node
+} // namespace allm

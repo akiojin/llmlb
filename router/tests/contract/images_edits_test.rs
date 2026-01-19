@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_router, TestServer},
-    router::{approve_node_from_register_response, register_node_with_runtimes, spawn_test_router},
+    router::{register_image_generation_endpoint, spawn_test_router},
 };
 use axum::{
     extract::{Multipart, State},
@@ -182,14 +182,10 @@ async fn images_edits_success() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let form = Form::new()
@@ -236,14 +232,10 @@ async fn images_edits_with_mask() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let form = Form::new()
@@ -287,14 +279,10 @@ async fn images_edits_missing_image() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let form = Form::new()
@@ -328,14 +316,10 @@ async fn images_edits_missing_prompt() {
     let stub = spawn_image_edit_stub(stub_state).await;
     let router = spawn_test_router().await;
 
-    let register_response =
-        register_node_with_runtimes(router.addr(), stub.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(router.addr(), register_response)
+    // EndpointRegistry経由で画像生成エンドポイントを登録
+    let _endpoint_id = register_image_generation_endpoint(router.addr(), stub.addr())
         .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
     let form = Form::new()

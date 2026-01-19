@@ -7,7 +7,7 @@
 #include "core/engine_plugin_api.h"
 #include "core/engine_registry.h"
 
-namespace llm_node {
+namespace allm {
 
 class EngineRegistry;
 
@@ -83,4 +83,4 @@ private:
     std::vector<PendingPlugin> pending_;
 };
 
-}  // namespace llm_node
+}  // namespace allm

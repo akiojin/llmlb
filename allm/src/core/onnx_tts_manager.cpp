@@ -16,7 +16,7 @@
 extern char** environ;
 #endif
 
-namespace llm_node {
+namespace allm {
 
 namespace {
 
@@ -257,29 +257,29 @@ SpeechResult OnnxTtsManager::synthesize(
     if (isVibeVoice(model_path)) {
 #if defined(__APPLE__)
         // Get configuration from environment variables
-        const char* runner_env = std::getenv("LLM_NODE_VIBEVOICE_RUNNER");
+        const char* runner_env = std::getenv("ALLM_VIBEVOICE_RUNNER");
         if (!runner_env || std::strlen(runner_env) == 0) {
-            result.error = "LLM_NODE_VIBEVOICE_RUNNER environment variable not set";
+            result.error = "ALLM_VIBEVOICE_RUNNER environment variable not set";
             return result;
         }
         std::string runner_path = runner_env;
 
-        const char* python_env = std::getenv("LLM_NODE_VIBEVOICE_PYTHON");
+        const char* python_env = std::getenv("ALLM_VIBEVOICE_PYTHON");
         std::string python_bin = python_env ? python_env : "python3";
 
-        const char* device_env = std::getenv("LLM_NODE_VIBEVOICE_DEVICE");
+        const char* device_env = std::getenv("ALLM_VIBEVOICE_DEVICE");
         std::string device = device_env ? device_env : "mps";
 
-        const char* model_env = std::getenv("LLM_NODE_VIBEVOICE_MODEL");
+        const char* model_env = std::getenv("ALLM_VIBEVOICE_MODEL");
         std::string model_id = model_env ? model_env : "microsoft/VibeVoice-Realtime-0.5B";
 
-        const char* ddpm_env = std::getenv("LLM_NODE_VIBEVOICE_DDPM_STEPS");
+        const char* ddpm_env = std::getenv("ALLM_VIBEVOICE_DDPM_STEPS");
         std::string ddpm_steps = ddpm_env ? ddpm_env : "5";
 
-        const char* cfg_env = std::getenv("LLM_NODE_VIBEVOICE_CFG_SCALE");
+        const char* cfg_env = std::getenv("ALLM_VIBEVOICE_CFG_SCALE");
         std::string cfg_scale = cfg_env ? cfg_env : "1.5";
 
-        const char* voice_env = std::getenv("LLM_NODE_VIBEVOICE_DEFAULT_VOICE");
+        const char* voice_env = std::getenv("ALLM_VIBEVOICE_DEFAULT_VOICE");
         std::string default_voice = voice_env ? voice_env : "Carter";
 
         // Use voice from params if specified, otherwise use default
@@ -290,7 +290,7 @@ SpeechResult OnnxTtsManager::synthesize(
             spdlog::info("Mapped voice '{}' to VibeVoice prompt '{}'", requested_voice, voice);
         }
 
-        const char* voice_prompt_env = std::getenv("LLM_NODE_VIBEVOICE_VOICE_PROMPT");
+        const char* voice_prompt_env = std::getenv("ALLM_VIBEVOICE_VOICE_PROMPT");
         std::string voice_prompt_path = voice_prompt_env ? voice_prompt_env : "";
 
         // Create temporary directory for output
@@ -612,4 +612,4 @@ std::vector<uint8_t> OnnxTtsManager::createWavFile(
     return wav;
 }
 
-}  // namespace llm_node
+}  // namespace allm

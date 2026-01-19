@@ -70,7 +70,7 @@ TEST_F(SplitLoaderTest, MissingIndexJsonReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        model_dir.c_str(),
+        model_dir.string().c_str(),
         callback,
         &data
     );
@@ -92,7 +92,7 @@ TEST_F(SplitLoaderTest, InvalidIndexJsonReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        model_dir.c_str(),
+        model_dir.string().c_str(),
         callback,
         &data
     );
@@ -114,7 +114,7 @@ TEST_F(SplitLoaderTest, IndexJsonMissingWeightMapReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        model_dir.c_str(),
+        model_dir.string().c_str(),
         callback,
         &data
     );
@@ -144,7 +144,7 @@ TEST_F(SplitLoaderTest, MissingShardFileReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        model_dir.c_str(),
+        model_dir.string().c_str(),
         callback,
         &data
     );
@@ -166,7 +166,7 @@ TEST_F(SplitLoaderTest, EmptyWeightMapReturnsError) {
     };
 
     stcpp_model* model = stcpp_model_load(
-        model_dir.c_str(),
+        model_dir.string().c_str(),
         callback,
         &data
     );

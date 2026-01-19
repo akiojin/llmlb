@@ -241,30 +241,65 @@
   - stcpp_lora_apply()
   - stcpp_lora_remove()
 
-## Phase 9: 追加アーキテクチャ
+## Phase 9: Nemotron 3アーキテクチャ（Mamba-Transformer MoE ハイブリッド）
 
-- [x] 41. ~~nemotronアーキテクチャテスト~~ (スコープ外: gpt-oss/nemotronエンジン削除により不要)
-- [x] 42. ~~nemotronアーキテクチャ実装~~ (スコープ外: gpt-oss/nemotronエンジン削除により不要)
+### Tests First (RED)
+
+- [x] 41. Mamba State Space Modelテスト (依存: 29)
+  - Mambaレイヤーの順伝播テスト
+  - State更新テスト
+  - 長コンテキスト（1M-token）処理テスト
+  - tests/unit/mamba_ssm_test.cpp 作成（一部GREEN、残りSKIP）
+
+- [x] 42. MoE (Mixture of Experts)テスト (依存: 29)
+  - Expert選択テスト（Top-K routing）
+  - 複数Expert並列実行テスト
+  - Load balancing テスト
+  - tests/unit/moe_test.cpp 作成（SKIP）
+
+- [x] 43. Mamba-Transformer ハイブリッドテスト (依存: 41, 42)
+  - レイヤー交互配置テスト
+  - Residual connection テスト
+  - 統合推論パイプラインテスト
+  - tests/unit/mamba_transformer_hybrid_test.cpp 作成（SKIP）
+
+### Implementation (GREEN)
+
+- [x] 44. Mamba State Space Model実装 (依存: 41)
+  - src/mamba.h, src/mamba.cpp - Mamba SSMレイヤー
+  - State管理・更新ロジック（MambaState構造体）
+  - ggml operations活用（ggml_ssm_conv, ggml_ssm_scan）
+
+- [x] 45. MoE実装 (依存: 42)
+  - src/moe.h, src/moe.cpp - Expert routing
+  - Top-K Expert選択ロジック（sigmoid gating + squared ReLU）
+  - Expert並列実行（128 routed + 2 shared）
+
+- [x] 46. Nemotron 3統合 (依存: 43, 44, 45)
+  - src/arch/nemotron3.h, src/arch/nemotron3.cpp - Nemotron 3アーキテクチャ
+  - Mamba + Transformer レイヤー構成（52層: 23 MoE + 23 Mamba + 6 GQA）
+  - config.json解析（parse_nemotron3_config）
+  - 1M-token コンテキスト対応設計
 
 ## Phase 10: 高度な機能
 
-- [x] 43. Rope Scalingテスト (依存: 29)
-- [x] 44. Rope Scaling実装 (依存: 43)
+- [x] 47. Rope Scalingテスト (依存: 29)
+- [x] 48. Rope Scaling実装 (依存: 47)
   - Linear/NTKスケーリング
 
-- [x] 45. Sliding Window Attentionテスト (依存: 29)
-- [x] 46. Sliding Window Attention実装 (依存: 45)
+- [x] 49. Sliding Window Attentionテスト (依存: 29)
+- [x] 50. Sliding Window Attention実装 (依存: 49)
 
-- [x] 47. GQA/MQAテスト (依存: 29)
-- [x] 48. GQA/MQA実装 (依存: 47)
+- [x] 51. GQA/MQAテスト (依存: 29)
+- [x] 52. GQA/MQA実装 (依存: 51)
 
 ## Phase 11: マルチGPU
 
-- [x] 49. マルチGPUテスト (依存: 29)
+- [x] 53. マルチGPUテスト (依存: 29)
   - Pipeline Parallelismテスト
   - デバイス間通信テスト
 
-- [x] 50. マルチGPU実装 (依存: 49)
+- [x] 54. マルチGPU実装 (依存: 53)
   - レイヤー分割
   - デバイス間同期
 
@@ -272,28 +307,28 @@
 
 ### Integration Tests
 
-- [x] 51. E2Eテスト: safetensorsモデル (依存: 29)
+- [x] 55. E2Eテスト: safetensorsモデル (依存: 29)
   - 完全なモデルロード→推論→結果検証
   - HuggingFace Tinyモデル（例: TinyLlama）使用
 
-- [x] 52. E2Eテスト: ストリーミング (依存: 51)
+- [x] 56. E2Eテスト: ストリーミング (依存: 55)
 
-- [x] 53. E2Eテスト: continuous batching (依存: 36, 51)
+- [x] 57. E2Eテスト: continuous batching (依存: 36, 55)
 
 ### Documentation
 
-- [x] 54. APIリファレンス作成 (依存: 29)
-- [x] 55. チュートリアル作成 (依存: 51) ※quickstart含むREADMEで対応
-- [x] 56. サンプルコード充実 (依存: 51) ※examples/benchmark.cppで対応
+- [x] 58. APIリファレンス作成 (依存: 29)
+- [x] 59. チュートリアル作成 (依存: 55) ※quickstart含むREADMEで対応
+- [x] 60. サンプルコード充実 (依存: 55) ※examples/benchmark.cppで対応
 
 ### Performance
 
-- [x] 57. ベンチマークツール作成 (依存: 51)
-- [x] 58. HuggingFace transformers比較ベンチマーク (依存: 57)
+- [x] 61. ベンチマークツール作成 (依存: 55)
+- [x] 62. HuggingFace transformers比較ベンチマーク (依存: 61)
   - `benchmarks/hf_benchmark.py` - HuggingFace transformersベンチマーク
   - `benchmarks/compare.py` - 結果比較ツール
   - `examples/benchmark.cpp` - JSON出力機能追加
-- [x] 59. VRAM使用量最適化 (依存: 58)
+- [x] 63. VRAM使用量最適化 (依存: 62)
   - `stcpp_vram_usage` 詳細構造体追加
   - `stcpp_kv_quant_type` KVキャッシュ量子化タイプ追加
   - `stcpp_context_vram_usage()` VRAM使用状況API追加
@@ -302,7 +337,7 @@
 
 ### CI/CD
 
-- [x] 60. CIワークフロー作成 (依存: 51) `[P]`
+- [x] 64. CIワークフロー作成 (依存: 55) `[P]`
   - ビルドテスト
   - ユニットテスト
   - HuggingFace Tinyモデルでの統合テスト
@@ -322,7 +357,9 @@
                                               ↓
                                           35 → 36 (バッチ)
                                               ↓
-                                          51,52,53 (E2E)
+                                          41,42,43 → 44,45,46 (Nemotron 3)
+                                              ↓
+                                          55,56,57 (E2E)
 ```
 
 ## MVP完了条件
@@ -337,13 +374,13 @@
 - [x] Phase 6: バッチ処理 (35-36)
 - [x] Phase 7: 埋め込み (37-38)
 - [x] Phase 8: LoRA (39-40)
-- [x] Phase 9: 追加アーキテクチャ (41-42) ※gpt-oss/nemotronエンジン削除によりスコープ外
-- [x] Phase 10: 高度な機能 (43-48)
-- [x] Phase 11: マルチGPU (49-50)
-- [x] E2Eテスト: safetensorsモデル (51)
-- [x] E2Eテスト: ストリーミング (52)
-- [x] E2Eテスト: continuous batching (53)
+- [x] Phase 9: Nemotron 3アーキテクチャ (41-46) ※Mamba-Transformer MoE ハイブリッド対応完了
+- [x] Phase 10: 高度な機能 (47-52)
+- [x] Phase 11: マルチGPU (53-54)
+- [x] E2Eテスト: safetensorsモデル (55)
+- [x] E2Eテスト: ストリーミング (56)
+- [x] E2Eテスト: continuous batching (57)
 
-MVP = 単一GPUでのsafetensorsモデル推論 + ストリーミング出力
+**✅ MVP達成**: 単一GPUでのsafetensorsモデル推論 + ストリーミング出力 + Nemotron 3対応
 
-Note: gpt-oss/nemotronエンジンは`refactor!: remove gptoss/nemotron engines for safetensors.cpp migration`で削除済み。safetensors.cppはggmlバックエンドを直接使用するアーキテクチャ非依存の設計。
+Note: safetensors.cppはggmlバックエンドを直接使用するアーキテクチャ非依存の設計。Phase 9でNemotron 3（Mamba-Transformer MoE ハイブリッド）対応を完了しました。

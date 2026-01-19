@@ -57,6 +57,21 @@ else()
     endif()
 endif()
 
+# nlohmann/json dependency (header-only library)
+if(TARGET nlohmann_json::nlohmann_json)
+    # Integrated build: use parent project's nlohmann_json
+    message(STATUS "safetensors.cpp: Using parent project's nlohmann_json")
+else()
+    # Standalone build or nlohmann_json not available: fetch it
+    include(FetchContent)
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -74,7 +89,11 @@ add_library(safetensors_cpp STATIC ${STCPP_SOURCES})
 target_include_directories(safetensors_cpp PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(safetensors_cpp PUBLIC ${STCPP_GGML_TARGET})
+target_link_libraries(safetensors_cpp
+    PUBLIC
+        ${STCPP_GGML_TARGET}
+        nlohmann_json::nlohmann_json
+)
 
 # Enable PIC for linking into shared libraries (required on Linux)
 set_target_properties(safetensors_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <chrono>
+#include <mutex>
 
 namespace allm {
 
@@ -18,7 +19,8 @@ public:
                     std::string api_key = {});
 
     // Fetch manifest JSON for a model id (e.g., gpt-oss-7b). Returns local manifest path.
-    std::string fetchManifest(const std::string& model_id);
+    // filename_hint can be used to disambiguate a specific artifact in HuggingFace repos.
+    std::string fetchManifest(const std::string& model_id, const std::string& filename_hint = {});
 
     // Download a blob by URL to the model directory. Reports progress if provided.
     // If expected_sha256 is provided, verify the downloaded file; on mismatch an empty string is returned.
@@ -27,12 +29,18 @@ public:
 
     const std::string& getModelsDir() const { return models_dir_; }
     const std::string& getRegistryBase() const { return registry_base_; }
+    std::string getLastError() const {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        return last_error_;
+    }
     size_t getChunkSize() const { return chunk_size_; }
     size_t getMaxBytesPerSec() const { return max_bytes_per_sec_; }
     void setChunkSize(size_t v) { chunk_size_ = v; }
     void setMaxBytesPerSec(size_t v) { max_bytes_per_sec_ = v; }
 
 private:
+    std::string fetchHfManifest(const std::string& model_id, const std::string& filename_hint);
+
     std::string registry_base_;
     std::string models_dir_;
     std::chrono::milliseconds timeout_;
@@ -42,6 +50,8 @@ private:
     size_t max_bytes_per_sec_{0};
     size_t chunk_size_{4096};
     std::string log_source_;
+    std::string last_error_;
+    mutable std::mutex error_mutex_;
 };
 
 }  // namespace allm

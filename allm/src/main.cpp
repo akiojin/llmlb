@@ -7,6 +7,10 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <optional>
+#include <algorithm>
+#include <cctype>
+#include <nlohmann/json.hpp>
 
 #include "system/gpu_detector.h"
 #include "system/resource_monitor.h"
@@ -26,6 +30,134 @@
 #include "utils/logger.h"
 #include "cli/commands.h"
 #include "cli/ollama_compat.h"
+
+#include <cstdlib>
+
+namespace {
+
+struct HfModelRef {
+    std::string repo;
+    std::string filename;
+};
+
+std::string toLowerAscii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+bool endsWith(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) return false;
+    return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::optional<std::string> hostFromUrl(const std::string& url) {
+    auto scheme_pos = url.find("://");
+    if (scheme_pos == std::string::npos) return std::nullopt;
+    std::string rest = url.substr(scheme_pos + 3);
+    auto slash = rest.find('/');
+    std::string host = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+    if (host.empty()) return std::nullopt;
+    return host;
+}
+
+bool isHfHost(const std::string& host) {
+    const std::string lower = toLowerAscii(host);
+    if (lower == "huggingface.co" || endsWith(lower, ".huggingface.co")) {
+        return true;
+    }
+    if (const char* base = std::getenv("HF_BASE_URL")) {
+        std::string base_url(base);
+        auto base_host = hostFromUrl(base_url);
+        if (base_host && toLowerAscii(*base_host) == lower) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> splitPath(const std::string& path) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (start < path.size()) {
+        size_t pos = path.find('/', start);
+        std::string segment = (pos == std::string::npos)
+            ? path.substr(start)
+            : path.substr(start, pos - start);
+        if (!segment.empty()) {
+            parts.push_back(segment);
+        }
+        if (pos == std::string::npos) break;
+        start = pos + 1;
+    }
+    return parts;
+}
+
+std::string joinPath(const std::vector<std::string>& parts, size_t start_index) {
+    std::string out;
+    for (size_t i = start_index; i < parts.size(); ++i) {
+        if (!out.empty()) out.push_back('/');
+        out.append(parts[i]);
+    }
+    return out;
+}
+
+std::optional<HfModelRef> parseHfModelRef(const std::string& input) {
+    if (input.empty()) return std::nullopt;
+
+    if (input.find("://") == std::string::npos) {
+        std::string repo = input;
+        auto qpos = repo.find_first_of("?#");
+        if (qpos != std::string::npos) {
+            repo = repo.substr(0, qpos);
+        }
+        if (!repo.empty() && repo.back() == '/') {
+            repo.pop_back();
+        }
+        auto parts = splitPath(repo);
+        if (parts.size() < 2) return std::nullopt;
+        HfModelRef ref;
+        ref.repo = parts[0] + "/" + parts[1];
+        if (parts.size() > 2) {
+            ref.filename = joinPath(parts, 2);
+        }
+        return ref;
+    }
+
+    auto host = hostFromUrl(input);
+    if (!host || !isHfHost(*host)) return std::nullopt;
+
+    auto scheme_pos = input.find("://");
+    std::string rest = input.substr(scheme_pos + 3);
+    auto slash = rest.find('/');
+    if (slash == std::string::npos) return std::nullopt;
+    std::string path = rest.substr(slash + 1);
+
+    // Strip query/fragment
+    auto qpos = path.find_first_of("?#");
+    if (qpos != std::string::npos) {
+        path = path.substr(0, qpos);
+    }
+
+    auto parts = splitPath(path);
+    if (parts.size() < 2) return std::nullopt;
+
+    HfModelRef ref;
+    ref.repo = parts[0] + "/" + parts[1];
+
+    if (parts.size() > 2) {
+        const std::string& marker = parts[2];
+        if ((marker == "resolve" || marker == "blob" || marker == "raw") && parts.size() >= 5) {
+            ref.filename = joinPath(parts, 4);
+        } else if (marker != "tree") {
+            ref.filename = joinPath(parts, 2);
+        }
+    }
+
+    return ref;
+}
+
+}  // namespace
 
 #ifdef USE_WHISPER
 #include "core/audio_manager.h"
@@ -239,8 +371,62 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
 #endif
 
         // SPEC-dcaeaec4 FR-7: POST /api/models/pull - receive sync notification from router
-        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry, &engine](const httplib::Request&, httplib::Response& res) {
+        server.getServer().Post("/api/models/pull", [&model_sync, &model_storage, &registry, &engine](const httplib::Request& req, httplib::Response& res) {
             try {
+                std::string requested;
+                std::string filename_hint;
+                auto body = nlohmann::json::parse(req.body, nullptr, false);
+                if (!body.is_discarded()) {
+                    if (body.contains("name") && body["name"].is_string()) {
+                        requested = body["name"].get<std::string>();
+                    } else if (body.contains("model") && body["model"].is_string()) {
+                        requested = body["model"].get<std::string>();
+                    }
+                }
+
+                if (!requested.empty()) {
+                    auto ref = parseHfModelRef(requested);
+                    if (!ref) {
+                        res.status = 400;
+                        nlohmann::json err;
+                        err["error"] = "invalid HuggingFace model reference (expected owner/model or HuggingFace URL)";
+                        res.set_content(err.dump(), "application/json");
+                        return;
+                    }
+
+                    const std::string model_id = ref->repo;
+                    filename_hint = ref->filename;
+                    spdlog::info("Received model pull request: {}{}", model_id,
+                                 filename_hint.empty() ? "" : " (" + filename_hint + ")");
+
+                    allm::ModelDownloader downloader("", model_sync->getModelsDir());
+                    bool ok = model_sync->downloadModel(downloader, model_id, nullptr, filename_hint);
+                    if (!ok) {
+                        res.status = 500;
+                        nlohmann::json err;
+                        const auto msg = downloader.getLastError();
+                        err["error"] = msg.empty() ? "download failed" : msg;
+                        res.set_content(err.dump(), "application/json");
+                        return;
+                    }
+
+                    // Update registry with current local models
+                    auto local_descriptors = model_storage.listAvailableDescriptors();
+                    std::vector<std::string> local_model_names;
+                    local_model_names.reserve(local_descriptors.size());
+                    for (const auto& desc : local_descriptors) {
+                        if (!engine.isModelSupported(desc)) {
+                            continue;
+                        }
+                        local_model_names.push_back(desc.name);
+                    }
+                    registry.setModels(local_model_names);
+                    spdlog::info("Model pull completed, {} models available", local_model_names.size());
+
+                    res.set_content(R"({"status":"ok"})", "application/json");
+                    return;
+                }
+
                 spdlog::info("Received model pull notification from router");
 
                 // Sync with router

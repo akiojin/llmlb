@@ -437,7 +437,8 @@ void ModelSync::setModelOverrides(std::unordered_map<std::string, ModelOverrides
 
 bool ModelSync::downloadModel(ModelDownloader& downloader,
                               const std::string& model_id,
-                              ProgressCallback cb) const {
+                              ProgressCallback cb,
+                              const std::string& filename_hint) const {
     spdlog::info("ModelSync: downloading model {}", model_id);
     ModelOverrides model_cfg;
     {
@@ -462,7 +463,7 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         spdlog::info("ModelSync: supported runtimes [{}]", rt_list);
     }
 
-    auto manifest_path = downloader.fetchManifest(model_id);
+    auto manifest_path = downloader.fetchManifest(model_id, filename_hint);
     if (manifest_path.empty()) {
         spdlog::warn("ModelSync: failed to fetch manifest for model {}", model_id);
         return false;

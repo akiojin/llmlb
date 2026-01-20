@@ -33,7 +33,7 @@
 - **責務分離**: Router は manifest を提供し、Node が runtime/アーティファクト選択を行う。
 - **Node 前提**: Node は Python 依存を持たない。
 - **GPU 前提**: GPU 非搭載ノードは対象外。
-- **llama.cpp fork**: Upstream fixes are pending; operate on `akiojin/llama.cpp` until they land upstream.
+- **llama.cpp fork**: Upstream fixes are pending; operate on `akiojin/llama.cpp` until they land upstream, then switch back to `ggerganov/llama.cpp`.
 - **対応 OS/GPU**:
   - macOS: Apple Silicon / Metal
   - Windows: CUDA

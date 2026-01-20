@@ -13,8 +13,8 @@ namespace commands {
 int router_models() {
     // TODO: Implement router models management
     // - List deployed models across cluster
-    // - Deploy model to nodes
-    // - Stop model on nodes
+    // - Deploy model to runtimes
+    // - Stop model on runtimes
 
     std::cerr << "Error: router models command not yet implemented" << std::endl;
     std::cerr << "This feature requires a running router instance" << std::endl;

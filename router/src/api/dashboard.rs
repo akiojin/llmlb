@@ -56,15 +56,20 @@ pub struct DashboardEndpoint {
 /// システム統計レスポンス
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardStats {
-    /// 登録ノード総数
+    /// 登録ランタイム総数
+    #[serde(rename = "total_runtimes", alias = "total_nodes")]
     pub total_nodes: usize,
-    /// オンラインノード数
+    /// オンラインランタイム数
+    #[serde(rename = "online_runtimes", alias = "online_nodes")]
     pub online_nodes: usize,
-    /// 承認待ちノード数
+    /// 承認待ちランタイム数
+    #[serde(rename = "pending_runtimes", alias = "pending_nodes")]
     pub pending_nodes: usize,
-    /// 登録中ノード数
+    /// 登録中ランタイム数
+    #[serde(rename = "registering_runtimes", alias = "registering_nodes")]
     pub registering_nodes: usize,
-    /// オフラインノード数
+    /// オフラインランタイム数
+    #[serde(rename = "offline_runtimes", alias = "offline_nodes")]
     pub offline_nodes: usize,
     /// 累積リクエスト数
     pub total_requests: u64,
@@ -161,7 +166,7 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     })
 }
 
-/// GET /v0/dashboard/metrics/:node_id
+/// GET /v0/dashboard/metrics/:runtime_id
 pub async fn get_node_metrics(
     Path(node_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -425,9 +430,9 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
         "timestamp",
         "request_type",
         "model",
-        "node_id",
-        "node_machine_name",
-        "node_ip",
+        "runtime_id",
+        "runtime_machine_name",
+        "runtime_ip",
         "client_ip",
         "duration_ms",
         "status",

@@ -202,22 +202,22 @@ RESPONSE=$(curl -X POST http://localhost:32768/v0/nodes \
   }')
 
 # レスポンスからノードID/トークンを抽出
-NODE_ID=$(echo $RESPONSE | jq -r '.node_id')
-NODE_TOKEN=$(echo $RESPONSE | jq -r '.node_token')
+NODE_ID=$(echo $RESPONSE | jq -r '.runtime_id')
+NODE_TOKEN=$(echo $RESPONSE | jq -r '.runtime_token')
 echo "ノードトークン: $NODE_TOKEN"
 ```
 
-**テスト検証**: レスポンスに `node_token` フィールドが含まれることを確認
+**テスト検証**: レスポンスに `runtime_token` フィールドが含まれることを確認
 
 ### ノードからのヘルスチェック
 
 ```bash
-# ノードトークンを使用してヘルスチェック（node_id 必須）
+# ノードトークンを使用してヘルスチェック（runtime_id 必須）
 curl -X POST http://localhost:32768/v0/health \
   -H "X-Node-Token: $NODE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "node_id": "'$NODE_ID'",
+    "runtime_id": "'$NODE_ID'",
     "cpu_usage": 12.3,
     "memory_usage": 45.6,
     "active_requests": 0,
@@ -236,7 +236,7 @@ curl -X POST http://localhost:32768/v0/health \
 curl -X POST http://localhost:32768/v0/health \
   -H "Content-Type: application/json" \
   -d '{
-    "node_id": "'$NODE_ID'",
+    "runtime_id": "'$NODE_ID'",
     "cpu_usage": 12.3,
     "memory_usage": 45.6,
     "active_requests": 0,

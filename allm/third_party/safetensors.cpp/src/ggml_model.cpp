@@ -91,6 +91,86 @@ enum ggml_type dtype_to_ggml_type(DType dtype) {
     }
 }
 
+static void bf16_to_f32_buffer(const uint16_t* src, float* dst, size_t n_elements) {
+    for (size_t i = 0; i < n_elements; ++i) {
+        uint32_t bits = static_cast<uint32_t>(src[i]) << 16;
+        float val;
+        memcpy(&val, &bits, sizeof(float));
+        dst[i] = val;
+    }
+}
+
+static void f16_to_f32_buffer(const ggml_fp16_t* src, float* dst, size_t n_elements) {
+    ggml_fp16_to_fp32_row(src, dst, static_cast<int>(n_elements));
+}
+
+bool pack_mxfp4_blocks_to_ggml(
+    const uint8_t* blocks,
+    const uint8_t* scales,
+    const std::vector<int64_t>& blocks_shape,
+    const std::vector<int64_t>& scales_shape,
+    int64_t row_offset,
+    int64_t row_count,
+    int64_t n_cols,
+    std::vector<uint8_t>& out,
+    std::string& error
+) {
+    if (!blocks || !scales) {
+        error = "mxfp4 blocks/scales are null";
+        return false;
+    }
+    if (blocks_shape.size() != 4 || scales_shape.size() != 3) {
+        error = "mxfp4 blocks/scales shapes are invalid";
+        return false;
+    }
+
+    const int64_t n_expert = blocks_shape[0];
+    const int64_t n_rows_total = blocks_shape[1];
+    const int64_t n_blocks = blocks_shape[2];
+    const int64_t block_bytes = blocks_shape[3];
+
+    if (block_bytes != 16) {
+        error = "mxfp4 blocks last dimension must be 16";
+        return false;
+    }
+    if (scales_shape[0] != n_expert || scales_shape[1] != n_rows_total || scales_shape[2] != n_blocks) {
+        error = "mxfp4 scales shape mismatch";
+        return false;
+    }
+    if (row_offset < 0 || row_count <= 0 || row_offset + row_count > n_rows_total) {
+        error = "mxfp4 row range out of bounds";
+        return false;
+    }
+    if (n_blocks * 32 != n_cols) {
+        error = "mxfp4 blocks do not match expected column count";
+        return false;
+    }
+
+    const size_t row_size = static_cast<size_t>(n_blocks) * 17;
+    const size_t total_rows = static_cast<size_t>(n_expert) * static_cast<size_t>(row_count);
+    out.assign(row_size * total_rows, 0);
+
+    for (int64_t e = 0; e < n_expert; ++e) {
+        for (int64_t r = 0; r < row_count; ++r) {
+            const int64_t src_row = row_offset + r;
+            const size_t dst_row_index = static_cast<size_t>(e) * row_count + static_cast<size_t>(r);
+            uint8_t* dst = out.data() + dst_row_index * row_size;
+
+            for (int64_t b = 0; b < n_blocks; ++b) {
+                const size_t idx = static_cast<size_t>((e * n_rows_total + src_row) * n_blocks + b);
+                const uint8_t scale = scales[idx];
+                const uint8_t* block = blocks + idx * block_bytes;
+                const size_t dst_off = static_cast<size_t>(b) * 17;
+
+                dst[dst_off] = scale;
+                memcpy(dst + dst_off + 1, block, 16);
+            }
+        }
+    }
+
+    return true;
+}
+
 /* Tensor name normalization */
 std::string TensorNameMap::normalize_name(const std::string& name) {
     // Different models use different naming conventions
@@ -267,6 +347,11 @@ bool load_hparams(
     hparams.n_head_kv = find_int_value("num_key_value_heads");
     if (hparams.n_head_kv == 0) hparams.n_head_kv = hparams.n_head;
 
+    hparams.head_dim = find_int_value("head_dim");
+    if (hparams.head_dim == 0 && hparams.n_head > 0) {
+        hparams.head_dim = hparams.n_embd / hparams.n_head;
+    }
+
     hparams.n_layer = find_int_value("num_hidden_layers");
     if (hparams.n_layer == 0) hparams.n_layer = find_int_value("n_layer");
 
@@ -275,6 +360,17 @@ bool load_hparams(
         // Default: 4 * hidden_size for most models
         hparams.n_ff = 4 * hparams.n_embd;
     }
+
+    hparams.n_expert = find_int_value("num_local_experts");
+    if (hparams.n_expert == 0) hparams.n_expert = find_int_value("num_experts");
+    if (hparams.n_expert == 0) hparams.n_expert = find_int_value("n_expert");
+
+    hparams.n_expert_used = find_int_value("num_experts_per_tok");
+    if (hparams.n_expert_used == 0) hparams.n_expert_used = find_int_value("experts_per_token");
+    if (hparams.n_expert_used == 0) hparams.n_expert_used = find_int_value("n_expert_used");
+
+    hparams.swiglu_limit = find_float_value("swiglu_limit");
+    if (hparams.swiglu_limit == 0.0f) hparams.swiglu_limit = 7.0f;
 
     hparams.n_ctx_train = find_int_value("max_position_embeddings");
     if (hparams.n_ctx_train == 0) hparams.n_ctx_train = find_int_value("n_positions");
@@ -285,7 +381,7 @@ bool load_hparams(
     if (hparams.rope_freq_base == 0.0f) hparams.rope_freq_base = 10000.0f;
 
     // Calculate rotation dimensions
-    hparams.n_rot = hparams.n_embd / hparams.n_head;
+    hparams.n_rot = hparams.head_dim > 0 ? hparams.head_dim : (hparams.n_embd / hparams.n_head);
 
     // Normalization epsilon
     hparams.norm_eps = find_float_value("rms_norm_eps");
@@ -301,6 +397,9 @@ bool load_hparams(
 
     // Detect architecture
     hparams.architecture = detect_architecture(model_dir, error);
+    hparams.use_moe = (hparams.architecture == "gpt_oss" &&
+                       hparams.n_expert > 0 &&
+                       hparams.n_expert_used > 0);
 
     // Parse torch_dtype for weight data type
     auto find_string_value = [&](const std::string& key) -> std::string {
@@ -328,6 +427,8 @@ bool load_hparams(
         hparams.weight_type = GGML_TYPE_F16;
     } else if (torch_dtype == "float32") {
         hparams.weight_type = GGML_TYPE_F32;
+    } else if (hparams.architecture == "gpt_oss") {
+        hparams.weight_type = GGML_TYPE_BF16;
     } else {
         // Default to F16 for unknown types
         hparams.weight_type = GGML_TYPE_F16;
@@ -467,65 +568,103 @@ static bool create_layer_tensors(
     const int32_t n_embd = hparams.n_embd;
     const int32_t n_head = hparams.n_head;
     const int32_t n_head_kv = hparams.n_head_kv;
-    const int32_t head_dim = n_embd / n_head;
+    const int32_t head_dim = hparams.head_dim;
+    const int32_t q_dim = n_head * head_dim;
+    const int32_t kv_dim = n_head_kv * head_dim;
     const int32_t n_ff = hparams.n_ff;
     const enum ggml_type wtype = hparams.weight_type;
 
     char name[128];
 
-    // Attention norm (use weight_type from config to match safetensors)
+    // Attention norm (always F32 for metal binary ops)
     snprintf(name, sizeof(name), "blk.%d.attn_norm.weight", layer_idx);
-    layer.attn_norm = ggml_new_tensor_1d(ctx, wtype, n_embd);
+    layer.attn_norm = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
     ggml_set_name(layer.attn_norm, name);
 
     // Q, K, V projections (use weight_type from config)
     snprintf(name, sizeof(name), "blk.%d.attn_q.weight", layer_idx);
-    layer.wq = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head * head_dim);
+    layer.wq = ggml_new_tensor_2d(ctx, wtype, n_embd, q_dim);
     ggml_set_name(layer.wq, name);
 
     snprintf(name, sizeof(name), "blk.%d.attn_k.weight", layer_idx);
-    layer.wk = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head_kv * head_dim);
+    layer.wk = ggml_new_tensor_2d(ctx, wtype, n_embd, kv_dim);
     ggml_set_name(layer.wk, name);
 
     snprintf(name, sizeof(name), "blk.%d.attn_v.weight", layer_idx);
-    layer.wv = ggml_new_tensor_2d(ctx, wtype, n_embd, n_head_kv * head_dim);
+    layer.wv = ggml_new_tensor_2d(ctx, wtype, n_embd, kv_dim);
     ggml_set_name(layer.wv, name);
 
     // Q, K, V biases (optional, used by Qwen2 - always F32)
     snprintf(name, sizeof(name), "blk.%d.attn_q.bias", layer_idx);
-    layer.bq = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_head * head_dim);
+    layer.bq = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, q_dim);
     ggml_set_name(layer.bq, name);
 
     snprintf(name, sizeof(name), "blk.%d.attn_k.bias", layer_idx);
-    layer.bk = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_head_kv * head_dim);
+    layer.bk = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, kv_dim);
     ggml_set_name(layer.bk, name);
 
     snprintf(name, sizeof(name), "blk.%d.attn_v.bias", layer_idx);
-    layer.bv = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_head_kv * head_dim);
+    layer.bv = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, kv_dim);
     ggml_set_name(layer.bv, name);
 
     // Output projection
     snprintf(name, sizeof(name), "blk.%d.attn_output.weight", layer_idx);
-    layer.wo = ggml_new_tensor_2d(ctx, wtype, n_head * head_dim, n_embd);
+    layer.wo = ggml_new_tensor_2d(ctx, wtype, q_dim, n_embd);
     ggml_set_name(layer.wo, name);
 
-    // FFN norm (use weight_type from config to match safetensors)
+    // FFN norm (always F32 for metal binary ops)
     snprintf(name, sizeof(name), "blk.%d.ffn_norm.weight", layer_idx);
-    layer.ffn_norm = ggml_new_tensor_1d(ctx, wtype, n_embd);
+    layer.ffn_norm = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
     ggml_set_name(layer.ffn_norm, name);
 
-    // FFN layers (SwiGLU: gate, up, down) - use weight_type from config
-    snprintf(name, sizeof(name), "blk.%d.ffn_gate.weight", layer_idx);
-    layer.ffn_gate = ggml_new_tensor_2d(ctx, wtype, n_embd, n_ff);
-    ggml_set_name(layer.ffn_gate, name);
+    if (hparams.use_moe) {
+        layer.is_moe = true;
 
-    snprintf(name, sizeof(name), "blk.%d.ffn_up.weight", layer_idx);
-    layer.ffn_up = ggml_new_tensor_2d(ctx, wtype, n_embd, n_ff);
-    ggml_set_name(layer.ffn_up, name);
+        snprintf(name, sizeof(name), "blk.%d.moe_router.weight", layer_idx);
+        layer.moe_router = ggml_new_tensor_2d(ctx, wtype, n_embd, hparams.n_expert);
+        ggml_set_name(layer.moe_router, name);
 
-    snprintf(name, sizeof(name), "blk.%d.ffn_down.weight", layer_idx);
-    layer.ffn_down = ggml_new_tensor_2d(ctx, wtype, n_ff, n_embd);
-    ggml_set_name(layer.ffn_down, name);
+        snprintf(name, sizeof(name), "blk.%d.moe_router.bias", layer_idx);
+        layer.moe_router_bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hparams.n_expert);
+        ggml_set_name(layer.moe_router_bias, name);
+
+        snprintf(name, sizeof(name), "blk.%d.moe_gate_exps.weight", layer_idx);
+        layer.moe_gate_exps = ggml_new_tensor_3d(ctx, GGML_TYPE_MXFP4, n_embd, n_ff, hparams.n_expert);
+        ggml_set_name(layer.moe_gate_exps, name);
+
+        snprintf(name, sizeof(name), "blk.%d.moe_up_exps.weight", layer_idx);
+        layer.moe_up_exps = ggml_new_tensor_3d(ctx, GGML_TYPE_MXFP4, n_embd, n_ff, hparams.n_expert);
+        ggml_set_name(layer.moe_up_exps, name);
+
+        snprintf(name, sizeof(name), "blk.%d.moe_down_exps.weight", layer_idx);
+        layer.moe_down_exps = ggml_new_tensor_3d(ctx, GGML_TYPE_MXFP4, n_ff, n_embd, hparams.n_expert);
+        ggml_set_name(layer.moe_down_exps, name);
+
+        snprintf(name, sizeof(name), "blk.%d.moe_gate_exps.bias", layer_idx);
+        layer.moe_gate_bias = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_ff, hparams.n_expert);
+        ggml_set_name(layer.moe_gate_bias, name);
+
+        snprintf(name, sizeof(name), "blk.%d.moe_up_exps.bias", layer_idx);
+        layer.moe_up_bias = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_ff, hparams.n_expert);
+        ggml_set_name(layer.moe_up_bias, name);
+
+        snprintf(name, sizeof(name), "blk.%d.moe_down_exps.bias", layer_idx);
+        layer.moe_down_bias = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_embd, hparams.n_expert);
+        ggml_set_name(layer.moe_down_bias, name);
+    } else {
+        // FFN layers (SwiGLU: gate, up, down) - use weight_type from config
+        snprintf(name, sizeof(name), "blk.%d.ffn_gate.weight", layer_idx);
+        layer.ffn_gate = ggml_new_tensor_2d(ctx, wtype, n_embd, n_ff);
+        ggml_set_name(layer.ffn_gate, name);
+
+        snprintf(name, sizeof(name), "blk.%d.ffn_up.weight", layer_idx);
+        layer.ffn_up = ggml_new_tensor_2d(ctx, wtype, n_embd, n_ff);
+        ggml_set_name(layer.ffn_up, name);
+
+        snprintf(name, sizeof(name), "blk.%d.ffn_down.weight", layer_idx);
+        layer.ffn_down = ggml_new_tensor_2d(ctx, wtype, n_ff, n_embd);
+        ggml_set_name(layer.ffn_down, name);
+    }
 
     return true;
 }
@@ -544,7 +683,9 @@ static size_t estimate_weight_memory(const ModelHParams& hparams) {
     const int32_t n_embd = hparams.n_embd;
     const int32_t n_head = hparams.n_head;
     const int32_t n_head_kv = hparams.n_head_kv;
-    const int32_t head_dim = n_embd / n_head;
+    const int32_t head_dim = hparams.head_dim;
+    const int32_t q_dim = n_head * head_dim;
+    const int32_t kv_dim = n_head_kv * head_dim;
     const int32_t n_ff = hparams.n_ff;
 
     for (int i = 0; i < hparams.n_layer; ++i) {
@@ -552,24 +693,39 @@ static size_t estimate_weight_memory(const ModelHParams& hparams) {
         mem += n_embd * sizeof(float);
 
         // Q, K, V, O weights (use weight_type)
-        mem += (size_t)n_embd * n_head * head_dim * wtype_size;      // Q
-        mem += (size_t)n_embd * n_head_kv * head_dim * wtype_size;   // K
-        mem += (size_t)n_embd * n_head_kv * head_dim * wtype_size;   // V
-        mem += (size_t)n_head * head_dim * n_embd * wtype_size;      // O
+        mem += (size_t)n_embd * q_dim * wtype_size;   // Q
+        mem += (size_t)n_embd * kv_dim * wtype_size;  // K
+        mem += (size_t)n_embd * kv_dim * wtype_size;  // V
+        mem += (size_t)q_dim * n_embd * wtype_size;   // O
 
         // Q, K, V biases (always F32, optional but allocated)
-        mem += (size_t)n_head * head_dim * sizeof(float);            // bq
-        mem += (size_t)n_head_kv * head_dim * sizeof(float);         // bk
-        mem += (size_t)n_head_kv * head_dim * sizeof(float);         // bv
+        mem += (size_t)q_dim * sizeof(float);   // bq
+        mem += (size_t)kv_dim * sizeof(float);  // bk
+        mem += (size_t)kv_dim * sizeof(float);  // bv
 
 
         // FFN norm (always F32)
         mem += n_embd * sizeof(float);
 
-        // FFN (use weight_type)
-        mem += (size_t)n_embd * n_ff * wtype_size;  // gate
-        mem += (size_t)n_embd * n_ff * wtype_size;  // up
-        mem += (size_t)n_ff * n_embd * wtype_size;  // down
+        if (hparams.use_moe) {
+            const size_t row_size_gate = ggml_row_size(GGML_TYPE_MXFP4, n_embd);
+            const size_t row_size_down = ggml_row_size(GGML_TYPE_MXFP4, n_ff);
+
+            mem += row_size_gate * (size_t)n_ff * (size_t)hparams.n_expert;  // gate
+            mem += row_size_gate * (size_t)n_ff * (size_t)hparams.n_expert;  // up
+            mem += row_size_down * (size_t)n_embd * (size_t)hparams.n_expert;  // down
+
+            mem += (size_t)n_embd * (size_t)hparams.n_expert * wtype_size;   // router
+            mem += (size_t)hparams.n_expert * sizeof(float);                 // router bias
+            mem += (size_t)n_ff * (size_t)hparams.n_expert * sizeof(float);  // gate bias
+            mem += (size_t)n_ff * (size_t)hparams.n_expert * sizeof(float);  // up bias
+            mem += (size_t)n_embd * (size_t)hparams.n_expert * sizeof(float); // down bias
+        } else {
+            // FFN (use weight_type)
+            mem += (size_t)n_embd * n_ff * wtype_size;  // gate
+            mem += (size_t)n_embd * n_ff * wtype_size;  // up
+            mem += (size_t)n_ff * n_embd * wtype_size;  // down
+        }
     }
 
     // Output norm (always F32)
@@ -691,9 +847,9 @@ GgmlModel* load_ggml_model(
     fprintf(stderr, "[DEBUG] load_ggml_model: layer tensors created, creating output tensors\n");
     fflush(stderr);
 
-    // Output norm (use weight_type from config to match safetensors)
+    // Output norm (always F32 for metal binary ops)
     tensors.output_norm = ggml_new_tensor_1d(
-        model->ctx_weights, wtype, hparams.n_embd
+        model->ctx_weights, GGML_TYPE_F32, hparams.n_embd
     );
     ggml_set_name(tensors.output_norm, "output_norm.weight");
 
@@ -754,6 +910,39 @@ GgmlModel* load_ggml_model(
     fprintf(stderr, "[DEBUG] load_ggml_model: found %zu safetensors files\n", safetensors_files.size());
     fflush(stderr);
 
+    struct Mxfp4Source {
+        const uint8_t* blocks = nullptr;
+        const uint8_t* scales = nullptr;
+        std::vector<int64_t> blocks_shape;
+        std::vector<int64_t> scales_shape;
+    };
+
+    struct GptOssMoeSources {
+        Mxfp4Source gate_up;
+        Mxfp4Source down;
+        const uint8_t* gate_up_bias = nullptr;
+        std::vector<int64_t> gate_up_bias_shape;
+    };
+
+    std::vector<GptOssMoeSources> gpt_oss_moe_sources;
+    if (hparams.use_moe) {
+        gpt_oss_moe_sources.resize(hparams.n_layer);
+    }
+
+    auto parse_layer_index = [](const std::string& norm_name, int& layer_idx) -> bool {
+        size_t blk_pos = norm_name.find("blk.");
+        if (blk_pos == std::string::npos) {
+            return false;
+        }
+        size_t idx_start = blk_pos + 4;
+        size_t idx_end = norm_name.find('.', idx_start);
+        if (idx_end == std::string::npos) {
+            return false;
+        }
+        layer_idx = std::stoi(norm_name.substr(idx_start, idx_end - idx_start));
+        return true;
+    };
+
     // Load tensor data from safetensors files
     // For MVP: we parse headers and memory-map files
     // Full implementation would copy data to GPU
@@ -791,7 +980,47 @@ GgmlModel* load_ggml_model(
         const uint8_t* data_base = static_cast<const uint8_t*>(file_data) + header.data_offset;
 
         for (const auto& tensor_info : header.tensors) {
-            // Skip most bias tensors except QKV biases (used by Qwen2)
+            // Find corresponding ggml tensor
+            std::string norm_name = TensorNameMap::normalize_name(tensor_info.name);
+            const uint8_t* src_data = data_base + tensor_info.data_offset;
+
+            if (hparams.use_moe && norm_name.find("mlp.experts.") != std::string::npos) {
+                int layer_idx = -1;
+                if (!parse_layer_index(norm_name, layer_idx) ||
+                    layer_idx < 0 || layer_idx >= hparams.n_layer) {
+                    error = "Invalid layer index for gpt-oss MoE tensor: " + tensor_info.name;
+                    return nullptr;
+                }
+
+                GptOssMoeSources& moe = gpt_oss_moe_sources[layer_idx];
+                if (norm_name.find("mlp.experts.gate_up_proj_blocks") != std::string::npos) {
+                    moe.gate_up.blocks = src_data;
+                    moe.gate_up.blocks_shape = tensor_info.shape;
+                    continue;
+                }
+                if (norm_name.find("mlp.experts.gate_up_proj_scales") != std::string::npos) {
+                    moe.gate_up.scales = src_data;
+                    moe.gate_up.scales_shape = tensor_info.shape;
+                    continue;
+                }
+                if (norm_name.find("mlp.experts.gate_up_proj_bias") != std::string::npos) {
+                    moe.gate_up_bias = src_data;
+                    moe.gate_up_bias_shape = tensor_info.shape;
+                    continue;
+                }
+                if (norm_name.find("mlp.experts.down_proj_blocks") != std::string::npos) {
+                    moe.down.blocks = src_data;
+                    moe.down.blocks_shape = tensor_info.shape;
+                    continue;
+                }
+                if (norm_name.find("mlp.experts.down_proj_scales") != std::string::npos) {
+                    moe.down.scales = src_data;
+                    moe.down.scales_shape = tensor_info.shape;
+                    continue;
+                }
+            }
+
+            // Skip most bias tensors except QKV and gpt-oss MoE biases
             bool is_bias = (tensor_info.name.find(".bias") != std::string::npos ||
                             tensor_info.name.find("_bias") != std::string::npos);
             bool is_qkv_bias = (tensor_info.name.find("q_proj.bias") != std::string::npos ||
@@ -800,12 +1029,12 @@ GgmlModel* load_ggml_model(
                                 tensor_info.name.find("attn_q.bias") != std::string::npos ||
                                 tensor_info.name.find("attn_k.bias") != std::string::npos ||
                                 tensor_info.name.find("attn_v.bias") != std::string::npos);
-            if (is_bias && !is_qkv_bias) {
+            bool is_moe_bias = hparams.use_moe &&
+                               (norm_name.find("mlp.router.bias") != std::string::npos ||
+                                norm_name.find("mlp.experts.down_proj_bias") != std::string::npos);
+            if (is_bias && !is_qkv_bias && !is_moe_bias) {
                 continue;
             }
-
-            // Find corresponding ggml tensor
-            std::string norm_name = TensorNameMap::normalize_name(tensor_info.name);
 
             struct ggml_tensor* ggml_tensor = nullptr;
 
@@ -830,18 +1059,28 @@ GgmlModel* load_ggml_model(
             // Match layer tensors: extract layer index from "blk.{i}." pattern
             if (!ggml_tensor && norm_name.find("blk.") != std::string::npos) {
                 // Extract layer index
-                size_t blk_pos = norm_name.find("blk.");
-                if (blk_pos != std::string::npos) {
-                    size_t idx_start = blk_pos + 4;
-                    size_t idx_end = norm_name.find('.', idx_start);
-                    if (idx_end != std::string::npos) {
-                        std::string idx_str = norm_name.substr(idx_start, idx_end - idx_start);
-                        int layer_idx = std::stoi(idx_str);
+                int layer_idx = -1;
+                if (parse_layer_index(norm_name, layer_idx)) {
+                    if (layer_idx >= 0 && layer_idx < hparams.n_layer) {
+                        LayerTensors& layer = tensors.layers[layer_idx];
+                        size_t idx_start = norm_name.find("blk.") + 4;
+                        size_t idx_end = norm_name.find('.', idx_start);
+                        if (idx_end == std::string::npos) {
+                            continue;
+                        }
+                        std::string layer_part = norm_name.substr(idx_end + 1);
 
-                        if (layer_idx >= 0 && layer_idx < hparams.n_layer) {
-                            LayerTensors& layer = tensors.layers[layer_idx];
-                            std::string layer_part = norm_name.substr(idx_end + 1);
+                        if (hparams.use_moe) {
+                            if (layer_part.find("mlp.router.weight") != std::string::npos) {
+                                ggml_tensor = layer.moe_router;
+                            } else if (layer_part.find("mlp.router.bias") != std::string::npos) {
+                                ggml_tensor = layer.moe_router_bias;
+                            } else if (layer_part.find("mlp.experts.down_proj_bias") != std::string::npos) {
+                                ggml_tensor = layer.moe_down_bias;
+                            }
+                        }
 
+                        if (!ggml_tensor) {
                             // Attention norm
                             if (layer_part.find("attn_norm") != std::string::npos ||
                                 layer_part.find("input_layernorm") != std::string::npos) {
@@ -920,7 +1159,6 @@ GgmlModel* load_ggml_model(
             if (ggml_tensor) {
                 // Validate size before copying
                 size_t ggml_size = ggml_nbytes(ggml_tensor);
-                const void* src_data = data_base + tensor_info.data_offset;
 
                 if (ggml_size == tensor_info.data_size) {
                     // Direct copy - sizes match
@@ -932,17 +1170,24 @@ GgmlModel* load_ggml_model(
                     // Convert bf16 to f32
                     size_t n_elements = ggml_nelements(ggml_tensor);
                     std::vector<float> f32_data(n_elements);
-                    const uint16_t* bf16_src = static_cast<const uint16_t*>(src_data);
+                    const uint16_t* bf16_src = reinterpret_cast<const uint16_t*>(src_data);
 
-                    for (size_t i = 0; i < n_elements; ++i) {
-                        // BF16 to F32: shift left by 16 bits
-                        uint32_t bits = static_cast<uint32_t>(bf16_src[i]) << 16;
-                        float val;
-                        memcpy(&val, &bits, sizeof(float));
-                        f32_data[i] = val;
-                    }
+                    bf16_to_f32_buffer(bf16_src, f32_data.data(), n_elements);
 
                     fprintf(stderr, "[DEBUG] converting tensor %s bf16->f32, n_elements=%zu\n",
+                            tensor_info.name.c_str(), n_elements);
+                    fflush(stderr);
+                    ggml_backend_tensor_set(ggml_tensor, f32_data.data(), 0, ggml_size);
+                } else if (ggml_tensor->type == GGML_TYPE_F32 && tensor_info.dtype == DType::F16 &&
+                           ggml_size == tensor_info.data_size * 2) {
+                    // Convert f16 to f32
+                    size_t n_elements = ggml_nelements(ggml_tensor);
+                    std::vector<float> f32_data(n_elements);
+                    const ggml_fp16_t* f16_src = reinterpret_cast<const ggml_fp16_t*>(src_data);
+
+                    f16_to_f32_buffer(f16_src, f32_data.data(), n_elements);
+
+                    fprintf(stderr, "[DEBUG] converting tensor %s f16->f32, n_elements=%zu\n",
                             tensor_info.name.c_str(), n_elements);
                     fflush(stderr);
                     ggml_backend_tensor_set(ggml_tensor, f32_data.data(), 0, ggml_size);
@@ -951,6 +1196,93 @@ GgmlModel* load_ggml_model(
                             tensor_info.name.c_str(), ggml_size, tensor_info.data_size);
                     fflush(stderr);
                 }
+            }
+        }
+    }
+
+    if (hparams.use_moe) {
+        for (int layer_idx = 0; layer_idx < hparams.n_layer; ++layer_idx) {
+            const GptOssMoeSources& moe_src = gpt_oss_moe_sources[layer_idx];
+            LayerTensors& layer = tensors.layers[layer_idx];
+
+            if (!layer.moe_gate_exps || !layer.moe_up_exps || !layer.moe_down_exps) {
+                continue;
+            }
+
+            if (!moe_src.gate_up.blocks || !moe_src.gate_up.scales ||
+                !moe_src.down.blocks || !moe_src.down.scales) {
+                error = "Missing gpt-oss mxfp4 tensors for layer " + std::to_string(layer_idx);
+                return nullptr;
+            }
+
+            std::vector<uint8_t> packed;
+            if (!pack_mxfp4_blocks_to_ggml(
+                    moe_src.gate_up.blocks,
+                    moe_src.gate_up.scales,
+                    moe_src.gate_up.blocks_shape,
+                    moe_src.gate_up.scales_shape,
+                    0,
+                    hparams.n_ff,
+                    hparams.n_embd,
+                    packed,
+                    error)) {
+                error = "gpt-oss gate packing failed for layer " + std::to_string(layer_idx) + ": " + error;
+                return nullptr;
+            }
+            ggml_backend_tensor_set(layer.moe_gate_exps, packed.data(), 0, packed.size());
+
+            if (!pack_mxfp4_blocks_to_ggml(
+                    moe_src.gate_up.blocks,
+                    moe_src.gate_up.scales,
+                    moe_src.gate_up.blocks_shape,
+                    moe_src.gate_up.scales_shape,
+                    hparams.n_ff,
+                    hparams.n_ff,
+                    hparams.n_embd,
+                    packed,
+                    error)) {
+                error = "gpt-oss up packing failed for layer " + std::to_string(layer_idx) + ": " + error;
+                return nullptr;
+            }
+            ggml_backend_tensor_set(layer.moe_up_exps, packed.data(), 0, packed.size());
+
+            if (!pack_mxfp4_blocks_to_ggml(
+                    moe_src.down.blocks,
+                    moe_src.down.scales,
+                    moe_src.down.blocks_shape,
+                    moe_src.down.scales_shape,
+                    0,
+                    hparams.n_embd,
+                    hparams.n_ff,
+                    packed,
+                    error)) {
+                error = "gpt-oss down packing failed for layer " + std::to_string(layer_idx) + ": " + error;
+                return nullptr;
+            }
+            ggml_backend_tensor_set(layer.moe_down_exps, packed.data(), 0, packed.size());
+
+            if (moe_src.gate_up_bias) {
+                const int64_t n_expert = hparams.n_expert;
+                const int64_t n_ff = hparams.n_ff;
+                if (moe_src.gate_up_bias_shape.size() != 2 ||
+                    moe_src.gate_up_bias_shape[0] != n_expert ||
+                    moe_src.gate_up_bias_shape[1] != n_ff * 2) {
+                    error = "gpt-oss gate_up bias shape mismatch for layer " + std::to_string(layer_idx);
+                    return nullptr;
+                }
+
+                std::vector<float> gate_bias(n_expert * n_ff);
+                std::vector<float> up_bias(n_expert * n_ff);
+                const uint16_t* src = reinterpret_cast<const uint16_t*>(moe_src.gate_up_bias);
+
+                for (int64_t e = 0; e < n_expert; ++e) {
+                    const uint16_t* row = src + e * n_ff * 2;
+                    bf16_to_f32_buffer(row, gate_bias.data() + e * n_ff, static_cast<size_t>(n_ff));
+                    bf16_to_f32_buffer(row + n_ff, up_bias.data() + e * n_ff, static_cast<size_t>(n_ff));
+                }
+
+                ggml_backend_tensor_set(layer.moe_gate_bias, gate_bias.data(), 0, gate_bias.size() * sizeof(float));
+                ggml_backend_tensor_set(layer.moe_up_bias, up_bias.data(), 0, up_bias.size() * sizeof(float));
             }
         }
     }
@@ -1128,7 +1460,7 @@ bool allocate_kv_cache(
 
     const int32_t n_layer = hparams.n_layer;
     const int32_t n_head_kv = hparams.n_head_kv;
-    const int32_t head_dim = hparams.n_embd / hparams.n_head;
+    const int32_t head_dim = hparams.head_dim;
 
     // KV cache size: n_layer * n_ctx * n_head_kv * head_dim * 2 (K and V) * sizeof(fp16)
     size_t kv_cache_size = (size_t)n_layer * n_ctx * n_head_kv * head_dim * 2 * sizeof(ggml_fp16_t);
@@ -1139,7 +1471,7 @@ bool allocate_kv_cache(
     struct ggml_init_params cache_params = {
         .mem_size = compute_size,
         .mem_buffer = nullptr,
-        .no_alloc = false,
+        .no_alloc = true,  // allocate via backend buffer
     };
 
     ctx->ctx_compute = ggml_init(cache_params);
@@ -1158,6 +1490,19 @@ bool allocate_kv_cache(
         ctx->ctx_compute, GGML_TYPE_F16,
         head_dim, n_head_kv, n_ctx, n_layer
     );
+
+    if (!ctx->model || !ctx->model->backend) {
+        error = "KV cache backend not initialized";
+        return false;
+    }
+
+    ctx->kv_cache_buffer = ggml_backend_alloc_ctx_tensors(ctx->ctx_compute, ctx->model->backend);
+    if (!ctx->kv_cache_buffer) {
+        error = "Failed to allocate KV cache backend buffer";
+        return false;
+    }
+
+    ggml_backend_buffer_clear(ctx->kv_cache_buffer, 0);
 
     ctx->kv_size = n_ctx;
     ctx->kv_used = 0;
@@ -1202,6 +1547,10 @@ size_t estimate_compute_buffer_size(
     per_layer += n_batch * n_embd * sizeof(float);  // Attention output
     per_layer += 3 * n_batch * n_ff * sizeof(float);  // FFN gate, up, down intermediates
     per_layer += 2 * n_batch * n_embd * sizeof(float);  // RMSNorm intermediates
+    if (hparams.use_moe) {
+        per_layer += n_batch * hparams.n_expert * sizeof(float);  // Router logits
+        per_layer += 4 * n_batch * hparams.n_expert_used * sizeof(float);  // Top-K indices/weights
+    }
 
     mem += per_layer * n_layer;
 

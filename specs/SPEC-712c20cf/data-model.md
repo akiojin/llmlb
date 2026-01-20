@@ -159,7 +159,7 @@ impl From<Node> for NodeWithUptime {
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodeMetrics {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub cpu_usage: f64,           // %
     pub memory_usage: f64,        // %
     pub active_requests: u32,     // 件
@@ -205,7 +205,7 @@ pub struct NodeMetrics {
 ┌──────────────────┐
 │  NodeMetrics    │ (将来拡張)
 │──────────────────│
-│ + node_id        │
+│ + runtime_id        │
 │ + cpu_usage      │
 │ + ...            │
 └──────────────────┘
@@ -341,7 +341,7 @@ router/src/
 ### メトリクス可視化（SPEC-589f2df1実装後）
 - `NodeMetrics`の実装
 - メトリクス収集API (`POST /v0/health` / `X-Node-Token`)
-- メトリクス取得API (`GET /v0/dashboard/metrics/:node_id`)
+- メトリクス取得API (`GET /v0/dashboard/metrics/:runtime_id`)
 - リクエスト履歴グラフ用のデータ構造
 
 ### リクエスト履歴

@@ -81,7 +81,7 @@ impl LogsQuery {
 
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|
-| /v0/nodes/:node_id/logs | GET | 指定ノードのログをプロキシ |
+| /v0/nodes/:runtime_id/logs | GET | 指定ノードのログをプロキシ |
 
 ## エラーモデル
 
@@ -126,7 +126,7 @@ pub enum ProxyError {
       "level": "INFO",
       "target": "allm::api::router_client",
       "message": "Heartbeat sent",
-      "node_id": "550e8400-e29b-41d4-a716-446655440000"
+      "runtime_id": "550e8400-e29b-41d4-a716-446655440000"
     },
     {
       "timestamp": "2025-01-02T10:30:05.456Z",

@@ -15,7 +15,7 @@ use uuid::Uuid;
 #[cfg(debug_assertions)]
 const DEBUG_API_KEY_ALL: &str = "sk_debug";
 #[cfg(debug_assertions)]
-const DEBUG_API_KEY_NODE: &str = "sk_debug_node";
+const DEBUG_API_KEY_RUNTIME: &str = "sk_debug_runtime";
 #[cfg(debug_assertions)]
 const DEBUG_API_KEY_API: &str = "sk_debug_api";
 #[cfg(debug_assertions)]
@@ -25,7 +25,7 @@ const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
 fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
     match request_key {
         DEBUG_API_KEY_ALL => Some(ApiKeyScope::all()),
-        DEBUG_API_KEY_NODE => Some(vec![ApiKeyScope::Node]),
+        DEBUG_API_KEY_RUNTIME => Some(vec![ApiKeyScope::Runtime]),
         DEBUG_API_KEY_API => Some(vec![ApiKeyScope::Api]),
         DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::Admin]),
         _ => None,
@@ -365,19 +365,19 @@ pub async fn authenticated_middleware(
     Ok(next.run(request).await)
 }
 
-/// 管理者またはノード権限ミドルウェア
+/// 管理者またはランタイム権限ミドルウェア
 ///
-/// `/v0/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ノード(Node APIキー)」の両方から
+/// `/v0/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ランタイム(Runtime APIキー)」の両方から
 /// アクセスされるエンドポイント向け。
 ///
 /// 許可される認証:
 /// - JWT (admin role)
 /// - APIキー (Admin scope)
-/// - APIキー (Node scope)
+/// - APIキー (Runtime scope)
 ///
 /// 拒否される認証:
 /// - APIキー (Api scope) → 403 Forbidden
-pub async fn admin_or_node_middleware(
+pub async fn admin_or_runtime_middleware(
     State(app_state): State<crate::AppState>,
     mut request: Request,
     next: Next,
@@ -410,13 +410,13 @@ pub async fn admin_or_node_middleware(
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
 
-    // Admin または Node スコープを許可
+    // Admin または Runtime スコープを許可
     let has_admin = auth_context.scopes.contains(&ApiKeyScope::Admin);
-    let has_node = auth_context.scopes.contains(&ApiKeyScope::Node);
-    if !has_admin && !has_node {
+    let has_runtime = auth_context.scopes.contains(&ApiKeyScope::Runtime);
+    if !has_admin && !has_runtime {
         return Err((
             StatusCode::FORBIDDEN,
-            "Admin or Node scope required".to_string(),
+            "Admin or Runtime scope required".to_string(),
         )
             .into_response());
     }

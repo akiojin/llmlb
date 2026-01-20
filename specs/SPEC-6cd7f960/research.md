@@ -135,12 +135,12 @@ enum WsEvent {
     },
     // ノード状態更新
     NodeStatusChanged {
-        node_id: String,
+        runtime_id: String,
         status: NodeStatus,
     },
     // メトリクス更新
     MetricsUpdated {
-        node_id: String,
+        runtime_id: String,
         metrics: NodeMetrics,
     },
 }

@@ -146,7 +146,7 @@ async fn test_dashboard_receives_node_registration_event() {
     state
         .event_bus
         .publish(llm_router::events::DashboardEvent::NodeRegistered {
-            node_id,
+            runtime_id: node_id,
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
             status: llm_router_common::types::NodeStatus::Online,
@@ -162,7 +162,7 @@ async fn test_dashboard_receives_node_registration_event() {
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "NodeRegistered");
-        assert_eq!(json["data"]["node_id"], node_id.to_string());
+        assert_eq!(json["data"]["runtime_id"], node_id.to_string());
         assert_eq!(json["data"]["machine_name"], "test-node");
     } else {
         panic!("Expected text message, got {:?}", msg);
@@ -200,7 +200,7 @@ async fn test_dashboard_receives_node_status_change() {
     state
         .event_bus
         .publish(llm_router::events::DashboardEvent::NodeStatusChanged {
-            node_id,
+            runtime_id: node_id,
             old_status: llm_router_common::types::NodeStatus::Online,
             new_status: llm_router_common::types::NodeStatus::Offline,
         });
@@ -215,7 +215,7 @@ async fn test_dashboard_receives_node_status_change() {
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "NodeStatusChanged");
-        assert_eq!(json["data"]["node_id"], node_id.to_string());
+        assert_eq!(json["data"]["runtime_id"], node_id.to_string());
         assert_eq!(json["data"]["new_status"], "offline");
     } else {
         panic!("Expected text message, got {:?}", msg);

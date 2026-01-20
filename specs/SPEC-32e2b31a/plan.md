@@ -250,7 +250,7 @@ pub enum NodeStatus {
 **HealthMetrics**:
 ```rust
 pub struct HealthMetrics {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub cpu_usage: f32,            // CPU使用率 (0.0-100.0)
     pub memory_usage: f32,         // メモリ使用率 (0.0-100.0)
     pub active_requests: u32,      // 処理中リクエスト数
@@ -263,7 +263,7 @@ pub struct HealthMetrics {
 ```rust
 pub struct Request {
     pub id: Uuid,
-    pub node_id: Uuid,            // 振り分け先ノード
+    pub runtime_id: Uuid,            // 振り分け先ノード
     pub endpoint: String,          // "/v1/chat/completions" など
     pub status: RequestStatus,     // 処理中/完了/エラー
     pub duration_ms: Option<u64>,  // 処理時間
@@ -444,7 +444,7 @@ components:
     RegisterResponse:
       type: object
       properties:
-        node_id:
+        runtime_id:
           type: string
           format: uuid
         status:
@@ -475,9 +475,9 @@ components:
 
     HealthCheckRequest:
       type: object
-      required: [node_id, cpu_usage, memory_usage, active_requests]
+      required: [runtime_id, cpu_usage, memory_usage, active_requests]
       properties:
-        node_id:
+        runtime_id:
           type: string
           format: uuid
         cpu_usage:
@@ -528,7 +528,7 @@ components:
 
 1. **ノード登録**:
    - Node → Router: `POST /v0/nodes` (起動時)
-   - Router → Node: `RegisterResponse` (node_id返却)
+   - Router → Node: `RegisterResponse` (runtime_id返却)
 
 2. **ヘルスチェック（ハートビート）**:
    - Node → Router: `POST /v0/health` (10秒間隔)
@@ -560,7 +560,7 @@ components:
 **ユーザーストーリーからのテストシナリオ**:
 
 1. **P1: ノード登録** (`tests/integration/test_node_lifecycle.rs`):
-   - ノード起動 → 登録リクエスト送信 → Router受信 → DB保存 → node_id返却
+   - ノード起動 → 登録リクエスト送信 → Router受信 → DB保存 → runtime_id返却
    - ノード終了 → 60秒後にタイムアウト → オフライン状態に変更
 
 2. **P2: 統一APIプロキシ** (`tests/integration/test_proxy.rs`):

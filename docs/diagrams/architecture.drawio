@@ -54,7 +54,7 @@
         <mxCell id="2" value="Client&lt;br&gt;(apps / users / integrations)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Noto Sans JP;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="150" y="80" width="520" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="3" value="Router&lt;br&gt;- /v1/* proxy + load balancing&lt;br&gt;- /v0/* (nodes, models, dashboard)&lt;br&gt;- /dashboard (Web UI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontFamily=Noto Sans JP;fontSize=14;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=14;" vertex="1" parent="1">
+        <mxCell id="3" value="Router&lt;br&gt;- /v1/* proxy + load balancing&lt;br&gt;- /v0/* (runtimes, models, dashboard)&lt;br&gt;- /dashboard (Web UI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontFamily=Noto Sans JP;fontSize=14;align=left;verticalAlign=middle;spacingLeft=14;spacingRight=14;" vertex="1" parent="1">
           <mxGeometry x="150" y="200" width="520" height="180" as="geometry" />
         </mxCell>
         <mxCell id="4" value="Node&lt;br&gt;llama.cpp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontFamily=Noto Sans JP;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
@@ -78,7 +78,7 @@
         <mxCell id="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;dashPattern=1 4;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="5" target="3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="11" value="/v0/nodes, /v0/health&lt;br&gt;(registration/heartbeat)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Noto Sans JP;fontSize=12;fontColor=#444444;" vertex="1" parent="1">
+        <mxCell id="11" value="/v0/runtimes, /v0/health&lt;br&gt;(registration/heartbeat)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Noto Sans JP;fontSize=12;fontColor=#444444;" vertex="1" parent="1">
           <mxGeometry x="270" y="380" width="280" height="40" as="geometry" />
         </mxCell>
       </root>

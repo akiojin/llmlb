@@ -29,7 +29,7 @@ pub async fn approve_node(app: &Router, node_id: &str) {
         .oneshot(
             admin_request()
                 .method("POST")
-                .uri(format!("/v0/nodes/{}/approve", node_id))
+                .uri(format!("/v0/runtimes/{}/approve", node_id))
                 .body(Body::empty())
                 .unwrap(),
         )

@@ -148,7 +148,7 @@ router/
 │   │   ├── migrations.rs # 新規: マイグレーション
 │   │   ├── users.rs    # 新規: ユーザーDB操作
 │   │   ├── api_keys.rs # 新規: APIキーDB操作
-│   │   └── node_tokens.rs # 新規: ノードトークンDB操作
+│   │   └── runtime_tokens.rs # 新規: ノードトークンDB操作
 │   ├── api/            # 既存: APIルーティング
 │   │   ├── mod.rs      # 変更: 認証ミドルウェア追加
 │   │   ├── auth.rs     # 新規: 認証エンドポイント
@@ -242,7 +242,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
   - expires_at: Option<DateTime<Utc>>
 
 - **NodeToken**: ノード通信用トークン
-  - node_id: UUID (PRIMARY KEY, FOREIGN KEY → Node.id)
+  - runtime_id: UUID (PRIMARY KEY, FOREIGN KEY → Node.id)
   - token_hash: String (UNIQUE, NOT NULL)
   - created_at: DateTime<Utc>
 
@@ -278,7 +278,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - `DELETE /v0/api-keys/:id` - APIキー削除（Admin専用）
 
 **ノード登録API** (既存、変更):
-- `POST /v0/nodes` - レスポンスに `node_token` フィールド追加
+- `POST /v0/nodes` - レスポンスに `runtime_token` フィールド追加
 
 ### 3. 契約テスト生成
 
@@ -312,7 +312,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - 認証無効化モードでの全API許可
 - 認証有効化モードでの認証要求
 
-**ユーザーストーリー5** → `integration/node_token_test.rs`:
+**ユーザーストーリー5** → `integration/runtime_token_test.rs`:
 - ノード登録時のトークン発行
 - トークン付きヘルスチェック成功
 - トークンなしヘルスチェック拒否
@@ -410,12 +410,12 @@ cargo run --bin router
    - [ ] 認証APIエンドポイント実装（`router/src/api/auth.rs`） → 契約テスト **GREEN**
    - [ ] ユーザー管理APIエンドポイント実装（`router/src/api/users.rs`） → 契約テスト **GREEN**
    - [ ] APIキー管理APIエンドポイント実装（`router/src/api/api_keys.rs`） → 契約テスト **GREEN**
-   - [ ] ノード登録API修正（node_token追加） → 既存テスト **GREEN**
+   - [ ] ノード登録API修正（runtime_token追加） → 既存テスト **GREEN**
 
 8. **Database Operations タスク**:
    - [ ] ユーザーDB操作実装（`router/src/db/users.rs`）
    - [ ] APIキーDB操作実装（`router/src/db/api_keys.rs`）
-   - [ ] ノードトークンDB操作実装（`router/src/db/node_tokens.rs`）
+   - [ ] ノードトークンDB操作実装（`router/src/db/runtime_tokens.rs`）
 
 9. **Bootstrap タスク** (TDD: Integration Test):
    - [ ] 初回起動時管理者作成テスト → **RED**

@@ -59,7 +59,7 @@ pub struct LogEntry {
 
     /// ノードID（オプション）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub node_id: Option<String>,
+    pub runtime_id: Option<String>,
 
     /// 追加フィールド（動的）
     #[serde(flatten)]
@@ -107,7 +107,7 @@ struct LogEntry {
     std::string msg;
     std::optional<std::string> request_id;
     std::optional<std::string> model;
-    std::optional<std::string> node_id;
+    std::optional<std::string> runtime_id;
     nlohmann::json extra;
 
     /// JSONL形式にシリアライズ

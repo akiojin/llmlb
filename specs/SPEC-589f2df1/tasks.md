@@ -41,7 +41,7 @@
 - [x] **T005** [P] モジュール宣言: `router/src/metrics/mod.rs` 作成
   - ✅ metricsモジュールとrouter/src/lib.rsに宣言を追加
 - [x] **T006** [P] データモデル定義: `common/src/types.rs` にNodeMetrics構造体追加
-  - ✅ node_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestampフィールドを定義
+  - ✅ runtime_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestampフィールドを定義
 
 **推定時間**: 30分 ✅ 完了
 
@@ -75,7 +75,7 @@
 #### データモデル
 
 - [x] **T011** [P] `common/src/types.rs` にNodeMetrics実装
-  - ✅ T006で既に実装済み（node_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestamp）
+  - ✅ T006で既に実装済み（runtime_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestamp）
   - ✅ Debug, Clone, Serialize, Deserializeを実装
 
 #### メトリクスストレージ

@@ -34,38 +34,33 @@ static bool parse_vocab(
     }
     ++p;
 
-    // Find max token ID to size vocab correctly
-    int32_t max_id = -1;
-    std::vector<std::pair<std::string, int32_t>> vocab_items;
-
     while (p < end) {
         json_parser::skip_ws(p, end);
         if (p >= end || *p == '}') break;
 
+        const char* before = p;
         std::string token = json_parser::parse_string(p, end);
+        if (p == before) {
+            error = "Invalid tokenizer.json: expected string key in vocab";
+            return false;
+        }
         json_parser::skip_ws(p, end);
         if (p < end && *p == ':') ++p;
         json_parser::skip_ws(p, end);
 
         int32_t id = static_cast<int32_t>(json_parser::parse_int(p, end));
-        vocab_items.push_back({token, id});
-        if (id > max_id) max_id = id;
+        if (id >= 0) {
+            if (id >= static_cast<int32_t>(tokenizer.vocab.size())) {
+                tokenizer.vocab.resize(static_cast<size_t>(id) + 1);
+            }
+            tokenizer.vocab[static_cast<size_t>(id)] = token;
+            tokenizer.vocab_to_id[token] = id;
+        }
 
         json_parser::skip_ws(p, end);
         if (p < end && *p == ',') ++p;
     }
     if (p < end && *p == '}') ++p;
-
-    // Resize vocab and populate
-    if (max_id >= 0) {
-        tokenizer.vocab.resize(max_id + 1);
-        for (const auto& item : vocab_items) {
-            if (item.second >= 0 && item.second < static_cast<int32_t>(tokenizer.vocab.size())) {
-                tokenizer.vocab[item.second] = item.first;
-                tokenizer.vocab_to_id[item.first] = item.second;
-            }
-        }
-    }
 
     return true;
 }
@@ -88,14 +83,49 @@ static bool parse_merges(
         json_parser::skip_ws(p, end);
         if (p >= end || *p == ']') break;
 
-        std::string merge = json_parser::parse_string(p, end);
-
-        // Parse "token1 token2" format
-        size_t space = merge.find(' ');
-        if (space != std::string::npos) {
-            std::string first = merge.substr(0, space);
-            std::string second = merge.substr(space + 1);
+        if (*p == '[') {
+            ++p;
+            json_parser::skip_ws(p, end);
+            const char* before_first = p;
+            std::string first = json_parser::parse_string(p, end);
+            if (p == before_first) {
+                error = "Invalid tokenizer.json: expected string in merge pair";
+                return false;
+            }
+            json_parser::skip_ws(p, end);
+            if (p < end && *p == ',') ++p;
+            json_parser::skip_ws(p, end);
+            const char* before_second = p;
+            std::string second = json_parser::parse_string(p, end);
+            if (p == before_second) {
+                error = "Invalid tokenizer.json: expected second string in merge pair";
+                return false;
+            }
+            // Skip any trailing elements in the pair if present.
+            while (p < end && *p != ']') {
+                if (*p == ',') {
+                    ++p;
+                    json_parser::skip_value(p, end);
+                } else {
+                    ++p;
+                }
+            }
+            if (p < end && *p == ']') ++p;
             tokenizer.merges.push_back({first, second});
+        } else {
+            const char* before = p;
+            std::string merge = json_parser::parse_string(p, end);
+            if (p == before) {
+                error = "Invalid tokenizer.json: expected string entry in merges";
+                return false;
+            }
+            // Parse "token1 token2" format
+            size_t space = merge.find(' ');
+            if (space != std::string::npos) {
+                std::string first = merge.substr(0, space);
+                std::string second = merge.substr(space + 1);
+                tokenizer.merges.push_back({first, second});
+            }
         }
 
         json_parser::skip_ws(p, end);

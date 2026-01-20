@@ -174,7 +174,7 @@ TEST(ModelSyncTest, ReportsDownloadProgressSnapshot) {
     ModelSync sync(base, dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 
-    bool ok = sync.downloadModel(dl, "test-model", nullptr);
+    bool ok = sync.downloadModel(dl, "test-model", {});
 
     server.stop();
     if (th.joinable()) th.join();
@@ -225,7 +225,7 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     ModelSync sync(base, dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 
-    bool ok = sync.downloadModel(dl, "gpt-oss-artifacts", nullptr);
+    bool ok = sync.downloadModel(dl, "gpt-oss-artifacts", {});
 
     server.stop();
     if (th.joinable()) th.join();
@@ -396,7 +396,7 @@ TEST(ModelSyncTest, PrioritiesControlConcurrencyAndOrder) {
     ModelSync sync("http://127.0.0.1:18110", dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 
-    bool ok = sync.downloadModel(dl, "gpt-oss-prio", nullptr);
+    bool ok = sync.downloadModel(dl, "gpt-oss-prio", {});
 
     server.stop();
     if (th.joinable()) th.join();
@@ -445,7 +445,7 @@ TEST(ModelSyncTest, OptionalManifestFilesDoNotFailDownload) {
     ModelSync sync("http://127.0.0.1:18111", dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 
-    bool ok = sync.downloadModel(dl, "gpt-oss-opt", nullptr);
+    bool ok = sync.downloadModel(dl, "gpt-oss-opt", {});
 
     server.stop();
     if (th.joinable()) th.join();

@@ -116,12 +116,12 @@ pub async fn register_node(
     Ok(response)
 }
 
-/// SPEC-66555000: POST /v0/nodes は廃止されました。
+/// SPEC-66555000: POST /v0/runtimes は廃止されました。
 /// このヘルパー関数は後方互換性のために残されていますが、
 /// 新しいテストは Endpoints API を使用してください。
 ///
 /// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
-/// レスポンスのボディには {"node_id": "...", "token": "..."} 形式が含まれます
+/// レスポンスのボディには {"runtime_id": "...", "token": "..."} 形式が含まれます
 pub async fn register_node_with_runtimes(
     router_addr: SocketAddr,
     node_addr: SocketAddr,
@@ -130,7 +130,7 @@ pub async fn register_node_with_runtimes(
     use serde_json::json;
 
     // 1. 内部APIを使ってノードを登録するための仮想レスポンスを作成
-    // POST /v0/nodes が廃止されたため、内部 /v0/internal/test/register-node を使用
+    // POST /v0/runtimes が廃止されたため、内部 /v0/internal/test/register-runtime を使用
     let payload = json!({
         "machine_name": "stub-node",
         "ip_address": node_addr.ip().to_string(),
@@ -146,7 +146,7 @@ pub async fn register_node_with_runtimes(
     // テスト専用の内部エンドポイントを使用
     Client::new()
         .post(format!(
-            "http://{router_addr}/v0/internal/test/register-node"
+            "http://{router_addr}/v0/internal/test/register-runtime"
         ))
         .header("authorization", "Bearer sk_debug")
         .json(&payload)
@@ -334,7 +334,7 @@ pub async fn approve_node(router_addr: SocketAddr, node_id: &str) -> reqwest::Re
 
     client
         .post(format!(
-            "http://{}/v0/nodes/{}/approve",
+            "http://{}/v0/runtimes/{}/approve",
             router_addr, node_id
         ))
         .header("authorization", format!("Bearer {}", token))
@@ -351,7 +351,7 @@ pub async fn approve_node_from_register_response(
     let status = register_response.status();
     let body: Value = register_response.json().await.unwrap_or_default();
 
-    if let Some(node_id) = body.get("node_id").and_then(|v| v.as_str()) {
+    if let Some(node_id) = body.get("runtime_id").and_then(|v| v.as_str()) {
         let _ = approve_node(router_addr, node_id).await?;
     }
 

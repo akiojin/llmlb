@@ -184,7 +184,7 @@
 
 - [x] T023 `router/src/api/dashboard.rs` に
   List エンドポイント (`GET /v0/dashboard/request-responses`) を実装
-  - クエリパラメータのパース（model, node_id, status, start_time, end_time,
+  - クエリパラメータのパース（model, runtime_id, status, start_time, end_time,
     page, per_page）
   - `filter_and_paginate()` 呼び出し
   - レスポンス構造（records, total_count, page, per_page）
@@ -358,14 +358,14 @@
 ### 背景
 
 - spec.mdの技術制約がJSONからSQLiteに変更された
-- 認証システム（users, api_keys, node_tokens）と同じDBに統合する
+- 認証システム（users, api_keys, runtime_tokens）と同じDBに統合する
 - インデックスによる高速クエリを実現
 
 ### タスク
 
 - [x] T044 [P] `router/migrations/002_request_history.sql` マイグレーション作成
   - request_historyテーブル定義
-  - timestamp, model, node_idインデックス
+  - timestamp, model, runtime_idインデックス
   - 依存: なし
   - 実装メモ: 既存 `router/migrations/001_init.sql` にテーブルとインデックスが定義済みのため追加マイグレーション不要（確認済み）
 

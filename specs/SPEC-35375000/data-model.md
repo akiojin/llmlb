@@ -70,7 +70,7 @@ pub struct WaitEntry {
 #[derive(Debug)]
 pub enum WaitResult {
     /// ノードが利用可能になった
-    Ready { node_id: String },
+    Ready { runtime_id: String },
 
     /// タイムアウト
     Timeout { waited: Duration },
@@ -188,7 +188,7 @@ impl Default for NodeCacheConfig {
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
     /// ノードID
-    pub node_id: String,
+    pub runtime_id: String,
 
     /// 作成時刻
     pub created_at: Instant,

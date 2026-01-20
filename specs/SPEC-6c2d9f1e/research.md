@@ -59,7 +59,7 @@ pub enum RuntimeType {
 
 ```json
 {
-  "node_id": "uuid",
+  "runtime_id": "uuid",
   "supported_runtimes": ["llama_cpp", "whisper"],
   "loaded_models": {
     "llm": ["llama-3.1-8b"],
@@ -96,7 +96,7 @@ pub enum RuntimeType {
   "object": "model",
   "ready": true,
   "nodes": [
-    {"node_id": "...", "ready": true}
+    {"runtime_id": "...", "ready": true}
   ]
 }
 ```

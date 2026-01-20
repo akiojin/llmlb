@@ -24,7 +24,7 @@
 
 - [x] **T608** `GET /v0/dashboard/overview` に集計時間と生成タイムスタンプを追加し、バックエンド処理時間を計測
 - [x] **T609** ダッシュボードのパフォーマンスインジケーターを拡張し、閾値評価とサーバー生成時刻の表示を実装
-- [x] **T610** `GET /v0/dashboard/metrics/:node_id` を実装し、ノードごとのCPU/メモリ履歴を返却
+- [x] **T610** `GET /v0/dashboard/metrics/:runtime_id` を実装し、ノードごとのCPU/メモリ履歴を返却
 - [x] **T611** ノード詳細モーダルにCPU/メモリ折れ線グラフを追加し、最新指標とエラーハンドリングを表示
 
 ## 本日のToDo (2025-10-31)
@@ -201,7 +201,7 @@
 - **ステータス**: ✅ 完了
 
 ### M004: メトリクスAPI実装（SPEC-589f2df1依存） ✅
-- **説明**: `GET /v0/dashboard/metrics/:node_id`実装
+- **説明**: `GET /v0/dashboard/metrics/:runtime_id`実装
 - **詳細**: SPEC-589f2df1のメトリクス収集が完了後に実装
 - **完了条件**: ノードごとのメトリクスが取得可能
 - **推定時間**: 30分
@@ -250,7 +250,7 @@
 - **ステータス**: ✅ 完了
 
 ### A004: ノード設定API実装 ✅ (FR-023)
-- **説明**: `PUT /v0/nodes/:node_id/settings` 実装
+- **説明**: `PUT /v0/nodes/:runtime_id/settings` 実装
 - **詳細**:
   - リクエスト: custom_name, tags, notes
   - Nodeモデルに設定フィールド追加
@@ -271,7 +271,7 @@
 - **ステータス**: ✅ 完了
 
 ### A006: ノード削除API実装 ✅ (FR-024)
-- **説明**: `DELETE /v0/nodes/:node_id` 実装
+- **説明**: `DELETE /v0/nodes/:runtime_id` 実装
 - **詳細**:
   - ノード情報削除
   - JSONストレージから削除
@@ -291,7 +291,7 @@
 - **ステータス**: ✅ 完了
 
 ### A008: ノード強制切断API実装 ✅ (FR-024)
-- **説明**: `POST /v0/nodes/:node_id/disconnect` 実装
+- **説明**: `POST /v0/nodes/:runtime_id/disconnect` 実装
 - **詳細**:
   - ノードステータスをOfflineに変更
   - 強制切断フラグ設定

@@ -123,7 +123,7 @@ pub struct ModelRegisterRequest {
 /// ノード上のモデル状態
 pub struct NodeModelState {
     /// ノードID
-    pub node_id: String,
+    pub runtime_id: String,
     /// モデルID
     pub model_id: String,
     /// ライフサイクル状態
@@ -166,13 +166,13 @@ pub enum WsEvent {
     },
     /// ノード状態変更
     NodeStatusChanged {
-        node_id: String,
+        runtime_id: String,
         status: NodeStatus,
         models: Vec<NodeModelState>,
     },
     /// メトリクス更新
     MetricsUpdated {
-        node_id: String,
+        runtime_id: String,
         gpu_usage: f32,
         memory_usage: f32,
         request_count: u64,

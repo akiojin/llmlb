@@ -180,7 +180,7 @@
 ## 技術制約 *(該当する場合)*
 
 - 保存方式はSQLiteとし、既存の認証システム（`router.db`）と統合する
-  - 認証機能（users, api_keys, node_tokens）と同じDBを使用
+  - 認証機能（users, api_keys, runtime_tokens）と同じDBを使用
   - インデックスによる高速クエリを実現
 - 保存場所は `~/.llm-router/router.db` の `request_history` テーブル
 - SQLiteのWALモードにより、並行アクセスの安全性を保証する

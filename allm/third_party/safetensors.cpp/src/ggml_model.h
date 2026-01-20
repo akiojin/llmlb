@@ -27,13 +27,18 @@ struct ModelHParams {
     int32_t n_embd = 0;        // Hidden size
     int32_t n_head = 0;        // Number of attention heads
     int32_t n_head_kv = 0;     // Number of KV heads (for GQA/MQA)
+    int32_t head_dim = 0;      // Per-head dimension (from config if present)
     int32_t n_layer = 0;       // Number of layers
     int32_t n_ff = 0;          // FFN intermediate size
+    int32_t n_expert = 0;      // Number of experts (MoE)
+    int32_t n_expert_used = 0; // Experts per token (Top-K)
     int32_t n_rot = 0;         // RoPE rotation dimensions
     float rope_freq_base = 10000.0f;
     float rope_freq_scale = 1.0f;
     float norm_eps = 1e-5f;
+    float swiglu_limit = 7.0f;  // gpt-oss SwiGLU clamp
     bool use_gqa = false;      // Grouped Query Attention
+    bool use_moe = false;      // MoE layers enabled
     std::string architecture;   // Architecture name from config.json (e.g., "llama", "mistral")
     enum ggml_type weight_type = GGML_TYPE_F16;  // Weight data type (from torch_dtype)
 };
@@ -64,6 +69,17 @@ struct LayerTensors {
     // FFN norm (pre-FFN)
     struct ggml_tensor* ffn_norm = nullptr;
     struct ggml_tensor* ffn_norm_b = nullptr;  // Optional bias
+
+    // MoE (gpt-oss)
+    bool is_moe = false;
+    struct ggml_tensor* moe_router = nullptr;       // [n_embd, n_expert]
+    struct ggml_tensor* moe_router_bias = nullptr;  // [n_expert]
+    struct ggml_tensor* moe_gate_exps = nullptr;    // [n_embd, n_ff, n_expert] (MXFP4)
+    struct ggml_tensor* moe_up_exps = nullptr;      // [n_embd, n_ff, n_expert] (MXFP4)
+    struct ggml_tensor* moe_down_exps = nullptr;    // [n_ff, n_embd, n_expert] (MXFP4)
+    struct ggml_tensor* moe_gate_bias = nullptr;    // [n_ff, n_expert] (F32)
+    struct ggml_tensor* moe_up_bias = nullptr;      // [n_ff, n_expert] (F32)
+    struct ggml_tensor* moe_down_bias = nullptr;    // [n_embd, n_expert] (F32)
 };
 
 /* Embedding and output tensors */
@@ -205,6 +221,20 @@ size_t estimate_compute_buffer_size(
 
 // Convert safetensors dtype to ggml type
 enum ggml_type dtype_to_ggml_type(DType dtype);
+
+// Pack gpt-oss MXFP4 blocks/scales into ggml row-major layout.
+// This helper is used by the loader and unit tests.
+bool pack_mxfp4_blocks_to_ggml(
+    const uint8_t* blocks,
+    const uint8_t* scales,
+    const std::vector<int64_t>& blocks_shape,
+    const std::vector<int64_t>& scales_shape,
+    int64_t row_offset,
+    int64_t row_count,
+    int64_t n_cols,
+    std::vector<uint8_t>& out,
+    std::string& error
+);
 
 }  // namespace stcpp
 

@@ -294,7 +294,7 @@ export interface NodeInfo {
  * Get list of nodes
  */
 export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> {
-  const response = await request.get(`${API_BASE}/v0/nodes`, {
+  const response = await request.get(`${API_BASE}/v0/runtimes`, {
     headers: AUTH_HEADER,
   });
   const data = await response.json();

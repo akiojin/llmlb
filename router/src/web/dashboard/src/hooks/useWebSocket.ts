@@ -12,7 +12,7 @@ export type DashboardEventType =
 export interface DashboardEvent {
   type: DashboardEventType
   data?: {
-    node_id?: string
+    runtime_id?: string
     machine_name?: string
     ip_address?: string
     status?: string

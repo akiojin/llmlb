@@ -89,7 +89,7 @@ async fn v0_nodes_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Runtime]).await;
     let api_key =
         create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
@@ -113,7 +113,7 @@ async fn v0_nodes_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-node")
+                .uri("/v0/internal/test/register-runtime")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -128,7 +128,7 @@ async fn v0_nodes_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-node")
+                .uri("/v0/internal/test/register-runtime")
                 .header("authorization", format!("Bearer {}", api_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -143,7 +143,7 @@ async fn v0_nodes_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-node")
+                .uri("/v0/internal/test/register-runtime")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -159,7 +159,7 @@ async fn v1_inference_requires_api_inference_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Runtime]).await;
     let api_key =
         create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
@@ -231,7 +231,7 @@ async fn admin_scope_allows_dashboard_overview() {
 async fn v0_health_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
-    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Node]).await;
+    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Runtime]).await;
     let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let payload = node_payload(32769);
@@ -240,7 +240,7 @@ async fn v0_health_requires_node_register_scope() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-node")
+                .uri("/v0/internal/test/register-runtime")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -254,11 +254,11 @@ async fn v0_health_requires_node_register_scope() {
         .await
         .unwrap();
     let register_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = register_data["node_id"].as_str().unwrap();
-    let node_token = register_data["node_token"].as_str().unwrap();
+    let node_id = register_data["runtime_id"].as_str().unwrap();
+    let node_token = register_data["runtime_token"].as_str().unwrap();
 
     let health_payload = json!({
-        "node_id": node_id,
+        "runtime_id": node_id,
         "cpu_usage": 0.0,
         "memory_usage": 0.0,
         "active_requests": 0,
@@ -275,7 +275,7 @@ async fn v0_health_requires_node_register_scope() {
                 .method("POST")
                 .uri("/v0/health")
                 .header("content-type", "application/json")
-                .header("x-node-token", node_token)
+                .header("x-runtime-token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                 .unwrap(),
         )
@@ -292,7 +292,7 @@ async fn v0_health_requires_node_register_scope() {
                 .uri("/v0/health")
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", api_key))
-                .header("x-node-token", node_token)
+                .header("x-runtime-token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                 .unwrap(),
         )
@@ -308,7 +308,7 @@ async fn v0_health_requires_node_register_scope() {
                 .uri("/v0/health")
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", node_key))
-                .header("x-node-token", node_token)
+                .header("x-runtime-token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
                 .unwrap(),
         )

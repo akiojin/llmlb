@@ -78,11 +78,11 @@ APIキー認証成功フローのテスト（REDを確認）
 JWT認証での管理API許可テスト（REDを確認）
 - [x] **T023** [P] `router/tests/integration/auth_disabled_test.rs` に
 認証無効化モードでのアクセス許可テスト（REDを確認）
-- [x] **T024** [P] `router/tests/integration/node_token_test.rs` に
+- [x] **T024** [P] `router/tests/integration/runtime_token_test.rs` に
 ノード登録時のトークン発行テスト（REDを確認）
-- [x] **T025** [P] `router/tests/integration/node_token_test.rs` に
+- [x] **T025** [P] `router/tests/integration/runtime_token_test.rs` に
 トークン付きヘルスチェック成功テスト（REDを確認）
-- [x] **T026** [P] `router/tests/integration/node_token_test.rs` に
+- [x] **T026** [P] `router/tests/integration/runtime_token_test.rs` に
 トークンなしヘルスチェック拒否テスト（REDを確認）
 
 ### Unit Tests (並列実行可能)
@@ -115,7 +115,7 @@ cargo test
 - [x] **T035** [P] `common/src/auth.rs` に ApiKeyWithPlaintext 構造体を実装
 （発行時のレスポンス用）
 - [x] **T036** [P] `common/src/auth.rs` に NodeToken 構造体を実装
-（node_id, token_hash, created_at）
+（runtime_id, token_hash, created_at）
 - [x] **T037** [P] `common/src/auth.rs` に NodeTokenWithPlaintext 構造体を実装
 （発行時のレスポンス用）
 - [x] **T038** `common/src/error.rs` に認証関連エラーを追加
@@ -124,7 +124,7 @@ cargo test
 ## Phase 3.4: データベースマイグレーション
 
 - [x] **T039** `router/migrations/001_auth_init.sql` に SQLiteスキーマを作成
-（users, api_keys, node_tokens テーブル、インデックス、外部キー制約）
+（users, api_keys, runtime_tokens テーブル、インデックス、外部キー制約）
 - [x] **T040** `router/src/db/migrations.rs` に
 マイグレーション実行関数を実装（sqlx::migrate!使用） → T014 GREEN
 - [x] **T041** `router/src/db/migrations.rs` に
@@ -165,9 +165,9 @@ APIキー認証ミドルウェアを実装（SHA-256検証） → T019, T020 GRE
 APIキーCRUD操作を実装（create, list, find_by_hash, delete）
 - [x] **T054** `router/src/db/api_keys.rs` に
 APIキー生成関数を実装（`sk_` + 32文字ランダム、SHA-256ハッシュ）
-- [x] **T055** `router/src/db/node_tokens.rs` に
+- [x] **T055** `router/src/db/runtime_tokens.rs` に
 ノードトークンCRUD操作を実装（create, find_by_hash, delete）
-- [x] **T056** `router/src/db/node_tokens.rs` に
+- [x] **T056** `router/src/db/runtime_tokens.rs` に
 ノードトークン生成関数を実装（`nt_` + UUID, SHA-256ハッシュ）
 
 ## Phase 3.8: API実装
@@ -194,7 +194,7 @@ POST /v0/api-keys エンドポイントを実装（Admin専用、平文キー返
 - [x] **T066** `router/src/api/api_keys.rs` に
 DELETE /v0/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
 - [x] **T067** `router/src/api/nodes.rs` を修正して
-POST /v0/nodes レスポンスに node_token フィールドを追加 → T024 GREEN
+POST /v0/nodes レスポンスに runtime_token フィールドを追加 → T024 GREEN
 
 ## Phase 3.9: 初回起動処理
 
@@ -335,7 +335,7 @@ cargo test integration::auth_flow_test &
 cargo test integration::api_key_flow_test &
 cargo test integration::middleware_test &
 cargo test integration::auth_disabled_test &
-cargo test integration::node_token_test &
+cargo test integration::runtime_token_test &
 wait
 ```
 

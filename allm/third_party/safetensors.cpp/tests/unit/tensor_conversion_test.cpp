@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 #include "safetensors.h"
+#include "ggml_model.h"
 #include <cmath>
 #include <vector>
 #include <limits>
@@ -166,5 +167,40 @@ TEST_F(TensorConversionTest, EndiannessCheck) {
     } else {
         // Byte swapping would be needed (uncommon on modern systems)
         SUCCEED();
+    }
+}
+
+// Test: Pack MXFP4 blocks/scales into ggml row-major layout
+TEST_F(TensorConversionTest, PackMxfp4BlocksToGgml) {
+    const uint8_t blocks[16] = {
+        0x00, 0x01, 0x02, 0x03,
+        0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B,
+        0x0C, 0x0D, 0x0E, 0x0F
+    };
+    const uint8_t scales[1] = {0x5A};
+
+    std::vector<int64_t> blocks_shape = {1, 1, 1, 16};
+    std::vector<int64_t> scales_shape = {1, 1, 1};
+
+    std::vector<uint8_t> packed;
+    std::string error;
+
+    ASSERT_TRUE(stcpp::pack_mxfp4_blocks_to_ggml(
+        blocks,
+        scales,
+        blocks_shape,
+        scales_shape,
+        0,
+        1,
+        32,
+        packed,
+        error
+    ));
+
+    ASSERT_EQ(packed.size(), 17u);
+    EXPECT_EQ(packed[0], 0x5A);
+    for (size_t i = 0; i < 16; ++i) {
+        EXPECT_EQ(packed[1 + i], static_cast<uint8_t>(i));
     }
 }

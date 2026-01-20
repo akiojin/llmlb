@@ -20,8 +20,8 @@ const EVENT_CHANNEL_CAPACITY: usize = 1024;
 pub enum DashboardEvent {
     /// ノード登録イベント
     NodeRegistered {
-        /// ノードID
-        node_id: Uuid,
+        /// ランタイムID
+        runtime_id: Uuid,
         /// マシン名
         machine_name: String,
         /// IPアドレス
@@ -31,8 +31,8 @@ pub enum DashboardEvent {
     },
     /// ノード状態変化イベント
     NodeStatusChanged {
-        /// ノードID
-        node_id: Uuid,
+        /// ランタイムID
+        runtime_id: Uuid,
         /// 旧ステータス
         old_status: NodeStatus,
         /// 新ステータス
@@ -40,8 +40,8 @@ pub enum DashboardEvent {
     },
     /// メトリクス更新イベント
     MetricsUpdated {
-        /// ノードID
-        node_id: Uuid,
+        /// ランタイムID
+        runtime_id: Uuid,
         /// CPU使用率
         cpu_usage: Option<f32>,
         /// メモリ使用率
@@ -51,8 +51,8 @@ pub enum DashboardEvent {
     },
     /// ノード削除イベント
     NodeRemoved {
-        /// ノードID
-        node_id: Uuid,
+        /// ランタイムID
+        runtime_id: Uuid,
     },
 }
 
@@ -116,7 +116,7 @@ mod tests {
         let mut receiver = bus.subscribe();
 
         let event = DashboardEvent::NodeRegistered {
-            node_id: Uuid::new_v4(),
+            runtime_id: Uuid::new_v4(),
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
             status: NodeStatus::Online,
@@ -139,7 +139,7 @@ mod tests {
 
         // 購読者がいなくてもパニックしないことを確認
         bus.publish(DashboardEvent::NodeRemoved {
-            node_id: Uuid::new_v4(),
+            runtime_id: Uuid::new_v4(),
         });
     }
 

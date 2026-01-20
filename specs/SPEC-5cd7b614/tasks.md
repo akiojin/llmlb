@@ -141,7 +141,7 @@
 - [x] **T031** ログ整備
   - GPU未搭載ノード拒否時・クリーンアップ時のログを明瞭化
   - ✅ println!をtracing::info/warn/errorに置き換え
-  - ✅ 構造化ログ（node_id, machine_name, reason）を追加
+  - ✅ 構造化ログ（runtime_id, machine_name, reason）を追加
 
 - [x] **T032** Web UI のUX調整
   - GPU情報が1枚/複数枚の表示フォーマットを調整

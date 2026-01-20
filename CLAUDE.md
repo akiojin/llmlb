@@ -52,6 +52,7 @@ llm-router/
 - **ダッシュボード**: 管理UI（SPA）の提供
 
 ### aLLM（`allm/` - C++製、llama.cppベース）
+- NOTE: llama.cpp is pinned to the akiojin/llama.cpp fork until upstream fixes land; treat the fork as canonical for now.
 
 実際のLLM推論を担当するコンポーネント。vLLM/Ollamaと同列のエンドポイントタイプ。
 

@@ -125,7 +125,8 @@ if(APPLE)
         target_link_libraries(allm-unit-tests PRIVATE ${METAL_FRAMEWORK} ${FOUNDATION_FRAMEWORK})
         target_compile_definitions(allm-unit-tests PRIVATE USE_METAL=1)
     endif()
-
+    # Increase stack size to 16MB to avoid stack overflow in tests using httplib::Server
+    target_link_options(allm-unit-tests PRIVATE "-Wl,-stack_size,0x1000000")
 endif()
 
 target_include_directories(allm-unit-tests

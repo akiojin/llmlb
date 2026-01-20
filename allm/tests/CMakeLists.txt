@@ -17,6 +17,13 @@ target_include_directories(test_common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+set(TEST_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/win_compat.h")
+if(MSVC)
+    target_compile_options(test_common PUBLIC "/FI${TEST_COMPAT_HEADER}")
+else()
+    target_compile_options(test_common PUBLIC "-include" "${TEST_COMPAT_HEADER}")
+endif()
+
 set(COMMON_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )

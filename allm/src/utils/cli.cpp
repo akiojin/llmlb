@@ -59,6 +59,7 @@ std::string getServeHelpMessage() {
     oss << "ENVIRONMENT VARIABLES:\n";
     oss << "    ALLM_PORT                HTTP server port (default: 32769)\n";
     oss << "    ALLM_MODELS_DIR          Model files directory\n";
+    oss << "    ALLM_REQUIRE_GPU         Require GPU for node operation (default: true)\n";
     oss << "    LLM_ROUTER_HOST              Router URL for registration\n";
     oss << "    LLM_ROUTER_DEBUG             Enable debug logging\n";
     oss << "    HF_TOKEN                     HuggingFace API token (for gated models)\n";

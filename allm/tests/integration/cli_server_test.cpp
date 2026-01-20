@@ -10,8 +10,10 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace allm {
 namespace cli {
@@ -125,6 +127,7 @@ TEST_F(CliServerTest, ServeHelpShowsUsage) {
 
 /// Test: server responds to health check
 /// Scenario: Running server responds to /health endpoint
+#ifndef _WIN32
 TEST_F(CliServerTest, DISABLED_ServerRespondsToHealthCheck) {
     // This test requires starting an actual server process
     // Disabled by default - enable for full integration testing
@@ -157,9 +160,11 @@ TEST_F(CliServerTest, DISABLED_ServerRespondsToHealthCheck) {
     EXPECT_TRUE(WIFEXITED(status));
     EXPECT_EQ(WEXITSTATUS(status), 0);
 }
+#endif
 
 /// Test: graceful shutdown on SIGTERM
 /// Scenario: Server shuts down cleanly on SIGTERM
+#ifndef _WIN32
 TEST_F(CliServerTest, DISABLED_GracefulShutdownOnSigterm) {
     // Similar to health check test but focuses on shutdown behavior
     // Disabled by default
@@ -197,9 +202,11 @@ TEST_F(CliServerTest, DISABLED_GracefulShutdownOnSigterm) {
     EXPECT_TRUE(WIFEXITED(status));
     EXPECT_EQ(WEXITSTATUS(status), 0);
 }
+#endif
 
 /// Test: graceful shutdown on SIGINT (Ctrl+C)
 /// Scenario: Server shuts down cleanly on Ctrl+C
+#ifndef _WIN32
 TEST_F(CliServerTest, DISABLED_GracefulShutdownOnSigint) {
     // Same as SIGTERM test but with SIGINT
     pid_t pid = fork();
@@ -225,6 +232,7 @@ TEST_F(CliServerTest, DISABLED_GracefulShutdownOnSigint) {
     EXPECT_TRUE(WIFEXITED(status));
     EXPECT_EQ(WEXITSTATUS(status), 0);
 }
+#endif
 
 /// Test: multiple clients can connect
 /// Scenario: Server handles concurrent connections

@@ -8,6 +8,9 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <spdlog/spdlog.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "utils/file_lock.h"
 #include "utils/allowlist.h"
 
@@ -15,15 +18,45 @@ namespace allm {
 
 namespace {
 
+std::optional<std::string> getEnvValue(const char* name) {
+    if (!name || !*name) {
+        return std::nullopt;
+    }
+#ifdef _WIN32
+    if (const char* v = std::getenv(name)) {
+        return std::string(v);
+    }
+    DWORD size = GetEnvironmentVariableA(name, nullptr, 0);
+    if (size == 0) {
+        if (GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            return std::nullopt;
+        }
+        return std::string();
+    }
+    std::string value(size, '\0');
+    DWORD copied = GetEnvironmentVariableA(name, value.data(), size);
+    if (copied == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+        return std::nullopt;
+    }
+    value.resize(copied);
+    return value;
+#else
+    if (const char* v = std::getenv(name)) {
+        return std::string(v);
+    }
+    return std::nullopt;
+#endif
+}
+
 /// Get environment variable with fallback to deprecated name
 /// Logs a warning if the deprecated name is used
 std::optional<std::string> getEnvWithFallback(const char* new_name, const char* old_name) {
-    if (const char* v = std::getenv(new_name)) {
-        return std::string(v);
+    if (auto v = getEnvValue(new_name)) {
+        return v;
     }
-    if (const char* v = std::getenv(old_name)) {
+    if (auto v = getEnvValue(old_name)) {
         spdlog::warn("Environment variable '{}' is deprecated, use '{}' instead", old_name, new_name);
-        return std::string(v);
+        return v;
     }
     return std::nullopt;
 }
@@ -45,7 +78,9 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     auto load_from_file = [&](const std::filesystem::path& path) {
         if (!std::filesystem::exists(path)) return false;
         try {
+#ifndef _WIN32
             FileLock lock(path);
+#endif
             std::ifstream ifs(path);
             if (!ifs.is_open()) return false;
 
@@ -63,13 +98,13 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
         }
     };
 
-    if (const char* env = std::getenv("LLM_DL_CONFIG")) {
-        if (load_from_file(env)) {
+    if (auto env = getEnvValue("LLM_DL_CONFIG")) {
+        if (load_from_file(*env)) {
             used_file = true;
         }
     } else {
         try {
-            std::filesystem::path home = std::getenv("HOME") ? std::getenv("HOME") : "";
+            std::filesystem::path home = getEnvValue("HOME").value_or("");
             auto path = home / std::filesystem::path(".llm-router/config.json");
             if (load_from_file(path)) {
                 used_file = true;
@@ -77,45 +112,45 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
         } catch (...) {}
     }
 
-    if (const char* env = std::getenv("LLM_DL_MAX_RETRIES")) {
+    if (auto env = getEnvValue("LLM_DL_MAX_RETRIES")) {
         try {
-            int v = std::stoi(env);
+            int v = std::stoi(*env);
             if (v >= 0) cfg.max_retries = v;
             log << "env:MAX_RETRIES=" << v << " ";
             used_env = true;
         } catch (...) {}
     }
 
-    if (const char* env = std::getenv("LLM_DL_BACKOFF_MS")) {
+    if (auto env = getEnvValue("LLM_DL_BACKOFF_MS")) {
         try {
-            long long ms = std::stoll(env);
+            long long ms = std::stoll(*env);
             if (ms >= 0) cfg.backoff = std::chrono::milliseconds(ms);
             log << "env:BACKOFF_MS=" << ms << " ";
             used_env = true;
         } catch (...) {}
     }
 
-    if (const char* env = std::getenv("LLM_DL_CONCURRENCY")) {
+    if (auto env = getEnvValue("LLM_DL_CONCURRENCY")) {
         try {
-            long long v = std::stoll(env);
+            long long v = std::stoll(*env);
             if (v > 0 && v < 64) cfg.max_concurrency = static_cast<size_t>(v);
             log << "env:CONCURRENCY=" << v << " ";
             used_env = true;
         } catch (...) {}
     }
 
-    if (const char* env = std::getenv("LLM_DL_MAX_BPS")) {
+    if (auto env = getEnvValue("LLM_DL_MAX_BPS")) {
         try {
-            long long v = std::stoll(env);
+            long long v = std::stoll(*env);
             if (v > 0) cfg.max_bytes_per_sec = static_cast<size_t>(v);
             log << "env:MAX_BPS=" << v << " ";
             used_env = true;
         } catch (...) {}
     }
 
-    if (const char* env = std::getenv("LLM_DL_CHUNK")) {
+    if (auto env = getEnvValue("LLM_DL_CHUNK")) {
         try {
-            long long v = std::stoll(env);
+            long long v = std::stoll(*env);
             if (v > 0 && v <= 1 << 20) cfg.chunk_size = static_cast<size_t>(v);
             log << "env:CHUNK=" << v << " ";
             used_env = true;
@@ -138,7 +173,7 @@ namespace {
 
 std::filesystem::path defaultConfigPath() {
     try {
-        std::filesystem::path home = std::getenv("HOME") ? std::getenv("HOME") : "";
+        std::filesystem::path home = getEnvValue("HOME").value_or("");
         if (!home.empty()) return home / ".llm-router/config.json";
     } catch (...) {
     }
@@ -147,8 +182,9 @@ std::filesystem::path defaultConfigPath() {
 
 bool readJsonWithLock(const std::filesystem::path& path, nlohmann::json& out) {
     if (!std::filesystem::exists(path)) return false;
+#ifndef _WIN32
     FileLock lock(path);
-    if (!lock.locked()) return false;
+#endif
     try {
         std::ifstream ifs(path);
         if (!ifs.is_open()) return false;
@@ -159,11 +195,24 @@ bool readJsonWithLock(const std::filesystem::path& path, nlohmann::json& out) {
     }
 }
 
+std::optional<bool> parseBoolFlag(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (value == "1" || value == "true" || value == "yes" || value == "on") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "no" || value == "off") {
+        return false;
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     NodeConfig cfg;
     cfg.bind_address = "0.0.0.0";
+    cfg.require_gpu = true;
     std::ostringstream log;
     bool used_env = false;
     bool used_file = false;
@@ -202,8 +251,8 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
 
     // file
     std::filesystem::path cfg_path;
-    if (const char* env = std::getenv("ALLM_CONFIG")) {
-        cfg_path = env;
+    if (auto env = getEnvValue("ALLM_CONFIG")) {
+        cfg_path = *env;
     } else {
         cfg_path = defaultConfigPath();
     }
@@ -248,9 +297,19 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         }
     }
 
-    if (const char* v = std::getenv("LLM_DEFAULT_EMBEDDING_MODEL")) {
-        cfg.default_embedding_model = v;
-        log << "env:DEFAULT_EMBEDDING_MODEL=" << v << " ";
+    if (auto v = getEnvValue("LLM_DEFAULT_EMBEDDING_MODEL")) {
+        cfg.default_embedding_model = *v;
+        log << "env:DEFAULT_EMBEDDING_MODEL=" << *v << " ";
+        used_env = true;
+    }
+
+    if (auto v = getEnvWithFallback("ALLM_REQUIRE_GPU", "LLM_REQUIRE_GPU")) {
+        if (auto parsed = parseBoolFlag(*v)) {
+            cfg.require_gpu = *parsed;
+        } else {
+            spdlog::warn("Invalid ALLM_REQUIRE_GPU value '{}', expected true/false", *v);
+        }
+        log << "env:REQUIRE_GPU=" << *v << " ";
         used_env = true;
     }
 
@@ -262,9 +321,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
         log << "file";
     }
     if (!used_env && !used_file) log << "default";
-
-    // GPU requirement is enforced for node operation
-    cfg.require_gpu = true;
 
     return {cfg, log.str()};
 }

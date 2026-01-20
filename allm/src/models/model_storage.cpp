@@ -585,7 +585,7 @@ std::string sanitizeModelId(const std::string& input) {
             continue;
         }
         // `/` はディレクトリセパレータとして許可
-        if (c == '/') {
+        if (c == '/' || c == '\\') {
             out.push_back('/');
             continue;
         }

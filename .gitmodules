@@ -6,7 +6,7 @@
 	url = https://github.com/leejet/stable-diffusion.cpp.git
 [submodule "node/third_party/llama.cpp"]
 	path = allm/third_party/llama.cpp
-	url = https://github.com/ggerganov/llama.cpp.git
+	url = https://github.com/akiojin/llama.cpp.git
 [submodule "node/third_party/cpp-httplib"]
 	path = allm/third_party/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git

@@ -25,7 +25,7 @@
 - [ ] T015 Add migration guide / breaking change note.
 
 ## Phase 4: Tests
-- [ ] T016 Add TextManager unit tests.
+- [x] T016 Add TextManager unit tests.
 - [ ] T017 Add manager-based integration coverage.
 - [x] T018 Add mandatory test coverage for gpt/nemotron/qwen/glm model families.
 - [x] T019 Run quality checks.

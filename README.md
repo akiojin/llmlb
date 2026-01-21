@@ -1,12 +1,12 @@
 # LLM Router
 
-A centralized management system for coordinating LLM inference nodes across multiple machines
+A centralized management system for coordinating LLM inference runtimes across multiple machines
 
 English | [日本語](./README.ja.md)
 
 ## Overview
 
-LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference nodes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
+LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference runtimes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
 
 ### Vision
 
@@ -33,6 +33,37 @@ LLM Router supports a pluggable multi-engine architecture:
 - **Models with GGUF available** → Use llama.cpp (Metal/CUDA ready)
 - **Models with safetensors only** → Implement built-in engine (Metal/CUDA support required)
 
+### Safetensors Architecture Support (Implementation-Aligned)
+
+| Architecture | Status | Notes |
+|-------------|--------|-------|
+| **gpt-oss (MoE + MXFP4)** | Implemented | Uses `mlp.router.*` and `mlp.experts.*_(blocks\|scales\|bias)` with MoE forward |
+| **nemotron3 (Mamba-Transformer MoE)** | Staged (not wired) | Not connected to the forward pass yet |
+
+See `specs/SPEC-69549000/spec.md` for the authoritative list and updates.
+
+### GGUF Architecture Coverage (llama.cpp, Examples)
+
+These are representative examples of model families supported via GGUF/llama.cpp. This list is
+non-exhaustive and follows upstream llama.cpp compatibility.
+
+| Architecture | Example models | Notes |
+|-------------|----------------|-------|
+| **llama** | Llama 3.1, Llama 3.2, Llama 3.3, DeepSeek-R1-Distill-Llama | Meta Llama family |
+| **mistral** | Mistral, Mistral-Nemo | Mistral AI family |
+| **gemma** | Gemma3, Gemma3n, Gemma3-QAT, FunctionGemma, EmbeddingGemma | Google Gemma family |
+| **qwen** | Qwen2.5, Qwen3, QwQ, Qwen3-VL, Qwen3-Coder, Qwen3-Embedding, Qwen3-Reranker | Alibaba Qwen family |
+| **phi** | Phi-4 | Microsoft Phi family |
+| **nemotron** | Nemotron | NVIDIA Nemotron family |
+| **deepseek** | DeepSeek-V3.2, DeepCoder-Preview | DeepSeek family |
+| **gpt-oss** | GPT-OSS, GPT-OSS-Safeguard | OpenAI GPT-OSS family |
+| **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite family |
+| **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM family |
+| **kimi** | Kimi-K2 | Moonshot Kimi family |
+| **moondream** | Moondream2 | Moondream vision family |
+| **devstral** | Devstral-Small | Mistral derivative (coding-focused) |
+| **magistral** | Magistral-Small-3.2 | Mistral derivative (multimodal) |
+
 ### Multimodal Support
 
 Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
@@ -41,6 +72,9 @@ Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
 - **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
 - **Image Generation**: `/v1/images/generations` - Generate images from text prompts
 - **Image Understanding**: `/v1/chat/completions` - Analyze images via `image_url` content parts (Vision models)
+
+Text generation should use the **Responses API** (`/v1/responses`) by default. Chat Completions remains
+available for compatibility.
 
 ## Key Features
 
@@ -143,7 +177,7 @@ Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 The router CLI currently exposes only basic flags (`--help`, `--version`).
 Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
 
-### Node (C++)
+### Runtime (C++)
 
 **Prerequisites:**
 
@@ -162,18 +196,18 @@ sudo apt install cmake build-essential
 
 ```bash
 # Build (Metal is enabled by default on macOS)
-npm run build:node
+npm run build:allm
 
 # Build (Linux / CUDA)
-npm run build:node:cuda
+npm run build:allm:cuda
 
 # Run
-npm run start:node
+npm run start:allm
 
 # Or manually:
-# cd node && cmake -B build -S . && cmake --build build --config Release
+# cd allm && cmake -B build -S . && cmake --build build --config Release
 # # Linux / CUDA:
-# # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
+# # cd allm && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
 # LLM_ROUTER_URL=http://localhost:32768 ./allm/build/allm
 ```
 
@@ -182,12 +216,12 @@ npm run start:node
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with |
-| `ALLM_PORT` | `32769` | Node listen port |
-| `ALLM_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
-| `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
-| `ALLM_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `ALLM_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `ALLM_LOG_LEVEL` | `info` | Log level |
+| `LLM_RUNTIME_PORT` | `32769` | Runtime listen port |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
+| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
+| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level |
 
 **Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
 
@@ -205,13 +239,13 @@ docker run --rm -p 32769:32769 \
 
 ## Load Balancing
 
-LLM Router supports multiple load balancing strategies to optimize request distribution across nodes.
+LLM Router supports multiple load balancing strategies to optimize request distribution across runtimes.
 
 ### Strategies
 
 #### 1. Metrics-Based Load Balancing (Recommended)
 
-Selects nodes based on real-time metrics (CPU usage, memory usage, active requests). This intelligent mode provides optimal performance by dynamically routing requests to the least loaded node, ensuring efficient resource utilization.
+Selects runtimes based on real-time metrics (CPU usage, memory usage, active requests). This intelligent mode provides optimal performance by dynamically routing requests to the least loaded runtime, ensuring efficient resource utilization.
 
 **Configuration:**
 ```bash
@@ -224,15 +258,15 @@ LLM_ROUTER_LOAD_BALANCER_MODE=metrics cargo run -p llm-router
 score = cpu_usage + memory_usage + (active_requests × 10)
 ```
 
-The node with the **lowest score** is selected. If all nodes have CPU usage > 80%, the system automatically falls back to round-robin.
+The runtime with the **lowest score** is selected. If all runtimes have CPU usage > 80%, the system automatically falls back to round-robin.
 
 **Example:**
-- Node A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
-- Node B: CPU 70%, Memory 50%, Active 5 → Score = 170
+- Runtime A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
+- Runtime B: CPU 70%, Memory 50%, Active 5 → Score = 170
 
 #### 2. Advanced Load Balancing (Default)
 
-Combines multiple factors including response time, active requests, and CPU usage to provide sophisticated node selection with adaptive performance optimization.
+Combines multiple factors including response time, active requests, and CPU usage to provide sophisticated runtime selection with adaptive performance optimization.
 
 **Configuration:**
 ```bash
@@ -242,18 +276,18 @@ LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
 
 ### Health / Metrics API
 
-Nodes report health + metrics to the Router for node status and load balancing decisions.
+Runtimes report health + metrics to the Router for runtime status and load balancing decisions.
 
-**Endpoint:** `POST /v0/health` (requires `X-Node-Token` + API key with `node`)
+**Endpoint:** `POST /v0/health` (requires `X-Runtime-Token` + API key with `runtime`)
 
 **Headers:**
 - `Authorization: Bearer <api_key>`
-- `X-Node-Token: <node_token>`
+- `X-Runtime-Token: <runtime_token>`
 
 **Request:**
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
   "cpu_usage": 45.5,
   "memory_usage": 60.2,
   "active_requests": 3,
@@ -269,13 +303,13 @@ Nodes report health + metrics to the Router for node status and load balancing d
 
 ## Architecture
 
-LLM Router coordinates local llama.cpp nodes and optionally proxies to cloud LLM providers via model prefixes.
+LLM Router coordinates local llama.cpp runtimes and optionally proxies to cloud LLM providers via model prefixes.
 
 ### Components
 - **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
-- **Local Nodes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the router.
+- **Local Runtimes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the router.
 - **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the router forwards to the corresponding cloud API.
-- **Storage**: SQLite for router metadata; model files live on each node.
+- **Storage**: SQLite for router metadata; model files live on each runtime.
 - **Observability**: Prometheus metrics, structured logs, dashboard stats.
 
 ### System Overview
@@ -291,7 +325,7 @@ Client
   ▼
 Router (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
-  └─ No prefix → Scheduler → Local Node
+  └─ No prefix → Scheduler → Local Runtime
                        └─ llama.cpp inference → Response
 ```
 
@@ -301,77 +335,82 @@ LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
 
 #### Traditional Method (Without Router)
 ```bash
-# Direct access to each node API (default: node_port=32769)
-curl http://machine1:32769/v1/chat/completions -d '...'
-curl http://machine2:32769/v1/chat/completions -d '...'
-curl http://machine3:32769/v1/chat/completions -d '...'
+# Direct access to each runtime API (default: runtime_port=32769)
+curl http://machine1:32769/v1/responses -d '...'
+curl http://machine2:32769/v1/responses -d '...'
+curl http://machine3:32769/v1/responses -d '...'
 ```
 
 #### With Router (Proxy)
 ```bash
-# Unified access to Router - automatic routing to the optimal node
-curl http://router:32768/v1/chat/completions -d '...'
-curl http://router:32768/v1/chat/completions -d '...'
-curl http://router:32768/v1/chat/completions -d '...'
+# Unified access to Router - automatic routing to the optimal runtime
+curl http://router:32768/v1/responses -d '...'
+curl http://router:32768/v1/responses -d '...'
+curl http://router:32768/v1/responses -d '...'
 ```
 
 **Detailed Request Flow:**
 
 1. **Client → Router**
    ```
-   POST http://router:32768/v1/chat/completions
+   POST http://router:32768/v1/responses
    Content-Type: application/json
 
-   {"model": "llama2", "messages": [...]}
+   {"model": "llama2", "input": "Hello!"}
    ```
 
 2. **Router Internal Processing**
-   - Select optimal node (Load Balancing)
-   - Forward request to selected node via HTTP client
+   - Select optimal runtime (Load Balancing)
+   - Forward request to selected runtime via HTTP client
 
-3. **Router → Node (Internal Communication)**
+3. **Router → Runtime (Internal Communication)**
    ```
-   POST http://node1:32769/v1/chat/completions
+   POST http://runtime1:32769/v1/responses
    Content-Type: application/json
 
-   {"model": "llama2", "messages": [...]}
+   {"model": "llama2", "input": "Hello!"}
    ```
 
-4. **Node Local Processing**
-   - Node loads model on-demand (from local cache or router-provided source)
-   - Node runs llama.cpp inference and returns an OpenAI-compatible response
+4. **Runtime Local Processing**
+   - Runtime loads model on-demand (from local cache or router-provided source)
+   - Runtime runs llama.cpp inference and returns an OpenAI-compatible response
 
 5. **Router → Client (Return Response)**
    ```json
-   {
-     "id": "chatcmpl-xxx",
-     "object": "chat.completion",
-     "choices": [{
-       "index": 0,
-       "message": {"role": "assistant", "content": "..."},
-       "finish_reason": "stop"
-     }]
-   }
+  {
+    "id": "resp_123",
+    "object": "response",
+    "output": [
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          { "type": "output_text", "text": "Hello!" }
+        ]
+      }
+    ]
+  }
    ```
 
-> **Note**: LLM Router exclusively supports **OpenAI-compatible API format**.
-> All responses follow the OpenAI Chat Completions API specification.
+> **Note**: LLM Router supports OpenAI-compatible APIs and **recommends** the
+> Responses API (`/v1/responses`). Chat Completions remains available for
+> compatibility.
 
 **From Client's Perspective**:
 - Router appears as the only OpenAI-compatible API server
-- No need to be aware of multiple internal nodes
+- No need to be aware of multiple internal runtimes
 - Complete with a single HTTP request
 
 ### Model Sync (No Push Distribution)
 
-- The router never pushes models to nodes.
-- Nodes resolve models on-demand in this order:
-  - local cache (`ALLM_MODELS_DIR`)
-  - allowlisted origin download (Hugging Face, etc.; configure via `ALLM_ORIGIN_ALLOWLIST`)
+- The router never pushes models to runtimes.
+- Runtimes resolve models on-demand in this order:
+  - local cache (`LLM_RUNTIME_MODELS_DIR`)
+  - allowlisted origin download (Hugging Face, etc.; configure via `LLM_RUNTIME_ORIGIN_ALLOWLIST`)
   - manifest-based selection from the router (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
-- Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
+- Runtimes register via `/v0/runtimes`; router rejects runtimes without GPUs by default.
 - Heartbeats carry CPU/GPU/memory metrics used for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
@@ -379,22 +418,22 @@ curl http://router:32768/v1/chat/completions -d '...'
 
 1. **Unified Endpoint**
    - Clients only need to know the Router URL
-   - No need to know each node location
+   - No need to know each runtime location
 
 2. **Transparent Load Balancing**
-   - Router automatically selects the optimal node
+   - Router automatically selects the optimal runtime
    - Clients benefit from load distribution without awareness
 
 3. **Automatic Retry on Failure**
-   - If Node1 fails → Router automatically tries Node2
+   - If Runtime1 fails → Router automatically tries Runtime2
    - No re-request needed from client
 
 4. **Security**
-   - Node IP addresses not exposed to clients
+   - Runtime IP addresses not exposed to clients
    - Only Router needs to be publicly accessible
 
 5. **Scalability**
-   - Adding nodes automatically increases processing capacity
+   - Adding runtimes automatically increases processing capacity
    - No changes needed on client side
 
 ## Project Structure
@@ -419,7 +458,7 @@ Use it to monitor endpoints, view request history, inspect logs, and manage mode
    ```bash
    cargo run -p llm-router
    ```
-2. Open:
+1. Open:
    ```text
    http://localhost:32768/dashboard
    ```
@@ -493,13 +532,13 @@ For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quick
   - Router stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
-  - Nodes pull models on-demand via the model registry endpoints:
+  - Runtimes pull models on-demand via the model registry endpoints:
     - `GET /v0/models/registry/:model_name/manifest.json`
     - `GET /v0/models/registry/:model_name/files/:file_name`
     - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
 - API:
   - `POST /v0/models/register` with `repo` and optional `filename`.
-- `/v1/models` lists registered models; `ready` reflects node sync status.
+- `/v1/models` lists registered models; `ready` reflects runtime sync status.
 
 ## Installation
 
@@ -532,7 +571,7 @@ If `nvidia-smi` shows your GPU, the driver is installed.
 
 #### Installing CUDA Toolkit (Build Environment Only)
 
-Required only for building the node with CUDA support (`BUILD_WITH_CUDA=ON`).
+Required only for building the runtime with CUDA support (`BUILD_WITH_CUDA=ON`).
 
 **Windows:**
 
@@ -560,7 +599,7 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 nvcc --version
 ```
 
-**Note:** Runtime environments (nodes running pre-built binaries) only need the CUDA
+**Note:** Runtime environments (runtimes running pre-built binaries) only need the CUDA
 Driver, not the full Toolkit.
 
 ### 1) Build from Rust source (Recommended)
@@ -581,13 +620,13 @@ docker run --rm -p 32768:32768 --gpus all \
 ```
 If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
 
-### 3) C++ Node Build
-See [Node (C++)](#node-c) section in Quick Start.
+### 3) C++ Runtime Build
+See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 ### Requirements
 
 - **Router**: Rust toolchain (stable)
-- **Node**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
+- **Runtime**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
 
 ## Usage
 
@@ -599,30 +638,29 @@ See [Node (C++)](#node-c) section in Quick Start.
    # Default: http://0.0.0.0:32768
    ```
 
-2. **Start Nodes on Multiple Machines**
+2. **Start Runtimes on Multiple Machines**
    ```bash
    # Machine 1
    LLM_ROUTER_URL=http://router:32768 \
-   # Replace with your actual API key (scope: node)
-   ALLM_API_KEY=sk_your_node_register_key \
+   # Replace with your actual API key (scope: runtime)
+   LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
    ./allm/build/allm
 
    # Machine 2
    LLM_ROUTER_URL=http://router:32768 \
-   # Replace with your actual API key (scope: node)
-   ALLM_API_KEY=sk_your_node_register_key \
+   # Replace with your actual API key (scope: runtime)
+   LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
    ./allm/build/allm
    ```
 
-3. **Send Inference Requests to Router (OpenAI-compatible)**
+3. **Send Inference Requests to Router (OpenAI-compatible, Responses API recommended)**
    ```bash
-   curl http://router:32768/v1/chat/completions \
+   curl http://router:32768/v1/responses \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
        "model": "gpt-oss-20b",
-       "messages": [{"role": "user", "content": "Hello!"}],
-       "stream": false
+       "input": "Hello!"
      }'
    ```
 
@@ -659,9 +697,9 @@ See [Node (C++)](#node-c) section in Quick Start.
        "max_tokens": 300
      }'
    ```
-4. **List Registered Nodes**
+4. **List Registered Runtimes**
    ```bash
-   curl http://router:32768/v0/nodes \
+   curl http://router:32768/v0/runtimes \
      # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
@@ -682,8 +720,8 @@ See [Node (C++)](#node-c) section in Quick Start.
 | `LLM_ROUTER_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
 | `LLM_ROUTER_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
 | `LLM_ROUTER_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Node health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
+| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Runtime health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
+| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Runtime request timeout (seconds) | `NODE_TIMEOUT` |
 | `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
 | `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 | `LLM_QUANTIZE_BIN` | - | Path to `llama-quantize` binary | optional |
@@ -701,22 +739,23 @@ Cloud / external services:
 | `HF_TOKEN` | - | Hugging Face token for model pulls | optional |
 | `LLM_ROUTER_API_KEY` | - | API key used by e2e tests/clients | client/test use |
 
-#### aLLM
+#### Runtime (llm-runtime)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
 | `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
-| `ALLM_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
-| `ALLM_PORT` | `32769` | Node listen port | - |
-| `ALLM_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
-| `ALLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
-| `ALLM_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
-| `ALLM_IP` | auto-detected | Node IP reported to router | - |
-| `ALLM_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
-| `ALLM_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
-| `ALLM_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
-| `ALLM_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `ALLM_CONFIG` | `~/.llm-router/config.json` | Path to node config file | - |
+| `LLM_RUNTIME_API_KEY` | - | API key for runtime registration / model registry download | scope: `runtime` |
+| `LLM_RUNTIME_PORT` | `32769` | Runtime listen port | - |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
+| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
+| `LLM_RUNTIME_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
+| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
+| `LLM_RUNTIME_IP` | auto-detected | Runtime IP reported to router | - |
+| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
+| `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
+| `LLM_RUNTIME_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
+| `LLM_RUNTIME_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `LLM_RUNTIME_CONFIG` | `~/.llm-router/config.json` | Path to runtime config file | - |
 | `LLM_MODEL_IDLE_TIMEOUT` | unset | Seconds before unloading idle models | enabled when set |
 | `LLM_MAX_LOADED_MODELS` | unset | Cap on simultaneously loaded models | enabled when set |
 | `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
@@ -727,7 +766,7 @@ Cloud / external services:
 
 ### GPU not found at startup
 - Check: `nvidia-smi` or `CUDA_VISIBLE_DEVICES`
-- Disable via env var: Node side `LLM_ALLOW_NO_GPU=true` (disabled by default)
+- Disable via env var: Runtime side `LLM_ALLOW_NO_GPU=true` (disabled by default)
 - If it still fails, check for NVML library presence
 
 ### Cloud models return 401/400
@@ -737,7 +776,7 @@ Cloud / external services:
 
 ### Port conflict
 - Router: Change `LLM_ROUTER_PORT` (e.g., `LLM_ROUTER_PORT=18080`)
-- Node: Change `ALLM_PORT` or use `--port`
+- Runtime: Change `LLM_RUNTIME_PORT` or use `--port`
 
 ### SQLite file creation failed
 - Check write permissions for the directory in `LLM_ROUTER_DATABASE_URL` path
@@ -749,12 +788,12 @@ Cloud / external services:
 - Check static delivery settings for `/dashboard/*` if using a reverse proxy
 
 ### OpenAI compatible API returns 503 / Model not registered
-- Returns 503 if all nodes are `initializing`. Wait for node model load or check status at `/v0/dashboard/nodes`
-- If specified model does not exist locally, wait for node to auto-pull
+- Returns 503 if all runtimes are `initializing`. Wait for runtime model load or check status at `/v0/dashboard/runtimes`
+- If specified model does not exist locally, wait for runtime to auto-pull
 
 ### Too many / too few logs
 - Control via `LLM_ROUTER_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLM_ROUTER_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
-- Node logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
+- Runtime logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
 
 ## Development
 
@@ -771,7 +810,7 @@ make quality-checks
 - gpt-oss (auto): `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
 - gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
-  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
+  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/runtime logs, request JSON, etc.)
 
 Notes:
 - gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
@@ -848,7 +887,7 @@ response bodies, and metadata
 - **Web Dashboard**: View, filter, and search request history through the
 web interface
 - **Export Capabilities**: Export history as CSV
-- **Filtering Options**: Filter by model, node, status, and time range
+- **Filtering Options**: Filter by model, runtime, status, and time range
 
 ### Accessing Request History
 
@@ -911,11 +950,11 @@ to `.migrated`.
 | Scope | Grants |
 |-------|--------|
 | `endpoints` | Endpoint management (`/v0/endpoints/*`) |
-| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) - Legacy |
-| `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
-| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
+| `runtime` | Runtime registration + health + model sync (`POST /v0/runtimes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) - Legacy |
+| `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via runtime token) |
+| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/runtimes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
-Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
+Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
 #### User Management Endpoints
 
@@ -947,23 +986,23 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v0/endpoints/:id/test` | Connection test | JWT+Admin or API key (admin) |
 | POST | `/v0/endpoints/:id/sync` | Sync models | JWT+Admin or API key (admin) |
 
-#### Node Management Endpoints (Legacy)
+#### Runtime Management Endpoints (Legacy)
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/nodes` | Register node (GPU required) | API key (node) |
-| GET | `/v0/nodes` | List nodes | JWT+Admin or API key (admin) |
-| DELETE | `/v0/nodes/:node_id` | Delete node | JWT+Admin or API key (admin) |
-| POST | `/v0/nodes/:node_id/disconnect` | Force node offline | JWT+Admin or API key (admin) |
-| PUT | `/v0/nodes/:node_id/settings` | Update node settings | JWT+Admin or API key (admin) |
-| GET | `/v0/nodes/metrics` | List node metrics | JWT+Admin or API key (admin) |
+| POST | `/v0/runtimes` | Register runtime (GPU required) | API key (runtime) |
+| GET | `/v0/runtimes` | List runtimes | JWT+Admin or API key (admin) |
+| DELETE | `/v0/runtimes/:runtime_id` | Delete runtime | JWT+Admin or API key (admin) |
+| POST | `/v0/runtimes/:runtime_id/disconnect` | Force runtime offline | JWT+Admin or API key (admin) |
+| PUT | `/v0/runtimes/:runtime_id/settings` | Update runtime settings | JWT+Admin or API key (admin) |
+| GET | `/v0/runtimes/metrics` | List runtime metrics | JWT+Admin or API key (admin) |
 | GET | `/v0/metrics/summary` | System statistics summary | JWT+Admin or API key (admin) |
 
 #### Health Check Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/health` | Receive health check from node | Node Token + API key (node) |
+| POST | `/v0/health` | Receive health check from runtime | Runtime Token + API key (runtime) |
 
 #### OpenAI-Compatible Endpoints
 
@@ -972,27 +1011,27 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v1/chat/completions` | Chat completions API | API Key |
 | POST | `/v1/completions` | Text completions API | API Key |
 | POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Node Token |
-| GET | `/v1/models/:model_id` | Get specific model info | API Key / Node Token |
+| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Runtime Token |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key / Runtime Token |
 
 #### Model Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/models` | List registered models (node sync) | API key (node or admin) |
+| GET | `/v0/models` | List registered models (runtime sync) | API key (runtime or admin) |
 | POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
 | DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
-| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (node or admin) |
+| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (runtime or admin) |
 
 #### Dashboard Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/nodes` | Node info list | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/runtimes` | Runtime info list | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/stats` | System statistics | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-history` | Request history | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/metrics/:node_id` | Node metrics history | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/metrics/:runtime_id` | Runtime metrics history | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin) |
@@ -1002,7 +1041,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/v0/dashboard/logs/router` | Router logs | JWT+Admin or API key (admin) |
-| GET | `/v0/nodes/:node_id/logs` | Node logs | JWT+Admin or API key (admin) |
+| GET | `/v0/runtimes/:runtime_id/logs` | Runtime logs | JWT+Admin or API key (admin) |
 
 #### Static Files & Metrics
 
@@ -1014,7 +1053,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/playground/*path` | Playground static files | None |
 | GET | `/v0/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin) |
 
-### Node API (C++)
+### Runtime API (C++)
 
 #### OpenAI-Compatible Endpoints
 
@@ -1025,7 +1064,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v1/completions` | Text completions |
 | POST | `/v1/embeddings` | Embeddings generation |
 
-#### Node Management Endpoints
+#### Runtime Management Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -1033,20 +1072,20 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/startup` | Startup status check |
 | GET | `/metrics` | Metrics (JSON format) |
 | GET | `/metrics/prom` | Prometheus metrics |
-| GET | `/v0/logs?tail=200` | Tail node logs (JSON) |
+| GET | `/v0/logs?tail=200` | Tail runtime logs (JSON) |
 | GET | `/log/level` | Get current log level |
 | POST | `/log/level` | Change log level |
 | GET | `/internal-error` | Intentional error (debug) |
 
 ### Request/Response Examples
 
-#### POST /v0/nodes
+#### POST /v0/runtimes
 
-Register a node.
+Register a runtime.
 
 **Request:**
 
-**Headers:** `Authorization: Bearer <node_api_key>`
+**Headers:** `Authorization: Bearer <runtime_api_key>`
 
 ```json
 {
@@ -1065,10 +1104,10 @@ Register a node.
 
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
-  "node_api_port": 32769,
-  "node_token": "nt_xxx"
+  "runtime_api_port": 32769,
+  "runtime_token": "nt_xxx"
 }
 ```
 
@@ -1104,19 +1143,18 @@ List available models with Azure OpenAI-style capabilities.
 ```
 
 > **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
-> `ready` is a router extension derived from node sync state.
+> `ready` is a router extension derived from runtime sync state.
 
-#### POST /v1/chat/completions
+#### POST /v1/responses
 
-Chat completions API (OpenAI-compatible).
+Responses API (recommended).
 
 **Request:**
 
 ```json
 {
   "model": "gpt-oss-20b",
-  "messages": [{"role": "user", "content": "Hello!"}],
-  "stream": false
+  "input": "Hello!"
 }
 ```
 
@@ -1124,16 +1162,21 @@ Chat completions API (OpenAI-compatible).
 
 ```json
 {
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion",
-  "choices": [{
-    "index": 0,
-    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
-    "finish_reason": "stop"
-  }]
+  "id": "resp_123",
+  "object": "response",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        { "type": "output_text", "text": "Hello! How can I help you?" }
+      ]
+    }
+  ]
 }
 ```
 
+> **Compatibility**: `/v1/chat/completions` remains available for legacy clients.
 > **Important**: LLM Router only supports OpenAI-compatible response format.
 
 ## License

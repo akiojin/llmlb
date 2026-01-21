@@ -333,7 +333,7 @@ ModelSyncResult ModelSync::sync() {
         for (const auto& id : remote_set) {
             if (local_set.count(id)) continue;
 
-            bool ok = downloadModel(downloader, id, nullptr);
+            bool ok = downloadModel(downloader, id, {});
 
             // metadata (chat_template) - persist only when we downloaded locally
             if (ok) {
@@ -437,7 +437,7 @@ void ModelSync::setModelOverrides(std::unordered_map<std::string, ModelOverrides
 
 bool ModelSync::downloadModel(ModelDownloader& downloader,
                               const std::string& model_id,
-                              ProgressCallback cb,
+                              const DownloadCallbacks& callbacks,
                               const std::string& filename_hint) const {
     spdlog::info("ModelSync: downloading model {}", model_id);
     ModelOverrides model_cfg;
@@ -525,7 +525,7 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             int priority = f.value("priority", 0);
             bool optional = f.value("optional", false);
 
-            auto task_fn = [this, &downloader, model_id, url, name, digest, cb, model_cfg, file_chunk, file_bps, priority, optional]() {
+            auto task_fn = [this, &downloader, model_id, url, name, digest, callbacks, model_cfg, file_chunk, file_bps, priority, optional]() {
                 size_t orig_chunk = downloader.getChunkSize();
                 size_t orig_bps = downloader.getMaxBytesPerSec();
 
@@ -559,7 +559,7 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                 spdlog::info("ModelSync: download config file={} chunk={} max_bps={} source={}",
                              name, applied_chunk, applied_bps, source);
 
-                auto progress_cb = [this, model_id, name, cb](size_t downloaded, size_t total) {
+                auto progress_cb = [this, model_id, name, callbacks](size_t downloaded, size_t total) {
                     {
                         std::lock_guard<std::mutex> lock(status_mutex_);
                         status_.current_download = SyncStatusInfo::DownloadProgress{
@@ -570,8 +570,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                         };
                         status_.updated_at = std::chrono::system_clock::now();
                     }
-                    if (cb) {
-                        cb(downloaded, total);
+                    if (callbacks.on_progress) {
+                        callbacks.on_progress(name, downloaded, total);
                     }
                 };
 
@@ -582,6 +582,9 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                 downloader.setMaxBytesPerSec(orig_bps);
                 if (out.empty()) {
                     spdlog::warn("ModelSync: download failed for model {} file {} url={}", model_id, name, url);
+                }
+                if (callbacks.on_complete) {
+                    callbacks.on_complete(name, !out.empty());
                 }
                 if (out.empty() && optional) {
                     return true;
@@ -599,6 +602,33 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
         // If all files were filtered out (unsupported runtime), treat as a successful no-op.
         if (hi_tasks.empty() && lo_tasks.empty()) {
             return true;
+        }
+        if (callbacks.on_manifest) {
+            std::vector<std::string> files;
+            files.reserve(hi_tasks.size() + lo_tasks.size());
+            for (const auto& f : j["files"]) {
+                std::string name = f.value("name", "");
+                if (name.empty()) continue;
+                if (!shouldDownloadForBackend(name)) {
+                    continue;
+                }
+                if (f.contains("runtimes") && f["runtimes"].is_array() && !supported_runtimes.empty()) {
+                    bool matched = false;
+                    for (const auto& r : f["runtimes"]) {
+                        if (!r.is_string()) continue;
+                        const auto rt = r.get<std::string>();
+                        if (std::find(supported_runtimes.begin(), supported_runtimes.end(), rt) != supported_runtimes.end()) {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if (!matched) {
+                        continue;
+                    }
+                }
+                files.push_back(name);
+            }
+            callbacks.on_manifest(files);
         }
         spdlog::info("ModelSync: download tasks hi={} lo={}", hi_tasks.size(), lo_tasks.size());
 

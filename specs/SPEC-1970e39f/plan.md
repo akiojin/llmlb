@@ -46,7 +46,7 @@
 **可観測性**: PASS - 本機能の主目的
 
 - 構造化ロギング: YES (JSON形式)
-- エラーコンテキスト: YES (request_id, endpoint, model, node_id)
+- エラーコンテキスト: YES (request_id, endpoint, model, runtime_id)
 
 **バージョニング**: N/A - バグ修正、新バージョン不要
 
@@ -99,7 +99,7 @@ pub struct RequestResponseRecord {
     pub timestamp: DateTime<Utc>,
     pub request_type: RequestType,
     pub model: String,
-    pub node_id: Uuid,           // Uuid::nil() for no node
+    pub runtime_id: Uuid,           // Uuid::nil() for no node
     pub node_machine_name: String,
     pub node_ip: IpAddr,
     pub client_ip: Option<IpAddr>,
@@ -116,9 +116,9 @@ pub struct RequestResponseRecord {
 | イベント | レベル | 必須フィールド |
 |----------|--------|----------------|
 | リクエスト受信 | INFO | endpoint, model, request_id |
-| ノード選択成功 | INFO | node_id, node_ip |
+| ノード選択成功 | INFO | runtime_id, node_ip |
 | ノード選択失敗 | ERROR | error, request_id |
-| プロキシエラー | WARN | status_code, node_id, error |
+| プロキシエラー | WARN | status_code, runtime_id, error |
 
 ### 契約テスト設計
 

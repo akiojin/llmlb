@@ -400,7 +400,7 @@ int run_node(const allm::NodeConfig& cfg, bool single_iteration) {
                                  filename_hint.empty() ? "" : " (" + filename_hint + ")");
 
                     allm::ModelDownloader downloader("", model_sync->getModelsDir());
-                    bool ok = model_sync->downloadModel(downloader, model_id, nullptr, filename_hint);
+                    bool ok = model_sync->downloadModel(downloader, model_id, {}, filename_hint);
                     if (!ok) {
                         res.status = 500;
                         nlohmann::json err;

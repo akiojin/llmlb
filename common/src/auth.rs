@@ -53,9 +53,9 @@ pub struct ApiKey {
 /// APIキースコープ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ApiKeyScope {
-    /// ノード登録・同期
-    #[serde(rename = "node")]
-    Node,
+    /// ランタイム登録・同期
+    #[serde(rename = "runtime")]
+    Runtime,
     /// OpenAI互換API利用
     #[serde(rename = "api")]
     Api,
@@ -67,7 +67,7 @@ pub enum ApiKeyScope {
 impl ApiKeyScope {
     /// すべてのスコープ
     pub fn all() -> Vec<ApiKeyScope> {
-        vec![ApiKeyScope::Node, ApiKeyScope::Api, ApiKeyScope::Admin]
+        vec![ApiKeyScope::Runtime, ApiKeyScope::Api, ApiKeyScope::Admin]
     }
 }
 
@@ -88,22 +88,22 @@ pub struct ApiKeyWithPlaintext {
     pub scopes: Vec<ApiKeyScope>,
 }
 
-/// ノードトークン
+/// ランタイムトークン
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeToken {
-    /// ノードID
-    pub node_id: Uuid,
+pub struct RuntimeToken {
+    /// ランタイムID
+    pub runtime_id: Uuid,
     /// トークンのSHA-256ハッシュ
     pub token_hash: String,
     /// 作成日時
     pub created_at: DateTime<Utc>,
 }
 
-/// ノードトークン（平文付き、発行時のレスポンス用）
+/// ランタイムトークン（平文付き、発行時のレスポンス用）
 #[derive(Debug, Clone, Serialize)]
-pub struct NodeTokenWithPlaintext {
-    /// ノードID
-    pub node_id: Uuid,
+pub struct RuntimeTokenWithPlaintext {
+    /// ランタイムID
+    pub runtime_id: Uuid,
     /// 平文のトークン（発行時のみ表示）
     pub token: String,
     /// 作成日時

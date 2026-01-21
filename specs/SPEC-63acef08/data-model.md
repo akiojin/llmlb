@@ -273,7 +273,7 @@ pub enum ProxyError {
 
     /// ノードへの接続失敗
     NodeConnectionFailed {
-        node_id: String,
+        runtime_id: String,
         reason: String,
     },
 
@@ -284,7 +284,7 @@ pub enum ProxyError {
 
     /// ノードからのエラーレスポンス
     NodeError {
-        node_id: String,
+        runtime_id: String,
         status: u16,
         body: String,
     },
@@ -395,5 +395,5 @@ llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="30"
 
 # ストリーミング
 llm_router_streaming_connections_active 15
-llm_router_streaming_chunks_total{node_id="node-1"} 50000
+llm_router_streaming_chunks_total{runtime_id="node-1"} 50000
 ```

@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 
 namespace stcpp {
 
@@ -69,6 +71,44 @@ static struct ggml_tensor* rms_norm(
     }
 
     return result;
+}
+
+// Metal backend does not support DIAG_MASK_INF, so apply a causal mask via add + repeat.
+struct CausalMaskInfo {
+    struct ggml_tensor* tensor;
+    int32_t n_past;
+};
+
+struct CausalMaskStorage {
+    CausalMaskInfo tensors[64];  // Max 64 layers
+    int count;
+};
+
+static CausalMaskStorage& get_causal_mask_storage() {
+    static CausalMaskStorage storage = {{}, 0};
+    return storage;
+}
+
+static struct ggml_tensor* apply_causal_mask(
+    struct ggml_context* ctx,
+    struct ggml_tensor* scores,
+    int n_past
+) {
+    const int64_t n_kv = scores->ne[0];
+    const int64_t n_tokens = scores->ne[1];
+
+    struct ggml_tensor* mask = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_kv, n_tokens);
+    ggml_set_input(mask);  // data will be set after graph allocation
+
+    auto& storage = get_causal_mask_storage();
+    if (storage.count < 64) {
+        storage.tensors[storage.count].tensor = mask;
+        storage.tensors[storage.count].n_past = n_past;
+        storage.count++;
+    }
+
+    struct ggml_tensor* mask_rep = ggml_repeat(ctx, mask, scores);
+    return ggml_add(ctx, scores, mask_rep);
 }
 
 /* Structure to track positions tensors for delayed initialization */
@@ -256,6 +296,7 @@ static struct ggml_tensor* multi_head_attention(
     int32_t n_head,
     int32_t n_head_kv,
     int32_t n_embd,
+    int32_t head_dim,
     int32_t n_rot,
     float freq_base,
     float freq_scale,
@@ -266,8 +307,6 @@ static struct ggml_tensor* multi_head_attention(
                 n_head, n_head_kv, n_embd, n_rot);
         fflush(stderr);
     }
-
-    const int32_t head_dim = n_embd / n_head;
 
     if (layer_idx == 0) {
         fprintf(stderr, "[DEBUG] MHA[0]: head_dim=%d, computing Q,K,V projections\n", head_dim);
@@ -590,7 +629,7 @@ static struct ggml_tensor* multi_head_attention(
         ggml_set_output(scores);
     }
 
-    scores = ggml_diag_mask_inf(ctx, scores, n_past);
+    scores = apply_causal_mask(ctx, scores, n_past);
 
     // Softmax over n_kv dimension (ne[0])
     scores = ggml_soft_max(ctx, scores);
@@ -712,8 +751,9 @@ static struct ggml_tensor* multi_head_attention(
         fflush(stderr);
     }
 
-    // Reshape to [n_embd, n_tokens]
-    attn_out = ggml_reshape_2d(ctx, attn_out, n_embd, n_tokens);
+    // Reshape to [q_dim, n_tokens] (q_dim = n_head * head_dim)
+    const int32_t q_dim = n_head * head_dim;
+    attn_out = ggml_reshape_2d(ctx, attn_out, q_dim, n_tokens);
 
     if (layer_idx == 0) {
         fprintf(stderr, "[DEBUG] MHA[0]: attn_out after reshape shape=[%lld,%lld,%lld,%lld]\n",
@@ -772,6 +812,93 @@ static struct ggml_tensor* swiglu_ffn(
     x = ggml_mul_mat(ctx, layer.ffn_down, x);
 
     return x;
+}
+
+/* gpt-oss MoE FFN (SwiGLU OAI) */
+static struct ggml_tensor* moe_swiglu_oai(
+    struct ggml_context* ctx,
+    struct ggml_tensor* cur,
+    const LayerTensors& layer,
+    const ModelHParams& hparams,
+    int32_t layer_idx
+) {
+    const int64_t n_embd = cur->ne[0];
+    const int64_t n_tokens = cur->ne[1];
+    const int64_t n_expert = hparams.n_expert;
+    const int64_t n_expert_used = hparams.n_expert_used;
+
+    if (n_expert <= 0 || n_expert_used <= 0 || n_expert_used > n_expert) {
+        throw std::runtime_error("Invalid gpt-oss MoE expert configuration");
+    }
+
+    if (!layer.moe_router || !layer.moe_gate_exps || !layer.moe_up_exps || !layer.moe_down_exps) {
+        throw std::runtime_error("MoE tensors missing for gpt-oss layer");
+    }
+
+    // Router logits [n_expert, n_tokens]
+    struct ggml_tensor* logits = ggml_mul_mat(ctx, layer.moe_router, cur);
+    if (layer.moe_router_bias) {
+        logits = ggml_add(ctx, logits, layer.moe_router_bias);
+    }
+
+    // Softmax probabilities
+    struct ggml_tensor* probs = ggml_soft_max(ctx, logits);
+
+    // Select Top-K experts
+    struct ggml_tensor* selected = ggml_argsort_top_k(ctx, probs, static_cast<int>(n_expert_used));
+
+    // Gather weights [1, n_expert_used, n_tokens]
+    probs = ggml_reshape_3d(ctx, probs, 1, n_expert, n_tokens);
+    struct ggml_tensor* weights = ggml_get_rows(ctx, probs, selected);
+
+    // Normalize weights across selected experts
+    weights = ggml_cont(ctx, weights);
+    weights = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
+    struct ggml_tensor* weights_sum = ggml_sum_rows(ctx, weights);
+    weights_sum = ggml_clamp(ctx, weights_sum, 6.103515625e-5f, INFINITY);
+    weights = ggml_div(ctx, weights, weights_sum);
+    weights = ggml_reshape_3d(ctx, weights, 1, n_expert_used, n_tokens);
+
+    // Prepare input for MoE matmul
+    struct ggml_tensor* cur_3d = ggml_reshape_3d(ctx, cur, n_embd, 1, n_tokens);
+
+    struct ggml_tensor* up = ggml_mul_mat_id(ctx, layer.moe_up_exps, cur_3d, selected);
+    if (layer.moe_up_bias) {
+        up = ggml_add_id(ctx, up, layer.moe_up_bias, selected);
+    }
+
+    struct ggml_tensor* gate = ggml_mul_mat_id(ctx, layer.moe_gate_exps, cur_3d, selected);
+    if (layer.moe_gate_bias) {
+        gate = ggml_add_id(ctx, gate, layer.moe_gate_bias, selected);
+    }
+
+    struct ggml_tensor* act = ggml_swiglu_oai(ctx, gate, up, 1.702f, hparams.swiglu_limit);
+
+    struct ggml_tensor* down = ggml_mul_mat_id(ctx, layer.moe_down_exps, act, selected);
+    if (layer.moe_down_bias) {
+        down = ggml_add_id(ctx, down, layer.moe_down_bias, selected);
+    }
+
+    // Apply routing weights
+    down = ggml_mul(ctx, down, weights);
+
+    // Sum across experts
+    struct ggml_tensor* moe_out = nullptr;
+    for (int64_t i = 0; i < n_expert_used; ++i) {
+        struct ggml_tensor* view = ggml_view_2d(ctx, down, n_embd, n_tokens, down->nb[2], i * down->nb[1]);
+        if (moe_out == nullptr) {
+            moe_out = view;
+        } else {
+            moe_out = ggml_add(ctx, moe_out, view);
+        }
+    }
+
+    if (layer_idx == 0) {
+        ggml_set_name(moe_out, "layer0_moe_out");
+        ggml_set_output(moe_out);
+    }
+
+    return moe_out;
 }
 
 /* Build transformer layer */
@@ -841,7 +968,7 @@ static struct ggml_tensor* build_layer(
         k_cache, v_cache,
         n_past, n_tokens,
         hparams.n_head, hparams.n_head_kv,
-        hparams.n_embd, hparams.n_rot,
+        hparams.n_embd, hparams.head_dim, hparams.n_rot,
         hparams.rope_freq_base, hparams.rope_freq_scale,
         layer_idx
     );
@@ -911,7 +1038,11 @@ static struct ggml_tensor* build_layer(
     }
 
     // FFN
-    cur = swiglu_ffn(ctx, cur, layer);
+    if (layer.is_moe) {
+        cur = moe_swiglu_oai(ctx, cur, layer, hparams, layer_idx);
+    } else {
+        cur = swiglu_ffn(ctx, cur, layer);
+    }
 
     // Mark FFN output to prevent buffer reuse by ggml_gallocr
     // Without this, the add operation's output buffer may alias ffn_out's buffer,
@@ -991,6 +1122,9 @@ struct ggml_cgraph* build_compute_graph(
     // Clear copy tensors list for this graph build
     get_copy_storage().count = 0;
 
+    // Clear causal mask tensors list for this graph build
+    get_causal_mask_storage().count = 0;
+
     struct ggml_context* ctx_graph = ggml_init(graph_params);
     if (!ctx_graph) {
         fprintf(stderr, "[DEBUG] build_compute_graph: ggml_init failed\n");
@@ -1059,8 +1193,9 @@ struct ggml_cgraph* build_compute_graph(
     fprintf(stderr, "[DEBUG] build_compute_graph: logits computed (marked as output)\n");
     fflush(stderr);
 
-    // Build graph
-    struct ggml_cgraph* graph = ggml_new_graph(ctx_graph);
+    // Build graph with a larger node budget for MoE graphs
+    const size_t graph_size = GGML_DEFAULT_GRAPH_SIZE * (hparams.use_moe ? 32 : 8);
+    struct ggml_cgraph* graph = ggml_new_graph_custom(ctx_graph, graph_size, false);
     ggml_build_forward_expand(graph, cur);
 
     // CRITICAL: Add KV cache copy operations to the graph explicitly
@@ -1200,6 +1335,29 @@ bool forward_pass(
     }
     fprintf(stderr, "[DEBUG] forward_pass: positions tensors set\n");
     fflush(stderr);
+
+    // Set causal mask tensors data after allocation
+    auto& mask_storage = get_causal_mask_storage();
+    for (int i = 0; i < mask_storage.count; ++i) {
+        const auto& info = mask_storage.tensors[i];
+        if (!info.tensor || !info.tensor->buffer) {
+            ggml_gallocr_free(allocr);
+            error = "Causal mask tensor " + std::to_string(i) + " has no buffer";
+            return false;
+        }
+        const int64_t n_kv = info.tensor->ne[0];
+        const int64_t n_tokens = info.tensor->ne[1];
+        const float neg_inf = -std::numeric_limits<float>::infinity();
+        std::vector<float> mask_data(static_cast<size_t>(n_kv * n_tokens));
+        for (int64_t t = 0; t < n_tokens; ++t) {
+            const int64_t max_k = static_cast<int64_t>(info.n_past) + t;
+            const int64_t row_offset = t * n_kv;
+            for (int64_t k = 0; k < n_kv; ++k) {
+                mask_data[static_cast<size_t>(row_offset + k)] = (k > max_k) ? neg_inf : 0.0f;
+            }
+        }
+        ggml_backend_tensor_set(info.tensor, mask_data.data(), 0, mask_data.size() * sizeof(float));
+    }
 
     // Debug: Check emb_input BEFORE compute
     {

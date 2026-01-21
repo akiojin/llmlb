@@ -8,7 +8,7 @@
 - [x] Router: `POST /v0/nodes` でノード登録（GPU必須バリデーション、到達性チェック）
 - [x] Router: `GET /v0/nodes` でノード一覧
 - [x] Router: `POST /v0/health` でヘルスチェック受信（`X-Node-Token` 認証）
-- [x] Token: 登録時に `node_token` を発行しDBに保存（以降のノード通信に必須）
+- [x] Token: 登録時に `runtime_token` を発行しDBに保存（以降のノード通信に必須）
 - [x] Registry: ノード状態をDBと同期し、起動時にロード
 - [x] Node: 定期的に `/v0/health` を送信して状態・メトリクスを更新
 - [x] Tests: 主要フローのテストを追加
@@ -37,7 +37,7 @@
 
 - spec.mdのFR-004で「ストレージ: SQLite」と明記されている
 - 現在の実装はJSONファイル（`nodes.json`）を使用しており、Specと不整合
-- 認証システム（users, api_keys, node_tokens）と同じDBに統合する
+- 認証システム（users, api_keys, runtime_tokens）と同じDBに統合する
 
 ### タスク
 

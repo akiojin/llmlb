@@ -129,7 +129,7 @@ pub struct RegisterRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterResponse {
     pub status: RegisterStatus,
-    pub node_id: Option<Uuid>,
+    pub runtime_id: Option<Uuid>,
     pub message: String,
 }
 
@@ -147,7 +147,7 @@ pub enum RegisterStatus {
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatRequest {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
 }
 ```
 

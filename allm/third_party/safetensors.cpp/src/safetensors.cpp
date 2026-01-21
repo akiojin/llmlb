@@ -92,8 +92,7 @@ stcpp_context_params stcpp_context_default_params(void) {
     params.use_mlock = false;
     params.kv_cache_quant = false;
 #if defined(STCPP_USE_METAL)
-    // Metal backend currently has kernel compilation issues - use CPU until fixed
-    params.backend = STCPP_BACKEND_CPU;
+    params.backend = STCPP_BACKEND_METAL;
 #elif defined(STCPP_USE_CUDA)
     params.backend = STCPP_BACKEND_CUDA;
 #elif defined(STCPP_USE_ROCM)

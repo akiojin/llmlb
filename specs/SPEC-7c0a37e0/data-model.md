@@ -72,7 +72,7 @@ pub enum UserRole {
 | キー | スコープ | 用途 |
 |------|---------|------|
 | `sk_debug` | すべて | 後方互換性 |
-| `sk_debug_node` | `node` | ノード登録テスト |
+| `sk_debug_runtime` | `node` | ノード登録テスト |
 | `sk_debug_api` | `api` | API利用テスト |
 | `sk_debug_admin` | `admin` | 管理操作テスト |
 

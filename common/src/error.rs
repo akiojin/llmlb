@@ -36,16 +36,16 @@ pub enum RouterError {
     #[error(transparent)]
     Common(#[from] CommonError),
 
-    /// Node not found
-    #[error("Node not found: {0}")]
+    /// Runtime not found
+    #[error("Runtime not found: {0}")]
     NodeNotFound(Uuid),
 
-    /// No available nodes
-    #[error("No available nodes")]
+    /// No available runtimes
+    #[error("No available runtimes")]
     NoNodesAvailable,
 
-    /// No capable nodes for model
-    #[error("No capable nodes for model: {0}")]
+    /// No capable runtimes for model
+    #[error("No capable runtimes for model: {0}")]
     NoCapableNodes(String),
 
     /// Database error
@@ -68,8 +68,8 @@ pub enum RouterError {
     #[error("Internal error: {0}")]
     Internal(String),
 
-    /// Node is offline
-    #[error("Node {0} is offline")]
+    /// Runtime is offline
+    #[error("Runtime {0} is offline")]
     NodeOffline(Uuid),
 
     /// Invalid model name
@@ -109,15 +109,15 @@ impl RouterError {
     pub fn external_message(&self) -> &'static str {
         match self {
             Self::Common(_) => "Request error",
-            Self::NodeNotFound(_) => "Node not found",
-            Self::NoNodesAvailable => "No available nodes",
-            Self::NoCapableNodes(_) => "No capable nodes",
+            Self::NodeNotFound(_) => "Runtime not found",
+            Self::NoNodesAvailable => "No available runtimes",
+            Self::NoCapableNodes(_) => "No capable runtimes",
             Self::Database(_) => "Database error",
             Self::Http(_) => "Backend service unavailable",
             Self::Timeout(_) => "Request timeout",
             Self::ServiceUnavailable(_) => "Service temporarily unavailable",
             Self::Internal(_) => "Internal server error",
-            Self::NodeOffline(_) => "Node offline",
+            Self::NodeOffline(_) => "Runtime offline",
             Self::InvalidModelName(_) => "Invalid model name",
             Self::InsufficientStorage(_) => "Insufficient storage",
             Self::PasswordHash(_) => "Authentication error",
@@ -128,7 +128,7 @@ impl RouterError {
     }
 }
 
-/// Node error type
+/// Runtime error type
 #[derive(Debug, Error)]
 pub enum NodeError {
     /// Common layer error
@@ -144,7 +144,7 @@ pub enum NodeError {
     RuntimeConnection(String),
 
     /// Registration error
-    #[error("Node registration failed: {0}")]
+    #[error("Runtime registration failed: {0}")]
     Registration(String),
 
     /// Health check send error
@@ -170,7 +170,7 @@ pub type CommonResult<T> = Result<T, CommonError>;
 /// Result type alias (Router)
 pub type RouterResult<T> = Result<T, RouterError>;
 
-/// Result type alias (Node)
+/// Result type alias (Runtime)
 pub type NodeResult<T> = Result<T, NodeError>;
 
 #[cfg(test)]
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_router_error_no_nodes() {
         let error = RouterError::NoNodesAvailable;
-        assert_eq!(error.to_string(), "No available nodes");
+        assert_eq!(error.to_string(), "No available runtimes");
     }
 
     #[test]

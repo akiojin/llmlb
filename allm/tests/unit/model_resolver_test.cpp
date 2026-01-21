@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,72 +49,74 @@ public:
     fs::path local;
 };
 
-class RegistryServer {
-public:
-    void setManifestBody(std::string body) { manifest_body_ = std::move(body); }
-    void setFileBody(std::string body) { file_body_ = std::move(body); }
-    void setFiles(std::vector<std::pair<std::string, std::string>> files) { files_ = std::move(files); }
-    void setServeManifest(bool enable) { serve_manifest_ = enable; }
+// RegistryServer - minimal test server for model registry
+struct RegistryServer {
+    httplib::Server server;
+    std::thread thread;
+    int port{0};
+    std::string model_name;
+    std::string manifest_body;
+    std::string file_body;
+    std::vector<std::pair<std::string, std::string>> files;
 
-    void start(int port, const std::string& model_name) {
-        port_ = port;
-        model_name_ = model_name;
+    void setManifestBody(std::string body) { manifest_body = std::move(body); }
+    void setFileBody(std::string body) { file_body = std::move(body); }
+    void setFiles(std::vector<std::pair<std::string, std::string>> f) { files = std::move(f); }
 
-        const std::string manifest_path = "/v0/models/registry/" + model_name_ + "/manifest.json";
-        server_.Get(manifest_path.c_str(), [this](const httplib::Request&, httplib::Response& res) {
-            if (!serve_manifest_) {
+    // Start server with explicit serve_manifest parameter (default true)
+    void start(int p, const std::string& mn, bool serve = true) {
+        port = p;
+        model_name = mn;
+
+        // Register manifest endpoint
+        std::string manifest_path = "/v0/models/registry/" + model_name + "/manifest.json";
+        std::string mbody = manifest_body;
+        std::string base = baseUrl();
+        server.Get(manifest_path.c_str(), [serve, mbody, base](const httplib::Request&, httplib::Response& res) {
+            if (!serve) {
                 res.status = 404;
                 return;
             }
-            std::string body = manifest_body_;
+            std::string body = mbody;
             if (body.empty()) {
                 body = std::string("{\"files\":[{\"name\":\"model.gguf\",\"url\":\"") +
-                       baseUrl() + "/files/model.gguf\"}]}";
+                       base + "/files/model.gguf\"}]}";
             }
             res.status = 200;
             res.set_content(body, "application/json");
         });
 
-        if (files_.empty()) {
-            server_.Get("/files/model.gguf", [this](const httplib::Request&, httplib::Response& res) {
-                std::string body = file_body_.empty() ? std::string("GGUF test") : file_body_;
+        // Register file endpoints
+        if (files.empty()) {
+            std::string fb = file_body;
+            server.Get("/files/model.gguf", [fb](const httplib::Request&, httplib::Response& res) {
+                std::string body = fb.empty() ? std::string("GGUF test") : fb;
                 res.status = 200;
                 res.set_content(body, "application/octet-stream");
             });
         } else {
-            for (const auto& entry : files_) {
-                const auto path = "/files/" + entry.first;
-                server_.Get(path.c_str(), [body = entry.second](const httplib::Request&, httplib::Response& res) {
+            for (const auto& entry : files) {
+                std::string fpath = "/files/" + entry.first;
+                std::string fbody = entry.second;
+                server.Get(fpath, [fbody](const httplib::Request&, httplib::Response& res) {
                     res.status = 200;
-                    res.set_content(body, "application/octet-stream");
+                    res.set_content(fbody, "application/octet-stream");
                 });
             }
         }
 
-        thread_ = std::thread([this, port]() { server_.listen("127.0.0.1", port); });
-        wait_for_server(server_, std::chrono::seconds(5));
+        thread = std::thread([this]() { server.listen("127.0.0.1", port); });
+        wait_for_server(server, std::chrono::seconds(5));
     }
 
     void stop() {
-        server_.stop();
-        if (thread_.joinable()) thread_.join();
+        server.stop();
+        if (thread.joinable()) thread.join();
     }
-
-    ~RegistryServer() { stop(); }
 
     std::string baseUrl() const {
-        return "http://127.0.0.1:" + std::to_string(port_);
+        return "http://127.0.0.1:" + std::to_string(port);
     }
-
-private:
-    httplib::Server server_;
-    std::thread thread_;
-    int port_{0};
-    std::string model_name_;
-    std::string manifest_body_;
-    std::string file_body_;
-    std::vector<std::pair<std::string, std::string>> files_;
-    bool serve_manifest_{true};
 };
 
 // Helper: create model directory with model.gguf
@@ -140,6 +143,36 @@ TEST(ModelResolverTest, LocalPathTakesPriority) {
 }
 
 // ===========================================================================
+// Debug: Basic httplib server test
+// ===========================================================================
+
+TEST(ModelResolverTest, BasicHttplibServer) {
+    // Simple test to verify httplib::Server works in this test context
+    httplib::Server svr;
+    svr.Get("/ping", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content("pong", "text/plain");
+    });
+    std::thread thread([&svr]() { svr.listen("127.0.0.1", 19898); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_TRUE(svr.is_running());
+    svr.stop();
+    thread.join();
+}
+
+TEST(ModelResolverTest, RegistryServerOnly) {
+    // Test RegistryServer heap allocation
+    auto server = std::make_unique<RegistryServer>();
+    server->start(19897, "test-model");
+
+    httplib::Client client("127.0.0.1", 19897);
+    auto res = client.Get("/v0/models/registry/test-model/manifest.json");
+    ASSERT_TRUE(res) << "HTTP request failed";
+    EXPECT_EQ(res->status, 200) << "Expected 200, got " << res->status;
+
+    server->stop();
+}
+
+// ===========================================================================
 // Registry manifest download tests
 // ===========================================================================
 
@@ -150,14 +183,14 @@ TEST(ModelResolverTest, DownloadFromRegistryWhenNotLocal) {
 #else
 TEST(ModelResolverTest, DownloadFromRegistryWhenNotLocal) {
     TempModelDirs tmp;
-    RegistryServer server;
-    server.start(20001, "registry-model");
+    auto server = std::make_unique<RegistryServer>();
+    server->start(20001, "registry-model");
 
-    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    ModelResolver resolver(tmp.local.string(), server->baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
     auto result = resolver.resolve("registry-model");
 
-    server.stop();
+    server->stop();
 
     EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(result.router_attempted);
@@ -174,16 +207,16 @@ TEST(ModelResolverTest, ReportsSyncProgressDuringRegistryDownload) {
 #else
 TEST(ModelResolverTest, ReportsSyncProgressDuringRegistryDownload) {
     TempModelDirs tmp;
-    RegistryServer server;
-    server.start(20006, "progress-model");
+    auto server = std::make_unique<RegistryServer>();
+    server->start(20006, "progress-model");
 
-    ModelSync sync(server.baseUrl(), tmp.local.string());
-    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    ModelSync sync(server->baseUrl(), tmp.local.string());
+    ModelResolver resolver(tmp.local.string(), server->baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
     resolver.setSyncReporter(&sync);
     auto result = resolver.resolve("progress-model");
 
-    server.stop();
+    server->stop();
 
     EXPECT_TRUE(result.success) << result.error_message;
     auto status = sync.getStatus();
@@ -202,14 +235,14 @@ TEST(ModelResolverTest, DownloadBlockedByAllowlist) {
 #else
 TEST(ModelResolverTest, DownloadBlockedByAllowlist) {
     TempModelDirs tmp;
-    RegistryServer server;
-    server.start(20002, "blocked-model");
+    auto server = std::make_unique<RegistryServer>();
+    server->start(20002, "blocked-model");
 
-    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    ModelResolver resolver(tmp.local.string(), server->baseUrl());
     resolver.setOriginAllowlist({"example.com/*"});
     auto result = resolver.resolve("blocked-model");
 
-    server.stop();
+    server->stop();
 
     EXPECT_FALSE(result.success);
     EXPECT_TRUE(result.router_attempted);
@@ -224,14 +257,13 @@ TEST(ModelResolverTest, MissingManifestReturnsError) {
 #else
 TEST(ModelResolverTest, MissingManifestReturnsError) {
     TempModelDirs tmp;
-    RegistryServer server;
-    server.setServeManifest(false);
-    server.start(20003, "missing-model");
+    auto server = std::make_unique<RegistryServer>();
+    server->start(20003, "missing-model", false);  // serve_manifest = false
 
-    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    ModelResolver resolver(tmp.local.string(), server->baseUrl());
     auto result = resolver.resolve("missing-model");
 
-    server.stop();
+    server->stop();
 
     EXPECT_FALSE(result.success);
     EXPECT_FALSE(result.error_message.empty());
@@ -274,29 +306,32 @@ TEST(ModelResolverTest, SupportsSafetensorsAndGgufFormats) {
 #else
 TEST(ModelResolverTest, SupportsSafetensorsAndGgufFormats) {
     TempModelDirs tmp;
-    RegistryServer server;
-    server.setFiles({
+    auto server = std::make_unique<RegistryServer>();
+    const int port = 20004;
+    const std::string base_url = "http://127.0.0.1:" + std::to_string(port);
+    server->setFiles({
         {"model.gguf", "gguf"},
         {"config.json", "{}"},
         {"tokenizer.json", "{}"},
         {"model.safetensors", "safetensors"}
     });
-    server.start(20004, "mixed-format-model");
+    // Set manifest BEFORE start() since lambda captures manifest_body at start time
     nlohmann::json manifest = {
         {"files", {
-            {{"name", "model.gguf"}, {"url", server.baseUrl() + "/files/model.gguf"}},
-            {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
-            {{"name", "tokenizer.json"}, {"url", server.baseUrl() + "/files/tokenizer.json"}},
-            {{"name", "model.safetensors"}, {"url", server.baseUrl() + "/files/model.safetensors"}}
+            {{"name", "model.gguf"}, {"url", base_url + "/files/model.gguf"}},
+            {{"name", "config.json"}, {"url", base_url + "/files/config.json"}},
+            {{"name", "tokenizer.json"}, {"url", base_url + "/files/tokenizer.json"}},
+            {{"name", "model.safetensors"}, {"url", base_url + "/files/model.safetensors"}}
         }}
     };
-    server.setManifestBody(manifest.dump());
+    server->setManifestBody(manifest.dump());
+    server->start(port, "mixed-format-model");
 
-    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    ModelResolver resolver(tmp.local.string(), server->baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
     auto result = resolver.resolve("mixed-format-model");
 
-    server.stop();
+    server->stop();
 
     EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(fs::exists(result.path));
@@ -311,27 +346,30 @@ TEST(ModelResolverTest, MetalArtifactIsOptional) {
 #else
 TEST(ModelResolverTest, MetalArtifactIsOptional) {
     TempModelDirs tmp;
-    RegistryServer server;
-    server.setFiles({
+    auto server = std::make_unique<RegistryServer>();
+    const int port = 20005;
+    const std::string base_url = "http://127.0.0.1:" + std::to_string(port);
+    server->setFiles({
         {"config.json", R"({"architectures":["LlamaForCausalLM"]})"},
         {"tokenizer.json", "{}"},
         {"model.safetensors", "safetensors"}
     });
-    server.start(20005, "llama-safetensors");
+    // Set manifest BEFORE start() since lambda captures manifest_body at start time
     nlohmann::json manifest = {
         {"files", {
-            {{"name", "config.json"}, {"url", server.baseUrl() + "/files/config.json"}},
-            {{"name", "tokenizer.json"}, {"url", server.baseUrl() + "/files/tokenizer.json"}},
-            {{"name", "model.safetensors"}, {"url", server.baseUrl() + "/files/model.safetensors"}}
+            {{"name", "config.json"}, {"url", base_url + "/files/config.json"}},
+            {{"name", "tokenizer.json"}, {"url", base_url + "/files/tokenizer.json"}},
+            {{"name", "model.safetensors"}, {"url", base_url + "/files/model.safetensors"}}
         }}
     };
-    server.setManifestBody(manifest.dump());
+    server->setManifestBody(manifest.dump());
+    server->start(port, "llama-safetensors");
 
-    ModelResolver resolver(tmp.local.string(), server.baseUrl());
+    ModelResolver resolver(tmp.local.string(), server->baseUrl());
     resolver.setOriginAllowlist({"127.0.0.1/*"});
     auto result = resolver.resolve("llama-safetensors");
 
-    server.stop();
+    server->stop();
 
     EXPECT_TRUE(result.success) << result.error_message;
     EXPECT_TRUE(fs::exists(result.path));

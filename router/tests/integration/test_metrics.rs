@@ -34,16 +34,16 @@ async fn test_metrics_collection_and_storage() {
     //     "gpu_count": 1,
     //     "gpu_model": "Test GPU"
     // });
-    // let node_response = server.post("/v0/nodes")
+    // let node_response = server.post("/v0/runtimes")
     //     .json(&node_req)
     //     .await;
-    // let node_id: Uuid = node_response.json().get("node_id").as_str().unwrap().parse().unwrap();
+    // let node_id: Uuid = node_response.json().get("runtime_id").as_str().unwrap().parse().unwrap();
 
     let _node_id = Uuid::new_v4(); // テスト用プレースホルダー
 
     // Act: メトリクス送信
     // let metrics_data = json!({
-    //     "node_id": node_id,
+    //     "runtime_id": node_id,
     //     "cpu_usage": 45.5,
     //     "memory_usage": 60.2,
     //     "active_requests": 3,
@@ -82,7 +82,7 @@ async fn test_metrics_update_existing_data() {
 
     // 初回メトリクス送信
     // let initial_metrics = json!({
-    //     "node_id": node_id,
+    //     "runtime_id": node_id,
     //     "cpu_usage": 30.0,
     //     "memory_usage": 40.0,
     //     "active_requests": 1,
@@ -95,7 +95,7 @@ async fn test_metrics_update_existing_data() {
 
     // Act: 更新メトリクス送信
     // let updated_metrics = json!({
-    //     "node_id": node_id,
+    //     "runtime_id": node_id,
     //     "cpu_usage": 75.0,
     //     "memory_usage": 80.0,
     //     "active_requests": 5,
@@ -134,7 +134,7 @@ async fn test_metrics_for_nonexistent_node_returns_error() {
 
     // Act: 存在しないノードIDでメトリクス送信
     // let metrics_data = json!({
-    //     "node_id": nonexistent_node_id,
+    //     "runtime_id": nonexistent_node_id,
     //     "cpu_usage": 45.5,
     //     "memory_usage": 60.2,
     //     "active_requests": 3,

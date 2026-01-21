@@ -17,7 +17,7 @@ ALTER TABLE request_history ADD COLUMN total_tokens INTEGER;
 
 -- 集計用インデックス
 CREATE INDEX idx_request_history_tokens ON request_history(timestamp DESC, model);
-CREATE INDEX idx_request_history_node_tokens ON request_history(node_id, timestamp DESC);
+CREATE INDEX idx_request_history_runtime_tokens ON request_history(runtime_id, timestamp DESC);
 ```
 
 ### 拡張後のrequest_historyテーブル
@@ -28,7 +28,7 @@ CREATE INDEX idx_request_history_node_tokens ON request_history(node_id, timesta
 | timestamp | TEXT | NOT NULL | ISO8601形式 |
 | request_type | TEXT | NOT NULL | Chat / Generate など |
 | model | TEXT | NOT NULL | 使用モデル名 |
-| node_id | TEXT | NOT NULL | 処理ノードID |
+| runtime_id | TEXT | NOT NULL | 処理ノードID |
 | node_machine_name | TEXT | NOT NULL | ノード名 |
 | node_ip | TEXT | NOT NULL | ノードIP |
 | client_ip | TEXT | NULL | クライアントIP |
@@ -55,7 +55,7 @@ pub struct RequestResponseRecord {
     pub timestamp: DateTime<Utc>,
     pub request_type: RequestType,
     pub model: String,
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub node_machine_name: String,
     pub node_ip: IpAddr,
     pub client_ip: Option<IpAddr>,
@@ -149,7 +149,7 @@ pub struct TokenStatistics {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeTokenStats {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub node_name: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -220,13 +220,13 @@ pub struct MonthlyTokenStats {
 
 ```sql
 SELECT
-    node_id,
+    runtime_id,
     SUM(input_tokens) as total_input,
     SUM(output_tokens) as total_output,
     SUM(total_tokens) as total
 FROM request_history
 WHERE input_tokens IS NOT NULL
-GROUP BY node_id;
+GROUP BY runtime_id;
 ```
 
 ### モデル別累計

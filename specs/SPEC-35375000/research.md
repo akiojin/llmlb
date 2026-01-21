@@ -183,7 +183,7 @@ use std::time::Duration;
 
 /// ノード選択キャッシュ
 pub struct NodeSelectionCache {
-    cache: Cache<String, String>,  // model_id -> node_id
+    cache: Cache<String, String>,  // model_id -> runtime_id
 }
 
 impl NodeSelectionCache {
@@ -202,8 +202,8 @@ impl NodeSelectionCache {
     }
 
     /// キャッシュにノードを保存
-    pub fn insert(&self, model_id: String, node_id: String) {
-        self.cache.insert(model_id, node_id);
+    pub fn insert(&self, model_id: String, runtime_id: String) {
+        self.cache.insert(model_id, runtime_id);
     }
 
     /// 特定モデルのキャッシュを無効化

@@ -239,7 +239,7 @@
    * 新: ~/.llm-router/
 
 2. 環境変数更新:
-   * `LLM_ROUTER_*` と `LLM_NODE_*` に統一
+   * `LLM_ROUTER_*` と `LLM_RUNTIME_*` に統一
 
 3. 実行ファイル名:
    * `runtime-router-router`→`or-router`

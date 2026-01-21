@@ -37,6 +37,12 @@ struct ModelSyncResult {
     std::vector<std::string> to_delete;
 };
 
+struct DownloadCallbacks {
+    std::function<void(const std::vector<std::string>& files)> on_manifest;
+    std::function<void(const std::string& file, size_t downloaded, size_t total)> on_progress;
+    std::function<void(const std::string& file, bool success)> on_complete;
+};
+
 struct DownloadHint {
     std::string etag;
     std::optional<size_t> size;
@@ -85,7 +91,7 @@ public:
     // manifestを取得し、files配列のエントリをまとめてダウンロード
     bool downloadModel(ModelDownloader& downloader,
                        const std::string& model_id,
-                       ProgressCallback cb = nullptr,
+                       const DownloadCallbacks& callbacks = {},
                        const std::string& filename_hint = "") const;
 
     // モデルごとにチャンクサイズや帯域を上書きする設定（オプション）

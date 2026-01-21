@@ -719,6 +719,9 @@ uint64_t LlamaEngine::getModelVramBytes(const ModelDescriptor& descriptor) const
     if (descriptor.primary_path.empty()) {
         return 0;
     }
+    if (manager_.isLoaded(descriptor.primary_path)) {
+        return 0;
+    }
     std::error_code ec;
     auto size = fs::file_size(descriptor.primary_path, ec);
     if (ec) {

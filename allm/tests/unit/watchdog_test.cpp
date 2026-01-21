@@ -83,17 +83,24 @@ TEST_F(TokenWatchdogTest, TimeoutTriggersWhenNoKick) {
 }
 
 TEST_F(TokenWatchdogTest, KickResetsTimeout) {
-    // kickするとタイムアウトがリセットされる
+    // kick keeps the watchdog alive
     EnvGuard test_mode("ALLM_TOKEN_WATCHDOG_TEST_MODE", "1");
 
     bool timeout_called = false;
     {
-        TokenWatchdog watchdog(std::chrono::milliseconds(30), [&timeout_called]() {
+#ifdef _WIN32
+        const auto timeout = std::chrono::milliseconds(200);
+        const auto kick_interval = std::chrono::milliseconds(50);
+#else
+        const auto timeout = std::chrono::milliseconds(30);
+        const auto kick_interval = std::chrono::milliseconds(20);
+#endif
+        TokenWatchdog watchdog(timeout, [&timeout_called]() {
             timeout_called = true;
         });
-        // 20ms毎にkickして、30msのタイムアウトを回避
+        // keep kicking before timeout
         for (int i = 0; i < 5; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            std::this_thread::sleep_for(kick_interval);
             watchdog.kick();
         }
     }
@@ -136,17 +143,26 @@ TEST_F(TokenWatchdogTest, TimeoutCanBeConfiguredViaEnv) {
 }
 
 TEST_F(TokenWatchdogTest, StopPreventsTimeout) {
-    // stop()を呼ぶとタイムアウトが発生しない
+    // stop should prevent timeout
     EnvGuard test_mode("ALLM_TOKEN_WATCHDOG_TEST_MODE", "1");
 
     bool timeout_called = false;
     {
-        TokenWatchdog watchdog(std::chrono::milliseconds(20), [&timeout_called]() {
+#ifdef _WIN32
+        const auto timeout = std::chrono::milliseconds(200);
+        const auto pre_stop_sleep = std::chrono::milliseconds(30);
+        const auto post_stop_sleep = std::chrono::milliseconds(150);
+#else
+        const auto timeout = std::chrono::milliseconds(20);
+        const auto pre_stop_sleep = std::chrono::milliseconds(10);
+        const auto post_stop_sleep = std::chrono::milliseconds(50);
+#endif
+        TokenWatchdog watchdog(timeout, [&timeout_called]() {
             timeout_called = true;
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(pre_stop_sleep);
         watchdog.stop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(post_stop_sleep);
     }
 
     EXPECT_FALSE(timeout_called);

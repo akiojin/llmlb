@@ -91,7 +91,8 @@ public:
     // manifestを取得し、files配列のエントリをまとめてダウンロード
     bool downloadModel(ModelDownloader& downloader,
                        const std::string& model_id,
-                       const DownloadCallbacks& callbacks = {}) const;
+                       const DownloadCallbacks& callbacks = {},
+                       const std::string& filename_hint = "") const;
 
     // モデルごとにチャンクサイズや帯域を上書きする設定（オプション）
     struct ModelOverrides {

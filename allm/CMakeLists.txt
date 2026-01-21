@@ -42,6 +42,8 @@ elseif(MSVC)
     # Enable UTF-8 source and execution charset for Japanese comments
     # Use generator expression to apply only to C/C++ (not CUDA)
     add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>)
+    # Ensure standard C++ exception unwinding on MSVC
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
 endif()
 
 # Options

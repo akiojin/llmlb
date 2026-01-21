@@ -12,6 +12,10 @@
 #include <thread>
 #include <vector>
 #include <optional>
+#include <algorithm>
+#include <cctype>
+#include <unordered_set>
+#include <nlohmann/json.hpp>
 
 #include "utils/config.h"
 #include "utils/file_lock.h"
@@ -267,6 +271,283 @@ std::unique_ptr<httplib::Client> makeClient(const HttpUrl& url, std::chrono::mil
     return nullptr;
 }
 
+std::string trimTrailingSlash(std::string value) {
+    while (!value.empty() && value.back() == '/') {
+        value.pop_back();
+    }
+    return value;
+}
+
+std::string normalizeBasePath(std::string path) {
+    if (path == "/" || path.empty()) return "";
+    if (!path.empty() && path.back() == '/') {
+        path.pop_back();
+    }
+    return path;
+}
+
+std::string encodePathSegments(const std::string& path) {
+    std::string out;
+    size_t start = 0;
+    while (start <= path.size()) {
+        size_t pos = path.find('/', start);
+        const std::string segment = (pos == std::string::npos) ? path.substr(start)
+                                                               : path.substr(start, pos - start);
+        out += allm::urlEncodePathSegment(segment);
+        if (pos == std::string::npos) break;
+        out.push_back('/');
+        start = pos + 1;
+    }
+    return out;
+}
+
+bool ends_with_case_insensitive(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) return false;
+    const size_t offset = value.size() - suffix.size();
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        const auto lhs = static_cast<unsigned char>(value[offset + i]);
+        const auto rhs = static_cast<unsigned char>(suffix[i]);
+        if (std::tolower(lhs) != std::tolower(rhs)) return false;
+    }
+    return true;
+}
+
+bool is_gguf_filename(const std::string& filename) {
+    return ends_with_case_insensitive(filename, ".gguf");
+}
+
+bool is_safetensors_index_filename(const std::string& filename) {
+    return ends_with_case_insensitive(filename, ".safetensors.index.json");
+}
+
+bool is_safetensors_filename(const std::string& filename) {
+    const auto lower = ends_with_case_insensitive(filename, ".safetensors") ||
+                       ends_with_case_insensitive(filename, ".safetensors.index.json");
+    return lower;
+}
+
+std::optional<std::string> infer_safetensors_index_from_shard(const std::string& filename) {
+    if (is_safetensors_index_filename(filename)) {
+        return std::nullopt;
+    }
+    if (!ends_with_case_insensitive(filename, ".safetensors")) {
+        return std::nullopt;
+    }
+
+    std::string dir;
+    std::string file = filename;
+    auto slash = filename.find_last_of('/');
+    if (slash != std::string::npos) {
+        dir = filename.substr(0, slash + 1);
+        file = filename.substr(slash + 1);
+    }
+
+    const std::string suffix = ".safetensors";
+    if (file.size() <= suffix.size()) return std::nullopt;
+    const std::string stem = file.substr(0, file.size() - suffix.size());
+
+    auto pos = stem.rfind("-of-");
+    if (pos == std::string::npos) return std::nullopt;
+    const std::string left = stem.substr(0, pos);
+    const std::string total = stem.substr(pos + 4);
+    if (left.empty() || total.empty()) return std::nullopt;
+    if (!std::all_of(total.begin(), total.end(),
+                     [](unsigned char c) { return std::isdigit(c); })) {
+        return std::nullopt;
+    }
+
+    auto pos2 = left.rfind('-');
+    if (pos2 == std::string::npos) return std::nullopt;
+    const std::string prefix = left.substr(0, pos2);
+    const std::string shard = left.substr(pos2 + 1);
+    if (prefix.empty() || shard.empty()) return std::nullopt;
+    if (!std::all_of(shard.begin(), shard.end(),
+                     [](unsigned char c) { return std::isdigit(c); })) {
+        return std::nullopt;
+    }
+
+    return dir + prefix + ".safetensors.index.json";
+}
+
+bool has_sibling(const std::vector<std::string>& siblings, const std::string& filename) {
+    return std::find(siblings.begin(), siblings.end(), filename) != siblings.end();
+}
+
+bool require_safetensors_metadata_files(const std::vector<std::string>& siblings) {
+    return has_sibling(siblings, "config.json") && has_sibling(siblings, "tokenizer.json");
+}
+
+std::optional<std::string> resolve_safetensors_primary(const std::vector<std::string>& siblings,
+                                                       const std::string& requested,
+                                                       std::string& error) {
+    if (!requested.empty()) {
+        if (!is_safetensors_filename(requested)) {
+            error = "filename must be a safetensors or safetensors index file";
+            return std::nullopt;
+        }
+        if (!has_sibling(siblings, requested)) {
+            error = "Specified safetensors file not found in repository";
+            return std::nullopt;
+        }
+        if (!is_safetensors_index_filename(requested)) {
+            if (auto candidate = infer_safetensors_index_from_shard(requested)) {
+                if (has_sibling(siblings, *candidate)) {
+                    return candidate;
+                }
+                std::vector<std::string> index_files;
+                for (const auto& name : siblings) {
+                    if (is_safetensors_index_filename(name)) {
+                        index_files.push_back(name);
+                    }
+                }
+                if (index_files.size() == 1) {
+                    return index_files.front();
+                }
+                if (index_files.size() > 1) {
+                    error = "Multiple safetensors index files found; specify filename";
+                    return std::nullopt;
+                }
+            }
+        }
+        return requested;
+    }
+
+    std::vector<std::string> index_files;
+    for (const auto& name : siblings) {
+        if (is_safetensors_index_filename(name)) {
+            index_files.push_back(name);
+        }
+    }
+    if (index_files.size() == 1) return index_files.front();
+    if (index_files.size() > 1) {
+        error = "Multiple safetensors index files found; specify filename";
+        return std::nullopt;
+    }
+
+    std::vector<std::string> st_files;
+    for (const auto& name : siblings) {
+        if (ends_with_case_insensitive(name, ".safetensors") && !is_safetensors_index_filename(name)) {
+            st_files.push_back(name);
+        }
+    }
+    if (st_files.size() == 1) return st_files.front();
+    if (st_files.empty()) {
+        error = "No safetensors file found in repository";
+        return std::nullopt;
+    }
+    error = "Multiple safetensors files found; specify filename";
+    return std::nullopt;
+}
+
+std::optional<std::string> find_metal_artifact(const std::vector<std::string>& siblings) {
+    const char* candidates[] = {"model.metal.bin", "metal/model.bin"};
+    for (const auto& name : candidates) {
+        if (has_sibling(siblings, name)) {
+            return std::string(name);
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<int> manifest_file_priority(const std::string& name) {
+    if (name == "config.json" || name == "tokenizer.json") return 10;
+    if (is_safetensors_index_filename(name)) return 5;
+    if (name == "model.metal.bin") return 5;
+    return std::nullopt;
+}
+
+bool is_quantization_token(const std::string& token) {
+    if (token.empty()) return false;
+    for (char c : token) {
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) return false;
+    }
+    std::string upper = token;
+    std::transform(upper.begin(), upper.end(), upper.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    auto has_digit = [](const std::string& value) {
+        return std::any_of(value.begin(), value.end(),
+                           [](unsigned char c) { return std::isdigit(c); });
+    };
+    auto starts_with_digit = [](const std::string& value) {
+        return !value.empty() && std::isdigit(static_cast<unsigned char>(value[0]));
+    };
+
+    if (upper.rfind("IQ", 0) == 0) return starts_with_digit(upper.substr(2));
+    if (upper.rfind("Q", 0) == 0) return starts_with_digit(upper.substr(1));
+    if (upper.rfind("BF", 0) == 0) return starts_with_digit(upper.substr(2));
+    if (upper.rfind("FP", 0) == 0) return starts_with_digit(upper.substr(2));
+    if (upper.rfind("F", 0) == 0) return starts_with_digit(upper.substr(1));
+    if (upper.rfind("MX", 0) == 0) return has_digit(upper.substr(2));
+    return false;
+}
+
+std::optional<std::string> infer_quantization_from_filename(const std::string& filename) {
+    if (!is_gguf_filename(filename)) return std::nullopt;
+    auto slash = filename.find_last_of('/');
+    std::string file = (slash == std::string::npos) ? filename : filename.substr(slash + 1);
+    const std::string suffix = ".gguf";
+    if (file.size() <= suffix.size()) return std::nullopt;
+    const std::string stem = file.substr(0, file.size() - suffix.size());
+    size_t pos = stem.size();
+    while (pos > 0) {
+        size_t prev = stem.find_last_of("-.", pos - 1);
+        std::string token = (prev == std::string::npos) ? stem : stem.substr(prev + 1);
+        if (is_quantization_token(token)) return token;
+        if (prev == std::string::npos) break;
+        pos = prev;
+    }
+    return std::nullopt;
+}
+
+std::string get_hf_base_url() {
+    const char* base = std::getenv("HF_BASE_URL");
+    if (!base || !*base) {
+        return "https://huggingface.co";
+    }
+    return trimTrailingSlash(std::string(base));
+}
+
+std::string build_hf_api_path(const HttpUrl& base, const std::string& repo) {
+    const std::string prefix = normalizeBasePath(base.path);
+    std::string path = prefix;
+    path += "/api/models/" + encodePathSegments(repo);
+    path += "?expand=siblings";
+    if (path.empty() || path.front() != '/') {
+        path.insert(path.begin(), '/');
+    }
+    return path;
+}
+
+std::string build_hf_resolve_path(const HttpUrl& base, const std::string& repo, const std::string& filename) {
+    const std::string prefix = normalizeBasePath(base.path);
+    std::string path = prefix;
+    path += "/";
+    path += encodePathSegments(repo);
+    path += "/resolve/main/";
+    path += encodePathSegments(filename);
+    if (path.empty() || path.front() != '/') {
+        path.insert(path.begin(), '/');
+    }
+    return path;
+}
+
+std::string build_hf_resolve_url(const std::string& base_url, const std::string& repo, const std::string& filename) {
+    std::string out = trimTrailingSlash(base_url);
+    out += "/";
+    out += encodePathSegments(repo);
+    out += "/resolve/main/";
+    out += encodePathSegments(filename);
+    return out;
+}
+
+bool validate_artifact_path(const std::string& path) {
+    if (path.empty()) return false;
+    if (path.find("..") != std::string::npos) return false;
+    if (path.find('\0') != std::string::npos) return false;
+    if (!path.empty() && (path.front() == '/' || path.front() == '\\')) return false;
+    return true;
+}
+
 }  // namespace
 
 namespace fs = std::filesystem;
@@ -289,15 +570,24 @@ ModelDownloader::ModelDownloader(std::string registry_base, std::string models_d
     chunk_size_ = cfg.chunk_size;
 }
 
-std::string ModelDownloader::fetchManifest(const std::string& model_id) {
+std::string ModelDownloader::fetchManifest(const std::string& model_id, const std::string& filename_hint) {
+    auto clear_error = [this]() {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        last_error_.clear();
+    };
+    auto set_error = [this](std::string msg) {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        last_error_ = std::move(msg);
+    };
+    clear_error();
     HttpUrl base = parseUrl(registry_base_);
     if (base.scheme.empty() || base.host.empty()) {
-        spdlog::warn("ModelDownloader: invalid registry base URL '{}'", registry_base_);
-        return "";
+        return fetchHfManifest(model_id, filename_hint);
     }
 
     auto client = makeClient(base, timeout_);
     if (!client) {
+        set_error("failed to create HTTP client for registry");
         spdlog::warn("ModelDownloader: failed to create HTTP client for '{}'", registry_base_);
         return "";
     }
@@ -326,11 +616,13 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
         if (attempt < max_retries_) std::this_thread::sleep_for(backoff_);
     }
     if (!res) {
+        set_error("manifest request failed (no response)");
         spdlog::warn("ModelDownloader: manifest request failed (no response) url='{}{}'",
                      registry_base_, path);
         return "";
     }
     if (res->status < 200 || res->status >= 300) {
+        set_error("manifest request failed status=" + std::to_string(res->status));
         spdlog::warn("ModelDownloader: manifest request failed status={} url='{}{}'",
                      res->status, registry_base_, path);
         return "";
@@ -341,12 +633,14 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     }
     std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
     if (!ofs.is_open()) {
+        set_error("failed to open manifest file for write");
         spdlog::warn("ModelDownloader: failed to open manifest file for write path='{}'", out_path);
         return "";
     }
     ofs << res->body;
     ofs.flush();
     if (!ofs.good()) {
+        set_error("failed to write manifest");
         spdlog::warn("ModelDownloader: failed to write manifest to path='{}'", out_path);
         return "";
     }
@@ -369,8 +663,263 @@ std::string ModelDownloader::fetchManifest(const std::string& model_id) {
     return out_path;
 }
 
+std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const std::string& filename_hint) {
+    auto clear_error = [this]() {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        last_error_.clear();
+    };
+    auto set_error = [this](std::string msg) {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        last_error_ = std::move(msg);
+    };
+    clear_error();
+    if (model_id.empty()) {
+        set_error("model id required");
+        return "";
+    }
+
+    const std::string base_url = get_hf_base_url();
+    HttpUrl base = parseUrl(base_url);
+    if (base.scheme.empty() || base.host.empty()) {
+        set_error("invalid HuggingFace base URL");
+        spdlog::warn("ModelDownloader: invalid HuggingFace base URL '{}'", base_url);
+        return "";
+    }
+
+    auto client = makeClient(base, timeout_);
+    if (!client) {
+        set_error("failed to create HTTP client for HuggingFace");
+        spdlog::warn("ModelDownloader: failed to create HTTP client for '{}'", base_url);
+        return "";
+    }
+
+    httplib::Headers headers;
+    if (const char* token = std::getenv("HF_TOKEN")) {
+        if (*token) headers.emplace("Authorization", std::string("Bearer ") + token);
+    }
+
+    const std::string api_path = build_hf_api_path(base, model_id);
+    spdlog::info("ModelDownloader: fetching HuggingFace repo metadata path='{}'", api_path);
+
+    auto res = client->Get(api_path.c_str(), headers);
+    if (!res) {
+        set_error("HuggingFace request failed (no response)");
+        spdlog::warn("ModelDownloader: HuggingFace request failed (no response) path='{}'", api_path);
+        return "";
+    }
+    if (res->status < 200 || res->status >= 300) {
+        if (res->status == 401 || res->status == 403) {
+            set_error("gated model or unauthorized (status=" + std::to_string(res->status) + ")");
+        } else {
+            set_error("HuggingFace request failed status=" + std::to_string(res->status));
+        }
+        spdlog::warn("ModelDownloader: HuggingFace request failed status={} path='{}'", res->status, api_path);
+        return "";
+    }
+
+    auto body = nlohmann::json::parse(res->body, nullptr, false);
+    if (body.is_discarded() || !body.contains("siblings") || !body["siblings"].is_array()) {
+        set_error("HuggingFace response missing siblings");
+        spdlog::warn("ModelDownloader: HuggingFace response missing siblings");
+        return "";
+    }
+
+    std::vector<std::string> siblings;
+    siblings.reserve(body["siblings"].size());
+    for (const auto& entry : body["siblings"]) {
+        if (entry.contains("rfilename") && entry["rfilename"].is_string()) {
+            siblings.push_back(entry["rfilename"].get<std::string>());
+        }
+    }
+    if (siblings.empty()) {
+        set_error("HuggingFace response contains no files");
+        spdlog::warn("ModelDownloader: HuggingFace response contains no files");
+        return "";
+    }
+
+    std::string selection;
+    enum class Format { Gguf, Safetensors };
+    std::optional<Format> format;
+
+    if (!filename_hint.empty()) {
+        if (!has_sibling(siblings, filename_hint)) {
+            set_error("Specified file not found in repository");
+            return "";
+        }
+        if (is_gguf_filename(filename_hint)) {
+            format = Format::Gguf;
+            selection = filename_hint;
+        } else if (is_safetensors_filename(filename_hint)) {
+            if (!require_safetensors_metadata_files(siblings)) {
+                set_error("config.json and tokenizer.json are required for safetensors models");
+                return "";
+            }
+            std::string err;
+            auto resolved = resolve_safetensors_primary(siblings, filename_hint, err);
+            if (!resolved) {
+                set_error(err.empty() ? "Failed to resolve safetensors index file" : err);
+                return "";
+            }
+            format = Format::Safetensors;
+            selection = *resolved;
+        } else {
+            set_error("filename must be a .gguf or .safetensors file");
+            return "";
+        }
+    } else {
+        std::vector<std::string> ggufs;
+        std::vector<std::string> safetensors;
+        for (const auto& name : siblings) {
+            if (is_gguf_filename(name)) ggufs.push_back(name);
+            if (is_safetensors_filename(name)) safetensors.push_back(name);
+        }
+        if (!ggufs.empty() && !safetensors.empty()) {
+            set_error("Multiple artifact types found; specify filename");
+            return "";
+        }
+        if (!ggufs.empty()) {
+            if (ggufs.size() == 1) {
+                format = Format::Gguf;
+                selection = ggufs.front();
+            } else {
+                set_error("Multiple GGUF files found; specify filename");
+                return "";
+            }
+        } else if (!safetensors.empty()) {
+            if (!require_safetensors_metadata_files(siblings)) {
+                set_error("config.json and tokenizer.json are required for safetensors models");
+                return "";
+            }
+            std::string err;
+            auto resolved = resolve_safetensors_primary(siblings, "", err);
+            if (!resolved) {
+                set_error(err.empty() ? "Failed to resolve safetensors index file" : err);
+                return "";
+            }
+            format = Format::Safetensors;
+            selection = *resolved;
+        } else {
+            set_error("No supported model artifacts found (safetensors/gguf)");
+            return "";
+        }
+    }
+
+    if (!format.has_value()) {
+        set_error("Failed to resolve model format");
+        return "";
+    }
+
+    nlohmann::json manifest;
+    nlohmann::json files = nlohmann::json::array();
+
+    bool ok = true;
+    auto push_file = [&](const std::string& name, const std::string& url) {
+        if (!validate_artifact_path(name)) {
+            set_error("invalid artifact path: " + name);
+            ok = false;
+            return;
+        }
+        nlohmann::json entry;
+        entry["name"] = name;
+        entry["url"] = url;
+        if (auto pr = manifest_file_priority(name)) {
+            entry["priority"] = *pr;
+        }
+        files.push_back(entry);
+    };
+
+    if (format && *format == Format::Gguf) {
+        manifest["format"] = "gguf";
+        if (auto quant = infer_quantization_from_filename(selection)) {
+            manifest["quantization"] = *quant;
+        }
+        push_file("model.gguf", build_hf_resolve_url(base_url, model_id, selection));
+    } else if (format && *format == Format::Safetensors) {
+        manifest["format"] = "safetensors";
+        std::vector<std::string> names = {"config.json", "tokenizer.json", selection};
+        if (is_safetensors_index_filename(selection)) {
+            const std::string index_path = selection;
+            const std::string resolve_path = build_hf_resolve_path(base, model_id, index_path);
+            auto index_res = client->Get(resolve_path.c_str(), headers);
+            if (!index_res || index_res->status < 200 || index_res->status >= 300) {
+                if (index_res && (index_res->status == 401 || index_res->status == 403)) {
+                    set_error("gated model or unauthorized (status=" + std::to_string(index_res->status) + ")");
+                } else {
+                    set_error("Failed to fetch file: " + index_path);
+                }
+                return "";
+            }
+            auto index_json = nlohmann::json::parse(index_res->body, nullptr, false);
+            if (index_json.is_discarded() || !index_json.contains("weight_map") || !index_json["weight_map"].is_object()) {
+                set_error("Invalid safetensors index format");
+                return "";
+            }
+            std::unordered_set<std::string> shard_set;
+            for (auto it = index_json["weight_map"].begin(); it != index_json["weight_map"].end(); ++it) {
+                if (it.value().is_string()) {
+                    shard_set.insert(it.value().get<std::string>());
+                }
+            }
+            std::vector<std::string> shards(shard_set.begin(), shard_set.end());
+            std::sort(shards.begin(), shards.end());
+            for (const auto& shard : shards) {
+                if (std::find(names.begin(), names.end(), shard) == names.end()) {
+                    names.push_back(shard);
+                }
+            }
+        }
+
+        for (const auto& name : names) {
+            push_file(name, build_hf_resolve_url(base_url, model_id, name));
+        }
+    }
+
+    if (!ok) {
+        return "";
+    }
+
+    if (auto metal = find_metal_artifact(siblings)) {
+        push_file("model.metal.bin", build_hf_resolve_url(base_url, model_id, *metal));
+        if (!ok) {
+            return "";
+        }
+    }
+
+    manifest["files"] = files;
+
+    const auto local_dir = allm::ModelStorage::modelNameToDir(model_id);
+    std::string out_path = models_dir_ + "/" + local_dir + "/manifest.json";
+    fs::create_directories(models_dir_ + "/" + local_dir);
+    FileLock lock(out_path + ".lock");
+
+    std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
+    if (!ofs.is_open()) {
+        set_error("failed to open manifest file for write");
+        spdlog::warn("ModelDownloader: failed to open manifest file for write path='{}'", out_path);
+        return "";
+    }
+    ofs << manifest.dump();
+    ofs.flush();
+    if (!ofs.good()) {
+        set_error("failed to write manifest");
+        spdlog::warn("ModelDownloader: failed to write manifest to path='{}'", out_path);
+        return "";
+    }
+
+    return out_path;
+}
+
 std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std::string& filename, ProgressCallback cb,
     const std::string& expected_sha256, const std::string& if_none_match) {
+    auto clear_error = [this]() {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        last_error_.clear();
+    };
+    auto set_error = [this](std::string msg) {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        last_error_ = std::move(msg);
+    };
+    clear_error();
     HttpUrl url = parseUrl(blob_url);
     // Keep whether the original URL was relative before resolving against registry_base_.
     const bool is_relative = url.scheme.empty();
@@ -393,6 +942,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
 
     auto client = makeClient(url, timeout_);
     if (!client) {
+        set_error("failed to create HTTP client for download");
         spdlog::warn("ModelDownloader: failed to create HTTP client for url='{}{}'",
                      url.scheme + "://" + url.host, url.path);
         return "";
@@ -463,6 +1013,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
             return out_path.string();
         }
         // could not satisfy conditional request
+        set_error("download failed");
         return "";
     }
 
@@ -560,6 +1111,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
 
         std::error_code ec;
         fs::remove(out_path, ec);
+        set_error("download failed");
         return "";
     };
 
@@ -577,6 +1129,7 @@ std::string ModelDownloader::downloadBlob(const std::string& blob_url, const std
         std::error_code ec;
         fs::remove(out_path, ec);
     }
+    set_error("download failed");
     return "";
 }
 

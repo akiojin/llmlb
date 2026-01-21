@@ -5,6 +5,7 @@ const legacyMessages = new Set([
   'Use config-based runtime hint for safetensors',
   'Update specs for Windows CUDA primary',
   'Fix Nemotron VRAM size compilation error',
+  'Fix Windows test config reading and MSVC llama.cpp patch',
 ]);
 
 module.exports = {

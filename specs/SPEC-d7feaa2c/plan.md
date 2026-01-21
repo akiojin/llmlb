@@ -22,6 +22,7 @@
 ## Phase 4: Tests and QA
 - Remove plugin-based tests.
 - Add manager-based unit/integration coverage.
+- Require coverage for gpt/nemotron/qwen/glm model families (verification or integration/E2E).
 - Run quality checks when feasible.
 
 ## Phase 5: Migration guide

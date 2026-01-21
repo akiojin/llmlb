@@ -27,7 +27,8 @@
 ## Phase 4: Tests
 - [ ] T016 Add TextManager unit tests.
 - [ ] T017 Add manager-based integration coverage.
-- [ ] T018 Run quality checks.
+- [ ] T018 Add mandatory test coverage for gpt/nemotron/qwen/glm model families.
+- [ ] T019 Run quality checks.
 
 ## Notes
 - Tasks refreshed for manager migration (2026-01-19).

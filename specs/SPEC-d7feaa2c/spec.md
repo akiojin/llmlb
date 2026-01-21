@@ -71,7 +71,12 @@ API endpoints
 - Ensure models are under `~/.llm-router/models` (or configured models dir).
 - Prefer Responses API for new integrations.
 
+## Testing requirements
+- gpt/nemotron/qwen/glm model families must be covered by mandatory tests.
+- Verification can be satisfied via model verification suite or integration/E2E coverage, but it must be recorded.
+
 ## Acceptance
 - Managers present in code and docs.
 - No plugin loader/ABI remains.
 - Tests updated to manager assumptions.
+- gpt/nemotron/qwen/glm families have explicit test coverage.

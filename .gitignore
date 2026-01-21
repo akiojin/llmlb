@@ -52,7 +52,7 @@ node/build-*/
 node/build-debug/
 node/build-debug-onnx/
 node/build-debug-onnx-cpu/
-allm/build-cuda-ninja/
+allm/build*/
 allm_cuda_dependents.txt
 
 # Environment variables

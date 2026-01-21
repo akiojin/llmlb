@@ -195,18 +195,6 @@ bool readJsonWithLock(const std::filesystem::path& path, nlohmann::json& out) {
     }
 }
 
-std::optional<bool> parseBoolFlag(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (value == "1" || value == "true" || value == "yes" || value == "on") {
-        return true;
-    }
-    if (value == "0" || value == "false" || value == "no" || value == "off") {
-        return false;
-    }
-    return std::nullopt;
-}
-
 }  // namespace
 
 std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
@@ -300,16 +288,6 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     if (auto v = getEnvValue("LLM_DEFAULT_EMBEDDING_MODEL")) {
         cfg.default_embedding_model = *v;
         log << "env:DEFAULT_EMBEDDING_MODEL=" << *v << " ";
-        used_env = true;
-    }
-
-    if (auto v = getEnvWithFallback("ALLM_REQUIRE_GPU", "LLM_REQUIRE_GPU")) {
-        if (auto parsed = parseBoolFlag(*v)) {
-            cfg.require_gpu = *parsed;
-        } else {
-            spdlog::warn("Invalid ALLM_REQUIRE_GPU value '{}', expected true/false", *v);
-        }
-        log << "env:REQUIRE_GPU=" << *v << " ";
         used_env = true;
     }
 

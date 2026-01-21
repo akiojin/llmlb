@@ -18,7 +18,7 @@ LLM Router is designed to serve three primary use cases:
 
 ### Multi-Engine Architecture
 
-LLM Router supports a pluggable multi-engine architecture:
+LLM Router uses a manager-based multi-engine architecture:
 
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
@@ -27,6 +27,9 @@ LLM Router supports a pluggable multi-engine architecture:
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
+
+Manager-based runtimes replace the legacy plugin system. See `docs/manager-migration.md`
+for migration steps.
 
 **Engine Selection Policy**:
 
@@ -748,7 +751,6 @@ Cloud / external services:
 | `LLM_RUNTIME_PORT` | `32769` | Runtime listen port | - |
 | `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
-| `LLM_RUNTIME_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `LLM_RUNTIME_IP` | auto-detected | Runtime IP reported to router | - |
 | `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |

@@ -21,8 +21,8 @@
 ## Phase 3: Docs/API
 - [x] T012 Update README and README.ja for manager approach.
 - [x] T013 Update SPEC quickstart.
-- [ ] T014 Update DEVELOPMENT.md and related docs if needed.
-- [ ] T015 Add migration guide / breaking change note.
+- [x] T014 Update DEVELOPMENT.md and related docs if needed.
+- [x] T015 Add migration guide / breaking change note.
 
 ## Phase 4: Tests
 - [x] T016 Add TextManager unit tests.

@@ -300,7 +300,6 @@ cmake --build build --config Release
 | `LLM_RUNTIME_PORT` | `32769` | HTTPサーバーポート |
 | `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
-| `LLM_RUNTIME_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_RUNTIME_LOG_LEVEL` | `info` | ログレベル |

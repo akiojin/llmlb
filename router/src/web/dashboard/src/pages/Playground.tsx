@@ -177,14 +177,15 @@ export default function Playground() {
     }
   }, [fetchedSessions])
 
-  // Set default model (registered モデルのみから選択)
+  // Set default model (ready ???????????????)
   useEffect(() => {
     if (models && !selectedModel) {
       const allModels = models as RegisteredModelView[]
       // Filter for registered models, but accept models with state or lifecycle_status
       const registeredModels = allModels.filter(m => {
         const isRegistered = m.lifecycle_status === 'registered' || (m as any).state === 'ready'
-        return isRegistered
+        const isReady = m.ready || (m as any).state === 'ready'
+        return isRegistered && isReady
       })
       if (registeredModels.length > 0) {
         setSelectedModel(registeredModels[0].name)
@@ -556,9 +557,9 @@ export default function Playground() {
     }
   }
 
-  // Only allow selecting models that are cached in the router (registered status)
+  // Only allow selecting models that are ready on an endpoint
   const allModels = (models as RegisteredModelView[] | undefined) || []
-  const availableModels = allModels.filter(m => m.lifecycle_status === 'registered')
+  const availableModels = allModels.filter(m => m.lifecycle_status === 'registered' && (m.ready || (m as any).state === 'ready'))
 
   return (
     <div className="flex h-screen bg-background">

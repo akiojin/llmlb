@@ -1,6 +1,6 @@
 # SPEC-d7feaa2c: aLLM Manager-based Runtime (Text/Audio/Image)
 
-**ステータス**: 草案
+**ステータス**: 下書き
 
 Status: Draft (2026-01-19)
 

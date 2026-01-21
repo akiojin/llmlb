@@ -10,13 +10,13 @@
 - [x] T004 Refactor InferenceEngine to resolve via TextManager.
 - [x] T005 Update main to advertise runtimes from TextManager.
 
-## Phase 2: Remove plugin system
-- [x] T006 Remove EngineHost / plugin ABI / plugin logger.
-- [x] T007 Remove plugin wrappers and engine manifests.
-- [x] T008 Update CMake to stop building plugin shared libraries.
-- [x] T009 Remove plugin config fields.
-- [x] T010 Remove plugin-based tests.
-- [ ] T011 Scan remaining docs/specs for plugin references (optional).
+## Phase 2: Remove legacy plugin system
+- [x] T006 Remove EngineHost / legacy plugin ABI / plugin logger.
+- [x] T007 Remove legacy plugin wrappers and engine manifests.
+- [x] T008 Update CMake to stop building legacy plugin shared libraries.
+- [x] T009 Remove legacy plugin config fields.
+- [x] T010 Remove legacy plugin-based tests.
+- [x] T011 Scan remaining docs/specs for legacy plugin references (optional).
 
 ## Phase 3: Docs/API
 - [x] T012 Update README and README.ja for manager approach.

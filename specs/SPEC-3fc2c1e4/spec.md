@@ -15,7 +15,7 @@
 - エンジン選択が登録時の `format` とアーティファクトに従うことを保証する。
 
 ## スコープ
-- Node 側の EngineRegistry / EngineHost / plugin ロード設計
+- Node 側の EngineRegistry / TextManager / runtime 解決設計
 - マニフェストとローカル実体に基づくエンジン選択
 - GPU バックエンド前提の実行要件
 
@@ -50,12 +50,12 @@
 
 **REQ-IE-001**: 内蔵エンジンは **RuntimeType / format / capabilities** に基づく単一の選択規約を持つ。
 以下の条件を **一つの要件** として満たすこと:
-- **プラグイン形式**: Node 本体は Engine Host とし、エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能。
-- **ABI 固定**: C ABI で互換性を保証し、`abi_version` を明示する。
+- **内蔵形式**: Node 本体は TextManager 等のマネージャを持ち、エンジンは in-process 実装として統合する。
+- **ABI 不要**: 動的 ABI は持たず、互換性は同一バイナリ内の API 境界で担保する。
 - **選択ソース**: 登録時に確定した `format` と HF 由来メタデータ（`config.json` 等）を正とする。
 - **自動フォールバック禁止**: safetensors/GGUF が共存しても `format` を優先し、実行時に切替しない。
 - **GPU 前提**: macOS=Metal / Windows=CUDA（Linux CUDA は実験扱い）。
-- **可否判定**: EngineRegistry / EngineHost / `/v1/models` の可否判定に反映し、未対応は ready 対象外とする。
+- **可否判定**: EngineRegistry / TextManager / `/v1/models` の可否判定に反映し、未対応は ready 対象外とする。
 
 ## アーキテクチャ概念
 
@@ -74,10 +74,10 @@ EngineRegistry
   - RuntimeType で解決
         │
         ▼
-Engine Host (Plugin Loader)
-  - GGUF: llama.cpp
-  - safetensors: gpt-oss / nemotron (TBD)
-  - ASR/TTS/画像: whisper / onnx / stable-diffusion
+Managers (In-process)
+  - TextManager: GGUF llama.cpp / safetensors gpt-oss / nemotron (TBD)
+  - AudioManager: whisper / onnx (TTS)
+  - ImageManager: stable-diffusion
 ```
 
 ## GPU バックエンド
@@ -90,14 +90,12 @@ Engine Host (Plugin Loader)
 - Windows は CUDA 主経路。DirectML は凍結。Nemotron は TBD。
 - 詳細な検証状況は `specs/SPEC-6cd7f960/verified-models.md` を正とする。
 
-## プラグイン設計指針
-- **配布単位**: 共有ライブラリ + `manifest.json`
-- **manifest.json**
-  - engine_id / engine_version / abi_version
-  - runtimes / formats / architectures / capabilities / modalities
-- gpu_targets（metal / cuda / rocm / vulkan）
-  - library（共有ライブラリ名）
-- **互換性**: ABI 互換を破る変更は `abi_version` を更新する。
+## エンジン実装指針（マネージャ方式）
+- **配布単位**: allm 内の in-process 実装 + EngineRegistry 登録
+- **登録情報**:
+  - runtime / format / architectures / capabilities / modalities
+  - gpu_targets（metal / cuda / rocm / vulkan）
+- **互換性**: EngineRegistry の契約（RuntimeType / format / capabilities）を破る変更は破壊的変更として扱う。
 
 ## RuntimeType 対応（現状）
 

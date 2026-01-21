@@ -21,20 +21,20 @@
 
 ## Core
 - [x] Node: safetensors（index + shards）を 1 モデルとしてロードする実装（メタデータ検証込み）。
-- [x] Node: Engine Host（プラグインローダー）で gpt-oss plugin をロードできるようにする。
-- [x] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を plugin として実装する。
+- [x] Node: EngineRegistry/TextManager で gpt-oss runtime を解決できるようにする。
+- [x] Node: gpt-oss safetensors 推論パス（Metal/CUDA）を内蔵エンジンとして実装する。
 - [x] Node: KVキャッシュ/サンプリングを含む最小生成ループを実装。
 - [x] Router: gpt-oss safetensors の必須ファイル群を manifest に確定する。
 - [x] Router: 公式GPU最適化アーティファクトを **マニフェストに含める**（取得はNode主導、supported_models.json の artifacts 指定）。
 - [x] Node: DirectML 最適化アーティファクト（model.directml.bin / model.dml.bin）をロード対象として扱う。
 - [x] Node: DirectML ランタイム DLL を動的ロードし、未配置時は明示エラーを返す。
-- [x] Node: DirectML 向け gpt-oss プラグインの最小スケルトンを追加。
+- [x] Node: DirectML 向け gpt-oss ランタイムの最小スケルトンを追加。
 
 ## Unit Tests (GREEN)
 - [x] Node: safetensors shards 解決とメタデータ検証のユニットテスト。
 - [x] Node: gpt-oss 推論パスの最小ユニットテスト（CPU/Stub不可、GPU実行環境で検証）。
 - [x] Node: manifest の optional ファイルは取得失敗でも継続できるユニットテスト。
-- [x] Node: プラグイン manifest/ABI の検証ユニットテスト。
+- [x] Node: runtime メタデータ/設定の検証ユニットテスト。
 - [x] Node: DirectML ランタイム未配置時のロード失敗を検証するユニットテスト。
 
 ## Docs

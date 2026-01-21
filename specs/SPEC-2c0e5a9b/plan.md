@@ -1,7 +1,7 @@
 ﻿# SPEC-2c0e5a9b: Plan
 
 ## 方針
-- gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する。
+- gpt-oss 用 runtime を内蔵ランタイムとして追加し、GPU 実行（Metal/CUDA）を提供する。
 - エンジン選択は既存の抽象化（`SPEC-d7feaa2c`）を利用し、登録時の `format` と HF 由来メタデータ（`config.json` 等）に従う。
 - `chat_template` の解釈は Router 側で行い、Node には最終プロンプト（テキスト）を渡す。
 - Node は Python 依存なしで動作する（必須）。
@@ -35,7 +35,7 @@
 - エラー: DLL 未配置 / アーティファクト欠落を明確に報告。
 - GPU 前提: macOS=Metal / Windows=CUDA、Linux/WSL2 は対象外。
 
-### Engine（gpt-oss plugin）
+### Engine（gpt-oss runtime）
 - 公式最適化アーティファクトがある場合はそれを優先ロード。
 - 無い場合は safetensors をロード。
 - Windows CUDA は `gptoss_cuda.dll` の存在を必須とする。

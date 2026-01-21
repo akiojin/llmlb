@@ -39,7 +39,7 @@
 - **移行理由**: WindowsはCUDAが再現性と安定性で優位なため主経路とし、DirectMLはアーティファクト不足とドライバ差分の影響が大きいため凍結する。
 - **現状の実運用確認**: safetensors系LLMで安定動作が確認できているのは **gpt-oss（Metal/macOS）** のみ。Windows CUDAが主経路、DirectMLは限定的、NemotronはTBD。
 - **chat_template**: 無い場合はデフォルトテンプレートを利用する。
-- **プラグイン形式**: gpt-oss 実行エンジンは Node のプラグインとして提供する。
+- **内蔵形式**: gpt-oss 実行エンジンは Node 内の TextManager 実装として提供する。
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -79,8 +79,8 @@ Node
   │    ├─ 共有パス or 外部ソース/プロキシから取得
   │    └─ GPUバックエンドに応じて必要アーティファクトを選択
   ├─ EngineRegistry: runtime を解決
-  └─ Engine Host (Plugin Loader)
-       └─ gpt-oss plugin: GPUで推論（通常/ストリーミング）
+  └─ TextManager (In-process)
+       └─ gpt-oss runtime: GPUで推論（通常/ストリーミング）
             ├─ 優先1: 公式GPU最適化アーティファクト（Metal向け、allowlist対象）
             └─ 優先2: safetensors（index + shards, CUDA/Metal共通）
 ```
@@ -103,7 +103,7 @@ Node
 - **FR-009**: 公式のGPU最適化アーティファクトは「同一 publisher org（例: `openai`, `nvidia`）配下の別リポジトリ」から取得できる。取得可否は許可リストで管理する（初期値: `openai/*`, `nvidia/*`）。
 - **FR-010**: 公式GPU最適化アーティファクトは登録形式を置き換えない（登録は常に `format=safetensors` のまま）。
 - **注記（初期実装）**: DirectML は凍結。Windows は CUDA 主経路とする。
-- **FR-011**: gpt-oss 実行エンジンはプラグインとしてロードされ、ABI 互換が一致する場合のみ有効化される。
+- **FR-011**: gpt-oss 実行エンジンは TextManager に内蔵され、EngineRegistry の runtime/capabilities 判定に一致する場合のみ有効化される。
 
 ### 非機能要件
 - **NFR-001**: GPU 非搭載ノードを登録対象にしない（既存方針と整合）。

@@ -9,13 +9,13 @@ using namespace xllm;
 class CliStopTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
     }
 };
 
 // Contract: stop requires a model name
 TEST_F(CliStopTest, RequiresModelName) {
-    const char* argv[] = {"allm", "stop"};
+    const char* argv[] = {"xllm", "stop"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -25,7 +25,7 @@ TEST_F(CliStopTest, RequiresModelName) {
 
 // Contract: stop parses model name
 TEST_F(CliStopTest, ParseModelName) {
-    const char* argv[] = {"allm", "stop", "llama3.2"};
+    const char* argv[] = {"xllm", "stop", "llama3.2"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -35,7 +35,7 @@ TEST_F(CliStopTest, ParseModelName) {
 
 // Contract: stop --help shows usage
 TEST_F(CliStopTest, ShowHelp) {
-    const char* argv[] = {"allm", "stop", "--help"};
+    const char* argv[] = {"xllm", "stop", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);

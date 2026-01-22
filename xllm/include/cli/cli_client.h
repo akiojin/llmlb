@@ -41,11 +41,11 @@ struct CliResponse<void> {
     bool ok() const { return error == CliError::Success; }
 };
 
-/// CLI client for communicating with aLLM server
+/// CLI client for communicating with xLLM server
 class CliClient {
 public:
     /// Constructor
-    /// @param host Server host (default from LLM_ROUTER_HOST env)
+    /// @param host Server host (default from LLMLB_HOST env)
     /// @param port Server port
     explicit CliClient(const std::string& host = "", uint16_t port = 0);
 

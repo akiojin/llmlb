@@ -102,17 +102,17 @@ curl http://localhost:8080/metrics
 
 ```text
 # 待機キューサイズ
-llm_router_queue_size 45
+llmlb_queue_size 45
 
 # リクエスト処理時間（p95）
-llm_router_request_duration_seconds{quantile="0.95"} 0.085
+llmlb_request_duration_seconds{quantile="0.95"} 0.085
 
 # バックプレッシャー拒否数
-llm_router_backpressure_rejections_total 12
+llmlb_backpressure_rejections_total 12
 
 # キャッシュヒット率
-llm_router_cache_hits_total 9500
-llm_router_cache_misses_total 500
+llmlb_cache_hits_total 9500
+llmlb_cache_misses_total 500
 # ヒット率: 9500 / (9500 + 500) = 95%
 ```
 
@@ -134,8 +134,8 @@ def get_metrics():
     return metrics
 
 metrics = get_metrics()
-print(f"Queue Size: {metrics.get('llm_router_queue_size', 0)}")
-print(f"Rejections: {metrics.get('llm_router_backpressure_rejections_total', 0)}")
+print(f"Queue Size: {metrics.get('llmlb_queue_size', 0)}")
+print(f"Rejections: {metrics.get('llmlb_backpressure_rejections_total', 0)}")
 ```
 
 ## エラーハンドリング

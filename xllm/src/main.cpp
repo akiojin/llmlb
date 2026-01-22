@@ -620,9 +620,9 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
             }
         }
 
-        // aLLM now operates in standalone mode only (NodeRegistry abolished)
+        // xLLM now operates in standalone mode only (NodeRegistry abolished)
         // Models are scanned from local storage without router registration
-        spdlog::info("Running in standalone mode (aLLM OpenAI-compatible endpoint)");
+        spdlog::info("Running in standalone mode (xLLM OpenAI-compatible endpoint)");
 
         // Update registry with local models (models actually available on this node)
         auto local_descriptors = model_storage.listAvailableDescriptors();
@@ -697,7 +697,7 @@ int main(int argc, char* argv[]) {
     // Branch based on subcommand
     switch (cli_result.subcommand) {
         case xllm::Subcommand::Serve: {
-            std::cout << "allm v" << XLLM_VERSION << " starting..." << std::endl;
+            std::cout << "xllm v" << XLLM_VERSION << " starting..." << std::endl;
             auto cfg = xllm::loadNodeConfig();
             // Override config with CLI options if specified
             if (cli_result.serve_options.port != 0) {
@@ -742,7 +742,7 @@ int main(int argc, char* argv[]) {
         case xllm::Subcommand::None:
         default:
             // Default to serve (legacy behavior for backward compatibility)
-            std::cout << "allm v" << XLLM_VERSION << " starting..." << std::endl;
+            std::cout << "xllm v" << XLLM_VERSION << " starting..." << std::endl;
             auto cfg = xllm::loadNodeConfig();
             return run_node(cfg, /*single_iteration=*/false);
     }
@@ -750,7 +750,7 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifdef XLLM_TESTING
-extern "C" int allm_run_for_test() {
+extern "C" int xllm_run_for_test() {
     auto cfg = xllm::loadNodeConfig();
     cfg.require_gpu = false;
     return run_node(cfg, /*single_iteration=*/true);

@@ -9,13 +9,13 @@ using namespace xllm;
 class CliRmTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
     }
 };
 
 // Contract: rm requires a model name
 TEST_F(CliRmTest, RequiresModelName) {
-    const char* argv[] = {"allm", "rm"};
+    const char* argv[] = {"xllm", "rm"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -25,7 +25,7 @@ TEST_F(CliRmTest, RequiresModelName) {
 
 // Contract: rm parses model name
 TEST_F(CliRmTest, ParseModelName) {
-    const char* argv[] = {"allm", "rm", "llama3.2"};
+    const char* argv[] = {"xllm", "rm", "llama3.2"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -35,7 +35,7 @@ TEST_F(CliRmTest, ParseModelName) {
 
 // Contract: rm --help shows usage
 TEST_F(CliRmTest, ShowHelp) {
-    const char* argv[] = {"allm", "rm", "--help"};
+    const char* argv[] = {"xllm", "rm", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);

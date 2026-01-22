@@ -1,5 +1,5 @@
 // SPEC-58378000: CLI client implementation
-// HTTP client for communicating with allm server
+// HTTP client for communicating with xllm server
 
 #include "cli/cli_client.h"
 
@@ -13,7 +13,7 @@ namespace cli {
 CliClient::CliClient(const std::string& host, uint16_t port) {
     // Get host from environment or use default
     if (host.empty()) {
-        const char* env_host = std::getenv("LLM_ROUTER_HOST");
+        const char* env_host = std::getenv("LLMLB_HOST");
         host_ = env_host ? env_host : "127.0.0.1";
     } else {
         host_ = host;

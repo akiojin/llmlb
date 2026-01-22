@@ -17,22 +17,22 @@ class CliModelLifecycleTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Save original environment
-        const char* host = std::getenv("LLM_ROUTER_HOST");
+        const char* host = std::getenv("LLMLB_HOST");
         const char* port = std::getenv("XLLM_PORT");
         original_host_ = host ? host : "";
         original_port_ = port ? port : "";
 
         // Set test environment
-        setenv("LLM_ROUTER_HOST", "127.0.0.1", 1);
+        setenv("LLMLB_HOST", "127.0.0.1", 1);
         setenv("XLLM_PORT", "11435", 1);
     }
 
     void TearDown() override {
         // Restore original environment
         if (original_host_.empty()) {
-            unsetenv("LLM_ROUTER_HOST");
+            unsetenv("LLMLB_HOST");
         } else {
-            setenv("LLM_ROUTER_HOST", original_host_.c_str(), 1);
+            setenv("LLMLB_HOST", original_host_.c_str(), 1);
         }
         if (original_port_.empty()) {
             unsetenv("XLLM_PORT");

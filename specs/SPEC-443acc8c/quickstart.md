@@ -98,11 +98,11 @@ curl http://localhost:8080/metrics | grep -E "(heartbeat|node_state|timeout)"
 **出力例**:
 
 ```text
-llm_router_heartbeats_received_total{node_id="node-1"} 100
-llm_router_heartbeats_received_total{node_id="node-2"} 95
-llm_router_node_state{node_id="node-1",state="online"} 1
-llm_router_node_state{node_id="node-2",state="offline"} 1
-llm_router_node_timeouts_total{node_id="node-2"} 1
+llmlb_heartbeats_received_total{node_id="node-1"} 100
+llmlb_heartbeats_received_total{node_id="node-2"} 95
+llmlb_node_state{node_id="node-1",state="online"} 1
+llmlb_node_state{node_id="node-2",state="offline"} 1
+llmlb_node_timeouts_total{node_id="node-2"} 1
 ```
 
 ## Python での利用

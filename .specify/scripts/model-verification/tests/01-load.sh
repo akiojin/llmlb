@@ -24,7 +24,7 @@ if [[ "$MODEL_SIZE" -lt 1000000 ]]; then
   exit 1
 fi
 
-# Try to load model with aLLM (quick validation mode)
+# Try to load model with xLLM (quick validation mode)
 echo "Loading model..."
 infer_command 1 "test" 2>&1 | head -20
 

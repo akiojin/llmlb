@@ -387,14 +387,14 @@ impl CloudErrorKind {
 
 ```text
 # クラウドAPIリクエスト数
-llm_router_cloud_requests_total{provider="openai",model="gpt-4.1",status="200"} 150
-llm_router_cloud_requests_total{provider="anthropic",model="claude-3-opus",status="200"} 80
-llm_router_cloud_requests_total{provider="openai",model="gpt-4.1",status="429"} 5
+llmlb_cloud_requests_total{provider="openai",model="gpt-4.1",status="200"} 150
+llmlb_cloud_requests_total{provider="anthropic",model="claude-3-opus",status="200"} 80
+llmlb_cloud_requests_total{provider="openai",model="gpt-4.1",status="429"} 5
 
 # クラウドAPIレイテンシ
-llm_router_cloud_latency_seconds_bucket{provider="openai",le="0.5"} 100
-llm_router_cloud_latency_seconds_bucket{provider="openai",le="1.0"} 140
-llm_router_cloud_latency_seconds_bucket{provider="openai",le="2.5"} 150
-llm_router_cloud_latency_seconds_sum{provider="openai"} 95.5
-llm_router_cloud_latency_seconds_count{provider="openai"} 150
+llmlb_cloud_latency_seconds_bucket{provider="openai",le="0.5"} 100
+llmlb_cloud_latency_seconds_bucket{provider="openai",le="1.0"} 140
+llmlb_cloud_latency_seconds_bucket{provider="openai",le="2.5"} 150
+llmlb_cloud_latency_seconds_sum{provider="openai"} 95.5
+llmlb_cloud_latency_seconds_count{provider="openai"} 150
 ```

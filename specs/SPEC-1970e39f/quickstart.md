@@ -32,13 +32,13 @@ tail -f ~/.llmlb/logs/router.log | jq '.'
 
 ```bash
 # ルーター
-export RUST_LOG=llm_router=info
+export RUST_LOG=llmlb=info
 
 # デバッグレベル
-export RUST_LOG=llm_router=debug
+export RUST_LOG=llmlb=debug
 
 # 特定モジュールのみ
-export RUST_LOG=llm_router::api::openai=debug
+export RUST_LOG=llmlb::api::openai=debug
 ```
 
 ### ノード側

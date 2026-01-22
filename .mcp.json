@@ -12,8 +12,8 @@
       "command": "node",
       "args": ["./mcp-server/dist/index.js"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:32768",
-        "LLM_ROUTER_OPENAPI_PATH": "./docs/openapi.yaml"
+        "LLMLB_URL": "http://localhost:32768",
+        "LLMLB_OPENAPI_PATH": "./docs/openapi.yaml"
       }
     }
   }

@@ -10,13 +10,13 @@ class CliPullTest : public ::testing::Test {
 protected:
     void SetUp() override {
         unsetenv("HF_TOKEN");
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
     }
 };
 
 // Contract: pull requires a model name
 TEST_F(CliPullTest, RequiresModelName) {
-    const char* argv[] = {"allm", "pull"};
+    const char* argv[] = {"xllm", "pull"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -26,7 +26,7 @@ TEST_F(CliPullTest, RequiresModelName) {
 
 // Contract: pull parses model name
 TEST_F(CliPullTest, ParseModelName) {
-    const char* argv[] = {"allm", "pull", "Qwen/Qwen2.5-0.5B-GGUF"};
+    const char* argv[] = {"xllm", "pull", "Qwen/Qwen2.5-0.5B-GGUF"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -36,7 +36,7 @@ TEST_F(CliPullTest, ParseModelName) {
 
 // Contract: pull accepts HuggingFace URL
 TEST_F(CliPullTest, ParseHuggingFaceUrl) {
-    const char* argv[] = {"allm", "pull", "https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF"};
+    const char* argv[] = {"xllm", "pull", "https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -46,7 +46,7 @@ TEST_F(CliPullTest, ParseHuggingFaceUrl) {
 
 // Contract: pull --help shows usage
 TEST_F(CliPullTest, ShowHelp) {
-    const char* argv[] = {"allm", "pull", "--help"};
+    const char* argv[] = {"xllm", "pull", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);

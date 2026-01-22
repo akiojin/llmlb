@@ -307,17 +307,17 @@ LLMLB_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
 
 ```text
 # 選択統計
-llm_router_node_selections_total{runtime_id="node-1",reason="lowest_gpu"} 1500
-llm_router_node_selections_total{runtime_id="node-2",reason="round_robin"} 500
+llmlb_node_selections_total{runtime_id="node-1",reason="lowest_gpu"} 1500
+llmlb_node_selections_total{runtime_id="node-2",reason="round_robin"} 500
 
 # ノード負荷
-llm_router_node_gpu_usage{runtime_id="node-1"} 45.5
-llm_router_node_vram_usage{runtime_id="node-1"} 78.2
-llm_router_node_active_requests{runtime_id="node-1"} 3
+llmlb_node_gpu_usage{runtime_id="node-1"} 45.5
+llmlb_node_vram_usage{runtime_id="node-1"} 78.2
+llmlb_node_active_requests{runtime_id="node-1"} 3
 
 # 選択時間
-llm_router_node_selection_duration_seconds_bucket{le="0.001"} 9500
-llm_router_node_selection_duration_seconds_bucket{le="0.01"} 10000
-llm_router_node_selection_duration_seconds_sum 5.2
-llm_router_node_selection_duration_seconds_count 10000
+llmlb_node_selection_duration_seconds_bucket{le="0.001"} 9500
+llmlb_node_selection_duration_seconds_bucket{le="0.01"} 10000
+llmlb_node_selection_duration_seconds_sum 5.2
+llmlb_node_selection_duration_seconds_count 10000
 ```

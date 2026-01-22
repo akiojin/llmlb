@@ -313,37 +313,37 @@ use prometheus::{Counter, Gauge, Histogram, register_counter, register_gauge, re
 lazy_static! {
     // リクエスト処理時間
     pub static ref REQUEST_DURATION: Histogram = register_histogram!(
-        "llm_router_request_duration_seconds",
+        "llmlb_request_duration_seconds",
         "Request processing duration",
         vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
     ).unwrap();
 
     // 待機キューサイズ
     pub static ref QUEUE_SIZE: Gauge = register_gauge!(
-        "llm_router_queue_size",
+        "llmlb_queue_size",
         "Current wait queue size"
     ).unwrap();
 
     // バックプレッシャー拒否数
     pub static ref BACKPRESSURE_REJECTIONS: Counter = register_counter!(
-        "llm_router_backpressure_rejections_total",
+        "llmlb_backpressure_rejections_total",
         "Total requests rejected by backpressure"
     ).unwrap();
 
     // 接続プール使用率
     pub static ref POOL_CONNECTIONS: Gauge = register_gauge!(
-        "llm_router_pool_connections",
+        "llmlb_pool_connections",
         "Active connections in pool"
     ).unwrap();
 
     // キャッシュヒット率
     pub static ref CACHE_HITS: Counter = register_counter!(
-        "llm_router_cache_hits_total",
+        "llmlb_cache_hits_total",
         "Node selection cache hits"
     ).unwrap();
 
     pub static ref CACHE_MISSES: Counter = register_counter!(
-        "llm_router_cache_misses_total",
+        "llmlb_cache_misses_total",
         "Node selection cache misses"
     ).unwrap();
 }

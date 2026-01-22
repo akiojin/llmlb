@@ -245,13 +245,13 @@ use prometheus::{Counter, Histogram, register_counter_vec, register_histogram_ve
 
 lazy_static! {
     pub static ref CLOUD_REQUESTS: CounterVec = register_counter_vec!(
-        "llm_router_cloud_requests_total",
+        "llmlb_cloud_requests_total",
         "Total cloud API requests",
         &["provider", "model", "status"]
     ).unwrap();
 
     pub static ref CLOUD_LATENCY: HistogramVec = register_histogram_vec!(
-        "llm_router_cloud_latency_seconds",
+        "llmlb_cloud_latency_seconds",
         "Cloud API request latency",
         &["provider"],
         vec![0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]

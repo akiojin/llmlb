@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Model Verification Suite
-# Comprehensive test suite for verifying model compatibility with llm-router engines
+# Comprehensive test suite for verifying model compatibility with llmlb engines
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -63,7 +63,7 @@ fi
 
 if [[ "$FORMAT" == "safetensors" ]]; then
   if [[ ! -x "$XLLM_BIN" ]]; then
-    echo "Error: aLLM not found or not executable: $XLLM_BIN"
+    echo "Error: xLLM not found or not executable: $XLLM_BIN"
     exit 1
   fi
 else

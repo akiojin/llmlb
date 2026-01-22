@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-typedef enum allm_error_code {
+typedef enum xllm_error_code {
     XLLM_ERROR_OK = 0,
     XLLM_ERROR_OOM_VRAM = 1,
     XLLM_ERROR_OOM_RAM = 2,
@@ -15,7 +15,7 @@ typedef enum allm_error_code {
     XLLM_ERROR_INTERNAL = 7,
     XLLM_ERROR_ABI_MISMATCH = 8,
     XLLM_ERROR_LOAD_FAILED = 9,
-} allm_error_code;
+} xllm_error_code;
 
 #ifdef __cplusplus
 }

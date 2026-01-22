@@ -34,7 +34,7 @@ LLM Load Balancerに対してCLIインターフェースを追加する。
 
 **アーキテクチャ**:
 
-- すべての機能をライブラリとして: ✅ `llm_router::cli` モジュールとして追加
+- すべての機能をライブラリとして: ✅ `llmlb::cli` モジュールとして追加
 - ライブラリリスト: llmlb (CLI + サーバー機能)
 - CLI: `llmlb --help/--version` + `llmlb user --help`
 

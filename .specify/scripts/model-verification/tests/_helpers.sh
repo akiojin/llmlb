@@ -51,7 +51,7 @@ run_xllm() {
     exit 1
   fi
   if [[ ! -x "$XLLM_BIN" ]]; then
-    echo "FAIL: aLLM not found: $XLLM_BIN" >&2
+    echo "FAIL: xLLM not found: $XLLM_BIN" >&2
     exit 1
   fi
   run_with_timeout "$timeout_secs" "$XLLM_BIN" "$@"

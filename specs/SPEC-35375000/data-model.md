@@ -420,22 +420,22 @@ LLMLB_CACHE_TTL_SECS=5
 
 ```text
 # 待機キューサイズ
-llm_router_queue_size 45
+llmlb_queue_size 45
 
 # リクエスト処理時間
-llm_router_request_duration_seconds_bucket{le="0.01"} 1000
-llm_router_request_duration_seconds_bucket{le="0.05"} 2500
-llm_router_request_duration_seconds_bucket{le="0.1"} 4000
-llm_router_request_duration_seconds_sum 250.5
-llm_router_request_duration_seconds_count 5000
+llmlb_request_duration_seconds_bucket{le="0.01"} 1000
+llmlb_request_duration_seconds_bucket{le="0.05"} 2500
+llmlb_request_duration_seconds_bucket{le="0.1"} 4000
+llmlb_request_duration_seconds_sum 250.5
+llmlb_request_duration_seconds_count 5000
 
 # バックプレッシャー拒否
-llm_router_backpressure_rejections_total 50
+llmlb_backpressure_rejections_total 50
 
 # キャッシュ効率
-llm_router_cache_hits_total 9000
-llm_router_cache_misses_total 1000
+llmlb_cache_hits_total 9000
+llmlb_cache_misses_total 1000
 
 # 接続プール
-llm_router_pool_connections 24
+llmlb_pool_connections 24
 ```

@@ -13,7 +13,7 @@ spdlog::level::level_enum parse_level(const std::string& level_text);
 // Get the log directory path (~/.llm-router/logs by default).
 std::string get_log_dir();
 
-// Get today's log file path (allm.jsonl.YYYY-MM-DD).
+// Get today's log file path (xllm.jsonl.YYYY-MM-DD).
 std::string get_log_file_path();
 
 // Get retention days from environment (default: 7).

@@ -26,7 +26,7 @@ namespace {
 #endif
     }
 
-    constexpr const char* LOG_FILE_BASE = "allm.jsonl";
+    constexpr const char* LOG_FILE_BASE = "xllm.jsonl";
     constexpr const char* DEFAULT_DATA_DIR = ".llm-router";
     constexpr const char* LOG_SUBDIR = "logs";
     constexpr int DEFAULT_RETENTION_DAYS = 7;
@@ -170,7 +170,7 @@ void init(const std::string& level,
             std::make_shared<spdlog::sinks::basic_file_sink_mt>(default_path, false));
     }
 
-    auto logger = std::make_shared<spdlog::logger>("allm", sinks.begin(), sinks.end());
+    auto logger = std::make_shared<spdlog::logger>("xllm", sinks.begin(), sinks.end());
     spdlog::set_default_logger(logger);
 
     spdlog::set_pattern(pattern);

@@ -12,7 +12,7 @@ using namespace xllm;
 
 // Test --help flag
 TEST(CliTest, HelpFlagShowsHelpMessage) {
-    std::vector<std::string> args = {"allm", "--help"};
+    std::vector<std::string> args = {"xllm", "--help"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -21,12 +21,12 @@ TEST(CliTest, HelpFlagShowsHelpMessage) {
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);
-    EXPECT_TRUE(result.output.find("allm") != std::string::npos);
+    EXPECT_TRUE(result.output.find("xllm") != std::string::npos);
     EXPECT_TRUE(result.output.find("COMMANDS") != std::string::npos);
 }
 
 TEST(CliTest, ShortHelpFlagShowsHelpMessage) {
-    std::vector<std::string> args = {"allm", "-h"};
+    std::vector<std::string> args = {"xllm", "-h"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -35,12 +35,12 @@ TEST(CliTest, ShortHelpFlagShowsHelpMessage) {
 
     EXPECT_TRUE(result.should_exit);
     EXPECT_EQ(result.exit_code, 0);
-    EXPECT_TRUE(result.output.find("allm") != std::string::npos);
+    EXPECT_TRUE(result.output.find("xllm") != std::string::npos);
 }
 
 // Test --version flag
 TEST(CliTest, VersionFlagShowsVersion) {
-    std::vector<std::string> args = {"allm", "--version"};
+    std::vector<std::string> args = {"xllm", "--version"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -53,7 +53,7 @@ TEST(CliTest, VersionFlagShowsVersion) {
 }
 
 TEST(CliTest, ShortVersionFlagShowsVersion) {
-    std::vector<std::string> args = {"allm", "-V"};
+    std::vector<std::string> args = {"xllm", "-V"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -67,7 +67,7 @@ TEST(CliTest, ShortVersionFlagShowsVersion) {
 
 // Test no arguments (should continue to server mode)
 TEST(CliTest, NoArgumentsContinuesToServerMode) {
-    std::vector<std::string> args = {"allm"};
+    std::vector<std::string> args = {"xllm"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -79,7 +79,7 @@ TEST(CliTest, NoArgumentsContinuesToServerMode) {
 
 // Test unknown argument (shows help with commands)
 TEST(CliTest, UnknownArgumentShowsHelpOrError) {
-    std::vector<std::string> args = {"allm", "--unknown-flag"};
+    std::vector<std::string> args = {"xllm", "--unknown-flag"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
@@ -95,7 +95,7 @@ TEST(CliTest, UnknownArgumentShowsHelpOrError) {
 
 // Test serve subcommand help contains environment variables
 TEST(CliTest, ServeHelpMessageContainsEnvironmentVariables) {
-    std::vector<std::string> args = {"allm", "serve", "--help"};
+    std::vector<std::string> args = {"xllm", "serve", "--help"};
     std::vector<char*> argv;
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);

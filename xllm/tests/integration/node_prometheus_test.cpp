@@ -24,8 +24,8 @@ TEST(NodePrometheusTest, MetricsEndpointReturnsText) {
     ASSERT_TRUE(resp);
     EXPECT_EQ(resp->status, 200);
     EXPECT_EQ(resp->get_header_value("Content-Type"), "text/plain");
-    EXPECT_NE(resp->body.find("allm_uptime_seconds"), std::string::npos);
-    EXPECT_NE(resp->body.find("allm_gpu_devices"), std::string::npos);
+    EXPECT_NE(resp->body.find("xllm_uptime_seconds"), std::string::npos);
+    EXPECT_NE(resp->body.find("xllm_gpu_devices"), std::string::npos);
 
     server.stop();
 }

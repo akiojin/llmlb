@@ -20,14 +20,14 @@ class CliServeTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset environment variables
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
         unsetenv("XLLM_PORT");
     }
 };
 
 // Contract: serve should parse default options correctly
 TEST_F(CliServeTest, ParseDefaultOptions) {
-    const char* argv[] = {"allm", "serve"};
+    const char* argv[] = {"xllm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -38,7 +38,7 @@ TEST_F(CliServeTest, ParseDefaultOptions) {
 
 // Contract: serve should accept --port option
 TEST_F(CliServeTest, ParseCustomPort) {
-    const char* argv[] = {"allm", "serve", "--port", "8080"};
+    const char* argv[] = {"xllm", "serve", "--port", "8080"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -48,7 +48,7 @@ TEST_F(CliServeTest, ParseCustomPort) {
 
 // Contract: serve should accept --host option
 TEST_F(CliServeTest, ParseCustomHost) {
-    const char* argv[] = {"allm", "serve", "--host", "127.0.0.1"};
+    const char* argv[] = {"xllm", "serve", "--host", "127.0.0.1"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -60,7 +60,7 @@ TEST_F(CliServeTest, ParseCustomHost) {
 TEST_F(CliServeTest, RespectPortEnvironmentVariable) {
     setenv("XLLM_PORT", "9999", 1);
 
-    const char* argv[] = {"allm", "serve"};
+    const char* argv[] = {"xllm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     // Environment variable should be respected when no explicit --port
@@ -70,7 +70,7 @@ TEST_F(CliServeTest, RespectPortEnvironmentVariable) {
 
 // Contract: serve --help should show help message
 TEST_F(CliServeTest, ShowHelp) {
-    const char* argv[] = {"allm", "serve", "--help"};
+    const char* argv[] = {"xllm", "serve", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);

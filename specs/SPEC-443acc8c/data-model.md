@@ -379,18 +379,18 @@ NODE_TIMEOUT=60                      # → LLMLB_NODE_TIMEOUT
 
 ```text
 # ハートビート
-llm_router_heartbeats_received_total{node_id="node-1"} 1000
-llm_router_heartbeats_received_total{node_id="node-2"} 995
+llmlb_heartbeats_received_total{node_id="node-1"} 1000
+llmlb_heartbeats_received_total{node_id="node-2"} 995
 
 # ノード状態
-llm_router_node_state{node_id="node-1",state="online"} 1
-llm_router_node_state{node_id="node-2",state="online"} 1
-llm_router_node_state{node_id="node-3",state="offline"} 1
+llmlb_node_state{node_id="node-1",state="online"} 1
+llmlb_node_state{node_id="node-2",state="online"} 1
+llmlb_node_state{node_id="node-3",state="offline"} 1
 
 # 状態遷移
-llm_router_node_transitions_total{from="online",to="offline"} 5
-llm_router_node_transitions_total{from="offline",to="online"} 5
+llmlb_node_transitions_total{from="online",to="offline"} 5
+llmlb_node_transitions_total{from="offline",to="online"} 5
 
 # タイムアウト
-llm_router_node_timeouts_total{node_id="node-3"} 3
+llmlb_node_timeouts_total{node_id="node-3"} 3
 ```

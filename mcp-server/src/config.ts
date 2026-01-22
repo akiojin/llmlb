@@ -12,12 +12,12 @@ export type ServerConfig = z.infer<typeof ConfigSchema>;
 
 export function loadConfig(): ServerConfig {
   const raw = {
-    routerUrl: process.env.LLM_ROUTER_URL || "http://localhost:32768",
-    apiKey: process.env.LLM_ROUTER_API_KEY,
-    jwtToken: process.env.LLM_ROUTER_JWT_TOKEN,
-    openapiPath: process.env.LLM_ROUTER_OPENAPI_PATH,
-    defaultTimeout: process.env.LLM_ROUTER_TIMEOUT
-      ? parseInt(process.env.LLM_ROUTER_TIMEOUT, 10)
+    routerUrl: process.env.LLMLB_URL || "http://localhost:32768",
+    apiKey: process.env.LLMLB_API_KEY,
+    jwtToken: process.env.LLMLB_JWT_TOKEN,
+    openapiPath: process.env.LLMLB_OPENAPI_PATH,
+    defaultTimeout: process.env.LLMLB_TIMEOUT
+      ? parseInt(process.env.LLMLB_TIMEOUT, 10)
       : 30,
   };
 

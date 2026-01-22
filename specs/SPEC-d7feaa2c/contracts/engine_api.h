@@ -7,8 +7,8 @@
  * すべてのプラグインはこのインターフェースを実装する必要があります。
  */
 
-#ifndef LLM_ROUTER_ENGINE_API_H
-#define LLM_ROUTER_ENGINE_API_H
+#ifndef LLMLB_ENGINE_API_H
+#define LLMLB_ENGINE_API_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -220,4 +220,4 @@ ENGINE_API const char* engine_get_last_error(void);
 }
 #endif
 
-#endif /* LLM_ROUTER_ENGINE_API_H */
+#endif /* LLMLB_ENGINE_API_H */

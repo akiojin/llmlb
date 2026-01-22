@@ -19,8 +19,8 @@ int ps() {
 
     // Check server connection
     if (!client->isServerRunning()) {
-        std::cerr << "Error: Could not connect to allm server" << std::endl;
-        std::cerr << "Start the server with: allm serve" << std::endl;
+        std::cerr << "Error: Could not connect to xllm server" << std::endl;
+        std::cerr << "Start the server with: xllm serve" << std::endl;
         return 2;
     }
 

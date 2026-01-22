@@ -9,14 +9,14 @@ using namespace xllm;
 class CliRunTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
         unsetenv("XLLM_PORT");
     }
 };
 
 // Contract: run requires a model name
 TEST_F(CliRunTest, RequiresModelName) {
-    const char* argv[] = {"allm", "run"};
+    const char* argv[] = {"xllm", "run"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -26,7 +26,7 @@ TEST_F(CliRunTest, RequiresModelName) {
 
 // Contract: run parses model name correctly
 TEST_F(CliRunTest, ParseModelName) {
-    const char* argv[] = {"allm", "run", "llama3.2"};
+    const char* argv[] = {"xllm", "run", "llama3.2"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -36,7 +36,7 @@ TEST_F(CliRunTest, ParseModelName) {
 
 // Contract: run accepts --think flag for reasoning models
 TEST_F(CliRunTest, ParseThinkFlag) {
-    const char* argv[] = {"allm", "run", "deepseek-r1", "--think"};
+    const char* argv[] = {"xllm", "run", "deepseek-r1", "--think"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -47,7 +47,7 @@ TEST_F(CliRunTest, ParseThinkFlag) {
 
 // Contract: run accepts --hide-think flag (default)
 TEST_F(CliRunTest, ParseHideThinkFlag) {
-    const char* argv[] = {"allm", "run", "deepseek-r1", "--hide-think"};
+    const char* argv[] = {"xllm", "run", "deepseek-r1", "--hide-think"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -58,7 +58,7 @@ TEST_F(CliRunTest, ParseHideThinkFlag) {
 
 // Contract: run --help shows usage
 TEST_F(CliRunTest, ShowHelp) {
-    const char* argv[] = {"allm", "run", "--help"};
+    const char* argv[] = {"xllm", "run", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -68,7 +68,7 @@ TEST_F(CliRunTest, ShowHelp) {
 
 // Contract: run accepts model with tag (e.g., llama3.2:latest)
 TEST_F(CliRunTest, ParseModelWithTag) {
-    const char* argv[] = {"allm", "run", "llama3.2:latest"};
+    const char* argv[] = {"xllm", "run", "llama3.2:latest"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -77,7 +77,7 @@ TEST_F(CliRunTest, ParseModelWithTag) {
 
 // Contract: run accepts ollama-prefixed model
 TEST_F(CliRunTest, ParseOllamaModel) {
-    const char* argv[] = {"allm", "run", "ollama:llama3.2"};
+    const char* argv[] = {"xllm", "run", "ollama:llama3.2"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);

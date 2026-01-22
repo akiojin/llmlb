@@ -22,7 +22,7 @@ ReplSession::~ReplSession() = default;
 int ReplSession::run() {
     // Check server connection
     if (!client_->isServerRunning()) {
-        std::cerr << "Error: Could not connect to allm server" << std::endl;
+        std::cerr << "Error: Could not connect to xllm server" << std::endl;
         return 2;  // Connection error
     }
 

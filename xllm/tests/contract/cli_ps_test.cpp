@@ -9,13 +9,13 @@ using namespace xllm;
 class CliPsTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
     }
 };
 
 // Contract: ps requires no arguments
 TEST_F(CliPsTest, ParseNoArguments) {
-    const char* argv[] = {"allm", "ps"};
+    const char* argv[] = {"xllm", "ps"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -24,7 +24,7 @@ TEST_F(CliPsTest, ParseNoArguments) {
 
 // Contract: ps --help shows usage
 TEST_F(CliPsTest, ShowHelp) {
-    const char* argv[] = {"allm", "ps", "--help"};
+    const char* argv[] = {"xllm", "ps", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);

@@ -113,7 +113,7 @@ export default function Playground() {
   const [maxTokens, setMaxTokens] = useState(2048)
   const [apiKey, setApiKey] = useState(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('llm-router-api-key')
+      const stored = localStorage.getItem('llmlb-api-key')
       if (stored) return stored
       // Use sk_debug as default for local environment (development mode)
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -207,7 +207,7 @@ export default function Playground() {
   // Save API key to localStorage
   const handleApiKeyChange = (value: string) => {
     setApiKey(value)
-    localStorage.setItem('llm-router-api-key', value)
+    localStorage.setItem('llmlb-api-key', value)
   }
 
   // Create new session

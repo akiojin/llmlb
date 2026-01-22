@@ -9,13 +9,13 @@ using namespace xllm;
 class CliShowTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        unsetenv("LLM_ROUTER_HOST");
+        unsetenv("LLMLB_HOST");
     }
 };
 
 // Contract: show requires a model name
 TEST_F(CliShowTest, RequiresModelName) {
-    const char* argv[] = {"allm", "show"};
+    const char* argv[] = {"xllm", "show"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -25,7 +25,7 @@ TEST_F(CliShowTest, RequiresModelName) {
 
 // Contract: show parses model name
 TEST_F(CliShowTest, ParseModelName) {
-    const char* argv[] = {"allm", "show", "llama3.2"};
+    const char* argv[] = {"xllm", "show", "llama3.2"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -35,7 +35,7 @@ TEST_F(CliShowTest, ParseModelName) {
 
 // Contract: show --license shows license only
 TEST_F(CliShowTest, ParseLicenseFlag) {
-    const char* argv[] = {"allm", "show", "llama3.2", "--license"};
+    const char* argv[] = {"xllm", "show", "llama3.2", "--license"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -45,7 +45,7 @@ TEST_F(CliShowTest, ParseLicenseFlag) {
 
 // Contract: show --modelfile shows modelfile only
 TEST_F(CliShowTest, ParseModelfileFlag) {
-    const char* argv[] = {"allm", "show", "llama3.2", "--modelfile"};
+    const char* argv[] = {"xllm", "show", "llama3.2", "--modelfile"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -54,7 +54,7 @@ TEST_F(CliShowTest, ParseModelfileFlag) {
 
 // Contract: show --parameters shows parameters only
 TEST_F(CliShowTest, ParseParametersFlag) {
-    const char* argv[] = {"allm", "show", "llama3.2", "--parameters"};
+    const char* argv[] = {"xllm", "show", "llama3.2", "--parameters"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -63,7 +63,7 @@ TEST_F(CliShowTest, ParseParametersFlag) {
 
 // Contract: show --template shows template only
 TEST_F(CliShowTest, ParseTemplateFlag) {
-    const char* argv[] = {"allm", "show", "llama3.2", "--template"};
+    const char* argv[] = {"xllm", "show", "llama3.2", "--template"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -72,7 +72,7 @@ TEST_F(CliShowTest, ParseTemplateFlag) {
 
 // Contract: show --system shows system prompt only
 TEST_F(CliShowTest, ParseSystemFlag) {
-    const char* argv[] = {"allm", "show", "llama3.2", "--system"};
+    const char* argv[] = {"xllm", "show", "llama3.2", "--system"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -81,7 +81,7 @@ TEST_F(CliShowTest, ParseSystemFlag) {
 
 // Contract: show --help shows usage
 TEST_F(CliShowTest, ShowHelp) {
-    const char* argv[] = {"allm", "show", "--help"};
+    const char* argv[] = {"xllm", "show", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);

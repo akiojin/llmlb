@@ -85,16 +85,16 @@ wait
 
 ```bash
 # Prometheusメトリクス
-curl http://localhost:8080/metrics | grep llm_router_node
+curl http://localhost:8080/metrics | grep llmlb_node
 ```
 
 **出力例**:
 
 ```text
-llm_router_node_gpu_usage{node_id="node-1"} 45.5
-llm_router_node_gpu_usage{node_id="node-2"} 20.0
-llm_router_node_selections_total{node_id="node-1",reason="lowest_gpu"} 3
-llm_router_node_selections_total{node_id="node-2",reason="lowest_gpu"} 7
+llmlb_node_gpu_usage{node_id="node-1"} 45.5
+llmlb_node_gpu_usage{node_id="node-2"} 20.0
+llmlb_node_selections_total{node_id="node-1",reason="lowest_gpu"} 3
+llmlb_node_selections_total{node_id="node-2",reason="lowest_gpu"} 7
 ```
 
 ## Python での利用

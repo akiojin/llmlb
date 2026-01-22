@@ -20,10 +20,10 @@ std::string getPsHelpMessage();
 
 std::string getHelpMessage() {
     std::ostringstream oss;
-    oss << "allm " << XLLM_VERSION << " - LLM inference engine\n";
+    oss << "xllm " << XLLM_VERSION << " - LLM inference engine\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm <COMMAND>\n";
+    oss << "    xllm <COMMAND>\n";
     oss << "\n";
     oss << "COMMANDS:\n";
     oss << "    serve      Start the server (foreground)\n";
@@ -40,16 +40,16 @@ std::string getHelpMessage() {
     oss << "    -h, --help       Print help information\n";
     oss << "    -V, --version    Print version information\n";
     oss << "\n";
-    oss << "Run 'allm <COMMAND> --help' for more info.\n";
+    oss << "Run 'xllm <COMMAND> --help' for more info.\n";
     return oss.str();
 }
 
 std::string getServeHelpMessage() {
     std::ostringstream oss;
-    oss << "allm serve - Start the server\n";
+    oss << "xllm serve - Start the server\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm serve [OPTIONS]\n";
+    oss << "    xllm serve [OPTIONS]\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    --port <PORT>    Server port (default: 32769, or XLLM_PORT)\n";
@@ -59,18 +59,18 @@ std::string getServeHelpMessage() {
     oss << "ENVIRONMENT VARIABLES:\n";
     oss << "    XLLM_PORT                HTTP server port (default: 32769)\n";
     oss << "    XLLM_MODELS_DIR          Model files directory\n";
-    oss << "    LLM_ROUTER_HOST              Router URL for registration\n";
-    oss << "    LLM_ROUTER_DEBUG             Enable debug logging\n";
+    oss << "    LLMLB_HOST              Router URL for registration\n";
+    oss << "    LLMLB_DEBUG             Enable debug logging\n";
     oss << "    HF_TOKEN                     HuggingFace API token (for gated models)\n";
     return oss.str();
 }
 
 std::string getRouterHelpMessage() {
     std::ostringstream oss;
-    oss << "allm router - Router subcommands\n";
+    oss << "xllm router - Router subcommands\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm router <SUBCOMMAND>\n";
+    oss << "    xllm router <SUBCOMMAND>\n";
     oss << "\n";
     oss << "SUBCOMMANDS:\n";
     oss << "    endpoints  Manage cluster endpoints\n";
@@ -83,10 +83,10 @@ std::string getRouterHelpMessage() {
 
 std::string getRunHelpMessage() {
     std::ostringstream oss;
-    oss << "allm run - Chat with a model\n";
+    oss << "xllm run - Chat with a model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm run <MODEL> [OPTIONS]\n";
+    oss << "    xllm run <MODEL> [OPTIONS]\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name (e.g., llama3.2, ollama:mistral)\n";
@@ -104,10 +104,10 @@ std::string getRunHelpMessage() {
 
 std::string getPullHelpMessage() {
     std::ostringstream oss;
-    oss << "allm pull - Download a model\n";
+    oss << "xllm pull - Download a model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm pull <MODEL>\n";
+    oss << "    xllm pull <MODEL>\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name or HuggingFace URL\n";
@@ -124,26 +124,26 @@ std::string getPullHelpMessage() {
 
 std::string getListHelpMessage() {
     std::ostringstream oss;
-    oss << "allm list - List local models\n";
+    oss << "xllm list - List local models\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm list\n";
+    oss << "    xllm list\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    -h, --help       Print help\n";
     oss << "\n";
     oss << "Shows models from:\n";
-    oss << "    - allm models directory\n";
+    oss << "    - xllm models directory\n";
     oss << "    - ollama models (~/.ollama/models/) with 'ollama:' prefix\n";
     return oss.str();
 }
 
 std::string getShowHelpMessage() {
     std::ostringstream oss;
-    oss << "allm show - Show model metadata\n";
+    oss << "xllm show - Show model metadata\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm show <MODEL> [OPTIONS]\n";
+    oss << "    xllm show <MODEL> [OPTIONS]\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name\n";
@@ -160,10 +160,10 @@ std::string getShowHelpMessage() {
 
 std::string getRmHelpMessage() {
     std::ostringstream oss;
-    oss << "allm rm - Delete a model\n";
+    oss << "xllm rm - Delete a model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm rm <MODEL>\n";
+    oss << "    xllm rm <MODEL>\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name to delete\n";
@@ -177,10 +177,10 @@ std::string getRmHelpMessage() {
 
 std::string getStopHelpMessage() {
     std::ostringstream oss;
-    oss << "allm stop - Unload a running model\n";
+    oss << "xllm stop - Unload a running model\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm stop <MODEL>\n";
+    oss << "    xllm stop <MODEL>\n";
     oss << "\n";
     oss << "ARGUMENTS:\n";
     oss << "    <MODEL>          Model name to stop\n";
@@ -192,10 +192,10 @@ std::string getStopHelpMessage() {
 
 std::string getPsHelpMessage() {
     std::ostringstream oss;
-    oss << "allm ps - List running models\n";
+    oss << "xllm ps - List running models\n";
     oss << "\n";
     oss << "USAGE:\n";
-    oss << "    allm ps\n";
+    oss << "    xllm ps\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    -h, --help       Print help\n";
@@ -207,7 +207,7 @@ std::string getPsHelpMessage() {
 
 std::string getVersionMessage() {
     std::ostringstream oss;
-    oss << "allm " << XLLM_VERSION << "\n";
+    oss << "xllm " << XLLM_VERSION << "\n";
     return oss.str();
 }
 
@@ -349,7 +349,7 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         if (!model_found) {
             result.should_exit = true;
             result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: allm run <MODEL>\n";
+            result.output = "Error: model name required\n\nUsage: xllm run <MODEL>\n";
             return result;
         }
         return result;
@@ -378,7 +378,7 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         if (result.pull_options.model.empty()) {
             result.should_exit = true;
             result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: allm pull <MODEL>\n";
+            result.output = "Error: model name required\n\nUsage: xllm pull <MODEL>\n";
             return result;
         }
         return result;
@@ -431,7 +431,7 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         if (!model_found) {
             result.should_exit = true;
             result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: allm show <MODEL>\n";
+            result.output = "Error: model name required\n\nUsage: xllm show <MODEL>\n";
             return result;
         }
         return result;
@@ -460,7 +460,7 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         if (result.model_options.model.empty()) {
             result.should_exit = true;
             result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: allm rm <MODEL>\n";
+            result.output = "Error: model name required\n\nUsage: xllm rm <MODEL>\n";
             return result;
         }
         return result;
@@ -489,7 +489,7 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         if (result.model_options.model.empty()) {
             result.should_exit = true;
             result.exit_code = 1;
-            result.output = "Error: model name required\n\nUsage: allm stop <MODEL>\n";
+            result.output = "Error: model name required\n\nUsage: xllm stop <MODEL>\n";
             return result;
         }
         return result;

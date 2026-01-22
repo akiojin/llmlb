@@ -13,7 +13,7 @@ Env vars:
   MODEL_FILENAME        (default: gpt-oss-20b-mxfp4.gguf)
   ROUTER_PORT           (default: 18080)
   NODE_PORT             (default: 32769)   # runtime_port = NODE_PORT - 1
-  ROUTER_BIN            (default: target/debug/llm-router)
+  ROUTER_BIN            (default: target/debug/llmlb)
   NODE_BIN              (default: xllm/build/xllm)
 
 Request shaping:
@@ -31,7 +31,7 @@ Generation params:
 
 Process control:
   KEEP_RUNNING          (default: 0)  # 1 to keep router/node running after completion
-  ALLM_LOG_LEVEL    (default: info)
+  XLLM_LOG_LEVEL    (default: info)
   SHOW_MANIFEST         (default: 0)  # 1 to print model manifest.json for diagnostics
 
 Examples:
@@ -64,7 +64,7 @@ USER_MESSAGE="${USER_MESSAGE:-Say hello in one short sentence.}"
 SYSTEM_MESSAGE="${SYSTEM_MESSAGE:-}"
 KEEP_RUNNING="${KEEP_RUNNING:-0}"
 
-ROUTER_BIN="${ROUTER_BIN:-"$REPO_ROOT/target/debug/llm-router"}"
+ROUTER_BIN="${ROUTER_BIN:-"$REPO_ROOT/target/debug/llmlb"}"
 NODE_BIN="${NODE_BIN:-"$REPO_ROOT/xllm/build/xllm"}"
 
 MODEL_REPO="${MODEL_REPO:-ggml-org/gpt-oss-20b-GGUF}"
@@ -83,7 +83,7 @@ require_cmd git
 
 if [[ ! -x "$ROUTER_BIN" ]]; then
   echo "[ERROR] Router binary not found: $ROUTER_BIN" >&2
-  echo "        Build it with: cargo build -p llm-router" >&2
+  echo "        Build it with: cargo build -p llmlb" >&2
   exit 1
 fi
 
@@ -115,9 +115,9 @@ trap cleanup EXIT
 
 echo "[INFO] Starting router on :$ROUTER_PORT (logs: $ROUTER_LOG)"
 HOME="$ROUTER_HOME" \
-  LLM_ROUTER_PORT="$ROUTER_PORT" \
-  LLM_ROUTER_ADMIN_USERNAME="admin" \
-  LLM_ROUTER_ADMIN_PASSWORD="test" \
+  LLMLB_PORT="$ROUTER_PORT" \
+  LLMLB_ADMIN_USERNAME="admin" \
+  LLMLB_ADMIN_PASSWORD="test" \
   RUST_LOG="info" \
   "$ROUTER_BIN" >"$ROUTER_LOG" 2>&1 &
 ROUTER_PID=$!
@@ -136,16 +136,16 @@ if [[ "$router_ready" -ne 1 ]]; then
   exit 1
 fi
 
-ROUTER_MODELS_DIR="$ROUTER_HOME/.llm-router/models"
+ROUTER_MODELS_DIR="$ROUTER_HOME/.llmlb/models"
 mkdir -p "$ROUTER_MODELS_DIR"
 
 echo "[INFO] Starting node on :$NODE_PORT (logs: $NODE_LOG)"
 HOME="$NODE_HOME" \
-  LLM_ROUTER_URL="http://127.0.0.1:$ROUTER_PORT" \
-  ALLM_PORT="$NODE_PORT" \
-  ALLM_MODELS_DIR="$ROUTER_MODELS_DIR" \
-  ALLM_API_KEY="sk_debug_node" \
-  ALLM_LOG_LEVEL="${ALLM_LOG_LEVEL:-info}" \
+  LLMLB_URL="http://127.0.0.1:$ROUTER_PORT" \
+  XLLM_PORT="$NODE_PORT" \
+  XLLM_MODELS_DIR="$ROUTER_MODELS_DIR" \
+  XLLM_API_KEY="sk_debug_node" \
+  XLLM_LOG_LEVEL="${XLLM_LOG_LEVEL:-info}" \
   "$NODE_BIN" >"$NODE_LOG" 2>&1 &
 NODE_PID=$!
 

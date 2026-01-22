@@ -77,7 +77,7 @@ pub struct LogEntry {
 #include <optional>
 #include <nlohmann/json.hpp>
 
-namespace llm_router {
+namespace llmlb {
 
 /// ログレベル
 enum class LogLevel {
@@ -114,7 +114,7 @@ struct LogEntry {
     std::string to_jsonl() const;
 };
 
-} // namespace llm_router
+} // namespace llmlb
 ```
 
 ### ログ設定

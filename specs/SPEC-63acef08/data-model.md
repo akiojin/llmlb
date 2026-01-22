@@ -384,16 +384,16 @@ LLMLB_MAX_CONCURRENT=100     # 最大同時リクエスト数
 
 ```text
 # プロキシリクエスト
-llm_router_proxy_requests_total{endpoint="/v1/chat/completions",status="200"} 5000
-llm_router_proxy_requests_total{endpoint="/v1/embeddings",status="200"} 1000
-llm_router_proxy_requests_total{endpoint="/v1/chat/completions",status="503"} 50
+llmlb_proxy_requests_total{endpoint="/v1/chat/completions",status="200"} 5000
+llmlb_proxy_requests_total{endpoint="/v1/embeddings",status="200"} 1000
+llmlb_proxy_requests_total{endpoint="/v1/chat/completions",status="503"} 50
 
 # レイテンシ
-llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="1"} 2000
-llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="5"} 4500
-llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="30"} 5000
+llmlb_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="1"} 2000
+llmlb_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="5"} 4500
+llmlb_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="30"} 5000
 
 # ストリーミング
-llm_router_streaming_connections_active 15
-llm_router_streaming_chunks_total{runtime_id="node-1"} 50000
+llmlb_streaming_connections_active 15
+llmlb_streaming_chunks_total{runtime_id="node-1"} 50000
 ```

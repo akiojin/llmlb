@@ -24,23 +24,23 @@ class CliServerTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Save original environment
-        const char* host = std::getenv("LLM_ROUTER_HOST");
+        const char* host = std::getenv("LLMLB_HOST");
         const char* port = std::getenv("XLLM_PORT");
         original_host_ = host ? host : "";
         original_port_ = port ? port : "";
 
         // Use different port for test server
         test_port_ = 11499;
-        setenv("LLM_ROUTER_HOST", "127.0.0.1", 1);
+        setenv("LLMLB_HOST", "127.0.0.1", 1);
         setenv("XLLM_PORT", std::to_string(test_port_).c_str(), 1);
     }
 
     void TearDown() override {
         // Restore original environment
         if (original_host_.empty()) {
-            unsetenv("LLM_ROUTER_HOST");
+            unsetenv("LLMLB_HOST");
         } else {
-            setenv("LLM_ROUTER_HOST", original_host_.c_str(), 1);
+            setenv("LLMLB_HOST", original_host_.c_str(), 1);
         }
         if (original_port_.empty()) {
             unsetenv("XLLM_PORT");
@@ -57,7 +57,7 @@ protected:
 /// Test: serve command parses correctly
 /// Scenario: Verify CLI parsing for serve options
 TEST_F(CliServerTest, ServeCommandParsing) {
-    const char* argv[] = {"allm", "serve"};
+    const char* argv[] = {"xllm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -67,7 +67,7 @@ TEST_F(CliServerTest, ServeCommandParsing) {
 /// Test: serve with custom port
 /// Scenario: --port flag is parsed
 TEST_F(CliServerTest, ServeWithCustomPort) {
-    const char* argv[] = {"allm", "serve", "--port", "8080"};
+    const char* argv[] = {"xllm", "serve", "--port", "8080"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -78,7 +78,7 @@ TEST_F(CliServerTest, ServeWithCustomPort) {
 /// Test: serve with custom host
 /// Scenario: --host flag is parsed
 TEST_F(CliServerTest, ServeWithCustomHost) {
-    const char* argv[] = {"allm", "serve", "--host", "0.0.0.0"};
+    const char* argv[] = {"xllm", "serve", "--host", "0.0.0.0"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -87,12 +87,12 @@ TEST_F(CliServerTest, ServeWithCustomHost) {
 }
 
 /// Test: serve respects environment variables
-/// Scenario: LLM_ROUTER_HOST and XLLM_PORT are used as defaults
+/// Scenario: LLMLB_HOST and XLLM_PORT are used as defaults
 TEST_F(CliServerTest, ServeRespectsEnvironment) {
-    setenv("LLM_ROUTER_HOST", "192.168.1.100", 1);
+    setenv("LLMLB_HOST", "192.168.1.100", 1);
     setenv("XLLM_PORT", "12345", 1);
 
-    const char* argv[] = {"allm", "serve"};
+    const char* argv[] = {"xllm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -107,7 +107,7 @@ TEST_F(CliServerTest, ServeRespectsEnvironment) {
 TEST_F(CliServerTest, CliFlagOverridesEnvironment) {
     setenv("XLLM_PORT", "12345", 1);
 
-    const char* argv[] = {"allm", "serve", "--port", "54321"};
+    const char* argv[] = {"xllm", "serve", "--port", "54321"};
     auto result = parseCliArgs(4, const_cast<char**>(argv));
 
     EXPECT_FALSE(result.should_exit);
@@ -117,7 +117,7 @@ TEST_F(CliServerTest, CliFlagOverridesEnvironment) {
 /// Test: help shows serve usage
 /// Scenario: serve --help displays usage information
 TEST_F(CliServerTest, ServeHelpShowsUsage) {
-    const char* argv[] = {"allm", "serve", "--help"};
+    const char* argv[] = {"xllm", "serve", "--help"};
     auto result = parseCliArgs(3, const_cast<char**>(argv));
 
     EXPECT_TRUE(result.should_exit);
@@ -136,7 +136,7 @@ TEST_F(CliServerTest, DISABLED_ServerRespondsToHealthCheck) {
     pid_t pid = fork();
     if (pid == 0) {
         // Child process - start server
-        const char* argv[] = {"allm", "serve", "--port",
+        const char* argv[] = {"xllm", "serve", "--port",
                               std::to_string(test_port_).c_str()};
         // This would actually run the server
         // execv("./llm-router", argv);
@@ -263,11 +263,11 @@ TEST_F(CliServerTest, DISABLED_HandlesInvalidRequests) {
 }
 
 /// Test: debug mode enables additional logging
-/// Scenario: LLM_ROUTER_DEBUG=1 enables verbose output
+/// Scenario: LLMLB_DEBUG=1 enables verbose output
 TEST_F(CliServerTest, DebugModeConfiguration) {
-    setenv("LLM_ROUTER_DEBUG", "1", 1);
+    setenv("LLMLB_DEBUG", "1", 1);
 
-    const char* argv[] = {"allm", "serve"};
+    const char* argv[] = {"xllm", "serve"};
     auto result = parseCliArgs(2, const_cast<char**>(argv));
 
     // Debug mode is handled at runtime, not parsing
@@ -275,7 +275,7 @@ TEST_F(CliServerTest, DebugModeConfiguration) {
     EXPECT_FALSE(result.should_exit);
     EXPECT_EQ(result.subcommand, Subcommand::Serve);
 
-    unsetenv("LLM_ROUTER_DEBUG");
+    unsetenv("LLMLB_DEBUG");
 }
 
 }  // namespace

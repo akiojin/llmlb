@@ -8,7 +8,7 @@
 
 #include "runtime/state.h"
 
-extern "C" int allm_run_for_test();
+extern "C" int xllm_run_for_test();
 
 using namespace std::chrono_literals;
 
@@ -72,14 +72,14 @@ TEST(MainTest, DISABLED_RunsWithStubRouterAndShutsDownOnFlag) {
     wait_for_server(router, 5s);
 
     TempDir models;
-    setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
+    setenv("LLMLB_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
     setenv("XLLM_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
     setenv("XLLM_API_KEY", "sk_test_node", 1);
 
     std::atomic<int> exit_code{0};
-    std::thread node_thread([&]() { exit_code = allm_run_for_test(); });
+    std::thread node_thread([&]() { exit_code = xllm_run_for_test(); });
 
     // wait for node to start and accept a health check
     {
@@ -116,7 +116,7 @@ TEST(MainTest, DISABLED_FailsWhenRouterRegistrationFails) {
     wait_for_server(router, 5s);
 
     TempDir models;
-    setenv("LLM_ROUTER_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
+    setenv("LLMLB_URL", ("http://127.0.0.1:" + std::to_string(router_port)).c_str(), 1);
     setenv("XLLM_PORT", std::to_string(node_port).c_str(), 1);
     setenv("LLM_MODELS_DIR", models.path.string().c_str(), 1);
     setenv("LLM_HEARTBEAT_SECS", "1", 1);
@@ -125,7 +125,7 @@ TEST(MainTest, DISABLED_FailsWhenRouterRegistrationFails) {
     std::atomic<int> exit_code{0};
     std::atomic<bool> node_exited{false};
     std::thread node_thread([&]() {
-        exit_code = allm_run_for_test();
+        exit_code = xllm_run_for_test();
         node_exited = true;
     });
 

@@ -55,7 +55,7 @@ test-hooks:
 		(echo "⚠️  bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0)
 
 # E2E tests for OpenAI-compatible API (requires running router/node)
-# Usage: LLM_ROUTER_URL=http://localhost:8081 LLM_ROUTER_API_KEY=sk_xxx make e2e-tests
+# Usage: LLMLB_URL=http://localhost:8081 LLMLB_API_KEY=sk_xxx make e2e-tests
 e2e-tests:
 	npx bats tests/e2e/test-openai-api.bats
 

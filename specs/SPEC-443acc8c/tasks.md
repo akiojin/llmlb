@@ -1,7 +1,7 @@
 # タスク: ヘルスチェックシステム
 
 **ステータス**: ✅ **実装完了** (PR #1でマージ済み、2025-10-30)
-**入力**: `/llm-router/specs/SPEC-443acc8c/`の設計ドキュメント
+**入力**: `/llmlb/specs/SPEC-443acc8c/`の設計ドキュメント
 
 ## 実装済みタスク一覧
 
@@ -12,7 +12,7 @@
 ## Phase 3.1: セットアップ
 
 - [x] **T001** [P] 依存関係確認: `chrono`, `tokio::time::interval`
-- [x] **T002** [P] 環境変数定義: `LLM_ROUTER_NODE_TIMEOUT`, `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（フォールバック: `NODE_TIMEOUT`, `HEALTH_CHECK_INTERVAL`）
+- [x] **T002** [P] 環境変数定義: `LLMLB_NODE_TIMEOUT`, `LLMLB_HEALTH_CHECK_INTERVAL`（フォールバック: `NODE_TIMEOUT`, `HEALTH_CHECK_INTERVAL`）
 
 **実装時間**: 約10分
 
@@ -22,22 +22,22 @@
 
 ### Integration Tests
 
-- [x] **T003** `router/tests/integration/health_test.rs` にタイムアウト検出テスト
+- [x] **T003** `llmlb/tests/integration/health_test.rs` にタイムアウト検出テスト
   - 前提: ノード登録済み
   - 実行: 60秒待機（ハートビート送信なし）
   - 検証: ノードがOfflineステータスに遷移
 
-- [x] **T004** `router/tests/integration/health_test.rs` に自動復旧テスト
+- [x] **T004** `llmlb/tests/integration/health_test.rs` に自動復旧テスト
   - 前提: ノードがOfflineステータス
   - 実行: ハートビート送信
   - 検証: ノードがOnlineステータスに復帰
 
-- [x] **T005** `router/tests/integration/health_test.rs` にOfflineノード除外テスト
+- [x] **T005** `llmlb/tests/integration/health_test.rs` にOfflineノード除外テスト
   - 前提: 3台のノード（1台Offline）
   - 実行: select_node()呼び出し
   - 検証: Onlineの2台のみが選択される
 
-- [x] **T006** `router/tests/integration/health_test.rs` に全ノードOfflineテスト
+- [x] **T006** `llmlb/tests/integration/health_test.rs` に全ノードOfflineテスト
   - 前提: すべてのノードがOffline
   - 実行: プロキシリクエスト送信
   - 検証: "No nodes available"エラー返却
@@ -50,25 +50,25 @@
 
 ### タイムアウト監視ロジック
 
-- [x] **T007** `router/src/registry/mod.rs` にstart_timeout_monitor()実装
+- [x] **T007** `llmlb/src/registry/mod.rs` にstart_timeout_monitor()実装
   - 機能: Tokio spawn でバックグラウンドタスク開始
   - ロジック: 定期的に全ノードをチェック、タイムアウトしたらOffline化
-  - 間隔: 環境変数 `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（フォールバック `HEALTH_CHECK_INTERVAL`、デフォルト30秒）
+  - 間隔: 環境変数 `LLMLB_HEALTH_CHECK_INTERVAL`（フォールバック `HEALTH_CHECK_INTERVAL`、デフォルト30秒）
 
-- [x] **T008** `router/src/registry/mod.rs` にタイムアウト判定ロジック実装
+- [x] **T008** `llmlb/src/registry/mod.rs` にタイムアウト判定ロジック実装
   - 条件: `Utc::now() - node.last_heartbeat > timeout`
   - アクション: `node.status = NodeStatus::Offline`
   - ログ: Offlineに遷移時にwarnログ出力
 
 ### ハートビート自動復旧
 
-- [x] **T009** `router/src/registry/mod.rs` のheartbeat()メソッドに自動復旧追加
+- [x] **T009** `llmlb/src/registry/mod.rs` のheartbeat()メソッドに自動復旧追加
   - ロジック: ハートビート受信時に `node.status = NodeStatus::Online`
   - ログ: Online復帰時にinfoログ出力
 
 ### ノード選択からOffline除外
 
-- [x] **T010** `router/src/registry/mod.rs` のselect_node()にOfflineフィルター追加
+- [x] **T010** `llmlb/src/registry/mod.rs` のselect_node()にOfflineフィルター追加
   - 変更前: すべてのノードから選択
   - 変更後: `filter(|a| a.status == NodeStatus::Online)`
 
@@ -78,13 +78,13 @@
 
 ## Phase 3.4: 統合
 
-- [x] **T011** `router/src/main.rs` でタイムアウト監視タスク起動
+- [x] **T011** `llmlb/src/main.rs` でタイムアウト監視タスク起動
   - 起動タイミング: サーバー起動時
-  - パラメータ: 環境変数から取得（`LLM_ROUTER_HEALTH_CHECK_INTERVAL`, `LLM_ROUTER_NODE_TIMEOUT`）
+  - パラメータ: 環境変数から取得（`LLMLB_HEALTH_CHECK_INTERVAL`, `LLMLB_NODE_TIMEOUT`）
 
-- [x] **T012** `router/src/main.rs` に環境変数読み込み追加
-  - `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（フォールバック `HEALTH_CHECK_INTERVAL`）: デフォルト30秒
-  - `LLM_ROUTER_NODE_TIMEOUT`（フォールバック `NODE_TIMEOUT`）: デフォルト60秒
+- [x] **T012** `llmlb/src/main.rs` に環境変数読み込み追加
+  - `LLMLB_HEALTH_CHECK_INTERVAL`（フォールバック `HEALTH_CHECK_INTERVAL`）: デフォルト30秒
+  - `LLMLB_NODE_TIMEOUT`（フォールバック `NODE_TIMEOUT`）: デフォルト60秒
 
 - [x] **T013** 起動ログにヘルスチェック設定情報追加
   - `tracing::info!("Health check interval: {}s, timeout: {}s", interval, timeout);`
@@ -97,7 +97,7 @@
 
 ### Unit Tests
 
-- [x] **T014** [P] `router/src/registry/mod.rs` にタイムアウト判定ロジックのunit test
+- [x] **T014** [P] `llmlb/src/registry/mod.rs` にタイムアウト判定ロジックのunit test
   - 正常ケース: タイムアウト前はOnline維持
   - タイムアウトケース: タイムアウト後はOffline遷移
 

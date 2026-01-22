@@ -1,4 +1,4 @@
-# データモデル: ルーター主導エンドポイント登録システム
+# データモデル: ロードバランサー主導エンドポイント登録システム
 
 **機能ID**: `SPEC-66555000`
 **日付**: 2026-01-14
@@ -14,7 +14,7 @@
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | id | UUID | Yes | 一意識別子 |
-| name | String | Yes | 表示名（例: "本番Ollama", "開発aLLM1"） |
+| name | String | Yes | 表示名（例: "本番Ollama", "開発xLLM1"） |
 | base_url | String | Yes | ベースURL（例: `http://192.168.1.100:11434`） |
 | api_key | String? | No | APIキー（暗号化保存） |
 | status | EndpointStatus | Yes | 現在の状態 |
@@ -153,7 +153,7 @@ CREATE INDEX idx_health_checks_checked_at ON endpoint_health_checks(checked_at);
 ## Rust構造体定義
 
 ```rust
-// router/src/types/endpoint.rs
+// llmlb/src/types/endpoint.rs
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -213,7 +213,7 @@ pub struct EndpointHealthCheck {
 
 - `Node`: `Endpoint`に置換
 - `NodeStatus`: `EndpointStatus`に置換
-- `RegisterRequest/RegisterResponse`: 廃止（ルーター主導登録に変更）
+- `RegisterRequest/RegisterResponse`: 廃止（ロードバランサー主導登録に変更）
 
 ### 維持されるエンティティ
 

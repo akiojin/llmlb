@@ -1,4 +1,4 @@
-# タスク: LLM Router System
+# タスク: LLM Load Balancer System
 
 ⚠️ **このSPECはアーカイブ済みです**
 
@@ -35,9 +35,9 @@
 
 ## パス規約
 
-- **Cargo Workspace**: `router/`, `node/`, `common/`
-- **テスト**: `router/tests/`, `node/tests/`, `tests/e2e/`
-- `common/` → `router/` と `node/` の依存関係
+- **Cargo Workspace**: `llmlb/`, `node/`, `common/`
+- **テスト**: `llmlb/tests/`, `node/tests/`, `tests/e2e/`
+- `common/` → `llmlb/` と `node/` の依存関係
 
 ---
 
@@ -45,9 +45,9 @@
 
 - [x] **T001** [P] `Cargo.toml` にCargo Workspaceを定義 (members: router, node, common)
 - [x] **T002** [P] `common/Cargo.toml` を作成し、共通依存クレートを追加 (serde, thiserror, config, uuid, chrono)
-- [x] **T003** [P] `router/Cargo.toml` を作成し、Router依存クレートを追加 (axum, tokio, reqwest, sqlx, tower-http, tracing)
+- [x] **T003** [P] `llmlb/Cargo.toml` を作成し、Load Balancer依存クレートを追加 (axum, tokio, reqwest, sqlx, tower-http, tracing)
 - [x] **T004** [P] `node/Cargo.toml` を作成し、Node依存クレートを追加 (tauri, tokio, reqwest, sysinfo, tray-icon)
-- [x] **T005** [P] `router/src/db/schema.sql` にSQLiteスキーマを定義 (nodes, health_metrics, requests)
+- [x] **T005** [P] `llmlb/src/db/schema.sql` にSQLiteスキーマを定義 (nodes, health_metrics, requests)
 - [x] **T006** [P] `.cargo/config.toml` にビルド設定を追加 (SQLx offline mode)
 - [x] **T007** [P] `.github/workflows/ci.yml` にCI/CD設定 (テスト、ビルド、リリース)
 - [x] **T008** [P] `rustfmt.toml` と `clippy.toml` を作成
@@ -60,19 +60,19 @@
 
 ### Contract Tests (並列実行可能)
 
-- [x] **T009** [P] `router/tests/contract/test_node_registration.rs` にノード登録 Contract Test (POST /v0/nodes)
-- [x] **T010** [P] `router/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /v0/health)
-- [x] **T011** [P] `router/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /v1/chat/completions)
-- [x] **T012** [P] `router/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /v1/completions)
-- [x] **T013** [P] `router/tests/contract/test_nodes_list.rs` にノード一覧 Contract Test (GET /v0/nodes)
+- [x] **T009** [P] `llmlb/tests/contract/test_node_registration.rs` にノード登録 Contract Test (POST /v0/nodes)
+- [x] **T010** [P] `llmlb/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /v0/health)
+- [x] **T011** [P] `llmlb/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /v1/chat/completions)
+- [x] **T012** [P] `llmlb/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /v1/completions)
+- [x] **T013** [P] `llmlb/tests/contract/test_nodes_list.rs` にノード一覧 Contract Test (GET /v0/nodes)
 
 ### Integration Tests (並列実行可能)
 
-- [x] **T014** [P] `router/tests/integration/test_node_lifecycle.rs` にノードライフサイクル Integration Test (登録→ヘルスチェック→オフライン検知)
-- [x] **T015** [P] `router/tests/integration/test_proxy.rs` にプロキシ Integration Test (リクエスト振り分け→LLM runtime転送)
-- [x] **T016** [P] `router/tests/integration/test_load_balancing.rs` にロードバランシング Integration Test (複数リクエスト分散)
-- [x] **T017** [P] `router/tests/integration/test_health_monitor.rs` にヘルスモニター Integration Test (タイムアウト検知)
-- [x] **T018** [P] `router/tests/integration/test_dashboard.rs` にダッシュボード Integration Test (WebSocket接続)
+- [x] **T014** [P] `llmlb/tests/integration/test_node_lifecycle.rs` にノードライフサイクル Integration Test (登録→ヘルスチェック→オフライン検知)
+- [x] **T015** [P] `llmlb/tests/integration/test_proxy.rs` にプロキシ Integration Test (リクエスト振り分け→LLM runtime転送)
+- [x] **T016** [P] `llmlb/tests/integration/test_load_balancing.rs` にロードバランシング Integration Test (複数リクエスト分散)
+- [x] **T017** [P] `llmlb/tests/integration/test_health_monitor.rs` にヘルスモニター Integration Test (タイムアウト検知)
+- [x] **T018** [P] `llmlb/tests/integration/test_dashboard.rs` にダッシュボード Integration Test (WebSocket接続)
 
 ---
 
@@ -96,76 +96,76 @@
 
 ---
 
-## Phase 3.4: Router実装 (依存関係順)
+## Phase 3.4: Load Balancer実装 (依存関係順)
 
 **依存関係**: T019-T026が完了（Common層完成）
 
 ### ノード登録API (Contract Test T009をGREENに)
 
-- [x] **T027** `router/src/api/mod.rs` にAPIモジュール構造定義
-- [x] **T028** `router/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /v0/nodes)
-- [x] **T029** `router/src/registry/mod.rs` にノード登録管理モジュール
-- [x] **T030** `router/src/registry/manager.rs` にNodeRegistryManager実装 (登録・更新・削除)
+- [x] **T027** `llmlb/src/api/mod.rs` にAPIモジュール構造定義
+- [x] **T028** `llmlb/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /v0/nodes)
+- [x] **T029** `llmlb/src/registry/mod.rs` にノード登録管理モジュール
+- [x] **T030** `llmlb/src/registry/manager.rs` にNodeRegistryManager実装 (登録・更新・削除)
 - [x] **T031** **検証**: Contract Test T009が合格 (GREEN)
 
 ### ヘルスチェックAPI (Contract Test T010をGREENに)
 
-- [x] **T032** `router/src/api/health.rs` にヘルスチェックハンドラー実装 (POST /v0/health)
-- [x] **T033** `router/src/health/mod.rs` にヘルスチェックモジュール
-- [x] **T034** `router/src/health/monitor.rs` にHealthMonitor実装 (定期チェック、タイムアウト検知)
+- [x] **T032** `llmlb/src/api/health.rs` にヘルスチェックハンドラー実装 (POST /v0/health)
+- [x] **T033** `llmlb/src/health/mod.rs` にヘルスチェックモジュール
+- [x] **T034** `llmlb/src/health/monitor.rs` にHealthMonitor実装 (定期チェック、タイムアウト検知)
 - [x] **T035** **検証**: Contract Test T010が合格 (GREEN)
 
 ### プロキシAPI (Contract Test T011-T012をGREENに)
 
-- [x] **T036** `router/src/api/proxy.rs` にLLM runtimeプロキシハンドラー実装 (POST /v1/chat/completions, /v1/completions)
-- [x] **T037** `router/src/balancer/mod.rs` にロードバランサーモジュール
-- [x] **T038** `router/src/balancer/round_robin.rs` にRoundRobinBalancer実装 (Atomicカウンター使用)
+- [x] **T036** `llmlb/src/api/proxy.rs` にLLM runtimeプロキシハンドラー実装 (POST /v1/chat/completions, /v1/completions)
+- [x] **T037** `llmlb/src/balancer/mod.rs` にロードバランサーモジュール
+- [x] **T038** `llmlb/src/balancer/round_robin.rs` にRoundRobinBalancer実装 (Atomicカウンター使用)
 - [x] **T039** **検証**: Contract Test T011-T012が合格 (GREEN)
 
 ### ノード一覧API (Contract Test T013をGREENに)
 
-- [x] **T040** `router/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /v0/nodes)
+- [x] **T040** `llmlb/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /v0/nodes)
 - [x] **T041** **検証**: Contract Test T013が合格 (GREEN)
 
 ### DB永続化 (Integration Test T014をGREENに)
 
-- [x] **T042** `router/src/db/mod.rs` にデータベースモジュール
-- [x] **T043** `router/src/db/queries.rs` にSQLxクエリ実装 (nodes, health_metrics, requests)
-- [x] **T044** Routerサーバー起動時にSQLiteマイグレーション実行
+- [x] **T042** `llmlb/src/db/mod.rs` にデータベースモジュール
+- [x] **T043** `llmlb/src/db/queries.rs` にSQLxクエリ実装 (nodes, health_metrics, requests)
+- [x] **T044** Load Balancerサーバー起動時にSQLiteマイグレーション実行
 - [x] **T045** **検証**: Integration Test T014が合格 (GREEN)
 
 ### ロードバランシング強化 (Integration Test T015-T016をGREENに)
 
-- [x] **T046** `router/src/balancer/load_based.rs` にLoadBasedBalancer実装 (CPU/メモリベース選択)
+- [x] **T046** `llmlb/src/balancer/load_based.rs` にLoadBasedBalancer実装 (CPU/メモリベース選択)
 - [x] **T047** **検証**: Integration Test T015-T016が合格 (GREEN)
 
 ### ヘルスモニター統合 (Integration Test T017をGREENに)
 
-- [x] **T048** Router起動時にHealthMonitorバックグラウンドタスク開始
+- [x] **T048** Load Balancer起動時にHealthMonitorバックグラウンドタスク開始
 - [x] **T049** **検証**: Integration Test T017が合格 (GREEN)
 
 ### ダッシュボード (Integration Test T018をGREENに)
 
-- [x] **T050** `router/src/api/dashboard.rs` にダッシュボードHTML配信ハンドラー (GET /dashboard)
-- [x] **T051** `router/src/api/dashboard.rs` にWebSocketハンドラー実装 (GET /ws/dashboard)
-- [x] **T052** `router/static/dashboard.html` にダッシュボードHTMLファイル作成
+- [x] **T050** `llmlb/src/api/dashboard.rs` にダッシュボードHTML配信ハンドラー (GET /dashboard)
+- [x] **T051** `llmlb/src/api/dashboard.rs` にWebSocketハンドラー実装 (GET /ws/dashboard)
+- [x] **T052** `llmlb/static/dashboard.html` にダッシュボードHTMLファイル作成
 - [x] **T053** **検証**: Integration Test T018が合格 (GREEN)
 
-### Routerメインアプリケーション
+### Load Balancerメインアプリケーション
 
-- [x] **T054** `router/src/main.rs` にエントリポイント実装 (Axumサーバー起動、ルーティング設定)
-- [x] **T055** `router/src/config.rs` に設定ファイル読み込み実装 (環境変数 + TOML)
-- [x] **T056** `router/src/lib.rs` にライブラリ公開設定
+- [x] **T054** `llmlb/src/main.rs` にエントリポイント実装 (Axumサーバー起動、ルーティング設定)
+- [x] **T055** `llmlb/src/config.rs` に設定ファイル読み込み実装 (環境変数 + TOML)
+- [x] **T056** `llmlb/src/lib.rs` にライブラリ公開設定
 
 ---
 
 ## Phase 3.5: Node実装 (依存関係順)
 
-**依存関係**: T027-T056が完了（Router完成）
+**依存関係**: T027-T056が完了（Load Balancer完成）
 
-### Router通信クライアント (並列実行可能)
+### Load Balancer通信クライアント (並列実行可能)
 
-- [x] **T057** [P] `node/src/client/mod.rs` にRouter通信モジュール
+- [x] **T057** [P] `node/src/client/mod.rs` にLoad Balancer通信モジュール
 - [x] **T058** [P] `node/src/client/register.rs` に自己登録クライアント実装 (POST /v0/nodes)
 - [x] **T059** [P] `node/src/client/heartbeat.rs` にハートビートクライアント実装 (POST /v0/health、10秒間隔)
 
@@ -173,7 +173,7 @@
 
 - [x] **T060** [P] `node/src/runtime/mod.rs` にLLM runtime管理モジュール
 - [x] **T061** [P] `node/src/runtime/monitor.rs` にLLM runtime状態監視実装 (HTTP APIヘルスチェック)
-- [x] **T062** [P] `node/src/runtime/proxy.rs` にLLM runtimeプロキシ実装 (Router→Node→LLM runtime転送)
+- [x] **T062** [P] `node/src/runtime/proxy.rs` にLLM runtimeプロキシ実装 (Load Balancer→Node→LLM runtime転送)
 
 ### メトリクス収集 (並列実行可能)
 
@@ -207,13 +207,13 @@
 
 ### E2Eテストセットアップ
 
-- [x] **T075** [P] `tests/e2e/setup.rs` にE2Eテスト環境セットアップ (Router起動、Node起動、モックLLM runtime)
+- [x] **T075** [P] `tests/e2e/setup.rs` にE2Eテスト環境セットアップ (Load Balancer起動、Node起動、モックLLM runtime)
 
 ### ユーザーストーリーE2Eテスト (並列実行可能)
 
 - [x] **T076** [P] `tests/e2e/scenarios/node_registration.rs` にP1ノード登録E2Eテスト
 - [x] **T077** [P] `tests/e2e/scenarios/proxy_api.rs` にP2統一APIプロキシE2Eテスト  
-  - ✅ `router/tests/e2e_openai_proxy.rs` でルーター＋スタブノードを起動し、OpenAI互換APIの成功/ストリーミング/エラーを実リクエストで検証（2025-11-03）
+  - ✅ `llmlb/tests/e2e_openai_proxy.rs` でロードバランサー＋スタブノードを起動し、OpenAI互換APIの成功/ストリーミング/エラーを実リクエストで検証（2025-11-03）
 - [x] **T078** [P] `tests/e2e/scenarios/load_balancing.rs` にP3ロードバランシングE2Eテスト
 - [x] **T079** [P] `tests/e2e/scenarios/health_check.rs` にP4ヘルスチェックE2Eテスト
 - [x] **T080** [P] `tests/e2e/scenarios/dashboard.rs` にP5ダッシュボードE2Eテスト
@@ -226,9 +226,9 @@
 
 ### Unit Tests
 
-- [x] **T081** [P] `router/tests/unit/test_round_robin.rs` にRoundRobinBalancer Unit Test
-- [x] **T082** [P] `router/tests/unit/test_load_based.rs` にLoadBasedBalancer Unit Test
-- [x] **T083** [P] `router/tests/unit/test_node_manager.rs` にNodeRegistryManager Unit Test
+- [x] **T081** [P] `llmlb/tests/unit/test_round_robin.rs` にRoundRobinBalancer Unit Test
+- [x] **T082** [P] `llmlb/tests/unit/test_load_based.rs` にLoadBasedBalancer Unit Test
+- [x] **T083** [P] `llmlb/tests/unit/test_node_manager.rs` にNodeRegistryManager Unit Test
 - [x] **T084** [P] `node/tests/unit/test_metrics_collector.rs` にMetricsCollector Unit Test
 - [x] **T085** [P] `node/tests/unit/test_runtime_monitor.rs` にLLM runtimeMonitor Unit Test
 
@@ -267,9 +267,9 @@ Setup (T001-T008) → すべての実装タスクをブロック
 Contract Tests (T009-T013) → RED確認必須
 Integration Tests (T014-T018) → RED確認必須
   ↓
-Common層 (T019-T026) → Router/Node実装をブロック
+Common層 (T019-T026) → Load Balancer/Node実装をブロック
   ↓
-Router実装 (T027-T056) → Node実装をブロック
+Load Balancer実装 (T027-T056) → Node実装をブロック
   ↓
 Node実装 (T057-T074)
   ↓
@@ -284,7 +284,7 @@ E2Eテスト (T075-T080)
 
 ```bash
 # すべて並列実行可能
-cargo init --name llm-router
+cargo init --name llmlb
 mkdir -p common router node tests/e2e
 ```
 
@@ -292,11 +292,11 @@ mkdir -p common router node tests/e2e
 
 ```rust
 // すべて異なるファイルなので並列実行可能
-// T009: router/tests/contract/test_node_registration.rs
-// T010: router/tests/contract/test_health_check.rs
-// T011: router/tests/contract/test_proxy_chat.rs
-// T012: router/tests/contract/test_proxy_generate.rs
-// T013: router/tests/contract/test_nodes_list.rs
+// T009: llmlb/tests/contract/test_node_registration.rs
+// T010: llmlb/tests/contract/test_health_check.rs
+// T011: llmlb/tests/contract/test_proxy_chat.rs
+// T012: llmlb/tests/contract/test_proxy_generate.rs
+// T013: llmlb/tests/contract/test_nodes_list.rs
 ```
 
 ### Common層実装 (T019-T026)
@@ -461,7 +461,7 @@ mkdir -p common router node tests/e2e
 ## タスク生成ルール
 
 1. **テストファースト**: Contract Tests → Integration Tests → 実装 → Unit Tests → E2E Tests
-2. **依存関係順序**: Common → Router → Node
+2. **依存関係順序**: Common → Load Balancer → Node
 3. **並列実行**: 異なるファイル = [P]マーク
 4. **ファイルパス明確**: 各タスクに正確なファイルパスを記載
 5. **検証ステップ**: Contract Test合格確認タスクを明示的に追加

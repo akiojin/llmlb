@@ -16,7 +16,7 @@
 - [x] Node: ベンチマーク結果に基づいて EngineRegistry が解決する
 - [x] Node: EngineRegistry が format に一致するエンジンのみ解決する
 - [x] Tests: EngineRegistry の format フィルタを検証する
-- [x] Router: registry manifest に format を明示する
+- [x] Load Balancer: registry manifest に format を明示する
 - [x] Node: manifest format を優先して ModelStorage が format を確定する
 - [x] Tests: manifest format 優先の contract/unit テストを追加する
 - [x] Node: EngineRegistry が capability に一致するエンジンのみ解決する
@@ -32,3 +32,5 @@
 - [x] DirectML推論パスの実装（演算カーネル、KVキャッシュ、サンプリング）
 - [x] 実GPU環境の統合テスト（小型モデルでE2E）
 - [x] 性能/メモリ要件の測定と制約の明文化
+
+- [x] Track llama.cpp fork: use akiojin/llama.cpp until upstream is fixed, then switch back to ggerganov/llama.cpp.

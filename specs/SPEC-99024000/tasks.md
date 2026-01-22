@@ -7,42 +7,42 @@
 
 **既存実装（SPEC-24157000で完了）**:
 
-- `router/src/api/responses.rs` - `/v1/responses`ハンドラー
-- `router/src/types/endpoint.rs` - `SupportedAPI`列挙型、`supports_responses_api`フラグ
-- `router/src/api/mod.rs` - ルート登録済み（234行目）
-- `router/src/api/proxy.rs` - `forward_to_endpoint`、`forward_streaming_response`
+- `llmlb/src/api/responses.rs` - `/v1/responses`ハンドラー
+- `llmlb/src/types/endpoint.rs` - `SupportedAPI`列挙型、`supports_responses_api`フラグ
+- `llmlb/src/api/mod.rs` - ルート登録済み（234行目）
+- `llmlb/src/api/proxy.rs` - `forward_to_endpoint`、`forward_streaming_response`
 
 **テスト実装完了**: 2026-01-16
 
 ## Phase 3.1: セットアップ
 
 - [x] T001 既存実装の確認（SPEC-24157000で完了）
-- [x] T002 統合テストファイル確認: `router/tests/integration/responses_api_test.rs`
+- [x] T002 統合テストファイル確認: `llmlb/tests/integration/responses_api_test.rs`
 
 ## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
 
 **重要: これらのテストは記述され、既存実装の動作を検証する**
 
-- [x] T003 [P] `router/tests/integration/responses_api_test.rs` に
+- [x] T003 [P] `llmlb/tests/integration/responses_api_test.rs` に
   RES001: Responses API対応バックエンドへのリクエスト転送テスト
   - `res001_responses_passthrough_preserves_request_body`
   - `res001_responses_passthrough_with_tools`
 
-- [x] T004 [P] `router/tests/integration/responses_streaming_test.rs` に
+- [x] T004 [P] `llmlb/tests/integration/responses_streaming_test.rs` に
   RES002: ストリーミングリクエストのパススルーテスト
   - `responses_streaming_passthrough_events`
   - `responses_streaming_events_preserve_order`
   - `responses_streaming_collects_full_text`
 
-- [x] T005 [P] `router/tests/integration/responses_api_test.rs` に
+- [x] T005 [P] `llmlb/tests/integration/responses_api_test.rs` に
   RES003: 非対応バックエンドへの501エラーテスト
   - `res003_non_supporting_backend_returns_501`
 
-- [x] T006 [P] `router/tests/integration/responses_api_test.rs` に
+- [x] T006 [P] `llmlb/tests/integration/responses_api_test.rs` に
   RES004: 認証なしリクエストへの401エラーテスト
   - `res004_request_without_auth_returns_401`
 
-- [x] T007 [P] `router/tests/integration/responses_api_test.rs` に
+- [x] T007 [P] `llmlb/tests/integration/responses_api_test.rs` に
   RES005: ルート存在確認テスト
   - `res005_responses_route_exists`
 

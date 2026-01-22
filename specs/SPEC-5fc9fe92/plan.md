@@ -20,17 +20,17 @@ OpenAI互換のマルチモーダル入力形式（content parts）を扱える�
 
 **言語/バージョン**:
 - フロントエンド: TypeScript / React（Dashboard/Playground）
-- ルーター: Rust（edition 2021）
+- ロードバランサー: Rust（edition 2021）
 - ノード: C++（C++20）
 
 **主要依存関係**:
 - フロント: Vite + React, TanStack Query, shadcn/ui（既存）
-- ルーター: axum, reqwest, serde_json（既存）
+- ロードバランサー: axum, reqwest, serde_json（既存）
 - ノード: nlohmann/json, llama.cpp 統合（既存）
 
 **ストレージ**:
 - Playground のセッションは localStorage（既存）
-- ルーターはリクエスト履歴を保持（既存）
+- ロードバランサーはリクエスト履歴を保持（既存）
 
 **テスト**:
 - Rust: `cargo test`
@@ -50,7 +50,7 @@ OpenAI互換のマルチモーダル入力形式（content parts）を扱える�
 - 少なくとも「添付UIが出る」「添付が送信payloadに反映される」ことを検証可能にする
 
 **可観測性**:
-- ルーターのリクエスト履歴が肥大化しないよう、添付データは保存時に要約/伏せ字化する（詳細はresearch.md）
+- ロードバランサーのリクエスト履歴が肥大化しないよう、添付データは保存時に要約/伏せ字化する（詳細はresearch.md）
 
 ## プロジェクト構造
 
@@ -70,9 +70,9 @@ specs/SPEC-5fc9fe92/
 ### 変更が入る可能性が高いコード領域（目安）
 
 ```
-router/src/web/dashboard/src/pages/Playground.tsx
-router/src/web/dashboard/src/lib/api.ts
-router/src/api/openai.rs
+llmlb/src/web/dashboard/src/pages/Playground.tsx
+llmlb/src/web/dashboard/src/lib/api.ts
+llmlb/src/api/openai.rs
 node/src/api/openai_endpoints.cpp
 ```
 
@@ -111,7 +111,7 @@ node/src/api/openai_endpoints.cpp
    - 「対応状況の根拠」をUIで示す（例: “未対応/不明/対応”）
 
 5. **履歴/監査ログの取り扱い**
-   - ルーターのリクエスト履歴に添付の生データ（base64等）を保存しない
+   - ロードバランサーのリクエスト履歴に添付の生データ（base64等）を保存しない
    - 保存時は要約（種別、サイズ、ハッシュ等）に置換する
 
 ## Phase 2: タスク計画アプローチ（tasks.mdはここでは作らない）

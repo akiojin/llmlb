@@ -3,7 +3,7 @@
 ## 方針
 - gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する。
 - エンジン選択は既存の抽象化（`SPEC-d7feaa2c`）を利用し、登録時の `format` と HF 由来メタデータ（`config.json` 等）に従う。
-- `chat_template` の解釈は Router 側で行い、Node には最終プロンプト（テキスト）を渡す。
+- `chat_template` の解釈は Load Balancer 側で行い、Node には最終プロンプト（テキスト）を渡す。
 - Node は Python 依存なしで動作する（必須）。
 - Nemotron 推論エンジンは本件では扱わない（別 SPEC で後回し）。
 - 公式 GPU 最適化アーティファクトがある場合は「実行キャッシュ」として優先利用する。
@@ -21,7 +21,7 @@
 
 ## 実装スコープ
 
-### Router（登録・配布）
+### Load Balancer（登録・配布）
 - `format=safetensors` での登録を前提。
 - `config.json` / `tokenizer.json` / index+shards の整合性検証。
 - Node が必要とするファイル一覧（manifest）を生成。

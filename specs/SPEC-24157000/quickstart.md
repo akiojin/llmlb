@@ -4,7 +4,7 @@
 
 ## 前提条件
 
-- llm-routerが起動している
+- llmlbが起動している
 - Responses API対応バックエンド（Ollama v0.13.3+, vLLM等）が登録されている
 - 有効なAPIキーを持っている
 
@@ -105,6 +105,6 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 ## 注意事項
 
-- ルーターはパススルーのみ。API変換は行わない
+- ロードバランサーはパススルーのみ。API変換は行わない
 - ステートフル機能（previous_response_id）はバックエンドの責務
 - ツール実行はクライアントの責務

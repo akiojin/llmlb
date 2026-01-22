@@ -18,7 +18,7 @@ test:
 	cargo test -- --test-threads=1
 
 markdownlint:
-	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!**/build/**" "!allm/third_party" "!node/third_party"
+	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!**/build/**" "!xllm/third_party" "!node/third_party"
 
 specify-tasks:
 	@bash -lc 'TASKS_LIST="$${TASKS:-}"; \
@@ -48,14 +48,14 @@ quality-checks-pre-commit: fmt clippy
 # NOTE: openai_proxy.rs was removed in SPEC-66555000 (NodeRegistry removal)
 # OpenAI API tests are now covered by e2e_openai_proxy
 openai-tests:
-	cargo test -p llm-router --test e2e_openai_proxy
+	cargo test -p llmlb --test e2e_openai_proxy
 
 test-hooks:
 	@npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
 		(echo "⚠️  bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0)
 
-# E2E tests for OpenAI-compatible API (requires running router/node)
-# Usage: LLM_ROUTER_URL=http://localhost:8081 LLM_ROUTER_API_KEY=sk_xxx make e2e-tests
+# E2E tests for OpenAI-compatible API (requires running llmlb/node)
+# Usage: LLMLB_URL=http://localhost:8081 LLMLB_API_KEY=sk_xxx make e2e-tests
 e2e-tests:
 	npx bats tests/e2e/test-openai-api.bats
 
@@ -92,12 +92,12 @@ bench-anthropic:
 build-macos-x86_64:
 	@echo "Building for macOS x86_64 (Intel)..."
 	cargo build --release --target x86_64-apple-darwin \
-		-p llm-router
+		-p llmlb
 
 build-macos-aarch64:
 	@echo "Building for macOS aarch64 (Apple Silicon)..."
 	cargo build --release --target aarch64-apple-darwin \
-		-p llm-router
+		-p llmlb
 
 build-macos-all: build-macos-x86_64 build-macos-aarch64
 	@echo "All macOS builds completed successfully!"

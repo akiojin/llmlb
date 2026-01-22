@@ -10,7 +10,7 @@
 
 ### 決定
 
-**静的JSONファイル（supported_models.json）** をルーターに組み込む方式を採用
+**静的JSONファイル（supported_models.json）** をロードバランサーに組み込む方式を採用
 
 ### 理由
 

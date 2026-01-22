@@ -2,14 +2,14 @@
 
 ## リサーチ課題
 
-1. Router（Rust）とNode（C++）で統一されたログ形式の実現方法
+1. Load Balancer（Rust）とNode（C++）で統一されたログ形式の実現方法
 2. 構造化ログ（JSONL）の出力ライブラリ選定
 3. ログローテーションの実装方式
 4. 非同期書き込みによるパフォーマンス最適化
 
 ## 1. ログライブラリ選定
 
-### Router（Rust）
+### Load Balancer（Rust）
 
 **決定**: `tracing` + `tracing-subscriber` を採用。
 
@@ -71,21 +71,21 @@ tracing_subscriber::registry()
 
 // 日付ローテーション付きファイルシンク
 auto file_sink = std::make_shared<spdlog::sinks::daily_file_sink_mt>(
-    "~/.llm-router/logs/allm.jsonl", 0, 0);
+    "~/.llmlb/logs/xllm.jsonl", 0, 0);
 
 // コンソールシンク
 auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 
 // マルチシンクロガー
 auto logger = std::make_shared<spdlog::logger>(
-    "allm", spdlog::sinks_init_list{file_sink, console_sink});
+    "xllm", spdlog::sinks_init_list{file_sink, console_sink});
 ```
 
 ## 2. JSONL フォーマット設計
 
 ### 決定
 
-統一フォーマットを採用し、Router/Node で同一形式を使用。
+統一フォーマットを採用し、Load Balancer/Node で同一形式を使用。
 
 ### フォーマット仕様
 
@@ -123,10 +123,10 @@ auto logger = std::make_shared<spdlog::logger>(
 ### 実装方式
 
 ```text
-~/.llm-router/logs/
-├── llm-router.jsonl.2025-12-01
-├── llm-router.jsonl.2025-12-02
-├── llm-router.jsonl.2025-12-03
+~/.llmlb/logs/
+├── llmlb.jsonl.2025-12-01
+├── llmlb.jsonl.2025-12-02
+├── llmlb.jsonl.2025-12-03
 └── ...
 ```
 
@@ -137,8 +137,8 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 let file_appender = RollingFileAppender::new(
     Rotation::DAILY,
-    "~/.llm-router/logs",
-    "llm-router.jsonl",
+    "~/.llmlb/logs",
+    "llmlb.jsonl",
 );
 ```
 
@@ -147,7 +147,7 @@ let file_appender = RollingFileAppender::new(
 ```cpp
 // spdlog の daily_file_sink は自動で日付サフィックスを付与
 auto sink = std::make_shared<spdlog::sinks::daily_file_sink_mt>(
-    "~/.llm-router/logs/allm.jsonl", 0, 0);
+    "~/.llmlb/logs/xllm.jsonl", 0, 0);
 ```
 
 ### 古いファイル削除
@@ -194,7 +194,7 @@ let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 // spdlog の async_logger を使用
 spdlog::init_thread_pool(8192, 1); // キューサイズ、スレッド数
 auto async_logger = std::make_shared<spdlog::async_logger>(
-    "allm",
+    "xllm",
     sinks,
     spdlog::thread_pool(),
     spdlog::async_overflow_policy::overrun_oldest

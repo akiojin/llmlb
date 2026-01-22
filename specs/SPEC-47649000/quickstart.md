@@ -2,18 +2,18 @@
 
 ## 前提条件
 
-- LLM Router がインストール済み
-- router.db が初期化済み（自動）
+- LLM Load Balancer がインストール済み
+- lb.db が初期化済み（自動）
 
 ## 基本的な使用例
 
 ### 1. 既存データの自動移行
 
-既存の`models.json`がある場合、ルーター起動時に自動移行されます。
+既存の`models.json`がある場合、ロードバランサー起動時に自動移行されます。
 
 ```bash
-# ルーター起動
-./llm-router
+# ロードバランサー起動
+./llmlb
 
 # ログ出力
 # [INFO] Migrating models.json to SQLite...
@@ -139,7 +139,7 @@ safetensors_models = response.json()["models"]
 
 1. `models.json`のJSON形式を確認
 2. 必須フィールド（name）が存在するか確認
-3. 手動で修正後、ルーターを再起動
+3. 手動で修正後、ロードバランサーを再起動
 
 ### 検索エラー
 
@@ -179,15 +179,15 @@ safetensors_models = response.json()["models"]
 2. `VACUUM`コマンドでデータベースを最適化
 
 ```bash
-sqlite3 router.db "VACUUM;"
+sqlite3 lb.db "VACUUM;"
 ```
 
 ### データが表示されない
 
 1. マイグレーションが完了しているか確認
-2. router.dbにmodelsテーブルが存在するか確認
+2. lb.dbにmodelsテーブルが存在するか確認
 
 ```bash
-sqlite3 router.db ".tables"
+sqlite3 lb.db ".tables"
 # models  model_tags  users  api_keys ...
 ```

@@ -133,13 +133,13 @@ pub enum NotReadyReason {
 Request
   |
   v
-Router: モデル検索
+Load Balancer: モデル検索
   |
   v
-Router: 登録情報削除
+Load Balancer: 登録情報削除
   |
   v
-Router: 全ノードへ削除通知 (並列)
+Load Balancer: 全ノードへ削除通知 (並列)
   |
   v
 Node: ローカルキャッシュ削除

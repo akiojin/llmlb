@@ -2,7 +2,7 @@
 
 ## 概要
 
-Router（Rust）とNode（C++）で統一された構造化ログシステムを提供する。
+Load Balancer（Rust）とNode（C++）で統一された構造化ログシステムを提供する。
 ログは標準出力（人間が読みやすい形式）とファイル（JSONL形式）の両方に出力する。
 
 ## ビジネス価値
@@ -15,13 +15,13 @@ Router（Rust）とNode（C++）で統一された構造化ログシステムを
 
 ### US-1: 運用者としてログファイルを確認したい
 
-運用者として、`~/.llm-router/logs/`配下のログファイルを確認することで、
-RouterとNodeの動作状況を把握できる。
+運用者として、`~/.llmlb/logs/`配下のログファイルを確認することで、
+Load BalancerとNodeの動作状況を把握できる。
 
 **受け入れ条件**:
 
-- Routerのログは`llm-router.jsonl.YYYY-MM-DD`形式でファイル出力される
-- Nodeのログは`allm.jsonl.YYYY-MM-DD`形式でファイル出力される
+- Load Balancerのログは`llmlb.jsonl.YYYY-MM-DD`形式でファイル出力される
+- Nodeのログは`xllm.jsonl.YYYY-MM-DD`形式でファイル出力される
 - 標準出力にも人間が読みやすい形式でログが出力される
 - ファイル出力はJSONL形式で構造化されている
 
@@ -49,9 +49,9 @@ RouterとNodeの動作状況を把握できる。
 
 ### FR-1: ログ出力先
 
-- ファイル出力ディレクトリ: `~/.llm-router/logs/`
-- Routerファイル名: `llm-router.jsonl.YYYY-MM-DD`
-- Nodeファイル名: `allm.jsonl.YYYY-MM-DD`
+- ファイル出力ディレクトリ: `~/.llmlb/logs/`
+- Load Balancerファイル名: `llmlb.jsonl.YYYY-MM-DD`
+- Nodeファイル名: `xllm.jsonl.YYYY-MM-DD`
 - 標準出力: 人間が読みやすいテキスト形式で出力
 
 ### FR-2: ログ形式
@@ -83,7 +83,7 @@ JSONL形式で以下のフィールドを含む:
 
 | 変数名 | 説明 | デフォルト値 |
 |--------|------|-------------|
-| `LLM_LOG_DIR` | ログディレクトリ | `~/.llm-router/logs` |
+| `LLM_LOG_DIR` | ログディレクトリ | `~/.llmlb/logs` |
 | `LLM_LOG_LEVEL` | ログレベル | `info` |
 | `LLM_LOG_RETENTION_DAYS` | 保持日数 | `7` |
 
@@ -127,7 +127,7 @@ JSONL形式で以下のフィールドを含む:
 
 **確認済み事項**:
 
-- ログディレクトリ: ~/.llm-router/logs/（FR-1で明記）
+- ログディレクトリ: ~/.llmlb/logs/（FR-1で明記）
 - ログ形式: JSONL（FR-2で明記）
 - 必須フィールド: ts, level, category, msg（FR-2で明記）
 - ログレベル: trace/debug/info/warn/error（FR-2で明記）

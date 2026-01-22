@@ -1,4 +1,4 @@
-# 実装計画: llm-router CLIコマンド
+# 実装計画: llmlb CLIコマンド
 
 **機能ID**: `SPEC-58378000` | **日付**: 2026-01-08 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-58378000/spec.md`の機能仕様
@@ -18,7 +18,7 @@
 
 ## 概要
 
-ollama互換のCLIコマンドをllm-routerに実装。ノード単体モードとルーターモードの両方で操作可能にする。
+ollama互換のCLIコマンドをllmlbに実装。ノード単体モードとロードバランサーモードの両方で操作可能にする。
 主要機能: `serve`, `run`, `pull`, `list`, `show`, `rm`, `stop`, `ps` (nodeサブコマンド)、
 `nodes`, `models`, `status` (routerサブコマンド)。
 
@@ -26,7 +26,7 @@ ollama互換のCLIコマンドをllm-routerに実装。ノード単体モード�
 
 **言語/バージョン**: C++17 (node), Rust 2021 edition (router)
 **主要依存関係**: httplib.h, nlohmann/json, llama.cpp
-**ストレージ**: ファイルシステム (`~/.llm-router/models/`)
+**ストレージ**: ファイルシステム (`~/.llmlb/models/`)
 **テスト**: CTest (node), cargo test (router)
 **対象プラットフォーム**: macOS (Metal), Linux (CUDA)
 **プロジェクトタイプ**: single (node/routerは既存構造を維持)
@@ -54,7 +54,7 @@ ollama互換のCLIコマンドをllm-routerに実装。ノード単体モード�
   - `repl_session`: REPL対話管理
   - `ollama_compat`: ollamaモデル参照
   - `progress_renderer`: プログレス表示
-- ライブラリごとのCLI: `llm-router --help`, `llm-router node --help`
+- ライブラリごとのCLI: `llmlb --help`, `llmlb node --help`
 - ライブラリドキュメント: quickstart.md形式で提供 ✓
 
 **テスト (妥協不可)**:

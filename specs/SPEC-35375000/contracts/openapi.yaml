@@ -98,12 +98,12 @@ paths:
         Prometheus形式でメトリクスを取得します。
 
         負荷最適化関連のメトリクス:
-        - `llm_router_queue_size`: 待機キューサイズ
-        - `llm_router_request_duration_seconds`: リクエスト処理時間
-        - `llm_router_backpressure_rejections_total`: バックプレッシャー拒否数
-        - `llm_router_cache_hits_total`: キャッシュヒット数
-        - `llm_router_cache_misses_total`: キャッシュミス数
-        - `llm_router_pool_connections`: 接続プール使用数
+        - `llmlb_queue_size`: 待機キューサイズ
+        - `llmlb_request_duration_seconds`: リクエスト処理時間
+        - `llmlb_backpressure_rejections_total`: バックプレッシャー拒否数
+        - `llmlb_cache_hits_total`: キャッシュヒット数
+        - `llmlb_cache_misses_total`: キャッシュミス数
+        - `llmlb_pool_connections`: 接続プール使用数
       operationId: getMetrics
       tags:
         - Metrics
@@ -115,21 +115,21 @@ paths:
               schema:
                 type: string
               example: |
-                # HELP llm_router_queue_size Current wait queue size
-                # TYPE llm_router_queue_size gauge
-                llm_router_queue_size 45
+                # HELP llmlb_queue_size Current wait queue size
+                # TYPE llmlb_queue_size gauge
+                llmlb_queue_size 45
 
-                # HELP llm_router_request_duration_seconds Request processing duration
-                # TYPE llm_router_request_duration_seconds histogram
-                llm_router_request_duration_seconds_bucket{le="0.01"} 1000
-                llm_router_request_duration_seconds_bucket{le="0.05"} 2500
-                llm_router_request_duration_seconds_bucket{le="0.1"} 4000
-                llm_router_request_duration_seconds_sum 250.5
-                llm_router_request_duration_seconds_count 5000
+                # HELP llmlb_request_duration_seconds Request processing duration
+                # TYPE llmlb_request_duration_seconds histogram
+                llmlb_request_duration_seconds_bucket{le="0.01"} 1000
+                llmlb_request_duration_seconds_bucket{le="0.05"} 2500
+                llmlb_request_duration_seconds_bucket{le="0.1"} 4000
+                llmlb_request_duration_seconds_sum 250.5
+                llmlb_request_duration_seconds_count 5000
 
-                # HELP llm_router_backpressure_rejections_total Total requests rejected
-                # TYPE llm_router_backpressure_rejections_total counter
-                llm_router_backpressure_rejections_total 50
+                # HELP llmlb_backpressure_rejections_total Total requests rejected
+                # TYPE llmlb_backpressure_rejections_total counter
+                llmlb_backpressure_rejections_total 50
 
   /v0/load-status:
     get:

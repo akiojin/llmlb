@@ -45,20 +45,20 @@ pub enum LogLevel {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Component {
-    Router,
+    Load Balancer,
     Node,
 }
 ```
 
 ## ログイベント定義
 
-### リクエスト受信 (Router)
+### リクエスト受信 (Load Balancer)
 
 ```json
 {
   "timestamp": "2025-01-02T10:30:00.123Z",
   "level": "INFO",
-  "target": "llm_router::api::openai",
+  "target": "llmlb::api::openai",
   "message": "Request received",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "component": "router",
@@ -68,13 +68,13 @@ pub enum Component {
 }
 ```
 
-### ノード選択成功 (Router)
+### ノード選択成功 (Load Balancer)
 
 ```json
 {
   "timestamp": "2025-01-02T10:30:00.125Z",
   "level": "INFO",
-  "target": "llm_router::routing",
+  "target": "llmlb::routing",
   "message": "Node selected",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "component": "router",
@@ -83,13 +83,13 @@ pub enum Component {
 }
 ```
 
-### ノード選択失敗 (Router)
+### ノード選択失敗 (Load Balancer)
 
 ```json
 {
   "timestamp": "2025-01-02T10:30:00.125Z",
   "level": "ERROR",
-  "target": "llm_router::routing",
+  "target": "llmlb::routing",
   "message": "No available nodes",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "component": "router",
@@ -128,7 +128,7 @@ pub enum Component {
 | request_id | string (UUID) | No | リクエスト追跡ID |
 | component | string | Yes | router / node |
 
-### Router固有フィールド
+### Load Balancer固有フィールド
 
 | フィールド | 型 | イベント | 説明 |
 |-----------|-----|---------|------|
@@ -153,8 +153,8 @@ pub enum Component {
 ### ファイルパス
 
 ```text
-~/.llm-router/logs/
-├── router.log           # ルーターログ（現在）
+~/.llmlb/logs/
+├── router.log           # ロードバランサーログ（現在）
 ├── router.log.2025-01-01 # ローテーション済み
 ├── node.log             # ノードログ（現在）
 └── node.log.2025-01-01  # ローテーション済み

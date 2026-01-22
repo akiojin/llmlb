@@ -21,7 +21,7 @@ TTSは **ONNX Runtime** で提供し、Node実行時のPython依存を排除す�
   - `*.onnx` を正本として扱う
 
 ## 役割分離
-- Router: 登録/配布、必須メタデータ検証、manifest確定
+- Load Balancer: 登録/配布、必須メタデータ検証、manifest確定
 - Node: whisper.cpp / ONNX Runtime で推論
 
 ## テスト方針（TDD）
@@ -30,4 +30,4 @@ TTSは **ONNX Runtime** で提供し、Node実行時のPython依存を排除す�
 
 ## 要明確化
 - ASR/TTS の最初の対応モデル範囲（最小構成）
-- safetensors 変換パイプラインの運用責任（Router/Node/外部運用）
+- safetensors 変換パイプラインの運用責任（Load Balancer/Node/外部運用）

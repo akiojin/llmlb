@@ -19,7 +19,7 @@
 
 ## 概要
 
-LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、GPUなしノードを事前登録から除外する。既存データベースのクリーンアップとダッシュボード上での GPU 情報可視化を同時に達成する。
+LLM runtimeロードバランサーで GPU を搭載したノードのみを受け入れ、GPUなしノードを事前登録から除外する。既存データベースのクリーンアップとダッシュボード上での GPU 情報可視化を同時に達成する。
 
 ### コア要素
 
@@ -33,8 +33,8 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 - **既存機能**: 直近の `SPEC-47c6f44c` で自動マージ周りが更新済み。GPU 関連の導線は部分的に `feature/gpu-performance` で導入済み。
 - **利用可能な構成要素**:
   - Nodeサイド: GPU情報を収集する `sysinfo` / `nvml-wrapper`。
-  - Router: 登録 API (`POST /v0/nodes`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
-  - Web UI: `router/src/web/static/app.js`（GPU指標表示を既に追加済みのため連携確認のみ）。
+  - Load Balancer: 登録 API (`POST /v0/nodes`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
+  - Web UI: `llmlb/src/web/static/app.js`（GPU指標表示を既に追加済みのため連携確認のみ）。
 - **制約**: Spec Kit カスタム運用によりブランチ・Worktree操作不可。CI は Quality Checks + Auto Merge を利用し、ローカルで同等検証を必須。
 
 ## 憲章チェック（事前）
@@ -51,10 +51,10 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 1. **GPU情報収集の現状**  
    - `node/src/metrics.rs` に GPU 指標取得ロジックが追加済み。フォーマット・送信箇所を確認。
 2. **登録 API の改修余地**  
-   - `router/src/api/node.rs` (`register_node`) のバリデーションフロー把握。
+   - `llmlb/src/api/node.rs` (`register_node`) のバリデーションフロー把握。
    - `common/src/types.rs` の `NodeRegistration` 構造体に GPU フィールドがあるか確認。
 3. **ストレージクリーンアップ**  
-   - `router/src/db` / `registry` の起動シーケンスから削除処理を差し込む箇所を調査。
+   - `llmlb/src/db` / `registry` の起動シーケンスから削除処理を差し込む箇所を調査。
 4. **ダッシュボード反映**  
    - `app.js` で GPU 情報の描画箇所を確認し、API レスポンス形式と整合させる。
 
@@ -65,12 +65,12 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 ### 登録時バリデーション
 
 - Node から送信される `POST /v0/nodes` のペイロードに `gpu_devices`（例: `[{model, count}]`）を要求。
-- Router で `gpu_devices` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
+- Load Balancer で `gpu_devices` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
 - Node 側では起動時に GPU 検出を行い、取得失敗時は登録リクエスト自体を中止する fallback を実装予定。
 
 ### 既存データクレンジング
 
-- Router 起動時にストレージ（DB）をスキャン。
+- Load Balancer 起動時にストレージ（DB）をスキャン。
 - `gpu_devices` が空 or 欠損（または `gpu_available=false`）のエントリを削除し、削除件数をログに出力。
 
 ### ダッシュボード & API
@@ -91,7 +91,7 @@ LLM runtimeルーターで GPU を搭載したノードのみを受け入れ、G
 
 ### 手動／E2E チェック
 
-- GPU搭載マシン（CI or ローカル）で Node→Router 登録フローを確認。
+- GPU搭載マシン（CI or ローカル）で Node→Load Balancer 登録フローを確認。
 - ダッシュボードで GPU 情報表示を目視確認（Spec Quickstart で手順化予定）。
 
 ## Phase 0: リサーチアウトライン

@@ -21,7 +21,7 @@
 - [x] 2.4 `ModelRegistry::isCompatible(ModelInfo, GpuBackend)` を実装
 - [x] 2.5 `/v1/models` APIを拡張し、GPU互換モデルIDのみを返す
 
-## Phase 3: Router側実装（コア）
+## Phase 3: Load Balancer側実装（コア）
 
 ### Core
 
@@ -37,12 +37,12 @@
 - [x] 3.10 `completions()` で model_id を渡すよう修正
 - [x] 3.11 推論失敗時のモデル除外処理を追加（proxy.rs）
 
-## Phase 4: Router側実装（API）
+## Phase 4: Load Balancer側実装（API）
 
 ### Integration
 
 - [x] 4.1 `/v1/models` APIをノードベース集約に変更
-- [x] 4.2 `NoCapableNodes` エラー型を追加 (`router/src/error.rs`)
+- [x] 4.2 `NoCapableNodes` エラー型を追加 (`llmlb/src/error.rs`)
 - [x] 4.3 404 Model Not Found エラーハンドリングを実装
 
 ## Phase 5: 廃止対応

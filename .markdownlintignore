@@ -7,7 +7,7 @@ dist/
 bun.lock
 vendor/
 **/vendor/
-allm/third_party/
-allm/build/
+xllm/third_party/
+xllm/build/
 tmp/
 **/tmp/**

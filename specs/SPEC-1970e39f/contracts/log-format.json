@@ -19,7 +19,7 @@
     "target": {
       "type": "string",
       "description": "ログ出力元モジュール",
-      "example": "llm_router::api::openai"
+      "example": "llmlb::api::openai"
     },
     "message": {
       "type": "string",

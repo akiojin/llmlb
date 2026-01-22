@@ -1,4 +1,6 @@
-# SPEC-d7feaa2c: aLLM Manager-based Runtime (Text/Audio/Image)
+# SPEC-d7feaa2c: xLLM Manager-based Runtime (Text/Audio/Image)
+
+**ステータス**: 草案
 
 Status: Draft (2026-01-19)
 
@@ -62,11 +64,11 @@ API endpoints
 
 ## Breaking changes
 - Removed plugin directory and plugin-specific config fields.
-- Removed engine plugin shared libraries and `manifest.json` under `allm/engines`.
+- Removed engine plugin shared libraries and `manifest.json` under `xllm/engines`.
 
 ## Migration
 - Remove plugin configuration (e.g., engine plugins directory and restart policy).
-- Ensure models are under `~/.llm-router/models` (or configured models dir).
+- Ensure models are under `~/.llmlb/models` (or configured models dir).
 - Prefer Responses API for new integrations.
 
 ## Acceptance

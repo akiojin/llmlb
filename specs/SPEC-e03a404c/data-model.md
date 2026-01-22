@@ -77,7 +77,7 @@ pub enum ContentPart {
 ### DecodedImage
 
 ```rust
-/// デコード済み画像（ルーターでの処理後）
+/// デコード済み画像（ロードバランサーでの処理後）
 pub struct DecodedImage {
     /// 生画像データ
     pub data: Vec<u8>,
@@ -271,7 +271,7 @@ impl Default for VisionConfig {
   "id": "llava-1.6-7b",
   "object": "model",
   "created": 1700000000,
-  "owned_by": "router",
+  "owned_by": "lb",
   "capabilities": {
     "text_generation": true,
     "image_understanding": true,

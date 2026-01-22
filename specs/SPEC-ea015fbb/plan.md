@@ -6,7 +6,7 @@
 ## 概要
 
 本SPECは**ドキュメント専用**であり、コード実装は不要です。
-LLM Router Web UIの全画面一覧と画面遷移関係を定義する索引ドキュメントとして機能します。
+LLM Load Balancer Web UIの全画面一覧と画面遷移関係を定義する索引ドキュメントとして機能します。
 
 ### 目的
 
@@ -48,7 +48,7 @@ specs/SPEC-ea015fbb/
 本SPECは以下の既存ファイルを参照（編集なし）:
 
 ```text
-router/src/web/static/
+llmlb/src/web/static/
 ├── index.html           # SCR-010: メインダッシュボード
 ├── login.html           # SCR-001: ログイン
 ├── register.html        # SCR-002: ユーザー登録

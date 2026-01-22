@@ -1,11 +1,11 @@
-# データモデル: ルーター負荷最適化
+# データモデル: ロードバランサー負荷最適化
 
 ## エンティティ定義
 
 ### 待機キュー
 
 ```rust
-// router/src/balancer/wait_queue.rs
+// llmlb/src/balancer/wait_queue.rs
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -102,7 +102,7 @@ pub enum WaitError {
 ### 接続プール
 
 ```rust
-// router/src/proxy/pool.rs
+// llmlb/src/proxy/pool.rs
 
 use std::time::Duration;
 
@@ -161,7 +161,7 @@ pub struct PoolStats {
 ### ノード選択キャッシュ
 
 ```rust
-// router/src/balancer/node_cache.rs
+// llmlb/src/balancer/node_cache.rs
 
 use std::time::{Duration, Instant};
 
@@ -217,7 +217,7 @@ pub struct CacheStats {
 ### バックプレッシャー
 
 ```rust
-// router/src/balancer/backpressure.rs
+// llmlb/src/balancer/backpressure.rs
 
 use std::time::Duration;
 
@@ -281,7 +281,7 @@ pub struct BackpressureDecision {
 ### ロードマネージャー統合
 
 ```rust
-// router/src/balancer/load_manager.rs
+// llmlb/src/balancer/load_manager.rs
 
 use std::sync::Arc;
 
@@ -400,42 +400,42 @@ ttl_secs = 5
 
 ```bash
 # 待機キュー
-LLM_ROUTER_MAX_WAITING=100
-LLM_ROUTER_WAIT_TIMEOUT_SECS=30
+LLMLB_MAX_WAITING=100
+LLMLB_WAIT_TIMEOUT_SECS=30
 
 # バックプレッシャー
-LLM_ROUTER_WARNING_THRESHOLD=0.5
-LLM_ROUTER_OVERLOAD_THRESHOLD=0.8
+LLMLB_WARNING_THRESHOLD=0.5
+LLMLB_OVERLOAD_THRESHOLD=0.8
 
 # 接続プール
-LLM_ROUTER_POOL_MAX_IDLE=32
-LLM_ROUTER_POOL_IDLE_TIMEOUT_SECS=90
+LLMLB_POOL_MAX_IDLE=32
+LLMLB_POOL_IDLE_TIMEOUT_SECS=90
 
 # ノードキャッシュ
-LLM_ROUTER_CACHE_MAX_CAPACITY=1000
-LLM_ROUTER_CACHE_TTL_SECS=5
+LLMLB_CACHE_MAX_CAPACITY=1000
+LLMLB_CACHE_TTL_SECS=5
 ```
 
 ## メトリクス形式
 
 ```text
 # 待機キューサイズ
-llm_router_queue_size 45
+llmlb_queue_size 45
 
 # リクエスト処理時間
-llm_router_request_duration_seconds_bucket{le="0.01"} 1000
-llm_router_request_duration_seconds_bucket{le="0.05"} 2500
-llm_router_request_duration_seconds_bucket{le="0.1"} 4000
-llm_router_request_duration_seconds_sum 250.5
-llm_router_request_duration_seconds_count 5000
+llmlb_request_duration_seconds_bucket{le="0.01"} 1000
+llmlb_request_duration_seconds_bucket{le="0.05"} 2500
+llmlb_request_duration_seconds_bucket{le="0.1"} 4000
+llmlb_request_duration_seconds_sum 250.5
+llmlb_request_duration_seconds_count 5000
 
 # バックプレッシャー拒否
-llm_router_backpressure_rejections_total 50
+llmlb_backpressure_rejections_total 50
 
 # キャッシュ効率
-llm_router_cache_hits_total 9000
-llm_router_cache_misses_total 1000
+llmlb_cache_hits_total 9000
+llmlb_cache_misses_total 1000
 
 # 接続プール
-llm_router_pool_connections 24
+llmlb_pool_connections 24
 ```

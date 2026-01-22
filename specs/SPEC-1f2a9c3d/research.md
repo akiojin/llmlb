@@ -1,8 +1,8 @@
-# リサーチ: Node/Router Log Retrieval API
+# リサーチ: Node/Load Balancer Log Retrieval API
 
 ## 調査目的
 
-ノードおよびルーター経由でログを取得するHTTP APIの設計調査。
+ノードおよびロードバランサー経由でログを取得するHTTP APIの設計調査。
 
 ## ログ取得方式の比較
 
@@ -44,7 +44,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
 - HTTP 413 Payload Too Large を返却
 - tail パラメータの減少を推奨
 
-## ルータープロキシ設計
+## ロードバランサープロキシ設計
 
 ### プロキシフロー
 
@@ -52,7 +52,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
 [クライアント]
      |
      v
-[ルーター] GET /v0/nodes/:runtime_id/logs?tail=N
+[ロードバランサー] GET /v0/nodes/:runtime_id/logs?tail=N
      |
      v
 [ノード検索]
@@ -81,7 +81,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
 {
   "timestamp": "2025-01-02T10:30:00.123Z",
   "level": "INFO",
-  "target": "allm::api",
+  "target": "xllm::api",
   "message": "Request received"
 }
 ```
@@ -93,7 +93,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
   "entries": [
     {"timestamp": "...", "level": "INFO", ...}
   ],
-  "path": "/var/log/allm/current.log"
+  "path": "/var/log/xllm/current.log"
 }
 ```
 

@@ -6,16 +6,16 @@
 |------|------|
 | OS | macOS (Metal) / Windows (CUDA) |
 | GPU | Metal 対応 / NVIDIA CUDA 対応 |
-| モデル配置 | `~/.llm-router/models` 配下に配置（GGUF / safetensors） |
+| モデル配置 | `~/.llmlb/models` 配下に配置（GGUF / safetensors） |
 
 > DirectML は凍結。Windows は CUDA 主経路。
 
 ## 1. ディレクトリ構成
 
-デフォルトは `~/.llm-router/models`（Windows は `%USERPROFILE%\.llm-router\models`）。
+デフォルトは `~/.llmlb/models`（Windows は `%USERPROFILE%\.llmlb\models`）。
 
 ```
-~/.llm-router/models/
+~/.llmlb/models/
   llama-3.2-1b/
     model.gguf
   nemotron-3-8b/
@@ -30,8 +30,8 @@
 ## 2. Node 起動
 
 ```bash
-ALLM_MODELS_DIR=~/.llm-router/models \
-  ./llm-router-node
+XLLM_MODELS_DIR=~/.llmlb/models \
+  ./llmlb-node
 ```
 
 ## 3. 確認

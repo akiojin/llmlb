@@ -153,7 +153,7 @@ pub struct HeartbeatRequest {
 
 ## ストレージスキーマ
 
-**ファイル**: `~/.llm-router/nodes.json`
+**ファイル**: `~/.llmlb/nodes.json`
 
 ```json
 [

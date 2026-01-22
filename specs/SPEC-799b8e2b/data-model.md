@@ -5,7 +5,7 @@
 ### ログエントリ（共通形式）
 
 ```rust
-// router/src/logging/mod.rs
+// llmlb/src/logging/mod.rs
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ pub struct LogEntry {
 #include <optional>
 #include <nlohmann/json.hpp>
 
-namespace llm_router {
+namespace llmlb {
 
 /// ログレベル
 enum class LogLevel {
@@ -114,13 +114,13 @@ struct LogEntry {
     std::string to_jsonl() const;
 };
 
-} // namespace llm_router
+} // namespace llmlb
 ```
 
 ### ログ設定
 
 ```rust
-// router/src/logging/config.rs
+// llmlb/src/logging/config.rs
 
 /// ログ設定
 #[derive(Debug, Clone)]
@@ -143,7 +143,7 @@ impl Default for LogConfig {
         Self {
             log_dir: dirs::home_dir()
                 .unwrap_or_default()
-                .join(".llm-router")
+                .join(".llmlb")
                 .join("logs"),
             level: LogLevel::Info,
             retention_days: 7,
@@ -219,14 +219,14 @@ impl LogConfig {
 ## ファイル構造
 
 ```text
-~/.llm-router/
+~/.llmlb/
 └── logs/
-    ├── llm-router.jsonl.2025-12-01
-    ├── llm-router.jsonl.2025-12-02
-    ├── llm-router.jsonl.2025-12-03
-    ├── allm.jsonl.2025-12-01
-    ├── allm.jsonl.2025-12-02
-    └── allm.jsonl.2025-12-03
+    ├── llmlb.jsonl.2025-12-01
+    ├── llmlb.jsonl.2025-12-02
+    ├── llmlb.jsonl.2025-12-03
+    ├── xllm.jsonl.2025-12-01
+    ├── xllm.jsonl.2025-12-02
+    └── xllm.jsonl.2025-12-03
 ```
 
 ## APIレスポンス形式

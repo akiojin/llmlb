@@ -11,7 +11,7 @@
 ## Phase 3.1: 検証
 
 - [x] T001 spec.mdの画面一覧が実装ファイルと一致することを確認
-  - 実装確認: `router/src/web/static/` に `index.html`, `login.html`, `register.html`, `playground.html` が存在
+  - 実装確認: `llmlb/src/web/static/` に `index.html`, `login.html`, `register.html`, `playground.html` が存在
 - [x] T002 [P] 各画面IDと関連SPECのリンクが正しいことを確認
   - 確認: 認証系は SPEC-d4eb8796、ダッシュボード/Playground は SPEC-712c20cf/SPEC-5fc9fe92 ほかに紐付け
 - [x] T003 [P] 画面遷移図が実装のルーティングと一致することを確認
@@ -46,7 +46,7 @@ Task: "依存関係マトリクスにSPEC-ea015fbbが含まれていることを
 
 ```bash
 # T001: 画面ファイルの存在確認
-ls router/src/web/static/*.html
+ls llmlb/src/web/static/*.html
 
 # T004: specs.mdの登録確認
 grep "SPEC-ea015fbb" specs/specs.md

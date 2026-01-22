@@ -15,7 +15,7 @@
 **ストレージ**: SQLite (request_history テーブル)
 **テスト**: cargo test, Vitest
 **対象プラットフォーム**: Linux/macOS サーバー + モダンブラウザ
-**プロジェクトタイプ**: web (backend: router/, frontend: dashboard/)
+**プロジェクトタイプ**: web (backend: llmlb/, frontend: dashboard/)
 
 ## 憲章チェック
 
@@ -33,7 +33,7 @@
 
 ## 実装済みコンポーネント
 
-### Backend (router/src/api/dashboard.rs)
+### Backend (llmlb/src/api/dashboard.rs)
 
 ```
 RequestHistoryQuery

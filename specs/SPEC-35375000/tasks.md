@@ -1,11 +1,11 @@
-# タスク: ルーター負荷最適化
+# タスク: ロードバランサー負荷最適化
 
 **入力**: `/specs/SPEC-35375000/`の設計ドキュメント
 **前提条件**: plan.md (必須)
 
 ## 概要
 
-クライアント増加時のルーター負荷を軽減するため、以下の最適化を実装:
+クライアント増加時のロードバランサー負荷を軽減するため、以下の最適化を実装:
 
 1. HTTPクライアントプーリング（P1）
 2. 待機機構の改善（P2）
@@ -19,82 +19,82 @@
 
 **重要: これらのテストは記述され、実装前に失敗する必要がある**
 
-- [x] T002 router/src/lib.rs に `test_app_state_has_shared_http_client` テストを追加（RED）
+- [x] T002 llmlb/src/lib.rs に `test_app_state_has_shared_http_client` テストを追加（RED）
   - AppStateにhttp_clientフィールドが存在することを確認
   - テストが失敗することを確認
 
-- [x] T003 router/src/lib.rs に `http_client: reqwest::Client` フィールドを追加（GREEN）
+- [x] T003 llmlb/src/lib.rs に `http_client: reqwest::Client` フィールドを追加（GREEN）
   - AppState構造体を拡張
   - テストが成功することを確認
 
 ## Phase 3.3: テストファースト (TDD) - 待機機構
 
-- [x] T004 router/src/balancer/mod.rs に `WaitResult` enum と `AdmissionDecision` enum を追加
+- [x] T004 llmlb/src/balancer/mod.rs に `WaitResult` enum と `AdmissionDecision` enum を追加
   - WaitResult: Ready, Timeout, CapacityExceeded
   - AdmissionDecision: Accept, AcceptWithDelay(Duration), Reject
 
-- [x] T005 router/src/balancer/mod.rs に `test_wait_for_ready_timeout` テストを追加（RED）
+- [x] T005 llmlb/src/balancer/mod.rs に `test_wait_for_ready_timeout` テストを追加（RED）
   - タイムアウト時にWaitResult::Timeoutを返すことを確認
   - テストが失敗することを確認
 
-- [x] T006 router/src/balancer/mod.rs に `test_wait_for_ready_ready_immediately` テストを追加（RED）
+- [x] T006 llmlb/src/balancer/mod.rs に `test_wait_for_ready_ready_immediately` テストを追加（RED）
   - ready状態時にWaitResult::Readyを返すことを確認
   - テストが失敗することを確認
 
-- [x] T007 router/src/balancer/mod.rs に `test_wait_for_ready_capacity_exceeded` テストを追加（RED）
+- [x] T007 llmlb/src/balancer/mod.rs に `test_wait_for_ready_capacity_exceeded` テストを追加（RED）
   - 上限超過時にWaitResult::CapacityExceededを返すことを確認
   - テストが失敗することを確認
 
-- [x] T008 router/src/balancer/mod.rs に `wait_for_ready_with_timeout` メソッドを実装（GREEN）
+- [x] T008 llmlb/src/balancer/mod.rs に `wait_for_ready_with_timeout` メソッドを実装（GREEN）
   - tokio::time::timeoutを使用
   - 既存のwait_for_readyを拡張
   - T005-T007のテストが成功することを確認
 
-- [x] T009 router/src/balancer/mod.rs に `test_admission_control_accept` テストを追加（RED）
+- [x] T009 llmlb/src/balancer/mod.rs に `test_admission_control_accept` テストを追加（RED）
   - 50%未満でAdmissionDecision::Acceptを返すことを確認
 
-- [x] T010 router/src/balancer/mod.rs に `test_admission_control_delay` テストを追加（RED）
+- [x] T010 llmlb/src/balancer/mod.rs に `test_admission_control_delay` テストを追加（RED）
   - 50-80%でAdmissionDecision::AcceptWithDelayを返すことを確認
 
-- [x] T011 router/src/balancer/mod.rs に `test_admission_control_reject` テストを追加（RED）
+- [x] T011 llmlb/src/balancer/mod.rs に `test_admission_control_reject` テストを追加（RED）
   - 80%以上でAdmissionDecision::Rejectを返すことを確認
 
-- [x] T012 router/src/balancer/mod.rs に `admission_control` メソッドを実装（GREEN）
+- [x] T012 llmlb/src/balancer/mod.rs に `admission_control` メソッドを実装（GREEN）
   - 待機者数に応じた段階的制御
   - T009-T011のテストが成功することを確認
 
 ## Phase 3.4: テストファースト (TDD) - ノード選択最適化
 
-- [~] T013 router/src/balancer/mod.rs に `test_cached_node_selection` テストを追加（RED）
+- [~] T013 llmlb/src/balancer/mod.rs に `test_cached_node_selection` テストを追加（RED）
   - 短時間の連続呼び出しで同一ノードを返すことを確認
   - **スキップ**: 微細最適化のため、現時点では不要と判断
 
-- [~] T014 router/src/balancer/mod.rs に `CachedSelection` 構造体と `select_node_cached` メソッドを実装（GREEN）
+- [~] T014 llmlb/src/balancer/mod.rs に `CachedSelection` 構造体と `select_node_cached` メソッドを実装（GREEN）
   - 短TTL（10ms程度）のキャッシュ
   - **スキップ**: 現在のselect_node()は十分高速
 
 ## Phase 3.5: 統合
 
-- [x] T015 router/src/main.rs にHTTPクライアント初期化を追加
+- [x] T015 llmlb/src/main.rs にHTTPクライアント初期化を追加
   - reqwest::Client::builder()で接続プーリング設定
   - pool_max_idle_per_host(32), pool_idle_timeout(60s), tcp_keepalive(30s)
 
-- [x] T016 [P] router/src/api/proxy.rs の Client::new() を state.http_client.clone() に置換
+- [x] T016 [P] llmlb/src/api/proxy.rs の Client::new() を state.http_client.clone() に置換
   - 118行、343行付近を修正
 
-- [x] T017 [P] router/src/api/openai.rs の Client::new() を state.http_client.clone() に置換
+- [x] T017 [P] llmlb/src/api/openai.rs の Client::new() を state.http_client.clone() に置換
   - テストコード内のみ残存（本番コードは完了）
 
-- [x] T018 [P] router/src/api/models.rs の Client::new() を state.http_client.clone() に置換
+- [x] T018 [P] llmlb/src/api/models.rs の Client::new() を state.http_client.clone() に置換
   - テストコード内のみ残存（本番コードは完了）
 
-- [x] T019 [P] router/src/api/nodes.rs の Client::new() を state.http_client.clone() に置換
+- [x] T019 [P] llmlb/src/api/nodes.rs の Client::new() を state.http_client.clone() に置換
   - テストコード内のみ残存（本番コードは完了）
 
-- [x] T020 [P] router/src/api/logs.rs の Client::new() を state.http_client.clone() に置換
+- [x] T020 [P] llmlb/src/api/logs.rs の Client::new() を state.http_client.clone() に置換
   - テストコード内のみ残存（本番コードは完了）
 
-- [x] T021 router/src/api/proxy.rs の待機処理を wait_for_ready_with_timeout に更新
+- [x] T021 llmlb/src/api/proxy.rs の待機処理を wait_for_ready_with_timeout に更新
   - 85-95行付近を修正
   - admission_controlを呼び出し
 
@@ -137,11 +137,11 @@ T022 → T023 → T024 → T025 (仕上げ)
 
 ```text
 # T016-T020 を並列実行:
-Task: "router/src/api/proxy.rs の Client::new() を置換"
-Task: "router/src/api/openai.rs の Client::new() を置換"
-Task: "router/src/api/models.rs の Client::new() を置換"
-Task: "router/src/api/nodes.rs の Client::new() を置換"
-Task: "router/src/api/logs.rs の Client::new() を置換"
+Task: "llmlb/src/api/proxy.rs の Client::new() を置換"
+Task: "llmlb/src/api/openai.rs の Client::new() を置換"
+Task: "llmlb/src/api/models.rs の Client::new() を置換"
+Task: "llmlb/src/api/nodes.rs の Client::new() を置換"
+Task: "llmlb/src/api/logs.rs の Client::new() を置換"
 ```
 
 ## 注意事項

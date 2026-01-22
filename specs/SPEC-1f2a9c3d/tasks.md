@@ -1,6 +1,6 @@
 - [x] **T001** Node: `/v0/logs?tail=N` エンドポイントを実装（デフォ200、上限1000、ログなしでも200で `entries: []`）。  
 - [x] **T002** Node: ログファイルパスを設定可能にし、単体テストで tail 切り出しを検証。  
-- [x] **T003** Router: `/v0/nodes/:runtime_id/logs` プロキシを実装（timeout/非200→502）。  
+- [x] **T003** Load Balancer: `/v0/nodes/:runtime_id/logs` プロキシを実装（timeout/非200→502）。  
 - [x] **T004** Contract test: 200/502 ケースをカバー（ノードスタブを用意）。  
 - [x] **T005** Dashboard: ログパネルが新APIでログを取得・表示するように差し替え（tail指定UI含む）。  
 - [x] **T006** E2E/Smoke: ダッシュボードからログが表示されることを手動またはスモークで確認。  

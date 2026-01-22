@@ -38,7 +38,7 @@
 
 ### Phase 2: ダッシュボード表示の改善 ✅
 
-#### Router側
+#### Load Balancer側
 
 - [x] app.jsのGPU表示ロジックを修正
 - [x] gpu_availableとgpu_modelを確認してモデル名表示
@@ -48,7 +48,7 @@
 
 #### テスト
 
-- [x] Router APIレスポンスのテストを追加
+- [x] Load Balancer APIレスポンスのテストを追加
 - [x] GPU情報を含むノード登録のテストを確認
 
 ### Phase 3: ドキュメント更新 ⏳
@@ -85,8 +85,8 @@
   - サンプルJSONを `/tmp/spec-5cd7b614/gpu-sample.json` に記録（コミット対象外）
 
 - [x] **T002** [P] テスト用ストレージ準備
-  - `router/tests/support/fixtures/nodes/gpu_missing.json`（GPU無し）追加
-  - `router/tests/support/fixtures/nodes/gpu_valid.json`（GPUあり）追加
+  - `llmlb/tests/support/fixtures/nodes/gpu_missing.json`（GPU無し）追加
+  - `llmlb/tests/support/fixtures/nodes/gpu_valid.json`（GPUあり）追加
 
 - [x] **T003** [P] 403応答フォーマット確認
   - バリデーションエラー応答をJSON統一に変更
@@ -95,14 +95,14 @@
 ### Phase 3.2 Tests (RED)
 
 - [x] **T010** [P] Contract Test: GPUあり登録成功
-  - `router/tests/contract/test_node_register_gpu.rs` を作成
+  - `llmlb/tests/contract/test_node_register_gpu.rs` を作成
   - GPU情報ありpayloadで201、レスポンスにGPUフィールドが含まれることを確認
 
 - [x] **T011** [P] Contract Test: GPUなし登録失敗
   - 同テストで `gpu_devices: []` もしくは欠損payloadを送り、403とエラーJSONを確認
 
 - [x] **T012** Integration Test: 起動時クリーンアップ
-  - `router/tests/integration/registry_cleanup.rs` を追加
+  - `llmlb/tests/integration/registry_cleanup.rs` を追加
   - GPU無しノードが起動時に削除されることを検証
 
 - [x] **T013** Integration Test: Dashboard API 表示
@@ -115,7 +115,7 @@
 
 - [x] **T020** 登録APIにGPUバリデーション追加
   - `common/src/types.rs` に `gpu_devices` 型（例: `Vec<GpuDeviceInfo>`）を追加
-  - `router/src/api/node.rs::register_node` で必須チェック処理を実装
+  - `llmlb/src/api/node.rs::register_node` で必須チェック処理を実装
   - エラーメッセージを `"GPU hardware is required"` として定義
 
 - [x] **T021** Node側GPU情報送信を必須化
@@ -123,11 +123,11 @@
   - 登録payloadへ `gpu_devices` を追加
 
 - [x] **T022** 起動時クリーンアップ実装
-  - `router/src/registry/mod.rs` or `router/src/main.rs` に削除処理を追加
+  - `llmlb/src/registry/mod.rs` or `llmlb/src/main.rs` に削除処理を追加
   - 削除件数を info ログへ出力
 
 - [x] **T023** Dashboard APIレスポンス拡張
-  - `router/src/api/dashboard.rs` / `app.js` で GPU 情報を整合
+  - `llmlb/src/api/dashboard.rs` / `app.js` で GPU 情報を整合
   - UIへの反映を確認
 
 ### Phase 3.4 Integration (REFACTOR)

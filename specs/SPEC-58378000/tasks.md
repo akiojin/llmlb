@@ -1,4 +1,4 @@
-# タスク: llm-router CLIコマンド
+# タスク: llmlb CLIコマンド
 
 **入力**: `/specs/SPEC-58378000/`の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/cli-commands.md, quickstart.md
@@ -80,7 +80,7 @@
 - [x] T033 [P] `node/src/cli/commands/stop.cpp` に `node stop` 実装
 - [x] T034 [P] `node/src/cli/commands/ps.cpp` に `node ps` 実装 (VRAM, TEMP表示)
 
-### Router サブコマンド実装
+### Load Balancer サブコマンド実装
 
 - [x] T035 [P] `node/src/cli/commands/router_nodes.cpp` に `router nodes` 実装
 - [x] T036 [P] `node/src/cli/commands/router_models.cpp` に `router models` 実装
@@ -91,7 +91,7 @@
 - [x] T038 CLIClientをModelStorage/ModelSyncに接続
 - [x] T039 REPLSessionを`/v1/chat/completions`エンドポイントに接続
 - [x] T040 OllamaCompatを`~/.ollama/models/`に接続
-- [x] T041 環境変数処理の統合 (LLM_ROUTER_HOST, LLM_ROUTER_DEBUG, HF_TOKEN)
+- [x] T041 環境変数処理の統合 (LLMLB_HOST, LLMLB_DEBUG, HF_TOKEN)
 - [x] T042 エラーハンドリングと終了コード統一 (0/1/2)
 
 ## Phase 3.5: 仕上げ ✅
@@ -125,7 +125,7 @@ Core Components:
   - T023-T026 [並列可能]
     ↓
 Node Commands (T027-T034) [並列可能]
-Router Commands (T035-T037) [並列可能]
+Load Balancer Commands (T035-T037) [並列可能]
     ↓
 Integration (T038-T042) [順次]
     ↓
@@ -183,7 +183,7 @@ Task: "node/src/cli/commands/ps.cpp に node ps 実装"
 | Data Models | 5 | 5 |
 | Core Components | 6 | 4 |
 | Node Commands | 8 | 8 |
-| Router Commands | 3 | 3 |
+| Load Balancer Commands | 3 | 3 |
 | Integration | 5 | 0 |
 | Polish | 7 | 5 |
 | **合計** | **49** | **38** |

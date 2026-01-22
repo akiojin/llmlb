@@ -1,7 +1,7 @@
 # タスク: ロードバランシングシステム
 
 **ステータス**: ✅ **実装完了** (Phase 1-2完了: 24/24タスク = 100%)
-**入力**: `/llm-router/specs/SPEC-589f2df1/`の設計ドキュメント
+**入力**: `/llmlb/specs/SPEC-589f2df1/`の設計ドキュメント
 
 ---
 
@@ -11,17 +11,17 @@
 
 ### セットアップ＆実装
 
-- [x] **T001** `router/src/registry/mod.rs` にround_robin_indexフィールド追加
+- [x] **T001** `llmlb/src/registry/mod.rs` にround_robin_indexフィールド追加
   - フィールド: `round_robin_index: AtomicUsize`
   - 初期化: `AtomicUsize::new(0)`
 
-- [x] **T002** `router/src/registry/mod.rs` にselect_node()メソッド実装
+- [x] **T002** `llmlb/src/registry/mod.rs` にselect_node()メソッド実装
   - 機能: オンラインノード一覧取得 → ラウンドロビンで選択
   - アルゴリズム: `index % online_nodes.len()`
 
 ### テスト
 
-- [x] **T003** `router/tests/integration/proxy_test.rs` にラウンドロビン動作テスト
+- [x] **T003** `llmlb/tests/integration/proxy_test.rs` にラウンドロビン動作テスト
   - 前提: 3台のノード登録済み
   - 実行: 9回連続リクエスト送信
   - 検証: 各ノードが3リクエストずつ処理
@@ -37,9 +37,9 @@
 ### Phase 2.1: セットアップ
 
 - [x] **T004** [P] Cargo.toml依存関係追加: `sysinfo`（CPU/メモリ監視）
-  - ✅ router/Cargo.tomlにsysinfo 0.32を追加
-- [x] **T005** [P] モジュール宣言: `router/src/metrics/mod.rs` 作成
-  - ✅ metricsモジュールとrouter/src/lib.rsに宣言を追加
+  - ✅ llmlb/Cargo.tomlにsysinfo 0.32を追加
+- [x] **T005** [P] モジュール宣言: `llmlb/src/metrics/mod.rs` 作成
+  - ✅ metricsモジュールとllmlb/src/lib.rsに宣言を追加
 - [x] **T006** [P] データモデル定義: `common/src/types.rs` にNodeMetrics構造体追加
   - ✅ runtime_id, cpu_usage, memory_usage, active_requests, avg_response_time_ms, timestampフィールドを定義
 
@@ -49,22 +49,22 @@
 
 #### Contract Tests
 
-- [x] **T007** [P] `router/tests/contract/test_metrics.rs` に POST /v0/health のcontract test
+- [x] **T007** [P] `llmlb/tests/contract/test_metrics.rs` に POST /v0/health のcontract test
   - ✅ 3つのContract Test作成（成功ケース、存在しないノード、不正な値）
-  - ✅ router/tests/contract_tests.rs にエントリーポイント作成
+  - ✅ llmlb/tests/contract_tests.rs にエントリーポイント作成
   - ✅ RED状態確認完了（TDD準拠）
 
 #### Integration Tests
 
-- [x] **T008** `router/tests/integration/test_metrics.rs` にメトリクス収集テスト
+- [x] **T008** `llmlb/tests/integration/test_metrics.rs` にメトリクス収集テスト
   - ✅ 3つのIntegration Test作成（収集と保存、更新、存在しないノード）
   - ✅ RED状態確認完了（TDD準拠）
 
-- [x] **T009** `router/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
+- [x] **T009** `llmlb/tests/integration/loadbalancer_test.rs` に負荷ベース選択テスト
   - ✅ 3台ノード中1台高負荷時の低負荷優先選択テスト作成
   - ✅ RED状態確認完了（TDD準拠）
 
-- [x] **T010** `router/tests/integration/loadbalancer_test.rs` に全ノード高負荷時のフォールバックテスト
+- [x] **T010** `llmlb/tests/integration/loadbalancer_test.rs` に全ノード高負荷時のフォールバックテスト
   - ✅ 全ノードCPU 95%時のラウンドロビンフォールバックテスト作成
   - ✅ RED状態確認完了（TDD準拠）
 
@@ -80,37 +80,37 @@
 
 #### メトリクスストレージ
 
-- [x] **T012** `router/src/registry/mod.rs` にmetricsフィールド追加
+- [x] **T012** `llmlb/src/registry/mod.rs` にmetricsフィールド追加
   - ✅ NodeRegistryにmetrics: Arc<RwLock<HashMap<Uuid, NodeMetrics>>>を追加
   - ✅ new()とwith_storage()で空のHashMapとして初期化
 
-- [x] **T013** `router/src/registry/mod.rs` にupdate_metrics()メソッド実装
+- [x] **T013** `llmlb/src/registry/mod.rs` にupdate_metrics()メソッド実装
   - ✅ ノード存在確認 → メトリクス保存の実装完了
 
 #### 負荷ベース選択ロジック
 
-- [x] **T014** `router/src/balancer/mod.rs` にselect_node_by_metrics()メソッド実装
+- [x] **T014** `llmlb/src/balancer/mod.rs` にselect_node_by_metrics()メソッド実装
   - ✅ 負荷スコア計算: cpu_usage + memory_usage + (active_requests * 10)
   - ✅ 最小スコアノード選択ロジック実装
 
-- [x] **T015** `router/src/balancer/mod.rs` にフォールバックロジック実装
+- [x] **T015** `llmlb/src/balancer/mod.rs` にフォールバックロジック実装
   - ✅ 全ノードCPU > 80%時のラウンドロビンフォールバック実装
 
 #### メトリクス収集API
 
-- [x] **T016** `router/src/api/metrics.rs` にupdate_metrics()ハンドラー実装
+- [x] **T016** `llmlb/src/api/metrics.rs` にupdate_metrics()ハンドラー実装
   - ✅ POST /v0/health エンドポイント実装
   - ✅ NodeMetrics受信 → registry.update_metrics() → 204 No Content返却
-  - ✅ router/src/api/mod.rsにルート登録
+  - ✅ llmlb/src/api/mod.rsにルート登録
 
 **推定時間**: 3時間 ✅ 完了
 
 ### Phase 2.4: 統合
 
-- [x] **T017** `router/src/main.rs` にメトリクスルート追加
+- [x] **T017** `llmlb/src/main.rs` にメトリクスルート追加
   - ✅ T016でapi/mod.rsにルート登録済み（create_router()経由で有効）
 
-- [x] **T018** `router/src/api/proxy.rs` でselect_node_by_metrics()使用
+- [x] **T018** `llmlb/src/api/proxy.rs` でselect_node_by_metrics()使用
   - ✅ 環境変数LOAD_BALANCER_MODEで切り替え実装
   - ✅ "metrics": select_node_by_metrics()使用
   - ✅ その他（デフォルト）: 既存のselect_node()使用
@@ -124,7 +124,7 @@
 
 #### Unit Tests
 
-- [x] **T020** [P] `router/src/registry/mod.rs` に負荷スコア計算のunit test
+- [x] **T020** [P] `llmlb/src/registry/mod.rs` に負荷スコア計算のunit test
   - ✅ 正常ケース: 低負荷ノードが高スコア
   - ✅ エッジケース: メトリクスなしノードは最低優先度
 
@@ -141,7 +141,7 @@
 
 #### パフォーマンステスト
 
-- [x] **T024** [P] `router/benches/loadbalancer_bench.rs` にベンチマーク追加
+- [x] **T024** [P] `llmlb/benches/loadbalancer_bench.rs` にベンチマーク追加
   - ✅ 測定: select_node_by_metrics() の実行時間
   - ✅ 目標: 1000ノードで < 10ms
   - ✅ **実測結果**（2025-11-02）:
@@ -189,7 +189,7 @@
 
 - [x] **T025** SPEC更新（FR-013追加）
   - GPU能力スコア優先、ビジー時フォールバック、メトリクス欠如時の扱いを仕様に追記
-- [x] **T026** `router/src/balancer/mod.rs` の優先度ロジック刷新
+- [x] **T026** `llmlb/src/balancer/mod.rs` の優先度ロジック刷新
   - `node_spec_score`/`compare_spec_*` ヘルパー追加
   - メトリクス有無に関わらず「スペック→ビジー判定→ラウンドロビン」の順序に統一
 - [x] **T027** 通常ロードバランサTDD（RED→GREEN）

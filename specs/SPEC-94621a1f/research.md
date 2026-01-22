@@ -8,7 +8,7 @@
 
 ### 決定1: JSONファイルストレージ
 
-**選択**: `~/.llm-router/nodes.json` にノード情報を保存
+**選択**: `~/.llmlb/nodes.json` にノード情報を保存
 
 **理由**:
 - シンプル: データベースサーバー不要
@@ -23,7 +23,7 @@
 
 **実装詳細**:
 ```rust
-// ~/.llm-router/nodes.json
+// ~/.llmlb/nodes.json
 [
   {
     "id": "uuid",
@@ -80,11 +80,11 @@ nodes.insert(id, node);
 
 **実装詳細**:
 - 環境変数（例）:
-  - Node: `ALLM_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
-  - Router: `LLM_ROUTER_HEALTH_CHECK_INTERVAL=30`（フォールバック: `HEALTH_CHECK_INTERVAL`）
-  - Router: `LLM_ROUTER_NODE_TIMEOUT=60`（フォールバック: `NODE_TIMEOUT`）
+  - Node: `XLLM_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
+  - Load Balancer: `LLMLB_HEALTH_CHECK_INTERVAL=30`（フォールバック: `HEALTH_CHECK_INTERVAL`）
+  - Load Balancer: `LLMLB_NODE_TIMEOUT=60`（フォールバック: `NODE_TIMEOUT`）
 - ノード側: `tokio::time::interval(Duration::from_secs(30))`
-- ルーター側: `last_heartbeat + 60秒 < now` でOffline判定
+- ロードバランサー側: `last_heartbeat + 60秒 < now` でOffline判定
 
 ### 決定4: UUID v4 によるノードID生成
 

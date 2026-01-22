@@ -1,0 +1,20 @@
+{
+  "name": "llmlb-e2e-playwright",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright E2E tests for LLM Router Dashboard and Playground",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:dashboard": "playwright test --grep @dashboard",
+    "test:playground": "playwright test --grep @playground",
+    "report": "playwright show-report reports/html"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

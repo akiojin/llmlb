@@ -14,7 +14,7 @@ import { ExecuteCurlHandler } from "./tools/execute-curl.js";
 export function createServer(config: ServerConfig): Server {
   const server = new Server(
     {
-      name: "llm-router-mcp",
+      name: "llmlb-mcp",
       version: "1.0.0",
     },
     {
@@ -97,7 +97,7 @@ export function createServer(config: ServerConfig): Server {
     const { uri } = request.params;
 
     // OpenAPI resource
-    if (uri === "llm-router://api/openapi") {
+    if (uri === "llmlb://api/openapi") {
       const content = await getOpenApiContent(config.openapiPath);
       return {
         contents: [
@@ -111,8 +111,8 @@ export function createServer(config: ServerConfig): Server {
     }
 
     // API Guide resources
-    if (uri.startsWith("llm-router://guide/")) {
-      const category = uri.replace("llm-router://guide/", "");
+    if (uri.startsWith("llmlb://guide/")) {
+      const category = uri.replace("llmlb://guide/", "");
       const content = getApiGuideContent(category, config.routerUrl);
       if (content) {
         return {

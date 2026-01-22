@@ -1,4 +1,4 @@
-# 技術リサーチ: ルーター負荷最適化
+# 技術リサーチ: ロードバランサー負荷最適化
 
 ## リサーチ課題
 
@@ -30,7 +30,7 @@
 ### 実装方法
 
 ```rust
-// router/src/proxy/client.rs
+// llmlb/src/proxy/client.rs
 
 use reqwest::Client;
 use std::time::Duration;
@@ -82,7 +82,7 @@ pub fn create_optimized_client() -> Client {
 ### 実装方法
 
 ```rust
-// router/src/balancer/wait_queue.rs
+// llmlb/src/balancer/wait_queue.rs
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -176,7 +176,7 @@ pub enum WaitError {
 ### 実装方法
 
 ```rust
-// router/src/balancer/node_cache.rs
+// llmlb/src/balancer/node_cache.rs
 
 use mini_moka::sync::Cache;
 use std::time::Duration;
@@ -241,7 +241,7 @@ impl NodeSelectionCache {
 ### 実装方法
 
 ```rust
-// router/src/balancer/backpressure.rs
+// llmlb/src/balancer/backpressure.rs
 
 /// バックプレッシャー状態
 #[derive(Debug, Clone, Copy)]
@@ -306,7 +306,7 @@ impl BackpressureController {
 ### メトリクス一覧
 
 ```rust
-// router/src/metrics/load.rs
+// llmlb/src/metrics/load.rs
 
 use prometheus::{Counter, Gauge, Histogram, register_counter, register_gauge, register_histogram};
 

@@ -1,4 +1,4 @@
-# 実装計画: LLM-Router独自モデルストレージ
+# 実装計画: LLM-Load Balancer独自モデルストレージ
 
 **機能ID**: `SPEC-dcaeaec4` | **日付**: 2025-12-23 | **仕様**: [spec.md](./spec.md)
 **ステータス**: 計画中
@@ -6,7 +6,7 @@
 ## 概要
 
 xllmがモデルファイルを `~/.llmlb/models/` 配下から読み込むことを基本としつつ、
-ルーターは**登録情報とマニフェストのみ**を提供する。
+ロードバランサーは**登録情報とマニフェストのみ**を提供する。
 モデルバイナリは保持せず、NodeがHF等の外部ソースから**直接ダウンロード**してキャッシュする。
 LLM runtime固有のストレージ形式への暗黙フォールバックは撤廃する。
 
@@ -17,7 +17,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 **ストレージ**: ファイルシステム (`~/.llmlb/models/`)  
 **テスト**: Google Test, cargo test  
 **対象プラットフォーム**: Linux/macOS  
-**プロジェクトタイプ**: web (node/, router/)
+**プロジェクトタイプ**: web (node/, llmlb/)
 
 ## 憲章チェック
 
@@ -37,7 +37,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ```text
 ~/.llmlb/
 ├── config.json          # 設定ファイル
-├── router.db            # ルーターDB（SQLite）
+├── router.db            # ロードバランサーDB（SQLite）
 └── models/
     ├── gpt-oss-20b/
     │   ├── config.json
@@ -53,7 +53,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 ```text
 1. ローカル ~/.llmlb/models/<name>/ を確認（必要アーティファクトが揃っていれば採用）
-2. ルーターのマニフェストを取得（/v0/models/registry/:model/manifest.json）
+2. ロードバランサーのマニフェストを取得（/v0/models/registry/:model/manifest.json）
 3. Nodeがruntime/GPU要件に合うアーティファクトを選択
 4. HF等の外部ソースから直接ダウンロードして保存
 5. いずれも不可 → エラー
@@ -66,7 +66,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 1. runtime_compat.cpp → model_storage.cpp リネーム
 2. LLM runtime manifest/blob解析ロジック削除
 3. 独自ディレクトリ構造実装
-4. ルーターAPI連携（/v0/models, manifest）
+4. ロードバランサーAPI連携（/v0/models, manifest）
 5. ノード起動時同期ロジック
 6. プッシュ通知受信ハンドラ
 7. 統合テスト

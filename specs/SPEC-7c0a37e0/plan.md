@@ -13,10 +13,10 @@
 ## 技術コンテキスト
 - **対象領域**:
   - `common/src/auth.rs`: APIキー/ユーザーのデータモデル拡張。
-  - `router/src/db/api_keys.rs`: スコープの永続化。
-  - `router/src/auth/middleware.rs`: スコープ判定・APIキー認証。
-  - `router/src/api/mod.rs`: `/v0`/`/v1` の認証ルート整理。
-  - `router/src/web/dashboard`: APIキー作成UI。
+  - `llmlb/src/db/api_keys.rs`: スコープの永続化。
+  - `llmlb/src/auth/middleware.rs`: スコープ判定・APIキー認証。
+  - `llmlb/src/api/mod.rs`: `/v0`/`/v1` の認証ルート整理。
+  - `llmlb/src/web/dashboard`: APIキー作成UI。
   - `node/`: ノード登録/モデル配信でAPIキーを使用。
 - **制約**:
   - 認証スキップのフラグは禁止（CLAUDE.md）。

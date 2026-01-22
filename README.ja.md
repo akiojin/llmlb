@@ -4,7 +4,7 @@
 
 ## 概要
 
-LLM Load Balancer は、複数マシンに配置した推論ランタイムを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ルーターです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
+LLM Load Balancer は、複数マシンに配置した推論ランタイムを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ロードバランサーです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
 
 ### ビジョン
 
@@ -80,13 +80,13 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 - OpenAI 互換 API: `/v1/responses`（推奨）, `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
 - ロードバランシング: 利用可能なエンドポイントへレイテンシベースで自動ルーティング
 - ダッシュボード: `/dashboard` でエンドポイント、リクエスト履歴、ログ、モデルを管理
-- エンドポイント管理: Ollama、vLLM、xLLM等の外部推論サーバーをルーターから一元管理
+- エンドポイント管理: Ollama、vLLM、xLLM等の外部推論サーバーをロードバランサーから一元管理
 - モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
 ## ダッシュボード
 
-ルーターが `/dashboard` で提供します。
+ロードバランサーが `/dashboard` で提供します。
 
 ```text
 http://localhost:32768/dashboard
@@ -94,7 +94,7 @@ http://localhost:32768/dashboard
 
 ## エンドポイント管理
 
-ルーターは外部の推論サーバー（Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
+ロードバランサーは外部の推論サーバー（Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
 
 ### 対応エンドポイント
 
@@ -271,7 +271,7 @@ cmake --build build --config Release
 
 ### 4) 基本設定
 
-#### ルーター（Rust）環境変数
+#### ロードバランサー（Rust）環境変数
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
@@ -295,7 +295,7 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLMLB_URL` | `http://127.0.0.1:32768` | ルーターURL |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | ロードバランサーURL |
 | `LLM_RUNTIME_API_KEY` | - | ランタイム登録/モデルレジストリ取得用APIキー（スコープ: `runtime`） |
 | `LLM_RUNTIME_PORT` | `32769` | HTTPサーバーポート |
 | `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | モデルディレクトリ |
@@ -312,7 +312,7 @@ cmake --build build --config Release
 
 ### 5) 起動例
 ```bash
-# ルーター
+# ロードバランサー
 cargo run -p llmlb
 
 # ランタイム (別シェル)
@@ -385,9 +385,9 @@ LLM Load Balancer は、ローカルの llama.cpp ランタイムを調整し、
 
 ### コンポーネント
 - **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
-- **Local Runtimes (C++ / llama.cpp)**: GGUF モデルを提供します。ルーターに登録し、ハートビートを送信します。
-- **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ルーターは対応するクラウド API に転送します。
-- **Storage**: ルーターのメタデータ用の SQLite。モデルファイルは各ランタイムに存在します。
+- **Local Runtimes (C++ / llama.cpp)**: GGUF モデルを提供します。ロードバランサーに登録し、ハートビートを送信します。
+- **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ロードバランサーは対応するクラウド API に転送します。
+- **Storage**: ロードバランサーのメタデータ用の SQLite。モデルファイルは各ランタイムに存在します。
 - **Observability**: Prometheus メトリクス、構造化ログ、ダッシュボード統計。
 
 ### システム構成
@@ -413,10 +413,10 @@ Router (OpenAI-compatible)
 - ランタイムはモデルをオンデマンドで次の順に解決します。
   - ローカルキャッシュ（`LLM_RUNTIME_MODELS_DIR`）
   - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_RUNTIME_ORIGIN_ALLOWLIST`）
-  - ルーターのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
+  - ロードバランサーのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
-- ランタイムは `/v0/runtimes` を介して登録します。ルーターはデフォルトで GPU のないランタイムを拒否します。
+- ランタイムは `/v0/runtimes` を介して登録します。ロードバランサーはデフォルトで GPU のないランタイムを拒否します。
 - ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
 - ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
 
@@ -428,7 +428,7 @@ Router (OpenAI-compatible)
 - それでも失敗する場合は NVML ライブラリの有無を確認
 
 ### クラウドモデルが 401/400 を返す
-- ルーター側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
+- ロードバランサー側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
 - ダッシュボード `/v0/dashboard/stats` の `*_key_present` が false なら未設定
 - プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
 
@@ -471,7 +471,7 @@ Router (OpenAI-compatible)
     - gpt-oss は公式GPUアーティファクトを優先します:
       `model.metal.bin` などが提供されている場合は、対応バックエンドで実行キャッシュとして利用します。
     - Windows は CUDA ビルド（`BUILD_WITH_CUDA=ON`）が必須です。DirectML は非対応です。
-  - ルーターは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
+  - ロードバランサーは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
   - ランタイムはモデルをプッシュ配布されず、オンデマンドで取得します:
@@ -504,7 +504,7 @@ Router (OpenAI-compatible)
 - `/v0/auth/login` は無認証、`/v0/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
-### ルーター（Router）
+### ロードバランサー（Load Balancer）
 
 #### OpenAI 互換（API キー認証）
 
@@ -551,7 +551,7 @@ Router (OpenAI-compatible)
 - GET `/v0/dashboard/request-responses`（admin権限）
 - GET `/v0/dashboard/request-responses/:id`（admin権限）
 - GET `/v0/dashboard/request-responses/export`（admin権限）
-- GET `/v0/dashboard/logs/router`（admin権限）
+- GET `/v0/dashboard/logs/lb`（admin権限）
 - GET `/v0/metrics/cloud`（admin権限）
 - GET `/dashboard/*`
 - GET `/playground/*`

@@ -29,7 +29,7 @@ pub struct QueueEntry {
 ### RequestQueue
 
 ```rust
-/// ルーター側のグローバルリクエストキュー
+/// ロードバランサー側のグローバルリクエストキュー
 pub struct RequestQueue {
     /// キューエントリ一覧
     entries: Arc<Mutex<VecDeque<QueueEntry>>>,
@@ -176,7 +176,7 @@ pub enum EstimateConfidence {
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Router                                   │
+│                         Load Balancer                                   │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │                    RequestQueue                            │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐         │  │
@@ -198,14 +198,14 @@ pub enum EstimateConfidence {
 └─────────────────────────────────────────────────────────────────┘
 
 リクエストフロー:
-1. Client → Router: リクエスト到着
-2. Router: ノード選択（アイドル優先）
+1. Client → Load Balancer: リクエスト到着
+2. Load Balancer: ノード選択（アイドル優先）
    - アイドルノードあり → 即座にディスパッチ
    - 全ノード処理中 → キューに追加
-3. Router → Node: 単発リクエスト送信
+3. Load Balancer → Node: 単発リクエスト送信
 4. Node: 推論実行（state: Processing）
-5. Node → Router: レスポンス返却
-6. Router → Client: レスポンス転送
+5. Node → Load Balancer: レスポンス返却
+6. Load Balancer → Client: レスポンス転送
 ```
 
 ## HTTPレスポンスヘッダー

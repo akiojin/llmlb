@@ -22,7 +22,7 @@
 - [x] [P] `/v0` 管理系/ダッシュボードAPIの認証必須化に合わせてテスト更新。
 - [x] [P] `/v1` 推論APIに `api` スコープが必須であることを確認。
 
-## Backend Implementation (router/common)
+## Backend Implementation (llmlb/common)
 - [x] APIキーに `scopes` を追加しDBへ永続化。
 - [x] APIキー認証/スコープ判定ミドルウェアを実装。
 - [x] `/v0` 管理系ルートを admin（JWT or admin）に制限。

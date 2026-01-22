@@ -12,7 +12,7 @@ OpenAI互換APIを100%準拠にする。主な追加機能:
 - /v1/modelsへの対応API情報追加
 - 非対応バックエンドへの501 Not Implemented返却
 
-**ルーターの役割**: llmlbはロードバランサー/ゲートウェイとして機能し、
+**ロードバランサーの役割**: llmlbはロードバランサー/ゲートウェイとして機能し、
 API変換は行わない（パススルーのみ）。
 
 ## 技術コンテキスト
@@ -83,19 +83,19 @@ specs/SPEC-24157000/
 ### ソースコード変更対象
 
 ```text
-router/src/api/
+llmlb/src/api/
 ├── mod.rs              # /v1/responsesルート追加
 ├── responses.rs        # 【新規】Responses APIハンドラー
 ├── proxy.rs            # 既存パススルー関数再利用
 └── openai.rs           # /v1/modelsレスポンス拡張
 
-router/src/types/
+llmlb/src/types/
 └── endpoint.rs         # supports_responses_apiフラグ追加
 
-router/src/sync/
+llmlb/src/sync/
 └── capabilities.rs     # Responses API検出ロジック追加
 
-router/src/registry/
+llmlb/src/registry/
 └── endpoint_registry.rs # フィルタリング拡張
 ```
 

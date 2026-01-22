@@ -4,13 +4,13 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | 1台以上のノード |
 | ノードトークン | 登録時に発行されたトークン |
 
 ## 基本設定
 
-### ルーター側環境変数
+### ロードバランサー側環境変数
 
 ```bash
 # 監視設定
@@ -24,7 +24,7 @@ export LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 # ハートビート設定
 export XLLM_HEARTBEAT_SECS=30    # 送信間隔（秒）
 export XLLM_TOKEN=<node-token>   # ノードトークン
-export LLMLB_URL=http://localhost:8080  # ルーターURL
+export LLMLB_URL=http://localhost:8080  # ロードバランサーURL
 ```
 
 ## 動作確認
@@ -59,7 +59,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 ### ハートビート送信（手動テスト）
 
 ```bash
-# ノードからルーターへハートビート送信
+# ノードからロードバランサーへハートビート送信
 curl -X POST http://localhost:8080/v0/health \
   -H "X-Node-Token: <node-token>" \
   -H "Content-Type: application/json" \
@@ -245,7 +245,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 
 ```bash
 # 1. ノードを再起動
-./xllm --router-url http://localhost:8080
+./xllm --lb-url http://localhost:8080
 
 # 2. 即座にオンライン状態を確認
 curl -X GET http://localhost:8080/v0/nodes \

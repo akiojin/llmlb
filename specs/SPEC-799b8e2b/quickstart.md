@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | ビルド済み（C++） |
 | ログディレクトリ | 書き込み権限あり |
 
@@ -23,7 +23,7 @@ export LLM_LOG_LEVEL=debug
 export LLM_LOG_RETENTION_DAYS=14
 ```
 
-### ルーター起動
+### ロードバランサー起動
 
 ```bash
 # デフォルト設定で起動
@@ -49,7 +49,7 @@ LLM_LOG_LEVEL=trace xllm
 
 ```text
 ~/.llmlb/logs/
-├── llmlb.jsonl.2025-12-01    # ルーターログ（日付別）
+├── llmlb.jsonl.2025-12-01    # ロードバランサーログ（日付別）
 ├── llmlb.jsonl.2025-12-02
 ├── xllm.jsonl.2025-12-01      # ノードログ（日付別）
 └── xllm.jsonl.2025-12-02
@@ -58,7 +58,7 @@ LLM_LOG_LEVEL=trace xllm
 ### ログの閲覧
 
 ```bash
-# 最新のルーターログを表示
+# 最新のロードバランサーログを表示
 tail -f ~/.llmlb/logs/llmlb.jsonl.$(date +%Y-%m-%d)
 
 # エラーログのみをフィルタ

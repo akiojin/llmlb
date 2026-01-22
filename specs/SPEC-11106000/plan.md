@@ -4,12 +4,12 @@
 **入力**: `/specs/SPEC-11106000/spec.md` の機能仕様
 
 ## 概要
-- HFリポジトリ/ファイルURLを登録し、ルーターは**メタデータとマニフェストのみ**を保持する。
-- **モデルバイナリはルーターに保持せず**、NodeがHFから直接ダウンロードしてキャッシュする。
+- HFリポジトリ/ファイルURLを登録し、ロードバランサーは**メタデータとマニフェストのみ**を保持する。
+- **モデルバイナリはロードバランサーに保持せず**、NodeがHFから直接ダウンロードしてキャッシュする。
 - /v1/models は登録済みモデルを返し、ready はNodeの同期状態に従う。
 
 ## 技術コンテキスト
-- **言語/バージョン**: Rust 1.75+（router/cli）、TypeScript/JSなしのプレーン JS (web static)、C++ノードは変更最小。
+- **言語/バージョン**: Rust 1.75+（llmlb/cli）、TypeScript/JSなしのプレーン JS (web static)、C++ノードは変更最小。
 - **主要依存関係**: router: axum/reqwest/serde; web: vanilla JS + fetch; cli: existing router CLI基盤を再利用（要確認）。
 - **ストレージ**: 既存DB/registryそのまま（モデル情報を拡張）。
 - **テスト**: cargo test (router)、JSは軽量ユニット or 集約E2E（既存フレームに合わせる）。
@@ -36,7 +36,7 @@
 ## Phase 0: アウトライン＆リサーチ
 - HF API: repoメタ（siblings）取得と認証要否のみ確認。カタログ一覧は扱わない。
 - モデルID命名: `hf/{repo}` または `hf/{repo}/{filename}` を基本形とする。
-- 形式選択はルーターで行わず、Nodeがruntime/GPU要件に応じて選択する。
+- 形式選択はロードバランサーで行わず、Nodeがruntime/GPU要件に応じて選択する。
 
 ## Phase 1: 設計＆契約
 - data-model.md: ModelInfo 拡張（repo, filename?, source, status, size, artifacts）。

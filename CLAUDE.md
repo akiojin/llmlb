@@ -6,7 +6,7 @@
 
 ## まず読む 90秒版
 
-- 何を作る: Rust製ルーター（`router/`）＋ llama.cppベースのC++推論エンジン（`xllm/`）。Ollamaは一切使わない／復活させない。
+- 何を作る: Rust製ロードバランサー（`llmlb/`）＋ llama.cppベースのC++推論エンジン（`xllm/`）。Ollamaは一切使わない／復活させない。
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
 - 守る: ブランチ／worktree作成・切替禁止、作業ディレクトリ移動禁止、GPU非搭載エンドポイント登録禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は`HF_TOKEN`（任意）と必要に応じ`HF_BASE_URL`を環境にセットしておく。
@@ -18,7 +18,7 @@
 
 ```text
 llmlb/
-├── router/          # Rust製ルーター（APIサーバー・管理UI）
+├── llmlb/          # Rust製ロードバランサー（APIサーバー・管理UI）
 ├── xllm/            # C++製推論エンジン（llama.cppベース）
 ├── common/          # 共通ライブラリ（Rust/C++間共有）
 ├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
@@ -40,7 +40,7 @@ llmlb/
 
 ## システムアーキテクチャ
 
-### ルーター（`router/` - Rust製）
+### ロードバランサー（`llmlb/` - Rust製）
 
 リクエストの受付・振り分け・管理を担当するコンポーネント。
 
@@ -113,7 +113,7 @@ llmlb/
 - プロジェクト概要とセットアップ: `README.md`, `README.ja.md`, `DEVELOPMENT.md`
 - 仕様とタスク: `specs/` 配下の `spec.md` / `plan.md` / `tasks.md`
 - 品質基準と憲章: `memory/constitution.md`
-- CLI とモデル管理: `router/src/cli/`
+- CLI とモデル管理: `llmlb/src/cli/`
 - テスト＆CIワークフロー: `.specify/scripts/checks/`, `make quality-checks`, `make openai-tests`
 
 ## よくあるNG（必ず回避）

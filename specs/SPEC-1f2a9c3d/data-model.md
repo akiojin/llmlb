@@ -1,4 +1,4 @@
-# データモデル: Node/Router Log Retrieval API
+# データモデル: Node/Load Balancer Log Retrieval API
 
 ## エンティティ定義
 
@@ -77,7 +77,7 @@ impl LogsQuery {
 |---------------|---------|------|
 | /v0/logs | GET | ノード自身のログを取得 |
 
-### Router Proxy API
+### Load Balancer Proxy API
 
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|

@@ -20,12 +20,12 @@
 
 **実装方針**:
 ```rust
-// router/migrations/001_init.sql
+// llmlb/migrations/001_init.sql
 CREATE TABLE IF NOT EXISTS users (...);
 CREATE TABLE IF NOT EXISTS api_keys (...);
 CREATE TABLE IF NOT EXISTS runtime_tokens (...);
 
-// router/src/db/mod.rs
+// llmlb/src/db/mod.rs
 pub async fn init_database() -> Result<SqlitePool> {
     let pool = SqlitePool::connect(&db_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -141,7 +141,7 @@ pub fn verify_jwt(token: &str) -> Result<Claims> {
 - Axumの標準的なミドルウェア実装パターン
 - AppState共有が容易（JWTシークレット等）
 - 型安全なエラーハンドリング
-- ルーター階層で柔軟に適用可能
+- ロードバランサー階層で柔軟に適用可能
 
 **検討した代替案**:
 - **tower::layer**: より低レベル、複雑
@@ -179,8 +179,8 @@ async fn jwt_auth_middleware<B>(
     Ok(next.run(req).await)
 }
 
-// ルーターへの適用
-Router::new()
+// ロードバランサーへの適用
+Load Balancer::new()
     .route("/v0/nodes", get(list_nodes))
     .layer(middleware::from_fn_with_state(state.clone(), jwt_auth_middleware))
 ```

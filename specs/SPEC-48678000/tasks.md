@@ -13,18 +13,18 @@
 ## 重要な変更 (Session 2025-12-31)
 
 - 対象は全モデル（GGUF / safetensors / Metal 等）
-- Node は外部ソースから直接ダウンロード（ルーターのバイナリ保持は不要）
+- Node は外部ソースから直接ダウンロード（ロードバランサーのバイナリ保持は不要）
 - 変換パイプラインは廃止（登録時に変換しない）
 
 ## 追加対応（Session 2025-12-31）
 
-- [x] ルータープロキシ経由ダウンロードのテスト/実装を削除（旧仕様の整理）
+- [x] ロードバランサープロキシ経由ダウンロードのテスト/実装を削除（旧仕様の整理）
 - [x] download_url 依存を廃止し、repo/filename ベースに統一
 
 ## 技術スタック
 
 - **Node**: C++17 (llama.cpp, httplib)
-- **Router**: Rust 1.75+ (reqwest)
+- **Load Balancer**: Rust 1.75+ (reqwest)
 - **Storage**: ファイルシステム (`~/.llmlb/models/`)
 - **Tests**: Google Test, cargo test
 
@@ -71,8 +71,8 @@
 
 - [x] T010 `node/src/model_resolver.cpp` にモデル解決フローを実装
   - ローカルキャッシュ確認
-  - `supported_models.json`参照（ルーター /v0/models）
-  - 外部ソース→ルータープロキシの順でダウンロード
+  - `supported_models.json`参照（ロードバランサー /v0/models）
+  - 外部ソース→ロードバランサープロキシの順でダウンロード
   - エラーハンドリング
 - [x] T011 `node/src/model_resolver.cpp` に`supported_models.json`参照ロジック
   - モデル定義の読み込み
@@ -81,8 +81,8 @@
 - [x] T012 外部ソース（HF等）からのダウンロード実装
   - 許可リストで制御
   - ローカルへの保存処理
-- [x] T013 ルータープロキシ経由ダウンロード実装（旧仕様・廃止予定）
-  - ルータープロキシ（`/v1/models/blob/:model_name`）
+- [x] T013 ロードバランサープロキシ経由ダウンロード実装（旧仕様・廃止予定）
+  - ロードバランサープロキシ（`/v1/models/blob/:model_name`）
   - ローカルへの保存処理
 - [x] T014 重複ダウンロード防止
   - ダウンロードロック機構
@@ -94,7 +94,7 @@
 ## Phase 3.4: 統合
 
 - [x] T016 既存の推論フローに ModelResolver を統合
-- [x] T017 設定ファイルから許可リスト・ルーターURL読み込み（共有パス設定は廃止）
+- [x] T017 設定ファイルから許可リスト・ロードバランサーURL読み込み（共有パス設定は廃止）
 
 ## Phase 3.5: 仕上げ
 
@@ -107,7 +107,7 @@
 ## Phase 3.6: 進捗可視化（追加）
 
 - [x] T021 [P] Node: モデル同期の進捗/状態を取得できるようにする（モデル名・ファイル名・downloaded/total）
-- [x] T022 [P] Router: ヘルスチェックに同期状態を取り込み、APIで取得できるようにする
+- [x] T022 [P] Load Balancer: ヘルスチェックに同期状態を取り込み、APIで取得できるようにする
 - [x] T023 [P] Dashboard: ノード一覧/詳細に同期状態と進捗を表示する
 - [x] T024 [P] ModelResolver経由のダウンロード進捗をsync_stateとして報告する
 - [x] T025 [P] ModelResolverの進捗報告テストを追加する

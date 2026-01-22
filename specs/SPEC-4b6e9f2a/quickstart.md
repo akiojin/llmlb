@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | 起動済み（`http://localhost:8080`） |
+| ロードバランサー | 起動済み（`http://localhost:8080`） |
 | APIキー | 使用するクラウドプロバイダーのAPIキー |
 
 ## 環境変数の設定
@@ -128,7 +128,7 @@ with httpx.stream(
 ```python
 from openai import OpenAI
 
-# ルーターをベースURLとして指定
+# ロードバランサーをベースURLとして指定
 client = OpenAI(
     base_url="http://localhost:8080/v1",
     api_key="sk-your-api-key"
@@ -170,7 +170,7 @@ cloud_response = httpx.post(
 ## プロバイダー状態の確認
 
 ```bash
-# ルーターのステータスを確認
+# ロードバランサーのステータスを確認
 curl http://localhost:8080/v0/status \
   -H "Authorization: Bearer sk-your-api-key"
 ```

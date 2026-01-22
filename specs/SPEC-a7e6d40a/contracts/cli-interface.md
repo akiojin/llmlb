@@ -1,6 +1,6 @@
 # CLI Interface Contract
 
-## Router CLI
+## Load Balancer CLI
 
 ### コマンド形式
 
@@ -86,7 +86,7 @@ Options:
   -V, --version  Print version information
 
 Environment Variables:
-  LLMLB_URL               Router URL (default: http://127.0.0.1:8080)
+  LLMLB_URL               Load Balancer URL (default: http://127.0.0.1:8080)
   XLLM_PORT                Node listen port (default: 11435)
   XLLM_MODELS_DIR          Model storage directory
   XLLM_LOG_LEVEL           Log level (default: info)
@@ -100,7 +100,7 @@ xllm {version}
 
 ## 環境変数仕様
 
-### Router環境変数
+### Load Balancer環境変数
 
 | 変数名 | 型 | 必須 | デフォルト | 説明 |
 |--------|-----|------|-----------|------|
@@ -121,7 +121,7 @@ xllm {version}
 
 | 変数名 | 型 | 必須 | デフォルト | 説明 |
 |--------|-----|------|-----------|------|
-| `LLMLB_URL` | String | No | `http://127.0.0.1:8080` | ルーターURL |
+| `LLMLB_URL` | String | No | `http://127.0.0.1:8080` | ロードバランサーURL |
 | `XLLM_PORT` | u16 | No | 11435 | 待受ポート |
 | `XLLM_IP` | String | No | (自動検出) | ノードIP |
 | `XLLM_MODELS_DIR` | Path | No | ~/.runtime/models | モデル保存先 |

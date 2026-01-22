@@ -169,12 +169,12 @@ cargo build --release -p llmlb
 
 **System Tray (Windows/macOS only):**
 
-On Windows 10+ and macOS 12+, the router displays a system tray icon.
+On Windows 10+ and macOS 12+, the load balancer displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
 ### CLI Reference
 
-The router CLI currently exposes only basic flags (`--help`, `--version`).
+the load balancer CLI currently exposes only basic flags (`--help`, `--version`).
 Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
 
 ### Runtime (C++)
@@ -215,7 +215,7 @@ npm run start:xllm
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLMLB_URL` | `http://127.0.0.1:32768` | Router URL to register with |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | Load balancer URL to register with |
 | `LLM_RUNTIME_PORT` | `32769` | Runtime listen port |
 | `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
@@ -276,7 +276,7 @@ LLMLB_LOAD_BALANCER_MODE=auto cargo run -p llmlb
 
 ### Health / Metrics API
 
-Runtimes report health + metrics to the Router for runtime status and load balancing decisions.
+Runtimes report health + metrics to the load balancer for runtime status and load balancing decisions.
 
 **Endpoint:** `POST /v0/health` (requires `X-Runtime-Token` + API key with `runtime`)
 
@@ -307,9 +307,9 @@ LLM Load Balancer coordinates local llama.cpp runtimes and optionally proxies to
 
 ### Components
 - **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
-- **Local Runtimes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the router.
-- **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the router forwards to the corresponding cloud API.
-- **Storage**: SQLite for router metadata; model files live on each runtime.
+- **Local Runtimes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the load balancer.
+- **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the load balancer forwards to the corresponding cloud API.
+- **Storage**: SQLite for load balancer metadata; model files live on each runtime.
 - **Observability**: Prometheus metrics, structured logs, dashboard stats.
 
 ### System Overview
@@ -331,7 +331,7 @@ Router (OpenAI-compatible)
 
 ### Communication Flow (Proxy Pattern)
 
-LLM Load Balancer uses a **Proxy Pattern** - clients only need to know the Router URL.
+LLM Load Balancer uses a **Proxy Pattern** - clients only need to know the load balancer URL.
 
 #### Traditional Method (Without Router)
 ```bash
@@ -344,16 +344,16 @@ curl http://machine3:32769/v1/responses -d '...'
 #### With Router (Proxy)
 ```bash
 # Unified access to Router - automatic routing to the optimal runtime
-curl http://router:32768/v1/responses -d '...'
-curl http://router:32768/v1/responses -d '...'
-curl http://router:32768/v1/responses -d '...'
+curl http://lb:32768/v1/responses -d '...'
+curl http://lb:32768/v1/responses -d '...'
+curl http://lb:32768/v1/responses -d '...'
 ```
 
 **Detailed Request Flow:**
 
 1. **Client → Router**
    ```
-   POST http://router:32768/v1/responses
+   POST http://lb:32768/v1/responses
    Content-Type: application/json
 
    {"model": "llama2", "input": "Hello!"}
@@ -403,21 +403,21 @@ curl http://router:32768/v1/responses -d '...'
 
 ### Model Sync (No Push Distribution)
 
-- The router never pushes models to runtimes.
+- the load balancer never pushes models to runtimes.
 - Runtimes resolve models on-demand in this order:
   - local cache (`LLM_RUNTIME_MODELS_DIR`)
   - allowlisted origin download (Hugging Face, etc.; configure via `LLM_RUNTIME_ORIGIN_ALLOWLIST`)
-  - manifest-based selection from the router (`GET /v0/models/registry/:model_name/manifest.json`)
+  - manifest-based selection from the load balancer (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
-- Runtimes register via `/v0/runtimes`; router rejects runtimes without GPUs by default.
+- Runtimes register via `/v0/runtimes`; load balancer rejects runtimes without GPUs by default.
 - Heartbeats carry CPU/GPU/memory metrics used for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
 ### Benefits of Proxy Pattern
 
 1. **Unified Endpoint**
-   - Clients only need to know the Router URL
+   - Clients only need to know the load balancer URL
    - No need to know each runtime location
 
 2. **Transparent Load Balancing**
@@ -449,12 +449,12 @@ llmlb/
 
 ## Dashboard
 
-The dashboard is served by the router at `/dashboard`.
+The dashboard is served by the load balancer at `/dashboard`.
 Use it to monitor endpoints, view request history, inspect logs, and manage models.
 
 ### Quick usage
 
-1. Start the router:
+1. Start the load balancer:
    ```bash
    cargo run -p llmlb
    ```
@@ -465,7 +465,7 @@ Use it to monitor endpoints, view request history, inspect logs, and manage mode
 
 ## Endpoint Management
 
-The router centrally manages external inference servers (Ollama, vLLM, xLLM, etc.) as "endpoints".
+the load balancer centrally manages external inference servers (Ollama, vLLM, xLLM, etc.) as "endpoints".
 
 ### Supported Endpoints
 
@@ -641,13 +641,13 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 2. **Start Runtimes on Multiple Machines**
    ```bash
    # Machine 1
-   LLMLB_URL=http://router:32768 \
+   LLMLB_URL=http://lb:32768 \
    # Replace with your actual API key (scope: runtime)
    LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
    ./xllm/build/xllm
 
    # Machine 2
-   LLMLB_URL=http://router:32768 \
+   LLMLB_URL=http://lb:32768 \
    # Replace with your actual API key (scope: runtime)
    LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
    ./xllm/build/xllm
@@ -655,7 +655,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 3. **Send Inference Requests to Router (OpenAI-compatible, Responses API recommended)**
    ```bash
-   curl http://router:32768/v1/responses \
+   curl http://lb:32768/v1/responses \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -666,7 +666,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
    **Image generation example**
    ```bash
-   curl http://router:32768/v1/images/generations \
+   curl http://lb:32768/v1/images/generations \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -680,7 +680,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
    **Image understanding example**
    ```bash
-   curl http://router:32768/v1/chat/completions \
+   curl http://lb:32768/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -699,7 +699,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
    ```
 4. **List Registered Runtimes**
    ```bash
-   curl http://router:32768/v0/runtimes \
+   curl http://lb:32768/v0/runtimes \
      # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
@@ -743,7 +743,7 @@ Cloud / external services:
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLMLB_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | Load balancer URL to register with | - |
 | `LLM_RUNTIME_API_KEY` | - | API key for runtime registration / model registry download | scope: `runtime` |
 | `LLM_RUNTIME_PORT` | `32769` | Runtime listen port | - |
 | `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory | `LLM_MODELS_DIR` |
@@ -771,7 +771,7 @@ Note: Engine plugins were removed in favor of built-in managers. See `docs/migra
 - If it still fails, check for NVML library presence
 
 ### Cloud models return 401/400
-- Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the router side
+- Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the load balancer side
 - If `*_key_present` is false in Dashboard `/v0/dashboard/stats`, it's not set
 - Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
 
@@ -894,7 +894,7 @@ web interface
 
 #### Via Web Dashboard
 
-1. Open the router dashboard: `http://localhost:32768/dashboard`
+1. Open the load balancer dashboard: `http://localhost:32768/dashboard`
 2. Navigate to the "Request History" section
 3. Use filters to narrow down specific requests
 4. Click on any request to view full details including request/response bodies

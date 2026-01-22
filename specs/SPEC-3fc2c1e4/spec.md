@@ -26,11 +26,11 @@
 
 ## 原則
 - `metadata.json` のような独自メタデータには依存しない。
-- 形式選択は Router では行わず、ランタイムが runtime/GPU 要件に応じて判断する。
+- 形式選択は Load Balancer では行わず、ランタイムが runtime/GPU 要件に応じて判断する。
 - 登録時に確定した `format` を尊重し、実行時の形式変換は行わない。
 
 ## 決定事項（要約）
-- **責務分離**: Router は manifest を提供し、ランタイムが runtime/アーティファクト選択を行う。
+- **責務分離**: Load Balancer は manifest を提供し、ランタイムが runtime/アーティファクト選択を行う。
 - **ランタイム前提**: ランタイムは Python 依存を持たない。
 - **GPU 前提**: GPU 非搭載ランタイムは対象外。
 - **llama.cpp fork**: Upstream fixes are pending; operate on `akiojin/llama.cpp` until they land upstream, then switch back to `ggerganov/llama.cpp`.
@@ -60,7 +60,7 @@
 ## アーキテクチャ概念
 
 ```
-Router
+Load Balancer
   - 登録/メタデータ検証
   - manifest 作成（ファイル一覧）
         │
@@ -111,7 +111,7 @@ TextManager (Built-in Engines)
 | `OnnxRuntime` | TTS | ONNX | Python 依存なし運用 |
 
 ## アーティファクト選択ルール
-1. Router は形式を確定せず、manifest のみを提供する。
+1. Load Balancer は形式を確定せず、manifest のみを提供する。
 2. ランタイムが runtime/GPU 要件に応じてアーティファクトを選択する。
 3. 形式変換は行わない（safetensors/GGUF/Metal/CUDA はそのまま扱う）。
 4. 公式最適化アーティファクトは実行キャッシュとして利用可能。

@@ -48,7 +48,7 @@ specs/SPEC-ea015fbb/
 本SPECは以下の既存ファイルを参照（編集なし）:
 
 ```text
-router/src/web/static/
+llmlb/src/web/static/
 ├── index.html           # SCR-010: メインダッシュボード
 ├── login.html           # SCR-001: ログイン
 ├── register.html        # SCR-002: ユーザー登録

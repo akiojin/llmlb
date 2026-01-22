@@ -76,12 +76,12 @@ specs/SPEC-82491000/
 ### ソースコード変更
 
 ```text
-router/src/api/
+llmlb/src/api/
 ├── mod.rs               # pub mod cloud_models; 追加
 ├── cloud_models.rs      # 新規: クラウドモデル取得ロジック
 └── openai.rs            # list_models() 拡張
 
-router/src/
+llmlb/src/
 └── lib.rs               # AppStateにキャッシュ追加（必要に応じて）
 ```
 
@@ -133,7 +133,7 @@ router/src/
 {
   "object": "list",
   "data": [
-    {"id": "local-model", "owned_by": "router", ...},
+    {"id": "local-model", "owned_by": "lb", ...},
     {"id": "openai:gpt-4o", "owned_by": "openai", ...},
     {"id": "google:gemini-2.0-flash", "owned_by": "google", ...},
     {"id": "anthropic:claude-sonnet-4-20250514", "owned_by": "anthropic", ...}

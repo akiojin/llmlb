@@ -43,7 +43,7 @@ cargo run --bin router
 ユーザー名: admin
 パスワード: ********
 [INFO] 管理者ユーザー 'admin' を作成しました。
-[INFO] ルーターを起動しています...
+[INFO] ロードバランサーを起動しています...
 [INFO] サーバーがポート 32768 で起動しました
 ```
 
@@ -276,7 +276,7 @@ unset AUTH_DISABLED
 # または
 export AUTH_DISABLED=false
 
-# ルーター再起動
+# ロードバランサー再起動
 cargo run -p llmlb
 ```
 
@@ -318,7 +318,7 @@ cp ~/.llmlb/router.db ~/.llmlb/router.db.backup
 # データベースを削除して再初期化
 rm ~/.llmlb/router.db
 
-# ルーター再起動（新しい管理者作成）
+# ロードバランサー再起動（新しい管理者作成）
 cargo run --bin router
 ```
 

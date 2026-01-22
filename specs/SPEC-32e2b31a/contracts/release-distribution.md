@@ -17,7 +17,7 @@ GitHub Release に添付される配布物が、プラットフォームごと�
 | RD-02 | 同梱ファイル | 各アーカイブに `llmlb-router*`、`llmlb-node*`、`README.md`、`README.ja.md`、`LICENSE` が含まれる | `tar -tzf` / `unzip -Z1` でファイル一覧を確認 |
 | RD-03 | 命名規則 | アーカイブ名は `llmlb-<platform>` で始まる | ワークフロー内で `[[ $archive == llmlb-* ]]` を確認 |
 | RD-04 | リリースタイミング | リリースビルドは `main` ブランチにマージ済みのコミットのみを対象とする | ワークフロー先頭で `target_commitish == "main"` を検証 |
-| RD-05 | インストーラー構成 | macOS `.pkg` / Windows `.msi` は Router インストーラーを生成し、`or-router-*` の命名規則に従う（Node は C++ 実装 `node/` ディレクトリに配置） | `.github/workflows/publish.yml` の installer ステップが Router 成果物をビルド・アップロードするか確認 |
+| RD-05 | インストーラー構成 | macOS `.pkg` / Windows `.msi` は Load Balancer インストーラーを生成し、`or-router-*` の命名規則に従う（Node は C++ 実装 `node/` ディレクトリに配置） | `.github/workflows/publish.yml` の installer ステップが Load Balancer 成果物をビルド・アップロードするか確認 |
 
 ## チェックリスト
 
@@ -25,4 +25,4 @@ GitHub Release に添付される配布物が、プラットフォームごと�
 2. `.github/workflows/release-binaries.yml` の検証ステップで新ターゲット分の条件を追加したか
 3. 手動でリリースする際も、同梱ファイルとフォーマットを必ず確認したか
 4. リリース対象コミットが `main` ブランチに存在することを確認したか
-5. Router インストーラーを出力する設定（RD-05）を更新したか
+5. Load Balancer インストーラーを出力する設定（RD-05）を更新したか

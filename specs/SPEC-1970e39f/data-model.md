@@ -45,14 +45,14 @@ pub enum LogLevel {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Component {
-    Router,
+    Load Balancer,
     Node,
 }
 ```
 
 ## ログイベント定義
 
-### リクエスト受信 (Router)
+### リクエスト受信 (Load Balancer)
 
 ```json
 {
@@ -68,7 +68,7 @@ pub enum Component {
 }
 ```
 
-### ノード選択成功 (Router)
+### ノード選択成功 (Load Balancer)
 
 ```json
 {
@@ -83,7 +83,7 @@ pub enum Component {
 }
 ```
 
-### ノード選択失敗 (Router)
+### ノード選択失敗 (Load Balancer)
 
 ```json
 {
@@ -128,7 +128,7 @@ pub enum Component {
 | request_id | string (UUID) | No | リクエスト追跡ID |
 | component | string | Yes | router / node |
 
-### Router固有フィールド
+### Load Balancer固有フィールド
 
 | フィールド | 型 | イベント | 説明 |
 |-----------|-----|---------|------|
@@ -154,7 +154,7 @@ pub enum Component {
 
 ```text
 ~/.llmlb/logs/
-├── router.log           # ルーターログ（現在）
+├── router.log           # ロードバランサーログ（現在）
 ├── router.log.2025-01-01 # ローテーション済み
 ├── node.log             # ノードログ（現在）
 └── node.log.2025-01-01  # ローテーション済み

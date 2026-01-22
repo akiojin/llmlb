@@ -7,7 +7,7 @@
 - [x] plan.md作成
 - [x] tasks.md作成
 
-## Router側
+## Load Balancer側
 
 ### Test (TDD Red)
 
@@ -47,13 +47,13 @@
 
 ## Integration
 
-- [x] Router/Node同時起動でログ出力確認（手動検証）
+- [x] Load Balancer/Node同時起動でログ出力確認（手動検証）
   - ✅ 2025-12-28 実行: `LLMLB_LOG_DIR`/`XLLM_LOG_DIR` を指定して同時起動
   - ✅ ログ出力確認: `/tmp/llm-logs-799b8e2b.Qa6okk/llmlb.jsonl.2025-12-28`
   - ✅ ログ出力確認: `/tmp/llm-logs-799b8e2b.Qa6okk/xllm.jsonl.2025-12-28`
 - [x] /v0/logsエンドポイント動作確認
   - ✅ SPEC-1f2a9c3d (Log Retrieval API) で実装・テスト済み
-  - ✅ `router/src/api/logs.rs` にwiremockテスト
+  - ✅ `llmlb/src/api/logs.rs` にwiremockテスト
 
 ## Polish
 

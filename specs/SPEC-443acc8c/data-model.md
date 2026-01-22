@@ -5,7 +5,7 @@
 ### ノード状態
 
 ```rust
-// router/src/registry/node.rs
+// llmlb/src/registry/node.rs
 
 use std::time::Instant;
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ impl NodeState {
 ### ハートビートリクエスト
 
 ```rust
-// router/src/api/health.rs
+// llmlb/src/api/health.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -106,7 +106,7 @@ pub struct SystemMetrics {
 ### ハートビートレスポンス
 
 ```rust
-// router/src/api/health.rs
+// llmlb/src/api/health.rs
 
 /// ハートビートレスポンス
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -136,7 +136,7 @@ pub enum HeartbeatStatus {
 ### ヘルスモニター
 
 ```rust
-// router/src/health/monitor.rs
+// llmlb/src/health/monitor.rs
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -196,7 +196,7 @@ pub struct NodeHealthInfo {
 ### 状態遷移
 
 ```rust
-// router/src/registry/transition.rs
+// llmlb/src/registry/transition.rs
 
 /// 状態遷移イベント
 #[derive(Debug, Clone)]
@@ -240,7 +240,7 @@ pub enum StateTransition {
 ### タイムアウト情報
 
 ```rust
-// router/src/health/timeout.rs
+// llmlb/src/health/timeout.rs
 
 use std::time::{Duration, Instant};
 
@@ -366,7 +366,7 @@ impl TimeoutCheck {
 # ノード側設定
 XLLM_HEARTBEAT_SECS=30        # ハートビート送信間隔（秒）
 
-# ルーター側設定
+# ロードバランサー側設定
 LLMLB_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
 LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 

@@ -105,6 +105,6 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 ## 注意事項
 
-- ルーターはパススルーのみ。API変換は行わない
+- ロードバランサーはパススルーのみ。API変換は行わない
 - ステートフル機能（previous_response_id）はバックエンドの責務
 - ツール実行はクライアントの責務

@@ -101,7 +101,7 @@ std::vector<float> decode_audio(const std::string& path);
 **理由**:
 
 - ノードが対応可能なモデルタイプを明示的に申告
-- ルーターが適切なノードを選択可能
+- ロードバランサーが適切なノードを選択可能
 - 既存のHealthCheckRequestを拡張
 
 **実装**:

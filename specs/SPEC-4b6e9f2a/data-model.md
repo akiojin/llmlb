@@ -5,7 +5,7 @@
 ### クラウドプロバイダー
 
 ```rust
-// router/src/cloud/provider.rs
+// llmlb/src/cloud/provider.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +51,7 @@ impl CloudProvider {
 ### プロバイダー設定
 
 ```rust
-// router/src/cloud/config.rs
+// llmlb/src/cloud/config.rs
 
 /// プロバイダー接続設定
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ impl CloudConfig {
 ### ルーティング結果
 
 ```rust
-// router/src/cloud/routing.rs
+// llmlb/src/cloud/routing.rs
 
 /// ルーティング先
 #[derive(Debug, Clone)]
@@ -182,7 +182,7 @@ impl RouteTarget {
 ### クラウドリクエスト
 
 ```rust
-// router/src/cloud/request.rs
+// llmlb/src/cloud/request.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -219,7 +219,7 @@ pub struct ChatMessage {
 ### クラウドエラー
 
 ```rust
-// router/src/cloud/error.rs
+// llmlb/src/cloud/error.rs
 
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};

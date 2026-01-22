@@ -2,9 +2,9 @@
 
 ## 概要
 
-Router/NodeのCLIインターフェースの使用方法を説明する。
+Load Balancer/NodeのCLIインターフェースの使用方法を説明する。
 
-## Router CLI
+## Load Balancer CLI
 
 ### ヘルプ表示
 
@@ -91,7 +91,7 @@ xllm
 ### 環境変数による設定
 
 ```bash
-# ルーターURLを指定
+# ロードバランサーURLを指定
 LLMLB_URL=http://192.168.1.100:8080 xllm
 
 # モデルディレクトリを指定
@@ -199,7 +199,7 @@ Error: Failed to bind to 0.0.0.0:8080: Address already in use
 
 ## 環境変数一覧
 
-### Router
+### Load Balancer
 
 | 環境変数 | デフォルト | 説明 |
 |----------|-----------|------|
@@ -214,7 +214,7 @@ Error: Failed to bind to 0.0.0.0:8080: Address already in use
 
 | 環境変数 | デフォルト | 説明 |
 |----------|-----------|------|
-| `LLMLB_URL` | `http://127.0.0.1:8080` | ルーターURL |
+| `LLMLB_URL` | `http://127.0.0.1:8080` | ロードバランサーURL |
 | `XLLM_PORT` | 11435 | 待受ポート |
 | `XLLM_MODELS_DIR` | ~/.runtime/models | モデル保存先 |
 | `XLLM_LOG_LEVEL` | info | ログレベル |

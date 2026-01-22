@@ -1,4 +1,4 @@
-# クイックスタート: Node/Router Log Retrieval API
+# クイックスタート: Node/Load Balancer Log Retrieval API
 
 ## 概要
 
@@ -40,7 +40,7 @@ curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
 }
 ```
 
-## ルーター経由でノードログ取得
+## ロードバランサー経由でノードログ取得
 
 ### 特定ノードのログを取得
 

@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | 1台以上のオンラインノード |
 | APIキー | 有効なAPIキー |
 
@@ -128,7 +128,7 @@ curl -X GET http://localhost:8080/v1/models \
 ```python
 from openai import OpenAI
 
-# ルーターをエンドポイントに設定
+# ロードバランサーをエンドポイントに設定
 client = OpenAI(
     api_key="sk-your-api-key",
     base_url="http://localhost:8080/v1"

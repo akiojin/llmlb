@@ -121,7 +121,7 @@ pub struct ApiKeyWithPlaintext {
 
 ### 3. NodeToken (ノードトークン)
 
-**説明**: ノードがルーターと安全に通信するための認証情報
+**説明**: ノードがロードバランサーと安全に通信するための認証情報
 
 **フィールド**:
 | フィールド | 型 | 制約 | 説明 |
@@ -189,7 +189,7 @@ Node (1) --- (1) NodeToken
 
 ## SQLiteスキーマ
 
-**マイグレーションファイル**: `router/migrations/001_auth_init.sql`
+**マイグレーションファイル**: `llmlb/migrations/001_auth_init.sql`
 
 ```sql
 -- ユーザーテーブル

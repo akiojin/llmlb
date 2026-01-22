@@ -5,7 +5,7 @@
 ### ノードメトリクス
 
 ```rust
-// router/src/balancer/metrics.rs
+// llmlb/src/balancer/metrics.rs
 
 use std::time::Instant;
 
@@ -60,7 +60,7 @@ impl Default for NodeMetrics {
 ### GPU能力スコア
 
 ```rust
-// router/src/balancer/gpu_score.rs
+// llmlb/src/balancer/gpu_score.rs
 
 /// GPUの能力スコア（0-10000）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -96,7 +96,7 @@ pub struct GpuInfo {
 ### ロードバランサー
 
 ```rust
-// router/src/balancer/mod.rs
+// llmlb/src/balancer/mod.rs
 
 use std::sync::Arc;
 use dashmap::DashMap;
@@ -153,7 +153,7 @@ pub struct MetricsPoint {
 ### ノード選択結果
 
 ```rust
-// router/src/balancer/selection.rs
+// llmlb/src/balancer/selection.rs
 
 /// ノード選択結果
 #[derive(Debug, Clone)]
@@ -196,7 +196,7 @@ pub enum SelectionReason {
 ### 負荷判定
 
 ```rust
-// router/src/balancer/load_check.rs
+// llmlb/src/balancer/load_check.rs
 
 /// 負荷状態
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

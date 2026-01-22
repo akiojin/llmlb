@@ -1,7 +1,7 @@
 # クイックスタート: HF URL 登録（変換なし・Node直ダウンロード）
 
 ## 前提
-- Router が起動済み
+- Load Balancer が起動済み
 - Node が起動済み（HFへのネットワーク到達性あり）
 - HF へのアクセスが必要な場合は **Node側**で `HF_TOKEN` を設定
 
@@ -29,7 +29,7 @@ curl -sS http://localhost:32768/v0/models/register \
 ## 2. Nodeが同期して取得
 - Nodeは起動時または同期通知時に /v0/models を参照し、
   マニフェストに従って HF から直接ダウンロードします。
-- ルーターはバイナリを保持しません。
+- ロードバランサーはバイナリを保持しません。
 
 ## 3. /v1/models で ready を確認
 ```bash

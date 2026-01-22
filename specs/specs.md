@@ -70,7 +70,7 @@
 
 以下のSPECは依存がなく、他のSPECから依存される基盤機能です：
 
-- **SPEC-66555000**: ルーター主導エンドポイント登録（最上位基盤、SPEC-94621a1fを置換）
+- **SPEC-66555000**: ロードバランサー主導エンドポイント登録（最上位基盤、SPEC-94621a1fを置換）
 - **SPEC-dcaeaec4**: モデルストレージ
 - **SPEC-d7feaa2c**: エンジンローダー
 - **SPEC-799b8e2b**: 共通ログシステム
@@ -83,13 +83,13 @@
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | ✅ | P1 | ✅ |
 | `SPEC-24157000` | OpenAI互換API完全準拠 | ✅ | P1 | ✅ |
 | `SPEC-32e2b31a` | LLM Load Balancer System（統合版・アーカイブ） | ✅ | P1 | ✅ |
-| `SPEC-35375000` | ルーター負荷最適化 | ✅ | P1 | ✅ |
+| `SPEC-35375000` | ロードバランサー負荷最適化 | ✅ | P1 | ✅ |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | ✅ | P2 | ✅ |
 | `SPEC-443acc8c` | 廃止: ヘルスチェックシステム（→SPEC-66555000） | 🗑️ | - | - |
 | `SPEC-589f2df1` | ロードバランシングシステム | ✅ | P1 | ✅ |
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | ✅ | P1 | ✅ |
 | `SPEC-63acef08` | 統一APIプロキシ | ✅ | P1 | ✅ |
-| `SPEC-66555000` | ルーター主導エンドポイント登録システム | ✅ | P1 | ✅ |
+| `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | ✅ | P1 | ✅ |
 | `SPEC-94621a1f` | 廃止: ノード自己登録システム（→SPEC-66555000） | 🗑️ | - | - |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | ✅ | P1 | ✅ |
 
@@ -98,7 +98,7 @@
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
 | `SPEC-7c0a37e0` | APIキースコープシステム | ✅ | P1 | ✅ |
-| `SPEC-d4eb8796` | ルーター認証・アクセス制御 | ✅ | P1 | ✅ |
+| `SPEC-d4eb8796` | ロードバランサー認証・アクセス制御 | ✅ | P1 | ✅ |
 
 ## 📦 モデル管理
 
@@ -118,8 +118,8 @@
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ | P2 | ✅ |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | ✅ | P2 | ✅ |
 | `SPEC-a61b24f2` | 廃止: モデル形式選択（safetensors/GGUF）とGGUF選択ポリシー | 🗑️ | - | - |
-| `SPEC-8ae67d67` | 廃止: ルーター主導のモデル自動配布機能 | 🗑️ | - | - |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | ✅ | P1 | ✅ |
+| `SPEC-8ae67d67` | 廃止: ロードバランサー主導のモデル自動配布機能 | 🗑️ | - | - |
+| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Load Balancer独自モデルストレージ | ✅ | P1 | ✅ |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | ✅ | P2 | ✅ |
 
 ## 🛤️ ルーティング
@@ -150,7 +150,7 @@
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
 | `SPEC-1970e39f` | 構造化ロギング強化 | ✅ | P2 | ✅ |
-| `SPEC-1f2a9c3d` | SPEC-log-api: Node / Router Log Retrieval API | ✅ | P2 | ✅ |
+| `SPEC-1f2a9c3d` | SPEC-log-api: Node / Load Balancer Log Retrieval API | ✅ | P2 | ✅ |
 | `SPEC-799b8e2b` | 共通ログシステム | ✅ | P1 | ✅ |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | ✅ | P1 | ✅ |
 
@@ -182,12 +182,12 @@
 | `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 完了 |
 | `SPEC-32637000` | モデル capabilities に基づくルーティング検証 | 完了 |
 | `SPEC-32e2b31a` | LLM Load Balancer System（統合版・アーカイブ） | 完了 |
-| `SPEC-35375000` | ルーター負荷最適化 | 完了 |
+| `SPEC-35375000` | ロードバランサー負荷最適化 | 完了 |
 | `SPEC-47649000` | モデルメタデータSQLite統合 | 完了 |
 | `SPEC-589f2df1` | ロードバランシングシステム | 完了 |
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | 完了 |
 | `SPEC-63acef08` | 統一APIプロキシ | 完了 |
-| `SPEC-66555000` | ルーター主導エンドポイント登録システム | 完了 |
+| `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | 完了 |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | 完了 |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | 完了 |
 | `SPEC-69549000` | safetensors.cpp - safetensors直接推論ライブラリ | 完了 |
@@ -195,9 +195,9 @@
 | `SPEC-799b8e2b` | 共通ログシステム | 完了 |
 | `SPEC-7c0a37e0` | APIキースコープシステム | 完了 |
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | 完了 |
-| `SPEC-d4eb8796` | ルーター認証・アクセス制御 | 完了 |
+| `SPEC-d4eb8796` | ロードバランサー認証・アクセス制御 | 完了 |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |
-| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Router独自モデルストレージ | 完了 |
+| `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Load Balancer独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
 
 ### P2（重要）- 18件
@@ -207,7 +207,7 @@
 | `SPEC-026b2cde` | リクエスト履歴一覧のページネーション機能 | 完了 |
 | `SPEC-08d2b908` | SPEC-08d2b908: モデル管理（統合仕様） | 完了 |
 | `SPEC-1970e39f` | 構造化ロギング強化 | 完了 |
-| `SPEC-1f2a9c3d` | SPEC-log-api: Node / Router Log Retrieval API | 完了 |
+| `SPEC-1f2a9c3d` | SPEC-log-api: Node / Load Balancer Log Retrieval API | 完了 |
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | 完了 |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | 完了 |
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | 完了 |
@@ -237,6 +237,6 @@
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | SPEC-dcaeaec4 |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | SPEC-48678000 |
 | `SPEC-443acc8c` | ヘルスチェックシステム | SPEC-66555000 |
-| `SPEC-8ae67d67` | ルーター主導のモデル自動配布機能 | SPEC-dcaeaec4 |
+| `SPEC-8ae67d67` | ロードバランサー主導のモデル自動配布機能 | SPEC-dcaeaec4 |
 | `SPEC-94621a1f` | ノード自己登録システム | SPEC-66555000 |
 | `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF） | 統合仕様へ移行 |

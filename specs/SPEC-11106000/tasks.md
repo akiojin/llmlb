@@ -2,14 +2,14 @@
 
 ## 方針
 - TDD順で進める。契約→Integration→E2E→Unitの順。
-- Web/CLI/Routerの3面を並列化できるところは[P]マーク。
+- Web/CLI/Load Balancerの3面を並列化できるところは[P]マーク。
 
 ## 重要な変更 (Session 2025-12-31)
 
-- 変換パイプライン廃止（Routerはバイナリを保持しない）
+- 変換パイプライン廃止（Load Balancerはバイナリを保持しない）
 - NodeがHFから直接ダウンロードしてキャッシュ
 - /v1/models の可視性は登録 + Node ready に基づく
-- 形式選択/gguf_policy はRouterで扱わない
+- 形式選択/gguf_policy はLoad Balancerで扱わない
 
 ## 追加対応（再計画）
 
@@ -18,13 +18,13 @@
 - [x] /v0/models/registry/:model/manifest.json の契約を整備
 - [x] /v1/models: 登録済み + Node ready の整合
 
-### Router
+### Load Balancer
 - [x] convert_manager の削除
 - [x] 登録フローをメタデータ保存のみへ変更（format/gguf_policy廃止）
 - [x] /v0/models/available とダウンロード系APIの整理
 
 ### CLI
-- [x] `model download` 等のRouter主導操作を廃止/整理
+- [x] `model download` 等のLoad Balancer主導操作を廃止/整理
 
 ### Frontend (web/static)
 - [x] URL登録フォームのみ残し、format/gguf_policy UIは削除

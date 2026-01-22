@@ -16,7 +16,7 @@
 ## Phase 3.1: セットアップ
 
 - [x] T001 既存実装の確認とテスト環境準備
-  - ファイル: `router/src/api/nodes.rs`, `router/src/registry/mod.rs`
+  - ファイル: `llmlb/src/api/nodes.rs`, `llmlb/src/registry/mod.rs`
   - 内容: 既存の approve_node, delete_node 実装を確認し、テスト追加の準備
 
 ## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
@@ -25,41 +25,41 @@
 
 ### 承認フローテスト
 
-- [x] T002 [P] `router/src/api/nodes.rs` に `test_approve_node_requires_admin` 追加
+- [x] T002 [P] `llmlb/src/api/nodes.rs` に `test_approve_node_requires_admin` 追加
   - 内容: 非Admin権限での承認操作が403エラーを返すことを検証
   - 期待: テストが失敗しないこと（既存実装でパスするはず）
 
-- [x] T003 [P] `router/src/api/nodes.rs` に `test_approve_pending_node_transitions_to_online` 追加
+- [x] T003 [P] `llmlb/src/api/nodes.rs` に `test_approve_pending_node_transitions_to_online` 追加
   - 内容: Pending状態のノードを承認するとOnline/Registeringに遷移することを検証
   - 期待: テストがパスすること
 
-- [x] T004 [P] `router/src/api/nodes.rs` に `test_approve_non_pending_node_fails` 追加
+- [x] T004 [P] `llmlb/src/api/nodes.rs` に `test_approve_non_pending_node_fails` 追加
   - 内容: Pending以外の状態のノードを承認しようとするとエラーになることを検証
   - 期待: テストがパスすること
 
 ### 拒否（削除）フローテスト
 
-- [x] T005 [P] `router/src/api/nodes.rs` に `test_delete_pending_node_removes_from_registry` 追加
+- [x] T005 [P] `llmlb/src/api/nodes.rs` に `test_delete_pending_node_removes_from_registry` 追加
   - 内容: Pending状態のノードを削除するとレジストリから完全に削除されることを検証
   - 期待: テストがパスすること
 
-- [x] T006 [P] `router/src/api/nodes.rs` に `test_delete_node_requires_admin` 追加
+- [x] T006 [P] `llmlb/src/api/nodes.rs` に `test_delete_node_requires_admin` 追加
   - 内容: 非Admin権限での削除操作が403エラーを返すことを検証
   - 期待: テストがパスすること
 
 ### ルーティング除外テスト
 
-- [x] T007 [P] `router/src/balancer/mod.rs` に `test_pending_node_excluded_from_routing` 追加
+- [x] T007 [P] `llmlb/src/balancer/mod.rs` に `test_pending_node_excluded_from_routing` 追加
   - 内容: Pending状態のノードに推論リクエストがルーティングされないことを検証
   - 期待: テストがパスすること
 
-- [x] T008 [P] `router/src/balancer/mod.rs` に `test_registering_node_excluded_from_routing` 追加
+- [x] T008 [P] `llmlb/src/balancer/mod.rs` に `test_registering_node_excluded_from_routing` 追加
   - 内容: Registering状態のノードに推論リクエストがルーティングされないことを検証
   - 期待: テストがパスすること
 
 ### 状態遷移テスト
 
-- [x] T009 [P] `router/src/registry/mod.rs` に `test_offline_node_returns_to_registering_on_heartbeat` 追加
+- [x] T009 [P] `llmlb/src/registry/mod.rs` に `test_offline_node_returns_to_registering_on_heartbeat` 追加
   - 内容: Offline状態のノードがハートビートで復帰するとRegistering状態になることを検証
   - 期待: テストがパスすること
 
@@ -67,7 +67,7 @@
 
 ### 承認ボタン
 
-- [x] T010 `router/src/web/dashboard/src/components/dashboard/NodeTable.tsx` に承認ボタン追加
+- [x] T010 `llmlb/src/web/dashboard/src/components/dashboard/NodeTable.tsx` に承認ボタン追加
   - 内容: Pending状態のノードに「承認」ボタンを表示
   - アクション: クリック時に `nodesApi.approve(nodeId)` を呼び出し
   - 成功時: ノード一覧を再取得（refetch）
@@ -75,7 +75,7 @@
 
 ### 拒否ボタン
 
-- [x] T011 `router/src/web/dashboard/src/components/dashboard/NodeTable.tsx` に拒否ボタン追加
+- [x] T011 `llmlb/src/web/dashboard/src/components/dashboard/NodeTable.tsx` に拒否ボタン追加
   - 内容: Pending状態のノードに「拒否」ボタンを表示
   - アクション: クリック時に確認ダイアログを表示
   - 確認後: `nodesApi.delete(nodeId)` を呼び出し
@@ -84,7 +84,7 @@
 
 ### 確認ダイアログ
 
-- [x] T012 `router/src/web/dashboard/src/components/dashboard/NodeTable.tsx` に確認ダイアログ追加
+- [x] T012 `llmlb/src/web/dashboard/src/components/dashboard/NodeTable.tsx` に確認ダイアログ追加
   - 内容: 拒否操作時に確認ダイアログを表示
   - メッセージ: 「このノードを拒否しますか？この操作は取り消せません。」
   - ボタン: 「キャンセル」「拒否」
@@ -98,7 +98,7 @@
 
 - [x] T014 ダッシュボードUIの手動テスト（自動テストによる検証完了）
   - 手順:
-    1. ルーター起動 (`cargo run -p llmlb`)
+    1. ロードバランサー起動 (`cargo run -p llmlb`)
     2. ノード起動（別ターミナル）
     3. ダッシュボードにログイン（admin/test）
     4. ノード一覧でPending状態のノードを確認
@@ -107,7 +107,7 @@
 
 ## Phase 3.5: 仕上げ
 
-- [x] T015 [P] `router/src/api/nodes.rs` のテストモジュールを整理（既存で整理済み）
+- [x] T015 [P] `llmlb/src/api/nodes.rs` のテストモジュールを整理（既存で整理済み）
   - 内容: 重複テストの削除、テスト名の統一
 
 - [x] T016 [P] SPEC-98934000 ドキュメント更新

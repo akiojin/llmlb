@@ -59,7 +59,7 @@ llmlb node ps
 llmlb node stop meta-llama/Llama-3.2-3B-Instruct
 ```
 
-### ルーター管理（分散構成時）
+### ロードバランサー管理（分散構成時）
 
 ```bash
 # ノード一覧

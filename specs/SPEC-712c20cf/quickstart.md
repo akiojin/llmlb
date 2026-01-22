@@ -176,9 +176,9 @@
 ### ダッシュボードが表示されない
 **原因**: 静的ファイルが正しく配信されていない
 **解決策**:
-1. `router/src/web/static/index.html`が存在することを確認
+1. `llmlb/src/web/static/index.html`が存在することを確認
 2. `tower-http`のServeDir設定を確認
-3. ルーターを再起動
+3. ロードバランサーを再起動
 
 ### ノード一覧が空
 **原因**: ノードが登録されていない
@@ -210,7 +210,7 @@
 **解決策**:
 1. ノードがハートビートを送信しているか確認:
    ```bash
-   # ルーターのログを確認（例）
+   # ロードバランサーのログを確認（例）
    ls ~/.llmlb/logs/llmlb.jsonl.*
    tail -n 200 ~/.llmlb/logs/llmlb.jsonl.$(date +%Y-%m-%d)
    ```

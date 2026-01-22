@@ -2,9 +2,9 @@
 
 ## 現状分析
 
-### Router (Rust)
+### Load Balancer (Rust)
 
-- **ファイル**: `router/src/logging.rs`
+- **ファイル**: `llmlb/src/logging.rs`
 - **出力先**: `~/.llmlb/logs/router.log.jsonl`（ファイルのみ）
 - **形式**: JSON Lines（tracing-subscriber fmt::layer().json()）
 - **ローテーション**: なし（append）
@@ -47,11 +47,11 @@
 {"ts":"2025-11-28T12:00:00.000Z","level":"info","category":"api","msg":"Request received"}
 ```
 
-## Router側修正
+## Load Balancer側修正
 
 ### 修正ファイル
 
-- `router/src/logging.rs`
+- `llmlb/src/logging.rs`
 
 ### 変更内容
 
@@ -102,7 +102,7 @@ spdlogの既存機能で対応可能（daily_file_sink_mtを使用）。
 
 ## 実装順序（TDD）
 
-### Phase 1: Router側
+### Phase 1: Load Balancer側
 
 1. テスト作成（ローテーション、フォーマット、古いファイル削除）
 2. `logging.rs`修正
@@ -116,5 +116,5 @@ spdlogの既存機能で対応可能（daily_file_sink_mtを使用）。
 
 ### Phase 3: 統合確認
 
-1. Router/Node両方を起動してログ出力確認
+1. Load Balancer/Node両方を起動してログ出力確認
 2. `GET /v0/logs` エンドポイント動作確認

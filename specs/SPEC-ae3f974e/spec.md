@@ -186,16 +186,16 @@
 
 ## 実装状況
 
-### Router側（Rust）- 完了
+### Load Balancer側（Rust）- 完了
 
 | ファイル | 状態 | 内容 |
 |---------|------|------|
 | `common/src/types.rs` | ✅ 完了 | RuntimeType::StableDiffusion, ModelType::ImageGeneration, ImageSize, ImageQuality, ImageStyle, ImageResponseFormat追加 |
 | `common/src/protocol.rs` | ✅ 完了 | ImageGenerationRequest, ImageEditRequest, ImageVariationRequest, ImageResponse, ImageData追加 |
-| `router/src/api/images.rs` | ✅ 完了 | generations, edits, variationsエンドポイント |
-| `router/src/api/mod.rs` | ✅ 完了 | imagesモジュール追加、ルート登録 |
-| `router/tests/contract/images_*.rs` | ✅ 完了 | 契約テスト（TDD RED Phase） |
-| `router/tests/integration/images_api_test.rs` | ✅ 完了 | 統合テスト（TDD RED Phase） |
+| `llmlb/src/api/images.rs` | ✅ 完了 | generations, edits, variationsエンドポイント |
+| `llmlb/src/api/mod.rs` | ✅ 完了 | imagesモジュール追加、ルート登録 |
+| `llmlb/tests/contract/images_*.rs` | ✅ 完了 | 契約テスト（TDD RED Phase） |
+| `llmlb/tests/integration/images_api_test.rs` | ✅ 完了 | 統合テスト（TDD RED Phase） |
 
 ### Node側（C++）- 完了
 

@@ -5,7 +5,7 @@
 ### プロキシリクエスト
 
 ```rust
-// router/src/api/proxy.rs
+// llmlb/src/api/proxy.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -53,7 +53,7 @@ pub struct ChatMessage {
 ### プロキシレスポンス
 
 ```rust
-// router/src/api/proxy.rs
+// llmlb/src/api/proxy.rs
 
 /// チャット完了レスポンス（OpenAI互換）
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -108,7 +108,7 @@ pub struct Usage {
 ### ストリーミングチャンク
 
 ```rust
-// router/src/api/streaming.rs
+// llmlb/src/api/streaming.rs
 
 /// ストリーミングチャンク（SSE）
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -158,7 +158,7 @@ pub struct ChunkDelta {
 ### Embeddings
 
 ```rust
-// router/src/api/embeddings.rs
+// llmlb/src/api/embeddings.rs
 
 /// Embeddingsリクエスト
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -228,7 +228,7 @@ pub struct EmbeddingUsage {
 ### プロキシ設定
 
 ```rust
-// router/src/proxy/config.rs
+// llmlb/src/proxy/config.rs
 
 use std::time::Duration;
 
@@ -263,7 +263,7 @@ impl Default for ProxyConfig {
 ### プロキシエラー
 
 ```rust
-// router/src/api/error.rs
+// llmlb/src/api/error.rs
 
 /// プロキシエラー
 #[derive(Debug, Clone)]

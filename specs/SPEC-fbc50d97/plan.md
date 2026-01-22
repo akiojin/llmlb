@@ -18,7 +18,7 @@
 
 ## 概要
 
-ルーターが受信するリクエストとノードから返されるレスポンスを
+ロードバランサーが受信するリクエストとノードから返されるレスポンスを
 JSONファイルに保存し、Webダッシュボードで履歴を可視化する機能。
 7日間のデータ保持、フィルタリング、詳細表示、エクスポート機能を提供する。
 
@@ -46,7 +46,7 @@ JSONファイルに保存し、Webダッシュボードで履歴を可視化す�
 - パターン回避? Yes (Repository パターン不使用、直接ファイルI/O) ✓
 
 **アーキテクチャ**:
-- すべての機能をライブラリとして? Yes (router/src/ 以下にモジュール実装) ✓
+- すべての機能をライブラリとして? Yes (llmlb/src/ 以下にモジュール実装) ✓
 - ライブラリリスト:
   - `router::db::request_history` - ストレージ層
   - `router::api::proxy` - プロキシ + キャプチャ機能
@@ -91,7 +91,7 @@ specs/SPEC-fbc50d97/
 ### ソースコード (リポジトリルート)
 
 ```
-router/
+llmlb/
 ├── src/
 │   ├── db/
 │   │   ├── mod.rs                 # 既存（ノード保存）
@@ -294,7 +294,7 @@ async fn test_export_request_responses_contract() {
 // tests/integration/request_capture_test.rs
 #[tokio::test]
 async fn test_request_is_captured_and_stored() {
-    // 1. ルーター起動
+    // 1. ロードバランサー起動
     // 2. テストノード登録
     // 3. /v1/chat/completions にリクエスト送信
     // 4. request_history.json にレコードが保存されることを確認

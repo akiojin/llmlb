@@ -38,13 +38,13 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 
 ## Debugging Tips
 
-- Set `RUST_LOG=debug` for verbose router output.
+- Set `RUST_LOG=debug` for verbose load balancer output.
 - Dashboard stats endpoint `/v0/dashboard/stats` shows cloud key presence.
 - For cloud routing, confirm the key is logged as present at startup.
 
 ## Token Statistics
 
-The router tracks token usage for all requests (prompt_tokens, completion_tokens,
+The load balancer tracks token usage for all requests (prompt_tokens, completion_tokens,
 total_tokens). Statistics are persisted to SQLite and available via dashboard API.
 
 - **Data source**: Node response `usage` field (preferred), tiktoken estimation (fallback)

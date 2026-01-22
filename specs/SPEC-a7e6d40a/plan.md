@@ -7,7 +7,7 @@
 
 LLM Load Balancerに対してCLIインターフェースを追加する。
 
-- 引数なしで実行した場合は従来通りルーターサービスを起動
+- 引数なしで実行した場合は従来通りロードバランサーサービスを起動
 - `--help`, `--version` オプションを追加
 - `user` サブコマンドでユーザー管理（list/add/delete）
 - 環境変数名を `LLMLB_*` プレフィックスに統一
@@ -69,7 +69,7 @@ specs/SPEC-a7e6d40a/
 ### ソースコード変更
 
 ```text
-router/
+llmlb/
 ├── Cargo.toml           # clap依存関係追加
 └── src/
     ├── main.rs          # CLIエントリポイント修正
@@ -209,7 +209,7 @@ Options:
   -V, --version  Print version information
 
 Environment Variables:
-  LLMLB_URL              Router URL (default: http://127.0.0.1:32768)
+  LLMLB_URL              Load Balancer URL (default: http://127.0.0.1:32768)
   XLLM_PORT               Node listen port (default: 32769)
   XLLM_LOG_LEVEL          Log level (default: info)
   XLLM_MODELS_DIR         Model storage directory
@@ -267,16 +267,16 @@ Environment Variables:
 
 ### 変更対象ファイル
 
-- `router/src/main.rs` - JWT_SECRET読み込みロジック変更
+- `llmlb/src/main.rs` - JWT_SECRET読み込みロジック変更
 
 ## Phase 2: タスク計画アプローチ
 
 **タスク生成戦略**:
 
-**Router (Rust)**:
+**Load Balancer (Rust)**:
 
 1. clap依存関係追加 → Cargo.toml
-2. CLIモジュール作成 → `router/src/cli/mod.rs`
+2. CLIモジュール作成 → `llmlb/src/cli/mod.rs`
 3. 引数なし実行でサーバー起動のテスト（既存動作維持）
 4. `--help` 表示テスト → 実装
 5. `--version` 表示テスト → 実装
@@ -299,7 +299,7 @@ Environment Variables:
 - TDD順序: テストが実装より先
 - 依存関係順序: CLI基盤 → サブコマンド → 環境変数統一
 - 並列実行: 独立したサブコマンドは [P] マーク
-- Router / Node は独立して並列実行可能
+- Load Balancer / Node は独立して並列実行可能
 
 **推定出力**: tasks.mdに30-35個のタスク
 

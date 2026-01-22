@@ -2,7 +2,7 @@
 
 ## 調査目的
 
-Router/Node の CLI インターフェースを整備するための技術調査。
+Load Balancer/Node の CLI インターフェースを整備するための技術調査。
 
 ## CLIライブラリ選定
 
@@ -17,7 +17,7 @@ Router/Node の CLI インターフェースを整備するための技術調査
 
 ### 選定結果
 
-- **Router (Rust)**: clap v4 (derive マクロ)
+- **Load Balancer (Rust)**: clap v4 (derive マクロ)
 - **Node (C++)**: 標準ライブラリ（argc/argv手動パース）
 
 ### clap採用理由
@@ -38,7 +38,7 @@ Router/Node の CLI インターフェースを整備するための技術調査
 
 | コンポーネント | プレフィックス |
 |---------------|---------------|
-| Router | `LLMLB_*` |
+| Load Balancer | `LLMLB_*` |
 | Node | `XLLM_*` |
 
 ### マイグレーション戦略
@@ -78,7 +78,7 @@ fn get_env_with_fallback(new_name: &str, old_name: &str) -> Option<String> {
 
 ## バージョン情報の取得
 
-### Router (Rust)
+### Load Balancer (Rust)
 
 ```rust
 const VERSION: &str = env!("CARGO_PKG_VERSION");

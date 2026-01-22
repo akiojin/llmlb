@@ -5,7 +5,7 @@
 ### ログエントリ（共通形式）
 
 ```rust
-// router/src/logging/mod.rs
+// llmlb/src/logging/mod.rs
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,7 @@ struct LogEntry {
 ### ログ設定
 
 ```rust
-// router/src/logging/config.rs
+// llmlb/src/logging/config.rs
 
 /// ログ設定
 #[derive(Debug, Clone)]

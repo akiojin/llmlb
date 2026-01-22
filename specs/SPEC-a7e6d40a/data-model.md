@@ -2,7 +2,7 @@
 
 ## CLI構造定義
 
-### Router CLI (Rust/clap)
+### Load Balancer CLI (Rust/clap)
 
 ```rust
 use clap::Parser;
@@ -28,7 +28,7 @@ CliOptions parse_args(int argc, char** argv);
 
 ## 環境変数定義
 
-### Router環境変数
+### Load Balancer環境変数
 
 | 環境変数 | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
@@ -43,7 +43,7 @@ CliOptions parse_args(int argc, char** argv);
 
 | 環境変数 | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
-| `LLMLB_URL` | String | `http://127.0.0.1:8080` | ルーターURL |
+| `LLMLB_URL` | String | `http://127.0.0.1:8080` | ロードバランサーURL |
 | `XLLM_PORT` | u16 | 11435 | 待受ポート |
 | `XLLM_IP` | String | (自動検出) | ノードIP |
 | `XLLM_MODELS_DIR` | Path | ~/.runtime/models | モデル保存先 |
@@ -98,7 +98,7 @@ fn load_jwt_secret() -> String {
 
 ## ヘルプ出力形式
 
-### Router
+### Load Balancer
 
 ```text
 LLM Load Balancer - OpenAI-compatible API gateway
@@ -130,7 +130,7 @@ Options:
   -V, --version  Print version information
 
 Environment Variables:
-  LLMLB_URL               Router URL (default: http://127.0.0.1:8080)
+  LLMLB_URL               Load Balancer URL (default: http://127.0.0.1:8080)
   XLLM_PORT                Node listen port (default: 11435)
   XLLM_MODELS_DIR          Model storage directory
   XLLM_LOG_LEVEL           Log level (default: info)

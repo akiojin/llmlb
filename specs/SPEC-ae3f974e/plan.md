@@ -17,7 +17,7 @@
   - `*.safetensors`（シャーディングの場合は `.safetensors.index.json` 必須）
 
 ## 役割分離
-- Router: 登録/メタデータ保存、manifest提供
+- Load Balancer: 登録/メタデータ保存、manifest提供
 - Node: 画像生成エンジンでsafetensors直読（必要に応じてHFから取得）
 
 ## テスト方針（TDD）

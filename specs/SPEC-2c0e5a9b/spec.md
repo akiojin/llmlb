@@ -71,7 +71,7 @@
 Client
   │  POST /v1/chat/completions
   ▼
-Router
+Load Balancer
   │  (必要なら chat_template をレンダリング)
   ▼
 Runtime

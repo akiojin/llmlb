@@ -2,14 +2,14 @@
 
 ## リサーチ課題
 
-1. Router（Rust）とNode（C++）で統一されたログ形式の実現方法
+1. Load Balancer（Rust）とNode（C++）で統一されたログ形式の実現方法
 2. 構造化ログ（JSONL）の出力ライブラリ選定
 3. ログローテーションの実装方式
 4. 非同期書き込みによるパフォーマンス最適化
 
 ## 1. ログライブラリ選定
 
-### Router（Rust）
+### Load Balancer（Rust）
 
 **決定**: `tracing` + `tracing-subscriber` を採用。
 
@@ -85,7 +85,7 @@ auto logger = std::make_shared<spdlog::logger>(
 
 ### 決定
 
-統一フォーマットを採用し、Router/Node で同一形式を使用。
+統一フォーマットを採用し、Load Balancer/Node で同一形式を使用。
 
 ### フォーマット仕様
 

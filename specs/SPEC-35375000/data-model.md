@@ -1,11 +1,11 @@
-# データモデル: ルーター負荷最適化
+# データモデル: ロードバランサー負荷最適化
 
 ## エンティティ定義
 
 ### 待機キュー
 
 ```rust
-// router/src/balancer/wait_queue.rs
+// llmlb/src/balancer/wait_queue.rs
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -102,7 +102,7 @@ pub enum WaitError {
 ### 接続プール
 
 ```rust
-// router/src/proxy/pool.rs
+// llmlb/src/proxy/pool.rs
 
 use std::time::Duration;
 
@@ -161,7 +161,7 @@ pub struct PoolStats {
 ### ノード選択キャッシュ
 
 ```rust
-// router/src/balancer/node_cache.rs
+// llmlb/src/balancer/node_cache.rs
 
 use std::time::{Duration, Instant};
 
@@ -217,7 +217,7 @@ pub struct CacheStats {
 ### バックプレッシャー
 
 ```rust
-// router/src/balancer/backpressure.rs
+// llmlb/src/balancer/backpressure.rs
 
 use std::time::Duration;
 
@@ -281,7 +281,7 @@ pub struct BackpressureDecision {
 ### ロードマネージャー統合
 
 ```rust
-// router/src/balancer/load_manager.rs
+// llmlb/src/balancer/load_manager.rs
 
 use std::sync::Arc;
 

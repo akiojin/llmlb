@@ -1,10 +1,10 @@
-# クイックスタート: LLM-Router独自モデルストレージ
+# クイックスタート: LLM-Load Balancer独自モデルストレージ
 
 ## 前提条件
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | 起動済み（`http://localhost:8080`） |
+| ロードバランサー | 起動済み（`http://localhost:8080`） |
 | ノード | 1台以上のオンラインノード |
 | ストレージ | `~/.llmlb/models/` が存在 |
 
@@ -36,7 +36,7 @@ cp -r qwen2.5-coder-7b/* ~/.llmlb/models/qwen2.5-coder-7b/
 ### モデル一覧の確認
 
 ```bash
-# ルーター経由で登録済みモデルを確認
+# ロードバランサー経由で登録済みモデルを確認
 curl http://localhost:8080/v1/models \
   -H "Authorization: Bearer sk-your-api-key"
 ```

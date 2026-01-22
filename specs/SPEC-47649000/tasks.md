@@ -5,7 +5,7 @@
 
 ## Phase 1: マイグレーション作成
 
-- [x] T001 [P] `router/migrations/001_init.sql` マイグレーション作成
+- [x] T001 [P] `llmlb/migrations/001_init.sql` マイグレーション作成
   - ✅ modelsテーブル定義（line 120-133）
   - ✅ model_tagsテーブル定義（line 139-143）
   - ✅ model_capabilitiesテーブル定義（line 148-152）
@@ -14,7 +14,7 @@
 
 ## Phase 2: テスト作成 (RED)
 
-- [x] T002 `router/src/db/models.rs` SQLite対応テスト作成
+- [x] T002 `llmlb/src/db/models.rs` SQLite対応テスト作成
   - ✅ test_save_and_load_model()
   - ✅ test_load_models()
   - ✅ test_delete_model()
@@ -23,7 +23,7 @@
 
 ## Phase 3: 実装 (GREEN)
 
-- [x] T003 `router/src/db/models.rs` SQLite実装
+- [x] T003 `llmlb/src/db/models.rs` SQLite実装
   - ✅ ModelStorage構造体（line 10-311）
   - ✅ save_model() - UPSERT処理
   - ✅ load_models() - 全モデル読み込み
@@ -31,7 +31,7 @@
   - ✅ delete_model() - 削除処理
   - ✅ タグ・能力のINSERT/DELETE処理
 
-- [x] T004 `router/src/db/migrations.rs` マイグレーション登録
+- [x] T004 `llmlb/src/db/migrations.rs` マイグレーション登録
   - ✅ 001_init.sqlにmodelsテーブルを統合（別ファイル登録不要）
   - ✅ sqlx::migrate!マクロで自動適用
 

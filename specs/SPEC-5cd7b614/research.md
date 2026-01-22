@@ -207,7 +207,7 @@ LLM runtimeの実装 (`/gpu/cpu_common.go`):
 
 1. **E2Eテスト**
    - Node起動時の自動登録フロー
-   - GPU情報がRouterに正しく送信されることを確認
+   - GPU情報がLoad Balancerに正しく送信されることを確認
 
 ## 参考資料
 

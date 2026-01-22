@@ -1,4 +1,4 @@
-# データモデル: ルーター主導エンドポイント登録システム
+# データモデル: ロードバランサー主導エンドポイント登録システム
 
 **機能ID**: `SPEC-66555000`
 **日付**: 2026-01-14
@@ -153,7 +153,7 @@ CREATE INDEX idx_health_checks_checked_at ON endpoint_health_checks(checked_at);
 ## Rust構造体定義
 
 ```rust
-// router/src/types/endpoint.rs
+// llmlb/src/types/endpoint.rs
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -213,7 +213,7 @@ pub struct EndpointHealthCheck {
 
 - `Node`: `Endpoint`に置換
 - `NodeStatus`: `EndpointStatus`に置換
-- `RegisterRequest/RegisterResponse`: 廃止（ルーター主導登録に変更）
+- `RegisterRequest/RegisterResponse`: 廃止（ロードバランサー主導登録に変更）
 
 ### 維持されるエンティティ
 

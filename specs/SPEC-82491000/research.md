@@ -165,7 +165,7 @@ async fn fetch_all_cloud_models() -> Vec<CloudModelInfo> {
 
 ## 5. 技術的決定事項
 
-1. **モジュール構成**: `router/src/api/cloud_models.rs`を新規作成
+1. **モジュール構成**: `llmlb/src/api/cloud_models.rs`を新規作成
 2. **キャッシュTTL**: 24時間（86400秒）
 3. **タイムアウト**: 各プロバイダー10秒
 4. **並列実行**: `futures::join_all`使用

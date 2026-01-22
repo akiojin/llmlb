@@ -18,7 +18,7 @@
 
 ## 概要
 
-ollama互換のCLIコマンドをllmlbに実装。ノード単体モードとルーターモードの両方で操作可能にする。
+ollama互換のCLIコマンドをllmlbに実装。ノード単体モードとロードバランサーモードの両方で操作可能にする。
 主要機能: `serve`, `run`, `pull`, `list`, `show`, `rm`, `stop`, `ps` (nodeサブコマンド)、
 `nodes`, `models`, `status` (routerサブコマンド)。
 

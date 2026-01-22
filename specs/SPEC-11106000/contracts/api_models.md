@@ -52,4 +52,4 @@
 
 ## CLI コマンド
 - `llmlb model add` は登録用途のみ。
-- `model download` などルーター主導のダウンロード系は廃止対象。
+- `model download` などロードバランサー主導のダウンロード系は廃止対象。

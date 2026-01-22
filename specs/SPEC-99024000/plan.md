@@ -6,17 +6,17 @@
 ## 概要
 
 llmlbにOpen Responses API（OpenAI Responses APIベースのオープン仕様）の
-パススルー機能を追加する。ルーターはロードバランサー/ゲートウェイとして機能し、
+パススルー機能を追加する。ロードバランサーはロードバランサー/ゲートウェイとして機能し、
 `/v1/responses`エンドポイントへのリクエストをResponses API対応バックエンドに転送する。
 
 ### 既存実装の発見
 
 調査の結果、以下の実装が既に存在することが判明:
 
-- `router/src/api/responses.rs` - `/v1/responses`ハンドラー（SPEC-24157000として実装済み）
-- `router/src/types/endpoint.rs` - `SupportedAPI`列挙型、`supports_responses_api`フラグ
-- `router/src/api/mod.rs` - ルート登録済み（234行目）
-- `router/src/api/proxy.rs` - `forward_to_endpoint`、`forward_streaming_response`
+- `llmlb/src/api/responses.rs` - `/v1/responses`ハンドラー（SPEC-24157000として実装済み）
+- `llmlb/src/types/endpoint.rs` - `SupportedAPI`列挙型、`supports_responses_api`フラグ
+- `llmlb/src/api/mod.rs` - ルート登録済み（234行目）
+- `llmlb/src/api/proxy.rs` - `forward_to_endpoint`、`forward_streaming_response`
 
 ### 残作業
 
@@ -32,7 +32,7 @@ llmlbにOpen Responses API（OpenAI Responses APIベースのオープン仕様�
 **ストレージ**: SQLite（エンドポイント情報）
 **テスト**: cargo test、統合テスト（wiremock）
 **対象プラットフォーム**: Linux/macOS サーバー
-**プロジェクトタイプ**: single（router/配下）
+**プロジェクトタイプ**: single（llmlb/配下）
 **パフォーマンス目標**: 既存APIと同等（パススルーのためオーバーヘッド最小）
 **制約**: パススルーのみ（変換なし）、バックエンド依存
 
@@ -88,7 +88,7 @@ specs/SPEC-99024000/
 ### ソースコード（既存）
 
 ```text
-router/src/
+llmlb/src/
 ├── api/
 │   ├── responses.rs     # ✅ 実装済み - Open Responses APIハンドラー
 │   ├── proxy.rs         # ✅ 実装済み - forward_to_endpoint, forward_streaming_response
@@ -99,7 +99,7 @@ router/src/
 └── sync/
     └── health_checker.rs # ヘルスチェック（要確認: Responses API検出）
 
-router/tests/integration/
+llmlb/tests/integration/
 └── responses_api_test.rs # ⚠️ 未作成 - 統合テスト必要
 ```
 

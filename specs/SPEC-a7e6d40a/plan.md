@@ -16,7 +16,7 @@ LLM Load Balancerに対してCLIインターフェースを追加する。
 
 **言語/バージョン**: Rust 1.75+
 **主要依存関係**: clap（CLI引数パース）、sqlx（DB）、bcrypt（パスワードハッシュ）
-**ストレージ**: SQLite (`~/.llmlb/router.db`)
+**ストレージ**: SQLite (`~/.llmlb/lb.db`)
 **テスト**: cargo test
 **対象プラットフォーム**: Linux, macOS, Windows
 **プロジェクトタイプ**: single

@@ -149,7 +149,7 @@ pub struct RegisteredModel {
 ```text
 ~/.llmlb/
 ├── config.json                    # グローバル設定
-├── router.db                      # ロードバランサーDB（SQLite）
+├── lb.db                      # ロードバランサーDB（SQLite）
 └── models/                        # モデルストレージ
     ├── llama-3.2-1b/
     │   ├── model.gguf             # GGUFモデル

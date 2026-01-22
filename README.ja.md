@@ -277,7 +277,7 @@ cmake --build build --config Release
 |---------|-----------|------|
 | `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
 | `LLMLB_PORT` | `32768` | リッスンポート |
-| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/router.db` | データベースURL |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | データベースURL |
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
@@ -450,7 +450,7 @@ Router (OpenAI-compatible)
 - モデル指定がローカルに存在しない場合、ランタイムが自動プルするまで待機
 
 ### ログが多すぎる / 少なすぎる
-- 環境変数 `LLMLB_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLMLB_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
+- 環境変数 `LLMLB_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLMLB_LOG_LEVEL=info` または `RUST_LOG=llmlb=debug`）
 - ランタイムのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
 ## モデル管理（Hugging Face, safetensors / GGUF）

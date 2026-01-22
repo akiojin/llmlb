@@ -110,7 +110,7 @@ xllm {version}
 | `LLMLB_JWT_SECRET` | String | No | (自動生成) | JWT署名キー |
 | `LLMLB_ADMIN_USERNAME` | String | No | admin | 初期管理者名 |
 | `LLMLB_ADMIN_PASSWORD` | String | Yes* | - | 初期管理者パスワード |
-| `LLMLB_DATABASE_URL` | String | No | sqlite://~/.llmlb/router.db | DB接続文字列 |
+| `LLMLB_DATABASE_URL` | String | No | sqlite://~/.llmlb/lb.db | DB接続文字列 |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | u64 | No | 30 | ヘルスチェック間隔(秒) |
 | `LLMLB_NODE_TIMEOUT` | u64 | No | 30 | ノードタイムアウト(秒) |
 | `LLMLB_LOAD_BALANCER_MODE` | String | No | round_robin | 負荷分散モード |

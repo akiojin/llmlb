@@ -372,7 +372,7 @@ curl http://lb:32768/v1/responses -d '...'
    ```
 
 4. **Runtime Local Processing**
-   - Runtime loads model on-demand (from local cache or router-provided source)
+   - Runtime loads model on-demand (from local cache or load-balancer-provided source)
    - Runtime runs llama.cpp inference and returns an OpenAI-compatible response
 
 5. **Router → Client (Return Response)**
@@ -441,7 +441,7 @@ curl http://lb:32768/v1/responses -d '...'
 ```
 llmlb/
 ├── common/              # Shared library (types, protocol, errors)
-├── router/              # Rust router (HTTP APIs, dashboard, proxy)
+├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy)
 ├── xllm/                # C++ xLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
@@ -712,7 +712,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 |----------|---------|-------------|----------------|
 | `LLMLB_HOST` | `0.0.0.0` | Bind address | `LLMLB_HOST` |
 | `LLMLB_PORT` | `32768` | Listen port | `LLMLB_PORT` |
-| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/router.db` | Database URL | `DATABASE_URL` |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | Database URL | `DATABASE_URL` |
 | `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for DB/log defaults | - |
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
@@ -749,7 +749,7 @@ Cloud / external services:
 | `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
 | `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
-| `LLM_RUNTIME_IP` | auto-detected | Runtime IP reported to router | - |
+| `LLM_RUNTIME_IP` | auto-detected | Runtime IP reported to load balancer | - |
 | `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
 | `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
 | `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` |
@@ -793,7 +793,7 @@ Note: Engine plugins were removed in favor of built-in managers. See `docs/migra
 - If specified model does not exist locally, wait for runtime to auto-pull
 
 ### Too many / too few logs
-- Control via `LLMLB_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLMLB_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
+- Control via `LLMLB_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLMLB_LOG_LEVEL=info` or `RUST_LOG=llmlb=debug`)
 - Runtime logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
 
 ## Development
@@ -811,7 +811,7 @@ make quality-checks
 - gpt-oss (auto): `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
 - gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
-  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/runtime logs, request JSON, etc.)
+  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (lb/runtime logs, request JSON, etc.)
 
 Notes:
 - gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
@@ -919,8 +919,8 @@ GET /v0/dashboard/request-responses/export
 ### Storage
 
 Request history is stored in SQLite at:
-- Linux/macOS: `~/.llmlb/router.db`
-- Windows: `%USERPROFILE%\.llmlb\router.db`
+- Linux/macOS: `~/.llmlb/lb.db`
+- Windows: `%USERPROFILE%\.llmlb\lb.db`
 
 Legacy `request_history.json` files (if present) are automatically imported on startup and renamed
 to `.migrated`.
@@ -1041,7 +1041,7 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/logs/router` | Router logs | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/logs/lb` | Load balancer logs | JWT+Admin or API key (admin) |
 | GET | `/v0/runtimes/:runtime_id/logs` | Runtime logs | JWT+Admin or API key (admin) |
 
 #### Static Files & Metrics
@@ -1126,7 +1126,7 @@ List available models with Azure OpenAI-style capabilities.
       "id": "meta-llama/llama-3.1-8b",
       "object": "model",
       "created": 0,
-      "owned_by": "router",
+      "owned_by": "lb",
       "capabilities": {
         "chat_completion": true,
         "completion": true,
@@ -1144,7 +1144,7 @@ List available models with Azure OpenAI-style capabilities.
 ```
 
 > **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
-> `ready` is a router extension derived from runtime sync state.
+> `ready` is a load balancer extension derived from runtime sync state.
 
 #### POST /v1/responses
 

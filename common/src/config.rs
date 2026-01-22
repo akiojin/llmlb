@@ -15,7 +15,7 @@ pub struct LbConfig {
     #[serde(default = "default_port")]
     pub port: u16,
 
-    /// データベースURL (デフォルト: "sqlite://load balancer.db")
+    /// データベースURL (デフォルト: "sqlite://lb.db")
     #[serde(default = "default_database_url")]
     pub database_url: String,
 
@@ -37,7 +37,7 @@ fn default_port() -> u16 {
 }
 
 fn default_database_url() -> String {
-    "sqlite://load balancer.db".to_string()
+    "sqlite://lb.db".to_string()
 }
 
 fn default_health_check_interval() -> u64 {
@@ -64,8 +64,8 @@ impl Default for LbConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
     /// load balancerのURL (デフォルト: "http://localhost:32768")
-    #[serde(default = "default_router_url")]
-    pub router_url: String,
+    #[serde(default = "default_lb_url")]
+    pub lb_url: String,
 
     /// ノードランタイムのURL (デフォルト: "http://localhost:32768")
     #[serde(rename = "runtime_url", default = "default_runtime_url")]
@@ -80,7 +80,7 @@ pub struct NodeConfig {
     pub auto_start: bool,
 }
 
-fn default_router_url() -> String {
+fn default_lb_url() -> String {
     "http://localhost:32768".to_string()
 }
 
@@ -95,7 +95,7 @@ fn default_heartbeat_interval() -> u64 {
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
-            router_url: default_router_url(),
+            lb_url: default_lb_url(),
             runtime_url: default_runtime_url(),
             heartbeat_interval_secs: default_heartbeat_interval(),
             auto_start: false,
@@ -113,7 +113,7 @@ mod tests {
 
         assert_eq!(config.host, "0.0.0.0");
         assert_eq!(config.port, 32768);
-        assert_eq!(config.database_url, "sqlite://load balancer.db");
+        assert_eq!(config.database_url, "sqlite://lb.db");
         assert_eq!(config.health_check_interval_secs, 30);
         assert_eq!(config.node_timeout_secs, 60);
     }
@@ -122,7 +122,7 @@ mod tests {
     fn test_node_config_defaults() {
         let config = NodeConfig::default();
 
-        assert_eq!(config.router_url, "http://localhost:32768");
+        assert_eq!(config.lb_url, "http://localhost:32768");
         assert_eq!(config.runtime_url, "http://localhost:32768");
         assert_eq!(config.heartbeat_interval_secs, 10);
         assert!(!config.auto_start);
@@ -136,15 +136,15 @@ mod tests {
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 9000);
         // デフォルト値が適用される
-        assert_eq!(config.database_url, "sqlite://load balancer.db");
+        assert_eq!(config.database_url, "sqlite://lb.db");
     }
 
     #[test]
     fn test_node_config_deserialization() {
-        let json = r#"{"router_url":"http://192.168.1.10:32768","auto_start":true}"#;
+        let json = r#"{"lb_url":"http://192.168.1.10:32768","auto_start":true}"#;
         let config: NodeConfig = serde_json::from_str(json).unwrap();
 
-        assert_eq!(config.router_url, "http://192.168.1.10:32768");
+        assert_eq!(config.lb_url, "http://192.168.1.10:32768");
         assert!(config.auto_start);
         // デフォルト値が適用される
         assert_eq!(config.runtime_url, "http://localhost:32768");

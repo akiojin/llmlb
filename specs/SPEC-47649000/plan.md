@@ -5,14 +5,14 @@
 
 ## 概要
 
-モデルメタデータ（従来のmodels.json）をSQLiteに統合し、認証システム（router.db）と
+モデルメタデータ（従来のmodels.json）をSQLiteに統合し、認証システム（lb.db）と
 同じDBで管理する。タグ検索やソースフィルタリングを高速化する。
 
 ## 技術コンテキスト
 
 **言語/バージョン**: Rust 1.75+
 **主要依存関係**: SQLx, Axum
-**ストレージ**: SQLite (router.db)
+**ストレージ**: SQLite (lb.db)
 **テスト**: cargo test
 **対象プラットフォーム**: Linux/macOS サーバー
 **プロジェクトタイプ**: single (llmlb/)

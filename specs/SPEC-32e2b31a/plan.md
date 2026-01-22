@@ -284,7 +284,7 @@ pub enum RequestStatus {
 pub struct RouterConfig {
     pub host: String,              // "0.0.0.0"
     pub port: u16,                 // 32768
-    pub database_url: String,      // "sqlite://router.db"
+    pub database_url: String,      // "sqlite://lb.db"
     pub health_check_interval_secs: u64,  // 30秒
     pub node_timeout_secs: u64,   // 60秒
 }
@@ -293,7 +293,7 @@ pub struct RouterConfig {
 **Config (Node)**:
 ```rust
 pub struct NodeConfig {
-    pub router_url: String,        // "http://lb:32768"
+    pub lb_url: String,        // "http://lb:32768"
     pub runtime_url: String,        // "http://localhost:32768"
     pub heartbeat_interval_secs: u64,  // 10秒
     pub auto_start: bool,          // Windows起動時の自動起動

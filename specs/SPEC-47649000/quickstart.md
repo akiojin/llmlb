@@ -3,7 +3,7 @@
 ## 前提条件
 
 - LLM Load Balancer がインストール済み
-- router.db が初期化済み（自動）
+- lb.db が初期化済み（自動）
 
 ## 基本的な使用例
 
@@ -179,15 +179,15 @@ safetensors_models = response.json()["models"]
 2. `VACUUM`コマンドでデータベースを最適化
 
 ```bash
-sqlite3 router.db "VACUUM;"
+sqlite3 lb.db "VACUUM;"
 ```
 
 ### データが表示されない
 
 1. マイグレーションが完了しているか確認
-2. router.dbにmodelsテーブルが存在するか確認
+2. lb.dbにmodelsテーブルが存在するか確認
 
 ```bash
-sqlite3 router.db ".tables"
+sqlite3 lb.db ".tables"
 # models  model_tags  users  api_keys ...
 ```

@@ -121,7 +121,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ```text
 ~/.llmlb/
 ├── config.json          # 設定ファイル
-├── router.db            # ロードバランサーDB（SQLite）
+├── lb.db            # ロードバランサーDB（SQLite）
 └── models/
     ├── gpt-oss-20b/
     │   ├── config.json

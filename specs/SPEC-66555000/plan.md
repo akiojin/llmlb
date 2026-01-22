@@ -39,7 +39,7 @@ Ollama/vLLM等の外部OpenAI互換APIも統一的に管理できるようにな
 
 **言語/バージョン**: Rust 1.75+, TypeScript 5.x (ダッシュボード)
 **主要依存関係**: axum 0.7, sqlx 0.7, tokio 1.x, reqwest 0.11
-**ストレージ**: SQLite (router.db) - sqlx migrations
+**ストレージ**: SQLite (lb.db) - sqlx migrations
 **テスト**: cargo test, playwright (E2E)
 **対象プラットフォーム**: Windows / macOS / Linux
 **プロジェクトタイプ**: single (router + node)

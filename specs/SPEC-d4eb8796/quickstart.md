@@ -313,10 +313,10 @@ curl -X PUT http://localhost:32768/v0/users/{user_id} \
 
 ```bash
 # データベースをバックアップ
-cp ~/.llmlb/router.db ~/.llmlb/router.db.backup
+cp ~/.llmlb/lb.db ~/.llmlb/lb.db.backup
 
 # データベースを削除して再初期化
-rm ~/.llmlb/router.db
+rm ~/.llmlb/lb.db
 
 # ロードバランサー再起動（新しい管理者作成）
 cargo run --bin router

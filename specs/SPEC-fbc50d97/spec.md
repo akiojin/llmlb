@@ -179,10 +179,10 @@
 
 ## 技術制約 *(該当する場合)*
 
-- 保存方式はSQLiteとし、既存の認証システム（`router.db`）と統合する
+- 保存方式はSQLiteとし、既存の認証システム（`lb.db`）と統合する
   - 認証機能（users, api_keys, runtime_tokens）と同じDBを使用
   - インデックスによる高速クエリを実現
-- 保存場所は `~/.llmlb/router.db` の `request_history` テーブル
+- 保存場所は `~/.llmlb/lb.db` の `request_history` テーブル
 - SQLiteのWALモードにより、並行アクセスの安全性を保証する
 - 既存のJSONファイル（`request_history.json`）からの自動移行をサポート
 
@@ -245,7 +245,7 @@
 **確認済み事項**:
 
 - 保存期間: 7日間、自動削除（FR-004で明記）
-- 保存方式: SQLite（router.db）、WALモード（技術制約で明記）
+- 保存方式: SQLite（lb.db）、WALモード（技術制約で明記）
 - 記録内容: リクエスト本文、レスポンス本文、メタデータ（FR-001~FR-003で明記）
 - フィルタ: モデル名、ノード、ステータス、日時範囲（FR-007で明記）
 - エクスポート: JSON、CSV形式（FR-008, FR-009で明記）

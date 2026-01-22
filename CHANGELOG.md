@@ -15,7 +15,7 @@
 
 ### Features
 
-* **installer:** ルーターとノードのインストーラーを分離 ([1a29f9f](https://github.com/akiojin/runtime-router/commit/1a29f9fd732a6867931387211760a28c7dd34096))
+* **installer:** ロードバランサーとノードのインストーラーを分離 ([1a29f9f](https://github.com/akiojin/runtime-router/commit/1a29f9fd732a6867931387211760a28c7dd34096))
 
 ## [2.3.1](https://github.com/akiojin/llmlb/compare/v2.3.0...v2.3.1) (2025-11-26)
 
@@ -217,7 +217,7 @@
 * **auth:** t064-t066 apiキー管理api実装 ([17de595](https://github.com/akiojin/runtime-router/commit/17de5952ed082173a46e7d1ba3dcbc829745dd09))
 * **auth:** t067ノード登録APIにnode_token追加 ([2a65c97](https://github.com/akiojin/runtime-router/commit/2a65c97496d0822ef230943ba385c0a399976e47))
 * **auth:** t068-t070初回起動時の管理者作成処理を実装 ([60fc0e1](https://github.com/akiojin/runtime-router/commit/60fc0e1a5c910bfddef34ed67044c93906c6b71f))
-* **auth:** t071-t074ルーター統合と認証ミドルウェア適用 ([a360860](https://github.com/akiojin/runtime-router/commit/a360860c9584b9b70444e89a3980381253e0d338))
+* **auth:** t071-t074ロードバランサー統合と認証ミドルウェア適用 ([a360860](https://github.com/akiojin/runtime-router/commit/a360860c9584b9b70444e89a3980381253e0d338))
 * **auth:** マージ feature/authenticate into feature/rename ([7053963](https://github.com/akiojin/runtime-router/commit/705396351f09ba087b049576c1d6977dc41892fb))
 * **auth:** 認証機能のセットアップ ([8b6048f](https://github.com/akiojin/runtime-router/commit/8b6048fbd9ba56299f70d5056fc1430d8e5b3dd0))
 * **coord-error:** add service unavailable handling ([c7ab69d](https://github.com/akiojin/runtime-router/commit/c7ab69ddd604c35ecafbbb8e00cb7dc5f4d15c2e))
@@ -313,7 +313,7 @@
 
 * **node:** ノード側HTTPサーバーとモデルプルAPI実装 (T033) ([2142f53](https://github.com/akiojin/runtime-router/commit/2142f53bc67d11550d7569bcc5b3c4e8848a36fb))
 * **router:** ノード登録時の自動モデル配布機能を実装 (T032) ([7935be0](https://github.com/akiojin/runtime-router/commit/7935be05098c0ad458609dc53af66f94caf442bb))
-* **router:** ルーター主導のモデル配布機能を実装 (Phase 3.1-3.3) ([62edaf7](https://github.com/akiojin/runtime-router/commit/62edaf7435e82cacd177ae3eb6939a0be72ff129))
+* **router:** ロードバランサー主導のモデル配布機能を実装 (Phase 3.1-3.3) ([62edaf7](https://github.com/akiojin/runtime-router/commit/62edaf7435e82cacd177ae3eb6939a0be72ff129))
 * **error:** エラーハンドリング強化 (T039) ([5350a31](https://github.com/akiojin/runtime-router/commit/5350a31bd9dae6b6c7690d25767ab18e1c3a42cb))
 * **logging:** ロギング強化 (T040) ([8cd8575](https://github.com/akiojin/runtime-router/commit/8cd85758bcaa5eeeef5e77e8d4dbb6ed8091f80e))
 * **models:** 進捗報告機能とノード自動配布を実装 (T034, T032拡張) ([9c81c48](https://github.com/akiojin/runtime-router/commit/9c81c4894c25b6403feafc802faf6adabd0b7404))
@@ -447,7 +447,7 @@
 * **node:** set user-node for runtime download ([5ec8dc8](https://github.com/akiojin/runtime-router/commit/5ec8dc8b17dfc8c59efb8df47108cfe76aa8cb7e))
 * **api:** clippyが警告するテストモジュール配置を調整 ([16720df](https://github.com/akiojin/runtime-router/commit/16720df8516b16d24c8218c21101f2232c182a34))
 * **api:** openai proxy returns upstream errors ([549ae48](https://github.com/akiojin/runtime-router/commit/549ae484565017d299f9fa7842c60128f9d68b5a))
-* **api:** ダッシュボード静的配信のルーターとテストを修正 ([02b7a24](https://github.com/akiojin/runtime-router/commit/02b7a246a47ad3d0ee62c263f5aece70cc68dfec))
+* **api:** ダッシュボード静的配信のロードバランサーとテストを修正 ([02b7a24](https://github.com/akiojin/runtime-router/commit/02b7a246a47ad3d0ee62c263f5aece70cc68dfec))
 * AppErrorにDebugトレイトを追加 ([1321b3d](https://github.com/akiojin/runtime-router/commit/1321b3db996094c15d7ac960c58ee2bf59aaed6b))
 * await_holding_lock警告を修正（tokio::sync::Mutexを使用） ([8b9d6ba](https://github.com/akiojin/runtime-router/commit/8b9d6ba5720e22a60fc5e0d84ce9e2b17d225342))
 * booleanアサーションのclippy警告を修正 ([a682508](https://github.com/akiojin/runtime-router/commit/a68250866e9acd2d778353653b1d5f968d27abc2))

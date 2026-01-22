@@ -115,8 +115,8 @@ import time
 import threading
 
 class HeartbeatSender:
-    def __init__(self, router_url: str, node_token: str, node_id: str):
-        self.router_url = router_url
+    def __init__(self, lb_url: str, node_token: str, node_id: str):
+        self.lb_url = lb_url
         self.node_token = node_token
         self.node_id = node_id
         self.running = False
@@ -124,7 +124,7 @@ class HeartbeatSender:
     def send_heartbeat(self, metrics: dict):
         """単一のハートビートを送信"""
         response = httpx.post(
-            f"{self.router_url}/v0/health",
+            f"{self.lb_url}/v0/health",
             headers={"X-Node-Token": self.node_token},
             json={
                 "node_id": self.node_id,
@@ -163,7 +163,7 @@ class HeartbeatSender:
 
 # 使用例
 sender = HeartbeatSender(
-    router_url="http://localhost:8080",
+    lb_url="http://localhost:8080",
     node_token="your-node-token",
     node_id="node-1"
 )

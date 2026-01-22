@@ -14,12 +14,12 @@ fn main() {
         .map(|os| os == "windows")
         .unwrap_or(false)
     {
-        println!("cargo:rerun-if-changed=../assets/icons/load balancer.ico");
+        println!("cargo:rerun-if-changed=../assets/icons/llmlb.ico");
 
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("../assets/icons/load balancer.ico");
+        res.set_icon("../assets/icons/llmlb.ico");
         res.compile()
-            .expect("failed to embed load balancer Windows resources");
+            .expect("failed to embed llmlb Windows resources");
     }
 }
 

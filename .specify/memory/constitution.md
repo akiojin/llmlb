@@ -159,20 +159,20 @@ Follow-up TODOs: なし
 
 ### テストカテゴリ
 
-1. **Contract tests** (`router/tests/contract/`):
+1. **Contract tests** (`llmlb/tests/contract/`):
    - OpenAI互換APIスキーマ検証
    - リクエスト/レスポンス形式
 
-2. **Integration tests** (`router/tests/integration/`):
+2. **Integration tests** (`llmlb/tests/integration/`):
    - Router-Node通信
    - データベース操作
    - 認証フロー
 
-3. **E2E tests** (`router/tests/e2e/`):
+3. **E2E tests** (`llmlb/tests/e2e/`):
    - エンドツーエンドワークフロー
    - ダッシュボード操作
 
-4. **Unit tests** (`router/src/**/tests.rs`, `node/tests/`):
+4. **Unit tests** (`llmlb/src/**/tests.rs`, `xllm/tests/`):
    - 個別モジュール検証
    - ユーティリティ関数
 

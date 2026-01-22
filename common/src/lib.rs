@@ -1,4 +1,4 @@
-//! LLM Router Common Library
+//! LLM load balancer Common Library
 //!
 //! 共通型定義、プロトコル、設定、エラー型を提供
 

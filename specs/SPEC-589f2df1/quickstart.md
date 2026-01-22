@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | 2台以上のオンラインノード |
 | GPU | 各ノードにGPU搭載 |
 
@@ -17,9 +17,9 @@
 export LOAD_BALANCER_MODE=metrics  # metrics | round_robin
 
 # GPU負荷閾値
-export LLM_ROUTER_GPU_THRESHOLD=80      # GPU使用率閾値（%）
-export LLM_ROUTER_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
-export LLM_ROUTER_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
+export LLMLB_GPU_THRESHOLD=80      # GPU使用率閾値（%）
+export LLMLB_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
+export LLMLB_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
 ```
 
 ### config.toml
@@ -85,16 +85,16 @@ wait
 
 ```bash
 # Prometheusメトリクス
-curl http://localhost:8080/metrics | grep llm_router_node
+curl http://localhost:8080/metrics | grep llmlb_node
 ```
 
 **出力例**:
 
 ```text
-llm_router_node_gpu_usage{node_id="node-1"} 45.5
-llm_router_node_gpu_usage{node_id="node-2"} 20.0
-llm_router_node_selections_total{node_id="node-1",reason="lowest_gpu"} 3
-llm_router_node_selections_total{node_id="node-2",reason="lowest_gpu"} 7
+llmlb_node_gpu_usage{node_id="node-1"} 45.5
+llmlb_node_gpu_usage{node_id="node-2"} 20.0
+llmlb_node_selections_total{node_id="node-1",reason="lowest_gpu"} 3
+llmlb_node_selections_total{node_id="node-2",reason="lowest_gpu"} 7
 ```
 
 ## Python での利用
@@ -220,7 +220,7 @@ def monitor_nodes(jwt_token: str, interval: int = 5):
 curl http://localhost:8080/metrics | grep gpu_usage
 
 # 対策: 閾値を調整
-export LLM_ROUTER_GPU_THRESHOLD=70
+export LLMLB_GPU_THRESHOLD=70
 ```
 
 ### 選択が遅い（10ms以上）
@@ -231,7 +231,7 @@ export LLM_ROUTER_GPU_THRESHOLD=70
 curl http://localhost:8080/metrics | grep selection_duration
 
 # 対策: メトリクス更新間隔を確認
-# ノード側で ALLM_HEARTBEAT_SECS を調整
+# ノード側で XLLM_HEARTBEAT_SECS を調整
 ```
 
 ### メトリクスが更新されない
@@ -242,7 +242,7 @@ curl http://localhost:8080/metrics | grep selection_duration
 curl http://localhost:8080/v0/nodes | jq '.nodes[].last_seen'
 
 # 対策: ノード側のログを確認
-# ALLM_HEARTBEAT_SECS=30 が設定されているか
+# XLLM_HEARTBEAT_SECS=30 が設定されているか
 ```
 
 ## 制限事項

@@ -6,17 +6,17 @@
 ## 前提条件
 
 - Rust（`cargo`）がインストールされている
-- ルーターが起動している（`cargo run -p llm-router`）
+- ロードバランサーが起動している（`cargo run -p llmlb`）
 
 ## ノード登録（curlで確認）
 
-> NOTE: ルーターは登録時にノードの OpenAI互換API（`runtime_port+1`）へ疎通確認を行います。
-> 実際のノード（allm）が起動している必要があります。
+> NOTE: ロードバランサーは登録時にノードの OpenAI互換API（`runtime_port+1`）へ疎通確認を行います。
+> 実際のノード（xllm）が起動している必要があります。
 
-### 1. ルーター起動
+### 1. ロードバランサー起動
 
 ```bash
-cargo run -p llm-router
+cargo run -p llmlb
 ```
 
 ### 2. ノード登録

@@ -9,7 +9,7 @@ $env:PATH = "$env:CUDA_PATH\bin;$env:PATH"
 Import-Module 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
 Enter-VsDevShell -VsInstallPath 'C:\Program Files\Microsoft Visual Studio\2022\Community' -DevCmdArguments '-arch=x64'
 
-$POC_DIR = 'E:\llm-router\.worktrees\feature-support-nemotron\poc\nemotron-cuda-cpp'
+$POC_DIR = 'E:\llmlb\.worktrees\feature-support-nemotron\poc\nemotron-cuda-cpp'
 $BUILD_DIR = "$POC_DIR\build"
 
 # Clean and create build directory

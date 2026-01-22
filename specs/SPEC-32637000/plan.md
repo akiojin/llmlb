@@ -5,7 +5,7 @@
 
 ## 概要
 
-OpenAI互換APIでモデルを指定して呼び出した際、そのモデルが要求されたAPI（TTS、ASR、画像生成など）に対応しているかをルーターで検証し、非対応の場合はエラーを返す機能を実装する。
+OpenAI互換APIでモデルを指定して呼び出した際、そのモデルが要求されたAPI（TTS、ASR、画像生成など）に対応しているかをロードバランサーで検証し、非対応の場合はエラーを返す機能を実装する。
 
 主要要件:
 
@@ -22,7 +22,7 @@ OpenAI互換APIでモデルを指定して呼び出した際、そのモデル�
 **ストレージ**: SQLite (既存のモデル登録に追加)
 **テスト**: cargo test
 **対象プラットフォーム**: Linux/macOS/Windows
-**プロジェクトタイプ**: single (既存のrouter/common構造に追加)
+**プロジェクトタイプ**: single (既存のllmlb/common構造に追加)
 **パフォーマンス目標**: 既存のルーティング性能を維持
 **制約**: 後方互換性必須（capabilities未設定モデルはModelTypeから推定）
 **スケール/スコープ**: 既存のモデル登録機能への拡張
@@ -48,7 +48,7 @@ OpenAI互換APIでモデルを指定して呼び出した際、そのモデル�
 - RED-GREEN-Refactorサイクルを強制? ✅ 必須
 - Gitコミットはテストが実装より先に表示? ✅ 必須
 - 順序: Contract→Integration→E2E→Unitを厳密に遵守? ✅
-- 実依存関係を使用? ✅ 実際のルーターでテスト
+- 実依存関係を使用? ✅ 実際のロードバランサーでテスト
 - 禁止: テスト前の実装、REDフェーズのスキップ ✅
 
 **可観測性**:
@@ -76,11 +76,11 @@ specs/SPEC-32637000/
 
 ```
 common/src/types.rs      # ModelCapability enum追加
-router/src/registry/models.rs  # ModelInfo.capabilities追加
-router/src/api/audio.rs  # TTS/ASR capabilities検証
-router/src/api/openai.rs # chat capabilities検証
-router/src/api/images.rs # 画像生成capabilities検証
-router/src/api/models.rs # /v1/models レスポンス拡張
+llmlb/src/registry/models.rs  # ModelInfo.capabilities追加
+llmlb/src/api/audio.rs  # TTS/ASR capabilities検証
+llmlb/src/api/openai.rs # chat capabilities検証
+llmlb/src/api/images.rs # 画像生成capabilities検証
+llmlb/src/api/models.rs # /v1/models レスポンス拡張
 ```
 
 ## Phase 0: リサーチ (完了)

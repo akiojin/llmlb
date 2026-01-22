@@ -13,17 +13,17 @@
 
 ## Phase 3.1: セットアップ
 
-- [x] T001 `router/src/api/dashboard.rs` に RequestHistoryQuery 構造体を定義
+- [x] T001 `llmlb/src/api/dashboard.rs` に RequestHistoryQuery 構造体を定義
 - [x] T002 ページサイズ正規化ロジック `normalized_per_page()` を実装
 
 ## Phase 3.2: テストファースト (TDD)
 
-- [x] T003 [P] `router/src/api/dashboard.rs` mod tests にページサイズ正規化テスト
+- [x] T003 [P] `llmlb/src/api/dashboard.rs` mod tests にページサイズ正規化テスト
 - [x] T004 [P] `dashboard/` にページネーションコンポーネントのユニットテスト
 
 ## Phase 3.3: コア実装
 
-- [x] T005 `router/src/api/dashboard.rs` に GET /api/dashboard/request-history エンドポイント実装
+- [x] T005 `llmlb/src/api/dashboard.rs` に GET /api/dashboard/request-history エンドポイント実装
   - page, per_page クエリパラメータ対応
   - 許可サイズ: [10, 25, 50, 100]
   - レスポンス: records, total, page, per_page, total_pages
@@ -64,7 +64,7 @@ T008, T009, T010 → T011, T012, T013 (統合 → 仕上げ)
 
 ```text
 # Phase 3.2 テスト (並列実行可能)
-Task T003: router/src/api/dashboard.rs のページサイズ正規化テスト
+Task T003: llmlb/src/api/dashboard.rs のページサイズ正規化テスト
 Task T004: dashboard/ のページネーションコンポーネントテスト
 
 # Phase 3.3 コア実装 (T006, T007 は並列実行可能)

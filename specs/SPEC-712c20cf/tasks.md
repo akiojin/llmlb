@@ -8,7 +8,7 @@
 ## 追加要件（2025-11-01更新）
 - 同一マシン上で複数のノードを起動する場合でも、`runtime_port` が異なれば別インスタンスとして自動登録できること。
 - OpenAI互換API (`/v1/chat/completions`, `/v1/completions`) のハッピーパス/エラーケースを自動テスト（TDD）で保証すること。
-- ノード起動時にルーターの `GET /v1/models` を参照し、マニフェストに基づいてHFから同期できること（ルーターからのpush配布はしない）。
+- ノード起動時にロードバランサーの `GET /v1/models` を参照し、マニフェストに基づいてHFから同期できること（ロードバランサーからのpush配布はしない）。
 - ダッシュボードのノード一覧でロード済みモデル列を表示し、詳細モーダルでも全モデルを確認できること。
 - ダッシュボードのノード一覧テーブルはヘッダーと行の列幅が一致し、視覚的なずれが発生しないこと。
 
@@ -29,19 +29,19 @@
 
 ## 本日のToDo (2025-10-31)
 
-- [x] **T601** `router/src/api/mod.rs` のルーター結線スモークテストを修正し、静的配信・API経路の確認を通す
-- [x] **T602** `cargo test -p llm-router-router` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
+- [x] **T601** `llmlb/src/api/mod.rs` のロードバランサー結線スモークテストを修正し、静的配信・API経路の確認を通す
+- [x] **T602** `cargo test -p llmlb-router` でダッシュボードAPI関連テストを実行し、失敗時は原因を特定して修正
 - [x] **T603** 本ファイルを含む関連Specドキュメントのステータス更新と変更点のコミット準備
-- [x] **T604** `router/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
+- [x] **T604** `llmlb/tests/dashboard_smoke.rs` を追加し、ダッシュボードAPIと静的ファイルのE2Eスモークテストを実装
 - [x] **T605** ダッシュボードSpecのタスク進捗（ページネーション等）を現状に合わせて更新
 - [x] **T606** ダッシュボードのDOM差分更新とポーリング処理の最適化（Phase 6 T002 着手）
 - [x] **T607** `GET /v0/dashboard/overview` を追加し、ダッシュボードの3リクエストを集約する
 
 ## 本日のToDo (2025-11-30)
 
-- [x] **T710 (RED)** `router/tests/contract/chat_modal_embed.rs` を作成し、`GET /dashboard` のHTMLに `id="chat-open"` ボタンと `id="chat-modal"` iframe（src=/chat）が存在することをスナップショットで検証
+- [x] **T710 (RED)** `llmlb/tests/contract/chat_modal_embed.rs` を作成し、`GET /dashboard` のHTMLに `id="chat-open"` ボタンと `id="chat-modal"` iframe（src=/chat）が存在することをスナップショットで検証
 - [x] **T711 (GREEN)** 上記テストをパスするようダッシュボードHTML/JS/スタイルを整備（モーダル表示/ESC・背景クリック閉鎖/iframe再読み込み）
-- [x] **T712 (RED)** `router/tests/contract/chat_page_spec.rs` を追加し、`GET /playground` でUIが提供されることを検証
+- [x] **T712 (RED)** `llmlb/tests/contract/chat_page_spec.rs` を追加し、`GET /playground` でUIが提供されることを検証
 - [x] **T713 (GREEN)** `/playground` の静的アセットをビルドに含め、モデルフィルタ・セッション永続化が壊れていないことを手動確認＆必要なら追加単体テスト
 - [x] **T714 (DOCS)** `specs/SPEC-712c20cf/spec.md` にチャットモーダル要件と受け入れシナリオを追記
 
@@ -51,7 +51,7 @@
 - **説明**: Axumで静的ファイルを配信
 - **詳細**:
   - `tower-http`の`ServeDir`ミドルウェア使用
-  - `router/src/web/static/`ディレクトリ作成
+  - `llmlb/src/web/static/`ディレクトリ作成
 - **完了条件**: `/dashboard`で静的HTMLが表示される
 - **推定時間**: 30分
 - **ステータス**: ✅ 完了
@@ -91,7 +91,7 @@
 ## Phase 2: バックエンドAPI実装 (TDD) 📋 (推定2時間)
 
 ### B001: ダッシュボードモジュール作成 ✅
-- **説明**: `router/src/api/dashboard.rs`作成
+- **説明**: `llmlb/src/api/dashboard.rs`作成
 - **完了条件**: コンパイル成功
 - **推定時間**: 5分
 - **ステータス**: ✅ 完了
@@ -324,7 +324,7 @@
 - **詳細**: 100ノード以上の場合にページング
 - **完了条件**: ページ切り替えが動作する
 - **推定時間**: 30分
-- **ステータス**: ✅ 完了（`router/src/web/static/app.js` で `pageSize=50` のページングを実装）
+- **ステータス**: ✅ 完了（`llmlb/src/web/static/app.js` で `pageSize=50` のページングを実装）
 
 ---
 
@@ -338,7 +338,7 @@
   - リアルタイム更新が動作する
 - **完了条件**: 全シナリオが成功
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`router/tests/dashboard_smoke.rs` で主要シナリオを検証）
+- **ステータス**: ✅ 完了（`llmlb/tests/dashboard_smoke.rs` で主要シナリオを検証）
 
 ### T002: パフォーマンス最適化 ✅
 - **説明**: 初回ロード時間とポーリングの最適化
@@ -370,7 +370,7 @@
   - `/v0/nodes` に対する統合テストを追加し、2件が登録されることを確認
 - **完了条件**: テストがCIで成功し、仕様がTDDで守られている
 - **推定時間**: 1時間
-- **ステータス**: ✅ 完了（`router/src/registry/mod.rs` 更新と `test_register_same_machine_different_port_creates_multiple_nodes` を追加）
+- **ステータス**: ✅ 完了（`llmlb/src/registry/mod.rs` 更新と `test_register_same_machine_different_port_creates_multiple_nodes` を追加）
 
 ---
 

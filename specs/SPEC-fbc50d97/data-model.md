@@ -167,10 +167,10 @@ Node (1) ----< (N) RequestResponseRecord
 ### ファイルパス
 
 ```
-~/.llm-router/request_history.json
+~/.llmlb/request_history.json
 ```
 
-環境変数 `LLM_ROUTER_DATA_DIR` で変更可能。
+環境変数 `LLMLB_DATA_DIR` で変更可能。
 
 ### JSON構造
 

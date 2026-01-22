@@ -10,12 +10,12 @@
 - エンジン選択規則が曖昧で、登録時の形式と実行時の選択がぶれていた。
 
 ## 目的
-- Node 側のエンジン抽象化と推論責務を統合的に定義する。
+- ランタイム側のエンジン抽象化と推論責務を統合的に定義する。
 - GPU 前提（Metal/CUDA）での実行要件を明確化する。
 - エンジン選択が登録時の `format` とアーティファクトに従うことを保証する。
 
 ## スコープ
-- Node 側の EngineRegistry / EngineHost / plugin ロード設計
+- ランタイム側の EngineRegistry / TextManager / 内蔵エンジン設計
 - マニフェストとローカル実体に基づくエンジン選択
 - GPU バックエンド前提の実行要件
 
@@ -26,13 +26,13 @@
 
 ## 原則
 - `metadata.json` のような独自メタデータには依存しない。
-- 形式選択は Router では行わず、Node が runtime/GPU 要件に応じて判断する。
+- 形式選択は Load Balancer では行わず、ランタイムが runtime/GPU 要件に応じて判断する。
 - 登録時に確定した `format` を尊重し、実行時の形式変換は行わない。
 
 ## 決定事項（要約）
-- **責務分離**: Router は manifest を提供し、Node が runtime/アーティファクト選択を行う。
-- **Node 前提**: Node は Python 依存を持たない。
-- **GPU 前提**: GPU 非搭載ノードは対象外。
+- **責務分離**: Load Balancer は manifest を提供し、ランタイムが runtime/アーティファクト選択を行う。
+- **ランタイム前提**: ランタイムは Python 依存を持たない。
+- **GPU 前提**: GPU 非搭載ランタイムは対象外。
 - **llama.cpp fork**: Upstream fixes are pending; operate on `akiojin/llama.cpp` until they land upstream, then switch back to `ggerganov/llama.cpp`.
 - **対応 OS/GPU**:
   - macOS: Apple Silicon / Metal
@@ -43,29 +43,29 @@
   DirectML は **最適化アーティファクト不足とドライバ差分の影響が大きい**ため凍結。
 - **形式固定**: `format` は登録時に確定し、実行時の形式切替は行わない。
 - **最適化アーティファクト**: 公式最適化アーティファクトは実行キャッシュとして利用可能だが、
-  Node が選択したアーティファクトを上書きしない。
+  ランタイムが選択したアーティファクトを上書きしない。
 - **Nemotron**: 新エンジンの詳細設計は後回し（TBD）。
 
 ## 内蔵エンジン要件（単一要件）
 
 **REQ-IE-001**: 内蔵エンジンは **RuntimeType / format / capabilities** に基づく単一の選択規約を持つ。
 以下の条件を **一つの要件** として満たすこと:
-- **プラグイン形式**: Node 本体は Engine Host とし、エンジンは動的プラグイン（.dylib/.so/.dll）で追加可能。
+- **内蔵エンジン形式**: ランタイム本体に TextManager を組み込み、エンジンは同一プロセス内で提供する。
 - **ABI 固定**: C ABI で互換性を保証し、`abi_version` を明示する。
 - **選択ソース**: 登録時に確定した `format` と HF 由来メタデータ（`config.json` 等）を正とする。
 - **自動フォールバック禁止**: safetensors/GGUF が共存しても `format` を優先し、実行時に切替しない。
 - **GPU 前提**: macOS=Metal / Windows=CUDA（Linux CUDA は実験扱い）。
-- **可否判定**: EngineRegistry / EngineHost / `/v1/models` の可否判定に反映し、未対応は ready 対象外とする。
+- **可否判定**: EngineRegistry / TextManager / `/v1/models` の可否判定に反映し、未対応は ready 対象外とする。
 
 ## アーキテクチャ概念
 
 ```
-Router
+Load Balancer
   - 登録/メタデータ検証
   - manifest 作成（ファイル一覧）
         │
         ▼
-Node
+Runtime
   - ModelStorage / Resolver
   - runtime/アーティファクト選択
         │
@@ -74,7 +74,7 @@ EngineRegistry
   - RuntimeType で解決
         │
         ▼
-Engine Host (Plugin Loader)
+TextManager (Built-in Engines)
   - GGUF: llama.cpp
   - safetensors: gpt-oss / nemotron (TBD)
   - ASR/TTS/画像: whisper / onnx / stable-diffusion
@@ -111,8 +111,8 @@ Engine Host (Plugin Loader)
 | `OnnxRuntime` | TTS | ONNX | Python 依存なし運用 |
 
 ## アーティファクト選択ルール
-1. Router は形式を確定せず、manifest のみを提供する。
-2. Node が runtime/GPU 要件に応じてアーティファクトを選択する。
+1. Load Balancer は形式を確定せず、manifest のみを提供する。
+2. ランタイムが runtime/GPU 要件に応じてアーティファクトを選択する。
 3. 形式変換は行わない（safetensors/GGUF/Metal/CUDA はそのまま扱う）。
 4. 公式最適化アーティファクトは実行キャッシュとして利用可能。
 

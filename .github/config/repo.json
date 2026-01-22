@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/twelvelabs/gh-repo-config/main/schema/repo.json",
-  "name": "llm-router",
+  "name": "llmlb",
   "description": "Distributed LLM router with load balancing and automatic model distribution",
   "homepage": null,
   "private": false,

@@ -8,7 +8,7 @@
 
 ## Setup
 
-- [x] `[P]` S-1: tiktoken-rs依存をrouter/Cargo.tomlに追加
+- [x] `[P]` S-1: tiktoken-rs依存をllmlb/Cargo.tomlに追加
 - [x] `[P]` S-2: マイグレーションファイル 004_add_token_statistics.sql 作成
 
 ## Test（RED）
@@ -51,12 +51,12 @@
 
 - [x] C-1: common/src/protocol.rs - RequestResponseRecordにトークンフィールド追加
   - 依存: T-1
-- [x] C-2: router/src/balancer/mod.rs - NodeLoadStateにトークンフィールド追加
+- [x] C-2: llmlb/src/balancer/mod.rs - NodeLoadStateにトークンフィールド追加
   - 依存: T-2
 
 ### トークン抽出実装
 
-- [x] C-3: トークン抽出モジュール作成（router/src/token/mod.rs）
+- [x] C-3: トークン抽出モジュール作成（llmlb/src/token/mod.rs）
   - 依存: T-3, T-4, T-5
 - [x] C-4: usageフィールド抽出ロジック実装
   - 依存: C-3

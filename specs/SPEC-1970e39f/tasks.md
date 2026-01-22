@@ -5,7 +5,7 @@
 
 ## 概要
 
-ルーターとノードのHTTPリクエスト/レスポンスを構造化ログとして出力し、
+ロードバランサーとノードのHTTPリクエスト/レスポンスを構造化ログとして出力し、
 ノード選択失敗時のリクエスト履歴保存を修正する。
 
 ## Phase 3.1: セットアップ
@@ -19,19 +19,19 @@
 
 ### ユーザーストーリー1: APIリクエストのトレース (P1)
 
-- [x] T002 [P] `router/tests/contract/openai_logging_test.rs`:
+- [x] T002 [P] `llmlb/tests/contract/openai_logging_test.rs`:
   `test_chat_completions_request_processed` - リクエスト受信時の処理確認
   - ✅ テスト作成・合格
-- [x] T003 [P] `router/tests/contract/openai_logging_test.rs`:
+- [x] T003 [P] `llmlb/tests/contract/openai_logging_test.rs`:
   `test_node_selection_failure_returns_error` - ノード選択失敗時のエラー応答
   - ✅ テスト作成・合格
-- [x] T004 [P] `router/tests/contract/openai_logging_test.rs`:
+- [x] T004 [P] `llmlb/tests/contract/openai_logging_test.rs`:
   `test_node_selection_failure_saves_request_history` - 失敗時もリクエスト履歴保存
   - ✅ テスト作成・合格
 
 ### ユーザーストーリー3: ログの検索と分析 (P3)
 
-- [x] T005 [P] `router/tests/contract/models_source_test.rs`:
+- [x] T005 [P] `llmlb/tests/contract/models_source_test.rs`:
   `test_model_source_deserializes_hf_onnx` - HfOnnxバリアントのデシリアライズ
   - ✅ テスト作成・合格
 
@@ -39,25 +39,25 @@
 
 ### FR-001: リクエスト受信ログ
 
-- [x] T006 `router/src/api/openai.rs`:
+- [x] T006 `llmlb/src/api/openai.rs`:
   `chat_completions`関数にtracing::info!追加 (endpoint, model, request_id)
   - ✅ 実装済み
 
 ### FR-003: プロキシエラーログ
 
-- [x] T007 `router/src/api/openai.rs`:
+- [x] T007 `llmlb/src/api/openai.rs`:
   `proxy_openai_post`関数のエラー分岐にtracing::warn!追加
   - ✅ 実装済み: error!マクロ使用 (openai.rs:984-988)
 
 ### FR-004: ノード選択失敗時の履歴保存 (重大バグ修正)
 
-- [x] T008 `router/src/api/openai.rs`:
+- [x] T008 `llmlb/src/api/openai.rs`:
   `select_available_node`のmatch式に変更し、Err時にsave_request_record呼び出し
   - ✅ 実装済み: openai.rs:981-1010
 
 ### HfOnnxバリアント追加
 
-- [x] T009 [P] `router/src/registry/models.rs`:
+- [x] T009 [P] `llmlb/src/registry/models.rs`:
   ModelSource enumにHfOnnxバリアント追加
   - ✅ 実装済み: registry/models.rs:25
 
@@ -65,7 +65,7 @@
 
 ### ノードポート修正
 
-- [x] T010 `router/src/convert.rs`:
+- [x] T010 `llmlb/src/convert.rs`:
   ノードAPI呼び出し時のポート修正
   - ✅ 実装済み
 
@@ -79,7 +79,7 @@
   - ✅ 合格
 - [x] T014 markdownlintチェック
   - ✅ 合格
-- [x] T015 動作確認: ルーター起動→リクエスト送信→ログ出力確認
+- [x] T015 動作確認: ロードバランサー起動→リクエスト送信→ログ出力確認
   - ✅ テストで動作確認済み
 
 ## 依存関係
@@ -100,10 +100,10 @@ T011-T015 (polish)
 
 ```text
 # T002-T005 を一緒に起動 (異なるテストファイル):
-Task: "router/tests/contract/openai_logging_test.rs に test_chat_completions_logs_request_received"
-Task: "router/tests/contract/openai_logging_test.rs に test_node_selection_failure_logs_error"
-Task: "router/tests/contract/openai_logging_test.rs に test_node_selection_failure_saves_request_history"
-Task: "router/tests/contract/models_source_test.rs に test_model_source_deserializes_hf_onnx"
+Task: "llmlb/tests/contract/openai_logging_test.rs に test_chat_completions_logs_request_received"
+Task: "llmlb/tests/contract/openai_logging_test.rs に test_node_selection_failure_logs_error"
+Task: "llmlb/tests/contract/openai_logging_test.rs に test_node_selection_failure_saves_request_history"
+Task: "llmlb/tests/contract/models_source_test.rs に test_model_source_deserializes_hf_onnx"
 ```
 
 ## 検証チェックリスト
@@ -120,10 +120,10 @@ Task: "router/tests/contract/models_source_test.rs に test_model_source_deseria
 ### T002: test_chat_completions_logs_request_received
 
 ```rust
-// router/tests/contract/openai_logging_test.rs
+// llmlb/tests/contract/openai_logging_test.rs
 #[tokio::test]
 async fn test_chat_completions_logs_request_received() {
-    // ルーター起動
+    // ロードバランサー起動
     // /v1/chat/completions にリクエスト送信
     // ログに "chat_completions request received" が含まれることを検証
     // ログに endpoint, model, request_id が含まれることを検証
@@ -135,7 +135,7 @@ async fn test_chat_completions_logs_request_received() {
 ```rust
 #[tokio::test]
 async fn test_node_selection_failure_logs_error() {
-    // ノードなしの状態でルーター起動
+    // ノードなしの状態でロードバランサー起動
     // /v1/chat/completions にリクエスト送信 (503が返る)
     // ログに "Failed to select available node" が含まれることを検証
 }
@@ -146,7 +146,7 @@ async fn test_node_selection_failure_logs_error() {
 ```rust
 #[tokio::test]
 async fn test_node_selection_failure_saves_request_history() {
-    // ノードなしの状態でルーター起動
+    // ノードなしの状態でロードバランサー起動
     // /v1/chat/completions にリクエスト送信 (503が返る)
     // request_history.json に失敗レコードが保存されることを検証
     // status が Error { message: "Node selection failed: ..." } であることを検証
@@ -156,7 +156,7 @@ async fn test_node_selection_failure_saves_request_history() {
 ### T008: ノード選択失敗時の履歴保存 (重大)
 
 ```rust
-// router/src/api/openai.rs 914行付近
+// llmlb/src/api/openai.rs 914行付近
 // 変更前:
 let node = select_available_node(state).await?;
 

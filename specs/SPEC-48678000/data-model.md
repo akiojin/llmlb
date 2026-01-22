@@ -160,8 +160,8 @@ pub enum DownloadStatus {
 │                                                              │
 │  ┌─────────────────┐   ┌─────────────────┐                  │
 │  │ ローカルキャッシュ │   │ ダウンローダー   │                  │
-│  │ ~/.llm-router/  │   │ HF Hub API      │                  │
-│  │ models/         │   │ Router Proxy    │                  │
+│  │ ~/.llmlb/  │   │ HF Hub API      │                  │
+│  │ models/         │   │ Load Balancer Proxy    │                  │
 │  └─────────────────┘   └─────────────────┘                  │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -177,7 +177,7 @@ pub enum DownloadStatus {
 ## ファイルシステム構造
 
 ```text
-~/.llm-router/
+~/.llmlb/
 ├── models/
 │   ├── llama-3.2-1b/
 │   │   └── model.gguf

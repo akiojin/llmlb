@@ -32,38 +32,38 @@
 
 | ファイル | 変更内容 |
 |----------|----------|
-| `router/migrations/004_add_token_statistics.sql` | 新規マイグレーション作成 |
+| `llmlb/migrations/004_add_token_statistics.sql` | 新規マイグレーション作成 |
 | `common/src/protocol.rs` | RequestResponseRecordにトークンフィールド追加 |
 
 ### Phase 2: コア実装
 
 | ファイル | 変更内容 |
 |----------|----------|
-| `router/Cargo.toml` | tiktoken-rs依存追加 |
-| `router/src/balancer/mod.rs` | NodeLoadStateにトークンフィールド追加 |
-| `router/src/balancer/mod.rs` | finish_request()でトークン集計 |
-| `router/src/db/request_history.rs` | insert_record()でトークン値保存 |
+| `llmlb/Cargo.toml` | tiktoken-rs依存追加 |
+| `llmlb/src/balancer/mod.rs` | NodeLoadStateにトークンフィールド追加 |
+| `llmlb/src/balancer/mod.rs` | finish_request()でトークン集計 |
+| `llmlb/src/db/request_history.rs` | insert_record()でトークン値保存 |
 
 ### Phase 3: API拡張
 
 | ファイル | 変更内容 |
 |----------|----------|
-| `router/src/api/dashboard.rs` | DashboardNode/Statsにトークンフィールド追加 |
-| `router/src/api/dashboard.rs` | 新規統計エンドポイント追加 |
+| `llmlb/src/api/dashboard.rs` | DashboardNode/Statsにトークンフィールド追加 |
+| `llmlb/src/api/dashboard.rs` | 新規統計エンドポイント追加 |
 
 ### Phase 4: ダッシュボードUI
 
 | ファイル | 変更内容 |
 |----------|----------|
-| `router/src/dashboard/` | ノード一覧にトークン統計表示 |
-| `router/src/dashboard/` | 専用統計ページ追加 |
+| `llmlb/src/dashboard/` | ノード一覧にトークン統計表示 |
+| `llmlb/src/dashboard/` | 専用統計ページ追加 |
 
 ## データモデル設計
 
 ### SQLiteマイグレーション
 
 ```sql
--- router/migrations/004_add_token_statistics.sql
+-- llmlb/migrations/004_add_token_statistics.sql
 
 -- request_history テーブルにトークンカラム追加
 ALTER TABLE request_history ADD COLUMN input_tokens INTEGER;
@@ -86,7 +86,7 @@ pub struct RequestResponseRecord {
     pub total_tokens: Option<u32>,
 }
 
-// router/src/balancer/mod.rs - NodeLoadState拡張
+// llmlb/src/balancer/mod.rs - NodeLoadState拡張
 struct NodeLoadState {
     // ... 既存フィールド ...
     total_input_tokens: u64,
@@ -94,7 +94,7 @@ struct NodeLoadState {
     total_tokens: u64,
 }
 
-// router/src/api/dashboard.rs - DashboardNode拡張
+// llmlb/src/api/dashboard.rs - DashboardNode拡張
 pub struct DashboardNode {
     // ... 既存フィールド ...
     pub total_input_tokens: Option<u64>,
@@ -102,7 +102,7 @@ pub struct DashboardNode {
     pub average_tokens_per_request: Option<f32>,
 }
 
-// router/src/api/dashboard.rs - DashboardStats拡張
+// llmlb/src/api/dashboard.rs - DashboardStats拡張
 pub struct DashboardStats {
     // ... 既存フィールド ...
     pub total_input_tokens: Option<u64>,
@@ -195,7 +195,7 @@ pub struct DashboardStats {
 ### 新規依存
 
 ```toml
-# router/Cargo.toml
+# llmlb/Cargo.toml
 [dependencies]
 tiktoken-rs = "0.5"  # OpenAI互換トークナイザ
 ```

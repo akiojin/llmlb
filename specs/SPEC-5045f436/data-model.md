@@ -74,7 +74,7 @@ pub struct RequestResponseRecord {
 ### NodeLoadState（拡張）
 
 ```rust
-// router/src/balancer/mod.rs
+// llmlb/src/balancer/mod.rs
 
 #[derive(Debug, Clone, Default)]
 struct NodeLoadState {
@@ -97,7 +97,7 @@ struct NodeLoadState {
 ### DashboardNode（拡張）
 
 ```rust
-// router/src/api/dashboard.rs
+// llmlb/src/api/dashboard.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardNode {
@@ -119,7 +119,7 @@ pub struct DashboardNode {
 ### DashboardStats（拡張）
 
 ```rust
-// router/src/api/dashboard.rs
+// llmlb/src/api/dashboard.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardStats {
@@ -136,7 +136,7 @@ pub struct DashboardStats {
 ### TokenStatistics（新規）
 
 ```rust
-// router/src/api/dashboard.rs
+// llmlb/src/api/dashboard.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenStatistics {
@@ -168,7 +168,7 @@ pub struct ModelTokenStats {
 ### DailyTokenStats（新規）
 
 ```rust
-// router/src/api/dashboard.rs
+// llmlb/src/api/dashboard.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyTokenStats {

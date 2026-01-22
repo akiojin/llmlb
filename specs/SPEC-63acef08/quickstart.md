@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | 1台以上のオンラインノード |
 | APIキー | 有効なAPIキー |
 
@@ -14,9 +14,9 @@
 
 ```bash
 # プロキシ設定
-export LLM_ROUTER_REQUEST_TIMEOUT=60    # リクエストタイムアウト（秒）
-export LLM_ROUTER_CONNECT_TIMEOUT=5     # 接続タイムアウト（秒）
-export LLM_ROUTER_MAX_CONCURRENT=100    # 最大同時リクエスト数
+export LLMLB_REQUEST_TIMEOUT=60    # リクエストタイムアウト（秒）
+export LLMLB_CONNECT_TIMEOUT=5     # 接続タイムアウト（秒）
+export LLMLB_MAX_CONCURRENT=100    # 最大同時リクエスト数
 ```
 
 ## OpenAI互換API
@@ -128,7 +128,7 @@ curl -X GET http://localhost:8080/v1/models \
 ```python
 from openai import OpenAI
 
-# ルーターをエンドポイントに設定
+# ロードバランサーをエンドポイントに設定
 client = OpenAI(
     api_key="sk-your-api-key",
     base_url="http://localhost:8080/v1"

@@ -4,7 +4,7 @@
 
 ## 前提条件
 
-- llm-routerが起動していること
+- llmlbが起動していること
 - 以下の環境変数が設定されていること（使用したいプロバイダーのみ）:
   - `OPENAI_API_KEY`: OpenAI APIキー
   - `GOOGLE_API_KEY`: Google AI APIキー
@@ -29,7 +29,7 @@ curl -X GET http://localhost:32768/v1/models \
       "id": "llama-3.2",
       "object": "model",
       "created": 0,
-      "owned_by": "router",
+      "owned_by": "lb",
       "ready": true
     },
     {
@@ -163,7 +163,7 @@ curl -s http://localhost:32768/v1/models \
 ### キャッシュをクリアしたい
 
 現在、キャッシュクリアAPIは提供されていません。
-ルーターを再起動するとキャッシュがクリアされます。
+ロードバランサーを再起動するとキャッシュがクリアされます。
 
 ---
 

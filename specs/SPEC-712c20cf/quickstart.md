@@ -19,11 +19,11 @@
 ### ステップ
 1. routerを起動
    ```bash
-   cargo run -p llm-router
+   cargo run -p llmlb
    ```
    期待される出力:
    ```
-   [INFO] LLM Router starting on 0.0.0.0:32768
+   [INFO] LLM Load Balancer starting on 0.0.0.0:32768
    [INFO] Dashboard available at http://localhost:32768/dashboard
    ```
 
@@ -31,7 +31,7 @@
 
 3. 期待される結果:
    - ダッシュボードページが表示される
-   - ヘッダーに「LLM Router Dashboard」が表示される
+   - ヘッダーに「LLM Load Balancer Dashboard」が表示される
    - システム統計カードが表示される（Total Nodes, Online Nodes, etc.）
    - ノード一覧テーブルが表示される
 
@@ -53,13 +53,13 @@
    cmake --build node/build -j
 
    # ターミナル1
-   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=32769 ./node/build/allm
+   LLMLB_URL=http://localhost:32768 XLLM_PORT=32769 ./node/build/xllm
 
    # ターミナル2
-   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=11436 ./node/build/allm
+   LLMLB_URL=http://localhost:32768 XLLM_PORT=11436 ./node/build/xllm
 
    # ターミナル3
-   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=11437 ./node/build/allm
+   LLMLB_URL=http://localhost:32768 XLLM_PORT=11437 ./node/build/xllm
    ```
 
 2. ダッシュボードでノード一覧を確認
@@ -110,7 +110,7 @@
 
 2. 新しいノードを登録
    ```bash
-   LLM_ROUTER_URL=http://localhost:32768 ALLM_PORT=11438 ./node/build/allm
+   LLMLB_URL=http://localhost:32768 XLLM_PORT=11438 ./node/build/xllm
    ```
 
 3. 期待される結果:
@@ -138,7 +138,7 @@
    # server-01のプロセスをCtrl+Cで停止
    ```
 
-3. 60秒以上待機（`LLM_ROUTER_NODE_TIMEOUT` のデフォルト値）
+3. 60秒以上待機（`LLMLB_NODE_TIMEOUT` のデフォルト値）
 
 4. 期待される結果:
    - ノードのステータスが自動的に「Offline」に変化
@@ -176,14 +176,14 @@
 ### ダッシュボードが表示されない
 **原因**: 静的ファイルが正しく配信されていない
 **解決策**:
-1. `router/src/web/static/index.html`が存在することを確認
+1. `llmlb/src/web/static/index.html`が存在することを確認
 2. `tower-http`のServeDir設定を確認
-3. ルーターを再起動
+3. ロードバランサーを再起動
 
 ### ノード一覧が空
 **原因**: ノードが登録されていない
 **解決策**:
-1. ノードを起動: `LLM_ROUTER_URL=http://localhost:32768 ./node/build/allm`
+1. ノードを起動: `LLMLB_URL=http://localhost:32768 ./node/build/xllm`
 2. 登録APIを手動で呼び出し:
    ```bash
    curl -X POST http://localhost:32768/v0/nodes \
@@ -210,12 +210,12 @@
 **解決策**:
 1. ノードがハートビートを送信しているか確認:
    ```bash
-   # ルーターのログを確認（例）
-   ls ~/.llm-router/logs/llm-router.jsonl.*
-   tail -n 200 ~/.llm-router/logs/llm-router.jsonl.$(date +%Y-%m-%d)
+   # ロードバランサーのログを確認（例）
+   ls ~/.llmlb/logs/llmlb.jsonl.*
+   tail -n 200 ~/.llmlb/logs/llmlb.jsonl.$(date +%Y-%m-%d)
    ```
-2. `LLM_ROUTER_HEALTH_CHECK_INTERVAL`（または互換の `HEALTH_CHECK_INTERVAL`）環境変数を確認
-3. `LLM_ROUTER_NODE_TIMEOUT` 環境変数を確認
+2. `LLMLB_HEALTH_CHECK_INTERVAL`（または互換の `HEALTH_CHECK_INTERVAL`）環境変数を確認
+3. `LLMLB_NODE_TIMEOUT` 環境変数を確認
 
 ---
 

@@ -29,9 +29,9 @@ pub enum CommonError {
     Validation(String),
 }
 
-/// Router error type
+/// load balancer error type
 #[derive(Debug, Error)]
-pub enum RouterError {
+pub enum LbError {
     /// Common layer error
     #[error(transparent)]
     Common(#[from] CommonError),
@@ -97,7 +97,7 @@ pub enum RouterError {
     Authorization(String),
 }
 
-impl RouterError {
+impl LbError {
     /// Returns a safe error message for external clients.
     ///
     /// This method returns a generic error message that does not expose
@@ -135,7 +135,7 @@ pub enum NodeError {
     #[error(transparent)]
     Common(#[from] CommonError),
 
-    /// Router connection error
+    /// load balancer connection error
     #[error("Failed to connect to Router: {0}")]
     RouterConnection(String),
 
@@ -167,8 +167,8 @@ pub enum NodeError {
 /// Result type alias (Common)
 pub type CommonResult<T> = Result<T, CommonError>;
 
-/// Result type alias (Router)
-pub type RouterResult<T> = Result<T, RouterError>;
+/// Result type alias (load balancer)
+pub type RouterResult<T> = Result<T, LbError>;
 
 /// Result type alias (Runtime)
 pub type NodeResult<T> = Result<T, NodeError>;
@@ -184,15 +184,15 @@ mod tests {
     }
 
     #[test]
-    fn test_router_error_node_not_found() {
+    fn test_lb_error_node_not_found() {
         let node_id = Uuid::new_v4();
-        let error = RouterError::NodeNotFound(node_id);
+        let error = LbError::NodeNotFound(node_id);
         assert!(error.to_string().contains(&node_id.to_string()));
     }
 
     #[test]
-    fn test_router_error_no_nodes() {
-        let error = RouterError::NoNodesAvailable;
+    fn test_lb_error_no_nodes() {
+        let error = LbError::NoNodesAvailable;
         assert_eq!(error.to_string(), "No available runtimes");
     }
 

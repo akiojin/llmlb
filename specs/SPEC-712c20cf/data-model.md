@@ -245,7 +245,7 @@ pub struct NodeMetrics {
 
 ### ノード一覧取得
 ```
-Client ─GET /v0/dashboard/nodes→ Router
+Client ─GET /v0/dashboard/nodes→ Load Balancer
                                         │
                                         │ NodeRegistry.list_all()
                                         ▼
@@ -262,7 +262,7 @@ Client ◄───────────────────────�
 
 ### システム統計取得
 ```
-Client ─GET /v0/dashboard/stats→ Router
+Client ─GET /v0/dashboard/stats→ Load Balancer
                                        │
                                        │ NodeRegistry.list_all()
                                        ▼
@@ -284,7 +284,7 @@ common/src/
 ├── types.rs              # Node, NodeStatus, SystemInfo (既存)
 └── dashboard.rs          # NodeWithUptime, DashboardStats (新規)
 
-router/src/
+llmlb/src/
 ├── api/
 │   └── dashboard.rs      # ダッシュボードAPI実装
 └── registry/

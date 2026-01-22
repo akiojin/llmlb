@@ -1,4 +1,4 @@
-# LLM Router ロードマップ
+# LLM Load Balancer ロードマップ
 
 > 更新: 2026-01-04 (SPEC-93536000追加・整合更新)
 >
@@ -19,8 +19,8 @@
 
 | SPEC ID | 機能名 | ステータス | 優先度 |
 |---------|--------|-----------|--------|
-| SPEC-32e2b31a | LLM Router System（統合版） | ✅ 済 | P1 |
-| SPEC-35375000 | ルーター負荷最適化 | ✅ 済 | P1 |
+| SPEC-32e2b31a | LLM Load Balancer System（統合版） | ✅ 済 | P1 |
+| SPEC-35375000 | ロードバランサー負荷最適化 | ✅ 済 | P1 |
 | SPEC-443acc8c | ヘルスチェックシステム | ✅ 済 | - |
 | SPEC-589f2df1 | ロードバランシングシステム | ✅ 済 | - |
 | SPEC-5cd7b614 | GPU必須ノード登録要件 | ✅ 済 | - |
@@ -32,7 +32,7 @@
 | SPEC ID | 機能名 | ステータス | 優先度 |
 |---------|--------|-----------|--------|
 | SPEC-7c0a37e0 | APIキースコープシステム | ✅ 済 | P1 |
-| SPEC-d4eb8796 | ルーター認証・アクセス制御 | ✅ 済 | P1 |
+| SPEC-d4eb8796 | ロードバランサー認証・アクセス制御 | ✅ 済 | P1 |
 
 ### モデル管理 (11件)
 
@@ -48,7 +48,7 @@
 | SPEC-8a2d1d43 | gptossアーキテクチャエイリアス | ✅ 済 | P2 |
 | SPEC-8ae67d67 | モデル自動配布機能 | 🗑️ 廃止 | - |
 | SPEC-a61b24f2 | モデル形式選択（safetensors/GGUF） | 🗑️ 廃止 | - |
-| SPEC-dcaeaec4 | LLM-Router独自モデルストレージ | ✅ 済 | P1 |
+| SPEC-dcaeaec4 | LLM-Load Balancer独自モデルストレージ | ✅ 済 | P1 |
 
 ### ルーティング (2件)
 
@@ -79,7 +79,7 @@
 | SPEC ID | 機能名 | ステータス | 優先度 |
 |---------|--------|-----------|--------|
 | SPEC-1970e39f | 構造化ロギング強化 | 🚧 部分 | P3 |
-| SPEC-1f2a9c3d | Node / Router Log Retrieval API | 🚧 部分 | P3 |
+| SPEC-1f2a9c3d | Node / Load Balancer Log Retrieval API | 🚧 部分 | P3 |
 | SPEC-799b8e2b | 共通ログシステム | 🚧 部分 | P3 |
 | SPEC-fbc50d97 | リクエスト/レスポンス履歴保存 | ✅ 済 | - |
 
@@ -105,7 +105,7 @@
 
 | 優先度 | SPEC | 依存関係 |
 |--------|------|---------|
-| P1 | SPEC-d4eb8796 ルーター認証 | なし |
+| P1 | SPEC-d4eb8796 ロードバランサー認証 | なし |
 | P1 | SPEC-7c0a37e0 APIキースコープ | SPEC-d4eb8796 |
 
 ### Milestone 2: マルチモーダル対応
@@ -173,7 +173,7 @@ Milestone 4 (品質)
 |---------|--------|---------|--------|
 | SPEC-0c4f3e5c | LLM runtimeモデルストレージ形式 | 統合設計へ移行 | SPEC-dcaeaec4 |
 | SPEC-3df1b977 | モデルファイル破損自動修復 | シンプル設計へ移行 | SPEC-48678000 |
-| SPEC-8ae67d67 | ルーター主導のモデル自動配布 | ノード主導pull方式へ変更 | SPEC-dcaeaec4 |
+| SPEC-8ae67d67 | ロードバランサー主導のモデル自動配布 | ノード主導pull方式へ変更 | SPEC-dcaeaec4 |
 | SPEC-a61b24f2 | モデル形式選択（safetensors/GGUF） | Node側形式選択へ統一 | 統合仕様 |
 
 ## 更新履歴

@@ -1,10 +1,10 @@
-# クイックスタート: llm-router CLIコマンド
+# クイックスタート: llmlb CLIコマンド
 
 **機能ID**: `SPEC-58378000` | **日付**: 2026-01-08
 
 ## 前提条件
 
-- llm-routerバイナリがビルド済み
+- llmlbバイナリがビルド済み
 - GPUが搭載されている
 - HuggingFaceアカウント（gatedモデル利用時）
 
@@ -14,21 +14,21 @@
 
 ```bash
 # ターミナル1: サーバーをフォアグラウンドで起動
-llm-router node serve
+llmlb node serve
 ```
 
 ### 2. モデルのダウンロード
 
 ```bash
 # ターミナル2: モデルをダウンロード
-llm-router node pull meta-llama/Llama-3.2-3B-Instruct
+llmlb node pull meta-llama/Llama-3.2-3B-Instruct
 ```
 
 ### 3. モデルとの対話
 
 ```bash
 # REPLを起動
-llm-router node run meta-llama/Llama-3.2-3B-Instruct
+llmlb node run meta-llama/Llama-3.2-3B-Instruct
 >>> こんにちは、何ができますか？
 私はAIアシスタントです。質問に答えたり...
 >>> /bye
@@ -40,36 +40,36 @@ llm-router node run meta-llama/Llama-3.2-3B-Instruct
 
 ```bash
 # ローカルモデル一覧
-llm-router node list
+llmlb node list
 
 # モデル詳細表示
-llm-router node show meta-llama/Llama-3.2-3B-Instruct
+llmlb node show meta-llama/Llama-3.2-3B-Instruct
 
 # モデル削除
-llm-router node rm meta-llama/Llama-3.2-3B-Instruct
+llmlb node rm meta-llama/Llama-3.2-3B-Instruct
 ```
 
 ### 実行中モデルの管理
 
 ```bash
 # 実行中モデル一覧
-llm-router node ps
+llmlb node ps
 
 # モデルをアンロード
-llm-router node stop meta-llama/Llama-3.2-3B-Instruct
+llmlb node stop meta-llama/Llama-3.2-3B-Instruct
 ```
 
-### ルーター管理（分散構成時）
+### ロードバランサー管理（分散構成時）
 
 ```bash
 # ノード一覧
-llm-router router nodes
+llmlb router nodes
 
 # モデル配信状況
-llm-router router models
+llmlb router models
 
 # クラスタ状態
-llm-router router status
+llmlb router status
 ```
 
 ## 高度な使い方
@@ -77,7 +77,7 @@ llm-router router status
 ### Vision入力
 
 ```bash
-llm-router node run llava
+llmlb node run llava
 >>> /path/to/image.png この画像について説明して
 この画像には...
 ```
@@ -86,30 +86,30 @@ llm-router node run llava
 
 ```bash
 # 思考過程を表示
-llm-router node run deepseek-r1 --think
+llmlb node run deepseek-r1 --think
 >>> 複雑な数学の問題を解いて
 <think>まず、問題を分析すると...</think>
 答えは42です。
 
 # 思考過程を非表示
-llm-router node run deepseek-r1 --hidethinking
+llmlb node run deepseek-r1 --hidethinking
 ```
 
 ### ollamaモデルの参照
 
 ```bash
 # ollamaでダウンロード済みモデルを参照
-llm-router node run ollama:llama3.2
+llmlb node run ollama:llama3.2
 ```
 
 ## 環境変数
 
 ```bash
 # サーバー接続先を変更
-export LLM_ROUTER_HOST=192.168.1.100:32769
+export LLMLB_HOST=192.168.1.100:32769
 
 # デバッグログを有効化
-export LLM_ROUTER_DEBUG=true
+export LLMLB_DEBUG=true
 
 # gatedモデル用HuggingFaceトークン
 export HF_TOKEN=hf_xxxxxxxxxxxxx
@@ -123,7 +123,7 @@ export HF_TOKEN=hf_xxxxxxxxxxxxx
 Error: Failed to connect to server at 127.0.0.1:32769
 ```
 
-→ `llm-router node serve` でサーバーを起動してください。
+→ `llmlb node serve` でサーバーを起動してください。
 
 ### gatedモデルのダウンロードエラー
 
@@ -143,7 +143,7 @@ export HF_TOKEN=hf_xxxxxxxxxxxxx
 Error: Model 'xxx' not found
 ```
 
-→ `llm-router node list` で利用可能なモデルを確認してください。
+→ `llmlb node list` で利用可能なモデルを確認してください。
 
 ## テスト検証シナリオ
 

@@ -2,28 +2,28 @@
 
 ## 概要
 
-ルーターとノードの構造化ログを確認・分析する方法を説明する。
+ロードバランサーとノードの構造化ログを確認・分析する方法を説明する。
 
 ## ログの確認
 
 ### ログファイルの場所
 
 ```bash
-# ルーターログ
-~/.llm-router/logs/router.log
+# ロードバランサーログ
+~/.llmlb/logs/router.log
 
 # ノードログ
-~/.llm-router/logs/node.log
+~/.llmlb/logs/node.log
 ```
 
 ### リアルタイム監視
 
 ```bash
-# ルーターログをリアルタイムで監視
-tail -f ~/.llm-router/logs/router.log
+# ロードバランサーログをリアルタイムで監視
+tail -f ~/.llmlb/logs/router.log
 
 # JSON整形して表示
-tail -f ~/.llm-router/logs/router.log | jq '.'
+tail -f ~/.llmlb/logs/router.log | jq '.'
 ```
 
 ## ログレベル設定
@@ -31,14 +31,14 @@ tail -f ~/.llm-router/logs/router.log | jq '.'
 ### 環境変数
 
 ```bash
-# ルーター
-export RUST_LOG=llm_router=info
+# ロードバランサー
+export RUST_LOG=llmlb=info
 
 # デバッグレベル
-export RUST_LOG=llm_router=debug
+export RUST_LOG=llmlb=debug
 
 # 特定モジュールのみ
-export RUST_LOG=llm_router::api::openai=debug
+export RUST_LOG=llmlb::api::openai=debug
 ```
 
 ### ノード側
@@ -123,7 +123,7 @@ cat router.log node.log | jq "select(.request_id == \"$REQUEST_ID\")" | jq -s 's
 
 ```bash
 # 7日以上前のログを削除
-find ~/.llm-router/logs -name "*.log.*" -mtime +7 -delete
+find ~/.llmlb/logs -name "*.log.*" -mtime +7 -delete
 ```
 
 ## トラブルシューティング
@@ -135,15 +135,15 @@ find ~/.llm-router/logs -name "*.log.*" -mtime +7 -delete
 echo $RUST_LOG
 
 # 書き込み権限を確認
-ls -la ~/.llm-router/logs/
+ls -la ~/.llmlb/logs/
 ```
 
 ### ログファイルが大きすぎる
 
 ```bash
 # ファイルサイズを確認
-du -h ~/.llm-router/logs/
+du -h ~/.llmlb/logs/
 
 # 古いログを圧縮
-gzip ~/.llm-router/logs/router.log.2025-01-01
+gzip ~/.llmlb/logs/router.log.2025-01-01
 ```

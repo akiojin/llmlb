@@ -24,7 +24,7 @@
 ## パス規約
 
 このプロジェクトは**単一プロジェクト構造**（router クレート）を使用：
-- `router/src/` - ソースコード
+- `llmlb/src/` - ソースコード
 - `common/src/` - 共有プロトコル定義
 - `tests/` - テストコード
 
@@ -41,7 +41,7 @@
   - CSV エクスポート用
   - 依存: なし
 
-- [x] T003 [P] `router/src/db/mod.rs` に `request_history` モジュールを宣言
+- [x] T003 [P] `llmlb/src/db/mod.rs` に `request_history` モジュールを宣言
   - `pub mod request_history;` を追加
   - 依存: なし
 
@@ -125,36 +125,36 @@
 
 ### ストレージ層実装
 
-- [x] T014 `router/src/db/request_history.rs` にストレージ構造体を作成
+- [x] T014 `llmlb/src/db/request_history.rs` にストレージ構造体を作成
   - `RequestHistoryStorage` 構造体
   - `Arc<Mutex<()>>` でファイルロック
   - `new()` コンストラクタ
   - 依存: T001, T003
 
-- [x] T015 `router/src/db/request_history.rs` に `save_record()` 関数を実装
+- [x] T015 `llmlb/src/db/request_history.rs` に `save_record()` 関数を実装
   - レコードを JSON 配列に追加して保存
   - ファイルロック使用
   - 一時ファイル + rename パターン（破損防止）
   - 依存: T014, T007 (テストが先)
 
-- [x] T016 `router/src/db/request_history.rs` に `load_records()` 関数を実装
+- [x] T016 `llmlb/src/db/request_history.rs` に `load_records()` 関数を実装
   - JSON ファイルから全レコードを読み込み
   - ファイルが存在しない場合は空配列を返す
   - 依存: T014, T008 (テストが先)
 
-- [x] T017 `router/src/db/request_history.rs` に
+- [x] T017 `llmlb/src/db/request_history.rs` に
   `cleanup_old_records()` 関数を実装
   - 7日より古いレコードを削除
   - 新しいレコードのみを残して保存
   - 依存: T014, T015, T016, T009 (テストが先)
 
-- [x] T018 `router/src/db/request_history.rs` に
+- [x] T018 `llmlb/src/db/request_history.rs` に
   `filter_and_paginate()` 関数を実装
   - フィルタ条件（モデル名、ノードID、ステータス、日時範囲）
   - ページネーション（page, per_page）
   - 依存: T014, T016, T010 (テストが先)
 
-- [x] T019 `router/src/db/request_history.rs` に
+- [x] T019 `llmlb/src/db/request_history.rs` に
   定期クリーンアップタスクを実装
   - `tokio::spawn` + `tokio::time::interval` (1時間ごと)
   - サーバー起動時に1回実行
@@ -163,18 +163,18 @@
 
 ### プロキシ層修正
 
-- [x] T020 `router/src/api/proxy.rs` の `proxy_chat()` 関数を修正
+- [x] T020 `llmlb/src/api/proxy.rs` の `proxy_chat()` 関数を修正
   - レスポンスをバッファリング（`hyper::body::to_bytes`）
   - RequestResponseRecord を作成
   - `tokio::spawn` で非同期保存（fire-and-forget）
   - クライアントにレスポンス返却
   - 依存: T001, T015, T011 (テストが先)
 
-- [x] T021 `router/src/api/proxy.rs` の `proxy_generate()` 関数を修正
+- [x] T021 `llmlb/src/api/proxy.rs` の `proxy_generate()` 関数を修正
   - T020 と同じキャプチャロジックを実装
   - 依存: T020, T011
 
-- [x] T022 `router/src/api/proxy.rs` に
+- [x] T022 `llmlb/src/api/proxy.rs` に
   ストリーミングレスポンスのキャプチャ機能を実装
   - `forward_streaming_response()` 関数を修正
   - ストリーム完了後にレスポンス全体を保存
@@ -182,7 +182,7 @@
 
 ### ダッシュボードAPI実装
 
-- [x] T023 `router/src/api/dashboard.rs` に
+- [x] T023 `llmlb/src/api/dashboard.rs` に
   List エンドポイント (`GET /v0/dashboard/request-responses`) を実装
   - クエリパラメータのパース（model, runtime_id, status, start_time, end_time,
     page, per_page）
@@ -190,14 +190,14 @@
   - レスポンス構造（records, total_count, page, per_page）
   - 依存: T016, T018, T004 (テストが先)
 
-- [x] T024 `router/src/api/dashboard.rs` に
+- [x] T024 `llmlb/src/api/dashboard.rs` に
   Detail エンドポイント (`GET /v0/dashboard/request-responses/:id`) を実装
   - パスパラメータから UUID を取得
   - レコードを検索して返却
   - 見つからない場合は 404
   - 依存: T016, T005 (テストが先)
 
-- [x] T025 `router/src/api/dashboard.rs` に
+- [x] T025 `llmlb/src/api/dashboard.rs` に
   Export エンドポイント (`GET /v0/dashboard/request-responses/export`) を実装
   - format パラメータ（json または csv）
   - JSON 形式: フィルタ済みレコードを JSON 配列で返却
@@ -205,8 +205,8 @@
   - Content-Disposition ヘッダー設定（attachment）
   - 依存: T002, T016, T018, T006 (テストが先)
 
-- [x] T026 `router/src/api/mod.rs` または `router/src/main.rs` に
-  新しいエンドポイントをルーターに登録
+- [x] T026 `llmlb/src/api/mod.rs` または `llmlb/src/main.rs` に
+  新しいエンドポイントをロードバランサーに登録
   - `/v0/dashboard/request-responses` → list handler
   - `/v0/dashboard/request-responses/:id` → detail handler
   - `/v0/dashboard/request-responses/export` → export handler
@@ -216,7 +216,7 @@
 
 ## Phase 3.4: UI実装
 
-- [x] T027 [P] `router/src/web/static/index.html` に
+- [x] T027 [P] `llmlb/src/web/static/index.html` に
   「リクエスト履歴」タブを追加
   - 新しいタブボタン（History）
   - 履歴コンテンツセクション（初期状態は非表示）
@@ -226,14 +226,14 @@
   - 詳細モーダル要素
   - 依存: なし
 
-- [x] T028 `router/src/web/static/app.js` に
+- [x] T028 `llmlb/src/web/static/app.js` に
   履歴リスト表示機能を実装
   - `fetchRequestHistory()` 関数（API呼び出し）
   - テーブルにレコードを描画
   - 5秒ごとの自動更新
   - 依存: T023, T027
 
-- [x] T029 `router/src/web/static/app.js` に
+- [x] T029 `llmlb/src/web/static/app.js` に
   詳細モーダル表示機能を実装
   - レコードクリック時のイベントハンドラ
   - 詳細API呼び出し
@@ -242,7 +242,7 @@
   - モーダルを閉じる機能
   - 依存: T024, T027, T028
 
-- [x] T030 `router/src/web/static/app.js` に
+- [x] T030 `llmlb/src/web/static/app.js` に
   フィルタ機能を実装
   - フィルタフォームの submit イベントハンドラ
   - クエリパラメータ構築
@@ -250,14 +250,14 @@
   - フィルタクリア機能
   - 依存: T023, T028
 
-- [x] T031 `router/src/web/static/app.js` に
+- [x] T031 `llmlb/src/web/static/app.js` に
   エクスポート機能を実装
   - JSON エクスポートボタンのクリックハンドラ
   - CSV エクスポートボタンのクリックハンドラ
   - ファイルダウンロード処理
   - 依存: T025, T027
 
-- [x] T032 [P] `router/src/web/static/styles.css` に
+- [x] T032 [P] `llmlb/src/web/static/styles.css` に
   履歴UI のスタイルを追加
   - 履歴テーブルのスタイル
   - 詳細モーダルのスタイル
@@ -324,14 +324,14 @@
 
 ### ページネーション改善 (2025-12-09)
 
-- [x] T040 [P] `router/src/api/dashboard.rs` のページネーションテストを作成（TDD RED）
+- [x] T040 [P] `llmlb/src/api/dashboard.rs` のページネーションテストを作成（TDD RED）
   - `RequestHistoryQuery` 構造体のデフォルト値テスト
   - 許可されたページサイズ（10/25/50/100）のテスト
   - 無効なページサイズの正規化テスト
   - URLクエリパラメータのパーステスト
   - 依存: T023
 
-- [x] T041 `router/src/api/dashboard.rs` のページネーション実装を改善（TDD GREEN）
+- [x] T041 `llmlb/src/api/dashboard.rs` のページネーション実装を改善（TDD GREEN）
   - `ALLOWED_PAGE_SIZES` 定数を追加（10, 25, 50, 100）
   - `DEFAULT_PAGE_SIZE` 定数を追加（10）
   - `RequestHistoryQuery` 構造体を追加（page, per_page）
@@ -339,7 +339,7 @@
   - `list_request_responses()` をクエリパラメータ対応に変更
   - 依存: T040
 
-- [x] T042 `router/Cargo.toml` に `serde_urlencoded` dev-dependency を追加
+- [x] T042 `llmlb/Cargo.toml` に `serde_urlencoded` dev-dependency を追加
   - テストでURLクエリパラメータのパースに使用
   - 依存: T040
 
@@ -363,19 +363,19 @@
 
 ### タスク
 
-- [x] T044 [P] `router/migrations/002_request_history.sql` マイグレーション作成
+- [x] T044 [P] `llmlb/migrations/002_request_history.sql` マイグレーション作成
   - request_historyテーブル定義
   - timestamp, model, runtime_idインデックス
   - 依存: なし
-  - 実装メモ: 既存 `router/migrations/001_init.sql` にテーブルとインデックスが定義済みのため追加マイグレーション不要（確認済み）
+  - 実装メモ: 既存 `llmlb/migrations/001_init.sql` にテーブルとインデックスが定義済みのため追加マイグレーション不要（確認済み）
 
-- [x] T045 `router/src/db/request_history.rs` SQLite対応テスト作成 (RED)
+- [x] T045 `llmlb/src/db/request_history.rs` SQLite対応テスト作成 (RED)
   - SQLite版のsave_record()テスト
   - SQLite版のload_records()テスト
   - SQLite版のfilter_and_paginate()テスト
   - 依存: T044
 
-- [x] T046 `router/src/db/request_history.rs` SQLite実装 (GREEN)
+- [x] T046 `llmlb/src/db/request_history.rs` SQLite実装 (GREEN)
   - RequestHistoryStorageをSQLite使用に書き換え
   - 既存のインターフェースを維持
   - 依存: T045
@@ -386,7 +386,7 @@
   - JSONファイルを.migratedにリネーム
   - 依存: T046
 
-- [x] T048 `router/src/db/migrations.rs` マイグレーション登録
+- [x] T048 `llmlb/src/db/migrations.rs` マイグレーション登録
   - 002_request_history.sqlを実行するロジック追加
   - 依存: T044, T046
   - 実装メモ: `sqlx::migrate!("./migrations")` で一括実行されるため追加登録は不要（確認済み）
@@ -434,7 +434,7 @@ Polish (T034-T039) → T034, T035 は並列、T036-T039 は順次
 # T001-T003 を並列実行
 Task T001: "common/src/protocol.rs に RequestResponseRecord 構造体を定義"
 Task T002: "Cargo.toml に csv 依存関係を追加"
-Task T003: "router/src/db/mod.rs に request_history モジュールを宣言"
+Task T003: "llmlb/src/db/mod.rs に request_history モジュールを宣言"
 ```
 
 ### Contract Test フェーズ

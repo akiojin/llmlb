@@ -6,7 +6,7 @@ Playground Chat でテキスト・画像・音声を使った入力ができる�
 
 ## 事前準備
 
-- LLM Router を起動し、Playground にアクセスできること
+- LLM Load Balancer を起動し、Playground にアクセスできること
 - モデルを選択できること（画像/音声対応モデルはUI上で表示される）
 
 ## 画像（P1）の確認手順

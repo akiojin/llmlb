@@ -18,7 +18,7 @@
 
 ## 概要
 
-ルーターが受信するリクエストとノードから返されるレスポンスを
+ロードバランサーが受信するリクエストとノードから返されるレスポンスを
 JSONファイルに保存し、Webダッシュボードで履歴を可視化する機能。
 7日間のデータ保持、フィルタリング、詳細表示、エクスポート機能を提供する。
 
@@ -27,7 +27,7 @@ JSONファイルに保存し、Webダッシュボードで履歴を可視化す�
 **言語/バージョン**: Rust 1.75+
 **主要依存関係**: Axum (WebAPI), Tokio (非同期ランタイム), serde/serde_json
 (JSON処理), chrono (日時処理), uuid (識別子生成)
-**ストレージ**: JSONファイル (`~/.llm-router/request_history.json`)
+**ストレージ**: JSONファイル (`~/.llmlb/request_history.json`)
 **テスト**: cargo test (unit/integration/e2e)
 **対象プラットフォーム**: Linux server (ubuntu-latest, windows-latest対応)
 **プロジェクトタイプ**: single (既存の router クレート内に実装)
@@ -46,12 +46,12 @@ JSONファイルに保存し、Webダッシュボードで履歴を可視化す�
 - パターン回避? Yes (Repository パターン不使用、直接ファイルI/O) ✓
 
 **アーキテクチャ**:
-- すべての機能をライブラリとして? Yes (router/src/ 以下にモジュール実装) ✓
+- すべての機能をライブラリとして? Yes (llmlb/src/ 以下にモジュール実装) ✓
 - ライブラリリスト:
   - `router::db::request_history` - ストレージ層
   - `router::api::proxy` - プロキシ + キャプチャ機能
   - `router::api::dashboard` - ダッシュボードAPI
-- ライブラリごとのCLI: `llm-router --help/--version` (既存CLIを拡張) ✓
+- ライブラリごとのCLI: `llmlb --help/--version` (既存CLIを拡張) ✓
 - ライブラリドキュメント: llms.txt形式を計画? 既存パターンに従う
 
 **テスト (妥協不可)**:
@@ -91,7 +91,7 @@ specs/SPEC-fbc50d97/
 ### ソースコード (リポジトリルート)
 
 ```
-router/
+llmlb/
 ├── src/
 │   ├── db/
 │   │   ├── mod.rs                 # 既存（ノード保存）
@@ -294,7 +294,7 @@ async fn test_export_request_responses_contract() {
 // tests/integration/request_capture_test.rs
 #[tokio::test]
 async fn test_request_is_captured_and_stored() {
-    // 1. ルーター起動
+    // 1. ロードバランサー起動
     // 2. テストノード登録
     // 3. /v1/chat/completions にリクエスト送信
     // 4. request_history.json にレコードが保存されることを確認

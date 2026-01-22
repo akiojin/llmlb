@@ -1,4 +1,4 @@
-# リサーチノート: ルーター主導エンドポイント登録システム
+# リサーチノート: ロードバランサー主導エンドポイント登録システム
 
 **機能ID**: `SPEC-66555000`
 **日付**: 2026-01-14
@@ -11,7 +11,7 @@
 
 **理由**:
 
-- aLLM（自社推論サーバー）、Ollama、vLLM等すべてOpenAI互換APIを提供
+- xLLM（自社推論サーバー）、Ollama、vLLM等すべてOpenAI互換APIを提供
 - /v1/models が業界標準エンドポイント
 - エンドポイントタイプ分けが不要になり、統一的な扱いが可能
 
@@ -31,7 +31,7 @@ Header: Authorization: Bearer {api_key} (if required)
 
 **対応エンドポイント**:
 
-- **aLLM**: 自社推論サーバー（llama.cpp/whisper.cpp/stable-diffusion.cpp/safetensors.cpp対応）
+- **xLLM**: 自社推論サーバー（llama.cpp/whisper.cpp/stable-diffusion.cpp/safetensors.cpp対応）
 - **Ollama**: OllamaのOpenAI互換モード
 - **vLLM**: vLLMサーバー
 - **その他**: OpenAI互換APIを提供する任意のサービス
@@ -40,11 +40,11 @@ Header: Authorization: Bearer {api_key} (if required)
 
 ### 2.1 プル型 vs プッシュ型
 
-**決定**: プル型（ルーターからエンドポイントへ定期ポーリング）
+**決定**: プル型（ロードバランサーからエンドポイントへ定期ポーリング）
 
 **理由**:
 
-- 外部エンドポイント（Ollama等）はルーターへのプッシュ機能を持たない
+- 外部エンドポイント（Ollama等）はロードバランサーへのプッシュ機能を持たない
 - 統一的なヘルスチェック方式で管理が容易
 - エンドポイント側の実装変更不要
 
@@ -81,7 +81,7 @@ Header: Authorization: Bearer {api_key} (if required)
 - 手動介入なしでの復旧を実現
 - error状態からの復旧も同様に自動化
 
-### 2.5 ルーター起動時の挙動
+### 2.5 ロードバランサー起動時の挙動
 
 **決定**: 全エンドポイントの即時チェックを並列実行
 

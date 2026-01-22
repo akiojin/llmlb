@@ -215,7 +215,7 @@ tests/
    - `cd src` → allow (Worktree内)
    - `cd /` → block
    - `cd ~` → block
-   - `cd /llm-router` → block (Worktree外)
+   - `cd /llmlb` → block (Worktree外)
    - `cd ../..` → block (親ディレクトリ)
 
 ### Quickstart

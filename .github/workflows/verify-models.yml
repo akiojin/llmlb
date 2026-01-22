@@ -61,7 +61,7 @@ jobs:
       MODEL_PLATFORM: ${{ inputs.platform }}
       MODEL_CAPABILITY: ${{ inputs.capability }}
       MODEL_DIR: ./models
-      BUILD_DIR: ./allm/build
+      BUILD_DIR: ./xllm/build
 
     steps:
       - name: Checkout
@@ -77,7 +77,7 @@ jobs:
         run: |
           pip install huggingface_hub[cli] || true
 
-      - name: Build aLLM
+      - name: Build xLLM
         run: |
           CMAKE_ARGS=""
           if [[ "$MODEL_PLATFORM" == "macos-metal" ]]; then
@@ -85,7 +85,7 @@ jobs:
           elif [[ "$MODEL_PLATFORM" == "linux-cuda" ]]; then
             CMAKE_ARGS="-DBUILD_WITH_CUDA=ON"
           fi
-          cmake -S allm -B "$BUILD_DIR" $CMAKE_ARGS -DBUILD_TESTS=OFF
+          cmake -S xllm -B "$BUILD_DIR" $CMAKE_ARGS -DBUILD_TESTS=OFF
           cmake --build "$BUILD_DIR" --config Release
 
       - name: Download model
@@ -123,7 +123,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           BRANCH="verify/${MODEL_ID}-${MODEL_PLATFORM}"
           git checkout -b "$BRANCH"
-          git add router/src/supported_models.json
+          git add llmlb/src/supported_models.json
           git commit -m "feat(models): add ${MODEL_ID} (${MODEL_PLATFORM})"
           git push origin "$BRANCH"
           gh pr create \

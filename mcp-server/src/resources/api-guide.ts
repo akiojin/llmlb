@@ -1,6 +1,6 @@
 import type { Resource } from "@modelcontextprotocol/sdk/types.js";
 
-const GUIDE_BASE_URI = "llm-router://guide";
+const GUIDE_BASE_URI = "llmlb://guide";
 
 /**
  * API Guide categories
@@ -8,27 +8,27 @@ const GUIDE_BASE_URI = "llm-router://guide";
 const GUIDE_CATEGORIES = [
   {
     id: "overview",
-    name: "llm-router-api-overview",
+    name: "llmlb-api-overview",
     description: "Overview of LLM Router API categories, authentication methods, and base URL configuration",
   },
   {
     id: "openai-compatible",
-    name: "llm-router-openai-api",
+    name: "llmlb-openai-api",
     description: "OpenAI-compatible endpoints: /v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models",
   },
   {
     id: "node-management",
-    name: "llm-router-node-api",
+    name: "llmlb-node-api",
     description: "Node management endpoints: /v0/nodes (list, register, delete, configure)",
   },
   {
     id: "model-management",
-    name: "llm-router-model-api",
+    name: "llmlb-model-api",
     description: "Model management endpoints: /v0/models/* (register, delete, manifest)",
   },
   {
     id: "dashboard",
-    name: "llm-router-dashboard-api",
+    name: "llmlb-dashboard-api",
     description: "Dashboard and monitoring endpoints: /v0/dashboard/* (stats, overview, metrics)",
   },
 ];

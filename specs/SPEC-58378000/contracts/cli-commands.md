@@ -1,11 +1,11 @@
-# CLI契約: llm-router コマンド
+# CLI契約: llmlb コマンド
 
 **機能ID**: `SPEC-58378000` | **日付**: 2026-01-08
 
 ## コマンド構造
 
 ```
-llm-router
+llmlb
 ├── node                      # ノード操作サブコマンド
 │   ├── serve                 # サーバー起動
 │   ├── run <model>           # REPL起動
@@ -15,7 +15,7 @@ llm-router
 │   ├── rm <model>            # 削除
 │   ├── stop <model>          # アンロード
 │   └── ps                    # 実行中一覧
-└── router                    # ルーター操作サブコマンド
+└── router                    # ロードバランサー操作サブコマンド
     ├── nodes                 # ノード一覧
     ├── models                # モデル配信状況
     └── status                # クラスタ状態
@@ -28,7 +28,7 @@ llm-router
 ### 使用法
 
 ```
-llm-router node serve [OPTIONS]
+llmlb node serve [OPTIONS]
 ```
 
 ### オプション
@@ -42,8 +42,8 @@ llm-router node serve [OPTIONS]
 
 | 変数 | 説明 |
 |------|------|
-| ALLM_PORT | ポート番号 |
-| ALLM_BIND_ADDRESS | バインドアドレス |
+| XLLM_PORT | ポート番号 |
+| XLLM_BIND_ADDRESS | バインドアドレス |
 
 ### 終了コード
 
@@ -61,7 +61,7 @@ llm-router node serve [OPTIONS]
 ### 使用法
 
 ```
-llm-router node run <MODEL> [OPTIONS]
+llmlb node run <MODEL> [OPTIONS]
 ```
 
 ### 引数
@@ -107,7 +107,7 @@ HuggingFaceからモデルをダウンロード。
 ### 使用法
 
 ```
-llm-router node pull <MODEL>
+llmlb node pull <MODEL>
 ```
 
 ### 引数
@@ -146,7 +146,7 @@ pulling abc123def456... 45% ▓▓▓▓▓▓▓▓░░░░░░░░░�
 ### 使用法
 
 ```
-llm-router node list
+llmlb node list
 ```
 
 ### 出力形式
@@ -174,7 +174,7 @@ ollama:llama3.2 (readonly)             4.1 GB   3 days ago
 ### 使用法
 
 ```
-llm-router node show <MODEL> [OPTIONS]
+llmlb node show <MODEL> [OPTIONS]
 ```
 
 ### オプション
@@ -217,7 +217,7 @@ Model: meta-llama/Llama-3.2-3B-Instruct
 ### 使用法
 
 ```
-llm-router node rm <MODEL>
+llmlb node rm <MODEL>
 ```
 
 ### 終了コード
@@ -237,7 +237,7 @@ llm-router node rm <MODEL>
 ### 使用法
 
 ```
-llm-router node stop <MODEL>
+llmlb node stop <MODEL>
 ```
 
 ### 終了コード
@@ -257,7 +257,7 @@ llm-router node stop <MODEL>
 ### 使用法
 
 ```
-llm-router node ps
+llmlb node ps
 ```
 
 ### 出力形式
@@ -295,7 +295,7 @@ meta-llama/Llama-3.2-3B-Instruct  abc123   6.4 GB   100% GPU   4 minutes    85% 
 ### 使用法
 
 ```
-llm-router router nodes
+llmlb router nodes
 ```
 
 ### 出力形式
@@ -311,7 +311,7 @@ def456     192.168.1.11     online    A100     5
 | コード | 条件 |
 |--------|------|
 | 0 | 成功 |
-| 2 | ルーター接続エラー |
+| 2 | ロードバランサー接続エラー |
 
 ---
 
@@ -322,7 +322,7 @@ def456     192.168.1.11     online    A100     5
 ### 使用法
 
 ```
-llm-router router models
+llmlb router models
 ```
 
 ### 出力形式
@@ -339,7 +339,7 @@ gpt-oss/gpt-oss-20b               0        unavailable
 | コード | 条件 |
 |--------|------|
 | 0 | 成功 |
-| 2 | ルーター接続エラー |
+| 2 | ロードバランサー接続エラー |
 
 ---
 
@@ -350,7 +350,7 @@ gpt-oss/gpt-oss-20b               0        unavailable
 ### 使用法
 
 ```
-llm-router router status
+llmlb router status
 ```
 
 ### 出力形式
@@ -369,4 +369,4 @@ VRAM:       85% average utilization
 | コード | 条件 |
 |--------|------|
 | 0 | 成功 |
-| 2 | ルーター接続エラー |
+| 2 | ロードバランサー接続エラー |

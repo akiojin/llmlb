@@ -6,9 +6,9 @@
 
 ## 設計原則
 
-- **シンプルさ優先**: ルーターはGPUバックエンド情報を持たない
-- **メモリのみ**: DB永続化なし、ルーター再起動時はノード再登録で復元
-- **プル型**: ルーターがノード登録時に/v1/modelsを取得
+- **シンプルさ優先**: ロードバランサーはGPUバックエンド情報を持たない
+- **メモリのみ**: DB永続化なし、ロードバランサー再起動時はノード再登録で復元
+- **プル型**: ロードバランサーがノード登録時に/v1/modelsを取得
 
 ## Node側の型定義（C++）
 
@@ -26,11 +26,11 @@
 | `ROCm` | AMD ROCm | Linux |
 | `Cpu` | CPU演算のみ | 全プラットフォーム |
 
-## Router側の型拡張（Rust）
+## Load Balancer側の型拡張（Rust）
 
 ### Node 構造体
 
-**ファイル**: `router/src/registry/mod.rs`
+**ファイル**: `llmlb/src/registry/mod.rs`
 
 **追加フィールド**:
 
@@ -39,7 +39,7 @@
 | `executable_models` | `Vec<String>` | このノードで実行可能なモデルID一覧 |
 | `excluded_models` | `HashSet<String>` | 推論失敗により一時除外中のモデルID |
 
-**注意**: `gpu_backend` フィールドは不要（ルーターはGPU情報を保持しない）
+**注意**: `gpu_backend` フィールドは不要（ロードバランサーはGPU情報を保持しない）
 
 ### RegisterRequest / HealthCheckRequest
 
@@ -107,7 +107,7 @@ isCompatible(model, backend):
 }
 ```
 
-### Router `/v1/models` レスポンス
+### Load Balancer `/v1/models` レスポンス
 
 オンラインノードのモデルを集約:
 
@@ -119,7 +119,7 @@ isCompatible(model, backend):
       "id": "llama2-7b-q4",
       "object": "model",
       "created": 1704240000,
-      "owned_by": "llm-router"
+      "owned_by": "llmlb"
     }
   ]
 }

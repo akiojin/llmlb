@@ -1,4 +1,4 @@
-# 実装計画: LLM Router System
+# 実装計画: LLM Load Balancer System
 
 **機能ID**: `SPEC-32e2b31a` | **日付**: 2025-10-30 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-32e2b31a/spec.md`の機能仕様
@@ -18,10 +18,10 @@
 
 ## 概要
 
-複数マシンで動作するLLM runtimeインスタンスを中央集権的に管理するシステム。Routerサーバー（中央管理）とNodeアプリ（各マシン）で構成され、統一APIエンドポイント、ロードバランシング、ヘルスチェック、リアルタイムダッシュボードを提供する。Rustで実装し、高いパフォーマンスとメモリ効率を追求する。
+複数マシンで動作するLLM runtimeインスタンスを中央集権的に管理するシステム。Load Balancerサーバー（中央管理）とNodeアプリ（各マシン）で構成され、統一APIエンドポイント、ロードバランシング、ヘルスチェック、リアルタイムダッシュボードを提供する。Rustで実装し、高いパフォーマンスとメモリ効率を追求する。
 
 **主要コンポーネント**:
-- **Router**: Axum（高速非同期Webフレームワーク）ベースのサーバー
+- **Load Balancer**: Axum（高速非同期Webフレームワーク）ベースのサーバー
 - **Node**: Tauri（クロスプラットフォームGUI）ベースのシステムトレイアプリ
 - **Common**: 共通型定義、プロトコル定義、設定管理
 
@@ -29,13 +29,13 @@
 
 **言語/バージョン**: Rust 1.75+ (stable)
 **主要依存関係**:
-- **Router**: `axum` (Web)、`tokio` (非同期)、`reqwest` (HTTP)、`sqlx` (DB)、`tower-http` (CORS/ロギング)、`tracing` (構造化ログ)
+- **Load Balancer**: `axum` (Web)、`tokio` (非同期)、`reqwest` (HTTP)、`sqlx` (DB)、`tower-http` (CORS/ロギング)、`tracing` (構造化ログ)
 - **Node**: `tauri` (GUI)、`tokio` (非同期)、`reqwest` (HTTP)、`sysinfo` (メトリクス)、`tray-icon` (システムトレイ)
 - **Common**: `serde` (JSON)、`thiserror` (エラー)、`config` (設定)
 
-**ストレージ**: SQLite (Router側、ノード情報・メトリクス履歴)
+**ストレージ**: SQLite (Load Balancer側、ノード情報・メトリクス履歴)
 **テスト**: `cargo test` (unit/integration)、`tokio::test` (非同期テスト)
-**対象プラットフォーム**: Windows 10+ (Node), Linux/Windows (Router)
+**対象プラットフォーム**: Windows 10+ (Node), Linux/Windows (Load Balancer)
 **プロジェクトタイプ**: multi (Cargo Workspace: router, node, common)
 **パフォーマンス目標**: ノード登録<5秒、リクエスト振り分け<50ms、障害検知<60秒
 **制約**: Windows GUI必須（Tauri）、非同期I/O優先、メモリ消費<100MB/Node
@@ -53,18 +53,18 @@
 - すべての機能をライブラリとして? ✅
 - ライブラリリスト:
   - `common`: 共通型定義、プロトコル、設定、エラー型
-  - `router`: Routerサーバー本体（バイナリ + ライブラリ）
+  - `router`: Load Balancerサーバー本体（バイナリ + ライブラリ）
   - `node`: Nodeアプリ本体（バイナリ + ライブラリ）
 - ライブラリごとのCLI:
   - `router`: `--help`, `--version`, `--config`, `--port` オプション
-  - `node`: `--help`, `--version`, `--config`, `--router-url` オプション
+  - `node`: `--help`, `--version`, `--config`, `--lb-url` オプション
 
 **テスト (妥協不可)**:
 - RED-GREEN-Refactorサイクルを強制? ✅ (テストコミット → REDチェック → 実装コミット)
 - Gitコミットはテストが実装より先に表示? ✅ (コミット履歴で検証)
 - 順序: Contract→Integration→E2E→Unit を厳密に遵守? ✅
   - Contract tests: API契約テスト（エンドポイント定義）
-  - Integration tests: Router↔Node通信、Router↔LLM runtime通信、DB永続化
+  - Integration tests: Load Balancer↔Node通信、Load Balancer↔LLM runtime通信、DB永続化
   - E2E tests: エンドツーエンドシナリオ（ノード登録→リクエスト振り分け→レスポンス）
   - Unit tests: 個別関数（ロードバランサーロジック、ヘルスチェックロジック）
 - 実依存関係を使用? ✅ (実SQLite DB、モックではない)
@@ -92,15 +92,15 @@ specs/SPEC-32e2b31a/
 ├── data-model.md        # Phase 1 出力 (データモデル定義)
 ├── quickstart.md        # Phase 1 出力 (開発者クイックスタート)
 ├── contracts/           # Phase 1 出力 (API契約定義)
-│   ├── router-api.yaml    # Router REST API (OpenAPI 3.0)
-│   └── node-protocol.md       # Node↔Router通信プロトコル
+│   ├── router-api.yaml    # Load Balancer REST API (OpenAPI 3.0)
+│   └── node-protocol.md       # Node↔Load Balancer通信プロトコル
 └── tasks.md             # Phase 2 出力 (/speckit.tasks)
 ```
 
 ### ソースコード (リポジトリルート)
 
 ```
-llm-router/
+llmlb/
 ├── Cargo.toml                    # Workspace定義
 ├── Cargo.lock
 ├── .cargo/
@@ -115,7 +115,7 @@ llm-router/
 │       ├── config.rs            # 設定構造体
 │       └── error.rs             # 統一エラー型
 │
-├── router/                 # Routerサーバー
+├── llmlb/                 # Load Balancerサーバー
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── main.rs             # エントリポイント
@@ -156,7 +156,7 @@ llm-router/
 │   │   │   ├── mod.rs
 │   │   │   ├── tray.rs         # システムトレイ
 │   │   │   └── window.rs       # 設定ウィンドウ
-│   │   ├── client/             # Router通信
+│   │   ├── client/             # Load Balancer通信
 │   │   │   ├── mod.rs
 │   │   │   ├── register.rs     # 自己登録
 │   │   │   └── heartbeat.rs    # ヘルスチェック送信
@@ -279,12 +279,12 @@ pub enum RequestStatus {
 }
 ```
 
-**Config (Router)**:
+**Config (Load Balancer)**:
 ```rust
 pub struct RouterConfig {
     pub host: String,              // "0.0.0.0"
     pub port: u16,                 // 32768
-    pub database_url: String,      // "sqlite://router.db"
+    pub database_url: String,      // "sqlite://lb.db"
     pub health_check_interval_secs: u64,  // 30秒
     pub node_timeout_secs: u64,   // 60秒
 }
@@ -293,7 +293,7 @@ pub struct RouterConfig {
 **Config (Node)**:
 ```rust
 pub struct NodeConfig {
-    pub router_url: String,        // "http://router:32768"
+    pub lb_url: String,        // "http://lb:32768"
     pub runtime_url: String,        // "http://localhost:32768"
     pub heartbeat_interval_secs: u64,  // 10秒
     pub auto_start: bool,          // Windows起動時の自動起動
@@ -307,7 +307,7 @@ pub struct NodeConfig {
 ```yaml
 openapi: 3.0.3
 info:
-  title: LLM Router API
+  title: LLM Load Balancer API
   version: 0.1.0
   description: 複数LLM runtimeインスタンスを管理する中央集権型システム
 
@@ -356,7 +356,7 @@ paths:
 
   /v0/health:
     post:
-      summary: ヘルスチェック情報送信（ノード→ルーター）
+      summary: ヘルスチェック情報送信（ノード→ロードバランサー）
       operationId: reportHealth
       requestBody:
         required: true
@@ -522,26 +522,26 @@ components:
           type: boolean
 ```
 
-### 3. Node↔Router通信プロトコル (`contracts/node-protocol.md`)
+### 3. Node↔Load Balancer通信プロトコル (`contracts/node-protocol.md`)
 
 **プロトコル仕様**:
 
 1. **ノード登録**:
-   - Node → Router: `POST /v0/nodes` (起動時)
-   - Router → Node: `RegisterResponse` (runtime_id返却)
+   - Node → Load Balancer: `POST /v0/nodes` (起動時)
+   - Load Balancer → Node: `RegisterResponse` (runtime_id返却)
 
 2. **ヘルスチェック（ハートビート）**:
-   - Node → Router: `POST /v0/health` (10秒間隔)
+   - Node → Load Balancer: `POST /v0/health` (10秒間隔)
    - Payload: CPU使用率、メモリ使用率、処理中リクエスト数
 
 3. **リクエスト振り分け**:
-   - Client → Router: `POST /v1/chat/completions` or `POST /v1/completions`
-   - Router → Node: HTTP Proxy (選択されたノードのLLM runtime URLへ転送)
+   - Client → Load Balancer: `POST /v1/chat/completions` or `POST /v1/completions`
+   - Load Balancer → Node: HTTP Proxy (選択されたノードのLLM runtime URLへ転送)
    - Node → LLM runtime: ローカルLLM runtime APIへ転送
-   - LLM runtime → Node → Router → Client: レスポンス返却
+   - LLM runtime → Node → Load Balancer → Client: レスポンス返却
 
 4. **ノード切断検知**:
-   - Router: 60秒以上ヘルスチェックがないノードを「オフライン」とマーク
+   - Load Balancer: 60秒以上ヘルスチェックがないノードを「オフライン」とマーク
 
 ### 4. Contract Tests生成
 
@@ -560,7 +560,7 @@ components:
 **ユーザーストーリーからのテストシナリオ**:
 
 1. **P1: ノード登録** (`tests/integration/test_node_lifecycle.rs`):
-   - ノード起動 → 登録リクエスト送信 → Router受信 → DB保存 → runtime_id返却
+   - ノード起動 → 登録リクエスト送信 → Load Balancer受信 → DB保存 → runtime_id返却
    - ノード終了 → 60秒後にタイムアウト → オフライン状態に変更
 
 2. **P2: 統一APIプロキシ** (`tests/integration/test_proxy.rs`):
@@ -593,7 +593,7 @@ components:
 1. **Setupタスク** ([P] 並列実行可):
    - Cargo Workspace初期化
    - 依存クレート追加 (axum, tokio, tauri, etc.)
-   - SQLiteスキーマ定義 (`router/src/db/schema.sql`)
+   - SQLiteスキーマ定義 (`llmlb/src/db/schema.sql`)
    - CI/CD設定 (GitHub Actions: テスト、ビルド、リリース)
    - リリース配布フォーマットの検証（Unix系=`.tar.gz`、Windows=`.zip`／主要ドキュメント同梱確認）
    - リリースワークフローで `main` ブランチへのマージ後のみ配布が行われるようガードを設置
@@ -609,7 +609,7 @@ components:
    - ヘルスチェック契約テスト (RED)
    - プロキシ契約テスト (RED)
 
-4. **Router実装** (依存関係順):
+4. **Load Balancer実装** (依存関係順):
    - ノード登録API実装 → Contract Test GREEN
    - ヘルスチェックAPI実装 → Contract Test GREEN
    - プロキシAPI実装 → Contract Test GREEN
@@ -619,7 +619,7 @@ components:
    - ダッシュボード実装 → Integration Test
 
 5. **Node実装** (依存関係順):
-   - Router通信クライアント → Integration Test
+   - Load Balancer通信クライアント → Integration Test
    - LLM runtime監視 → Unit Test
    - メトリクス収集 → Unit Test
    - GUI（Tauri） → 手動テスト
@@ -640,7 +640,7 @@ components:
 
 **順序戦略**:
 - TDD順序: Contract Test → Integration Test → 実装 → Unit Test → E2E Test
-- 依存関係順序: Common → Router → Node
+- 依存関係順序: Common → Load Balancer → Node
 - 並列実行: Common内のモジュール、Contract Tests、Setup tasks
 
 **推定出力**: tasks.mdに約40-50個のタスク

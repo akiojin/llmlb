@@ -7,7 +7,7 @@
         "markitdown-mcp"
       ]
     },
-    "llm-router": {
+    "llmlb": {
       "type": "stdio",
       "command": "node",
       "args": ["./mcp-server/dist/index.js"],

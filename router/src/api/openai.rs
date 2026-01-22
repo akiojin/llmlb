@@ -10,7 +10,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use llm_router_common::{
+use llmlb_common::{
     error::{CommonError, RouterError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
     types::{ModelCapabilities, ModelCapability, VisionCapability},
@@ -1921,7 +1921,7 @@ mod tests {
     };
     use axum::body::to_bytes;
     use axum::http::StatusCode;
-    use llm_router_common::protocol::{RecordStatus, RequestType};
+    use llmlb_common::protocol::{RecordStatus, RequestType};
     use serde_json::json;
     use serial_test::serial;
     use sqlx::SqlitePool;
@@ -1959,7 +1959,7 @@ mod tests {
 
     async fn create_state_with_tempdir() -> (AppState, tempfile::TempDir) {
         let dir = tempdir().expect("temp dir");
-        std::env::set_var("LLM_ROUTER_DATA_DIR", dir.path());
+        std::env::set_var("LLMLB_DATA_DIR", dir.path());
         let state = create_local_state().await;
         (state, dir)
     }
@@ -2013,7 +2013,7 @@ mod tests {
         if let Some(key) = saved {
             std::env::set_var("OPENAI_API_KEY", key);
         }
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2047,7 +2047,7 @@ mod tests {
         if let Some(key) = saved {
             std::env::set_var("GOOGLE_API_KEY", key);
         }
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2081,7 +2081,7 @@ mod tests {
         if let Some(key) = saved {
             std::env::set_var("ANTHROPIC_API_KEY", key);
         }
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2123,7 +2123,7 @@ mod tests {
 
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("OPENAI_BASE_URL");
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2166,7 +2166,7 @@ mod tests {
 
         std::env::remove_var("GOOGLE_API_KEY");
         std::env::remove_var("GOOGLE_API_BASE_URL");
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2211,7 +2211,7 @@ mod tests {
 
         std::env::remove_var("ANTHROPIC_API_KEY");
         std::env::remove_var("ANTHROPIC_API_BASE_URL");
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2219,7 +2219,7 @@ mod tests {
     async fn cloud_request_is_recorded_in_history() {
         let _guard = TEST_LOCK.lock().await;
         let temp_dir = tempdir().expect("temp dir");
-        std::env::set_var("LLM_ROUTER_DATA_DIR", temp_dir.path());
+        std::env::set_var("LLMLB_DATA_DIR", temp_dir.path());
 
         let state = create_local_state().await;
         let server = MockServer::start().await;
@@ -2270,7 +2270,7 @@ mod tests {
 
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("OPENAI_BASE_URL");
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]
@@ -2352,7 +2352,7 @@ mod tests {
         // cleanup env
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("OPENAI_BASE_URL");
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
         drop(dir);
     }
 
@@ -2410,14 +2410,14 @@ mod tests {
         if let Some(key) = saved {
             std::env::set_var("OPENAI_API_KEY", key);
         }
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     // T006: chat capabilities検証テスト (RED)
     // TextGeneration capability を持たないモデルで /v1/chat/completions を呼ぶとエラー
     #[test]
     fn test_chat_capability_validation_error_message() {
-        use llm_router_common::types::{ModelCapability, ModelType};
+        use llmlb_common::types::{ModelCapability, ModelType};
 
         // TTSモデルはTextToSpeechのみ、TextGenerationは非対応
         let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);

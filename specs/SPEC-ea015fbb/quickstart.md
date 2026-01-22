@@ -2,7 +2,7 @@
 
 ## 概要
 
-LLM Router Web UIの画面構成と基本的な操作方法を説明する。
+LLM Load Balancer Web UIの画面構成と基本的な操作方法を説明する。
 
 ## 画面アクセス
 

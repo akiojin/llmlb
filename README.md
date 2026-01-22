@@ -1,4 +1,4 @@
-# LLM Router
+# LLM Load Balancer
 
 A centralized management system for coordinating LLM inference runtimes across multiple machines
 
@@ -6,11 +6,11 @@ English | [日本語](./README.ja.md)
 
 ## Overview
 
-LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference runtimes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
+LLM Load Balancer is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference runtimes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
 
 ### Vision
 
-LLM Router is designed to serve three primary use cases:
+LLM Load Balancer is designed to serve three primary use cases:
 
 1. **Private LLM Server** - For individuals and small teams who want to run their own LLM infrastructure with full control over their data and models
 2. **Enterprise Gateway** - For organizations requiring centralized management, access control, and monitoring of LLM resources across departments
@@ -18,7 +18,7 @@ LLM Router is designed to serve three primary use cases:
 
 ### Multi-Engine Architecture
 
-LLM Router supports a pluggable multi-engine architecture:
+LLM Load Balancer supports a pluggable multi-engine architecture:
 
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
@@ -66,7 +66,7 @@ non-exhaustive and follows upstream llama.cpp compatibility.
 
 ### Multimodal Support
 
-Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
+Beyond text generation, LLM Load Balancer provides OpenAI-compatible APIs for:
 
 - **Text-to-Speech (TTS)**: `/v1/audio/speech` - Generate natural speech from text
 - **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
@@ -80,7 +80,7 @@ available for compatibility.
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
 - **Automatic Load Balancing**: Latency-based request distribution across available endpoints
-- **Endpoint Management**: Centralized management of Ollama, vLLM, aLLM and other OpenAI-compatible servers
+- **Endpoint Management**: Centralized management of Ollama, vLLM, xLLM and other OpenAI-compatible servers
 - **Model Sync**: Automatic model discovery via `GET /v1/models` from registered endpoints
 - **Automatic Failure Detection**: Detect offline endpoints and exclude them from routing
 - **Real-time Monitoring**: Comprehensive visualization of endpoint states and performance metrics via web dashboard
@@ -92,7 +92,7 @@ available for compatibility.
 
 ## MCP Server for LLM Assistants
 
-LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
+LLM assistants (like Claude Code) can interact with LLM Load Balancer through a dedicated
 MCP server. This is the recommended approach over using Bash with curl commands
 directly.
 The MCP server is installed and run with npm/npx; the repository root uses pnpm
@@ -113,9 +113,9 @@ for workspace tasks.
 ### Installation
 
 ```bash
-npm install -g @llm-router/mcp-server
+npm install -g @llmlb/mcp-server
 # or
-npx @llm-router/mcp-server
+npx @llmlb/mcp-server
 ```
 
 ### Configuration (.mcp.json)
@@ -123,13 +123,13 @@ npx @llm-router/mcp-server
 ```json
 {
   "mcpServers": {
-    "llm-router": {
+    "llmlb": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@llm-router/mcp-server"],
+      "args": ["-y", "@llmlb/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:32768",
-        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+        "LLMLB_URL": "http://localhost:32768",
+        "LLMLB_API_KEY": "sk_your_api_key"
       }
     }
   }
@@ -140,14 +140,14 @@ For detailed documentation, see [mcp-server/README.md](./mcp-server/README.md).
 
 ## Quick Start
 
-### Router (llm-router)
+### Router (llmlb)
 
 ```bash
 # Build
-cargo build --release -p llm-router
+cargo build --release -p llmlb
 
 # Run
-./target/release/llm-router
+./target/release/llmlb
 # Default: http://0.0.0.0:32768
 
 # Access dashboard
@@ -158,12 +158,12 @@ cargo build --release -p llm-router
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
-| `LLM_ROUTER_PORT` | `32768` | Listen port |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
-| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (required) | Initial admin password |
+| `LLMLB_HOST` | `0.0.0.0` | Bind address |
+| `LLMLB_PORT` | `32768` | Listen port |
+| `LLMLB_LOG_LEVEL` | `info` | Log level |
+| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
+| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
+| `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
 
 **Backward compatibility:** Legacy env var names (`ROUTER_PORT` etc.) are supported but deprecated.
 
@@ -196,28 +196,28 @@ sudo apt install cmake build-essential
 
 ```bash
 # Build (Metal is enabled by default on macOS)
-npm run build:allm
+npm run build:xllm
 
 # Build (Linux / CUDA)
-npm run build:allm:cuda
+npm run build:xllm:cuda
 
 # Run
-npm run start:allm
+npm run start:xllm
 
 # Or manually:
-# cd allm && cmake -B build -S . && cmake --build build --config Release
+# cd xllm && cmake -B build -S . && cmake --build build --config Release
 # # Linux / CUDA:
-# # cd allm && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:32768 ./allm/build/allm
+# # cd xllm && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
+# LLMLB_URL=http://localhost:32768 ./xllm/build/xllm
 ```
 
 **Environment Variables:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | Router URL to register with |
 | `LLM_RUNTIME_PORT` | `32769` | Runtime listen port |
-| `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
 | `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address |
 | `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
@@ -229,17 +229,17 @@ npm run start:allm
 
 ```bash
 # Build
-docker build --build-arg CUDA=cpu -t allm:latest allm/
+docker build --build-arg CUDA=cpu -t xllm:latest xllm/
 
 # Run
 docker run --rm -p 32769:32769 \
-  -e LLM_ROUTER_URL=http://host.docker.internal:32768 \
-  allm:latest
+  -e LLMLB_URL=http://host.docker.internal:32768 \
+  xllm:latest
 ```
 
 ## Load Balancing
 
-LLM Router supports multiple load balancing strategies to optimize request distribution across runtimes.
+LLM Load Balancer supports multiple load balancing strategies to optimize request distribution across runtimes.
 
 ### Strategies
 
@@ -250,7 +250,7 @@ Selects runtimes based on real-time metrics (CPU usage, memory usage, active req
 **Configuration:**
 ```bash
 # Enable metrics-based load balancing
-LLM_ROUTER_LOAD_BALANCER_MODE=metrics cargo run -p llm-router
+LLMLB_LOAD_BALANCER_MODE=metrics cargo run -p llmlb
 ```
 
 **Load Score Calculation:**
@@ -271,7 +271,7 @@ Combines multiple factors including response time, active requests, and CPU usag
 **Configuration:**
 ```bash
 # Use default advanced load balancing (or omit LOAD_BALANCER_MODE)
-LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
+LLMLB_LOAD_BALANCER_MODE=auto cargo run -p llmlb
 ```
 
 ### Health / Metrics API
@@ -303,7 +303,7 @@ Runtimes report health + metrics to the Router for runtime status and load balan
 
 ## Architecture
 
-LLM Router coordinates local llama.cpp runtimes and optionally proxies to cloud LLM providers via model prefixes.
+LLM Load Balancer coordinates local llama.cpp runtimes and optionally proxies to cloud LLM providers via model prefixes.
 
 ### Components
 - **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
@@ -331,7 +331,7 @@ Router (OpenAI-compatible)
 
 ### Communication Flow (Proxy Pattern)
 
-LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
+LLM Load Balancer uses a **Proxy Pattern** - clients only need to know the Router URL.
 
 #### Traditional Method (Without Router)
 ```bash
@@ -392,7 +392,7 @@ curl http://router:32768/v1/responses -d '...'
   }
    ```
 
-> **Note**: LLM Router supports OpenAI-compatible APIs and **recommends** the
+> **Note**: LLM Load Balancer supports OpenAI-compatible APIs and **recommends** the
 > Responses API (`/v1/responses`). Chat Completions remains available for
 > compatibility.
 
@@ -439,10 +439,10 @@ curl http://router:32768/v1/responses -d '...'
 ## Project Structure
 
 ```
-llm-router/
+llmlb/
 ├── common/              # Shared library (types, protocol, errors)
 ├── router/              # Rust router (HTTP APIs, dashboard, proxy)
-├── allm/                # C++ aLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
+├── xllm/                # C++ xLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
@@ -456,7 +456,7 @@ Use it to monitor endpoints, view request history, inspect logs, and manage mode
 
 1. Start the router:
    ```bash
-   cargo run -p llm-router
+   cargo run -p llmlb
    ```
 1. Open:
    ```text
@@ -465,13 +465,13 @@ Use it to monitor endpoints, view request history, inspect logs, and manage mode
 
 ## Endpoint Management
 
-The router centrally manages external inference servers (Ollama, vLLM, aLLM, etc.) as "endpoints".
+The router centrally manages external inference servers (Ollama, vLLM, xLLM, etc.) as "endpoints".
 
 ### Supported Endpoints
 
 | Type | Description | Health Check |
 |------|-------------|--------------|
-| **aLLM** | In-house inference server (llama.cpp/whisper.cpp) | `GET /v1/models` |
+| **xLLM** | In-house inference server (llama.cpp/whisper.cpp) | `GET /v1/models` |
 | **Ollama** | Ollama server | `GET /v1/models` |
 | **vLLM** | vLLM inference server | `GET /v1/models` |
 | **OpenAI-compatible** | Other OpenAI-compatible APIs | `GET /v1/models` |
@@ -604,19 +604,19 @@ Driver, not the full Toolkit.
 
 ### 1) Build from Rust source (Recommended)
 ```bash
-git clone https://github.com/akiojin/llm-router.git
-cd llm-router
+git clone https://github.com/akiojin/llmlb.git
+cd llmlb
 make quality-checks   # fmt/clippy/test/markdownlint
-cargo build -p llm-router --release
+cargo build -p llmlb --release
 ```
-Artifact: `target/release/llm-router`
+Artifact: `target/release/llmlb`
 
 ### 2) Run with Docker
 ```bash
-docker build -t llm-router:latest .
+docker build -t llmlb:latest .
 docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
-  llm-router:latest
+  llmlb:latest
 ```
 If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
 
@@ -634,23 +634,23 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 1. **Start Router**
    ```bash
-   ./target/release/llm-router
+   ./target/release/llmlb
    # Default: http://0.0.0.0:32768
    ```
 
 2. **Start Runtimes on Multiple Machines**
    ```bash
    # Machine 1
-   LLM_ROUTER_URL=http://router:32768 \
+   LLMLB_URL=http://router:32768 \
    # Replace with your actual API key (scope: runtime)
    LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
-   ./allm/build/allm
+   ./xllm/build/xllm
 
    # Machine 2
-   LLM_ROUTER_URL=http://router:32768 \
+   LLMLB_URL=http://router:32768 \
    # Replace with your actual API key (scope: runtime)
    LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
-   ./allm/build/allm
+   ./xllm/build/xllm
    ```
 
 3. **Send Inference Requests to Router (OpenAI-compatible, Responses API recommended)**
@@ -706,23 +706,23 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 ### Environment Variables
 
-#### Router (llm-router)
+#### Router (llmlb)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
-| `LLM_ROUTER_PORT` | `32768` | Listen port | `ROUTER_PORT` |
-| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | Database URL | `DATABASE_URL` |
-| `LLM_ROUTER_DATA_DIR` | `~/.llm-router` | Base directory for DB/log defaults | - |
-| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
-| `LLM_ROUTER_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
-| `LLM_ROUTER_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Runtime health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Runtime request timeout (seconds) | `NODE_TIMEOUT` |
-| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
+| `LLMLB_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
+| `LLMLB_PORT` | `32768` | Listen port | `ROUTER_PORT` |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/router.db` | Database URL | `DATABASE_URL` |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for DB/log defaults | - |
+| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
+| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
+| `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
+| `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
+| `LLMLB_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
+| `LLMLB_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | Runtime health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
+| `LLMLB_NODE_TIMEOUT` | `60` | Runtime request timeout (seconds) | `NODE_TIMEOUT` |
+| `LLMLB_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
 | `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 | `LLM_QUANTIZE_BIN` | - | Path to `llama-quantize` binary | optional |
 
@@ -737,30 +737,31 @@ Cloud / external services:
 | `ANTHROPIC_API_KEY` | - | API key for `anthropic:` models | required |
 | `ANTHROPIC_API_BASE_URL` | `https://api.anthropic.com` | Override Anthropic base URL | optional |
 | `HF_TOKEN` | - | Hugging Face token for model pulls | optional |
-| `LLM_ROUTER_API_KEY` | - | API key used by e2e tests/clients | client/test use |
+| `LLMLB_API_KEY` | - | API key used by e2e tests/clients | client/test use |
 
 #### Runtime (llm-runtime)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
 | `LLM_RUNTIME_API_KEY` | - | API key for runtime registration / model registry download | scope: `runtime` |
 | `LLM_RUNTIME_PORT` | `32769` | Runtime listen port | - |
-| `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory | `LLM_MODELS_DIR` |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
-| `LLM_RUNTIME_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
 | `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
 | `LLM_RUNTIME_IP` | auto-detected | Runtime IP reported to router | - |
 | `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
 | `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
-| `LLM_RUNTIME_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
+| `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` |
 | `LLM_RUNTIME_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `LLM_RUNTIME_CONFIG` | `~/.llm-router/config.json` | Path to runtime config file | - |
+| `LLM_RUNTIME_CONFIG` | `~/.llmlb/config.json` | Path to runtime config file | - |
 | `LLM_MODEL_IDLE_TIMEOUT` | unset | Seconds before unloading idle models | enabled when set |
 | `LLM_MAX_LOADED_MODELS` | unset | Cap on simultaneously loaded models | enabled when set |
 | `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
+
+Note: Engine plugins were removed in favor of built-in managers. See `docs/migrations/plugin-to-manager.md`.
 
 ## Troubleshooting
 
@@ -775,11 +776,11 @@ Cloud / external services:
 - Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
 
 ### Port conflict
-- Router: Change `LLM_ROUTER_PORT` (e.g., `LLM_ROUTER_PORT=18080`)
+- Router: Change `LLMLB_PORT` (e.g., `LLMLB_PORT=18080`)
 - Runtime: Change `LLM_RUNTIME_PORT` or use `--port`
 
 ### SQLite file creation failed
-- Check write permissions for the directory in `LLM_ROUTER_DATABASE_URL` path
+- Check write permissions for the directory in `LLMLB_DATABASE_URL` path
 - On Windows, check if the path contains spaces
 
 ### Dashboard does not appear
@@ -792,7 +793,7 @@ Cloud / external services:
 - If specified model does not exist locally, wait for runtime to auto-pull
 
 ### Too many / too few logs
-- Control via `LLM_ROUTER_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLM_ROUTER_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
+- Control via `LLMLB_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLMLB_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
 - Runtime logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
 
 ## Development
@@ -876,7 +877,7 @@ Hook tests are automatically executed in CI/CD:
 
 ## Request History
 
-LLM Router automatically logs all requests and responses for debugging,
+LLM Load Balancer automatically logs all requests and responses for debugging,
 auditing, and analysis purposes.
 
 ### Features
@@ -918,8 +919,8 @@ GET /v0/dashboard/request-responses/export
 ### Storage
 
 Request history is stored in SQLite at:
-- Linux/macOS: `~/.llm-router/router.db`
-- Windows: `%USERPROFILE%\.llm-router\router.db`
+- Linux/macOS: `~/.llmlb/router.db`
+- Windows: `%USERPROFILE%\.llmlb\router.db`
 
 Legacy `request_history.json` files (if present) are automatically imported on startup and renamed
 to `.migrated`.
@@ -1177,7 +1178,7 @@ Responses API (recommended).
 ```
 
 > **Compatibility**: `/v1/chat/completions` remains available for legacy clients.
-> **Important**: LLM Router only supports OpenAI-compatible response format.
+> **Important**: LLM Load Balancer only supports OpenAI-compatible response format.
 
 ## License
 

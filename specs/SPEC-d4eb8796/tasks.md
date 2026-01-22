@@ -255,7 +255,7 @@ APIキー削除機能を実装（DELETE /v0/api-keys/:id）
 - [x] **T088** `node/src/main.rs` に
 ノード登録レスポンスからトークン抽出を実装
 - [x] **T089** `node/src/main.rs` に
-トークン保存機能を実装（`~/.llm-router/token` ファイルに保存）
+トークン保存機能を実装（`~/.llmlb/token` ファイルに保存）
 - [x] **T090** `node/src/main.rs` に
 全HTTPリクエストにX-Node-Tokenヘッダー付与を実装
 

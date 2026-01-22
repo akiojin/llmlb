@@ -1,6 +1,6 @@
 //! モデル名の解析ユーティリティ（量子化サフィックス対応）
 
-use llm_router_common::error::{CommonError, RouterError};
+use llmlb_common::error::{CommonError, RouterError};
 
 /// 量子化サフィックスを含むモデル名の解析結果
 #[derive(Debug, Clone, PartialEq, Eq)]

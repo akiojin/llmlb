@@ -4,7 +4,7 @@
 
 ## 前提条件
 
-- llm-routerが起動している
+- llmlbが起動している
 - Responses API対応バックエンド（Ollama v0.13.3+, vLLM等）が登録されている
 - 有効なAPIキーを持っている
 

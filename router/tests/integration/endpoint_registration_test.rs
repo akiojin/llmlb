@@ -2,7 +2,7 @@
 //!
 //! SPEC-66555000: ルーター主導エンドポイント登録システム
 //!
-//! 管理者として、Ollama・vLLM・aLLMなどのエンドポイントを
+//! 管理者として、Ollama・vLLM・xLLMなどのエンドポイントを
 //! ダッシュボードまたはAPIから登録したい。
 
 use reqwest::Client;
@@ -80,7 +80,7 @@ async fn test_endpoint_registration_initial_status_pending() {
     );
 }
 
-/// US1-シナリオ3: 複数タイプのエンドポイント（Ollama、vLLM、aLLM）を
+/// US1-シナリオ3: 複数タイプのエンドポイント（Ollama、vLLM、xLLM）を
 /// 統一的に登録できることを確認
 #[tokio::test]
 async fn test_endpoint_registration_multiple_types() {
@@ -113,18 +113,18 @@ async fn test_endpoint_registration_multiple_types() {
         .unwrap();
     assert_eq!(vllm_resp.status().as_u16(), 201);
 
-    // aLLM
-    let allm_resp = client
+    // xLLM
+    let xllm_resp = client
         .post(format!("http://{}/v0/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
-            "name": "aLLM Server",
+            "name": "xLLM Server",
             "base_url": "http://localhost:9000"
         }))
         .send()
         .await
         .unwrap();
-    assert_eq!(allm_resp.status().as_u16(), 201);
+    assert_eq!(xllm_resp.status().as_u16(), 201);
 
     // 全て一覧に表示される
     let list_response = client

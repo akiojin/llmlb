@@ -157,7 +157,7 @@ LLMノードの操作がブロックされた際に、システムが理由と�
 複合コマンド
 - block-cd-command.sh: 6/6テスト合格
   - Allow: `cd .`, `cd src`
-  - Block: `cd /`, `cd ~`, `cd /llm-router`, `cd ../..`
+  - Block: `cd /`, `cd ~`, `cd /llmlb`, `cd ../..`
 
 **パフォーマンステスト**: ✅ 目標達成
 

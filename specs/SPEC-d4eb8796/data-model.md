@@ -274,8 +274,8 @@ CREATE INDEX idx_runtime_tokens_hash ON runtime_tokens(token_hash);
 ## JSONからSQLiteへのマイグレーション
 
 **既存データ**:
-- `~/.llm-router/nodes.json` → `nodes` テーブル
-- `~/.llm-router/request_history.json` → `request_history` テーブル（新規作成）
+- `~/.llmlb/nodes.json` → `nodes` テーブル
+- `~/.llmlb/request_history.json` → `request_history` テーブル（新規作成）
 
 **マイグレーション手順**:
 1. 既存のJSONファイルをパース

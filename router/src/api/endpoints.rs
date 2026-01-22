@@ -13,7 +13,7 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use llm_router_common::auth::{Claims, UserRole};
+use llmlb_common::auth::{Claims, UserRole};
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;

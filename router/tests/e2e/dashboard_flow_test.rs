@@ -9,8 +9,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llm_router_common::auth::{ApiKeyScope, UserRole};
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb_common::auth::{ApiKeyScope, UserRole};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -24,7 +24,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
 
     let db_pool = support::router::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
@@ -32,7 +32,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
         .expect("Failed to create endpoint registry");
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = support::router::test_jwt_secret();
 
@@ -42,17 +42,16 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let admin_user =
-        llm_router::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
-            .await
-            .expect("create admin user");
-    let admin_key = llm_router::db::api_keys::create(
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+        .await
+        .expect("create admin user");
+    let admin_key = llmlb::db::api_keys::create(
         &db_pool,
         "admin-key",
         admin_user.id,

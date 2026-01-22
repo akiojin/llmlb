@@ -394,7 +394,7 @@ Models管理セクションから未使用のHugging Face関連UIを削除する
 
 **競合差別化**:
 
-- 複数ノード分散処理がLLM Routerの最大の差別化要素
+- 複数ノード分散処理がLLM Load Balancerの最大の差別化要素
 - LM Studio、Ollama、vLLM/TGI、LiteLLMとの差別化ポイント
 
 **その他の決定事項**:

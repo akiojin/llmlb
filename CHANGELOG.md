@@ -1,5 +1,8 @@
 # Unreleased
 
+### Breaking Changes
+- Engine plugins removed in favor of built-in managers. See `docs/migrations/plugin-to-manager.md`.
+
 ### Features
 - cloud prefix routing for `openai:/google:/anthropic:` with SSE passthrough
 - cloud Prometheus metrics at `/v0/metrics/cloud` (provider/status counters & latency histogram)
@@ -14,22 +17,22 @@
 
 * **installer:** ルーターとノードのインストーラーを分離 ([1a29f9f](https://github.com/akiojin/runtime-router/commit/1a29f9fd732a6867931387211760a28c7dd34096))
 
-## [2.3.1](https://github.com/akiojin/llm-router/compare/v2.3.0...v2.3.1) (2025-11-26)
+## [2.3.1](https://github.com/akiojin/llmlb/compare/v2.3.0...v2.3.1) (2025-11-26)
 
 
 ### Bug Fixes
 
-* **docs:** releaseコマンドの使い方を正しいコマンドに修正 ([87d103d](https://github.com/akiojin/llm-router/commit/87d103dc81fb056b0ebdb139d9fdd1803c6ab87c))
-* **docs:** releaseコマンドの使い方を正しいコマンドに修正 ([5d6a9c9](https://github.com/akiojin/llm-router/commit/5d6a9c99858aa13d4bb1d5e5e1dc3b530fbf6649))
+* **docs:** releaseコマンドの使い方を正しいコマンドに修正 ([87d103d](https://github.com/akiojin/llmlb/commit/87d103dc81fb056b0ebdb139d9fdd1803c6ab87c))
+* **docs:** releaseコマンドの使い方を正しいコマンドに修正 ([5d6a9c9](https://github.com/akiojin/llmlb/commit/5d6a9c99858aa13d4bb1d5e5e1dc3b530fbf6649))
 
-## [2.3.0](https://github.com/akiojin/llm-router/compare/v2.2.0...v2.3.0) (2025-11-26)
+## [2.3.0](https://github.com/akiojin/llmlb/compare/v2.2.0...v2.3.0) (2025-11-26)
 
 
 ### Features
 
-* **docker:** add environment variables for API keys ([d4ade1c](https://github.com/akiojin/llm-router/commit/d4ade1c05936dfb3610cca863f55f2a4e6cba019))
+* **docker:** add environment variables for API keys ([d4ade1c](https://github.com/akiojin/llmlb/commit/d4ade1c05936dfb3610cca863f55f2a4e6cba019))
 
-## [2.2.0](https://github.com/akiojin/llm-router/compare/v2.1.8...v2.2.0) (2025-11-22)
+## [2.2.0](https://github.com/akiojin/llmlb/compare/v2.1.8...v2.2.0) (2025-11-22)
 
 
 ### Features
@@ -236,10 +239,10 @@
 
 1. データ移行:
    * 旧: ~/.runtime-router/
-   * 新: ~/.llm-router/
+   * 新: ~/.llmlb/
 
 2. 環境変数更新:
-   * `LLM_ROUTER_*` と `LLM_RUNTIME_*` に統一
+   * `LLMLB_*` と `LLM_RUNTIME_*` に統一
 
 3. 実行ファイル名:
    * `runtime-router-router`→`or-router`

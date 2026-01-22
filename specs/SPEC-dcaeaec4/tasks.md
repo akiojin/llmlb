@@ -6,7 +6,7 @@ LLM-Router独自モデルストレージの実装タスク。
 
 ## 実装済み
 
-- [x] FR-1: モデルディレクトリ構造 (`~/.llm-router/models/`)
+- [x] FR-1: モデルディレクトリ構造 (`~/.llmlb/models/`)
 - [x] FR-2: モデル名の形式変換 (`ModelStorage::modelNameToDir()`)
 - [x] FR-3: モデルアーティファクト解決（Node主導/外部ソース対応）を実装
 - [x] FR-4: 利用可能モデル一覧をsafetensors対応

@@ -298,9 +298,9 @@ impl Default for LoadThresholds {
 LOAD_BALANCER_MODE=metrics  # metrics | round_robin
 
 # 負荷閾値
-LLM_ROUTER_GPU_THRESHOLD=80      # GPU使用率閾値（%）
-LLM_ROUTER_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
-LLM_ROUTER_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
+LLMLB_GPU_THRESHOLD=80      # GPU使用率閾値（%）
+LLMLB_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
+LLMLB_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
 ```
 
 ## メトリクス形式

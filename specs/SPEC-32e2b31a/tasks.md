@@ -1,4 +1,4 @@
-# タスク: LLM Router System
+# タスク: LLM Load Balancer System
 
 ⚠️ **このSPECはアーカイブ済みです**
 
@@ -284,7 +284,7 @@ E2Eテスト (T075-T080)
 
 ```bash
 # すべて並列実行可能
-cargo init --name llm-router
+cargo init --name llmlb
 mkdir -p common router node tests/e2e
 ```
 

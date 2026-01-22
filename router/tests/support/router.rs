@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
-use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llm_router_common::auth::UserRole;
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb_common::auth::UserRole;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -16,12 +16,12 @@ pub async fn create_test_router() -> (Router, SqlitePool) {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
     std::env::set_var("LLM_CONVERT_FAKE", "1");
 
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = test_jwt_secret();
 
@@ -39,8 +39,8 @@ pub async fn create_test_router() -> (Router, SqlitePool) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
@@ -74,12 +74,12 @@ pub async fn spawn_test_router() -> TestServer {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
     std::env::set_var("LLM_CONVERT_FAKE", "1");
 
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = test_jwt_secret();
 
@@ -97,8 +97,8 @@ pub async fn spawn_test_router() -> TestServer {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
@@ -362,8 +362,8 @@ pub async fn approve_node_from_register_response(
 #[allow(dead_code)]
 pub async fn create_test_api_key(router_addr: SocketAddr, db_pool: &SqlitePool) -> String {
     // 管理者ユーザーを作成
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    llm_router::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
         .await
         .ok();
 
@@ -410,11 +410,11 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
 
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = test_jwt_secret();
 
@@ -432,8 +432,8 @@ pub async fn spawn_test_router_with_db() -> (TestServer, SqlitePool) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 

@@ -5,7 +5,7 @@
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
 **注記**: 実装は完了しているが、テストの有効化にはVisionモデル（LLaVA等）が
-登録されたノード環境が必要。aLLMはllama.cppのmultimodal supportをラップして使用。
+登録されたノード環境が必要。xLLMはllama.cppのmultimodal supportをラップして使用。
 
 ## 技術スタック
 

@@ -5,8 +5,8 @@
 use crate::auth::password::hash_password;
 use crate::config::get_env_with_fallback;
 use crate::db;
-use llm_router_common::auth::UserRole;
-use llm_router_common::error::RouterError;
+use llmlb_common::auth::UserRole;
+use llmlb_common::error::RouterError;
 use std::io::{self, Write};
 
 /// 環境変数から管理者を作成
@@ -24,16 +24,16 @@ use std::io::{self, Write};
 /// * `Err(RouterError)` - 作成失敗
 pub async fn create_admin_from_env(pool: &sqlx::SqlitePool) -> Result<Option<String>, RouterError> {
     // ADMIN_PASSWORDが設定されていなければスキップ
-    let password = match get_env_with_fallback("LLM_ROUTER_ADMIN_PASSWORD", "ADMIN_PASSWORD") {
+    let password = match get_env_with_fallback("LLMLB_ADMIN_PASSWORD", "ADMIN_PASSWORD") {
         Some(p) if !p.is_empty() => p,
         _ => {
-            tracing::debug!("LLM_ROUTER_ADMIN_PASSWORD not set, skipping admin creation from env");
+            tracing::debug!("LLMLB_ADMIN_PASSWORD not set, skipping admin creation from env");
             return Ok(None);
         }
     };
 
     // ADMIN_USERNAMEが設定されていなければデフォルト値を使用
-    let username = get_env_with_fallback("LLM_ROUTER_ADMIN_USERNAME", "ADMIN_USERNAME")
+    let username = get_env_with_fallback("LLMLB_ADMIN_USERNAME", "ADMIN_USERNAME")
         .unwrap_or_else(|| "admin".to_string());
 
     // パスワードをハッシュ化

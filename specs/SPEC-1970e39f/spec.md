@@ -135,7 +135,7 @@
 - Rust側は既存の `tracing` + `tracing-subscriber` を使用する
 - C++側は既存の `spdlog` を使用する
 - 新規ライブラリの追加は行わない
-- ログ出力先は既存のパス（`~/.llm-router/logs/`）を維持する
+- ログ出力先は既存のパス（`~/.llmlb/logs/`）を維持する
 
 ---
 

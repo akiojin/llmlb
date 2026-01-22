@@ -1,8 +1,8 @@
 // T050-T052: ユーザーCRUD操作
 
 use chrono::{DateTime, Utc};
-use llm_router_common::auth::{User, UserRole};
-use llm_router_common::error::RouterError;
+use llmlb_common::auth::{User, UserRole};
+use llmlb_common::error::RouterError;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 

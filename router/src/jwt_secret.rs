@@ -1,7 +1,7 @@
 //! JWT Secret management
 //!
 //! Provides automatic generation and file-based persistence of JWT secrets.
-//! The secret is stored in `~/.llm-router/jwt_secret` with permissions 600.
+//! The secret is stored in `~/.llmlb/jwt_secret` with permissions 600.
 
 use crate::config::get_env_with_fallback;
 use std::fs::{self, File, OpenOptions};
@@ -15,13 +15,13 @@ use std::os::unix::fs::PermissionsExt;
 /// Default JWT secret file name
 const JWT_SECRET_FILE: &str = "jwt_secret";
 /// Default data directory name
-const DATA_DIR: &str = ".llm-router";
+const DATA_DIR: &str = ".llmlb";
 
 /// Get or create the JWT secret
 ///
 /// Priority:
-/// 1. Environment variable `LLM_ROUTER_JWT_SECRET` (or deprecated `JWT_SECRET`)
-/// 2. Read from file `~/.llm-router/jwt_secret`
+/// 1. Environment variable `LLMLB_JWT_SECRET` (or deprecated `JWT_SECRET`)
+/// 2. Read from file `~/.llmlb/jwt_secret`
 /// 3. Generate new UUIDv4 and save to file
 ///
 /// # Returns
@@ -30,13 +30,13 @@ const DATA_DIR: &str = ".llm-router";
 ///
 /// # Example
 /// ```no_run
-/// use llm_router::jwt_secret::get_or_create_jwt_secret;
+/// use llmlb::jwt_secret::get_or_create_jwt_secret;
 ///
 /// let secret = get_or_create_jwt_secret().expect("Failed to get JWT secret");
 /// ```
 pub fn get_or_create_jwt_secret() -> io::Result<String> {
     // 1. Check environment variable first
-    if let Some(secret) = get_env_with_fallback("LLM_ROUTER_JWT_SECRET", "JWT_SECRET") {
+    if let Some(secret) = get_env_with_fallback("LLMLB_JWT_SECRET", "JWT_SECRET") {
         if !secret.is_empty() {
             tracing::info!("Using JWT secret from environment variable");
             return Ok(secret);
@@ -156,19 +156,19 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_or_create_uses_env_var() {
-        std::env::set_var("LLM_ROUTER_JWT_SECRET", "env-secret-test");
+        std::env::set_var("LLMLB_JWT_SECRET", "env-secret-test");
         std::env::remove_var("JWT_SECRET");
 
         let secret = get_or_create_jwt_secret().unwrap();
         assert_eq!(secret, "env-secret-test");
 
-        std::env::remove_var("LLM_ROUTER_JWT_SECRET");
+        std::env::remove_var("LLMLB_JWT_SECRET");
     }
 
     #[test]
     #[serial]
     fn test_get_or_create_uses_legacy_env_var() {
-        std::env::remove_var("LLM_ROUTER_JWT_SECRET");
+        std::env::remove_var("LLMLB_JWT_SECRET");
         std::env::set_var("JWT_SECRET", "legacy-secret-test");
 
         let secret = get_or_create_jwt_secret().unwrap();

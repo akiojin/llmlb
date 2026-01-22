@@ -3,7 +3,7 @@
 //! SPEC-24157000: OpenAI互換API完全準拠 - Open Responses API対応
 //!
 //! このモジュールは /v1/responses エンドポイントへのリクエストを
-//! Responses API対応バックエンド（Ollama、vLLM、aLLM等）にパススルーする。
+//! Responses API対応バックエンド（Ollama、vLLM、xLLM等）にパススルーする。
 
 use axum::{
     extract::State,
@@ -11,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use llm_router_common::error::RouterError;
+use llmlb_common::error::RouterError;
 use serde_json::{json, Value};
 use tracing::{error, info};
 
@@ -43,9 +43,7 @@ fn not_implemented_response(model: &str) -> Response {
 fn extract_model(payload: &Value) -> Result<String, AppError> {
     payload["model"].as_str().map(String::from).ok_or_else(|| {
         AppError::from(RouterError::Common(
-            llm_router_common::error::CommonError::Validation(
-                "Missing required field: model".into(),
-            ),
+            llmlb_common::error::CommonError::Validation("Missing required field: model".into()),
         ))
     })
 }

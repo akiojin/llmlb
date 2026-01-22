@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use llm_router_common::protocol::GenerateRequest;
+use llmlb_common::protocol::GenerateRequest;
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serde_json::Value;
 use serial_test::serial;

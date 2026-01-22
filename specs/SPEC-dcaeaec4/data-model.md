@@ -137,7 +137,7 @@ pub struct RegisteredModel {
 │  └─────────────────┘    └──────────────────┘                 │
 │          │                                                    │
 │          ↓                                                    │
-│  ~/.llm-router/models/<model_id>/                            │
+│  ~/.llmlb/models/<model_id>/                            │
 │      ├── model.gguf                                          │
 │      ├── model.safetensors                                   │
 │      └── metadata.json (optional)                            │
@@ -147,7 +147,7 @@ pub struct RegisteredModel {
 ## ディレクトリ構造
 
 ```text
-~/.llm-router/
+~/.llmlb/
 ├── config.json                    # グローバル設定
 ├── router.db                      # ルーターDB（SQLite）
 └── models/                        # モデルストレージ

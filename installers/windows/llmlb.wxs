@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="LLM Load Balancer"
+    Language="1041"
+    Version="$(var.ProductVersion)"
+    Manufacturer="llmlb"
+    Codepage="65001"
+    UpgradeCode="{B5064C44-1AB8-4AEA-86A1-0B36FEC7B6B7}"
+  >
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64"
+    />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <MajorUpgrade
+      AllowDowngrades="no"
+      DowngradeErrorMessage="A newer version of LLM Load Balancer is already installed."
+    />
+
+    <Feature Id="MainFeature" Title="LLM Load Balancer" Level="1">
+      <ComponentGroupRef Id="RuntimeComponents" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="llmlb" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="llmlb" />
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <!-- Paths are resolved relative to repository root (workflow runs from repo root) -->
+    <Icon Id="RouterIcon" SourceFile="assets\\icons\\router.ico" />
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="RuntimeComponents">
+      <Component Id="RouterBinary" Directory="INSTALLFOLDER" Guid="{0859444E-7EA4-45FC-8F0F-4B1E4C0C5B2C}" Win64="yes">
+        <File
+          Id="RouterExe"
+          KeyPath="yes"
+          Source="$(var.BinariesDir)\llmlb.exe"
+        />
+      </Component>
+
+      <Component Id="RouterStartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="{66D07D25-2201-47C1-9535-FA9244062B1F}" Win64="yes">
+        <Shortcut
+          Id="RouterShortcut"
+          Name="LLM Load Balancer"
+          Description="LLM Load Balancer を起動"
+          Target="[INSTALLFOLDER]llmlb.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="RouterIcon"
+          IconIndex="0"
+        />
+        <RemoveFolder Id="RemoveRouterProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\\llmlb" Name="RouterShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -9,7 +9,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use llm_router_common::{
+use llmlb_common::{
     error::RouterError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
     types::ModelCapability,
@@ -676,7 +676,7 @@ mod tests {
     // ImageGeneration capability を持たないモデルで /v1/images/generations を呼ぶとエラー
     #[test]
     fn test_image_generation_capability_validation_error_message() {
-        use llm_router_common::types::{ModelCapability, ModelType};
+        use llmlb_common::types::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、ImageGenerationは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);

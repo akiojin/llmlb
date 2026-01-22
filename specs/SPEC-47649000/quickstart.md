@@ -2,7 +2,7 @@
 
 ## 前提条件
 
-- LLM Router がインストール済み
+- LLM Load Balancer がインストール済み
 - router.db が初期化済み（自動）
 
 ## 基本的な使用例
@@ -13,7 +13,7 @@
 
 ```bash
 # ルーター起動
-./llm-router
+./llmlb
 
 # ログ出力
 # [INFO] Migrating models.json to SQLite...

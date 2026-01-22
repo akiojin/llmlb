@@ -48,19 +48,19 @@
   - `get_env_with_fallback(new_name, old_name)` 関数
   - 旧変数使用時の警告ログ
 - [x] T017 `router/src/main.rs` の環境変数を更新
-  - `ROUTER_HOST` → `LLM_ROUTER_HOST`（フォールバック付き）
-  - `ROUTER_PORT` → `LLM_ROUTER_PORT`（フォールバック付き）
-  - `JWT_SECRET` → `LLM_ROUTER_JWT_SECRET`（フォールバック付き）
-  - `DATABASE_URL` → `LLM_ROUTER_DATABASE_URL`（フォールバック付き）
-  - `HEALTH_CHECK_INTERVAL` → `LLM_ROUTER_HEALTH_CHECK_INTERVAL`
-  - `NODE_TIMEOUT` → `LLM_ROUTER_NODE_TIMEOUT`
-  - `LOAD_BALANCER_MODE` → `LLM_ROUTER_LOAD_BALANCER_MODE`
+  - `ROUTER_HOST` → `LLMLB_HOST`（フォールバック付き）
+  - `ROUTER_PORT` → `LLMLB_PORT`（フォールバック付き）
+  - `JWT_SECRET` → `LLMLB_JWT_SECRET`（フォールバック付き）
+  - `DATABASE_URL` → `LLMLB_DATABASE_URL`（フォールバック付き）
+  - `HEALTH_CHECK_INTERVAL` → `LLMLB_HEALTH_CHECK_INTERVAL`
+  - `NODE_TIMEOUT` → `LLMLB_NODE_TIMEOUT`
+  - `LOAD_BALANCER_MODE` → `LLMLB_LOAD_BALANCER_MODE`
 - [x] T018 `router/src/auth/bootstrap.rs` の環境変数を更新
-  - `ADMIN_USERNAME` → `LLM_ROUTER_ADMIN_USERNAME`（フォールバック付き）
-  - `ADMIN_PASSWORD` → `LLM_ROUTER_ADMIN_PASSWORD`（フォールバック付き）
+  - `ADMIN_USERNAME` → `LLMLB_ADMIN_USERNAME`（フォールバック付き）
+  - `ADMIN_PASSWORD` → `LLMLB_ADMIN_PASSWORD`（フォールバック付き）
 - [x] T019 `router/src/logging.rs` の環境変数を更新
   - `ROUTER_LOG_LEVEL` を削除（レガシー）
-  - `LLM_LOG_LEVEL` → `LLM_ROUTER_LOG_LEVEL`（フォールバック付き）
+  - `LLM_LOG_LEVEL` → `LLMLB_LOG_LEVEL`（フォールバック付き）
 - [x] T020 Cloud API環境変数 - スコープ外（既存のままで良い）
 
 ## Phase 3.5: JWT_SECRET ファイル永続化
@@ -74,11 +74,11 @@
 ## Phase 3.6: Node（C++）CLI
 
 - [x] T024 [P] `node/tests/unit/cli_test.cpp` に --help テスト
-  - `allm --help` の出力に環境変数の説明が含まれることを確認
+  - `xllm --help` の出力に環境変数の説明が含まれることを確認
 - [x] T025 [P] `node/tests/unit/cli_test.cpp` に --version テスト
-  - `allm --version` の出力にバージョン番号が含まれることを確認
+  - `xllm --version` の出力にバージョン番号が含まれることを確認
 - [x] T026 `node/include/utils/version.h` を新規作成
-  - `ALLM_VERSION` 定数
+  - `XLLM_VERSION` 定数
 - [x] T027 `node/src/main.cpp` にCLI引数処理を追加
   - `--help` / `-h` → ヘルプ表示して終了
   - `--version` / `-V` → バージョン表示して終了
@@ -87,33 +87,33 @@
 ## Phase 3.7: Node 環境変数統一
 
 - [x] T028 [P] `node/tests/unit/utils_config_test.cpp` に環境変数テスト追加
-  - `ALLM_MODELS_DIR` が使用されることを確認
+  - `XLLM_MODELS_DIR` が使用されることを確認
   - 旧 `LLM_MODELS_DIR` 使用時に警告が出ることを確認
 - [x] T029 `node/src/utils/config.cpp` の環境変数を更新
-  - `LLM_MODELS_DIR` → `ALLM_MODELS_DIR`（フォールバック付き）
-  - `LLM_HEARTBEAT_SECS` → `ALLM_HEARTBEAT_SECS`（フォールバック付き）
-  - `LLM_ALLOW_NO_GPU` → `ALLM_ALLOW_NO_GPU`（削除）
-  - `LLM_BIND_ADDRESS` → `ALLM_BIND_ADDRESS`（フォールバック付き）
+  - `LLM_MODELS_DIR` → `XLLM_MODELS_DIR`（フォールバック付き）
+  - `LLM_HEARTBEAT_SECS` → `XLLM_HEARTBEAT_SECS`（フォールバック付き）
+  - `LLM_ALLOW_NO_GPU` → `XLLM_ALLOW_NO_GPU`（削除）
+  - `LLM_BIND_ADDRESS` → `XLLM_BIND_ADDRESS`（フォールバック付き）
 - [x] T030 `node/src/utils/logger.cpp` の環境変数を更新
-  - `LLM_LOG_DIR` → `ALLM_LOG_DIR`（フォールバック付き）
-  - `LLM_LOG_LEVEL` → `ALLM_LOG_LEVEL`（フォールバック付き）
-  - `LLM_LOG_RETENTION_DAYS` → `ALLM_LOG_RETENTION_DAYS`（フォールバック付き）
+  - `LLM_LOG_DIR` → `XLLM_LOG_DIR`（フォールバック付き）
+  - `LLM_LOG_LEVEL` → `XLLM_LOG_LEVEL`（フォールバック付き）
+  - `LLM_LOG_RETENTION_DAYS` → `XLLM_LOG_RETENTION_DAYS`（フォールバック付き）
 
 ## Phase 3.8: 仕上げ
 
 - [x] T031 [P] `docs/authentication.md` を更新
   - CLI user コマンドの使用例を追加
-  - 環境変数 `LLM_ROUTER_ADMIN_PASSWORD` / `LLM_ROUTER_JWT_SECRET` を記載
+  - 環境変数 `LLMLB_ADMIN_PASSWORD` / `LLMLB_JWT_SECRET` を記載
 - [x] T032 [P] `INSTALL.md` を更新
-  - 新しい環境変数名を表形式で記載（Router: LLM_ROUTER_*, Node: ALLM_*）
+  - 新しい環境変数名を表形式で記載（Router: LLMLB_*, Node: XLLM_*）
 - [x] T033 [P] `README.md` を更新
   - 環境変数セクションを更新済み
 - [x] T034 すべてのテストを実行して合格を確認
   - Router: `cargo test` (121 tests) / `cargo clippy -- -D warnings` / `cargo fmt --check` ✓
   - Node: 91 unit tests ✓
 - [x] T035 手動テスト実行
-  - `allm --help` → 環境変数一覧表示 ✓
-  - `allm --version` → "allm 1.0.0" ✓
+  - `xllm --help` → 環境変数一覧表示 ✓
+  - `xllm --version` → "xllm 1.0.0" ✓
 
 ## Phase 4: CLI簡素化（2025-12-10追加）
 

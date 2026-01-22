@@ -4,7 +4,7 @@
 
 #[cfg(all(test, feature = "gpu_selector_tests"))]
 mod tests {
-    use llm_router::models::gpu_selector::select_model_by_gpu_memory;
+    use llmlb::models::gpu_selector::select_model_by_gpu_memory;
 
     /// T021: 16GB GPUには gpt-oss-20b を選択
     #[test]

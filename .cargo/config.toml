@@ -1,4 +1,4 @@
-# Cargo configuration for llm-router
+# Cargo configuration for llmlb
 
 [build]
 # SQLx offline mode: コンパイル時にデータベース接続不要

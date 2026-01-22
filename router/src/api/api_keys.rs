@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use llm_router_common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext, Claims, UserRole};
+use llmlb_common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext, Claims, UserRole};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

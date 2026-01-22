@@ -1,4 +1,4 @@
-# 機能仕様書: llm-router CLIコマンド
+# 機能仕様書: llmlb CLIコマンド
 
 **機能ID**: `SPEC-58378000`
 **作成日**: 2026-01-08
@@ -16,16 +16,16 @@ ollamaと同様の操作感で、学習コストを最小限に抑えたい。
 **この優先度の理由**: モデルの取得と対話は最も基本的な機能であり、
 他のすべての機能の前提となる。
 
-**独立テスト**: `llm-router node pull <model>` でモデルをダウンロードし、
-`llm-router node run <model>` で対話できることで完全にテスト可能。
+**独立テスト**: `llmlb node pull <model>` でモデルをダウンロードし、
+`llmlb node run <model>` で対話できることで完全にテスト可能。
 
 **受け入れシナリオ**:
 
 1. **前提** HuggingFaceにモデルが存在する、
-   **実行** `llm-router node pull meta-llama/Llama-3.2-3B-Instruct`、
+   **実行** `llmlb node pull meta-llama/Llama-3.2-3B-Instruct`、
    **結果** プログレスバーが表示され、モデルがローカルに保存される
 2. **前提** モデルがローカルに存在する、
-   **実行** `llm-router node run meta-llama/Llama-3.2-3B-Instruct`、
+   **実行** `llmlb node run meta-llama/Llama-3.2-3B-Instruct`、
    **結果** REPLが起動し、プロンプトに入力するとモデルが応答する
 3. **前提** REPLが起動中、
    **実行** `/bye` を入力、
@@ -46,13 +46,13 @@ ollamaと同様の操作感で、学習コストを最小限に抑えたい。
 **受け入れシナリオ**:
 
 1. **前提** 複数のモデルがローカルに存在する、
-   **実行** `llm-router node list`、
+   **実行** `llmlb node list`、
    **結果** モデル名、サイズ、最終使用日時が一覧表示される
 2. **前提** モデルがローカルに存在する、
-   **実行** `llm-router node show <model>`、
+   **実行** `llmlb node show <model>`、
    **結果** アーキテクチャ、パラメータ数、量子化情報等が表示される
 3. **前提** モデルがローカルに存在する、
-   **実行** `llm-router node rm <model>`、
+   **実行** `llmlb node rm <model>`、
    **結果** 確認なしで即座に削除され、ストレージが解放される
 
 ---
@@ -70,10 +70,10 @@ API経由でのアクセスを可能にする。
 **受け入れシナリオ**:
 
 1. **前提** ノードが未起動、
-   **実行** `llm-router node serve`、
+   **実行** `llmlb node serve`、
    **結果** フォアグラウンドでサーバーが起動し、ログが標準出力される
 2. **前提** サーバーが起動中、
-   **実行** 別ターミナルで `llm-router node list`、
+   **実行** 別ターミナルで `llmlb node list`、
    **結果** サーバーに接続してモデル一覧を取得できる
 3. **前提** サーバーが起動中、
    **実行** Ctrl+C、
@@ -94,10 +94,10 @@ API経由でのアクセスを可能にする。
 **受け入れシナリオ**:
 
 1. **前提** モデルがロードされている、
-   **実行** `llm-router node ps`、
+   **実行** `llmlb node ps`、
    **結果** NAME, ID, SIZE, PROCESSOR, UNTIL, VRAM使用率, 温度が表示される
 2. **前提** モデルがロードされている、
-   **実行** `llm-router node stop <model>`、
+   **実行** `llmlb node stop <model>`、
    **結果** モデルがアンロードされ、VRAMが解放される
 
 ---
@@ -110,18 +110,18 @@ API経由でのアクセスを可能にする。
 **この優先度の理由**: 分散構成での運用に必要だが、
 単体ノード機能が完成した後に対応可能。
 
-**独立テスト**: `llm-router router` サブコマンドでクラスタ状態を確認可能。
+**独立テスト**: `llmlb router` サブコマンドでクラスタ状態を確認可能。
 
 **受け入れシナリオ**:
 
 1. **前提** ルーターが起動中、
-   **実行** `llm-router router nodes`、
+   **実行** `llmlb router nodes`、
    **結果** 登録されているノード一覧と状態が表示される
 2. **前提** ルーターが起動中、
-   **実行** `llm-router router models`、
+   **実行** `llmlb router models`、
    **結果** 各ノードで利用可能なモデル一覧が表示される
 3. **前提** ルーターが起動中、
-   **実行** `llm-router router status`、
+   **実行** `llmlb router status`、
    **結果** クラスタ全体の状態サマリーが表示される
 
 ---
@@ -157,10 +157,10 @@ Vision対応モデルで画像の内容について質問できる必要があ�
 **受け入れシナリオ**:
 
 1. **前提** reasoningモデルがロード済み、
-   **実行** `llm-router node run <model> --think`、
+   **実行** `llmlb node run <model> --think`、
    **結果** 思考過程が表示された後に回答が表示される
 2. **前提** reasoningモデルがロード済み、
-   **実行** `llm-router node run <model> --hidethinking`、
+   **実行** `llmlb node run <model> --hidethinking`、
    **結果** 思考過程は非表示で回答のみ表示される
 
 ---
@@ -178,10 +178,10 @@ Vision対応モデルで画像の内容について質問できる必要があ�
 **受け入れシナリオ**:
 
 1. **前提** ollamaでモデルがダウンロード済み、
-   **実行** `llm-router node list`、
+   **実行** `llmlb node list`、
    **結果** ollamaのモデルも一覧に表示される（読み取り専用として）
 2. **前提** ollamaにのみモデルが存在する、
-   **実行** `llm-router node run ollama:llama3.2`、
+   **実行** `llmlb node run ollama:llama3.2`、
    **結果** ollamaのモデルを参照して対話できる
 
 ---
@@ -226,8 +226,8 @@ Vision対応モデルで画像の内容について質問できる必要があ�
 
 #### 共通機能
 
-- **FR-016**: 環境変数 `LLM_ROUTER_HOST` でサーバー接続先を指定できる
-- **FR-017**: 環境変数 `LLM_ROUTER_DEBUG` でログレベルを制御できる
+- **FR-016**: 環境変数 `LLMLB_HOST` でサーバー接続先を指定できる
+- **FR-017**: 環境変数 `LLMLB_DEBUG` でログレベルを制御できる
 - **FR-018**: エイリアス機能でモデルを短縮名で指定できる（pull時に自動生成）
 - **FR-019**: ollamaの `~/.ollama/models/` を読み取り専用で参照できる
 - **FR-020**: 終了コードは 0=成功, 1=一般エラー, 2=接続エラー で統一する
@@ -267,7 +267,7 @@ Vision対応モデルで画像の内容について質問できる必要があ�
 
 この機能は以下を前提とします:
 
-- llm-router nodeバイナリがビルド済みであること
+- llmlb nodeバイナリがビルド済みであること
 - GPUが搭載されていること（推論実行のため）
 - HuggingFaceアカウントがあること（gatedモデル利用時）
 

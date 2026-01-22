@@ -1,14 +1,14 @@
-# LLM Router
+# LLM Load Balancer
 
 [English](./README.md) | 日本語
 
 ## 概要
 
-LLM Router は、複数マシンに配置した推論ランタイムを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ルーターです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
+LLM Load Balancer は、複数マシンに配置した推論ランタイムを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ルーターです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
 
 ### ビジョン
 
-LLM Router は以下の3つの主要なユースケースに対応します：
+LLM Load Balancer は以下の3つの主要なユースケースに対応します：
 
 1. **プライベート LLM サーバー** - 個人やチームが、データとモデルを完全にコントロールしながら独自の LLM インフラを運用
 2. **エンタープライズゲートウェイ** - 企業内での一元管理、アクセス制御、部門横断的な LLM リソースの監視
@@ -16,7 +16,7 @@ LLM Router は以下の3つの主要なユースケースに対応します：
 
 ### マルチエンジンアーキテクチャ
 
-LLM Router はプラグイン可能なマルチエンジン構成をサポートします：
+LLM Load Balancer はプラグイン可能なマルチエンジン構成をサポートします：
 
 | エンジン | ステータス | モデル | ハードウェア |
 |---------|-----------|--------|------------|
@@ -80,7 +80,7 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 - OpenAI 互換 API: `/v1/responses`（推奨）, `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
 - ロードバランシング: 利用可能なエンドポイントへレイテンシベースで自動ルーティング
 - ダッシュボード: `/dashboard` でエンドポイント、リクエスト履歴、ログ、モデルを管理
-- エンドポイント管理: Ollama、vLLM、aLLM等の外部推論サーバーをルーターから一元管理
+- エンドポイント管理: Ollama、vLLM、xLLM等の外部推論サーバーをルーターから一元管理
 - モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
@@ -94,13 +94,13 @@ http://localhost:32768/dashboard
 
 ## エンドポイント管理
 
-ルーターは外部の推論サーバー（Ollama、vLLM、aLLM等）を「エンドポイント」として一元管理します。
+ルーターは外部の推論サーバー（Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
 
 ### 対応エンドポイント
 
 | タイプ | 説明 | ヘルスチェック |
 |-------|------|---------------|
-| **aLLM** | 自社推論サーバー（llama.cpp/whisper.cpp等） | `GET /v1/models` |
+| **xLLM** | 自社推論サーバー（llama.cpp/whisper.cpp等） | `GET /v1/models` |
 | **Ollama** | Ollamaサーバー | `GET /v1/models` |
 | **vLLM** | vLLM推論サーバー | `GET /v1/models` |
 | **OpenAI互換** | その他のOpenAI互換API | `GET /v1/models` |
@@ -141,16 +141,16 @@ curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
 
 ## LLM アシスタント向け MCP サーバー
 
-LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Router と連携できます。
+LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Load Balancer と連携できます。
 
 MCP ????? npm/npx ??????????????????????? pnpm ??????
 
 ### インストール
 
 ```bash
-npm install -g @llm-router/mcp-server
+npm install -g @llmlb/mcp-server
 # または
-npx @llm-router/mcp-server
+npx @llmlb/mcp-server
 ```
 
 ### 設定例 (.mcp.json)
@@ -158,13 +158,13 @@ npx @llm-router/mcp-server
 ```json
 {
   "mcpServers": {
-    "llm-router": {
+    "llmlb": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@llm-router/mcp-server"],
+      "args": ["-y", "@llmlb/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:32768",
-        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+        "LLMLB_URL": "http://localhost:32768",
+        "LLMLB_API_KEY": "sk_your_api_key"
       }
     }
   }
@@ -237,37 +237,37 @@ CUDA Toolkitは不要です。
 
 ### 1) Rustソースからビルド（推奨）
 ```bash
-git clone https://github.com/akiojin/llm-router.git
-cd llm-router
+git clone https://github.com/akiojin/llmlb.git
+cd llmlb
 make quality-checks   # fmt/clippy/test/markdownlint 一式
-cargo build -p llm-router --release
+cargo build -p llmlb --release
 ```
-生成物: `target/release/llm-router`
+生成物: `target/release/llmlb`
 
 ### 2) Docker で起動
 ```bash
-docker build -t llm-router:latest .
+docker build -t llmlb:latest .
 docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
-  llm-router:latest
+  llmlb:latest
 ```
 GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
 
 ### 3) C++ Runtime ビルド
 
 ```bash
-npm run build:allm
+npm run build:xllm
 
 # Linux / CUDA の場合
-npm run build:allm:cuda
+npm run build:xllm:cuda
 
 # 手動でビルドする場合:
-cd allm
+cd xllm
 cmake -B build -S .
 cmake --build build --config Release
 ```
 
-生成物: `allm/build/allm`
+生成物: `xllm/build/xllm`
 
 ### 4) 基本設定
 
@@ -275,16 +275,16 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
-| `LLM_ROUTER_PORT` | `32768` | リッスンポート |
-| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
-| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
-| `LLM_ROUTER_ADMIN_PASSWORD` | - | 初期管理者パスワード |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
-| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+| `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
+| `LLMLB_PORT` | `32768` | リッスンポート |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/router.db` | データベースURL |
+| `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
+| `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
+| `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLMLB_LOG_LEVEL` | `info` | ログレベル |
+| `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
+| `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
+| `LLMLB_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
 | `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
 
 クラウドAPI:
@@ -295,27 +295,28 @@ cmake --build build --config Release
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | ルーターURL |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | ルーターURL |
 | `LLM_RUNTIME_API_KEY` | - | ランタイム登録/モデルレジストリ取得用APIキー（スコープ: `runtime`） |
 | `LLM_RUNTIME_PORT` | `32769` | HTTPサーバーポート |
-| `LLM_RUNTIME_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | モデルディレクトリ |
 | `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
-| `LLM_RUNTIME_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
 | `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
 | `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
 | `LLM_RUNTIME_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_RUNTIME_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+| `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | ログディレクトリ |
 
 **注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
 新しい環境変数名を使用してください。
 
+**注記**: エンジンプラグインは廃止しました。移行手順は `docs/migrations/plugin-to-manager.md` を参照してください。
+
 ### 5) 起動例
 ```bash
 # ルーター
-cargo run -p llm-router
+cargo run -p llmlb
 
 # ランタイム (別シェル)
-LLM_RUNTIME_API_KEY=sk_runtime_register_key ./allm/build/allm
+LLM_RUNTIME_API_KEY=sk_runtime_register_key ./xllm/build/xllm
 ```
 
 ### 6) 動作確認
@@ -380,7 +381,7 @@ curl http://localhost:32768/v1/chat/completions \
 
 ## アーキテクチャ
 
-LLM Router は、ローカルの llama.cpp ランタイムを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
+LLM Load Balancer は、ローカルの llama.cpp ランタイムを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
 
 ### コンポーネント
 - **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
@@ -432,11 +433,11 @@ Router (OpenAI-compatible)
 - プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
 
 ### ポート競合で起動しない
-- ルーター: `LLM_ROUTER_PORT` を変更（例: `LLM_ROUTER_PORT=18080`）
+- ルーター: `LLMLB_PORT` を変更（例: `LLMLB_PORT=18080`）
 - ランタイム: `LLM_RUNTIME_PORT` または `--port` で変更
 
 ### SQLite ファイル作成に失敗
-- `LLM_ROUTER_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認
+- `LLMLB_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認
 - Windows の場合はパスにスペースが含まれていないか確認
 
 ### ダッシュボードが表示されない
@@ -449,7 +450,7 @@ Router (OpenAI-compatible)
 - モデル指定がローカルに存在しない場合、ランタイムが自動プルするまで待機
 
 ### ログが多すぎる / 少なすぎる
-- 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
+- 環境変数 `LLMLB_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLMLB_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
 - ランタイムのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
 ## モデル管理（Hugging Face, safetensors / GGUF）
@@ -598,7 +599,7 @@ Dashboard を更新する場合:
 
 ```bash
 pnpm install
-pnpm --filter @llm-router/dashboard build
+pnpm --filter @llmlb/dashboard build
 ```
 
 ## ライセンス

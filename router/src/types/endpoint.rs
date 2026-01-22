@@ -127,7 +127,7 @@ impl std::fmt::Display for EndpointCapability {
 pub struct Endpoint {
     /// 一意識別子
     pub id: Uuid,
-    /// 表示名（例: "本番Ollama", "開発aLLM1"）
+    /// 表示名（例: "本番Ollama", "開発xLLM1"）
     pub name: String,
     /// ベースURL（例: `http://192.168.1.100:11434`）
     pub base_url: String,
@@ -216,8 +216,8 @@ impl Endpoint {
         note = "This is a temporary bridge for NodeRegistry migration. Will be removed after full EndpointRegistry migration."
     )]
     #[allow(deprecated)] // Uses deprecated Node type for migration bridge
-    pub fn to_legacy_node(&self, models: Vec<String>) -> llm_router_common::types::Node {
-        use llm_router_common::types::{Node, NodeStatus};
+    pub fn to_legacy_node(&self, models: Vec<String>) -> llmlb_common::types::Node {
+        use llmlb_common::types::{Node, NodeStatus};
         use std::collections::HashSet;
         use std::net::IpAddr;
 

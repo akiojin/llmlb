@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 mod jwt_tests {
-    use llm_router_common::auth::UserRole;
-    use llm_router::auth::jwt::{create_jwt, verify_jwt};
+    use llmlb_common::auth::UserRole;
+    use llmlb::auth::jwt::{create_jwt, verify_jwt};
 
     const TEST_SECRET: &str = "test_secret_key_for_jwt_testing_12345678";
 

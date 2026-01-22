@@ -57,7 +57,7 @@ Examples:
 - List nodes: curl http://localhost:32768/v0/nodes
 - Dashboard stats: curl http://localhost:32768/v0/dashboard/stats
 
-Refer to the 'llm-router-openapi' resource for full API documentation.`;
+Refer to the 'llmlb-openapi' resource for full API documentation.`;
 
   readonly inputSchema = {
     type: "object" as const,

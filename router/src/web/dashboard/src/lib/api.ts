@@ -209,7 +209,7 @@ export interface DashboardNode {
 
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
- * Dashboard display info for external inference services (Ollama, vLLM, aLLM, etc.)
+ * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export interface DashboardEndpoint {
   id: string
@@ -372,7 +372,7 @@ export const dashboardApi = {
 /**
  * Endpoints API
  * SPEC-66555000: Router-Driven Endpoint Registration System
- * Management API for external inference services (Ollama, vLLM, aLLM, etc.)
+ * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export const endpointsApi = {
   /** List endpoints for dashboard */
@@ -584,7 +584,7 @@ export const modelsApi = {
   getRegistered: async (): Promise<RegisteredModelView[]> => {
     // /v1/models - OpenAI-compatible model list (includes lifecycle_status)
     // Requires API key auth, using API key from localStorage
-    const apiKey = localStorage.getItem('llm-router-api-key') || 'sk_debug'
+    const apiKey = localStorage.getItem('llmlb-api-key') || 'sk_debug'
     const response = await fetch('/v1/models', {
       headers: {
         Authorization: `Bearer ${apiKey}`,

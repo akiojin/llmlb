@@ -3,7 +3,7 @@
 //! ノード登録・状態変化・メトリクス更新などのイベントを
 //! WebSocketクライアントにブロードキャストするための基盤
 
-use llm_router_common::types::NodeStatus;
+use llmlb_common::types::NodeStatus;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::broadcast;

@@ -53,15 +53,15 @@
 
 ノードは定期的にルーターへハートビート（ヘルスチェック＋メトリクス）を送信し、ルーターはそれを受信して稼働状況を更新する（ルーターからノードへポーリングはしない）。
 
-- 送信間隔: 30秒ごと（Node側設定。例: `ALLM_HEARTBEAT_SECS`）
+- 送信間隔: 30秒ごと（Node側設定。例: `XLLM_HEARTBEAT_SECS`）
 - 送信先: `POST /v0/health`（`X-Node-Token` 必須）
 
 ### FR-014: 障害検知
 
 ノードからの応答がない場合、障害と判定する。
 
-- 監視間隔: ルーターのバックグラウンド監視（環境変数 `LLM_ROUTER_HEALTH_CHECK_INTERVAL` / フォールバック `HEALTH_CHECK_INTERVAL`）
-- タイムアウト期間: 60秒（環境変数 `LLM_ROUTER_NODE_TIMEOUT` / フォールバック `NODE_TIMEOUT`）
+- 監視間隔: ルーターのバックグラウンド監視（環境変数 `LLMLB_HEALTH_CHECK_INTERVAL` / フォールバック `HEALTH_CHECK_INTERVAL`）
+- タイムアウト期間: 60秒（環境変数 `LLMLB_NODE_TIMEOUT` / フォールバック `NODE_TIMEOUT`）
 - 最後のハートビート（`last_seen`）からタイムアウト以上経過したらオフライン状態に遷移
 - オフライン状態のノードはリクエスト振り分けから除外
 
@@ -113,8 +113,8 @@
 
 **確認済み事項**:
 
-- ハートビート送信間隔: 30秒（Node側、`ALLM_HEARTBEAT_SECS`で設定可能）（FR-013で明記）
-- タイムアウト期間: 60秒（`LLM_ROUTER_NODE_TIMEOUT`で設定可能）（FR-014で明記）
+- ハートビート送信間隔: 30秒（Node側、`XLLM_HEARTBEAT_SECS`で設定可能）（FR-013で明記）
+- タイムアウト期間: 60秒（`LLMLB_NODE_TIMEOUT`で設定可能）（FR-014で明記）
 - 障害検知: `last_seen`からタイムアウト経過でオフライン遷移（FR-014で明記）
 - 自動復旧: ハートビート受信時にオンライン復帰（FR-015で明記）
 - API: `POST /v0/health`、`X-Node-Token`必須（FR-016で明記）

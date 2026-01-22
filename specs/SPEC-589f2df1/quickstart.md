@@ -17,9 +17,9 @@
 export LOAD_BALANCER_MODE=metrics  # metrics | round_robin
 
 # GPU負荷閾値
-export LLM_ROUTER_GPU_THRESHOLD=80      # GPU使用率閾値（%）
-export LLM_ROUTER_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
-export LLM_ROUTER_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
+export LLMLB_GPU_THRESHOLD=80      # GPU使用率閾値（%）
+export LLMLB_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
+export LLMLB_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
 ```
 
 ### config.toml
@@ -220,7 +220,7 @@ def monitor_nodes(jwt_token: str, interval: int = 5):
 curl http://localhost:8080/metrics | grep gpu_usage
 
 # 対策: 閾値を調整
-export LLM_ROUTER_GPU_THRESHOLD=70
+export LLMLB_GPU_THRESHOLD=70
 ```
 
 ### 選択が遅い（10ms以上）
@@ -231,7 +231,7 @@ export LLM_ROUTER_GPU_THRESHOLD=70
 curl http://localhost:8080/metrics | grep selection_duration
 
 # 対策: メトリクス更新間隔を確認
-# ノード側で ALLM_HEARTBEAT_SECS を調整
+# ノード側で XLLM_HEARTBEAT_SECS を調整
 ```
 
 ### メトリクスが更新されない
@@ -242,7 +242,7 @@ curl http://localhost:8080/metrics | grep selection_duration
 curl http://localhost:8080/v0/nodes | jq '.nodes[].last_seen'
 
 # 対策: ノード側のログを確認
-# ALLM_HEARTBEAT_SECS=30 が設定されているか
+# XLLM_HEARTBEAT_SECS=30 が設定されているか
 ```
 
 ## 制限事項

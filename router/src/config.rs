@@ -21,9 +21,9 @@ use std::time::Duration;
 ///
 /// # Example
 /// ```
-/// use llm_router::config::get_env_with_fallback;
+/// use llmlb::config::get_env_with_fallback;
 ///
-/// let port = get_env_with_fallback("LLM_ROUTER_PORT", "ROUTER_PORT");
+/// let port = get_env_with_fallback("LLMLB_PORT", "ROUTER_PORT");
 /// ```
 pub fn get_env_with_fallback(new_name: &str, old_name: &str) -> Option<String> {
     if let Ok(val) = std::env::var(new_name) {
@@ -87,13 +87,9 @@ pub struct QueueConfig {
 impl QueueConfig {
     /// Load queue configuration from environment variables.
     pub fn from_env() -> Self {
-        let max_waiters =
-            get_env_with_fallback_parse("LLM_ROUTER_QUEUE_MAX", "QUEUE_MAX", 100usize);
-        let timeout_secs = get_env_with_fallback_parse(
-            "LLM_ROUTER_QUEUE_TIMEOUT_SECS",
-            "QUEUE_TIMEOUT_SECS",
-            60u64,
-        );
+        let max_waiters = get_env_with_fallback_parse("LLMLB_QUEUE_MAX", "QUEUE_MAX", 100usize);
+        let timeout_secs =
+            get_env_with_fallback_parse("LLMLB_QUEUE_TIMEOUT_SECS", "QUEUE_TIMEOUT_SECS", 60u64);
 
         Self {
             max_waiters,

@@ -136,7 +136,7 @@
 ## Phase 3.5: 仕上げ
 
 - [x] T021 全テスト実行・合格確認
-  - `cargo test --package llm-router`
+  - `cargo test --package llmlb`
   - すべてのテストが成功することを確認
   - ✅ 230テスト合格
 

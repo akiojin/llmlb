@@ -12,7 +12,7 @@ use axum::{
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
-use llm_router_common::auth::UserRole;
+use llmlb_common::auth::UserRole;
 use serde::Deserialize;
 use tracing::{debug, warn};
 

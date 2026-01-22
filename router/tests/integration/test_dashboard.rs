@@ -6,11 +6,11 @@
 
 use axum::Router;
 use futures::StreamExt;
-use llm_router::{
+use llmlb::{
     api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
     AppState,
 };
-use llm_router_common::auth::UserRole;
+use llmlb_common::auth::UserRole;
 use serial_test::serial;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -32,7 +32,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
     // Disable authentication for integration tests (cleaned up by AuthDisabledGuard)
@@ -50,11 +50,11 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         .await
         .expect("Failed to create endpoint registry");
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
-    llm_router::api::models::clear_registered_models(&db_pool)
+    llmlb::api::models::clear_registered_models(&db_pool)
         .await
         .expect("clear registered models");
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
@@ -63,8 +63,8 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
@@ -145,11 +145,11 @@ async fn test_dashboard_receives_node_registration_event() {
     let node_id = uuid::Uuid::new_v4();
     state
         .event_bus
-        .publish(llm_router::events::DashboardEvent::NodeRegistered {
+        .publish(llmlb::events::DashboardEvent::NodeRegistered {
             runtime_id: node_id,
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
-            status: llm_router_common::types::NodeStatus::Online,
+            status: llmlb_common::types::NodeStatus::Online,
         });
 
     // Assert: WebSocket client should receive node registration event
@@ -199,10 +199,10 @@ async fn test_dashboard_receives_node_status_change() {
     let node_id = uuid::Uuid::new_v4();
     state
         .event_bus
-        .publish(llm_router::events::DashboardEvent::NodeStatusChanged {
+        .publish(llmlb::events::DashboardEvent::NodeStatusChanged {
             runtime_id: node_id,
-            old_status: llm_router_common::types::NodeStatus::Online,
-            new_status: llm_router_common::types::NodeStatus::Offline,
+            old_status: llmlb_common::types::NodeStatus::Online,
+            new_status: llmlb_common::types::NodeStatus::Offline,
         });
 
     // Assert: WebSocket client should receive status change event

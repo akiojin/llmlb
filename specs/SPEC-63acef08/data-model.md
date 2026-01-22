@@ -373,11 +373,11 @@ impl ProxyError {
 
 ```bash
 # プロキシタイムアウト
-LLM_ROUTER_REQUEST_TIMEOUT=60     # リクエストタイムアウト（秒）
-LLM_ROUTER_CONNECT_TIMEOUT=5      # 接続タイムアウト（秒）
+LLMLB_REQUEST_TIMEOUT=60     # リクエストタイムアウト（秒）
+LLMLB_CONNECT_TIMEOUT=5      # 接続タイムアウト（秒）
 
 # 同時リクエスト制限
-LLM_ROUTER_MAX_CONCURRENT=100     # 最大同時リクエスト数
+LLMLB_MAX_CONCURRENT=100     # 最大同時リクエスト数
 ```
 
 ## メトリクス形式

@@ -36,7 +36,7 @@
 - [x] [P] APIキー一覧にスコープ表示を追加。
 
 ## Node (C++)
-- [x] `ALLM_API_KEY` を設定可能にする。
+- [x] `XLLM_API_KEY` を設定可能にする。
 - [x] ノード登録時に APIキーを送信。
 - [x] モデル配信 (`/v0/models/blob`) に APIキーを送信（旧仕様）。
 - [x] ハートビート (`/v0/health`) に APIキーを送信。

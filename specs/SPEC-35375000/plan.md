@@ -36,7 +36,7 @@
 
 - すべての機能をライブラリとして? ✓（router/src/lib.rs）
 - ライブラリリスト: router（ロードバランシング、プロキシ）
-- ライブラリごとのCLI: llm-router-cli
+- ライブラリごとのCLI: llmlb-cli
 
 **テスト (妥協不可)**:
 

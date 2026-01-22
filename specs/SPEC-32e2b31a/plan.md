@@ -1,4 +1,4 @@
-# 実装計画: LLM Router System
+# 実装計画: LLM Load Balancer System
 
 **機能ID**: `SPEC-32e2b31a` | **日付**: 2025-10-30 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-32e2b31a/spec.md`の機能仕様
@@ -100,7 +100,7 @@ specs/SPEC-32e2b31a/
 ### ソースコード (リポジトリルート)
 
 ```
-llm-router/
+llmlb/
 ├── Cargo.toml                    # Workspace定義
 ├── Cargo.lock
 ├── .cargo/
@@ -307,7 +307,7 @@ pub struct NodeConfig {
 ```yaml
 openapi: 3.0.3
 info:
-  title: LLM Router API
+  title: LLM Load Balancer API
   version: 0.1.0
   description: 複数LLM runtimeインスタンスを管理する中央集権型システム
 

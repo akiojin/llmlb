@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use llm_router_common::auth::{Claims, UserRole};
+use llmlb_common::auth::{Claims, UserRole};
 use serde::{Deserialize, Serialize};
 
 /// ログインリクエスト
@@ -77,7 +77,7 @@ pub async fn login(
         let expires_in = 86400;
         let token = crate::auth::jwt::create_jwt(
             &dev_user_id,
-            llm_router_common::auth::UserRole::Admin,
+            llmlb_common::auth::UserRole::Admin,
             &app_state.jwt_secret,
         )
         .map_err(|e| {

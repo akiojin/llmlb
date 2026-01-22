@@ -153,7 +153,7 @@ pub enum Component {
 ### ファイルパス
 
 ```text
-~/.llm-router/logs/
+~/.llmlb/logs/
 ├── router.log           # ルーターログ（現在）
 ├── router.log.2025-01-01 # ローテーション済み
 ├── node.log             # ノードログ（現在）

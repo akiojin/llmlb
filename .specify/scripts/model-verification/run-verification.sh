@@ -13,8 +13,8 @@ PLATFORM="macos-metal"
 ENGINE=""
 RESULTS_DIR=""
 CHAT_TEMPLATE=""
-ALLM_BIN="${SCRIPT_DIR}/../../../allm/build/allm"
-LLAMA_CLI="${SCRIPT_DIR}/../../../allm/third_party/llama.cpp/build/bin/llama-cli"
+XLLM_BIN="${SCRIPT_DIR}/../../../xllm/build/xllm"
+LLAMA_CLI="${SCRIPT_DIR}/../../../xllm/third_party/llama.cpp/build/bin/llama-cli"
 TEST_TIMEOUT_SEC="${TEST_TIMEOUT_SEC:-900}"
 
 # Parse arguments
@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
     --capability) CAPABILITY="$2"; shift 2;;
     --platform) PLATFORM="$2"; shift 2;;
     --chat-template) CHAT_TEMPLATE="$2"; shift 2;;
-    --allm) ALLM_BIN="$2"; shift 2;;
+    --xllm) XLLM_BIN="$2"; shift 2;;
     --results-dir) RESULTS_DIR="$2"; shift 2;;
     --timeout) TEST_TIMEOUT_SEC="$2"; shift 2;;
     -h|--help)
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --capability  Model capability: TextGeneration|Vision|Audio|Embedding|Reranker"
       echo "  --platform    Target platform: macos-metal|linux-cuda|windows-directml"
       echo "  --chat-template Chat prompt style for test 08: plain|chatml (optional)"
-      echo "  --allm    Path to aLLM binary"
+      echo "  --xllm    Path to xLLM binary"
       echo "  --results-dir Directory to store results"
       echo "  --timeout    Per-test timeout seconds (default: ${TEST_TIMEOUT_SEC})"
       exit 0
@@ -62,14 +62,14 @@ if ! [[ "$TEST_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || [[ "$TEST_TIMEOUT_SEC" -le 0 ]]; t
 fi
 
 if [[ "$FORMAT" == "safetensors" ]]; then
-  if [[ ! -x "$ALLM_BIN" ]]; then
-    echo "Error: aLLM not found or not executable: $ALLM_BIN"
+  if [[ ! -x "$XLLM_BIN" ]]; then
+    echo "Error: aLLM not found or not executable: $XLLM_BIN"
     exit 1
   fi
 else
   if [[ ! -x "$LLAMA_CLI" ]]; then
     echo "Error: llama-cli not found or not executable: $LLAMA_CLI"
-    echo "Build it with: cmake --build allm/third_party/llama.cpp/build"
+    echo "Build it with: cmake --build xllm/third_party/llama.cpp/build"
     exit 1
   fi
 fi
@@ -88,7 +88,7 @@ fi
 mkdir -p "$RESULTS_DIR"
 
 # Export for test scripts
-export MODEL FORMAT CAPABILITY PLATFORM ENGINE ALLM_BIN LLAMA_CLI RESULTS_DIR SCRIPT_DIR CHAT_TEMPLATE
+export MODEL FORMAT CAPABILITY PLATFORM ENGINE XLLM_BIN LLAMA_CLI RESULTS_DIR SCRIPT_DIR CHAT_TEMPLATE
 
 echo "=============================================="
 echo "       Model Verification Suite"

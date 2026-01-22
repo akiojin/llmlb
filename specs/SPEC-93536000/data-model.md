@@ -119,7 +119,7 @@ isCompatible(model, backend):
       "id": "llama2-7b-q4",
       "object": "model",
       "created": 1704240000,
-      "owned_by": "llm-router"
+      "owned_by": "llmlb"
     }
   ]
 }

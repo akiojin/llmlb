@@ -13,7 +13,7 @@
 
 use crate::registry::endpoints::EndpointRegistry;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
-use llm_router_common::{
+use llmlb_common::{
     error::{RouterError, RouterResult},
     types::{HealthMetrics, Node, NodeStatus},
 };

@@ -141,7 +141,7 @@ OpenAI APIの主要な機能の一つである。
 ### ユーザーストーリー6 - Open Responses API基本リクエスト (優先度: P1)
 
 開発者として、Open Responses API（/v1/responses）を使用してLLMにアクセスしたい。
-これにより、業界標準のResponses APIを使用しながら、llm-routerの負荷分散機能を
+これにより、業界標準のResponses APIを使用しながら、llmlbの負荷分散機能を
 活用できる。
 
 **この優先度の理由**: Responses APIの基本的なパススルー機能がなければ、
@@ -322,7 +322,7 @@ OpenAI APIの主要な機能の一つである。
 - Chat Completions APIとResponses API間の変換（パススルーのみ）
 - ステートフル機能（previous_response_id）の管理（バックエンドの責務）
 - ツール実行（function_call、web_search等）の処理（クライアントの責務）
-- aLLM側のResponses API実装（別SPECで対応）
+- xLLM側のResponses API実装（別SPECで対応）
 
 ---
 
@@ -343,7 +343,7 @@ OpenAI APIの主要な機能の一つである。
 - llama.cppがトークナイザー機能を提供していること
 - llama.cppがサンプリング時のlogits情報を取得可能であること
 - 現在のOpenAI互換APIエンドポイント（/v1/chat/completions等）が動作していること
-- 少なくとも1つのResponses API対応バックエンド（Ollama v0.13.3+、vLLM、aLLM等）が存在する（Open Responses API用）
+- 少なくとも1つのResponses API対応バックエンド（Ollama v0.13.3+、vLLM、xLLM等）が存在する（Open Responses API用）
 - クライアントはResponses API仕様を理解している（Open Responses API用）
 - 既存のAPIキー認証システムが動作している
 

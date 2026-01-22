@@ -9,8 +9,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llm_router_common::auth::UserRole;
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb_common::auth::UserRole;
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -24,13 +24,13 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         .expect("Failed to create endpoint registry");
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = support::router::test_jwt_secret();
 
     // テスト用の管理者ユーザーを作成
-    let password_hash = llm_router::auth::password::hash_password("admin123").unwrap();
-    llm_router::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+    let password_hash = llmlb::auth::password::hash_password("admin123").unwrap();
+    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
         .await
         .ok();
 
@@ -40,8 +40,8 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 

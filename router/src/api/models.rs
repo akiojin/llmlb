@@ -15,7 +15,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use llm_router_common::error::{CommonError, RouterError, RouterResult};
+use llmlb_common::error::{CommonError, RouterError, RouterResult};
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -1202,7 +1202,7 @@ pub async fn register_model(
         ArtifactFormat::Safetensors => tags.push("safetensors".to_string()),
     }
     let description = req.display_name.clone().unwrap_or_else(|| repo.clone());
-    let capabilities = vec![llm_router_common::types::ModelCapability::TextGeneration];
+    let capabilities = vec![llmlb_common::types::ModelCapability::TextGeneration];
     let size_bytes = content_length;
     let required_memory_bytes = required_memory;
 

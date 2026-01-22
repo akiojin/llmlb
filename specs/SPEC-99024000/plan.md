@@ -5,7 +5,7 @@
 
 ## 概要
 
-llm-routerにOpen Responses API（OpenAI Responses APIベースのオープン仕様）の
+llmlbにOpen Responses API（OpenAI Responses APIベースのオープン仕様）の
 パススルー機能を追加する。ルーターはロードバランサー/ゲートウェイとして機能し、
 `/v1/responses`エンドポイントへのリクエストをResponses API対応バックエンドに転送する。
 
@@ -119,7 +119,7 @@ router/tests/integration/
 3. **バックエンド対応状況** - 確認済み
    - Ollama: Responses API対応予定
    - vLLM: Responses API対応予定
-   - aLLM: Responses API実装予定
+   - xLLM: Responses API実装予定
 
 ### 残課題
 

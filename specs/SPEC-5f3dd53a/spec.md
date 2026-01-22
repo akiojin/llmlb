@@ -47,8 +47,8 @@
 
 **受け入れシナリオ**:
 
-1. **前提** `ALLM_GPTOSS_CUDA_LIB` が設定済み、**実行** モデル登録、**結果** gpt-oss CUDA DLL をロードできる。
-2. **前提** `ALLM_NEMOTRON_CUDA_LIB` が設定済み、**実行** モデル登録、**結果** nemotron CUDA DLL をロードできる。
+1. **前提** `XLLM_GPTOSS_CUDA_LIB` が設定済み、**実行** モデル登録、**結果** gpt-oss CUDA DLL をロードできる。
+2. **前提** `XLLM_NEMOTRON_CUDA_LIB` が設定済み、**実行** モデル登録、**結果** nemotron CUDA DLL をロードできる。
 
 ---
 

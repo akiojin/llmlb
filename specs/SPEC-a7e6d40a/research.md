@@ -38,8 +38,8 @@ Router/Node の CLI インターフェースを整備するための技術調査
 
 | コンポーネント | プレフィックス |
 |---------------|---------------|
-| Router | `LLM_ROUTER_*` |
-| Node | `ALLM_*` |
+| Router | `LLMLB_*` |
+| Node | `XLLM_*` |
 
 ### マイグレーション戦略
 
@@ -66,14 +66,14 @@ fn get_env_with_fallback(new_name: &str, old_name: &str) -> Option<String> {
 ### 解決策
 
 1. 初回起動時にUUIDv4で自動生成
-2. `~/.llm-router/jwt_secret` に保存（パーミッション600）
+2. `~/.llmlb/jwt_secret` に保存（パーミッション600）
 3. 以降の起動時はファイルから読み込み
 4. 環境変数で上書き可能
 
 ### 優先順位
 
-1. 環境変数 `LLM_ROUTER_JWT_SECRET`
-2. ファイル `~/.llm-router/jwt_secret`
+1. 環境変数 `LLMLB_JWT_SECRET`
+2. ファイル `~/.llmlb/jwt_secret`
 3. 自動生成（ファイルに保存）
 
 ## バージョン情報の取得
@@ -88,7 +88,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 ```cpp
 // node/include/utils/version.h
-#define ALLM_VERSION "0.1.0"
+#define XLLM_VERSION "0.1.0"
 ```
 
 CMake連携でビルド時に自動設定も可能。

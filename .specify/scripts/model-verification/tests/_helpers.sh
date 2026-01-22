@@ -44,17 +44,17 @@ run_with_timeout() {
   wait "$pid"
 }
 
-run_allm() {
+run_xllm() {
   local timeout_secs="${VERIFY_TIMEOUT_SECS:-120}"
-  if [[ -z "${ALLM_BIN:-}" ]]; then
-    echo "FAIL: ALLM_BIN is not set" >&2
+  if [[ -z "${XLLM_BIN:-}" ]]; then
+    echo "FAIL: XLLM_BIN is not set" >&2
     exit 1
   fi
-  if [[ ! -x "$ALLM_BIN" ]]; then
-    echo "FAIL: aLLM not found: $ALLM_BIN" >&2
+  if [[ ! -x "$XLLM_BIN" ]]; then
+    echo "FAIL: aLLM not found: $XLLM_BIN" >&2
     exit 1
   fi
-  run_with_timeout "$timeout_secs" "$ALLM_BIN" "$@"
+  run_with_timeout "$timeout_secs" "$XLLM_BIN" "$@"
 }
 
 infer_command() {
@@ -76,7 +76,7 @@ infer_command() {
     return $?
   fi
 
-  run_allm --model "$MODEL" --n-predict "$n_predict" --prompt "$prompt" "$@"
+  run_xllm --model "$MODEL" --n-predict "$n_predict" --prompt "$prompt" "$@"
 }
 
 format_chat_prompt() {

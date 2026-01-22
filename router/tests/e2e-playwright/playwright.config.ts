@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright E2E Test Configuration for LLM Router
+ * Playwright E2E Test Configuration for LLM Load Balancer
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
@@ -27,8 +27,8 @@ export default defineConfig({
     : {
         command:
           process.platform === 'win32'
-            ? 'set LLM_ROUTER_DATABASE_URL=sqlite:router\\tests\\e2e-playwright\\.llm-router\\router.db&& set LLM_ROUTER_LOG_DIR=router\\tests\\e2e-playwright\\.llm-router\\logs&& cargo run -p llm-router'
-            : 'LLM_ROUTER_DATABASE_URL=sqlite:router/tests/e2e-playwright/.llm-router/router.db LLM_ROUTER_LOG_DIR=router/tests/e2e-playwright/.llm-router/logs cargo run -p llm-router',
+            ? 'set LLMLB_DATABASE_URL=sqlite:router\\tests\\e2e-playwright\\.llmlb\\router.db&& set LLMLB_LOG_DIR=router\\tests\\e2e-playwright\\.llmlb\\logs&& cargo run -p llmlb'
+            : 'LLMLB_DATABASE_URL=sqlite:router/tests/e2e-playwright/.llmlb/router.db LLMLB_LOG_DIR=router/tests/e2e-playwright/.llmlb/logs cargo run -p llmlb',
         url: 'http://127.0.0.1:32768/dashboard',
         reuseExistingServer: !process.env.CI,
         timeout: 300000,

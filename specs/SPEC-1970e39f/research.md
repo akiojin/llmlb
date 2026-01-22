@@ -93,7 +93,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 let file_appender = RollingFileAppender::new(
     Rotation::DAILY,
-    "~/.llm-router/logs",
+    "~/.llmlb/logs",
     "router.log",
 );
 ```

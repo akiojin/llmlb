@@ -14,10 +14,10 @@ use uuid::Uuid;
 #[ignore = "TDD RED phase - metrics implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_metrics_collection_and_storage() {
     // Arrange: Routerサーバー起動、ノード登録
-    // let registry = llm_router::registry::NodeRegistry::new();
-    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
-    // let state = llm_router::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
-    // let app = llm_router::api::create_router(state);
+    // let registry = llmlb::registry::NodeRegistry::new();
+    // let load_manager = llmlb::balancer::LoadManager::new(registry.clone());
+    // let state = llmlb::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
+    // let app = llmlb::api::create_router(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
     // ノード登録
@@ -72,10 +72,10 @@ async fn test_metrics_collection_and_storage() {
 #[ignore = "TDD RED phase - metrics implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_metrics_update_existing_data() {
     // Arrange: Routerサーバー起動、ノード登録、初回メトリクス送信
-    // let registry = llm_router::registry::NodeRegistry::new();
-    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
-    // let state = llm_router::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
-    // let app = llm_router::api::create_router(state);
+    // let registry = llmlb::registry::NodeRegistry::new();
+    // let load_manager = llmlb::balancer::LoadManager::new(registry.clone());
+    // let state = llmlb::AppState { registry: registry.clone(), load_manager: load_manager.clone() };
+    // let app = llmlb::api::create_router(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
     let _node_id = Uuid::new_v4();
@@ -124,10 +124,10 @@ async fn test_metrics_update_existing_data() {
 #[ignore = "TDD RED phase - metrics implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_metrics_for_nonexistent_node_returns_error() {
     // Arrange: Routerサーバー起動（ノード未登録）
-    // let registry = llm_router::registry::NodeRegistry::new();
-    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
-    // let state = llm_router::AppState { registry, load_manager };
-    // let app = llm_router::api::create_router(state);
+    // let registry = llmlb::registry::NodeRegistry::new();
+    // let load_manager = llmlb::balancer::LoadManager::new(registry.clone());
+    // let state = llmlb::AppState { registry, load_manager };
+    // let app = llmlb::api::create_router(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
     let _nonexistent_node_id = Uuid::new_v4();

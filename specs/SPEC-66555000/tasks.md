@@ -146,7 +146,7 @@
 - [x] T039 `router/src/api/nodes.rs` を削除（旧ノードAPI廃止）✅ 2026-01-19完了
 - [x] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse/HealthCheckRequest削除 ✅ 2026-01-19完了
 
-**完了（2026-01-19）**: aLLMはOpenAI互換APIを提供するため、通常のEndpointとして登録可能。
+**完了（2026-01-19）**: xLLMはOpenAI互換APIを提供するため、通常のEndpointとして登録可能。
 新規アーキテクチャは不要と判断し、NodeRegistry関連の残存コードをすべて削除完了。
 
 **削除完了項目**:
@@ -236,6 +236,6 @@ T001 → [T002, T003, T004]
 ### 旧コード削除（クリーンアップ）: ⏸️ 将来対応
 
 T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリーンアップタスク。
-これらはaLLMがEndpointとして登録される新しいアーキテクチャが整った後に対応。
+これらはxLLMがEndpointとして登録される新しいアーキテクチャが整った後に対応。
 
 **本SPECの機能要件は100%達成済み。**

@@ -204,7 +204,7 @@ std::string generate_response_id(const std::string& prefix) {
 
 ### 決定
 
-llm-routerをロードバランサー/ゲートウェイとして機能させ、
+llmlbをロードバランサー/ゲートウェイとして機能させ、
 Open Responses APIリクエストをバックエンドにパススルーする。
 
 ### 理由
@@ -243,7 +243,7 @@ Open Responses APIリクエストをバックエンドにパススルーする�
 | Ollama | v0.13.3+ | ✅ 対応 | `/v1/responses` 200応答 |
 | vLLM | 最新 | ✅ 対応 | `/v1/responses` 200応答 |
 | OpenRouter | - | ✅ 対応 | `/v1/responses` 200応答 |
-| aLLM | 計画中 | 別SPEC | - |
+| xLLM | 計画中 | 別SPEC | - |
 
 ### 検討した代替案
 

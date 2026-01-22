@@ -14,17 +14,17 @@
 
 ```bash
 # 監視設定
-export LLM_ROUTER_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
-export LLM_ROUTER_NODE_TIMEOUT=60           # タイムアウト（秒）
+export LLMLB_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
+export LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 ```
 
 ### ノード側環境変数
 
 ```bash
 # ハートビート設定
-export ALLM_HEARTBEAT_SECS=30    # 送信間隔（秒）
-export ALLM_TOKEN=<node-token>   # ノードトークン
-export LLM_ROUTER_URL=http://localhost:8080  # ルーターURL
+export XLLM_HEARTBEAT_SECS=30    # 送信間隔（秒）
+export XLLM_TOKEN=<node-token>   # ノードトークン
+export LLMLB_URL=http://localhost:8080  # ルーターURL
 ```
 
 ## 動作確認
@@ -233,7 +233,7 @@ for alert in alerts:
 
 ```bash
 # 1. ノードを停止
-pkill -f allm
+pkill -f xllm
 
 # 2. 60秒後にオフライン状態を確認
 sleep 60
@@ -245,7 +245,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 
 ```bash
 # 1. ノードを再起動
-./allm --router-url http://localhost:8080
+./xllm --router-url http://localhost:8080
 
 # 2. 即座にオンライン状態を確認
 curl -X GET http://localhost:8080/v0/nodes \
@@ -297,7 +297,7 @@ curl http://localhost:8080/metrics | grep heartbeats
 ```bash
 # 原因: タイムアウトが短すぎる
 # 対策: タイムアウトを延長
-export LLM_ROUTER_NODE_TIMEOUT=120  # 2分に延長
+export LLMLB_NODE_TIMEOUT=120  # 2分に延長
 ```
 
 ### 復旧が遅い
@@ -305,7 +305,7 @@ export LLM_ROUTER_NODE_TIMEOUT=120  # 2分に延長
 ```bash
 # 原因: ハートビート間隔が長い
 # 対策: ノード側で間隔を短縮
-export ALLM_HEARTBEAT_SECS=10  # 10秒に短縮
+export XLLM_HEARTBEAT_SECS=10  # 10秒に短縮
 ```
 
 ## 制限事項

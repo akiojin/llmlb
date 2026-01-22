@@ -5,13 +5,13 @@
 //! All other operations are performed via API/Dashboard UI.
 
 use clap::Parser;
-use llm_router::cli::Cli;
+use llmlb::cli::Cli;
 
 /// T006: Test --version output contains version number
 #[test]
 fn test_version_available() {
     // Try parsing with --version should return error (because it prints and exits)
-    let result = Cli::try_parse_from(["llm-router", "--version"]);
+    let result = Cli::try_parse_from(["llmlb", "--version"]);
     // clap returns an error with kind DisplayVersion for --version
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -22,7 +22,7 @@ fn test_version_available() {
 #[test]
 fn test_help_available() {
     // Try parsing with --help should return error (because it prints and exits)
-    let result = Cli::try_parse_from(["llm-router", "--help"]);
+    let result = Cli::try_parse_from(["llmlb", "--help"]);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
@@ -32,14 +32,14 @@ fn test_help_available() {
 #[test]
 fn test_no_args_starts_server() {
     // Running without arguments should succeed and start the server
-    let cli = Cli::try_parse_from(["llm-router"]);
+    let cli = Cli::try_parse_from(["llmlb"]);
     assert!(cli.is_ok());
 }
 
 /// Test short version flag
 #[test]
 fn test_short_version_flag() {
-    let result = Cli::try_parse_from(["llm-router", "-V"]);
+    let result = Cli::try_parse_from(["llmlb", "-V"]);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
@@ -48,7 +48,7 @@ fn test_short_version_flag() {
 /// Test short help flag
 #[test]
 fn test_short_help_flag() {
-    let result = Cli::try_parse_from(["llm-router", "-h"]);
+    let result = Cli::try_parse_from(["llmlb", "-h"]);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
@@ -57,13 +57,13 @@ fn test_short_help_flag() {
 /// Test unknown argument is rejected
 #[test]
 fn test_unknown_arg_rejected() {
-    let result = Cli::try_parse_from(["llm-router", "--unknown"]);
+    let result = Cli::try_parse_from(["llmlb", "--unknown"]);
     assert!(result.is_err());
 }
 
 /// Test subcommand is rejected (no subcommands available)
 #[test]
 fn test_subcommand_rejected() {
-    let result = Cli::try_parse_from(["llm-router", "user"]);
+    let result = Cli::try_parse_from(["llmlb", "user"]);
     assert!(result.is_err());
 }

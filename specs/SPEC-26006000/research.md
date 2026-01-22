@@ -27,7 +27,7 @@
 ```cmake
 # node/CMakeLists.txt
 add_subdirectory(third_party/whisper.cpp)
-target_link_libraries(allm PRIVATE whisper)
+target_link_libraries(xllm PRIVATE whisper)
 ```
 
 ## 2. 音声合成ランタイム (TTS)
@@ -55,7 +55,7 @@ target_link_libraries(allm PRIVATE whisper)
 ```cmake
 # node/CMakeLists.txt
 find_package(onnxruntime REQUIRED)
-target_link_libraries(allm PRIVATE onnxruntime)
+target_link_libraries(xllm PRIVATE onnxruntime)
 ```
 
 ## 3. 音声フォーマット処理
@@ -84,7 +84,7 @@ std::vector<float> decode_audio(const std::string& path);
 
 - 既存のOpenAIクライアントライブラリがそのまま使用可能
 - 仕様が明確に文書化されている
-- llm-routerの既存OpenAI互換パターンと一貫性
+- llmlbの既存OpenAI互換パターンと一貫性
 
 **エンドポイント**:
 

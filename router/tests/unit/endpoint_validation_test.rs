@@ -5,7 +5,7 @@
 //! - base_url形式バリデーション
 //! - 必須フィールドの検証
 
-use llm_router::types::endpoint::Endpoint;
+use llmlb::types::endpoint::Endpoint;
 
 #[test]
 fn test_endpoint_new_creates_valid_endpoint() {
@@ -19,7 +19,7 @@ fn test_endpoint_new_creates_valid_endpoint() {
     assert_eq!(endpoint.base_url, "http://localhost:8080");
     assert_eq!(
         endpoint.status,
-        llm_router::types::endpoint::EndpointStatus::Pending
+        llmlb::types::endpoint::EndpointStatus::Pending
     );
     assert_eq!(endpoint.health_check_interval_secs, 30); // default
     assert_eq!(endpoint.inference_timeout_secs, 120); // default

@@ -5,7 +5,7 @@
 //! - レイテンシNone時のソート挙動
 //! - 同一レイテンシ時の挙動
 
-use llm_router::types::endpoint::{Endpoint, EndpointStatus};
+use llmlb::types::endpoint::{Endpoint, EndpointStatus};
 use std::cmp::Ordering;
 
 /// レイテンシでソートするためのヘルパー関数

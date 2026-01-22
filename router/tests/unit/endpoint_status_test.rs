@@ -4,7 +4,7 @@
 //! - pending → offline の即時遷移
 //! - 各ステータスからの遷移パターン
 
-use llm_router::types::endpoint::EndpointStatus;
+use llmlb::types::endpoint::EndpointStatus;
 
 #[test]
 fn test_endpoint_status_default_is_pending() {

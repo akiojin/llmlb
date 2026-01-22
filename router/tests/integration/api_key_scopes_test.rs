@@ -9,8 +9,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llm_router_common::auth::{ApiKeyScope, UserRole};
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb_common::auth::{ApiKeyScope, UserRole};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -28,7 +28,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         .expect("Failed to create endpoint registry");
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = support::router::test_jwt_secret();
 
@@ -38,8 +38,8 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         db_pool: db_pool.clone(),
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
@@ -47,13 +47,13 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 }
 
 async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let created = llm_router::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
         .await;
     if let Ok(user) = created {
         return user.id;
     }
-    llm_router::db::users::find_by_username(db_pool, "admin")
+    llmlb::db::users::find_by_username(db_pool, "admin")
         .await
         .unwrap()
         .unwrap()
@@ -65,7 +65,7 @@ async fn create_api_key(
     scopes: Vec<ApiKeyScope>,
 ) -> String {
     let admin_id = create_admin_user(db_pool).await;
-    let api_key = llm_router::db::api_keys::create(db_pool, "test-key", admin_id, None, scopes)
+    let api_key = llmlb::db::api_keys::create(db_pool, "test-key", admin_id, None, scopes)
         .await
         .expect("create api key");
     api_key.key

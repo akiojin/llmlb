@@ -344,7 +344,7 @@ impl CloudErrorKind {
 │           ▼                 ▼                                       │
 │  ┌────────────────┐  ┌──────────────────┐                          │
 │  │  Local Node    │  │  ProviderConfig  │                          │
-│  │  (allm)    │  │  - api_key       │                          │
+│  │  (xllm)    │  │  - api_key       │                          │
 │  │                │  │  - base_url      │                          │
 │  │                │  │  - timeout_secs  │                          │
 │  └────────────────┘  └────────┬─────────┘                          │

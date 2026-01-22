@@ -46,7 +46,7 @@
 - シリアライゼーション: serde 1.0, serde_json 1.0
 
 **ストレージ**: SQLite (既存のJSONファイルベースから移行)
-- データベースファイル: `~/.llm-router/router.db`
+- データベースファイル: `~/.llmlb/router.db`
 - 自動マイグレーション機能（初回起動時にJSONからインポート）
 
 **テスト**: cargo test

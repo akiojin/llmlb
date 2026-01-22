@@ -45,6 +45,6 @@
 ## Phase 5: 品質保証
 
 - [x] T006 品質チェック＆コミット
-  - ✅ `cargo test -p llm-router --lib -- db::models` 4テスト合格
-  - ✅ `cargo test -p llm-router --test '*' -- models` 15テスト合格
+  - ✅ `cargo test -p llmlb --lib -- db::models` 4テスト合格
+  - ✅ `cargo test -p llmlb --test '*' -- models` 15テスト合格
   - ✅ モデルAPI契約テスト合格

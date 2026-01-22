@@ -7,10 +7,10 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::db::models::ModelStorage;
-use llm_router::registry::models::ModelInfo;
-use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llm_router_common::auth::{ApiKeyScope, UserRole};
+use llmlb::db::models::ModelStorage;
+use llmlb::registry::models::ModelInfo;
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb_common::auth::{ApiKeyScope, UserRole};
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::Arc;
@@ -97,7 +97,7 @@ async fn build_app() -> TestApp {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -111,7 +111,7 @@ async fn build_app() -> TestApp {
         .expect("Failed to create endpoint registry");
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
     let state = AppState {
@@ -120,17 +120,17 @@ async fn build_app() -> TestApp {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
     let admin_user =
-        llm_router::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
+        llmlb::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
             .await
             .expect("create admin user");
-    let admin_key = llm_router::db::api_keys::create(
+    let admin_key = llmlb::db::api_keys::create(
         &state.db_pool,
         "admin-key",
         admin_user.id,
@@ -141,7 +141,7 @@ async fn build_app() -> TestApp {
     .expect("create admin api key")
     .key;
 
-    let node_key = llm_router::db::api_keys::create(
+    let node_key = llmlb::db::api_keys::create(
         &state.db_pool,
         "node-key",
         admin_user.id,

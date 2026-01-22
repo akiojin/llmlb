@@ -61,7 +61,7 @@ pub enum ResponseFormat {
 /// # Examples
 ///
 /// ```
-/// use llm_router::sync::parser::parse_models_response;
+/// use llmlb::sync::parser::parse_models_response;
 ///
 /// // OpenAI形式
 /// let json = r#"{"data": [{"id": "gpt-4"}, {"id": "gpt-3.5-turbo"}]}"#;

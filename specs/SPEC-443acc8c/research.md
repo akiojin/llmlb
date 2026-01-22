@@ -71,9 +71,9 @@
 
 | パラメータ | デフォルト | 環境変数 | 範囲 |
 |-----------|-----------|---------|------|
-| ハートビート間隔 | 30秒 | `ALLM_HEARTBEAT_SECS` | 10-60秒 |
-| タイムアウト | 60秒 | `LLM_ROUTER_NODE_TIMEOUT` | 30-300秒 |
-| 監視間隔 | 10秒 | `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | 5-60秒 |
+| ハートビート間隔 | 30秒 | `XLLM_HEARTBEAT_SECS` | 10-60秒 |
+| タイムアウト | 60秒 | `LLMLB_NODE_TIMEOUT` | 30-300秒 |
+| 監視間隔 | 10秒 | `LLMLB_HEALTH_CHECK_INTERVAL` | 5-60秒 |
 
 ### 検出時間の計算
 

@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -46,7 +46,7 @@ async fn build_app() -> Router {
         .expect("Failed to create endpoint registry");
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
     let request_history = std::sync::Arc::new(
-        llm_router::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = support::router::test_jwt_secret();
 
@@ -56,8 +56,8 @@ async fn build_app() -> Router {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 

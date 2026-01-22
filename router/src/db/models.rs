@@ -1,8 +1,8 @@
 //! モデル情報の永続化 (SQLite)
 
 use chrono::{DateTime, Utc};
-use llm_router_common::error::{RouterError, RouterResult};
-use llm_router_common::types::ModelCapability;
+use llmlb_common::error::{RouterError, RouterResult};
+use llmlb_common::types::ModelCapability;
 use sqlx::SqlitePool;
 
 use crate::registry::models::{ModelInfo, ModelSource};

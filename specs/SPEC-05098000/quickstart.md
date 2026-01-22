@@ -184,6 +184,6 @@ enable_fairness = true
 
 ```bash
 # 環境変数での設定
-export LLM_ROUTER_QUEUE_MAX_SIZE=200
-export LLM_ROUTER_QUEUE_TIMEOUT_SECS=120
+export LLMLB_QUEUE_MAX_SIZE=200
+export LLMLB_QUEUE_TIMEOUT_SECS=120
 ```

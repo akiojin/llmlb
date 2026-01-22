@@ -2,7 +2,7 @@
 
 ## 概要
 
-allm がモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
+xllm がモデルファイルを `~/.llmlb/models/` 配下から読み込むことを基本としつつ、
 **モデルキャッシュはNode主導**とする。ルーターは登録情報とファイル一覧（マニフェスト）を提示し、
 Node が GPU 差分に応じて必要アーティファクトを選択・取得する。
 ルーターは**モデルバイナリをキャッシュしない**（登録メタデータのみ保持）。
@@ -23,7 +23,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 シンプルな独自ディレクトリ構造を採用しつつ、ルーターは登録情報とマニフェストを提示する：
 
 ```text
-~/.llm-router/models/
+~/.llmlb/models/
   <model-name>/
     model.safetensors.*（index + shards）/ model.gguf / model.metal.bin など
 ```
@@ -34,8 +34,8 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-1: モデルディレクトリ構造（ノードローカルキャッシュ）
 
-- デフォルトのモデル保存先は `~/.llm-router/models/`
-- 環境変数で上書き可能（推奨: `ALLM_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
+- デフォルトのモデル保存先は `~/.llmlb/models/`
+- 環境変数で上書き可能（推奨: `XLLM_MODELS_DIR`、互換: `LLM_MODELS_DIR`）
 - 各モデルは `<models_dir>/<model-name>/` 配下に配置し、形式に応じたアーティファクトを保持する
 
 #### FR-2: モデル名の形式
@@ -53,7 +53,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 1. ルーターは登録済みモデルの**ファイル一覧（マニフェスト）**を提示する。
    - 例: `/v0/models/registry/:model_name/manifest.json`
 2. Node はマニフェストと GPU バックエンド（Metal/DirectML）に応じて**必要アーティファクトを選択**する。
-3. Node はローカル `~/.llm-router/models/<name>/` を確認し、必要アーティファクトが揃っていれば採用する。
+3. Node はローカル `~/.llmlb/models/<name>/` を確認し、必要アーティファクトが揃っていれば採用する。
 4. 共有パスは本仕様では扱わない（廃止）。
 5. ローカルに無ければ、Node は**許可リスト内の外部ソース（Hugging Face 等）から直接取得**し、ローカルに保存する。
    - ルーターは**モデルバイナリを保持しない**ため、プロキシは必須ではない。
@@ -113,13 +113,13 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 #### NFR-2: シンプルさと安全性
 
 - LLM runtimeのmanifest/blob形式のサポートは削除（他アプリの資産に依存しない）
-- 参照パスは `~/.llm-router/models` と共有パス（設定時）のみ
+- 参照パスは `~/.llmlb/models` と共有パス（設定時）のみ
 - ノードのダウンロード先は **許可リスト内の外部ソース** に限定する
 
 ## ディレクトリ構造の例
 
 ```text
-~/.llm-router/
+~/.llmlb/
 ├── config.json          # 設定ファイル
 ├── router.db            # ルーターDB（SQLite）
 └── models/
@@ -159,8 +159,8 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 **確認済み事項**:
 
-- デフォルトパス: ~/.llm-router/models/（FR-1で明記）
-- 環境変数: ALLM_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
+- デフォルトパス: ~/.llmlb/models/（FR-1で明記）
+- 環境変数: XLLM_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
 - モデル名形式: ファイル名ベースまたは階層形式（FR-2で明記）
 - 解決フロー: ローカル → 外部ソース（FR-3で明記）
 - API設計: 外部は `/v1/models`、Node同期は `/v0/models` と manifest API（FR-8で明記）
@@ -188,7 +188,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 ## 受け入れ基準
 
-1. `~/.llm-router/models/<model_name>/` 配下のアーティファクト（gguf/safetensors）からモデルを読み込める
+1. `~/.llmlb/models/<model_name>/` 配下のアーティファクト（gguf/safetensors）からモデルを読み込める
 2. モデルディレクトリを環境変数で上書きできる
 3. モデルIDがディレクトリ名として安全に扱われる
 4. 既存の単体テスト・統合テストがパスする

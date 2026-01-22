@@ -95,11 +95,11 @@ curl -X POST http://localhost:32768/v0/endpoints/{endpoint_id}/sync \
 
 すべてのエンドポイントはOpenAI互換APIとして統一的に扱われます。
 
-### aLLM（自社推論サーバー）
+### xLLM（自社推論サーバー）
 
 ```json
 {
-  "name": "開発aLLM1",
+  "name": "開発xLLM1",
   "base_url": "http://192.168.1.50:32768"
 }
 ```

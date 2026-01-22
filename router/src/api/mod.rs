@@ -37,7 +37,7 @@ use axum::{
     Router,
 };
 use include_dir::{include_dir, Dir, File};
-use llm_router_common::auth::ApiKeyScope;
+use llmlb_common::auth::ApiKeyScope;
 use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
@@ -55,7 +55,7 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 pub fn create_router(state: AppState) -> Router {
     let auth_disabled = crate::config::is_auth_disabled();
 
-    // `/v0/*`: llm-router独自API（管理/運用向け）
+    // `/v0/*`: llmlb独自API（管理/運用向け）
     // JWTが必要な認証ルート（ログイン以外）
     let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
@@ -287,7 +287,7 @@ pub fn create_router(state: AppState) -> Router {
     let test_routes = Router::new();
 
     Router::new()
-        // `/v0/*`: llm-router独自API（互換不要・versioned）
+        // `/v0/*`: llmlb独自API（互換不要・versioned）
         .nest(
             "/v0",
             Router::new()

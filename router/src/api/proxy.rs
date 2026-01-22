@@ -13,14 +13,14 @@ use axum::{
     response::Response,
 };
 use futures::TryStreamExt;
-use llm_router_common::{error::RouterError, protocol::RequestResponseRecord};
+use llmlb_common::{error::RouterError, protocol::RequestResponseRecord};
 use std::{io, sync::Arc, time::Instant};
 
 use crate::balancer::WaitResult;
 
 pub(crate) async fn select_available_node(
     state: &AppState,
-) -> Result<llm_router_common::types::Node, RouterError> {
+) -> Result<llmlb_common::types::Node, RouterError> {
     let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
 
     match mode.as_str() {
@@ -43,7 +43,7 @@ pub(crate) async fn select_available_node(
 
 pub(crate) enum QueueSelection {
     Ready {
-        node: Box<llm_router_common::types::Node>,
+        node: Box<llmlb_common::types::Node>,
         queued_wait_ms: Option<u128>,
     },
     CapacityExceeded,

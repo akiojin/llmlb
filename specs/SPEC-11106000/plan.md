@@ -31,7 +31,7 @@
 - docs: specs/SPEC-11106000/{research.md, data-model.md, quickstart.md, contracts/} を生成。  
 - backend (router): src/api/models.rs, registry/models.rs 付近拡張。  
 - frontend (web/static): models.js + UIテンプレート拡張。  
-- cli: 既存 `llm-router` に `model list/add` サブコマンドを整理。
+- cli: 既存 `llmlb` に `model list/add` サブコマンドを整理。
 
 ## Phase 0: アウトライン＆リサーチ
 - HF API: repoメタ（siblings）取得と認証要否のみ確認。カタログ一覧は扱わない。

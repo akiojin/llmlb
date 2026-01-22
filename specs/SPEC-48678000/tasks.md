@@ -25,7 +25,7 @@
 
 - **Node**: C++17 (llama.cpp, httplib)
 - **Router**: Rust 1.75+ (reqwest)
-- **Storage**: ファイルシステム (`~/.llm-router/models/`)
+- **Storage**: ファイルシステム (`~/.llmlb/models/`)
 - **Tests**: Google Test, cargo test
 
 ## Phase 3.1: セットアップ・クリーンアップ

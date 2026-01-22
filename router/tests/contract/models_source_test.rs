@@ -3,7 +3,7 @@
 //! SPEC-1970e39f: 構造化ロギング強化
 //! models.jsonの`hf_onnx`バリアント対応
 
-use llm_router::registry::models::ModelSource;
+use llmlb::registry::models::ModelSource;
 
 /// T005: ModelSourceがhf_onnxをデシリアライズできることを検証
 #[test]
@@ -65,7 +65,7 @@ fn test_model_info_with_hf_onnx_source() {
         "source": "hf_onnx"
     }"#;
 
-    let result: Result<llm_router::registry::models::ModelInfo, _> = serde_json::from_str(json);
+    let result: Result<llmlb::registry::models::ModelInfo, _> = serde_json::from_str(json);
 
     assert!(
         result.is_ok(),

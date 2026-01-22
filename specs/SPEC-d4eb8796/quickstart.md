@@ -5,7 +5,7 @@
 
 ## 前提条件
 
-- llm-router v1.6.0+ がインストール済み
+- llmlb v1.6.0+ がインストール済み
 - ポート 32768 が利用可能
 
 ## 1. 初回起動と管理者作成
@@ -254,7 +254,7 @@ curl -X POST http://localhost:32768/v0/health \
 
 ```bash
 export AUTH_DISABLED=true
-cargo run -p llm-router
+cargo run -p llmlb
 ```
 
 ### 動作確認
@@ -277,7 +277,7 @@ unset AUTH_DISABLED
 export AUTH_DISABLED=false
 
 # ルーター再起動
-cargo run -p llm-router
+cargo run -p llmlb
 ```
 
 ## 8. トラブルシューティング
@@ -313,10 +313,10 @@ curl -X PUT http://localhost:32768/v0/users/{user_id} \
 
 ```bash
 # データベースをバックアップ
-cp ~/.llm-router/router.db ~/.llm-router/router.db.backup
+cp ~/.llmlb/router.db ~/.llmlb/router.db.backup
 
 # データベースを削除して再初期化
-rm ~/.llm-router/router.db
+rm ~/.llmlb/router.db
 
 # ルーター再起動（新しい管理者作成）
 cargo run --bin router

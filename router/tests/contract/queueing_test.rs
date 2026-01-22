@@ -81,13 +81,13 @@ async fn tags_handler() -> impl IntoResponse {
 }
 
 fn set_queue_env(max: usize, timeout_secs: u64) {
-    std::env::set_var("LLM_ROUTER_QUEUE_MAX", max.to_string());
-    std::env::set_var("LLM_ROUTER_QUEUE_TIMEOUT_SECS", timeout_secs.to_string());
+    std::env::set_var("LLMLB_QUEUE_MAX", max.to_string());
+    std::env::set_var("LLMLB_QUEUE_TIMEOUT_SECS", timeout_secs.to_string());
 }
 
 fn clear_queue_env() {
-    std::env::remove_var("LLM_ROUTER_QUEUE_MAX");
-    std::env::remove_var("LLM_ROUTER_QUEUE_TIMEOUT_SECS");
+    std::env::remove_var("LLMLB_QUEUE_MAX");
+    std::env::remove_var("LLMLB_QUEUE_TIMEOUT_SECS");
 }
 
 fn chat_payload() -> serde_json::Value {

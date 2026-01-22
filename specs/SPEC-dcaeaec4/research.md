@@ -14,7 +14,7 @@
 シンプルなディレクトリベース構造を採用。
 
 ```text
-~/.llm-router/models/<model-name>/<artifacts>
+~/.llmlb/models/<model-name>/<artifacts>
 ```
 
 ### 理由

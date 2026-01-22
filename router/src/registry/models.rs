@@ -3,7 +3,7 @@
 //! LLM runtimeモデルのメタデータ管理
 
 use chrono::{DateTime, Utc};
-use llm_router_common::types::ModelCapability;
+use llmlb_common::types::ModelCapability;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

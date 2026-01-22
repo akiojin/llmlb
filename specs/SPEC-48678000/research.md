@@ -22,7 +22,7 @@
 ### 解決優先順位
 
 ```text
-1. ローカルストレージ (~/.llm-router/models/)
+1. ローカルストレージ (~/.llmlb/models/)
 2. 外部ソース（HuggingFace等）から直接取得
 3. ルータープロキシ経由取得（外部アクセス不可時のフォールバック）
 4. エラー（supported_models.json未定義）
@@ -94,7 +94,7 @@ C++側でhttplibを使用したHTTPダウンロード実装。
 ### ロックファイル形式
 
 ```text
-~/.llm-router/models/.locks/{model_id}.lock
+~/.llmlb/models/.locks/{model_id}.lock
 内容: PID, 開始時刻, 進捗率
 ```
 

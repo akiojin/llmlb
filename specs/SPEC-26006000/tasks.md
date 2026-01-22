@@ -99,10 +99,10 @@
 - [x] T053 `specs/SPEC-26006000/quickstart.md` のコマンドを実行して動作確認
   - 実行日: 2025-12-28
   - ✅ 手動検証完了 (ASR: WAV/MP3, TTS: WAV 出力)
-  - ✅ VibeVoice 実行条件: `ALLM_VIBEVOICE_MODEL=microsoft/VibeVoice-1.5B`
-  - ✅ VibeVoice 付帯条件: `ALLM_VIBEVOICE_VOICE_PROMPT=<WAVパス>`
+  - ✅ VibeVoice 実行条件: `XLLM_VIBEVOICE_MODEL=microsoft/VibeVoice-1.5B`
+  - ✅ VibeVoice 付帯条件: `XLLM_VIBEVOICE_VOICE_PROMPT=<WAVパス>`
 - [x] T054 `router/src/api/audio.rs` のコードを clippy でチェック・修正
-  - ✅ `cargo clippy -p llm-router -- -D warnings` 合格
+  - ✅ `cargo clippy -p llmlb -- -D warnings` 合格
 - [x] T055 `node/` のコードを clang-tidy でチェック・修正
   - ✅ 実行: `/opt/homebrew/opt/llvm/bin/run-clang-tidy -p node/build`
   - ✅ 追加: `-extra-arg=-isysroot` / `-extra-arg=$(xcrun --show-sdk-path)`

@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llm_router::{
+use llmlb::{
     api, balancer::LoadManager, db::request_history::RequestHistoryStorage,
     registry::endpoints::EndpointRegistry, AppState,
 };
@@ -34,12 +34,12 @@ async fn build_app(openai_base_url: String) -> TestApp {
         uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
-    std::env::set_var("LLM_ROUTER_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
 
     // OpenAI互換エンドポイントのAPIキー認証をスキップ（テスト用）
-    std::env::set_var("LLM_ROUTER_SKIP_API_KEY", "1");
+    std::env::set_var("LLMLB_SKIP_API_KEY", "1");
 
     // Cloud proxy用（wiremockへ向ける）
     std::env::set_var("OPENAI_API_KEY", "sk-test");
@@ -64,8 +64,8 @@ async fn build_app(openai_base_url: String) -> TestApp {
         db_pool,
         jwt_secret,
         http_client: reqwest::Client::new(),
-        queue_config: llm_router::config::QueueConfig::from_env(),
-        event_bus: llm_router::events::create_shared_event_bus(),
+        queue_config: llmlb::config::QueueConfig::from_env(),
+        event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
     };
 
@@ -77,7 +77,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
 
 async fn wait_for_one_record(
     storage: &RequestHistoryStorage,
-) -> llm_router_common::protocol::RequestResponseRecord {
+) -> llmlb_common::protocol::RequestResponseRecord {
     for _ in 0..50 {
         let records = storage.load_records().await.expect("records");
         if let Some(last) = records.last() {

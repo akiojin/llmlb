@@ -12,7 +12,7 @@ OpenAI互換APIを100%準拠にする。主な追加機能:
 - /v1/modelsへの対応API情報追加
 - 非対応バックエンドへの501 Not Implemented返却
 
-**ルーターの役割**: llm-routerはロードバランサー/ゲートウェイとして機能し、
+**ルーターの役割**: llmlbはロードバランサー/ゲートウェイとして機能し、
 API変換は行わない（パススルーのみ）。
 
 ## 技術コンテキスト
@@ -126,7 +126,7 @@ router/src/registry/
 | Ollama v0.13.3+ | ✅ 対応 | `/v1/responses` エンドポイント |
 | vLLM | ✅ 対応 | `/v1/responses` エンドポイント |
 | OpenRouter | ✅ 対応 | `/v1/responses` エンドポイント |
-| aLLM | 計画中 | 別SPEC |
+| xLLM | 計画中 | 別SPEC |
 
 **出力**: research.md（上記決定事項を文書化）
 

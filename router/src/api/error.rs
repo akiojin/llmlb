@@ -3,7 +3,7 @@
 //! axum用の共通エラーハンドリング
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use llm_router_common::error::RouterError;
+use llmlb_common::error::RouterError;
 use serde_json::json;
 
 /// Axum用のエラーレスポンス型

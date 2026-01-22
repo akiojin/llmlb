@@ -1,7 +1,7 @@
 // 招待コードCRUD操作
 
 use chrono::{DateTime, Duration, Utc};
-use llm_router_common::error::{CommonError, RouterError};
+use llmlb_common::error::{CommonError, RouterError};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -368,7 +368,7 @@ mod tests {
     use super::*;
     use crate::db::migrations::initialize_database;
     use crate::db::users;
-    use llm_router_common::auth::UserRole;
+    use llmlb_common::auth::UserRole;
 
     async fn setup_test_db() -> SqlitePool {
         initialize_database("sqlite::memory:")

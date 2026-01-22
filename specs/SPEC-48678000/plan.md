@@ -18,7 +18,7 @@
 
 **言語/バージョン**: C++17, Rust 1.75+
 **主要依存関係**: llama.cpp, httplib (C++), reqwest (Rust)
-**ストレージ**: ファイルシステム (`~/.llm-router/models/`)
+**ストレージ**: ファイルシステム (`~/.llmlb/models/`)
 **テスト**: Google Test, cargo test
 **対象プラットフォーム**: Windows/macOS
 **プロジェクトタイプ**: web (node/, router/)

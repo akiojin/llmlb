@@ -11,7 +11,7 @@
 
 **理由**:
 
-- aLLM（自社推論サーバー）、Ollama、vLLM等すべてOpenAI互換APIを提供
+- xLLM（自社推論サーバー）、Ollama、vLLM等すべてOpenAI互換APIを提供
 - /v1/models が業界標準エンドポイント
 - エンドポイントタイプ分けが不要になり、統一的な扱いが可能
 
@@ -31,7 +31,7 @@ Header: Authorization: Bearer {api_key} (if required)
 
 **対応エンドポイント**:
 
-- **aLLM**: 自社推論サーバー（llama.cpp/whisper.cpp/stable-diffusion.cpp/safetensors.cpp対応）
+- **xLLM**: 自社推論サーバー（llama.cpp/whisper.cpp/stable-diffusion.cpp/safetensors.cpp対応）
 - **Ollama**: OllamaのOpenAI互換モード
 - **vLLM**: vLLMサーバー
 - **その他**: OpenAI互換APIを提供する任意のサービス

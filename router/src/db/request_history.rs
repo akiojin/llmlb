@@ -3,7 +3,7 @@
 //! SQLiteベースでリクエスト履歴を永続化（router.dbと統合）
 
 use chrono::{DateTime, Duration, Utc};
-use llm_router_common::{
+use llmlb_common::{
     error::{RouterError, RouterResult},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
 };
@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 
-const LEGACY_DATA_DIR_ENV: &str = "LLM_ROUTER_DATA_DIR";
-const DEFAULT_DATA_DIR: &str = ".llm-router";
+const LEGACY_DATA_DIR_ENV: &str = "LLMLB_DATA_DIR";
+const DEFAULT_DATA_DIR: &str = ".llmlb";
 const LEGACY_REQUEST_HISTORY_FILE: &str = "request_history.json";
 
 /// リクエスト履歴ストレージ（SQLite版）
@@ -892,7 +892,7 @@ pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
 mod tests {
     use super::*;
     use crate::db::migrations::initialize_database;
-    use llm_router_common::protocol::RequestType;
+    use llmlb_common::protocol::RequestType;
     use serial_test::serial;
     use tempfile::tempdir;
 

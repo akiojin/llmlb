@@ -6,7 +6,7 @@
 
 ## まず読む 90秒版
 
-- 何を作る: Rust製ルーター（`router/`）＋ llama.cppベースのC++推論エンジン（`allm/`）。Ollamaは一切使わない／復活させない。
+- 何を作る: Rust製ルーター（`router/`）＋ llama.cppベースのC++推論エンジン（`xllm/`）。Ollamaは一切使わない／復活させない。
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
 - 守る: ブランチ／worktree作成・切替禁止、作業ディレクトリ移動禁止、GPU非搭載エンドポイント登録禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は`HF_TOKEN`（任意）と必要に応じ`HF_BASE_URL`を環境にセットしておく。
@@ -17,9 +17,9 @@
 ## ディレクトリ構成
 
 ```text
-llm-router/
+llmlb/
 ├── router/          # Rust製ルーター（APIサーバー・管理UI）
-├── allm/            # C++製推論エンジン（llama.cppベース）
+├── xllm/            # C++製推論エンジン（llama.cppベース）
 ├── common/          # 共通ライブラリ（Rust/C++間共有）
 ├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
 ├── memory/          # プロジェクト憲章・メモリファイル
@@ -35,8 +35,8 @@ llm-router/
 | 用語 | 説明 |
 |------|------|
 | **ルーター** | Rust製のAPIゲートウェイ。OpenAI互換APIを提供し、リクエストを適切なエンドポイントに振り分ける。ダッシュボード（管理UI）も内蔵。 |
-| **エンドポイント** | ルーターが管理する推論サービスの接続先。aLLM、Ollama、vLLM、その他OpenAI互換APIなど多様なバックエンドを統一的に扱う。 |
-| **aLLM** | 本プロジェクト独自のC++製推論エンジン。llama.cpp/whisper.cpp/stable-diffusion.cppなどを統合し、GPUを活用したローカル推論を提供。vLLM/Ollamaと同列のエンドポイントタイプとして扱う。 |
+| **エンドポイント** | ルーターが管理する推論サービスの接続先。xLLM、Ollama、vLLM、その他OpenAI互換APIなど多様なバックエンドを統一的に扱う。 |
+| **xLLM** | 本プロジェクト独自のC++製推論エンジン。llama.cpp/whisper.cpp/stable-diffusion.cppなどを統合し、GPUを活用したローカル推論を提供。vLLM/Ollamaと同列のエンドポイントタイプとして扱う。 |
 
 ## システムアーキテクチャ
 
@@ -51,7 +51,7 @@ llm-router/
 - **リクエストルーティング**: 適切なエンドポイントへのリクエスト転送
 - **ダッシュボード**: 管理UI（SPA）の提供
 
-### aLLM（`allm/` - C++製、llama.cppベース）
+### xLLM（`xllm/` - C++製、llama.cppベース）
 - NOTE: llama.cpp is pinned to the akiojin/llama.cpp fork until upstream fixes land; once upstream is fixed, switch back to ggerganov/llama.cpp.
 
 実際のLLM推論を担当するコンポーネント。vLLM/Ollamaと同列のエンドポイントタイプ。
@@ -78,10 +78,10 @@ llm-router/
 
 ### 動作モード
 
-**aLLM単体モード（スタンドアロン）**:
+**xLLM単体モード（スタンドアロン）**:
 
 ```text
-[クライアント] → [aLLM (GPU)]
+[クライアント] → [xLLM (GPU)]
 ```
 
 - Ollamaサーバーと同様のスタンドアロン動作
@@ -91,15 +91,15 @@ llm-router/
 **ルーター + エンドポイント モード（分散構成）**:
 
 ```text
-[クライアント] → [ルーター] → [aLLM1 (GPU)]
-                          → [aLLM2 (GPU)]
+[クライアント] → [ルーター] → [xLLM1 (GPU)]
+                          → [xLLM2 (GPU)]
                           → [Ollama]
                           → [vLLM]
 ```
 
 - 複数エンドポイントの統合管理
 - 負荷分散・スケールアウト
-- 異種バックエンド（aLLM/Ollama/vLLM等）の混在運用
+- 異種バックエンド（xLLM/Ollama/vLLM等）の混在運用
 - 大規模運用・本番環境向け
 
 ## 絶対原則（Kaguyaワークフロー準拠）

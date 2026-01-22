@@ -10,8 +10,8 @@
 #[ignore = "TDD RED phase - load balancing implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_select_node_by_metrics_prefers_low_load() {
     // Arrange: 3台のノード（1台が高負荷 CPU 90%、他は低負荷）
-    // let registry = llm_router::registry::NodeRegistry::new();
-    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
+    // let registry = llmlb::registry::NodeRegistry::new();
+    // let load_manager = llmlb::balancer::LoadManager::new(registry.clone());
 
     // ノード登録
     // let node1_id = registry.register(create_test_node_request("node1", "192.168.10.1")).await.unwrap().node_id;
@@ -42,8 +42,8 @@ async fn test_select_node_by_metrics_prefers_low_load() {
 #[ignore = "TDD RED phase - load balancing implemented in SPEC-589f2df1, covered by unit tests"]
 async fn test_fallback_to_round_robin_when_all_nodes_high_load() {
     // Arrange: 3台のノード（すべてがCPU 95%の高負荷）
-    // let registry = llm_router::registry::NodeRegistry::new();
-    // let load_manager = llm_router::balancer::LoadManager::new(registry.clone());
+    // let registry = llmlb::registry::NodeRegistry::new();
+    // let load_manager = llmlb::balancer::LoadManager::new(registry.clone());
 
     // ノード登録
     // let node1_id = registry.register(create_test_node_request("node1", "192.168.11.1")).await.unwrap().node_id;
@@ -74,7 +74,7 @@ async fn test_fallback_to_round_robin_when_all_nodes_high_load() {
 
 // ヘルパー関数（実装時に使用）
 // fn create_test_node_request(name: &str, ip: &str) -> RegisterRequest {
-//     use llm_router_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
+//     use llmlb_common::{protocol::RegisterRequest, types::GpuDeviceInfo};
 //     RegisterRequest {
 //         machine_name: name.to_string(),
 //         ip_address: ip.parse().unwrap(),
@@ -92,7 +92,7 @@ async fn test_fallback_to_round_robin_when_all_nodes_high_load() {
 // }
 
 // fn create_metrics(node_id: Uuid, cpu: f64, memory: f64, active_reqs: u32) -> MetricsUpdate {
-//     use llm_router::balancer::MetricsUpdate;
+//     use llmlb::balancer::MetricsUpdate;
 //     MetricsUpdate {
 //         node_id,
 //         cpu_usage: cpu,

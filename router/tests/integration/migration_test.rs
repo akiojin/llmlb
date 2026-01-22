@@ -2,7 +2,7 @@
 //!
 //! T014: JSONからSQLiteへのマイグレーション
 
-use llm_router::db::migrations::{
+use llmlb::db::migrations::{
     import_nodes_from_json, initialize_database,
 };
 

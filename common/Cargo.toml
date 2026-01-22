@@ -1,5 +1,5 @@
 [package]
-name = "llm-router-common"
+name = "llmlb-common"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

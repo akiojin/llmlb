@@ -1,4 +1,4 @@
-# タスク: llm-router CLIコマンド
+# タスク: llmlb CLIコマンド
 
 **入力**: `/specs/SPEC-58378000/`の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/cli-commands.md, quickstart.md
@@ -91,7 +91,7 @@
 - [x] T038 CLIClientをModelStorage/ModelSyncに接続
 - [x] T039 REPLSessionを`/v1/chat/completions`エンドポイントに接続
 - [x] T040 OllamaCompatを`~/.ollama/models/`に接続
-- [x] T041 環境変数処理の統合 (LLM_ROUTER_HOST, LLM_ROUTER_DEBUG, HF_TOKEN)
+- [x] T041 環境変数処理の統合 (LLMLB_HOST, LLMLB_DEBUG, HF_TOKEN)
 - [x] T042 エラーハンドリングと終了コード統一 (0/1/2)
 
 ## Phase 3.5: 仕上げ ✅

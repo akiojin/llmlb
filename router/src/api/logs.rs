@@ -8,7 +8,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use llm_router_common::{
+use llmlb_common::{
     error::{RouterError, RouterResult},
     log::{tail_json_logs, LogEntry},
 };
@@ -196,7 +196,7 @@ mod tests {
     async fn router_logs_endpoint_returns_entries() {
         let _guard = TEST_LOCK.lock().await;
         let temp = tempdir().unwrap();
-        std::env::set_var("LLM_ROUTER_DATA_DIR", temp.path());
+        std::env::set_var("LLMLB_DATA_DIR", temp.path());
         let log_path = logging::log_file_path().unwrap();
         if let Some(parent) = log_path.parent() {
             std::fs::create_dir_all(parent).unwrap();
@@ -229,7 +229,7 @@ mod tests {
         assert!(has_hello, "Expected 'hello' message in log entries");
         assert!(has_world, "Expected 'world' message in log entries");
 
-        std::env::remove_var("LLM_ROUTER_DATA_DIR");
+        std::env::remove_var("LLMLB_DATA_DIR");
     }
 
     #[tokio::test]

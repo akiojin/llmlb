@@ -3,10 +3,10 @@
 **機能ID**: `SPEC-99024000`
 **作成日**: 2026-01-16
 **ステータス**: 完了
-**入力**: ユーザー説明: "Open Responses API対応 - llm-routerにOpen Responses API
+**入力**: ユーザー説明: "Open Responses API対応 - llmlbにOpen Responses API
 （OpenAI Responses APIベースのオープン仕様）のパススルー機能を追加する。ルーターは
 ロードバランサーとして機能し、/v1/responsesエンドポイントへのリクエストを
-Responses API対応バックエンド（Ollama、vLLM、aLLM等）にそのまま転送する。
+Responses API対応バックエンド（Ollama、vLLM、xLLM等）にそのまま転送する。
 ストリーミングイベントの完全パススルー、バックエンド対応状況の自動検出、
 /v1/modelsへの対応API情報追加を含む。非対応バックエンドへのリクエストは
 501 Not Implementedを返す。"
@@ -173,7 +173,7 @@ APIクライアントは、Responses APIに対応していないバックエン�
 
 この機能は以下を前提とします:
 
-- バックエンド（Ollama、vLLM、aLLM等）がOpen Responses APIを実装している
+- バックエンド（Ollama、vLLM、xLLM等）がOpen Responses APIを実装している
 - 既存のエンドポイント登録・ヘルスチェック機構が動作している
 - 既存のストリーミングプロキシ機能が利用可能である
 

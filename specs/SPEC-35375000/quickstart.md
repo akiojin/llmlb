@@ -14,20 +14,20 @@
 
 ```bash
 # 待機キュー設定
-export LLM_ROUTER_MAX_WAITING=100        # 最大待機数
-export LLM_ROUTER_WAIT_TIMEOUT_SECS=30   # タイムアウト（秒）
+export LLMLB_MAX_WAITING=100        # 最大待機数
+export LLMLB_WAIT_TIMEOUT_SECS=30   # タイムアウト（秒）
 
 # バックプレッシャー設定
-export LLM_ROUTER_WARNING_THRESHOLD=0.5    # 警告閾値（50%）
-export LLM_ROUTER_OVERLOAD_THRESHOLD=0.8   # 過負荷閾値（80%）
+export LLMLB_WARNING_THRESHOLD=0.5    # 警告閾値（50%）
+export LLMLB_OVERLOAD_THRESHOLD=0.8   # 過負荷閾値（80%）
 
 # 接続プール設定
-export LLM_ROUTER_POOL_MAX_IDLE=32         # 最大アイドル接続数
-export LLM_ROUTER_POOL_IDLE_TIMEOUT_SECS=90  # アイドルタイムアウト
+export LLMLB_POOL_MAX_IDLE=32         # 最大アイドル接続数
+export LLMLB_POOL_IDLE_TIMEOUT_SECS=90  # アイドルタイムアウト
 
 # ノードキャッシュ設定
-export LLM_ROUTER_CACHE_MAX_CAPACITY=1000  # 最大キャッシュエントリ
-export LLM_ROUTER_CACHE_TTL_SECS=5         # キャッシュTTL
+export LLMLB_CACHE_MAX_CAPACITY=1000  # 最大キャッシュエントリ
+export LLMLB_CACHE_TTL_SECS=5         # キャッシュTTL
 ```
 
 ### config.toml

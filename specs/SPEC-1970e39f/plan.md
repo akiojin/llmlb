@@ -19,7 +19,7 @@
 
 **言語/バージョン**: Rust 1.75+ (Router), C++17 (Node)
 **主要依存関係**: tracing + tracing-subscriber (Rust), spdlog (C++)
-**ストレージ**: JSON files (`~/.llm-router/logs/`, `~/.llm-router/request_history.json`)
+**ストレージ**: JSON files (`~/.llmlb/logs/`, `~/.llmlb/request_history.json`)
 **テスト**: cargo test, contract tests
 **対象プラットフォーム**: macOS, Linux
 **プロジェクトタイプ**: single (router + node)

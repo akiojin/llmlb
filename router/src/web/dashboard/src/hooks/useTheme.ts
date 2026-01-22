@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 type Theme = 'dark' | 'light'
 
-const THEME_STORAGE_KEY = 'llm-router-theme'
+const THEME_STORAGE_KEY = 'llmlb-theme'
 
 /**
  * Theme management hook

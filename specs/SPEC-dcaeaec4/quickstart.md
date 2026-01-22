@@ -6,7 +6,7 @@
 |------|------|
 | ルーター | 起動済み（`http://localhost:8080`） |
 | ノード | 1台以上のオンラインノード |
-| ストレージ | `~/.llm-router/models/` が存在 |
+| ストレージ | `~/.llmlb/models/` が存在 |
 
 ## 基本的な使用例
 
@@ -14,23 +14,23 @@
 
 ```bash
 # デフォルトのモデルディレクトリ
-ls ~/.llm-router/models/
+ls ~/.llmlb/models/
 
 # 環境変数でカスタマイズ
-export ALLM_MODELS_DIR=/path/to/custom/models
-ls $ALLM_MODELS_DIR
+export XLLM_MODELS_DIR=/path/to/custom/models
+ls $XLLM_MODELS_DIR
 ```
 
 ### 手動でモデルを配置
 
 ```bash
 # GGUFモデルの場合
-mkdir -p ~/.llm-router/models/llama-3.2-1b
-cp Llama-3.2-1B-Instruct-Q4_K_M.gguf ~/.llm-router/models/llama-3.2-1b/model.gguf
+mkdir -p ~/.llmlb/models/llama-3.2-1b
+cp Llama-3.2-1B-Instruct-Q4_K_M.gguf ~/.llmlb/models/llama-3.2-1b/model.gguf
 
 # SafeTensorsモデルの場合
-mkdir -p ~/.llm-router/models/qwen2.5-coder-7b
-cp -r qwen2.5-coder-7b/* ~/.llm-router/models/qwen2.5-coder-7b/
+mkdir -p ~/.llmlb/models/qwen2.5-coder-7b
+cp -r qwen2.5-coder-7b/* ~/.llmlb/models/qwen2.5-coder-7b/
 ```
 
 ### モデル一覧の確認
@@ -96,7 +96,7 @@ from pathlib import Path
 
 BASE_URL = "http://localhost:8080"
 HEADERS = {"Authorization": "Bearer sk-your-api-key"}
-MODELS_DIR = Path.home() / ".llm-router" / "models"
+MODELS_DIR = Path.home() / ".llmlb" / "models"
 
 # モデル一覧を取得
 response = httpx.get(f"{BASE_URL}/v1/models", headers=HEADERS)
@@ -179,7 +179,7 @@ for f in manifest["files"]:
 
 ```bash
 # モデルディレクトリ（推奨）
-export ALLM_MODELS_DIR=/custom/path/models
+export XLLM_MODELS_DIR=/custom/path/models
 
 # 互換モード
 export LLM_MODELS_DIR=/custom/path/models
@@ -192,8 +192,8 @@ export HF_TOKEN=hf_xxxxxxxxxxxxx
 
 ```bash
 # カスタムモデルディレクトリを指定
-allm --models-dir /custom/path/models
+xllm --models-dir /custom/path/models
 
 # ヘルプを表示
-allm --help
+xllm --help
 ```

@@ -14,7 +14,7 @@
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | id | UUID | Yes | 一意識別子 |
-| name | String | Yes | 表示名（例: "本番Ollama", "開発aLLM1"） |
+| name | String | Yes | 表示名（例: "本番Ollama", "開発xLLM1"） |
 | base_url | String | Yes | ベースURL（例: `http://192.168.1.100:11434`） |
 | api_key | String? | No | APIキー（暗号化保存） |
 | status | EndpointStatus | Yes | 現在の状態 |

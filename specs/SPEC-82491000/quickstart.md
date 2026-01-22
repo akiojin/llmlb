@@ -4,7 +4,7 @@
 
 ## 前提条件
 
-- llm-routerが起動していること
+- llmlbが起動していること
 - 以下の環境変数が設定されていること（使用したいプロバイダーのみ）:
   - `OPENAI_API_KEY`: OpenAI APIキー
   - `GOOGLE_API_KEY`: Google AI APIキー

@@ -4,12 +4,12 @@
 
 ## 前提条件
 
-- llm-router が起動していること
+- llmlb が起動していること
 - 音声対応ノードが登録されていること
 - 認証トークンを取得済みであること
 - VibeVoice ランナー利用時は以下を設定していること
-  - `ALLM_VIBEVOICE_MODEL=microsoft/VibeVoice-1.5B`
-  - `ALLM_VIBEVOICE_VOICE_PROMPT=<音声プロンプトWAVのパス>`
+  - `XLLM_VIBEVOICE_MODEL=microsoft/VibeVoice-1.5B`
+  - `XLLM_VIBEVOICE_VOICE_PROMPT=<音声プロンプトWAVのパス>`
 
 ## 音声認識 (ASR)
 

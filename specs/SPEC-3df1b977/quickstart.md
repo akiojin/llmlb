@@ -9,7 +9,7 @@
 
 ## 前提条件
 
-- llm-router ノードが起動していること
+- llmlb ノードが起動していること
 - ルーターに接続していること
 - インターネット接続があること
 
@@ -134,7 +134,7 @@ wait
 
 ```bash
 # 修復ログを確認
-grep "auto-repair" /var/log/allm.log
+grep "auto-repair" /var/log/xllm.log
 ```
 
 出力例:

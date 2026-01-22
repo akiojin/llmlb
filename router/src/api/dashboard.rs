@@ -13,7 +13,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use llm_router_common::types::HealthMetrics;
+use llmlb_common::types::HealthMetrics;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use uuid::Uuid;
@@ -403,14 +403,14 @@ pub async fn list_request_responses(
 pub async fn get_request_response_detail(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
-) -> Result<Json<llm_router_common::protocol::RequestResponseRecord>, AppError> {
+) -> Result<Json<llmlb_common::protocol::RequestResponseRecord>, AppError> {
     let records = state
         .request_history
         .load_records()
         .await
         .map_err(AppError::from)?;
     let record = records.into_iter().find(|r| r.id == id).ok_or_else(|| {
-        llm_router_common::error::RouterError::Database(format!("Record {} not found", id))
+        llmlb_common::error::RouterError::Database(format!("Record {} not found", id))
     })?;
     Ok(Json(record))
 }
@@ -438,14 +438,12 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
         "status",
         "completed_at",
     ])
-    .map_err(|e| {
-        llm_router_common::error::RouterError::Internal(format!("CSV header error: {}", e))
-    })?;
+    .map_err(|e| llmlb_common::error::RouterError::Internal(format!("CSV header error: {}", e)))?;
 
     for record in records {
         let status_str = match &record.status {
-            llm_router_common::protocol::RecordStatus::Success => "success".to_string(),
-            llm_router_common::protocol::RecordStatus::Error { message } => {
+            llmlb_common::protocol::RecordStatus::Success => "success".to_string(),
+            llmlb_common::protocol::RecordStatus::Error { message } => {
                 format!("error: {}", message)
             }
         };
@@ -467,12 +465,12 @@ pub async fn export_request_responses(State(state): State<AppState>) -> Result<R
             record.completed_at.to_rfc3339(),
         ])
         .map_err(|e| {
-            llm_router_common::error::RouterError::Internal(format!("CSV write error: {}", e))
+            llmlb_common::error::RouterError::Internal(format!("CSV write error: {}", e))
         })?;
     }
 
     let csv_data = wtr.into_inner().map_err(|e| {
-        llm_router_common::error::RouterError::Internal(format!("CSV finalize error: {}", e))
+        llmlb_common::error::RouterError::Internal(format!("CSV finalize error: {}", e))
     })?;
 
     let response = Response::builder()

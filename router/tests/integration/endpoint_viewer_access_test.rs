@@ -16,22 +16,22 @@ async fn test_viewer_can_list_endpoints() {
     let client = Client::new();
 
     // viewerユーザーとAPIキーを作成
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let viewer_user = llm_router::db::users::create(
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer_user = llmlb::db::users::create(
         &db_pool,
         "viewer",
         &password_hash,
-        llm_router_common::auth::UserRole::Viewer,
+        llmlb_common::auth::UserRole::Viewer,
     )
     .await
     .expect("create viewer user");
 
-    let viewer_key = llm_router::db::api_keys::create(
+    let viewer_key = llmlb::db::api_keys::create(
         &db_pool,
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::Api],
+        vec![llmlb_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("create viewer api key")
@@ -67,22 +67,22 @@ async fn test_viewer_can_get_endpoint_detail() {
     let client = Client::new();
 
     // viewerユーザーとAPIキーを作成
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let viewer_user = llm_router::db::users::create(
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer_user = llmlb::db::users::create(
         &db_pool,
         "viewer",
         &password_hash,
-        llm_router_common::auth::UserRole::Viewer,
+        llmlb_common::auth::UserRole::Viewer,
     )
     .await
     .expect("create viewer user");
 
-    let viewer_key = llm_router::db::api_keys::create(
+    let viewer_key = llmlb::db::api_keys::create(
         &db_pool,
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::Api],
+        vec![llmlb_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("create viewer api key")
@@ -125,22 +125,22 @@ async fn test_viewer_cannot_create_endpoint() {
     let client = Client::new();
 
     // viewerユーザーとAPIキーを作成
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let viewer_user = llm_router::db::users::create(
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer_user = llmlb::db::users::create(
         &db_pool,
         "viewer",
         &password_hash,
-        llm_router_common::auth::UserRole::Viewer,
+        llmlb_common::auth::UserRole::Viewer,
     )
     .await
     .expect("create viewer user");
 
-    let viewer_key = llm_router::db::api_keys::create(
+    let viewer_key = llmlb::db::api_keys::create(
         &db_pool,
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::Api],
+        vec![llmlb_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("create viewer api key")
@@ -169,22 +169,22 @@ async fn test_viewer_cannot_update_endpoint() {
     let client = Client::new();
 
     // viewerユーザーとAPIキーを作成
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let viewer_user = llm_router::db::users::create(
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer_user = llmlb::db::users::create(
         &db_pool,
         "viewer",
         &password_hash,
-        llm_router_common::auth::UserRole::Viewer,
+        llmlb_common::auth::UserRole::Viewer,
     )
     .await
     .expect("create viewer user");
 
-    let viewer_key = llm_router::db::api_keys::create(
+    let viewer_key = llmlb::db::api_keys::create(
         &db_pool,
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::Api],
+        vec![llmlb_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("create viewer api key")
@@ -231,22 +231,22 @@ async fn test_viewer_cannot_delete_endpoint() {
     let client = Client::new();
 
     // viewerユーザーとAPIキーを作成
-    let password_hash = llm_router::auth::password::hash_password("password123").unwrap();
-    let viewer_user = llm_router::db::users::create(
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer_user = llmlb::db::users::create(
         &db_pool,
         "viewer",
         &password_hash,
-        llm_router_common::auth::UserRole::Viewer,
+        llmlb_common::auth::UserRole::Viewer,
     )
     .await
     .expect("create viewer user");
 
-    let viewer_key = llm_router::db::api_keys::create(
+    let viewer_key = llmlb::db::api_keys::create(
         &db_pool,
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llm_router_common::auth::ApiKeyScope::Api],
+        vec![llmlb_common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("create viewer api key")

@@ -3,7 +3,7 @@
 **機能ID**: `SPEC-ae3f974e`
 **作成日**: 2024-12-14
 **ステータス**: 方針更新（要再設計）
-**入力**: ユーザー説明: "画像生成モデル対応 - llm-routerに画像生成モデル対応を追加する。OpenAI API互換のエンドポイント（/v1/images/generations, /v1/images/edits, /v1/images/variations）を実装する。"
+**入力**: ユーザー説明: "画像生成モデル対応 - llmlbに画像生成モデル対応を追加する。OpenAI API互換のエンドポイント（/v1/images/generations, /v1/images/edits, /v1/images/variations）を実装する。"
 
 ## 決定事項（共有用サマリ）
 - 画像生成は **safetensors正本** を前提に実行する

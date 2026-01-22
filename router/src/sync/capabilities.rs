@@ -36,7 +36,7 @@ impl std::fmt::Display for Capability {
 /// # Examples
 ///
 /// ```
-/// use llm_router::sync::capabilities::{detect_capabilities, Capability};
+/// use llmlb::sync::capabilities::{detect_capabilities, Capability};
 ///
 /// let caps = detect_capabilities("nomic-embed-text-v1.5");
 /// assert_eq!(caps, vec![Capability::Embeddings]);

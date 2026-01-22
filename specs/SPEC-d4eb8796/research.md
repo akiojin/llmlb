@@ -34,7 +34,7 @@ pub async fn init_database() -> Result<SqlitePool> {
 ```
 
 **JSONインポート戦略**:
-1. 起動時に `~/.llm-router/nodes.json` の存在確認
+1. 起動時に `~/.llmlb/nodes.json` の存在確認
 2. 存在する場合、SQLiteにデータが未移行かチェック
 3. トランザクション内でJSONをパース→SQLiteに挿入
 4. 成功後、`nodes.json.migrated` にリネーム（バックアップ）
@@ -50,7 +50,7 @@ pub async fn init_database() -> Result<SqlitePool> {
 - パフォーマンス: cost=12で約200-300ms（許容範囲）
 
 **検討した代替案**:
-- **argon2**: より新しいが、llm-routerの規模ではオーバースペック
+- **argon2**: より新しいが、llmlbの規模ではオーバースペック
 - **scrypt**: 標準化が不十分
 - **SHA-256**: ハッシュアルゴリズムであり、パスワードハッシュ専用ではない（不適切）
 
@@ -241,7 +241,7 @@ pub fn verify_runtime_token(token: &str, stored_hash: &str) -> bool {
 - プレフィックスでAPIキーと区別
 
 **ノード側の実装**:
-- トークンを `~/.llm-router/token` に保存
+- トークンを `~/.llmlb/token` に保存
 - 全HTTPリクエストに `X-Node-Token: nt_...` ヘッダーを追加
 
 ## まとめ

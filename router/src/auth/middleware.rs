@@ -8,7 +8,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
-use llm_router_common::auth::{ApiKeyScope, Claims, UserRole};
+use llmlb_common::auth::{ApiKeyScope, Claims, UserRole};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 

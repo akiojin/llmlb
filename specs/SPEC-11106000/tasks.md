@@ -57,9 +57,9 @@
 - [x] 構造化ログ・エラー整備。
 
 ### CLI
-- [x] `llm-router model list` 実装（search/limit/offset/format）。
-- [x] `llm-router model add <repo> --file <gguf>` 実装。
-- [x] `llm-router model download <name> (--all | --node <uuid>)` 実装。
+- [x] `llmlb model list` 実装（search/limit/offset/format）。
+- [x] `llmlb model add <repo> --file <gguf>` 実装。
+- [x] `llmlb model download <name> (--all | --node <uuid>)` 実装。
 - [x] CLIエラー/重複/進捗表示のテスト。
 
 ### Frontend (web/static)

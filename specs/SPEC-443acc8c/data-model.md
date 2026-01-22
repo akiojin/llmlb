@@ -364,15 +364,15 @@ impl TimeoutCheck {
 
 ```bash
 # ノード側設定
-ALLM_HEARTBEAT_SECS=30        # ハートビート送信間隔（秒）
+XLLM_HEARTBEAT_SECS=30        # ハートビート送信間隔（秒）
 
 # ルーター側設定
-LLM_ROUTER_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
-LLM_ROUTER_NODE_TIMEOUT=60           # タイムアウト（秒）
+LLMLB_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
+LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 
 # レガシー環境変数（後方互換）
-HEALTH_CHECK_INTERVAL=10             # → LLM_ROUTER_HEALTH_CHECK_INTERVAL
-NODE_TIMEOUT=60                      # → LLM_ROUTER_NODE_TIMEOUT
+HEALTH_CHECK_INTERVAL=10             # → LLMLB_HEALTH_CHECK_INTERVAL
+NODE_TIMEOUT=60                      # → LLMLB_NODE_TIMEOUT
 ```
 
 ## メトリクス形式

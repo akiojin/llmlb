@@ -5,7 +5,7 @@
 
 ## 概要
 
-allmがモデルファイルを `~/.llm-router/models/` 配下から読み込むことを基本としつつ、
+xllmがモデルファイルを `~/.llmlb/models/` 配下から読み込むことを基本としつつ、
 ルーターは**登録情報とマニフェストのみ**を提供する。
 モデルバイナリは保持せず、NodeがHF等の外部ソースから**直接ダウンロード**してキャッシュする。
 LLM runtime固有のストレージ形式への暗黙フォールバックは撤廃する。
@@ -14,7 +14,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 **言語/バージョン**: C++17, Rust 1.75+  
 **主要依存関係**: llama.cpp, Axum  
-**ストレージ**: ファイルシステム (`~/.llm-router/models/`)  
+**ストレージ**: ファイルシステム (`~/.llmlb/models/`)  
 **テスト**: Google Test, cargo test  
 **対象プラットフォーム**: Linux/macOS  
 **プロジェクトタイプ**: web (node/, router/)
@@ -35,7 +35,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ## ディレクトリ構造
 
 ```text
-~/.llm-router/
+~/.llmlb/
 ├── config.json          # 設定ファイル
 ├── router.db            # ルーターDB（SQLite）
 └── models/
@@ -52,7 +52,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 ## モデル解決フロー（Node主導）
 
 ```text
-1. ローカル ~/.llm-router/models/<name>/ を確認（必要アーティファクトが揃っていれば採用）
+1. ローカル ~/.llmlb/models/<name>/ を確認（必要アーティファクトが揃っていれば採用）
 2. ルーターのマニフェストを取得（/v0/models/registry/:model/manifest.json）
 3. Nodeがruntime/GPU要件に合うアーティファクトを選択
 4. HF等の外部ソースから直接ダウンロードして保存

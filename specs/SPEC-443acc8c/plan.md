@@ -1,7 +1,7 @@
 # 実装計画: ヘルスチェックシステム
 
 **機能ID**: `SPEC-443acc8c` | **日付**: 2025-10-30（実装完了日） | **仕様**: [spec.md](./spec.md)
-**入力**: `/llm-router/specs/SPEC-443acc8c/spec.md`の機能仕様
+**入力**: `/llmlb/specs/SPEC-443acc8c/spec.md`の機能仕様
 **ステータス**: ✅ **実装済み** (PR #1でマージ済み)
 
 ## 概要
@@ -105,7 +105,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 
 ### 決定3: 環境変数設定可能化
 
-**選択**: `LLM_ROUTER_NODE_TIMEOUT`（フォールバック: `NODE_TIMEOUT`）環境変数でタイムアウト設定可能
+**選択**: `LLMLB_NODE_TIMEOUT`（フォールバック: `NODE_TIMEOUT`）環境変数でタイムアウト設定可能
 
 **理由**:
 - 柔軟性: 環境に応じてチューニング可能

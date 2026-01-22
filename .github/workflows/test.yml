@@ -31,7 +31,7 @@ jobs:
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/test.yml'
             rust:
-              - 'router/**'
+              - 'llmlb/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '.github/workflows/test.yml'

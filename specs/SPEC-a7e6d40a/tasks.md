@@ -48,8 +48,8 @@
   - `get_env_with_fallback(new_name, old_name)` 関数
   - 旧変数使用時の警告ログ
 - [x] T017 `router/src/main.rs` の環境変数を更新
-  - `ROUTER_HOST` → `LLMLB_HOST`（フォールバック付き）
-  - `ROUTER_PORT` → `LLMLB_PORT`（フォールバック付き）
+  - `LLMLB_HOST` → `LLMLB_HOST`（フォールバック付き）
+  - `LLMLB_PORT` → `LLMLB_PORT`（フォールバック付き）
   - `JWT_SECRET` → `LLMLB_JWT_SECRET`（フォールバック付き）
   - `DATABASE_URL` → `LLMLB_DATABASE_URL`（フォールバック付き）
   - `HEALTH_CHECK_INTERVAL` → `LLMLB_HEALTH_CHECK_INTERVAL`
@@ -59,7 +59,7 @@
   - `ADMIN_USERNAME` → `LLMLB_ADMIN_USERNAME`（フォールバック付き）
   - `ADMIN_PASSWORD` → `LLMLB_ADMIN_PASSWORD`（フォールバック付き）
 - [x] T019 `router/src/logging.rs` の環境変数を更新
-  - `ROUTER_LOG_LEVEL` を削除（レガシー）
+  - `LLMLB_LOG_LEVEL` を削除（レガシー）
   - `LLM_LOG_LEVEL` → `LLMLB_LOG_LEVEL`（フォールバック付き）
 - [x] T020 Cloud API環境変数 - スコープ外（既存のままで良い）
 

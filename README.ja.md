@@ -305,7 +305,7 @@ cmake --build build --config Release
 | `LLM_RUNTIME_LOG_LEVEL` | `info` | ログレベル |
 | `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | ログディレクトリ |
 
-**注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
+**注意**: 旧環境変数名（`LLMLB_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
 新しい環境変数名を使用してください。
 
 **注記**: エンジンプラグインは廃止しました。移行手順は `docs/migrations/plugin-to-manager.md` を参照してください。

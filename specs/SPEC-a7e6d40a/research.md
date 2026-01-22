@@ -31,7 +31,7 @@ Router/Node の CLI インターフェースを整備するための技術調査
 
 ### 現状の問題
 
-- 環境変数名が不統一（`ROUTER_PORT`, `JWT_SECRET`, `LLM_LOG_LEVEL` など）
+- 環境変数名が不統一（`LLMLB_PORT`, `JWT_SECRET`, `LLM_LOG_LEVEL` など）
 - コンポーネント判別が困難
 
 ### 解決策

@@ -31,7 +31,7 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 3. Refactor with tests green.
 
 ## Environment Variables
-- Router: `ROUTER_PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`,
+- Router: `LLMLB_PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`,
   `ANTHROPIC_API_KEY`.
 - xLLM: `LLMLB_URL`, `XLLM_PORT`, `LLM_ALLOW_NO_GPU=false`
   by default.

@@ -87,13 +87,13 @@ router/
 
 | 現在の変数名 | 使用場所 | 新しい変数名 |
 |-------------|---------|------------|
-| `ROUTER_HOST` | main.rs:17 | `LLMLB_HOST` |
-| `ROUTER_PORT` | main.rs:18 | `LLMLB_PORT` |
+| `LLMLB_HOST` | main.rs:17 | `LLMLB_HOST` |
+| `LLMLB_PORT` | main.rs:18 | `LLMLB_PORT` |
 | `JWT_SECRET` | main.rs:168 | `LLMLB_JWT_SECRET` |
 | `ADMIN_USERNAME` | auth/bootstrap.rs:35 | `LLMLB_ADMIN_USERNAME` |
 | `ADMIN_PASSWORD` | auth/bootstrap.rs:26 | `LLMLB_ADMIN_PASSWORD` |
 | `LLM_LOG_LEVEL` | logging.rs:25 | `LLMLB_LOG_LEVEL` |
-| `ROUTER_LOG_LEVEL` | logging.rs:28 (レガシー) | 削除 |
+| `LLMLB_LOG_LEVEL` | logging.rs:28 (レガシー) | 削除 |
 | `DATABASE_URL` | main.rs:145 | `LLMLB_DATABASE_URL` |
 | `HEALTH_CHECK_INTERVAL` | main.rs:115 | `LLMLB_HEALTH_CHECK_INTERVAL` |
 | `NODE_TIMEOUT` | main.rs:119 | `LLMLB_NODE_TIMEOUT` |

@@ -123,7 +123,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           BRANCH="verify/${MODEL_ID}-${MODEL_PLATFORM}"
           git checkout -b "$BRANCH"
-          git add router/src/supported_models.json
+          git add llmlb/src/supported_models.json
           git commit -m "feat(models): add ${MODEL_ID} (${MODEL_PLATFORM})"
           git push origin "$BRANCH"
           gh pr create \

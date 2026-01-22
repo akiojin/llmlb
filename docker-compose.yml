@@ -34,7 +34,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${ROUTER_PORT:-32768}:32768"
+      - "${LLMLB_PORT:-32768}:32768"
       - "8081:8081"
       - "32768-32774:32768-32774"
     stdin_open: true

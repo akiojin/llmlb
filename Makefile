@@ -54,7 +54,7 @@ test-hooks:
 	@npx bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
 		(echo "⚠️  bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0)
 
-# E2E tests for OpenAI-compatible API (requires running router/node)
+# E2E tests for OpenAI-compatible API (requires running llmlb/node)
 # Usage: LLMLB_URL=http://localhost:8081 LLMLB_API_KEY=sk_xxx make e2e-tests
 e2e-tests:
 	npx bats tests/e2e/test-openai-api.bats

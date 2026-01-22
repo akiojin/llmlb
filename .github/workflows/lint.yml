@@ -25,7 +25,7 @@ jobs:
         with:
           filters: |
             rust:
-              - 'router/**'
+              - 'llmlb/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '.github/workflows/lint.yml'

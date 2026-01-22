@@ -41,7 +41,7 @@
 
   <Fragment>
     <!-- Paths are resolved relative to repository root (workflow runs from repo root) -->
-    <Icon Id="RouterIcon" SourceFile="assets\\icons\\router.ico" />
+    <Icon Id="LlmlbIcon" SourceFile="assets\\icons\\llmlb.ico" />
   </Fragment>
 
   <Fragment>
@@ -61,7 +61,7 @@
           Description="LLM Load Balancer を起動"
           Target="[INSTALLFOLDER]llmlb.exe"
           WorkingDirectory="INSTALLFOLDER"
-          Icon="RouterIcon"
+          Icon="LlmlbIcon"
           IconIndex="0"
         />
         <RemoveFolder Id="RemoveRouterProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />

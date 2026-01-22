@@ -8,7 +8,7 @@
 - **出力先**: `~/.llmlb/logs/router.log.jsonl`（ファイルのみ）
 - **形式**: JSON Lines（tracing-subscriber fmt::layer().json()）
 - **ローテーション**: なし（append）
-- **環境変数**: `ROUTER_LOG_LEVEL`, `RUST_LOG`, `LLMLB_DATA_DIR`
+- **環境変数**: `LLMLB_LOG_LEVEL`, `RUST_LOG`, `LLMLB_DATA_DIR`
 
 ### Node (C++)
 
@@ -39,7 +39,7 @@
 | `LLM_LOG_LEVEL` | ログレベル | `info` |
 | `LLM_LOG_RETENTION_DAYS` | 保持日数 | `7` |
 
-既存の環境変数（`ROUTER_LOG_LEVEL`, `LOG_LEVEL`等）も後方互換として維持。
+既存の環境変数（`LLMLB_LOG_LEVEL`, `LOG_LEVEL`等）も後方互換として維持。
 
 ### ログエントリ形式（共通）
 

@@ -38,6 +38,6 @@
   },
   "workspaces": [
     "mcp-server",
-    "router/src/web/dashboard"
+    "llmlb/src/web/dashboard"
   ]
 }

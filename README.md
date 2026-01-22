@@ -165,7 +165,7 @@ cargo build --release -p llmlb
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
 | `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
 
-**Backward compatibility:** Legacy env var names (`ROUTER_PORT` etc.) are supported but deprecated.
+**Backward compatibility:** Legacy env var names (`LLMLB_PORT` etc.) are supported but deprecated.
 
 **System Tray (Windows/macOS only):**
 
@@ -710,8 +710,8 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLMLB_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
-| `LLMLB_PORT` | `32768` | Listen port | `ROUTER_PORT` |
+| `LLMLB_HOST` | `0.0.0.0` | Bind address | `LLMLB_HOST` |
+| `LLMLB_PORT` | `32768` | Listen port | `LLMLB_PORT` |
 | `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/router.db` | Database URL | `DATABASE_URL` |
 | `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for DB/log defaults | - |
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
@@ -723,7 +723,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | Runtime health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
 | `LLMLB_NODE_TIMEOUT` | `60` | Runtime request timeout (seconds) | `NODE_TIMEOUT` |
 | `LLMLB_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
-| `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
+| `LLMLB_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 | `LLM_QUANTIZE_BIN` | - | Path to `llama-quantize` binary | optional |
 
 Cloud / external services:

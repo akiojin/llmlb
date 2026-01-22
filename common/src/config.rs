@@ -1,12 +1,12 @@
 //! 設定管理
 //!
-//! RouterConfig, NodeConfig等の設定構造体
+//! LbConfig, NodeConfig等の設定構造体
 
 use serde::{Deserialize, Serialize};
 
-/// Router設定
+/// load balancer設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RouterConfig {
+pub struct LbConfig {
     /// ホストアドレス (デフォルト: "0.0.0.0")
     #[serde(default = "default_host")]
     pub host: String,
@@ -15,7 +15,7 @@ pub struct RouterConfig {
     #[serde(default = "default_port")]
     pub port: u16,
 
-    /// データベースURL (デフォルト: "sqlite://router.db")
+    /// データベースURL (デフォルト: "sqlite://load balancer.db")
     #[serde(default = "default_database_url")]
     pub database_url: String,
 
@@ -37,7 +37,7 @@ fn default_port() -> u16 {
 }
 
 fn default_database_url() -> String {
-    "sqlite://router.db".to_string()
+    "sqlite://load balancer.db".to_string()
 }
 
 fn default_health_check_interval() -> u64 {
@@ -48,7 +48,7 @@ fn default_node_timeout() -> u64 {
     60
 }
 
-impl Default for RouterConfig {
+impl Default for LbConfig {
     fn default() -> Self {
         Self {
             host: default_host(),
@@ -63,7 +63,7 @@ impl Default for RouterConfig {
 /// Node設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
-    /// RouterのURL (デフォルト: "http://localhost:32768")
+    /// load balancerのURL (デフォルト: "http://localhost:32768")
     #[serde(default = "default_router_url")]
     pub router_url: String,
 
@@ -108,12 +108,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_router_config_defaults() {
-        let config = RouterConfig::default();
+    fn test_lb_config_defaults() {
+        let config = LbConfig::default();
 
         assert_eq!(config.host, "0.0.0.0");
         assert_eq!(config.port, 32768);
-        assert_eq!(config.database_url, "sqlite://router.db");
+        assert_eq!(config.database_url, "sqlite://load balancer.db");
         assert_eq!(config.health_check_interval_secs, 30);
         assert_eq!(config.node_timeout_secs, 60);
     }
@@ -129,14 +129,14 @@ mod tests {
     }
 
     #[test]
-    fn test_router_config_deserialization() {
+    fn test_lb_config_deserialization() {
         let json = r#"{"host":"127.0.0.1","port":9000}"#;
-        let config: RouterConfig = serde_json::from_str(json).unwrap();
+        let config: LbConfig = serde_json::from_str(json).unwrap();
 
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 9000);
         // デフォルト値が適用される
-        assert_eq!(config.database_url, "sqlite://router.db");
+        assert_eq!(config.database_url, "sqlite://load balancer.db");
     }
 
     #[test]

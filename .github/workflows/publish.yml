@@ -184,9 +184,9 @@ jobs:
             exit 1
           fi
           pkg_root_router="$(pwd)/pkgroot-router"
-          install_dir_router="$pkg_root_router/usr/local/bin"
+          install_dir_router="$pkg_root_llmlb/usr/local/bin"
           mkdir -p "$install_dir_router"
-          install -m 0755 "target/${{ matrix.target }}/release/llmlb" "$install_dir_router/"
+          install -m 0755 "target/${{ matrix.target }}/release/llmlb" "$install_dir_llmlb/"
           pkg_router="llmlb-${{ matrix.artifact }}.pkg"
           pkgbuild \
             --root "$pkg_root_router" \

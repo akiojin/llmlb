@@ -139,7 +139,7 @@ TEST_F(CliServerTest, DISABLED_ServerRespondsToHealthCheck) {
         const char* argv[] = {"xllm", "serve", "--port",
                               std::to_string(test_port_).c_str()};
         // This would actually run the server
-        // execv("./llm-router", argv);
+        // execv("./llmlb", argv);
         exit(0);
     }
 

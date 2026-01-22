@@ -10,7 +10,7 @@ namespace xllm::logger {
 // Convert textual level to spdlog level (case-insensitive). Unknown -> info.
 spdlog::level::level_enum parse_level(const std::string& level_text);
 
-// Get the log directory path (~/.llm-router/logs by default).
+// Get the log directory path (~/.llmlb/logs by default).
 std::string get_log_dir();
 
 // Get today's log file path (xllm.jsonl.YYYY-MM-DD).
@@ -30,7 +30,7 @@ void init(const std::string& level = "info",
           std::vector<spdlog::sink_ptr> additional_sinks = {});
 
 // Initialize using environment variables:
-// LLM_LOG_DIR (log directory, default: ~/.llm-router/logs)
+// LLM_LOG_DIR (log directory, default: ~/.llmlb/logs)
 // LLM_LOG_LEVEL (trace|debug|info|warn|error|critical|off)
 // LLM_LOG_RETENTION_DAYS (retention days, default: 7)
 // Legacy: LOG_LEVEL, LOG_FILE are still supported for backward compatibility.

@@ -211,7 +211,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
 
         // Determine models directory
         std::string models_dir = cfg.models_dir.empty()
-                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.llm-router/models"
+                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.llmlb/models"
                                      : cfg.models_dir;
 
         // Initialize LlamaManager and ModelStorage for inference engine
@@ -467,7 +467,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine](const httplib::Request&, httplib::Response& res) {
             nlohmann::json models_array = nlohmann::json::array();
 
-            // List llm-router models
+            // List llmlb models
             auto descriptors = model_storage.listAvailableDescriptors();
             for (const auto& desc : descriptors) {
                 if (!engine.isModelSupported(desc)) {
@@ -576,7 +576,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
                 }
             }
 
-            // Check llm-router models
+            // Check llmlb models
             auto descriptor = model_storage.resolveDescriptor(model_name);
             if (descriptor) {
                 response["modelfile"] = "";

@@ -5,4 +5,4 @@ set PATH=%CUDA_PATH%\bin;%PATH%
 
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 
-cmake --build "E:\llm-router\.worktrees\feature-support-nemotron\node\build" --config Release -j 8
+cmake --build "E:\llmlb\.worktrees\feature-support-nemotron\node\build" --config Release -j 8

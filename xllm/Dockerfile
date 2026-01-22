@@ -38,7 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM runtime-${CUDA} AS runtime
 
 ENV LLM_MODELS_DIR=/var/lib/runtime/models
-ENV LLM_ROUTER_URL=http://router:32768
+ENV LLMLB_URL=http://lb:32768
 ENV ALLM_PORT=32769
 
 WORKDIR /app

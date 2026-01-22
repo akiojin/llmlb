@@ -7,7 +7,7 @@
 
 namespace xllm {
 
-/// Subcommand types for llm-router CLI
+/// Subcommand types for llmlb CLI
 enum class Subcommand {
     None,           // No subcommand (legacy server mode)
     // Direct commands (formerly node subcommands)

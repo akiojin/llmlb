@@ -143,7 +143,8 @@ jobs:
         run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
 
       - name: Build llmlb
-        run: cargo build --release -p llmlb
+        # Use debug build to enable sk_debug API key for E2E tests
+        run: cargo build -p llmlb
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -168,7 +169,7 @@ jobs:
           LLMLB_LOG_DIR=llmlb/tests/e2e-playwright/.llmlb/logs \
           ADMIN_USERNAME=admin \
           ADMIN_PASSWORD=test \
-          ./target/release/llmlb &
+          ./target/debug/llmlb &
           # Wait for server to be ready
           for i in {1..30}; do
             if curl -s http://127.0.0.1:32768/health > /dev/null 2>&1; then

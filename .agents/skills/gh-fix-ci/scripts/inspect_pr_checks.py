@@ -50,6 +50,8 @@ FAILURE_MARKERS = (
 
 DEFAULT_MAX_LINES = 160
 DEFAULT_CONTEXT_LINES = 30
+DEFAULT_MAX_REVIEW_COMMENTS = 50
+DEFAULT_MAX_COMMENT_BODY_CHARS = 400
 PENDING_LOG_MARKERS = (
     "still in progress",
     "log will be available when it is complete",
@@ -103,6 +105,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-lines", type=int, default=DEFAULT_MAX_LINES)
     parser.add_argument("--context", type=int, default=DEFAULT_CONTEXT_LINES)
+    parser.add_argument(
+        "--max-review-comments",
+        type=int,
+        default=DEFAULT_MAX_REVIEW_COMMENTS,
+        help="Maximum number of reviewer comments to list per category.",
+    )
+    parser.add_argument(
+        "--required-only",
+        action="store_true",
+        help="Limit CI checks to required checks only (uses gh pr checks --required).",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text output.")
     parser.add_argument(
         "--resolve-threads",
@@ -124,6 +137,8 @@ def main() -> int:
     if repo_root is None:
         print("Error: not inside a Git repository.", file=sys.stderr)
         return 1
+
+    max_review_comments = max(1, args.max_review_comments)
 
     if not ensure_gh_available(repo_root):
         return 1
@@ -149,11 +164,12 @@ def main() -> int:
     if args.mode in ("conflicts", "all"):
         conflict_result = check_conflicts(pr_value, repo_root)
         results["conflicts"] = conflict_result
-        if conflict_result.get("hasConflicts"):
+        if conflict_result.get("hasConflicts") or conflict_result.get("updateBranchRequired"):
             has_issues = True
 
     # Reviews check (Change Requests + Unresolved Threads)
     if args.mode in ("reviews", "all"):
+        author_login = fetch_pr_author_login(pr_value, repo_root)
         change_requests = fetch_change_requests(pr_value, repo_root)
         results["changeRequests"] = change_requests
         if change_requests:
@@ -163,6 +179,42 @@ def main() -> int:
         results["unresolvedThreads"] = unresolved_threads
         if unresolved_threads:
             has_issues = True
+
+        review_summaries = fetch_review_summaries(pr_value, repo_root, author_login)
+        review_comments = fetch_review_comments(pr_value, repo_root, author_login)
+        issue_comments = fetch_issue_comments(pr_value, repo_root, author_login)
+
+        results["reviewSummaries"] = review_summaries[:max_review_comments]
+        results["reviewComments"] = review_comments[:max_review_comments]
+        results["issueComments"] = issue_comments[:max_review_comments]
+        results["reviewCounts"] = {
+            "reviewSummaries": len(review_summaries),
+            "reviewComments": len(review_comments),
+            "issueComments": len(issue_comments),
+        }
+
+        review_action_required = bool(
+            change_requests or unresolved_threads or review_summaries or review_comments or issue_comments
+        )
+        results["reviewActionRequired"] = review_action_required
+        if review_action_required:
+            has_issues = True
+
+        review_notes = []
+        if len(review_summaries) > max_review_comments:
+            review_notes.append(
+                f"Showing {max_review_comments} of {len(review_summaries)} review summaries."
+            )
+        if len(review_comments) > max_review_comments:
+            review_notes.append(
+                f"Showing {max_review_comments} of {len(review_comments)} inline review comments."
+            )
+        if len(issue_comments) > max_review_comments:
+            review_notes.append(
+                f"Showing {max_review_comments} of {len(issue_comments)} issue comments."
+            )
+        if review_notes:
+            results["reviewNote"] = " ".join(review_notes)
 
         # Handle --resolve-threads
         if args.resolve_threads and unresolved_threads:
@@ -175,7 +227,7 @@ def main() -> int:
 
     # CI checks
     if args.mode in ("checks", "all"):
-        checks = fetch_checks(pr_value, repo_root)
+        checks, checks_note = fetch_checks(pr_value, repo_root, required_only=args.required_only)
         if checks is not None:
             failing = [c for c in checks if is_failing(c)]
             if failing:
@@ -196,6 +248,10 @@ def main() -> int:
         else:
             results["ciFailures"] = None
             results["ciError"] = "Failed to fetch CI checks"
+        if checks_note:
+            results["checksNote"] = checks_note
+        if args.required_only:
+            results["checksRequiredOnly"] = True
 
     # Output
     if args.json:
@@ -231,9 +287,35 @@ def ensure_gh_available(repo_root: Path) -> bool:
     return False
 
 
+def extract_pr_number(pr_value: str) -> str | None:
+    if pr_value.isdigit():
+        return pr_value
+    match = re.search(r"/pull/(\d+)", pr_value)
+    if match:
+        return match.group(1)
+    return None
+
+
 def resolve_pr(pr_value: str | None, repo_root: Path) -> str | None:
     if pr_value:
-        return pr_value
+        extracted = extract_pr_number(pr_value)
+        if extracted:
+            return extracted
+        result = run_gh_command(["pr", "view", pr_value, "--json", "number"], cwd=repo_root)
+        if result.returncode != 0:
+            message = (result.stderr or result.stdout or "").strip()
+            print(message or "Error: unable to resolve PR.", file=sys.stderr)
+            return None
+        try:
+            data = json.loads(result.stdout or "{}")
+        except json.JSONDecodeError:
+            print("Error: unable to parse PR JSON.", file=sys.stderr)
+            return None
+        number = data.get("number")
+        if not number:
+            print("Error: no PR number found.", file=sys.stderr)
+            return None
+        return str(number)
     result = run_gh_command(["pr", "view", "--json", "number"], cwd=repo_root)
     if result.returncode != 0:
         message = (result.stderr or result.stdout or "").strip()
@@ -293,6 +375,7 @@ def check_conflicts(pr_value: str, repo_root: Path) -> dict[str, Any]:
 
     mergeable_raw = data.get("mergeable")
     merge_state_status = data.get("mergeStateStatus", "UNKNOWN")
+    merge_state_normalized = normalize_field(merge_state_status)
 
     # Handle different return types from gh CLI:
     # - Older versions: boolean (true/false)
@@ -311,13 +394,16 @@ def check_conflicts(pr_value: str, repo_root: Path) -> dict[str, Any]:
         mergeable_display = "UNKNOWN"
 
     # Also check mergeStateStatus for DIRTY state
-    if merge_state_status == "DIRTY":
+    if merge_state_normalized == "dirty":
         has_conflicts = True
+
+    update_branch_required = merge_state_normalized == "behind"
 
     return {
         "hasConflicts": has_conflicts,
         "mergeable": mergeable_display,
         "mergeStateStatus": merge_state_status,
+        "updateBranchRequired": update_branch_required,
         "baseRefName": data.get("baseRefName", ""),
         "headRefName": data.get("headRefName", ""),
     }
@@ -360,6 +446,168 @@ def fetch_change_requests(pr_value: str, repo_root: Path) -> list[dict[str, Any]
             })
 
     return change_requests
+
+
+# =============================================================================
+# Reviewer comments
+# =============================================================================
+
+def fetch_pr_author_login(pr_value: str, repo_root: Path) -> str:
+    """Fetch PR author login to filter out self-comments."""
+    result = run_gh_command(["pr", "view", pr_value, "--json", "author"], cwd=repo_root)
+    if result.returncode != 0:
+        return ""
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return ""
+    author = data.get("author") or {}
+    login = author.get("login") if isinstance(author, dict) else ""
+    return str(login or "")
+
+
+def fetch_review_summaries(
+    pr_value: str,
+    repo_root: Path,
+    exclude_login: str,
+) -> list[dict[str, Any]]:
+    """Fetch review summaries with COMMENTED/APPROVED states that contain bodies."""
+    repo_slug = fetch_repo_slug(repo_root)
+    if not repo_slug:
+        return []
+
+    result = run_gh_command(
+        ["api", f"repos/{repo_slug}/pulls/{pr_value}/reviews?per_page=100"],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return []
+
+    try:
+        reviews = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(reviews, list):
+        return []
+
+    exclude_key = exclude_login.lower() if exclude_login else ""
+    summaries: list[dict[str, Any]] = []
+    for review in reviews:
+        if not isinstance(review, dict):
+            continue
+        state = normalize_field(review.get("state"))
+        if state in ("pending", "changes_requested"):
+            continue
+        body = (review.get("body") or "").strip()
+        if not body:
+            continue
+        user_login = str(review.get("user", {}).get("login") or "")
+        if exclude_key and user_login.lower() == exclude_key:
+            continue
+        summaries.append(
+            {
+                "id": review.get("id"),
+                "reviewer": user_login or "unknown",
+                "state": state.upper(),
+                "body": compact_text(body, DEFAULT_MAX_COMMENT_BODY_CHARS),
+                "submittedAt": review.get("submitted_at", ""),
+                "htmlUrl": review.get("html_url", ""),
+            }
+        )
+    return summaries
+
+
+def fetch_review_comments(
+    pr_value: str,
+    repo_root: Path,
+    exclude_login: str,
+) -> list[dict[str, Any]]:
+    """Fetch inline review comments."""
+    repo_slug = fetch_repo_slug(repo_root)
+    if not repo_slug:
+        return []
+
+    result = run_gh_command(
+        ["api", f"repos/{repo_slug}/pulls/{pr_value}/comments?per_page=100"],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return []
+
+    try:
+        comments = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(comments, list):
+        return []
+
+    exclude_key = exclude_login.lower() if exclude_login else ""
+    review_comments: list[dict[str, Any]] = []
+    for comment in comments:
+        if not isinstance(comment, dict):
+            continue
+        user_login = str(comment.get("user", {}).get("login") or "")
+        if exclude_key and user_login.lower() == exclude_key:
+            continue
+        review_comments.append(
+            {
+                "id": comment.get("id"),
+                "reviewer": user_login or "unknown",
+                "path": comment.get("path", ""),
+                "line": comment.get("line") or comment.get("original_line") or comment.get("position"),
+                "body": compact_text(comment.get("body") or "", DEFAULT_MAX_COMMENT_BODY_CHARS),
+                "createdAt": comment.get("created_at", ""),
+                "htmlUrl": comment.get("html_url", ""),
+            }
+        )
+    return review_comments
+
+
+def fetch_issue_comments(
+    pr_value: str,
+    repo_root: Path,
+    exclude_login: str,
+) -> list[dict[str, Any]]:
+    """Fetch issue comments on the PR conversation."""
+    repo_slug = fetch_repo_slug(repo_root)
+    if not repo_slug:
+        return []
+
+    result = run_gh_command(
+        ["api", f"repos/{repo_slug}/issues/{pr_value}/comments?per_page=100"],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return []
+
+    try:
+        comments = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(comments, list):
+        return []
+
+    exclude_key = exclude_login.lower() if exclude_login else ""
+    issue_comments: list[dict[str, Any]] = []
+    for comment in comments:
+        if not isinstance(comment, dict):
+            continue
+        user_login = str(comment.get("user", {}).get("login") or "")
+        if exclude_key and user_login.lower() == exclude_key:
+            continue
+        issue_comments.append(
+            {
+                "id": comment.get("id"),
+                "reviewer": user_login or "unknown",
+                "body": compact_text(comment.get("body") or "", DEFAULT_MAX_COMMENT_BODY_CHARS),
+                "createdAt": comment.get("created_at", ""),
+                "htmlUrl": comment.get("html_url", ""),
+            }
+        )
+    return issue_comments
 
 
 # =============================================================================
@@ -507,49 +755,69 @@ def add_pr_comment(pr_value: str, body: str, repo_root: Path) -> bool:
 # CI checks (existing functionality)
 # =============================================================================
 
-def fetch_checks(pr_value: str, repo_root: Path) -> list[dict[str, Any]] | None:
+def fetch_checks(
+    pr_value: str,
+    repo_root: Path,
+    required_only: bool,
+) -> tuple[list[dict[str, Any]] | None, str]:
     primary_fields = ["name", "state", "conclusion", "detailsUrl", "startedAt", "completedAt"]
-    result = run_gh_command(
-        ["pr", "checks", pr_value, "--json", ",".join(primary_fields)],
-        cwd=repo_root,
-    )
+    note = ""
+    use_required = required_only
+
+    def run_checks(fields: Sequence[str], include_required: bool) -> GhResult:
+        args = ["pr", "checks", pr_value]
+        if include_required:
+            args.append("--required")
+        args.extend(["--json", ",".join(fields)])
+        return run_gh_command(args, cwd=repo_root)
+
+    result = run_checks(primary_fields, use_required)
     if result.returncode != 0:
         message = "\n".join(filter(None, [result.stderr, result.stdout])).strip()
-        available_fields = parse_available_fields(message)
-        if available_fields:
-            fallback_fields = [
-                "name",
-                "state",
-                "bucket",
-                "link",
-                "startedAt",
-                "completedAt",
-                "workflow",
-            ]
-            selected_fields = [field for field in fallback_fields if field in available_fields]
-            if not selected_fields:
-                print("Error: no usable fields available for gh pr checks.", file=sys.stderr)
-                return None
-            result = run_gh_command(
-                ["pr", "checks", pr_value, "--json", ",".join(selected_fields)],
-                cwd=repo_root,
-            )
-            if result.returncode != 0:
-                message = (result.stderr or result.stdout or "").strip()
+        if use_required and required_flag_unsupported(message):
+            use_required = False
+            note = "gh pr checks --required not supported; showing all checks instead."
+            result = run_checks(primary_fields, use_required)
+            message = "\n".join(filter(None, [result.stderr, result.stdout])).strip()
+        if result.returncode != 0:
+            available_fields = parse_available_fields(message)
+            if available_fields:
+                fallback_fields = [
+                    "name",
+                    "state",
+                    "bucket",
+                    "link",
+                    "startedAt",
+                    "completedAt",
+                    "workflow",
+                ]
+                selected_fields = [field for field in fallback_fields if field in available_fields]
+                if not selected_fields:
+                    print("Error: no usable fields available for gh pr checks.", file=sys.stderr)
+                    return None, note
+                result = run_checks(selected_fields, use_required)
+                if result.returncode != 0 and use_required:
+                    message = "\n".join(filter(None, [result.stderr, result.stdout])).strip()
+                    if required_flag_unsupported(message):
+                        use_required = False
+                        note = "gh pr checks --required not supported; showing all checks instead."
+                        result = run_checks(selected_fields, use_required)
+                if result.returncode != 0:
+                    message = (result.stderr or result.stdout or "").strip()
+                    print(message or "Error: gh pr checks failed.", file=sys.stderr)
+                    return None, note
+            else:
                 print(message or "Error: gh pr checks failed.", file=sys.stderr)
-                return None
-        else:
-            print(message or "Error: gh pr checks failed.", file=sys.stderr)
-            return None
+                return None, note
     try:
         data = json.loads(result.stdout or "[]")
     except json.JSONDecodeError:
         print("Error: unable to parse checks JSON.", file=sys.stderr)
-        return None
+        return None, note
     if not isinstance(data, list):
         print("Error: unexpected checks JSON shape.", file=sys.stderr)
-        return None
-    return data
+        return None, note
+    return data, note
 
 
 def is_failing(check: dict[str, Any]) -> bool:
@@ -711,6 +979,16 @@ def normalize_field(value: Any) -> str:
     return str(value).strip().lower()
 
 
+def compact_text(text: str, max_chars: int) -> str:
+    if not text:
+        return ""
+    cleaned = " ".join(str(text).split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    trimmed = cleaned[: max(0, max_chars - 3)].rstrip()
+    return f"{trimmed}..."
+
+
 def parse_available_fields(message: str) -> list[str]:
     if "Available fields:" not in message:
         return []
@@ -727,6 +1005,13 @@ def parse_available_fields(message: str) -> list[str]:
             continue
         fields.append(field)
     return fields
+
+
+def required_flag_unsupported(message: str) -> bool:
+    lowered = message.lower()
+    if "--required" not in lowered:
+        return False
+    return "unknown" in lowered or "invalid" in lowered or "flag" in lowered or "option" in lowered
 
 
 def is_log_pending_message(message: str) -> bool:
@@ -780,18 +1065,23 @@ def render_comprehensive_results(results: dict[str, Any]) -> None:
     print(f"PR #{pr_number}: Comprehensive Check Results")
     print("=" * 60)
 
-    # Conflicts
+    # Merge status
     conflicts = results.get("conflicts")
     if conflicts:
-        print("\nMERGE CONFLICTS")
+        print("\nMERGE STATUS")
         print("-" * 60)
+        has_conflicts = conflicts.get("hasConflicts")
+        update_required = conflicts.get("updateBranchRequired")
         if conflicts.get("error"):
             print(f"Error: {conflicts['error']}")
-        elif conflicts.get("hasConflicts"):
-            print(f"Status: {conflicts.get('mergeable', 'UNKNOWN')}")
+        elif has_conflicts or update_required:
+            print(f"Mergeable: {conflicts.get('mergeable', 'UNKNOWN')}")
             print(f"Merge State: {conflicts.get('mergeStateStatus', 'UNKNOWN')}")
             print(f"Base: {conflicts.get('baseRefName', '')} <- Head: {conflicts.get('headRefName', '')}")
-            print("Action Required: Resolve conflicts before merging")
+            if has_conflicts:
+                print("Action Required: Resolve conflicts before merging")
+            if update_required:
+                print("Action Required: Update branch because base is ahead")
         else:
             print("No merge conflicts detected.")
             print(f"Mergeable: {conflicts.get('mergeable', 'UNKNOWN')}")
@@ -836,6 +1126,84 @@ def render_comprehensive_results(results: dict[str, Any]) -> None:
         else:
             print("No unresolved review threads.")
 
+    # Review summaries (non-CHANGES_REQUESTED)
+    review_summaries = results.get("reviewSummaries")
+    if review_summaries is not None:
+        print("\nREVIEW COMMENTS")
+        print("-" * 60)
+        if review_summaries:
+            for summary in review_summaries:
+                reviewer = summary.get("reviewer", "unknown")
+                submitted_at = summary.get("submittedAt", "")[:10] if summary.get("submittedAt") else ""
+                state = summary.get("state", "")
+                body = summary.get("body", "")
+                print(f"From @{reviewer} ({submitted_at}) [{state}]:")
+                if body:
+                    print(indent_block(f'"{body}"', prefix="  "))
+                else:
+                    print("  (no comment body)")
+                print()
+        else:
+            print("No review summary comments.")
+
+    # Inline review comments
+    review_comments = results.get("reviewComments")
+    if review_comments is not None:
+        print("\nINLINE REVIEW COMMENTS")
+        print("-" * 60)
+        if review_comments:
+            for comment in review_comments:
+                reviewer = comment.get("reviewer", "unknown")
+                path = comment.get("path", "")
+                line = comment.get("line")
+                location = f"{path}:{line}" if line else path
+                created_at = comment.get("createdAt", "")[:10] if comment.get("createdAt") else ""
+                body = comment.get("body", "")
+                print(f"{location} - @{reviewer} ({created_at})")
+                if body:
+                    print(indent_block(f'"{body}"', prefix="  "))
+                else:
+                    print("  (no comment body)")
+                print()
+        else:
+            print("No inline review comments.")
+
+    # Issue comments
+    issue_comments = results.get("issueComments")
+    if issue_comments is not None:
+        print("\nISSUE COMMENTS")
+        print("-" * 60)
+        if issue_comments:
+            for comment in issue_comments:
+                reviewer = comment.get("reviewer", "unknown")
+                created_at = comment.get("createdAt", "")[:10] if comment.get("createdAt") else ""
+                body = comment.get("body", "")
+                print(f"@{reviewer} ({created_at})")
+                if body:
+                    print(indent_block(f'"{body}"', prefix="  "))
+                else:
+                    print("  (no comment body)")
+                print()
+        else:
+            print("No issue comments.")
+
+    review_counts = results.get("reviewCounts")
+    if review_counts:
+        print(
+            "\nREVIEW COUNTS"
+            f"\nSummary comments: {review_counts.get('reviewSummaries', 0)}"
+            f"\nInline comments: {review_counts.get('reviewComments', 0)}"
+            f"\nIssue comments: {review_counts.get('issueComments', 0)}"
+        )
+
+    review_note = results.get("reviewNote")
+    if review_note:
+        print(f"\nReview note: {review_note}")
+
+    review_action_required = results.get("reviewActionRequired")
+    if review_action_required is not None:
+        print(f"\nREVIEW ACTION REQUIRED: {'YES' if review_action_required else 'NO'}")
+
     # Resolved threads count
     resolved_count = results.get("resolvedThreadsCount")
     if resolved_count is not None:
@@ -846,6 +1214,11 @@ def render_comprehensive_results(results: dict[str, Any]) -> None:
     if ci_failures is not None:
         print("\nCI FAILURES")
         print("-" * 60)
+        if results.get("checksRequiredOnly"):
+            print("Checks mode: required only")
+        checks_note = results.get("checksNote")
+        if checks_note:
+            print(f"Checks note: {checks_note}")
         if ci_failures:
             render_ci_results(ci_failures)
         else:

@@ -32,7 +32,7 @@ curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
     {
       "timestamp": "2025-01-02T10:30:01.456Z",
       "level": "INFO",
-      "target": "xllm::api::router_client",
+      "target": "xllm::api::openai_endpoints",
       "message": "Registered with router"
     }
   ],

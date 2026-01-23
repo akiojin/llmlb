@@ -18,7 +18,7 @@ LLM Load Balancer is designed to serve three primary use cases:
 
 ### Multi-Engine Architecture
 
-LLM Load Balancer supports a pluggable multi-engine architecture:
+LLM Load Balancer uses a manager-based multi-engine architecture:
 
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
@@ -27,6 +27,9 @@ LLM Load Balancer supports a pluggable multi-engine architecture:
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
+
+Manager-based runtimes replace the legacy plugin system. See `docs/manager-migration.md`
+for migration steps.
 
 **Engine Selection Policy**:
 

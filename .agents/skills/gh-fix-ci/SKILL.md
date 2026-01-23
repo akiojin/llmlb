@@ -1,6 +1,6 @@
 ---
 name: gh-fix-ci
-description: Inspect GitHub PR for CI failures, merge conflicts, change requests, and unresolved review threads. Create fix plans and implement after user approval. Resolve review threads and notify reviewers after fixes.
+description: Inspect GitHub PR for CI failures, merge conflicts, update-branch requirements, reviewer comments, change requests, and unresolved review threads. Create fix plans and implement after user approval. Resolve review threads and notify reviewers after fixes.
 metadata:
   short-description: Fix failing GitHub PRs comprehensively
 ---
@@ -13,6 +13,8 @@ Use gh to inspect PRs for:
 
 - Failing CI checks (GitHub Actions)
 - Merge conflicts
+- Update Branch requirements (base branch advanced)
+- Reviewer comments (review summaries, inline comments, issue comments)
 - Change Requests from reviewers
 - Unresolved review threads
 
@@ -27,6 +29,8 @@ Prereq: ensure `gh` is authenticated (for example, run `gh auth login` once), th
 - `repo`: path inside the repo (default `.`)
 - `pr`: PR number or URL (optional; defaults to current branch PR)
 - `mode`: inspection mode (`checks`, `conflicts`, `reviews`, `all`)
+- `max-review-comments`: max reviewer comments to list per category
+- `required-only`: limit CI checks to required checks only (uses `gh pr checks --required`)
 - `gh` authentication for the repo host
 
 ## Quick start
@@ -46,6 +50,12 @@ python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>"
 
 # JSON output
 python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --json
+
+# Required checks only (if gh supports --required)
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --mode checks --required-only
+
+# Limit review comment output
+python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --max-review-comments 30
 
 # Resolve all unresolved threads after fixing
 python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>" --resolve-threads
@@ -69,15 +79,19 @@ python "<path-to-skill>/scripts/inspect_pr_checks.py" --repo "." --pr "<number>"
    **Conflicts Mode (`--mode conflicts`):**
    - Check `mergeable` and `mergeStateStatus` fields.
    - If `CONFLICTING` or `DIRTY`, report conflict details.
+   - If `BEHIND`, report that the base branch advanced and an Update Branch is required.
    - Suggest resolution steps: fetch base branch, merge/rebase, resolve conflicts.
 
    **Reviews Mode (`--mode reviews`):**
    - Fetch reviews with `CHANGES_REQUESTED` state.
    - Fetch unresolved review threads using GraphQL.
+   - Fetch reviewer comments (review summaries, inline review comments, issue comments).
    - Display reviewer, comment body, file path, and line number.
+   - Decide if reviewer feedback requires action (any change request, unresolved thread, or reviewer comment).
 
    **Checks Mode (`--mode checks`):**
    - Run bundled script to inspect failing CI checks.
+   - Add `--required-only` to limit output to required checks when supported.
    - Fetch GitHub Actions logs and extract failure snippets.
    - For external checks (Buildkite, etc.), report URL only.
 
@@ -120,6 +134,8 @@ Comprehensive PR inspection tool. Exits non-zero when issues remain.
 | `--mode` | `all` | Inspection mode: `checks`, `conflicts`, `reviews`, `all` |
 | `--max-lines` | 160 | Max lines for log snippets |
 | `--context` | 30 | Context lines around failure markers |
+| `--max-review-comments` | 50 | Max reviewer comments to list per category |
+| `--required-only` | false | Limit CI checks to required checks only |
 | `--json` | false | Emit JSON output |
 | `--resolve-threads` | false | Resolve unresolved review threads |
 | `--add-comment` | (none) | Add a comment to the PR |
@@ -136,6 +152,7 @@ Comprehensive PR inspection tool. Exits non-zero when issues remain.
 Detects merge conflicts via `mergeable` and `mergeStateStatus` fields.
 
 - `CONFLICTING` / `DIRTY`: Conflict detected
+- `BEHIND`: Base branch advanced; Update Branch required
 - `MERGEABLE` / `CLEAN`: No conflicts
 
 ### Change Request Handling
@@ -145,6 +162,15 @@ Fetches reviews with `state == "CHANGES_REQUESTED"` and displays:
 - Reviewer name
 - Review body
 - Submission timestamp
+
+### Reviewer Comments
+
+Fetches reviewer feedback beyond change requests:
+
+- Review summaries with comment bodies
+- Inline review comments (file/line)
+- PR issue comments
+- Marks review action required if any reviewer feedback exists
 
 ### Unresolved Review Threads
 
@@ -176,9 +202,9 @@ Use `--add-comment "message"` to post a summary comment to the PR after fixes.
 PR #123: Comprehensive Check Results
 ============================================================
 
-MERGE CONFLICTS
+MERGE STATUS
 ------------------------------------------------------------
-Status: CONFLICTING
+Mergeable: CONFLICTING
 Merge State: DIRTY
 Base: main <- Head: feature/my-branch
 Action Required: Resolve conflicts before merging

@@ -90,14 +90,12 @@ TextManager (Built-in Engines)
 - Windows は CUDA 主経路。DirectML は凍結。Nemotron は TBD。
 - 詳細な検証状況は `specs/SPEC-6cd7f960/verified-models.md` を正とする。
 
-## プラグイン設計指針
-- **配布単位**: 共有ライブラリ + `manifest.json`
-- **manifest.json**
-  - engine_id / engine_version / abi_version
-  - runtimes / formats / architectures / capabilities / modalities
-- gpu_targets（metal / cuda / rocm / vulkan）
-  - library（共有ライブラリ名）
-- **互換性**: ABI 互換を破る変更は `abi_version` を更新する。
+## エンジン実装指針（マネージャ方式）
+- **配布単位**: allm 内の in-process 実装 + EngineRegistry 登録
+- **登録情報**:
+  - runtime / format / architectures / capabilities / modalities
+  - gpu_targets（metal / cuda / rocm / vulkan）
+- **互換性**: EngineRegistry の契約（RuntimeType / format / capabilities）を破る変更は破壊的変更として扱う。
 
 ## RuntimeType 対応（現状）
 

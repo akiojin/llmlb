@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -40,13 +41,16 @@ using xllm::LlamaManager;
 using xllm::ModelDescriptor;
 using xllm::TextManager;
 
-TEST(TextManagerTest, RegistersLlamaRuntime) {
+TEST(TextManagerTest, RegistersExpectedRuntimes) {
     TempDir tmp;
     LlamaManager llama(tmp.path.string());
     TextManager manager(llama, tmp.path.string());
 
     auto runtimes = manager.getRegisteredRuntimes();
     EXPECT_TRUE(contains(runtimes, "llama_cpp"));
+#ifdef XLLM_WITH_SAFETENSORS
+    EXPECT_TRUE(contains(runtimes, "safetensors_cpp"));
+#endif
 }
 
 TEST(TextManagerTest, ResolvesTextEngineForLlama) {
@@ -73,6 +77,23 @@ TEST(TextManagerTest, SupportsArchitectureNormalization) {
     EXPECT_TRUE(manager.supportsArchitecture("llama_cpp", {"Llama-3"}));
     EXPECT_FALSE(manager.supportsArchitecture("llama_cpp", {"gpt-oss"}));
     EXPECT_FALSE(manager.supportsArchitecture("missing", {"llama"}));
+}
+
+TEST(TextManagerTest, SupportsArchitectureFamilies) {
+    TempDir tmp;
+    LlamaManager llama(tmp.path.string());
+    TextManager manager(llama, tmp.path.string());
+
+    EXPECT_TRUE(manager.supportsArchitecture("llama_cpp", {"llama"}));
+    EXPECT_TRUE(manager.supportsArchitecture("llama_cpp", {"mistral"}));
+    EXPECT_FALSE(manager.supportsArchitecture("llama_cpp", {"gptoss"}));
+
+#ifdef XLLM_WITH_SAFETENSORS
+    EXPECT_TRUE(manager.supportsArchitecture("safetensors_cpp", {"gptoss"}));
+    EXPECT_TRUE(manager.supportsArchitecture("safetensors_cpp", {"nemotron"}));
+    EXPECT_TRUE(manager.supportsArchitecture("safetensors_cpp", {"qwen"}));
+    EXPECT_TRUE(manager.supportsArchitecture("safetensors_cpp", {"glm"}));
+#endif
 }
 
 TEST(TextManagerTest, ReturnsErrorWhenRegistryMissing) {

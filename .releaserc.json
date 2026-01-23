@@ -6,7 +6,7 @@
       "prerelease": "alpha"
     }
   ],
-  "repositoryUrl": "https://github.com/akiojin/llm-router",
+  "repositoryUrl": "https://github.com/akiojin/llmlb",
   "tagFormat": "v${version}",
   "npmPublish": false,
   "tarballDir": false,

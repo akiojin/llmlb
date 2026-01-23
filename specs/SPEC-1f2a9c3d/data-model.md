@@ -124,7 +124,7 @@ pub enum ProxyError {
     {
       "timestamp": "2025-01-02T10:30:00.123Z",
       "level": "INFO",
-      "target": "xllm::api::router_client",
+      "target": "xllm::api::openai_endpoints",
       "message": "Heartbeat sent",
       "runtime_id": "550e8400-e29b-41d4-a716-446655440000"
     },

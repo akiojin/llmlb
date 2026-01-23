@@ -1538,4 +1538,105 @@ mod tests {
         let empty_json = serde_json::to_string(&empty_info).expect("シリアライズに失敗");
         assert_eq!(empty_json, "{}");
     }
+
+    // ===== SPEC-6cd7f960: Qwenモデル定義の契約テスト =====
+
+    #[test]
+    fn test_qwen_model_defined_in_supported_models() {
+        // supported_models.jsonに少なくとも1つのQwenモデルが定義されていることを確認
+        let models: Vec<serde_json::Value> =
+            serde_json::from_str(super::SUPPORTED_MODELS_JSON).expect("JSON解析に失敗");
+
+        let qwen_models: Vec<&serde_json::Value> = models
+            .iter()
+            .filter(|m| {
+                m["id"]
+                    .as_str()
+                    .map(|id| id.to_lowercase().contains("qwen"))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        assert!(
+            !qwen_models.is_empty(),
+            "supported_models.jsonにQwenモデルが定義されていません"
+        );
+    }
+
+    #[test]
+    fn test_qwen_model_has_required_fields() {
+        // Qwenモデルに必須フィールドが含まれていることを確認
+        let models: Vec<serde_json::Value> =
+            serde_json::from_str(super::SUPPORTED_MODELS_JSON).expect("JSON解析に失敗");
+
+        for model in &models {
+            let id = model["id"].as_str().unwrap_or("");
+            if id.to_lowercase().contains("qwen") {
+                // 必須フィールドの存在確認
+                assert!(model["id"].is_string(), "{}: idが必須", id);
+                assert!(model["name"].is_string(), "{}: nameが必須", id);
+                assert!(model["repo"].is_string(), "{}: repoが必須", id);
+                assert!(
+                    model["recommended_filename"].is_string(),
+                    "{}: recommended_filenameが必須",
+                    id
+                );
+                assert!(model["size_bytes"].is_number(), "{}: size_bytesが必須", id);
+                assert!(
+                    model["required_memory_bytes"].is_number(),
+                    "{}: required_memory_bytesが必須",
+                    id
+                );
+                assert!(model["tags"].is_array(), "{}: tagsが必須", id);
+                assert!(
+                    model["capabilities"].is_array(),
+                    "{}: capabilitiesが必須",
+                    id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qwen_model_capabilities_include_text_generation() {
+        // QwenモデルがTextGeneration機能を持つことを確認
+        let models: Vec<serde_json::Value> =
+            serde_json::from_str(super::SUPPORTED_MODELS_JSON).expect("JSON解析に失敗");
+
+        for model in &models {
+            let id = model["id"].as_str().unwrap_or("");
+            if id.to_lowercase().contains("qwen") {
+                let capabilities = model["capabilities"]
+                    .as_array()
+                    .expect("capabilitiesが配列ではありません");
+                let has_text_gen = capabilities
+                    .iter()
+                    .any(|c| c.as_str() == Some("TextGeneration"));
+                assert!(has_text_gen, "{}: TextGeneration機能が含まれていません", id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_qwen_model_repo_is_valid_hf_format() {
+        // Qwenモデルのrepoが有効なHuggingFace形式であることを確認
+        let models: Vec<serde_json::Value> =
+            serde_json::from_str(super::SUPPORTED_MODELS_JSON).expect("JSON解析に失敗");
+
+        for model in &models {
+            let id = model["id"].as_str().unwrap_or("");
+            if id.to_lowercase().contains("qwen") {
+                let repo = model["repo"].as_str().expect("repoが文字列ではありません");
+                // HuggingFace repo format: org/repo-name
+                assert!(
+                    repo.contains('/'),
+                    "{}: repoが 'org/repo-name' 形式ではありません: {}",
+                    id,
+                    repo
+                );
+                let parts: Vec<&str> = repo.split('/').collect();
+                assert!(parts.len() >= 2, "{}: repoが不正な形式です: {}", id, repo);
+            }
+        }
+    }
 }

@@ -55,6 +55,10 @@ add_executable(stcpp_unit_tests
     unit/mamba_transformer_hybrid_test.cpp
     unit/moe_test.cpp
     unit/multi_gpu_test.cpp
+    unit/glm_config_test.cpp
+    unit/glm_moe_test.cpp
+    unit/glm_fp8_test.cpp
+    unit/glm_thinking_test.cpp
 )
 target_link_libraries(stcpp_unit_tests
     PRIVATE

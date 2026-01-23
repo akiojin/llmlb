@@ -303,7 +303,63 @@
   - レイヤー分割
   - デバイス間同期
 
-## Phase 12: 仕上げ
+## Phase 12: GLM-4.7アーキテクチャ
+
+### Tests First (RED)
+
+- [x] 65. GLM config.json解析テスト (依存: 29)
+  - GLM-4.7系のconfig.json解析テスト
+  - アーキテクチャ検出テスト（ChatGLMForCausalLM）
+  - tests/unit/glm_config_test.cpp 作成
+
+- [x] 66. GLM MoEテスト (依存: 29)
+  - GLM-4.7-Flash（30B-A3B）のMoEルーティングテスト
+  - Expert選択テスト
+  - tests/unit/glm_moe_test.cpp 作成
+
+- [x] 67. GLM FP8量子化テスト (依存: 29)
+  - GLM-4.7-FP8のFP8テンソルロードテスト
+  - FP8演算テスト
+  - tests/unit/glm_fp8_test.cpp 作成
+
+- [x] 68. GLM Thinkingモードテスト (依存: 29)
+  - Interleaved Thinkingブロック解析テスト
+  - 思考過程出力テスト
+  - tests/unit/glm_thinking_test.cpp 作成
+
+### Implementation (GREEN)
+
+- [x] 69. GLMアーキテクチャ実装 (依存: 65)
+  - src/arch/glm.h, src/arch/glm.cpp - GLMアーキテクチャ
+  - config.json解析（parse_glm_config）
+  - テンソル名マッピング
+
+- [ ] 70. GLM MoE実装 (依存: 66, 69)
+  - GLM-4.7-Flash用MoEルーティング
+  - 30B-A3B構成対応
+
+- [ ] 71. GLM FP8実装 (依存: 67, 69)
+  - GLM-4.7-FP8用FP8テンソルロード
+  - ggml FP8演算対応
+
+- [ ] 72. GLM Thinkingモード実装 (依存: 68, 69)
+  - Interleaved Thinking出力処理
+  - 思考ブロックのパース・整形
+
+- [ ] 73. GLM E2Eテスト (依存: 69, 70, 71, 72)
+  - GLM-4.7-Flash safetensorsでの推論テスト
+  - GLM-4.7-FP8 safetensorsでの推論テスト
+  - zai-org公式モデルでの検証
+
+### Manager層統合
+
+- [ ] 74. engine_registry.cppにGLM追加 (依存: 69)
+  - normalize_architecture()にglm追加
+
+- [ ] 75. text_manager.cppにGLM追加 (依存: 74)
+  - safetensors_reg.architecturesにglm追加
+
+## Phase 13: 仕上げ
 
 ### Integration Tests
 
@@ -359,6 +415,10 @@
                                               ↓
                                           41,42,43 → 44,45,46 (Nemotron 3)
                                               ↓
+                                          65,66,67,68 → 69,70,71,72 → 73 (GLM-4.7)
+                                              ↓
+                                          74,75 (Manager層統合)
+                                              ↓
                                           55,56,57 (E2E)
 ```
 
@@ -377,10 +437,13 @@
 - [x] Phase 9: Nemotron 3アーキテクチャ (41-46) ※Mamba-Transformer MoE ハイブリッド対応完了
 - [x] Phase 10: 高度な機能 (47-52)
 - [x] Phase 11: マルチGPU (53-54)
+- [ ] Phase 12: GLM-4.7アーキテクチャ (65-75) ※Z.ai公式safetensors対応
 - [x] E2Eテスト: safetensorsモデル (55)
 - [x] E2Eテスト: ストリーミング (56)
 - [x] E2Eテスト: continuous batching (57)
 
 **✅ MVP達成**: 単一GPUでのsafetensorsモデル推論 + ストリーミング出力 + Nemotron 3対応
+
+**🔄 GLM-4.7対応**: Phase 12で、Z.ai公式safetensors形式のGLM-4.7系（GLM-4.7, GLM-4.7-Flash, GLM-4.7-FP8）対応を実装中
 
 Note: safetensors.cppはggmlバックエンドを直接使用するアーキテクチャ非依存の設計。Phase 9でNemotron 3（Mamba-Transformer MoE ハイブリッド）対応を完了しました。

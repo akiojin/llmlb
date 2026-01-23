@@ -19,8 +19,10 @@
 
 1. **前提** OpenAI公式のgpt-oss-20b safetensorsモデル（openai/gpt-oss-20b, MoE + MXFP4）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
 2. **前提** NVIDIA公式のNemotron 3 safetensorsモデル（nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
-3. **前提** 分割されたsafetensors（model-00001-of-00005.safetensors等）、**実行** index.jsonを解析してロード、**結果** 全テンソルが正しく読み込まれる
-4. **前提** 不正なsafetensorsファイル、**実行** モデルをロード、**結果** 明確なエラーメッセージで失敗する
+3. **前提** Z.ai公式のGLM-4.7-Flash safetensorsモデル（zai-org/GLM-4.7-Flash, 30B-A3B MoE）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
+4. **前提** Z.ai公式のGLM-4.7-FP8 safetensorsモデル（zai-org/GLM-4.7-FP8, FP8量子化版）、**実行** モデルをロードしてプロンプトを入力、**結果** テキストが生成される
+5. **前提** 分割されたsafetensors（model-00001-of-00005.safetensors等）、**実行** index.jsonを解析してロード、**結果** 全テンソルが正しく読み込まれる
+6. **前提** 不正なsafetensorsファイル、**実行** モデルをロード、**結果** 明確なエラーメッセージで失敗する
 
 **重要**: テストは公式が配布するsafetensors版モデルを使用すること。サードパーティのGGUF変換版でのテストは不十分。
 
@@ -145,6 +147,9 @@
 - 推論中にキャンセルが要求された場合、安全に中断して部分結果を返す
 - VRAM見積もりがロード前に失敗を予測した場合、明確なエラーで早期リターンする
 - mmapがサポートされない環境では通常のファイル読み込みにフォールバックする
+- GLM-4.7-FlashのMoEルーティングが正しく動作しない場合、エラーを返す
+- GLM-4.7のThinkingブロックが適切にパースできない場合、フォールバック処理を行う
+- GLM-4.7の92分割safetensors（model-00001-of-00092.safetensors等）を正しく結合ロードする
 
 ## 要件
 
@@ -194,6 +199,10 @@
 - **FR-043**: Visionモデル（LLaVA、Qwen-VL等）の画像入力をサポートする（将来対応）
 - **FR-044**: gpt-ossのMoEルーティング（Top-K）と専門家FFNを実装し、gpt-ossのsafetensorsを直接推論できる
 - **FR-045**: gpt-ossのMXFP4ブロック量子化（blocks + scales）をggml形式に変換し、推論に使用できる
+- **FR-046**: GLM-4.7系（GLM-4.7, GLM-4.7-Flash, GLM-4.7-FP8）のsafetensorsを読み込み、推論を実行できる
+- **FR-047**: GLM-4.7-Flash（30B-A3B MoE）のMoEルーティングを正しく処理できる
+- **FR-048**: GLM-4.7-FP8（FP8量子化版）を読み込み、推論を実行できる
+- **FR-049**: GLM-4.7のInterleaved Thinking（思考過程の出力）を適切に処理できる
 
 ### 対応アーキテクチャ一覧（実装反映・追記式）
 
@@ -204,6 +213,7 @@
 |--------------|------|----------|------|
 | **gpt-oss (MoE + MXFP4)** | 実装済み | `xllm/third_party/safetensors.cpp/src/ggml_model.cpp`, `xllm/third_party/safetensors.cpp/src/transformer.cpp` | `mlp.router.*` / `mlp.experts.*_(blocks\|scales\|bias)` の読み込みとMoE forwardを含む |
 | **nemotron3 (Mamba-Transformer MoE)** | 実装済み（未統合） | `xllm/third_party/safetensors.cpp/src/arch/nemotron3.*`, `mamba.*`, `moe.*`, `gqa.*` | forwardパスとの統合が未実施 |
+| **glm (GLM-4.7系)** | 未実装 | - | Z.ai公式safetensors（zai-org/GLM-4.7, GLM-4.7-Flash, GLM-4.7-FP8）を対象。MoE（30B-A3B）、FP8量子化、Interleaved Thinking対応が必要 |
 
 **備考**:
 
@@ -214,7 +224,7 @@
 
 以下は将来候補としての例であり、現時点の対応を示すものではない。
 
-- llama / mistral / qwen / phi / gemma / glm など
+- llama / mistral / qwen / phi / gemma など
 
 ### 主要エンティティ
 
@@ -268,13 +278,15 @@
 
 1. safetensors形式のgpt-oss-20bモデルで推論が正常に動作する
 2. safetensors形式のnemotronモデルで推論が正常に動作する
-3. Metal/CUDA/ROCm/Vulkanの4プラットフォームで同一のテストがパスする
-4. safetensors.cpp単体でビルドとテストが完結する（Load Balancer/xLLM依存なし）
-5. ggmlをサブモジュールとして正しく管理できている
-6. HuggingFace transformers（Python）と同等以上の推論速度を達成する
-7. ストリーミング出力でトークンごとにコールバックが呼ばれる
-8. continuous batchingで複数リクエストを効率的に処理できる
-9. HuggingFace Tinyモデルを使用したCIテストがパスする
+3. safetensors形式のGLM-4.7-Flashモデル（zai-org公式）で推論が正常に動作する
+4. safetensors形式のGLM-4.7-FP8モデル（zai-org公式）で推論が正常に動作する
+5. Metal/CUDA/ROCm/Vulkanの4プラットフォームで同一のテストがパスする
+6. safetensors.cpp単体でビルドとテストが完結する（Load Balancer/xLLM依存なし）
+7. ggmlをサブモジュールとして正しく管理できている
+8. HuggingFace transformers（Python）と同等以上の推論速度を達成する
+9. ストリーミング出力でトークンごとにコールバックが呼ばれる
+10. continuous batchingで複数リクエストを効率的に処理できる
+11. HuggingFace Tinyモデルを使用したCIテストがパスする
 
 ---
 

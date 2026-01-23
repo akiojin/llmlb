@@ -9,9 +9,9 @@
 - [x] 統合仕様の作成（本SPEC）
 - [x] 既存SPECの責務境界を明文化
 - [x] 依存関係マトリクスの更新
-- [x] Node: Engine Host（プラグインローダー）を導入する
-- [x] Node: プラグイン ABI/manifest の検証ロジックを整備する
-- [x] Node: plugin manifest の gpu_targets に一致しないエンジンをロード対象から除外する
+- [x] Node: TextManager/EngineRegistry を導入する
+- [x] Node: runtime 登録メタデータの検証ロジックを整備する
+- [x] Node: runtime メタデータの gpu_targets に一致しないエンジンをロード対象から除外する
 - [x] Node: EngineRegistry で同一runtimeに複数エンジンを登録できるようにする
 - [x] Node: ベンチマーク結果に基づいて EngineRegistry が解決する
 - [x] Node: EngineRegistry が format に一致するエンジンのみ解決する
@@ -28,7 +28,7 @@
 - [x] Tests: embeddings未対応モデルで400を返すことを検証する
 - [x] Node: ModelDescriptor に capabilities を付与し、runtime→capabilities を埋める
 - [x] Tests: EngineRegistry のベンチマーク選択とフォールバックを検証する
-- [x] Node: ベンチマーク未設定時はプラグイン（非builtin）を優先する
+- [x] Node: ベンチマーク未設定時は最適化エンジンを優先する
 - [x] DirectML推論パスの実装（演算カーネル、KVキャッシュ、サンプリング）
 - [x] 実GPU環境の統合テスト（小型モデルでE2E）
 - [x] 性能/メモリ要件の測定と制約の明文化

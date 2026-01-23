@@ -34,6 +34,7 @@ TextManager::TextManager(LlamaManager& llama_manager, std::string models_dir)
         "nemotron",
         "deepseek",
         "gptoss",
+        "glm",
         "granite",
         "smollm",
         "kimi",

@@ -52,6 +52,8 @@ node/build-*/
 node/build-debug/
 node/build-debug-onnx/
 node/build-debug-onnx-cpu/
+allm/build*/
+allm_cuda_dependents.txt
 
 # Environment variables
 .env
@@ -102,6 +104,7 @@ coverage/
 .playwright-mcp/
 router/tests/e2e-playwright/bun.lock
 router/tests/e2e-playwright/.llm-router/
+.llm-router/
 
 # ESLint cache
 .eslintcache

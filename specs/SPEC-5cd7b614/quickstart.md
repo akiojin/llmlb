@@ -25,7 +25,7 @@
 
 3. **ストレージクリーンアップを確認する**
 
-   過去バージョンで登録された GPU 非搭載ノード（`gpu_available=false` または GPU 情報欠損）が DB に残っている状態でルーターを起動する。起動ログに `Removing GPU-less node from database during startup cleanup` が表示され、`GET /v0/nodes` から当該ノードが消えていることを確認する。
+   過去バージョンで登録された GPU 非搭載ノード（`gpu_available=false` または GPU 情報欠損）が DB に残っている状態でロードバランサーを起動する。起動ログに `Removing GPU-less node from database during startup cleanup` が表示され、`GET /v0/nodes` から当該ノードが消えていることを確認する。
 
 4. **ダッシュボードの表示を確認する**
 

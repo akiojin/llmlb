@@ -6,7 +6,7 @@
 
 ## 概要
 
-ノードは起動時にルーターへ自己登録し、`runtime_token` を受け取る。以降は定期的にヘルスチェック（ハートビート＋メトリクス）を送信し、ルーターはノード状態（Online/Offline/initializing 等）と負荷情報を更新する。
+ノードは起動時にロードバランサーへ自己登録し、`runtime_token` を受け取る。以降は定期的にヘルスチェック（ハートビート＋メトリクス）を送信し、ロードバランサーはノード状態（Online/Offline/initializing 等）と負荷情報を更新する。
 
 ## API（実装済み）
 
@@ -41,10 +41,10 @@
 ## 主要コード
 
 - `common/src/protocol.rs`: `RegisterRequest`, `RegisterResponse`, `HealthCheckRequest`
-- `router/src/api/nodes.rs`: `register_node`, `list_nodes`
-- `router/src/api/health.rs`: `health_check`
-- `router/src/registry/mod.rs`: ノード状態管理（DB同期）
-- `router/src/auth/middleware.rs`: `runtime_token_auth_middleware`（`X-Node-Token`）
+- `llmlb/src/api/nodes.rs`: `register_node`, `list_nodes`
+- `llmlb/src/api/health.rs`: `health_check`
+- `llmlb/src/registry/mod.rs`: ノード状態管理（DB同期）
+- `llmlb/src/auth/middleware.rs`: `runtime_token_auth_middleware`（`X-Node-Token`）
 - `node/src/api/router_client.cpp`: `/v0/nodes` 登録 + `/v0/health` 送信
 
 ## リクエスト例

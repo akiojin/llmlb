@@ -22,7 +22,7 @@
 - [x] [P] `/v0` 管理系/ダッシュボードAPIの認証必須化に合わせてテスト更新。
 - [x] [P] `/v1` 推論APIに `api` スコープが必須であることを確認。
 
-## Backend Implementation (router/common)
+## Backend Implementation (llmlb/common)
 - [x] APIキーに `scopes` を追加しDBへ永続化。
 - [x] APIキー認証/スコープ判定ミドルウェアを実装。
 - [x] `/v0` 管理系ルートを admin（JWT or admin）に制限。
@@ -36,7 +36,7 @@
 - [x] [P] APIキー一覧にスコープ表示を追加。
 
 ## Node (C++)
-- [x] `ALLM_API_KEY` を設定可能にする。
+- [x] `XLLM_API_KEY` を設定可能にする。
 - [x] ノード登録時に APIキーを送信。
 - [x] モデル配信 (`/v0/models/blob`) に APIキーを送信（旧仕様）。
 - [x] ハートビート (`/v0/health`) に APIキーを送信。

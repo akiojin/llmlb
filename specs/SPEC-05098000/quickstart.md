@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | SPEC-589f2df1（ロードバランシング）実装済み |
+| ロードバランサー | SPEC-589f2df1（ロードバランシング）実装済み |
 | ノード | 1台以上のオンラインノード |
 | API | SPEC-63acef08（統一APIプロキシ）経由 |
 
@@ -184,6 +184,6 @@ enable_fairness = true
 
 ```bash
 # 環境変数での設定
-export LLM_ROUTER_QUEUE_MAX_SIZE=200
-export LLM_ROUTER_QUEUE_TIMEOUT_SECS=120
+export LLMLB_QUEUE_MAX_SIZE=200
+export LLMLB_QUEUE_TIMEOUT_SECS=120
 ```

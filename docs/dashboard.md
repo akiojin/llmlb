@@ -27,7 +27,7 @@ The authoritative API list and setup instructions live in `README.md` / `README.
 
 ```bash
 pnpm install
-pnpm --filter @llm-router/dashboard build
+pnpm --filter @llmlb/dashboard build
 ```
 
 This regenerates embedded static assets under `router/src/web/static/`.

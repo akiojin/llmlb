@@ -5,15 +5,15 @@ Steps for working on this repository locally.
 ## Prerequisites
 
 - Rust toolchain (stable)
-- CMake + C++20 compiler for aLLM
+- CMake + C++20 compiler for xLLM
 - Docker (optional)
 - pnpm (for workspace tooling such as markdownlint)
 - npm (for mcp-server)
 
 ## Setup
 ```bash
-git clone https://github.com/akiojin/llm-router.git
-cd llm-router
+git clone https://github.com/akiojin/llmlb.git
+cd llmlb
 pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendored
 ```
 
@@ -21,9 +21,9 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 
 - Format/lint/test everything: `make quality-checks`
 - OpenAI-only tests: `make openai-tests`
-- Router dev run: `cargo run -p llm-router`
-- aLLM build: `npm run build:node`
-- aLLM run: `npm run start:node`
+- Router dev run: `cargo run -p llmlb`
+- xLLM build: `npm run build:node`
+- xLLM run: `npm run start:node`
 
 ## TDD Expectations
 1. Write a failing test (contract/integration first, then unit).
@@ -38,20 +38,20 @@ Use the model verification suite or explicit E2E coverage and record results in 
 - E2E coverage: `LLM_TEST_MODEL=<model-id> npx bats tests/e2e/test-openai-api.bats`
 
 ## Environment Variables
-- Router: `ROUTER_PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`,
+- Router: `LLMLB_PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`,
   `ANTHROPIC_API_KEY`.
-- aLLM: `LLM_ROUTER_URL`, `ALLM_PORT`, `LLM_ALLOW_NO_GPU=false`
+- xLLM: `LLMLB_URL`, `XLLM_PORT`, `LLM_ALLOW_NO_GPU=false`
   by default.
 
 ## Debugging Tips
 
-- Set `RUST_LOG=debug` for verbose router output.
+- Set `RUST_LOG=debug` for verbose load balancer output.
 - Dashboard stats endpoint `/v0/dashboard/stats` shows cloud key presence.
 - For cloud routing, confirm the key is logged as present at startup.
 
 ## Token Statistics
 
-The router tracks token usage for all requests (prompt_tokens, completion_tokens,
+The load balancer tracks token usage for all requests (prompt_tokens, completion_tokens,
 total_tokens). Statistics are persisted to SQLite and available via dashboard API.
 
 - **Data source**: Node response `usage` field (preferred), tiktoken estimation (fallback)
@@ -61,7 +61,7 @@ total_tokens). Statistics are persisted to SQLite and available via dashboard AP
 - **Dashboard**: Statistics tab shows daily/monthly breakdown
 
 ## Submodules
-- `allm/third_party/stable-diffusion.cpp` is pinned to the public fork
+- `xllm/third_party/stable-diffusion.cpp` is pinned to the public fork
   `https://github.com/akiojin/stable-diffusion.cpp.git` to carry project-specific
   crash/compatibility fixes.
 - Upstream (leejet/stable-diffusion.cpp) updates are synced manually on demand

@@ -136,7 +136,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Navigate to repository root
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-JSON_FILE="$REPO_ROOT/router/src/supported_models.json"
+JSON_FILE="$REPO_ROOT/llmlb/src/supported_models.json"
 
 if [[ ! -f "$JSON_FILE" ]]; then
   echo "Error: $JSON_FILE not found"

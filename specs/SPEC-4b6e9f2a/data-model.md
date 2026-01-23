@@ -5,7 +5,7 @@
 ### クラウドプロバイダー
 
 ```rust
-// router/src/cloud/provider.rs
+// llmlb/src/cloud/provider.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +51,7 @@ impl CloudProvider {
 ### プロバイダー設定
 
 ```rust
-// router/src/cloud/config.rs
+// llmlb/src/cloud/config.rs
 
 /// プロバイダー接続設定
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ impl CloudConfig {
 ### ルーティング結果
 
 ```rust
-// router/src/cloud/routing.rs
+// llmlb/src/cloud/routing.rs
 
 /// ルーティング先
 #[derive(Debug, Clone)]
@@ -182,7 +182,7 @@ impl RouteTarget {
 ### クラウドリクエスト
 
 ```rust
-// router/src/cloud/request.rs
+// llmlb/src/cloud/request.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -219,7 +219,7 @@ pub struct ChatMessage {
 ### クラウドエラー
 
 ```rust
-// router/src/cloud/error.rs
+// llmlb/src/cloud/error.rs
 
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -344,7 +344,7 @@ impl CloudErrorKind {
 │           ▼                 ▼                                       │
 │  ┌────────────────┐  ┌──────────────────┐                          │
 │  │  Local Node    │  │  ProviderConfig  │                          │
-│  │  (allm)    │  │  - api_key       │                          │
+│  │  (xllm)    │  │  - api_key       │                          │
 │  │                │  │  - base_url      │                          │
 │  │                │  │  - timeout_secs  │                          │
 │  └────────────────┘  └────────┬─────────┘                          │
@@ -387,14 +387,14 @@ impl CloudErrorKind {
 
 ```text
 # クラウドAPIリクエスト数
-llm_router_cloud_requests_total{provider="openai",model="gpt-4.1",status="200"} 150
-llm_router_cloud_requests_total{provider="anthropic",model="claude-3-opus",status="200"} 80
-llm_router_cloud_requests_total{provider="openai",model="gpt-4.1",status="429"} 5
+llmlb_cloud_requests_total{provider="openai",model="gpt-4.1",status="200"} 150
+llmlb_cloud_requests_total{provider="anthropic",model="claude-3-opus",status="200"} 80
+llmlb_cloud_requests_total{provider="openai",model="gpt-4.1",status="429"} 5
 
 # クラウドAPIレイテンシ
-llm_router_cloud_latency_seconds_bucket{provider="openai",le="0.5"} 100
-llm_router_cloud_latency_seconds_bucket{provider="openai",le="1.0"} 140
-llm_router_cloud_latency_seconds_bucket{provider="openai",le="2.5"} 150
-llm_router_cloud_latency_seconds_sum{provider="openai"} 95.5
-llm_router_cloud_latency_seconds_count{provider="openai"} 150
+llmlb_cloud_latency_seconds_bucket{provider="openai",le="0.5"} 100
+llmlb_cloud_latency_seconds_bucket{provider="openai",le="1.0"} 140
+llmlb_cloud_latency_seconds_bucket{provider="openai",le="2.5"} 150
+llmlb_cloud_latency_seconds_sum{provider="openai"} 95.5
+llmlb_cloud_latency_seconds_count{provider="openai"} 150
 ```

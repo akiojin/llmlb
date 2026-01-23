@@ -92,9 +92,9 @@
 ## Phase 3.5: 仕上げ
 
 - [x] T042 [P] `node/tests/contract/openai_api_test.cpp` 全テストがパスすることを確認
-  - 注記: nodeビルド環境の制約（サブモジュール依存）により実行スキップ、Router側テストでカバー
+  - 注記: nodeビルド環境の制約（サブモジュール依存）により実行スキップ、Load Balancer側テストでカバー
 - [x] T043 [P] `node/tests/integration/openai_endpoints_test.cpp` 全テストがパスすることを確認
-  - 注記: nodeビルド環境の制約（サブモジュール依存）により実行スキップ、Router側テストでカバー
+  - 注記: nodeビルド環境の制約（サブモジュール依存）により実行スキップ、Load Balancer側テストでカバー
 - [x] T044 既存の `make openai-tests` がパスすることを確認
   - 検証日: 2026-01-06, 結果: 8 passed; 0 failed
 - [x] T045 [P] `specs/SPEC-24157000/spec.md` のステータスを「実装完了」に更新
@@ -170,9 +170,9 @@ Task: "T018 get_current_timestamp() 関数実装"
 ### テストファースト（TDD RED）
 
 - [x] T047 `node/tests/contract/openai_api_test.cpp` LogprobsReturnsRealValues テストを実値検証に更新
-  - 注記: nodeビルド環境の制約（サブモジュール依存）によりスキップ、Router側テストでカバー
+  - 注記: nodeビルド環境の制約（サブモジュール依存）によりスキップ、Load Balancer側テストでカバー
 - [x] T048 `node/tests/integration/openai_endpoints_test.cpp` LogprobsMatchesModelOutput テストを実値検証に更新
-  - 注記: nodeビルド環境の制約（サブモジュール依存）によりスキップ、Router側テストでカバー
+  - 注記: nodeビルド環境の制約（サブモジュール依存）によりスキップ、Load Balancer側テストでカバー
 
 ### コア実装（GREEN）
 
@@ -202,11 +202,11 @@ Task: "T018 get_current_timestamp() 関数実装"
 
 ### Phase 4.1: セットアップ
 
-- [x] T054 `router/migrations/` に `supports_responses_api` 列追加のマイグレーション作成
+- [x] T054 `llmlb/migrations/` に `supports_responses_api` 列追加のマイグレーション作成
   - 完了日: 2026-01-16, ファイル: `006_add_responses_api_support.sql`
-- [x] T055 `router/src/types/endpoint.rs` に `supports_responses_api: bool` フィールド追加
+- [x] T055 `llmlb/src/types/endpoint.rs` に `supports_responses_api: bool` フィールド追加
   - 完了日: 2026-01-16
-- [x] T056 `router/src/types/mod.rs` に `SupportedAPI` 列挙型追加
+- [x] T056 `llmlb/src/types/mod.rs` に `SupportedAPI` 列挙型追加
   - 完了日: 2026-01-16
 
 ### Phase 4.2: テストファースト (TDD) ⚠️ 4.3の前に完了必須
@@ -215,20 +215,20 @@ Task: "T018 get_current_timestamp() 関数実装"
 
 #### Contract Tests
 
-- [x] T057 [P] `router/tests/contract/responses_api_test.rs` 新規作成: POST /v1/responses 基本リクエストテスト
+- [x] T057 [P] `llmlb/tests/contract/responses_api_test.rs` 新規作成: POST /v1/responses 基本リクエストテスト
   - 完了日: 2026-01-16, テスト: `responses_api_basic_request_success` PASS
-- [x] T058 [P] `router/tests/contract/responses_api_test.rs` に 501 Not Implementedエラーテスト追加
+- [x] T058 [P] `llmlb/tests/contract/responses_api_test.rs` に 501 Not Implementedエラーテスト追加
   - 完了日: 2026-01-16, テスト: `responses_api_returns_501_for_non_supporting_backend` PASS
-- [x] T059 [P] `router/tests/contract/responses_api_test.rs` に 認証必須テスト追加
+- [x] T059 [P] `llmlb/tests/contract/responses_api_test.rs` に 認証必須テスト追加
   - 完了日: 2026-01-16, テスト: `responses_api_requires_authentication`, `responses_api_rejects_invalid_api_key` PASS
 
 #### Integration Tests
 
-- [x] T060 [P] `router/tests/integration/responses_api_test.rs` 新規作成: パススルーテスト
+- [x] T060 [P] `llmlb/tests/integration/responses_api_test.rs` 新規作成: パススルーテスト
   - 完了日: 2026-01-16（T064と統合、一部テストは#[ignore]でTDD RED待ち）
-- [x] T061 [P] `router/tests/integration/responses_streaming_test.rs` 新規作成: ストリーミングテスト
+- [x] T061 [P] `llmlb/tests/integration/responses_streaming_test.rs` 新規作成: ストリーミングテスト
   - 完了日: 2026-01-16, 3テスト全てPASS
-- [x] T062 [P] `router/tests/integration/models_api_test.rs` に supported_apisフィールドテスト追加
+- [x] T062 [P] `llmlb/tests/integration/models_api_test.rs` に supported_apisフィールドテスト追加
   - 完了日: 2026-01-16
   - 2テスト追加: `v1_models_includes_supported_apis_field`, `v1_models_excludes_responses_api_for_non_supporting_endpoint`
 
@@ -236,57 +236,57 @@ Task: "T018 get_current_timestamp() 関数実装"
 
 #### エンドポイント実装
 
-- [x] T063 `router/src/api/responses.rs` 新規作成: Responses APIハンドラー
+- [x] T063 `llmlb/src/api/responses.rs` 新規作成: Responses APIハンドラー
   - 完了日: 2026-01-16
   - `post_responses()`: メインハンドラー
   - リクエストボディをそのままパススルー
   - モデル名からエンドポイント選択
-- [x] T064 `router/src/api/responses.rs` に ストリーミングパススルー実装
+- [x] T064 `llmlb/src/api/responses.rs` に ストリーミングパススルー実装
   - 完了日: 2026-01-16
   - `forward_streaming_response()` 再利用
-- [x] T065 `router/src/api/responses.rs` に 501エラーハンドリング追加
+- [x] T065 `llmlb/src/api/responses.rs` に 501エラーハンドリング追加
   - 完了日: 2026-01-16
   - `supports_responses_api == false` の場合
-- [x] T066 `router/src/api/mod.rs` に `/v1/responses` ルート追加
+- [x] T066 `llmlb/src/api/mod.rs` に `/v1/responses` ルート追加
   - 完了日: 2026-01-16
 
 #### エンドポイント選択拡張
 
-- [x] T067 `router/src/api/responses.rs` に `select_endpoint_for_responses_api()` 関数追加
+- [x] T067 `llmlb/src/api/responses.rs` に `select_endpoint_for_responses_api()` 関数追加
   - 完了日: 2026-01-16
   - Responses API対応エンドポイントのみをフィルタリング
   - 注記: proxy.rsではなくresponses.rsに実装（コロケーション）
-- [x] T068 `router/src/registry/endpoints.rs` に `find_by_model_sorted_by_latency()` + `supports_responses_api` フィルタリング
+- [x] T068 `llmlb/src/registry/endpoints.rs` に `find_by_model_sorted_by_latency()` + `supports_responses_api` フィルタリング
   - 完了日: 2026-01-16
   - 注記: 別メソッドではなく、既存メソッドとフラグの組み合わせで実装
 
 ### Phase 4.4: ヘルスチェック拡張
 
-- [x] T069 `router/src/api/endpoints.rs` の `test_endpoint` に Responses API検出ロジック実装
+- [x] T069 `llmlb/src/api/endpoints.rs` の `test_endpoint` に Responses API検出ロジック実装
   - 完了日: 2026-01-16
   - /health レスポンスの `supports_responses_api` フラグで対応判定
   - 注記: capabilities.rsではなくtest_endpointハンドラー内に実装
-- [x] T070 `router/src/registry/endpoints.rs` に `update_responses_api_support()` 関数実装
+- [x] T070 `llmlb/src/registry/endpoints.rs` に `update_responses_api_support()` 関数実装
   - 完了日: 2026-01-16
   - 注記: 別ファイルではなくEndpointRegistry内に実装
-- [x] T071 `router/src/db/endpoints.rs` に `update_endpoint_responses_api_support()` 関数実装
+- [x] T071 `llmlb/src/db/endpoints.rs` に `update_endpoint_responses_api_support()` 関数実装
   - 完了日: 2026-01-16
   - 注記: endpoint_repository.rsではなくexisting endpoints.rsに実装
 
 ### Phase 4.5: /v1/models API拡張
 
-- [x] T072 `router/src/api/openai.rs` の `/v1/models` レスポンスに `supported_apis` フィールド追加
+- [x] T072 `llmlb/src/api/openai.rs` の `/v1/models` レスポンスに `supported_apis` フィールド追加
   - 完了日: 2026-01-16
   - エンドポイントからのモデルも含めるよう拡張
-- [x] T073 `router/src/types/endpoint.rs` の `EndpointModel` に `supported_apis` フィールド追加
+- [x] T073 `llmlb/src/types/endpoint.rs` の `EndpointModel` に `supported_apis` フィールド追加
   - 完了日: 2026-01-16（T056で既に実装済み）
   - SupportedAPI enumに `Hash` トレイトも追加
 
 ### Phase 4.6: 仕上げ
 
-- [x] T074 [P] `router/tests/contract/responses_api_test.rs` 全テストがパスすることを確認
+- [x] T074 [P] `llmlb/tests/contract/responses_api_test.rs` 全テストがパスすることを確認
   - 検証日: 2026-01-16, 結果: 5 passed; 0 failed
-- [x] T075 [P] `router/tests/integration/` のResponses API関連テストがパスすることを確認
+- [x] T075 [P] `llmlb/tests/integration/` のResponses API関連テストがパスすることを確認
   - 検証日: 2026-01-16, 結果: 5 passed (streaming 3 + models_api 2)
 - [x] T076 既存の `cargo test` がパスすることを確認（リグレッションなし）
   - 検証日: 2026-01-16, 結果: 全636テスト PASS
@@ -317,10 +317,10 @@ T074-T078 (Polish)
 
 ```bash
 # T057-T062: テスト作成を並列実行
-Task: "router/tests/contract/responses_api_test.rs に POST /v1/responses の contract test"
-Task: "router/tests/integration/responses_passthrough_test.rs にパススルーテスト"
-Task: "router/tests/integration/responses_streaming_test.rs にストリーミングテスト"
-Task: "router/tests/integration/models_api_test.rs に supported_apis テスト"
+Task: "llmlb/tests/contract/responses_api_test.rs に POST /v1/responses の contract test"
+Task: "llmlb/tests/integration/responses_passthrough_test.rs にパススルーテスト"
+Task: "llmlb/tests/integration/responses_streaming_test.rs にストリーミングテスト"
+Task: "llmlb/tests/integration/models_api_test.rs に supported_apis テスト"
 ```
 
 ## Phase 4 検証チェックリスト
@@ -346,8 +346,8 @@ Task: "router/tests/integration/models_api_test.rs に supported_apis テスト"
 | 4.6 Polish | T074-T078 | 5/5 | 全テストPASS、T077は自動テストで検証済み |
 
 **主要実装ファイル**:
-- `router/src/api/responses.rs` - Responses APIハンドラー
-- `router/src/api/openai.rs` - /v1/models拡張
-- `router/src/api/endpoints.rs` - Responses API検出
-- `router/src/types/endpoint.rs` - SupportedAPI enum
-- `router/migrations/006_add_responses_api_support.sql` - DBスキーマ
+- `llmlb/src/api/responses.rs` - Responses APIハンドラー
+- `llmlb/src/api/openai.rs` - /v1/models拡張
+- `llmlb/src/api/endpoints.rs` - Responses API検出
+- `llmlb/src/types/endpoint.rs` - SupportedAPI enum
+- `llmlb/migrations/006_add_responses_api_support.sql` - DBスキーマ

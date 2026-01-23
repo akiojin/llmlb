@@ -1,4 +1,4 @@
-# データモデル: llm-router CLIコマンド
+# データモデル: llmlb CLIコマンド
 
 **機能ID**: `SPEC-58378000` | **日付**: 2026-01-08
 
@@ -131,17 +131,17 @@ OllamaModel
 
 | コマンド | 説明 | 引数 |
 |---------|------|------|
-| `llm-router node serve` | サーバー起動 | なし |
-| `llm-router node run <model>` | REPL起動 | model名, --think |
-| `llm-router node pull <model>` | ダウンロード | model名/URL |
-| `llm-router node list` | モデル一覧 | なし |
-| `llm-router node show <model>` | 詳細表示 | model名, --license |
-| `llm-router node rm <model>` | 削除 | model名 |
-| `llm-router node stop <model>` | アンロード | model名 |
-| `llm-router node ps` | 実行中一覧 | なし |
-| `llm-router router nodes` | ノード一覧 | なし |
-| `llm-router router models` | モデル配信状況 | なし |
-| `llm-router router status` | クラスタ状態 | なし |
+| `llmlb node serve` | サーバー起動 | なし |
+| `llmlb node run <model>` | REPL起動 | model名, --think |
+| `llmlb node pull <model>` | ダウンロード | model名/URL |
+| `llmlb node list` | モデル一覧 | なし |
+| `llmlb node show <model>` | 詳細表示 | model名, --license |
+| `llmlb node rm <model>` | 削除 | model名 |
+| `llmlb node stop <model>` | アンロード | model名 |
+| `llmlb node ps` | 実行中一覧 | なし |
+| `llmlb router nodes` | ノード一覧 | なし |
+| `llmlb router models` | モデル配信状況 | なし |
+| `llmlb router status` | クラスタ状態 | なし |
 
 ### 終了コード
 
@@ -155,8 +155,8 @@ OllamaModel
 
 | 変数名 | デフォルト | 説明 |
 |--------|----------|------|
-| `LLM_ROUTER_HOST` | `127.0.0.1:32769` | サーバー接続先 |
-| `LLM_ROUTER_DEBUG` | `false` | デバッグログ有効化 |
+| `LLMLB_HOST` | `127.0.0.1:32769` | サーバー接続先 |
+| `LLMLB_DEBUG` | `false` | デバッグログ有効化 |
 | `HF_TOKEN` | なし | HuggingFace認証トークン |
 
 ## 出力フォーマット

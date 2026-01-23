@@ -10,14 +10,14 @@
 
 ## Phase 3.1: セットアップ
 
-- [x] T001 `router/src/lib.rs` にキュー設定を追加し、`router/src/main.rs` で環境変数から読み込む
-- [x] T002 [P] `router/src/api/dashboard.rs` と `router/src/web/dashboard/src/lib/api.ts` の stats 型を拡張
+- [x] T001 `llmlb/src/lib.rs` にキュー設定を追加し、`llmlb/src/main.rs` で環境変数から読み込む
+- [x] T002 [P] `llmlb/src/api/dashboard.rs` と `llmlb/src/web/dashboard/src/lib/api.ts` の stats 型を拡張
 
 ## Phase 3.2: テストファースト (TDD)
 
 ### 3.2.1 Contract / Integration Tests
 
-- [x] T003 `router/tests/contract/queueing_test.rs` に以下のテストを追加
+- [x] T003 `llmlb/tests/contract/queueing_test.rs` に以下のテストを追加
   - 単一ノードでの待機処理（キュー待機ヘッダ）
   - キュー満杯時の 429 + Retry-After
   - タイムアウト時の 504
@@ -29,13 +29,13 @@
 
 ### 3.2.3 Dashboard Tests
 
-- [x] T005 `router/src/api/nodes.rs` の summary テストに待機数フィールドを追加
+- [x] T005 `llmlb/src/api/nodes.rs` の summary テストに待機数フィールドを追加
 
-## Phase 3.3: Router 実装
+## Phase 3.3: Load Balancer 実装
 
-- [x] T006 `router/src/balancer/mod.rs` に待機ガードと `wait_for_idle_node_with_timeout` を実装
-- [x] T007 `router/src/api/proxy.rs` にキュー選択ヘルパーを追加
-- [x] T008 `router/src/api/openai.rs` にキュー待機・429/504レスポンス・待機ヘッダを追加
+- [x] T006 `llmlb/src/balancer/mod.rs` に待機ガードと `wait_for_idle_node_with_timeout` を実装
+- [x] T007 `llmlb/src/api/proxy.rs` にキュー選択ヘルパーを追加
+- [x] T008 `llmlb/src/api/openai.rs` にキュー待機・429/504レスポンス・待機ヘッダを追加
 
 ## Phase 3.4: Node 実装
 
@@ -45,9 +45,9 @@
 
 ## Phase 3.5: Dashboard
 
-- [x] T012 `router/src/api/dashboard.rs` で待機数の集計を追加
-- [x] T013 `router/src/web/dashboard/src/components/dashboard/StatsCards.tsx` に待機数/処理中数を表示
-- [x] T014 `router/src/web/dashboard` をビルドし、`router/src/web/static` を更新
+- [x] T012 `llmlb/src/api/dashboard.rs` で待機数の集計を追加
+- [x] T013 `llmlb/src/web/dashboard/src/components/dashboard/StatsCards.tsx` に待機数/処理中数を表示
+- [x] T014 `llmlb/src/web/dashboard` をビルドし、`llmlb/src/web/static` を更新
 
 ## Phase 3.6: 仕上げ
 
@@ -72,4 +72,4 @@ T014 → T016
 
 - キュー待機中にリクエストが破棄された場合、待機数カウンタを減算する
 - テストは Contract → Integration → Unit の順で追加する
-- 変更後は `router/src/web/static` を再生成する
+- 変更後は `llmlb/src/web/static` を再生成する

@@ -5,14 +5,14 @@
 
 ## 概要
 
-ノードがルーターに登録リクエストを送信（Push型）し、管理者が手動で承認/拒否する機能。
+ノードがロードバランサーに登録リクエストを送信（Push型）し、管理者が手動で承認/拒否する機能。
 承認前のノードには推論リクエストがルーティングされない。
 
 **実装状況**: バックエンドはほぼ完全実装済み。ダッシュボードUIのみ追加が必要。
 
 ## 技術コンテキスト
 
-**言語/バージョン**: Rust 1.75+ (Router), TypeScript 5.x (Dashboard)
+**言語/バージョン**: Rust 1.75+ (Load Balancer), TypeScript 5.x (Dashboard)
 **主要依存関係**: Axum, React, shadcn/ui
 **ストレージ**: SQLite (nodes テーブル)
 **テスト**: cargo test, vitest
@@ -37,13 +37,13 @@
 | コンポーネント | 実装状況 | ファイル |
 |---------------|---------|---------|
 | NodeStatus enum | ✅ 完了 | `common/src/types.rs` |
-| approve_node API | ✅ 完了 | `router/src/api/nodes.rs:319` |
-| delete_node API | ✅ 完了 | `router/src/api/nodes.rs:356` |
-| 状態遷移ロジック | ✅ 完了 | `router/src/registry/mod.rs:504` |
-| ルーティング除外 | ✅ 完了 | `router/src/balancer/mod.rs` |
+| approve_node API | ✅ 完了 | `llmlb/src/api/nodes.rs:319` |
+| delete_node API | ✅ 完了 | `llmlb/src/api/nodes.rs:356` |
+| 状態遷移ロジック | ✅ 完了 | `llmlb/src/registry/mod.rs:504` |
+| ルーティング除外 | ✅ 完了 | `llmlb/src/balancer/mod.rs` |
 | UI - 承認ボタン | ❌ 未実装 | `NodeTable.tsx` |
 | UI - 拒否ボタン | ❌ 未実装 | `NodeTable.tsx` |
-| テスト - 承認フロー | ⚠️ 要強化 | `router/src/api/nodes.rs` |
+| テスト - 承認フロー | ⚠️ 要強化 | `llmlb/src/api/nodes.rs` |
 
 ## Phase 0: リサーチ（完了）
 

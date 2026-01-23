@@ -1,7 +1,7 @@
-# SPEC-log-api: Node / Router Log Retrieval API
+# SPEC-log-api: Node / Load Balancer Log Retrieval API
 
 ## 目的
-- ノードの最新ログを HTTP 経由で取得できるようにし、ルーター経由でも同じ内容を参照できること。
+- ノードの最新ログを HTTP 経由で取得できるようにし、ロードバランサー経由でも同じ内容を参照できること。
 - ダッシュボードのログパネルはこの API を利用してログを表示できること。
 
 ## 機能要件
@@ -10,14 +10,14 @@
   - レスポンスは `{"entries": LogEntry[], "path": "…"}` のJSON。LogEntryは既存JSONLと同じフィールドを持つ。  
   - ログファイル未存在時は 200 で `entries: []` を返す。内部エラー時は 500。
 
-- **FR-002 (Router Proxy)**: ルーターは `GET /v0/nodes/:runtime_id/logs?tail=N` で対象ノードのログ API をプロキシする。  
+- **FR-002 (Load Balancer Proxy)**: ロードバランサーは `GET /v0/nodes/:runtime_id/logs?tail=N` で対象ノードのログ API をプロキシする。  
   - ノードが 200 を返した場合は本文をそのまま返す。  
   - ノードが応答しない/タイムアウト/非200 の場合は 502 を返し、`{"error": "...reason..."}` を含める。
 
-- **FR-003 (Dashboard Integration)**: ダッシュボードのログパネルは上記ルーター API を用いて最新ログを表示できる。tail 件数は UI で可変（デフォルト 200）。
+- **FR-003 (Dashboard Integration)**: ダッシュボードのログパネルは上記ロードバランサー API を用いて最新ログを表示できる。tail 件数は UI で可変（デフォルト 200）。
 
 ## 非機能要件
-- NFR-001: レイテンシはノード応答＋500ms以内（ルーター側の追加オーバーヘッド）。  
+- NFR-001: レイテンシはノード応答＋500ms以内（ロードバランサー側の追加オーバーヘッド）。  
 - NFR-002: レスポンスサイズは最大で tail×(1KB) を想定し、10MB を超える場合は 413 を返す。
 
 ## 例外・制約
@@ -29,7 +29,7 @@
 - AC-001: ノード `/v0/logs?tail=5` が末尾5行の JSONL を返す。
   - 事前にテスト用ログファイルを用意し、行末5が返ることを確認。
 - AC-002: ログファイルが存在しない場合でも 200 で `entries: []` を返す。
-- AC-003: ルーター `/v0/nodes/:runtime_id/logs?tail=3` が 200 を返し、ノードからの3行がそのまま届く。
+- AC-003: ロードバランサー `/v0/nodes/:runtime_id/logs?tail=3` が 200 を返し、ノードからの3行がそのまま届く。
 - AC-004: ノード停止/到達不可時は 502 かつ `error` メッセージを含む。
 - AC-005: ダッシュボードのログパネルで最新ログテキストが表示される（スモーク/E2E）。
 
@@ -44,7 +44,7 @@
 **確認済み事項**:
 
 - Node API: `GET /v0/logs?tail=N`、デフォルト200件、1-1000にクランプ（FR-001で明記）
-- Router Proxy: `GET /v0/nodes/:runtime_id/logs?tail=N`、502でエラー返却（FR-002で明記）
+- Load Balancer Proxy: `GET /v0/nodes/:runtime_id/logs?tail=N`、502でエラー返却（FR-002で明記）
 - レスポンス形式: `{"entries": LogEntry[], "path": "…"}`（FR-001で明記）
 - サイズ制限: 10MB超過時は413エラー（NFR-002で明記）
 - 認証: 現状不要（将来対応）

@@ -4,7 +4,7 @@
 
 ## 方針
 - 対応モデルは静的リストで管理する
-- ルーターはバイナリを保持せず、Node が HF から直接取得する
+- ロードバランサーはバイナリを保持せず、Node が HF から直接取得する
 - UI は Model Hub（対応モデル）と Local（登録済み）の2タブ
 
 ## 方針更新（2025-12-31）
@@ -39,7 +39,7 @@
 - [x] テキスト生成の最小スモーク（短文で 1-2 トークン以上）を確認
 - [x] メモリ使用量の記録（`required_memory_bytes` の更新）
 - [x] 検証ログを `specs/SPEC-6cd7f960/verified-models.md` に記録
-- [x] `router/src/supported_models.json` に追加し、Model Hub に反映
+- [x] `llmlb/src/supported_models.json` に追加し、Model Hub に反映
 
 **完了ステータス（2026-01-05）:**
 アクセス可能な全Docker Desktop Modelsの検証を完了。以下のモデルは外部要因でブロック:

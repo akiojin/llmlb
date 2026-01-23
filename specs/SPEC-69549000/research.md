@@ -259,9 +259,9 @@ Nemotron 3 Nanoのハイブリッド Mamba-Transformer MoE アーキテクチャ
 
 ### MoE Routing実装詳細
 
-**Router構成（Nemotron 3）**:
+**Load Balancer構成（Nemotron 3）**:
 
-- **Router type**: 標準的なMLP router with sigmoid gating + squared ReLU activation
+- **Load Balancer type**: 標準的なMLP router with sigmoid gating + squared ReLU activation
 - **Expert選択**: 128 routed experts中、Top-6を選択
 - **Shared experts**: 2個の共有エキスパート（全トークンで活性化）
 - **Gating function**: Learnt multi-layer perceptron (MLP)

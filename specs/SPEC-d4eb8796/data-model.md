@@ -121,7 +121,7 @@ pub struct ApiKeyWithPlaintext {
 
 ### 3. NodeToken (ノードトークン)
 
-**説明**: ノードがルーターと安全に通信するための認証情報
+**説明**: ノードがロードバランサーと安全に通信するための認証情報
 
 **フィールド**:
 | フィールド | 型 | 制約 | 説明 |
@@ -189,7 +189,7 @@ Node (1) --- (1) NodeToken
 
 ## SQLiteスキーマ
 
-**マイグレーションファイル**: `router/migrations/001_auth_init.sql`
+**マイグレーションファイル**: `llmlb/migrations/001_auth_init.sql`
 
 ```sql
 -- ユーザーテーブル
@@ -274,8 +274,8 @@ CREATE INDEX idx_runtime_tokens_hash ON runtime_tokens(token_hash);
 ## JSONからSQLiteへのマイグレーション
 
 **既存データ**:
-- `~/.llm-router/nodes.json` → `nodes` テーブル
-- `~/.llm-router/request_history.json` → `request_history` テーブル（新規作成）
+- `~/.llmlb/nodes.json` → `nodes` テーブル
+- `~/.llmlb/request_history.json` → `request_history` テーブル（新規作成）
 
 **マイグレーション手順**:
 1. 既存のJSONファイルをパース

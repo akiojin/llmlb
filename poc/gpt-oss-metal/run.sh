@@ -9,10 +9,10 @@ Env vars:
   HF_TOKEN              (required) Hugging Face token
   MODEL_REPO            (default: openai/gpt-oss-20b)
   MODEL_FILENAME        (default: model.safetensors.index.json)
-  ROUTER_PORT           (default: 18080)
+  LLMLB_PORT           (default: 18080)
   NODE_PORT             (default: 32769)   # runtime_port = NODE_PORT - 1
-  ROUTER_BIN            (default: target/debug/llm-router)
-  NODE_BIN              (default: allm/build/allm)
+  LLMLB_BIN            (default: target/debug/llmlb)
+  NODE_BIN              (default: xllm/build/xllm)
 
 Request shaping:
   USER_MESSAGE          (default: Say hello in one short sentence.)
@@ -28,8 +28,8 @@ Generation params:
   STREAM                (default: 0)  # 1 to use SSE streaming
 
 Process control:
-  KEEP_RUNNING          (default: 0)  # 1 to keep router/node running after completion
-  ALLM_LOG_LEVEL    (default: info)
+  KEEP_RUNNING          (default: 0)  # 1 to keep llmlb/node running after completion
+  XLLM_LOG_LEVEL    (default: info)
   SHOW_MANIFEST         (default: 0)  # 1 to print model manifest.json for diagnostics
 
 Examples:
@@ -48,10 +48,10 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 POC_ROOT="${POC_ROOT:-"$REPO_ROOT/tmp/poc-gptoss-metal"}"
-ROUTER_HOME="${ROUTER_HOME:-"$POC_ROOT/router-home"}"
+LLMLB_HOME="${LLMLB_HOME:-"$POC_ROOT/router-home"}"
 NODE_HOME="${NODE_HOME:-"$POC_ROOT/node-home"}"
 
-ROUTER_PORT="${ROUTER_PORT:-18080}"
+LLMLB_PORT="${LLMLB_PORT:-18080}"
 NODE_PORT="${NODE_PORT:-32769}"
 TEMPERATURE="${TEMPERATURE:-0.2}"
 MAX_TOKENS="${MAX_TOKENS:-64}"
@@ -61,8 +61,8 @@ USER_MESSAGE="${USER_MESSAGE:-Say hello in one short sentence.}"
 SYSTEM_MESSAGE="${SYSTEM_MESSAGE:-}"
 KEEP_RUNNING="${KEEP_RUNNING:-0}"
 
-ROUTER_BIN="${ROUTER_BIN:-"$REPO_ROOT/target/debug/llm-router"}"
-NODE_BIN="${NODE_BIN:-"$REPO_ROOT/allm/build/allm"}"
+LLMLB_BIN="${LLMLB_BIN:-"$REPO_ROOT/target/debug/llmlb"}"
+NODE_BIN="${NODE_BIN:-"$REPO_ROOT/xllm/build/xllm"}"
 
 MODEL_REPO="${MODEL_REPO:-openai/gpt-oss-20b}"
 MODEL_FILENAME="${MODEL_FILENAME:-model.safetensors.index.json}"
@@ -83,71 +83,71 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$ROUTER_BIN" ]]; then
-  echo "[ERROR] Router binary not found: $ROUTER_BIN" >&2
-  echo "        Build it with: cargo build -p llm-router" >&2
+if [[ ! -x "$LLMLB_BIN" ]]; then
+  echo "[ERROR] Router binary not found: $LLMLB_BIN" >&2
+  echo "        Build it with: cargo build -p llmlb" >&2
   exit 1
 fi
 
 if [[ ! -x "$NODE_BIN" ]]; then
   echo "[ERROR] Node binary not found: $NODE_BIN" >&2
-  echo "        Build it with: cmake --build allm/build" >&2
+  echo "        Build it with: cmake --build xllm/build" >&2
   exit 1
 fi
 
-mkdir -p "$POC_ROOT" "$ROUTER_HOME" "$NODE_HOME"
+mkdir -p "$POC_ROOT" "$LLMLB_HOME" "$NODE_HOME"
 
-ROUTER_LOG="$POC_ROOT/router.log"
+LLMLB_LOG="$POC_ROOT/router.log"
 NODE_LOG="$POC_ROOT/node.log"
 
 cleanup() {
   set +e
   if [[ "$KEEP_RUNNING" == "1" ]]; then
-    echo "[INFO] KEEP_RUNNING=1; leaving router/node running"
+    echo "[INFO] KEEP_RUNNING=1; leaving llmlb/node running"
     return 0
   fi
   if [[ -n "${NODE_PID:-}" ]]; then
     kill "$NODE_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${ROUTER_PID:-}" ]]; then
-    kill "$ROUTER_PID" >/dev/null 2>&1 || true
+  if [[ -n "${LLMLB_PID:-}" ]]; then
+    kill "$LLMLB_PID" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
-echo "[INFO] Starting router on :$ROUTER_PORT (logs: $ROUTER_LOG)"
-HOME="$ROUTER_HOME" \
-  LLM_ROUTER_PORT="$ROUTER_PORT" \
-  LLM_ROUTER_ADMIN_USERNAME="admin" \
-  LLM_ROUTER_ADMIN_PASSWORD="test" \
+echo "[INFO] Starting router on :$LLMLB_PORT (logs: $LLMLB_LOG)"
+HOME="$LLMLB_HOME" \
+  LLMLB_PORT="$LLMLB_PORT" \
+  LLMLB_ADMIN_USERNAME="admin" \
+  LLMLB_ADMIN_PASSWORD="test" \
   RUST_LOG="info" \
-  "$ROUTER_BIN" >"$ROUTER_LOG" 2>&1 &
-ROUTER_PID=$!
+  "$LLMLB_BIN" >"$LLMLB_LOG" 2>&1 &
+LLMLB_PID=$!
 
 echo "[INFO] Waiting for router to become ready..."
 router_ready=0
 for _ in $(seq 1 200); do
-  if curl -fsS -H "Authorization: Bearer sk_debug" "http://127.0.0.1:$ROUTER_PORT/v1/models" >/dev/null 2>&1; then
+  if curl -fsS -H "Authorization: Bearer sk_debug" "http://127.0.0.1:$LLMLB_PORT/v1/models" >/dev/null 2>&1; then
     router_ready=1
     break
   fi
   sleep 0.25
 done
 if [[ "$router_ready" -ne 1 ]]; then
-  echo "[ERROR] router did not become ready (see $ROUTER_LOG)" >&2
+  echo "[ERROR] router did not become ready (see $LLMLB_LOG)" >&2
   exit 1
 fi
 
-ROUTER_MODELS_DIR="$ROUTER_HOME/.llm-router/models"
-mkdir -p "$ROUTER_MODELS_DIR"
+LLMLB_MODELS_DIR="$LLMLB_HOME/.llmlb/models"
+mkdir -p "$LLMLB_MODELS_DIR"
 
 echo "[INFO] Starting node on :$NODE_PORT (logs: $NODE_LOG)"
 HOME="$NODE_HOME" \
-  LLM_ROUTER_URL="http://127.0.0.1:$ROUTER_PORT" \
-  ALLM_PORT="$NODE_PORT" \
-  ALLM_MODELS_DIR="$ROUTER_MODELS_DIR" \
-  ALLM_API_KEY="sk_debug_node" \
-  ALLM_LOG_LEVEL="${ALLM_LOG_LEVEL:-info}" \
+  LLMLB_URL="http://127.0.0.1:$LLMLB_PORT" \
+  XLLM_PORT="$NODE_PORT" \
+  XLLM_MODELS_DIR="$LLMLB_MODELS_DIR" \
+  XLLM_API_KEY="sk_debug_node" \
+  XLLM_LOG_LEVEL="${XLLM_LOG_LEVEL:-info}" \
   "$NODE_BIN" >"$NODE_LOG" 2>&1 &
 NODE_PID=$!
 
@@ -168,7 +168,7 @@ fi
 echo "[INFO] Approving node (required for routing)"
 NODE_RUNTIME_PORT="$((NODE_PORT - 1))"
 nodes_tmp="$POC_ROOT/nodes.json"
-curl -fsS -H "Authorization: Bearer sk_debug_admin" "http://127.0.0.1:$ROUTER_PORT/v0/nodes" >"$nodes_tmp"
+curl -fsS -H "Authorization: Bearer sk_debug_admin" "http://127.0.0.1:$LLMLB_PORT/v0/nodes" >"$nodes_tmp"
 node_json="$(
   jq -c --arg ip "127.0.0.1" --argjson port "$NODE_RUNTIME_PORT" '
     map(select(.ip_address==$ip and .runtime_port==$port))
@@ -186,7 +186,7 @@ fi
 if [[ "$node_status" == "pending" ]]; then
   approve_tmp="$POC_ROOT/approve.json"
   approve_code="$(
-    curl -sS -o "$approve_tmp" -w "%{http_code}" -X POST "http://127.0.0.1:$ROUTER_PORT/v0/nodes/$node_id/approve" \
+    curl -sS -o "$approve_tmp" -w "%{http_code}" -X POST "http://127.0.0.1:$LLMLB_PORT/v0/nodes/$node_id/approve" \
       -H "Authorization: Bearer sk_debug_admin"
   )"
   if [[ "$approve_code" =~ ^2 ]]; then
@@ -203,7 +203,7 @@ fi
 echo "[INFO] Registering model: $MODEL_REPO ($MODEL_FILENAME)"
 register_tmp="$POC_ROOT/register.json"
 register_code="$(
-  curl -sS -o "$register_tmp" -w "%{http_code}" -X POST "http://127.0.0.1:$ROUTER_PORT/v0/models/register" \
+  curl -sS -o "$register_tmp" -w "%{http_code}" -X POST "http://127.0.0.1:$LLMLB_PORT/v0/models/register" \
     -H "Authorization: Bearer sk_debug_admin" \
     -H "Content-Type: application/json" \
     -d "{\"repo\":\"$MODEL_REPO\",\"format\":\"safetensors\",\"filename\":\"$MODEL_FILENAME\"}"
@@ -225,7 +225,7 @@ MODEL_ID="$(echo "$MODEL_REPO" | tr '[:upper:]' '[:lower:]')"
 echo "[INFO] Waiting for router to finish caching: $MODEL_ID"
 router_cached=0
 for i in $(seq 1 3600); do
-  models_json="$(curl -fsS -H "Authorization: Bearer sk_debug" "http://127.0.0.1:$ROUTER_PORT/v1/models")"
+  models_json="$(curl -fsS -H "Authorization: Bearer sk_debug" "http://127.0.0.1:$LLMLB_PORT/v1/models")"
   status="$(echo "$models_json" | jq -r --arg id "$MODEL_ID" '.data[] | select(.id==$id) | .lifecycle_status // empty')"
   ready="$(echo "$models_json" | jq -r --arg id "$MODEL_ID" '.data[] | select(.id==$id) | .ready // false')"
   if [[ "$status" == "registered" && "$ready" == "true" ]]; then
@@ -233,7 +233,7 @@ for i in $(seq 1 3600); do
     break
   fi
   if [[ "$status" == "error" ]]; then
-    echo "[ERROR] model caching failed (see $ROUTER_LOG)" >&2
+    echo "[ERROR] model caching failed (see $LLMLB_LOG)" >&2
     exit 1
   fi
   if ((i % 15 == 0)); then
@@ -242,7 +242,7 @@ for i in $(seq 1 3600); do
   sleep 2
 done
 if [[ "$router_cached" -ne 1 ]]; then
-  echo "[ERROR] model did not become ready in time (see $ROUTER_LOG)" >&2
+  echo "[ERROR] model did not become ready in time (see $LLMLB_LOG)" >&2
   exit 1
 fi
 
@@ -269,7 +269,7 @@ encoded_model_id="$(jq -rn --arg s "$MODEL_ID" '$s|@uri')"
 manifest_code="$(
   curl -sS -o "$manifest_tmp" -w "%{http_code}" \
     -H "Authorization: Bearer sk_debug_node" \
-    "http://127.0.0.1:$ROUTER_PORT/v0/models/registry/$encoded_model_id/manifest.json"
+    "http://127.0.0.1:$LLMLB_PORT/v0/models/registry/$encoded_model_id/manifest.json"
 )"
 if [[ "$manifest_code" =~ ^2 ]]; then
   manifest_runtimes="$(jq -r '[.files[]?.runtimes[]?] | unique | join(",")' "$manifest_tmp")"
@@ -337,7 +337,7 @@ is_stream="$(jq -r '.stream // false' "$request_tmp")"
 if [[ "$is_stream" == "true" ]]; then
   echo "[INFO] stream=true; printing SSE response as-is"
   set +e
-  curl --fail-with-body -sS -N "http://127.0.0.1:$ROUTER_PORT/v1/chat/completions" \
+  curl --fail-with-body -sS -N "http://127.0.0.1:$LLMLB_PORT/v1/chat/completions" \
     -H "Authorization: Bearer sk_debug" \
     -H "Content-Type: application/json" \
     --data-binary @"$request_tmp"
@@ -346,8 +346,8 @@ if [[ "$is_stream" == "true" ]]; then
   echo
   if [[ "$curl_rc" -ne 0 ]]; then
     echo "[ERROR] chat.completions (stream) failed (curl rc=$curl_rc)" >&2
-    echo "[INFO] router log tail ($ROUTER_LOG):" >&2
-    tail -n 200 "$ROUTER_LOG" >&2 || true
+    echo "[INFO] router log tail ($LLMLB_LOG):" >&2
+    tail -n 200 "$LLMLB_LOG" >&2 || true
     echo "[INFO] node log tail ($NODE_LOG):" >&2
     tail -n 200 "$NODE_LOG" >&2 || true
     exit 1
@@ -355,7 +355,7 @@ if [[ "$is_stream" == "true" ]]; then
 else
   chat_tmp="$POC_ROOT/chat.json"
   chat_code="$(
-    curl -sS -o "$chat_tmp" -w "%{http_code}" "http://127.0.0.1:$ROUTER_PORT/v1/chat/completions" \
+    curl -sS -o "$chat_tmp" -w "%{http_code}" "http://127.0.0.1:$LLMLB_PORT/v1/chat/completions" \
       -H "Authorization: Bearer sk_debug" \
       -H "Content-Type: application/json" \
       --data-binary @"$request_tmp"
@@ -366,8 +366,8 @@ else
   else
     echo "[ERROR] chat.completions failed (HTTP $chat_code)" >&2
     cat "$chat_tmp" | jq . || cat "$chat_tmp"
-    echo "[INFO] router log tail ($ROUTER_LOG):" >&2
-    tail -n 200 "$ROUTER_LOG" >&2 || true
+    echo "[INFO] router log tail ($LLMLB_LOG):" >&2
+    tail -n 200 "$LLMLB_LOG" >&2 || true
     echo "[INFO] node log tail ($NODE_LOG):" >&2
     tail -n 200 "$NODE_LOG" >&2 || true
     exit 1

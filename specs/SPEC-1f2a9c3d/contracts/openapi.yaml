@@ -96,7 +96,7 @@ components:
         path:
           type: string
           description: ログファイルのパス
-          example: /home/user/.llm-router/logs/current.jsonl
+          example: /home/user/.llmlb/logs/current.jsonl
 
     LogEntry:
       type: object
@@ -118,7 +118,7 @@ components:
         target:
           type: string
           description: ログ出力元モジュール
-          example: allm::api::router_client
+          example: xllm::api::openai_endpoints
         message:
           type: string
           description: ログメッセージ

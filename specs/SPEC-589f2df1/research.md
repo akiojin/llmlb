@@ -48,7 +48,7 @@
 
 ### 理由
 
-- ルーターからのポーリングはスケーラビリティに問題
+- ロードバランサーからのポーリングはスケーラビリティに問題
 - ノード側がGPU情報を直接取得可能
 - ハートビートと統合して通信を削減
 
@@ -90,7 +90,7 @@
 ### 実装方法
 
 ```rust
-// router/src/balancer/mod.rs
+// llmlb/src/balancer/mod.rs
 pub struct LoadBalancer {
     // メトリクスは Arc<DashMap> で高速アクセス
     metrics: Arc<DashMap<NodeId, NodeMetrics>>,

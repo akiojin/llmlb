@@ -79,7 +79,7 @@
 
 **この優先度の理由**: llama.cpp、stable-diffusion.cpp、whisper.cppと同様に、コミュニティで広く利用される独立プロジェクトとして成長させるため。
 
-**独立テスト**: safetensors.cpp単体でビルド・テストが完結し、外部プロジェクト（Router/aLLM）への依存がないことを確認。
+**独立テスト**: safetensors.cpp単体でビルド・テストが完結し、外部プロジェクト（Load Balancer/xLLM）への依存がないことを確認。
 
 **受け入れシナリオ**:
 
@@ -167,7 +167,7 @@
 - **FR-016**: embeddings APIをサポートする
 - **FR-017**: tools/function_calling（構造化出力）をサポートする
 - **FR-018**: llama.cpp互換のC APIを提供する
-- **FR-019**: 外部プロジェクト（Router/aLLM）に依存せず、単体でビルド・テストできる
+- **FR-019**: 外部プロジェクト（Load Balancer/xLLM）に依存せず、単体でビルド・テストできる
 - **FR-020**: ggmlをサブモジュールとして管理し、GPUバックエンドとして利用する
 - **FR-021**: HuggingFaceのtokenizer.jsonを解析してトークナイズできる
 - **FR-022**: HuggingFaceのconfig.jsonからモデル設定を読み込める
@@ -202,8 +202,8 @@
 
 | アーキテクチャ | 状態 | 実装根拠 | 備考 |
 |--------------|------|----------|------|
-| **gpt-oss (MoE + MXFP4)** | 実装済み | `allm/third_party/safetensors.cpp/src/ggml_model.cpp`, `allm/third_party/safetensors.cpp/src/transformer.cpp` | `mlp.router.*` / `mlp.experts.*_(blocks\|scales\|bias)` の読み込みとMoE forwardを含む |
-| **nemotron3 (Mamba-Transformer MoE)** | 実装済み（未統合） | `allm/third_party/safetensors.cpp/src/arch/nemotron3.*`, `mamba.*`, `moe.*`, `gqa.*` | forwardパスとの統合が未実施 |
+| **gpt-oss (MoE + MXFP4)** | 実装済み | `xllm/third_party/safetensors.cpp/src/ggml_model.cpp`, `xllm/third_party/safetensors.cpp/src/transformer.cpp` | `mlp.router.*` / `mlp.experts.*_(blocks\|scales\|bias)` の読み込みとMoE forwardを含む |
+| **nemotron3 (Mamba-Transformer MoE)** | 実装済み（未統合） | `xllm/third_party/safetensors.cpp/src/arch/nemotron3.*`, `mamba.*`, `moe.*`, `gqa.*` | forwardパスとの統合が未実施 |
 
 **備考**:
 
@@ -233,8 +233,8 @@
 - CPU推論（GPU必須。CPU対応は将来検討）
 - GGUFフォーマットへの対応（llama.cppが担当）
 - モデルの学習・ファインチューニング機能
-- Webサーバー機能（aLLM側で提供）
-- モデルのダウンロード・管理機能（Router側で提供）
+- Webサーバー機能（xLLM側で提供）
+- モデルのダウンロード・管理機能（Load Balancer側で提供）
 - VRAM不足時のGPU/CPU自動分割オフロード
 
 ---
@@ -269,7 +269,7 @@
 1. safetensors形式のgpt-oss-20bモデルで推論が正常に動作する
 2. safetensors形式のnemotronモデルで推論が正常に動作する
 3. Metal/CUDA/ROCm/Vulkanの4プラットフォームで同一のテストがパスする
-4. safetensors.cpp単体でビルドとテストが完結する（Router/aLLM依存なし）
+4. safetensors.cpp単体でビルドとテストが完結する（Load Balancer/xLLM依存なし）
 5. ggmlをサブモジュールとして正しく管理できている
 6. HuggingFace transformers（Python）と同等以上の推論速度を達成する
 7. ストリーミング出力でトークンごとにコールバックが呼ばれる

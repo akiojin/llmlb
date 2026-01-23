@@ -2,7 +2,7 @@
 
 ## 調査目的
 
-ルーターとノードのHTTPリクエスト/レスポンスを構造化ログとして出力するための技術調査。
+ロードバランサーとノードのHTTPリクエスト/レスポンスを構造化ログとして出力するための技術調査。
 
 ## ロギングライブラリ比較
 
@@ -34,7 +34,7 @@
 {
   "timestamp": "2025-01-02T10:30:00.123Z",
   "level": "INFO",
-  "target": "llm_router::api::openai",
+  "target": "llmlb::api::openai",
   "message": "Request received",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "endpoint": "/v1/chat/completions",
@@ -93,7 +93,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 let file_appender = RollingFileAppender::new(
     Rotation::DAILY,
-    "~/.llm-router/logs",
+    "~/.llmlb/logs",
     "router.log",
 );
 ```

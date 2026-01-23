@@ -208,7 +208,7 @@ pub enum WsEvent {
                                │ load at startup
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                          Router                                  │
+│                          Load Balancer                                  │
 │  ┌────────────────┐    ┌────────────────┐    ┌──────────────┐   │
 │  │ SupportedModel │    │ RegisteredModel│    │   HfCache    │   │
 │  │    (static)    │    │   (database)   │    │ (in-memory)  │   │

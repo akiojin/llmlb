@@ -63,7 +63,7 @@ Webブラウザからアクセスできるリアルタイムダッシュボー�
 
 **アーキテクチャ**:
 - すべての機能をライブラリとして? N/A（routerはバイナリクレート）
-- ライブラリリスト: router/src（既存のregistryとapi）
+- ライブラリリスト: llmlb/src（既存のregistryとapi）
 - ライブラリごとのCLI: router binary（`--help`, `--version`対応予定）
 - ライブラリドキュメント: llms.txt形式を計画? N/A
 
@@ -103,7 +103,7 @@ specs/SPEC-712c20cf/
 
 ### ソースコード (リポジトリルート)
 ```
-router/
+llmlb/
 ├── src/
 │   ├── api/
 │   │   ├── mod.rs
@@ -297,7 +297,7 @@ async fn test_dashboard_page_returns_html() {
 ユーザーストーリーから抽出したテストシナリオ:
 
 1. **シナリオ1**: ダッシュボードアクセス
-   - 前提: ルーターが起動
+   - 前提: ロードバランサーが起動
    - 実行: `GET /dashboard`
    - 結果: HTMLページが返却され、ノード一覧が表示
 
@@ -323,7 +323,7 @@ async fn test_dashboard_page_returns_html() {
 
 1. **Setup Tasks**:
    - S001: Cargo.tomlにtower-http依存関係を追加
-   - S002: router/src/web/static/ディレクトリ作成
+   - S002: llmlb/src/web/static/ディレクトリ作成
 
 2. **Contract Test Tasks** [P]:
    - C001: ダッシュボードAPI契約テスト作成（RED）

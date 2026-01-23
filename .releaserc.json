@@ -6,7 +6,7 @@
       "prerelease": "alpha"
     }
   ],
-  "repositoryUrl": "https://github.com/akiojin/llm-router",
+  "repositoryUrl": "https://github.com/akiojin/llmlb",
   "tagFormat": "v${version}",
   "npmPublish": false,
   "tarballDir": false,
@@ -24,24 +24,24 @@
       {
         "assets": [
           {
-            "path": "dist/allm-linux-amd64.tar.gz",
-            "label": "allm-linux-amd64"
+            "path": "dist/xllm-linux-amd64.tar.gz",
+            "label": "xllm-linux-amd64"
           },
           {
-            "path": "dist/allm-macos-arm64.tar.gz",
-            "label": "allm-macos-arm64"
+            "path": "dist/xllm-macos-arm64.tar.gz",
+            "label": "xllm-macos-arm64"
           },
           {
-            "path": "dist/allm-macos-x64.tar.gz",
-            "label": "allm-macos-x64"
+            "path": "dist/xllm-macos-x64.tar.gz",
+            "label": "xllm-macos-x64"
           },
           {
-            "path": "dist/allm-windows-x64.zip",
-            "label": "allm-windows-x64"
+            "path": "dist/xllm-windows-x64.zip",
+            "label": "xllm-windows-x64"
           },
           {
-            "path": "dist/allm-linux-cuda.tar.gz",
-            "label": "allm-linux-cuda"
+            "path": "dist/xllm-linux-cuda.tar.gz",
+            "label": "xllm-linux-cuda"
           }
         ]
       }

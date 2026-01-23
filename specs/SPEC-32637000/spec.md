@@ -3,7 +3,7 @@
 **機能ID**: `SPEC-32637000`
 **作成日**: 2025-12-19
 **ステータス**: ✅ 実装完了
-**入力**: ユーザー説明: "モデル capabilities に基づくルーティング検証 - OpenAI互換APIでモデルを指定して呼び出した際、そのモデルが要求されたAPI（TTS、ASR、画像生成など）に対応しているかをルーターで検証し、非対応の場合はエラーを返す"
+**入力**: ユーザー説明: "モデル capabilities に基づくルーティング検証 - OpenAI互換APIでモデルを指定して呼び出した際、そのモデルが要求されたAPI（TTS、ASR、画像生成など）に対応しているかをロードバランサーで検証し、非対応の場合はエラーを返す"
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -17,9 +17,9 @@
 
 **受け入れシナリオ**:
 
-1. **前提** LLaMA（テキスト生成のみ対応）がルーターに登録されている、**実行** `/v1/audio/speech` に `model: "llama-3.1-8b"` を指定してリクエスト、**結果** エラーレスポンス「Model 'llama-3.1-8b' does not support text-to-speech」が返る
-2. **前提** Whisper（音声認識のみ対応）がルーターに登録されている、**実行** `/v1/chat/completions` に `model: "whisper-large-v3"` を指定してリクエスト、**結果** エラーレスポンス「Model 'whisper-large-v3' does not support text generation」が返る
-3. **前提** VibeVoice（音声合成のみ対応）がルーターに登録されている、**実行** `/v1/images/generations` に `model: "vibevoice"` を指定してリクエスト、**結果** エラーレスポンス「Model 'vibevoice' does not support image generation」が返る
+1. **前提** LLaMA（テキスト生成のみ対応）がロードバランサーに登録されている、**実行** `/v1/audio/speech` に `model: "llama-3.1-8b"` を指定してリクエスト、**結果** エラーレスポンス「Model 'llama-3.1-8b' does not support text-to-speech」が返る
+2. **前提** Whisper（音声認識のみ対応）がロードバランサーに登録されている、**実行** `/v1/chat/completions` に `model: "whisper-large-v3"` を指定してリクエスト、**結果** エラーレスポンス「Model 'whisper-large-v3' does not support text generation」が返る
+3. **前提** VibeVoice（音声合成のみ対応）がロードバランサーに登録されている、**実行** `/v1/images/generations` に `model: "vibevoice"` を指定してリクエスト、**結果** エラーレスポンス「Model 'vibevoice' does not support image generation」が返る
 
 ---
 
@@ -33,8 +33,8 @@
 
 **受け入れシナリオ**:
 
-1. **前提** VibeVoice（音声合成対応）がルーターに登録されている、**実行** `/v1/audio/speech` に `model: "vibevoice"` を指定してリクエスト、**結果** 音声データが正常に返る
-2. **前提** LLaMA（テキスト生成対応）がルーターに登録されている、**実行** `/v1/chat/completions` に `model: "llama-3.1-8b"` を指定してリクエスト、**結果** テキストレスポンスが正常に返る
+1. **前提** VibeVoice（音声合成対応）がロードバランサーに登録されている、**実行** `/v1/audio/speech` に `model: "vibevoice"` を指定してリクエスト、**結果** 音声データが正常に返る
+2. **前提** LLaMA（テキスト生成対応）がロードバランサーに登録されている、**実行** `/v1/chat/completions` に `model: "llama-3.1-8b"` を指定してリクエスト、**結果** テキストレスポンスが正常に返る
 
 ---
 
@@ -48,7 +48,7 @@
 
 **受け入れシナリオ**:
 
-1. **前提** 複数のモデルがルーターに登録されている、**実行** `/v1/models` を呼び出す、**結果** 各モデルに `capabilities` フィールドが含まれ、対応するAPI能力が一覧で表示される
+1. **前提** 複数のモデルがロードバランサーに登録されている、**実行** `/v1/models` を呼び出す、**結果** 各モデルに `capabilities` フィールドが含まれ、対応するAPI能力が一覧で表示される
 
 ---
 
@@ -101,8 +101,8 @@
 
 この機能は以下を前提とします:
 
-- ルーターに登録されたモデルは、すべてのノードで同期されている
-- ルーティングは「どのノードに振り分けるか」のみを決定し、「どのモデルを使うか」はルーター時点で決定済み
+- ロードバランサーに登録されたモデルは、すべてのノードで同期されている
+- ルーティングは「どのノードに振り分けるか」のみを決定し、「どのモデルを使うか」はロードバランサー時点で決定済み
 
 ---
 

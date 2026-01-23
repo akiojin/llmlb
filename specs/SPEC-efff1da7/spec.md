@@ -18,7 +18,7 @@ Nemotron 3 Nano 30B A3B(BF16) は llama.cpp の `convert_hf_to_gguf.py` では�
 ## 非ゴール
 - GGUF への完全変換実装
 - llama.cpp 側への本実装変更
-- Node/Router の本番機能追加
+- Node/Load Balancer の本番機能追加
 
 ## ユーザーストーリー
 - 開発者として、safetensors-cpp を使って Nemotron の safetensors を読み込み、テンソル命名や MoE 構造を把握したい。

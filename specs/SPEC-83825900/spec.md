@@ -98,7 +98,7 @@ LLM runtimeの開発者として、CUDA推論の基礎的な性能データ（�
 - KVキャッシュの最適化
 - 量子化モデルのサポート
 - マルチGPU対応
-- llm-router Nodeへの統合
+- llmlb Nodeへの統合
 
 ---
 

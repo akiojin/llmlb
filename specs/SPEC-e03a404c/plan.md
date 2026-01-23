@@ -16,7 +16,7 @@
   - `*.safetensors`（シャーディングの場合は `.safetensors.index.json` 必須）
 
 ## 役割分離
-- Router: 画像付きchatの検証・パース、必須メタデータ検証、manifest確定
+- Load Balancer: 画像付きchatの検証・パース、必須メタデータ検証、manifest確定
 - Node: 画像認識エンジンでsafetensors直読
 
 ## テスト方針（TDD）

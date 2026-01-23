@@ -2,37 +2,37 @@
 
 ## 概要
 
-Router/NodeのCLIインターフェースの使用方法を説明する。
+Load Balancer/NodeのCLIインターフェースの使用方法を説明する。
 
-## Router CLI
+## Load Balancer CLI
 
 ### ヘルプ表示
 
 ```bash
-llm-router --help
+llmlb --help
 # または
-llm-router -h
+llmlb -h
 ```
 
 ### バージョン表示
 
 ```bash
-llm-router --version
+llmlb --version
 # または
-llm-router -V
+llmlb -V
 ```
 
 出力例:
 
 ```text
-llm-router 2.1.0
+llmlb 2.1.0
 ```
 
 ### サーバー起動（デフォルト）
 
 ```bash
 # 引数なしで起動
-llm-router
+llmlb
 ```
 
 デフォルト設定:
@@ -45,16 +45,16 @@ llm-router
 
 ```bash
 # ポートを変更
-LLM_ROUTER_PORT=3000 llm-router
+LLMLB_PORT=3000 llmlb
 
 # ログレベルを変更
-LLM_ROUTER_LOG_LEVEL=debug llm-router
+LLMLB_LOG_LEVEL=debug llmlb
 
 # 複数設定
-LLM_ROUTER_PORT=3000 \
-LLM_ROUTER_LOG_LEVEL=debug \
-LLM_ROUTER_JWT_SECRET=my-secret-key \
-llm-router
+LLMLB_PORT=3000 \
+LLMLB_LOG_LEVEL=debug \
+LLMLB_JWT_SECRET=my-secret-key \
+llmlb
 ```
 
 ## Node CLI
@@ -62,46 +62,46 @@ llm-router
 ### ヘルプ表示
 
 ```bash
-allm --help
+xllm --help
 # または
-allm -h
+xllm -h
 ```
 
 ### バージョン表示
 
 ```bash
-allm --version
+xllm --version
 # または
-allm -V
+xllm -V
 ```
 
 出力例:
 
 ```text
-allm 0.1.0
+xllm 0.1.0
 ```
 
 ### サーバー起動
 
 ```bash
 # 引数なしで起動
-allm
+xllm
 ```
 
 ### 環境変数による設定
 
 ```bash
-# ルーターURLを指定
-LLM_ROUTER_URL=http://192.168.1.100:8080 allm
+# ロードバランサーURLを指定
+LLMLB_URL=http://192.168.1.100:8080 xllm
 
 # モデルディレクトリを指定
-ALLM_MODELS_DIR=/data/models allm
+XLLM_MODELS_DIR=/data/models xllm
 
 # 複数設定
-LLM_ROUTER_URL=http://router:8080 \
-ALLM_PORT=11436 \
-ALLM_LOG_LEVEL=debug \
-allm
+LLMLB_URL=http://router:8080 \
+XLLM_PORT=11436 \
+XLLM_LOG_LEVEL=debug \
+xllm
 ```
 
 ## JWT_SECRET の自動管理
@@ -110,17 +110,17 @@ allm
 
 ```bash
 # 初回起動時、JWT_SECRETが自動生成される
-llm-router
+llmlb
 
 # 生成されたシークレットを確認
-cat ~/.llm-router/jwt_secret
+cat ~/.llmlb/jwt_secret
 ```
 
 ### 環境変数で上書き
 
 ```bash
 # Kubernetes等での運用時
-LLM_ROUTER_JWT_SECRET=$(cat /secrets/jwt-secret) llm-router
+LLMLB_JWT_SECRET=$(cat /secrets/jwt-secret) llmlb
 ```
 
 ## 廃止されたコマンド
@@ -130,12 +130,12 @@ LLM_ROUTER_JWT_SECRET=$(cat /secrets/jwt-secret) llm-router
 ### ユーザー管理（廃止）
 
 ```bash
-# 廃止: llm-router user list
+# 廃止: llmlb user list
 # 代替: API経由
 curl http://localhost:8080/v0/users \
   -H "Authorization: Bearer $TOKEN"
 
-# 廃止: llm-router user add admin
+# 廃止: llmlb user add admin
 # 代替: API経由
 curl -X POST http://localhost:8080/v0/users \
   -H "Content-Type: application/json" \
@@ -145,12 +145,12 @@ curl -X POST http://localhost:8080/v0/users \
 ### モデル管理（廃止）
 
 ```bash
-# 廃止: llm-router model list
+# 廃止: llmlb model list
 # 代替: API経由
 curl http://localhost:8080/v1/models \
   -H "Authorization: Bearer sk_debug"
 
-# 廃止: llm-router model add llama-3.1-8b
+# 廃止: llmlb model add llama-3.1-8b
 # 代替: Dashboard経由でモデル登録
 ```
 
@@ -159,7 +159,7 @@ curl http://localhost:8080/v1/models \
 ### 不正なオプションを指定した場合
 
 ```bash
-llm-router --unknown-option
+llmlb --unknown-option
 ```
 
 出力:
@@ -167,7 +167,7 @@ llm-router --unknown-option
 ```text
 error: unexpected argument '--unknown-option' found
 
-Usage: llm-router [OPTIONS]
+Usage: llmlb [OPTIONS]
 
 For more information, try '--help'.
 ```
@@ -176,19 +176,19 @@ For more information, try '--help'.
 
 ```bash
 # 初回起動時、ADMIN_PASSWORDが必須
-llm-router
+llmlb
 ```
 
 出力:
 
 ```text
-Error: LLM_ROUTER_ADMIN_PASSWORD is required on first run
+Error: LLMLB_ADMIN_PASSWORD is required on first run
 ```
 
 ### ポート競合の場合
 
 ```bash
-LLM_ROUTER_PORT=8080 llm-router
+LLMLB_PORT=8080 llmlb
 ```
 
 出力:
@@ -199,23 +199,23 @@ Error: Failed to bind to 0.0.0.0:8080: Address already in use
 
 ## 環境変数一覧
 
-### Router
+### Load Balancer
 
 | 環境変数 | デフォルト | 説明 |
 |----------|-----------|------|
-| `LLM_ROUTER_PORT` | 8080 | 待受ポート |
-| `LLM_ROUTER_HOST` | 0.0.0.0 | 待受アドレス |
-| `LLM_ROUTER_LOG_LEVEL` | info | ログレベル |
-| `LLM_ROUTER_JWT_SECRET` | (自動生成) | JWT署名キー |
-| `LLM_ROUTER_ADMIN_USERNAME` | admin | 初期管理者名 |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (必須) | 初期管理者パスワード |
+| `LLMLB_PORT` | 8080 | 待受ポート |
+| `LLMLB_HOST` | 0.0.0.0 | 待受アドレス |
+| `LLMLB_LOG_LEVEL` | info | ログレベル |
+| `LLMLB_JWT_SECRET` | (自動生成) | JWT署名キー |
+| `LLMLB_ADMIN_USERNAME` | admin | 初期管理者名 |
+| `LLMLB_ADMIN_PASSWORD` | (必須) | 初期管理者パスワード |
 
 ### Node
 
 | 環境変数 | デフォルト | 説明 |
 |----------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:8080` | ルーターURL |
-| `ALLM_PORT` | 11435 | 待受ポート |
-| `ALLM_MODELS_DIR` | ~/.runtime/models | モデル保存先 |
-| `ALLM_LOG_LEVEL` | info | ログレベル |
-| `ALLM_HEARTBEAT_SECS` | 10 | ハートビート間隔 |
+| `LLMLB_URL` | `http://127.0.0.1:8080` | ロードバランサーURL |
+| `XLLM_PORT` | 11435 | 待受ポート |
+| `XLLM_MODELS_DIR` | ~/.runtime/models | モデル保存先 |
+| `XLLM_LOG_LEVEL` | info | ログレベル |
+| `XLLM_HEARTBEAT_SECS` | 10 | ハートビート間隔 |

@@ -1,6 +1,6 @@
 # Dashboard
 
-LLM Router serves the admin dashboard UI and a lightweight Playground UI.
+llmlb serves the admin dashboard UI and a lightweight Playground UI.
 
 - Dashboard: `GET /dashboard`
 - Playground: `GET /playground`
@@ -30,4 +30,4 @@ pnpm install
 pnpm --filter @llmlb/dashboard build
 ```
 
-This regenerates embedded static assets under `router/src/web/static/`.
+This regenerates embedded static assets under `llmlb/src/web/static/`.

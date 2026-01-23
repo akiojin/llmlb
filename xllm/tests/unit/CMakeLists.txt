@@ -1,6 +1,7 @@
 set(UNIT_TEST_SOURCES
     continuous_batch_scheduler_test.cpp
     gpu_detector_test.cpp
+    qwen_models_test.cpp
     vision_processor_test.cpp
     inference_cache_test.cpp
     prefix_cache_test.cpp

@@ -166,6 +166,8 @@ jobs:
           mkdir -p llmlb/tests/e2e-playwright/.llmlb/logs
           LLMLB_DATABASE_URL=sqlite:llmlb/tests/e2e-playwright/.llmlb/router.db \
           LLMLB_LOG_DIR=llmlb/tests/e2e-playwright/.llmlb/logs \
+          ADMIN_USERNAME=admin \
+          ADMIN_PASSWORD=test \
           ./target/release/llmlb &
           # Wait for server to be ready
           for i in {1..30}; do
